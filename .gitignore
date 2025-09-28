@@ -1,0 +1,48 @@
+# ----------------------------------------------------------------------
+# Node.js/JavaScript Monorepo Files (Highest Priority)
+# ----------------------------------------------------------------------
+# Standard Node dependency directories (ignore everywhere)
+node_modules/
+**/node_modules
+/packages/**/node_modules
+
+# Build/Artifacts directories
+/dist
+/build
+/out
+/packages/*/dist
+/packages/*/build
+
+# Package lock files for safety (only exclude if using a monorepo manager like yarn/pnpm, but safe to exclude for now)
+# package-lock.json
+
+# Environment files (Critical for Security)
+.env
+.env.*
+!.env.example # Keep the example file
+*.log
+npm-debug.log*
+
+# ----------------------------------------------------------------------
+# IDE and OS Files
+# ----------------------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ----------------------------------------------------------------------
+# C++ / CMake Artifacts
+# ----------------------------------------------------------------------
+# C++ compilation and dependency files
+*.o
+*.so
+*.a
+*.obj
+*.lib
+*.exe
+# CMake build directories
+/packages/cpp-core/build
+/packages/cpp-core/CMakeFiles
+
+# ----------------------------------------------------------------------
