@@ -1,0 +1,61 @@
+name: CI / Build & Test
+
+on:
+  push:
+    branches:
+      - dev-core
+      - main
+  pull_request:
+    branches:
+      - dev-core
+      - main
+
+jobs:
+  # Job 1: Build and Test the Node.js API (MERN/PERN components)
+  build-test-node:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Install Node dependencies
+        run: npm install # Assumes a monorepo setup or single package install in root/api
+
+      - name: Run Node linting (TypeScript checks)
+        run: npm run lint # You will need to define this script in your package.json
+
+      - name: Run Node unit tests
+        run: npm run test:unit # You will need to define this script
+
+  # Job 2: Build and Test the C++ Core Engine
+  build-test-cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup C++ environment
+        run: |
+          sudo apt-get update
+          # Install g++ and cmake for C++ compilation
+          sudo apt-get install -y g++ cmake build-essential
+
+      - name: Build C++ Core
+        # Assuming your C++ compilation script is robust (e.g., using cmake/make)
+        run: |
+          cd packages/cpp-core/
+          cmake .
+          make
+
+      - name: Run C++ tests
+        # Assuming you have a C++ test runner executable
+        run: |
+          cd packages/cpp-core/
+          ./test_runner
