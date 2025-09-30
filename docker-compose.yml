@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: synchroflow_db
+    restart: always
+    ports:
+      # Map container port 5432 to host port 5432
+      - "5432:5432"
+    environment:
+      # Use the application-specific user and database defined previously
+      POSTGRES_USER: sf_user
+      POSTGRES_PASSWORD: sf_pass
+      POSTGRES_DB: synchroflow_db
+    volumes:
+      # Persist the database data across restarts
+      - postgres_data:/var/lib/postgresql/data/
+
+volumes:
+  postgres_data:
