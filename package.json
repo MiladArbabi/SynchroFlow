@@ -10,6 +10,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "node-addon-api": "^7.0.0"
+    "node-addon-api": "^7.1.1"
   }
 }
