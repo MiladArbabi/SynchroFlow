@@ -1,7 +1,11 @@
-// The path must point to the compiled .node file
 const addon = require('./packages/cpp-core/build/Release/sf_core.node');
 
-console.log("Testing our native addon...");
-const result = addon.hello(); // Call the C++ function
+console.log("--- Validating C++ Core Latency ---");
 
-console.log("Result from C++:", result);
+console.time("C++ Call Latency"); // Start the timer
+
+const item = addon.getInventoryItem("SYN-TS-M-BLUE");
+
+console.timeEnd("C++ Call Latency"); // Stop the timer and print the duration
+
+console.log("\nReceived item:", item);
