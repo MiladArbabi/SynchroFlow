@@ -1,11 +1,22 @@
 const addon = require('./packages/cpp-core/build/Release/sf_core.node');
 
-console.log("--- Validating C++ Core Latency ---");
+console.log("--- Testing Compliance Logic in C++ Core ---");
 
-console.time("C++ Call Latency"); // Start the timer
+// Test Case 1: Item found, shipping to Germany (DE)
+console.log("\nRequesting SKU 'SYN-TS-M-BLUE' for DE...");
+const itemDE = addon.getInventoryItem("SYN-TS-M-BLUE", "DE");
+console.log("Result for DE:", itemDE);
+console.log(`Price with 19% VAT: ${itemDE.priceWithVat.toFixed(2)}`);
 
-const item = addon.getInventoryItem("SYN-TS-M-BLUE");
 
-console.timeEnd("C++ Call Latency"); // Stop the timer and print the duration
+// Test Case 2: Item found, shipping to Sweden (SE)
+console.log("\nRequesting SKU 'SYN-TS-M-BLUE' for SE...");
+const itemSE = addon.getInventoryItem("SYN-TS-M-BLUE", "SE");
+console.log("Result for SE:", itemSE);
+console.log(`Price with 25% VAT: ${itemSE.priceWithVat.toFixed(2)}`);
 
-console.log("\nReceived item:", item);
+
+// Test Case 3: Item not found
+console.log("\nRequesting SKU 'NOT-A-SKU' for US...");
+const itemNotFound = addon.getInventoryItem("NOT-A-SKU", "US");
+console.log("Result for Not Found:", itemNotFound);
