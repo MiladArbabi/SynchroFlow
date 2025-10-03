@@ -1,51 +1,46 @@
 #include <napi.h>
-#include "types.h"
+#include <pqxx/pqxx>
+#include <iostream>
 #include <unordered_map>
-#include <fstream>
-#include <sstream>
+#include "types.h"
 
+// The in-memory cache
 static std::unordered_map<std::string, InventoryItem> inventory_cache;
 
-// LoadInventoryData now takes a file path argument
-void LoadInventoryData(const Napi::Env& env, const std::string& file_path) {
-    inventory_cache.clear(); // Clear any old data
-    std::ifstream file(file_path);
-    if (!file.is_open()) {
-        std::string error_msg = "Failed to open " + file_path;
-        Napi::Error::New(env, error_msg).ThrowAsJavaScriptException();
-        return;
-    }
-    std::string line;
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        std::string sku, quantity_str, price_str, location;
+// This function now connects to the DB and loads the cache.
+void LoadCacheFromDB(const Napi::Env& env) {
+    try {
+        pqxx::connection conn("user=sf_user password=sf_pass host=localhost port=5432 dbname=synchroflow_db");
+        std::cout << "C++ Core: Successfully connected to PostgreSQL." << std::endl;
+
+        inventory_cache.clear();
+        pqxx::work txn(conn);
         
-        std::getline(ss, sku, ',');
-        std::getline(ss, quantity_str, ',');
-        std::getline(ss, price_str, ',');
-        std::getline(ss, location, ',');
+        // Execute the query to select all necessary columns
+        pqxx::result r = txn.exec(
+            "SELECT sku, quantity_available, price, warehouse_location FROM inventory_truth"
+        );
+        
+        // Loop through the database results and populate the C++ cache
+        for (auto row : r) {
+            InventoryItem item;
+            item.sku = row["sku"].as<std::string>();
+            item.quantity = row["quantity_available"].as<int64_t>();
+            item.price = row["price"].as<double>();
+            item.warehouse_location = row["warehouse_location"].as<std::string>();
+            
+            inventory_cache[item.sku] = item;
+        }
+        
+        txn.commit();
+        std::cout << "C++ Core: Loaded " << inventory_cache.size() << " items into the cache." << std::endl;
 
-        InventoryItem item;
-        item.sku = sku;
-        item.quantity = std::stoll(quantity_str);
-        item.price = std::stod(price_str);
-        item.warehouse_location = location;
-        inventory_cache[sku] = item;
+    } catch (const std::exception &e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
     }
 }
 
-// New exported function to initialize the cache from Node.js
-void InitCache(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsString()) {
-        Napi::TypeError::New(env, "String file path expected").ThrowAsJavaScriptException();
-        return;
-    }
-    std::string file_path = info[0].As<Napi::String>().Utf8Value();
-    LoadInventoryData(env, file_path);
-}
-
-// getInventoryItem remains the same, but no longer loads data
+// getInventoryItem now looks up items from the DB-populated cache
 Napi::Object getInventoryItem(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
@@ -57,29 +52,28 @@ Napi::Object getInventoryItem(const Napi::CallbackInfo& info) {
   std::string sku_from_js = info[0].As<Napi::String>().Utf8Value();
   auto it = inventory_cache.find(sku_from_js);
 
-  InventoryItem item;
-  if (it != inventory_cache.end()) {
-    item = it->second;
-  } else {
-    item.sku = sku_from_js;
-    item.quantity = 0;
-    item.price = 0.0;
-    item.warehouse_location = "Not Found";
-  }
-
   Napi::Object result = Napi::Object::New(env);
-  result.Set("sku", item.sku);
-  result.Set("quantity", item.quantity);
-  result.Set("price", item.price);
-  result.Set("location", item.warehouse_location);
+  if (it != inventory_cache.end()) {
+    // Found in cache
+    InventoryItem& item = it->second;
+    result.Set("sku", item.sku);
+    result.Set("quantity", item.quantity);
+    result.Set("price", item.price);
+    result.Set("location", item.warehouse_location);
+  } else {
+    // Not found in cache
+    result.Set("sku", sku_from_js);
+    result.Set("quantity", 0);
+    result.Set("price", 0.0);
+    result.Set("location", "Not Found");
+  }
 
   return result;
 }
 
-// The Init function now exports BOTH functions
+// The Init function loads the cache from the DB
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-  exports.Set(Napi::String::New(env, "initCache"),
-              Napi::Function::New(env, InitCache));
+  LoadCacheFromDB(env);
   exports.Set(Napi::String::New(env, "getInventoryItem"),
               Napi::Function::New(env, getInventoryItem));
   return exports;
