@@ -1,63 +1,87 @@
 #include <napi.h>
 #include "types.h"
+#include <unordered_map>
+#include <fstream>
+#include <sstream>
 
-// This is our new business logic function for compliance
-double getVatRate(const std::string& countryCode) {
-    if (countryCode == "DE") return 0.19; // Germany VAT 19%
-    if (countryCode == "SE") return 0.25; // Sweden VAT 25%
-    if (countryCode == "US") return 0.07; // Example US Sales Tax 7%
-    return 0.0; // Default / No tax
+static std::unordered_map<std::string, InventoryItem> inventory_cache;
+
+// LoadInventoryData now takes a file path argument
+void LoadInventoryData(const Napi::Env& env, const std::string& file_path) {
+    inventory_cache.clear(); // Clear any old data
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+        std::string error_msg = "Failed to open " + file_path;
+        Napi::Error::New(env, error_msg).ThrowAsJavaScriptException();
+        return;
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string sku, quantity_str, price_str, location;
+        
+        std::getline(ss, sku, ',');
+        std::getline(ss, quantity_str, ',');
+        std::getline(ss, price_str, ',');
+        std::getline(ss, location, ',');
+
+        InventoryItem item;
+        item.sku = sku;
+        item.quantity = std::stoll(quantity_str);
+        item.price = std::stod(price_str);
+        item.warehouse_location = location;
+        inventory_cache[sku] = item;
+    }
 }
 
-// The main N-API method, now updated to accept two arguments
-Napi::Object Method(const Napi::CallbackInfo& info) {
+// New exported function to initialize the cache from Node.js
+void InitCache(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "String file path expected").ThrowAsJavaScriptException();
+        return;
+    }
+    std::string file_path = info[0].As<Napi::String>().Utf8Value();
+    LoadInventoryData(env, file_path);
+}
+
+// getInventoryItem remains the same, but no longer loads data
+Napi::Object getInventoryItem(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  // 1. Check if we received the correct number and type of arguments
-  if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
-    Napi::TypeError::New(env, "Two string arguments expected: SKU and countryCode").ThrowAsJavaScriptException();
+  if (info.Length() < 1 || !info[0].IsString()) {
+    Napi::TypeError::New(env, "String SKU expected").ThrowAsJavaScriptException();
     return Napi::Object::New(env);
   }
 
-  // 2. Get the arguments passed from Node.js
   std::string sku_from_js = info[0].As<Napi::String>().Utf8Value();
-  std::string country_code_from_js = info[1].As<Napi::String>().Utf8Value();
+  auto it = inventory_cache.find(sku_from_js);
 
-  // 3. Create a C++ struct (simulating a database lookup)
   InventoryItem item;
-  if (sku_from_js == "SYN-TS-M-BLUE") {
-    item.sku = "SYN-TS-M-BLUE";
-    item.quantity = 150;
-    item.price = 29.99;
-    item.warehouse_location = "Aisle 4, Bay 7";
+  if (it != inventory_cache.end()) {
+    item = it->second;
   } else {
-    // Return a 'Not Found' version
     item.sku = sku_from_js;
     item.quantity = 0;
     item.price = 0.0;
     item.warehouse_location = "Not Found";
   }
 
-  // 4. Call our new business logic function
-  double vatRate = getVatRate(country_code_from_js);
-  double priceWithVat = item.price * (1 + vatRate);
-
-  // 5. Convert to a JavaScript object, now including compliance data
   Napi::Object result = Napi::Object::New(env);
   result.Set("sku", item.sku);
   result.Set("quantity", item.quantity);
-  result.Set("basePrice", item.price);
+  result.Set("price", item.price);
   result.Set("location", item.warehouse_location);
-  result.Set("vatRate", vatRate);
-  result.Set("priceWithVat", priceWithVat);
 
   return result;
 }
 
-// Init function remains the same
+// The Init function now exports BOTH functions
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  exports.Set(Napi::String::New(env, "initCache"),
+              Napi::Function::New(env, InitCache));
   exports.Set(Napi::String::New(env, "getInventoryItem"),
-              Napi::Function::New(env, Method));
+              Napi::Function::New(env, getInventoryItem));
   return exports;
 }
 
