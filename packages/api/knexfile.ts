@@ -1,9 +1,8 @@
-
 import * as dotenv from 'dotenv';
 import { Knex } from 'knex';
 
 // Load environment variables from .env file
-dotenv.config();
+dotenv.config({ path: '../../.env' }); // Make sure it finds the root .env file
 
 const config: { [key: string]: Knex.Config } = {
   development: {
@@ -11,9 +10,9 @@ const config: { [key: string]: Knex.Config } = {
     connection: {
       host: process.env.PG_HOST || 'localhost',
       port: Number(process.env.PG_PORT) || 5432,
-      user: process.env.PG_USER || 'synchro_user',
-      password: process.env.PG_PASSWORD || 'synchro_pass',
-      database: process.env.PG_DATABASE || 'synchroflow_dev_db',
+      user: process.env.PG_USER || 'sf_user',
+      password: process.env.PG_PASSWORD || 'sf_pass',
+      database: process.env.PG_DATABASE || 'synchroflow_db',
     },
     migrations: {
       tableName: 'knex_migrations',
@@ -24,10 +23,6 @@ const config: { [key: string]: Knex.Config } = {
     },
   },
   // Add staging and production configurations here later
-  production: {
-    // ... production configurations
-  }
 };
 
 module.exports = config;
-

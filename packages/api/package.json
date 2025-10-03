@@ -1,6 +1,8 @@
 {
   "scripts": {
-    "start": "ts-node src/server.ts"
+    "start": "ts-node src/server.ts",
+    "migrate": "knex migrate:latest",
+    "migrate:make": "knex migrate:make"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
