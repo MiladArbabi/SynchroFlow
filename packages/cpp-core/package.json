@@ -1,0 +1,12 @@
+{
+  "name": "sf_core",
+  "version": "1.0.0",
+  "main": "build/Release/sf_core.node",
+  "gypfile": true,
+  "scripts": {
+    "build": "node-gyp configure && node-gyp build"
+  },
+  "dependencies": {
+    "node-addon-api": "^7.0.0"
+  }
+}
