@@ -9,13 +9,19 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:*\"",
     "dev:api": "nodemon",
-    "dev:cpp": "nodemon --watch packages/cpp-core --ext cpp,h,gyp --exec \"npm run build -w sf_core\""
+    "dev:cpp": "nodemon --watch packages/cpp-core --ext cpp,h,gyp --exec \"npm run build -w sf_core\"",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/supertest": "^6.0.3",
     "concurrently": "^9.2.1",
-    "nodemon": "^3.1.10"
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.10",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.4"
   }
 }
