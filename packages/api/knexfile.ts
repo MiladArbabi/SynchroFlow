@@ -1,8 +1,9 @@
 import * as dotenv from 'dotenv';
 import { Knex } from 'knex';
+import path from 'path';
 
 // Load environment variables from .env file
-dotenv.config({ path: '../../.env' }); // Make sure it finds the root .env file
+dotenv.config({ path: '../../.env' });
 
 const config: { [key: string]: Knex.Config } = {
   development: {
@@ -16,13 +17,12 @@ const config: { [key: string]: Knex.Config } = {
     },
     migrations: {
       tableName: 'knex_migrations',
-      directory: './migrations',
+      directory: path.join(__dirname, './migrations'),
     },
     seeds: {
-      directory: './seeds',
+      directory: path.join(__dirname, './seeds'),
     },
   },
-  // Add staging and production configurations here later
 };
 
 module.exports = config;
