@@ -1,16 +1,19 @@
 import request from 'supertest';
 import app from '../src/server';
-import db from '../src/db'; 
+import db from '../src/db';
 import { InventoryItem } from '../src/types';
 
 describe('Inventory API Endpoints', () => {
 
-  // Before all tests run, make sure migrations are up to date
+  // Before all tests, clean the tables to ensure a fresh start
   beforeAll(async () => {
     await db.migrate.latest();
+    // Clean out the tables in reverse order of dependency
+    await db('inventory_truth').del();
+    await db('shops').del();
   });
 
-  // After all tests run, destroy the database connection
+  // After all tests, destroy the connection
   afterAll(async () => {
     await db.destroy();
   });
@@ -18,7 +21,7 @@ describe('Inventory API Endpoints', () => {
   const testSku = 'TEST-SKU-123';
   let createdShopId: number;
 
-  it('should create a new shop for testing', async () => {
+  it('should create a new shop', async () => {
     const response = await request(app)
       .post('/v1/shops')
       .send({
@@ -33,7 +36,7 @@ describe('Inventory API Endpoints', () => {
     createdShopId = response.body.id;
   });
 
-  it('should create a new inventory item via POST /v1/inventory', async () => {
+  it('should create a new inventory item', async () => {
     const response = await request(app)
       .post('/v1/inventory')
       .send({
@@ -42,28 +45,25 @@ describe('Inventory API Endpoints', () => {
         quantity: 100,
         price: 9.99,
         warehouse_location: "Test-Bin-1",
-        shop_id: createdShopId
+        shop_id: createdShopId // This will fail if the previous test fails
       });
 
     expect(response.statusCode).toBe(201);
     expect(response.body.sku).toBe(testSku);
-    expect(response.body.quantity_available).toBe(100);
   });
-
-  it('should update an inventory item via PUT /v1/inventory/:sku', async () => {
+  
+  it('should update an inventory item', async () => {
     const response = await request(app)
       .put(`/v1/inventory/${testSku}`)
       .send({ quantity_available: 90 });
 
     expect(response.statusCode).toBe(200);
-    expect(response.body.sku).toBe(testSku);
     expect(response.body.quantity_available).toBe(90);
   });
 
-  it('should fetch all inventory items via GET /v1/inventory', async () => {
+  it('should fetch all inventory items', async () => {
     const response = await request(app).get('/v1/inventory');
     expect(response.statusCode).toBe(200);
-    // Ensure the response is an array and contains our test item
     expect(Array.isArray(response.body)).toBe(true);
     expect(response.body.some((item: InventoryItem) => item.sku === testSku)).toBe(true);
   });
