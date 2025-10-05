@@ -4,7 +4,7 @@
       "target_name": "sf_core",
       "sources": [ "main.cpp" ],
       "include_dirs": [
-        "node_modules/node-addon-api",
+        "../../node_modules/node-addon-api",
         "src",
         "<!(pkg-config --cflags-only-I libpqxx | sed 's/-I//g')"
       ],
