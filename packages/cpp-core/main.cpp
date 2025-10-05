@@ -12,6 +12,7 @@ void LoadCacheFromDB(const Napi::Env& env) {
     try {
         pqxx::connection conn("user=sf_user password=sf_pass host=localhost port=5432 dbname=synchroflow_db");
         std::cout << "C++ Core: Successfully connected to PostgreSQL." << std::endl;
+        std::cout << "C++ Core: Rebuild triggered!" << std::endl;
 
         inventory_cache.clear();
         pqxx::work txn(conn);

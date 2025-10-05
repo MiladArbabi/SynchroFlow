@@ -7,9 +7,15 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently \"npm:dev:*\"",
+    "dev:api": "nodemon",
+    "dev:cpp": "nodemon --watch packages/cpp-core --ext cpp,h,gyp --exec \"npm run build -w sf_core\""
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.10"
+  }
 }
