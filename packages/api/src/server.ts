@@ -1,3 +1,4 @@
+// packages/api/src/server.ts
 import express from 'express';
 import db from './db';
 
@@ -8,12 +9,12 @@ import path from 'path';
 // Load the C++ addon. The path goes up from /api, then down into /cpp-core.
 const addonPath = path.join(__dirname, '../../../packages/cpp-core/build/Release/sf_core.node');
 const addon = require(addonPath);
-// --------------------
 
 const app = express();
 app.use(express.json());
 const port = 3000;
 
+// --- Routes ---
 app.get('/', (req, res) => {
   res.send('SynchroFlow API is running!');
 });
@@ -110,6 +111,10 @@ app.put('/v1/inventory/:sku', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server is listening on port ${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server is listening on port ${port}`);
+  });
+}
+
+export default app;
