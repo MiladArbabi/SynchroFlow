@@ -1,19 +1,15 @@
 {
-  "name": "synchroflow",
+  "name": "synchroflow-monorepo",
   "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
+  "description": "The root of the SynchroFlow monorepo.",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "express": "^5.1.0",
-    "node-addon-api": "^7.1.1"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.3"
-  }
+  "license": "ISC"
 }
