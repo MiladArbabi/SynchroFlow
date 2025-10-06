@@ -4,7 +4,8 @@
   "scripts": {
     "start": "ts-node src/server.ts",
     "migrate": "knex migrate:latest",
-    "migrate:make": "knex migrate:make"
+    "migrate:make": "knex migrate:make",
+    "migrate:rollback": "knex migrate:rollback"
   },
   "dependencies": {
     "express": "^4.19.2",

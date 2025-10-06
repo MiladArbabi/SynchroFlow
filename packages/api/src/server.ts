@@ -89,6 +89,21 @@ app.post('/v1/shops', async (req, res) => {
   }
 });
 
+app.post('/v1/transactions', async (req, res) => {
+  try {
+    const transactionData = req.body;
+    const [loggedTransaction] = await db('financial_transactions').insert(transactionData).returning('*');
+    res.status(201).json(loggedTransaction);
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
 app.put('/v1/inventory/:sku', async (req, res) => {
   try {
     const { sku } = req.params;
