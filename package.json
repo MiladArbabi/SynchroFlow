@@ -10,7 +10,7 @@
     "dev": "concurrently \"npm:dev:*\"",
     "dev:api": "nodemon",
     "dev:cpp": "nodemon --watch packages/cpp-core --ext cpp,h,gyp --exec \"npm run build -w sf_core\"",
-    "dev:ai": "./packages/ai-engine/venv/bin/uvicorn main:app --reload --app-dir ./packages/ai-engine",
+    "dev:ai": "./packages/ai-engine/venv/bin/uvicorn main:app --reload --app-dir ./packages/ai-engine --host 0.0.0.0",
     "test": "jest"
   },
   "keywords": [],
