@@ -1,6 +1,7 @@
 // packages/api/src/server.ts
 import express from 'express';
 import db from './db';
+import { getDemandForecastForSku } from './services/forecasting.service';
 
 // --- ADD THESE LINES ---
 // Use 'path' to create a reliable, absolute path to the addon file
@@ -49,6 +50,20 @@ app.get('/v1/inventory', async (req, res) => {
       res.status(500).json({ error: error.message });
     } else {
       res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
+app.get('/v1/forecast/demand/:sku', async (req, res) => {
+  try {
+    const { sku } = req.params;
+    const forecast = await getDemandForecastForSku(sku);
+    res.json(forecast);
+  } catch (error) {
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown error occurred while generating forecast.' });
     }
   }
 });
