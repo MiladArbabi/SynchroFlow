@@ -46,3 +46,12 @@ Thumbs.db
 /packages/cpp-core/CMakeFiles
 
 # ----------------------------------------------------------------------
+# Python / AI Engine Artifacts
+# ----------------------------------------------------------------------
+# Virtual environment
+/packages/ai-engine/venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
