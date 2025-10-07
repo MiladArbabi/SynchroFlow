@@ -8,7 +8,7 @@ const AI_ENGINE_URL = 'http://127.0.0.1:8000';
 
 export async function calculateTotalInventoryValue(): Promise<number> {
   const allInventory: InventoryItem[] = await db('inventory_truth').select('*');
-  const totalValue = allInventory.reduce((total, item) => {
+  const totalValue = allInventory.reduce((total: number, item: InventoryItem) => {
     const price = parseFloat(item.price);
     return total + (item.quantity_available * price);
   }, 0);
@@ -21,15 +21,25 @@ export async function getDemandForecastForSku(sku: string): Promise<any> {
     // 1. Fetch historical sales data for the given SKU from our database.
     // For now, we'll simulate this with a hardcoded array.
     // In the future, we would query the 'orders' or 'financial_transactions' table.
-    const historical_sales = [110, 130, 155, 142, 168, 180, 205]; // Sample data
+    // 1. Fetch REAL historical sales data for the given SKU from the database.
+    const salesRecords = await db('historical_sales')
+      .where({ sku: sku })
+      .orderBy('sale_date', 'asc');
 
-    // 2. Make an API call to our Python AI Engine.
+    if (salesRecords.length < 2) {
+      throw new Error('Not enough historical data to generate a forecast.');
+    }
+
+    // 2. Extract just the quantity_sold into a simple array.
+    const historical_sales = salesRecords.map((record: { quantity_sold: number }) => record.quantity_sold);
+
+    // 3. Make an API call to our Python AI Engine with the live data.
     const response = await axios.post(`${AI_ENGINE_URL}/predict/demand`, {
       sku: sku,
       historical_sales: historical_sales
     });
 
-    // 3. Return the forecast from the AI Engine's response.
+    // 4. Return the forecast.
     return response.data;
 
   } catch (error) {
