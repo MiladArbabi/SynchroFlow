@@ -1,9 +1,8 @@
+// packages/api/__tests__/api.test.ts
 import request from 'supertest';
 import app from '../src/server';
 import db from '../src/db';
 import { InventoryItem } from '../src/types';
-
-describe('Inventory API Endpoints', () => {
 
   // Before all tests, clean the tables to ensure a fresh start
   beforeAll(async () => {
@@ -17,6 +16,8 @@ describe('Inventory API Endpoints', () => {
   afterAll(async () => {
     await db.destroy();
   });
+
+describe('Inventory API Endpoints', () => {
 
   const testSku = 'TEST-SKU-123';
   let createdShopId: number;
@@ -66,5 +67,40 @@ describe('Inventory API Endpoints', () => {
     expect(response.statusCode).toBe(200);
     expect(Array.isArray(response.body)).toBe(true);
     expect(response.body.some((item: InventoryItem) => item.sku === testSku)).toBe(true);
+  });
+});
+
+describe('POST /v1/data/sales', () => {
+  it('should create a new historical sales record and return it', async () => {
+    // We need a shop and an item to exist first
+    const shopResponse = await request(app).post('/v1/shops').send({
+      name: "TDD Store",
+      contact_email: "tdd@store.com",
+      auth_secret: "tdd-secret",
+      primary_erp_type: "TestERP",
+      primary_ecomm_type: "TestPlatform"
+    });
+    const shopId = shopResponse.body.id;
+
+    await request(app).post('/v1/inventory').send({
+      sku: "TDD-SKU-001",
+      description: "A TDD test item",
+      quantity: 1, price: 1, warehouse_location: "TDD-Bin", shop_id: shopId
+    });
+
+    // Now, test the actual endpoint
+    const response = await request(app)
+      .post('/v1/data/sales')
+      .send({
+        shop_id: shopId,
+        sku: "TDD-SKU-001",
+        sale_date: "2025-10-07",
+        quantity_sold: 5
+      });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.body).toHaveProperty('id');
+    expect(response.body.sku).toBe("TDD-SKU-001");
+    expect(response.body.quantity_sold).toBe(5);
   });
 });
