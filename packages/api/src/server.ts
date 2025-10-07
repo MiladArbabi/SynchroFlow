@@ -85,7 +85,12 @@ app.post('/v1/inventory', async (req, res) => {
     
     res.status(201).json(createdItem);
   } catch (error) {
-    // ... error handling ...
+   console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
   }
 });
 
@@ -158,7 +163,12 @@ app.put('/v1/inventory/:sku', async (req, res) => {
     const [updatedItem] = await db('inventory_truth').where({ sku: sku }).select('*');
     res.json(updatedItem);
   } catch (error) {
-    // ... error handling ...
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
   }
 });
 

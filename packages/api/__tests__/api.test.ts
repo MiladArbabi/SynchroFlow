@@ -3,26 +3,26 @@ import request from 'supertest';
 import app from '../src/server';
 import db from '../src/db';
 import { InventoryItem } from '../src/types';
+import axios from 'axios';
 
-  // Before all tests, clean the tables to ensure a fresh start
-  beforeAll(async () => {
-    await db.migrate.latest();
-    // Clean out the tables in reverse order of dependency
-    await db('inventory_truth').del();
-    await db('shops').del();
-  });
+// Tell Jest to mock the 'axios' library
+jest.mock('axios');
+// Create a typed mock for axios.post
+const mockedAxiosPost = axios.post as jest.Mock;
 
-  // After all tests, destroy the connection
-  afterAll(async () => {
-    await db.destroy();
-  });
+beforeAll(async () => {
+  await db.migrate.latest();
+});
+
+afterAll(async () => {
+  await db.destroy();
+});
 
 describe('Inventory API Endpoints', () => {
 
   const testSku = 'TEST-SKU-123';
-  let createdShopId: number;
-
-  it('should create a new shop', async () => {
+  // Each test in this block is now fully independent.
+  it('should create a new shop and return it', async () => {
     const response = await request(app)
       .post('/v1/shops')
       .send({
@@ -34,10 +34,21 @@ describe('Inventory API Endpoints', () => {
       });
     expect(response.statusCode).toBe(201);
     expect(response.body).toHaveProperty('id');
-    createdShopId = response.body.id;
+    expect(response.body.name).toBe("Test Store");
   });
 
   it('should create a new inventory item', async () => {
+    // 1. Create the shop this item will belong to.
+    const shopResponse = await request(app).post('/v1/shops').send({
+      name: "Inventory Test Store",
+      contact_email: "inventory-test@store.com",
+      auth_secret: "inv-secret",
+      primary_erp_type: "TestERP",
+      primary_ecomm_type: "TestPlatform"
+    });
+    const shopId = shopResponse.body.id;
+
+  // 2. Now create the inventory item.
     const response = await request(app)
       .post('/v1/inventory')
       .send({
@@ -46,7 +57,7 @@ describe('Inventory API Endpoints', () => {
         quantity: 100,
         price: 9.99,
         warehouse_location: "Test-Bin-1",
-        shop_id: createdShopId // This will fail if the previous test fails
+        shop_id: shopId
       });
 
     expect(response.statusCode).toBe(201);
@@ -54,6 +65,18 @@ describe('Inventory API Endpoints', () => {
   });
   
   it('should update an inventory item', async () => {
+    // 1. Create the prerequisite shop and item.
+    const shopResponse = await request(app).post('/v1/shops').send({
+      name: "Update Test Store", contact_email: "update@store.com", auth_secret: "upd-secret",
+      primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform"
+    });
+    const shopId = shopResponse.body.id;
+    await request(app).post('/v1/inventory').send({
+        sku: testSku, description: "Item to be updated", quantity: 100,
+        price: 9.99, warehouse_location: "Test-Bin-1", shop_id: shopId
+    });
+
+    // 2. Now, update the item.
     const response = await request(app)
       .put(`/v1/inventory/${testSku}`)
       .send({ quantity_available: 90 });
@@ -63,6 +86,18 @@ describe('Inventory API Endpoints', () => {
   });
 
   it('should fetch all inventory items', async () => {
+    // 1. Create the prerequisite shop and item.
+    const shopResponse = await request(app).post('/v1/shops').send({
+      name: "Fetch Test Store", contact_email: "fetch@store.com", auth_secret: "fetch-secret",
+      primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform"
+    });
+    const shopId = shopResponse.body.id;
+    await request(app).post('/v1/inventory').send({
+        sku: testSku, description: "Item to be fetched", quantity: 100,
+        price: 9.99, warehouse_location: "Test-Bin-1", shop_id: shopId
+    });
+
+    // 2. Now, fetch the items.
     const response = await request(app).get('/v1/inventory');
     expect(response.statusCode).toBe(200);
     expect(Array.isArray(response.body)).toBe(true);
@@ -102,5 +137,59 @@ describe('POST /v1/data/sales', () => {
     expect(response.body).toHaveProperty('id');
     expect(response.body.sku).toBe("TDD-SKU-001");
     expect(response.body.quantity_sold).toBe(5);
+  });
+});
+
+describe('GET /v1/forecast/demand/:sku', () => {
+  beforeEach(async () => {
+    // Clean the historical_sales table before each test
+    await db('historical_sales').del();
+    await db('inventory_truth').del();
+    await db('shops').del();
+  });
+
+  it('should fetch historical data, call the AI engine, and return a forecast', async () => {
+    // --- 1. SETUP ---
+    // Create the shop that the sales records will belong to.
+    const shopResponse = await request(app).post('/v1/shops').send({
+      name: "Forecast Store",
+      contact_email: "forecast@store.com",
+      auth_secret: "forecast-secret",
+      primary_erp_type: "TestERP",
+      primary_ecomm_type: "TestPlatform"
+    });
+
+    const shopId = shopResponse.body.id;
+
+    // Seed the database with historical sales data for that shop
+    const testSku = "FORECAST-SKU-001";
+    await db('historical_sales').insert([
+      { shop_id: shopId, sku: testSku, sale_date: "2025-01-01", quantity_sold: 10 },
+      { shop_id: shopId, sku: testSku, sale_date: "2025-02-01", quantity_sold: 12 },
+      { shop_id: shopId, sku: testSku, sale_date: "2025-03-01", quantity_sold: 15 },
+    ]);
+
+    // Define the fake response our mocked AI engine will return
+    const fakeForecast = {
+      sku: testSku,
+      forecast: [16.5, 17.0, 18.2]
+    };
+    // Tell our mock to return this fake data when called
+    mockedAxiosPost.mockResolvedValue({ data: fakeForecast });
+
+    // --- 2. EXECUTION ---
+    // Call our real API endpoint
+    const response = await request(app).get(`/v1/forecast/demand/${testSku}`);
+
+    // --- 3. ASSERTION ---
+    // Check that the API returned the correct status and the data from our mock
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(fakeForecast);
+
+    // Crucially, verify that our API called the AI engine with the CORRECT data from the database
+    expect(mockedAxiosPost).toHaveBeenCalledWith("http://127.0.0.1:8000/predict/demand", {
+      sku: testSku,
+      historical_sales: [10, 12, 15] // This proves we queried the DB correctly
+    });
   });
 });
