@@ -104,6 +104,27 @@ app.post('/v1/shops', async (req, res) => {
   }
 });
 
+app.post('/v1/data/sales', async (req, res) => {
+  try {
+    const salesData = req.body;
+
+    // Basic validation to ensure we have the required data
+    if (!salesData.shop_id || !salesData.sku || !salesData.sale_date || !salesData.quantity_sold) {
+      return res.status(400).json({ error: 'shop_id, sku, sale_date, and quantity_sold are required.' });
+    }
+
+    const [loggedSale] = await db('historical_sales').insert(salesData).returning('*');
+    res.status(201).json(loggedSale);
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
 app.post('/v1/transactions', async (req, res) => {
   try {
     const transactionData = req.body;
