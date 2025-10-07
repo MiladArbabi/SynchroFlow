@@ -11,7 +11,10 @@
     "dev:api": "nodemon",
     "dev:cpp": "nodemon --watch packages/cpp-core --ext cpp,h,gyp --exec \"npm run build -w sf_core\"",
     "dev:ai": "./packages/ai-engine/venv/bin/uvicorn main:app --reload --app-dir ./packages/ai-engine --host 0.0.0.0",
-    "test": "jest"
+    "db:reset": "docker exec synchroflow_db psql -U sf_user -d postgres -c 'DROP DATABASE IF EXISTS synchroflow_db;' && docker exec synchroflow_db psql -U sf_user -d postgres -c 'CREATE DATABASE synchroflow_db;'",
+    "test:setup": "npm run db:reset && npm run migrate -w api",
+    "test": "npm run test:setup && jest",
+    "test:ci": "jest"
   },
   "keywords": [],
   "author": "",

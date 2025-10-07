@@ -10,19 +10,12 @@ jest.mock('axios');
 // Create a typed mock for axios.post
 const mockedAxiosPost = axios.post as jest.Mock;
 
-beforeAll(async () => {
-  await db.migrate.latest();
-});
-
 afterAll(async () => {
   await db.destroy();
 });
 
-describe('Inventory API Endpoints', () => {
-
-  const testSku = 'TEST-SKU-123';
-  // Each test in this block is now fully independent.
-  it('should create a new shop and return it', async () => {
+describe('API Endpoints', () => {
+  it('POST /v1/shops - should create a new shop and return it', async () => {
     const response = await request(app)
       .post('/v1/shops')
       .send({
@@ -37,7 +30,8 @@ describe('Inventory API Endpoints', () => {
     expect(response.body.name).toBe("Test Store");
   });
 
-  it('should create a new inventory item', async () => {
+  it('POST /v1/inventory - should create a new inventory item', async () => {
+    const testSku = 'INV-ITEM-001';
     // 1. Create the shop this item will belong to.
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "Inventory Test Store",
@@ -64,7 +58,8 @@ describe('Inventory API Endpoints', () => {
     expect(response.body.sku).toBe(testSku);
   });
   
-  it('should update an inventory item', async () => {
+  it('PUT /v1/inventory/:sku - should update an inventory item', async () => {
+    const testSku = 'UPDATE-SKU-001';
     // 1. Create the prerequisite shop and item.
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "Update Test Store", contact_email: "update@store.com", auth_secret: "upd-secret",
@@ -85,7 +80,8 @@ describe('Inventory API Endpoints', () => {
     expect(response.body.quantity_available).toBe(90);
   });
 
-  it('should fetch all inventory items', async () => {
+  it('GET /v1/inventory - should fetch all inventory items', async () => {
+    const testSku = 'FETCH-SKU-001';
     // 1. Create the prerequisite shop and item.
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "Fetch Test Store", contact_email: "fetch@store.com", auth_secret: "fetch-secret",
@@ -103,10 +99,8 @@ describe('Inventory API Endpoints', () => {
     expect(Array.isArray(response.body)).toBe(true);
     expect(response.body.some((item: InventoryItem) => item.sku === testSku)).toBe(true);
   });
-});
 
-describe('POST /v1/data/sales', () => {
-  it('should create a new historical sales record and return it', async () => {
+it('POST /v1/data/sales - should create a new historical sales record', async () => {
     // We need a shop and an item to exist first
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "TDD Store",
@@ -138,19 +132,8 @@ describe('POST /v1/data/sales', () => {
     expect(response.body.sku).toBe("TDD-SKU-001");
     expect(response.body.quantity_sold).toBe(5);
   });
-});
 
-describe('GET /v1/forecast/demand/:sku', () => {
-  beforeEach(async () => {
-    // Clean the historical_sales table before each test
-    await db('historical_sales').del();
-    await db('inventory_truth').del();
-    await db('shops').del();
-  });
-
-  it('should fetch historical data, call the AI engine, and return a forecast', async () => {
-    // --- 1. SETUP ---
-    // Create the shop that the sales records will belong to.
+ it('GET /v1/forecast/demand/:sku - should fetch data and return a forecast', async () => {
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "Forecast Store",
       contact_email: "forecast@store.com",
@@ -191,5 +174,25 @@ describe('GET /v1/forecast/demand/:sku', () => {
       sku: testSku,
       historical_sales: [10, 12, 15] // This proves we queried the DB correctly
     });
+  });
+
+  it('POST /v1/data/product-costs - should create a new product cost record', async () => {
+    // 1. Create the shop and inventory item this cost record will link to
+    const shopResponse = await request(app).post('/v1/shops').send({ name: "Cost Test Store", contact_email: "cost@store.com", auth_secret: "cost-secret", primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform" });
+    const shopId = shopResponse.body.id;
+    await request(app).post('/v1/inventory').send({ sku: "COST-SKU-001", description: "A test item for costs", quantity: 1, price: 1, warehouse_location: "Cost-Bin", shop_id: shopId });
+
+    // 2. Now, test the new endpoint
+    const response = await request(app)
+      .post('/v1/data/product-costs')
+      .send({
+        sku: "COST-SKU-001",
+        purchase_price: 15.50,
+        landed_cost_per_unit: 18.75
+      });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.body.sku).toBe("COST-SKU-001");
+    expect(response.body.landed_cost_per_unit).toBe("18.75"); // Knex returns decimal as string
   });
 });
