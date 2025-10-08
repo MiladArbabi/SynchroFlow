@@ -14,5 +14,6 @@ test('renders the main layout with a sidebar and header on the root route', () =
   expect(screen.getByRole('heading', { name: /Welcome to the FinOps Command Center/i })).toBeInTheDocument();
 
   // Look for a navigation link in the sidebar
-  expect(screen.getByRole('link', { name: /inventory/i })).toBeInTheDocument();
+  const productLink = screen.getByRole('link', { name: /products/i });
+  expect(productLink).toHaveAttribute('href', '/products');
 });
