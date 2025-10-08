@@ -10,15 +10,26 @@ jest.mock('axios');
 // Create a typed mock for axios.post
 const mockedAxiosPost = axios.post as jest.Mock;
 
+beforeAll(async () => {
+   await db.migrate.latest();
+ });
+
 afterAll(async () => {
   await db.destroy();
 });
 
-describe('Inventory API Endpoints', () => {
+beforeEach(async () => {
+  await db('historical_sales').del();
+  await db('product_costs').del();
+  await db('inventory_truth').del();
+  await db('shops').del();
+});
+
+describe('API Endpoints', () => {
 
   const testSku = 'TEST-SKU-123';
   // Each test in this block is now fully independent.
-  it('should create a new shop and return it', async () => {
+  it('POST /v1/shops - should create a new shop and return it', async () => {
     const response = await request(app)
       .post('/v1/shops')
       .send({
@@ -33,7 +44,7 @@ describe('Inventory API Endpoints', () => {
     expect(response.body.name).toBe("Test Store");
   });
 
-  it('should create a new inventory item', async () => {
+  it('POST /v1/inventory - should create a new inventory item', async () => {
     // 1. Create the shop this item will belong to.
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "Inventory Test Store",
@@ -60,7 +71,7 @@ describe('Inventory API Endpoints', () => {
     expect(response.body.sku).toBe(testSku);
   });
   
-  it('should update an inventory item', async () => {
+ it('PUT /v1/inventory/:sku - should update an inventory item', async () => {
     // 1. Create the prerequisite shop and item.
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "Update Test Store", contact_email: "update@store.com", auth_secret: "upd-secret",
@@ -81,7 +92,7 @@ describe('Inventory API Endpoints', () => {
     expect(response.body.quantity_available).toBe(90);
   });
 
-  it('should fetch all inventory items', async () => {
+ it('GET /v1/inventory - should fetch all inventory items', async () => {
     // 1. Create the prerequisite shop and item.
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "Fetch Test Store", contact_email: "fetch@store.com", auth_secret: "fetch-secret",
@@ -99,10 +110,8 @@ describe('Inventory API Endpoints', () => {
     expect(Array.isArray(response.body)).toBe(true);
     expect(response.body.some((item: InventoryItem) => item.sku === testSku)).toBe(true);
   });
-});
 
-describe('POST /v1/data/sales', () => {
-  it('should create a new historical sales record and return it', async () => {
+it('POST /v1/data/sales - should create a new historical sales record', async () => {
     // We need a shop and an item to exist first
     const shopResponse = await request(app).post('/v1/shops').send({
       name: "TDD Store",
@@ -134,17 +143,8 @@ describe('POST /v1/data/sales', () => {
     expect(response.body.sku).toBe("TDD-SKU-001");
     expect(response.body.quantity_sold).toBe(5);
   });
-});
 
-describe('GET /v1/forecast/demand/:sku', () => {
-  beforeEach(async () => {
-    // Clean the historical_sales table before each test
-    await db('historical_sales').del();
-    await db('inventory_truth').del();
-    await db('shops').del();
-  });
-
-  it('should fetch historical data, call the AI engine, and return a forecast', async () => {
+it('GET /v1/forecast/demand/:sku - should fetch data and return a forecast', async () => {
     // --- 1. SETUP ---
     // Create the shop that the sales records will belong to.
     const shopResponse = await request(app).post('/v1/shops').send({
@@ -188,17 +188,8 @@ describe('GET /v1/forecast/demand/:sku', () => {
       historical_sales: [10, 12, 15] // This proves we queried the DB correctly
     });
   });
-});
 
-describe('POST /v1/data/product-costs', () => {
-  beforeEach(async () => {
-    // Ensure a clean state for this test
-    await db('product_costs').del();
-    await db('inventory_truth').del();
-    await db('shops').del();
-  });
-
-  it('should create a new product cost record and return it', async () => {
+it('POST /v1/data/product-costs - should create a new product cost record', async () => {
     // 1. Create the shop and inventory item this cost record will link to
     const shopResponse = await request(app).post('/v1/shops').send({ name: "Cost Test Store", contact_email: "cost@store.com", auth_secret: "cost-secret", primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform" });
     const shopId = shopResponse.body.id;
@@ -216,5 +207,29 @@ describe('POST /v1/data/product-costs', () => {
     expect(response.statusCode).toBe(201);
     expect(response.body.sku).toBe("COST-SKU-001");
     expect(response.body.landed_cost_per_unit).toBe("18.75"); // Knex returns decimal as string
+  });
+
+it('GET /v1/analytics/inventory-value - should calculate and return the total value', async () => {
+    // --- 1. SETUP ---
+    // Create a shop for the inventory
+    const shopResponse = await request(app).post('/v1/shops').send({ name: "Analytics Test Store", contact_email: "analytics@store.com", auth_secret: "analytics-secret", primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform" });
+    const shopId = shopResponse.body.id;
+
+    // Seed the database with a few inventory items
+    await db('inventory_truth').insert([
+      { sku: "VAL-001", shop_id: shopId, quantity_available: 10, price: 25.50, description: "Item 1" }, // Value: 255.00
+      { sku: "VAL-002", shop_id: shopId, quantity_available: 5, price: 100.00, description: "Item 2" }, // Value: 500.00
+      { sku: "VAL-003", shop_id: shopId, quantity_available: 200, price: 1.50, description: "Item 3" }, // Value: 300.00
+    ]);
+
+    // --- 2. EXECUTION ---
+    const response = await request(app).get('/v1/analytics/inventory-value');
+
+    // --- 3. ASSERTION ---
+    const expectedTotalValue = 255.00 + 500.00 + 300.00; // 1055.00
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toHaveProperty('total_inventory_value');
+    expect(response.body.total_inventory_value).toBeCloseTo(expectedTotalValue);
   });
 });

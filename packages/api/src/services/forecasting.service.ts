@@ -7,7 +7,7 @@ import axios from 'axios'; // Import axios
 const AI_ENGINE_URL = 'http://127.0.0.1:8000';
 
 export async function calculateTotalInventoryValue(): Promise<number> {
-  const allInventory: InventoryItem[] = await db('inventory_truth').select('*');
+  const allInventory: InventoryItem[] = await db('inventory_truth').select('price', 'quantity_available');
   const totalValue = allInventory.reduce((total: number, item: InventoryItem) => {
     const price = parseFloat(item.price);
     return total + (item.quantity_available * price);
