@@ -18,7 +18,7 @@ module.exports = {
       transform: {
         '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'packages/ui/tsconfig.json' }],
       },
-      setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
       moduleNameMapper: {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
       },

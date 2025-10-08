@@ -1,11 +1,15 @@
 // packages/ui/src/App.tsx
-import './App.css'
+import { Routes, Route } from 'react-router-dom';
+import { LoginPage } from './LoginPage';
 
 function App() {
 
   return (
     <div>
-      <h1>Welcome to SynchroFlow</h1>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<h1>Welcome to the SynchroFlow Dashboard</h1>} />
+      </Routes>
     </div>
   )
 }
