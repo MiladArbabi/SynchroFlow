@@ -10,10 +10,6 @@ jest.mock('axios');
 // Create a typed mock for axios.post
 const mockedAxiosPost = axios.post as jest.Mock;
 
-beforeAll(async () => {
-  await db.migrate.latest();
-});
-
 afterAll(async () => {
   await db.destroy();
 });
@@ -191,5 +187,34 @@ describe('GET /v1/forecast/demand/:sku', () => {
       sku: testSku,
       historical_sales: [10, 12, 15] // This proves we queried the DB correctly
     });
+  });
+});
+
+describe('POST /v1/data/product-costs', () => {
+  beforeEach(async () => {
+    // Ensure a clean state for this test
+    await db('product_costs').del();
+    await db('inventory_truth').del();
+    await db('shops').del();
+  });
+
+  it('should create a new product cost record and return it', async () => {
+    // 1. Create the shop and inventory item this cost record will link to
+    const shopResponse = await request(app).post('/v1/shops').send({ name: "Cost Test Store", contact_email: "cost@store.com", auth_secret: "cost-secret", primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform" });
+    const shopId = shopResponse.body.id;
+    await request(app).post('/v1/inventory').send({ sku: "COST-SKU-001", description: "A test item for costs", quantity: 1, price: 1, warehouse_location: "Cost-Bin", shop_id: shopId });
+
+    // 2. Now, test the new endpoint
+    const response = await request(app)
+      .post('/v1/data/product-costs')
+      .send({
+        sku: "COST-SKU-001",
+        purchase_price: 15.50,
+        landed_cost_per_unit: 18.75
+      });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.body.sku).toBe("COST-SKU-001");
+    expect(response.body.landed_cost_per_unit).toBe("18.75"); // Knex returns decimal as string
   });
 });

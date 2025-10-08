@@ -130,6 +130,26 @@ app.post('/v1/data/sales', async (req, res) => {
   }
 });
 
+app.post('/v1/data/product-costs', async (req, res) => {
+  try {
+    const costData = req.body;
+
+    if (!costData.sku || !costData.purchase_price || !costData.landed_cost_per_unit) {
+      return res.status(400).json({ error: 'sku, purchase_price, and landed_cost_per_unit are required.' });
+    }
+
+    const [loggedCost] = await db('product_costs').insert(costData).returning('*');
+    res.status(201).json(loggedCost);
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
 app.post('/v1/transactions', async (req, res) => {
   try {
     const transactionData = req.body;
