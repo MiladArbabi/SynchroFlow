@@ -26,9 +26,9 @@ void LoadCacheFromDB(const Napi::Env& env) {
         for (auto row : r) {
             InventoryItem item;
             item.sku = row["sku"].as<std::string>();
-            item.quantity = row["quantity_available"].as<int64_t>();
-            item.price = row["price"].as<double>();
-            item.warehouse_location = row["warehouse_location"].as<std::string>();
+            if (!row["quantity_available"].is_null()) item.quantity = row["quantity_available"].as<int64_t>();
+            if (!row["price"].is_null()) item.price = row["price"].as<double>();
+            if (!row["warehouse_location"].is_null()) item.warehouse_location = row["warehouse_location"].as<std::string>();
             
             inventory_cache[item.sku] = item;
         }
