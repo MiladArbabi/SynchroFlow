@@ -13,7 +13,7 @@ export function Sidebar() {
           </li>
           <li style={{ marginTop: '1rem' }}>
             {/* This is the link our test is looking for */}
-            <Link to="/inventory" style={{ color: 'white', textDecoration: 'none' }}>Inventory</Link>
+            <Link to="/products" style={{ color: 'white', textDecoration: 'none' }}>Products</Link>
           </li>
         </ul>
       </nav>
