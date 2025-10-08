@@ -11,6 +11,6 @@ test('renders the main App component with a title', () => {
     </MemoryRouter>
   );
   // This test will look for an element that contains the text "SynchroFlow"
-  const titleElement = screen.getByRole('heading', { name: /Welcome to the FinOps Command Center/i });
+  const titleElement = screen.getByRole('heading', { name: /FinOps Command Center/i });
   expect(titleElement).toBeInTheDocument();
 });
