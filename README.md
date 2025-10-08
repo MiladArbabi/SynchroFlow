@@ -1,113 +1,120 @@
-SynchroFlow: Real-Time E-commerce Orchestration Platform
+# SynchroFlow: Real-Time E-commerce Orchestration Platform
+
 SynchroFlow is a B2B SaaS platform designed to solve inventory synchronization and compliance issues for mid-market e-tailers. Our unique value proposition is a high-performance C++ core that guarantees sub-100ms data consistency between disparate systems (ERP, E-commerce, WMS), eliminating overselling and automating compliance risk.
 
-Current Project Status
-Phase 1: Core Performance Proof (MVP) is complete. The foundational technical architecture has been built and validated. We have successfully established:
+## Current Project Status
+**Phase 1: Core Performance Proof (MVP)** is complete. The foundational technical architecture has been built and validated. We have successfully established:
 
-A PERN stack API with a full CRUD interface for managing data.
+* A PERN stack API with a full CRUD interface for managing data.
+* A high-performance C++ core connected to Node.js via N-API.
+* A decoupled Python AI engine for forecasting.
+* A React-based UI for the main application shell.
+* A professional, unified development environment (`npm run dev`).
+* A robust, automated, full-stack testing framework (`npm test`).
 
-A high-performance C++ core connected to Node.js via N-API.
+We are now beginning the feature implementation for **Phase 2**, starting with the FinOps Command Center.
 
-A live, high-speed connection between the C++ core and the PostgreSQL database.
-
-A professional monorepo development environment with automated builds and restarts.
-
-A robust, automated API integration testing framework.
-
-We are now beginning Phase 2, which will focus on building the partner-ready features, starting with the FinOps Command Center.
-
-Technical Architecture
-SynchroFlow uses a hybrid architecture to combine the rapid development of a modern web stack with the raw performance of C++. Our future roadmap includes a decoupled Python microservice for AI-powered forecasting.
+## Technical Architecture
+SynchroFlow uses a hybrid architecture to combine the rapid development of a modern web stack with the raw performance of C++.
 
 graph TD
+    subgraph "Browser"
+        UI[React UI - Vite]
+    end
     subgraph "Web Layer (Node.js)"
-        B[Express.js API Server]
+        API[Express.js API Server]
     end
     subgraph "High-Performance Core (C++)"
-        A[C++ Engine & In-Memory Cache]
+        CPP[C++ Engine & In-Memory Cache]
     end
-    subgraph "AI Engine (Python - Planned)"
-        C[ML Microservice<br>(Forecasting, Anomaly Detection)]
+    subgraph "AI Engine (Python)"
+        AI[ML Microservice<br>(Forecasting)]
     end
     subgraph "Data Layer"
-        E[PostgreSQL Database]
+        DB[PostgreSQL Database]
     end
 
-    Client -- HTTPS --> B
-    B -- N-API Call --> A
-    A -- Load/Persist --> E
-    B -- Knex.js --> E
-    B -- Data for Prediction --> C
-    C -- Prediction Results --> B
+    UI -- HTTPS --> API
+    API -- N-API Call --> CPP
+    CPP -- Load/Persist --> DB
+    API -- Knex.js --> DB
+    API -- API Call --> AI
 
-Technology Stack
-API/Backend (PERN Stack): PostgreSQL, Express.js, React (planned), Node.js (TypeScript).
+### Technology Stack
 
-High-Performance Core: C++17, N-API, libpqxx, node-gyp.
+  * **Frontend:** React (Vite), TypeScript, Tailwind CSS (planned).
+  * **API/Backend:** Node.js, Express.js, TypeScript, Knex.js.
+  * **Database:** PostgreSQL (Docker).
+  * **High-Performance Core:** C++, N-API, `libpqxx`, `node-gyp`.
+  * **AI Engine:** Python, FastAPI, Pandas, Statsmodels.
+  * **Development & Testing:** NPM Workspaces, `concurrently`, `nodemon`, Jest, Supertest, React Testing Library.
 
-Development & Testing: NPM Workspaces, concurrently, nodemon, Jest, Supertest.
+## Local Development Setup
 
-AI Engine (Planned): A decoupled Python microservice using FastAPI.
+### Prerequisites
 
-Local Development Setup
-Prerequisites
-Node.js (v18 or later)
+  * **Node.js** (v20 or later - Use `nvm` to manage versions).
+  * **Docker** and **Docker Compose**.
+  * **Homebrew** (for macOS dependencies).
+  * A C++ compiler (**Xcode Command Line Tools** on macOS).
+  * **Python 3** & `venv`.
 
-Docker and Docker Compose
+### 1\. First-Time Installation
 
-Homebrew (for macOS dependencies)
-
-A C++ compiler (Xcode Command Line Tools on macOS)
-
-1. Initial Setup
-This one-time setup clones the repository, installs all dependencies for all packages, and prepares the C++ libraries.
+This one-time setup clones the repository and prepares all dependencies.
 
 # Clone the repository
 git clone [https://github.com/MiladArbabi/SynchroFlow.git](https://github.com/MiladArbabi/SynchroFlow.git)
 cd SynchroFlow
 
-# Install C++ dependencies using Homebrew
+# Install C++ dependencies
 brew install libpq libpqxx
 
-# Install all Node.js dependencies for all packages from the root
+# Set up Python virtual environment for the AI engine
+cd packages/ai-engine
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
+cd ../..
+
+# Install all Node.js dependencies for all workspaces
 npm install
 
-2. Running the Development Environment
-This is the only command you need for day-to-day development.
+### 2\. Running the Application
 
-# 1. Start the Docker container for the database
+The entire application stack (API, C++ Watcher, AI Engine, UI) can be started with a single command from the project root.
+
+# 1. Start the database container (if not already running)
 docker-compose up -d
 
-# 2. Run the database migrations (only needs to be done once)
+# 2. Run database migrations (only needs to be done once after a reset)
 npm run migrate -w api
 
-# 3. Start the entire application with one command
+# 3. Start the entire application stack
 npm run dev
 
-The npm run dev command will:
+The services will be available at:
 
-Start the API server on http://localhost:3000.
+  * **React UI**: `http://localhost:5173`
+  * **Node.js API**: `http://localhost:3000`
+  * **Python AI Engine**: `http://localhost:8000`
 
-Watch for changes to TypeScript files in the /api package and restart the server.
+### 3\. Running Tests
 
-Watch for changes to C++ files in the /cpp-core package, automatically rebuild the native addon, and then restart the server.
+The unified test suite can be run from the project root. It will automatically reset the test database, run all migrations, and then execute the full-stack test suite for both backend and frontend projects.
 
-Testing
-The project uses Jest and Supertest for automated API integration testing.
-
-# Run the entire test suite from the project root
 npm test
 
-Test files are located in the __tests__ directory within each package (e.g., packages/api/__tests__).
+## Project Structure
 
-Project Structure
-This is a monorepo managed by NPM Workspaces.
+This is a monorepo managed with NPM Workspaces.
 
-/packages/api: The Node.js/Express.js API server, database migrations, and web logic.
+  * `/packages/api`: The Node.js/Express.js API server, database migrations, and web logic.
+  * `/packages/cpp-core`: The high-performance C++ addon.
+  * `/packages/ai-engine`: The Python/FastAPI microservice for all machine learning models.
+  * `/packages/ui`: The React/Vite application for the user-facing dashboard.
 
-/packages/cpp-core: The high-performance C++ addon.
+## Roadmap
 
-/packages/ai-engine: (Planned) The Python AI/ML microservice.
-
-Roadmap
 For a detailed view of upcoming features and phases, please see the Project Milestones.
