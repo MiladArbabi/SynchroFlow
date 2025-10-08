@@ -11,7 +11,7 @@ test('renders the main layout with a sidebar and header on the root route', () =
   );
 
   // Look for the main dashboard heading
-  expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /Welcome to the FinOps Command Center/i })).toBeInTheDocument();
 
   // Look for a navigation link in the sidebar
   expect(screen.getByRole('link', { name: /inventory/i })).toBeInTheDocument();
