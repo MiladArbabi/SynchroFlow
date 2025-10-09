@@ -28,8 +28,4 @@ test('renders the simulation form fields when open', () => {
 
   // Look for the "Run Simulation" button
   expect(screen.getByRole('button', { name: /Run Simulation/i })).toBeInTheDocument();
-<<<<<<< Updated upstream
 });
-=======
-});
->>>>>>> Stashed changes

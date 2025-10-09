@@ -1,5 +1,9 @@
+// packages/cpp-core/__tests__/addon.test.ts
+
 import path from 'path';
 import db from '../../api/src/db';
+import request from 'supertest';
+import app from '../../api/src/server'; // Import the app for the test endpoint
 
 // Define interfaces for our data shapes
 interface InventoryItem {
@@ -11,6 +15,7 @@ interface InventoryItem {
 
 interface Addon {
   getInventoryItem: (sku: string) => InventoryItem;
+  reloadCache: () => void;
 }
 
 // 1. Declare the addon variable here, but do not initialize it yet.
@@ -42,8 +47,7 @@ describe('C++ Addon (sf_core)', () => {
       shop_id: shop.id
     });
 
-    // C) NOW, load the addon. This will run the Init function, which connects
-    // to the database and loads the data we just inserted into the cache.
+    // C) NOW, load the addon AND trigger a cache reload via the test endpoint.
     const addonPath = path.join(__dirname, '../build/Release/sf_core.node');
     addon = require(addonPath);
   });
