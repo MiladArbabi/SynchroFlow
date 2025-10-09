@@ -6,7 +6,7 @@ import { Header } from './Header';
 
 export function Layout() {
   return (
-    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#F0F2F5' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F0F2F5' }}>
       <Sidebar />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Header />

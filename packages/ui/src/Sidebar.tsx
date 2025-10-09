@@ -4,10 +4,17 @@ import { Link } from 'react-router-dom';
 
 export function Sidebar() {
   return (
-    <aside style={{ width: '250px', backgroundColor: '#434D5B', color: 'white', padding: '1rem' }}>
-      <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>SynchroFlow</h1>
+    <aside style={{ 
+      width: '250px', 
+      backgroundColor: '#434D5B', // Accent Slate
+      color: 'white', 
+      padding: '1rem',
+      display: 'flex',
+      flexDirection: 'column' 
+    }}>
+    <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>SynchroFlow</h1>
       <nav style={{ marginTop: '2rem' }}>
-        <ul>
+        <ul style={{ listStyleType: 'none', paddingLeft: '0.5rem' }}>
           <li>
             <Link to="/" style={{ color: 'white', textDecoration: 'none' }}>Dashboard</Link>
           </li>

@@ -10,8 +10,10 @@ import {
 // Use 'path' to create a reliable, absolute path to the addon file
 import path from 'path';
 
-// Load the C++ addon. The path goes up from /api, then down into /cpp-core.
-const addonPath = path.join(__dirname, '../../../packages/cpp-core/build/Release/sf_core.node');
+// Load the C++ addon. The path is different for tests (running from src) vs. dev (running from dist).
+const addonPath = process.env.NODE_ENV === 'test'
+  ? path.join(__dirname, '../../../packages/cpp-core/build/Release/sf_core.node') // Path for Jest/ts-jest
+  : path.join(__dirname, './sf_core.node'); // Path for the compiled server.js
 const addon = require(addonPath);
 
 const app = express();

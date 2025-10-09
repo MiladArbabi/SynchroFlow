@@ -45,6 +45,9 @@ Thumbs.db
 /packages/cpp-core/build
 /packages/cpp-core/CMakeFiles
 
+# Copied build artifacts
++**/dist/**/*.node
+
 # ----------------------------------------------------------------------
 # Python / AI Engine Artifacts
 # ----------------------------------------------------------------------

@@ -4,5 +4,5 @@
     "packages/cpp-core/build/Release/sf_core.node"
   ],
   "ext": "ts,json,node",
-  "exec": "npm start -w api"
+  "exec": "npm run build -w api && npm start -w api"
 }
