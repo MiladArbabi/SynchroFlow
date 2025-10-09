@@ -1,5 +1,5 @@
-## SynchroFlow: Real-Time E-commerce Orchestration Platform
-SynchroFlow is a B2B SaaS platform designed to solve inventory synchronization and compliance issues for mid-market e-tailers. Our unique value proposition is a high-performance C++ core that guarantees sub-100ms data consistency, and a FinOps Command Center for operational intelligence.
+## SynchroFlow: The Autonomous Commerce Operations Platform
+SynchroFlow is a B2B SaaS platform engineered to solve the most expensive operational challenges for mid-market, direct-to-consumer (D2C) brands: data fragmentation and communication silos. Our solution is a unified platform built on a high-performance C++ core that serves as the single source of operational truth, an AI engine for intelligent forecasting, and a React-based UI for command and control.
 
 ## Current Project Status
 Phase 1: Core Architecture is complete. The foundational technical architecture has been built, tested, and validated. We are now actively building the features for Phase 2, starting with the FinOps Command Center.
@@ -17,7 +17,7 @@ A complete UI application shell with routing, layout, and a tested login page.
 The first live KPI widget and backend simulation engine for the FinOps dashboard.
 
 ## Technical Architecture
-SynchroFlow uses a hybrid, multi-service architecture to combine performance and flexibility.
+SynchroFlow uses a hybrid, multi-service architecture designed for performance, scalability, and creating a virtuous data cycle between its core components.
 
 ## Code snippet
 
@@ -26,7 +26,7 @@ graph TD
         UI[React UI - Vite]
     end
     subgraph "Web Layer (Node.js)"
-        API[Express.js API Server]
+        API[Express.js API Server<br>Orchestrates Intelligence Rules]
     end
     subgraph "High-Performance Core (C++)"
         CPP[C++ Engine & In-Memory Cache]
@@ -39,17 +39,16 @@ graph TD
     end
 
     UI -- HTTPS --> API
-    API -- N-API Call --> CPP
-    CPP -- Load/Persist --> DB
-    API -- Knex.js --> DB
-    API -- API Call --> AI
-
-## Technology Stack
+    API -- N-API Call (Low-Latency) --> CPP
+    CPP -- libpqxx (Bulk Ops) --> DB
+    API -- Knex.js (Standard CRUD) --> DB
+    API -- REST --> AI
+Technology Stack
 Frontend: React (Vite), TypeScript, React Router, Recharts.
 
-API/Backend: Node.js, Express.js, TypeScript, Knex.js.
+API/Backend: Node.js, Express.js, TypeScript.
 
-Database: PostgreSQL (Docker).
+Database: PostgreSQL (Docker), Knex.js.
 
 High-Performance Core: C++, N-API, libpqxx.
 
@@ -57,7 +56,7 @@ AI Engine: Python, FastAPI, Pandas, Statsmodels.
 
 Development & Testing: NPM Workspaces, concurrently, nodemon, Jest, Supertest, React Testing Library.
 
-## Local Development Setup
+Local Development Setup
 Prerequisites
 Node.js (v20 or later - Use nvm to manage versions).
 
