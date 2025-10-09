@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { CashFlowChart } from '../components/CashFlowChart';
+import { SimulationModal } from '../components/SimulationModal';
 
 // A simple placeholder for a KPI widget
 const KpiCard = ({ title, value, isLoading }: { title: string, value: string, isLoading: boolean }) => (
@@ -18,6 +19,9 @@ export function DashboardPage() {
   const [inventoryValue, setInventoryValue] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // State for the simulation modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // State for our cash flow data
   const initialCashFlow = [
@@ -81,7 +85,7 @@ export function DashboardPage() {
         <KpiCard title="Cash Conversion Cycle" value="--" isLoading={false} />
         {/* More KPIs will be added here */}
       </div>
-      <CashFlowChart data={cashFlowData} />
+      <CashFlowChart data={cashFlowData} onClick={() => setIsModalOpen(true)} />
 
       <div style={{ marginTop: '2rem' }}>
         <button
@@ -94,6 +98,7 @@ export function DashboardPage() {
           Simulate 2-Week Delay
         </button>
       </div>
+      <SimulationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

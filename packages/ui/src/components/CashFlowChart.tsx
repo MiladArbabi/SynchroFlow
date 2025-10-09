@@ -7,9 +7,14 @@ interface ChartData {
   cash: number;
 }
 
-export function CashFlowChart({ data }: { data: ChartData[] }) {
+interface CashFlowChartProps {
+  data: ChartData[];
+  onClick?: () => void;
+}
+
+export function CashFlowChart({ data, onClick }: CashFlowChartProps) {
   return (
-    <div style={{ marginTop: '2rem', padding: '1.5rem', backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '0.5rem' }}>
+    <div onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default', marginTop: '2rem', padding: '1.5rem', backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '0.5rem' }}>
       <h3 style={{ color: '#434D5B', fontSize: '1.25rem', fontWeight: '600' }}>
         Cash Flow Forecast
       </h3>
