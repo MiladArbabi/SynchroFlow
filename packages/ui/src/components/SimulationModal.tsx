@@ -30,10 +30,44 @@ export function SimulationModal({ isOpen, onClose }: SimulationModalProps) {
             &times;
           </button>
         </div>
-        {/* Form content will go here in the next step */}
-        <div style={{ marginTop: '1.5rem' }}>
-          <p>Simulation form will be here.</p>
-        </div>
+        <form style={{ marginTop: '1.h5rem' }}>
+          <div>
+            <label htmlFor="paymentAmount" style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#434D5B' }}>
+              Payment Amount
+            </label>
+            <div style={{ marginTop: '0.25rem' }}>
+              <input
+                type="number"
+                id="paymentAmount"
+                name="paymentAmount"
+                defaultValue={7500}
+                style={{ display: 'block', width: '100%', border: '1px solid #D1D5DB', padding: '0.5rem' }}
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: '1rem' }}>
+            <label htmlFor="delayPeriod" style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#434D5B' }}>
+              Delay by (weeks)
+            </label>
+            <div style={{ marginTop: '0.25rem' }}>
+              <input
+                type="number"
+                id="delayPeriod"
+                name="delayPeriod"
+                defaultValue={2}
+                style={{ display: 'block', width: '100%', border: '1px solid #D1D5DB', padding: '0.5rem' }}
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: '2rem' }}>
+            <button
+              type="submit"
+              style={{ width: '100%', backgroundColor: '#2F54EB', color: 'white', fontWeight: '600', padding: '0.75rem', border: 'none', borderRadius: '0.25rem' }}
+            >
+              Run Simulation
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
