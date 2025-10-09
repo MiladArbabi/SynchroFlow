@@ -2,6 +2,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { LoginPage } from './LoginPage';
 import { ProductIntelligencePage } from './pages/ProductIntelligencePage';
+import { DashboardPage } from './pages/DashboardPage';
 import { Layout } from './Layout';
 
 function App() {
@@ -11,7 +12,7 @@ function App() {
       <Routes>
         {/* Routes inside the main application shell */}
         <Route path="/" element={<Layout />}>
-          <Route index element={<h1>Welcome to the FinOps Command Center</h1>} />
+          <Route index element={<DashboardPage />} />
           <Route path="/products" element={<ProductIntelligencePage />} />
         </Route>
         <Route path="/login" element={<LoginPage />} />
