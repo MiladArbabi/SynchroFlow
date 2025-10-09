@@ -47,3 +47,27 @@ export async function getDemandForecastForSku(sku: string): Promise<any> {
     throw new Error('Failed to retrieve demand forecast.');
   }
 }
+
+export function simulatePaymentDelay(
+  currentCashFlow: number[],
+  paymentDetails: { amount: number; original_due_week: number; delay_weeks: number }
+): number[] {
+  const { amount, original_due_week, delay_weeks } = paymentDetails;
+
+  // Create a copy of the original cash flow to avoid modifying it
+  const simulatedFlow = [...currentCashFlow];
+
+  // Check for invalid inputs to prevent errors
+  const newDueWeek = original_due_week + delay_weeks;
+  if (original_due_week >= simulatedFlow.length || newDueWeek >= simulatedFlow.length) {
+    throw new Error('Payment due week is outside the forecast period.');
+  }
+
+  // Simulate the delay:
+  // 1. Add the payment amount back to the original week (since it's not being paid)
+  simulatedFlow[original_due_week] += amount;
+  // 2. Subtract the payment amount from the new, delayed week
+  simulatedFlow[newDueWeek] -= amount;
+
+  return simulatedFlow;
+}

@@ -6,8 +6,10 @@ global.TextEncoder = require('util').TextEncoder;
 global.TextDecoder = require('util').TextDecoder;
 global.ResizeObserver = require('resize-observer-polyfill');
 
-const RechartsModule = jest.requireActual('recharts');
-return {
-    ...RechartsModule,
-    ResponsiveContainer: ({ children }) => children,
-}
+jest.mock('recharts', () => {
+    const OriginalModule = jest.requireActual('recharts');
+    return {
+        ...OriginalModule,
+        ResponsiveContainer: ({ children }) => children,
+    };
+});

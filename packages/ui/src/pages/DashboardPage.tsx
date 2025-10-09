@@ -15,9 +15,18 @@ const KpiCard = ({ title, value, isLoading }: { title: string, value: string, is
 
 export function DashboardPage() {
 
-    const [inventoryValue, setInventoryValue] = useState<number | null>(null);
+  const [inventoryValue, setInventoryValue] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // State for our cash flow data
+  const initialCashFlow = [
+    { name: 'Week 1', cash: 10000 },
+    { name: 'Week 2', cash: -5000 },
+    { name: 'Week 3', cash: 12000 },
+    { name: 'Week 4', cash: 8000 },
+  ];
+  const [cashFlowData, setCashFlowData] = useState(initialCashFlow);
 
   useEffect(() => {
     const fetchInventoryValue = async () => {
@@ -39,11 +48,27 @@ export function DashboardPage() {
     ? `$${inventoryValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : '--';
 
-    const sampleCashFlowData = [
-        { name: 'Week 1', cash: 10000 },
-        { name: 'Week 2', cash: -5000 },
-        { name: 'Week 3', cash: 12000 },
-    ];
+    const handleSimulation = async () => {
+    const requestBody = {
+      current_cash_flow: initialCashFlow.map(d => d.cash),
+      payment_details: {
+        amount: 7500,
+        original_due_week: 1,
+        delay_weeks: 2
+      }
+    };
+
+    try {
+      const response = await axios.post('/api/v1/simulations/payment-delay', requestBody);
+      const simulatedData = initialCashFlow.map((item, index) => ({
+        ...item,
+        cash: response.data.simulated_cash_flow[index],
+      }));
+      setCashFlowData(simulatedData);
+    } catch (err) {
+      console.error("Simulation failed:", err);
+    }
+  };
 
   return (
     <div>
@@ -56,7 +81,19 @@ export function DashboardPage() {
         <KpiCard title="Cash Conversion Cycle" value="--" isLoading={false} />
         {/* More KPIs will be added here */}
       </div>
-      <CashFlowChart data={sampleCashFlowData} />
+      <CashFlowChart data={cashFlowData} />
+
+      <div style={{ marginTop: '2rem' }}>
+        <button
+          onClick={handleSimulation}
+          style={{
+            backgroundColor: '#2F54EB', color: 'white', fontWeight: '600',
+            padding: '0.5rem 1rem', border: 'none', borderRadius: '0.25rem'
+          }}
+        >
+          Simulate 2-Week Delay
+        </button>
+      </div>
     </div>
   );
 }
