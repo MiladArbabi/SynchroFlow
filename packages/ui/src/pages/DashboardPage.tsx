@@ -1,6 +1,7 @@
 // packages/ui/src/pages/DashboardPage.tsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { CashFlowChart } from '../components/CashFlowChart';
 
 // A simple placeholder for a KPI widget
 const KpiCard = ({ title, value, isLoading }: { title: string, value: string, isLoading: boolean }) => (
@@ -38,6 +39,12 @@ export function DashboardPage() {
     ? `$${inventoryValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : '--';
 
+    const sampleCashFlowData = [
+        { name: 'Week 1', cash: 10000 },
+        { name: 'Week 2', cash: -5000 },
+        { name: 'Week 3', cash: 12000 },
+    ];
+
   return (
     <div>
       <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: '#1F2937' }}>
@@ -49,6 +56,7 @@ export function DashboardPage() {
         <KpiCard title="Cash Conversion Cycle" value="--" isLoading={false} />
         {/* More KPIs will be added here */}
       </div>
+      <CashFlowChart data={sampleCashFlowData} />
     </div>
   );
 }
