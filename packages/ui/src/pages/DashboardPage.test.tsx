@@ -79,3 +79,32 @@ test('allows a user to run a payment delay simulation and updates the chart', as
     });
   });
 });
+
+test('clicking the chart opens the simulation modal', async () => {
+  // --- 1. SETUP ---
+  // Mock the initial data fetch for the KPI widget to ensure the page renders
+  mockedAxiosGet.mockResolvedValue({ data: { total_inventory_value: 100 } });
+
+  render(
+    <MemoryRouter>
+      <DashboardPage />
+    </MemoryRouter>
+  );
+
+  // --- 2. EXECUTION ---
+  // Wait for the chart to be visible by finding its title
+  const chartTitle = await screen.findByRole('heading', { name: /Cash Flow Forecast/i });
+
+  // Find the chart's parent container and simulate a user click
+  const chartContainer = chartTitle.parentElement;
+  fireEvent.click(chartContainer!);
+
+  // --- 3. ASSERTION ---
+  // After the click, the simulation modal should appear. We'll wait for its title to be visible.
+  const modalTitle = await screen.findByRole('heading', { name: /Simulate a Scenario/i });
+  expect(modalTitle).toBeInTheDocument();
+
+  // We can also verify that the form inside it is now visible.
+  // This uses the test from the SimulationModal component to ensure it's fully rendered.
+  expect(screen.getByLabelText(/Payment Amount/i)).toBeInTheDocument();
+});
