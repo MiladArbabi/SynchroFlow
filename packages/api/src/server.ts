@@ -1,7 +1,10 @@
 // packages/api/src/server.ts
 import express from 'express';
 import db from './db';
-import { getDemandForecastForSku, calculateTotalInventoryValue } from './services/forecasting.service';
+import { 
+  getDemandForecastForSku, 
+  calculateTotalInventoryValue,
+  simulatePaymentDelay } from './services/forecasting.service';
 
 // --- ADD THESE LINES ---
 // Use 'path' to create a reliable, absolute path to the addon file
@@ -105,6 +108,24 @@ app.post('/v1/inventory', async (req, res) => {
     } else {
       res.status(500).json({ error: 'An unknown database error occurred' });
     }
+  }
+});
+
+app.post('/v1/simulations/payment-delay', (req, res) => {
+  try {
+    const { current_cash_flow, payment_details } = req.body;
+
+    if (!current_cash_flow || !payment_details) {
+      return res.status(400).json({ error: 'Missing required simulation data.' });
+    }
+
+    const simulated_cash_flow = simulatePaymentDelay(current_cash_flow, payment_details);
+    res.json({ simulated_cash_flow });
+
+  } catch (error) {
+    // This will catch errors from the service, like an out-of-bounds delay
+    const message = error instanceof Error ? error.message : 'An unknown error occurred during simulation.';
+    res.status(400).json({ error: message });
   }
 });
 

@@ -233,3 +233,31 @@ it('GET /v1/analytics/inventory-value - should calculate and return the total va
     expect(response.body.total_inventory_value).toBeCloseTo(expectedTotalValue);
   });
 });
+
+describe('POST /v1/simulations/payment-delay', () => {
+  it('should calculate the impact of delaying a payment on a cash flow forecast', async () => {
+    // --- 1. SETUP ---
+    // This is the input to our simulation.
+    const requestBody = {
+      // A simplified cash flow forecast (e.g., net cash for the next 4 weeks)
+      current_cash_flow: [10000, -5000, 12000, 8000],
+      payment_details: {
+        amount: 7500,
+        original_due_week: 1, // Due in the 2nd week (0-indexed)
+        delay_weeks: 2       // Delay it by 2 weeks
+      }
+    };
+
+    // This is the result we expect the simulation to produce.
+    const expected_simulated_flow = [10000, 2500, 12000, 500];
+
+    // --- 2. EXECUTION ---
+    const response = await request(app)
+      .post('/v1/simulations/payment-delay')
+      .send(requestBody);
+
+    // --- 3. ASSERTION ---
+    expect(response.statusCode).toBe(200);
+    expect(response.body.simulated_cash_flow).toEqual(expected_simulated_flow);
+  });
+});
