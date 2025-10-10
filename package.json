@@ -4,14 +4,19 @@
   "private": true,
   "description": "The root of the SynchroFlow monorepo.",
   "workspaces": [
-    "packages/*"
+    "packages/api",
+    "packages/cpp-core",
+    "packages/ui",
+    "packages/ai-engine",
+    "packages/integration-service"
   ],
   "scripts": {
-    "dev": "concurrently \"npm:dev:*\"",
-    "dev:api": "nodemon",
-    "dev:cpp": "nodemon --watch packages/cpp-core --ext cpp,h,gyp --exec \"npm run build -w sf_core\"",
-    "dev:ai": "./packages/ai-engine/venv/bin/uvicorn main:app --reload --app-dir ./packages/ai-engine --host 0.0.0.0",
-    "dev:ui": "npm run dev -w ui",
+    "dev": "concurrently \"npm:dev-api\" \"npm:dev-cpp\" \"npm:dev-ui\" \"npm:dev-ai\" \"npm:dev-integration\"",
+    "dev-api": "npm run dev -w api",
+    "dev-cpp": "npm run dev -w cpp-core",
+    "dev-ui": "npm run dev -w ui",
+    "dev-ai": "npm run dev -w ai-engine",
+    "dev-integration": "npm run dev -w integration-service",
     "db:reset": "docker exec synchroflow_db psql -U sf_user -d postgres -c 'DROP DATABASE IF EXISTS synchroflow_db;' && docker exec synchroflow_db psql -U sf_user -d postgres -c 'CREATE DATABASE synchroflow_db;'",
     "test:setup": "npm run db:reset && npm run migrate -w api",
     "test": "npm run test:setup && jest"
