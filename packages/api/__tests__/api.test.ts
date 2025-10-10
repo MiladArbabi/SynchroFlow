@@ -18,14 +18,14 @@ afterAll(async () => {
   await db.destroy();
 });
 
-beforeEach(async () => {
+describe('API Endpoints', () => {
+  // This beforeEach hook now only applies to tests inside THIS describe block
+  beforeEach(async () => {
   await db('historical_sales').del();
   await db('product_costs').del();
   await db('inventory_truth').del();
   await db('shops').del();
 });
-
-describe('API Endpoints', () => {
 
   const testSku = 'TEST-SKU-123';
   // Each test in this block is now fully independent.
@@ -260,4 +260,126 @@ describe('POST /v1/simulations/payment-delay', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.simulated_cash_flow).toEqual(expected_simulated_flow);
   });
+});
+
+describe('Data Mapping Rules API', () => {
+  // We need a shop_id to associate rules with, let's create one before tests run.
+  let shopId: number;
+
+  beforeAll(async () => {
+    // Clean the tables before all tests in this block
+    await db('data_mapping_rules').del();
+    await db('shops').del();
+    
+    // Create a dummy shop to satisfy the foreign key constraint
+    const [shop] = await db('shops').insert({ 
+      name: 'Test Shop for Mappings', 
+      platform: 'shopify', 
+      contact_email: 'test@shop.com',
+      auth_secret: 'mapping-test-secret',
+      primary_erp_type: 'TestERP',
+      primary_ecomm_type: 'TestPlatform'
+    }).returning('id');
+    shopId = shop.id;
+  });
+
+  beforeEach(async () => {
+    // Clean the mapping rules table before each test in this suite
+    await db('data_mapping_rules').del();
+  });
+  
+  it('should create a new data mapping rule', async () => {
+    const newRule = {
+      shop_id: shopId,
+      source_platform: 'shopify',
+      source_field_path: 'order.line_items[0].sku',
+      target_field_path: 'synchroflow.product_sku'
+    };
+
+    const response = await request(app)
+      .post('/api/v1/mappings')
+      .send(newRule);
+
+    expect(response.status).toBe(201);
+    expect(response.body).toHaveProperty('id');
+    expect(response.body.source_platform).toBe('shopify');
+  });
+
+  it('should retrieve all mapping rules for a given shop_id', async () => {
+    // --- 1. SETUP ---
+    // Seed the database with a couple of rules for our test shop
+    await db('data_mapping_rules').insert([
+      {
+        shop_id: shopId,
+        source_platform: 'shopify',
+        source_field_path: 'customer.email',
+        target_field_path: 'synchroflow.customer_email'
+      },
+      {
+        shop_id: shopId,
+        source_platform: 'shopify',
+        source_field_path: 'order.total_price',
+        target_field_path: 'synchroflow.order_total'
+      }
+    ]);
+
+    // --- 2. EXECUTION ---
+    const response = await request(app)
+      .get(`/api/v1/mappings?shop_id=${shopId}`);
+
+    // --- 3. ASSERTION ---
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body)).toBe(true);
+    expect(response.body.length).toBe(2);
+    expect(response.body[0].target_field_path).toBe('synchroflow.customer_email');
+  });
+
+  it('should update an existing data mapping rule', async () => {
+    // --- 1. SETUP ---
+    // First, create a rule that we can then update.
+    const [originalRule] = await db('data_mapping_rules').insert({
+      shop_id: shopId,
+      source_platform: 'shopify',
+      source_field_path: 'order.original_path',
+      target_field_path: 'synchroflow.original_path'
+    }).returning('*');
+
+    const updatedData = {
+      target_field_path: 'synchroflow.UPDATED_PATH'
+    };
+
+    // --- 2. EXECUTION ---
+    const response = await request(app)
+      .put(`/api/v1/mappings/${originalRule.id}`)
+      .send(updatedData);
+
+    // --- 3. ASSERTION ---
+    expect(response.status).toBe(200);
+    expect(response.body.target_field_path).toBe('synchroflow.UPDATED_PATH');
+    expect(response.body.id).toBe(originalRule.id);
+  });
+
+  it('should delete an existing data mapping rule', async () => {
+    // --- 1. SETUP ---
+    // Create a rule that we can then delete.
+    const [ruleToDelete] = await db('data_mapping_rules').insert({
+      shop_id: shopId,
+      source_platform: 'shopify',
+      source_field_path: 'order.to_be_deleted',
+      target_field_path: 'synchroflow.to_be_deleted'
+    }).returning('*');
+
+    // --- 2. EXECUTION ---
+    const deleteResponse = await request(app)
+      .delete(`/api/v1/mappings/${ruleToDelete.id}`);
+
+    // --- 3. ASSERTION ---
+    // Assert that the delete operation was successful
+    expect(deleteResponse.status).toBe(204);
+
+    // As an extra check, try to fetch the deleted rule and expect a 404
+    const getResponse = await db('data_mapping_rules').where({ id: ruleToDelete.id }).first();
+    expect(getResponse).toBeUndefined();
+  });
+
 });

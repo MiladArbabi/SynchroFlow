@@ -87,6 +87,27 @@ app.get('/v1/analytics/inventory-value', async (req, res) => {
   }
 });
 
+app.get('/api/v1/mappings', async (req, res) => {
+  try {
+    const { shop_id } = req.query;
+
+    if (!shop_id) {
+      return res.status(400).json({ error: 'shop_id query parameter is required.' });
+    }
+
+    const rules = await db('data_mapping_rules').where({ shop_id: Number(shop_id) });
+
+    res.status(200).json(rules);
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
 app.post('/v1/inventory', async (req, res) => {
   try {
     // Separate the incoming 'quantity' from the rest of the request body
@@ -202,6 +223,47 @@ app.post('/v1/transactions', async (req, res) => {
   }
 });
 
+app.post('/api/v1/mappings', async (req, res) => {
+  try {
+    const newRule = req.body;
+
+    // Basic validation
+    if (!newRule.shop_id || !newRule.source_platform || !newRule.source_field_path || !newRule.target_field_path) {
+      return res.status(400).json({ error: 'Missing required fields for mapping rule.' });
+    }
+
+    const [createdRule] = await db('data_mapping_rules').insert(newRule).returning('*');
+    res.status(201).json(createdRule);
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
+app.delete('/api/v1/mappings/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedCount = await db('data_mapping_rules').where({ id: Number(id) }).del();
+
+    if (deletedCount === 0) {
+      return res.status(404).json({ error: 'Mapping rule not found.' });
+    }
+
+    res.status(204).send(); // 204 No Content is standard for a successful delete
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
 app.put('/v1/inventory/:sku', async (req, res) => {
   try {
     const { sku } = req.params;
@@ -219,6 +281,29 @@ app.put('/v1/inventory/:sku', async (req, res) => {
 
     const [updatedItem] = await db('inventory_truth').where({ sku: sku }).select('*');
     res.json(updatedItem);
+  } catch (error) {
+    console.error(error);
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'An unknown database error occurred' });
+    }
+  }
+});
+
+app.put('/api/v1/mappings/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const updatedCount = await db('data_mapping_rules').where({ id: Number(id) }).update(updates);
+
+    if (updatedCount === 0) {
+      return res.status(404).json({ error: 'Mapping rule not found.' });
+    }
+
+    const [updatedRule] = await db('data_mapping_rules').where({ id: Number(id) });
+    res.status(200).json(updatedRule);
   } catch (error) {
     console.error(error);
     if (error instanceof Error) {
