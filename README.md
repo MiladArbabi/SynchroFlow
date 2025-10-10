@@ -2,11 +2,13 @@
 SynchroFlow is a B2B SaaS platform engineered to solve the most expensive operational challenges for mid-market, direct-to-consumer (D2C) brands: data fragmentation and communication silos. Our solution is a unified platform built on a high-performance C++ core that serves as the single source of operational truth, an AI engine for intelligent forecasting, and a React-based UI for command and control.
 
 ## Current Project Status
-Phase 1: Core Architecture is complete. The foundational technical architecture has been built, tested, and validated. We are now actively building the features for Phase 2, starting with the FinOps Command Center.
+**Phase 1: Core Architecture & Integration Layer Foundation** is complete. The foundational technical architecture, including a new decoupled Integration Service, has been built, tested, and validated. We are now actively building the features for 
+
+**Phase 2**, starting with the FinOps Command Center and its data ingestion pipeline.
 
 ## Key Achievements:
 
-A full-stack, multi-service architecture (Node.js API, C++ Core, Python AI, React UI).
+A full-stack, **five-service architecture** (Node.js API, C++ Core, Python AI, React UI, and a dedicated Node.js Integration Service).
 
 A professional, unified development environment with a single command (npm run dev).
 
@@ -17,44 +19,66 @@ A complete UI application shell with routing, layout, and a tested login page.
 The first live KPI widget and backend simulation engine for the FinOps dashboard.
 
 ## Technical Architecture
-SynchroFlow uses a hybrid, multi-service architecture designed for performance, scalability, and creating a virtuous data cycle between its core components.
+SynchroFlow uses a decoupled, event-driven microservices architecture. It combines the rapid development of TypeScript with the raw performance of a C++ core, all orchestrated by a message queue for scalability and resilience.
 
 ## Code snippet
 
+```mermaid
 graph TD
-    subgraph "Browser"
-        UI[React UI - Vite]
-    end
-    subgraph "Web Layer (Node.js)"
-        API[Express.js API Server<br>Orchestrates Intelligence Rules]
-    end
-    subgraph "High-Performance Core (C++)"
-        CPP[C++ Engine & In-Memory Cache]
-    end
-    subgraph "AI Engine (Python)"
-        AI[ML Microservice<br>(Forecasting, Simulation)]
-    end
-    subgraph "Data Layer"
-        DB[PostgreSQL Database]
+    subgraph "External Platforms"
+        ThirdParty[Shopify, NetSuite, etc.]
     end
 
+    subgraph "User Interface"
+        UI[React UI - Vite]
+    end
+
+    subgraph "SynchroFlow Platform"
+        subgraph "Integration Layer"
+            IS[Integration Service<br>(Node.js)]
+            MQ[(RabbitMQ<br>Message Queue)]
+        end
+
+        subgraph "Web Layer & Core API"
+            API[Express.js API Server]
+        end
+
+        subgraph "High-Performance Core"
+            CPP[C++ Engine]
+        end
+
+        subgraph "AI Engine"
+            AI[Python Microservice]
+        end
+
+        subgraph "Data Layer"
+            DB[(PostgreSQL)]
+        end
+    end
+
+    ThirdParty -- Webhooks --> IS
+    IS -- Publishes Events --> MQ
+    API -- Consumes Events --> MQ
     UI -- HTTPS --> API
-    API -- N-API Call (Low-Latency) --> CPP
-    CPP -- libpqxx (Bulk Ops) --> DB
-    API -- Knex.js (Standard CRUD) --> DB
+    API -- N-API Call --> CPP
+    API -- Knex.js --> DB
+    CPP -- libpqxx --> DB
     API -- REST --> AI
+```
+
+
 Technology Stack
 Frontend: React (Vite), TypeScript, React Router, Recharts.
 
-API/Backend: Node.js, Express.js, TypeScript.
+API/Backend: Node.js, Express.js, TypeScript, Knex.js, amqplib.
 
-Database: PostgreSQL (Docker), Knex.js.
+Database & Message Queue: PostgreSQL (Docker), RabbitMQ (Docker).
 
 High-Performance Core: C++, N-API, libpqxx.
 
 AI Engine: Python, FastAPI, Pandas, Statsmodels.
 
-Development & Testing: NPM Workspaces, concurrently, nodemon, Jest, Supertest, React Testing Library.
+Development & Testing: NPM Workspaces, Concurrently, Nodemon, Jest, Supertest, React Testing Library.
 
 Local Development Setup
 Prerequisites
@@ -108,6 +132,7 @@ The services will be available at:
 React UI: http://localhost:5173
 
 Node.js API: http://localhost:3000
+Integration Service: http://localhost:3001
 
 Python AI Engine: http://localhost:8000
 
@@ -123,6 +148,8 @@ This is a monorepo managed with NPM Workspaces.
 /packages/cpp-core: The high-performance C++ addon.
 
 /packages/ai-engine: The Python/FastAPI microservice for machine learning.
+
+/packages/integration-service: The dedicated service for handling all third-party API communications and webhooks.
 
 /packages/ui: The React/Vite application for the user-facing dashboard.
 
