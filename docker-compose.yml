@@ -1,21 +1,37 @@
-version: '3.8'
-
 services:
-  db:
-    image: postgres:16-alpine
+  postgres:
+    image: postgres:16
     container_name: synchroflow_db
-    restart: always
-    ports:
-      # Map container port 5432 to host port 5432
-      - "5432:5432"
     environment:
-      # Use the application-specific user and database defined previously
-      POSTGRES_USER: sf_user
-      POSTGRES_PASSWORD: sf_pass
-      POSTGRES_DB: synchroflow_db
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DATABASE}
+    ports:
+      - "5432:5432"
     volumes:
-      # Persist the database data across restarts
-      - postgres_data:/var/lib/postgresql/data/
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - synchroflow-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: synchroflow_mq
+    hostname: rabbitmq
+    ports:
+      # AMQP protocol port
+      - "5672:5672"
+      # HTTP management UI
+      - "15672:15672"
+    environment:
+      # Default user and password
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - synchroflow-net
 
 volumes:
   postgres_data:
+
+networks:
+  synchroflow-net:
+    driver: bridge
