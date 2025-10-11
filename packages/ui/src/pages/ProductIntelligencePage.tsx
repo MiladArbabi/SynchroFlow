@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { InventoryResult } from '../components/InventoryResult';
 import { ForecastResult } from '../components/ForecastResult';
+import DataMapper from '../components/DataMapper/DataMapper';
 
 // Define the shape of our data for type safety
 interface ProductData {
@@ -65,6 +66,9 @@ export function ProductIntelligencePage() {
         >
           Search
         </button>
+        <div className="mt-8">
+        <DataMapper />
+      </div>
       </div>
 
       {loading && <p style={{ marginTop: '2rem' }}>Loading...</p>}
