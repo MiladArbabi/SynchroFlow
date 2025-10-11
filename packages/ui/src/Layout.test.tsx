@@ -16,4 +16,5 @@ test('renders the main layout with a sidebar and header on the root route', () =
   // Look for a navigation link in the sidebar
   const productLink = screen.getByRole('link', { name: /products/i });
   expect(productLink).toHaveAttribute('href', '/products');
+  expect(screen.getByRole('link', { name: /product intelligence/i })).toHaveAttribute('href', '/product-intelligence');
 });

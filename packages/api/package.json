@@ -4,7 +4,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.json && cp ../cpp-core/build/Release/sf_core.node dist/src",
     "start": "node dist/src/server.js",
-    "dev": "nodemon --watch src --ext ts --exec \"npm run build && npm start\"",
+    "dev": "nodemon --watch src --ext ts --exec \"npm run build && node --env-file=../../.env dist/src/server.js\"",
     "migrate": "knex migrate:latest",
     "migrate:make": "knex migrate:make",
     "migrate:rollback": "knex migrate:rollback"

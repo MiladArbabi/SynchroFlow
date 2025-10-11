@@ -13,7 +13,8 @@ function App() {
         {/* Routes inside the main application shell */}
         <Route path="/" element={<Layout />}>
           <Route index element={<DashboardPage />} />
-          <Route path="/products" element={<ProductIntelligencePage />} />
+          <Route path="product-intelligence" element={<ProductIntelligencePage />} />
+          {/* Add other nested routes here */}
         </Route>
         <Route path="/login" element={<LoginPage />} />
       </Routes>
