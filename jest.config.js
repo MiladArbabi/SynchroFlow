@@ -5,7 +5,11 @@ module.exports = {
     {
       displayName: 'backend',
       testEnvironment: 'node',
-      testMatch: ['<rootDir>/packages/api/**/*.test.ts', '<rootDir>/packages/cpp-core/**/*.test.ts'],
+      testMatch: [
+        '<rootDir>/packages/api/**/*.test.ts',
+        '<rootDir>/packages/cpp-core/**/*.test.ts',
+        '<rootDir>/packages/integration-service/**/*.test.ts'
+      ],
       transform: {
         '^.+\\.ts$': ['ts-jest', { tsconfig: 'packages/api/tsconfig.json' }],
       },

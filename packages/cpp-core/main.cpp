@@ -8,11 +8,11 @@
 static std::unordered_map<std::string, InventoryItem> inventory_cache;
 
 // This function now connects to the DB and loads the cache.
-void LoadCacheFromDB(const Napi::Env& env) {
+void ReloadCacheSync(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
     try {
         pqxx::connection conn("user=sf_user password=sf_pass host=localhost port=5432 dbname=synchroflow_db");
         std::cout << "C++ Core: Successfully connected to PostgreSQL." << std::endl;
-        std::cout << "C++ Core: Rebuild triggered!" << std::endl;
 
         inventory_cache.clear();
         pqxx::work txn(conn);
@@ -74,9 +74,10 @@ Napi::Object getInventoryItem(const Napi::CallbackInfo& info) {
 
 // The Init function loads the cache from the DB
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-  LoadCacheFromDB(env);
   exports.Set(Napi::String::New(env, "getInventoryItem"),
               Napi::Function::New(env, getInventoryItem));
+  exports.Set(Napi::String::New(env, "reloadCacheSync"),
+              Napi::Function::New(env, ReloadCacheSync));
   return exports;
 }
 

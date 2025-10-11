@@ -39,6 +39,7 @@
     "ts-jest": "^29.4.4"
   },
   "dependencies": {
+    "amqplib": "^0.10.9",
     "axios": "^1.12.2"
   }
 }
