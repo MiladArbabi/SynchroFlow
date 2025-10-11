@@ -2,8 +2,7 @@
 
 import path from 'path';
 import db from '../../api/src/db';
-import request from 'supertest';
-import app from '../../api/src/server'; // Import the app for the test endpoint
+import { execSync } from 'child_process';
 
 // Define interfaces for our data shapes
 interface InventoryItem {
@@ -15,7 +14,7 @@ interface InventoryItem {
 
 interface Addon {
   getInventoryItem: (sku: string) => InventoryItem;
-  reloadCache: () => void;
+  reloadCacheSync: () => void;
 }
 
 // 1. Declare the addon variable here, but do not initialize it yet.
@@ -27,27 +26,12 @@ describe('C++ Addon (sf_core)', () => {
   beforeAll(async () => {
     // A) Clean the database to ensure a predictable state.
     await db.migrate.latest();
-    await db('inventory_truth').del();
-    await db('shops').del();
 
-    // B) Seed the database with the exact data this test suite needs.
-    const [shop] = await db('shops').insert({
-      name: "C++ Test Store",
-      contact_email: "cpp-test@store.com",
-      auth_secret: "cpp-test-secret",
-      primary_erp_type: "TestERP",
-      primary_ecomm_type: "TestPlatform"
-    }).returning('id');
+    // Force a rebuild of the C++ addon before loading it.
+    // This ensures we are always testing against the latest code.
+    execSync('npm run build -w cpp-core', { stdio: 'inherit' });
 
-    await db('inventory_truth').insert({
-      sku: 'SYN-TS-RED-LOGO',
-      quantity_available: 95,
-      price: 19.99,
-      warehouse_location: 'Shelf A-1',
-      shop_id: shop.id
-    });
-
-    // C) NOW, load the addon AND trigger a cache reload via the test endpoint.
+    // Load the addon only ONCE. It does nothing on load.
     const addonPath = path.join(__dirname, '../build/Release/sf_core.node');
     addon = require(addonPath);
   });
@@ -57,18 +41,23 @@ describe('C++ Addon (sf_core)', () => {
     await db.destroy();
   });
 
-  it('should be loaded successfully and have the correct functions', () => {
-    expect(addon).toBeDefined();
-    expect(typeof addon.getInventoryItem).toBe('function');
-  });
+  // Before each test, we clean, seed, and synchronously reload the cache.
+  beforeEach(async () => {
+    await db.raw('TRUNCATE shops, inventory_truth RESTART IDENTITY CASCADE');
+    const [shop] = await db('shops').insert({ name: "C++ Test Store", contact_email: "cpp-test@store.com", auth_secret: "cpp-test-secret", platform: "shopify", primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform" }).returning('id');
+    await db('inventory_truth').insert({ sku: 'SYN-TS-RED-LOGO', quantity_available: 95, price: 19.99, warehouse_location: 'Shelf A-1', shop_id: shop.id });
+    
+    // Call the synchronous reload function. The test will wait here until it's done.
+    addon.reloadCacheSync();
+   });
 
   it('should return the correct inventory item from the live-loaded cache', () => {
     const sku = 'SYN-TS-RED-LOGO';
     const item = addon.getInventoryItem(sku);
 
     expect(item).toBeDefined();
-    expect(item.sku).toBe(sku);
     // This assertion will now pass because the cache was loaded with the correct data.
+    expect(item.sku).toBe(sku); 
     expect(item.quantity).toBe(95);
     expect(item.price).toBe(19.99);
   });
