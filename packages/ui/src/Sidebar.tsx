@@ -22,6 +22,9 @@ export function Sidebar() {
             {/* This is the link our test is looking for */}
             <Link to="/products" style={{ color: 'white', textDecoration: 'none' }}>Products</Link>
           </li>
+          <li style={{ marginTop: '1rem' }}>
+            <Link to="/product-intelligence" style={{ color: 'white', textDecoration: 'none' }}>Product Intelligence</Link>
+          </li>
         </ul>
       </nav>
     </aside>
