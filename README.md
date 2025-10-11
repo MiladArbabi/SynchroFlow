@@ -2,9 +2,11 @@
 SynchroFlow is a B2B SaaS platform engineered to solve the most expensive operational challenges for mid-market, direct-to-consumer (D2C) brands: data fragmentation and communication silos. Our solution is a unified platform built on a high-performance C++ core that serves as the single source of operational truth, an AI engine for intelligent forecasting, and a React-based UI for command and control.
 
 ## Current Project Status
-**Phase 1: Core Architecture & Integration Layer Foundation** is complete. The foundational technical architecture, including a new decoupled Integration Service, has been built, tested, and validated. We are now actively building the features for 
++**Phase 1: Core Architecture & Integration Layer Foundation** is complete. We are now deep into 
 
-**Phase 2**, starting with the FinOps Command Center and its data ingestion pipeline.
+**Phase 2**, having completed the foundational backend and frontend for the 
+
+**Self-Service Data Mapping** feature. The next priority is activating the data ingestion pipeline.
 
 ## Key Achievements:
 
@@ -14,7 +16,7 @@ A professional, unified development environment with a single command (npm run d
 
 A robust, automated, full-stack testing framework (npm test) with guaranteed clean-slate database resets.
 
-A complete UI application shell with routing, layout, and a tested login page.
+**Completed the full-stack Data Mapping feature**, including a backend CRUD API and a frontend UI for managing rules.
 
 The first live KPI widget and backend simulation engine for the FinOps dashboard.
 
@@ -95,10 +97,9 @@ Python 3 & venv.
 1. First-Time Installation
 This one-time setup clones the repository and prepares all dependencies.
 
-Bash
-
+```bash
 # Clone the repository
-git clone https://github.com/MiladArbabi/SynchroFlow.git
+git clone [https://github.com/MiladArbabi/SynchroFlow.git](https://github.com/MiladArbabi/SynchroFlow.git)
 cd SynchroFlow
 
 # Install C++ dependencies
@@ -114,11 +115,12 @@ cd ../..
 
 # Install all Node.js dependencies for all workspaces
 npm install
+```
+
 2. Running the Application
 The entire application stack (API, C++ Watcher, AI Engine, UI) can be started with a single command from the project root.
 
-Bash
-
+```bash
 # 1. Start the database container (if not already running)
 docker-compose up -d
 
@@ -127,6 +129,8 @@ npm run migrate -w api
 
 # 3. Start the entire application stack with hot-reloading
 npm run dev
+```
+
 The services will be available at:
 
 React UI: http://localhost:5173
@@ -139,7 +143,10 @@ Python AI Engine: http://localhost:8000
 3. Running Tests
 The unified test suite can be run from the project root. It will automatically reset and migrate the test database before running all backend and frontend tests, ensuring a clean state for every run.
 
+```bash
 npm test
+```
+
 Project Structure
 This is a monorepo managed with NPM Workspaces.
 
