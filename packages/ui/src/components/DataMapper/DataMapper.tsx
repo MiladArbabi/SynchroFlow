@@ -15,7 +15,8 @@ const DataMapper: React.FC = () => {
         // We'll hardcode shop_id=1 for now
         const response = await axios.get('/api/v1/mappings?shop_id=1');
         setRules(response.data);
-      } catch (_err) {
+      } catch (err) {
+        console.error(err.message);
         setError('Failed to fetch mapping rules.');
       } finally {
         setIsLoading(false);
@@ -42,7 +43,7 @@ const DataMapper: React.FC = () => {
       setSourcePath('');
       setTargetPath('');
     } catch (err) {
-      // Simple error handling for now
+      console.error(err.message);
       alert('Failed to add new rule.');
     }
   };
