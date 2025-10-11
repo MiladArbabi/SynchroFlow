@@ -48,6 +48,21 @@ const DataMapper: React.FC = () => {
     }
   };
 
+  const handleDelete = async (ruleId: number) => {
+    if (!window.confirm('Are you sure you want to delete this rule?')) {
+      return;
+    }
+
+    try {
+      await axios.delete(`/api/v1/mappings/${ruleId}`);
+      // Remove the rule from the local state to update the UI
+      setRules(prevRules => prevRules.filter(rule => rule.id !== ruleId));
+    } catch (err) {
+      console.error(err.message);
+      alert('Failed to delete the rule.');
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="sm:flex sm:items-center">
@@ -107,6 +122,9 @@ const DataMapper: React.FC = () => {
                     <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">Source Path</th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Target Path</th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Platform</th>
+                    <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0">
+                      <span className="sr-only">Edit</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -116,12 +134,18 @@ const DataMapper: React.FC = () => {
                         <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">{rule.source_field_path}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{rule.target_field_path}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{rule.source_platform}</td>
+                        <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
+                          <button
+                            onClick={() => handleDelete(rule.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Delete
+                          </button>
+                        </td>
                       </tr>
                     ))
                   ) : (
-                    <tr>
-                      <td colSpan={3} className="text-center py-4 text-sm text-gray-500">No mapping rules found.</td>
-                    </tr>
+                    <tr><td colSpan={4} className="text-center py-4 text-sm text-gray-500">No mapping rules found.</td></tr>
                   )}
                 </tbody>
               </table>
