@@ -4,6 +4,7 @@ import { LoginPage } from './LoginPage';
 import { ProductIntelligencePage } from './pages/ProductIntelligencePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { Layout } from './Layout';
+import { ProductsPage } from './pages/ProductsPage';
 
 function App() {
 
@@ -13,8 +14,8 @@ function App() {
         {/* Routes inside the main application shell */}
         <Route path="/" element={<Layout />}>
           <Route index element={<DashboardPage />} />
+          <Route path="products" element={<ProductsPage />} />
           <Route path="product-intelligence" element={<ProductIntelligencePage />} />
-          {/* Add other nested routes here */}
         </Route>
         <Route path="/login" element={<LoginPage />} />
       </Routes>
