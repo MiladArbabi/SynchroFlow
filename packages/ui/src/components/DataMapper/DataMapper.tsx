@@ -6,6 +6,8 @@ const DataMapper: React.FC = () => {
     const [rules, setRules] = useState<MappingRule[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
+    const [sourcePath, setSourcePath] = useState('');
+    const [targetPath, setTargetPath] = useState('');
 
     useEffect(() => {
     const fetchRules = async () => {
@@ -23,6 +25,27 @@ const DataMapper: React.FC = () => {
     fetchRules();
   }, []); // Empty dependency array means this runs once on mount
 
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const newRuleData = {
+      shop_id: 1, // Hardcoded for now
+      source_platform: 'shopify', // Hardcoded for now
+      source_field_path: sourcePath,
+      target_field_path: targetPath,
+    };
+
+    try {
+      const response = await axios.post('/api/v1/mappings', newRuleData);
+      // Add the new rule to the table optimistically
+      setRules(prevRules => [...prevRules, response.data]);
+      // Clear the form
+      setSourcePath('');
+      setTargetPath('');
+    } catch (err) {
+      // Simple error handling for now
+      alert('Failed to add new rule.');
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -34,6 +57,41 @@ const DataMapper: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Add New Rule Form */}
+      <div className="mt-8">
+        <form className="flex items-end gap-x-4" onSubmit={handleSubmit}>
+          <div className="flex-grow">
+            <label htmlFor="source-path" className="block text-sm font-medium leading-6 text-gray-900">Source Path</label>
+            <input
+              type="text"
+              id="source-path"
+              value={sourcePath}
+              onChange={(e) => setSourcePath(e.target.value)}
+              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+              required
+            />
+          </div>
+          <div className="flex-grow">
+            <label htmlFor="target-path" className="block text-sm font-medium leading-6 text-gray-900">Target Path</label>
+            <input
+              type="text"
+              id="target-path"
+              value={targetPath}
+              onChange={(e) => setTargetPath(e.target.value)}
+              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+          >
+            Add Rule
+          </button>
+        </form>
+      </div>
+
       <div className="mt-8 flow-root">
         <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
           <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">

@@ -1,11 +1,17 @@
 // packages/ui/src/components/DataMapper/DataMapper.test.tsx
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import axios from 'axios';
 import DataMapper from './DataMapper';
 
 // Mock the axios module
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+beforeEach(() => {
+  mockedAxios.get.mockClear();
+  mockedAxios.post.mockClear();
+});
 
 describe('DataMapper', () => {
   it('renders the main heading', () => {
@@ -31,5 +37,41 @@ describe('DataMapper', () => {
 
     // Verify axios was called correctly
     expect(mockedAxios.get).toHaveBeenCalledWith('/api/v1/mappings?shop_id=1');
+  });
+
+  it('allows a user to add a new mapping rule', async () => {
+    const user = userEvent.setup();
+    
+    // Mock the initial GET call to return an empty array
+    mockedAxios.get.mockResolvedValue({ data: [] });
+
+    // Mock the POST call to simulate a successful creation
+    const newRule = { id: 3, shop_id: 1, source_platform: 'shopify', source_field_path: 'order.new.path', target_field_path: 'synchro.new.path' };
+    mockedAxios.post.mockResolvedValue({ data: newRule });
+
+    render(<DataMapper />);
+
+    // Find the input fields and the button
+    const sourceInput = screen.getByLabelText(/source path/i);
+    const targetInput = screen.getByLabelText(/target path/i);
+    const addButton = screen.getByRole('button', { name: /add rule/i });
+
+    // Simulate user typing into the fields
+    await user.type(sourceInput, 'order.new.path');
+    await user.type(targetInput, 'synchro.new.path');
+
+    // Simulate user clicking the add button
+    await user.click(addButton);
+
+    // Assert that the new rule appears on the screen
+    expect(await screen.findByText('order.new.path')).toBeInTheDocument();
+
+    // Assert that axios.post was called with the correct data
+    expect(mockedAxios.post).toHaveBeenCalledWith('/api/v1/mappings', {
+      shop_id: 1, // Hardcoded for now
+      source_platform: 'shopify', // Hardcoded for now
+      source_field_path: 'order.new.path',
+      target_field_path: 'synchro.new.path'
+    });
   });
 });
