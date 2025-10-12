@@ -1,4 +1,5 @@
-## SynchroFlow: The Autonomous Commerce Operations Platform
+## SynchroFlow: The Autonomous Commerce Operations Platform 
+## version (v3.0) 
 SynchroFlow is the Autonomous Commerce Operations Platform for mid-market ($10M - $40M ARR) D2C brands, engineered to turn operations from a cost center into a core profit driver. We eliminate data fragmentation by creating a single source of operational truth, integrating platforms like Shopify, Amazon, Zendesk, and WMS. 
 
 Our **Product-Led Growth (PLG)** model provides a frictionless, self-service experience, allowing brands to see tangible value with their own data in minutes.
