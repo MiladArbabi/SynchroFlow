@@ -13,8 +13,9 @@ const port = process.env.INTEGRATION_PORT || 3001;
 // because it needs the raw, unparsed request body to compute the signature.
 const verifyShopifyWebhook = (req: Request, res: Response, next: NextFunction) => {
   const hmacHeader = req.get('X-Shopify-Hmac-Sha256');
-  const body = req.body;
-  const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
+  // Use the rawBody we save from the verify function, not the parsed body
+  const body = (req as any).rawBody;
+  const secret = process.env.SHOPIFY_WEBHOOK_SECRET?.trim();
 
   if (!hmacHeader || !secret) {
     return res.status(401).send('Unauthorized: Missing signature or secret.');
@@ -25,11 +26,6 @@ const verifyShopifyWebhook = (req: Request, res: Response, next: NextFunction) =
       .createHmac('sha256', secret)
       .update(body)
       .digest('base64');
-
-    // --- DEBUG LOGS ---
-    console.log('[DEBUG] Received Signature:', hmacHeader);
-    console.log('[DEBUG] Generated Signature:', generatedHash);
-    // --- END DEBUG LOGS ---
 
     const trusted = Buffer.from(hmacHeader, 'base64');
     const untrusted = Buffer.from(generatedHash, 'base64');
@@ -53,13 +49,17 @@ app.get('/health', (req: Request, res: Response) => {
 // --- Webhook Ingestion Route ---
 app.post(
   '/ingest/shopify/orders/create',
-  // Use express.raw to get the raw buffer body for HMAC verification
-  express.raw({ type: 'application/json' }),
+  // Use express.json with a custom verify function
+  express.json({
+    verify: (req: Request, res: Response, buf: Buffer) => {
+      // Save the raw buffer to the request object before it's parsed
+      (req as any).rawBody = buf;
+    }
+  }),
   verifyShopifyWebhook,
   async (req: Request, res: Response) => {
-    // If we get here, the signature was valid.
-    // We can now parse the JSON body from the raw buffer.
-    const payload = JSON.parse(req.body.toString());
+    // The signature is valid, and the body is already parsed JSON.
+    const payload = req.body;
 
     try {
       // Save the raw payload to our staging table
