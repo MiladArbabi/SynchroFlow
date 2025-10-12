@@ -2,6 +2,7 @@
 import request from 'supertest';
 import app from '../src/server';
 import db from '../src/db';
+import { connection as queueConnection } from '../src/queue';
 import { InventoryItem } from '../src/types';
 import axios from 'axios';
 
@@ -16,6 +17,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.destroy();
+  await queueConnection.close(); // Close the RabbitMQ connection
 });
 
 describe('API Endpoints', () => {
