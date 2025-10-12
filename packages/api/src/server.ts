@@ -5,6 +5,7 @@ import {
   getDemandForecastForSku, 
   calculateTotalInventoryValue,
   simulatePaymentDelay } from './services/forecasting.service';
+import { startWorker } from './worker';
 
 // --- ADD THESE LINES ---
 // Use 'path' to create a reliable, absolute path to the addon file
@@ -317,6 +318,8 @@ app.put('/api/v1/mappings/:id', async (req, res) => {
 if (require.main === module) {
   app.listen(port, () => {
     console.log(`Server is listening on port ${port}`);
+    // Start the queue worker
+    startWorker();
   });
 }
 
