@@ -5,8 +5,6 @@ import crypto from 'crypto';
 import db from './db';
 import { publishToQueue } from './queue';
 
-dotenv.config();
-
 const app = express();
 const port = process.env.INTEGRATION_PORT || 3001;
 
@@ -27,6 +25,11 @@ const verifyShopifyWebhook = (req: Request, res: Response, next: NextFunction) =
       .createHmac('sha256', secret)
       .update(body)
       .digest('base64');
+
+    // --- DEBUG LOGS ---
+    console.log('[DEBUG] Received Signature:', hmacHeader);
+    console.log('[DEBUG] Generated Signature:', generatedHash);
+    // --- END DEBUG LOGS ---
 
     const trusted = Buffer.from(hmacHeader, 'base64');
     const untrusted = Buffer.from(generatedHash, 'base64');
