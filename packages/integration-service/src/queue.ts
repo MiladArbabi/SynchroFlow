@@ -1,3 +1,4 @@
+// packages/integration-service/src/queue.ts
 import amqp from 'amqp-connection-manager';
 import { ChannelWrapper } from 'amqp-connection-manager';
 import { Channel } from 'amqplib';
