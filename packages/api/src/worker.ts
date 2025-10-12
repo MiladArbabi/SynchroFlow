@@ -2,6 +2,7 @@
 import { Channel } from 'amqplib';
 import { channelWrapper } from './queue';
 import db from './db';
+import { transformPayload } from './transformer';
 
 // This is the function our test is targeting
 export async function processMessage(msg: { content: Buffer } | null) {
@@ -20,17 +21,21 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }
 
     // Fetch the raw payload from the database
-    const stagedEvent = await db('staged_events').where({ id: staged_event_id }).first();
+    const stagedEvent = await db('staged_events').where({ id: staged_event_id }).first<{ id: number; shop_id: number; raw_payload: Record<string, any> }>();
 
     if (!stagedEvent) {
       console.error(`[worker] Staged event with id ${staged_event_id} not found.`);
       channelWrapper.ack(msg as any);
       return;
     }
+ 
+    // Fetch the mapping rules for the shop associated with the event
+    const mappingRules = await db('data_mapping_rules').where({ shop_id: stagedEvent.shop_id });
 
-    console.log('[worker] Processing staged event payload:', stagedEvent.raw_payload);
-    
-    // TODO: In the next step (#99), we will add the transformation logic here.
+    // Transform the payload
+    const transformedPayload = transformPayload(stagedEvent.raw_payload, mappingRules);
+
+    console.log('[worker] Successfully transformed payload:', transformedPayload);    
     
     // Acknowledge the message was processed successfully
     channelWrapper.ack(msg as any);
