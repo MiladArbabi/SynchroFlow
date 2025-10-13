@@ -38,7 +38,7 @@ describe('Shopify Webhook Ingestion', () => {
       .digest('base64');
     
     const response = await request(app)
-      .post('/ingest/shopify/orders/create')
+      .post('/ingest/shopify/1/orders/create')
       .set('X-Shopify-Hmac-Sha256', hmac)
       .send(fakePayload);
 
@@ -48,7 +48,8 @@ describe('Shopify Webhook Ingestion', () => {
     expect(mockInsert).toHaveBeenCalledWith({
       source_platform: 'shopify',
       event_type: 'orders/create',
-      raw_payload: fakePayload, // Check the parsed payload
+      raw_payload: fakePayload,
+      shop_id: 1 
     });
     
     expect(mockPublishToQueue).toHaveBeenCalledWith('events', JSON.stringify({ staged_event_id: 1 }));
@@ -58,7 +59,7 @@ describe('Shopify Webhook Ingestion', () => {
     const fakePayload = { order_id: 12345 };
     
     const response = await request(app)
-      .post('/ingest/shopify/orders/create')
+      .post('/ingest/shopify/1/orders/create')
       .set('X-Shopify-Hmac-Sha256', 'an-invalid-signature')
       .send(fakePayload);
 
