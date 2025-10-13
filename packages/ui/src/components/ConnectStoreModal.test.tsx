@@ -1,6 +1,12 @@
 // packages/ui/src/components/ConnectStoreModal.test.tsx
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import axios from 'axios';
 import { ConnectStoreModal } from './ConnectStoreModal';
+
+// Mock axios
+jest.mock('axios');
+const mockedAxiosPost = axios.post as jest.Mock;
 
 describe('ConnectStoreModal', () => {
   it('renders the modal with the correct title when open', () => {
@@ -18,5 +24,38 @@ describe('ConnectStoreModal', () => {
     const { container } = render(<ConnectStoreModal isOpen={false} onClose={handleClose} />);
     
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('submits the form and calls the sync API endpoint', async () => {
+    const user = userEvent.setup();
+    const handleClose = jest.fn();
+    mockedAxiosPost.mockResolvedValue({ status: 202 }); // Simulate a successful API call
+
+    render(<ConnectStoreModal isOpen={true} onClose={handleClose} />);
+
+    // Find the form elements
+    const shopInput = screen.getByLabelText(/Shop Name/i);
+    const tokenInput = screen.getByLabelText(/Admin API Access Token/i);
+    const syncButton = screen.getByRole('button', { name: /Start Sync/i });
+
+    // Simulate user input
+    await user.type(shopInput, 'my-cool-store.myshopify.com');
+    await user.type(tokenInput, 'shpat_testaccesstoken');
+
+    // Simulate form submission
+    await user.click(syncButton);
+
+    // Assertions
+    await waitFor(() => {
+      // Check that our sync API was called with the correct data
+      expect(mockedAxiosPost).toHaveBeenCalledWith('/api/v1/integrations/shopify/start-trial-sync', {
+        shop: 'my-cool-store.myshopify.com',
+        accessToken: 'shpat_testaccesstoken',
+        shopId: 1, // Expect the hardcoded shopId
+      });
+    });
+
+    // Check that the modal closed on success
+    expect(handleClose).toHaveBeenCalled();
   });
 });
