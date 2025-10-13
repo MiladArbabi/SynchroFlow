@@ -6,6 +6,7 @@ import {
   calculateTotalInventoryValue,
   simulatePaymentDelay } from './services/forecasting.service';
 import { startWorker } from './worker';
+import { seedSandboxData } from './db/seeder';
 
 // --- ADD THESE LINES ---
 // Use 'path' to create a reliable, absolute path to the addon file
@@ -262,6 +263,25 @@ app.delete('/api/v1/mappings/:id', async (req, res) => {
     } else {
       res.status(500).json({ error: 'An unknown database error occurred' });
     }
+  }
+});
+
+// --- DEVELOPMENT ONLY ENDPOINTS ---
+// This endpoint should be protected or removed in production
+app.post('/api/v1/dev/seed-sandbox/:shop_id', async (req, res) => {
+  try {
+    const shopId = Number(req.params.shop_id);
+    if (isNaN(shopId)) {
+      return res.status(400).json({ error: 'A valid shop_id is required.' });
+    }
+
+    await seedSandboxData(shopId);
+
+    res.status(200).json({ message: `Sandbox data seeded for shopId: ${shopId}` });
+  } catch (error) {
+    console.error('[seeder-endpoint] Error seeding sandbox data:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: `Failed to seed sandbox data: ${message}` });
   }
 });
 

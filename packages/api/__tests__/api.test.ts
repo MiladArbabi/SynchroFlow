@@ -5,11 +5,16 @@ import db from '../src/db';
 import { connection as queueConnection } from '../src/queue';
 import { InventoryItem } from '../src/types';
 import axios from 'axios';
+import { seedSandboxData } from '../src/db/seeder';
 
 // Tell Jest to mock the 'axios' library
 jest.mock('axios');
 // Create a typed mock for axios.post
 const mockedAxiosPost = axios.post as jest.Mock;
+
+// Mock our new seeder function
+jest.mock('../src/db/seeder');
+const mockedSeedSandboxData = seedSandboxData as jest.Mock;
 
 beforeAll(async () => {
    await db.migrate.latest();
@@ -384,4 +389,19 @@ describe('Data Mapping Rules API', () => {
     expect(getResponse).toBeUndefined();
   });
 
+});
+
+describe('Dev Endpoints', () => {
+  it('POST /api/v1/dev/seed-sandbox/:shop_id should call the seeder function', async () => {
+    const testShopId = 99;
+
+    const response = await request(app)
+      .post(`/api/v1/dev/seed-sandbox/${testShopId}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ message: `Sandbox data seeded for shopId: ${testShopId}` });
+
+    // The most important assertion: verify our endpoint called the seeder
+    expect(mockedSeedSandboxData).toHaveBeenCalledWith(testShopId);
+  });
 });
