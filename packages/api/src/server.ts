@@ -5,6 +5,7 @@ import {
   getDemandForecastForSku, 
   calculateTotalInventoryValue,
   simulatePaymentDelay } from './services/forecasting.service';
+import { calculateGrossRevenue } from './services/analytics.service';
 import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
 
@@ -263,6 +264,22 @@ app.delete('/api/v1/mappings/:id', async (req, res) => {
     } else {
       res.status(500).json({ error: 'An unknown database error occurred' });
     }
+  }
+});
+
+// --- ANALYTICS ENDPOINTS ---
+app.get('/api/v1/analytics/gross-revenue', async (req, res) => {
+  try {
+    const shopId = Number(req.query.shop_id);
+    if (isNaN(shopId)) {
+      return res.status(400).json({ error: 'A valid shop_id is required.' });
+    }
+
+    const revenue = await calculateGrossRevenue(shopId);
+    res.json({ gross_revenue: revenue });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to calculate gross revenue.' });
   }
 });
 
