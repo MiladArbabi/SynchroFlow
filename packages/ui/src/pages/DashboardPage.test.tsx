@@ -1,5 +1,6 @@
 // packages/ui/src/pages/DashboardPage.test.tsx
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { DashboardPage } from './DashboardPage';
 import { UserProvider } from '../contexts/UserContext';
@@ -39,6 +40,24 @@ test('displays a sandbox banner when in sandbox mode', () => {
   // Assert that the sandbox banner IS visible
   expect(screen.getByText(/You are currently in a sandbox environment/i)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Connect Your Store/i })).toBeInTheDocument();
+});
+
+test('clicking the sandbox banner button opens the connection modal', async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <UserProvider value={{ isSandbox: true }}>
+        <DashboardPage />
+      </UserProvider>
+    </MemoryRouter>
+  );
+
+  // Find and click the button in the banner
+  const connectButton = screen.getByRole('button', { name: /Connect Your Store/i });
+  await user.click(connectButton);
+
+  // Assert that the modal is now visible by finding its title
+  expect(await screen.findByRole('heading', { name: /Connect a Data Source/i })).toBeInTheDocument();
 });
 
 test('fetches and displays the total inventory value', async () => {

@@ -4,6 +4,7 @@ import axios from 'axios';
 import { CashFlowChart } from '../components/CashFlowChart';
 import { SimulationModal } from '../components/SimulationModal';
 import { useUser } from '../contexts/UserContext';
+import { ConnectStoreModal } from '../components/ConnectStoreModal';
 
 // A simple placeholder for a KPI widget
 const KpiCard = ({ title, value, isLoading }: { title: string, value: string, isLoading: boolean }) => (
@@ -15,7 +16,7 @@ const KpiCard = ({ title, value, isLoading }: { title: string, value: string, is
   </div>
 );
 
-const SandboxBanner: React.FC = () => (
+const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <div className="rounded-md bg-blue-50 p-4 mb-8">
     <div className="flex">
       <div className="ml-3 flex-1 md:flex md:justify-between">
@@ -23,8 +24,7 @@ const SandboxBanner: React.FC = () => (
           You are currently in a sandbox environment. Explore with sample data, or connect your own store to see real insights.
         </p>
         <p className="mt-3 text-sm md:ml-6 md:mt-0">
-          <button className="whitespace-nowrap font-medium text-blue-700 hover:text-blue-600">
-            Connect Your Store &rarr;
+        <button onClick={onClick} className="whitespace-nowrap font-medium text-blue-700 hover:text-blue-600">            Connect Your Store &rarr;
           </button>
         </p>
       </div>
@@ -39,8 +39,9 @@ export function DashboardPage() {
   const [error, setError] = useState('');
   const { isSandbox } = useUser();
 
-  // State for the simulation modal
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // State for the modals
+  const [isSimulationModalOpen, setIsSimulationModalOpen] = useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
   // State for our cash flow data
   const initialCashFlow = [
@@ -95,7 +96,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      {isSandbox && <SandboxBanner />}
+      {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
       <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: '#1F2937' }}>
         FinOps Command Center
       </h1>
@@ -105,8 +106,7 @@ export function DashboardPage() {
         <KpiCard title="Cash Conversion Cycle" value="--" isLoading={false} />
         {/* More KPIs will be added here */}
       </div>
-      <CashFlowChart data={cashFlowData} onClick={() => setIsModalOpen(true)} />
-
+      <CashFlowChart data={cashFlowData} onClick={() => setIsSimulationModalOpen(true)} />
       <div style={{ marginTop: '2rem' }}>
         <button
           onClick={handleSimulation}
@@ -117,8 +117,9 @@ export function DashboardPage() {
         >
           Simulate 2-Week Delay
         </button>
-      </div>
-      <SimulationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+       </div>
+      <SimulationModal isOpen={isSimulationModalOpen} onClose={() => setIsSimulationModalOpen(false)} />
+      <ConnectStoreModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} />
     </div>
   );
 }
