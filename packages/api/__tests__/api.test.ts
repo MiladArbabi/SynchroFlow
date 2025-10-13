@@ -405,3 +405,46 @@ describe('Dev Endpoints', () => {
     expect(mockedSeedSandboxData).toHaveBeenCalledWith(testShopId);
   });
 });
+
+describe('GET /api/v1/analytics/gross-revenue', () => {
+  let shopId: number;
+
+  beforeEach(async () => {
+    // Clean and seed the database with necessary data for this test
+    await db.raw('TRUNCATE shops, inventory_truth, historical_sales RESTART IDENTITY CASCADE');
+    
+    const [shop] = await db('shops').insert({
+      name: "Revenue Test Store",
+      platform: "shopify",
+      contact_email: "revenue@test.com",
+      auth_secret: "revenue-secret",
+      primary_erp_type: "TestERP",
+      primary_ecomm_type: "TestPlatform"
+    }).returning('id');
+    shopId = shop.id;
+
+    // Seed some products with prices
+    await db('inventory_truth').insert([
+      { sku: 'REV-SKU-01', shop_id: shopId, price: 100.00, quantity_available: 10 },
+      { sku: 'REV-SKU-02', shop_id: shopId, price: 50.00, quantity_available: 10 },
+    ]);
+
+    // Seed some historical sales for those products
+    await db('historical_sales').insert([
+      { shop_id: shopId, sku: 'REV-SKU-01', quantity_sold: 5, sale_date: new Date() }, // 5 * 100 = 500
+      { shop_id: shopId, sku: 'REV-SKU-02', quantity_sold: 10, sale_date: new Date() }, // 10 * 50 = 500
+    ]);
+  });
+
+  it('should calculate and return the total gross revenue', async () => {
+    const response = await request(app)
+      .get('/api/v1/analytics/gross-revenue')
+      .query({ shop_id: shopId });
+    
+    const expectedRevenue = 1000.00; // 500 + 500
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty('gross_revenue');
+    expect(response.body.gross_revenue).toBeCloseTo(expectedRevenue);
+  });
+});
