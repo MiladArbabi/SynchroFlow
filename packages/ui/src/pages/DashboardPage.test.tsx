@@ -2,25 +2,43 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { DashboardPage } from './DashboardPage';
+import { UserProvider } from '../contexts/UserContext';
 import axios from 'axios';
 
 jest.mock('axios');
 const mockedAxiosGet = axios.get as jest.Mock;
 const mockedAxiosPost = axios.post as jest.Mock;
 
-test('renders the main dashboard with key metric placeholders', () => {
+test('renders the main dashboard and hides the sandbox banner in live mode', () => {
   render(
     <MemoryRouter>
-      <DashboardPage />
+      {/* Override the context to simulate live mode */}
+      <UserProvider value={{ isSandbox: false }}>
+        <DashboardPage />
+      </UserProvider>
     </MemoryRouter>
   );
 
   // Look for the main page heading
   expect(screen.getByRole('heading', { name: /FinOps Command Center/i })).toBeInTheDocument();
 
-  // Look for placeholders for our future KPI widgets
-  expect(screen.getByText(/Total Inventory Value/i)).toBeInTheDocument();
-  expect(screen.getByText(/Cash Conversion Cycle/i)).toBeInTheDocument();
+  // Assert that the sandbox banner is NOT visible
+  expect(screen.queryByText(/You are currently in a sandbox environment/i)).not.toBeInTheDocument();
+});
+
+test('displays a sandbox banner when in sandbox mode', () => {
+  render(
+    <MemoryRouter>
+      {/* Use the default sandbox mode value */}
+      <UserProvider>
+        <DashboardPage />
+      </UserProvider>
+    </MemoryRouter>
+  );
+
+  // Assert that the sandbox banner IS visible
+  expect(screen.getByText(/You are currently in a sandbox environment/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Connect Your Store/i })).toBeInTheDocument();
 });
 
 test('fetches and displays the total inventory value', async () => {
@@ -34,7 +52,9 @@ test('fetches and displays the total inventory value', async () => {
 
   render(
     <MemoryRouter>
-      <DashboardPage />
+      <UserProvider>
+        <DashboardPage />
+      </UserProvider>
     </MemoryRouter>
   );
 
@@ -59,7 +79,9 @@ test('allows a user to run a payment delay simulation and updates the chart', as
 
   render(
     <MemoryRouter>
-      <DashboardPage />
+      <UserProvider>
+        <DashboardPage />
+      </UserProvider>
     </MemoryRouter>
   );
 
@@ -87,7 +109,9 @@ test('clicking the chart opens the simulation modal', async () => {
 
   render(
     <MemoryRouter>
-      <DashboardPage />
+      <UserProvider>
+        <DashboardPage />
+      </UserProvider>
     </MemoryRouter>
   );
 
@@ -107,4 +131,4 @@ test('clicking the chart opens the simulation modal', async () => {
   // We can also verify that the form inside it is now visible.
   // This uses the test from the SimulationModal component to ensure it's fully rendered.
   expect(screen.getByLabelText(/Payment Amount/i)).toBeInTheDocument();
-});
+  });

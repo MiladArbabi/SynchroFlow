@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { CashFlowChart } from '../components/CashFlowChart';
 import { SimulationModal } from '../components/SimulationModal';
+import { useUser } from '../contexts/UserContext';
 
 // A simple placeholder for a KPI widget
 const KpiCard = ({ title, value, isLoading }: { title: string, value: string, isLoading: boolean }) => (
@@ -14,11 +15,29 @@ const KpiCard = ({ title, value, isLoading }: { title: string, value: string, is
   </div>
 );
 
+const SandboxBanner: React.FC = () => (
+  <div className="rounded-md bg-blue-50 p-4 mb-8">
+    <div className="flex">
+      <div className="ml-3 flex-1 md:flex md:justify-between">
+        <p className="text-sm text-blue-700">
+          You are currently in a sandbox environment. Explore with sample data, or connect your own store to see real insights.
+        </p>
+        <p className="mt-3 text-sm md:ml-6 md:mt-0">
+          <button className="whitespace-nowrap font-medium text-blue-700 hover:text-blue-600">
+            Connect Your Store &rarr;
+          </button>
+        </p>
+      </div>
+    </div>
+  </div>
+);
+
 export function DashboardPage() {
 
   const [inventoryValue, setInventoryValue] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const { isSandbox } = useUser();
 
   // State for the simulation modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -76,6 +95,7 @@ export function DashboardPage() {
 
   return (
     <div>
+      {isSandbox && <SandboxBanner />}
       <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: '#1F2937' }}>
         FinOps Command Center
       </h1>
