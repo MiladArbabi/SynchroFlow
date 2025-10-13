@@ -53,7 +53,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 // --- Webhook Ingestion Route ---
 app.post(
-  '/ingest/shopify/orders/create',
+  '/ingest/shopify/:shop_id/orders/create',
   // Use express.json with a custom verify function
   express.json({
     verify: (req: Request, res: Response, buf: Buffer) => {
@@ -65,10 +65,12 @@ app.post(
   async (req: Request, res: Response) => {
     // The signature is valid, and the body is already parsed JSON.
     const payload = req.body;
+    const { shop_id } = req.params;
 
     try {
       // Save the raw payload to our staging table
       const [stagedEvent] = await db('staged_events').insert({
+        shop_id: Number(shop_id),
         source_platform: 'shopify',
         event_type: 'orders/create',
         raw_payload: payload,

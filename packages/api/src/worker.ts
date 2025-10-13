@@ -21,7 +21,9 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }
 
     // Fetch the raw payload from the database
-    const stagedEvent = await db('staged_events').where({ id: staged_event_id }).first<{ id: number; shop_id: number; raw_payload: Record<string, any> }>();
+    const stagedEvent = await db('staged_events')
+    .where({ id: staged_event_id })
+    .first<{ id: number; shop_id: number; raw_payload: Record<string, any> }>();
 
     if (!stagedEvent) {
       console.error(`[worker] Staged event with id ${staged_event_id} not found.`);
@@ -30,7 +32,8 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }
  
     // Fetch the mapping rules for the shop associated with the event
-    const mappingRules = await db('data_mapping_rules').where({ shop_id: stagedEvent.shop_id });
+    const mappingRules = await db('data_mapping_rules')
+    .where({ shop_id: stagedEvent.shop_id });
 
     // Transform the payload
     const transformedPayload = transformPayload(stagedEvent.raw_payload, mappingRules);
