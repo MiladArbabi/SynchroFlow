@@ -58,4 +58,25 @@ describe('ConnectStoreModal', () => {
     // Check that the modal closed on success
     expect(handleClose).toHaveBeenCalled();
   });
+  it('displays a progress view while the sync is in progress', async () => {
+    const user = userEvent.setup();
+    const handleClose = jest.fn();
+    // Simulate a hanging API call that never resolves to test the "in-progress" state
+    mockedAxiosPost.mockReturnValue(new Promise(() => {}));
+
+    render(<ConnectStoreModal isOpen={true} onClose={handleClose} />);
+
+    // Find and fill out the form
+    await user.type(screen.getByLabelText(/Shop Name/i), 'test-shop.myshopify.com');
+    await user.type(screen.getByLabelText(/Admin API Access Token/i), 'shpat_test-token');
+
+    // Click the submit button
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+
+    // Assert that the "Syncing..." message is now visible
+    expect(await screen.findByText(/Syncing your data.../i)).toBeInTheDocument();
+
+    // Assert that the form inputs are now gone
+    expect(screen.queryByLabelText(/Shop Name/i)).not.toBeInTheDocument();
+  });
 });
