@@ -1,7 +1,7 @@
-// packages/api/__tests__/worker.test.ts
+//packages/api/__tests__/worker.test.ts
 import { processMessage } from '../src/worker';
 import db from '../src/db';
-import { channelWrapper } from '../src/queue';
+import { channelWrapper, connection as queueConnection } from '../src/queue';
 import { transformPayload } from '../src/transformer';
 
 // Mock all external dependencies
@@ -18,7 +18,6 @@ const mockedTransformPayload = transformPayload as jest.Mock;
 const mockFirst = jest.fn();
 const mockWhere = jest.fn();
 mockedDb.mockReturnValue({ where: mockWhere });
-
 
 describe('API Queue Worker', () => {
 

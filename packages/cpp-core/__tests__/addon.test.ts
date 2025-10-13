@@ -1,5 +1,4 @@
 // packages/cpp-core/__tests__/addon.test.ts
-
 import path from 'path';
 import db from '../../api/src/db';
 import { execSync } from 'child_process';
@@ -36,10 +35,9 @@ describe('C++ Addon (sf_core)', () => {
     addon = require(addonPath);
   });
 
-  // After all tests, clean up the database connection.
   afterAll(async () => {
-    await db.destroy();
-  });
+      await db.destroy();
+    });
 
   // Before each test, we clean, seed, and synchronously reload the cache.
   beforeEach(async () => {
