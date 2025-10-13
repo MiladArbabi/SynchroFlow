@@ -268,7 +268,7 @@ app.delete('/api/v1/mappings/:id', async (req, res) => {
 });
 
 // --- ANALYTICS ENDPOINTS ---
-app.get('/api/v1/analytics/gross-revenue', async (req, res) => {
+app.get('/v1/analytics/gross-revenue', async (req, res) => {
   try {
     const shopId = Number(req.query.shop_id);
     if (isNaN(shopId)) {
