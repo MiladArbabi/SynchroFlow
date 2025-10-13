@@ -5,6 +5,8 @@ module.exports = {
     {
       displayName: 'backend',
       testEnvironment: 'node',
+      // This file will run before all backend tests, loading the .env file.
+      setupFiles: ['<rootDir>/jest.env.js'],
       testMatch: [
         '<rootDir>/packages/api/**/*.test.ts',
         '<rootDir>/packages/cpp-core/**/*.test.ts',
