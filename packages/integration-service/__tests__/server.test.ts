@@ -2,6 +2,9 @@
 import request from 'supertest';
 import app from '../src/server';
 import { createHmac } from 'crypto';
+import { fetchRecentOrders } from '../src/clients/shopify';
+import db from '../src/db';
+import { publishToQueue } from '../src/queue';
 
 // --- Mocking Setup ---
 // We mock the entire db module to control its behavior
@@ -23,11 +26,21 @@ jest.mock('../src/queue', () => ({
   // We also need a mock for connectToQueue so the server doesn't crash on startup
   connectToQueue: jest.fn(),
 }));
+
+// Shopify test mock
+jest.mock('../src/clients/shopify');
+const mockedFetchRecentOrders = fetchRecentOrders as jest.Mock;
 // --- End Mocking Setup ---
 
+beforeEach(() => {
+  // Clear the history of all mocks before each test
+  mockInsert.mockClear();
+  mockReturning.mockClear();
+  mockPublishToQueue.mockClear();
+  mockedFetchRecentOrders.mockClear();
+});
 
 describe('Shopify Webhook Ingestion', () => {
-
   it('should return 200 OK, save to DB, and publish to queue for a valid webhook', async () => {
     const fakePayload = { order_id: 12345, customer: { email: 'test@example.com' }};
     const secret = 'my-shopify-webhook-secret';
@@ -65,5 +78,39 @@ describe('Shopify Webhook Ingestion', () => {
 
     expect(response.status).toBe(401);
   });
-  
+});
+
+describe('POST /integrations/shopify/start-trial-sync', () => {
+  it('should call fetchRecentOrders and push results into the pipeline', async () => {
+    // 1. SETUP
+    const fakeShopId = 1;
+    const fakeShop = 'test-shop.myshopify.com';
+    const fakeAccessToken = 'test-access-token';
+    
+    const fakeOrders = [
+      { id: 'gid://shopify/Order/123', name: '#1001' },
+      { id: 'gid://shopify/Order/124', name: '#1002' },
+    ];
+    
+    // Tell our mocks what to return
+    mockedFetchRecentOrders.mockResolvedValue(fakeOrders);
+
+    // 2. EXECUTION
+    const response = await request(app)
+      .post('/integrations/shopify/start-trial-sync')
+      .send({
+        shopId: fakeShopId,
+        shop: fakeShop,
+        accessToken: fakeAccessToken
+      });
+
+    // 3. ASSERTION
+    expect(response.status).toBe(202); // 202 Accepted is a good status for a long-running job
+    expect(response.body).toEqual({ message: 'Scoped trial sync initiated for 2 orders.' });
+
+    // Verify the core logic
+    expect(mockedFetchRecentOrders).toHaveBeenCalledWith(fakeShop, fakeAccessToken);
+    expect(mockInsert).toHaveBeenCalledTimes(2);
+    expect(mockPublishToQueue).toHaveBeenCalledTimes(2);
+  });
 });

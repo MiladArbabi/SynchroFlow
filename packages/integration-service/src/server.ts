@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import db from './db';
 import { publishToQueue } from './queue';
+import { fetchRecentOrders } from './clients/shopify';
 
 const app = express();
 const port = process.env.INTEGRATION_PORT || 3001;
@@ -87,6 +88,42 @@ app.post(
     }
   }
 );
+
+// --- Integration Triggers ---
+app.post('/integrations/shopify/start-trial-sync', express.json(), async (req: Request, res: Response) => {
+  try {
+    const { shopId, shop, accessToken } = req.body;
+
+    if (!shopId || !shop || !accessToken) {
+      return res.status(400).json({ error: 'shopId, shop, and accessToken are required.' });
+    }
+
+    // 1. Fetch the recent orders from Shopify
+    const orders = await fetchRecentOrders(shop, accessToken);
+
+    // 2. Process each order by pushing it into our pipeline
+    for (const order of orders) {
+      // Save the raw payload to our staging table
+      const [stagedEvent] = await db('staged_events').insert({
+        shop_id: shopId,
+        source_platform: 'shopify',
+        event_type: 'orders/create', // We treat each synced order as a 'create' event
+        raw_payload: order,
+      }).returning('id');
+
+      // Publish the ID of the staged event to the queue
+      await publishToQueue('events', JSON.stringify({ staged_event_id: stagedEvent.id }));
+    }
+
+    console.log(`[trial-sync] Initiated sync for ${orders.length} orders for shop ${shopId}.`);
+    // 202 Accepted is a great status code for starting a background job.
+    res.status(202).json({ message: `Scoped trial sync initiated for ${orders.length} orders.` });
+
+  } catch (error) {
+    console.error('Error starting scoped trial sync:', error);
+    res.status(500).json({ error: 'Failed to start trial sync.' });
+  }
+});
 
 // This conditional allows us to import 'app' in our tests without starting the server.
 if (process.env.NODE_ENV !== 'test') {
