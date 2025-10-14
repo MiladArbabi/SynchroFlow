@@ -1,32 +1,37 @@
+// jest.config.js
 module.exports = {
-  // Use Jest's 'projects' configuration for monorepos
   projects: [
-    // Configuration for backend packages (api, cpp-core)
+    // Configuration for ALL backend packages
     {
       displayName: 'backend',
       testEnvironment: 'node',
-      // This file will run before all backend tests, loading the .env file.
       setupFiles: ['<rootDir>/jest.env.js'],
       testMatch: [
         '<rootDir>/packages/api/**/*.test.ts',
         '<rootDir>/packages/cpp-core/**/*.test.ts',
-        '<rootDir>/packages/integration-service/**/*.test.ts'
+        '<rootDir>/packages/integration-service/**/*.test.ts',
       ],
+      // Explicitly use babel-jest for all .ts files
       transform: {
-        '^.+\\.ts$': ['ts-jest', { tsconfig: 'packages/api/tsconfig.json' }],
+        '^.+\\.ts$': 'babel-jest',
       },
     },
-    // Configuration for the frontend package (ui)
+    // Configuration for the frontend package
     {
       displayName: 'frontend',
       testEnvironment: 'jsdom',
-      testMatch: ['<rootDir>/packages/ui/src/**/*.test.tsx'],
+      testMatch: [
+        '<rootDir>/packages/ui/src/**/*.test.tsx',
+        '<rootDir>/packages/ui/__tests__/**/*.test.tsx',
+      ],
+      // Explicitly use babel-jest for all .tsx and .ts files
       transform: {
-        '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'packages/ui/tsconfig.json' }],
+        '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
       },
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
       moduleNameMapper: {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
+        '^assets/(.*)$': '<rootDir>/packages/ui/src/assets/$1',
       },
     },
   ],
