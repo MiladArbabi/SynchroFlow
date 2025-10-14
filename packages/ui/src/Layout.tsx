@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Outlet } from 'react-router-dom';
 
 // Import the components we copied from the Material Dashboard template
 import Sidenav from './components/Sidenav';
@@ -8,13 +8,12 @@ import DashboardLayout from './components/DashboardLayout';
 
 // Import the context and routes
 import { useMaterialUIController, setMiniSidenav } from './contexts/MaterialUI';
-import routes from './routes.js'; // The routes file for the Sidenav
+import routes from './routes'; // The routes file for the Sidenav
 
 export function Layout() {
   const [controller, dispatch] = useMaterialUIController();
   const { miniSidenav, sidenavColor } = controller;
   const [onMouseEnter, setOnMouseEnter] = useState(false);
-  const { pathname } = useLocation();
 
   // Open Sidenav on mouse enter
   const handleOnMouseEnter = () => {
