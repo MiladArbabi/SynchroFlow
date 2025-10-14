@@ -55,7 +55,7 @@ export const KpiCard: React.FC<KpiCardProps> = (props) => {
     };
 
     fetchData();
-  }, [props.dataUrl, props.dataKey]);
+  }, [props.dataUrl, props.dataKey, fetchedValue]);
 
   // Decide whether to use internal state (smart) or passed-in props (dumb)
   const isLoading = props.dataUrl ? isFetching : props.isLoading ?? false;

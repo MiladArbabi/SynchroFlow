@@ -14,7 +14,7 @@
     "dev": "concurrently \"npm:dev-api\" \"npm:dev-cpp\" \"npm:dev-ui\" \"npm:dev-ai\" \"npm:dev-integration\"",
     "dev-api": "npm run dev -w api",
     "dev-cpp": "npm run dev -w cpp-core",
-    "dev-ui": "npm run dev -w ui",
+    "dev-ui": "wait-on tcp:3000 && npm run dev -w ui",
     "dev-ai": "npm run dev -w ai-engine",
     "dev-integration": "npm run dev -w integration-service",
     "db:reset": "docker exec synchroflow_db psql -U sf_user -d postgres -c 'DROP DATABASE IF EXISTS synchroflow_db;' && docker exec synchroflow_db psql -U sf_user -d postgres -c 'CREATE DATABASE synchroflow_db;'",
@@ -36,7 +36,8 @@
     "nodemon": "^3.1.10",
     "resize-observer-polyfill": "^1.5.1",
     "supertest": "^7.1.4",
-    "ts-jest": "^29.4.4"
+    "ts-jest": "^29.4.4",
+    "wait-on": "^9.0.1"
   },
   "dependencies": {
     "amqplib": "^0.10.9",
