@@ -35,10 +35,6 @@ describe('C++ Addon (sf_core)', () => {
     addon = require(addonPath);
   });
 
-  afterAll(async () => {
-      await db.destroy();
-    });
-
   // Before each test, we clean, seed, and synchronously reload the cache.
   beforeEach(async () => {
     await db.raw('TRUNCATE shops, inventory_truth RESTART IDENTITY CASCADE');
