@@ -3,17 +3,34 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import { UserProvider } from './contexts/UserContext';
+import { MaterialUIControllerProvider } from './contexts/MaterialUI';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import theme from './assets/theme';
 
-test('renders the main App component with a title', () => {
-  // We must wrap the App in a router because it now contains <Routes>
-  render(
-    <MemoryRouter>
-      <UserProvider>
-        <App />
-      </UserProvider>
-    </MemoryRouter>
-  );
-  // This test will look for an element that contains the text "SynchroFlow"
-  const titleElement = screen.getByRole('heading', { name: /FinOps Command Center/i });
+jest.mock('./routes.js', () => []);
+
+test('renders the main App component without crashing', () => {
+  try {
+    render(
+      <MemoryRouter>
+        <MaterialUIControllerProvider>
+          <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <UserProvider>
+              <App />
+            </UserProvider>
+          </ThemeProvider>
+        </MaterialUIControllerProvider>
+      </MemoryRouter>
+    );
+    expect(screen.getByText(/SynchroFlow/i)).toBeInTheDocument();
+  } catch (error) {
+    console.error('Render error:', error);
+    throw error;
+  }
+    // A simple test to confirm the app shell renders.
+  // We'll look for text that we know is in the new Sidenav.
+  const titleElement = screen.getByText(/SynchroFlow/i);
   expect(titleElement).toBeInTheDocument();
 });

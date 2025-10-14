@@ -19,8 +19,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Map 'assets' to the correct absolute path
       'assets': path.resolve(__dirname, './src/assets'),
+      'components': path.resolve(__dirname, './src/components'),
+      'context': path.resolve(__dirname, './src/contexts/MaterialUI.tsx'),
+      'examples': path.resolve(__dirname, './src/components'),
+      'layouts': path.resolve(__dirname, './src/layouts'),
     },
   },
 })
