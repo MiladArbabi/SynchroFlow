@@ -58,3 +58,5 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 *$py.class
+# UI Template/Asset directory
+material-dashboard-react-main/
