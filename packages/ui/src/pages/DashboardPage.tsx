@@ -75,6 +75,12 @@ export function DashboardPage() {
           formatAs="currency"
         />
         <KpiCard
+          title="Gross Margin"
+          dataUrl="/api/v1/analytics/gross-margin?shop_id=1"
+          dataKey="gross_margin_percentage"
+          formatAs="percentage"
+        />
+        <KpiCard
           title="Total Inventory Value"
           dataUrl="/api/v1/analytics/inventory-value?shop_id=1"
           dataKey="total_inventory_value"
