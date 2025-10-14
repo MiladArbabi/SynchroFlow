@@ -29,9 +29,7 @@ const colors = {
     focus: "#7b809a",
   },
 
-  transparent: {
-    main: "transparent",
-  },
+  transparent: { main: "rgba(0,0,0,0)" },
 
   white: {
     main: "#ffffff",
