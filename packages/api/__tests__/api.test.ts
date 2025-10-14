@@ -438,7 +438,7 @@ describe('GET /api/v1/analytics/gross-revenue', () => {
 
   it('should calculate and return the total gross revenue', async () => {
     const response = await request(app)
-      .get('/api/v1/analytics/gross-revenue')
+      .get('/v1/analytics/gross-revenue')
       .query({ shop_id: shopId });
     
     const expectedRevenue = 1000.00; // 500 + 500
@@ -446,5 +446,50 @@ describe('GET /api/v1/analytics/gross-revenue', () => {
     expect(response.status).toBe(200);
     expect(response.body).toHaveProperty('gross_revenue');
     expect(response.body.gross_revenue).toBeCloseTo(expectedRevenue);
+  });
+});
+
+describe('GET /v1/analytics/gross-margin', () => {
+  let shopId: number;
+
+  beforeEach(async () => {
+    // This will clean all tables before this test runs
+    await db.raw('TRUNCATE shops, inventory_truth, historical_sales, product_costs RESTART IDENTITY CASCADE');
+    
+    const [shop] = await db('shops').insert({ name: "Margin Test Store", platform: "shopify", contact_email: "margin@test.com", auth_secret: "margin-secret", primary_erp_type: "TestERP", primary_ecomm_type: "TestPlatform" }).returning('id');
+    shopId = shop.id;
+
+    // Seed products with prices
+    await db('inventory_truth').insert([
+      { sku: 'MARGIN-SKU-01', shop_id: shopId, price: 100.00, quantity_available: 10 },
+      { sku: 'MARGIN-SKU-02', shop_id: shopId, price: 200.00, quantity_available: 10 },
+    ]);
+
+    // Seed costs for those products
+    await db('product_costs').insert([
+        { sku: 'MARGIN-SKU-01', purchase_price: 35.00, landed_cost_per_unit: 40.00 },
+        { sku: 'MARGIN-SKU-02', purchase_price: 140.00, landed_cost_per_unit: 150.00 },
+    ]);
+
+    // Seed some sales
+    await db('historical_sales').insert([
+      { shop_id: shopId, sku: 'MARGIN-SKU-01', quantity_sold: 10, sale_date: new Date() }, // Revenue: 1000, COGS: 400
+      { shop_id: shopId, sku: 'MARGIN-SKU-02', quantity_sold: 5, sale_date: new Date() }, // Revenue: 1000, COGS: 750
+    ]);
+  });
+
+  it('should calculate and return the gross margin percentage', async () => {
+    const response = await request(app)
+      .get(`/v1/analytics/gross-margin?shop_id=${shopId}`);
+    
+    // Total Revenue = 1000 + 1000 = 2000
+    // Total COGS = 400 + 750 = 1150
+    // Gross Profit = 2000 - 1150 = 850
+    // Gross Margin % = (850 / 2000) * 100 = 42.5
+    const expectedMargin = 42.5;
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty('gross_margin_percentage');
+    expect(response.body.gross_margin_percentage).toBeCloseTo(expectedMargin);
   });
 });

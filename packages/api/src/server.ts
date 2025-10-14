@@ -5,7 +5,7 @@ import {
   getDemandForecastForSku, 
   calculateTotalInventoryValue,
   simulatePaymentDelay } from './services/forecasting.service';
-import { calculateGrossRevenue } from './services/analytics.service';
+import { calculateGrossRevenue, calculateGrossMargin } from './services/analytics.service';
 import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
 
@@ -268,7 +268,7 @@ app.delete('/api/v1/mappings/:id', async (req, res) => {
 });
 
 // --- ANALYTICS ENDPOINTS ---
-app.get('/api/v1/analytics/gross-revenue', async (req, res) => {
+app.get('/v1/analytics/gross-revenue', async (req, res) => {
   try {
     const shopId = Number(req.query.shop_id);
     if (isNaN(shopId)) {
@@ -280,6 +280,20 @@ app.get('/api/v1/analytics/gross-revenue', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to calculate gross revenue.' });
+  }
+});
+
+app.get('/v1/analytics/gross-margin', async (req, res) => {
+  try {
+    const shopId = Number(req.query.shop_id);
+    if (isNaN(shopId)) {
+      return res.status(400).json({ error: 'A valid shop_id is required.' });
+    }
+    const margin = await calculateGrossMargin(shopId);
+    res.json({ gross_margin_percentage: margin });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to calculate gross margin.' });
   }
 });
 
