@@ -85,6 +85,25 @@ test('fetches and displays the total inventory value', async () => {
   expect(valueElement).toBeInTheDocument();
 });
 
+test('fetches and displays the gross margin percentage', async () => {
+  const fakeApiResponse = {
+    gross_margin_percentage: 42.5
+  };
+  mockedAxiosGet.mockResolvedValue({ data: fakeApiResponse });
+
+  render(
+    <MemoryRouter>
+      <UserProvider>
+        <DashboardPage />
+      </UserProvider>
+    </MemoryRouter>
+  );
+
+  // Wait for the formatted percentage value to appear
+  const valueElement = await screen.findByText(/42\.5%/);
+  expect(valueElement).toBeInTheDocument();
+});
+
 test('allows a user to run a payment delay simulation and updates the chart', async () => {
   // --- 1. SETUP ---
   // Mock the initial data fetch

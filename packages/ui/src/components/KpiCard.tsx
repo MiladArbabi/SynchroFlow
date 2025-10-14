@@ -3,12 +3,16 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 // --- Helper Functions ---
-function formatValue(value: number, format: 'currency' | 'number' | undefined): string {
+function formatValue(value: number, format: 'currency' | 'number' | 'percentage' | undefined): string {
   if (format === 'currency') {
     return value.toLocaleString('en-US', {
       style: 'currency',
       currency: 'USD',
     });
+  }
+  if (format === 'percentage') {
+    // Format as a percentage with one decimal place, e.g., 42.5%
+    return `${value.toFixed(1)}%`;
   }
   return value.toLocaleString('en-US');
 }
@@ -22,7 +26,7 @@ interface KpiCardProps {
   // Props for "smart" mode
   dataUrl?: string;
   dataKey?: string;
-  formatAs?: 'currency' | 'number';
+  formatAs?: 'currency' | 'number' | 'percentage';
 }
 
 export const KpiCard: React.FC<KpiCardProps> = (props) => {
