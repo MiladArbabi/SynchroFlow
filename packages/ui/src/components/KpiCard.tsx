@@ -1,82 +1,72 @@
 // packages/ui/src/components/KpiCard.tsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { ComplexStatisticsCard } from './Cards/StatisticsCards/ComplexStatisticsCard';
 
-// --- Helper Functions ---
-function formatValue(value: number, format: 'currency' | 'number' | 'percentage' | undefined): string {
+// Helper function for formatting values
+function formatValue(value: number, format?: 'currency' | 'number' | 'percentage'): string {
   if (format === 'currency') {
-    return value.toLocaleString('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    });
+    return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
   }
   if (format === 'percentage') {
-    // Format as a percentage with one decimal place, e.g., 42.5%
     return `${value.toFixed(1)}%`;
   }
   return value.toLocaleString('en-US');
 }
 
-// --- Component Props ---
+// Define the props for our smart wrapper
 interface KpiCardProps {
   title: string;
-  // Props for "dumb" mode
-  value?: string;
-  isLoading?: boolean;
-  // Props for "smart" mode
-  dataUrl?: string;
-  dataKey?: string;
+  dataUrl: string;
+  dataKey: string;
   formatAs?: 'currency' | 'number' | 'percentage';
+  icon: string;
+  color?: "primary" | "secondary" | "info" | "success" | "warning" | "error" | "light" | "dark";
+  value: string;
+  isLoading: boolean
 }
 
-export const KpiCard: React.FC<KpiCardProps> = (props) => {
-  // Internal state for smart-mode data fetching
-  const [fetchedValue, setFetchedValue] = useState<number | null>(null);
-  const [isFetching, setIsFetching] = useState(true);
+export const KpiCard: React.FC<KpiCardProps> = ({ title, dataUrl, dataKey, formatAs, icon, color }) => {
+  const [value, setValue] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Define the async function to fetch data
     const fetchData = async () => {
-      setIsFetching(true);
+      setIsLoading(true);
       setError('');
       try {
-        const response = await axios.get(props.dataUrl);
-        if (response.data && response.data[props.dataKey!] !== undefined) {
-          setFetchedValue(response.data[props.dataKey!]);
+        const response = await axios.get(dataUrl);
+        if (response.data && response.data[dataKey] !== undefined) {
+          setValue(response.data[dataKey]);
         } else {
-          setError('Invalid data structure.');
+          setError('Invalid data.');
         }
       } catch (_err) {
-        setError('Failed to fetch data.');
+        setError('Error');
       } finally {
-        setIsFetching(false);
+        setIsLoading(false);
       }
     };
 
     fetchData();
-  }, [props.dataUrl, props.dataKey, fetchedValue]);
+  }, [dataUrl, dataKey]);
 
-  // Decide whether to use internal state (smart) or passed-in props (dumb)
-  const isLoading = props.dataUrl ? isFetching : props.isLoading ?? false;
-  const finalValue = props.dataUrl ? (fetchedValue !== null ? formatValue(fetchedValue, props.formatAs) : '--') : props.value;
-
-  // --- Render Logic ---
-  let displayValue = '--';
+  let displayValue: string | number = '...';
   if (isLoading) {
-    displayValue = 'Loading...';
+    displayValue = '...';
   } else if (error) {
     displayValue = 'Error';
-  } else if (finalValue !== undefined) {
-    displayValue = finalValue;
+  } else if (value !== null) {
+    displayValue = formatValue(value, formatAs);
   }
-  
+
   return (
-    <div className="bg-white p-6 border border-gray-200 rounded-lg">
-      <h3 className="text-gray-600 text-sm font-medium">{props.title}</h3>
-      <p className={`text-gray-800 text-3xl font-bold mt-2 ${error ? 'text-red-500' : ''}`}>
-        {displayValue}
-      </p>
-    </div>
+    <ComplexStatisticsCard
+      title={title}
+      count={displayValue}
+      icon={icon}
+      color={color}
+    />
   );
 };
