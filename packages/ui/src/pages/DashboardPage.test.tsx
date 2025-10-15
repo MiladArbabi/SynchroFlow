@@ -124,3 +124,21 @@ test('clicking the chart opens the simulation modal', async () => {
   // This uses the test from the SimulationModal component to ensure it's fully rendered.
   expect(screen.getByLabelText(/Payment Amount/i)).toBeInTheDocument();
   });
+
+  test('fetches and displays the cost of stockout', async () => {
+  // 1. SETUP
+  const fakeApiResponse = {
+    cost_of_stockout: 1680.00,
+  };
+  mockedAxiosGet.mockResolvedValue({ data: fakeApiResponse });
+
+  renderWithProviders(<DashboardPage />);
+
+  // 3. ASSERTION
+  // Wait for the formatted currency value to appear
+  const valueElement = await screen.findByText('$1,680.00');
+  expect(valueElement).toBeInTheDocument();
+
+  // Also check that the corresponding title is rendered
+  expect(screen.getByText(/Cost of Stockout/i)).toBeInTheDocument();
+});
