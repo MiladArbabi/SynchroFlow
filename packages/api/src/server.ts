@@ -9,7 +9,8 @@ import {
   calculateGrossRevenue, 
   calculateGrossMargin,
   getInventoryHealth,
-  calculateCostOfStockout } from './services/analytics.service';
+  calculateCostOfStockout,
+  getFulfillmentPipeline } from './services/analytics.service';
 import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
 
@@ -329,6 +330,21 @@ app.get('/v1/analytics/cost-of-stockout', async (req, res) => {
   } catch (error) {
     console.error('Error calculating cost of stockout:', error);
     res.status(500).json({ error: 'Failed to calculate cost of stockout.' });
+  }
+});
+
+app.get('/v1/analytics/fulfillment-pipeline', async (req, res) => {
+  try {
+    const shopId = Number(req.query.shop_id);
+    if (isNaN(shopId)) {
+      return res.status(400).json({ error: 'A valid shop_id is required.' });
+    }
+
+    const pipelineData = await getFulfillmentPipeline(shopId);
+    res.json(pipelineData);
+  } catch (error) {
+    console.error('Error fetching fulfillment pipeline:', error);
+    res.status(500).json({ error: 'Failed to fetch fulfillment pipeline data.' });
   }
 });
 

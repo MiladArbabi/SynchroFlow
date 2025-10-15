@@ -98,3 +98,25 @@ export async function calculateCostOfStockout(shopId: number, sku: string): Prom
 
   return costOfStockout;
 }
+
+export async function getFulfillmentPipeline(shopId: number): Promise<{ [key: string]: number }> {
+  const statusCounts = await db('order_fulfillment_status')
+    .where({ shop_id: shopId })
+    .groupBy('status')
+    .select('status', db.raw('count(*)::int as count'));
+
+  // The query returns an array like [{ status: 'processing', count: 2 }].
+  // We need to transform it into the object { processing: 2 }.
+  const pipeline = statusCounts.reduce((acc, row) => {
+    // We don't include 'cancelled' orders in the pipeline view.
+    if (row.status !== 'cancelled') {
+      acc[row.status] = row.count;
+    }
+    return acc;
+  }, {} as { [key: string]: number });
+
+  // Ensure all keys are present, even if their count is 0
+  const defaults = { processing: 0, in_transit: 0, delivered: 0 };
+
+  return { ...defaults, ...pipeline };
+}
