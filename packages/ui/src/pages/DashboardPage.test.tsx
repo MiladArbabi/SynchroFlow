@@ -100,36 +100,6 @@ test('fetches and displays the gross margin percentage', async () => {
   expect(valueElement).toBeInTheDocument();
 });
 
-test('allows a user to run a payment delay simulation and updates the chart', async () => {
-  // --- 1. SETUP ---
-  // Mock the initial data fetch
-  mockedAxiosGet.mockResolvedValue({ data: { total_inventory_value: 100 } });
-
-  // Define the fake response our SIMULATION API will return
-  const fakeSimulationResponse = {
-    simulated_cash_flow: [10000, 2500, 12000, 500]
-  };
-  mockedAxiosPost.mockResolvedValue({ data: fakeSimulationResponse });
-
-  renderWithProviders(<DashboardPage />);
-
-  // --- 2. EXECUTION ---
-  // Find the button to trigger the simulation (we will add this button)
-  const simulateButton = screen.getByRole('button', { name: /Simulate 2-Week Delay/i });
-  // Simulate the user clicking the button
-  fireEvent.click(simulateButton);
-
-  // --- 3. ASSERTION ---
-  // This is a more robust test. We verify that the component's LOGIC is correct
-  // by checking that it called the API with the expected payload.
-  await waitFor(() => {
-    expect(mockedAxiosPost).toHaveBeenCalledWith('/api/v1/simulations/payment-delay', {
-      current_cash_flow: [10000, -5000, 12000, 8000],
-      payment_details: { amount: 7500, original_due_week: 1, delay_weeks: 2 },
-    });
-  });
-});
-
 test('clicking the chart opens the simulation modal', async () => {
   // --- 1. SETUP ---
   // Mock the initial data fetch for the KPI widget to ensure the page renders

@@ -540,3 +540,64 @@ describe('GET /v1/analytics/inventory-health', () => {
     expect(stockoutItem.status).toBe('Stockout');
   });
 });
+
+describe('GET /v1/analytics/cost-of-stockout', () => {
+  let shopId: number;
+  const testSku = 'STOCKOUT-SKU-01';
+
+  beforeEach(async () => {
+    await db.raw('TRUNCATE shops, inventory_truth, historical_sales, product_costs RESTART IDENTITY CASCADE');
+
+    const [shop] = await db('shops').insert({
+      name: "Stockout Test Store",
+      platform: "shopify",
+      contact_email: "stockout@test.com",
+      auth_secret: "so-secret",
+      primary_erp_type: "Test",
+      primary_ecomm_type: "Test"
+    }).returning('id');
+    shopId = shop.id;
+
+    // Seed product with price
+    await db('inventory_truth').insert({
+      sku: testSku,
+      shop_id: shopId,
+      price: 100.00,
+      quantity_available: 10
+    });
+
+    // Seed cost for the product
+    await db('product_costs').insert({
+      sku: testSku,
+      purchase_price: 50.00,
+      landed_cost_per_unit: 60.00
+    });
+
+    // Seed 10 days of sales data (30 units total -> 3 units/day)
+    for (let i = 1; i <= 10; i++) {
+      await db('historical_sales').insert({
+        shop_id: shopId,
+        sku: testSku,
+        quantity_sold: 3,
+        sale_date: new Date(`2025-10-${String(i).padStart(2, '0')}`)
+      });
+    }
+  });
+
+  it('should calculate and return the cost of stockout for a given SKU', async () => {
+    const response = await request(app)
+      .get('/v1/analytics/cost-of-stockout')
+      .query({ shop_id: shopId, sku: testSku });
+
+    // Calculation:
+    // Daily Sales Velocity = 30 units / 10 days = 3 units/day
+    // Profit Per Unit = $100 (price) - $60 (cost) = $40
+    // Lead Time = 14 days (hardcoded)
+    // Cost of Stockout = 3 * 14 * 40 = $1680
+    const expectedCost = 1680;
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty('cost_of_stockout');
+    expect(response.body.cost_of_stockout).toBeCloseTo(expectedCost);
+  });
+});
