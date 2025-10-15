@@ -601,3 +601,50 @@ describe('GET /v1/analytics/cost-of-stockout', () => {
     expect(response.body.cost_of_stockout).toBeCloseTo(expectedCost);
   });
 });
+
+describe('GET /v1/analytics/fulfillment-pipeline', () => {
+  let shopId: number;
+
+  beforeEach(async () => {
+    // Run migrations to ensure our new table exists for this test suite
+    await db.migrate.latest();
+
+    const [shop] = await db('shops').insert({
+      name: "Fulfillment Test Store",
+      platform: "shopify",
+      contact_email: "fulfill@test.com",
+      auth_secret: "fulfill-secret",
+      primary_erp_type: "Test",
+      primary_ecomm_type: "Test"
+    }).returning('id');
+    shopId = shop.id;
+
+    // Seed fulfillment statuses
+    await db('order_fulfillment_status').insert([
+      { shop_id: shopId, order_id: '1001', status: 'processing' },
+      { shop_id: shopId, order_id: '1002', status: 'processing' },
+      { shop_id: shopId, order_id: '1003', status: 'in_transit' },
+      { shop_id: shopId, order_id: '1004', status: 'delivered' },
+      { shop_id: shopId, order_id: '1005', status: 'delivered' },
+      { shop_id: shopId, order_id: '1006', status: 'delivered' },
+    ]);
+  });
+
+  afterEach(async () => {
+    // Rollback migrations after each test to keep the environment clean
+    await db.migrate.rollback();
+  });
+
+  it('should return aggregated counts for each fulfillment status', async () => {
+    const response = await request(app)
+      .get('/v1/analytics/fulfillment-pipeline')
+      .query({ shop_id: shopId });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      processing: 2,
+      in_transit: 1,
+      delivered: 3,
+    });
+  });
+});

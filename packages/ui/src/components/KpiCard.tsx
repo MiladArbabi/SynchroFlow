@@ -22,8 +22,6 @@ interface KpiCardProps {
   formatAs?: 'currency' | 'number' | 'percentage';
   icon: string;
   color?: "primary" | "secondary" | "info" | "success" | "warning" | "error" | "light" | "dark";
-  value: string;
-  isLoading: boolean
 }
 
 export const KpiCard: React.FC<KpiCardProps> = ({ title, dataUrl, dataKey, formatAs, icon, color }) => {
