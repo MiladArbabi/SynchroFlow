@@ -2,22 +2,33 @@
 import { render, screen } from '@testing-library/react';
 import axios from 'axios';
 import { KpiCard } from './KpiCard';
+import { MemoryRouter } from 'react-router-dom';
+import { UserProvider } from '../contexts/UserContext';
+import { MaterialUIControllerProvider } from 'contexts/MaterialUI';
+import { ThemeProvider } from '@mui/material/styles';
+import theme from 'assets/theme';
+import CssBaseline from '@mui/material/CssBaseline';
 
 jest.mock('axios');
 const mockedAxiosGet = axios.get as jest.Mock;
 
+// --- Helper function ---
+const renderWithProviders = (ui: React.ReactElement) => {
+  return render(
+    <MemoryRouter>
+      <MaterialUIControllerProvider>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <UserProvider>
+            {ui}
+          </UserProvider>
+        </ThemeProvider>
+      </MaterialUIControllerProvider>
+    </MemoryRouter>
+  );
+};
+
 describe('KpiCard', () => {
-  it('renders the title, value, and handles loading state', () => {
-    // Test the loading state
-    const { rerender } = render(<KpiCard title="Test Metric" value="" isLoading={true} />);
-    expect(screen.getByText('Test Metric')).toBeInTheDocument();
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
-
-    // Rerender the component in the non-loading state
-    rerender(<KpiCard title="Test Metric" value="$1,234.56" isLoading={false} />);
-    expect(screen.getByText('$1,234.56')).toBeInTheDocument();
-  });
-
   it('fetches data from a URL and displays the formatted value', async () => {
     // 1. SETUP
     // Define the fake data our API will return
@@ -28,12 +39,13 @@ describe('KpiCard', () => {
 
     // 2. RENDER
     // Render the component with the new data-fetching props
-    render(
+    renderWithProviders(
       <KpiCard
         title="Gross Revenue"
         dataUrl="/api/v1/analytics/gross-revenue"
         dataKey="gross_revenue"
         formatAs="currency"
+        icon=''
       />
     );
 

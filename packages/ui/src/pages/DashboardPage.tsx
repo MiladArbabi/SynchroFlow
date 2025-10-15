@@ -73,20 +73,32 @@ export function DashboardPage() {
           dataUrl="/api/v1/analytics/gross-revenue?shop_id=1"
           dataKey="gross_revenue"
           formatAs="currency"
+          icon="leaderboard"
+          color="dark"
         />
         <KpiCard
           title="Gross Margin"
           dataUrl="/api/v1/analytics/gross-margin?shop_id=1"
           dataKey="gross_margin_percentage"
           formatAs="percentage"
+          icon="store"
+          color="success"
         />
         <KpiCard
           title="Total Inventory Value"
           dataUrl="/api/v1/analytics/inventory-value?shop_id=1"
           dataKey="total_inventory_value"
           formatAs="currency"
+          icon="paid"
+          color="primary"
         />
-        <KpiCard title="Cash Conversion Cycle" value="--" isLoading={false} />
+        {/* This will now show an error by design, which is what we want for a placeholder */}
+        <KpiCard 
+          title="Cash Conversion Cycle" 
+          dataUrl="/api/v1/analytics/ccc" // This endpoint doesn't exist yet
+          dataKey="ccc_days"
+          icon="update"
+        />
         {/* More KPIs will be added here */}
       </div>
       <CashFlowChart data={cashFlowData} onClick={() => setIsSimulationModalOpen(true)} />

@@ -4,21 +4,36 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { DashboardPage } from './DashboardPage';
 import { UserProvider } from '../contexts/UserContext';
+import { MaterialUIControllerProvider } from 'contexts/MaterialUI';
+import { ThemeProvider } from '@mui/material/styles';
+import theme from 'assets/theme';
+import CssBaseline from '@mui/material/CssBaseline';
 import axios from 'axios';
 
 jest.mock('axios');
 const mockedAxiosGet = axios.get as jest.Mock;
 const mockedAxiosPost = axios.post as jest.Mock;
 
-test('renders the main dashboard and hides the sandbox banner in live mode', () => {
-  render(
+// --- Helper function ---
+const renderWithProviders = (ui: React.ReactElement, { userProviderProps = {} } = {}) => {
+  return render(
     <MemoryRouter>
-      {/* Override the context to simulate live mode */}
-      <UserProvider value={{ isSandbox: false }}>
-        <DashboardPage />
-      </UserProvider>
+      <MaterialUIControllerProvider>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <UserProvider {...userProviderProps}>
+            {ui}
+          </UserProvider>
+        </ThemeProvider>
+      </MaterialUIControllerProvider>
     </MemoryRouter>
   );
+};
+
+test('renders the main dashboard and hides the sandbox banner in live mode', () => {
+  renderWithProviders(<DashboardPage />, {
+    userProviderProps: { value: { isSandbox: false } },
+  });
 
   // Look for the main page heading
   expect(screen.getByRole('heading', { name: /FinOps Command Center/i })).toBeInTheDocument();
@@ -28,14 +43,7 @@ test('renders the main dashboard and hides the sandbox banner in live mode', () 
 });
 
 test('displays a sandbox banner when in sandbox mode', () => {
-  render(
-    <MemoryRouter>
-      {/* Use the default sandbox mode value */}
-      <UserProvider>
-        <DashboardPage />
-      </UserProvider>
-    </MemoryRouter>
-  );
+  renderWithProviders(<DashboardPage />);
 
   // Assert that the sandbox banner IS visible
   expect(screen.getByText(/You are currently in a sandbox environment/i)).toBeInTheDocument();
@@ -44,13 +52,9 @@ test('displays a sandbox banner when in sandbox mode', () => {
 
 test('clicking the sandbox banner button opens the connection modal', async () => {
   const user = userEvent.setup();
-  render(
-    <MemoryRouter>
-      <UserProvider value={{ isSandbox: true }}>
-        <DashboardPage />
-      </UserProvider>
-    </MemoryRouter>
-  );
+  renderWithProviders(<DashboardPage />, {
+    userProviderProps: { value: { isSandbox: true } },
+  });
 
   // Find and click the button in the banner
   const connectButton = screen.getByRole('button', { name: /Connect Your Store/i });
@@ -69,13 +73,7 @@ test('fetches and displays the total inventory value', async () => {
   // Tell our mock to return this fake data when called
   mockedAxiosGet.mockResolvedValue({ data: fakeApiResponse });
 
-  render(
-    <MemoryRouter>
-      <UserProvider>
-        <DashboardPage />
-      </UserProvider>
-    </MemoryRouter>
-  );
+  renderWithProviders(<DashboardPage />);
 
   // --- 2. ASSERTION ---
   // The component will fetch data on render. We need to wait for the
@@ -83,6 +81,10 @@ test('fetches and displays the total inventory value', async () => {
   // We look for "$125,340.75"
   const valueElement = await screen.findByText(/\$125,340\.75/);
   expect(valueElement).toBeInTheDocument();
+
+  // A robust test: Assert that the icon for this card is rendered.
+  // "paid" is the name of the Material Icon for currency/value.
+  expect(screen.getByText("paid")).toBeInTheDocument();
 });
 
 test('fetches and displays the gross margin percentage', async () => {
@@ -91,13 +93,7 @@ test('fetches and displays the gross margin percentage', async () => {
   };
   mockedAxiosGet.mockResolvedValue({ data: fakeApiResponse });
 
-  render(
-    <MemoryRouter>
-      <UserProvider>
-        <DashboardPage />
-      </UserProvider>
-    </MemoryRouter>
-  );
+  renderWithProviders(<DashboardPage />);
 
   // Wait for the formatted percentage value to appear
   const valueElement = await screen.findByText(/42\.5%/);
@@ -115,13 +111,7 @@ test('allows a user to run a payment delay simulation and updates the chart', as
   };
   mockedAxiosPost.mockResolvedValue({ data: fakeSimulationResponse });
 
-  render(
-    <MemoryRouter>
-      <UserProvider>
-        <DashboardPage />
-      </UserProvider>
-    </MemoryRouter>
-  );
+  renderWithProviders(<DashboardPage />);
 
   // --- 2. EXECUTION ---
   // Find the button to trigger the simulation (we will add this button)
@@ -145,13 +135,7 @@ test('clicking the chart opens the simulation modal', async () => {
   // Mock the initial data fetch for the KPI widget to ensure the page renders
   mockedAxiosGet.mockResolvedValue({ data: { total_inventory_value: 100 } });
 
-  render(
-    <MemoryRouter>
-      <UserProvider>
-        <DashboardPage />
-      </UserProvider>
-    </MemoryRouter>
-  );
+  renderWithProviders(<DashboardPage />);
 
   // --- 2. EXECUTION ---
   // Wait for the chart to be visible by finding its title
