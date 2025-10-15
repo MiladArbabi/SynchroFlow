@@ -5,7 +5,10 @@ import {
   getDemandForecastForSku, 
   calculateTotalInventoryValue,
   simulatePaymentDelay } from './services/forecasting.service';
-import { calculateGrossRevenue, calculateGrossMargin } from './services/analytics.service';
+import { 
+  calculateGrossRevenue, 
+  calculateGrossMargin,
+  getInventoryHealth } from './services/analytics.service';
 import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
 
@@ -294,6 +297,20 @@ app.get('/v1/analytics/gross-margin', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to calculate gross margin.' });
+  }
+});
+
+app.get('/v1/analytics/inventory-health', async (req, res) => {
+  try {
+    const shopId = Number(req.query.shop_id);
+    if (isNaN(shopId)) {
+      return res.status(400).json({ error: 'A valid shop_id is required.' });
+    }
+    const healthData = await getInventoryHealth(shopId);
+    res.json(healthData);
+  } catch (error) {
+    console.error('Error fetching inventory health:', error);
+    res.status(500).json({ error: 'Failed to fetch inventory health data.' });
   }
 });
 

@@ -493,3 +493,50 @@ describe('GET /v1/analytics/gross-margin', () => {
     expect(response.body.gross_margin_percentage).toBeCloseTo(expectedMargin);
   });
 });
+
+describe('GET /v1/analytics/inventory-health', () => {
+  let shopId: number;
+
+  beforeEach(async () => {
+    // This single command efficiently cleans all necessary tables.
+    await db.raw('TRUNCATE shops, inventory_truth RESTART IDENTITY CASCADE');
+
+    const [shop] = await db('shops').insert({ 
+      name: "Health Test Store", 
+      platform: "shopify",
+      contact_email: "health@test.com",
+     auth_secret: "health-secret",
+     primary_erp_type: "Test",
+     primary_ecomm_type: "Test" 
+    }).returning('id');
+    shopId = shop.id;
+
+    // Seed inventory with different stock levels
+    await db('inventory_truth').insert([
+      // Healthy: quantity > 10
+      { sku: 'HEALTHY-SKU', shop_id: shopId, quantity_available: 50, price: 10 },
+      // At Risk: quantity between 1 and 10
+      { sku: 'AT-RISK-SKU', shop_id: shopId, quantity_available: 5, price: 10 },
+      // Stockout: quantity = 0
+      { sku: 'STOCKOUT-SKU', shop_id: shopId, quantity_available: 0, price: 10 },
+    ]);
+  });
+
+  it('should return a list of products with their inventory health status', async () => {
+    const response = await request(app)
+      .get('/v1/analytics/inventory-health')
+      .query({ shop_id: shopId });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(3);
+
+    // Find each item in the response and check its status
+    const healthyItem = response.body.find((item: any) => item.sku === 'HEALTHY-SKU');
+    const atRiskItem = response.body.find((item: any) => item.sku === 'AT-RISK-SKU');
+    const stockoutItem = response.body.find((item: any) => item.sku === 'STOCKOUT-SKU');
+
+    expect(healthyItem.status).toBe('Healthy');
+    expect(atRiskItem.status).toBe('At Risk');
+    expect(stockoutItem.status).toBe('Stockout');
+  });
+});
