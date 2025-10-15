@@ -6,6 +6,8 @@ import { SimulationModal } from '../components/SimulationModal';
 import { useUser } from '../contexts/UserContext';
 import { ConnectStoreModal } from '../components/ConnectStoreModal';
 import { KpiCard } from '../components/KpiCard';
+import { InventoryHealthTable } from '../components/InventoryHealthTable';
+
 
 const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <div className="rounded-md bg-blue-50 p-4 mb-8">
@@ -102,17 +104,10 @@ export function DashboardPage() {
         {/* More KPIs will be added here */}
       </div>
       <CashFlowChart data={cashFlowData} onClick={() => setIsSimulationModalOpen(true)} />
+      {/* Add the new Inventory Health Table below the chart */}
       <div style={{ marginTop: '2rem' }}>
-        <button
-          onClick={handleSimulation}
-          style={{
-            backgroundColor: '#2F54EB', color: 'white', fontWeight: '600',
-            padding: '0.5rem 1rem', border: 'none', borderRadius: '0.25rem'
-          }}
-        >
-          Simulate 2-Week Delay
-        </button>
-       </div>
+        <InventoryHealthTable />
+      </div>
       <SimulationModal isOpen={isSimulationModalOpen} onClose={() => setIsSimulationModalOpen(false)} />
       <ConnectStoreModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} />
     </div>
