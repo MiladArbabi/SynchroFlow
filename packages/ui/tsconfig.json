@@ -15,5 +15,14 @@
       "jsx": "react-jsx",
       "esModuleInterop": true
    },
+   "paths": {
+    "assets/*": ["assets/*"],
+    "components/*": ["components/*"],
+    "context": ["contexts/MaterialUI.tsx"],
+    "contexts/*": ["contexts/*"],
+    "examples/*": ["components/*"],
+    "layouts/*": ["layouts/*"],
+    "routes": ["routes.tsx"]
+  },
    "include": ["src"]
   }

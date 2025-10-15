@@ -22,8 +22,10 @@ export default defineConfig({
       'assets': path.resolve(__dirname, './src/assets'),
       'components': path.resolve(__dirname, './src/components'),
       'context': path.resolve(__dirname, './src/contexts/MaterialUI.tsx'),
+      'contexts': path.resolve(__dirname, './src/contexts'),
       'examples': path.resolve(__dirname, './src/components'),
       'layouts': path.resolve(__dirname, './src/layouts'),
+      'routes': path.resolve(__dirname, './src/routes.tsx'),
     },
   },
 })

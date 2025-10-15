@@ -24,6 +24,7 @@ test('renders the professional layout with Sidenav and Navbar', () => {
   // Assert that the main brand name is visible in the new Sidenav.
   expect(screen.getByText(/SynchroFlow/i)).toBeInTheDocument();
 
-  // As a bonus, let's check for an element in the new DashboardNavbar.
-  expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
+  // Assert that the search bar is visible in the DashboardNavbar.
+  // This is a more robust test query.
+  expect(screen.getByRole('textbox', { name: /search here/i })).toBeInTheDocument();
 });
