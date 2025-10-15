@@ -94,6 +94,14 @@ export function DashboardPage() {
           icon="paid"
           color="primary"
         />
+        <KpiCard
+          title="Cost of Stockout"
+          dataUrl="/api/v1/analytics/cost-of-stockout?shop_id=1&sku=STOCKOUT-SKU-01"
+          dataKey="cost_of_stockout"
+          formatAs="currency"
+          icon="warning"
+          color="warning"
+        />
         {/* This will now show an error by design, which is what we want for a placeholder */}
         <KpiCard 
           title="Cash Conversion Cycle" 
