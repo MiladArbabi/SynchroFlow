@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import { MaterialUIControllerProvider } from './contexts/MaterialUI';
@@ -21,9 +21,12 @@ test('renders the professional layout with Sidenav and Navbar', () => {
     </MemoryRouter>
   );
 
+  screen.debug();
+
   // Assert that the main brand name is visible in the new Sidenav.
   expect(screen.getByText(/SynchroFlow/i)).toBeInTheDocument();
 
-  // As a bonus, let's check for an element in the new DashboardNavbar.
-  expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
+  // A more robust way to confirm the Navbar has rendered is to find a unique element within it,
+  // like the search input field.
+  expect(screen.getByRole('textbox', { name: /search here/i })).toBeInTheDocument();
 });

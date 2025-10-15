@@ -8,8 +8,6 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from './assets/theme';
 
-jest.mock('./routes.js', () => []);
-
 test('renders the main App component without crashing', () => {
   try {
     render(
