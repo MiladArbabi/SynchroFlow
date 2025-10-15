@@ -57,3 +57,44 @@ export async function getInventoryHealth(shopId: number): Promise<any[]> {
 
   return itemsWithStatus;
 }
+
+export async function calculateCostOfStockout(shopId: number, sku: string): Promise<number> {
+  // 1. Calculate Daily Sales Velocity
+  const salesStats = await db('historical_sales')
+    .where({ shop_id: shopId, sku: sku })
+    .select(
+      db.raw('SUM(quantity_sold) as total_sold'),
+      db.raw('COUNT(DISTINCT sale_date::date) as days_of_sales')
+    )
+    .first();
+
+  // If there are no sales, the stockout cost is zero.
+  if (!salesStats || !salesStats.total_sold || Number(salesStats.days_of_sales) === 0) {
+    return 0;
+  }
+
+  const dailyVelocity = Number(salesStats.total_sold) / Number(salesStats.days_of_sales);
+
+  // 2. Calculate Profit Per Unit
+  const productInfo = await db('inventory_truth as it')
+    .leftJoin('product_costs as pc', 'it.sku', 'pc.sku')
+    .where('it.shop_id', shopId)
+    .andWhere('it.sku', sku)
+    .select('it.price', 'pc.landed_cost_per_unit')
+    .first();
+
+  // If we're missing price or cost data, we can't calculate profit.
+  if (!productInfo || productInfo.price == null || productInfo.landed_cost_per_unit == null) {
+    return 0;
+  }
+
+  const profitPerUnit = Number(productInfo.price) - Number(productInfo.landed_cost_per_unit);
+
+  // 3. Hardcoded Lead Time (as per requirements)
+  const leadTimeInDays = 14;
+
+  // Final Calculation
+  const costOfStockout = dailyVelocity * leadTimeInDays * profitPerUnit;
+
+  return costOfStockout;
+}

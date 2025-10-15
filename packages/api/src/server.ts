@@ -8,7 +8,8 @@ import {
 import { 
   calculateGrossRevenue, 
   calculateGrossMargin,
-  getInventoryHealth } from './services/analytics.service';
+  getInventoryHealth,
+  calculateCostOfStockout } from './services/analytics.service';
 import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
 
@@ -311,6 +312,23 @@ app.get('/v1/analytics/inventory-health', async (req, res) => {
   } catch (error) {
     console.error('Error fetching inventory health:', error);
     res.status(500).json({ error: 'Failed to fetch inventory health data.' });
+  }
+});
+
+app.get('/v1/analytics/cost-of-stockout', async (req, res) => {
+  try {
+    const shopId = Number(req.query.shop_id);
+    const sku = req.query.sku as string;
+
+    if (isNaN(shopId) || !sku) {
+      return res.status(400).json({ error: 'A valid shop_id and sku are required.' });
+    }
+
+    const cost = await calculateCostOfStockout(shopId, sku);
+    res.json({ cost_of_stockout: cost });
+  } catch (error) {
+    console.error('Error calculating cost of stockout:', error);
+    res.status(500).json({ error: 'Failed to calculate cost of stockout.' });
   }
 });
 
