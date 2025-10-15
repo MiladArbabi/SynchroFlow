@@ -1,21 +1,36 @@
-import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+// packages/ui/src/Layout.tsx
+import { useState, useEffect } from "react";
+import { useLocation, Outlet } from "react-router-dom";
 
-// Import the components we copied from the Material Dashboard template
-import Sidenav from './components/Sidenav';
-import DashboardNavbar from './components/DashboardNavbar';
-import DashboardLayout from './components/DashboardLayout';
+// Material Dashboard 2 React example components
+import Sidenav from "components/Sidenav";
+import Configurator from "components/Configurator";
+import DashboardLayout from "components/DashboardLayout";
+import DashboardNavbar from "components/DashboardNavbar";
 
-// Import the context and routes
-import { useMaterialUIController, setMiniSidenav } from './contexts/MaterialUI';
-import routes from './routes'; // The routes file for the Sidenav
+// Material Dashboard 2 React context
+import { useMaterialUIController, setMiniSidenav, setOpenConfigurator } from "contexts/MaterialUI";
+
+// Images and routes
+import brandWhite from "assets/images/logo-ct.png";
+import brandDark from "assets/images/logo-ct-dark.png";
+import routes from "routes";
 
 export function Layout() {
   const [controller, dispatch] = useMaterialUIController();
-  const { miniSidenav, sidenavColor } = controller;
+  const {
+    miniSidenav,
+    layout,
+    openConfigurator,
+    sidenavColor,
+    transparentSidenav,
+    whiteSidenav,
+    darkMode,
+  } = controller;
   const [onMouseEnter, setOnMouseEnter] = useState(false);
+  const { pathname } = useLocation();
 
-  // Open Sidenav on mouse enter
+  // Open sidenav when mouse enter on mini sidenav
   const handleOnMouseEnter = () => {
     if (miniSidenav && !onMouseEnter) {
       setMiniSidenav(dispatch, false);
@@ -23,33 +38,42 @@ export function Layout() {
     }
   };
 
-  // Close Sidenav on mouse leave
+  // Close sidenav when mouse leave mini sidenav
   const handleOnMouseLeave = () => {
     if (onMouseEnter) {
       setMiniSidenav(dispatch, true);
       setOnMouseEnter(false);
     }
   };
-  
-  // Set the document layout for the navbar
-  //useEffect(() => {
-  // This is a pattern from the template to ensure the layout name is set
-  //}, [dispatch, pathname]);
 
-  return (
-    <DashboardLayout>
+   // We don't need the configurator for now, so this can be simplified.
+  const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
+
+   // Set the document layout for the navbar
+  useEffect(() => {
+    // This is a pattern from the template, we'll keep it for now.
+  }, [dispatch, pathname]);
+
+  // We only render the Sidenav and main layout if the layout is 'dashboard'
+  if (layout !== "dashboard") {
+    return <Outlet />;
+  }
+
+ return (
+    <>
       <Sidenav
         color={sidenavColor}
-        brand=""
+        brand={(transparentSidenav && !darkMode) || whiteSidenav ? brandDark : brandWhite}
         brandName="SynchroFlow"
         routes={routes}
         onMouseEnter={handleOnMouseEnter}
         onMouseLeave={handleOnMouseLeave}
       />
-      <DashboardNavbar />
-      <main style={{ flex: 1, padding: '2rem' }}>
+      <Configurator />
+      <DashboardLayout>
+        <DashboardNavbar />
         <Outlet />
-      </main>
-    </DashboardLayout>
+      </DashboardLayout>
+    </>
   );
 }

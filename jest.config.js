@@ -24,10 +24,13 @@ module.exports = {
         '<rootDir>/packages/ui/src/**/*.test.tsx',
         '<rootDir>/packages/ui/__tests__/**/*.test.tsx',
       ],
-      // Use babel-jest for all frontend files
       transform: {
         '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
       },
+      transformIgnorePatterns: [
+        '/node_modules/(?!react-github-btn)',
+        '\\.pnp\\.[^\\/]+$'
+      ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
       moduleNameMapper: {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
@@ -35,8 +38,10 @@ module.exports = {
         '^assets/(.*)$': '<rootDir>/packages/ui/src/assets/$1',
         '^components/(.*)$': '<rootDir>/packages/ui/src/components/$1',
         '^context$': '<rootDir>/packages/ui/src/contexts/MaterialUI.tsx',
+        '^contexts/(.*)$': '<rootDir>/packages/ui/src/contexts/$1',
         '^examples/(.*)$': '<rootDir>/packages/ui/src/components/$1',
         '^layouts/(.*)$': '<rootDir>/packages/ui/src/layouts/$1',
+        '^routes$': '<rootDir>/packages/ui/src/routes.tsx',
       },
     },
   ],
