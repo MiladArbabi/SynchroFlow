@@ -36,3 +36,24 @@ export async function calculateGrossMargin(shopId: number): Promise<number> {
 
   return grossMarginPercentage;
 }
+
+export async function getInventoryHealth(shopId: number): Promise<any[]> {
+  const inventoryItems = await db('inventory_truth')
+    .where({ shop_id: shopId })
+    .select('sku', 'quantity_available');
+
+  // Map over the items to add a 'status' based on our business rules
+  const itemsWithStatus = inventoryItems.map(item => {
+    let status: string;
+    if (item.quantity_available > 10) {
+      status = 'Healthy';
+    } else if (item.quantity_available > 0 && item.quantity_available <= 10) {
+      status = 'At Risk';
+    } else {
+      status = 'Stockout';
+    }
+    return { ...item, status };
+  });
+
+  return itemsWithStatus;
+}
