@@ -5,8 +5,8 @@ import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 
 // Our SynchroFlow components
-import DashboardLayout from "components/DashboardLayout";
-import DashboardNavbar from "components/DashboardNavbar";
+import DashboardLayout from "../../components/DashboardLayout";
+import DashboardNavbar from "../../components/DashboardNavbar";
 import Footer from "components/Footer";
 import { KpiCard } from "components/KpiCard"; // Use our KpiCard
 
