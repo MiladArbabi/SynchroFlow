@@ -8,8 +8,8 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
+import MDBox from './MDBox';
+import MDTypography from './MDTypography';
 import Card from "@mui/material/Card";
 
 // Register the necessary Chart.js components
