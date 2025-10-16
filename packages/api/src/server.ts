@@ -10,7 +10,8 @@ import {
   calculateGrossMargin,
   getInventoryHealth,
   calculateCostOfStockout,
-  getFulfillmentPipeline } from './services/analytics.service';
+  getFulfillmentPipeline,
+  calculatePerfectOrderPercentage } from './services/analytics.service';
 import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
 
@@ -345,6 +346,21 @@ app.get('/v1/analytics/fulfillment-pipeline', async (req, res) => {
   } catch (error) {
     console.error('Error fetching fulfillment pipeline:', error);
     res.status(500).json({ error: 'Failed to fetch fulfillment pipeline data.' });
+  }
+});
+
+app.get('/v1/analytics/perfect-order-percentage', async (req, res) => {
+  try {
+    const shopId = Number(req.query.shop_id);
+    if (isNaN(shopId)) {
+      return res.status(400).json({ error: 'A valid shop_id is required.' });
+    }
+
+    const percentage = await calculatePerfectOrderPercentage(shopId);
+    res.json({ perfect_order_percentage: percentage });
+  } catch (error) {
+    console.error('Error calculating perfect order percentage:', error);
+    res.status(500).json({ error: 'Failed to calculate perfect order percentage.' });
   }
 });
 

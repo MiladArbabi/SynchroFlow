@@ -120,3 +120,29 @@ export async function getFulfillmentPipeline(shopId: number): Promise<{ [key: st
 
   return { ...defaults, ...pipeline };
 }
+
+export async function calculatePerfectOrderPercentage(shopId: number): Promise<number> {
+  // Count all delivered orders
+  const totalOrdersResult = await db('order_fulfillment_status')
+    .where({ shop_id: shopId, status: 'delivered' })
+    .count({ total: 'id' })
+    .first();
+
+  const totalOrders = Number(totalOrdersResult?.total || 0);
+
+  if (totalOrders === 0) {
+    return 100; // If there are no orders, the percentage is perfect by default.
+  }
+
+  // Count delivered orders that had no issues
+  const perfectOrdersResult = await db('order_fulfillment_status')
+    .where({ shop_id: shopId, status: 'delivered', has_issue: false })
+    .count({ total: 'id' })
+    .first();
+
+  const perfectOrders = Number(perfectOrdersResult?.total || 0);
+
+  const percentage = (perfectOrders / totalOrders) * 100;
+
+  return percentage;
+}
