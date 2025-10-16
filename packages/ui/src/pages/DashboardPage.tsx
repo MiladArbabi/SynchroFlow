@@ -9,6 +9,7 @@ import Grid from "@mui/material/Grid"
 import MDBox from '../components/MDBox';
 import DashboardLayout from '../components/DashboardLayout';
 import DashboardNavbar from "../components/DashboardNavbar";
+import { PerfectOrderGauge } from '../components/PerfectOrderGauge';
 
 const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <div className="rounded-md bg-blue-50 p-4 mb-8">
@@ -38,7 +39,7 @@ export function DashboardPage() {
       <MDBox py={3}>
         {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
         <Grid container spacing={3}>
-          <Grid spacing={5}>
+          <Grid>
             <MDBox mb={1.5}>
               <KpiCard
                 title="Gross Revenue"
@@ -92,13 +93,16 @@ export function DashboardPage() {
             <Grid>
               <InventoryHealthTable />
             </Grid>
-            <Grid>
+            <Grid >
+               <MDBox mb={3}>
+                <PerfectOrderGauge />
+              </MDBox>
                <FulfillmentPipelineChart />
              </Grid>
            </Grid>
          </MDBox>
       </MDBox>
-       <ConnectStoreModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} />
+      <ConnectStoreModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} />
     </DashboardLayout>
   );
 }
