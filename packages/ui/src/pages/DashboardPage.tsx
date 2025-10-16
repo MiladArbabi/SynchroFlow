@@ -1,13 +1,14 @@
 // packages/ui/src/pages/DashboardPage.tsx
 import React, { useState } from 'react';
-import axios from 'axios';
-import { CashFlowChart } from '../components/CashFlowChart';
-import { SimulationModal } from '../components/SimulationModal';
 import { useUser } from '../contexts/UserContext';
 import { ConnectStoreModal } from '../components/ConnectStoreModal';
 import { KpiCard } from '../components/KpiCard';
 import { InventoryHealthTable } from '../components/InventoryHealthTable';
-
+import { FulfillmentPipelineChart } from '../components/FulfillmentPipelineChart';
+import Grid from "@mui/material/Grid"
+import MDBox from '../components/MDBox';
+import DashboardLayout from '../components/DashboardLayout';
+import DashboardNavbar from "../components/DashboardNavbar";
 
 const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <div className="rounded-md bg-blue-50 p-4 mb-8">
@@ -29,95 +30,75 @@ export function DashboardPage() {
   const { isSandbox } = useUser();
 
   // State for the modals
-  const [isSimulationModalOpen, setIsSimulationModalOpen] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
-  // State for our cash flow data
-  const initialCashFlow = [
-    { name: 'Week 1', cash: 10000 },
-    { name: 'Week 2', cash: -5000 },
-    { name: 'Week 3', cash: 12000 },
-    { name: 'Week 4', cash: 8000 },
-  ];
-  const [cashFlowData, setCashFlowData] = useState(initialCashFlow);
-
-    const handleSimulation = async () => {
-    const requestBody = {
-      current_cash_flow: initialCashFlow.map(d => d.cash),
-      payment_details: {
-        amount: 7500,
-        original_due_week: 1,
-        delay_weeks: 2
-      }
-    };
-
-    try {
-      const response = await axios.post('/api/v1/simulations/payment-delay', requestBody);
-      const simulatedData = initialCashFlow.map((item, index) => ({
-        ...item,
-        cash: response.data.simulated_cash_flow[index],
-      }));
-      setCashFlowData(simulatedData);
-    } catch (err) {
-      console.error("Simulation failed:", err);
-    }
-  };
-
   return (
-    <div>
-      {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
-      <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: '#1F2937' }}>
-        FinOps Command Center
-      </h1>
-      <div style={{ marginTop: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
-        <KpiCard
-          title="Gross Revenue"
-          dataUrl="/api/v1/analytics/gross-revenue?shop_id=1"
-          dataKey="gross_revenue"
-          formatAs="currency"
-          icon="leaderboard"
-          color="dark"
-        />
-        <KpiCard
-          title="Gross Margin"
-          dataUrl="/api/v1/analytics/gross-margin?shop_id=1"
-          dataKey="gross_margin_percentage"
-          formatAs="percentage"
-          icon="store"
-          color="success"
-        />
-        <KpiCard
-          title="Total Inventory Value"
-          dataUrl="/api/v1/analytics/inventory-value?shop_id=1"
-          dataKey="total_inventory_value"
-          formatAs="currency"
-          icon="paid"
-          color="primary"
-        />
-        <KpiCard
-          title="Cost of Stockout"
-          dataUrl="/api/v1/analytics/cost-of-stockout?shop_id=1&sku=STOCKOUT-SKU-01"
-          dataKey="cost_of_stockout"
-          formatAs="currency"
-          icon="warning"
-          color="warning"
-        />
-        {/* This will now show an error by design, which is what we want for a placeholder */}
-        <KpiCard 
-          title="Cash Conversion Cycle" 
-          dataUrl="/api/v1/analytics/ccc" // This endpoint doesn't exist yet
-          dataKey="ccc_days"
-          icon="update"
-        />
-        {/* More KPIs will be added here */}
-      </div>
-      <CashFlowChart data={cashFlowData} onClick={() => setIsSimulationModalOpen(true)} />
-      {/* Add the new Inventory Health Table below the chart */}
-      <div style={{ marginTop: '2rem' }}>
-        <InventoryHealthTable />
-      </div>
-      <SimulationModal isOpen={isSimulationModalOpen} onClose={() => setIsSimulationModalOpen(false)} />
-      <ConnectStoreModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} />
-    </div>
+    <DashboardLayout>
+      <DashboardNavbar />
+      <MDBox py={3}>
+        {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
+        <Grid container spacing={3}>
+          <Grid spacing={5}>
+            <MDBox mb={1.5}>
+              <KpiCard
+                title="Gross Revenue"
+                dataUrl="/api/v1/analytics/gross-revenue?shop_id=1"
+                dataKey="gross_revenue"
+                formatAs="currency"
+                icon="leaderboard"
+                color="dark"
+              />
+            </MDBox>
+          </Grid>
+          <Grid>
+            <MDBox mb={1.5}>
+              <KpiCard
+                title="Gross Margin"
+                dataUrl="/api/v1/analytics/gross-margin?shop_id=1"
+                dataKey="gross_margin_percentage"
+                formatAs="percentage"
+                icon="store"
+                color="success"
+              />
+            </MDBox>
+          </Grid>
+          <Grid>
+            <MDBox mb={1.5}>
+              <KpiCard
+                title="Total Inventory Value"
+                dataUrl="/api/v1/analytics/inventory-value?shop_id=1"
+                dataKey="total_inventory_value"
+                formatAs="currency"
+                icon="paid"
+                color="primary"
+              />
+            </MDBox>
+          </Grid>
+          <Grid>
+            <MDBox mb={1.5}>
+              <KpiCard
+                title="Cost of Stockout"
+                dataUrl="/api/v1/analytics/cost-of-stockout?shop_id=1&sku=STOCKOUT-SKU-01"
+                dataKey="cost_of_stockout"
+                formatAs="currency"
+                icon="warning"
+                color="warning"
+              />
+            </MDBox>
+          </Grid>
+        </Grid>
+        <MDBox mt={4.5}>
+           <Grid container spacing={3}>
+            <Grid>
+              <InventoryHealthTable />
+            </Grid>
+            <Grid>
+               <FulfillmentPipelineChart />
+             </Grid>
+           </Grid>
+         </MDBox>
+      </MDBox>
+       <ConnectStoreModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} />
+    </DashboardLayout>
   );
 }

@@ -27,7 +27,6 @@ describe('API Queue Worker', () => {
     mockedDb.mockClear();
     mockWhere.mockClear();
     mockedTransformPayload.mockClear();
-    console.log = jest.fn();
 
     // Provide a clear implementation for the ack/nack functions on the channel mock
     if (mockedChannelWrapper) {
