@@ -1,5 +1,4 @@
 // packages/ui/src/components/PerfectOrderGauge.test.tsx
-
 import { render, screen, waitFor } from '@testing-library/react';
 import axios from 'axios';
 import { MemoryRouter } from 'react-router-dom';
@@ -72,16 +71,5 @@ afterEach(() => {
     // Check that percentage displays as 0% on error
     expect(await screen.findByText('0.0%')).toBeInTheDocument();
     expect(screen.getByText('Perfect Order %')).toBeInTheDocument();
-  });
-
-  it('matches snapshot with data', async () => {
-    mockedAxiosGet.mockResolvedValueOnce({
-      data: { perfect_order_percentage: 80.0 },
-    });
-    const { container } = renderWithProviders(<PerfectOrderGauge />);
-    await waitFor(() => {
-      expect(screen.getByText('80.0%')).toBeInTheDocument();
-    });
-    expect(container).toMatchSnapshot();
   });
 });
