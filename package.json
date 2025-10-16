@@ -45,6 +45,8 @@
     "wait-on": "^9.0.1"
   },
   "dependencies": {
+    "@mui/material": "^7.3.4",
+    "@mui/types": "^7.4.7",
     "amqplib": "^0.10.9",
     "axios": "^1.12.2"
   }
