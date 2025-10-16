@@ -648,3 +648,56 @@ describe('GET /v1/analytics/fulfillment-pipeline', () => {
     });
   });
 });
+
+describe('GET /v1/analytics/perfect-order-percentage', () => {
+  let shopId: number;
+
+  beforeEach(async () => {
+    // Run migrations to ensure our new column exists
+    await db.migrate.latest();
+
+    const [shop] = await db('shops').insert({
+      name: "Perfect Order Test Store",
+      platform: "shopify",
+      contact_email: "perfect@test.com",
+      auth_secret: "perfect-secret",
+      primary_erp_type: "Test",
+      primary_ecomm_type: "Test"
+    }).returning('id');
+    shopId = shop.id;
+
+    // Seed fulfillment statuses with and without issues
+    await db('order_fulfillment_status').insert([
+      // 8 perfect orders
+      { shop_id: shopId, order_id: '1001', status: 'delivered', has_issue: false },
+      { shop_id: shopId, order_id: '1002', status: 'delivered', has_issue: false },
+      { shop_id: shopId, order_id: '1003', status: 'delivered', has_issue: false },
+      { shop_id: shopId, order_id: '1004', status: 'delivered', has_issue: false },
+      { shop_id: shopId, order_id: '1005', status: 'delivered', has_issue: false },
+      { shop_id: shopId, order_id: '1006', status: 'delivered', has_issue: false },
+      { shop_id: shopId, order_id: '1007', status: 'delivered', has_issue: false },
+      { shop_id: shopId, order_id: '1008', status: 'delivered', has_issue: false },
+      // 2 imperfect orders
+      { shop_id: shopId, order_id: '1009', status: 'delivered', has_issue: true },
+      { shop_id: shopId, order_id: '1010', status: 'delivered', has_issue: true },
+    ]);
+  });
+
+  afterEach(async () => {
+    // Rollback migrations to keep the test environment clean for other tests
+    await db.migrate.rollback();
+  });
+
+  it('should calculate and return the perfect order percentage', async () => {
+    const response = await request(app)
+      .get('/v1/analytics/perfect-order-percentage')
+      .query({ shop_id: shopId });
+
+    // Calculation: 8 perfect orders / 10 total orders = 80%
+    const expectedPercentage = 80.0;
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty('perfect_order_percentage');
+    expect(response.body.perfect_order_percentage).toBeCloseTo(expectedPercentage);
+  });
+});
