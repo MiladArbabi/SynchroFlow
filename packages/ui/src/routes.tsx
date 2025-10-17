@@ -15,7 +15,6 @@ const routes = [
     route: "/dashboard",
     component: <DashboardPage />,
   },
-  { type: "title", title: "Account Pages", key: "account-pages" },
   {
     type: "collapse",
     name: "Products",
