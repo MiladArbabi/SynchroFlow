@@ -1,3 +1,4 @@
+// packages/ui/src/components/Sidenav/index.tsx
 import React, { useEffect } from "react";
 import { useLocation, NavLink } from "react-router-dom";
 
@@ -5,7 +6,6 @@ import { useLocation, NavLink } from "react-router-dom";
 import List from "@mui/material/List";
 import Divider from "@mui/material/Divider";
 import Link from "@mui/material/Link";
-import Icon from "@mui/material/Icon";
 
 // Material Dashboard 2 React components
 import MDBox from "components/MDBox";
@@ -138,7 +138,7 @@ export const Sidenav: React.FC<SidenavProps> = ({ color = "info", brand = "", br
           sx={{ cursor: "pointer" }}
         >
           <MDTypography variant="h6" color="secondary">
-            <Icon sx={{ fontWeight: "bold" }}>close</Icon>
+            SYNCHROFLOW ICON PLACE
           </MDTypography>
         </MDBox>
         <MDBox component={NavLink} to="/" display="flex" alignItems="center">

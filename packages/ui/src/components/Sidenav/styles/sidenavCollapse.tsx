@@ -1,18 +1,16 @@
-/**
-=========================================================
-* Material Dashboard 2 React - v2.2.0
-=========================================================
+//packages/ui/src/components/Sidenav/styles/sidenavCollapse.tsx
+import { Theme } from "@mui/material/styles";
 
-* Product Page: https://www.creative-tim.com/product/material-dashboard-react
-* Copyright 2023 Creative Tim (https://www.creative-tim.com)
+interface OwnerState {
+  active: boolean;
+  transparentSidenav?: boolean;
+  whiteSidenav?: boolean;
+  darkMode?: boolean;
+  sidenavColor?: string;
+  miniSidenav?: boolean;
+}
 
-Coded by www.creative-tim.com
-
- =========================================================
-
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*/
-function collapseItem(theme, ownerState) {
+function collapseItem(theme: Theme | any, ownerState: OwnerState) {
   const { palette, transitions, breakpoints, boxShadows, borders, functions } = theme;
   const { active, transparentSidenav, whiteSidenav, darkMode, sidenavColor } = ownerState;
 
@@ -22,13 +20,8 @@ function collapseItem(theme, ownerState) {
   const { pxToRem, rgba, linearGradient } = functions;
 
   return {
-    background: active
-      ? linearGradient(gradients[sidenavColor].main, gradients[sidenavColor].state)
-      : transparent.main,
-    color:
-      (transparentSidenav && !darkMode && !active) || (whiteSidenav && !active)
-        ? dark.main
-        : white.main,
+    background: active && sidenavColor ? linearGradient(gradients[sidenavColor].main, gradients[sidenavColor].state) : transparent.main,
+    color: (transparentSidenav && !darkMode && !active) || (whiteSidenav && !active) ? dark.main : white.main,
     display: "flex",
     alignItems: "center",
     width: "100%",
@@ -45,25 +38,19 @@ function collapseItem(theme, ownerState) {
         duration: transitions.duration.shorter,
       }),
     },
-
     "&:hover, &:focus": {
       backgroundColor: () => {
         let backgroundValue;
-
         if (!active) {
-          backgroundValue =
-            transparentSidenav && !darkMode
-              ? grey[300]
-              : rgba(whiteSidenav ? grey[400] : white.main, 0.2);
+          backgroundValue = transparentSidenav && !darkMode ? grey[300] : rgba(whiteSidenav ? grey[400] : white.main, 0.2);
         }
-
         return backgroundValue;
       },
     },
   };
 }
 
-function collapseIconBox(theme, ownerState) {
+function collapseIconBox(theme: Theme | any, ownerState: OwnerState) {
   const { palette, transitions, borders, functions } = theme;
   const { transparentSidenav, whiteSidenav, darkMode, active } = ownerState;
 
@@ -74,10 +61,7 @@ function collapseIconBox(theme, ownerState) {
   return {
     minWidth: pxToRem(32),
     minHeight: pxToRem(32),
-    color:
-      (transparentSidenav && !darkMode && !active) || (whiteSidenav && !active)
-        ? dark.main
-        : white.main,
+    color: (transparentSidenav && !darkMode && !active) || (whiteSidenav && !active) ? dark.main : white.main,
     borderRadius: borderRadius.md,
     display: "grid",
     placeItems: "center",
@@ -85,18 +69,19 @@ function collapseIconBox(theme, ownerState) {
       easing: transitions.easing.easeInOut,
       duration: transitions.duration.standard,
     }),
-
     "& svg, svg g": {
       color: transparentSidenav || whiteSidenav ? dark.main : white.main,
     },
   };
 }
 
-const collapseIcon = ({ palette: { white, gradients } }, { active }) => ({
-  color: active ? white.main : gradients.dark.state,
+const collapseIcon = (theme: Theme | any, { active }: OwnerState) => ({
+  color: active ? theme.palette.white.main : theme.palette.gradients.dark.state,
+  // This is the definitive fix: an explicit, high-specificity override.
+  fontSize: "1.25rem !important",
 });
 
-function collapseText(theme, ownerState) {
+function collapseText(theme: Theme | any, ownerState: OwnerState) {
   const { typography, transitions, breakpoints, functions } = theme;
   const { miniSidenav, transparentSidenav, active } = ownerState;
 
@@ -105,7 +90,6 @@ function collapseText(theme, ownerState) {
 
   return {
     marginLeft: pxToRem(10),
-
     [breakpoints.up("xl")]: {
       opacity: miniSidenav || (miniSidenav && transparentSidenav) ? 0 : 1,
       maxWidth: miniSidenav || (miniSidenav && transparentSidenav) ? 0 : "100%",
@@ -115,11 +99,10 @@ function collapseText(theme, ownerState) {
         duration: transitions.duration.standard,
       }),
     },
-
     "& span": {
       fontWeight: active ? fontWeightRegular : fontWeightLight,
       fontSize: size.sm,
-      lineHeight: 0,
+      lineHeight: 1,
     },
   };
 }
