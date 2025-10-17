@@ -1,4 +1,5 @@
-function menuItem(theme) {
+import { Theme } from "@mui/material/styles";
+  function menuItem(theme: Theme | any): object {
   const { palette, borders, transitions } = theme;
 
   const { secondary, light, dark } = palette;

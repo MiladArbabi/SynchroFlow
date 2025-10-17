@@ -7,8 +7,7 @@ import MDBox from "components/MDBox";
 // Our SynchroFlow components
 import DashboardLayout from "../../components/DashboardLayout";
 import DashboardNavbar from "../../components/DashboardNavbar";
-import Footer from "components/Footer";
-import { KpiCard } from "components/KpiCard"; // Use our KpiCard
+import { KpiCard } from "components/KpiCard"; 
 
 function Dashboard() {
   return (
@@ -55,7 +54,6 @@ function Dashboard() {
         </Grid>
         {/* We will add charts and other components here in future tasks */}
       </MDBox>
-      <Footer />
     </DashboardLayout>
   );
 }

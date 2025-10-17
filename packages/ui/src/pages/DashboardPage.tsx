@@ -6,7 +6,7 @@ import { KpiCard } from '../components/KpiCard';
 import { InventoryHealthTable } from '../components/InventoryHealthTable';
 import { FulfillmentPipelineChart } from '../components/FulfillmentPipelineChart';
 import { PerfectOrderGauge } from '../components/PerfectOrderGauge';
-import Grid from '@mui/material/Grid';
+import  Grid from '@mui/material/Grid';
 import MDBox from '../components/MDBox';
 
 const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
@@ -33,7 +33,7 @@ export function DashboardPage() {
     <MDBox py={3}>
       {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
       <Grid container spacing={3}>
-        <Grid xs={12} md={6} lg={3}>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
           <MDBox mb={1.5}>
             <KpiCard
               title="Gross Revenue"
@@ -45,7 +45,7 @@ export function DashboardPage() {
             />
           </MDBox>
         </Grid>
-        <Grid xs={12} md={6} lg={3}>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
           <MDBox mb={1.5}>
             <KpiCard
               title="Gross Margin"
@@ -57,7 +57,7 @@ export function DashboardPage() {
             />
           </MDBox>
         </Grid>
-        <Grid xs={12} md={6} lg={3}>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
           <MDBox mb={1.5}>
             <KpiCard
               title="Total Inventory Value"
@@ -69,7 +69,7 @@ export function DashboardPage() {
             />
           </MDBox>
         </Grid>
-        <Grid xs={12} md={6} lg={3}>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
           <MDBox mb={1.5}>
             <KpiCard
               title="Cost of Stockout"
@@ -84,10 +84,10 @@ export function DashboardPage() {
       </Grid>
       <MDBox mt={4.5}>
          <Grid container spacing={3}>
-          <Grid xs={12} md={8}>
+         <Grid size={{ xs: 12, md: 7 }}>
             <InventoryHealthTable />
           </Grid>
-          <Grid xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 5 }}>
              <MDBox mb={3}>
               <PerfectOrderGauge />
             </MDBox>
