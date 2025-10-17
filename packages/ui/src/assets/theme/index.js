@@ -59,8 +59,6 @@ import autocomplete from "assets/theme/components/form/autocomplete";
 import container from "assets/theme/components/container";
 import popover from "assets/theme/components/popover";
 import buttonBase from "assets/theme/components/buttonBase";
-import icon from "assets/theme/components/icon";
-import svgIcon from "assets/theme/components/svgIcon";
 import link from "assets/theme/components/link";
 import dialog from "assets/theme/components/dialog";
 import dialogTitle from "assets/theme/components/dialog/dialogTitle";
@@ -96,8 +94,6 @@ export default createTheme({
     MuiCard: { ...card },
     MuiCardMedia: { ...cardMedia },
     MuiCardContent: { ...cardContent },
-    MuiButton: { ...button },
-    MuiIconButton: { ...iconButton },
     MuiInput: { ...input },
     MuiInputLabel: { ...inputLabel },
     MuiOutlinedInput: { ...inputOutlined },
@@ -130,8 +126,6 @@ export default createTheme({
     MuiAutocomplete: { ...autocomplete },
     MuiPopover: { ...popover },
     MuiButtonBase: { ...buttonBase },
-    MuiIcon: { ...icon },
-    MuiSvgIcon: { ...svgIcon },
     MuiLink: { ...link },
     MuiDialog: { ...dialog },
     MuiDialogTitle: { ...dialogTitle },

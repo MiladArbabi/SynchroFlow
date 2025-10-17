@@ -5,7 +5,6 @@ import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
-import Icon from "@mui/material/Icon";
 import MDBox from "components/MDBox";
 import MDInput from "components/MDInput";
 import Breadcrumbs from "../Breadcrumbs";
@@ -67,9 +66,9 @@ export const DashboardNavbar: React.FC<DashboardNavbarProps> = ({ absolute = fal
       onClose={handleCloseMenu}
       sx={{ mt: 2 }}
     >
-      <NotificationItem icon={<Icon>email</Icon>} title="Check new messages" />
-      <NotificationItem icon={<Icon>podcasts</Icon>} title="Manage Podcast sessions" />
-      <NotificationItem icon={<Icon>shopping_cart</Icon>} title="Payment successfully completed" />
+      <NotificationItem icon="📧" title="Check new messages" />
+      <NotificationItem icon="🎙️" title="Manage Podcast sessions" />
+      <NotificationItem icon="🛒" title="Payment successfully completed" />
     </Menu>
   );
 
@@ -101,16 +100,14 @@ export const DashboardNavbar: React.FC<DashboardNavbarProps> = ({ absolute = fal
             <MDBox color={light ? "white" : "inherit"}>
               <Link to="/authentication/sign-in">
                 <IconButton sx={navbarIconButton} size="small" disableRipple>
-                  <Icon sx={iconsStyle}>account_circle</Icon>
+                  👤
                 </IconButton>
               </Link>
               <IconButton size="small" disableRipple color="inherit" sx={navbarMobileMenu} onClick={handleMiniSidenav}>
-                <Icon sx={iconsStyle} fontSize="medium">
-                  {miniSidenav ? "menu_open" : "menu"}
-                </Icon>
+                {miniSidenav ? "▶️" : "◀️"}
               </IconButton>
               <IconButton size="small" disableRipple color="inherit" sx={navbarIconButton} onClick={handleConfiguratorOpen}>
-                <Icon sx={iconsStyle}>settings</Icon>
+                ⚙️
               </IconButton>
               <IconButton
                 size="small"
@@ -121,7 +118,7 @@ export const DashboardNavbar: React.FC<DashboardNavbarProps> = ({ absolute = fal
                 aria-haspopup="true"
                 onClick={handleOpenMenu}
               >
-                <Icon sx={iconsStyle}>notifications</Icon>
+                🔔
               </IconButton>
               {renderMenu()}
             </MDBox>

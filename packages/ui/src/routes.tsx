@@ -11,7 +11,7 @@ const routes = [
     type: "collapse",
     name: "Dashboard",
     key: "dashboard",
-    icon: <Icon fontSize="small">dashboard</Icon>,
+    icon: "🏠",
     route: "/dashboard",
     component: <DashboardPage />,
   },
@@ -19,7 +19,7 @@ const routes = [
     type: "collapse",
     name: "Products",
     key: "products",
-    icon: <Icon fontSize="small">inventory</Icon>,
+    icon: "📦",
     route: "/products",
     component: <ProductsPage />,
   },
@@ -27,7 +27,7 @@ const routes = [
     type: "collapse",
     name: "Data Mapper",
     key: "data-mapper",
-    icon: <Icon fontSize="small">schema</Icon>, // A more descriptive icon
+    icon: "🔗", // Placeholder
     route: "/data-mapper", 
     component: <DataMapper />,
   },
@@ -35,7 +35,7 @@ const routes = [
     type: "collapse",
     name: "Product Intelligence",
     key: "product-intelligence",
-    icon: <Icon fontSize="small">transform</Icon>,
+    icon: "💡", // Placeholder
     route: "/product-intelligence",
     component: <ProductIntelligencePage />,
   },
@@ -43,7 +43,7 @@ const routes = [
     type: "collapse",
     name: "Sign In",
     key: "sign-in",
-    icon: <Icon fontSize="small">login</Icon>,
+    icon: "➡️", // Placeholder
     route: "/authentication/sign-in",
     component: <LoginPage />,
    },

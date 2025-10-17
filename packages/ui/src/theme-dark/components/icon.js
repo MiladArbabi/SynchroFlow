@@ -19,14 +19,10 @@ import pxToRem from "assets/theme-dark/functions/pxToRem";
 const icon = {
   defaultProps: {
     baseClassName: "material-icons-round",
-    fontSize: "inherit",
+    fontSize: "medium",
   },
 
   styleOverrides: {
-    fontSizeInherit: {
-      fontSize: "inherit !important",
-    },
-
     fontSizeSmall: {
       fontSize: `${pxToRem(20)} !important`,
     },

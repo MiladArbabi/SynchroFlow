@@ -13,3 +13,15 @@ body,
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   background-color: #F0F2F5; /* Our standard background gray */
 }
+
+.MuiIcon-fontSizeSmall {
+  font-size: 20px !important;
+}
+
+.MuiIcon-fontSizeMedium {
+  font-size: 24px !important;
+}
+
+.MuiIcon-fontSizeLarge {
+  font-size: 36px !important;
+}

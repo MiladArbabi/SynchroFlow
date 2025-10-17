@@ -1,7 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Breadcrumbs as MuiBreadcrumbs } from "@mui/material";
-import Icon from "@mui/material/Icon";
 import MDBox from "../MDBox";
 import MDTypography from "../MDTypography";
 
@@ -32,7 +31,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ icon, title, route, li
             opacity={light ? 0.8 : 0.5}
             sx={{ lineHeight: 0 }}
           >
-            <Icon>{icon}</Icon>
+            🏠 {/* Placeholder for home icon */}
           </MDTypography>
         </Link>
         {routes.map((el) => (
