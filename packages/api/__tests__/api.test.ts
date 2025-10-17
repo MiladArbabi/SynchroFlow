@@ -20,11 +20,6 @@ beforeAll(async () => {
    await db.migrate.latest();
  });
 
- afterAll(async () => {
-  await db.destroy();
-  await queueConnection.close();
- });
-
 describe('API Endpoints', () => {
   // This beforeEach hook now only applies to tests inside THIS describe block
   beforeEach(async () => {

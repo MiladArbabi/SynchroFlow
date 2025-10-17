@@ -2,6 +2,10 @@
 import { seedSandboxData } from '../src/db/seeder';
 import db from '../src/db';
 
+beforeAll(async () => {
+  await db.migrate.latest();
+});
+
 describe('Sandbox Seeder', () => {
   // Before each test, wipe the database clean to ensure a fresh start
   beforeEach(async () => {
