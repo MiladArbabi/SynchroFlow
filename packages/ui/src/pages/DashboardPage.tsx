@@ -40,7 +40,7 @@ export function DashboardPage() {
               dataUrl="/api/v1/analytics/gross-revenue?shop_id=1"
               dataKey="gross_revenue"
               formatAs="currency"
-              icon="leaderboard"
+              icon="📈"
               color="dark"
             />
           </MDBox>
@@ -52,7 +52,7 @@ export function DashboardPage() {
               dataUrl="/api/v1/analytics/gross-margin?shop_id=1"
               dataKey="gross_margin_percentage"
               formatAs="percentage"
-              icon="store"
+              icon="💰"
               color="success"
             />
           </MDBox>
@@ -64,7 +64,7 @@ export function DashboardPage() {
               dataUrl="/api/v1/analytics/inventory-value?shop_id=1"
               dataKey="total_inventory_value"
               formatAs="currency"
-              icon="paid"
+             icon="📦"
               color="primary"
             />
           </MDBox>
@@ -76,7 +76,7 @@ export function DashboardPage() {
               dataUrl="/api/v1/analytics/cost-of-stockout?shop_id=1&sku=STOCKOUT-SKU-01"
               dataKey="cost_of_stockout"
               formatAs="currency"
-              icon="warning"
+              icon="⚠️"
               color="warning"
             />
           </MDBox>
