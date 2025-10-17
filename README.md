@@ -1,17 +1,18 @@
-# SynchroFlow: The Autonomous Commerce Operations Platform (v5.0)
+# SynchroFlow: The Autonomous Commerce Operations Platform (v5.1)
 
 SynchroFlow is the Autonomous Commerce Operations Platform for D2C and emerging B2B e-commerce brands. It unifies data from platforms like Shopify, Amazon, Zendesk, and Faire into a single operational truth. Our **Product-Led Growth (PLG)** model offers a frictionless self-service experience with an instant sandbox and scoped trials, evolving from data visualization to AI-driven recommendations and ultimately to agentic automation.
 
 ## Current Project Status
 
-**Phase 1** (Core Architecture & Data Pipeline) is complete. We are now in **Phase 2: PLG-Powered FinOps MVP**. The goal is to launch our Freemium tier and self-service funnel to acquire our first users. Our immediate priority is to build out the foundational UI/UX by integrating a professional design system.
+**Phase 2** (PLG-Powered FinOps MVP) is substantially complete. The foundational UI/UX has been implemented using a professional design system, and the core dashboard widgets are functional. Our current priority is addressing technical debt to ensure a stable and scalable platform before moving to the next feature phase.
 
 ## Key Achievements:
 
 * A full-stack, **five-service architecture** (Node.js API, C++ Core, Python AI, React UI, and a dedicated Node.js Integration Service).
-* A professional, unified development environment (`npm run dev`) and testing framework (`npm test`).
+* A professional, unified development environment (`npm run dev`) and a robust, stable testing framework (`npm test`).
 * A complete, end-to-end **data ingestion and transformation pipeline** (Webhook -> Staging -> Message Queue -> API Worker -> Transformer).
-* The foundational components for our **PLG onboarding funnel** (Sandbox Seeder, Scoped Trial Logic).
+* A **professional UI foundation** built on Material-UI, providing a consistent and modern user experience.
+* The core **FinOps Command Center** with live-data widgets for Gross Revenue, Gross Margin, Inventory Value, Inventory Health, and Fulfillment status.
 
 ## Technical Architecture
 
@@ -65,7 +66,7 @@ graph TD
 * **Data Lakehouse Approach:** Raw data is staged in Object Storage (S3/GCS), live data is in PostgreSQL, and historical data is in a Data Warehouse (BigQuery/Redshift).
 
 ### Technology Stack
-* **Frontend:** React (Vite), TypeScript, Material-UI, Emotion.
+* **Frontend:** React (Vite), TypeScript, Material-UI, Emotion, TanStack Table, Chart.js.
 * **API/Backend:** Node.js, Express.js, TypeScript, Knex.js, amqplib.
 * **Data Layer:** PostgreSQL (Docker), RabbitMQ (Docker), Redis.
 * **High-Performance Core:** C++, N-API, libpqxx.
@@ -108,6 +109,6 @@ npm run dev
 ## Roadmap
 This is a high-level overview. For details, see the **Project Milestones on GitHub**.
 * **Phase 1: Core Performance Proof (✅ Complete)**
-* **Phase 2: PLG-Powered FinOps MVP (In Progress)**: Launch the self-service "FinOps Command Center" with a robust PLG funnel and Freemium tier.
-* **Phase 3: The Optimization Engine (Upcoming)**: Introduce AI-driven recommendations.
+* **Phase 2: PLG-Powered FinOps MVP (✅ Complete)**
+* **Phase 3: Optimization Engine (In Progress)**: Introduce AI-driven recommendations and address technical debt.
 * **Phase 4: The Autonomous Engine (Upcoming)**: Deliver true workflow automation with agentic AI.
