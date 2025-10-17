@@ -4,9 +4,9 @@ import axios from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import theme from 'assets/theme';
-import { MaterialUIControllerProvider } from 'contexts/MaterialUI';
-import { UserProvider } from 'contexts/UserContext';
+import theme from '../theme';
+import { MaterialUIControllerProvider } from '../contexts/MaterialUI';
+import { UserProvider } from '../contexts/UserContext';
 import { InventoryHealthTable } from './InventoryHealthTable';
 
 jest.mock('axios');
