@@ -1,25 +1,57 @@
 // packages/ui/src/App.tsx
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { LoginPage } from './LoginPage';
-import { ProductIntelligencePage } from './pages/ProductIntelligencePage';
-import { DashboardPage } from './pages/DashboardPage';
 import { Layout } from './Layout';
-import { ProductsPage } from './pages/ProductsPage';
+import routes from './routes';
+import { JSX, useEffect } from 'react';
+
+// Define a type for our route objects to avoid using 'any'
+interface RouteType {
+  type: string;
+  name: string;
+  key: string;
+  icon: JSX.Element;
+  route: string;
+  component: JSX.Element;
+  collapse?: RouteType[];
+}
 
 function App() {
+  const { pathname } = useLocation();
+
+  // Setting the page layout for the sidenav
+  // This logic is from the template and ensures the correct layout is set in the context
+  useEffect(() => {
+    // Placeholder for layout context logic if needed in the future
+  }, [pathname]);
+
+  const getRoutes = (allRoutes: RouteType[]) =>
+    allRoutes.map((route) => {
+      if (route.collapse) {
+        return getRoutes(route.collapse);
+      }
+
+      if (route.route) {
+        return <Route path={route.route} element={route.component} key={route.key} />;
+      }
+
+      return null;
+    });
 
   return (
-    <div>
       <Routes>
-        {/* Routes inside the main application shell */}
-        <Route path="/" element={<Layout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="products" element={<ProductsPage />} />
-          <Route path="product-intelligence" element={<ProductIntelligencePage />} />
-        </Route>
+        {/* Public Routes */}
         <Route path="/login" element={<LoginPage />} />
+
+        {/* Protected Routes */}
+        <Route element={<Layout />}>
+          {getRoutes(routes)}
+          <Route path="*" element={<Navigate to="/dashboard" />} />
+        </Route>
+
+        {/* Default route redirects to dashboard */}
+        <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
-    </div>
   )
 }
 
