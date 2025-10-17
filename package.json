@@ -19,7 +19,8 @@
     "dev-integration": "npm run dev -w integration-service",
     "db:reset": "docker exec synchroflow_db psql -U sf_user -d postgres -c 'DROP DATABASE IF EXISTS synchroflow_db;' && docker exec synchroflow_db psql -U sf_user -d postgres -c 'CREATE DATABASE synchroflow_db;'",
     "test:setup": "npm run db:reset && npm run migrate -w api",
-    "test": "npm run test:setup && jest --runInBand --verbose"
+    "test": "npm run test:setup && jest --runInBand --verbose",
+    "dev:full": "npm run test:setup && npm run dev"
   },
   "keywords": [],
   "author": "",
