@@ -1,5 +1,6 @@
 // jest.config.js
 module.exports = {
+  globalTeardown: "<rootDir>/jest.global-teardown.js",
   projects: [
     // Configuration for ALL backend packages
     {

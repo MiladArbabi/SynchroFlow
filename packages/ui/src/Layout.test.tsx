@@ -20,9 +20,6 @@ test('renders the professional layout with Sidenav and Navbar', () => {
       </MaterialUIControllerProvider>
     </MemoryRouter>
   );
-
-  screen.debug();
-
   // Assert that the main brand name is visible in the new Sidenav.
   expect(screen.getByText(/SynchroFlow Icon/i)).toBeInTheDocument();
 
