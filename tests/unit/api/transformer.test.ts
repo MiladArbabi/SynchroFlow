@@ -1,5 +1,5 @@
 //packages/api/__tests__/transformer.test.ts
-import { transformPayload } from '../src/transformer';
+import { transformPayload } from '../../../packages/api/src//transformer';
 
 describe('Payload Transformer', () => {
   it('should transform a flat payload based on mapping rules', () => {

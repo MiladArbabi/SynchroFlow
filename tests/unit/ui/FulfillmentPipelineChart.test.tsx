@@ -1,29 +1,11 @@
 // packages/ui/src/components/FulfillmentPipelineChart.test.tsx
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import axios from 'axios';
-import { MemoryRouter } from 'react-router-dom';
-import { ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import theme from '../theme';
-import { MaterialUIControllerProvider } from '../contexts/MaterialUI';
-import { UserProvider } from '../contexts/UserContext';
-import { FulfillmentPipelineChart } from './FulfillmentPipelineChart';
+import { renderWithProviders } from 'test-utils';
+import { FulfillmentPipelineChart } from '../../../packages/ui/src/components/FulfillmentPipelineChart';
 
 jest.mock('axios');
 const mockedAxiosGet = axios.get as jest.Mock;
-
-const renderWithProviders = (ui: React.ReactElement) => {
-  return render(
-    <MemoryRouter>
-      <MaterialUIControllerProvider>
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
-          <UserProvider>{ui}</UserProvider>
-        </ThemeProvider>
-      </MaterialUIControllerProvider>
-    </MemoryRouter>
-  );
-};
 
 describe('FulfillmentPipelineChart', () => {
   it('fetches data and renders the bar chart with correct labels', async () => {

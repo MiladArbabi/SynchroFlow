@@ -2,7 +2,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axios from 'axios';
-import { ConnectStoreModal } from './ConnectStoreModal';
+import { ConnectStoreModal } from 'components/ConnectStoreModal';
 
 // Mock axios
 jest.mock('axios');

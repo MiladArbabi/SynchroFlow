@@ -1,11 +1,10 @@
 // packages/api/__tests__/api.test.ts
 import request from 'supertest';
-import app from '../src/server';
-import db from '../src/db';
-import { connection as queueConnection } from '../src/queue';
-import { InventoryItem } from '../src/types';
+import app from '../../../packages/api/src/server';
+import db from '../../../packages/api/src/db';
+import { InventoryItem } from '../../../packages/api/src/types';
 import axios from 'axios';
-import { seedSandboxData } from '../src/db/seeder';
+import { seedSandboxData } from '../../../packages/api/src/db/seeder';
 
 // Tell Jest to mock the 'axios' library
 jest.mock('axios');
@@ -13,7 +12,7 @@ jest.mock('axios');
 const mockedAxiosPost = axios.post as jest.Mock;
 
 // Mock our new seeder function
-jest.mock('../src/db/seeder');
+jest.mock('../../../packages/api/src/db/seeder');
 const mockedSeedSandboxData = seedSandboxData as jest.Mock;
 
 beforeAll(async () => {

@@ -1,13 +1,13 @@
 //packages/api/__tests__/worker.test.ts
-import { processMessage } from '../src/worker';
-import db from '../src/db';
-import { channelWrapper, connection as queueConnection } from '../src/queue';
-import { transformPayload } from '../src/transformer';
+import { processMessage } from '../../../packages/api/src/worker';
+import db from '../../../packages/api/src//db';
+import { channelWrapper, connection as queueConnection } from '../../../packages/api/src//queue';
+import { transformPayload } from '../../../packages/api/src//transformer';
 
 // Mock all external dependencies
-jest.mock('../src/db');
-jest.mock('../src/queue');
-jest.mock('../src/transformer');
+jest.mock('../../../packages/api/src/db');
+jest.mock('../../../packages/api/src/queue');
+jest.mock('../../../packages/api/src/transformer');
 
 // Create typed variables for our mocks
 const mockedDb = db as unknown as jest.Mock;

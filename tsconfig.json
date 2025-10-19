@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* --- THIS IS THE DEFINITIVE FIX FOR PATH ALIASING --- */
+    "baseUrl": ".",
+    "paths": {
+      "test-utils": ["packages/ui/src/test-utils.tsx"],
+      
+      // Wildcard aliases for directories inside /src
+      "components/*": ["packages/ui/src/components/*"],
+      "contexts/*": ["packages/ui/src/contexts/*"],
+      "pages/*": ["packages/ui/src/pages/*"],
+      "src/*": ["packages/ui/src/*"] // A robust fallback for anything else in src
+    }
+  },
+  "include": [
+    "packages/ui/src",
+    "tests/unit/ui"
+  ],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

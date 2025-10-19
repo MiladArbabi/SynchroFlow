@@ -8,11 +8,10 @@ module.exports = {
       testEnvironment: 'node',
       setupFiles: ['<rootDir>/jest.env.js'],
       testMatch: [
-        '<rootDir>/packages/api/**/*.test.ts',
-        '<rootDir>/packages/core-engine/**/*.test.ts',
-        '<rootDir>/packages/integration-service/**/*.test.ts',
+        '<rootDir>/tests/unit/api/**/*.test.ts',
+        '<rootDir>/tests/unit/core-engine/**/*.test.ts',
+        '<rootDir>/tests/unit/integration/**/*.test.ts',
       ],
-      // Use babel-jest for all backend files
       transform: {
         '^.+\\.ts$': 'babel-jest',
       },
@@ -22,8 +21,7 @@ module.exports = {
       displayName: 'frontend',
       testEnvironment: 'jsdom',
       testMatch: [
-        '<rootDir>/packages/ui/src/**/*.test.tsx',
-        '<rootDir>/packages/ui/__tests__/**/*.test.tsx',
+        '<rootDir>/tests/unit/ui/**/*.test.tsx',
       ],
       transform: {
         '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
@@ -36,13 +34,10 @@ module.exports = {
       moduleNameMapper: {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
         '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js',
-        '^assets/(.*)$': '<rootDir>/packages/ui/src/assets/$1',
-        '^components/(.*)$': '<rootDir>/packages/ui/src/components/$1',
-        '^context$': '<rootDir>/packages/ui/src/contexts/MaterialUI.tsx',
-        '^contexts/(.*)$': '<rootDir>/packages/ui/src/contexts/$1',
-        '^examples/(.*)$': '<rootDir>/packages/ui/src/components/$1',
-        '^layouts/(.*)$': '<rootDir>/packages/ui/src/layouts/$1',
-        '^routes$': '<rootDir>/packages/ui/src/routes.tsx',
+        '^test-utils$': '<rootDir>/packages/ui/src/test-utils.tsx',
+        // Match any import that starts with a folder name inside /src
+        '^(components|contexts|pages|utils|hooks|assets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',
+        '^(App|Layout|LoginPage|routes)$': '<rootDir>/packages/ui/src/$1.tsx',
       },
     },
   ],

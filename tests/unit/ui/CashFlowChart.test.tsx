@@ -1,6 +1,6 @@
 // packages/ui/src/components/CashFlowChart.test.tsx
 import { render, screen } from '@testing-library/react';
-import { CashFlowChart } from './CashFlowChart';
+import { CashFlowChart } from '../../../packages/ui/src/components/CashFlowChart';
 
 test('renders the cash flow chart with data points', () => {
   const sampleData = [

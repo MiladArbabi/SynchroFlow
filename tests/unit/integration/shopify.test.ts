@@ -1,5 +1,5 @@
 // packages/integration-service/__tests__/shopify.test.ts
-import { fetchRecentOrders } from '../src/clients/shopify';
+import { fetchRecentOrders } from '../../../packages/integration/src/clients/shopify';
 import { shopifyApi } from '@shopify/shopify-api';
 
 // Create a typed mock for the GraphQL client that we can control in tests

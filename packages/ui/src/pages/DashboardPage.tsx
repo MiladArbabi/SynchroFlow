@@ -26,20 +26,26 @@ const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
 );
 
 export function DashboardPage() {
+    // --- DEBUG LOGS ---
+  // Log the imported components to see if they are mocked correctly
+  console.log('DEBUG: Imported KpiCard component:', KpiCard);
+  // Log the return value of the hook before destructuring
+  console.log('DEBUG: useUser() returned:', useUser());
+
   const { isSandbox } = useUser();
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
   return (
+    console.log({ KpiCard, InventoryHealthTable }),
     <MDBox py={3}>
       {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
       <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+        <Grid item size={{ xs: 12, md: 6, lg: 3 }}>
           <MDBox mb={1.5}>
             <KpiCard
               title="Gross Revenue"
               dataUrl="/api/v1/analytics/gross-revenue?shop_id=1"
-              dataKey="gross_revenue"
-              formatAs="currency"
+              format="currency"
               icon="📈"
               color="dark"
             />
@@ -50,8 +56,7 @@ export function DashboardPage() {
             <KpiCard
               title="Gross Margin"
               dataUrl="/api/v1/analytics/gross-margin?shop_id=1"
-              dataKey="gross_margin_percentage"
-              formatAs="percentage"
+              format="percentage"
               icon="💰"
               color="success"
             />
@@ -62,9 +67,8 @@ export function DashboardPage() {
             <KpiCard
               title="Total Inventory Value"
               dataUrl="/api/v1/analytics/inventory-value?shop_id=1"
-              dataKey="total_inventory_value"
-              formatAs="currency"
-             icon="📦"
+              format="currency"
+              icon="📦"
               color="primary"
             />
           </MDBox>
@@ -74,8 +78,7 @@ export function DashboardPage() {
             <KpiCard
               title="Cost of Stockout"
               dataUrl="/api/v1/analytics/cost-of-stockout?shop_id=1&sku=STOCKOUT-SKU-01"
-              dataKey="cost_of_stockout"
-              formatAs="currency"
+              format="currency"
               icon="⚠️"
               color="warning"
             />

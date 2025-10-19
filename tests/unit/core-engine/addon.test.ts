@@ -1,6 +1,6 @@
 // packages/core-engine/__tests__/addon.test.ts
 import path from 'path';
-import db from '../../api/src/db';
+import db from 'api/src/db';
 import { execSync } from 'child_process';
 
 // Define interfaces for our data shapes
@@ -31,7 +31,7 @@ describe('C++ Addon (sf_core)', () => {
     execSync('npm run build -w core-engine', { stdio: 'inherit' });
 
     // Load the addon only ONCE. It does nothing on load.
-    const addonPath = path.join(__dirname, '../build/Release/sf_core.node');
+    const addonPath = path.join(process.cwd(), 'packages/core-engine/build/Release/sf_core.node');
     addon = require(addonPath);
   });
 

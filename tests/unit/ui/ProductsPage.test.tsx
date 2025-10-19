@@ -1,7 +1,7 @@
 // packages/ui/src/pages/ProductsPage.test.tsx
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { ProductsPage } from './ProductsPage';
+import { ProductsPage } from '../../../packages/ui/src/pages/ProductsPage';
 
 describe('ProductsPage', () => {
   it('renders the main heading and search components', () => {

@@ -2,7 +2,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axios from 'axios';
-import DataMapper from './DataMapper';
+import DataMapper from 'components/DataMapper/DataMapper';
 
 // Mock the axios module
 jest.mock('axios');

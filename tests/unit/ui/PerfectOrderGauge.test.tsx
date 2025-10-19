@@ -1,29 +1,11 @@
 // packages/ui/src/components/PerfectOrderGauge.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import axios from 'axios';
-import { MemoryRouter } from 'react-router-dom';
-import { ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import theme from '../theme';
-import { MaterialUIControllerProvider } from '../contexts/MaterialUI';
-import { UserProvider } from '../contexts/UserContext';
-import { PerfectOrderGauge } from './PerfectOrderGauge';
+import { waitFor, screen } from "@testing-library/react";
+import { renderWithProviders } from "test-utils";
+import axios from "axios";
+import { PerfectOrderGauge } from '../../../packages/ui/src/components/PerfectOrderGauge'
 
 jest.mock('axios');
 const mockedAxiosGet = axios.get as jest.Mock;
-
-const renderWithProviders = (ui: React.ReactElement) => {
-  return render(
-    <MemoryRouter>
-      <MaterialUIControllerProvider>
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
-          <UserProvider>{ui}</UserProvider>
-        </ThemeProvider>
-      </MaterialUIControllerProvider>
-    </MemoryRouter>
-  );
-};
 
 describe('PerfectOrderGauge', () => {
 

@@ -1,16 +1,14 @@
 // packages/integration-service/__tests__/server.test.ts
 import request from 'supertest';
-import app from '../src/server';
+import app from '../../../packages/integration/src/server';
 import { createHmac } from 'crypto';
-import { fetchRecentOrders } from '../src/clients/shopify';
-import db from '../src/db';
-import { publishToQueue } from '../src/queue';
+import { fetchRecentOrders } from '../../../packages/integration/src/clients/shopify';
 
 // --- Mocking Setup ---
 // We mock the entire db module to control its behavior
 const mockInsert = jest.fn().mockReturnThis(); // Mocks the .insert() call and allows chaining
 const mockReturning = jest.fn().mockResolvedValue([{ id: 1 }]); // Mocks the .returning() call
-jest.mock('../src/db', () => ({
+jest.mock('../../../packages/integration/src/db', () => ({
   __esModule: true,
   default: jest.fn(() => ({
     insert: mockInsert,
@@ -20,7 +18,7 @@ jest.mock('../src/db', () => ({
 
 // We mock the queue module to control its behavior
 const mockPublishToQueue = jest.fn();
-jest.mock('../src/queue', () => ({
+jest.mock('../../../packages/integration/src/queue', () => ({
   __esModule: true,
   publishToQueue: (queueName: string, message: string) => mockPublishToQueue(queueName, message),
   // We also need a mock for connectToQueue so the server doesn't crash on startup
@@ -28,7 +26,7 @@ jest.mock('../src/queue', () => ({
 }));
 
 // Shopify test mock
-jest.mock('../src/clients/shopify');
+jest.mock('../../../packages/integration/src/clients/shopify');
 const mockedFetchRecentOrders = fetchRecentOrders as jest.Mock;
 // --- End Mocking Setup ---
 
