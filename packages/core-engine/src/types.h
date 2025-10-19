@@ -1,4 +1,4 @@
-// In packages/cpp-core/src/types.h
+// packages/core-engine/src/types.h
 #pragma once 
 #include <string>
 #include <cstdint>

@@ -42,8 +42,8 @@ Thumbs.db
 *.lib
 *.exe
 # CMake build directories
-/packages/cpp-core/build
-/packages/cpp-core/CMakeFiles
+/packages/core-engine/build
+/packages/core-engine/CMakeFiles
 
 # Copied build artifacts
 +**/dist/**/*.node

@@ -21,7 +21,7 @@ import path from 'path';
 
 // Load the C++ addon. The path is different for tests (running from src) vs. dev (running from dist).
 const addonPath = process.env.NODE_ENV === 'test'
-  ? path.join(__dirname, '../../../packages/cpp-core/build/Release/sf_core.node') // Path for Jest/ts-jest
+  ? path.join(__dirname, '../../../packages/core-engine/build/Release/sf_core.node') // Path for Jest/ts-jest
   : path.join(__dirname, './sf_core.node'); // Path for the compiled server.js
 const addon = require(addonPath);
 

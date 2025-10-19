@@ -4,16 +4,12 @@
   "private": true,
   "description": "The root of the SynchroFlow monorepo.",
   "workspaces": [
-    "packages/api",
-    "packages/cpp-core",
-    "packages/ui",
-    "packages/ai-engine",
-    "packages/integration-service"
+    "packages/*"
   ],
   "scripts": {
     "dev": "concurrently \"npm:dev-api\" \"npm:dev-cpp\" \"npm:dev-ui\" \"npm:dev-ai\" \"npm:dev-integration\"",
     "dev-api": "npm run dev -w api",
-    "dev-cpp": "npm run dev -w cpp-core",
+    "dev-cpp": "npm run dev -w core-engine",
     "dev-ui": "wait-on tcp:3000 && npm run dev -w ui",
     "dev-ai": "npm run dev -w ai-engine",
     "dev-integration": "npm run dev -w integration-service",

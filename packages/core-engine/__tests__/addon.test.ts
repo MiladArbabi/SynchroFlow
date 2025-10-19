@@ -1,4 +1,4 @@
-// packages/cpp-core/__tests__/addon.test.ts
+// packages/core-engine/__tests__/addon.test.ts
 import path from 'path';
 import db from '../../api/src/db';
 import { execSync } from 'child_process';
@@ -28,7 +28,7 @@ describe('C++ Addon (sf_core)', () => {
 
     // Force a rebuild of the C++ addon before loading it.
     // This ensures we are always testing against the latest code.
-    execSync('npm run build -w cpp-core', { stdio: 'inherit' });
+    execSync('npm run build -w core-engine', { stdio: 'inherit' });
 
     // Load the addon only ONCE. It does nothing on load.
     const addonPath = path.join(__dirname, '../build/Release/sf_core.node');

@@ -1,5 +1,5 @@
 {
-  "name": "cpp-core",
+  "name": "core-engine",
   "version": "1.0.0",
   "main": "build/Release/sf_core.node",
   "gypfile": true,

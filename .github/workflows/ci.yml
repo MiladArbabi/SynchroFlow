@@ -50,12 +50,12 @@ jobs:
       - name: Build C++ Core
         # Assuming your C++ compilation script is robust (e.g., using cmake/make)
         run: |
-          cd packages/cpp-core/
+          cd packages/core-engine/
           cmake .
           make
 
       - name: Run C++ tests
         # Assuming you have a C++ test runner executable
         run: |
-          cd packages/cpp-core/
+          cd packages/core-engine/
           ./test_runner

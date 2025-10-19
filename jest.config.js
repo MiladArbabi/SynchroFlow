@@ -9,7 +9,7 @@ module.exports = {
       setupFiles: ['<rootDir>/jest.env.js'],
       testMatch: [
         '<rootDir>/packages/api/**/*.test.ts',
-        '<rootDir>/packages/cpp-core/**/*.test.ts',
+        '<rootDir>/packages/core-engine/**/*.test.ts',
         '<rootDir>/packages/integration-service/**/*.test.ts',
       ],
       // Use babel-jest for all backend files
