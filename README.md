@@ -1,114 +1,157 @@
-# SynchroFlow: The Autonomous Commerce Operations Platform (v5.1)
+# SynchroFlow: The Autonomous Commerce Operations Platform (v5.4)
 
-SynchroFlow is the Autonomous Commerce Operations Platform for D2C and emerging B2B e-commerce brands. It unifies data from platforms like Shopify, Amazon, Zendesk, and Faire into a single operational truth. Our **Product-Led Growth (PLG)** model offers a frictionless self-service experience with an instant sandbox and scoped trials, evolving from data visualization to AI-driven recommendations and ultimately to agentic automation.
+SynchroFlow is a B2B SaaS platform engineered to be the central nervous system for mid-market ($1M - $50M+ ARR) e-commerce brands. We solve the two most expensive operational challenges: data fragmentation and communication silos.
 
-## Current Project Status
+Our platform is built on a high-performance C++ core that serves as a single source of truth, evolving from a unified platform into a complete commerce ecosystem.
 
-**Phase 2** (PLG-Powered FinOps MVP) is substantially complete. The foundational UI/UX has been implemented using a professional design system, and the core dashboard widgets are functional. Our current priority is addressing technical debt to ensure a stable and scalable platform before moving to the next feature phase.
+## 1. Core Product Modules & Offerings (v5.4)
 
-## Key Achievements:
+### Core Platform
+* **FinOps Command Center:** Unified dashboard for finance and operations.
+* **Echo Communications Hub:** Unified inbox for customer support.
+* **Ops-Intel Engine:** A cross-platform module to track and quantify labor cost savings.
 
-* A full-stack, **five-service architecture** (Node.js API, C++ Core, Python AI, React UI, and a dedicated Node.js Integration Service).
-* A professional, unified development environment (`npm run dev`) and a robust, stable testing framework (`npm test`).
-* A complete, end-to-end **data ingestion and transformation pipeline** (Webhook -> Staging -> Message Queue -> API Worker -> Transformer).
-* A **professional UI foundation** built on Material-UI, providing a consistent and modern user experience.
-* The core **FinOps Command Center** with live-data widgets for Gross Revenue, Gross Margin, Inventory Value, Inventory Health, and Fulfillment status.
+### Core Operations Module
+* **"SynchroFlow Warehouse Ops" (WMS-Lite):** A new module for brands running their own small warehouses, providing MDE/mobile-based pick/pack/ship and bin-level inventory control.
 
-## Technical Architecture
+### Advanced Platform Modules (Expansion)
+* **"SynchroFlow Clarity":** AI-driven industry benchmarking.
+* **Supplier & Procurement Portal:** Manages the complete PO lifecycle.
+* **B2B Wholesale Portal:** A revenue-generating, real-time B2B ordering portal.
 
-SynchroFlow uses a decoupled, event-driven microservices architecture designed for global scale and data residency. It follows a **Data Lakehouse** approach to combine the speed of an operational database with the analytical power of a data warehouse.
+### Ecosystem Services (Dominance)
+* **"SynchroFlow Concierge":** A premium BPO service, allowing customers to outsource their ops and CX to our certified experts.
+
+## 2. Technical Architecture (v5.4)
+
+SynchroFlow uses a decoupled, five-service microservices architecture. The new "Warehouse Ops" module is a mobile application that communicates directly with our core API.
 
 ```mermaid
 graph TD
-    subgraph "Third-Party Platforms"
-        SP[Shopify] AM[Amazon] FR[Faire] SL[Shopee/Lazada] ML[Mercado Libre] ZD[Zendesk] WS[Webshipper/WMS] PP[PayPal/PYUSD]
+    subgraph "External Platforms"
+        ThirdParty[Shopify, NetSuite, Zendesk, etc.]
+    end
+
+    subgraph "User Interface Layer"
+        UI[React UI (Web)]
+        WMS_App[WMS Mobile App (MDE/Phone)]
+        B2B[B2B Wholesale Portal]
+        SUP[Supplier Portal]
     end
 
     subgraph "SynchroFlow Platform"
-        subgraph "Client Layer"
-            UI[React UI (Vite, Material-UI)]
-        end
-        
-        subgraph "Web Layer (Node.js)"
-            API[Express.js API Server]
+        subgraph "Integration Layer"
+            IS[Integration Service<br>(Node.js)]
+            MQ[(RabbitMQ<br>Message Queue)]
         end
 
-        subgraph "Integration Layer (Node.js)"
-            IS[Integration Service] MQ[(RabbitMQ/SQS)]
+        subgraph "Web Layer & Core API"
+            API[Express.js API Server<br>(Handles FinOps, Echo, B2B, POs, WMS)]
         end
 
-        subgraph "Core Services"
-            CPP[C++ Engine] AI[Python AI Engine (PyTorch/LangChain)]
+        subgraph "High-Performance Core"
+            CPP[C++ Engine<br>(Atomic Inventory Truth)]
+        end
+
+        subgraph "AI Engine"
+            AI[Python Microservice<br>(Forecasting, NLP, Benchmarking)]
         end
 
         subgraph "Data Layer"
-            S3[S3/GCS] DW[BigQuery/Redshift] DB[(PostgreSQL)] CACHE[(Redis)]
+            DB[(PostgreSQL)]
+            CACHE[(Redis)]
+            DW[Data Warehouse]
+            S3[S3 Data Lake]
         end
     end
 
     %% Connections
-    SP & AM & FR & SL & ML & ZD & WS & PP -- Webhooks/Polling --> IS
-    IS -- Raw Events --> S3
-    IS -- Job Tickets --> MQ
-    API -- Consumes Jobs From --> MQ
+    ThirdParty -- Webhooks --> IS
+    IS -- Raw Data --> S3
+    IS -- Publishes Job --> MQ
     
-    UI -- HTTPS --> API
+    API -- Consumes Job --> MQ
+    UI & B2B & SUP & WMS_App -- HTTPS --> API
+    
     API -- N-API Call --> CPP
     API -- REST --> AI
-    API -- Knex.js CRUD --> DB
-    API -- Caching --> CACHE
-    CPP -- libpqxx Bulk Ops --> DB
-    AI --> DW & DB
+    API -- CRUD --> DB
+    API -- Cache --> CACHE
+    API -- Analytics --> DW
+    CPP -- libpqxx --> DB
 ```
 
 ### Key Architectural Principles
-* **Multi-Region Deployment:** Infrastructure will be deployed in distinct EU, US, APAC, and LATAM regions.
-* **Data Lakehouse Approach:** Raw data is staged in Object Storage (S3/GCS), live data is in PostgreSQL, and historical data is in a Data Warehouse (BigQuery/Redshift).
+- Multi-Region Deployment: Infrastructure will be deployed in distinct EU, US, APAC, and LATAM regions.
+- Data Lakehouse Approach: Raw data is staged in Object Storage (S3), live data is in PostgreSQL, and historical data is in a Data Warehouse.
 
 ### Technology Stack
-* **Frontend:** React (Vite), TypeScript, Material-UI, Emotion, TanStack Table, Chart.js.
-* **API/Backend:** Node.js, Express.js, TypeScript, Knex.js, amqplib.
-* **Data Layer:** PostgreSQL (Docker), RabbitMQ (Docker), Redis.
-* **High-Performance Core:** C++, N-API, libpqxx.
-* **AI Engine:** Python, FastAPI, PyTorch, LangChain.
-* **DevOps:** Docker, NPM Workspaces, Jest, Supertest, React Testing Library.
+- Frontend: React (Vite), TypeScript, Material-UI, Emotion, TanStack Table, Chart.js.
+- API/Backend: Node.js, Express.js, TypeScript, Knex.js, amqplib.
+- Data Layer: PostgreSQL (Docker), RabbitMQ (Docker), Redis.
+- High-Performance Core: C++, N-API, libpqxx.
+- AI Engine: Python, FastAPI, PyTorch, LangChain.
+- DevOps: Docker, NPM Workspaces, Jest, Supertest, React Testing Library.
 
-## Local Development Setup
+## 3. Local Development Setup
 
 ### Prerequisites
-* Node.js (v20+), Docker, Homebrew, C++ Compiler, Python 3 & `venv`.
+Node.js (v20+), Docker, Homebrew, C++ Compiler, Python 3 & venv.
 
-### 1. First-Time Installation
+### First-Time Installation
 ```bash
 # Clone the repository
-git clone [https://github.com/MiladArbabi/SynchroFlow.git](https://github.com/MiladArbabi/SynchroFlow.git)
+git clone [YOUR_REPO_URL]
 cd SynchroFlow
 
-# Install C++ dependencies
+# Install C++ dependencies (macOS with Homebrew)
 brew install libpq libpqxx
 
 # Set up Python virtual environment
 cd packages/ai-engine && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && deactivate && cd ../..
 
-# Install all Node.js dependencies
+# Install all Node.js dependencies from the root
 npm install
 ```
 
-### 2. Running the Application
+### Running the Application
 ```bash
-# 1. Start Docker services
-docker-compose up -d
-# 2. Wait for DB to initialize
-sleep 5
-# 3. Run database migrations
-npm run migrate -w api
-# 4. Start all application services
-npm run dev
+# This command starts Docker, resets the DB, runs migrations, and starts all services.
+# It is the single command needed for daily development.
+npm run dev:full
 ```
 
-## Roadmap
-This is a high-level overview. For details, see the **Project Milestones on GitHub**.
-* **Phase 1: Core Performance Proof (✅ Complete)**
-* **Phase 2: PLG-Powered FinOps MVP (✅ Complete)**
-* **Phase 3: Optimization Engine (In Progress)**: Introduce AI-driven recommendations and address technical debt.
-* **Phase 4: The Autonomous Engine (Upcoming)**: Deliver true workflow automation with agentic AI.
+The services will be available at:
+- React UI: http://localhost:5173/
+- Node.js API: http://localhost:3000
+- Python AI Engine: http://localhost:8000
+
+## 4. GTM & Pricing Strategy (v5.4)
+
+Our GTM is a Product-Led Growth (PLG) motion that funnels into a high-value, sales-led conversion, based on a Margin-Protected Penetration strategy.
+
+- Acquisition: The "Ignition" plan is our primary acquisition tool.
+- Cash Flow: We will aggressively drive Annual Upfront Contracts by offering a "2 Months Free" discount.
+- Expansion: Our sales and customer success teams will be heavily incentivized to "land and expand" by upselling our new suite of high-margin modules.
+
+### The Pricing Ladder (Annual-First)
+
+| Plan       | Target ICP (ARR) | Monthly Price | Annual Price (Upfront) | Core Value Proposition                  |
+|------------|------------------|---------------|-------------------------|-----------------------------------------|
+| Ignition  | $1M - $10M      | $349 / mo    | **$3,490 / year**      | Unified Analytics. Replaces BI tools.   |
+| Clarity   | $10M - $20M     | $799 / mo    | **$7,990 / year**      | Core Operations Sync. Replaces OMS.     |
+| Optimize  | $20M - $50M     | $1,999 / mo  | **$19,990 / year**     | The "Franken-Stack Killer." Unified Ops + CX. |
+| Autonomous| $50M+           | $4,500+ / mo | Custom Annual Contract | Strategic Headcount Reduction.          |
+
+(See Feature Matrix for detailed plan gating)
+
+## 5. Development Roadmap (High-Level)
+- Phase 1: Core Architecture: (✅ Complete)
+- Phase 2: FinOps MVP: (✅ Complete)
+- Phase 3: Polish & Tech Debt: (In Progress) -> Fixing the core UI is the current priority.
+- Phase 4: Launch "Ignition" & "Ops-Intel" (v1): Launch the $349/mo plan and the "Ops Efficiency" dashboard.
+- Phase 5: Launch "Warehouse Ops" Module: Develop the WMS-Lite mobile app.
+- Phase 6: Launch "Echo Hub" & "Optimize" Plan: Build the full CX suite.
+- Phase 7: Launch "Expand" Modules (B2B, Supplier, Clarity): Develop the high-margin add-ons.
+- Phase 8: Launch "Dominate" Services (Concierge): Pilot the BPO service.
+- Phase 9: The "Autonomous" Engine: Develop true agentic AI for workflow automation.
