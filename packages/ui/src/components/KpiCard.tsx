@@ -1,70 +1,62 @@
 // packages/ui/src/components/KpiCard.tsx
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { ComplexStatisticsCard } from './Cards/StatisticsCards/ComplexStatisticsCard';
+import { useState, useEffect } from "react";
+import axios from "axios";
+import MDBox from "./MDBox"; // We are keeping MDBox
+import MDTypography from "./MDTypography"; // We are keeping MDTypography
 
-// Helper function for formatting values
-function formatValue(value: number, format?: 'currency' | 'number' | 'percentage'): string {
-  if (format === 'currency') {
-    return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+// Helper to format values
+function formatValue(value, format) {
+  if (value === null || value === undefined) return "N/A";
+  if (format === "currency") {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(value);
   }
-  if (format === 'percentage') {
-    return `${value.toFixed(1)}%`;
+  if (format === "percentage") {
+    return `${value.toFixed(2)}%`;
   }
-  return value.toLocaleString('en-US');
+  return value.toLocaleString();
 }
 
-// Define the props for our smart wrapper
-interface KpiCardProps {
-  title: string;
-  dataUrl: string;
-  dataKey: string;
-  formatAs?: 'currency' | 'number' | 'percentage';
-  icon: string;
-  color?: "primary" | "secondary" | "info" | "success" | "warning" | "error" | "light" | "dark";
-}
-
-export const KpiCard: React.FC<KpiCardProps> = ({ title, dataUrl, dataKey, formatAs, icon, color }) => {
-  const [value, setValue] = useState<number | null>(null);
+function KpiCard({ title, dataUrl, format, icon }) {
+  const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      setError('');
       try {
         const response = await axios.get(dataUrl);
-        if (response.data && response.data[dataKey] !== undefined) {
-          setValue(response.data[dataKey]);
-        } else {
-          setError('Invalid data.');
-        }
-      } catch (_err) {
-        setError('Error');
+        setData(response.data);
+      } catch (error) {
+        console.error(`Failed to fetch KPI data for ${title}:`, error);
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchData();
-  }, [dataUrl, dataKey]);
+  }, [dataUrl, title]);
 
-  let displayValue: string | number = '...';
-  if (isLoading) {
-    displayValue = '...';
-  } else if (error) {
-    displayValue = 'Error';
-  } else if (value !== null) {
-    displayValue = formatValue(value, formatAs);
-  }
+  const displayValue = isLoading ? "Loading..." : formatValue(data?.value, format);
 
   return (
-    <ComplexStatisticsCard
-      title={title}
-      count={displayValue}
-      icon={icon}
-      color={color}
-    />
+    <MDBox
+      variant="gradient"
+      bgColor="dark"
+      color="white"
+      borderRadius="lg"
+      p={2}
+      textAlign="center"
+    >
+      <MDTypography variant="h6" fontWeight="medium" color="white" textTransform="capitalize">
+        {title}
+      </MDTypography>
+      <MDTypography variant="h4" fontWeight="bold" color="white">
+        {displayValue}
+      </MDTypography>
+    </MDBox>
   );
-};
+}
+
+export default KpiCard;

@@ -1,164 +1,87 @@
 // packages/ui/src/components/Sidenav/index.tsx
-import React, { useEffect } from "react";
 import { useLocation, NavLink } from "react-router-dom";
 
-// @mui material components
+// MUI components
 import List from "@mui/material/List";
 import Divider from "@mui/material/Divider";
 import Link from "@mui/material/Link";
 
-// Material Dashboard 2 React components
-import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
+// SynchroFlow components
+import MDBox from "../MDBox";
+import MDTypography from "../MDTypography";
+import SidenavCollapse from "./SidenavCollapse";
 
-// Material Dashboard 2 React example components
-import SidenavCollapse from "components/Sidenav/SidenavCollapse";
+// Styles
+import SidenavRoot from "./SidenavRoot";
 
-// Custom styles for the Sidenav
-import SidenavRoot from "components/Sidenav/SidenavRoot";
-import sidenavLogoLabel from "components/Sidenav/styles/sidenav";
-
-// Material Dashboard 2 React context
-import {
-  useMaterialUIController,
-  setMiniSidenav,
-  setTransparentSidenav,
-  setWhiteSidenav,
-} from "contexts/MaterialUI";
-
-// Define the shape of a route object for strong typing
+// Define the shape of a route object
 interface Route {
   type: "collapse" | "title" | "divider";
-  name: string;
+  name?: string;
   key: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   route?: string;
   href?: string;
   title?: string;
-  noCollapse?: boolean;
 }
 
 interface SidenavProps {
-  color: "primary" | "secondary" | "info" | "success" | "warning" | "error" | "dark";
-  brand?: string;
   brandName: string;
-  routes: Route[];
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
+  routes: readonly Route[];
+  isSidenavOpen: boolean;
 }
 
-export const Sidenav: React.FC<SidenavProps> = ({ color = "info", brand = "", brandName, routes, onMouseEnter, onMouseLeave }) => {
-  const [controller, dispatch] = useMaterialUIController();
-  const { miniSidenav, transparentSidenav, whiteSidenav, darkMode } = controller;
+export const Sidenav: React.FC<SidenavProps> = ({ brandName, routes, isSidenavOpen }) => {
   const location = useLocation();
   const collapseName = location.pathname.replace("/", "");
 
-  let textColor: "white" | "inherit" | "dark" = "white";
-
-  if (transparentSidenav || (whiteSidenav && !darkMode)) {
-    textColor = "dark";
-  } else if (whiteSidenav && darkMode) {
-    textColor = "inherit";
-  }
-
-  const closeSidenav = () => setMiniSidenav(dispatch, true);
-
-  useEffect(() => {
-    function handleMiniSidenav() {
-      setMiniSidenav(dispatch, window.innerWidth < 1200);
-      setTransparentSidenav(dispatch, window.innerWidth < 1200 ? false : transparentSidenav);
-      setWhiteSidenav(dispatch, window.innerWidth < 1200 ? false : whiteSidenav);
-    }
-
-    window.addEventListener("resize", handleMiniSidenav);
-    handleMiniSidenav();
-    return () => window.removeEventListener("resize", handleMiniSidenav);
-  }, [dispatch, location, transparentSidenav, whiteSidenav]);
-
-  const renderRoutes = routes.map(({ type, name, icon, title, noCollapse, key, href, route }) => {
-    let returnValue;
-
+  const renderRoutes = routes.map(({ type, name, icon, title, key, href, route }) => {
     if (type === "collapse") {
-      returnValue = href ? (
+      return href ? (
         <Link href={href} key={key} target="_blank" rel="noreferrer" sx={{ textDecoration: "none" }}>
-          <SidenavCollapse name={name} icon={icon} active={key === collapseName} noCollapse={noCollapse} />
+          <SidenavCollapse name={name!} icon={icon} active={key === collapseName} />
         </Link>
       ) : (
         <NavLink key={key} to={route!}>
-          <SidenavCollapse name={name} icon={icon} active={key === collapseName} />
+          <SidenavCollapse name={name!} icon={icon} active={key === collapseName} />
         </NavLink>
       );
     } else if (type === "title") {
-      returnValue = (
+      return (
         <MDTypography
           key={key}
-          color={textColor}
-          display="block"
+          color="white"
           variant="caption"
           fontWeight="bold"
           textTransform="uppercase"
-          pl={3}
-          mt={2}
-          mb={1}
-          ml={1}
         >
           {title}
         </MDTypography>
       );
     } else if (type === "divider") {
-      returnValue = (
-        <Divider
-          key={key}
-          light={
-            (!darkMode && !whiteSidenav && !transparentSidenav) ||
-            (darkMode && !transparentSidenav && whiteSidenav)
-          }
-        />
-      );
+      return <Divider key={key} light={true} />;
     }
-
-    return returnValue;
+    return null;
   });
 
   return (
     <SidenavRoot
       variant="permanent"
-      ownerState={{ transparentSidenav, whiteSidenav, miniSidenav, darkMode }}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      ownerState={{ miniSidenav: !isSidenavOpen }}
     >
       <MDBox pt={3} pb={1} px={4} textAlign="center">
-        <MDBox
-          display={{ xs: "block", xl: "none" }}
-          position="absolute"
-          top={0}
-          right={0}
-          p={1.625}
-          onClick={closeSidenav}
-          sx={{ cursor: "pointer" }}
-        >
-          <MDTypography variant="h6" color="secondary">
-            SYNCHROFLOW ICON PLACE
-          </MDTypography>
-        </MDBox>
         <MDBox component={NavLink} to="/" display="flex" alignItems="center">
-          {brand && <MDBox component="img" src={brand} alt="Brand" width="2rem" />}
           <MDBox
-            width={!brandName && "100%"}
-            sx={(theme) => sidenavLogoLabel(theme, { miniSidenav })}
+            width={"100%"}
+            style={{ opacity: isSidenavOpen ? 1 : 0, transition: 'opacity 0.2s ease-in-out' }}
           >
-            <MDTypography component="h6" variant="button" fontWeight="medium" color={textColor}>
+            <MDTypography variant="h6" fontWeight="medium" color="white">
               {brandName}
             </MDTypography>
           </MDBox>
         </MDBox>
       </MDBox>
-      <Divider
-        light={
-          (!darkMode && !whiteSidenav && !transparentSidenav) ||
-          (darkMode && !transparentSidenav && whiteSidenav)
-        }
-      />
+      <Divider light={true} />
       <List>{renderRoutes}</List>
     </SidenavRoot>
   );

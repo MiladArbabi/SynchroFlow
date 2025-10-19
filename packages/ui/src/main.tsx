@@ -4,23 +4,19 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import { UserProvider } from './contexts/UserContext.tsx';
 import App from './App.tsx'
-import { ThemeProvider } from '@mui/material/styles';
+import { ThemeProvider } from '@emotion/react';
+import { createTheme } from '@mui/material';
 import CssBaseline from '@mui/material/CssBaseline';
-import theme from './assets/theme';
-import { MaterialUIControllerProvider } from './contexts/MaterialUI.tsx';
-
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-     <MaterialUIControllerProvider>
-      <ThemeProvider theme={theme}>
+     <ThemeProvider theme={createTheme()}>
         <CssBaseline />
         <UserProvider>
           <App />
         </UserProvider>
-      </ThemeProvider>
-    </MaterialUIControllerProvider>
+    </ThemeProvider>
     </BrowserRouter>
   </StrictMode>,
 )

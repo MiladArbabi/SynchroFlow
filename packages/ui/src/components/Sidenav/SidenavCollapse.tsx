@@ -1,5 +1,6 @@
 // packages/ui/src/components/Sidenav/SidenavCollapse.tsx
 import React from 'react';
+import { Theme } from "@mui/material/styles";
 import ListItem from "@mui/material/ListItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
@@ -7,10 +8,8 @@ import MDBox from '../MDBox';
 import {
   collapseItem,
   collapseIconBox,
-  collapseIcon,
   collapseText,
 } from "../Sidenav/styles/sidenavCollapse";
-import { useMaterialUIController } from '../../contexts/MaterialUI';
 
 // Define the props for the component
 interface SidenavCollapseProps {
@@ -21,46 +20,28 @@ interface SidenavCollapseProps {
 }
 
 export const SidenavCollapse: React.FC<SidenavCollapseProps> = ({ icon, name, active = false, ...rest }) => {
-  const [controller] = useMaterialUIController();
-  const { miniSidenav, transparentSidenav, whiteSidenav, darkMode, sidenavColor } = controller;
-
   return (
     <ListItem component="li">
       <MDBox
         {...rest}
-        sx={(theme: unknown) =>
+        sx={(theme: Theme) =>
           collapseItem(theme, {
-            active,
-            transparentSidenav,
-            whiteSidenav,
-            darkMode,
-            sidenavColor,
+            active
           })
         }
       >
         <ListItemIcon
           sx={(theme: unknown) => ({
             ...collapseIconBox(theme, {
-              transparentSidenav, whiteSidenav, darkMode, active,
-              sidenavColor: 'info'
+              active,
             }),
-            fontSize: "1.375rem",
           })}
         >
           {icon}
-          </ListItemIcon>
+        </ListItemIcon>
         <ListItemText
           primary={name}
-          sx={(theme: unknown) =>
-            collapseText(theme, {
-              miniSidenav,
-              transparentSidenav,
-              whiteSidenav,
-              active,
-              darkMode: false,
-              sidenavColor: 'info'
-            })
-          }
+          sx={(theme: Theme) => collapseText(theme, { active })}
         />
       </MDBox>
     </ListItem>

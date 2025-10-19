@@ -1,64 +1,18 @@
-import React from "react";
-import { Link } from "react-router-dom";
-import { Breadcrumbs as MuiBreadcrumbs } from "@mui/material";
-import MDBox from "../MDBox";
-import MDTypography from "../MDTypography";
+// packages/ui/src/components/Breadcrumbs/index.tsx
+
+import React from 'react';
+import MDBox from '../MDBox';
+import MDTypography from '../MDTypography';
 
 interface BreadcrumbsProps {
   icon: React.ReactNode;
   title: string;
-  route: string[];
   light?: boolean;
 }
 
-export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ icon, title, route, light = false }) => {
-  const routes = route.slice(0, -1);
-
+const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ icon, title, light }) => {
   return (
-    <MDBox mr={{ xs: 0, xl: 8 }}>
-      <MuiBreadcrumbs
-        sx={{
-          "& .MuiBreadcrumbs-separator": {
-            color: ({ palette: { white, grey } }) => (light ? white.main : grey[600]),
-          },
-        }}
-      >
-        <Link to="/">
-          <MDTypography
-            component="span"
-            variant="body2"
-            color={light ? "white" : "dark"}
-            opacity={light ? 0.8 : 0.5}
-            sx={{ lineHeight: 0 }}
-          >
-            🏠 {/* Placeholder for home icon */}
-          </MDTypography>
-        </Link>
-        {routes.map((el) => (
-          <Link to={`/${el}`} key={el}>
-            <MDTypography
-              component="span"
-              variant="button"
-              fontWeight="regular"
-              textTransform="capitalize"
-              color={light ? "white" : "dark"}
-              opacity={light ? 0.8 : 0.5}
-              sx={{ lineHeight: 0 }}
-            >
-              {el}
-            </MDTypography>
-          </Link>
-        ))}
-        <MDTypography
-          variant="button"
-          fontWeight="regular"
-          textTransform="capitalize"
-          color={light ? "white" : "dark"}
-          sx={{ lineHeight: 0 }}
-        >
-          {title.replace("-", " ")}
-        </MDTypography>
-      </MuiBreadcrumbs>
+    <MDBox mr={{ xs: 0, md: 2 }}>
       <MDTypography
         fontWeight="bold"
         textTransform="capitalize"
@@ -66,10 +20,10 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ icon, title, route, li
         color={light ? "white" : "dark"}
         noWrap
       >
-        {title.replace("-", " ")}
+        {title}
       </MDTypography>
     </MDBox>
   );
-}
+};
 
 export default Breadcrumbs;

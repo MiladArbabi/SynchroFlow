@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { ConnectStoreModal } from '../components/ConnectStoreModal';
-import { KpiCard } from '../components/KpiCard';
+import KpiCard from '../components/KpiCard';
 import { InventoryHealthTable } from '../components/InventoryHealthTable';
 import { FulfillmentPipelineChart } from '../components/FulfillmentPipelineChart';
 import { PerfectOrderGauge } from '../components/PerfectOrderGauge';

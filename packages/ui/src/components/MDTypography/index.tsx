@@ -1,6 +1,5 @@
 // packages/ui/src/components/MDTypography/index.tsx
 import { forwardRef } from "react";
-import { useMaterialUIController } from "../../contexts/MaterialUI";
 import MDTypographyRoot from "./MDTypographyRoot";
 import { MDTypographyProps } from "./types";
 
@@ -11,7 +10,6 @@ const MDTypography = forwardRef<HTMLElement, MDTypographyProps>(
       fontWeight = false,
       textTransform = "none",
       verticalAlign = "unset",
-      textGradient = false,
       opacity = 1,
       variant = "inherit",
       children,
@@ -19,8 +17,6 @@ const MDTypography = forwardRef<HTMLElement, MDTypographyProps>(
     },
     ref
   ) => {
-    const [controller] = useMaterialUIController();
-    const { darkMode } = controller;
 
     return (
       <MDTypographyRoot
@@ -33,8 +29,6 @@ const MDTypography = forwardRef<HTMLElement, MDTypographyProps>(
           verticalAlign,
           fontWeight,
           opacity,
-          textGradient,
-          darkMode,
         }}
       >
         {children}

@@ -16,9 +16,7 @@ const MDTypographyRoot = styled(Typography, {
     prop !== "textTransform" &&
     prop !== "verticalAlign" &&
     prop !== "fontWeight" &&
-    prop !== "opacity" &&
-    prop !== "textGradient" &&
-    prop !== "darkMode",
+    prop !== "opacity",
 })<MDTypographyRootProps>(({ theme, ownerState }) => getTypographyStyles(theme, ownerState));
 
 MDTypographyRoot.displayName = "MDTypographyRoot";

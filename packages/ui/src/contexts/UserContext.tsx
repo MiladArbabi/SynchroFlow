@@ -1,33 +1,52 @@
-// packages/ui/src/contexts/UserContext.tsx
-import React, { createContext, useContext, ReactNode } from 'react';
+//packages/ui/src/contexts/UserContext.tsx
+import React, { createContext, useState, useContext, ReactNode } from 'react';
 
-// Define the shape of the context data
+// Define the shape of the user and the context
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  shopId: number | null;
+}
+
 interface UserContextType {
-  isSandbox: boolean;
-  // We can add more user data here later, like name, email, etc.
+  user: User | null;
+  isAuthenticated: boolean;
+  login: (userData: User) => void;
+  logout: () => void;
 }
 
 // Create the context with a default value
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-interface UserProviderProps {
-  children: ReactNode;
-  value?: Partial<UserContextType>; // Allow overriding the value for tests
-}
+// Create the provider component
+export const UserProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
 
-// Create a provider component
-export const UserProvider: React.FC<UserProviderProps> = ({ children, value: overrideValue }) => {
-  // For now, we'll hardcode the value to simulate being in sandbox mode.
-  // Later, this will come from an API call.
-  const defaultValue = { isSandbox: true };
-  const value = { ...defaultValue, ...overrideValue };
+  const login = (userData: User) => {
+    setUser(userData);
+    // In a real app, you would also set a token in localStorage or a cookie
+  };
+
+  const logout = () => {
+    setUser(null);
+    // Clear any stored tokens
+  };
+
+  const isAuthenticated = !!user;
+
+  const value = {
+    user,
+    isAuthenticated,
+    login,
+    logout,
+  };
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 };
 
-// Create a custom hook to easily use the context
-// eslint-disable-next-line react-refresh/only-export-components
-export const useUser = (): UserContextType => {
+// Create a custom hook for easy access to the context
+export const useUser = () => {
   const context = useContext(UserContext);
   if (context === undefined) {
     throw new Error('useUser must be used within a UserProvider');

@@ -1,34 +1,27 @@
 // packages/ui/src/components/DashboardLayout/index.tsx
-import React, { useEffect } from "react";
-import { useLocation } from "react-router-dom";
-import MDBox from "components/MDBox";
-import { useMaterialUIController, setLayout } from "contexts/MaterialUI";
+import { ReactNode } from "react";
+import { Theme } from "@mui/material/styles";
+import MDBox from "../MDBox";
 
 interface DashboardLayoutProps {
-  children: React.ReactNode;
+  children: ReactNode;
+  isSidenavOpen: boolean;
 }
 
-export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
-  const [controller, dispatch] = useMaterialUIController();
-  const { miniSidenav } = controller;
-  const { pathname } = useLocation();
-
-  useEffect(() => {
-    setLayout(dispatch, "dashboard");
-  }, [pathname, dispatch]);
+export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, isSidenavOpen }) => {  
 
   return (
     <MDBox
-      sx={({ breakpoints, transitions, functions: { pxToRem } }: any) => ({
+      sx={(theme: Theme) => ({
         p: 3,
         position: "relative",
-        [breakpoints.up("xl")]: {
-          marginLeft: miniSidenav ? pxToRem(120) : pxToRem(274),
-          transition: transitions.create(["margin-left", "margin-right"], {
-            easing: transitions.easing.easeInOut,
-            duration: transitions.duration.standard,
-          }),
+        marginLeft: {
+          xl: isSidenavOpen ? "274px" : "120px",
         },
+        transition: theme.transitions.create(["margin-left"], {
+          easing: theme.transitions.easing.easeInOut,
+          duration: theme.transitions.duration.standard,
+        }),
       })}
     >
       {children}

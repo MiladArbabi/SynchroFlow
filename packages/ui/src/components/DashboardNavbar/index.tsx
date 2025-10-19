@@ -1,59 +1,41 @@
 // packages/ui/src/components/DashboardNavbar/index.tsx
-import React, { useState, useEffect } from "react";
+
+import { useState } from "react";
 import { useLocation, Link } from "react-router-dom";
+
+// MUI components
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
-import MDBox from "components/MDBox";
-import MDInput from "components/MDInput";
-import Breadcrumbs from "../Breadcrumbs";
-import NotificationItem from "../Items/NotificationItem";
+import Icon from "@mui/material/Icon";
+import TextField from "@mui/material/TextField";
+
+// SynchroFlow components
+import MDBox from "../MDBox";
+import Breadcrumbs from "../Breadcrumbs"; // Now imports our new, simple component
+
+// Styles
 import {
   navbar,
   navbarContainer,
   navbarRow,
-  navbarIconButton,
-  navbarMobileMenu,
-} from "components/DashboardNavbar/styles";
-import {
-  useMaterialUIController,
-  setTransparentNavbar,
-  setMiniSidenav,
-  setOpenConfigurator,
-} from "contexts/MaterialUI";
+  navbarIconButton
+} from "./styles"; // Now imports our fixed styles
 
+// Props interface
 interface DashboardNavbarProps {
+  isSidenavOpen: boolean;
+  handleSidenavToggle: () => void;
   absolute?: boolean;
   light?: boolean;
-  isMini?: boolean;
 }
 
-export const DashboardNavbar: React.FC<DashboardNavbarProps> = ({ absolute = false, light = false, isMini = false }) => {
-  const [navbarType, setNavbarType] = useState<"sticky" | "static">("sticky");
-  const [controller, dispatch] = useMaterialUIController();
-  const { miniSidenav, transparentNavbar, fixedNavbar, openConfigurator, darkMode } = controller;
+export const DashboardNavbar: React.FC<DashboardNavbarProps> = ({ 
+  isSidenavOpen, handleSidenavToggle, absolute, light }) => {
   const [openMenu, setOpenMenu] = useState<null | HTMLElement>(null);
   const route = useLocation().pathname.split("/").slice(1);
 
-  useEffect(() => {
-    if (fixedNavbar) {
-      setNavbarType("sticky");
-    } else {
-      setNavbarType("static");
-    }
-
-    function handleTransparentNavbar() {
-      setTransparentNavbar(dispatch, (fixedNavbar && window.scrollY === 0) || !fixedNavbar);
-    }
-
-    window.addEventListener("scroll", handleTransparentNavbar);
-    handleTransparentNavbar();
-    return () => window.removeEventListener("scroll", handleTransparentNavbar);
-  }, [dispatch, fixedNavbar]);
-
-  const handleMiniSidenav = () => setMiniSidenav(dispatch, !miniSidenav);
-  const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
   const handleOpenMenu = (event: React.MouseEvent<HTMLElement>) => setOpenMenu(event.currentTarget);
   const handleCloseMenu = () => setOpenMenu(null);
 
@@ -66,64 +48,47 @@ export const DashboardNavbar: React.FC<DashboardNavbarProps> = ({ absolute = fal
       onClose={handleCloseMenu}
       sx={{ mt: 2 }}
     >
-      <NotificationItem icon="📧" title="Check new messages" />
-      <NotificationItem icon="🎙️" title="Manage Podcast sessions" />
-      <NotificationItem icon="🛒" title="Payment successfully completed" />
+      <div style={{ padding: '8px 16px' }}>No new notifications</div>
     </Menu>
   );
 
-  const iconsStyle = ({ palette: { dark, white, text }, functions: { rgba } }: any) => ({
-    color: () => {
-      let colorValue = light || darkMode ? white.main : dark.main;
-      if (transparentNavbar && !light) {
-        colorValue = darkMode ? rgba(text.main, 0.6) : text.main;
-      }
-      return colorValue;
-    },
-  });
-
   return (
     <AppBar
-      position={absolute ? "absolute" : navbarType}
+      position={absolute ? "absolute" : "sticky"}
       color="inherit"
-      sx={(theme) => navbar(theme, { transparentNavbar, absolute, light, darkMode })}
+      sx={(theme) => navbar(theme, { transparentNavbar: false, absolute, light })}
     >
       <Toolbar sx={(theme) => navbarContainer(theme)}>
-        <MDBox color="inherit" mb={{ xs: 1, md: 0 }} sx={(theme) => navbarRow(theme, { isMini })}>
-          <Breadcrumbs icon="home" title={route[route.length - 1]} route={route} light={light} />
+        <MDBox color="inherit" mb={{ xs: 1, md: 0 }} sx={(theme) => navbarRow(theme)}>
+          <Breadcrumbs icon={<Icon>home</Icon>} title={route[route.length - 1] || 'Dashboard'} light={light} />
         </MDBox>
-        {!isMini && (
-          <MDBox sx={(theme) => navbarRow(theme, { isMini })}>
-            <MDBox pr={1}>
-              <MDInput label="Search here" />
-            </MDBox>
-            <MDBox color={light ? "white" : "inherit"}>
-              <Link to="/authentication/sign-in">
-                <IconButton sx={navbarIconButton} size="small" disableRipple>
-                  👤
-                </IconButton>
-              </Link>
-              <IconButton size="small" disableRipple color="inherit" sx={navbarMobileMenu} onClick={handleMiniSidenav}>
-                {miniSidenav ? "▶️" : "◀️"}
+
+        <MDBox sx={(theme) => navbarRow(theme)}>
+          {/* The menu toggle icon is always visible */}
+              <IconButton sx={navbarIconButton} size="small" onClick={handleSidenavToggle}>
+                <Icon>menu</Icon>
               </IconButton>
-              <IconButton size="small" disableRipple color="inherit" sx={navbarIconButton} onClick={handleConfiguratorOpen}>
-                ⚙️
-              </IconButton>
-              <IconButton
-                size="small"
-                disableRipple
-                color="inherit"
-                sx={navbarIconButton}
-                aria-controls="notification-menu"
-                aria-haspopup="true"
-                onClick={handleOpenMenu}
-              >
-                🔔
-              </IconButton>
-              {renderMenu()}
-            </MDBox>
+
+              {/* FIX: Use 'isSidenavOpen' to conditionally show the rest of the navbar content */}
+              {isSidenavOpen && (
+                <>
+                  <MDBox pr={1}>
+                    <TextField label="Search here" variant="outlined" size="small" />
+                  </MDBox>
+                  <MDBox color={light ? "white" : "inherit"}>
+                    <Link to="/authentication/sign-in">
+                      <IconButton sx={navbarIconButton} size="small">
+                        <Icon>account_circle</Icon>
+                      </IconButton>
+                    </Link>
+                    <IconButton size="small" color="inherit" sx={navbarIconButton} onClick={handleOpenMenu}>
+                      <Icon>notifications</Icon>
+                    </IconButton>
+                    {renderMenu()}
+                  </MDBox>
+                </>
+              )}
           </MDBox>
-        )}
       </Toolbar>
     </AppBar>
   );

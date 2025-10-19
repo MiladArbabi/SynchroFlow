@@ -1,110 +1,81 @@
-//packages/ui/src/components/Sidenav/styles/sidenavCollapse.tsx
+// packages/ui/src/components/Sidenav/styles/sidenavCollapse.tsx
+
 import { Theme } from "@mui/material/styles";
 
+// Define a simple, clean type for the component's state
 interface OwnerState {
   active: boolean;
-  transparentSidenav?: boolean;
-  whiteSidenav?: boolean;
-  darkMode?: boolean;
-  sidenavColor?: string;
-  miniSidenav?: boolean;
 }
 
-function collapseItem(theme: Theme | any, ownerState: OwnerState) {
-  const { palette, transitions, breakpoints, boxShadows, borders, functions } = theme;
-  const { active, transparentSidenav, whiteSidenav, darkMode, sidenavColor } = ownerState;
+// --- REWRITTEN STYLING FUNCTIONS ---
 
-  const { white, transparent, dark, grey, gradients } = palette;
-  const { md } = boxShadows;
-  const { borderRadius } = borders;
-  const { pxToRem, rgba, linearGradient } = functions;
+// This function styles the main container of the navigation item
+function collapseItem(theme: Theme, { active }: OwnerState) {
+  const { palette, shape, transitions, shadows } = theme;
 
   return {
-    background: active && sidenavColor ? linearGradient(gradients[sidenavColor].main, gradients[sidenavColor].state) : transparent.main,
-    color: (transparentSidenav && !darkMode && !active) || (whiteSidenav && !active) ? dark.main : white.main,
     display: "flex",
     alignItems: "center",
     width: "100%",
-    padding: `${pxToRem(8)} ${pxToRem(10)}`,
-    margin: `${pxToRem(1.5)} ${pxToRem(16)}`,
-    borderRadius: borderRadius.md,
+    padding: "0.5rem 1rem",
+    margin: "0.1rem 0",
+    borderRadius: shape.borderRadius,
     cursor: "pointer",
     userSelect: "none",
     whiteSpace: "nowrap",
-    boxShadow: active && !whiteSidenav && !darkMode && !transparentSidenav ? md : "none",
-    [breakpoints.up("xl")]: {
-      transition: transitions.create(["box-shadow", "background-color"], {
-        easing: transitions.easing.easeInOut,
-        duration: transitions.duration.shorter,
-      }),
-    },
+    transition: transitions.create(["background-color", "box-shadow"], {
+      easing: transitions.easing.easeInOut,
+      duration: transitions.duration.shorter,
+    }),
+
+    // Apply active styles
+    ...(active && {
+      backgroundColor: palette.primary.main,
+      color: palette.primary.contrastText,
+      boxShadow: shadows[3],
+    }),
+
+    // Apply hover styles
     "&:hover, &:focus": {
-      backgroundColor: () => {
-        let backgroundValue;
-        if (!active) {
-          backgroundValue = transparentSidenav && !darkMode ? grey[300] : rgba(whiteSidenav ? grey[400] : white.main, 0.2);
-        }
-        return backgroundValue;
-      },
+      backgroundColor: active ? undefined : palette.action.hover,
     },
   };
 }
 
-function collapseIconBox(theme: Theme | any, ownerState: OwnerState) {
-  const { palette, transitions, borders, functions } = theme;
-  const { transparentSidenav, whiteSidenav, darkMode, active } = ownerState;
-
-  const { white, dark } = palette;
-  const { borderRadius } = borders;
-  const { pxToRem } = functions;
-
+// This function styles the box that contains the icon
+function collapseIconBox(theme: Theme, { active }: OwnerState) {
   return {
-    minWidth: pxToRem(32),
-    minHeight: pxToRem(32),
-    color: (transparentSidenav && !darkMode && !active) || (whiteSidenav && !active) ? dark.main : white.main,
-    borderRadius: borderRadius.md,
+    minWidth: "32px",
+    minHeight: "32px",
+    color: active ? theme.palette.primary.contrastText : theme.palette.text.secondary,
+    borderRadius: theme.shape.borderRadius,
     display: "grid",
     placeItems: "center",
-    transition: transitions.create("margin", {
-      easing: transitions.easing.easeInOut,
-      duration: transitions.duration.standard,
+    transition: theme.transitions.create("color", {
+      easing: theme.transitions.easing.easeInOut,
+      duration: theme.transitions.duration.standard,
     }),
-    "& svg, svg g": {
-      color: transparentSidenav || whiteSidenav ? dark.main : white.main,
-    },
   };
 }
 
-const collapseIcon = (theme: Theme | any, { active }: OwnerState) => ({
-  color: active ? theme.palette.white.main : theme.palette.gradients.dark.state,
-  // This is the definitive fix: an explicit, high-specificity override.
-  fontSize: "1.25rem !important",
+// This function styles the icon itself
+const collapseIcon = (theme: Theme, { active }: OwnerState) => ({
+  color: "inherit", // Inherit color from the parent (collapseIconBox)
 });
 
-function collapseText(theme: Theme | any, ownerState: OwnerState) {
-  const { typography, transitions, breakpoints, functions } = theme;
-  const { miniSidenav, transparentSidenav, active } = ownerState;
-
-  const { size, fontWeightRegular, fontWeightLight } = typography;
-  const { pxToRem } = functions;
+// This function styles the text label
+function collapseText(theme: Theme, { active }: OwnerState) {
+  const { typography } = theme;
 
   return {
-    marginLeft: pxToRem(10),
-    [breakpoints.up("xl")]: {
-      opacity: miniSidenav || (miniSidenav && transparentSidenav) ? 0 : 1,
-      maxWidth: miniSidenav || (miniSidenav && transparentSidenav) ? 0 : "100%",
-      marginLeft: miniSidenav || (miniSidenav && transparentSidenav) ? 0 : pxToRem(10),
-      transition: transitions.create(["opacity", "margin"], {
-        easing: transitions.easing.easeInOut,
-        duration: transitions.duration.standard,
-      }),
-    },
+    marginLeft: "0.625rem",
     "& span": {
-      fontWeight: active ? fontWeightRegular : fontWeightLight,
-      fontSize: size.sm,
-      lineHeight: 1,
+      fontWeight: active ? typography.fontWeightBold : typography.fontWeightRegular,
+      fontSize: typography.body2.fontSize,
+      lineHeight: 1.5,
     },
   };
 }
 
+// Export the newly written, clean styling functions
 export { collapseItem, collapseIconBox, collapseIcon, collapseText };

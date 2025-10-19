@@ -1,7 +1,7 @@
 // packages/ui/src/App.tsx
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { LoginPage } from './LoginPage';
-import { Layout } from './Layout';
+import Layout from './Layout';
 import routes from './routes';
 import { JSX, useEffect } from 'react';
 

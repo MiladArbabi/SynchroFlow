@@ -1,36 +1,40 @@
+// packages/ui/src/components/MDBox/MDBoxRoot.tsx
 import { styled, Theme } from "@mui/material/styles";
+import { BoxProps } from "@mui/material/Box";
 
-export const MDBoxRoot = styled("div")<{ ownerState: any }>(({ theme, ownerState }) => {
-  const { palette, functions, borders, boxShadows } = theme as Theme & { functions: any; borders: any; boxShadows: any; };
-  const { variant, bgColor, color, opacity, borderRadius, shadow, coloredShadow } = ownerState;
+interface MDBoxRootProps extends BoxProps {
+  ownerState: {
+    variant?: "gradient" | "contained";
+    bgColor?: string;
+    color?: string;
+    opacity?: number;
+    borderRadius?: string;
+    shadow?: string;
+    coloredShadow?: string;
+  };
+}
 
-  const { black, white, transparent, gradients, grey } = palette;
-  const { linearGradient, rgba } = functions;
-  const { borderRadius: radius } = borders;
-  const { colored } = boxShadows;
+export const MDBoxRoot = styled("div")<MDBoxRootProps>(({ theme, ownerState }) => {
+  const { palette, shadows, shape } = theme;
+  const { variant, bgColor, color, opacity, borderRadiues, shadow, coloredShadow } = ownerState;
+
+  const { gradients, grey, transparent } = palette as unknown; // Cast to access custom gradients if they exist
 
   let backgroundValue = bgColor;
 
   if (variant === "gradient") {
-    backgroundValue = gradients[bgColor]
-      ? linearGradient(gradients[bgColor].main, gradients[bgColor].state)
-      : linearGradient(gradients.info.main, gradients.info.state);
-  } else if (palette[bgColor]) {
+    // FIX: Replace custom 'linearGradient' function with standard CSS.
+    const gradient = gradients?.[bgColor] || gradients?.info;
+    backgroundValue = gradient ? `linear-gradient(195deg, ${gradient.main}, ${gradient.state})` : "none";
+  } else if (palette[bgColor as keyof typeof palette]) {
     backgroundValue = palette[bgColor].main;
-  }
-
-  let colorValue = color;
-  if (palette[color]) {
-    colorValue = palette[color].main;
-  } else if (color === "light") {
-    colorValue = grey[100];
   }
 
   return {
     opacity,
     background: backgroundValue,
-    color: colorValue,
-    borderRadius: radius[borderRadius],
-    boxShadow: colored[coloredShadow] || shadow,
+    color: palette[color as keyof typeof palette]?.main || color,
+    borderRadius: shape.borderRadius, // FIX: Use standard 'shape.borderRadius'
+    boxShadow: shadows[1] || shadow,
   };
 });
