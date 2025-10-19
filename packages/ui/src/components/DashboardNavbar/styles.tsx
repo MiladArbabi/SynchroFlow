@@ -4,9 +4,9 @@ import { Theme } from "@mui/material/styles";
 import { alpha } from "@mui/material/styles";
 
 function navbar(theme: Theme, ownerState: { absolute?: boolean; light?: boolean; }) {
-  const { palette, shadows, transitions } = theme;
+  const { palette, shadows } = theme;
   const { background, common } = palette;
-  const { absolute, light } = ownerState;
+  const { absolute } = ownerState;
 
   return {
     boxShadow: shadows[2],
