@@ -25,17 +25,15 @@ export default function Layout() {
     }, [pathname]);
 
     return (
+        <>
+        <Sidenav
+            brandName="SynchroFlow"
+            routes={routes}
+            isSidenavOpen={isSidenavOpen}
+        />
         <DashboardLayout isSidenavOpen={isSidenavOpen}>
-            <Sidenav
-                brandName="SynchroFlow"
-                routes={routes}
-                isSidenavOpen={isSidenavOpen} // Pass state as a prop
-            />
-            <DashboardNavbar
-                isSidenavOpen={isSidenavOpen} // Pass state as a prop
-                handleSidenavToggle={handleSidenavToggle} // Pass handler as a prop
-            />
             <Outlet /> {/* This will render the active page */}
         </DashboardLayout>
+        </>
     );
 }

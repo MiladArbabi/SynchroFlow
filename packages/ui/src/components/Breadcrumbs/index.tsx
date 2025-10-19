@@ -3,6 +3,7 @@
 import React from 'react';
 import MDBox from '../MDBox';
 import MDTypography from '../MDTypography';
+import HomeIcon from '@mui/icons-material/Home'; // Import the specific icon
 
 interface BreadcrumbsProps {
   icon: React.ReactNode;
@@ -12,7 +13,8 @@ interface BreadcrumbsProps {
 
 const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ icon, title, light }) => {
   return (
-    <MDBox mr={{ xs: 0, md: 2 }}>
+    <MDBox mr={{ xs: 0, md: 2 }} display="flex" alignItems="center">
+      <HomeIcon color={light ? "white" : "dark"} sx={{ mr: 1 }} />
       <MDTypography
         fontWeight="bold"
         textTransform="capitalize"

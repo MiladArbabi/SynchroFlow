@@ -36,11 +36,10 @@ export function DashboardPage() {
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
   return (
-    console.log({ KpiCard, InventoryHealthTable }),
     <MDBox py={3}>
       {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
       <Grid container spacing={3}>
-        <Grid item size={{ xs: 12, md: 6, lg: 3 }}>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
           <MDBox mb={1.5}>
             <KpiCard
               title="Gross Revenue"
