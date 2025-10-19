@@ -57,6 +57,7 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
       };
       await axios.post('/api/v1/integrations/shopify/start-trial-sync', payload);
       onClose(); // Close the modal on success
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (_err) {
         setError('Failed to initiate sync. Please check your credentials.');
         setSyncState('form'); // Return to the form on error

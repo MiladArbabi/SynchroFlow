@@ -66,7 +66,6 @@ export const Sidenav: React.FC<SidenavProps> = ({ brandName, routes, isSidenavOp
 
   return (
     <SidenavRoot
-      variant="permanent"
       ownerState={{ miniSidenav: !isSidenavOpen }}
     >
       <MDBox pt={3} pb={1} px={4} textAlign="center">

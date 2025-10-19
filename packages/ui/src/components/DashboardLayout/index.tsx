@@ -7,36 +7,25 @@ import DashboardNavbar from "../DashboardNavbar";
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  isSidenavOpen: boolean;
   handleSidenavToggle: () => void;
 }
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ 
   children, 
-  isSidenavOpen, 
   handleSidenavToggle }) => {  
     
     return (
     <MDBox
       sx={(theme: Theme) => {
-        // Define constants in the correct scope, using the theme object
-        const sidenavWidth = theme.spacing(32); // 256px
-        const collapsedSidenavWidth = theme.spacing(12); // 96px
-
         return {
+          flexGrow: 1, 
+          width: '100%',
           p: 3,
-          position: "relative",
-          [theme.breakpoints.up("xl")]: {
-            marginLeft: isSidenavOpen ? sidenavWidth : collapsedSidenavWidth,
-          },
-          transition: theme.transitions.create(["margin-left"], {
-            easing: theme.transitions.easing.easeInOut,
-            duration: theme.transitions.duration.standard,
-          }),
+          position: "relative"
         };
       }}
     >
-      <DashboardNavbar isSidenavOpen={isSidenavOpen} handleSidenavToggle={handleSidenavToggle} />
+        <DashboardNavbar handleSidenavToggle={handleSidenavToggle} />
       {children}
     </MDBox>
   );

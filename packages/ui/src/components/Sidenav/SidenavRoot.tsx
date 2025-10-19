@@ -1,64 +1,26 @@
 // packages/ui/src/components/Sidenav/SidenavRoot.tsx
-import Drawer from "@mui/material/Drawer";
+
+import Box from "@mui/material/Box";
 import { styled } from "@mui/material/styles";
 
-const SidenavRoot = styled(Drawer, {
+const SidenavRoot = styled(Box,{
   shouldForwardProp: (prop) => prop !== "ownerState",
 })<{ ownerState: { miniSidenav: boolean } }>(({ theme, ownerState }) => {
-  const { transitions, breakpoints, palette } = theme;
+  const { transitions, palette, spacing } = theme;
   const { miniSidenav } = ownerState;
 
-  const sidebarWidth = 250;
-  const backgroundValue = palette.grey[900];
-
-  // styles for the sidenav when miniSidenav={false}
-  const drawerOpenStyles = () => ({
-    background: backgroundValue,
-    transform: "translateX(0)",
-    transition: transitions.create("transform", {
-      easing: transitions.easing.sharp,
-      duration: transitions.duration.shorter,
-    }),
-
-    [breakpoints.up("xl")]: {
-      left: "0",
-      width: sidebarWidth,
-      transform: "translateX(0)",
-      transition: transitions.create(["width", "background-color"], {
-        easing: transitions.easing.sharp,
-        duration: transitions.duration.enteringScreen,
-      }),
-    },
-  });
-
-  // styles for the sidenav when miniSidenav={true}
-  const drawerCloseStyles = () => ({
-    background: backgroundValue,
-    transform: `translateX(-320px)`,
-    transition: transitions.create("transform", {
-      easing: transitions.easing.sharp,
-      duration: transitions.duration.shorter,
-    }),
-
-    [breakpoints.up("xl")]: {
-      left: "0",
-      width: `96px`,
-      overflowX: "hidden",
-      transform: "translateX(0)",
-      transition: transitions.create(["width", "background-color"], {
-        easing: transitions.easing.sharp,
-        duration: transitions.duration.shorter,
-      }),
-    },
-  });
+  const openWidth = spacing(32); // 256px
+  const closedWidth = spacing(12); // 96px
 
   return {
-    "& .MuiDrawer-paper": {
-      boxShadow: theme.shadows[3],
-      border: "none",
-
-      ...(miniSidenav ? drawerCloseStyles() : drawerOpenStyles()),
-    },
+    width: miniSidenav ? closedWidth : openWidth,
+    flexShrink: 0, // Prevent the Sidenav from shrinking
+    overflowX: 'hidden',
+    transition: transitions.create('width', {
+      easing: transitions.easing.sharp,
+      duration: transitions.duration.enteringScreen,
+    }),
+    background: palette.grey[900],
   };
 });
 
