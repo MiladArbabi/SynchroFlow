@@ -12,6 +12,7 @@ interface User {
 interface UserContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isSandbox: boolean;
   login: (userData: User) => void;
   logout: () => void;
 }
@@ -34,10 +35,12 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const isAuthenticated = !!user;
+  const isSandbox = !isAuthenticated;
 
   const value = {
     user,
     isAuthenticated,
+    isSandbox,
     login,
     logout,
   };

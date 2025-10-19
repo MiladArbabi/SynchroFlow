@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import { useLocation, Outlet } from "react-router-dom";
 import Sidenav from "./components/Sidenav";
 import DashboardLayout from "./components/DashboardLayout";
-import DashboardNavbar from "./components/DashboardNavbar";
 
 // You will need to define your routes here.
 // This is just a placeholder example.
@@ -31,8 +30,7 @@ export default function Layout() {
             routes={routes}
             isSidenavOpen={isSidenavOpen}
         />
-        <DashboardLayout isSidenavOpen={isSidenavOpen}>
-            <Outlet /> {/* This will render the active page */}
+            <DashboardLayout isSidenavOpen={isSidenavOpen} handleSidenavToggle={handleSidenavToggle}>            <Outlet /> {/* This will render the active page */}
         </DashboardLayout>
         </>
     );

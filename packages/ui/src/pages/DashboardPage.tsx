@@ -7,31 +7,22 @@ import { InventoryHealthTable } from '../components/InventoryHealthTable';
 import { FulfillmentPipelineChart } from '../components/FulfillmentPipelineChart';
 import { PerfectOrderGauge } from '../components/PerfectOrderGauge';
 import  Grid from '@mui/material/Grid';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import MDBox from '../components/MDBox';
 
 const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <div className="rounded-md bg-blue-50 p-4 mb-8">
-    <div className="flex">
-      <div className="ml-3 flex-1 md:flex md:justify-between">
-        <p className="text-sm text-blue-700">
-          You are currently in a sandbox environment. Explore with sample data, or connect your own store to see real insights.
-        </p>
-        <p className="mt-3 text-sm md:ml-6 md:mt-0">
-          <button onClick={onClick} className="whitespace-nowrap font-medium text-blue-700 hover:text-blue-600">            Connect Your Store &rarr;
-          </button>
-        </p>
-      </div>
-    </div>
-  </div>
+ <Box sx={{ p: 2, mb: 3, backgroundColor: 'primary.lighter', borderRadius: 1, border: '1px solid', borderColor: 'primary.light', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <Typography variant="body2" sx={{ color: 'primary.dark' }}>
+      You are currently in a sandbox environment. Explore with sample data, or connect your own store to see real insights.
+    </Typography>
+    <button onClick={onClick} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', color: 'inherit' }}>
+      Connect Your Store &rarr;
+    </button>
+  </Box>
 );
 
 export function DashboardPage() {
-    // --- DEBUG LOGS ---
-  // Log the imported components to see if they are mocked correctly
-  console.log('DEBUG: Imported KpiCard component:', KpiCard);
-  // Log the return value of the hook before destructuring
-  console.log('DEBUG: useUser() returned:', useUser());
-
   const { isSandbox } = useUser();
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
