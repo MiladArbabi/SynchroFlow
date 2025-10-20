@@ -9,6 +9,7 @@ import { InventoryHealthTable } from "../components/InventoryHealthTable";
 import MDBox from "../components/MDBox";
 import MDButton from "../components/MDButton";
 import Icon from "@mui/material/Icon";
+import WidgetLibrary from "../components/WidgetLibrary";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -36,6 +37,8 @@ export const DashboardPage = () => {
 const [isEditing, setIsEditing] = useState(false);
 // State to hold the current layout of widgets
 const [layout, setLayout] = useState(initialLayout);
+// State to manage the Widget Library visibility
+const [isLibraryOpen, setIsLibraryOpen] = useState(false);
 
 // Callback to update the layout state when the user makes changes
   const onLayoutChange = useCallback((newLayout: RGL.Layout[]) => {
@@ -49,10 +52,16 @@ const [layout, setLayout] = useState(initialLayout);
     <>
       <MDBox display="flex" justifyContent="flex-end" mb={2}>
         {isEditing ? (
-          <MDButton variant="gradient" color="success" onClick={() => setIsEditing(false)}>
-            <Icon sx={{ marginRight: 1 }}>save</Icon>
-            Done
-          </MDButton>
+          <>
+            <MDButton variant="gradient" color="info" onClick={() => setIsLibraryOpen(true)}>
+              <Icon sx={{ marginRight: 1 }}>add</Icon>
+              Add Widget
+            </MDButton>
+            <MDButton variant="gradient" color="success" onClick={() => setIsEditing(false)}>
+              <Icon sx={{ marginRight: 1 }}>save</Icon>
+              Done
+            </MDButton>
+          </>
         ) : (
           <MDButton variant="outlined" color="info" onClick={() => setIsEditing(true)}>
             <Icon sx={{ marginRight: 1 }}>edit</Icon>
@@ -87,6 +96,7 @@ const [layout, setLayout] = useState(initialLayout);
           <InventoryHealthTable />
         </div>
       </GridLayout>
+      <WidgetLibrary open={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} />
     </>
   );
 };
