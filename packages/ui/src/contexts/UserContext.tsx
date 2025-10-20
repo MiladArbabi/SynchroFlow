@@ -1,5 +1,6 @@
+/* eslint-disable react-refresh/only-export-components */
 //packages/ui/src/contexts/UserContext.tsx
-import React, { createContext, useState, ReactNode } from 'react';
+import React, { createContext, useState, useContext, ReactNode } from 'react';
 
 // Define the shape of the user and the context
 interface User {
@@ -46,4 +47,13 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
+};
+
+// Create a custom hook for easy access to the context
+export const useUser = () => {
+  const context = useContext(UserContext);
+  if (context === undefined) {
+    throw new Error('useUser must be used within a UserProvider');
+  }
+  return context;
 };
