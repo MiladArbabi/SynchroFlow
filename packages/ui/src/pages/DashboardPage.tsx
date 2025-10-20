@@ -1,94 +1,46 @@
 // packages/ui/src/pages/DashboardPage.tsx
-import React, { useState } from 'react';
-import { useUser } from '../contexts/UserContext';
-import { ConnectStoreModal } from '../components/ConnectStoreModal';
-import KpiCard from '../components/KpiCard';
-import { InventoryHealthTable } from '../components/InventoryHealthTable';
-import { FulfillmentPipelineChart } from '../components/FulfillmentPipelineChart';
-import { PerfectOrderGauge } from '../components/PerfectOrderGauge';
-import  Grid from '@mui/material/Grid';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import MDBox from '../components/MDBox';
+import RGL, { WidthProvider } from "react-grid-layout";
 
-const SandboxBanner: React.FC<{ onClick: () => void }> = ({ onClick }) => (
- <Box sx={{ p: 2, mb: 3, backgroundColor: 'primary.lighter', borderRadius: 1, border: '1px solid', borderColor: 'primary.light', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-    <Typography variant="body2" sx={{ color: 'primary.dark' }}>
-      You are currently in a sandbox environment. Explore with sample data, or connect your own store to see real insights.
-    </Typography>
-    <button onClick={onClick} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', color: 'inherit' }}>
-      Connect Your Store &rarr;
-    </button>
-  </Box>
-);
+// Import our actual widget components
+import KpiCard from "../components/KpiCard";
+import { CashFlowChart } from "../components/CashFlowChart";
+import { InventoryHealthTable } from "../components/InventoryHealthTable";
 
-export function DashboardPage() {
-  const { isSandbox } = useUser();
-  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+const GridLayout = WidthProvider(RGL);
+
+export const DashboardPage = () => {
+  // This layout defines the initial position and size of our real widgets
+  const layout = [
+    { i: "kpi-revenue", x: 0, y: 0, w: 3, h: 1 },
+    { i: "kpi-margin", x: 3, y: 0, w: 3, h: 1 },
+    { i: "kpi-inventory", x: 6, y: 0, w: 3, h: 1 },
+    { i: "cashflow-chart", x: 0, y: 1, w: 9, h: 3 },
+    { i: "inventory-health", x: 0, y: 4, w: 12, h: 4 },
+  ];
 
   return (
-    <MDBox py={3}>
-      {isSandbox && <SandboxBanner onClick={() => setIsConnectModalOpen(true)} />}
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <MDBox mb={1.5}>
-            <KpiCard
-              title="Gross Revenue"
-              dataUrl="/api/v1/analytics/gross-revenue?shop_id=1"
-              format="currency"
-              icon="📈"
-              color="dark"
-            />
-          </MDBox>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <MDBox mb={1.5}>
-            <KpiCard
-              title="Gross Margin"
-              dataUrl="/api/v1/analytics/gross-margin?shop_id=1"
-              format="percentage"
-              icon="💰"
-              color="success"
-            />
-          </MDBox>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <MDBox mb={1.5}>
-            <KpiCard
-              title="Total Inventory Value"
-              dataUrl="/api/v1/analytics/inventory-value?shop_id=1"
-              format="currency"
-              icon="📦"
-              color="primary"
-            />
-          </MDBox>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <MDBox mb={1.5}>
-            <KpiCard
-              title="Cost of Stockout"
-              dataUrl="/api/v1/analytics/cost-of-stockout?shop_id=1&sku=STOCKOUT-SKU-01"
-              format="currency"
-              icon="⚠️"
-              color="warning"
-            />
-          </MDBox>
-        </Grid>
-      </Grid>
-      <MDBox mt={4.5}>
-         <Grid container spacing={3}>
-         <Grid size={{ xs: 12, md: 7 }}>
-            <InventoryHealthTable />
-          </Grid>
-          <Grid size={{ xs: 12, md: 5 }}>
-             <MDBox mb={3}>
-              <PerfectOrderGauge />
-            </MDBox>
-             <FulfillmentPipelineChart />
-           </Grid>
-         </Grid>
-       </MDBox>
-      <ConnectStoreModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} />
-    </MDBox>
+    <GridLayout
+      layout={layout}
+      cols={12}
+      rowHeight={120} // Adjusted for better vertical spacing
+      compactType={null}
+      preventCollision={true}
+    >
+      <div key="kpi-revenue">
+        <KpiCard title="Gross Revenue" value="$750,930" percentage="+55%" icon="leaderboard" />
+      </div>
+      <div key="kpi-margin">
+        <KpiCard title="Gross Margin" value="$320,400" percentage="+12%" icon="store" />
+      </div>
+      <div key="kpi-inventory">
+        <KpiCard title="Inventory Value" value="$1.2M" percentage="-2%" icon="inventory" />
+      </div>
+      <div key="cashflow-chart">
+        <CashFlowChart />
+      </div>
+      <div key="inventory-health">
+        <InventoryHealthTable />
+      </div>
+    </GridLayout>
   );
-}
+};
