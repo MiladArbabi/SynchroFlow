@@ -1,5 +1,6 @@
 // packages/ui/.storybook/preview.tsx
 import type { Preview } from "@storybook/react";
+import { MemoryRouter } from "react-router-dom";
 import { withTheme } from "./withTheme"; // Import our corrected decorator
 
 const preview: Preview = {
@@ -11,8 +12,15 @@ const preview: Preview = {
       },
     },
   },
-  // This applies our theme decorator to all stories in the project.
-  decorators: [withTheme],
+  decorators: [
+    withTheme,
+    // This decorator wraps all stories in a MemoryRouter
+    (Story) => (
+      <MemoryRouter>
+        <Story />
+      </MemoryRouter>
+    ),
+  ],
 };
 
 export default preview;

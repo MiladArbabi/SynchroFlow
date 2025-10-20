@@ -2,6 +2,8 @@
 import React, { ReactNode } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import MDBox from "../../components/MDBox";
+import SidenavContent from "./SidenavContent";
+import TopnavbarContent from "./TopnavbarContent";
 
 // Define simple styles for the handles for now. We will improve these later.
 const handleStyle = {
@@ -14,53 +16,47 @@ const verticalHandleStyle = {
   background: "#e0e0e0",
 };
 
-// This layout will eventually take children to render inside the "Workspace"
 interface AppLayoutProps {
   children: ReactNode;
 }
 
 const AppLayout = ({ children }: AppLayoutProps) => {
   return (
-    <MDBox sx={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column" }}>
-      {/* Topnavbar Panel */}
-      <MDBox sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
-        {/* We will add the real DashboardNavbar component here later */}
-        Topnavbar Placeholder
-      </MDBox>
-
-      {/* Main Content Area */}
-      <MDBox sx={{ flexGrow: 1, height: "calc(100vh - 60px)" }}>
-        <PanelGroup direction="horizontal">
-          {/* Sidenav Panel */}
-          <Panel defaultSize={20} minSize={5} maxSize={25} collapsible>
-            <MDBox sx={{ height: "100%", borderRight: "1px solid #e0e0e0" }}>
-              {/* We will add the real Sidenav component here later */}
-              Sidenav Placeholder
+    <MDBox sx={{ width: "100vw", height: "100vh" }}>
+      <PanelGroup direction="horizontal">
+        {/* Sidenav Panel */}
+        <Panel defaultSize={20} minSize={5} maxSize={25} collapsible>
+          <MDBox sx={{ height: "100%", borderRight: "1px solid #e0e0e0" }}>
+            <SidenavContent />
+          </MDBox>
+        </Panel>
+        <PanelResizeHandle style={handleStyle} />
+        {/* Main Content Panel (contains Topnav, Workspace, and Ops Console) */}
+        <Panel>
+          <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {/* Topnavbar Area */}
+            <MDBox sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
+              <TopnavbarContent isSidenavOpen={true} handleSidenavToggle={() => {}} />
             </MDBox>
-          </Panel>
-          <PanelResizeHandle style={handleStyle} />
-
-          {/* Vertical group for Workspace and Ops Console */}
-          <Panel>
+          {/* Resizable area for Workspace and Ops Console */}
             <PanelGroup direction="vertical">
               {/* Workspace Panel (Outlet) */}
               <Panel defaultSize={75} minSize={50}>
                 <MDBox sx={{ height: "100%", overflow: "auto", padding: "16px" }}>
-                  {children} {/* This is where our page content will go */}
+                  {children}
                 </MDBox>
               </Panel>
               <PanelResizeHandle style={verticalHandleStyle} />
               {/* Ops Console Panel */}
               <Panel defaultSize={25} minSize={10} collapsible>
                 <MDBox sx={{ height: "100%", borderTop: "1px solid #e0e0e0" }}>
-                  {/* We will add the real Ops Console component here later */}
                   Ops Console Placeholder
                 </MDBox>
               </Panel>
             </PanelGroup>
-          </Panel>
-        </PanelGroup>
-      </MDBox>
+          </MDBox>
+        </Panel>
+      </PanelGroup>
     </MDBox>
   );
 };
