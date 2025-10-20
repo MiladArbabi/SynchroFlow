@@ -6,7 +6,7 @@ import Divider from "@mui/material/Divider";
 import Link from "@mui/material/Link";
 import MDBox from "../../components/MDBox";
 import MDTypography from "../../components/MDTypography";
-import SidenavCollapse from "../../components/Sidenav/SidenavCollapse";
+import SidenavCollapse from "../../components/SidenavCollapse";
 import routes from "../../routes";
 
 const brandName = "SynchroFlow"; // Placeholder for now
