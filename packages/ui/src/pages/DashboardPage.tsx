@@ -2,14 +2,12 @@
 import React, { useState, useCallback } from "react";
 import RGL, { WidthProvider } from "react-grid-layout";
 
-// Import our actual widget components
-import KpiCard from "../components/KpiCard";
-import { CashFlowChart } from "../components/CashFlowChart";
-import { InventoryHealthTable } from "../components/InventoryHealthTable";
 import MDBox from "../components/MDBox";
 import MDButton from "../components/MDButton";
 import Icon from "@mui/material/Icon";
 import WidgetLibrary from "../components/WidgetLibrary";
+import { WIDGET_REGISTRY } from "../widgets/widgetRegistry";
+import { IconButton } from "@mui/material";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -23,20 +21,48 @@ const mockCashFlowData = [
   { name: 'Jun', cash: 5500 },
 ];
 
-// Base layout definition, defined outside the component to prevent re-creation on re-renders
-const initialLayout = [
-  { i: "kpi-revenue", x: 0, y: 0, w: 3, h: 1 },
-  { i: "kpi-margin", x: 3, y: 0, w: 3, h: 1 },
-  { i: "kpi-inventory", x: 6, y: 0, w: 3, h: 1 },
-  { i: "cashflow-chart", x: 0, y: 1, w: 9, h: 3 },
-  { i: "inventory-health", x: 0, y: 4, w: 12, h: 4 },
+// Defines the widgets that are active on the dashboard by default
+const initialActiveWidgets = [
+  { instanceId: "kpi-revenue-1", widgetId: "kpi-revenue" },
+  { instanceId: "kpi-margin-1", widgetId: "kpi-margin" },
+  { instanceId: "kpi-inventory-1", widgetId: "kpi-inventory" },
+  { instanceId: "cashflow-chart-1", widgetId: "cashflow-chart" },
+  { instanceId: "inventory-health-1", widgetId: "inventory-health" },
 ];
+
+// Defines the initial layout for those widgets
+const initialLayout: RGL.Layout[] = [
+  { i: "kpi-revenue-1", x: 0, y: 0, w: 3, h: 1 },
+  { i: "kpi-margin-1", x: 3, y: 0, w: 3, h: 1 },
+  { i: "kpi-inventory-1", x: 6, y: 0, w: 3, h: 1 },
+  { i: "cashflow-chart-1", x: 0, y: 1, w: 9, h: 3 },
+  { i: "inventory-health-1", x: 0, y: 4, w: 12, h: 4 },
+];
+
+const getWidgetProps = (widgetId: string) => {
+  switch (widgetId) {
+    case "kpi-revenue":
+      return { title: "Gross Revenue", value: "$750,930", percentage: "55%", icon: "leaderboard" };
+    case "kpi-margin":
+      return { title: "Gross Margin", value: "$320,400", percentage: "12%", icon: "store" };
+    case "kpi-inventory":
+      return { title: "Inventory Value", value: "$1.2M", percentage: "-2%", icon: "inventory" };
+    case "cashflow-chart":
+      return { data: mockCashFlowData };
+    case "inventory-health":
+      return {};
+    default:
+      return {};
+  }
+};
 
 export const DashboardPage = () => {
 // State to manage the editing mode
 const [isEditing, setIsEditing] = useState(false);
 // State to hold the current layout of widgets
 const [layout, setLayout] = useState(initialLayout);
+// State to hold the list of active widgets
+const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
 // State to manage the Widget Library visibility
 const [isLibraryOpen, setIsLibraryOpen] = useState(false);
 
@@ -47,6 +73,34 @@ const [isLibraryOpen, setIsLibraryOpen] = useState(false);
       setLayout(newLayout);
     }
   }, [isEditing]);
+
+  // Handler for adding a new widget from the library
+  const handleAddWidget = (widgetId: string) => {
+    console.log(`[DEBUG] handleAddWidget received: ${widgetId}`);
+    const widgetConfig = WIDGET_REGISTRY[widgetId];
+    if (!widgetConfig) return;
+
+    const newInstanceId = `${widgetId}-${Date.now()}`;
+
+    setActiveWidgets((prev) => [...prev, { instanceId: newInstanceId, widgetId }]);
+    setLayout((prev) => [
+      ...prev,
+      {
+        i: newInstanceId,
+        x: 0, // New widgets appear at the top-left
+        y: 0,
+        ...widgetConfig.defaultLayout,
+      },
+    ]);
+    // Explicitly close the library after adding a widget
+    setIsLibraryOpen(false);
+  };
+
+// Handler for removing a widget from the dashboard
+  const handleRemoveWidget = (instanceId: string) => {
+    setActiveWidgets((prev) => prev.filter((w) => w.instanceId !== instanceId));
+    setLayout((prev) => prev.filter((l) => l.i !== instanceId));
+  };
 
   return (
     <>
@@ -79,24 +133,42 @@ const [isLibraryOpen, setIsLibraryOpen] = useState(false);
         isDraggable={isEditing}
         isResizable={isEditing}
         onLayoutChange={onLayoutChange}
+        // Add a class for styling the grid items in edit mode
+        className={isEditing ? "grid-editing" : ""}
       >
-        <div key="kpi-revenue">
-          <KpiCard title="Gross Revenue" value="$750,930" percentage="55%" icon="leaderboard" />
-        </div>
-        <div key="kpi-margin">
-          <KpiCard title="Gross Margin" value="$320,400" percentage="12%" icon="store" />
-        </div>
-        <div key="kpi-inventory">
-          <KpiCard title="Inventory Value" value="$1.2M" percentage="-2%" icon="inventory" />
-        </div>
-        <div key="cashflow-chart">
-          <CashFlowChart data={mockCashFlowData}/>
-        </div>
-        <div key="inventory-health">
-          <InventoryHealthTable />
-        </div>
+      {activeWidgets.map(({ instanceId, widgetId }) => {
+          const WidgetComponent = WIDGET_REGISTRY[widgetId].component;
+          return (
+            // FIX: This wrapper div ensures each grid item has stable styling and a unique key.
+            <div key={instanceId} style={{ width: '100%', height: '100%', position: 'relative' }}>
+              <WidgetComponent {...getWidgetProps(widgetId)} />
+              {isEditing && (
+                <IconButton
+                  // FIX: Stop propagation to prevent the grid from capturing the click.
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => handleRemoveWidget(instanceId)}
+                  size="small"
+                  sx={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    backgroundColor: "rgba(255, 255, 255, 0.7)",
+                    "&:hover": { backgroundColor: "white" },
+                    zIndex: 10,
+                  }}
+                >
+                  <Icon fontSize="small">close</Icon>
+                </IconButton>
+              )}
+            </div>
+          );
+        })}
       </GridLayout>
-      <WidgetLibrary open={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} />
+     <WidgetLibrary
+        open={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+        onAddWidget={handleAddWidget}
+      />
     </>
   );
 };
