@@ -1,28 +1,36 @@
 // packages/ui/src/App.tsx
-import { Routes, Route, Navigate } from "react-router-dom";
+import React from "react";
+import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
+import AppLayout from "./layouts/AppLayout";
+import routes from "./routes";
+import { UserProvider } from "./contexts/UserContext";
 
-// NOTE: The theme files were not in the directory listing, 
-// so we are temporarily creating a default theme object for the spike.
 import { createTheme } from "@mui/material/styles";
 const spikeTheme = createTheme();
 
-// Our new spike layout for testing. The path is now correct.
-import SpikeResizableLayout from "./layouts/SpikeLayout";
-
 export default function App() {
   return (
-    // We use the basic theme here. We will restore your full theme logic later.
-    <ThemeProvider theme={spikeTheme}>
-      <CssBaseline />
-      <Routes>
-        {/* 1. The ONLY route for this spike is the layout evaluation page. */}
-        <Route path="/spike/resizable-layout" element={<SpikeResizableLayout />} />
+    <UserProvider>
+      <ThemeProvider theme={spikeTheme}>
+        <CssBaseline />
+        <Routes>
+        {/* Render the sign-in route standalone */}
+          <Route path="/authentication/sign-in" element={routes.find(r => r.key === 'sign-in')?.component} />
+          {/* All other routes are nested inside the AppLayout */}
+          <Route element={<AppLayout><Outlet /></AppLayout>}>
+            {routes.map((route) =>
+              route.key !== "sign-in" ? (
+                <Route path={route.route} element={route.component} key={route.key} />
+              ) : null
+            )}
+          </Route>
 
-        {/* 2. All other paths redirect to our test page for now. */}
-        <Route path="*" element={<Navigate to="/spike/resizable-layout" />} />
-      </Routes>
-    </ThemeProvider>
+          {/* A default redirect to the dashboard */}
+          <Route path="*" element={<Navigate to="/dashboard" />} />
+        </Routes>
+      </ThemeProvider>
+    </UserProvider>
   );
 }
