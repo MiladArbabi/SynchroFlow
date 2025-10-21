@@ -33,8 +33,6 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, percentage, icon }) => 
           </Typography>
         </Box>
         <Box
-          color="white"
-          bgColor="info"
           sx={{
             width: "3rem",
             height: "3rem",
@@ -42,6 +40,8 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, percentage, icon }) => 
             display: "grid",
             placeItems: "center",
             boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+            backgroundColor: "info.main", 
+            color: "white",
           }}
         >
           <IconComponent name={icon as any} size="small" color="white" />        

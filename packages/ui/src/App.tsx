@@ -1,6 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 // packages/ui/src/App.tsx
 import React from "react";
+import axios from "axios";
+import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -18,6 +20,9 @@ type LayoutContextType = {
   isLibraryOpen: boolean;
   setIsLibraryOpen: (open: boolean) => void;
   currentUserPlan: PlanLevel;
+  layoutRef: React.MutableRefObject<RGL.Layout[]>;
+  activeWidgetsRef: React.MutableRefObject<{ instanceId: string; widgetId: string }[]>;
+  handleSaveLayout: () => Promise<void>;
 };
 
 // Custom hook to easily access the layout context
@@ -27,18 +32,35 @@ export function useLayoutContext() {
 
 // Helper Component to manage layout state and render AppLayout
 const LayoutManager = () => {
-  //const location = useLocation(); // Needed for breadcrumbs eventually
-
   // State for managing layout editing mode
   const [isEditing, setIsEditing] = React.useState(false);
   // State for managing the Widget Library visibility
   const [isLibraryOpen, setIsLibraryOpen] = React.useState(false);
   // Mock user plan for WidgetLibrary gating
   const currentUserPlan: PlanLevel = 'Ignition';
+  const layoutRef = React.useRef<RGL.Layout[]>([]);
+  const activeWidgetsRef = React.useRef<{ instanceId: string; widgetId: string }[]>([]);
 
   // Placeholder for Sidenav toggle logic
   const handleToggleSidenav = () => {
     console.log("Sidenav toggle clicked");
+  };
+
+  // Handler for saving the layout (calls backend)
+  const handleSaveLayout = async () => {
+    console.log("[DEBUG] LayoutManager: handleSaveLayout invoked");
+    try {
+      await axios.post("/api/v1/layouts/dashboard", {
+        layout: layoutRef.current, // Use data from refs
+        activeWidgets: activeWidgetsRef.current,
+      });
+      console.log("[DEBUG] LayoutManager: Save successful");
+    } catch (error) {
+      console.error("Failed to save layout:", error);
+      // Optionally, show a snackbar/toast to the user that saving failed
+    } finally {
+      setIsEditing(false); // Toggle editing state AFTER save attempt
+    }
   };
 
   const contextValue: LayoutContextType = {
@@ -46,12 +68,15 @@ const LayoutManager = () => {
    isLibraryOpen,
    setIsLibraryOpen,
    currentUserPlan,
+   layoutRef,
+    activeWidgetsRef,
+    handleSaveLayout,
  };
 
   return (
     <AppLayout
       isEditing={isEditing}
-      onEditToggle={() => setIsEditing(!isEditing)}
+      onEditToggle={isEditing ? handleSaveLayout : () => setIsEditing(true)}
       onAddWidget={() => setIsLibraryOpen(true)}
       onToggleSidenav={handleToggleSidenav}
     >
