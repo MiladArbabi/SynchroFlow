@@ -51,11 +51,11 @@ const initialLayout: RGL.Layout[] = [
 const getWidgetProps = (widgetId: string) => {
   switch (widgetId) {
     case "kpi-revenue":
-      return { title: "Gross Revenue", value: "$750,930", percentage: "55%", icon: "leaderboard" };
+      return { title: "Gross Revenue", value: "$750,930", percentage: "55%", icon: "BarChart3" }; 
     case "kpi-margin":
-      return { title: "Gross Margin", value: "$320,400", percentage: "12%", icon: "store" };
+      return { title: "Gross Margin", value: "$320,400", percentage: "12%", icon: "Store" };
     case "kpi-inventory":
-      return { title: "Inventory Value", value: "$1.2M", percentage: "-2%", icon: "inventory" };
+      return { title: "Inventory Value", value: "$1.2M", percentage: "-2%", icon: "Package" };
     case "cashflow-chart":
       return { data: mockCashFlowData };
     case "inventory-health":
@@ -71,7 +71,23 @@ export const DashboardPage = () => {
   // State to hold the list of active widgets
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
   // Get editing state and library controls from parent context
-  const { isEditing, isLibraryOpen, setIsLibraryOpen, currentUserPlan } = useLayoutContext();
+  const {
+    isEditing,
+    isLibraryOpen,
+    setIsLibraryOpen,
+    currentUserPlan,
+    layoutRef, // Get refs from context
+    activeWidgetsRef, // Get refs from context
+  } = useLayoutContext();
+
+  // Keep refs updated whenever local state changes
+  useEffect(() => {
+    layoutRef.current = layout;
+  }, [layout, layoutRef]);
+
+  useEffect(() => {
+    activeWidgetsRef.current = activeWidgets;
+  }, [activeWidgets, activeWidgetsRef]);
 
   // Callback to update the layout state when the user makes changes
   const onLayoutChange = useCallback((newLayout: RGL.Layout[]) => {
