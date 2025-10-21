@@ -18,9 +18,19 @@ const verticalHandleStyle = {
 
 interface AppLayoutProps {
   children: ReactNode;
+  isEditing: boolean;
+  onEditToggle: () => void;
+  onAddWidget: () => void;
+  onToggleSidenav: () => void;
 }
 
-const AppLayout = ({ children }: AppLayoutProps) => {
+const AppLayout = ({
+  children,
+  isEditing,
+  onEditToggle,
+  onAddWidget,
+  onToggleSidenav
+}: AppLayoutProps) => {
   return (
     <MDBox sx={{ width: "100vw", height: "100vh" }}>
       <PanelGroup direction="horizontal">
@@ -31,16 +41,28 @@ const AppLayout = ({ children }: AppLayoutProps) => {
           </MDBox>
         </Panel>
         <PanelResizeHandle style={handleStyle} />
-        
-        {/* Main Content Panel (contains Workspace, and Ops Console) */}
+        {/* Main Content Panel (contains Topnav, Workspace, and Ops Console) */}
         <Panel>
-            {/* The vertical PanelGroup is now the direct child of the main content Panel */}
-          <PanelGroup direction="vertical">
-            {/* Workspace Panel (Outlet) */}
-            <Panel defaultSize={75} minSize={50}>
-              <MDBox sx={{ height: "100%", width: "100%", overflow: "auto", position: "relative" }}>
-                {children}
-              </MDBox>
+          <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {/* Topnavbar Area */}
+            <MDBox sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
+              {/* FIX: Re-add TopnavbarContent. Pass dummy props for now. */}
+              <TopnavbarContent
+                handleSidenavToggle={onToggleSidenav} // Use prop
+                isEditing={isEditing}
+                onEditToggle={onEditToggle}
+                onAddWidget={onAddWidget}
+              />
+            </MDBox>
+
+          {/* Resizable area for Workspace and Ops Console */}
+          <MDBox sx={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
+            <PanelGroup direction="vertical">
+              {/* Workspace Panel (Outlet) */}
+              <Panel defaultSize={75} minSize={50}>
+                <MDBox sx={{ height: "100%", width: "100%", overflow: "auto", position: "relative" }}>
+                  {children}
+                </MDBox>
             </Panel>
             <PanelResizeHandle style={verticalHandleStyle} />
             {/* Ops Console Panel */}
@@ -48,8 +70,10 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               <MDBox sx={{ height: "100%", borderTop: "1px solid #e0e0e0" }}>
                 Ops Console Placeholder
               </MDBox>
-            </Panel>
-          </PanelGroup>
+              </Panel>
+              </PanelGroup>
+            </MDBox>
+          </MDBox>
         </Panel>
       </PanelGroup>
     </MDBox>

@@ -3,14 +3,12 @@
 import React, { useState, useCallback, useEffect } from "react";
 import RGL, { WidthProvider } from "react-grid-layout";
 import axios from "axios";
-
-import MDBox from "../components/MDBox";
-import MDButton from "../components/MDButton";
-import Icon from "@mui/material/Icon";
+import IconComponent from "../components/Icon";
 import WidgetLibrary from "../components/WidgetLibrary";
 import { PlanLevel, WIDGET_REGISTRY } from "../widgets/widgetRegistry";
 import { IconButton } from "@mui/material";
 import { InventoryHealthTable, InventoryHealthRow } from "../components/InventoryHealthTable";
+import { useLayoutContext } from "../App";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -68,20 +66,15 @@ const getWidgetProps = (widgetId: string) => {
 };
 
 export const DashboardPage = () => {
-  // State to manage the editing mode
-  const [isEditing, setIsEditing] = useState(false);
   // State to hold the current layout of widgets
   const [layout, setLayout] = useState(initialLayout);
   // State to hold the list of active widgets
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
-  // State to manage the Widget Library visibility
-  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  // Mock the user's current plan level
-  const currentUserPlan: PlanLevel = 'Ignition'; // Change this to 'Clarity' or 'Autonomous' to test different states
+  // Get editing state and library controls from parent context
+  const { isEditing, isLibraryOpen, setIsLibraryOpen, currentUserPlan } = useLayoutContext();
 
   // Callback to update the layout state when the user makes changes
   const onLayoutChange = useCallback((newLayout: RGL.Layout[]) => {
-    // Only update layout state if in editing mode to prevent unwanted changes
     if (isEditing) {
       setLayout(newLayout);
     }
@@ -120,10 +113,9 @@ export const DashboardPage = () => {
         x: 0, // New widgets appear at the top-left
         y: 0,
         ...widgetConfig.defaultLayout,
+        static: false,
       },
     ]);
-    // Explicitly close the library after adding a widget
-    setIsLibraryOpen(false);
   };
 
 // Handler for removing a widget from the dashboard
@@ -132,43 +124,8 @@ export const DashboardPage = () => {
     setLayout((prev) => prev.filter((l) => l.i !== instanceId));
   };
 
-  // Handler for saving the layout
-  const handleSaveLayout = async () => {
-    try {
-      await axios.post("/api/v1/layouts/dashboard", {
-        layout,
-        activeWidgets,
-      });
-    } catch (error) {
-      console.error("Failed to save layout:", error);
-      // Optionally, show a snackbar/toast to the user that saving failed
-    } finally {
-      setIsEditing(false);
-    }
-  };
-
   return (
     <>
-      <MDBox display="flex" justifyContent="flex-end" mb={2}>
-        {isEditing ? (
-          <>
-            <MDButton variant="gradient" color="info" onClick={() => setIsLibraryOpen(true)}>
-              <Icon sx={{ marginRight: 1 }}>add</Icon>
-              Add Widget
-            </MDButton>
-            <MDButton variant="gradient" color="success" onClick={handleSaveLayout}>
-              <Icon sx={{ marginRight: 1 }}>save</Icon>
-              Done
-            </MDButton>
-          </>
-        ) : (
-          <MDButton variant="outlined" color="info" onClick={() => setIsEditing(true)}>
-            <Icon sx={{ marginRight: 1 }}>edit</Icon>
-            Edit Layout
-          </MDButton>
-        )}
-      </MDBox>
-
       <GridLayout
         layout={layout}
         cols={12}
@@ -202,7 +159,7 @@ export const DashboardPage = () => {
                     zIndex: 10,
                   }}
                 >
-                  <Icon fontSize="small">close</Icon>
+                  <IconComponent name="X" size="xs" color="inherit"/>
                 </IconButton>
               )}
             </div>
@@ -210,7 +167,7 @@ export const DashboardPage = () => {
         })}
       </GridLayout>
      <WidgetLibrary
-        open={isLibraryOpen}
+        open={isLibraryOpen} 
         onClose={() => setIsLibraryOpen(false)}
         onAddWidget={handleAddWidget}
         currentPlan={currentUserPlan}
