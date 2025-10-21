@@ -1,9 +1,9 @@
 //packages/ui/src/components/InventoryHealthTable.tsx
 import React from 'react';
-import MDBox from "./MDBox";
-import MDTypography from "./MDTypography";
+import { Box } from '@mui/material';
 import { DataTable } from './DataTable'; // Import our new generic component
 import { createColumnHelper, ColumnDef } from '@tanstack/react-table';
+import {Typography} from '@mui/material';
 
 // Define the shape of our data
 export interface InventoryHealthRow {
@@ -26,13 +26,13 @@ const columns: ColumnDef<InventoryHealthRow, unknown>[] = [
 
 export const InventoryHealthTable: React.FC<InventoryHealthTableProps> = ({ data }) => {
   return (
-    <MDBox pt={3}>
-      <MDBox mb={1}>
-        <MDTypography variant="h6">
+    <Box pt={3}>
+      <Box mb={1}>
+        <Typography variant="h6">
           Inventory Health Monitor
-        </MDTypography>
-      </MDBox>
+        </Typography>
+      </Box>
       <DataTable columns={columns} data={data} />
-    </MDBox>
+    </Box>
   );
 };
