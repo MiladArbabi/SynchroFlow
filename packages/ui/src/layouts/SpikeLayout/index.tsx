@@ -2,7 +2,7 @@
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 // 1. IMPORT CHANGE: We are now using the base GridLayout instead of Responsive
 import RGL, { WidthProvider } from "react-grid-layout";
-import MDBox from "../../components/MDBox";
+import { Box } from "@mui/material";
 
 // We now use the WidthProvider directly on our base RGL component
 const GridLayout = WidthProvider(RGL);
@@ -35,7 +35,7 @@ function SpikeResizableLayout() {
   ];
 
   return (
-    <MDBox
+    <Box
       sx={{
         width: "100vw",
         height: "100vh",
@@ -43,7 +43,7 @@ function SpikeResizableLayout() {
         flexDirection: "column",
       }}
     >
-      <MDBox
+      <Box
         sx={{
           ...panelStyle("#999"),
           height: "60px",
@@ -52,19 +52,19 @@ function SpikeResizableLayout() {
         }}
       >
         Topnavbar (Fixed 60px)
-      </MDBox>
+      </Box>
 
-      <MDBox sx={{ flexGrow: 1, height: "calc(100vh - 60px)" }}>
+      <Box sx={{ flexGrow: 1, height: "calc(100vh - 60px)" }}>
         <PanelGroup direction="horizontal">
           <Panel defaultSize={20} minSize={15} maxSize={30}>
-            <MDBox sx={panelStyle("#f00")}>Sidenav</MDBox>
+            <Box sx={panelStyle("#f00")}>Sidenav</Box>
           </Panel>
           <PanelResizeHandle style={handleStyle} />
 
           <Panel>
             <PanelGroup direction="vertical">
               <Panel defaultSize={75} minSize={50}>
-                <MDBox sx={{ ...panelStyle("#0f0"), padding: "10px" }}>
+                <Box sx={{ ...panelStyle("#0f0"), padding: "10px" }}>
 
                   {/* 2. COMPONENT CHANGE: Switched to the non-responsive GridLayout */}
                   <GridLayout
@@ -83,36 +83,36 @@ function SpikeResizableLayout() {
                     compactType={null}      // Disables auto-compaction
                     preventCollision={true} // Prevents widgets from overlapping when dragging
                   >
-                    <MDBox
+                    <Box
                       key="a"
                       sx={{ ...panelStyle("#777"), background: "#eee" }}
                     >
                       Widget A
-                    </MDBox>
-                    <MDBox
+                    </Box>
+                    <Box
                       key="b"
                       sx={{ ...panelStyle("#777"), background: "#eee" }}
                     >
                       Widget B
-                    </MDBox>
-                    <MDBox
+                    </Box>
+                    <Box
                       key="c"
                       sx={{ ...panelStyle("#777"), background: "#eee" }}
                     >
                       Widget C
-                    </MDBox>
+                    </Box>
                   </GridLayout>
-                </MDBox>
+                </Box>
               </Panel>
               <PanelResizeHandle style={verticalHandleStyle} />
               <Panel defaultSize={25} minSize={10}>
-                <MDBox sx={panelStyle("#00f")}>Ops Console</MDBox>
+                <Box sx={panelStyle("#00f")}>Ops Console</Box>
               </Panel>
             </PanelGroup>
           </Panel>
         </PanelGroup>
-      </MDBox>
-    </MDBox>
+      </Box>
+    </Box>
   );
 }
 

@@ -2,7 +2,7 @@
 import React from "react";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
-import MDBox from "../MDBox";
+import { Box } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 
 interface SidenavCollapseProps {
@@ -15,7 +15,7 @@ const SidenavCollapse: React.FC<SidenavCollapseProps> = ({ icon, name, active = 
   const theme = useTheme();
 
   return (
-    <MDBox
+    <Box
       sx={{
         display: "flex",
         alignItems: "center",
@@ -46,7 +46,7 @@ const SidenavCollapse: React.FC<SidenavCollapseProps> = ({ icon, name, active = 
           sx: { opacity: 1 }
         }}
       />
-    </MDBox>
+    </Box>
   );
 };
 

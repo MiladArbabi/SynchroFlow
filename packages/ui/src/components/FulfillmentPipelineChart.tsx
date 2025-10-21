@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/components/FulfillmentPipelineChart.tsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -11,8 +12,8 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import MDBox from './MDBox';
-import MDTypography from './MDTypography';
+import { Box } from '@mui/material';
+import {Typography} from '@mui/material';
 import Card from "@mui/material/Card";
 
 // Register Chart.js components
@@ -84,16 +85,16 @@ export const FulfillmentPipelineChart: React.FC = () => {
 
   return (
     <Card>
-        <MDBox p={2}>
-            <MDTypography variant="h6">Fulfillment Pipeline</MDTypography>
-        </MDBox>
-        <MDBox p={2}>
+        <Box p={2}>
+            <Typography variant="h6">Fulfillment Pipeline</Typography>
+        </Box>
+        <Box p={2}>
             {isLoading ? (
-                <MDTypography>Loading chart...</MDTypography>
+                <Typography>Loading chart...</Typography>
             ) : (
                 <Bar options={options} data={chartData} />
             )}
-        </MDBox>
+        </Box>
     </Card>
   );
 };

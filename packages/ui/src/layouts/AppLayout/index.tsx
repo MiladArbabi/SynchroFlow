@@ -1,7 +1,7 @@
 //packages/ui/src/layouts/AppLayout/index.tsx
 import React, { ReactNode } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import MDBox from "../../components/MDBox";
+import { Box } from "@mui/material";
 import SidenavContent from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 
@@ -32,20 +32,20 @@ const AppLayout = ({
   onToggleSidenav
 }: AppLayoutProps) => {
   return (
-    <MDBox sx={{ width: "100vw", height: "100vh" }}>
+    <Box sx={{ width: "100vw", height: "100vh" }}>
       <PanelGroup direction="horizontal">
         {/* Sidenav Panel */}
         <Panel defaultSize={20} minSize={5} maxSize={25} collapsible>
-          <MDBox sx={{ height: "100%", borderRight: "1px solid #e0e0e0" }}>
+          <Box sx={{ height: "100%", borderRight: "1px solid #e0e0e0" }}>
             <SidenavContent />
-          </MDBox>
+          </Box>
         </Panel>
         <PanelResizeHandle style={handleStyle} />
         {/* Main Content Panel (contains Topnav, Workspace, and Ops Console) */}
         <Panel>
-          <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
             {/* Topnavbar Area */}
-            <MDBox sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
+            <Box sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
               {/* FIX: Re-add TopnavbarContent. Pass dummy props for now. */}
               <TopnavbarContent
                 handleSidenavToggle={onToggleSidenav} // Use prop
@@ -53,30 +53,30 @@ const AppLayout = ({
                 onEditToggle={onEditToggle}
                 onAddWidget={onAddWidget}
               />
-            </MDBox>
+            </Box>
 
           {/* Resizable area for Workspace and Ops Console */}
-          <MDBox sx={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
+          <Box sx={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
             <PanelGroup direction="vertical">
               {/* Workspace Panel (Outlet) */}
               <Panel defaultSize={75} minSize={50}>
-                <MDBox sx={{ height: "100%", width: "100%", overflow: "auto", position: "relative" }}>
+                <Box sx={{ height: "100%", width: "100%", overflow: "auto", position: "relative" }}>
                   {children}
-                </MDBox>
+                </Box>
             </Panel>
             <PanelResizeHandle style={verticalHandleStyle} />
             {/* Ops Console Panel */}
             <Panel defaultSize={25} minSize={10} collapsible>
-              <MDBox sx={{ height: "100%", borderTop: "1px solid #e0e0e0" }}>
+              <Box sx={{ height: "100%", borderTop: "1px solid #e0e0e0" }}>
                 Ops Console Placeholder
-              </MDBox>
+              </Box>
               </Panel>
               </PanelGroup>
-            </MDBox>
-          </MDBox>
+            </Box>
+          </Box>
         </Panel>
       </PanelGroup>
-    </MDBox>
+    </Box>
   );
 };
 

@@ -2,8 +2,8 @@
 import React from "react";
 import Drawer from "@mui/material/Drawer";
 import { WIDGET_REGISTRY, WidgetConfig, PlanLevel } from "../../widgets/widgetRegistry";
-import MDBox from "../MDBox";
-import MDTypography from "../MDTypography";
+import { Box } from "@mui/material";
+import {Typography} from "@mui/material";
 import IconButton from "@mui/material/IconButton";
 import Icon from "@mui/material/Icon";
 import TextField from "@mui/material/TextField";
@@ -27,9 +27,9 @@ const WidgetCard = ({
   onAdd: () => void;
   isLocked: boolean;
 }) => (
-  <MDBox sx={{ width: "50%", padding: "0.5rem" }}>
+  <Box sx={{ width: "50%", padding: "0.5rem" }}>
   {/* FIX: Wrap the card in a button to ensure click events are handled */}
-    <MDBox
+    <Box
       onClick={isLocked ? () => alert(`Requires ${widget.requiredPlan} plan`) : onAdd} // Placeholder alert for locked state
       sx={{
         border: "1px dashed #e0e0e0",
@@ -56,11 +56,11 @@ const WidgetCard = ({
           }}
         />
       )}
-   <MDTypography variant="h6" color="secondary">
+   <Typography variant="h6" color="secondary">
         {widget.name}
-      </MDTypography>
-    </MDBox> 
-  </MDBox>
+      </Typography>
+    </Box> 
+  </Box>
 );
 
 const WidgetLibrary: React.FC<WidgetLibraryProps> = ({ open, onClose, onAddWidget, currentPlan }) => {
@@ -76,17 +76,17 @@ const WidgetLibrary: React.FC<WidgetLibraryProps> = ({ open, onClose, onAddWidge
 
   return (
     <Drawer anchor="right" open={open} onClose={onClose}>
-      <MDBox width={{ xs: "100vw", sm: "400px" }} p={2}>
-        <MDBox display="flex" justifyContent="space-between" alignItems="center">
-          <MDTypography variant="h5">Widget Library</MDTypography>
+      <Box width={{ xs: "100vw", sm: "400px" }} p={2}>
+        <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Typography variant="h5">Widget Library</Typography>
           <IconButton onClick={onClose}>
-            <Icon>close</Icon>
+            <Icon>x</Icon>
           </IconButton>
-        </MDBox>
-        <MDBox mt={3} mb={2}>
+        </Box>
+        <Box mt={3} mb={2}>
           <TextField fullWidth variant="outlined" placeholder="Search widgets..." />
-        </MDBox>
-        <MDBox sx={{ display: "flex", flexWrap: "wrap", margin: "-0.5rem" }}>
+        </Box>
+        <Box sx={{ display: "flex", flexWrap: "wrap", margin: "-0.5rem" }}>
           {Object.values(WIDGET_REGISTRY).map((widget) => {
             const locked = isWidgetLocked(widget.requiredPlan);
             return (
@@ -98,8 +98,8 @@ const WidgetLibrary: React.FC<WidgetLibraryProps> = ({ open, onClose, onAddWidge
               />
             );
           })}
-        </MDBox>
-      </MDBox>
+        </Box>
+      </Box>
     </Drawer>
   );
 };

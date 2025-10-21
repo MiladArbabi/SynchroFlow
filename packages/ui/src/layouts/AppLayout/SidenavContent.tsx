@@ -1,11 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/layouts/AppLayout/SidenavContent.tsx
 import React from "react";
 import { useLocation, NavLink } from "react-router-dom";
 import List from "@mui/material/List";
 import Divider from "@mui/material/Divider";
 import Link from "@mui/material/Link";
-import MDBox from "../../components/MDBox";
-import MDTypography from "../../components/MDTypography";
+import { Box } from "@mui/material";
+import {Typography} from "@mui/material";
 import SidenavCollapse from "../../components/SidenavCollapse";
 import routes from "../../routes";
 
@@ -31,7 +32,7 @@ const SidenavContent: React.FC = () => {
       );
     } else if (type === "title") {
       return (
-        <MDTypography
+        <Typography
           key={key}
           color="white" // This will need to be adjusted once we have a real theme
           variant="caption"
@@ -39,7 +40,7 @@ const SidenavContent: React.FC = () => {
           textTransform="uppercase"
         >
           {title}
-        </MDTypography>
+        </Typography>
       );
     } else if (type === "divider") {
       return <Divider key={key} sx={{ opacity: 0.6 }} />;
@@ -49,15 +50,15 @@ const SidenavContent: React.FC = () => {
 
   return (
     <>
-      <MDBox pt={3} pb={1} px={2} textAlign="center">
-        <MDBox component={NavLink} to="/" display="flex" alignItems="center">
-          <MDBox width="100%">
-            <MDTypography variant="h6" fontWeight="medium">
+      <Box pt={3} pb={1} px={2} textAlign="center">
+        <Box component={NavLink} to="/" display="flex" alignItems="center">
+          <Box width="100%">
+            <Typography variant="h6" fontWeight="medium">
               {brandName}
-            </MDTypography>
-          </MDBox>
-        </MDBox>
-      </MDBox>
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
       <Divider sx={{ opacity: 0.6 }} />
       <List>{renderRoutes}</List>
     </>

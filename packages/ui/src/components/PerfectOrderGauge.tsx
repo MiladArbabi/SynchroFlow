@@ -8,8 +8,8 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import MDBox from './MDBox';
-import MDTypography from './MDTypography';
+import { Box } from '@mui/material';
+import {Typography} from '@mui/material';
 import Card from "@mui/material/Card";
 
 // Register the necessary Chart.js components
@@ -59,15 +59,15 @@ export const PerfectOrderGauge: React.FC = () => {
 
   return (
     <Card>
-      <MDBox p={2} textAlign="center">
-        <MDTypography variant="h6">Perfect Order %</MDTypography>
-        <MDBox sx={{ position: 'relative', height: '150px', mt: 2 }}>
+      <Box p={2} textAlign="center">
+        <Typography variant="h6">Perfect Order %</Typography>
+        <Box sx={{ position: 'relative', height: '150px', mt: 2 }}>
           {isLoading ? (
-            <MDTypography>Loading...</MDTypography>
+            <Typography>Loading...</Typography>
           ) : (
             <>
               <Doughnut data={data} options={options} />
-              <MDBox
+              <Box
                 sx={{
                   position: 'absolute',
                   top: '70%',
@@ -75,14 +75,14 @@ export const PerfectOrderGauge: React.FC = () => {
                   transform: 'translate(-50%, -50%)',
                 }}
               >
-                <MDTypography variant="h4" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold">
                   {`${percentage.toFixed(1)}%`}
-                </MDTypography>
-              </MDBox>
+                </Typography>
+              </Box>
             </>
           )}
-        </MDBox>
-      </MDBox>
+        </Box>
+      </Box>
     </Card>
   );
 };

@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/components/KpiCard.tsx
 import React from "react";
-import MDBox from "./MDBox"; // We are keeping MDBox
-import MDTypography from "./MDTypography"; // We are keeping MDTypography
+import { Box } from "@mui/material";
+import {Typography} from "@mui/material";
 import IconComponent from "./Icon";
 
 interface KpiCardProps {
@@ -14,7 +14,7 @@ interface KpiCardProps {
 
 const KpiCard: React.FC<KpiCardProps> = ({ title, value, percentage, icon }) => {
   return (
-    <MDBox
+    <Box
       sx={{
         backgroundColor: "white",
         borderRadius: "0.75rem",
@@ -23,16 +23,16 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, percentage, icon }) => 
         height: '100%'
       }}
     >
-      <MDBox display="flex" justifyContent="space-between" alignItems="flex-start">
-        <MDBox>
-          <MDTypography variant="button" color="text" fontWeight="medium" textTransform="capitalize">
+      <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+        <Box>
+          <Typography variant="button" color="text" fontWeight="medium" textTransform="capitalize">
             {title}
-          </MDTypography>
-          <MDTypography variant="h5" fontWeight="bold">
+          </Typography>
+          <Typography variant="h5" fontWeight="bold">
             {value}
-          </MDTypography>
-        </MDBox>
-        <MDBox
+          </Typography>
+        </Box>
+        <Box
           color="white"
           bgColor="info"
           sx={{
@@ -45,17 +45,17 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, percentage, icon }) => 
           }}
         >
           <IconComponent name={icon as any} size="small" color="white" />        
-        </MDBox>
-      </MDBox>
-      <MDBox sx={{ marginTop: "1rem", display: "block" }}>
-        <MDTypography variant="button" color="text">
-          <MDTypography variant="button" color="success" fontWeight="bold">
+        </Box>
+      </Box>
+      <Box sx={{ marginTop: "1rem", display: "block" }}>
+        <Typography variant="button" color="text">
+          <Typography variant="button" color="success" fontWeight="bold">
           {percentage}
-          </MDTypography>
+          </Typography>
           &nbsp;than last week
-        </MDTypography>
-      </MDBox>
-    </MDBox>
+        </Typography>
+      </Box>
+    </Box>
   );
 }
 
