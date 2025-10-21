@@ -14,6 +14,7 @@ import {
   calculatePerfectOrderPercentage } from './services/analytics.service';
 import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
+import layoutRoutes from "./api/layouts/layout.routes";
 
 // --- ADD THESE LINES ---
 // Use 'path' to create a reliable, absolute path to the addon file
@@ -33,6 +34,9 @@ const port = 3000;
 app.get('/', (req, res) => {
   res.send('SynchroFlow API is running!');
 });
+
+// Integrate the new layout routes
+app.use("/api/v1/layouts", layoutRoutes);
 
 app.get('/v1/inventory/:sku', (req, res) => {
   const { sku } = req.params;

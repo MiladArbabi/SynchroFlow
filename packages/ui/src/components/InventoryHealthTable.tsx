@@ -1,16 +1,19 @@
 //packages/ui/src/components/InventoryHealthTable.tsx
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React from 'react';
 import MDBox from "./MDBox";
 import MDTypography from "./MDTypography";
 import { DataTable } from './DataTable'; // Import our new generic component
 import { createColumnHelper, ColumnDef } from '@tanstack/react-table';
 
 // Define the shape of our data
-interface InventoryHealthRow {
+export interface InventoryHealthRow {
   sku: string;
   quantity_available: number;
   status: 'Healthy' | 'At Risk' | 'Stockout';
+}
+
+interface InventoryHealthTableProps {
+  data: InventoryHealthRow[];
 }
 
 // Define columns using the TanStack Table helper
@@ -21,26 +24,7 @@ const columns: ColumnDef<InventoryHealthRow, unknown>[] = [
   columnHelper.accessor('status', { header: 'Status', cell: info => info.getValue() }),
 ];
 
-export const InventoryHealthTable: React.FC = () => {
-  const [data, setData] = useState<InventoryHealthRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const response = await axios.get<InventoryHealthRow[]>('/api/v1/analytics/inventory-health?shop_id=1');
-        setData(response.data);
-      } catch (error) {
-        console.error("Failed to fetch inventory health:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
+export const InventoryHealthTable: React.FC<InventoryHealthTableProps> = ({ data }) => {
   return (
     <MDBox pt={3}>
       <MDBox mb={1}>
@@ -48,11 +32,7 @@ export const InventoryHealthTable: React.FC = () => {
           Inventory Health Monitor
         </MDTypography>
       </MDBox>
-      {isLoading ? (
-        <MDTypography>Loading...</MDTypography>
-      ) : (
-        <DataTable columns={columns} data={data} />
-      )}
+      <DataTable columns={columns} data={data} />
     </MDBox>
   );
 };
