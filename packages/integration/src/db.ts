@@ -1,4 +1,4 @@
-// packages/integration-service/src/db.ts
+// packages/integration/src/db.ts
 import knex, { Knex } from 'knex';
 import knexfile = require('../knexfile');
 

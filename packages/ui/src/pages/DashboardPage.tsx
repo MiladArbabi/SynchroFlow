@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/DashboardPage.tsx 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import RGL, { WidthProvider } from "react-grid-layout";
+import axios from "axios";
 
 import MDBox from "../components/MDBox";
 import MDButton from "../components/MDButton";
@@ -8,6 +10,7 @@ import Icon from "@mui/material/Icon";
 import WidgetLibrary from "../components/WidgetLibrary";
 import { WIDGET_REGISTRY } from "../widgets/widgetRegistry";
 import { IconButton } from "@mui/material";
+import { InventoryHealthTable, InventoryHealthRow } from "../components/InventoryHealthTable";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -19,6 +22,14 @@ const mockCashFlowData = [
   { name: 'Apr', cash: 4500 },
   { name: 'May', cash: 6000 },
   { name: 'Jun', cash: 5500 },
+];
+
+// Mock data for the InventoryHealthTable component
+const mockInventoryHealthData: InventoryHealthRow[] = [
+  { sku: 'SF-TS-BLK-M', quantity_available: 150, status: 'Healthy' },
+  { sku: 'SF-HD-GRY-L', quantity_available: 25, status: 'At Risk' },
+  { sku: 'SF-CP-NAV-OS', quantity_available: 0, status: 'Stockout' },
+  { sku: 'SF-TS-WHT-S', quantity_available: 80, status: 'Healthy' },
 ];
 
 // Defines the widgets that are active on the dashboard by default
@@ -50,29 +61,46 @@ const getWidgetProps = (widgetId: string) => {
     case "cashflow-chart":
       return { data: mockCashFlowData };
     case "inventory-health":
-      return {};
+      return { data: mockInventoryHealthData };
     default:
       return {};
   }
 };
 
 export const DashboardPage = () => {
-// State to manage the editing mode
-const [isEditing, setIsEditing] = useState(false);
-// State to hold the current layout of widgets
-const [layout, setLayout] = useState(initialLayout);
-// State to hold the list of active widgets
-const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
-// State to manage the Widget Library visibility
-const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  // State to manage the editing mode
+  const [isEditing, setIsEditing] = useState(false);
+  // State to hold the current layout of widgets
+  const [layout, setLayout] = useState(initialLayout);
+  // State to hold the list of active widgets
+  const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
+  // State to manage the Widget Library visibility
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
 
-// Callback to update the layout state when the user makes changes
+  // Callback to update the layout state when the user makes changes
   const onLayoutChange = useCallback((newLayout: RGL.Layout[]) => {
     // Only update layout state if in editing mode to prevent unwanted changes
     if (isEditing) {
       setLayout(newLayout);
     }
   }, [isEditing]);
+
+  // Fetch the saved layout when the component mounts
+  useEffect(() => {
+    const fetchLayout = async () => {
+      try {
+        const response = await axios.get("/api/v1/layouts/dashboard");
+        if (response.data) {
+          setLayout(response.data.layout);
+          setActiveWidgets(response.data.activeWidgets);
+        }
+      } catch (error) {
+        // If a 404 occurs, it means no layout is saved yet. We can ignore this.
+        console.log("No saved layout found, using default.");
+      }
+    };
+    fetchLayout();
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   // Handler for adding a new widget from the library
   const handleAddWidget = (widgetId: string) => {
@@ -102,6 +130,21 @@ const [isLibraryOpen, setIsLibraryOpen] = useState(false);
     setLayout((prev) => prev.filter((l) => l.i !== instanceId));
   };
 
+  // Handler for saving the layout
+  const handleSaveLayout = async () => {
+    try {
+      await axios.post("/api/v1/layouts/dashboard", {
+        layout,
+        activeWidgets,
+      });
+    } catch (error) {
+      console.error("Failed to save layout:", error);
+      // Optionally, show a snackbar/toast to the user that saving failed
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
   return (
     <>
       <MDBox display="flex" justifyContent="flex-end" mb={2}>
@@ -111,7 +154,7 @@ const [isLibraryOpen, setIsLibraryOpen] = useState(false);
               <Icon sx={{ marginRight: 1 }}>add</Icon>
               Add Widget
             </MDButton>
-            <MDButton variant="gradient" color="success" onClick={() => setIsEditing(false)}>
+            <MDButton variant="gradient" color="success" onClick={handleSaveLayout}>
               <Icon sx={{ marginRight: 1 }}>save</Icon>
               Done
             </MDButton>
