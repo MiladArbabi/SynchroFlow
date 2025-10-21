@@ -8,7 +8,7 @@ import MDBox from "../components/MDBox";
 import MDButton from "../components/MDButton";
 import Icon from "@mui/material/Icon";
 import WidgetLibrary from "../components/WidgetLibrary";
-import { WIDGET_REGISTRY } from "../widgets/widgetRegistry";
+import { PlanLevel, WIDGET_REGISTRY } from "../widgets/widgetRegistry";
 import { IconButton } from "@mui/material";
 import { InventoryHealthTable, InventoryHealthRow } from "../components/InventoryHealthTable";
 
@@ -76,6 +76,8 @@ export const DashboardPage = () => {
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
   // State to manage the Widget Library visibility
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  // Mock the user's current plan level
+  const currentUserPlan: PlanLevel = 'Ignition'; // Change this to 'Clarity' or 'Autonomous' to test different states
 
   // Callback to update the layout state when the user makes changes
   const onLayoutChange = useCallback((newLayout: RGL.Layout[]) => {
@@ -211,6 +213,7 @@ export const DashboardPage = () => {
         open={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
         onAddWidget={handleAddWidget}
+        currentPlan={currentUserPlan}
       />
     </>
   );

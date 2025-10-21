@@ -1,14 +1,19 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 //packages/ui/src/widgets/widgetRegistry.ts
 import { ComponentType } from "react";
 import KpiCard from "../components/KpiCard";
 import {CashFlowChart} from "../components/CashFlowChart";
 import {InventoryHealthTable} from "../components/InventoryHealthTable";
 
+// Define possible plan levels
+export type PlanLevel = 'Ignition' | 'Clarity' | 'Autonomous';
+
 export interface WidgetConfig {
   id: string;
   name: string;
-  component: ComponentType<any>;
+  component: ComponentType<any> | (() => string);
   defaultLayout: { w: number; h: number };
+  requiredPlan: PlanLevel;
 }
 
 export const WIDGET_REGISTRY: Record<string, WidgetConfig> = {
@@ -17,30 +22,42 @@ export const WIDGET_REGISTRY: Record<string, WidgetConfig> = {
     name: "Gross Revenue",
     component: KpiCard,
     defaultLayout: { w: 3, h: 1 },
+    requiredPlan: 'Ignition',
   },
   "kpi-margin": {
     id: "kpi-margin",
     name: "Gross Margin",
     component: KpiCard,
     defaultLayout: { w: 3, h: 1 },
+    requiredPlan: 'Ignition',
   },
   "kpi-inventory": {
     id: "kpi-inventory",
     name: "Inventory Value",
     component: KpiCard,
     defaultLayout: { w: 3, h: 1 },
+    requiredPlan: 'Clarity',
   },
   "cashflow-chart": {
     id: "cashflow-chart",
     name: "Cash Flow Chart",
     component: CashFlowChart,
     defaultLayout: { w: 9, h: 3 },
+    requiredPlan: 'Ignition',
   },
   "inventory-health": {
     id: "inventory-health",
     name: "Inventory Health",
     component: InventoryHealthTable,
     defaultLayout: { w: 12, h: 4 },
+    requiredPlan: 'Clarity',
+  },
+  "ai-reordering": {
+    id: "ai-reordering",
+    name: "AI Smart Reordering",
+    component: () => "AI Smart Reordering (Placeholder)",
+    defaultLayout: { w: 6, h: 2},
+    requiredPlan: 'Autonomous',
   },
 };
 
