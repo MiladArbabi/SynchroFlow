@@ -21,6 +21,8 @@
     "@mui/icons-material": "^7.3.4",
     "@mui/material": "^7.3.4",
     "@mui/system": "^7.3.3",
+    "@mui/x-data-grid": "^8.14.1",
+    "@mui/x-date-pickers": "^8.14.1",
     "@tabler/icons-react": "^3.35.0",
     "@tanstack/react-table": "^8.21.3",
     "@types/lodash-es": "^4.17.12",
