@@ -12,8 +12,8 @@ export default function Tooltip(theme: Theme): TooltipComponentConfig {
         styleOverrides: {
             // Target the 'tooltip' class key
             tooltip: {
-                margin: 0, // Keep margin override
-                lineHeight: 1.4, // Keep line-height override
+                margin: 0,
+                lineHeight: 1.4,
                 // Use standard theme palette keys
                 color: theme.palette.background.paper, // Text color
                 backgroundColor: theme.palette.text.primary // Background color

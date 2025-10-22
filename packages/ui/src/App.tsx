@@ -5,6 +5,7 @@ import axios from "axios";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout";
+import Customization from "./layout/Customization";
 import routes from "./routes";
 import { PlanLevel } from "./widgets/widgetRegistry";
 
@@ -48,11 +49,6 @@ const LayoutManager = () => {
   const layoutRef = React.useRef<RGL.Layout[]>([]);
   const activeWidgetsRef = React.useRef<{ instanceId: string; widgetId: string }[]>([]);
 
-  // Placeholder for Sidenav toggle logic
-  const handleToggleSidenav = () => {
-    console.log("Sidenav toggle clicked");
-  };
-
   // Handler for saving the layout (calls backend)
   const handleSaveLayout = async () => {
     try {
@@ -83,7 +79,6 @@ const LayoutManager = () => {
       isEditing={isEditing}
       onEditToggle={isEditing ? handleSaveLayout : () => setIsEditing(true)}
       onAddWidget={() => setIsLibraryOpen(true)}
-      onToggleSidenav={handleToggleSidenav}
     >
       {/* Pass state down via Outlet context */}
       <Outlet context={contextValue} />
@@ -111,6 +106,7 @@ export default function App() {
         {/* A default redirect to the dashboard */}
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
+      <Customization />
     </ThemeCustomization>
   );
 }
