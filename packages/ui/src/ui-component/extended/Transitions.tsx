@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/ui-component/extended/Transitions.tsx
 import React from 'react';
 
@@ -11,113 +12,204 @@ import Box, { BoxProps } from '@mui/material/Box';
 import { Theme } from '@mui/material/styles';
 import { SxProps } from '@mui/system';
 
-// Define possible transition types and positions
+// Define types
 type TransitionType = 'grow' | 'fade' | 'collapse' | 'slide' | 'zoom';
-// FIX 1: Rename 'position' to avoid conflict with BoxProps' 'position'
 type TransformOriginPosition = 'top-left' | 'top-right' | 'top' | 'bottom-left' | 'bottom-right' | 'bottom';
 type TransitionDirection = 'up' | 'down' | 'left' | 'right';
+type MuiTimeout = number | { appear?: number, enter?: number, exit?: number };
+type CollapseTimeout = MuiTimeout | 'auto';
 
-// Define the props interface, explicitly omitting BoxProps['position'] to avoid conflict
-interface TransitionsProps extends Omit<BoxProps, 'position'> {
-  children: React.ReactNode;
-  // FIX 1: Use the new name here
+// Base props needed by Transitions logic
+type CoreTransitionProps = {
+    in?: boolean;
+    timeout?: MuiTimeout | CollapseTimeout;
+};
+
+// All possible MUI Transition component props
+type AnyMuiTransitionProps = GrowProps | FadeProps | CollapseProps | SlideProps | ZoomProps;
+
+// Define the component props interface
+// Use Omit to exclude Box props handled internally or potentially conflicting
+type ExcludedBoxProps = 'position' | 'timeout' | 'in';
+interface TransitionsProps extends Omit<BoxProps, ExcludedBoxProps>, CoreTransitionProps {
+  children: React.ReactNode; // Children are required
   transformOriginPosition?: TransformOriginPosition;
-  sx?: SxProps<Theme>;
+  sx?: SxProps<Theme>; // SX for the inner Box
   type?: TransitionType;
   direction?: TransitionDirection;
-  // Allow passing additional props to the underlying MUI transition component
-  TransitionProps?: GrowProps | FadeProps | CollapseProps | SlideProps | ZoomProps;
+  // Extra props specifically for the underlying MUI component
+  // --- FIX 1: REMOVE Omit --- Allow 'timeout', 'in', 'children' to be passed via muiTransitionProps if needed, although direct props take precedence
+  muiTransitionProps?: AnyMuiTransitionProps;
 }
+
+// Helper function remains the same
+const pickTransitionHandlers = (props: AnyMuiTransitionProps | undefined): Partial<AnyMuiTransitionProps> => {
+    // ... (implementation from previous step)
+    if (!props) return {};
+    const handlers: Partial<AnyMuiTransitionProps> = {};
+    if (typeof props.onEnter === 'function') handlers.onEnter = props.onEnter;
+    if (typeof props.onEntering === 'function') handlers.onEntering = props.onEntering;
+    if (typeof props.onEntered === 'function') handlers.onEntered = props.onEntered;
+    if (typeof props.onExit === 'function') handlers.onExit = props.onExit;
+    if (typeof props.onExiting === 'function') handlers.onExiting = props.onExiting;
+    if (typeof props.onExited === 'function') handlers.onExited = props.onExited;
+    if (typeof props.addEndListener === 'function') handlers.addEndListener = props.addEndListener;
+    if ('mountOnEnter' in props) handlers.mountOnEnter = props.mountOnEnter;
+    if ('unmountOnExit' in props) handlers.unmountOnExit = props.unmountOnExit;
+    if ('appear' in props) handlers.appear = props.appear;
+    return handlers;
+};
+
 
 const Transitions: React.FC<TransitionsProps> = ({
   children,
-  // FIX 1: Destructure the renamed prop with its default value
   transformOriginPosition = 'top-left',
-  sx,
+  sx, // SX for the inner Box
   type = 'grow',
   direction = 'up',
-  TransitionProps = {}, // Default empty object for TransitionProps
-  ...others // Spread remaining BoxProps (excluding 'position')
+  // Destructure core props
+  in: inProp,
+  timeout: timeoutProp,
+  muiTransitionProps = {}, // Capture all extra props
+  ...boxProps // Capture ONLY remaining BoxProps for the OUTER wrapper
 }) => {
-  let positionSX: SxProps<Theme> = {
-    transformOrigin: '0 0 0'
-  };
+  let positionSX: SxProps<Theme> = { transformOrigin: '0 0 0' };
 
-  // FIX 1: Update the switch statement to use the renamed prop
   switch (transformOriginPosition) {
-    case 'top-right':
-      positionSX = { transformOrigin: 'top right' };
-      break;
-    case 'top':
-      positionSX = { transformOrigin: 'top' };
-      break;
-    case 'bottom-left':
-      positionSX = { transformOrigin: 'bottom left' };
-      break;
-    case 'bottom-right':
-      positionSX = { transformOrigin: 'bottom right' };
-      break;
-    case 'bottom':
-      positionSX = { transformOrigin: 'bottom' };
-      break;
-    case 'top-left':
-    default:
-      positionSX = { transformOrigin: '0 0 0' };
-      break;
+    case 'top-right': positionSX = { transformOrigin: 'top right' }; break;
+    case 'top': positionSX = { transformOrigin: 'top' }; break;
+    case 'bottom-left': positionSX = { transformOrigin: 'bottom left' }; break;
+    case 'bottom-right': positionSX = { transformOrigin: 'bottom right' }; break;
+    case 'bottom': positionSX = { transformOrigin: 'bottom' }; break;
+    case 'top-left': default: positionSX = { transformOrigin: '0 0 0' }; break;
   }
 
-  // Define default timeouts
-  const defaultFadeTimeout = { appear: 500, enter: 600, exit: 400 };
-  const defaultSlideTimeout = { appear: 0, enter: 400, exit: 200 };
+  // Defaults
+  const defaultFadeTimeout: MuiTimeout = { appear: 500, enter: 600, exit: 400 };
+  const defaultSlideTimeout: MuiTimeout = { appear: 0, enter: 400, exit: 200 };
 
-  // Handle timeout more carefully - merge objects if possible
-  const fadeTimeout = typeof (TransitionProps as FadeProps)?.timeout === 'object'
-    ? { ...defaultFadeTimeout, ...(TransitionProps as FadeProps)?.timeout as object }
-    : defaultFadeTimeout;
+  // --- Timeout Calculation ---
+  // Priority: timeoutProp > muiTransitionProps.timeout > default
+  const getTimeoutValue = (defaultTimeout: MuiTimeout | undefined = undefined): MuiTimeout | CollapseTimeout | undefined => {
+      const explicitTimeout = timeoutProp ?? muiTransitionProps?.timeout;
 
-  const slideTimeout = typeof (TransitionProps as SlideProps)?.timeout === 'object'
-    ? { ...defaultSlideTimeout, ...((TransitionProps as SlideProps).timeout as object) }
-    : defaultSlideTimeout;
+      // Handle 'auto' only for Collapse
+      if (type === 'collapse' && explicitTimeout === 'auto') {
+          return 'auto';
+      }
+      // If explicit is 'auto' but type is not Collapse, ignore it or use default
+      if (explicitTimeout === 'auto') {
+          return defaultTimeout;
+      }
+      // Handle object merging with default (if default exists)
+      if (typeof explicitTimeout === 'object' && typeof defaultTimeout === 'object') {
+          return { ...defaultTimeout, ...explicitTimeout };
+      }
+      // Return explicit number/object or default number/object or undefined
+      return explicitTimeout ?? defaultTimeout;
+  };
 
+  const fadeTimeout = getTimeoutValue(defaultFadeTimeout) as FadeProps['timeout'];
+  const slideTimeout = getTimeoutValue(defaultSlideTimeout) as SlideProps['timeout'];
+  const otherTimeout = getTimeoutValue(undefined) as GrowProps['timeout'] | ZoomProps['timeout'] | CollapseProps['timeout']; // No specific default for others
 
-  return (
-    <Box {...others}>
-      {type === 'grow' && (
-        <Grow {...(TransitionProps as GrowProps)}>
-          <Box sx={{ ...positionSX, ...sx }}>{children}</Box>
-        </Grow>
-      )}
-      {type === 'collapse' && (
-        <Collapse {...(TransitionProps as CollapseProps)} sx={{ ...positionSX, ...sx }}>
-          {children}
-        </Collapse>
-      )}
-      {type === 'fade' && (
-        <Fade
-          {...(TransitionProps as FadeProps)}
-          // FIX 2: Use the calculated timeout object
-          timeout={fadeTimeout}
-        >
-          <Box sx={{ ...positionSX, ...sx }}>{children}</Box>
-        </Fade>
-      )}
-      {type === 'slide' && (
-        <Slide
-          {...(TransitionProps as SlideProps)}
-          // FIX 2: Use the calculated timeout object
-          timeout={slideTimeout}
-          direction={direction}
-        >
-          <Box sx={{ ...positionSX, ...sx }}>{children}</Box>
-        </Slide>
-      )}
-      {type === 'zoom' && (
-        <Zoom {...(TransitionProps as ZoomProps)}>
-          <Box sx={{ ...positionSX, ...sx }}>{children}</Box>
-        </Zoom>
-      )}
-    </Box>
-  );
+  // Pick only valid event handlers and flags from muiTransitionProps
+  const validMuiTransitionHandlersAndFlags = pickTransitionHandlers(muiTransitionProps);
+
+  // --- FIX 3: Ensure InnerBox is always defined ---
+  const InnerBox = <Box sx={{ ...positionSX, ...sx }}>{children}</Box>;
+
+  // --- FIX 2 & 3: Construct props for each transition type more carefully ---
+  // Common props for most transitions
+  const commonProps = {
+      ...validMuiTransitionHandlersAndFlags, // Handlers and flags
+      in: inProp, // 'in' state
+  };
+
+  switch (type) {
+    case 'collapse': {
+      const timeout = getTimeoutValue(undefined) as CollapseTimeout; // Allow 'auto'
+      return (
+        // --- FIX: Add outer Box to receive boxProps ---
+        <Box {...boxProps}>
+            <Collapse
+              {...commonProps} // Spread common transition props (in, handlers)
+              timeout={timeout} // Pass specific timeout, allowing 'auto'
+              // --- FIX: Remove sx from Collapse, apply to InnerBox if needed ---
+              // sx={sx}
+              // --- FIX: DO NOT spread boxProps onto Collapse ---
+              // {...boxProps}
+              // Spread any *other* specific Collapse props from muiTransitionProps
+               {...(muiTransitionProps as CollapseProps)} // Spread safely here AFTER commonProps
+            >
+              {/* --- FIX: Collapse wraps children directly or InnerBox --- */}
+              {/* Option 1: Direct children (simpler if no extra styling needed) */}
+               {children}
+              {/* Option 2: Use InnerBox if sx or positionSX needed */}
+              {/* {InnerBox} */}
+            </Collapse>
+        </Box>
+      );
+    }
+    case 'fade': {
+      const timeout = getTimeoutValue(defaultFadeTimeout) as FadeProps['timeout'];
+      return (
+        <Box {...boxProps}>
+            <Fade
+              {...commonProps}
+              timeout={timeout}
+              {...(muiTransitionProps as FadeProps)}
+            >
+              {InnerBox}
+            </Fade>
+         </Box>
+      );
+    }
+    case 'slide': {
+      const timeout = getTimeoutValue(defaultSlideTimeout) as SlideProps['timeout'];
+      return (
+         <Box {...boxProps}>
+            <Slide
+              {...commonProps}
+              timeout={timeout}
+              direction={direction}
+               {...(muiTransitionProps as SlideProps)}
+            >
+              {InnerBox}
+            </Slide>
+        </Box>
+      );
+    }
+    case 'zoom': {
+      const timeout = getTimeoutValue(undefined) as MuiTimeout | undefined;
+      return (
+        <Box {...boxProps}>
+            <Zoom
+              {...commonProps}
+              timeout={timeout}
+               {...(muiTransitionProps as ZoomProps)}
+            >
+              {InnerBox}
+            </Zoom>
+         </Box>
+      );
+    }
+    case 'grow':
+    default: {
+      const timeout = getTimeoutValue(undefined) as MuiTimeout | undefined;
+      return (
+         <Box {...boxProps}>
+            <Grow
+              {...commonProps}
+              timeout={timeout}
+               {...(muiTransitionProps as GrowProps)}
+            >
+              {InnerBox}
+            </Grow>
+         </Box>
+      );
+    }
+  }
 };
 
 export default Transitions;
