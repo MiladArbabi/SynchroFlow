@@ -11,7 +11,7 @@ import CustomShadows from './custom-shadows';
 import useConfig from 'hooks/useConfig';
 import { buildPalette } from './palette';
 import Typography from './typography';
-import componentsOverrides from './overrides';
+import componentsOverrides from './overrides/index';
 
 // ==============================|| DEFAULT THEME - MAIN ||============================== //
 
@@ -26,9 +26,7 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
 
   const palette = useMemo(() => buildPalette(presetColor), [presetColor]);
   const themeTypography = useMemo(() => Typography(fontFamily), [fontFamily]);
-  // @ts-expect-error: We'll fix this later if needed
   const themeCustomShadows = useMemo(() => CustomShadows(palette.light, ThemeMode.LIGHT), [palette.light]);
-  // @ts-expect-error: We'll fix this later if needed
   const themeCustomShadowsDark = useMemo(() => CustomShadows(palette.dark, ThemeMode.DARK), [palette.dark]);
 
   const themeOptions = useMemo(

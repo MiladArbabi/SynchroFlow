@@ -1,11 +1,13 @@
-// third party
+// packages/ui/src/themes/overrides/index.ts
 import { merge } from 'lodash-es';
+import { Theme } from '@mui/material/styles'; // Import MUI Theme type
 
-// project imports
+// Import individual override functions (assuming they exist, adjust paths/names if needed)
+// We'll convert these files next. For now, TypeScript might complain they don't exist yet.
 import Alert from './Alert';
 import Autocomplete from './Autocomplete';
 import Avatar from './Avatar';
-import Button from './Button';
+import Button from './Button'; // This likely contains Slider overrides based on previous cat output
 import CardActions from './CardActions';
 import CardContent from './CardContent';
 import CardHeader from './CardHeader';
@@ -27,7 +29,7 @@ import PaginationItem from './PaginationItem';
 import Paper from './Paper';
 import PickersTextField from './PickersTextField';
 import Select from './Select';
-import Slider from './Slider';
+import Slider from './Slider'; // This might be the actual Slider overrides
 import TableCell from './TableCell';
 import Tabs from './Tabs';
 import TimelineContent from './TimelineContent';
@@ -38,22 +40,25 @@ import Typography from './Typography';
 
 // ===============================||  OVERRIDES - MAIN  ||=============================== //
 
-export default function ComponentsOverrides(theme, borderRadius, outlinedFilled) {
+// Define the function signature with MUI Theme type
+export default function ComponentsOverrides(theme: Theme, borderRadius: number, outlinedFilled: boolean) {
+  // Call merge with the results of individual override functions
+  // TypeScript might initially complain about argument types until individual files are converted
   return merge(
     Alert(theme),
     Autocomplete(theme, borderRadius),
     Avatar(theme),
-    Button(theme),
-    CardActions,
-    CardContent(),
+    Button(theme), // Contains Slider overrides?
+    CardActions, // Might need conversion if it's not just an object
+    CardContent(), // Might need theme/args
     CardHeader(theme),
-    Checkbox(),
+    Checkbox(), // Might need theme/args
     Chip(theme),
     DataGrid(theme),
-    DatePicker(),
-    DateTimePickerToolbar(),
-    Dialog(),
-    DialogTitle(),
+    DatePicker(), // Might need theme/args
+    DateTimePickerToolbar(), // Might need theme/args
+    Dialog(), // Might need theme/args
+    DialogTitle(), // Might need theme/args
     Divider(theme),
     InputBase(theme),
     InternalDateTimePickerTabs(theme),
@@ -61,17 +66,17 @@ export default function ComponentsOverrides(theme, borderRadius, outlinedFilled)
     ListItemIcon(theme),
     ListItemText(theme),
     OutlinedInput(theme, borderRadius, outlinedFilled),
-    PaginationItem(),
-    Paper(borderRadius),
+    PaginationItem(), // Might need theme/args
+    Paper(borderRadius), // Might need theme/args
     PickersTextField(theme, borderRadius, outlinedFilled),
-    Select(),
-    Slider(theme),
+    Select(), // Might need theme/args
+    Slider(theme), // Actual Slider overrides?
     TableCell(theme),
     Tabs(theme),
     TimelineContent(theme),
-    TimelineDot(),
+    TimelineDot(), // Might need theme/args
     Tooltip(theme),
-    TreeItem(),
+    TreeItem(), // Might need theme/args
     Typography(theme)
   );
 }

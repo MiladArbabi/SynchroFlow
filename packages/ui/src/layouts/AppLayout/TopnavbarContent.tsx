@@ -15,6 +15,7 @@ import LocalizationSection from 'layout/MainLayout/Header/LocalizationSection';
 import NotificationSection from 'layout/MainLayout/Header/NotificationSection';
 import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
+import MobileSection from 'layout/MainLayout/Header/MobileSection';
 // --- END BERRY IMPORTS ---
 
 
@@ -47,8 +48,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
       alignItems="center"
       height="100%"
       px={2}
-      // Add gap for spacing between left and right sections if needed
-      gap={2}
     >
       {/* === Left Side: Stays the Same === */}
       <Box display="flex" alignItems="center" gap={2}>
@@ -71,28 +70,37 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         </MuiBreadcrumbs>
       </Box>
 
-      {/* === Right Side: Use Berry Header Sections === */}
-      <Box display="flex" alignItems="center" gap={1}>
+      {/* Spacer to push right side items */}
+      <Box sx={{ flexGrow: 1 }} />
+
+      <Box display="flex" alignItems="center" gap={{ xs: 0.5, sm: 1, md: 1.5 }}> {/* Adjust gap */}
+        {/* --- Berry Sections in Order --- */}
+        <SearchSection />
+        <Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box>
+        {/* Render Localization OR MobileSection based on screen size */}
+        <Box sx={{ display: { xs: 'none', sm: 'block' } }}><LocalizationSection /></Box>
+        <NotificationSection />
+        <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box>
+        
         {/* Layout Edit Buttons (Keep these for now) */}
         {isEditing && (
           <Button
             variant="contained" color="info" size="small"
             onClick={onAddWidget} startIcon={<IconComponent name="Plus" size="small" />}
+            sx={{ display: { xs: 'none', sm: 'inline-flex' } }} // Hide on very small screens if needed
           > Add Widget </Button>
         )}
         <Button
            variant={isEditing ? "contained" : "outlined"} color={isEditing ? "success" : "info"} size="small"
            onClick={onEditToggle} startIcon={<IconComponent name={isEditing ? "Save" : "Pencil"} size="small" />}
+           sx={{ display: { xs: 'none', sm: 'inline-flex' } }} // Hide on very small screens if needed
         > {isEditing ? "Done" : "Edit Layout"} </Button>
-
-         {/* --- Add Berry Sections Here --- */}
-         <SearchSection />
-         <Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box>
-         <Box sx={{ display: { xs: 'none', sm: 'block' } }}><LocalizationSection /></Box>
-         <NotificationSection />
-         <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box>
          <ProfileSection />
          {/* --- End Berry Sections --- */}
+         {/* Mobile Section - Renders only on 'xs' screens */}
+        <Box sx={{ display: { xs: 'block', sm: 'none' } }}> {/* Show only on xs */}
+          <MobileSection />
+        </Box>
       </Box>
     </Box>
   );
