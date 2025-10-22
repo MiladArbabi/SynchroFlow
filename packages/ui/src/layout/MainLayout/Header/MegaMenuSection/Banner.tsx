@@ -1,4 +1,4 @@
-// material-ui
+//packages/ui/src/layout/MainLayout/Header/MegaMenuSection/Banner.tsx
 import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 
