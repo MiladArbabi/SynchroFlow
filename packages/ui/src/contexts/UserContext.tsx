@@ -19,7 +19,7 @@ interface UserContextType {
 }
 
 // Create the context with a default value
-const UserContext = createContext<UserContextType | undefined>(undefined);
+export const UserContext = createContext<UserContextType | undefined>(undefined);
 
 // Create the provider component
 export const UserProvider = ({ children }: { children: ReactNode }) => {
