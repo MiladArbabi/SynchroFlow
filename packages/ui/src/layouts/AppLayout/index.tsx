@@ -73,7 +73,7 @@ const AppLayout = ({
   // --- END EFFECT ---
 
   return (
-    <Box sx={{ width: "100vw", height: "100vh", overflow: 'hidden' }}> {/* Add overflow hidden */}
+    <Box sx={{ width: "100vw", height: "100vh" }}> 
       <PanelGroup direction="horizontal">
         {/* Sidenav Panel */}
         <Panel
