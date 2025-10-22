@@ -19,7 +19,8 @@ import { SxProps } from '@mui/system';
 // project imports
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu'; // We might adjust handlerDrawerOpen usage
 import { MenuOrientation, ThemeDirection } from 'config';
-import useConfig, { ConfigContext } from 'hooks/useConfig'; // Import ConfigContext
+import useConfig from 'hooks/useConfig';
+import { ConfigContext } from 'contexts/ConfigContext'; // Adjust the import path according to your project structure
 import { withAlpha } from 'utils/colorUtils'; // Ensure this is typed later
 
 // third party
