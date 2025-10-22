@@ -30,6 +30,9 @@ export default defineConfig({
       'themes': path.resolve(__dirname, './src/themes'),
       'utils': path.resolve(__dirname, './src/utils'),
       'ui-component': path.resolve(__dirname, './src/ui-component'),
+      'layout': path.resolve(__dirname, './src/layout'),
+      'menu-items': path.resolve(__dirname, './src/menu-items'),
+      'api': path.resolve(__dirname, './src/api'),
       
       // --- OUR EXISTING ALIASES ---
       'assets': path.resolve(__dirname, './src/assets'),
