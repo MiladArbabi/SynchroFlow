@@ -1,5 +1,6 @@
 // packages/ui/src/types/mui.d.ts
 import '@mui/material/styles';
+import '@mui/material/Chip';
 
 // Define the structure of the custom color objects Berry adds
 interface CustomPaletteColor {
@@ -26,17 +27,20 @@ declare module '@mui/material/styles' {
   }
 }
 
-// Optional: If specific components use these colors directly via 'color' prop
-// declare module '@mui/material/Button' {
-//   interface ButtonPropsColorOverrides {
-//     orange: true;
-//     dark: true;
-//   }
-// }
-// declare module '@mui/material/Chip' {
-//   interface ChipPropsColorOverrides {
-//     orange: true;
-//     dark: true;
-//   }
-// }
-// Add similar overrides for other components if needed
+ //Optional: If specific components use these colors directly via 'color' prop
+ declare module '@mui/material/Button' {
+   interface ButtonPropsColorOverrides {
+     orange: true;
+     dark: true;
+   }
+ }
+ declare module '@mui/material/Chip' {
+   interface ChipPropsColorOverrides {
+     orange: true;
+     dark: true;
+     light: true;
+   }
+   interface ChipPropsVariantOverrides {
+     light: true;
+   }
+ }
