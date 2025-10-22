@@ -12,8 +12,12 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
+    "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/poppins": "^5.2.7",
+    "@fontsource/roboto": "^5.2.8",
     "@mui/icons-material": "^7.3.4",
     "@mui/material": "^7.3.4",
     "@mui/system": "^7.3.3",
@@ -21,6 +25,8 @@
     "axios": "^1.12.2",
     "chart.js": "^4.5.1",
     "chroma-js": "^3.1.2",
+    "framer-motion": "^12.23.22",
+    "lodash-es": "^4.17.21",
     "lucide-react": "^0.546.0",
     "prop-types": "^15.8.1",
     "react": "^19.1.1",
@@ -29,8 +35,12 @@
     "react-github-btn": "^1.4.0",
     "react-grid-layout": "^1.5.2",
     "react-resizable-panels": "^3.0.6",
+    "react-responsive-carousel": "^3.2.23",
     "react-router-dom": "^7.9.3",
-    "recharts": "^3.2.1"
+    "recharts": "^3.2.1",
+    "sass": "^1.93.2",
+    "simplebar-react": "^3.3.2",
+    "slick-carousel": "^1.8.1"
   },
   "devDependencies": {
     "@chromatic-com/storybook": "^4.1.1",

@@ -24,6 +24,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      // --- BERRY'S NEW ALIASES ---
+      'config': path.resolve(__dirname, './src/config.ts'),
+      'hooks': path.resolve(__dirname, './src/hooks'),
+      'themes': path.resolve(__dirname, './src/themes'),
+      'utils': path.resolve(__dirname, './src/utils'),
+      
       'assets': path.resolve(__dirname, './src/assets'),
       'components': path.resolve(__dirname, './src/components'),
       'context': path.resolve(__dirname, './src/contexts/MaterialUI.tsx'),

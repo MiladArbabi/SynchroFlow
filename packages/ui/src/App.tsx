@@ -4,15 +4,22 @@ import React from "react";
 import axios from "axios";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
-import { ThemeProvider } from "@mui/material/styles";
-import CssBaseline from "@mui/material/CssBaseline";
 import AppLayout from "./layouts/AppLayout";
 import routes from "./routes";
-import { UserProvider } from "./contexts/UserContext";
 import { PlanLevel } from "./widgets/widgetRegistry";
 
-import { createTheme } from "@mui/material/styles";
-const spikeTheme = createTheme();
+// --- BERRY THEME IMPORT ---
+import ThemeCustomization from './themes';
+// --- END BERRY IMPORT ---
+
+// --- REMOVED OLD THEME ---
+// import { ThemeProvider } from "@mui/material/styles";
+// import CssBaseline from "@mui/material/CssBaseline";
+// import { createTheme } from "@mui/material/styles";
+// const spikeTheme = createTheme();
+// import { UserProvider } from "./contexts/UserContext"; // This is now in main.tsx
+// --- END REMOVED ---
+
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -48,13 +55,11 @@ const LayoutManager = () => {
 
   // Handler for saving the layout (calls backend)
   const handleSaveLayout = async () => {
-    console.log("[DEBUG] LayoutManager: handleSaveLayout invoked");
     try {
       await axios.post("/api/v1/layouts/dashboard", {
         layout: layoutRef.current, // Use data from refs
         activeWidgets: activeWidgetsRef.current,
       });
-      console.log("[DEBUG] LayoutManager: Save successful");
     } catch (error) {
       console.error("Failed to save layout:", error);
       // Optionally, show a snackbar/toast to the user that saving failed
@@ -64,14 +69,14 @@ const LayoutManager = () => {
   };
 
   const contextValue: LayoutContextType = {
-   isEditing,
-   isLibraryOpen,
-   setIsLibraryOpen,
-   currentUserPlan,
-   layoutRef,
+    isEditing,
+    isLibraryOpen,
+    setIsLibraryOpen,
+    currentUserPlan,
+    layoutRef,
     activeWidgetsRef,
     handleSaveLayout,
- };
+  };
 
   return (
     <AppLayout
@@ -81,32 +86,31 @@ const LayoutManager = () => {
       onToggleSidenav={handleToggleSidenav}
     >
       {/* Pass state down via Outlet context */}
-     <Outlet context={contextValue} />
+      <Outlet context={contextValue} />
     </AppLayout>
   );
 };
 
 export default function App() {
   return (
-    <UserProvider>
-      <ThemeProvider theme={spikeTheme}>
-        <CssBaseline />
-        <Routes>
+    // Wrap the entire app in Berry's ThemeCustomization
+    // This reads from ConfigProvider and provides the MUI theme + CssBaseline
+    <ThemeCustomization>
+      <Routes>
         {/* Render the sign-in route standalone */}
-          <Route path="/authentication/sign-in" element={routes.find(r => r.key === 'sign-in')?.component} />
-          {/* All other routes are nested inside the AppLayout */}
-          <Route element={<LayoutManager />}>
-            {routes.map((route) =>
-              route.key !== "sign-in" ? (
-                <Route path={route.route} element={route.component} key={route.key} />
-              ) : null
-            )}
-          </Route>
+        <Route path="/authentication/sign-in" element={routes.find(r => r.key === 'sign-in')?.component} />
+        {/* All other routes are nested inside the AppLayout */}
+        <Route element={<LayoutManager />}>
+          {routes.map((route) =>
+            route.key !== "sign-in" ? (
+              <Route path={route.route} element={route.component} key={route.key} />
+            ) : null
+          )}
+        </Route>
 
-          {/* A default redirect to the dashboard */}
-          <Route path="*" element={<Navigate to="/dashboard" />} />
-        </Routes>
-      </ThemeProvider>
-    </UserProvider>
+        {/* A default redirect to the dashboard */}
+        <Route path="*" element={<Navigate to="/dashboard" />} />
+      </Routes>
+    </ThemeCustomization>
   );
 }

@@ -115,7 +115,6 @@ export const DashboardPage = () => {
 
   // Handler for adding a new widget from the library
   const handleAddWidget = (widgetId: string) => {
-    console.log(`[DEBUG] handleAddWidget received: ${widgetId}`);
     const widgetConfig = WIDGET_REGISTRY[widgetId];
     if (!widgetConfig) return;
 
