@@ -1,33 +1,42 @@
 // packages/ui/src/layouts/AppLayout/TopnavbarContent.tsx
-import React from "react";
+import React, { useContext } from "react"; // Import useContext
 import { useLocation, Link as RouterLink } from "react-router-dom";
-import { Box } from "@mui/material";
-import IconButton from "@mui/material/IconButton";
+import { Box, IconButton, Button, Typography, Link } from "@mui/material"; // Consolidate MUI imports
+import Breadcrumbs from '@mui/material/Breadcrumbs';
 import IconComponent from "../../components/Icon";
-import { Button } from "@mui/material";
-import {Typography} from "@mui/material";
-import MuiBreadcrumbs from "@mui/material/Breadcrumbs"; 
-import Link from "@mui/material/Link";
+
+// --- CONTEXT IMPORT ---
+import { ConfigContext } from 'contexts/ConfigContext';
+import useConfig from 'hooks/useConfig'; // We still need useConfig to read the state if needed
+// --- END CONTEXT ---
 
 interface TopnavbarContentProps {
-  handleSidenavToggle: () => void;
+  // handleSidenavToggle: () => void; // REMOVE this prop, we'll handle toggle internally
   isEditing: boolean;
   onEditToggle: () => void;
   onAddWidget: () => void;
 }
 
 const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
-  handleSidenavToggle,
+  // handleSidenavToggle, // REMOVE this prop
   isEditing,
   onEditToggle,
   onAddWidget,
-}) => {  
-  
+}) => {
   const location = useLocation();
-  const pathnames = location.pathname.split("/").filter((x) => x); // Filter out empty strings
-
-  // Helper function to capitalize first letter
+  const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  // --- GET STATE & DISPATCH ---
+  const { state } = useConfig(); // Read state if needed (e.g., to change icon based on state)
+  const { dispatch } = useContext(ConfigContext); // Get dispatch function
+
+  // --- NEW TOGGLE HANDLER ---
+  const handleToggleSidenav = () => {
+    // Dispatch the action to flip the miniDrawer state
+    dispatch({ type: 'SET_MINI_DRAWER', payload: !state.miniDrawer });
+  };
+  // --- END NEW HANDLER ---
 
   return (
     <Box
@@ -39,46 +48,46 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
     >
       {/* Left Side: Breadcrumbs and Sidenav Toggle */}
       <Box display="flex" alignItems="center" gap={2}>
-        <IconButton onClick={handleSidenavToggle} size="small" disableRipple>
-         <IconComponent name="Menu" size="medium" color="inherit" /> 
+        {/* Use the NEW internal handler */}
+        <IconButton onClick={handleToggleSidenav} size="small" disableRipple>
+          <IconComponent name="Menu" size="medium" color="inherit" />
         </IconButton>
-        <MuiBreadcrumbs aria-label="breadcrumb">
+        <Breadcrumbs aria-label="breadcrumb">
           <Link component={RouterLink} underline="hover" color="inherit" to="/dashboard">
             <IconComponent name="Home" size="small" color="inherit" />
           </Link>
           {pathnames.map((value, index) => {
             const last = index === pathnames.length - 1;
             const to = `/${pathnames.slice(0, index + 1).join('/')}`;
-
             return last ? (
               <Typography color="text.primary" key={to}>{capitalize(value.replace('-', ' '))}</Typography>
             ) : (
               <Link component={RouterLink} underline="hover" color="inherit" to={to} key={to}>{capitalize(value.replace('-', ' '))}</Link>
             );
           })}
-        </MuiBreadcrumbs>
+        </Breadcrumbs>
       </Box>
 
-      {/* Right Side: Icons (Search, Notifications, User) */}
+      {/* Right Side: Icons & Buttons */}
       <Box display="flex" alignItems="center" gap={1}>
         {isEditing && (
-          <Button 
-            variant="contained" 
-            color="info" 
-            size="small" 
-            onClick={onAddWidget} 
+          <Button
+            variant="contained"
+            color="info"
+            size="small"
+            onClick={onAddWidget}
             startIcon={<IconComponent name="Plus" size="small" />}
           >
             Add Widget
           </Button>
         )}
         <Button
-           variant={isEditing ? "contained" : "outlined"} // Map gradient to contained
-            color={isEditing ? "success" : "info"}
-            size="small"
-            onClick={onEditToggle}
+           variant={isEditing ? "contained" : "outlined"}
+           color={isEditing ? "success" : "info"}
+           size="small"
+           onClick={onEditToggle}
            startIcon={<IconComponent name={isEditing ? "Save" : "Pencil"} size="small" />}
-         >
+        >
           {isEditing ? "Done" : "Edit Layout"}
         </Button>
         <IconButton size="small" disableRipple>
