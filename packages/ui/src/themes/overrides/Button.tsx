@@ -3,7 +3,7 @@
 
 import { Theme } from '@mui/material/styles';
 // Import the specific types needed
-import { ComponentsOverrides, OverridesStyleRules } from '@mui/material/styles/overrides';
+import { ComponentsOverrides, OverridesStyleRules } from '@mui/material/styles';
 import { SliderClassKey } from '@mui/material/Slider'; // Import the specific class keys
 import { withAlpha } from 'utils/colorUtils';
 
