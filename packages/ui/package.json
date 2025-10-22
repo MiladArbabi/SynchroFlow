@@ -19,6 +19,7 @@
     "@fontsource/poppins": "^5.2.7",
     "@fontsource/roboto": "^5.2.8",
     "@mui/icons-material": "^7.3.4",
+    "@mui/lab": "^7.0.1-beta.18",
     "@mui/material": "^7.3.4",
     "@mui/system": "^7.3.3",
     "@mui/x-data-grid": "^8.14.1",
