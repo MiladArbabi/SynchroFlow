@@ -29,7 +29,6 @@ import PaginationItem from './PaginationItem';
 import Paper from './Paper';
 import PickersTextField from './PickersTextField';
 import Select from './Select';
-import Slider from './Slider'; // This might be the actual Slider overrides
 import TableCell from './TableCell';
 import Tabs from './Tabs';
 import TimelineContent from './TimelineContent';
@@ -70,7 +69,6 @@ export default function ComponentsOverrides(theme: Theme, borderRadius: number, 
     Paper(borderRadius), // Might need theme/args
     PickersTextField(theme, borderRadius, outlinedFilled),
     Select(), // Might need theme/args
-    Slider(theme), // Actual Slider overrides?
     TableCell(theme),
     Tabs(theme),
     TimelineContent(theme),
