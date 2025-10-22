@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/themes/overrides/Button.tsx
 // NOTE: Contains Slider overrides.
 
 import { Theme } from '@mui/material/styles';
 // Import the specific types needed
-import { ComponentsOverrides, OverridesStyleRules } from '@mui/material/styles';
+import { ComponentsOverrides } from '@mui/material/styles';
 import { SliderClassKey } from '@mui/material/Slider'; // Import the specific class keys
 import { withAlpha } from 'utils/colorUtils';
 
@@ -11,7 +12,7 @@ import { withAlpha } from 'utils/colorUtils';
 
 // Define the specific return type matching ComponentsOverrides['MuiSlider']
 // which is Partial<OverridesStyleRules<SliderClassKey, 'MuiSlider', Theme>>
-type MuiSliderOverride = Partial<OverridesStyleRules<SliderClassKey, 'MuiSlider', Theme>>;
+type MuiSliderOverride = Partial<Record<SliderClassKey, Record<string, any>>>;
 
 // Define the component override object structure for merging
 type SliderComponentOverrides = Pick<ComponentsOverrides, 'MuiSlider'>;
@@ -49,7 +50,7 @@ export default function SliderOverrides(theme: Theme): SliderComponentOverrides 
 /*
 // --- Example MuiButton Overrides (Correct Structure based on types) ---
 import { ButtonClassKey } from '@mui/material/Button';
-type MuiButtonOverride = Partial<OverridesStyleRules<ButtonClassKey, 'MuiButton', Theme>>;
+type MuiButtonOverride = Partial<Record<ButtonClassKey, Record<string, any>>>;
 type ButtonComponentOverrides = Pick<ComponentsOverrides, 'MuiButton'>;
 
 export function ButtonOverrides(theme: Theme): ButtonComponentOverrides {
