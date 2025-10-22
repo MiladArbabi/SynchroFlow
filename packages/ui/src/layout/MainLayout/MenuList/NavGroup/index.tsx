@@ -26,7 +26,8 @@ import NavCollapse from '../NavCollapse';
 import NavItem, { NavItemType } from '../NavItem'; // Import NavItemType
 
 import { MenuOrientation, HORIZONTAL_MAX_ITEM } from 'config'; // Import HORIZONTAL_MAX_ITEM
-import useConfig, { ConfigContext } from 'hooks/useConfig'; // Import ConfigContext
+import useConfig from 'hooks/useConfig'; // Import useConfig hook
+import {ConfigContext} from 'contexts/ConfigContext'; // Import ConfigContext from its source
 import Transitions from 'ui-component/extended/Transitions';
 import { useGetMenuMaster } from 'api/menu'; // Uses our refactored hook
 

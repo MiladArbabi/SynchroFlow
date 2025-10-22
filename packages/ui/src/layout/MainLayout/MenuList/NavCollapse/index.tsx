@@ -18,6 +18,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { SxProps } from '@mui/system';
+import { matchPath } from 'react-router-dom';
 
 // project imports
 import NavItem, { NavItemType } from '../NavItem'; // Import NavItem and its type
@@ -26,7 +27,8 @@ import { withAlpha } from 'utils/colorUtils'; // Ensure this is typed
 
 import { useGetMenuMaster } from 'api/menu'; // Uses our refactored hook
 import { MenuOrientation, ThemeDirection } from 'config';
-import useConfig, { ConfigContext } from 'hooks/useConfig'; // Import ConfigContext
+import useConfig from 'hooks/useConfig';
+import { ConfigContext } from 'contexts/ConfigContext'; // Import ConfigContext separately
 import useMenuCollapse from 'hooks/useMenuCollapse'; // Ensure this hook is copied and typed
 
 // third party
@@ -144,7 +146,7 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
 
     // Custom hook manages collapse state based on route and openMini state
     // Ensure useMenuCollapse is copied and typed correctly
-    useMenuCollapse(menu, useLocation().pathname, Boolean(anchorEl), setSelected, setOpen, setAnchorEl);
+    useMenuCollapse(selected, menu, useLocation().pathname, Boolean(anchorEl), setSelected, setOpen, setAnchorEl);
 
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
