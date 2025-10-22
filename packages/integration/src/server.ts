@@ -28,11 +28,6 @@ const verifyShopifyWebhook = (req: Request, res: Response, next: NextFunction) =
       .update(body)
       .digest('base64');
 
-    // --- DEBUG LOGS ---
-    console.log('[DEBUG] Received Signature:', hmacHeader);
-    console.log('[DEBUG] Generated Signature:', generatedHash);
-    // --- END DEBUG LOGS ---
-
     const trusted = Buffer.from(hmacHeader, 'base64');
     const untrusted = Buffer.from(generatedHash, 'base64');
 
