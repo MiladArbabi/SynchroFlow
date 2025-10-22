@@ -79,16 +79,16 @@ const PopperStyled = styled(Popper)(({ theme }) => ({
     // Use theme variables for colors
     borderTopColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.dark.main : theme.palette.background.paper, // Adjust color based on theme
-    borderLeftColor: theme.palette.mode === 'dark' ? theme.palette.dark.main : theme.palette.background.paper, // Adjust color based on theme
+    borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper, // Adjust color based on theme
+    borderLeftColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper, // Adjust color based on theme
     // Adjust arrow position for RTL
     ...(theme.direction === 'rtl' && {
         left: 'auto',
         right: -5,
          borderTopColor: 'transparent',
          borderLeftColor: 'transparent',
-         borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.dark.main : theme.palette.background.paper,
-         borderRightColor: theme.palette.mode === 'dark' ? theme.palette.dark.main : theme.palette.background.paper,
+         borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper,
+         borderRightColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper,
     }),
   },
     // Placement adjustments might be needed based on testing
@@ -224,7 +224,6 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
         if (menu.children) {
             checkSelected(menu.children, pathname);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pathname, menu]); // Rerun only if menu or path changes
 
   // menu collapse & item
@@ -438,7 +437,7 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
                       width: '1px',
                       opacity: 1,
                       // Use theme variables for the line color
-                      bgcolor: theme.palette.mode === 'dark' ? withAlpha(theme.palette.dark.light, 0.2) : theme.palette.primary.light,
+                      bgcolor: theme.palette.mode === 'dark' ? withAlpha(theme.palette.grey[800], 0.2) : theme.palette.primary.light,
                     }
                   }}
                 >
