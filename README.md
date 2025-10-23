@@ -1,4 +1,4 @@
-# SynchroFlow: The Autonomous Commerce Operations Platform (v5.5)
+# SynchroFlow: The Autonomous Commerce Operations Platform (v5.6)
 
 SynchroFlow is a B2B SaaS platform engineered to be the central nervous system for mid-market ($1M - $50M+ ARR) e-commerce brands. We solve the two most expensive operational challenges: data fragmentation and communication silos.
 
@@ -6,19 +6,19 @@ Our platform is built on a high-performance C++ core that serves as a single sou
 
 ## 1. Current Project Status & Key Achievements
 
-**Phase 3 (UI Foundation & Core Features)** is now substantially complete. We have successfully implemented a robust, scalable foundation for the application's user interface and core functionalities.
+**Phase 3 (UI Foundation & Core Features)** is complete. We have successfully replaced our custom UI foundation with a professional, robust, and scalable UI kit based on the **Berry Material React Admin Template**. This provides a consistent, theme-aware, and feature-rich user experience.
 
-**Key Achievements Since v5.4:**
+**Key Achievements Since v5.5 (Berry Integration):**
 
-* **IDE-Style Resizable Layout:** Implemented a dynamic 4-panel application shell (`AppLayout`) using `react-resizable-panels`, replacing the previous static layout.
-* **Customizable Widget Workspace:** Integrated `react-grid-layout` into the main workspace panel, allowing users to drag, resize, add, and remove widgets.
-* **Layout Persistence:** Full-stack implementation enabling users to save their customized dashboard layouts to the database (`user_layouts` table) and have them restored on page load.
-* **Widget Library & Marketplace Foundation:** Built the UI shell for the Widget Library, including dynamic rendering, add/remove logic, and the visual implementation of feature gating ("locked" widgets based on user plan).
-* **Modern Icon System:** Replaced the legacy icon font system with a custom `<IconComponent>` wrapper using the performant `lucide-react` SVG library.
-* **Major Component Cleanup:** Removed significant technical debt by deleting unused and problematic Material Dashboard (`MD*`) template components. Refactored core components (`MDBox`, `MDTypography`, `MDButton`) to use standard MUI primitives (`Box`, `Typography`, `Button`), improving predictability.
-* **Streamlined Workflow:**
-    * Established a Component-Driven Development (CDD) workflow using Storybook.
-    * Created the `ship.sh` script to automate the local Git add, commit, push, and PR creation process.
+* **Full Theme Engine Integration:** Transplanted Berry's theme engine, including custom palettes, preset colors, typography, and dark/light mode logic, all wired to a central `ConfigContext`.
+* **Component Overrides Converted:** Ported and converted Berry's entire `themes/overrides` directory to TypeScript, ensuring all MUI components (Buttons, Cards, Inputs, Tables, etc.) match the theme's design.
+* **Sidenav & Navigation Functional:** Replaced the placeholder Sidenav with Berry's `MenuList`, `NavGroup`, `NavCollapse`, and `NavItem` components. The navigation is now data-driven from our `menu-items` config and fully supports collapsed/expanded states.
+* **Dynamic Header Integrated:** Replaced the placeholder top navbar with Berry's header components, including a functional `ProfileSection`, `NotificationSection`, `SearchSection`, `MegaMenuSection`, `LocalizationSection`, and `MobileSection`.
+* **Live Customization Drawer:** Integrated Berry's full "Live Customize" drawer. All child components (`ThemeMode`, `PresetColor`, `BorderRadius`, `FontFamily`, etc.) are converted and correctly wired to the `ConfigContext`, allowing real-time theme changes.
+* **Dashboard Widget Refactor:**
+    * **`KpiCard`:** Rebuilt to be fully theme-aware, with colors that automatically update based on the selected theme preset.
+    * **`InventoryHealthWidget`:** Replaced the custom table with a theme-aware `MainCard` and `MuiTable` implementation.
+    * **`CashFlowWidget`:** Replaced the old chart with a professional, theme-aware `ReactApexChart` component.
 
 ## 2. Core Product Modules & Offerings (v5.4 - Unchanged)
 
@@ -38,9 +38,9 @@ Our platform is built on a high-performance C++ core that serves as a single sou
 ### Ecosystem Services (Dominance)
 * **"SynchroFlow Concierge":** Premium BPO service. (Planned)
 
-## 3. Technical Architecture (v5.5)
+## 3. Technical Architecture (v5.6)
 
-SynchroFlow uses a decoupled, five-service microservices architecture. The core UI now utilizes a modern, resizable panel system.
+SynchroFlow uses a decoupled, five-service microservices architecture. The core UI is now powered by a dynamic layout system and the Berry MUI theme engine.
 
 ```mermaid
 graph TD
@@ -104,7 +104,7 @@ graph TD
 
 ### Technology Stack
 
-  * **Frontend:** React (Vite), TypeScript, Material UI (MUI Core: `Box`, `Typography`, `Button`, etc.), Emotion, `react-resizable-panels`, `react-grid-layout`, `lucide-react`, TanStack Table, Chart.js, Axios.
+  * **Frontend:** React (Vite), TypeScript, **Material UI (MUI Core)**, Emotion, `react-resizable-panels`, `react-grid-layout`, `lucide-react`, **`react-apexcharts`**, **`react-intl`**, `framer-motion`, `lodash-es`, Axios.
   * **API/Backend:** Node.js, Express.js, TypeScript, Knex.js, `pg`, `amqplib`.
   * **Data Layer:** PostgreSQL (Docker), RabbitMQ (Docker), Redis (Planned).
   * **High-Performance Core:** C++, N-API, `libpqxx`.
@@ -177,14 +177,14 @@ Our GTM is a Product-Led Growth (PLG) motion funneling into sales-led conversion
 
 *(See Feature Matrix for detailed plan gating)*
 
-## 6\. Development Roadmap (High-Level - Updated v5.5)
+## 6\. Development Roadmap (High-Level - Updated v5.6)
 
   * **Phase 1: Core Architecture:** (✅ Complete)
   * **Phase 2: FinOps MVP:** (✅ Complete)
-  * **Phase 3: UI Foundation & Core Features:** (✅ Complete) - *Includes IDE Layout, Workspace Customization, Icon System, Component Cleanup.*
-  * **Phase 4: Launch "Ignition" & "Ops-Intel" (v1):** (Next Up) - Launch the $349/mo plan, implement the Ops Efficiency dashboard.
-  * **Phase 5: Launch "Warehouse Ops" Module:** Develop the WMS-Lite mobile app.
-  * **Phase 6: Launch "Echo Hub" & "Optimize" Plan:** Build the full CX suite.
-  * **Phase 7: Launch "Expand" Modules (B2B, Supplier, Clarity):** Develop high-margin add-ons.
-  * **Phase 8: Launch "Dominate" Services (Concierge):** Pilot the BPO service.
-  * **Phase 9: The "Autonomous" Engine:** Develop true agentic AI for workflow automation.
+  * **Phase 3: UI Foundation & Core Features:** (✅ Complete) - *Includes IDE Layout, Workspace Customization, and full Berry Theme Engine Integration.*
+  * **Phase 4: Launch "Ignition" & "Ops-Intel" (v1):** (In Progress) - *Core dashboard widgets (`KpiCard`, `CashFlow`, `InventoryHealth`) are now theme-aware and built on `MainCard`.*
+  * **Phase 5: Launch "Warehouse Ops" Module:** (Upcoming) Develop the WMS-Lite mobile app.
+  * **Phase 6: Launch "Echo Hub" & "Optimize" Plan:** (Upcoming) Build the full CX suite.
+  * **Phase 7: Launch "Expand" Modules (B2B, Supplier, Clarity):** (Upcoming) Develop high-margin add-ons.
+  * **Phase 8: Launch "Dominate" Services (Concierge):** (Upcoming) Pilot the BPO service.
+  * **Phase 9: The "Autonomous" Engine:** (Upcoming) Develop true agentic AI for workflow automation.

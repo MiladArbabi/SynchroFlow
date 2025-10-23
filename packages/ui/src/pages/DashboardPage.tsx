@@ -7,20 +7,10 @@ import IconComponent from "../components/Icon";
 import WidgetLibrary from "../components/WidgetLibrary";
 import { PlanLevel, WIDGET_REGISTRY } from "../widgets/widgetRegistry";
 import { IconButton } from "@mui/material";
-import { InventoryHealthTable, InventoryHealthRow } from "../components/InventoryHealthTable";
+import { InventoryHealthRow } from "widgets/InventoryHealthWidget";
 import { useLayoutContext } from "../App";
 
 const GridLayout = WidthProvider(RGL);
-
-// Mock data for the CashFlowChart component
-const mockCashFlowData = [
-  { name: 'Jan', cash: 4000 },
-  { name: 'Feb', cash: 3000 },
-  { name: 'Mar', cash: 5000 },
-  { name: 'Apr', cash: 4500 },
-  { name: 'May', cash: 6000 },
-  { name: 'Jun', cash: 5500 },
-];
 
 // Mock data for the InventoryHealthTable component
 const mockInventoryHealthData: InventoryHealthRow[] = [
@@ -44,8 +34,8 @@ const initialLayout: RGL.Layout[] = [
   { i: "kpi-revenue-1", x: 0, y: 0, w: 3, h: 1 },
   { i: "kpi-margin-1", x: 3, y: 0, w: 3, h: 1 },
   { i: "kpi-inventory-1", x: 6, y: 0, w: 3, h: 1 },
-  { i: "cashflow-chart-1", x: 0, y: 1, w: 9, h: 3 },
-  { i: "inventory-health-1", x: 0, y: 4, w: 12, h: 4 },
+  { i: "cashflow-chart-1", x: 0, y: 1, w: 6, h: 4 },
+  { i: "inventory-health-1", x: 0, y: 4, w: 6, h: 4 },
 ];
 
 const getWidgetProps = (widgetId: string) => {
@@ -57,7 +47,7 @@ const getWidgetProps = (widgetId: string) => {
     case "kpi-inventory":
       return { title: "Inventory Value", value: "$1.2M", percentage: "-2%", icon: "Package" };
     case "cashflow-chart":
-      return { data: mockCashFlowData };
+      return {};
     case "inventory-health":
       return { data: mockInventoryHealthData };
     default:

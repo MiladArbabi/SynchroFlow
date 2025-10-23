@@ -2,8 +2,8 @@
 //packages/ui/src/widgets/widgetRegistry.ts
 import { ComponentType } from "react";
 import KpiCard from "../components/KpiCard";
-import {CashFlowChart} from "../components/CashFlowChart";
-import {InventoryHealthTable} from "../components/InventoryHealthTable";
+import CashFlowWidget from './CashFlowWidget';
+import InventoryHealthWidget from './InventoryHealthWidget';
 
 // Define possible plan levels
 export type PlanLevel = 'Ignition' | 'Clarity' | 'Autonomous';
@@ -41,15 +41,15 @@ export const WIDGET_REGISTRY: Record<string, WidgetConfig> = {
   "cashflow-chart": {
     id: "cashflow-chart",
     name: "Cash Flow Chart",
-    component: CashFlowChart,
+    component: CashFlowWidget,
     defaultLayout: { w: 9, h: 3 },
     requiredPlan: 'Ignition',
   },
   "inventory-health": {
     id: "inventory-health",
     name: "Inventory Health",
-    component: InventoryHealthTable,
-    defaultLayout: { w: 12, h: 4 },
+    component: InventoryHealthWidget,
+    defaultLayout: { w: 6, h: 4 },
     requiredPlan: 'Clarity',
   },
   "ai-reordering": {
