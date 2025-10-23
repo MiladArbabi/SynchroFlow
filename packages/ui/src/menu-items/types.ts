@@ -27,6 +27,18 @@ export interface NavItemType {
     chip?: ChipProps;
 }
 
+// Define NavCollapseType
+export interface NavCollapseType {
+    id: string;
+    title: string; // <-- Make title required
+    type: 'collapse';
+    icon?: React.FC<LucideProps>;
+    children?: (NavItemType | NavCollapseType)[]; // Can contain items or nested collapses
+    caption?: string;
+    disabled?: boolean; // Add disabled if needed
+    // url?: string; // Usually collapses don't link directly
+}
+
 // Interface for a navigation group
 export interface NavGroupType {
     id: string;
@@ -34,7 +46,7 @@ export interface NavGroupType {
     caption?: string; // Optional: Group caption
     type: 'group';
     icon?: React.FC<LucideProps>; 
-    children?: (NavItemType | NavGroupType)[]; // Groups can contain items or nested groups
+    children?: (NavItemType | NavGroupType | NavCollapseType)[]; // Groups can contain items or nested groups
     // Groups might sometimes link directly in horizontal mode, but less common
     url?: string;
     target?: boolean;
@@ -42,7 +54,7 @@ export interface NavGroupType {
 }
 
 // Union type for any menu item
-export type MenuItem = NavItemType | NavGroupType;
+export type MenuItem = NavItemType | NavGroupType | NavCollapseType;
 
 // Structure for the main menuItems export
 export interface MenuItems {
