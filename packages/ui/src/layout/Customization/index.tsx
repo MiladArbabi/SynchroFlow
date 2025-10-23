@@ -224,10 +224,10 @@ const Customization: React.FC = () => {
                     <Layout />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid> 
-                  {/* <Grid item xs={12}>
+                  <Grid item xs={12}>
                     <SidebarDrawer />
                     <Divider sx={{ mt: 2.5 }}/>
-                  </Grid> */} 
+                  </Grid> 
                   {/* <Grid item xs={12}>
                     <MenuOrientation />
                     <Divider sx={{ mt: 2.5 }}/>
