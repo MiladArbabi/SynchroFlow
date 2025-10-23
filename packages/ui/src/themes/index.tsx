@@ -23,8 +23,15 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
   const {
     state: { borderRadius, fontFamily, outlinedFilled, presetColor, themeDirection }
   } = useConfig();
+  
+  console.log('[DEBUG-ThemeCustomization] Re-rendering. Current presetColor:', presetColor);
 
-  const palette = useMemo(() => buildPalette(presetColor), [presetColor]);
+  const palette = useMemo(() => {
+    console.log('[ThemeCustomization] Building palette for presetColor:', presetColor); // Log before building
+     const built = buildPalette(presetColor);
+    console.log('[ThemeCustomization] Built palette:', built); 
+     return built;
+    }, [presetColor]);
   const themeTypography = useMemo(() => Typography(fontFamily), [fontFamily]);
   const themeCustomShadows = useMemo(() => CustomShadows(palette.light, ThemeMode.LIGHT), [palette.light]);
   const themeCustomShadowsDark = useMemo(() => CustomShadows(palette.dark, ThemeMode.DARK), [palette.dark]);
