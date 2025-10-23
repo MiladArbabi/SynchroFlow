@@ -13,8 +13,7 @@ type ActionType =
   | { type: 'SET_PRESET_COLOR'; payload: ConfigProps['presetColor'] }
   | { type: 'SET_I18N'; payload: ConfigProps['i18n'] }
   | { type: 'SET_THEME_DIRECTION'; payload: ConfigProps['themeDirection'] }
-  | { type: 'SET_CONTAINER'; payload: ConfigProps['container'] }
-  | { type: 'SET_OUTLINED_FILLED'; payload: ConfigProps['outlinedFilled'] };
+  | { type: 'SET_CONTAINER'; payload: ConfigProps['container'] };
 
 // Define context state
 export type ConfigContextState = {
