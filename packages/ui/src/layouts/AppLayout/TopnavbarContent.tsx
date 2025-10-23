@@ -38,8 +38,8 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   const { dispatch } = useContext(ConfigContext);
 
   const handleToggleSidenav = () => {
-    dispatch({ type: 'SET_MINI_DRAWER', payload: !state.miniDrawer });
-  };
+  dispatch({ type: 'SET_MINI_DRAWER', payload: !state.miniDrawer });
+};
 
   return (
     <Box
