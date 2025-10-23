@@ -43,13 +43,9 @@ const PresetColorBox: React.FC<PresetColorBoxProps> = ({ color, presetColorId, s
     const theme = useTheme(); // Get theme for mode check
     const isSelected = presetColorId === color.id;
 
-    console.log(`[DEBUG-PresetColorBox] Rendering swatch for ID: ${color.id}, Selected: ${isSelected}`);
-
     // Determine swatch colors based on current theme mode
     const swatchPrimary = theme.palette.mode === ThemeMode.DARK ? color.primaryDarkSwatch : color.primary;
     const swatchSecondary = theme.palette.mode === ThemeMode.DARK ? color.secondaryDarkSwatch : color.secondary;
-
-    console.log(`[DEBUG-PresetColorBox] ID: ${color.id}, Mode: ${theme.palette.mode}, Swatch Primary: ${swatchPrimary}, Swatch Secondary: ${swatchSecondary}`);
 
     // Define Avatar SX
     const avatarSx: SxProps<Theme> = {
@@ -105,7 +101,6 @@ const PresetColor: React.FC = () => {
 
   // Handler uses dispatch
   const handlePresetColorChange = (newPresetColorId: string) => {
-    console.log('[DEBUG-PresetColor] Dispatching SET_PRESET_COLOR with payload:', newPresetColorId);
       dispatch({ type: 'SET_PRESET_COLOR', payload: newPresetColorId });
   };
 

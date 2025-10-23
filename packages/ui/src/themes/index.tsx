@@ -24,8 +24,6 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
     state: { borderRadius, fontFamily, outlinedFilled, presetColor, themeDirection }
   } = useConfig();
   
-  console.log('[DEBUG-ThemeCustomization] Re-rendering. Current presetColor:', presetColor);
-
   const palette = useMemo(() => {
     console.log('[ThemeCustomization] Building palette for presetColor:', presetColor); // Log before building
      const built = buildPalette(presetColor);
