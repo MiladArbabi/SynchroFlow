@@ -35,7 +35,8 @@ import useMenuCollapse from 'hooks/useMenuCollapse'; // Ensure this hook is copi
 import { FormattedMessage } from 'react-intl';
 
 // assets
-import { IconChevronDown, IconChevronRight, IconChevronUp, TablerIconsProps } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
+import { LucideProps } from 'lucide-react';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 
 // Define the NavCollapseType structure
@@ -43,7 +44,7 @@ interface NavCollapseType {
   id: string;
   title: string; // Message ID
   type: 'collapse';
-  icon?: (props: TablerIconsProps) => JSX.Element;
+  icon?: React.FC<LucideProps>;
   children?: (NavCollapseType | NavItemType)[];
   caption?: string; // Message ID
   disabled?: boolean;
@@ -120,7 +121,6 @@ const PopperStyled = styled(Popper)(({ theme }) => ({
            }),
        }
    },
-
 }));
 
 
@@ -144,9 +144,9 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
   const [selected, setSelected] = useState<string | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-    // Custom hook manages collapse state based on route and openMini state
-    // Ensure useMenuCollapse is copied and typed correctly
-    useMenuCollapse(selected, menu, useLocation().pathname, Boolean(anchorEl), setSelected, setOpen, setAnchorEl);
+  // Custom hook manages collapse state based on route and openMini state
+  // Ensure useMenuCollapse is copied and typed correctly
+  useMenuCollapse(selected, menu, useLocation().pathname, Boolean(anchorEl), setSelected, setOpen, setAnchorEl);
 
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {

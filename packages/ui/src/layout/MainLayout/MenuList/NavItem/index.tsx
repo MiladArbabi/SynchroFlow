@@ -28,7 +28,7 @@ import { FormattedMessage } from 'react-intl';
 
 // assets
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-import { TablerIconsProps } from '@tabler/icons-react'; // Import icon type
+import { LucideProps } from 'lucide-react';
 import Box from '@mui/material/Box';
 
 // Define the NavItemType structure (adjust based on your actual menu-items files)
@@ -46,7 +46,7 @@ export interface NavItemType {
   type: 'item';
   url: string;
   link?: string; // Optional alternative to url
-  icon?: (props: TablerIconsProps) => JSX.Element;
+  icon?: React.FC<LucideProps>;
   target?: boolean;
   disabled?: boolean;
   caption?: string; // Message ID for react-intl
@@ -76,11 +76,18 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
   const { dispatch } = useContext(ConfigContext); // Get dispatch from context
 
   const { menuMaster } = useGetMenuMaster(); // Uses our refactored hook
-  const drawerOpen = menuMaster.isDashboardDrawerOpened; // Reads from ConfigContext state via hook
-  const isHorizontal = menuOrientation === MenuOrientation.HORIZONTAL && !downMD;
+  const isDrawerOpen = !menuMaster.isDashboardDrawerOpened; // Reads from ConfigContext state via hook
+  console.log(`[NavItem] Item: ${item.id}, isDrawerOpen (visual):`, isDrawerOpen);
 
-  // Check if the current item is selected based on the URL
   const isSelected = !!matchPath({ path: item?.link ? item.link : item.url, end: false }, pathname);
+
+  const Icon = item?.icon;
+  const itemIcon = item?.icon ? (
+    <Icon strokeWidth={1.5} size={isDrawerOpen ? '20px' : '24px'} style={{ stroke: 'currentColor' }} />
+  ) : (
+    <FiberManualRecordIcon sx={{ width: isSelected ? 8 : 6, height: isSelected ? 8 : 6 }} fontSize={level > 0 ? 'inherit' : 'medium'} />
+  );
+  // Check if the current item is selected based on the URL
 
   const [hoverStatus, setHover] = useState(false);
 
@@ -96,12 +103,6 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
     return () => window.removeEventListener('resize', compareSize);
   }, []); // Empty dependency array means this runs once on mount and cleans up on unmount
 
-  const Icon = item?.icon;
-  const itemIcon = item?.icon ? (
-    <Icon stroke={1.5} size={drawerOpen ? '20px' : '24px'} style={{ ...(isHorizontal && isParents && { fontSize: 20, stroke: '1.5' }) }} />
-  ) : (
-    <FiberManualRecordIcon sx={{ width: isSelected ? 8 : 6, height: isSelected ? 8 : 6 }} fontSize={level > 0 ? 'inherit' : 'medium'} />
-  );
 
   let itemTarget = '_self';
   if (item.target) {
@@ -124,9 +125,9 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
     zIndex: 1201,
     borderRadius: `${borderRadius}px`,
     mb: 0.5,
-    pl: drawerOpen ? `${level * 24}px` : 1.5, // Adjust indentation based on level and drawer state
-    py: !drawerOpen && level === 1 ? 1.25 : 1,
-     ...(drawerOpen && level === 1 && {
+    pl: isDrawerOpen ? `${level * 24}px` : 1.5, // Use inverted state
+    py: !isDrawerOpen && level === 1 ? 1.25 : 1, // Use inverted state
+     ...(isDrawerOpen && level === 1 && { // Use inverted state
          '&:hover': {
              bgcolor: 'secondary.light'
          },
@@ -139,7 +140,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
              }
          }
      }),
-    ...(!drawerOpen && {
+    ...(!isDrawerOpen && {
       '&:hover': { bgcolor: 'transparent' },
       '&.Mui-selected': {
           '&:hover': { bgcolor: 'transparent' },
@@ -153,7 +154,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
     minWidth: !item?.icon ? 18 : 36,
     color: isSelected ? 'secondary.main' : 'text.primary',
     // Theme-dependent styles for mini variant
-    ...(!drawerOpen &&
+    ...(!isDrawerOpen &&
       level === 1 && {
         borderRadius: `${borderRadius}px`,
         width: 46,
@@ -180,20 +181,20 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
 
   return (
     <>
-      {!isHorizontal ? (
+      {!itemIcon ? (
         <ListItemButton
           component={Link}
           to={item.url}
           target={itemTarget}
           disabled={item.disabled}
-          disableRipple={!drawerOpen}
+          disableRipple={!isDrawerOpen}
           sx={listItemButtonSx}
           selected={isSelected}
           onClick={itemHandler} // Simplified onClick
         >
           <ListItemIcon sx={listItemIconSx}>{itemIcon}</ListItemIcon>
 
-          {(drawerOpen || (!drawerOpen && level !== 1)) && (
+          {(isDrawerOpen || (!isDrawerOpen && level !== 1)) && (
              <ListItemText
                 primary={
                     <Typography
@@ -204,8 +205,8 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
                              whiteSpace: 'nowrap',
                              overflow: 'hidden',
                              textOverflow: 'ellipsis',
-                             width: drawerOpen ? 'auto' : 0, // Hide text when drawer is closed unless hovered/tooltip
-                             opacity: drawerOpen ? 1 : 0,
+                             width: isDrawerOpen ? 'auto' : 0, // Hide text when drawer is closed unless hovered/tooltip
+                             opacity: isDrawerOpen ? 1 : 0,
                              transition: 'width 0.3s ease-in-out, opacity 0.3s ease-in-out',
                         }}
                     >
@@ -213,7 +214,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
                     </Typography>
                 }
                 secondary={
-                    item.caption && drawerOpen && ( // Only show caption if drawer is open
+                    item.caption && isDrawerOpen && ( // Only show caption if drawer is open
                         <Typography variant="caption" display="block" gutterBottom sx={{ color: 'text.secondary'}}>
                            <FormattedMessage id={item.caption} defaultMessage={item.caption} />
                         </Typography>
@@ -223,7 +224,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
           )}
 
            {/* Tooltip for Mini variant */}
-           {!drawerOpen && (
+           {!isDrawerOpen && (
                <Tooltip title={<FormattedMessage id={item.title} defaultMessage={item.title} />} placement="right">
                    {/* This Box acts as the anchor for the tooltip */}
                     <Box sx={{
@@ -238,7 +239,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
            )}
 
 
-          {drawerOpen && item.chip && (
+          {isDrawerOpen && item.chip && (
             <Chip
               color={item.chip.color}
               variant={item.chip.variant}
