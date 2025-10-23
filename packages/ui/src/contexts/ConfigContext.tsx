@@ -29,7 +29,6 @@ const ConfigContext = createContext<ConfigContextState>({
 
 // Reducer
 const configReducer = (state: ConfigProps, action: ActionType): ConfigProps => {
-  console.log('[DEBUG-ConfigContext] Action Received:', action); // Log every action
   switch (action.type) {
     case 'SET_MENU_ORIENTATION':
       return { ...state, menuOrientation: action.payload };
@@ -42,16 +41,14 @@ const configReducer = (state: ConfigProps, action: ActionType): ConfigProps => {
     case 'SET_OUTLINED_FILLED':
       return { ...state, outlinedFilled: action.payload };
     case 'SET_PRESET_COLOR':
-      console.log(`[DEBUG-ConfigContext] Updating presetColor from ${state.presetColor} to ${action.payload}`);
       return { ...state, presetColor: action.payload };
     case 'SET_I18N':
       return { ...state, i18n: action.payload };
     case 'SET_THEME_DIRECTION':
       return { ...state, themeDirection: action.payload };
     case 'SET_CONTAINER':
-      return { ...state, container: action.payload };
+      return { ...state, container: action.payload };;
     default:
-      console.log('[DEBUG-ConfigContext]  Reducer: No state change for action', action);
       return state;
   }
 };

@@ -220,18 +220,18 @@ const Customization: React.FC = () => {
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>
                   {/* --- Temporarily comment out unused sections --- */}
-                  {/* <Grid item xs={12}>
+                  <Grid item xs={12}>
                     <Layout />
                     <Divider sx={{ mt: 2.5 }}/>
-                  </Grid> */}
-                  {/* <Grid item xs={12}>
+                  </Grid> 
+                  <Grid item xs={12}>
                     <SidebarDrawer />
                     <Divider sx={{ mt: 2.5 }}/>
-                  </Grid> */}
-                  {/* <Grid item xs={12}>
+                  </Grid> 
+                  <Grid item xs={12}>
                     <MenuOrientation />
                     <Divider sx={{ mt: 2.5 }}/>
-                  </Grid> */}
+                  </Grid>
                    {/* --- End Temp Comment Out --- */}
                 </Grid>
               </CustomTabPanel>
