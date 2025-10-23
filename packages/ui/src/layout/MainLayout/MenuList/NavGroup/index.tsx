@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/layout/MainLayout/MenuList/NavGroup/index.tsx
 import React, { Fragment, useEffect, useState, useContext, JSX, useRef } from 'react';
 import { matchPath, useLocation } from 'react-router-dom';
@@ -24,7 +23,11 @@ import { SxProps } from '@mui/system';
 import NavCollapse from '../NavCollapse';
 import NavItem from '../NavItem';
 import { NavItemType } from '../NavItem';
-import { NavGroupType as MenuNavGroupType } from 'menu-items/types';
+import { 
+  NavGroupType as MenuNavGroupType,
+  NavItemType as MenuNavItemType, 
+  NavCollapseType,
+  MenuItem } from 'menu-items/types';
 
 import { MenuOrientation, HORIZONTAL_MAX_ITEM } from 'config';
 import useConfig from 'hooks/useConfig';
@@ -39,22 +42,10 @@ import { FormattedMessage } from 'react-intl';
 import { IconChevronDown, IconMinusVertical, IconChevronUp } from '@tabler/icons-react';
 import { LucideProps } from 'lucide-react';
 
-// Define NavCollapseType
-interface NavCollapseType {
-  id: string;
-  title: string;
-  type: 'collapse';
-  icon?: React.FC<LucideProps>;
-  children: (NavItemType | NavCollapseType)[];
-  caption?: string;
-  url?: string;
-}
-
-
 // Define the type for remaining items in horizontal mode
 interface RemItemType {
   title?: string;
-  elements?: (NavItemType | NavCollapseType)[];
+  elements?: MenuItem[];
   icon?: React.FC<LucideProps>;
   url?: string;
   id?: string;
@@ -73,7 +64,7 @@ interface NavGroupProps {
   setSelectedID: (id: string | null) => void;
 }
 
-const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSelectedID }: NavGroupProps) => {
+function NavGroup ({ item, lastItem, remItems = [], lastItemId, selectedID, setSelectedID }: NavGroupProps) {
   const theme = useTheme();
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
   const ref = useRef<HTMLDivElement>(null);
@@ -90,7 +81,7 @@ const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSe
   const isHorizontal = menuOrientation === MenuOrientation.HORIZONTAL && !downMD;
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [currentItem, setCurrentItem] = useState<any>(item);
+  const [currentItem, setCurrentItem] = useState<MenuNavGroupType>(item);
 
   const openMini = Boolean(anchorEl);
 
@@ -108,7 +99,7 @@ const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSe
 
   useEffect(() => {
     if (isHorizontal && lastItem && item.id === lastItemId) {
-      const localItem: any = { ...item };
+      const localItem = { ...item };
       const elements = remItems.flatMap((ele) => ele.elements || []);
       localItem.children = elements;
       setCurrentItem(localItem);
@@ -117,8 +108,8 @@ const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSe
     }
   }, [item, lastItem, isHorizontal, remItems, lastItemId]);
 
-  const checkOpenForParent = (child: any[], id: string) => {
-    child.forEach((ele: any) => {
+  const checkOpenForParent = (child: MenuItem[], id: string) => {
+    child.forEach((ele) => {
       if (ele.type === 'collapse' && ele.children?.length) {
         checkOpenForParent(ele.children, id);
       }
@@ -130,13 +121,13 @@ const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSe
 
   useEffect(() => {
     let isChildSelected = false;
-    const childrens = currentItem.children || [];
-    childrens.forEach((itemCheck: any) => {
+    const childrens: MenuItem[] = currentItem.children || [];
+    childrens.forEach((itemCheck) => {
       if (itemCheck.type === 'item' && itemCheck.url && matchPath({ path: itemCheck.url, end: false }, pathname)) {
         isChildSelected = true;
       }
-      if (itemCheck.type === 'collapse') {
-        const checkCollapse = (items: any[]): boolean => {
+      if (itemCheck.type === 'collapse' && itemCheck.children) { // Ensure children exist
+        const checkCollapse = (items: MenuItem[]): boolean => {
           for (const subItem of items) {
             if (subItem.type === 'item' && subItem.url && matchPath({ path: subItem.url, end: false }, pathname)) return true;
             if (subItem.type === 'collapse' && subItem.children && checkCollapse(subItem.children)) return true;
@@ -180,15 +171,15 @@ const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSe
   const Icon = currentItem?.icon;
   const itemIcon = currentItem?.icon ? <Icon stroke="1.5" size="20px" /> : null;
 
-  const items = currentItem.children?.map((menu: any) => {
+  const items = currentItem.children?.map((menu: MenuItem) => {
     switch (menu.type) {
       case 'collapse':
-        return <NavCollapse key={menu.id} menu={menu} level={1} parentId={currentItem.id} />;
+        return <NavCollapse key={menu.id} menu={menu as NavCollapseType} level={1} parentId={currentItem.id} />;
       case 'item':
-        return <NavItem key={menu.id} item={menu} level={1} setSelectedID={() => setSelectedID(null)} />;
+        return <NavItem key={menu.id} item={menu as MenuNavItemType} level={1} setSelectedID={() => setSelectedID(null)} />; 
       default: {
         return (
-          <Typography key="error" variant="h6" align="center" sx={{ color: 'error.main' }}>
+          <Typography key={menu.id} variant="h6" align="center" sx={{ color: 'error.main' }}>
             Menu Items Error
           </Typography>
         );
@@ -196,10 +187,10 @@ const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSe
     }
   });
 
-  const moreItems = remItems.map((itemRem, i) => (
+  const moreItems = remItems?.map((itemRem: RemItemType, i: number) => (
     <Fragment key={i}>
       {itemRem.url ? (
-        <NavItem item={itemRem as NavItemType} level={1} setSelectedID={() => setSelectedID(null)} />
+       <NavItem item={itemRem as MenuNavItemType} level={1} setSelectedID={() => setSelectedID(null)} /> // Use MenuNavItemType
       ) : (
         itemRem.title && (
           <Typography variant="caption" sx={{ pl: 2, pt: 1, pb: 0.5, display: 'block' }} color="textSecondary">
@@ -207,15 +198,15 @@ const NavGroup = ({ item, lastItem, remItems = [], lastItemId, selectedID, setSe
           </Typography>
         )
       )}
-      {itemRem?.elements?.map((menu: any) => {
+        {itemRem?.elements?.map((menu: MenuItem) => {
         switch (menu.type) {
           case 'collapse':
-            return <NavCollapse key={menu.id} menu={menu} level={1} parentId={currentItem.id} />;
+            return <NavCollapse key={menu.id} menu={menu as NavCollapseType} level={1} parentId={currentItem.id} />;
           case 'item':
-            return <NavItem key={menu.id} item={menu} level={1} setSelectedID={() => setSelectedID(null)} />;
+            return <NavItem key={menu.id} item={menu as MenuNavItemType} level={1} setSelectedID={() => setSelectedID(null)} />;
           default: {
             return (
-              <Typography key="error" variant="h6" align="center" sx={{ color: 'error.main' }}>
+              <Typography key={menu.id} variant="h6" align="center" sx={{ color: 'error.main' }}>
                 Menu Items Error
               </Typography>
             );

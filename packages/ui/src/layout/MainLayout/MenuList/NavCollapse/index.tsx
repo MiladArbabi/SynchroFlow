@@ -21,7 +21,8 @@ import { SxProps } from '@mui/system';
 import { matchPath } from 'react-router-dom';
 
 // project imports
-import NavItem, { NavItemType } from '../NavItem'; // Import NavItem and its type
+import NavItem from '../NavItem';
+import { NavItemType as MenuNavItemType, NavCollapseType } from 'menu-items/types';// Import NavItem and its type
 import Transitions from 'ui-component/extended/Transitions';
 import { withAlpha } from 'utils/colorUtils'; // Ensure this is typed
 
@@ -30,6 +31,7 @@ import { MenuOrientation, ThemeDirection } from 'config';
 import useConfig from 'hooks/useConfig';
 import { ConfigContext } from 'contexts/ConfigContext'; // Import ConfigContext separately
 import useMenuCollapse from 'hooks/useMenuCollapse'; // Ensure this hook is copied and typed
+import { MenuItem } from 'menu-items/types';
 
 // third party
 import { FormattedMessage } from 'react-intl';
@@ -38,19 +40,6 @@ import { FormattedMessage } from 'react-intl';
 import { IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
 import { LucideProps } from 'lucide-react';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-
-// Define the NavCollapseType structure
-interface NavCollapseType {
-  id: string;
-  title: string; // Message ID
-  type: 'collapse';
-  icon?: React.FC<LucideProps>;
-  children?: (NavCollapseType | NavItemType)[];
-  caption?: string; // Message ID
-  disabled?: boolean;
-  breadcrumbs?: boolean;
-  url?: string; // Optional: Some collapses might link directly
-}
 
 // Define component props
 interface NavCollapseProps {
@@ -203,7 +192,7 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
 
     // Effect to handle initial selection based on URL (runs once)
     useEffect(() => {
-        const checkSelected = (items: (NavCollapseType | NavItemType)[], currentPath: string) => {
+        const checkSelected = (items: (NavCollapseType | MenuNavItemType)[], currentPath: string) => {
             for (const item of items) {
                 if (item.type === 'item' && matchPath({ path: item.url, end: false }, currentPath)) {
                     setSelected(menu.id); // Select this collapse group
@@ -227,15 +216,15 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
     }, [pathname, menu]); // Rerun only if menu or path changes
 
   // menu collapse & item
-  const menus = menu.children?.map((item) => {
+  const menus = menu.children?.map((item: MenuItem) => {
     switch (item.type) {
       case 'collapse':
         return <NavCollapse key={item.id} menu={item as NavCollapseType} level={level + 1} parentId={menu.id} />;
       case 'item':
-        return <NavItem key={item.id} item={item as NavItemType} level={level + 1} />;
+        return <NavItem key={item.id} item={item as MenuNavItemType} level={level + 1} />;
       default:
         return (
-          <Typography key={item.id} variant="h6" align="center" sx={{ color: 'error.main' }}>
+         <Typography key={`error-${item.id || Math.random()}`} variant="h6" align="center" sx={{ color: 'error.main' }}>
             Menu Items Error
           </Typography>
         );

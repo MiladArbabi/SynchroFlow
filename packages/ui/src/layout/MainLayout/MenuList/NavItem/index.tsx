@@ -83,7 +83,12 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
 
   const Icon = item?.icon;
   const itemIcon = item?.icon ? (
-    <Icon strokeWidth={1.5} size={isDrawerOpen ? '20px' : '24px'} style={{ stroke: 'currentColor' }} />
+    <Icon
+      strokeWidth={1.5}
+      size={isDrawerOpen ? '20px' : '24px'}
+      // Conditionally set the stroke color
+      stroke={isSelected ? theme.palette.secondary.dark : theme.palette.text.primary}
+    />
   ) : (
     <FiberManualRecordIcon sx={{ width: isSelected ? 8 : 6, height: isSelected ? 8 : 6 }} fontSize={level > 0 ? 'inherit' : 'medium'} />
   );
@@ -152,7 +157,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
   // Define common ListItemIcon SX properties
   const listItemIconSx: SxProps<Theme> = {
     minWidth: !item?.icon ? 18 : 36,
-    color: isSelected ? 'secondary.main' : 'text.primary',
+    color: 'inherit',
     // Theme-dependent styles for mini variant
     ...(!isDrawerOpen &&
       level === 1 && {
@@ -168,7 +173,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
         }),
         // Dark mode overrides using theme.applyStyles (assuming it exists or is added)
          ...(theme.palette.mode === 'dark' && { // Direct check if applyStyles isn't available
-             color: isSelected ? 'secondary.main' : 'text.primary', // Adjust dark mode selected color if needed
+             // color: isSelected ? 'secondary.dark' : 'text.primary',// Adjust dark mode selected color if needed
              '&:hover': { bgcolor: withAlpha(theme.palette.secondary.main, 0.25) },
              ...(isSelected && {
                  bgcolor: withAlpha(theme.palette.secondary.main, 0.25),
@@ -177,7 +182,6 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
          })
       })
   };
-
 
   return (
     <>
