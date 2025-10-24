@@ -18,6 +18,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "types": ["jest", "@testing-library/jest-dom"],
 
     "baseUrl": ".",
     "paths": {
@@ -38,6 +39,7 @@
       "ui-component/*": ["packages/ui/src/ui-component/*"],
       "menu-items": ["packages/ui/src/menu-items/index.ts"],
       "widgets/*": ["packages/ui/src/widgets/*"],
+      "themes/*": ["packages/ui/src/themes/*"],
       
       // Aliases for root files
       "Layout": ["packages/ui/src/Layout.tsx"],

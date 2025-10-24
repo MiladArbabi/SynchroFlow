@@ -35,7 +35,7 @@ module.exports = {
         '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
       },
       transformIgnorePatterns: [
-        '/node_modules/(?!(react-github-btn|react-resizable-panels))',
+        '/node_modules/(?!(react-github-btn|react-resizable-panels|lodash-es))',
         '\\.pnp\\.[^\\/]+$'
       ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
@@ -48,8 +48,8 @@ module.exports = {
         '^layout/(.*)$': '<rootDir>/packages/ui/src/layout/$1',
         '^api/(.*)$': '<rootDir>/packages/ui/src/api/$1',
 
-        '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',        
-                
+        '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',                
+        
         '^config$': '<rootDir>/packages/ui/src/config.ts',
         '^menu-items$': '<rootDir>/packages/ui/src/menu-items/index.ts',
         
