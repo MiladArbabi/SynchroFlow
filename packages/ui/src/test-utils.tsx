@@ -5,6 +5,7 @@ import { MemoryRouter, MemoryRouterProps } from 'react-router-dom'; // Use Memor
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { UserProvider } from './contexts/UserContext';
+import { IntlProvider } from 'react-intl';
 
 // This is our enhanced render options type
 interface ExtendedRenderOptions extends Omit<RenderOptions, 'wrapper'> {
@@ -19,20 +20,21 @@ const renderWithProviders = (
     const theme = createTheme();
 
     return (
-      // Use MemoryRouter to control the route in tests
-      <MemoryRouter {...routerProps}>
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
-          <UserProvider>
-            {children}
-          </UserProvider>
-        </ThemeProvider>
-      </MemoryRouter>
+      // Add IntlProvider
+      <IntlProvider locale="en" defaultLocale="en" messages={{}}>
+        <MemoryRouter {...routerProps}>
+          <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <UserProvider>
+              {children}
+            </UserProvider>
+          </ThemeProvider>
+        </MemoryRouter>
+      </IntlProvider>
     );
   };
 
   return render(ui, { wrapper: AllTheProviders, ...renderOptions });
 };
 
-// Override the default render method
 export { renderWithProviders };

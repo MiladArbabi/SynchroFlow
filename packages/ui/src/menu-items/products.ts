@@ -1,17 +1,14 @@
 // packages/ui/src/menu-items/products.ts
-import { Package } from 'lucide-react'; // Use Package icon
+import { Package } from 'lucide-react';
+import { NavItemType } from './types';
 
-const icons = {
-    Package
-};
-
-const products = {
-    id: 'products',
-    title: 'Products',
-    type: 'item',
-    url: '/products',
-    icon: icons.Package,
-    breadcrumbs: false
+const products: NavItemType = {
+  id: 'products',
+  title: 'Products',
+  type: 'item',
+  url: '/products',
+  icon: Package,
+  breadcrumbs: false
 };
 
 export default products;
