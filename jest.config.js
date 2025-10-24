@@ -40,7 +40,7 @@ module.exports = {
         '^layout/(.*)$': '<rootDir>/packages/ui/src/layout/$1',
         '^api/(.*)$': '<rootDir>/packages/ui/src/api/$1',
 
-        '^ui-component/(.*)$': '<rootDir>/packages/ui/src/ui-component/$1',
+        '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',        
         
         // Aliases for directories inside /src
         '^(components|contexts|layouts|pages|utils|hooks|assets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',
