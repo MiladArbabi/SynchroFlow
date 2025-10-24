@@ -31,6 +31,12 @@
       "utils/*": ["packages/ui/src/utils/*"],
       "hooks/*": ["packages/ui/src/hooks/*"],
       "assets/*": ["packages/ui/src/assets/*"],
+
+      "config": ["packages/ui/src/config.ts"],
+      "layout/*": ["packages/ui/src/layout/*"],
+      "api/*": ["packages/ui/src/api/*"],
+      "ui-component/*": ["packages/ui/src/ui-component/*"],
+      "menu-items": ["packages/ui/src/menu-items/index.ts"],
       
       // Aliases for root files
       "Layout": ["packages/ui/src/Layout.tsx"],

@@ -27,16 +27,12 @@ type KnexConfig = { [key: string]: Knex.Config };
 // Assert that our imported knexfile matches the shape we defined.
 const config = knexfile as KnexConfig;
 
-console.log(`[DB INIT] Attempting Knex connection: Host=${process.env.PG_HOST}, Port=${process.env.PG_PORT}, DB=${process.env.PG_DATABASE}, User=${process.env.PG_USER}`);
-
 // Now, TypeScript knows that config.development is a valid property.
 const db = knex(config.development);
 
 // FIX: Add connection test and detailed error logging
 db.raw('SELECT 1+1 AS result').then(() => {
-  console.log('[DB INIT] Knex connection successful.');
 }).catch((err) => {
-  console.error('[DB INIT] FATAL: Knex connection failed:', err);
   process.exit(1); // Exit if connection fails
 });
 

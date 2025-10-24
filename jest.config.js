@@ -35,8 +35,20 @@ module.exports = {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
         '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js',
         '^test-utils$': '<rootDir>/packages/ui/src/test-utils.tsx',
-        // MODIFICATION: Added 'layouts'
+        
+        // Add aliases for 'layout' and 'api'
+        '^layout/(.*)$': '<rootDir>/packages/ui/src/layout/$1',
+        '^api/(.*)$': '<rootDir>/packages/ui/src/api/$1',
+
+        '^ui-component/(.*)$': '<rootDir>/packages/ui/src/ui-component/$1',
+        
+        // Aliases for directories inside /src
         '^(components|contexts|layouts|pages|utils|hooks|assets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',
+        
+        '^config$': '<rootDir>/packages/ui/src/config.ts',
+        '^menu-items$': '<rootDir>/packages/ui/src/menu-items/index.ts',
+        
+        // Aliases for root files
         '^(App|Layout|LoginPage|routes)$': '<rootDir>/packages/ui/src/$1.tsx',
       },
     },
