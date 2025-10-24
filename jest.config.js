@@ -27,7 +27,7 @@ module.exports = {
         '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
       },
       transformIgnorePatterns: [
-        '/node_modules/(?!react-github-btn)',
+        '/node_modules/(?!(react-github-btn|react-resizable-panels))',
         '\\.pnp\\.[^\\/]+$'
       ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
@@ -35,8 +35,8 @@ module.exports = {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
         '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js',
         '^test-utils$': '<rootDir>/packages/ui/src/test-utils.tsx',
-        // Match any import that starts with a folder name inside /src
-        '^(components|contexts|pages|utils|hooks|assets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',
+        // MODIFICATION: Added 'layouts'
+        '^(components|contexts|layouts|pages|utils|hooks|assets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',
         '^(App|Layout|LoginPage|routes)$': '<rootDir>/packages/ui/src/$1.tsx',
       },
     },

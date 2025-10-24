@@ -1,16 +1,32 @@
-import { screen } from "@testing-library/react";
-import { renderWithProviders } from "test-utils";
-import Layout from "Layout";
+// tests/unit/ui/Layout.test.tsx
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from 'test-utils';
+// MODIFICATION: Use 'Layout' alias
+import Layout from 'Layout';
 
-test('renders the professional layout with Sidenav and Navbar', () => {
- renderWithProviders(<Layout />)
-  // Assert that the main brand name is visible in the new Sidenav.
-  expect(screen.getByText(/SynchroFlow/i)).toBeInTheDocument();
+// Mock child components using aliases
+// MODIFICATION: Use 'layouts/' alias
+jest.mock('layouts/AppLayout/SidenavContent', () => ({
+  __esModule: true,
+  default: () => <div data-testid="sidenav-mock" />,
+}));
+// MODIFICATION: Use 'pages/' alias
+jest.mock('pages/DashboardPage', () => ({
+  __esModule: true,
+  DashboardPage: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dashboard-page-mock">{children}</div>
+  ),
+}));
 
-  // A more robust way to confirm the Navbar has rendered is to find a unique element within it,
-  // like the search input field.
-  //expect(screen.getByRole('textbox', { name: /search here/i })).toBeInTheDocument();
+describe('Layout (#277)', () => {
+  it('should render the resizable Master/Context panels', () => {
+    renderWithProviders(
+        <Layout />
+    );
 
-  // Assert that a link to one of our reintegrated pages now exists.
-  //expect(screen.getByRole('link', { name: /data mapper/i })).toBeInTheDocument();
+    // This test is RED.
+    // It should now fail: "Unable to find an element with the role 'group'"
+    const panels = screen.getAllByRole('group');
+    expect(panels).toHaveLength(2);
+  });
 });
