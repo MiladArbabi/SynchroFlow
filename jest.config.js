@@ -15,6 +15,14 @@ module.exports = {
       transform: {
         '^.+\\.ts$': 'babel-jest',
       },
+      moduleNameMapper: {
+        // Alias for the src directory
+        '^api-src/(.*)$': '<rootDir>/packages/api/src/$1',
+        // Direct aliases for common imports
+        '^api-db$': '<rootDir>/packages/api/src/db.ts',
+        '^api-types$': '<rootDir>/packages/api/src/types.ts',
+        '^api-server$': '<rootDir>/packages/api/src/server.ts',
+      },
     },
     // Configuration for the frontend package
     {
@@ -41,10 +49,7 @@ module.exports = {
         '^api/(.*)$': '<rootDir>/packages/ui/src/api/$1',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',        
-        
-        // Aliases for directories inside /src
-        '^(components|contexts|layouts|pages|utils|hooks|assets)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',
-        
+                
         '^config$': '<rootDir>/packages/ui/src/config.ts',
         '^menu-items$': '<rootDir>/packages/ui/src/menu-items/index.ts',
         
