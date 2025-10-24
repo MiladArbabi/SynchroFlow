@@ -19,7 +19,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
 
-    /* --- THIS IS THE DEFINITIVE FIX FOR PATH ALIASING --- */
     "baseUrl": ".",
     "paths": {
       "test-utils": ["packages/ui/src/test-utils.tsx"],
@@ -28,7 +27,18 @@
       "components/*": ["packages/ui/src/components/*"],
       "contexts/*": ["packages/ui/src/contexts/*"],
       "pages/*": ["packages/ui/src/pages/*"],
-      "src/*": ["packages/ui/src/*"] // A robust fallback for anything else in src
+      "layouts/*": ["packages/ui/src/layouts/*"], 
+      "utils/*": ["packages/ui/src/utils/*"],
+      "hooks/*": ["packages/ui/src/hooks/*"],
+      "assets/*": ["packages/ui/src/assets/*"],
+      
+      // Aliases for root files
+      "Layout": ["packages/ui/src/Layout.tsx"],
+      "App": ["packages/ui/src/App.tsx"],
+      "LoginPage": ["packages/ui/src/LoginPage.tsx"],
+      "routes": ["packages/ui/src/routes.tsx"],
+
+      "src/*": ["packages/ui/src/*"]
     }
   },
   "include": [

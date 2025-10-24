@@ -1,9 +1,14 @@
 // packages/ui/src/Layout.tsx
 import { useState, useEffect } from "react";
 import { useLocation, Outlet } from "react-router-dom";
-import Sidenav from "./components/Sidenav";
-import DashboardLayout from "./components/DashboardLayout";
-import Box from "@mui/material/Box";
+import Sidenav from './layouts/AppLayout/SidenavContent'
+import { DashboardPage } from "pages/DashboardPage";
+// Import the correct components from react-resizable-panels
+import {
+  PanelGroup,
+  Panel,
+  PanelResizeHandle,
+} from "react-resizable-panels";
 
 // You will need to define your routes here.
 // This is just a placeholder example.
@@ -24,16 +29,38 @@ export default function Layout() {
         document.body.setAttribute("layout", "dashboard");
     }, [pathname]);
 
+    // Replace root <Box> with PanelGroup
     return (
-        <Box sx={{ display: 'flex' }}>
-            <Sidenav
-                brandName="SynchroFlow"
-                routes={routes}
-                isSidenavOpen={isSidenavOpen}
-            />
-            <DashboardLayout handleSidenavToggle={handleSidenavToggle}>
-                <Outlet /> {/* This will render the active page */}
-            </DashboardLayout>
-        </Box>
+        <PanelGroup
+          direction="horizontal"
+          style={{ height: '100vh', width: '100vw' }}
+        >
+            {/* === MASTER PANEL (Sidenav) === */}
+            <Panel
+              defaultSize={20}
+              minSize={18}
+              maxSize={25}
+              role="group" // For the test
+            >
+                <Sidenav
+                    brandName="SynchroFlow"
+                    routes={routes}
+                    isSidenavOpen={isSidenavOpen}
+                />
+            </Panel>
+
+            {/* Handle must be styled or it is 0px width */}
+            <PanelResizeHandle style={{ width: '1px', background: '#e0e0e0' }} />
+
+            {/* === CONTEXT PANEL (DashboardPage + Outlet) === */}
+            <Panel
+              defaultSize={80}
+              role="group" // For the test
+            >
+                <DashboardPage handleSidenavToggle={handleSidenavToggle}>
+                    <Outlet /> {/* This will render the active page */}
+                </DashboardPage>
+            </Panel>
+        </PanelGroup>
     );
 }
