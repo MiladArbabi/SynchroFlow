@@ -4,6 +4,7 @@ import { ComponentType } from "react";
 import KpiCard from "../components/KpiCard";
 import CashFlowWidget from './CashFlowWidget';
 import InventoryHealthWidget from './InventoryHealthWidget';
+import AOpexGauge from './AOpexGauge';
 
 // Define possible plan levels
 export type PlanLevel = 'Ignition' | 'Clarity' | 'Autonomous';
@@ -51,6 +52,13 @@ export const WIDGET_REGISTRY: Record<string, WidgetConfig> = {
     component: InventoryHealthWidget,
     defaultLayout: { w: 6, h: 4 },
     requiredPlan: 'Clarity',
+  },
+  "a-opex-gauge": {
+    id: "a-opex-gauge",
+    name: "Opex Saved",
+    component: AOpexGauge,
+    defaultLayout: { w: 3, h: 2 }, 
+    requiredPlan: 'Ignition',
   },
   "ai-reordering": {
     id: "ai-reordering",

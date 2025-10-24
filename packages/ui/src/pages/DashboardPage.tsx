@@ -25,20 +25,31 @@ const initialActiveWidgets = [
   { instanceId: "kpi-revenue-1", widgetId: "kpi-revenue" },
   { instanceId: "kpi-margin-1", widgetId: "kpi-margin" },
   { instanceId: "kpi-inventory-1", widgetId: "kpi-inventory" },
+  { instanceId: "a-opex-gauge-1", widgetId: "a-opex-gauge" },
   { instanceId: "cashflow-chart-1", widgetId: "cashflow-chart" },
   { instanceId: "inventory-health-1", widgetId: "inventory-health" },
 ];
+
+// Define Ops-Intel data type ---
+interface OpsIntelData {
+  automated_tasks: number;
+  labor_cost_saved: number;
+}
 
 // Defines the initial layout for those widgets
 const initialLayout: RGL.Layout[] = [
   { i: "kpi-revenue-1", x: 0, y: 0, w: 3, h: 1 },
   { i: "kpi-margin-1", x: 3, y: 0, w: 3, h: 1 },
   { i: "kpi-inventory-1", x: 6, y: 0, w: 3, h: 1 },
+  { i: "a-opex-gauge-1", x: 9, y: 0, w: 3, h: 2 },
   { i: "cashflow-chart-1", x: 0, y: 1, w: 6, h: 4 },
   { i: "inventory-health-1", x: 0, y: 4, w: 6, h: 4 },
 ];
 
-const getWidgetProps = (widgetId: string) => {
+const getWidgetProps = (
+  widgetId: string, 
+  opsIntelData: OpsIntelData // Pass in the new data
+) => {
   switch (widgetId) {
     case "kpi-revenue":
       return { title: "Gross Revenue", value: "$750,930", percentage: "55%", icon: "BarChart3" }; 
@@ -46,6 +57,12 @@ const getWidgetProps = (widgetId: string) => {
       return { title: "Gross Margin", value: "$320,400", percentage: "12%", icon: "Store" };
     case "kpi-inventory":
       return { title: "Inventory Value", value: "$1.2M", percentage: "-2%", icon: "Package" };
+    case "a-opex-gauge":
+      return { 
+        title: "Opex Saved", 
+        value: opsIntelData.labor_cost_saved, 
+        target: 10000 // Hardcode target for v1
+      };
     case "cashflow-chart":
       return {};
     case "inventory-health":
@@ -60,6 +77,11 @@ export const DashboardPage = () => {
   const [layout, setLayout] = useState(initialLayout);
   // State to hold the list of active widgets
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
+  const [opsIntelData, setOpsIntelData] = useState<OpsIntelData>({ 
+    automated_tasks: 0, 
+    labor_cost_saved: 0 
+  });
+
   // Get editing state and library controls from parent context
   const {
     isEditing,
@@ -103,6 +125,20 @@ export const DashboardPage = () => {
     fetchLayout();
   }, []); // Empty dependency array ensures this runs only once on mount
 
+  // --- FETCH OPS-INTEL DATA ---
+  useEffect(() => {
+    const fetchOpsIntel = async () => {
+      try {
+        // This is the call our Red Test is looking for
+        const response = await axios.get("/api/v1/ops-intel/summary");
+        setOpsIntelData(response.data);
+      } catch (error) {
+        console.error("Failed to fetch Ops-Intel data:", error);
+      }
+    };
+    fetchOpsIntel();
+  }, []);
+
   // Handler for adding a new widget from the library
   const handleAddWidget = (widgetId: string) => {
     const widgetConfig = WIDGET_REGISTRY[widgetId];
@@ -144,11 +180,10 @@ export const DashboardPage = () => {
         className={isEditing ? "grid-editing" : ""}
       >
       {activeWidgets.map(({ instanceId, widgetId }) => {
-          const WidgetComponent = WIDGET_REGISTRY[widgetId].component;
-          return (
-            // FIX: This wrapper div ensures each grid item has stable styling and a unique key.
-            <div key={instanceId} style={{ width: '100%', height: '100%', position: 'relative' }}>
-              <WidgetComponent {...getWidgetProps(widgetId)} />
+        const WidgetComponent = WIDGET_REGISTRY[widgetId].component;
+        return (
+          <div key={instanceId} style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <WidgetComponent {...getWidgetProps(widgetId, opsIntelData)} />
               {isEditing && (
                 <IconButton
                   // FIX: Stop propagation to prevent the grid from capturing the click.
