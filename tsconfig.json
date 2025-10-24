@@ -45,12 +45,22 @@
       "LoginPage": ["packages/ui/src/LoginPage.tsx"],
       "routes": ["packages/ui/src/routes.tsx"],
 
+      // --- BACKEND ALIASES ---
+      "api-src/*": ["packages/api/src/*"],
+      "api-db": ["packages/api/src/db.ts"],
+      "api-types": ["packages/api/src/types.ts"],
+      "api-server": ["packages/api/src/server.ts"],
+
       "src/*": ["packages/ui/src/*"]
     }
   },
   "include": [
     "packages/ui/src",
-    "tests/unit/ui"
+    "packages/api/src", // Good practice to include this
+    "tests/unit/ui",
+    "tests/unit/api",
+    "tests/unit/core-engine",
+    "tests/unit/integration"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

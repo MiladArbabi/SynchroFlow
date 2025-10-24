@@ -1,8 +1,8 @@
 // packages/api/__tests__/api.test.ts
 import request from 'supertest';
-import app from '../../../packages/api/src/server';
-import db from '../../../packages/api/src/db';
-import { InventoryItem } from '../../../packages/api/src/types';
+import app from 'api-server';
+import db from 'api-db';
+import { InventoryItem } from 'api-types';
 import axios from 'axios';
 import { seedSandboxData } from '../../../packages/api/src/db/seeder';
 
@@ -693,5 +693,29 @@ describe('GET /v1/analytics/perfect-order-percentage', () => {
     expect(response.status).toBe(200);
     expect(response.body).toHaveProperty('perfect_order_percentage');
     expect(response.body.perfect_order_percentage).toBeCloseTo(expectedPercentage);
+  });
+});
+
+describe('API Health Check', () => {
+  it('GET / should return 200 OK', async () => {
+    const response = await request(app).get('/');
+    expect(response.status).toBe(200);
+  });
+});
+
+describe('Ops-Intel Endpoint (#282)', () => {
+  describe('GET /api/v1/ops-intel/summary', () => {
+    
+    // MODIFICATION: Update test for 200
+    it('should return the Ops-Intel summary data', async () => {
+      const response = await request(app).get('/api/v1/ops-intel/summary');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        automated_tasks: 4500,
+        labor_cost_saved: 8125.75,
+      });
+    });
+
   });
 });
