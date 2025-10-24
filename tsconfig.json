@@ -37,6 +37,7 @@
       "api/*": ["packages/ui/src/api/*"],
       "ui-component/*": ["packages/ui/src/ui-component/*"],
       "menu-items": ["packages/ui/src/menu-items/index.ts"],
+      "widgets/*": ["packages/ui/src/widgets/*"],
       
       // Aliases for root files
       "Layout": ["packages/ui/src/Layout.tsx"],
