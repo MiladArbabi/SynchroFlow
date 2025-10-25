@@ -40,7 +40,8 @@ export default defineConfig({
       'contexts': path.resolve(__dirname, './src/contexts'),
       'examples': path.resolve(__dirname, './src/components'),
       'layouts': path.resolve(__dirname, './src/layouts'),
-      'routes': path.resolve(__dirname, './src/routes.tsx')
+      'routes': path.resolve(__dirname, './src/routes.tsx'),
+      'widgets': path.resolve(__dirname, './src/widgets'),
     }
   },
   test: {
