@@ -736,3 +736,20 @@ describe('Order Endpoint (#288)', () => {
 
   });
 });
+
+// --- ADD NEW DESCRIBE BLOCK ---
+describe('GET /api/v1/orders/:id/profitability', () => {
+  it('should return the order profitability data', async () => {
+       const response = await request(app).get('/api/v1/orders/12345/profitability');
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        orderId: '12345',
+        revenue: 149.99,
+        cogs: 62.50,
+        shippingCost: 12.00,
+        fees: 4.50,
+        margin: 70.99,
+        marginPercent: 47.3
+      });
+    });
+  });
