@@ -5,6 +5,7 @@ import axios from 'axios';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import ContextPanel, { ContextPanelTab } from 'ui-component/ContextPanel/index.tsx';
 import WmsStatusStepper, { OrderStatus } from 'ui-component/WmsStatusStepper/index.tsx';
+import OrderProfitability, { OrderProfitabilityData } from 'widgets/OrderProfitability/index.tsx';
 
 // Define the expected API response structure
 interface OrderStatusResponse {
@@ -12,32 +13,57 @@ interface OrderStatusResponse {
   status: OrderStatus;
 }
 
+// --- PROFITABILITY RESPONSE TYPE ---
+type OrderProfitabilityResponse = OrderProfitabilityData & { orderId: string };
+
 /**
  * The Order 360 Page: Displays comprehensive details for a single order.
  */
 const Order360Page: React.FC = () => {
   const { id } = useParams<{ id: string }>(); // Get order ID from URL
   const [orderStatus, setOrderStatus] = useState<OrderStatus | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // --- SEPARATE LOADING/ERROR STATES ---
+  const [statusLoading, setStatusLoading] = useState<boolean>(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [profitabilityData, setProfitabilityData] = useState<OrderProfitabilityData | null>(null);
+  const [profitabilityLoading, setProfitabilityLoading] = useState<boolean>(true);
+  const [profitabilityError, setProfitabilityError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOrderStatus = async () => {
       if (!id) return; // Guard against missing ID
-      setLoading(true);
-      setError(null);
+      setStatusLoading(true);
+      setStatusError(null);
       try {
         const response = await axios.get<OrderStatusResponse>(`/api/v1/orders/${id}/status`);
         setOrderStatus(response.data.status);
       } catch (err) {
         console.error('Failed to fetch order status:', err);
-        setError('Failed to load order status.');
+        setStatusError('Failed to load order status.');
       } finally {
-        setLoading(false);
+        setStatusLoading(false);
+      }
+    };
+
+    // --- ADD PROFITABILITY FETCH LOGIC ---
+    const fetchOrderProfitability = async () => {
+      if (!id) return;
+      setProfitabilityLoading(true);
+      setProfitabilityError(null);
+      try {
+        const response = await axios.get<OrderProfitabilityResponse>(`/api/v1/orders/${id}/profitability`);
+        setProfitabilityData(response.data);
+      } catch (err) {
+        console.error('Failed to fetch order profitability:', err);
+        setProfitabilityError('Failed to load profitability data.');
+      } finally {
+        setProfitabilityLoading(false);
       }
     };
 
     fetchOrderStatus();
+    fetchOrderProfitability();
   }, [id]); // Re-fetch if the order ID changes
 
   // Define tabs for the ContextPanel
@@ -46,10 +72,13 @@ const Order360Page: React.FC = () => {
       label: 'Summary',
       content: (
         <Box>
-          {loading && <CircularProgress />}
-          {error && <Typography color="error">{error}</Typography>}
+          {statusLoading && <CircularProgress size={20} />}
+          {statusError && <Typography color="error" variant="body2">{statusError}</Typography>}
           {orderStatus && <WmsStatusStepper currentStatus={orderStatus} />}
-          {/* Other summary widgets will go here */}
+          {/* Profitability Section */}
+          {profitabilityLoading && <CircularProgress size={20} />}
+          {profitabilityError && <Typography color="error" variant="body2">{profitabilityError}</Typography>}
+          {profitabilityData && <OrderProfitability data={profitabilityData} />}
         </Box>
       ),
     },

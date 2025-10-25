@@ -37,14 +37,29 @@ jest.mock('react-router-dom', () => {
   };
 });
 
+jest.mock('widgets/OrderProfitability/index.tsx', () => ({
+  __esModule: true,
+  // Mock receives data and displays margin for assertion
+  default: ({ data }: { data: { margin: number } | null }) => (
+    <div data-testid="order-profitability-mock">Margin: {data?.margin ?? 'N/A'}</div>
+  ),
+}));
+
 describe('Order360Page (#287)', () => {
   beforeEach(() => {
     mockedAxios.get.mockReset();
-    // Mock the API response
-    mockedAxios.get.mockResolvedValue({
-      data: { orderId: '54321', status: 'Picking' },
-    });
+    // Mock BOTH API responses
+    mockedAxios.get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/status')) {
+        return { data: { orderId: '54321', status: 'Picking' } };
+      }
+      if (url.endsWith('/profitability')) {
+        return { data: { orderId: '54321', margin: 70.99 /* other fields */ } };
+      }
+      throw new Error(`Unhandled GET request: ${url}`);
   });
+});
+  
 
   it('should fetch order status and render the WmsStatusStepper', async () => {
     renderWithProviders(<Order360Page />);
@@ -58,10 +73,19 @@ describe('Order360Page (#287)', () => {
       expect(mockedAxios.get).toHaveBeenCalledWith('/api/v1/orders/54321/status');
     });
 
+    // --- ADD ASSERTION FOR PROFITABILITY API CALL ---
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/api/v1/orders/54321/profitability');
+    });
+
     // Wait for the stepper to appear after loading
     const stepper = await screen.findByTestId('wms-stepper-mock');
     expect(stepper).toHaveTextContent('Picking');
     // Also check that the loading spinner disappears
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+
+    // --- ADD ASSERTION FOR PROFITABILITY WIDGET ---
+    const profitabilityWidget = await screen.findByTestId('order-profitability-mock');
+    expect(profitabilityWidget).toHaveTextContent('Margin: 70.99');
+    });
   });
-});
