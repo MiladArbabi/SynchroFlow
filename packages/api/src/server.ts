@@ -16,6 +16,8 @@ import { startWorker } from './worker';
 import { seedSandboxData } from './db/seeder';
 import layoutRoutes from "./api/layouts/layout.routes";
 import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
+import orderRoutes from "./api/orders/orders.routes";
+
 
 // --- ADD THESE LINES ---
 // Use 'path' to create a reliable, absolute path to the addon file
@@ -39,6 +41,7 @@ app.get('/', (req, res) => {
 // Integrate the new layout routes
 app.use("/api/v1/layouts", layoutRoutes);
 app.use("/api/v1/ops-intel", opsIntelRoutes);
+app.use("/api/v1/orders", orderRoutes);
 
 app.get('/v1/inventory/:sku', (req, res) => {
   const { sku } = req.params;

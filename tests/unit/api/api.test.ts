@@ -719,3 +719,20 @@ describe('Ops-Intel Endpoint (#282)', () => {
 
   });
 });
+
+describe('Order Endpoint (#288)', () => {
+  describe('GET /api/v1/orders/:id/status', () => {
+    
+    // MODIFICATION: Update test for 200
+    it('should return the order status', async () => {
+      const response = await request(app).get('/api/v1/orders/12345/status');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        orderId: '12345',
+        status: 'Picking',
+      });
+    });
+
+  });
+});
