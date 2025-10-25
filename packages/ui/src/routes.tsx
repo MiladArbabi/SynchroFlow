@@ -5,6 +5,7 @@ import { ProductsPage } from "./pages/ProductsPage";
 import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
 import DataMapper from "./components/DataMapper/DataMapper";
 import Order360Page from "./pages/Order360Page";
+import OrdersPage from "./pages/OrdersPage";
 
 
 const routes = [
@@ -23,6 +24,13 @@ const routes = [
     icon: "📦",
     route: "/products",
     component: <ProductsPage />,
+  },
+  {
+      type: "collapse", // Keep as collapse if it's in the Sidenav
+      name: "Orders",   // Match Sidenav item title
+      key: "orders",
+      route: "/orders", // The main list view route
+      component: <OrdersPage />,
   },
   {
     type: "collapse",
