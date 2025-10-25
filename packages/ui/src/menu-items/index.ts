@@ -1,5 +1,6 @@
 // packages/ui/src/menu-items/index.ts
-import { MenuItems } from './types';
+import { MenuItems, NavItemType } from './types';
+import { MessageSquare } from 'lucide-react';
 
 // Import Items
 import dashboard from './dashboard';
@@ -8,6 +9,15 @@ import customers from './customers';
 import products from './products';
 
 // ==============================|| MENU ITEMS ||============================== //
+
+const echoHub: NavItemType = {
+  id: 'echo-hub',
+  title: 'Echo Inbox',
+  type: 'item',
+  url: '/echo-hub',
+  icon: MessageSquare,
+  breadcrumbs: false
+};
 
 // CORRECTED STRUCTURE: Must conform to MenuItems interface
 const menuItems: MenuItems = {
@@ -28,6 +38,12 @@ const menuItems: MenuItems = {
         customers,
         products,
       ]
+    },
+    // --- ADD ECHO HUB GROUP/ITEM ---
+    {
+      id: 'communication-group',
+      type: 'group',
+      children: [echoHub]
     }
     // Old, removed items (dataMapper, productIntelligence) are gone.
   ]
