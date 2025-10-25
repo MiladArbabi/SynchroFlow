@@ -6,7 +6,7 @@ import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
 import DataMapper from "./components/DataMapper/DataMapper";
 import Order360Page from "./pages/Order360Page";
 import OrdersPage from "./pages/OrdersPage";
-
+import EchoHubPage from "./pages/EchoHubPage";
 
 const routes = [
   {
@@ -31,6 +31,14 @@ const routes = [
       key: "orders",
       route: "/orders", // The main list view route
       component: <OrdersPage />,
+  },
+  {
+    type: "collapse", // Show in Sidenav
+    name: "Echo Inbox",
+    key: "echo-hub",
+    icon: "💬", // Placeholder icon
+    route: "/echo-hub",
+    component: <EchoHubPage />,
   },
   {
     type: "collapse",
