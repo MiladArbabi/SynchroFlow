@@ -7,7 +7,14 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "./src",
+    "paths": {
+      "api-server": ["server.ts"],
+      "api-db": ["db.ts"],
+      "api-types": ["types.ts"],
+      "api-src/*": ["./*"]
+    }
   },
   "include": [
     "src/**/*.ts",      // Include all .ts files in the src directory
