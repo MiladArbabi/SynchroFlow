@@ -13,7 +13,6 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    // Explicitly set the port for the UI dev server
     proxy: {
       // Proxy requests from /api to the backend API server
       '/api': {
