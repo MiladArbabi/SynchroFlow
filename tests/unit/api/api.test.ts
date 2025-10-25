@@ -733,9 +733,7 @@ describe('Order Endpoint (#288)', () => {
         status: 'Picking',
       });
     });
-
   });
-});
 
 // --- ADD NEW DESCRIBE BLOCK ---
 describe('GET /api/v1/orders/:id/profitability', () => {
@@ -753,3 +751,20 @@ describe('GET /api/v1/orders/:id/profitability', () => {
       });
     });
   });
+
+describe('GET /api/v1/orders', () => {
+  it('should return a list of orders', async () => {
+    const response = await request(app).get('/api/v1/orders');
+     expect(response.status).toBe(200);
+      // Check if it's an array
+      expect(Array.isArray(response.body)).toBe(true);
+      // Check the structure of the first item (if exists)
+      if (response.body.length > 0) {
+        expect(response.body[0]).toHaveProperty('id');
+        expect(response.body[0]).toHaveProperty('customer_name');
+        expect(response.body[0]).toHaveProperty('total');
+        expect(response.body[0]).toHaveProperty('status');
+      }
+    });
+  });
+});
