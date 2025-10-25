@@ -4,7 +4,8 @@ import { LoginPage } from "./LoginPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
 import DataMapper from "./components/DataMapper/DataMapper";
-import Icon from "@mui/material/Icon";
+import Order360Page from "./pages/Order360Page";
+
 
 const routes = [
   {
@@ -38,6 +39,13 @@ const routes = [
     icon: "💡", // Placeholder
     route: "/product-intelligence",
     component: <ProductIntelligencePage />,
+  },
+  {
+    type: "route", // Use a different type if not for Sidenav display
+    name: "Order Details",
+    key: "order-details",
+    route: "/orders/:id", // Use a parameter for the order ID
+    component: <Order360Page />,
   },
   {
     type: "collapse",
