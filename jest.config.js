@@ -47,6 +47,7 @@ module.exports = {
         // Add aliases for 'layout' and 'api'
         '^layout/(.*)$': '<rootDir>/packages/ui/src/layout/$1',
         '^api/(.*)$': '<rootDir>/packages/ui/src/api/$1',
+        '^pages/(.*)$': '<rootDir>/packages/ui/src/pages/$1',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',                
         

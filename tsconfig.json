@@ -58,7 +58,7 @@
   },
   "include": [
     "packages/ui/src",
-    "packages/api/src", // Good practice to include this
+    "packages/api/src", 
     "tests/unit/ui",
     "tests/unit/api",
     "tests/unit/core-engine",
