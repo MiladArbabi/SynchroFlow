@@ -49,4 +49,22 @@ router.get('/:id/profitability', async (req, res) => {
   }
 });
 
+router.get('/', async (req, res) => {
+  try {
+    // v1: Return mock data.
+    // In v2, this will query the database.
+    const mockOrders = [
+      { id: '1001', customer_name: 'Alice Smith', total: 50.00, status: 'Pending', created_at: new Date() },
+      { id: '1002', customer_name: 'Bob Johnson', total: 75.50, status: 'Shipped', created_at: new Date() },
+      { id: '1003', customer_name: 'Charlie Brown', total: 120.00, status: 'Picking', created_at: new Date() },
+    ];
+
+    res.status(200).json(mockOrders);
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: `Failed to fetch orders list: ${message}` });
+  }
+});
+
 export default router;
