@@ -12,6 +12,8 @@ import {
   Paper,
 } from '@mui/material';
 import { Send } from 'lucide-react'; // Example Icon
+import CustomerProfile from 'components/Customer360/CustomerProfile.tsx';
+import CustomerKeyMetrics from 'components/Customer360/CustomerKeyMetrics.tsx';
 
 // Helper TabPanel component (can be reused or defined locally if preferred)
 interface TabPanelProps {
@@ -38,6 +40,28 @@ const EchoHubRightPane: React.FC<EchoHubRightPaneProps> = ({ selectedId }) => {
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
+
+  // --- ADD MOCK CUSTOMER DATA (Fetch/derive later based on selectedId) ---
+  const mockCustomer = {
+    // Assuming an order object would contain customer info or an ID to fetch it
+    name: `Customer for ${selectedId}`, // Example dynamic name
+    email: 'john.doe@example.com',
+    phone: '555-1234',
+    tags: ['VIP'],
+    shippingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
+    billingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
+    accountCreated: '2024-01-15T10:00:00Z',
+    source: 'Shopify',
+  };
+
+  const mockMetrics = {
+    ltv: 1204.50,
+    aov: 110.40,
+    totalOrders: 11,
+    totalMargin: 550.25,
+    lastOrderDate: '2025-10-15T09:30:00Z',
+  };
+  // --- END MOCK DATA ---
 
   // Mock conversation content
   const MockConversationThread = ({ id }: { id: string | null }) => (
@@ -76,8 +100,10 @@ const EchoHubRightPane: React.FC<EchoHubRightPaneProps> = ({ selectedId }) => {
           <MockConversationThread id={selectedId} />
         </TabPanel>
         <TabPanel value={tabValue} index={1}>
-          <Typography>Customer 360 Placeholder Content</Typography>
-          {/* Future: Embed Customer 360 component */}
+          <Stack spacing={2}> {/* Add spacing between components */}
+            <CustomerProfile customer={mockCustomer} />
+            <CustomerKeyMetrics metrics={mockMetrics} />
+          </Stack>
         </TabPanel>
         <TabPanel value={tabValue} index={2}>
           <Typography>Order 360 Placeholder Content</Typography>
