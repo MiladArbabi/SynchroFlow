@@ -768,3 +768,21 @@ describe('GET /api/v1/orders', () => {
     });
   });
 });
+
+describe('Customer Endpoint', () => {
+  describe('GET /api/v1/customers', () => {
+    // MODIFICATION: Update test for 200 and data structure
+      it('should return a list of customers', async () => {
+        const response = await request(app).get('/api/v1/customers');
+        expect(response.status).toBe(200);
+        expect(Array.isArray(response.body)).toBe(true);
+        // Check structure of the first item
+        if (response.body.length > 0) {
+          expect(response.body[0]).toHaveProperty('id');
+          expect(response.body[0]).toHaveProperty('name');
+          expect(response.body[0]).toHaveProperty('email');
+          expect(response.body[0]).toHaveProperty('total_orders');
+        }
+    });
+  });
+});

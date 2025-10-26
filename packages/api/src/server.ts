@@ -17,6 +17,7 @@ import { seedSandboxData } from './db/seeder';
 import layoutRoutes from "./api/layouts/layout.routes";
 import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
 import orderRoutes from "./api/orders/orders.routes";
+import customerRoutes from "./api/customers/customers.routes";
 
 
 // --- ADD THESE LINES ---
@@ -42,6 +43,7 @@ app.get('/', (req, res) => {
 app.use("/api/v1/layouts", layoutRoutes);
 app.use("/api/v1/ops-intel", opsIntelRoutes);
 app.use("/api/v1/orders", orderRoutes);
+app.use("/api/v1/customers", customerRoutes);
 
 app.get('/v1/inventory/:sku', (req, res) => {
   const { sku } = req.params;
