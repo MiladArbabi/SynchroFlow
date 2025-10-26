@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/components/EchoHub/EchoHubMiddlePane.tsx
 import React from 'react';
 import {
@@ -41,13 +40,15 @@ const mockConversations: MockConversation[] = [
   { id: 'conv4', customerName: 'Diana Miller', avatarInitial: 'D', subject: 'Urgent: Wrong Item Received', timestamp: '2d ago', status: 'Open', unread: true },
 ];
 
+interface EchoHubMiddlePaneProps {
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}
+
 /**
  * EchoHubMiddlePane: Displays a list of conversations.
  */
-const EchoHubMiddlePane: React.FC = () => {
-  // We'll add selected state later
-  const [selectedConversationId, setSelectedConversationId] = React.useState<string | null>(mockConversations[0]?.id ?? null); // Select first by default
-
+const EchoHubMiddlePane: React.FC<EchoHubMiddlePaneProps> = ({ selectedId, onSelect }) => {
   return (
     <List dense sx={{ width: '100%', height: '100%', bgcolor: 'background.paper', overflowY: 'auto', p: 0 }}>
       {mockConversations.map((conv) => (
@@ -61,8 +62,8 @@ const EchoHubMiddlePane: React.FC = () => {
           }
         >
           <ListItemButton
-            selected={selectedConversationId === conv.id}
-            // onClick={() => setSelectedConversationId(conv.id)} // Add functionality later
+            selected={selectedId === conv.id}
+            onClick={() => onSelect(conv.id)}
             sx={{ alignItems: 'flex-start' }} // Align items nicely
           >
             <ListItemAvatar sx={{ mt: 0.5 }}>

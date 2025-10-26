@@ -25,10 +25,14 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => (
   </div>
 );
 
+interface EchoHubRightPaneProps {
+  selectedId: string | null;
+}
+
 /**
  * EchoHubRightPane: Displays the selected conversation, context tabs, and composer.
  */
-const EchoHubRightPane: React.FC = () => {
+const EchoHubRightPane: React.FC<EchoHubRightPaneProps> = ({ selectedId }) => {
   const [tabValue, setTabValue] = useState(0); // Default to 'Conversation' tab
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -36,17 +40,20 @@ const EchoHubRightPane: React.FC = () => {
   };
 
   // Mock conversation content
-  const MockConversationThread = () => (
-    <Stack spacing={2}>
-      <Typography variant="body2">**Alice Johnson** - Oct 26, 2025, 10:05 AM</Typography>
-      <Typography variant="body1">Hello Alice,</Typography>
-      <Typography variant="body1">
-        Thank you for reaching out regarding order #12345. We see it's currently in the 'Picking' stage.
-        We expect it to ship out later today or early tomorrow. You'll receive a tracking number via email once it ships.
-      </Typography>
-      <Typography variant="body2">**Support Agent** - Oct 26, 2025, 11:15 AM</Typography>
-      <Typography variant="body1">Okay, thank you for the update!</Typography>
-      <Typography variant="body2">**Alice Johnson** - Oct 26, 2025, 11:17 AM</Typography>
+  const MockConversationThread = ({ id }: { id: string | null }) => (
+    <Stack spacing={1} sx={{ p: 1 }}>
+      <Typography variant="subtitle2">Details for Conversation: {id ?? 'None Selected'}</Typography>
+      <Divider sx={{ my: 1 }} />
+      {id === 'conv1' && <>
+        <Typography variant="body2">**Alice Johnson** - 10m ago</Typography>
+        <Typography variant="body1">Regarding Order #12345...</Typography>
+      </>}
+      {id === 'conv2' && <>
+        <Typography variant="body2">**Bob Williams** - 1h ago</Typography>
+        <Typography variant="body1">Question about Shipping...</Typography>
+      </>}
+      {id === 'conv3' && <Typography variant="body1">Charlie's return request...</Typography>}
+      {id === 'conv4' && <Typography variant="body1">Diana - Urgent: Wrong Item...</Typography>}
     </Stack>
   );
 
@@ -66,7 +73,7 @@ const EchoHubRightPane: React.FC = () => {
       <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
         <TabPanel value={tabValue} index={0}>
           {/* Conversation Thread */}
-          <MockConversationThread />
+          <MockConversationThread id={selectedId} />
         </TabPanel>
         <TabPanel value={tabValue} index={1}>
           <Typography>Customer 360 Placeholder Content</Typography>
