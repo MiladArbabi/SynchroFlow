@@ -1,6 +1,6 @@
 // packages/ui/src/pages/EchoHubPage.tsx
 import React, { useState } from 'react';
-import { Box, Grid, Paper, Typography } from '@mui/material';
+import { Box, Grid, Paper } from '@mui/material';
 import EchoHubLeftPane from 'components/EchoHub/EchoHubLeftPane';
 import EchoHubMiddlePane from 'components/EchoHub/EchoHubMiddlePane';
 import EchoHubRightPane from 'components/EchoHub/EchoHubRightPane';
