@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/components/EchoHub/EchoHubLeftPane.tsx
 import React from 'react';
 import {
