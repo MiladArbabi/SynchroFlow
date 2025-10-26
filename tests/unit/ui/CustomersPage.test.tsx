@@ -1,12 +1,12 @@
 // tests/unit/ui/CustomersPage.test.tsx
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react'; // Add waitFor
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from 'test-utils';
-import axios from 'axios';
-// This import will fail
 import CustomersPage from 'pages/CustomersPage.tsx';
+// No longer import from @tanstack/react-query here
 
 // Mock axios
+import axios from 'axios';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
@@ -21,7 +21,7 @@ jest.mock('ui-component/MasterPanel/index.tsx', () => ({
   ),
 }));
 
-// Mock DataGrid
+// Mock DataGrid (renders basic table content for verification)
 jest.mock('@mui/x-data-grid', () => ({
   ...jest.requireActual('@mui/x-data-grid'),
   DataGrid: ({ rows, columns, onRowClick }: any) => (
@@ -49,38 +49,41 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
+
 // Mock customer data
 const mockCustomers = [
   { id: 'cust_abc', name: 'John Doe', email: 'john.doe@example.com', total_orders: 5 },
   { id: 'cust_def', name: 'Jane Smith', email: 'jane.smith@example.com', total_orders: 2 },
 ];
 
-describe('CustomersPage (#FEAT(UI): Build Customers Master Panel page)', () => {
+describe('CustomersPage with useQuery (#351)', () => {
   beforeEach(() => {
-    mockedAxios.get.mockReset();
     mockNavigate.mockReset();
-    mockedAxios.get.mockResolvedValue({ data: mockCustomers }); // Mock API response
+    mockedAxios.get.mockReset(); // Reset axios mock
+    // Default SUCCESS mock for axios.get
+    mockedAxios.get.mockResolvedValue({
+      data: mockCustomers,
+    });
   });
 
-  it('should fetch customers, render MasterPanel/DataGrid, and navigate on row click', async () => {
+  it('should render loading state initially, then data, and navigate on row click', async () => {
     const user = userEvent.setup();
     renderWithProviders(<CustomersPage />);
 
-    // This test is RED.
-    // It will FAIL: Cannot find module 'pages/CustomersPage.tsx'
+    // 1. Check for loading state initially
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByTestId('data-grid-mock')).not.toBeInTheDocument();
 
-    // Assertions:
-    // 1. API call
-    await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/api/v1/customers');
-    });
-
-    // 2. MasterPanel and Title
-    expect(screen.getByTestId('master-panel-mock')).toBeInTheDocument();
+    // 2. Wait for data to load and check MasterPanel/Title
+    expect(await screen.findByTestId('master-panel-mock')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Customers' })).toBeInTheDocument();
 
-    // 3. DataGrid content
-    const dataGrid = await screen.findByTestId('data-grid-mock'); // Wait for grid
+    // 3. Verify loading spinner is gone and DataGrid content is present
+    // MODIFICATION: Wait for the progress bar to disappear
+    await waitFor(() => {
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    });
+    const dataGrid = screen.getByTestId('data-grid-mock');
     expect(dataGrid).toBeInTheDocument();
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
@@ -88,5 +91,19 @@ describe('CustomersPage (#FEAT(UI): Build Customers Master Panel page)', () => {
     // 4. Row click navigation
     await user.click(screen.getByText('John Doe')); // Click cell in John's row
     expect(mockNavigate).toHaveBeenCalledWith('/customers/cust_abc');
+  });
+
+
+  it('should render error state', async () => {
+    // Override axios mock to reject for this test
+    const mockError = new Error('Network Error');
+    mockedAxios.get.mockRejectedValueOnce(mockError);
+    renderWithProviders(<CustomersPage />);
+
+    // Wait for the error alert to appear
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/Failed to load customers/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('data-grid-mock')).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(); // Ensure loading is also gone
   });
 });

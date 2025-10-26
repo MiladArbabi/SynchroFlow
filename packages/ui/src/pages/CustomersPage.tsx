@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/CustomersPage.tsx
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import { DataGrid, GridColDef, GridRowParams } from '@mui/x-data-grid';
+import { useQuery } from '@tanstack/react-query';
 import MasterPanel from 'ui-component/MasterPanel/index.tsx';
 
 // Define the structure of a Customer for the list
@@ -36,28 +37,25 @@ const columns: GridColDef<Customer>[] = [
  */
 const CustomersPage: React.FC = () => {
   const navigate = useNavigate();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // This endpoint doesn't exist yet, will cause error in UI
-        const response = await axios.get<Customer[]>('/api/v1/customers');
-        // Ensure IDs are strings
-        setCustomers(response.data.map(cust => ({ ...cust, id: String(cust.id) })));
-      } catch (err) {
-        console.error('Failed to fetch customers:', err);
-        setError('Failed to load customers.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCustomers();
-  }, []); // Fetch on mount
+  // --- Data Fetching with useQuery ---
+  const fetchCustomers = async (): Promise<Customer[]> => {
+    const { data } = await axios.get<Customer[]>('/api/v1/customers');
+    // Ensure IDs are strings right after fetching
+    return data.map(cust => ({ ...cust, id: String(cust.id) }));
+  };
+
+  const {
+    data: customers, // Renamed data to customers
+    isLoading,      // Use isLoading from useQuery
+    isError,        // Use isError from useQuery
+    error           // Use error from useQuery
+  } = useQuery<Customer[], Error>({ // Add type safety
+        queryKey: ['customers'], // Unique key for this query
+        queryFn: fetchCustomers, // The function to fetch data
+        // Optional: configure staleTime, gcTime etc. here if needed
+      });
+  // --- End Data Fetching ---
 
   const handleRowClick = (params: GridRowParams<Customer>) => {
     navigate(`/customers/${params.row.id}`);
@@ -65,17 +63,17 @@ const CustomersPage: React.FC = () => {
 
   return (
     <MasterPanel title="Customers">
-      {loading && (
+      {isLoading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80%' }}>
           <CircularProgress />
         </Box>
       )}
-      {error && (
+      {isError && (
         <Box sx={{ p: 2 }}>
-           <Alert severity="error">{error}</Alert>
+           <Alert severity="error">Failed to load customers. {error?.message}</Alert>
         </Box>
       )}
-      {!loading && !error && (
+      {!isLoading && !isError && customers && (
         <Box sx={{ height: 'calc(100vh - 150px)', width: '100%' }}>
            {/* Adjust height calculation */}
           <DataGrid
