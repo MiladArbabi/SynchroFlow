@@ -1,8 +1,7 @@
 // tests/unit/ui/EchoHubPage.test.tsx
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from 'test-utils';
-// This import will fail
-import EchoHubPage from 'pages/EchoHubPage.tsx';
+import EchoHubPage from 'pages/EchoHubPage.tsx'
 
 // Mock react-resizable-panels if we decide to use it
 // For simplicity, let's assume MUI Grid first, or mock panels later if needed.
