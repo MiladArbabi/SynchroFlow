@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/components/Customer360/CustomerSupportHistory.stories.tsx
 import type { Meta, StoryObj } from '@storybook/react';
 import { Box, Paper } from '@mui/material'; // Use Paper for better visual context
