@@ -1,12 +1,22 @@
 // packages/ui/src/pages/EchoHubPage.tsx
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Grid, Paper, Typography } from '@mui/material';
+import EchoHubLeftPane from 'components/EchoHub/EchoHubLeftPane';
+import EchoHubMiddlePane from 'components/EchoHub/EchoHubMiddlePane';
+import EchoHubRightPane from 'components/EchoHub/EchoHubRightPane';
 
 /**
  * EchoHubPage: The main container for the Echo Hub UI.
  * Implements the initial 3-pane layout shell.
  */
 const EchoHubPage: React.FC = () => {
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>('conv1'); // Default to first mock item
+
+  // --- HANDLER FOR SELECTION ---
+  const handleSelectConversation = (id: string) => {
+    setSelectedConversationId(id);
+  };
+
   return (
     // Use a Box that fills the available height within the main layout
     <Box sx={{ height: 'calc(100vh - 64px - 32px)', display: 'flex', p: 1 }}> {/* Adjust height based on header/padding */}
@@ -19,9 +29,8 @@ const EchoHubPage: React.FC = () => {
           xs={12} sm={3} md={2}
         >
           <Paper sx={{ height: '100%', p: 1, overflowY: 'auto' }}>
-            <Typography variant="h6">Sources</Typography>
-            <Box mt={1}>Sources Pane Placeholder</Box>
-            {/* Future: Add List component here */}
+            {/* Use the actual Left Pane component */}
+            <EchoHubLeftPane />
           </Paper>
         </Grid>
 
@@ -33,18 +42,16 @@ const EchoHubPage: React.FC = () => {
           xs={12} sm={5} md={7}
         >
           <Paper sx={{ height: '100%', p: 1, overflowY: 'auto' }}>
-            <Typography variant="h6">Conversations</Typography>
-            <Box mt={1}>Conversations Pane Placeholder</Box>
-            {/* Future: Add List component here */}
+            {/* Use the actual Middle Pane component, passing state and handler */}
+            <EchoHubMiddlePane selectedId={selectedConversationId} onSelect={handleSelectConversation} />
           </Paper>
         </Grid>
 
         {/* --- Right Pane (Details/Context) --- */}
         <Grid item xs={12} sm={5} md={7} sx={{ height: '100%' }}>
           <Paper sx={{ height: '100%', p: 1, overflowY: 'auto' }}>
-            <Typography variant="h6">Details</Typography>
-            <Box mt={1}>Details Pane Placeholder</Box>
-            {/* Future: Add Thread, Composer, Tabs here */}
+            {/* Use the actual Right Pane component, passing selected ID */}
+            <EchoHubRightPane selectedId={selectedConversationId} />
           </Paper>
         </Grid>
 
