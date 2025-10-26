@@ -7,6 +7,7 @@ import DataMapper from "./components/DataMapper/DataMapper";
 import Order360Page from "./pages/Order360Page";
 import OrdersPage from "./pages/OrdersPage";
 import EchoHubPage from "./pages/EchoHubPage";
+import Customer360Page from "./pages/Customer360Page";
 
 const routes = [
   {
@@ -39,6 +40,13 @@ const routes = [
     icon: "💬", // Placeholder icon
     route: "/echo-hub",
     component: <EchoHubPage />,
+  },
+  {
+    type: "route",
+    name: "Customer Details",
+    key: "customer-details",
+    route: "/customers/:id", // Route with parameter
+    component: <Customer360Page />,
   },
   {
     type: "collapse",
