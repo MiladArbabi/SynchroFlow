@@ -111,7 +111,7 @@ const AppLayout = ({
               <PanelGroup direction="vertical">
                 {/* Workspace Panel (Outlet) */}
                 <Panel defaultSize={75} minSize={50} order={1}> {/* Define order */}
-                  <Box sx={{ height: "100%", width: "100%", overflow: "auto", position: "relative" }}>
+                  <Box sx={{ height: "100%", width: "100%", overflowY: "auto", position: "relative" }}>
                     {children}
                   </Box>
                 </Panel>

@@ -50,11 +50,17 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ tabs }) => {
       content={false}
       sx={{ height: '100%' }}
     >
+      <Box sx={{ 
+        height: 'calc(100% - 49px)',
+         overflowY: 'auto',
+         pb: 3
+      }}>
       {tabs.map((tab, index) => (
         <TabPanel key={tab.label} value={value} index={index}>
           {tab.content}
         </TabPanel>
       ))}
+      </Box>
     </MainCard>
   );
 };

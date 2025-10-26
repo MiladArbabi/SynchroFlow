@@ -5,6 +5,8 @@ import axios from 'axios';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import ContextPanel, { ContextPanelTab } from 'ui-component/ContextPanel/index.tsx';
 import WmsStatusStepper, { OrderStatus } from 'ui-component/WmsStatusStepper/index.tsx';
+import CustomerProfile from 'components/Customer360/CustomerProfile.tsx';
+import CustomerKeyMetrics from 'components/Customer360/CustomerKeyMetrics.tsx';
 import OrderProfitability, { OrderProfitabilityData } from 'widgets/OrderProfitability/index.tsx';
 
 // Define the expected API response structure
@@ -29,6 +31,28 @@ const Order360Page: React.FC = () => {
   const [profitabilityData, setProfitabilityData] = useState<OrderProfitabilityData | null>(null);
   const [profitabilityLoading, setProfitabilityLoading] = useState<boolean>(true);
   const [profitabilityError, setProfitabilityError] = useState<string | null>(null);
+
+  // --- ADD MOCK CUSTOMER DATA (Fetch later) ---
+  const mockCustomer = {
+    // Assuming an order object would contain customer info or an ID to fetch it
+    name: 'John Doe (from Order)', // Example
+    email: 'john.doe@example.com',
+    phone: '555-1234',
+    tags: ['VIP'],
+    shippingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
+    billingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
+    accountCreated: '2024-01-15T10:00:00Z',
+    source: 'Shopify',
+  };
+
+  const mockMetrics = {
+    ltv: 1204.50,
+    aov: 110.40,
+    totalOrders: 11,
+    totalMargin: 550.25,
+    lastOrderDate: '2025-10-15T09:30:00Z',
+  };
+  // --- END MOCK DATA ---
 
   useEffect(() => {
     const fetchOrderStatus = async () => {
@@ -71,10 +95,15 @@ const Order360Page: React.FC = () => {
     {
       label: 'Summary',
       content: (
-        <Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {statusLoading && <CircularProgress size={20} />}
           {statusError && <Typography color="error" variant="body2">{statusError}</Typography>}
           {orderStatus && <WmsStatusStepper currentStatus={orderStatus} />}
+
+          {/* --- ADD CUSTOMER COMPONENTS --- */}
+          <CustomerProfile customer={mockCustomer} />
+          <CustomerKeyMetrics metrics={mockMetrics} />
+
           {/* Profitability Section */}
           {profitabilityLoading && <CircularProgress size={20} />}
           {profitabilityError && <Typography color="error" variant="body2">{profitabilityError}</Typography>}

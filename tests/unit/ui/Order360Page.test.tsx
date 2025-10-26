@@ -45,6 +45,15 @@ jest.mock('widgets/OrderProfitability/index.tsx', () => ({
   ),
 }));
 
+jest.mock('components/Customer360/CustomerProfile.tsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="customer-profile-mock">Profile Component</div>,
+}));
+jest.mock('components/Customer360/CustomerKeyMetrics.tsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="customer-metrics-mock">Metrics Component</div>,
+}));
+
 describe('Order360Page (#287)', () => {
   beforeEach(() => {
     mockedAxios.get.mockReset();
@@ -83,6 +92,10 @@ describe('Order360Page (#287)', () => {
     expect(stepper).toHaveTextContent('Picking');
     // Also check that the loading spinner disappears
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+
+    // --- ASSERTIONS FOR CUSTOMER COMPONENTS ---
+    expect(screen.getByTestId('customer-profile-mock')).toBeInTheDocument();
+    expect(screen.getByTestId('customer-metrics-mock')).toBeInTheDocument();
 
     // --- ADD ASSERTION FOR PROFITABILITY WIDGET ---
     const profitabilityWidget = await screen.findByTestId('order-profitability-mock');
