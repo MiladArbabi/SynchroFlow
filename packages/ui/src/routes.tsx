@@ -8,6 +8,7 @@ import Order360Page from "./pages/Order360Page";
 import OrdersPage from "./pages/OrdersPage";
 import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
+import CustomersPage from "./pages/CustomersPage";
 
 const routes = [
   {
@@ -32,6 +33,14 @@ const routes = [
       key: "orders",
       route: "/orders", // The main list view route
       component: <OrdersPage />,
+  },
+  {
+    type: "collapse", // Show in Sidenav
+    name: "Customers", // Match Sidenav item title
+    key: "customers",
+    icon: "👥", // Placeholder icon
+    route: "/customers", // The main list view route
+    component: <CustomersPage />,
   },
   {
     type: "collapse", // Show in Sidenav
