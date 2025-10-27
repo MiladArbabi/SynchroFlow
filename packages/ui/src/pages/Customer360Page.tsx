@@ -69,19 +69,6 @@ const Customer360Page: React.FC = () => {
       });
   // --- End Data Fetching ---
 
-
-  // --- Static Mock Data (Keep for Order/Support History until API is ready) ---
-  const mockOrders = [
-    { id: '1002', orderDate: '2025-10-20T14:00:00Z', status: 'Shipped', total: 75.50 },
-    { id: '1001', orderDate: '2025-09-15T10:30:00Z', status: 'Delivered', total: 50.00 },
-  ];
-  const mockTickets = [
-    { id: 'TKT-501', subject: 'Question about Shipping', date: '2025-10-25T11:00:00Z', status: 'Pending' as const },
-    { id: 'TKT-498', subject: 'Return Request - SF-TS-BLK-M', date: '2025-10-22T16:30:00Z', status: 'Resolved' as const },
-  ];
-  // --- END MOCK DATA ---
-
-
   // --- Render Logic ---
   return (
     <Box sx={{ p: 2 }}>
@@ -127,17 +114,17 @@ const Customer360Page: React.FC = () => {
           <Grid xs={12}>
             <Paper sx={{ p: 2 }}>
                <Typography variant="h6" gutterBottom>Order History</Typography>
-               {/* TODO: Fetch and pass real order history */}
-               <CustomerOrderHistory orders={mockOrders} />
+               {/* Pass the real (or mock) data from the API */}
+               <CustomerOrderHistory orders={customerData.orders || []} />
             </Paper>
           </Grid>
 
-          {/* Support History Section (Still uses static mock data for now) */}
+          {/* Support History Section (Now uses data from the query) */}
           <Grid xs={12}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>Support History</Typography>
-              {/* TODO: Fetch and pass real support history */}
-              <CustomerSupportHistory tickets={mockTickets} />
+              {/* Pass the real (or mock) data from the API */}
+              <CustomerSupportHistory tickets={customerData.tickets || []} />
             </Paper>
           </Grid>
         </Grid>

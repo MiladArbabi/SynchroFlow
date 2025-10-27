@@ -1,5 +1,6 @@
 // packages/api/src/api/customers/customers.routes.ts
 import { Router } from 'express';
+import * as customersController from './customers.controller';
 
 const router = Router();
 
@@ -8,6 +9,7 @@ const router = Router();
  * @desc    Get a list of all customers.
  * @access  Private (TODO: Add auth middleware)
  */
+
 router.get('/', async (req, res) => {
   try {
     // v1: Return mock data matching the test expectations
@@ -24,6 +26,8 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: `Failed to fetch customers list: ${message}` });
   }
 });
+
+router.get('/:id', customersController.getCustomerDetails);
 
 router.get('/:id', async (req, res) => {
   try {
