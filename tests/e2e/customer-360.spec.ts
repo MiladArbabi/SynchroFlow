@@ -22,6 +22,13 @@ test.describe('Customer 360 Page', () => {
           totalMargin: 1200,
           lastOrderDate: '2025-10-20T14:00:00Z',
         },
+        orders: [
+          { id: '1002', orderDate: '2025-10-20T14:00:00Z', status: 'Shipped', total: 75.50 },
+          { id: '1001', orderDate: '2025-09-15T10:30:00Z', status: 'Delivered', total: 50.00 },
+        ],
+        tickets: [
+          { id: 'TKT-501', subject: 'Question about Shipping', date: '2025-10-25T11:00:00Z', status: 'Pending' as const },
+        ]
       };
       
       await route.fulfill({
