@@ -41,11 +41,15 @@ const messages = {
 const defaultLocale = 'en';
 // --- END INTL CONFIG ---
 
+// Check if we are in the Playwright E2E test environment
+const isE2ETest = import.meta.env.MODE === 'e2e';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       // Example default: Refetch on window focus
       refetchOnWindowFocus: true,
+      retry: isE2ETest ? false : 3,
       // Configure staleTime/gcTime later if needed
       // staleTime: 5 * 60 * 1000, // 5 minutes
       // gcTime: 10 * 60 * 1000, // 10 minutes
