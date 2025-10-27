@@ -1,88 +1,147 @@
 // packages/ui/src/pages/Customer360Page.tsx
 import React from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, Grid, Paper, Typography } from '@mui/material';
-import CustomerProfile from 'components/Customer360/CustomerProfile.tsx';
-import CustomerKeyMetrics from 'components/Customer360/CustomerKeyMetrics.tsx';
-import CustomerOrderHistory from 'components/Customer360/CustomerOrderHistory.tsx';
-import CustomerSupportHistory from 'components/Customer360/CustomerSupportHistory.tsx';
+import { Box, Grid, Paper, Typography, CircularProgress, Alert } from '@mui/material';
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
+
+// Import Child Components and their data types
+import CustomerProfile, { CustomerProfileData } from 'components/Customer360/CustomerProfile.tsx';
+import CustomerKeyMetrics, { CustomerMetricsData } from 'components/Customer360/CustomerKeyMetrics.tsx';
+import CustomerOrderHistory, { CustomerOrder } from 'components/Customer360/CustomerOrderHistory.tsx';
+import CustomerSupportHistory, { SupportTicket } from 'components/Customer360/CustomerSupportHistory.tsx';
+
+/**
+ * Defines the expected structure of the data returned by the
+ * GET /api/v1/customers/:id endpoint.
+ */
+interface CustomerApiResponse {
+    id: string;
+    profile: CustomerProfileData;
+    metrics: CustomerMetricsData;
+    orders?: CustomerOrder[]; // Mark as optional for now
+    tickets?: SupportTicket[]; // Mark as optional for now
+}
 
 /**
  * Customer360Page: Displays the unified view for a single customer.
- * Initial version contains placeholders for different sections.
+ * Fetches data using TanStack Query and renders child components.
  */
 const Customer360Page: React.FC = () => {
-  const { id } = useParams<{ id: string }>(); // Get customer ID from URL
+  // --- Hooks ---
+  const { id } = useParams<{ id: string }>(); // Get customer ID from URL parameter
 
-  // --- MOCK DATA (Move to state/API call later) ---
-  const mockCustomer = {
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '555-1234',
-    tags: ['VIP', 'High Return Rate'],
-    shippingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
-    billingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
-    accountCreated: '2024-01-15T10:00:00Z',
-    source: 'Shopify',
+  // --- Data Fetching Function ---
+  /**
+   * Fetches detailed data for a specific customer from the API.
+   * Throws an error if customerId is missing or API call fails.
+   */
+  const fetchCustomerData = async (customerId: string | undefined): Promise<CustomerApiResponse> => {
+    // Input validation
+    if (!customerId) {
+      throw new Error('Customer ID is required to fetch data.');
+    }
+    console.log(`Fetching data for customer: ${customerId}`); // Debug log
+    // API call (Ensure this endpoint exists and returns the expected CustomerApiResponse structure)
+    const { data } = await axios.get<CustomerApiResponse>(`/api/v1/customers/${customerId}`);
+    console.log(`Successfully fetched data for customer: ${customerId}`, data); // Debug log
+    return data;
   };
 
-  const mockMetrics = {
-    ltv: 1204.50,
-    aov: 110.40,
-    totalOrders: 11,
-    totalMargin: 550.25,
-    lastOrderDate: '2025-10-15T09:30:00Z',
-  };
+  // --- TanStack Query Hook ---
+  const {
+    data: customerData, // The fetched data (CustomerApiResponse | undefined)
+    isLoading,         // True while the initial fetch is in progress
+    isError,           // True if the query encountered an error
+    error              // The error object if isError is true
+  } = useQuery<CustomerApiResponse, Error>({
+        // queryKey: A unique array identifying this specific query.
+        // Includes 'customer' and the dynamic 'id'. Ensures data is refetched if 'id' changes.
+        queryKey: ['customer', id],
+        // queryFn: The async function that performs the data fetching.
+        queryFn: () => fetchCustomerData(id),
+        // enabled: Prevents the query from running automatically if 'id' is not yet available (e.g., during initial render).
+        enabled: !!id,
+        // Optional configurations:
+        // staleTime: How long data is considered fresh (ms). Default: 0
+        // gcTime: How long inactive query data stays in cache (ms). Default: 5 minutes
+        // refetchOnWindowFocus: Refetch when browser window gets focus again. Default: true
+      });
+  // --- End Data Fetching ---
 
+
+  // --- Static Mock Data (Keep for Order/Support History until API is ready) ---
   const mockOrders = [
     { id: '1002', orderDate: '2025-10-20T14:00:00Z', status: 'Shipped', total: 75.50 },
     { id: '1001', orderDate: '2025-09-15T10:30:00Z', status: 'Delivered', total: 50.00 },
   ];
-
   const mockTickets = [
     { id: 'TKT-501', subject: 'Question about Shipping', date: '2025-10-25T11:00:00Z', status: 'Pending' as const },
     { id: 'TKT-498', subject: 'Return Request - SF-TS-BLK-M', date: '2025-10-22T16:30:00Z', status: 'Resolved' as const },
   ];
   // --- END MOCK DATA ---
 
+
+  // --- Render Logic ---
   return (
     <Box sx={{ p: 2 }}>
+      {/* Page Title */}
       <Typography variant="h4" gutterBottom>
         Details for Customer #{id}
       </Typography>
 
-      <Grid container spacing={3}>
-        {/* Profile Section  */}
-        <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 2, height: '100%' }}>
-            {/* CustomerProfile component */}
-            <CustomerProfile customer={mockCustomer} />
-          </Paper>
-        </Grid>
+      {/* Loading State: Show a spinner while data is being fetched */}
+      {isLoading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+          <CircularProgress />
+        </Box>
+      )}
 
-        {/* Key Metrics Section */}
-        <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 2, height: '100%' }}>
-            <CustomerKeyMetrics metrics={mockMetrics} />
-          </Paper>
-        </Grid>
+      {/* Error State: Show an alert if fetching failed */}
+      {isError && (
+        <Alert severity="error" sx={{ my: 2 }}>
+          Failed to load customer data: {error?.message}
+        </Alert>
+      )}
 
-        {/* Order History Section */}
-        <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-             <Typography variant="h6" gutterBottom>Order History</Typography>
-             <CustomerOrderHistory orders={mockOrders} />
-          </Paper>
-        </Grid>
+      {/* Success State: Render the main content grid when data is available */}
+      {customerData && !isLoading && !isError && (
+        <Grid container spacing={3}>
+          {/* Profile Section */}
+          <Grid xs={12} md={4}>
+            <Paper sx={{ p: 2, height: '100%' }}>
+              {/* Pass the fetched profile data to the CustomerProfile component */}
+              <CustomerProfile customer={customerData.profile} />
+            </Paper>
+          </Grid>
 
-        {/* Support History Section */}
-        <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Support History</Typography>
-            <CustomerSupportHistory tickets={mockTickets} />
-          </Paper>
+          {/* Key Metrics Section */}
+          <Grid xs={12} md={8}>
+            <Paper sx={{ p: 2, height: '100%' }}>
+              {/* Pass the fetched metrics data to the CustomerKeyMetrics component */}
+              <CustomerKeyMetrics metrics={customerData.metrics} />
+            </Paper>
+          </Grid>
+
+          {/* Order History Section (Still uses static mock data for now) */}
+          <Grid xs={12}>
+            <Paper sx={{ p: 2 }}>
+               <Typography variant="h6" gutterBottom>Order History</Typography>
+               {/* TODO: Fetch and pass real order history */}
+               <CustomerOrderHistory orders={mockOrders} />
+            </Paper>
+          </Grid>
+
+          {/* Support History Section (Still uses static mock data for now) */}
+          <Grid xs={12}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>Support History</Typography>
+              {/* TODO: Fetch and pass real support history */}
+              <CustomerSupportHistory tickets={mockTickets} />
+            </Paper>
+          </Grid>
         </Grid>
-      </Grid>
+      )}
     </Box>
   );
 };
