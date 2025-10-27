@@ -74,6 +74,10 @@ test.describe('Customer 360 Page', () => {
 
     await expect(totalOrders).toBeVisible();
     await expect(totalOrders).toHaveText('34');
+
+    // Check that the order/ticket data from the *mock* is visible
+    await expect(page.getByText('Shipped')).toBeVisible();
+    await expect(page.getByText('Question about Shipping')).toBeVisible();
   });
 
   test('should show an error message for an invalid customer (Jane Smith)', async ({ page }) => {
