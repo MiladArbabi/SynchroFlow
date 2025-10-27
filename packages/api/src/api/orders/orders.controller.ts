@@ -48,3 +48,23 @@ export const httpGetOrderProfitability = async (req: Request, res: Response) => 
     res.status(500).json({ error: `Failed to fetch order profitability for ${id}: ${message}` });
   }
 };
+
+/**
+ * @route   GET /api/v1/orders/:id
+ * @desc    Get consolidated details for a single order.
+ * @access  Private
+ */
+export const httpGetOrderDetails = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const details = await ordersService.getOrderDetailsById(id);
+    if (details) {
+      res.status(200).json(details);
+    } else {
+      res.status(404).json({ error: `Order with ID ${id} not found.` });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: `Failed to fetch order details for ${id}: ${message}` });
+  }
+};

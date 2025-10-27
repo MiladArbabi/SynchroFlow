@@ -15,6 +15,27 @@ const mockOrders: Order[] = [
   { id: '1002', customer_name: 'Bob Johnson', total: 75.50, status: 'Shipped', created_at: new Date() },
   { id: '1003', customer_name: 'Charlie Brown', total: 120.00, status: 'Picking', created_at: new Date() },
 ];
+
+// --- MOCK CUSTOMER DATA (for Order 360) ---
+// In a real app, we'd fetch this via a relation.
+const mockCustomerProfile = {
+  name: 'John Doe (from Order)',
+  email: 'john.doe@example.com',
+  phone: '555-1234',
+  tags: ['VIP'],
+  shippingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
+  billingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
+  accountCreated: '2024-01-15T10:00:00Z',
+  source: 'Shopify',
+};
+
+const mockCustomerMetrics = {
+  ltv: 1204.50,
+  aov: 110.40,
+  totalOrders: 11,
+  totalMargin: 550.25,
+  lastOrderDate: '2025-10-15T09:30:00Z',
+};
 // --- END MOCK DATA ---
 
 /**
@@ -51,5 +72,33 @@ export const getOrderProfitabilityById = async (id: string) => {
     fees: 4.50,
     margin: 70.99,
     marginPercent: 47.3
+  };
+};
+
+/**
+ * Simulates fetching all data for the Order 360 page.
+ * @param id The order ID
+ */
+export const getOrderDetailsById = async (id: string) => {
+  // In a real app, we'd fetch the order and its relations
+  // For now, we'll compose our other mock services
+  
+  // Find the basic order info from our list
+  const orderInfo = mockOrders.find(o => o.id === id);
+  if (!orderInfo) {
+    return null; // Order not found
+  }
+
+  const status = await getOrderStatusById(id);
+  const profitability = await getOrderProfitabilityById(id);
+
+  return {
+    id: orderInfo.id,
+    customer: {
+      profile: mockCustomerProfile,
+      metrics: mockCustomerMetrics,
+    },
+    status: status.status, // Just return the status string
+    profitability: profitability,
   };
 };

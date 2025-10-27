@@ -1,94 +1,53 @@
 // packages/ui/src/pages/Order360Page.tsx
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Box, CircularProgress, Typography, Alert } from '@mui/material';
+import { useQuery } from '@tanstack/react-query';
 import ContextPanel, { ContextPanelTab } from 'ui-component/ContextPanel/index.tsx';
 import WmsStatusStepper, { OrderStatus } from 'ui-component/WmsStatusStepper/index.tsx';
-import CustomerProfile from 'components/Customer360/CustomerProfile.tsx';
-import CustomerKeyMetrics from 'components/Customer360/CustomerKeyMetrics.tsx';
+// Import the customer component types
+import CustomerProfile, { CustomerProfileData } from 'components/Customer360/CustomerProfile.tsx';
+import CustomerKeyMetrics, { CustomerMetricsData } from 'components/Customer360/CustomerKeyMetrics.tsx';
 import OrderProfitability, { OrderProfitabilityData } from 'widgets/OrderProfitability/index.tsx';
 
-// Define the expected API response structure
-interface OrderStatusResponse {
-  orderId: string;
+// --- DEFINE NEW CONSOLIDATED API RESPONSE ---
+interface Order360ApiResponse {
+  id: string;
   status: OrderStatus;
+  profitability: OrderProfitabilityData;
+  customer: {
+    profile: CustomerProfileData;
+    metrics: CustomerMetricsData;
+  };
 }
-
-// --- PROFITABILITY RESPONSE TYPE ---
-type OrderProfitabilityResponse = OrderProfitabilityData & { orderId: string };
 
 /**
  * The Order 360 Page: Displays comprehensive details for a single order.
  */
 const Order360Page: React.FC = () => {
   const { id } = useParams<{ id: string }>(); // Get order ID from URL
-  const [orderStatus, setOrderStatus] = useState<OrderStatus | null>(null);
 
-  // --- SEPARATE LOADING/ERROR STATES ---
-  const [statusLoading, setStatusLoading] = useState<boolean>(true);
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [profitabilityData, setProfitabilityData] = useState<OrderProfitabilityData | null>(null);
-  const [profitabilityLoading, setProfitabilityLoading] = useState<boolean>(true);
-  const [profitabilityError, setProfitabilityError] = useState<string | null>(null);
-
-  // --- ADD MOCK CUSTOMER DATA (Fetch later) ---
-  const mockCustomer = {
-    // Assuming an order object would contain customer info or an ID to fetch it
-    name: 'John Doe (from Order)', // Example
-    email: 'john.doe@example.com',
-    phone: '555-1234',
-    tags: ['VIP'],
-    shippingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
-    billingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
-    accountCreated: '2024-01-15T10:00:00Z',
-    source: 'Shopify',
+  // --- REFACTOR TO A SINGLE useQuery ---
+  const fetchOrderDetails = async (orderId: string | undefined): Promise<Order360ApiResponse> => {
+    if (!orderId) {
+      throw new Error('Order ID is required');
+    }
+    const { data } = await axios.get<Order360ApiResponse>(`/api/v1/orders/${orderId}`);
+    return data;
   };
 
-  const mockMetrics = {
-    ltv: 1204.50,
-    aov: 110.40,
-    totalOrders: 11,
-    totalMargin: 550.25,
-    lastOrderDate: '2025-10-15T09:30:00Z',
-  };
-  // --- END MOCK DATA ---
-
-  useEffect(() => {
-    const fetchOrderStatus = async () => {
-      if (!id) return; // Guard against missing ID
-      setStatusLoading(true);
-      setStatusError(null);
-      try {
-        const response = await axios.get<OrderStatusResponse>(`/api/v1/orders/${id}/status`);
-        setOrderStatus(response.data.status);
-      } catch (err) {
-        console.error('Failed to fetch order status:', err);
-        setStatusError('Failed to load order status.');
-      } finally {
-        setStatusLoading(false);
-      }
-    };
-
-    // --- ADD PROFITABILITY FETCH LOGIC ---
-    const fetchOrderProfitability = async () => {
-      if (!id) return;
-      setProfitabilityLoading(true);
-      setProfitabilityError(null);
-      try {
-        const response = await axios.get<OrderProfitabilityResponse>(`/api/v1/orders/${id}/profitability`);
-        setProfitabilityData(response.data);
-      } catch (err) {
-        console.error('Failed to fetch order profitability:', err);
-        setProfitabilityError('Failed to load profitability data.');
-      } finally {
-        setProfitabilityLoading(false);
-      }
-    };
-
-    fetchOrderStatus();
-    fetchOrderProfitability();
-  }, [id]); // Re-fetch if the order ID changes
+  const {
+    data: orderData,
+    isLoading,
+    isError,
+    error
+  } = useQuery<Order360ApiResponse, Error>({
+    queryKey: ['order', id],
+    queryFn: () => fetchOrderDetails(id),
+    enabled: !!id,
+  });
+  // --- END REFACTOR ---
 
   // Define tabs for the ContextPanel
   const tabs: ContextPanelTab[] = [
@@ -96,18 +55,27 @@ const Order360Page: React.FC = () => {
       label: 'Summary',
       content: (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {statusLoading && <CircularProgress size={20} />}
-          {statusError && <Typography color="error" variant="body2">{statusError}</Typography>}
-          {orderStatus && <WmsStatusStepper currentStatus={orderStatus} />}
-
-          {/* --- ADD CUSTOMER COMPONENTS --- */}
-          <CustomerProfile customer={mockCustomer} />
-          <CustomerKeyMetrics metrics={mockMetrics} />
-
-          {/* Profitability Section */}
-          {profitabilityLoading && <CircularProgress size={20} />}
-          {profitabilityError && <Typography color="error" variant="body2">{profitabilityError}</Typography>}
-          {profitabilityData && <OrderProfitability data={profitabilityData} />}
+          {/* We can use the single loading/error state */}
+          {isLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+              <CircularProgress />
+            </Box>
+          )}
+          {isError && (
+            <Alert severity="error" sx={{ my: 2 }}>
+              Failed to load order data: {error?.message}
+            </Alert>
+          )}
+          
+          {/* Render all components once data is available */}
+          {orderData && (
+            <>
+              <WmsStatusStepper currentStatus={orderData.status} />
+              <CustomerProfile customer={orderData.customer.profile} />
+              <CustomerKeyMetrics metrics={orderData.customer.metrics} />
+              <OrderProfitability data={orderData.profitability} />
+            </>
+          )}
         </Box>
       ),
     },
@@ -122,8 +90,6 @@ const Order360Page: React.FC = () => {
   ];
 
   return (
-    // The page uses the ContextPanel directly
-    // (MasterPanel will be on a separate '/orders' list page)
     <Box sx={{ p: 2, height: '100%' }}>
       <Typography variant="h4" gutterBottom>Order #{id}</Typography>
       <ContextPanel tabs={tabs} />
