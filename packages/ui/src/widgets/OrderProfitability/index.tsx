@@ -80,7 +80,11 @@ const OrderProfitability: React.FC<OrderProfitabilityProps> = ({ data }) => {
             <Stack spacing={0.5}>
               <Typography variant="caption" color="textSecondary">Margin</Typography>
               {/* Use different color based on profit/loss */}
-              <Typography variant="h5" color={data.margin >= 0 ? 'success.main' : 'error.main'}>
+              <Typography 
+                variant="h5" 
+                color={data.margin >= 0 ? 'success.main' : 'error.main'}
+                data-testid="profitability-margin"
+                >
                 {marginDisplay}
               </Typography>
             </Stack>
