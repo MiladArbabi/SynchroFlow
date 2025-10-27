@@ -4,12 +4,12 @@
   "main": "build/Release/sf_core.node",
   "gypfile": true,
   "scripts": {
-     "install": "./build.sh",
-     "build": "./build.sh",
-     "dev": "nodemon --watch ./ --ext cpp,h,gyp --exec \"npm run build\"",
-     "test": "jest"
-   },
+    "install": "./build.sh",
+    "build": "./build.sh",
+    "dev": "nodemon --watch ./ --ext cpp,h,gyp --exec \"npm run build\"",
+    "test": "jest"
+  },
   "dependencies": {
-    "node-addon-api": "^8.0.0"
+    "node-addon-api": "^8.5.0"
   }
 }
