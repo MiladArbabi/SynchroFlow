@@ -1,4 +1,25 @@
 // packages/api/src/api/orders/orders.service.ts
+import path from 'path';
+
+// Load the C++ addon. Adjust the path based on build output location if needed.
+const addonPath = process.env.NODE_ENV === 'test'
+  ? path.join(__dirname, '../../../../../packages/core-engine/build/Release/sf_core.node') // Adjust path for tests if necessary
+  : path.join(__dirname, '../../sf_core.node'); // Adjust path relative to the compiled server.js in 'dist'
+let addon: {
+    getOrderStatus: (orderId: string) => { orderId: string; status: string };
+    // Add other addon function types here if needed
+};
+try {
+  addon = require(addonPath);
+  console.log("Successfully loaded C++ Core Engine addon.");
+  // Optionally call reloadCacheSync here if needed on startup
+} catch (error) {
+  console.error("!!! FAILED TO LOAD C++ CORE ENGINE ADDON !!!", error);
+  // Fallback or throw error depending on requirements
+  addon = { // Provide a fallback mock if loading fails, useful for basic testing
+      getOrderStatus: (orderId: string) => ({ orderId: orderId, status: "Error: Addon Failed" })
+  };
+}
 
 // This interface can be expanded or moved to a shared types package
 interface Order {
@@ -51,11 +72,10 @@ export const getAllOrders = async (): Promise<Order[]> => {
  * @param id The order ID
  */
 export const getOrderStatusById = async (id: string) => {
-  // In v2, this will call the C++ core
-  return {
-    orderId: id,
-    status: 'Picking' // Hardcoded for v1
-  };
+  console.log(`Calling C++ addon getOrderStatus for ID: ${id}`);
+  const result = addon.getOrderStatus(id); // Call the C++ function
+  console.log(`C++ addon returned:`, result);
+  return result; // Return the object { orderId: string, status: string }
 };
 
 /**
@@ -80,16 +100,13 @@ export const getOrderProfitabilityById = async (id: string) => {
  * @param id The order ID
  */
 export const getOrderDetailsById = async (id: string) => {
-  // In a real app, we'd fetch the order and its relations
-  // For now, we'll compose our other mock services
-  
   // Find the basic order info from our list
   const orderInfo = mockOrders.find(o => o.id === id);
   if (!orderInfo) {
     return null; // Order not found
   }
 
-  const status = await getOrderStatusById(id);
+  const statusResult = await getOrderStatusById(id); // This now calls C++
   const profitability = await getOrderProfitabilityById(id);
 
   return {
@@ -98,7 +115,8 @@ export const getOrderDetailsById = async (id: string) => {
       profile: mockCustomerProfile,
       metrics: mockCustomerMetrics,
     },
-    status: status.status, // Just return the status string
+    status: statusResult.status,
     profitability: profitability,
   };
+  
 };

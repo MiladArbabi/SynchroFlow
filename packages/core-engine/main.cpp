@@ -2,6 +2,7 @@
 #include <pqxx/pqxx>
 #include <iostream>
 #include <unordered_map>
+#include <cstdint>
 #include "types.h"
 
 // The in-memory cache
@@ -72,12 +73,64 @@ Napi::Object getInventoryItem(const Napi::CallbackInfo& info) {
   return result;
 }
 
+// --- FUNCTION for Order Status ---
+Napi::Object getOrderStatus(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) { /* ... error handling ... */ }
+    std::string orderId = info[0].As<Napi::String>().Utf8Value();
+
+    Napi::Object result = Napi::Object::New(env);
+    result.Set("orderId", orderId);
+    std::string status = "Unknown";
+
+    try {
+        // --- ADD LOGGING ---
+        std::cout << "[C++ LOG] Connecting to DB for order_id: " << orderId << std::endl;
+        pqxx::connection conn("user=sf_user password=sf_pass host=localhost port=5432 dbname=synchroflow_db");
+        std::cout << "[C++ LOG] Connected. Starting transaction." << std::endl;
+        pqxx::work txn(conn); // Start transaction
+
+        std::cout << "[C++ LOG] Executing query: SELECT status FROM order_fulfillment_status WHERE order_id = '" << orderId << "'" << std::endl;
+
+        // Execute the query
+        pqxx::result r = txn.exec_params(
+            "SELECT status FROM public.order_fulfillment_status WHERE order_id = $1",
+            orderId);
+
+        // --- ADD LOGGING ---
+        std::cout << "[C++ LOG] Query executed. Result size: " << r.size() << std::endl;
+
+        // Commit is not strictly needed for SELECT, but harmless
+        txn.commit();
+        std::cout << "[C++ LOG] Transaction committed." << std::endl;
+
+        // Process result
+        if (!r.empty()) { // Check if result set is not empty
+            status = r[0]["status"].as<std::string>("StatusColumnNull"); // Use a different default if status itself is NULL
+            std::cout << "[C++ LOG] Found status: " << status << std::endl;
+        } else {
+            status = "NotFound"; // No rows returned
+            std::cout << "[C++ LOG] No rows found for order_id: " << orderId << std::endl;
+        }
+
+    } catch (const std::exception &e) {
+        std::cerr << "[C++ ERROR] Database exception: " << e.what() << std::endl; // Use cerr for errors
+        Napi::Error::New(env, "Database error fetching order status: " + std::string(e.what())).ThrowAsJavaScriptException();
+        return Napi::Object::New(env);
+    }
+
+    result.Set("status", status);
+    return result;
+}
+
 // The Init function loads the cache from the DB
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set(Napi::String::New(env, "getInventoryItem"),
               Napi::Function::New(env, getInventoryItem));
   exports.Set(Napi::String::New(env, "reloadCacheSync"),
               Napi::Function::New(env, ReloadCacheSync));
+  exports.Set(Napi::String::New(env, "getOrderStatus"),
+                Napi::Function::New(env, getOrderStatus));
   return exports;
 }
 
