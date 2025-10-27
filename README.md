@@ -20,6 +20,28 @@ Our platform is built on a high-performance C++ core that serves as a single sou
     * **`InventoryHealthWidget`:** Replaced the custom table with a theme-aware `MainCard` and `MuiTable` implementation.
     * **`CashFlowWidget`:** Replaced the old chart with a professional, theme-aware `ReactApexChart` component.
 
+* **Recent Progress (Connecting Core Features & Testing):**
+
+**API Structure Refactored:** Migrated API logic for Customers, Orders, and Ops-Intel endpoints from routes files into a scalable Service/Controller pattern.
+
+**Core Pages Connected:** Integrated Customer360Page, OrdersPage, Order360Page, and DashboardPage with their respective API endpoints using useQuery, replacing static mock data in the UI.
+
+**C++ Integration (Order Status):** Successfully integrated the C++ Core Engine (sf_core.node) with the API service layer. The /api/v1/orders/:id/status endpoint now retrieves live status directly from the PostgreSQL database via the C++ addon.
+
+* **Robust E2E Testing Implemented:**
+
+Configured Playwright for End-to-End testing of the UI package.
+
+Established API mocking within tests using page.route for speed and isolation.
+
+Implemented data-testid attributes in key UI components for stable test selectors.
+
+Created passing test suites for Customer360Page, OrdersPage, Order360Page, and DashboardPage.
+
+Integrated React Query retry disabling (retry: false) specifically for the E2E test environment.
+
+**Automated Database Seeding:** Added a Knex seed file (dev_seed.ts) and integrated it into the npm run dev:full startup script. The development database is now automatically reset, migrated, and seeded with consistent test data on every start.
+
 ## 2. Core Product Modules & Offerings (v5.4 - Unchanged)
 
 ### Core Platform
@@ -40,7 +62,7 @@ Our platform is built on a high-performance C++ core that serves as a single sou
 
 ## 3. Technical Architecture (v5.6)
 
-SynchroFlow uses a decoupled, five-service microservices architecture. The core UI is now powered by a dynamic layout system and the Berry MUI theme engine.
+SynchroFlow uses a decoupled, five-service microservices architecture. The API layer now follows a standard Service/Controller pattern. The core UI is powered by a dynamic layout system and the Berry MUI theme engine. The C++ Core Engine provides direct, high-performance database access for critical operations like Order Status retrieval.
 
 ```mermaid
 graph TD
@@ -104,12 +126,12 @@ graph TD
 
 ### Technology Stack
 
-  * **Frontend:** React (Vite), TypeScript, **Material UI (MUI Core)**, Emotion, `react-resizable-panels`, `react-grid-layout`, `lucide-react`, **`react-apexcharts`**, **`react-intl`**, `framer-motion`, `lodash-es`, Axios.
+  * **Frontend:** React (Vite), TypeScript, **Material UI (MUI Core)**, Emotion, `react-resizable-panels`, `react-grid-layout`, `lucide-react`, **`react-apexcharts`**, **`react-intl`**, `framer-motion`, `lodash-es`, Axios, @tanstack/react-query.
   * **API/Backend:** Node.js, Express.js, TypeScript, Knex.js, `pg`, `amqplib`.
   * **Data Layer:** PostgreSQL (Docker), RabbitMQ (Docker), Redis (Planned).
   * **High-Performance Core:** C++, N-API, `libpqxx`.
   * **AI Engine:** Python, FastAPI, PyTorch (Planned), LangChain (Planned).
-  * **DevOps & Testing:** Docker, NPM Workspaces, Storybook, Jest, Supertest, React Testing Library, GitHub Actions (Planned CI/CD).
+  * **DevOps & Testing: Docker, NPM Workspaces, Storybook, Jest, Supertest, React Testing Library, Playwright (E2E), Knex Migrations & Seeding, GitHub Actions (Planned CI/CD).
 
 ## 4\. Local Development Setup
 
@@ -137,7 +159,7 @@ npm install
 ### Running the Application
 
 ```bash
-# Clean start: Resets DB, runs migrations, starts all services with hot-reloading.
+# Clean start: Resets DB, runs migrations, seeds DB, starts all services with hot-reloading.
 npm run dev:full
 ```
 
@@ -148,6 +170,27 @@ The services will typically be available at:
   * Integration Service: `http://localhost:3001`
   * Python AI Engine: `http://localhost:8000`
   * Storybook: `http://localhost:6006` (Run separately: `npm run storybook -w ui`)
+
+Running Tests
+Unit & Integration Tests (API/UI)
+Bash
+
+# Run API unit/integration tests (if configured)
+npm test -w api
+
+# Run UI unit/integration tests (using Vitest/RTL)
+npm test -w ui
+End-to-End Tests (UI - Playwright)
+Ensure no servers are running manually first. Playwright will start its own server instance.
+
+Bash
+
+# From the root SynchroFlow directory:
+npx playwright test --config=packages/ui/playwright.config.ts
+
+# To view the latest HTML report after a run:
+npx playwright show-report packages/ui/playwright-report
+
 
 ### Local Workflow Automation
 
