@@ -89,7 +89,11 @@ const AOpexGauge: React.FC<AOpexGaugeProps> = ({ title, value, target }) => {
         
         {/* The Value */}
         <Box sx={{ mt: -3 }}>
-          <Typography variant="h2" color="primary">
+          <Typography 
+            variant="h2" 
+            color="primary"
+            data-testid="aopex-value"
+          >
             {formatCurrency(value)}
           </Typography>
         </Box>
