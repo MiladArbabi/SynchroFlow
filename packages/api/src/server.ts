@@ -24,6 +24,7 @@ import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
 import orderRoutes from "./api/orders/orders.routes";
 import customerRoutes from "./api/customers/customers.routes";
 import integrationRoutes from "./api/integrations/integration.routes";
+import authRoutes from "./api/auth/auth.routes";
 
 // Use 'path' to create a reliable, absolute path to the addon file
 import path from 'path';
@@ -63,6 +64,7 @@ app.use("/api/v1/ops-intel", opsIntelRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
+app.use("/api/v1/auth", authRoutes);
 
 app.get('/v1/inventory/:sku', (req, res) => {
   const { sku } = req.params;
