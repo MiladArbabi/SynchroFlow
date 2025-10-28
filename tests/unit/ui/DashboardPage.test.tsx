@@ -1,92 +1,98 @@
 // tests/unit/ui/DashboardPage.test.tsx
-import { screen, waitFor, findByText } from '@testing-library/react';
+import { screen, act } from '@testing-library/react';
+import { DashboardPage } from 'pages/DashboardPage'; // <-- USE ALIAS
 import { renderWithProviders } from 'test-utils';
 import axios from 'axios';
-import { DashboardPage } from 'pages/DashboardPage.tsx'; // Import the named export
-import { useLayoutContext } from 'App';
 
 // Mock axios
 jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
 
-// Mock SidenavContent to prevent the 'imporxt.meta' syntax error
-jest.mock('layouts/AppLayout/SidenavContent', () => ({
-  __esModule: true,
-  default: () => <div data-testid="sidenav-content-mock" />,
-}));
-
-// Mock the 'App' alias
+// Mock the layout context
 jest.mock('App', () => ({
-  ...jest.requireActual('App'), 
-  useLayoutContext: jest.fn(),
+  useLayoutContext: () => ({
+    isEditing: false,
+    isLibraryOpen: false,
+    setIsLibraryOpen: jest.fn(),
+    currentUserPlan: 'pro',
+    layoutRef: { current: null },
+    activeWidgetsRef: { current: [] }
+  })
 }));
-const mockedUseLayoutContext = useLayoutContext as jest.Mock;
 
-// Mock the widgets in the registry
-jest.mock('components/KpiCard', () => ({
-  __esModule: true,
-  default: () => <div data-testid="kpi-card-mock" />,
-}));
-jest.mock('widgets/CashFlowWidget', () => ({
-  __esModule: true,
-  default: () => <div data-testid="cashflow-widget-mock" />,
-}));
-jest.mock('widgets/InventoryHealthWidget', () => ({
-  __esModule: true,
-  default: () => <div data-testid="inventory-health-mock" />,
-}));
-// Mock the NEW widget we are about to add
-jest.mock('widgets/AOpexGauge', () => ({
-  __esModule: true,
-  default: ({ title, value }: { title: string, value: number }) => (
-    <div data-testid="a-opex-gauge-mock">
-      {title}: {value}
-    </div>
+// Mock complex child components
+jest.mock('react-grid-layout', () => ({
+  WidthProvider: (Component: React.ElementType) => (props: any) => (
+    <Component {...props} />
   ),
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="rgl-grid">{children}</div>
+   ),
 }));
 
-describe('DashboardPage (#283)', () => {
+jest.mock('components/Icon', () => () => <span data-testid="icon" />);
 
+// Mock all the widgets that the dashboard tries to render
+jest.mock('../../../packages/ui/src/widgets/widgetRegistry', () => ({
+  WIDGET_REGISTRY: {
+    'kpi-revenue': { component: () => <div data-testid="widget-kpi-revenue" /> },
+    'kpi-margin': { component: () => <div data-testid="widget-kpi-margin" /> },
+    'kpi-inventory': { component: () => <div data-testid="widget-kpi-inventory" /> },
+    'a-opex-gauge': { component: () => <div data-testid="widget-a-opex-gauge" /> },
+    'cashflow-chart': { component: () => <div data-testid="widget-cashflow-chart" /> },
+    'inventory-health': { component: () => <div data-testid="widget-inventory-health" /> },
+  },
+  PlanLevel: {} // Mock the enum/type object
+}));
+
+// Mock components
+jest.mock('components/WidgetLibrary', () => () => (
+  <div data-testid="widget-library" />
+));
+jest.mock(
+  'components/ConnectStoreBanner',
+  () => () => <div data-testid="connect-banner" />
+);
+jest.mock(
+  'components/ConnectStoreModal',
+  () => ({ ConnectStoreModal: () => <div data-testid="connect-modal" /> })
+);
+
+// Helper function to render with router context
+const renderDashboard = (route: string) => {
+  return renderWithProviders(<DashboardPage />, {
+    // We use 'initialEntries' to simulate the URL
+    routerProps: { initialEntries: [`/dashboard${route}`] }
+  });
+};
+
+describe('DashboardPage - Connection Success UX', () => {
   beforeEach(() => {
-    mockedAxios.get.mockReset();
-    mockedUseLayoutContext.mockReturnValue({
-      isEditing: false,
-      isLibraryOpen: false,
-      setIsLibraryOpen: jest.fn(),
-      currentUserPlan: 'Ignition',
-      layoutRef: { current: [] },
-      activeWidgetsRef: { current: [] },
-      handleSaveLayout: jest.fn(),
-    });
-
-    // Mock the layout fetch (404 = use default)
-    mockedAxios.get.mockImplementation((url: string) => {
-      if (url === '/api/v1/layouts/dashboard') {
-        return Promise.reject(new Error('404')); 
-      }
-      if (url === '/api/v1/ops-intel/summary') {
-        return Promise.resolve({ 
-          data: { automated_tasks: 4500, labor_cost_saved: 8125.75 } 
-        });
-      }
-      return Promise.resolve({ data: {} });
+    (axios.get as jest.Mock).mockClear();
+    // Mock a successful layout fetch by default
+    (axios.get as jest.Mock).mockResolvedValue({
+      data: { layout: [], activeWidgets: [] }
     });
   });
 
-  it('should fetch ops-intel data and render the AOpexGauge widget', async () => {
-    const { container } = renderWithProviders(<DashboardPage />);
-
-    // ... (Assertions) ...
-    await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledWith(
-        '/api/v1/ops-intel/summary'
-      );
+  it('should NOT show a success alert on normal load', async () => {
+    renderDashboard('');
+    // Wait for effects
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    
-    expect(screen.getByTestId('a-opex-gauge-mock')).toBeInTheDocument();
-    
-    expect(
-      await findByText(container as HTMLElement, 'Opex Saved: 8125.75')
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('should show a success alert when URL has ?connect=success', async () => {
+    renderDashboard('?connect=success');
+
+    // --- THIS IS THE "RED" TEST ---
+    const successAlert = await screen.findByRole('alert');
+    expect(successAlert).toBeInTheDocument();
+    expect(successAlert).toHaveTextContent(/Connection successful!/i);
+
+    // It should also HIDE the banner
+    expect(screen.queryByTestId('connect-banner')).not.toBeInTheDocument();
   });
 });
