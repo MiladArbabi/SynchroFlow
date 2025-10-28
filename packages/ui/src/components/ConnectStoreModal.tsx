@@ -1,32 +1,52 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/components/ConnectStoreModal.tsx
-import React, { useState } from 'react';
+import React, { useState, FormEvent } from 'react';
 import axios from 'axios';
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  TextField,
+  Grid,
+  Box,
+  Typography,
+  CircularProgress,
+  Paper, // For the cards
+  ButtonBase, // To make cards clickable
+  Theme
+} from '@mui/material';
+import { styled } from '@mui/material/styles';
+import IconComponent from './Icon';
 
-// A new sub-component for the progress view to keep our main component clean
-const ProgressView = () => (
-  <div>
-    <div className="text-center">
-      <h3 className="text-base font-semibold leading-6 text-gray-900">
-        Syncing your data...
-      </h3>
-      <div className="mt-2">
-        <p className="text-sm text-gray-500">
-          This may take a few minutes. We'll notify you when it's complete.
-        </p>
-        {/* We can add a progress checklist here in the future */}
-      </div>
-    </div>
-    <div className="mt-5 sm:mt-6">
-      <button
-        type="button"
-        className="inline-flex w-full justify-center rounded-md bg-gray-400 px-3 py-2 text-sm font-semibold text-white"
-        disabled
-      >
-        Please wait...
-      </button>
-    </div>
-  </div>
-);
+// --- Define our Platform Card (inspired by Berry's SubCard) ---
+const PlatformCard = styled(ButtonBase)(({ theme }: { theme: Theme }) => ({
+  width: '100%',
+  padding: theme.spacing(3),
+  textAlign: 'center',
+  border: `1px solid ${theme.palette.divider}`,
+  borderRadius: theme.shape.borderRadius,
+  transition: 'border-color 0.2s',
+  '&:hover': {
+    borderColor: theme.palette.primary.main,
+    backgroundColor: theme.palette.action.hover
+  }
+}));
+
+// --- Platform definitions ---
+type PlatformID = 'shopify' | 'quickbooks' | 'amazon';
+
+const PLATFORMS: { id: PlatformID; name: string; icon: string; requiresInput: boolean }[] = [
+  // 'ShopifyLogo' is not a valid Lucide icon, 'Store' is.
+  { id: 'shopify', name: 'Shopify', icon: 'Store', requiresInput: true },
+  // 'Database' is valid.
+  { id: 'quickbooks', name: 'QuickBooks', icon: 'Database', requiresInput: false },
+  // 'AmazonLogo' is not valid, 'Package' is.
+  { id: 'amazon', name: 'Amazon', icon: 'Package', requiresInput: false }
+];
 
 interface ConnectStoreModalProps {
   isOpen: boolean;
@@ -35,98 +55,192 @@ interface ConnectStoreModalProps {
 
 export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, onClose }) => {
   const [shopName, setShopName] = useState('');
-  const [accessToken, setAccessToken] = useState('');
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformID | null>(null);
   const [syncState, setSyncState] = useState<'form' | 'syncing' | 'error'>('form');
   const [error, setError] = useState('');
 
-    if (!isOpen) {
-    return null;
-  }
-
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!selectedPlatform) return;
+
     setSyncState('syncing');
     setError('');
 
     try {
-      // We will add a real shopId when we have user sessions
-      const payload = {
-        shopId: 1, 
-        shop: shopName,
-        accessToken: accessToken,
+      // Step 1: Call our new BE endpoint
+      const params = {
+        platform: selectedPlatform,
+        ...(selectedPlatform === 'shopify' && { shop: shopName })
       };
-      await axios.post('/api/v1/integrations/shopify/start-trial-sync', payload);
-      onClose(); // Close the modal on success
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
+      const { data } = await axios.get('/api/v1/integrations/oauth/initiate', { params });
+
+      // Step 2: On success, redirect to the platform's auth URL
+      if (data.authorizationUrl) {
+        window.location.href = data.authorizationUrl;
+      }
     } catch (_err) {
-        setError('Failed to initiate sync. Please check your credentials.');
-        setSyncState('form'); // Return to the form on error
+      setError('Failed to initiate connection. Please try again.');
+      setSyncState('form'); // Return to the form
+  };
+};
+
+  const resetForm = () => {
+    setSelectedPlatform(null);
+    setShopName('');
+    setError('');
+    setSyncState('form');
+  };
+
+  // Handle modal close
+  const handleClose = () => {
+    // Only allow close if not in the middle of syncing
+    if (syncState !== 'syncing') {
+      onClose();
+      setTimeout(resetForm, 300);
     }
   };
 
+  const handleBack = () => {
+    setSelectedPlatform(null);
+    setError('');
+  };
+
+  // --- Dynamic Content Rendering ---
+  let dialogTitle = 'Connect a Data Source';
+  let dialogContent: React.ReactNode;
+  let dialogActions: React.ReactNode;
+
+  const platformInfo = selectedPlatform ? PLATFORMS.find(p => p.id === selectedPlatform) : null;
+
+  if (syncState === 'syncing') {
+    // --- SYNCING VIEW ---
+    dialogTitle = 'Redirecting to Connect...';
+    dialogContent = (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
+        <CircularProgress />
+        <Typography variant="h5" sx={{ mt: 3 }}>
+          Please wait...
+        </Typography>
+        <DialogContentText sx={{ mt: 1 }}>
+          We are securely redirecting you to {platformInfo?.name}.
+        </DialogContentText>
+      </Box>
+    );
+    dialogActions = (
+      <DialogActions sx={{ p: 3 }}>
+        <Button disabled fullWidth variant="contained">
+          Please wait...
+        </Button>
+      </DialogActions>
+    );
+  } else if (selectedPlatform === null) {
+    // --- 1. PLATFORM SELECTION GRID ---
+    dialogContent = (
+      <>
+        <DialogContentText sx={{ mb: 3 }}>
+          Select a platform to begin your scoped live trial.
+        </DialogContentText>
+        <Grid container spacing={2}>
+          {PLATFORMS.map((platform) => (
+            <Grid item xs={12} sm={4} key={platform.id}>
+              <PlatformCard onClick={() => setSelectedPlatform(platform.id)}>
+                <Box>
+                  {/* Assuming IconComponent can take a name prop */}
+                  <IconComponent name={platform.icon as any} size="xl" />
+                  <Typography variant="h6" sx={{ mt: 1 }}>
+                    {platform.name}
+                  </Typography>
+                </Box>
+              </PlatformCard>
+            </Grid>
+          ))}
+        </Grid>
+      </>
+    );
+    dialogActions = (
+      <DialogActions sx={{ p: 3 }}>
+        <Button fullWidth onClick={handleClose} variant="outlined" color="secondary">
+          Cancel
+        </Button>
+      </DialogActions>
+    );
+  } else if (selectedPlatform === 'shopify') {
+    // --- 2. SHOPIFY INPUT STEP ---
+    dialogTitle = 'Connect Shopify';
+    dialogContent = (
+      <>
+        <DialogContentText sx={{ mb: 3 }}>
+          Please enter your Shopify store name to continue.
+        </DialogContentText>
+        <TextField
+          autoFocus
+          required
+          margin="dense"
+          id="shop-name"
+          label="Shop Name"
+          type="text"
+          fullWidth
+          variant="outlined"
+          placeholder="my-store.myshopify.com"
+          value={shopName}
+          onChange={(e) => setShopName(e.target.value)}
+        />
+        {error && <Typography color="error" variant="body2" sx={{ mt: 2 }}>{error}</Typography>}
+      </>
+    );
+    dialogActions = (
+      <DialogActions sx={{ p: 3 }}>
+        <Grid container spacing={2} sx={{ width: '100%' }}>
+          <Grid item xs={12} sm={6}>
+            <Button fullWidth onClick={handleBack} variant="outlined" color="secondary">
+              Back
+            </Button>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Button fullWidth type="submit" variant="contained" color="primary">
+              Connect
+            </Button>
+          </Grid>
+        </Grid>
+      </DialogActions>
+    );
+  } else {
+    // --- 3. OTHER PLATFORMS (NO INPUT) ---
+    dialogTitle = `Connect ${platformInfo?.name}`;
+    dialogContent = (
+      <>
+        <DialogContentText>
+          You will be redirected to {platformInfo?.name} to authorize the connection.
+        </DialogContentText>
+        {error && <Typography color="error" variant="body2" sx={{ mt: 2 }}>{error}</Typography>}
+      </>
+    );
+    dialogActions = (
+      <DialogActions sx={{ p: 3 }}>
+        <Grid container spacing={2} sx={{ width: '100%' }}>
+          <Grid item xs={12} sm={6}>
+            <Button fullWidth onClick={handleBack} variant="outlined" color="secondary">
+              Back
+            </Button>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Button fullWidth type="submit" variant="contained" color="primary">
+              Connect
+            </Button>
+          </Grid>
+        </Grid>
+      </DialogActions>
+    );
+  }
+
   return (
-    // Full-screen overlay
-    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-10">
-      <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
-        <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-          
-          {/* Modal Panel */}
-          <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
-            {syncState === 'syncing' ? (
-              <ProgressView />
-            ) : (
-              <form onSubmit={handleSubmit}>
-                <div className="text-left">
-                  <div className="text-center">
-                    <h3 className="text-base font-semibold leading-6 text-gray-900">
-                      Connect a Data Source
-                    </h3>
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-500">
-                        Select a platform to begin your scoped live trial.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-6 space-y-4">
-                    <div>
-                      <label htmlFor="shop-name" className="block text-sm font-medium leading-6 text-gray-900">Shop Name</label>
-                      <input
-                        type="text" id="shop-name" value={shopName} onChange={(e) => setShopName(e.target.value)}
-                        className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                        placeholder="my-store.myshopify.com" required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="access-token" className="block text-sm font-medium leading-6 text-gray-900">Admin API Access Token</label>
-                      <input
-                        type="password" id="access-token" value={accessToken} onChange={(e) => setAccessToken(e.target.value)}
-                        className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                        placeholder="shpat_..." required
-                      />
-                    </div>
-                    {error && <p className="text-sm text-red-600">{error}</p>}
-                  </div>
-                </div>
-                <div className="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
-                  <button
-                    type="submit"
-                    className="inline-flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:col-start-2"
-                  >
-                    Start Sync
-                  </button>
-                  <button
-                    type="button"
-                    className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0"
-                    onClick={onClose}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <Dialog open={isOpen} onClose={handleClose} maxWidth="sm" fullWidth>
+      <form onSubmit={handleSubmit}>
+        <DialogTitle>{dialogTitle}</DialogTitle>
+        <DialogContent>{dialogContent}</DialogContent>
+        {dialogActions}
+      </form>
+    </Dialog>
   );
 };

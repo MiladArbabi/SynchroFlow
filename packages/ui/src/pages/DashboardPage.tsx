@@ -11,6 +11,8 @@ import { PlanLevel, WIDGET_REGISTRY } from "../widgets/widgetRegistry";
 import { IconButton, Box, CircularProgress, Alert } from "@mui/material"; // Added Box, CircularProgress, Alert
 import { InventoryHealthRow } from "widgets/InventoryHealthWidget";
 import { useLayoutContext } from "../App";
+import { ConnectStoreModal } from "../components/ConnectStoreModal";
+import { ConnectStoreBanner } from "../components/ConnectStoreBanner";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -80,6 +82,8 @@ const getWidgetProps = (
 export const DashboardPage = () => {
   const [layout, setLayout] = useState(initialLayout);
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [showConnectBanner, setShowConnectBanner] = useState(false);
 
   const fetchOpsIntel = async (): Promise<OpsIntelSummaryResponse> => {
     const { data } = await axios.get<OpsIntelSummaryResponse>("/api/v1/ops-intel/summary");
@@ -127,10 +131,21 @@ export const DashboardPage = () => {
       } catch (error) {
         // If a 404 occurs, it means no layout is saved yet. We can ignore this.
         console.log("No saved layout found, using default.");
+        setShowConnectBanner(true);
       }
     };
     fetchLayout();
   }, []); // Empty dependency array ensures this runs only once on mount
+
+  // --- HANDLE MODAL CLOSE ---
+  // When the modal closes (especially on success), we'll reload 
+  // the page to fetch the new dashboard layout and data.
+  const handleModalClose = () => {
+    setIsConnectModalOpen(false); // Close the modal
+    setShowConnectBanner(false); // Hide the banner on success
+    // Simple reload to refresh all data.
+    window.location.reload(); 
+  };
 
   // Handler for adding a new widget from the library
   const handleAddWidget = (widgetId: string) => {
@@ -171,6 +186,15 @@ export const DashboardPage = () => {
 
   return (
     <>
+    {/* --- 5. RENDER BANNER & MODAL --- */}
+      {showConnectBanner && (
+        <ConnectStoreBanner onOpenModal={() => setIsConnectModalOpen(true)} />
+      )}
+      <ConnectStoreModal
+        isOpen={isConnectModalOpen}
+        onClose={handleModalClose} 
+      />
+
       <GridLayout
         layout={layout}
         cols={12}

@@ -1,82 +1,58 @@
-// packages/ui/src/components/ConnectStoreModal.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+// tests/unit/ui/ConnectStoreModal.test.tsx
+import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
+// Correct relative path from tests/unit/ui/ to packages/ui/src/components/
+import { ConnectStoreModal } from '../../../packages/ui/src/components/ConnectStoreModal';
 import axios from 'axios';
-import { ConnectStoreModal } from 'components/ConnectStoreModal';
+
+// Mock the onClose function
+const mockOnClose = jest.fn();
+
+// Mock the IconComponent to avoid issues with Lucide icons in a unit test
+jest.mock(
+  '../../../packages/ui/src/components/Icon',
+  () =>
+    ({ name }: { name: string }) =>
+      <span data-testid="icon">{name}</span>
+);
 
 // Mock axios
-jest.mock('axios');
-const mockedAxiosPost = axios.post as jest.Mock;
+jest.mock('axios', () => ({
+  get: jest.fn(() => Promise.resolve({ data: {} }))
+}));
 
-describe('ConnectStoreModal', () => {
-  it('renders the modal with the correct title when open', () => {
-    // A simple onClose mock function for the test
-    const handleClose = jest.fn();
-
-    render(<ConnectStoreModal isOpen={true} onClose={handleClose} />);
-
-    expect(screen.getByRole('heading', { name: /Connect a Data Source/i })).toBeInTheDocument();
+describe('ConnectStoreModal - OAuth Flow', () => {
+  beforeEach(() => {
+    mockOnClose.mockClear();
+    (axios.get as jest.Mock).mockClear();
   });
 
-  it('renders nothing when closed', () => {
-    const handleClose = jest.fn();
-    
-    const { container } = render(<ConnectStoreModal isOpen={false} onClose={handleClose} />);
-    
-    expect(container).toBeEmptyDOMElement();
-  });
+  it('should render the platform selection grid on initial load', () => {
+    render(<ConnectStoreModal isOpen={true} onClose={mockOnClose} />);
 
-  it('submits the form and calls the sync API endpoint', async () => {
-    const user = userEvent.setup();
-    const handleClose = jest.fn();
-    mockedAxiosPost.mockResolvedValue({ status: 202 }); // Simulate a successful API call
-
-    render(<ConnectStoreModal isOpen={true} onClose={handleClose} />);
-
-    // Find the form elements
-    const shopInput = screen.getByLabelText(/Shop Name/i);
-    const tokenInput = screen.getByLabelText(/Admin API Access Token/i);
-    const syncButton = screen.getByRole('button', { name: /Start Sync/i });
-
-    // Simulate user input
-    await user.type(shopInput, 'my-cool-store.myshopify.com');
-    await user.type(tokenInput, 'shpat_testaccesstoken');
-
-    // Simulate form submission
-    await user.click(syncButton);
-
-    // Assertions
-    await waitFor(() => {
-      // Check that our sync API was called with the correct data
-      expect(mockedAxiosPost).toHaveBeenCalledWith('/api/v1/integrations/shopify/start-trial-sync', {
-        shop: 'my-cool-store.myshopify.com',
-        accessToken: 'shpat_testaccesstoken',
-        shopId: 1, // Expect the hardcoded shopId
-      });
-    });
-
-    // Check that the modal closed on success
-    expect(handleClose).toHaveBeenCalled();
-  });
-  it('displays a progress view while the sync is in progress', async () => {
-    const user = userEvent.setup();
-    const handleClose = jest.fn();
-    // Simulate a hanging API call that never resolves to test the "in-progress" state
-    mockedAxiosPost.mockReturnValue(new Promise(() => {}));
-
-    render(<ConnectStoreModal isOpen={true} onClose={handleClose} />);
-
-    // Find and fill out the form
-    await user.type(screen.getByLabelText(/Shop Name/i), 'test-shop.myshopify.com');
-    await user.type(screen.getByLabelText(/Admin API Access Token/i), 'shpat_test-token');
-
-    // Click the submit button
-    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
-
-    // Assert that the "Syncing..." message is now visible
-    expect(await screen.findByText(/Syncing your data.../i)).toBeInTheDocument();
-
-    // Assert that the form inputs are now gone
+    // It should NOT find the "Shop Name" field.
     expect(screen.queryByLabelText(/Shop Name/i)).not.toBeInTheDocument();
+
+    // It should find the platform buttons
+    expect(screen.getByRole('button', { name: /Shopify/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /QuickBooks/i })
+    ).toBeInTheDocument();
+  });
+
+  it('should show the Shop Name input after clicking Shopify', () => {
+    render(<ConnectStoreModal isOpen={true} onClose={mockOnClose} />);
+
+    // 1. Find the Shopify button
+    const shopifyButton = screen.getByRole('button', { name: /Shopify/i });
+    fireEvent.click(shopifyButton);
+
+    // 2. Now, the "Shop Name" field should be visible
+    expect(screen.getByLabelText(/Shop Name/i)).toBeInTheDocument();
+
+    // 3. And the platform buttons should be gone
+    expect(
+      screen.queryByRole('button', { name: /Shopify/i })
+    ).not.toBeInTheDocument();
   });
 });
