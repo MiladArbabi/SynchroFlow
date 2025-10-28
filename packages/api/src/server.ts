@@ -1,5 +1,7 @@
 // packages/api/src/server.ts
 import express from 'express';
+import session from 'express-session';
+import crypto from 'crypto';
 import db from './db';
 import { 
   getDemandForecastForSku, 
@@ -18,6 +20,7 @@ import layoutRoutes from "./api/layouts/layout.routes";
 import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
 import orderRoutes from "./api/orders/orders.routes";
 import customerRoutes from "./api/customers/customers.routes";
+import integrationRoutes from "./api/integrations/integration.routes";
 
 
 // --- ADD THESE LINES ---
@@ -32,6 +35,20 @@ const addon = require(addonPath);
 
 const app = express();
 app.use(express.json());
+// --- SESSION MIDDLEWARE ---
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'a-very-strong-dev-secret-key', // <-- Use env var
+    resave: false,
+    saveUninitialized: true,
+    store: new session.MemoryStore(), // <-- Use MemoryStore for dev
+    cookie: {
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in prod
+      httpOnly: true,
+      maxAge: 600000 // 10 minutes
+    }
+  })
+);
 const port = 3000;
 
 // --- Routes ---
@@ -44,6 +61,7 @@ app.use("/api/v1/layouts", layoutRoutes);
 app.use("/api/v1/ops-intel", opsIntelRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/customers", customerRoutes);
+app.use("/api/v1/integrations", integrationRoutes);
 
 app.get('/v1/inventory/:sku', (req, res) => {
   const { sku } = req.params;
