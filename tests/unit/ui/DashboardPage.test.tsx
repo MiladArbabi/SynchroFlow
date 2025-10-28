@@ -51,7 +51,7 @@ jest.mock('components/WidgetLibrary', () => () => (
 ));
 jest.mock(
   'components/ConnectStoreBanner',
-  () => () => <div data-testid="connect-banner" />
+  () => ({ ConnectStoreBanner: () => <div data-testid="connect-modal" /> })
 );
 jest.mock(
   'components/ConnectStoreModal',

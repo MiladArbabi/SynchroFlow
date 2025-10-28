@@ -1,4 +1,6 @@
 // packages/api/src/server.ts
+import dotenv from 'dotenv';
+dotenv.config();
 import express from 'express';
 import session from 'express-session';
 import crypto from 'crypto';
@@ -23,8 +25,6 @@ import orderRoutes from "./api/orders/orders.routes";
 import customerRoutes from "./api/customers/customers.routes";
 import integrationRoutes from "./api/integrations/integration.routes";
 
-
-// --- ADD THESE LINES ---
 // Use 'path' to create a reliable, absolute path to the addon file
 import path from 'path';
 
