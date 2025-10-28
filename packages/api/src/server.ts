@@ -15,6 +15,7 @@ import {
   getFulfillmentPipeline,
   calculatePerfectOrderPercentage } from './services/analytics.service';
 import { startWorker } from './worker';
+import { startSyncWorker } from './sync.worker';
 import { seedSandboxData } from './db/seeder';
 import layoutRoutes from "./api/layouts/layout.routes";
 import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
@@ -467,6 +468,7 @@ if (require.main === module) {
     console.log(`Server is listening on port ${port}`);
     // Start the queue worker
     startWorker();
+    startSyncWorker();
   });
 }
 

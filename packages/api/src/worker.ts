@@ -1,8 +1,11 @@
 // packages/api/src/worker.ts
 import { Channel } from 'amqplib';
-import { channelWrapper } from './queue';
+import { getQueueChannel } from './queue';
 import db from './db';
 import { transformPayload } from './transformer';
+
+// Get the specific channel for 'events'
+const eventChannel = getQueueChannel('events');
 
 // This is the function our test is targeting
 export async function processMessage(msg: { content: Buffer } | null) {
@@ -16,7 +19,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
     if (!staged_event_id) {
       console.error('[worker] Message is missing staged_event_id');
-      channelWrapper.ack(msg as any); // Acknowledge message to remove from queue
+      eventChannel.ack(msg as any); // Acknowledge message to remove from queue
       return;
     }
 
@@ -27,7 +30,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
     if (!stagedEvent) {
       console.error(`[worker] Staged event with id ${staged_event_id} not found.`);
-      channelWrapper.ack(msg as any);
+      eventChannel.ack(msg as any);
       return;
     }
  
@@ -41,18 +44,18 @@ export async function processMessage(msg: { content: Buffer } | null) {
     console.log('[worker] Successfully transformed payload:', transformedPayload);    
     
     // Acknowledge the message was processed successfully
-    channelWrapper.ack(msg as any);
+    eventChannel.ack(msg as any);
   } catch (error) {
     console.error('[worker] Error processing message:', error);
     // In case of error, we "nack" the message (negative acknowledgement)
     // and tell the queue not to re-queue it to avoid infinite loops.
-    channelWrapper.nack(msg as any, false, false);
+    eventChannel.nack(msg as any, false, false);
   }
 }
 
 // This function starts the consumer
 export function startWorker() {
   console.log('[worker] Starting API worker...');
-  channelWrapper.consume('events', processMessage, { noAck: false });
+  eventChannel.consume('events', processMessage, { noAck: false });
   console.log('[worker] Worker started. Waiting for events...');
 }
