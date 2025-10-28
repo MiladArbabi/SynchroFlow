@@ -57,6 +57,11 @@ jest.mock(
   'components/ConnectStoreModal',
   () => ({ ConnectStoreModal: () => <div data-testid="connect-modal" /> })
 );
+jest.mock('components/DataSyncingModal', () => ({
+  DataSyncingModal: ({ open }: { open: boolean }) => (
+    open ? <div role="dialog" data-testid="sync-modal">Syncing...</div> : null
+  )
+}));
 
 // Helper function to render with router context
 const renderDashboard = (route: string) => {
@@ -84,15 +89,18 @@ describe('DashboardPage - Connection Success UX', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('should show a success alert when URL has ?connect=success', async () => {
+  it('should show the new DataSyncingModal when URL has ?connect=success', async () => {
     renderDashboard('?connect=success');
 
-    // --- THIS IS THE "RED" TEST ---
-    const successAlert = await screen.findByRole('alert');
-    expect(successAlert).toBeInTheDocument();
-    expect(successAlert).toHaveTextContent(/Connection successful!/i);
+    // It should find the modal's dialog role
+    const modal = await screen.findByRole('dialog');
+    expect(modal).toBeInTheDocument();
+    expect(modal).toHaveTextContent(/Syncing/i);
 
     // It should also HIDE the banner
     expect(screen.queryByTestId('connect-banner')).not.toBeInTheDocument();
+
+    // It should NOT show the old snackbar
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

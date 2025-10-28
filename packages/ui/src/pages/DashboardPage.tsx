@@ -20,6 +20,7 @@ import { InventoryHealthRow } from 'widgets/InventoryHealthWidget';
 import { useLayoutContext } from '../App'; 
 import { ConnectStoreModal } from 'components/ConnectStoreModal'; 
 import { ConnectStoreBanner } from 'components/ConnectStoreBanner';
+import { DataSyncingModal } from 'components/DataSyncingModal';
 
 const GridLayout = WidthProvider(RGL);
 
@@ -106,7 +107,7 @@ export const DashboardPage = () => {
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [showConnectBanner, setShowConnectBanner] = useState(false);
-  const [isSuccessToastOpen, setIsSuccessToastOpen] = useState(false); // New state for toast
+  const [isSyncingModalOpen, setIsSyncingModalOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams(); // New hook for URL
 
   const fetchOpsIntel = async (): Promise<OpsIntelSummaryResponse> => {
@@ -150,8 +151,8 @@ export const DashboardPage = () => {
   useEffect(() => {
     // 1. Check for the success param FIRST
     if (searchParams.get('connect') === 'success') {
-      // Show the success toast
-      setIsSuccessToastOpen(true);
+      // Ensure the banner is hidden
+      setIsSyncingModalOpen(true);
       // Ensure the banner is hidden
       setShowConnectBanner(false);
       // Clean the URL
@@ -198,6 +199,12 @@ export const DashboardPage = () => {
     setShowConnectBanner(false); // Hide the banner on success
     // Simple reload to refresh all data.
     window.location.reload();
+  };
+
+  // --- HANDLE SYNC MODAL CLOSE ---
+  const handleSyncModalClose = () => {
+    setIsSyncingModalOpen(false);
+    // We'll refetch or reload here in the future
   };
 
   // Handler for adding a new widget from the library
@@ -270,6 +277,11 @@ export const DashboardPage = () => {
         onClose={handleModalClose}
       />
 
+      <DataSyncingModal
+        open={isSyncingModalOpen}
+        onClose={handleSyncModalClose}
+      />
+
       <GridLayout
         layout={layout}
         cols={12}
@@ -324,22 +336,6 @@ export const DashboardPage = () => {
         onAddWidget={handleAddWidget}
         currentPlan={currentUserPlan}
       />
-
-      {/* --- RENDER THE SUCCESS TOAST --- */}
-      <Snackbar
-        open={isSuccessToastOpen}
-        autoHideDuration={6000}
-        onClose={() => setIsSuccessToastOpen(false)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setIsSuccessToastOpen(false)}
-          severity="success"
-          sx={{ width: '100%' }}
-        >
-          Connection successful! We are syncing your data.
-        </Alert>
-      </Snackbar>
     </>
   );
 };
