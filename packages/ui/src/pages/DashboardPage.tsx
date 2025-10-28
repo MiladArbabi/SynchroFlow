@@ -17,7 +17,7 @@ import {
   Snackbar // Added for toast
 } from '@mui/material';
 import { InventoryHealthRow } from 'widgets/InventoryHealthWidget'; 
-import { useLayoutContext } from 'App'; 
+import { useLayoutContext } from '../App'; 
 import { ConnectStoreModal } from 'components/ConnectStoreModal'; 
 import { ConnectStoreBanner } from 'components/ConnectStoreBanner';
 
