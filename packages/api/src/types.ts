@@ -1,3 +1,4 @@
+// packages/api/src/types.ts
 // This interface defines the shape of an inventory item
 // as it exists in our database and API responses.
 export interface InventoryItem {
@@ -11,3 +12,17 @@ export interface InventoryItem {
   created_at: string;
   updated_at: string;
 }
+
+export interface User {
+  id: number;
+  email: string;
+  password_hash: string; // We'll select this only on the backend
+  first_name?: string;
+  last_name?: string;
+  created_at: string; // Knex returns timestamps as strings by default
+  updated_at: string;
+}
+
+// Optional: Define a type for user data we might send to the frontend
+// (omitting the password hash)
+export type PublicUser = Omit<User, 'password_hash'>;

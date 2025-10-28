@@ -97,7 +97,7 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
       
       // 6. Assertions
       expect(callbackRes.statusCode).toBe(302); // 302 Redirect
-      expect(callbackRes.headers.location).toBe('/dashboard?connect=success');
+      expect(callbackRes.headers.location).toBe('http://localhost:5173/dashboard?connect=success');
 
       // 7. Verify token exchange and DB insert happened
       expect(mockedAxios.post).toHaveBeenCalledWith(
