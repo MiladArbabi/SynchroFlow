@@ -11,15 +11,27 @@ jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 // Mock the db
+// Define mock functions for Knex methods
+const mockWhere = jest.fn().mockReturnThis();
+const mockFirst = jest.fn();
+const mockInsert = jest.fn().mockReturnThis();
+const mockReturning = jest.fn();
+
+const mockKnexChain = { // The object returned *after* db('tableName')
+  where: mockWhere,
+  first: mockFirst,
+  insert: mockInsert,
+  returning: mockReturning,
+};
+
 jest.mock('../../../../packages/api/src/db', () => ({
   __esModule: true,
-  default: jest.fn(() => ({
-    insert: jest.fn(() => ({
-      returning: jest.fn(() => Promise.resolve([{ id: 1 }]))
-    })),
-  }))
+  default: jest.fn().mockImplementation(() => mockKnexChain) // Mock db() call to return the chain
 }));
-const mockedDb = db as unknown as jest.Mock;
+
+// Mock bcrypt for password hashing in tests
+jest.mock('bcrypt');
+const mockedBcrypt = jest.requireMock('bcrypt');
 
 // Mock the queue module
 const mockSendToQueue = jest.fn(() => true);
@@ -38,8 +50,13 @@ describe('OAuth Integration Flow', () => {
 
   beforeEach(() => {
     mockedAxios.post.mockClear();
-    mockedDb.mockClear();
+    (db as unknown as jest.Mock).mockClear();
     mockSendToQueue.mockClear();
+    mockedBcrypt.hash.mockClear(); // Clear bcrypt mock
+    mockWhere.mockClear().mockReturnThis();
+    mockFirst.mockClear();
+    mockInsert.mockClear().mockReturnThis();
+    mockReturning.mockClear();
 
     mockedQueue.getQueueChannel.mockReturnValue({
       sendToQueue: mockSendToQueue,
@@ -89,6 +106,8 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
         }
       });
 
+      mockReturning.mockResolvedValue([{ id: 1 }]);
+
       // 5. Call the /callback with the agent (which has the cookie) and valid state
       const callbackRes = await agent
         .get(
@@ -108,7 +127,7 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
           code: 'test_code',
         }
       );
-      expect(mockedDb).toHaveBeenCalledWith('integrations');
+      expect(db as unknown as jest.Mock).toHaveBeenCalledWith('integrations');
 
       // --- THIS IS THE "RED" ASSERTION ---
       // 8. Verify it was queued
@@ -118,5 +137,68 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
         Buffer.from(JSON.stringify({ integrationId: 1 }))
       );
     });
+  });
+});
+
+// --- ADD THIS NEW BLOCK ---
+describe('POST /api/v1/auth/register', () => {
+  const userData = {
+    email: 'test@example.com',
+    password: 'password123',
+  };
+
+  beforeEach(() => {
+    mockFirst.mockResolvedValue(null);
+    // Mock successful insert returning the new user
+    // Default for 'users' table: Mock successful insert returning the new user
+    mockReturning.mockImplementation(async () => [{ // Use implementation for flexibility
+        id: 1, email: userData.email, created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+    }]);
+    // **SPECIFIC MOCK FOR INTEGRATIONS TABLE:** Ensure it returns an array for destructuring
+    (db as unknown as jest.Mock).mockImplementation((tableName: string) => {
+      if (tableName === 'integrations') {
+        mockReturning.mockResolvedValueOnce([{ id: 1 }]); // Return specific shape for integration insert
+      }
+      return mockKnexChain; // Return the chain for other tables ('users')
+    });
+
+    // Mock successful hashing
+    mockedBcrypt.hash.mockResolvedValue('hashed_password');
+  });
+
+  it('should register a new user successfully', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send(userData);
+
+    // --- Assertions for Green Test ---
+    expect(res.statusCode).toBe(201); // 201 Created
+    expect(res.body).toHaveProperty('id');
+    expect(res.body.email).toBe(userData.email);
+    expect(res.body).not.toHaveProperty('password_hash'); // Ensure hash isn't returned
+
+    // Verify db interaction
+    expect(db).toHaveBeenCalledWith('users'); // Use the imported 'db' which is the mock
+    expect(mockWhere).toHaveBeenCalledWith({ email: userData.email.toLowerCase() }); // Check where clause
+    expect(mockFirst).toHaveBeenCalled();
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+        email: userData.email,
+        password_hash: 'hashed_password'
+    }));
+
+    // Verify password hashing
+    expect(mockedBcrypt.hash).toHaveBeenCalledWith(userData.password, 10);
+  });
+
+  it('should fail with 409 Conflict if email is already in use', async () => {
+    // Mock db to return an existing user this time
+    mockFirst.mockResolvedValue({ id: 2, email: userData.email });
+
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send(userData);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('Email already in use.');
   });
 });
