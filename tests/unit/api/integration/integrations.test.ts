@@ -3,6 +3,8 @@ import request from 'supertest';
 import app from '../../../../packages/api/src/server';
 import axios from 'axios';
 import db from '../../../../packages/api/src/db';
+// Mock the queue module to spy on sendToQueue
+import * as queue from 'api-src/queue';;
 
 // Mock axios
 jest.mock('axios');
@@ -19,6 +21,14 @@ jest.mock('../../../../packages/api/src/db', () => ({
 }));
 const mockedDb = db as unknown as jest.Mock;
 
+// Mock the queue module
+const mockSendToQueue = jest.fn(() => true);
+jest.mock('api-src/queue', () => ({
+  ...jest.requireActual('api-src/queue'), // Keep actual connection logic
+  getQueueChannel: jest.fn(),
+}));
+const mockedQueue = queue as jest.Mocked<typeof queue>;
+
 describe('OAuth Integration Flow', () => {
   // Set mock env vars
   process.env.SHOPIFY_API_KEY = 'test_api_key';
@@ -29,6 +39,11 @@ describe('OAuth Integration Flow', () => {
   beforeEach(() => {
     mockedAxios.post.mockClear();
     mockedDb.mockClear();
+    mockSendToQueue.mockClear();
+
+    mockedQueue.getQueueChannel.mockReturnValue({
+      sendToQueue: mockSendToQueue,
+    } as any);
   });
 
   describe('GET /api/v1/integrations/oauth/initiate', () => {
@@ -94,6 +109,14 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
         }
       );
       expect(mockedDb).toHaveBeenCalledWith('integrations');
+
+      // --- THIS IS THE "RED" ASSERTION ---
+      // 8. Verify it was queued
+      expect(mockedQueue.getQueueChannel).toHaveBeenCalledWith('sync_jobs');
+      expect(mockSendToQueue).toHaveBeenCalledWith(
+        'sync_jobs',
+        Buffer.from(JSON.stringify({ integrationId: 1 }))
+      );
     });
   });
 });

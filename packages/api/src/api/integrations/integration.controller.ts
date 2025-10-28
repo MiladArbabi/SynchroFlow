@@ -3,8 +3,9 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import session from 'express-session';
 import axios from 'axios'; 
-import db from 'api-db'; 
+import db from '../../db';
 import CryptoJS from 'crypto-js';
+import { getQueueChannel } from 'api-src/queue';
 
 // Define the shape of the session
 interface OAuthSession extends session.Session {
@@ -114,10 +115,16 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       })
       .returning('*');
 
-    console.log(`Successfully stored integration ID: ${newIntegration.id}`);
+      const integrationId = newIntegration.id;
+      console.log(`Successfully stored integration ID: ${integrationId}`);
 
-    // --- 4. Final Redirect ---
-    res.redirect('/dashboard?connect=success');
+      // --- 4. Queue the initial sync job ---
+      const syncChannel = getQueueChannel('sync_jobs');
+      const jobPayload = { integrationId };
+      syncChannel.sendToQueue('sync_jobs', Buffer.from(JSON.stringify(jobPayload)));
+      console.log(`Queued initial sync job for integration ID: ${integrationId}`);
+      // --- 4. Final Redirect ---
+      res.redirect('/dashboard?connect=success');
 
   } catch (err) {
     console.error('Error in OAuth callback:', err);
