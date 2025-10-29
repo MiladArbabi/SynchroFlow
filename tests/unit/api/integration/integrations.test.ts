@@ -33,6 +33,10 @@ jest.mock('../../../../packages/api/src/db', () => ({
 jest.mock('bcrypt');
 const mockedBcrypt = jest.requireMock('bcrypt');
 
+// Mock jsonwebtoken
+jest.mock('jsonwebtoken');
+const mockedJwt = jest.requireMock('jsonwebtoken')
+
 // Mock the queue module
 const mockSendToQueue = jest.fn(() => true);
 jest.mock('api-src/queue', () => ({
@@ -52,7 +56,8 @@ describe('OAuth Integration Flow', () => {
     mockedAxios.post.mockClear();
     (db as unknown as jest.Mock).mockClear();
     mockSendToQueue.mockClear();
-    mockedBcrypt.hash.mockClear(); // Clear bcrypt mock
+    mockedBcrypt.hash.mockClear(); 
+    mockedBcrypt.compare.mockClear();
     mockWhere.mockClear().mockReturnThis();
     mockFirst.mockClear();
     mockInsert.mockClear().mockReturnThis();
@@ -200,5 +205,58 @@ describe('POST /api/v1/auth/register', () => {
 
     expect(res.statusCode).toBe(409);
     expect(res.body.error).toBe('Email already in use.');
+  });
+
+  describe('POST /api/v1/auth/login', () => {
+  const loginData = {
+    email: 'test@example.com',
+    password: 'password123',
+  };
+  const mockUser = {
+    id: 1,
+    email: loginData.email,
+    password_hash: 'hashed_password',
+  };
+
+  beforeEach(() => {
+    // Default: Mock finding the user
+    mockFirst.mockResolvedValue(mockUser);
+    // Default: Mock correct password
+    mockedBcrypt.compare.mockResolvedValue(true);
+    // Mock successful JWT signing
+    mockedJwt.sign.mockReturnValue('fake_jwt_token');
+  });
+
+  it('should login successfully with correct credentials', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send(loginData);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toHaveProperty('token', 'fake_jwt_token');
+
+    // Verify db and bcrypt calls
+    expect(db).toHaveBeenCalledWith('users');
+    expect(mockWhere).toHaveBeenCalledWith({ email: loginData.email.toLowerCase() });
+    expect(mockFirst).toHaveBeenCalled();
+    expect(mockedBcrypt.compare).toHaveBeenCalledWith(loginData.password, mockUser.password_hash);
+    expect(mockedJwt.sign).toHaveBeenCalledWith({ userId: mockUser.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+  });
+
+  it('should fail with 401 Unauthorized if user not found', async () => {
+    mockFirst.mockResolvedValue(null); // Override mock: user doesn't exist
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send(loginData);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('should fail with 401 Unauthorized if password is incorrect', async () => {
+    mockedBcrypt.compare.mockResolvedValue(false); // Override mock: wrong password
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send(loginData);
+    expect(res.statusCode).toBe(401);
+  });
   });
 });

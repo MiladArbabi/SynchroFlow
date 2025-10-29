@@ -2,7 +2,8 @@
 import { Request, Response } from 'express';
 import db from 'api-db';
 import bcrypt from 'bcrypt';
-import { User } from 'api-types'; // Assuming types.ts defines User
+import { User } from 'api-types'; 
+import jwt from 'jsonwebtoken';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -42,5 +43,44 @@ export const registerUser = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error during registration:', error);
     res.status(500).json({ error: 'Internal server error during registration.' });
+  }
+};
+
+export const loginUser = async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  // --- Basic Validation ---
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
+  try {
+    // --- Find user by email (case-insensitive) ---
+    const user = await db<User>('users')
+                      .where({ email: email.toLowerCase() })
+                      .first(); // Select password_hash too
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password.' }); // 401 Unauthorized
+    }
+
+    // --- Verify password ---
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Invalid email or password.' }); // 401 Unauthorized
+    }
+
+    // --- Issue JWT ---
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) throw new Error('JWT_SECRET is not set.');
+
+    const token = jwt.sign({ userId: user.id }, jwtSecret, { expiresIn: '1d' }); // Token valid for 1 day
+
+    res.status(200).json({ token });
+
+  } catch (error) {
+    console.error('Error during login:', error);
+    res.status(500).json({ error: 'Internal server error during login.' });
   }
 };
