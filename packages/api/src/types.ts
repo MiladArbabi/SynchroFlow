@@ -19,6 +19,7 @@ export interface User {
   password_hash: string; // We'll select this only on the backend
   first_name?: string;
   last_name?: string;
+  shop_id?: number;
   created_at: string; // Knex returns timestamps as strings by default
   updated_at: string;
 }

@@ -1,4 +1,4 @@
-// tests/unit/api/integration/integrations.test.ts
+// packages/api/src/api/auth/auth.controller.ts
 import request from 'supertest';
 import app from '../../../../packages/api/src/server';
 import axios from 'axios';
@@ -100,12 +100,28 @@ describe('OAuth Integration Flow', () => {
 describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
     
     it('should fail with 403 Forbidden if state is invalid', async () => {
-      // We call the callback directly with a bad state
-      const res = await request(app)
+      // 1. Create an agent to persist session cookies
+      const agent = request.agent(app);
+
+      // 2. Mock JWT verification for the /initiate call
+      const mockUserId = 1;
+      mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: null, arg1: { userId: number; }) => void) => {
+        callback(null, { userId: mockUserId }); // Simulate successful verification
+      });
+
+      // 3. Call /initiate to set up a VALID session (with user_id and state)
+      await agent
+        .get('/api/v1/integrations/oauth/initiate?platform=shopify&shop=my-store')
+        .set('Authorization', 'Bearer fake_valid_token')
+        .expect(200);
+
+      // 4. Call /callback with the valid session, but an INVALID state
+      const res = await agent
         .get(
-          '/api/v1/integrations/oauth/callback/shopify?code=test_code&state=invalid_state'
+          `/api/v1/integrations/oauth/callback/shopify?code=test_code&state=THIS_IS_THE_WRONG_STATE&shop=my-store`
         );
 
+      // 5. Assert it fails at the state check, not the user_id check
       expect(res.statusCode).toBe(403);
       expect(res.body.error).toBe('Invalid CSRF state token.');
     });
@@ -116,6 +132,13 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
 
       // Mock JWT verification for the /initiate call
       const mockUserId = 1;
+      const mockUserShopId = 5; // Give this user a shop ID
+
+      // Mock the user lookup in the callback
+      mockFirst.mockImplementation(async () => ({
+        id: mockUserId, shop_id: mockUserShopId
+      }));
+
       mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: null, arg1: { userId: number; }) => void) => {
         callback(null, { userId: mockUserId }); // Simulate successful verification
       });
@@ -159,8 +182,13 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
         }
       );
       expect(db as unknown as jest.Mock).toHaveBeenCalledWith('integrations');
+      
+      // --- THIS IS THE "GREEN" ASSERTION ---
+      // We check that the 'insert' call now contains the user's *shop_id*
+      expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+        shop_id: mockUserShopId // Expecting shop_id: 5 (from our mock user)
+      }));
 
-      // --- THIS IS THE "RED" ASSERTION ---
       // 8. Verify it was queued
       expect(mockedQueue.getQueueChannel).toHaveBeenCalledWith('sync_jobs');
       expect(mockSendToQueue).toHaveBeenCalledWith(

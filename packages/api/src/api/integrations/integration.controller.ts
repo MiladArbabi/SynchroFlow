@@ -5,6 +5,7 @@ import session from 'express-session';
 import axios from 'axios'; 
 import db from '../../db';
 import CryptoJS from 'crypto-js';
+import { User } from 'api-types';
 import { getQueueChannel } from '../../queue';
 
 // Define the shape of the session
@@ -26,7 +27,7 @@ const encryptToken = (token: string): string => {
 export const initiateOAuth = (req: Request, res: Response) => {
   const { platform, shop } = req.query as { platform: string; shop: string };
   const session = req.session as OAuthSession;
-  const userId = req.user?.userId; // Get user ID from authenticateToken middleware
+ const userId = req.user?.userId;
 
   // User ID must be present from middleware
   if (!userId) {
@@ -74,9 +75,15 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   const { platform } = req.params as { platform: string };
   const { code, state, shop } = req.query as { code: string; state: string; shop: string };
   const session = req.session as OAuthSession;
+  const userId = session.oauth_user_id;
 
   // --- 1. Security: Validate CSRF State Token ---
   const expectedState = session.oauth_state;
+
+  // --- NEW: Validate User ID ---
+  if (!userId) {
+    return res.status(403).json({ error: 'Invalid session: No user ID found.' });
+  }
 
   if (!expectedState || !state || expectedState !== state) {
     // Clear the bad state
@@ -85,7 +92,8 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   }
 
   // State is valid, clear it from session
-  session.oauth_state = undefined; 
+  session.oauth_state = undefined;
+  session.oauth_user_id = undefined;
 
   try {
     let accessToken = '';
@@ -110,13 +118,19 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to retrieve access token.' });
     }
 
-    // --- 3. Encrypt and Store Token ---
+    // --- 3. Get User's Shop ID ---
+    const user = await db<User>('users').where({ id: userId }).first();
+    if (!user || !user.shop_id) {
+      return res.status(404).json({ error: 'User account or associated shop not found.' });
+    }
+    const userShopId = user.shop_id;
+
+    // --- 4. Encrypt and Store Token ---
     const encryptedToken = encryptToken(accessToken);
 
-    // TODO: Replace 'shopId: 1' with the actual user/account ID from the session
     const [newIntegration] = await db('integrations')
       .insert({
-        shop_id: 1, // Placeholder for user/account ID
+        shop_id: userShopId, // <-- USE THE USER'S SHOP ID
         platform: platform,
         platform_shop_name: shop,
         access_token_encrypted: encryptedToken,
@@ -126,12 +140,12 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       const integrationId = newIntegration.id;
       console.log(`Successfully stored integration ID: ${integrationId}`);
 
-      // --- 4. Queue the initial sync job ---
+      // --- 5. Queue the initial sync job ---
       const syncChannel = getQueueChannel('sync_jobs');
       const jobPayload = { integrationId };
       syncChannel.sendToQueue('sync_jobs', Buffer.from(JSON.stringify(jobPayload)));
       console.log(`Queued initial sync job for integration ID: ${integrationId}`);
-      // --- 4. Final Redirect ---
+      // --- Final Redirect ---
       res.redirect(`${process.env.FRONTEND_URL}/dashboard?connect=success`);
 
   } catch (err) {
