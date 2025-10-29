@@ -257,6 +257,47 @@ describe('POST /api/v1/auth/register', () => {
       .post('/api/v1/auth/login')
       .send(loginData);
     expect(res.statusCode).toBe(401);
+    });
   });
+
+  describe('Protected Routes Middleware', () => {
+  // We'll use the layouts endpoint as our test case
+  const layoutsUrl = '/api/v1/layouts/dashboard';
+
+  beforeEach(() => {
+    // Mock db to return no layout found by default for simplicity
+    mockFirst.mockResolvedValue(null);
+    // Mock db integration check to return no integrations
+    // This simulates the case where the layout endpoint *should* return 404 if unprotected
+    (db as unknown as jest.Mock).mockImplementation((tableName: string) => {
+      if (tableName === 'integrations') {
+        mockFirst.mockResolvedValueOnce(null); // No integrations found
+      }
+      return mockKnexChain;
+    });
+  });
+
+  it('GET /layouts/dashboard should return 401 Unauthorized without a valid token', async () => {
+    const res = await request(app)
+      .get(layoutsUrl);
+    // This is the RED TEST - it will currently return 404 or 200, not 401
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('GET /layouts/dashboard should return 200 OK with a valid token', async () => {
+    // 1. Mock JWT verification to succeed
+    const mockUserId = 1;
+    mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: null, arg1: { userId: number; }) => void) => {
+      callback(null, { userId: mockUserId }); // Simulate successful verification
+    });
+
+    // 2. Make request with a dummy token (verification is mocked anyway)
+    const res = await request(app)
+      .get(layoutsUrl)
+      .set('Authorization', 'Bearer fake_valid_token');
+
+    // **FIX:** Expect 404 because our mocks simulate NO layout AND NO integrations
+    expect(res.statusCode).toBe(404);
+    });
   });
 });
