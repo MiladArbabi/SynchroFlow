@@ -1,5 +1,5 @@
 // jest.setup.js
-require('@testing-library/jest-dom');
+import '@testing-library/jest-dom';
 
 // Polyfill for TextEncoder/TextDecoder which are not available in JSDOM
 global.TextEncoder = require('util').TextEncoder;
@@ -11,7 +11,7 @@ global.ResizeObserver = require('resize-observer-polyfill');
 Object.defineProperty(global, 'import.meta', {
   value: {
     env: {
-      VITE_APP_VERSION: 'v-test', // Provide a mock version
+      VITE_APP_VERSION: 'test-version', // Provide a mock version
       // Add other env variables used by your app here
     }
   },
