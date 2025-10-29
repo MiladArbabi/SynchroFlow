@@ -10,7 +10,8 @@ import { getQueueChannel } from '../../queue';
 // Define the shape of the session
 interface OAuthSession extends session.Session {
   oauth_state?: string;
-  user_id?: number;
+  oauth_user_id?: number; // Store the user ID initiating the flow
+  user_id?: number; // (This might be from a regular login session)
 }
 
 // --- Helper function for encryption ---
@@ -25,6 +26,12 @@ const encryptToken = (token: string): string => {
 export const initiateOAuth = (req: Request, res: Response) => {
   const { platform, shop } = req.query as { platform: string; shop: string };
   const session = req.session as OAuthSession;
+  const userId = req.user?.userId; // Get user ID from authenticateToken middleware
+
+  // User ID must be present from middleware
+  if (!userId) {
+    return res.status(500).json({ error: 'Authenticated user ID not found.' });
+  }
 
   // --- 1. Validation ---
   if (!platform) {
@@ -34,6 +41,7 @@ export const initiateOAuth = (req: Request, res: Response) => {
   // --- 2. Security: Generate & Store CSRF State Token ---
   const state = crypto.randomBytes(16).toString('hex');
   session.oauth_state = state;
+  session.oauth_user_id = userId; // <-- STORE THE USER ID
 
   let authorizationUrl = '';
   const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/${platform}`;
