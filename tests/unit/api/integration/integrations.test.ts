@@ -33,6 +33,9 @@ jest.mock('../../../../packages/api/src/db', () => ({
 jest.mock('bcrypt');
 const mockedBcrypt = jest.requireMock('bcrypt');
 
+// Mock the layout controller to spy on its methods if needed (optional)
+// jest.mock('api-src/api/layouts/layout.controller');
+
 // Mock jsonwebtoken
 jest.mock('jsonwebtoken');
 const mockedJwt = jest.requireMock('jsonwebtoken')
@@ -58,11 +61,18 @@ describe('OAuth Integration Flow', () => {
     mockSendToQueue.mockClear();
     mockedBcrypt.hash.mockClear(); 
     mockedBcrypt.compare.mockClear();
+    mockedJwt.verify.mockClear();
+    mockedJwt.sign.mockClear()
     mockWhere.mockClear().mockReturnThis();
     mockFirst.mockClear();
     mockInsert.mockClear().mockReturnThis();
     mockReturning.mockClear();
 
+    // Reset implementation for flexibility in tests
+    (db as unknown as jest.Mock).mockImplementation(() => mockKnexChain);
+
+    // Default mock for user lookup (needed for middleware pass-through)
+    mockFirst.mockResolvedValue({ id: 1, shop_id: 5 }); // Default user
     mockedQueue.getQueueChannel.mockReturnValue({
       sendToQueue: mockSendToQueue,
     } as any);
@@ -133,6 +143,7 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
       // Mock JWT verification for the /initiate call
       const mockUserId = 1;
       const mockUserShopId = 5; // Give this user a shop ID
+      mockFirst.mockResolvedValue({ id: mockUserId, shop_id: mockUserShopId }); // Mock user lookup for callback
 
       // Mock the user lookup in the callback
       mockFirst.mockImplementation(async () => ({
@@ -317,28 +328,91 @@ describe('POST /api/v1/auth/register', () => {
   describe('Protected Routes Middleware', () => {
   // We'll use the layouts endpoint as our test case
   const layoutsUrl = '/api/v1/layouts/dashboard';
+  const mockUserId = 1;
+  const mockUserShopId = 5;
+  const mockLayoutData = { layout: [{ i: 'a', x: 0, y: 0, w: 1, h: 1 }], activeWidgets: [{ instanceId: 'a', widgetId: 'b' }] };
+  const mockIntegrationData = { id: 1, platform: 'shopify' };
 
   beforeEach(() => {
-    // Mock db to return no layout found by default for simplicity
-    mockFirst.mockResolvedValue(null);
-    // Mock db integration check to return no integrations
-    // This simulates the case where the layout endpoint *should* return 404 if unprotected
+  // Reset mocks specifically for layout tests
+    mockFirst.mockClear();
+    mockWhere.mockClear().mockReturnThis();
+    (db as unknown as jest.Mock).mockClear();
+
+    // Mock JWT verification to succeed by default for these tests
+    mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: null, arg1: { userId: number; }) => void) => {
+      callback(null, { userId: mockUserId });
+    });
+
+    // Mock the user lookup that happens first in the controller
     (db as unknown as jest.Mock).mockImplementation((tableName: string) => {
-      if (tableName === 'integrations') {
-        mockFirst.mockResolvedValueOnce(null); // No integrations found
+      if (tableName === 'users') {
+        mockFirst.mockResolvedValueOnce({ id: mockUserId, shop_id: mockUserShopId });
       }
       return mockKnexChain;
     });
   });
 
   it('GET /layouts/dashboard should return 401 Unauthorized without a valid token', async () => {
+    mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: Error, arg1: undefined) => void) => {
+       callback(new Error('test invalid token'), undefined); // Simulate JWT failure
+    });
+
     const res = await request(app)
       .get(layoutsUrl);
     // This is the RED TEST - it will currently return 404 or 200, not 401
     expect(res.statusCode).toBe(401);
+    // Note: Our middleware currently returns 403 on invalid token, test reflects that
+    // expect(res.statusCode).toBe(401); // Or 403 depending on middleware exact logic
   });
 
-  it('GET /layouts/dashboard should return 200 OK with a valid token', async () => {
+    it('GET /layouts/dashboard should return 200 OK with layout data if found', async () => {
+    // Mock finding the layout for the user's shop
+    (db as unknown as jest.Mock).mockImplementation((tableName: string) => {
+      if (tableName === 'users') mockFirst.mockResolvedValueOnce({ id: mockUserId, shop_id: mockUserShopId });
+      if (tableName === 'layouts') mockFirst.mockResolvedValueOnce(mockLayoutData);
+      return mockKnexChain;
+    });
+
+    const res = await request(app)
+      .get(layoutsUrl)
+      .set('Authorization', 'Bearer fake_valid_token');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual(mockLayoutData);
+    expect(db).toHaveBeenCalledWith('layouts');
+    expect(mockWhere).toHaveBeenCalledWith({ shop_id: mockUserShopId, name: 'dashboard' });
+  });
+
+  it('GET /layouts/dashboard should return 200 OK (default) if layout NOT found but integrations EXIST', async () => {
+    // Mock finding NO layout but YES integrations for the user's shop
+    (db as unknown as jest.Mock).mockImplementation((tableName: string) => {
+      if (tableName === 'users') mockFirst.mockResolvedValueOnce({ id: mockUserId, shop_id: mockUserShopId });
+      if (tableName === 'layouts') mockFirst.mockResolvedValueOnce(null); // No layout
+      if (tableName === 'integrations') mockFirst.mockResolvedValueOnce(mockIntegrationData); // Yes integration
+      return mockKnexChain;
+    });
+
+    const res = await request(app)
+      .get(layoutsUrl)
+      .set('Authorization', 'Bearer fake_valid_token');
+
+    expect(res.statusCode).toBe(200); // Expect 200 as per #379
+    expect(res.body).toEqual({ layout: [], activeWidgets: [] }); // Expect default structure
+    expect(db).toHaveBeenCalledWith('layouts');
+    expect(db).toHaveBeenCalledWith('integrations');
+    expect(mockWhere).toHaveBeenCalledWith({ shop_id: mockUserShopId }); // Check integration query
+  });
+
+  it('GET /layouts/dashboard should return 404 if layout AND integrations NOT found', async () => {
+    // Mock finding NO layout AND NO integrations for the user's shop
+    (db as unknown as jest.Mock).mockImplementation((tableName: string) => {
+      if (tableName === 'users') mockFirst.mockResolvedValueOnce({ id: mockUserId, shop_id: mockUserShopId });
+      if (tableName === 'layouts') mockFirst.mockResolvedValueOnce(null); // No layout
+      if (tableName === 'integrations') mockFirst.mockResolvedValueOnce(null); // No integration
+      return mockKnexChain;
+    });
+
     // 1. Mock JWT verification to succeed
     const mockUserId = 1;
     mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: null, arg1: { userId: number; }) => void) => {
@@ -350,8 +424,10 @@ describe('POST /api/v1/auth/register', () => {
       .get(layoutsUrl)
       .set('Authorization', 'Bearer fake_valid_token');
 
-    // **FIX:** Expect 404 because our mocks simulate NO layout AND NO integrations
+    // This is the RED TEST - Controller doesn't implement the logic yet
     expect(res.statusCode).toBe(404);
+    expect(db).toHaveBeenCalledWith('layouts');
+    expect(db).toHaveBeenCalledWith('integrations');;
     });
   });
 });
