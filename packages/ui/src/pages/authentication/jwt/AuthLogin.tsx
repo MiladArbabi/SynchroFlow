@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -12,8 +13,8 @@ import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import InputLabel from '@mui/material/InputLabel';
 import OutlinedInput from '@mui/material/OutlinedInput';
-import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 
 // third party
 import * as Yup from 'yup';
@@ -73,13 +74,15 @@ export default function JWTLogin({ ...others }: JWTLoginProps) {
           .max(10, 'Password must be less than 10 characters')
       })}
       onSubmit={async (values, { setErrors, setStatus, setSubmitting }: FormikHelpers<LoginFormValues>) => { // <-- Add FormikHelpers type
-        try {
-          console.log('Login attempt:', values.email); // <-- Temporary log
-          // TODO (#389): Replace with Axios call to /api/v1/auth/login
-          // const trimmedEmail = values.email.trim();
-          // await login?.(trimmedEmail, values.password); // <-- Original call
-
-          // Simulate success for now
+        try {          
+          // --- Call the backend API ---
+          const response = await axios.post('/api/v1/auth/login', {
+            email: values.email.trim(), // Send trimmed email
+            password: values.password // Send password as is
+          });
+          
+          // TODO (#390): Store the received token (response.data.token)
+          console.log('Login successful, token:', response.data.token); // Placeholder log
           setStatus({ success: true });
           setSubmitting(false);
           // if (scriptedRef.current) { ... } // <-- Removed script ref check
@@ -88,7 +91,10 @@ export default function JWTLogin({ ...others }: JWTLoginProps) {
           setStatus({ success: false });
           setErrors({ submit: err.message || 'Login failed' }); // Use generic message
           setSubmitting(false);
-          // if (scriptedRef.current) { ... } // <-- Removed script ref check
+          // Extract error message from API response if available
+          const apiError = err.response?.data?.error || 'Login failed. Please check your credentials.';
+          setErrors({ submit: apiError });
+          setSubmitting(false);
         }
       }}
     >

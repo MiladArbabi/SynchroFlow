@@ -1,7 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 // import { useDispatch } from 'store';
 
 // material-ui
@@ -125,27 +126,35 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
         })}
         onSubmit={async (values, { setErrors, setStatus, setSubmitting }: FormikHelpers<RegisterFormValues>) => {
           try {
-            console.log('Register attempt:', values);
-            // TODO (#389): Replace with Axios call to /api/v1/auth/register
+            // --- Call the backend API ---
             const trimmedFirstName = values.firstName.trim();
             const trimmedLastName = values.lastName.trim();
             const trimmedEmail = values.email.trim();
             // await register?.(trimmedEmail, values.password, trimmedFirstName, trimmedLastName);
 
-            // Simulate success for now
+            await axios.post('/api/v1/auth/register', {
+              firstName: trimmedFirstName,
+              lastName: trimmedLastName,
+              email: trimmedEmail,
+              password: values.password // Send password as is
+            });
+ 
+            // --- Handle Success ---
             setStatus({ success: true });
             setSubmitting(false);
             console.log('Registration simulated successfully.');
-            // Redirect immediately for now
-            navigate('/login');
-            // if (scriptedRef.current) { ... } // Removed script ref check
-
+            
+            navigate('/login', { replace: true }); // Redirect to login after successful registration
           } catch (err: any) { // <-- Add Type
             console.error("Register error:", err); // <-- Temporary log
             setStatus({ success: false });
             setErrors({ submit: err.message || 'Registration failed' }); // Generic message
-            setSubmitting(false);
             // if (scriptedRef.current)
+
+            // Extract error message from API response if available
+            const apiError = err.response?.data?.error || 'Registration failed. Please try again.';
+            setErrors({ submit: apiError });
+            setSubmitting(false);
           }
         }}
       >
