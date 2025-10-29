@@ -14,7 +14,6 @@ interface BuiltPalette {
     dark: ThemeOptions['palette'];
 }
 
-
 // ==============================|| DEFAULT THEME - PALETTE ||============================== //
 
 export function buildPalette(presetColorId: string): BuiltPalette { // Accept preset ID string

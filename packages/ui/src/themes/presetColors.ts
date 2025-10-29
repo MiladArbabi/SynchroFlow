@@ -32,105 +32,105 @@ interface ColorSet {
   darkSecondary800: string;
 }
 
-// Default Colors (from _themes-vars.module.scss)
+// Default Colors
 const defaultColors: ColorSet = {
   id: 'default',
-  primary: '#2196f3', primaryDarkSwatch: '#2196f3',
-  secondary: '#673ab7', secondaryDarkSwatch: '#7c4dff',
-  primaryLight: '#e3f2fd', primaryMain: '#2196f3', primaryDark: '#1e88e5', primary200: '#90caf9', primary800: '#1565c0',
-  secondaryLight: '#ede7f6', secondaryMain: '#673ab7', secondaryDark: '#5e35b1', secondary200: '#b39ddb', secondary800: '#4527a0',
-  darkPrimaryLight: '#e3f2fd', darkPrimaryMain: '#2196f3', darkPrimaryDark: '#1e88e5', darkPrimary200: '#90caf9', darkPrimary800: '#1565c0',
-  darkSecondaryLight: '#d1c4e9', darkSecondaryMain: '#7c4dff', darkSecondaryDark: '#651fff', darkSecondary200: '#b39ddb', darkSecondary800: '#6200ea',
+  primary: '#0f62fe', primaryDarkSwatch: '#002d9c',
+  secondary: '#1192e8', secondaryDarkSwatch: '#00539a',
+  primaryLight: '#edf5ff', primaryMain: '#0f62fe', primaryDark: '#0043ce', primary200: '#a6c8ff', primary800: '#001d6c',
+  secondaryLight: '#e5f6ff', secondaryMain: '#1192e8', secondaryDark: '#0072c3', secondary200: '#82cfff', secondary800: '#012749',
+  darkPrimaryLight: '#edf5ff', darkPrimaryMain: '#002d9c', darkPrimaryDark: '#001d6c', darkPrimary200: '#a6c8ff', darkPrimary800: '#001141',
+  darkSecondaryLight: '#e5f6ff', darkSecondaryMain: '#00539a', darkSecondaryDark: '#003a6d', darkSecondary200: '#82cfff', darkSecondary800: '#012749',
 };
 
-// Theme 1 Colors (from _theme1.module.scss)
-const theme1Colors: ColorSet = {
-  id: 'theme1',
-  primary: '#607d8b', primaryDarkSwatch: '#78919c',
-  secondary: '#009688', secondaryDarkSwatch: '#009688',
-  primaryLight: '#eceff1', primaryMain: '#607d8b', primaryDark: '#546e7a', primary200: '#b0bec5', primary800: '#455a64',
-  secondaryLight: '#e0f2f1', secondaryMain: '#009688', secondaryDark: '#00897b', secondary200: '#80cbc4', secondary800: '#00695c',
-  darkPrimaryLight: '#eceff1', darkPrimaryMain: '#78919c', darkPrimaryDark: '#587583', darkPrimary200: '#b0bec5', darkPrimary800: '#44606e',
-  darkSecondaryLight: '#e0f2f1', darkSecondaryMain: '#009688', darkSecondaryDark: '#00897b', darkSecondary200: '#80cbc4', darkSecondary800: '#00695c',
+// Mono Light Colors
+const monoLightColors: ColorSet = {
+  id: 'mono_light',
+  primary: '#424242', primaryDarkSwatch: '#616161',
+  secondary: '#757575', secondaryDarkSwatch: '#9e9e9e',
+  primaryLight: '#ececec', primaryMain: '#424242', primaryDark: '#343434', primary200: '#a0a0a0', primary800: '#212121',
+  secondaryLight: '#f0f0f0', secondaryMain: '#757575', secondaryDark: '#616161', secondary200: '#bdbdbd', secondary800: '#424242',
+  darkPrimaryLight: '#e0e0e0', darkPrimaryMain: '#616161', darkPrimaryDark: '#424242', darkPrimary200: '#9e9e9e', darkPrimary800: '#212121',
+  darkSecondaryLight: '#eeeeee', darkSecondaryMain: '#9e9e9e', darkSecondaryDark: '#757575', darkSecondary200: '#bdbdbd', darkSecondary800: '#424242',
 };
 
-// Theme 2 Colors (from _theme2.module.scss)
-const theme2Colors: ColorSet = {
-  id: 'theme2',
-  primary: '#203461', primaryDarkSwatch: '#606d88',
-  secondary: '#ec407a', secondaryDarkSwatch: '#ec407a',
-  primaryLight: '#e4e7ec', primaryMain: '#203461', primaryDark: '#1c2f59', primary200: '#909ab0', primary800: '#132145',
-  secondaryLight: '#fde8ef', secondaryMain: '#ec407a', secondaryDark: '#ea3a72', secondary200: '#f6a0bd', secondary800: '#e42a5d',
-  darkPrimaryLight: '#ecedf1', darkPrimaryMain: '#606d88', darkPrimaryDark: '#586580', darkPrimary200: '#b0b6c4', darkPrimary800: '#44506b',
-  darkSecondaryLight: '#fde8ef', darkSecondaryMain: '#ec407a', darkSecondaryDark: '#ea3a72', darkSecondary200: '#f6a0bd', darkSecondary800: '#e42a5d',
+// Mono Dark Colors
+const monoDarkColors: ColorSet = {
+  id: 'mono_dark',
+  primary: '#bdbdbd', primaryDarkSwatch: '#eeeeee',
+  secondary: '#808080', secondaryDarkSwatch: '#aaaaaa',
+  primaryLight: '#ffffff', primaryMain: '#bdbdbd', primaryDark: '#a0a0a0', primary200: '#eeeeee', primary800: '#757575',
+  secondaryLight: '#f5f5f5', secondaryMain: '#808080', secondaryDark: '#6a6a6a', secondary200: '#b3b3b3', secondary800: '#4d4d4d',
+  darkPrimaryLight: '#ffffff', darkPrimaryMain: '#eeeeee', darkPrimaryDark: '#bdbdbd', darkPrimary200: '#f5f5f5', darkPrimary800: '#9e9e9e',
+  darkSecondaryLight: '#dddddd', darkSecondaryMain: '#aaaaaa', darkSecondaryDark: '#888888', darkSecondary200: '#cccccc', darkSecondary800: '#666666',
 };
 
-// Theme 3 Colors (from _theme3.module.scss)
-const theme3Colors: ColorSet = {
-  id: 'theme3',
-  primary: '#16595a', primaryDarkSwatch: '#1f7778',
-  secondary: '#c77e23', secondaryDarkSwatch: '#c77e23',
-  primaryLight: '#e3ebeb', primaryMain: '#16595a', primaryDark: '#135152', primary200: '#8bacad', primary800: '#0c3e3f',
-  secondaryLight: '#f8f0e5', secondaryMain: '#c77e23', secondaryDark: '#c1761f', secondary200: '#e3bf91', secondary800: '#b36115',
-  darkPrimaryLight: '#eceff1', darkPrimaryMain: '#1f7778', darkPrimaryDark: '#1b6f70', darkPrimary200: '#8fbbbc', darkPrimary800: '#125a5b',
-  darkSecondaryLight: '#f8f0e5', darkSecondaryMain: '#c77e23', darkSecondaryDark: '#c1761f', darkSecondary200: '#e3bf91', darkSecondary800: '#b36115',
+// Orange Colors
+const orangeColors: ColorSet = {
+  id: 'orange',
+  primary: '#FF9800', primaryDarkSwatch: '#EF6C00',
+  secondary: '#FFC107', secondaryDarkSwatch: '#FFA000',
+  primaryLight: '#FFF3E0', primaryMain: '#FF9800', primaryDark: '#FB8C00', primary200: '#FFE082', primary800: '#EF6C00',
+  secondaryLight: '#FFF8E1', secondaryMain: '#FFC107', secondaryDark: '#FFB300', secondary200: '#FFECB3', secondary800: '#FFA000',
+  darkPrimaryLight: '#FFF3E0', darkPrimaryMain: '#EF6C00', darkPrimaryDark: '#E65100', darkPrimary200: '#FFE082', darkPrimary800: '#D84315',
+  darkSecondaryLight: '#FFF8E1', darkSecondaryMain: '#FFA000', darkSecondaryDark: '#F57C00', darkSecondary200: '#FFECB3', darkSecondary800: '#EF6C00',
 };
 
-// Theme 4 Colors (from _theme4.module.scss)
-const theme4Colors: ColorSet = {
-  id: 'theme4',
-  primary: '#173e43', primaryDarkSwatch: '#3a5b5f',
-  secondary: '#3fb0ac', secondaryDarkSwatch: '#3fb0ac',
-  primaryLight: '#e3e8e8', primaryMain: '#173e43', primaryDark: '#14383d', primary200: '#8b9fa1', primary800: '#0d282c',
-  secondaryLight: '#e8f6f5', secondaryMain: '#3fb0ac', secondaryDark: '#39a9a5', secondary200: '#9fd8d6', secondary800: '#299792',
-  darkPrimaryLight: '#e3e8e8', darkPrimaryMain: '#3a5b5f', darkPrimaryDark: '#14383d', darkPrimary200: '#8b9fa1', darkPrimary800: '#0d282c',
-  darkSecondaryLight: '#e8f6f5', darkSecondaryMain: '#3fb0ac', darkSecondaryDark: '#39a9a5', darkSecondary200: '#9fd8d6', darkSecondary800: '#299792',
+// Green Olive Colors
+const greenOliveColors: ColorSet = {
+  id: 'green_olive',
+  primary: '#8bc34a', primaryDarkSwatch: '#add580',
+  secondary: '#7a8c6a', secondaryDarkSwatch: '#afbaa5',
+  primaryLight: '#e7f3da', primaryMain: '#8bc34a', primaryDark: '#7daf42', primary200: '#b9db92', primary800: '#374e1d',
+  secondaryLight: '#e4e8e1', secondaryMain: '#7a8c6a', secondaryDark: '#6d7e5f', secondary200: '#afbaa5', secondary800: '#30382a',
+  darkPrimaryLight: '#e7f3da', darkPrimaryMain: '#add580', darkPrimaryDark: '#7daf42', darkPrimary200: '#b9db92', darkPrimary800: '#374e1d',
+  darkSecondaryLight: '#e4e8e1', darkSecondaryMain: '#afbaa5', darkSecondaryDark: '#6d7e5f', darkSecondary200: '#afbaa5', darkSecondary800: '#30382a',
 };
 
-// Theme 5 Colors (from _theme5.module.scss)
-const theme5Colors: ColorSet = {
-  id: 'theme5',
-  primary: '#0a2342', primaryDarkSwatch: '#54657b',
-  secondary: '#2ca58d', secondaryDarkSwatch: '#2ca58d',
-  primaryLight: '#e2e5e8', primaryMain: '#0a2342', primaryDark: '#091f3c', primary200: '#8591a1', primary800: '#05152b',
-  secondaryLight: '#e6f4f1', secondaryMain: '#2ca58d', secondaryDark: '#279d85', secondary200: '#96d2c6', secondary800: '#1b8a70',
-  darkPrimaryLight: '#e2e5e8', darkPrimaryMain: '#54657b', darkPrimaryDark: '#2f445e', darkPrimary200: '#8591a1', darkPrimary800: '#05152b',
-  darkSecondaryLight: '#e6f4f1', darkSecondaryMain: '#2ca58d', darkSecondaryDark: '#279d85', darkSecondary200: '#96d2c6', darkSecondary800: '#1b8a70',
+// Lavender Violet Colors
+const lavenderVioletColors: ColorSet = {
+  id: 'lavender_violet',
+  primary: '#6a4c7c', primaryDarkSwatch: '#a593b0',
+  secondary: '#d7c4e2', secondaryDarkSwatch: '#e1dbe4',
+  primaryLight: '#e1dbe4', primaryMain: '#6a4c7c', primaryDark: '#5f446f', primary200: '#a593b0', primary800: '#2a1e31',
+  secondaryLight: '#f5f2f7', secondaryMain: '#d7c4e2', secondaryDark: '#c2b1cd', secondary200: '#e5d7ed', secondary800: '#564f5a',
+  darkPrimaryLight: '#e1dbe4', darkPrimaryMain: '#a593b0', darkPrimaryDark: '#5f446f', darkPrimary200: '#a593b0', darkPrimary800: '#2a1e31',
+  darkSecondaryLight: '#f5f2f7', darkSecondaryMain: '#e1dbe4', darkSecondaryDark: '#c2b1cd', darkSecondary200: '#e5d7ed', darkSecondary800: '#564f5a',
 };
 
-// Theme 6 Colors (from _theme6.module.scss)
-const theme6Colors: ColorSet = {
-  id: 'theme6',
-  primary: '#3f51b5', primaryDarkSwatch: '#7267ef', // Note: Theme6 Dark Primary is different
-  secondary: '#3f51b5', secondaryDarkSwatch: '#7267ef', // Note: Theme6 Dark Secondary is different
-  primaryLight: '#e8eaf6', primaryMain: '#3f51b5', primaryDark: '#3949ab', primary200: '#9fa8da', primary800: '#283593',
-  secondaryLight: '#e8eaf6', secondaryMain: '#3f51b5', secondaryDark: '#3949ab', secondary200: '#9fa8da', secondary800: '#283593',
-  darkPrimaryLight: '#eeedfd', darkPrimaryMain: '#7267ef', darkPrimaryDark: '#6a5fed', darkPrimary200: '#b9b3f7', darkPrimary800: '#554ae8',
-  darkSecondaryLight: '#eeedfd', darkSecondaryMain: '#7267ef', darkSecondaryDark: '#6a5fed', darkSecondary200: '#b9b3f7', darkSecondary800: '#554ae8',
+// Brown Beige Colors
+const brownBeigeColors: ColorSet = {
+  id: 'brown_beige',
+  primary: '#8d6e63', primaryDarkSwatch: '#baa8a1',
+  secondary: '#a1887f', secondaryDarkSwatch: '#c6b7b2',
+  primaryLight: '#e8e2df', primaryMain: '#8d6e63', primaryDark: '#7e6359', primary200: '#baa8a1', primary800: '#382c27',
+  secondaryLight: '#ece7e5', secondaryMain: '#a1887f', secondaryDark: '#907a72', secondary200: '#c6b7b2', secondary800: '#403632',
+  darkPrimaryLight: '#e8e2df', darkPrimaryMain: '#baa8a1', darkPrimaryDark: '#7e6359', darkPrimary200: '#baa8a1', darkPrimary800: '#382c27',
+  darkSecondaryLight: '#ece7e5', darkSecondaryMain: '#c6b7b2', darkSecondaryDark: '#907a72', darkSecondary200: '#c6b7b2', darkSecondary800: '#403632',
 };
 
 // Base colors (usually consistent across presets) - Copied from _themes-vars
 export const baseColors = {
     paper: '#ffffff',
     errorLight: '#ef9a9a', errorMain: '#f44336', errorDark: '#c62828',
-    orangeLight: '#fbe9e7', orangeMain: '#ffab91', orangeDark: '#d84315',
+    orangeLight: '#fff8e1', orangeMain: '#ffecb3', orangeDark: '#fb8c00',
     warningLight: '#fff8e1', warningMain: '#ffe57f', warningDark: '#ffc107',
     successLight: '#b9f6ca', success200: '#69f0ae', successMain: '#00e676', successDark: '#00c853',
     grey50: '#f8fafc', grey100: '#eef2f6', grey200: '#e3e8ef', grey300: '#cdd5df',
     grey500: '#697586', grey600: '#4b5565', grey700: '#364152', grey900: '#121926',
     darkBackground: '#1a223f', darkPaper: '#111936', darkLevel1: '#29314f', darkLevel2: '#212946',
-    darkTextTitle: '#d7dcec', darkTextPrimary: '#bdc8f0', darkTextSecondary: '#8492c4',
+    darkTextTitle: '#ffffff', darkTextPrimary: '#e5e5e7', darkTextSecondary: '#a5adbb',
 };
 
 // Exported list of available presets
 export const presetColorOptions: ColorSet[] = [
     defaultColors,
-    theme1Colors,
-    theme2Colors,
-    theme3Colors,
-    theme4Colors,
-    theme5Colors,
-    theme6Colors,
+    monoLightColors,
+    monoDarkColors,
+    orangeColors,
+    greenOliveColors,
+    lavenderVioletColors,
+    brownBeigeColors,
 ];
 
 // Export a function to get colors by ID (used by palette builder)
