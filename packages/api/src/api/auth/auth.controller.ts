@@ -82,11 +82,25 @@ export const loginUser = async (req: Request, res: Response) => {
 
     // --- Issue JWT ---
     const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) throw new Error('JWT_SECRET is not set.');
+    const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || jwtSecret; // Use separate secret if defined
+    if (!jwtSecret || !jwtRefreshSecret) throw new Error('JWT secrets are not set.');
 
-    const token = jwt.sign({ userId: user.id }, jwtSecret, { expiresIn: '1d' }); // Token valid for 1 day
+    // 1. Short-lived Access Token (sent in body)
+    const accessToken = jwt.sign({ userId: user.id }, jwtSecret, { expiresIn: '15m' }); // e.g., 15 minutes
 
-    res.status(200).json({ token });
+    // 2. Long-lived Refresh Token (sent as HttpOnly cookie)
+    const refreshToken = jwt.sign({ userId: user.id }, jwtRefreshSecret, { expiresIn: '7d' }); // e.g., 7 days
+
+    // Set cookie options
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true, // Crucial for security! JS can't access.
+      secure: process.env.NODE_ENV === 'production', // Send only over HTTPS in production
+      sameSite: 'strict', // Helps prevent CSRF
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds (must match token expiry)
+    });
+
+    // Send only the access token in the response body
+    res.status(200).json({ accessToken });
 
   } catch (error) {
     console.error('Error during login:', error);

@@ -1,6 +1,7 @@
 // packages/api/src/server.ts
 import dotenv from 'dotenv';
 dotenv.config();
+import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
 import crypto from 'crypto';
@@ -37,6 +38,8 @@ const addon = require(addonPath);
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
+
 // --- SESSION MIDDLEWARE ---
 app.use(
   session({
