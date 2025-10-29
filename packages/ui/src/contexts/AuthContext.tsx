@@ -2,6 +2,7 @@
 // packages/ui/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from '../../../api/src/types';
+import { setToken, clearToken } from 'utils/authStore';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -48,6 +49,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       user,
       accessToken,
     });
+    setToken(accessToken); // <-- WRITE to in-memory store
     console.log("AuthContext: User logged in, token stored in memory."); // Debug log
   }, []);
 
@@ -58,12 +60,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       user: null,
       accessToken: null,
     });
+    clearToken();
     console.log("AuthContext: User logged out, token cleared from memory."); // Debug log
     // Note: Calling the backend /logout endpoint happens separately
   }, []);
 
   const setAccessToken = useCallback((token: string | null) => {
       setAuthState(prev => ({ ...prev, accessToken: token }));
+      setToken(token); // <-- UPDATE in-memory store
       console.log("AuthContext: Access token updated."); // Debug log
   }, []);
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import { axiosInstance as axios } from 'api/axiosConfig';
 
 // material-ui
 import Button from '@mui/material/Button';
