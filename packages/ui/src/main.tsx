@@ -1,9 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/main.tsx
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import App from './App.tsx';
+import App from './App';
 import { UserProvider } from './contexts/UserContext.tsx';
+import { AuthProvider } from './contexts/AuthContext';
+import { User } from '../../api/src/types';
 
 // --- TanStack Query Imports ---
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -59,34 +62,36 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {/* --- Wrap everything with QueryClientProvider --- */}
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {/* 1. Berry's ConfigProvider (manages theme state) */}
-        <ConfigProvider>
-          {/* 2. React Intl Provider */}
-          <IntlProvider
-            locale={defaultLocale}
-            defaultLocale={defaultLocale}
-            messages={messages} // Provide empty messages for now
-            onError={(err) => {
-              // Suppress missing translation errors for now, rely on defaultMessage
-              if (err.code === 'MISSING_TRANSLATION') {
-                 // console.warn('Missing translation:', err.message);
-                 return;
-              }
-               console.error(err);
-            }}
-          >
-            {/* 3. Our UserProvider (manages user state) */}
-            <UserProvider>
-              <App />
-            </UserProvider>
-          </IntlProvider>
-        </ConfigProvider>
-      </BrowserRouter>
+    <ConfigProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <UserProvider>
+            <BrowserRouter>
+              <ConfigProvider>
+              <IntlProvider
+                locale={defaultLocale}
+                defaultLocale={defaultLocale}
+                messages={messages} // Provide empty messages for now
+                onError={(err) => {
+                  // Suppress missing translation errors for now, rely on defaultMessage
+                  if (err.code === 'MISSING_TRANSLATION') {
+                    // console.warn('Missing translation:', err.message);
+                    return;
+                  }
+                  console.error(err);
+                }}
+                >
+                  <UserProvider>
+                    <App />
+                  </UserProvider>
+              </IntlProvider>
+              </ConfigProvider>
+            </BrowserRouter>
+          </UserProvider>
+        </AuthProvider>
       {/* Add DevTools outside other providers, but inside QueryClientProvider */}
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
+    </ConfigProvider>
   </StrictMode>
 );
