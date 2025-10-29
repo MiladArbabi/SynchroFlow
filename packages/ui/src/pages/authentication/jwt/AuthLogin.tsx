@@ -15,6 +15,7 @@ import InputLabel from '@mui/material/InputLabel';
 import OutlinedInput from '@mui/material/OutlinedInput';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import { useAuth } from 'contexts/AuthContext';
 
 // third party
 import * as Yup from 'yup';
@@ -42,6 +43,7 @@ interface LoginFormValues {
 }
 
 export default function JWTLogin({ ...others }: JWTLoginProps) {
+  const auth = useAuth(); // <-- GET AUTH CONTEXT
   // const { login, isLoggedIn } = useAuth(); // <-- COMMENT OUT
   // const scriptedRef = useScriptRef(); // <-- COMMENT OUT
   const [checked, setChecked] = useState(true);
@@ -81,8 +83,11 @@ export default function JWTLogin({ ...others }: JWTLoginProps) {
             password: values.password // Send password as is
           });
           
-          // TODO (#390): Store the received token (response.data.token)
-          console.log('Login successful, token:', response.data.token); // Placeholder log
+          // --- Call AuthContext to store token and user data ---
+          if (response.data.accessToken && response.data.user) {
+            auth.login(response.data.user, response.data.accessToken);
+          }
+          
           setStatus({ success: true });
           setSubmitting(false);
           // if (scriptedRef.current) { ... } // <-- Removed script ref check
