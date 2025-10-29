@@ -69,13 +69,32 @@ describe('OAuth Integration Flow', () => {
   });
 
   describe('GET /api/v1/integrations/oauth/initiate', () => {
-    it('should return a 200 and an authorizationUrl for Shopify', async () => {
-       const res = await request(app).get(
+    it('should return 401 Unauthorized without a valid token', async () => {
+      const res = await request(app).get(
         '/api/v1/integrations/oauth/initiate?platform=shopify&shop=my-store'
       );
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toHaveProperty('authorizationUrl');
+      expect(res.statusCode).toBe(401);
     });
+
+    it('should return 200 and store user_id in session with a valid token', async () => {
+      // Mock JWT verify to pass and provide user ID
+      const mockUserId = 5;
+      mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: null, arg1: { userId: number; }) => void) => {
+        callback(null, { userId: mockUserId });
+      });
+
+      // Use agent to capture session changes
+      const agent = request.agent(app);
+      const res = await agent.get(
+        '/api/v1/integrations/oauth/initiate?platform=shopify&shop=my-store'
+      )
+      .set('Authorization', 'Bearer fake_valid_token'); // Send token
+
+       expect(res.statusCode).toBe(200);
+       expect(res.body).toHaveProperty('authorizationUrl');
+      // **RED ASSERTION:** We need to check the session, but supertest doesn't expose it directly.
+      // We'll rely on the next step (callback) implicitly testing this was stored correctly.
+     });
   });
 
 describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
@@ -95,9 +114,16 @@ describe('GET /api/v1/integrations/oauth/callback/shopify', () => {
       // 1. Create an agent to persist session cookies
       const agent = request.agent(app);
 
+      // Mock JWT verification for the /initiate call
+      const mockUserId = 1;
+      mockedJwt.verify.mockImplementation((_token: any, _secret: any, callback: (arg0: null, arg1: { userId: number; }) => void) => {
+        callback(null, { userId: mockUserId }); // Simulate successful verification
+      });
+
       // 2. Call /initiate to populate the session
       const initRes = await agent
         .get('/api/v1/integrations/oauth/initiate?platform=shopify&shop=my-store')
+        .set('Authorization', 'Bearer fake_valid_token')
         .expect(200);
 
       // 3. Extract the valid 'state' token from the URL
