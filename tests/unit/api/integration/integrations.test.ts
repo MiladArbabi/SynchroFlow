@@ -288,8 +288,10 @@ describe('POST /api/v1/auth/register', () => {
     mockFirst.mockResolvedValue(mockUser);
     // Default: Mock correct password
     mockedBcrypt.compare.mockResolvedValue(true);
-    // Mock successful JWT signing
-    mockedJwt.sign.mockReturnValue('fake_jwt_token');
+    // Mock successful JWT signing (will be called twice)
+    mockedJwt.sign
+      .mockReturnValueOnce('fake_jwt_token') // First call is access token
+      .mockReturnValueOnce('fake_refresh_token'); // Second call is refresh token
   });
 
   it('should login successfully with correct credentials', async () => {
@@ -297,15 +299,27 @@ describe('POST /api/v1/auth/register', () => {
       .post('/api/v1/auth/login')
       .send(loginData);
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('token', 'fake_jwt_token');
+    expect(res.statusCode).toBe(200); // Should still be 200 OK
+    expect(res.body).toHaveProperty('accessToken', 'fake_jwt_token'); // Expect access token in body
+    expect(res.body).not.toHaveProperty('refreshToken'); // Refresh token should NOT be in body
+
+    // --- RED ASSERTION: Check for HttpOnly cookie ---
+    expect(res.headers['set-cookie']).toBeDefined();
+    const cookieString = Array.isArray(res.headers['set-cookie']) ? res.headers['set-cookie'][0] : res.headers['set-cookie'];
+    expect(cookieString).toMatch(/refreshToken=fake_refresh_token;/); // Check for cookie name and value
+    expect(cookieString).toMatch(/HttpOnly/);
+    expect(cookieString).toMatch(/SameSite=Strict/);
+    // Note: 'Secure' flag might not be set in http test environment, depends on supertest/express setup
 
     // Verify db and bcrypt calls
     expect(db).toHaveBeenCalledWith('users');
     expect(mockWhere).toHaveBeenCalledWith({ email: loginData.email.toLowerCase() });
     expect(mockFirst).toHaveBeenCalled();
     expect(mockedBcrypt.compare).toHaveBeenCalledWith(loginData.password, mockUser.password_hash);
-    expect(mockedJwt.sign).toHaveBeenCalledWith({ userId: mockUser.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    // Check Access Token signing
+    expect(mockedJwt.sign).toHaveBeenCalledWith({ userId: mockUser.id }, process.env.JWT_SECRET, { expiresIn: '15m' });
+    // Check Refresh Token signing (assuming JWT_REFRESH_SECRET falls back to JWT_SECRET in test)
+    expect(mockedJwt.sign).toHaveBeenCalledWith({ userId: mockUser.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
   });
 
   it('should fail with 401 Unauthorized if user not found', async () => {
