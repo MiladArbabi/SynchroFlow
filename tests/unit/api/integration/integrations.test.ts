@@ -505,3 +505,22 @@ describe('POST /api/v1/auth/register', () => {
     });
   });
 });
+
+describe('POST /api/v1/auth/logout', () => {
+    it('should clear the refreshToken cookie and return 204 on success', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Cookie', 'refreshToken=some_token'); // Send a cookie just in case
+
+      // This is the RED TEST
+      // Will fail 404 first
+      expect(res.statusCode).toBe(204); // No Content
+      // Check that the Set-Cookie header clears the token
+      expect(res.headers['set-cookie']).toBeDefined();
+      const cookieString = Array.isArray(res.headers['set-cookie']) ? res.headers['set-cookie'][0] : res.headers['set-cookie'];
+      expect(cookieString).toMatch(/refreshToken=;/); // Check value is empty
+      expect(cookieString).toMatch(/Max-Age=0/); // Check Max-Age is 0
+      // Optionally check Expires, though Max-Age=0 is usually sufficient
+      // expect(cookieString).toMatch(/Expires=Thu, 01 Jan 1970/);
+  });
+});

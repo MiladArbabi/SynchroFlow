@@ -18,8 +18,8 @@ export const registerUser = async (req: Request, res: Response) => {
   try {
     // --- Check if user already exists ---
     const existingUser = await db<User>('users')
-                            .where({ email: email.toLowerCase() })
-                            .first();
+      .where({ email: email.toLowerCase() })
+      .first();
     if (existingUser) {
       return res.status(409).json({ error: 'Email already in use.' }); // 409 Conflict
     }
@@ -66,8 +66,8 @@ export const loginUser = async (req: Request, res: Response) => {
   try {
     // --- Find user by email (case-insensitive) ---
     const user = await db<User>('users')
-                      .where({ email: email.toLowerCase() })
-                      .first(); // Select password_hash too
+      .where({ email: email.toLowerCase() })
+      .first(); // Select password_hash too
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' }); // 401 Unauthorized
@@ -143,4 +143,16 @@ export const refreshToken = async (req: Request, res: Response) => {
     console.error('Refresh Token Error:', err instanceof Error ? err.message : err);
     return res.status(403).json({ error: 'Forbidden: Invalid or expired refresh token.' }); // Token failed verification
   }
+};
+
+export const logoutUser = (req: Request, res: Response) => {
+  // Clear the refresh token cookie
+  res.cookie('refreshToken', '', { // Set value to empty string
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    expires: new Date(0), // Set expiry date to the past
+    maxAge: 0 // Explicitly set maxAge to 0
+  });
+  res.status(204).send(); // Send 204 No Content
 };
