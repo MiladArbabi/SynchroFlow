@@ -1,18 +1,27 @@
 #!/bin/bash
 
 # --- Ship Script ---
-# Automates the process of adding, committing, pushing, and creating a PR.
+# Automates adding, committing, pushing, creating PR, merging, and cleanup.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
 # --- 1. Validation ---
 
-# Check if a commit message was provided
-if [ -z "$1" ]; then
-  echo "❌ Error: Commit message is required."
-  echo "Usage: ./ship.sh \"feat(scope): Your commit message\""
+# Check if commit message and issue number were provided
+if [ -z "$1" ] || [ -z "$2" ]; then
+  echo "❌ Error: Commit message and Issue number are required."
+  echo "Usage: ./ship.sh \"feat(scope): Your commit message\" <issue_number>"
   exit 1
+fi
+
+COMMIT_MESSAGE="$1"
+ISSUE_NUMBER="$2"
+
+# Validate if the second argument is a number
+if ! [[ "$ISSUE_NUMBER" =~ ^[0-9]+$ ]]; then
+   echo "❌ Error: Invalid issue number provided: '$ISSUE_NUMBER'. Must be an integer."
+   exit 1
 fi
 
 # Get the current branch name
@@ -24,7 +33,7 @@ if [ "$CURRENT_BRANCH" == "main" ]; then
   exit 1
 fi
 
-echo "🚀 Starting ship process for branch '$CURRENT_BRANCH'..."
+echo "🚀 Starting ship process for branch '$CURRENT_BRANCH' (Issue #$ISSUE_NUMBER)..."
 
 # --- 2. Git Operations ---
 
@@ -33,8 +42,8 @@ echo "   Adding all changes..."
 git add .
 
 # Commit with the provided message
-echo "   Committing with message: '$1'..."
-git commit -m "$1"
+echo "   Committing with message: '$COMMIT_MESSAGE'..."
+git commit -m "$COMMIT_MESSAGE"
 
 # Push the current branch to the remote origin
 echo "   Pushing branch '$CURRENT_BRANCH' to origin..."
@@ -44,21 +53,51 @@ git push origin HEAD # Use HEAD to push the current branch safely
 
 echo "   Creating Pull Request..."
 # Extract the type (e.g., feat, fix, chore) from the commit message for the title
-COMMIT_TYPE=$(echo "$1" | cut -d'(' -f1)
-COMMIT_SCOPE_MSG=$(echo "$1" | sed -E 's/^[a-z]+\(([^)]+)\):\s*(.*)/\u\1: \2/') # Capitalize scope and message
-PR_TITLE="$COMMIT_SCOPE_MSG"
+COMMIT_TYPE=$(echo "$COMMIT_MESSAGE" | cut -d'(' -f1)
+COMMIT_SCOPE_MSG=$(echo "$COMMIT_MESSAGE" | sed -E 's/^[a-z]+\(([^)]+)\):\s*(.*)/\u\1: \2/') # Capitalize scope and message
+PR_TITLE="$COMMIT_SCOPE_MSG (#$ISSUE_NUMBER)" # Add issue number to title
 
 # Create the PR using GitHub CLI, grabbing the URL
 PR_URL=$(gh pr create \
   --title "$PR_TITLE" \
-  --body "Automated PR created by ship.sh for branch '$CURRENT_BRANCH'." \
+  --body "Automated PR created by ship.sh for branch '$CURRENT_BRANCH'. Closes #$ISSUE_NUMBER" \
   --base "main" \
   --head "$CURRENT_BRANCH")
 
-# --- 4. Output ---
-
 echo "✅ Pull Request created successfully!"
 echo "   PR URL: $PR_URL"
+
+# --- 4. Merge PR and Cleanup ---
+
+# Extract PR number from URL (assuming standard GitHub URL format)
+PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
+if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+   echo "❌ Error: Could not parse PR number from URL: '$PR_URL'"
+   exit 1
+fi
+echo "   Extracted PR Number: $PR_NUMBER"
+
+# Merge the PR using squash and delete the remote branch
+echo "   Merging PR #$PR_NUMBER..."
+gh pr merge "$PR_NUMBER" --squash --delete-branch
+echo "✅ PR #$PR_NUMBER merged and remote branch deleted."
+
+# Close the associated issue
+echo "   Closing Issue #$ISSUE_NUMBER..."
+gh issue close "$ISSUE_NUMBER"
+echo "✅ Issue #$ISSUE_NUMBER closed."
+
+# Switch back to main and pull latest changes (including the merge)
+echo "   Switching back to 'main' and pulling latest changes..."
+git switch main
+git pull origin main
+
+# Delete the local feature branch
+echo "   Deleting local branch '$CURRENT_BRANCH'..."
+git branch -d "$CURRENT_BRANCH"
+echo "✅ Local branch '$CURRENT_BRANCH' deleted."
+
+# --- 5. Output ---
 
 echo "🚢 Ship process complete."
 
