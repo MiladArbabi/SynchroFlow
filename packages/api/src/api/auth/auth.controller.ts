@@ -1,6 +1,6 @@
 // packages/api/src/api/auth/auth.controller.ts
 import { Request, Response } from 'express';
-import db from 'api-db';
+import db from '../../db';
 import bcrypt from 'bcrypt';
 import { User } from 'api-types'; 
 import jwt from 'jsonwebtoken';

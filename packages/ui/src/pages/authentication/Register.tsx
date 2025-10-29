@@ -10,9 +10,9 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 
 // project imports
-import AuthWrapper1 from 'pages/authentication/AuthWrapper1'; // <-- USE ALIAS
-import AuthCardWrapper from 'pages/authentication/AuthCardWrapper'; // <-- USE ALIAS
-import LoginProvider from 'pages/authentication/LoginProvider'; // <-- USE ALIAS
+import AuthWrapper1 from '../authentication/AuthWrapper1'; // <-- USE ALIAS
+import AuthCardWrapper from '../authentication/AuthCardWrapper'; // <-- USE ALIAS
+import LoginProvider from '../authentication/LoginProvider'; // <-- USE ALIAS
 // import ViewOnlyAlert from 'pages/authentication/ViewOnlyAlert';
 
 import Logo from 'ui-component/Logo'; // <-- USE ALIAS

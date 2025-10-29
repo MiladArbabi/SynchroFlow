@@ -1,7 +1,8 @@
 //packages/api/src/api/layouts/layout.controller.ts
 import { Request, Response } from "express";
 import { User } from 'api-types'; 
-import db from "api-db";
+import db from "../../db";
+
 
 // We'll use a hardcoded user ID for now, as authentication is not yet fully integrated
 const MOCK_USER_ID = "default_user";
