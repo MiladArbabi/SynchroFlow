@@ -93,14 +93,19 @@ export default function App() {
     <ThemeCustomization>
       <Routes>
         {/* Render the sign-in route standalone */}
-        <Route path="/authentication/sign-in" element={routes.find(r => r.key === 'sign-in')?.component} />
+        {routes
+          .filter((route) => route.key === 'login' || route.key === 'register') // Filter for auth keys
+          .map((route) => (
+             <Route path={route.route} element={route.component} key={route.key} />
+        ))}
+
         {/* All other routes are nested inside the AppLayout */}
         <Route element={<LayoutManager />}>
-          {routes.map((route) =>
-            route.key !== "sign-in" ? (
+          {routes
+            .filter((route) => route.key !== 'login' && route.key !== 'register') // Filter OUT auth keys
+            .map((route) => (
               <Route path={route.route} element={route.component} key={route.key} />
-            ) : null
-          )}
+            ))}
         </Route>
 
         {/* A default redirect to the dashboard */}
