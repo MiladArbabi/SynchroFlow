@@ -1,6 +1,7 @@
 //packages/ui/src/routes.tsx
 import { DashboardPage } from "./pages/DashboardPage";
-import { LoginPage } from "./LoginPage";
+import LoginPage from "./pages/authentication/Login"; // Assuming Login.tsx has default export
+import RegisterPage from "./pages/authentication/Register"; // Assuming Register.tsx has default export
 import { ProductsPage } from "./pages/ProductsPage";
 import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
 import DataMapper from "./components/DataMapper/DataMapper";
@@ -80,14 +81,20 @@ const routes = [
     route: "/orders/:id", // Use a parameter for the order ID
     component: <Order360Page />,
   },
-  {
-    type: "collapse",
-    name: "Sign In",
-    key: "sign-in",
-    icon: "➡️", // Placeholder
-    route: "/authentication/sign-in",
+   {
+    type: "route", // Doesn't show in nav
+    name: "Login",
+    key: "login",
+    route: "/login",
     component: <LoginPage />,
-   },
+  },
+  {
+    type: "route", // Doesn't show in nav
+    name: "Register",
+    key: "register",
+    route: "/register",
+    component: <RegisterPage />,
+  },
 ];
 
 export default routes;
