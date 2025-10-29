@@ -444,4 +444,64 @@ describe('POST /api/v1/auth/register', () => {
     expect(db).toHaveBeenCalledWith('integrations');;
     });
   });
+
+  describe('POST /api/v1/auth/refresh_token', () => {
+  const mockUserId = 1;
+  const validRefreshToken = 'valid_refresh_token_value';
+  const newAccessToken = 'new_access_token_value';
+
+  beforeEach(() => {
+    // Reset JWT mocks for refresh tests
+    mockedJwt.verify.mockClear();
+    mockedJwt.sign.mockReset();
+
+    // Default: Mock successful refresh token verification
+    mockedJwt.verify.mockImplementation((token: string, secret: any, callback: any) => {
+      const expectedSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+      if (token === validRefreshToken && secret === expectedSecret) {
+        // Simulate sync version: return payload if valid, throw if invalid
+        if (callback) callback(null, { userId: mockUserId }); // Handle if callback *is* provided
+        return { userId: mockUserId }; // Return payload for sync usage
+      } else {
+        if (callback) callback(new Error('Invalid token'), undefined); // Handle if callback *is* provided
+        throw new Error('Invalid token'); // Throw error for sync usage
+      }
+    });
+    mockedJwt.sign.mockReturnValue(newAccessToken)
+  });
+
+  it('should return a new access token with a valid refresh token cookie', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/refresh_token')
+      .set('Cookie', `refreshToken=${validRefreshToken}`); // Send valid cookie
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toHaveProperty('accessToken', newAccessToken);
+
+    // Verify JWT verify and sign calls
+    expect(mockedJwt.verify).toHaveBeenCalledWith(
+      validRefreshToken,
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, // Use correct secret
+    );
+    expect(mockedJwt.sign).toHaveBeenCalledWith(
+      { userId: mockUserId },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+  });
+
+  it('should fail with 401 Unauthorized if no refresh token cookie is provided', async () => {
+    const res = await request(app).post('/api/v1/auth/refresh_token');
+    // Will fail 404 first
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('should fail with 403 Forbidden if refresh token is invalid/expired', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/refresh_token')
+      .set('Cookie', 'refreshToken=invalid_or_expired_token');
+    // Now expects 403
+    expect(res.statusCode).toBe(403);
+    });
+  });
 });
