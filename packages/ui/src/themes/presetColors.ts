@@ -118,7 +118,7 @@ export const baseColors = {
     successLight: '#b9f6ca', success200: '#69f0ae', successMain: '#00e676', successDark: '#00c853',
     grey50: '#f8fafc', grey100: '#eef2f6', grey200: '#e3e8ef', grey300: '#cdd5df',
     grey500: '#697586', grey600: '#4b5565', grey700: '#364152', grey900: '#121926',
-    darkBackground: '#1a223f', darkPaper: '#111936', darkLevel1: '#29314f', darkLevel2: '#212946',
+    darkBackground: '#000000', darkPaper: '#000000', darkLevel1: '#0d0d0d', darkLevel2: '#121212',
     darkTextTitle: '#ffffff', darkTextPrimary: '#e5e5e7', darkTextSecondary: '#a5adbb',
 };
 
