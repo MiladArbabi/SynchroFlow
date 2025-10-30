@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/api/axiosConfig.ts
 import axios from 'axios';
-import { getToken } from 'utils/authStore'; // Use alias
+import { getToken, setToken, clearToken } from 'utils/authStore'; // Use alias
 
 // Create a new Axios instance
 const axiosInstance = axios.create({
@@ -27,5 +28,75 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// We'll add the response interceptor (for token refresh) in the next issue
+// --- Response Interceptor ---
+// This function runs *after* a response is received.
+
+// Variable to prevent multiple refresh attempts simultaneously
+let isRefreshing = false;
+let failedQueue: Array<{ resolve: (value: any) => void; reject: (reason: any) => void }> = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+axiosInstance.interceptors.response.use(
+  (response) => {
+    // Any status code that lies within the range of 2xx causes this function to trigger
+    return response;
+  },
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Check for 401 and ensure it's not a retry or a failed refresh
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      
+      if (isRefreshing) {
+        // If already refreshing, wait for the new token
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = 'Bearer ' + token;
+          return axiosInstance(originalRequest);
+        });
+      }
+
+      originalRequest._retry = true; // Mark as retried
+      isRefreshing = true;
+
+      try {
+        // Call the refresh token endpoint
+        const { data } = await axiosInstance.post('/api/v1/auth/refresh_token');
+        const newAccessToken = data.accessToken;
+
+        setToken(newAccessToken); // Update in-memory store
+        axiosInstance.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`; // Update default header
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`; // Update current request
+        
+        processQueue(null, newAccessToken); // Resume queued requests
+        isRefreshing = false;
+        return axiosInstance(originalRequest); // Retry original request
+
+      } catch (refreshError: any) {
+        processQueue(refreshError, null); // Reject queued requests
+        isRefreshing = false;
+        
+        clearToken(); // Logout: Clear token
+        // Optional: Redirect to login
+        // window.location.href = '/login';
+
+        return Promise.reject(refreshError);
+      }
+    }
+
+    // For any other errors, just reject
+    return Promise.reject(error);
+  }
+);
 export { axiosInstance };
