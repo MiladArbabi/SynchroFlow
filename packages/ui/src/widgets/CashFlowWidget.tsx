@@ -82,7 +82,7 @@ const CashFlowWidget: React.FC = () => {
         position: 'top',
         horizontalAlign: 'right',
         labels: {
-            colors: theme.palette.text.primary, // Use theme text color
+            colors: theme.palette.text.secondary, // Use theme text color
         },
         markers: {
              fillColors: [theme.palette.primary.main, theme.palette.error.main]
@@ -101,7 +101,7 @@ const CashFlowWidget: React.FC = () => {
         <Box sx={{ p: 2.5, pb: 1 }}> {/* Add custom padding */}
             {/* You can add summary stats here */}
             <Stack spacing={1}>
-                <Typography variant="h3" color="primary">$45,890</Typography>
+                <Typography variant="h3" color="text.primary">$45,890</Typography>
                 <Typography variant="body2" color="text.secondary">Net EOM Balance (Est.)</Typography>
             </Stack>
         </Box>
