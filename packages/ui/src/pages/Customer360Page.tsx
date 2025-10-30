@@ -62,10 +62,18 @@ const Customer360Page: React.FC = () => {
         queryFn: () => fetchCustomerData(id),
         // enabled: Prevents the query from running automatically if 'id' is not yet available (e.g., during initial render).
         enabled: !!id,
-        // Optional configurations:
-        // staleTime: How long data is considered fresh (ms). Default: 0
-        // gcTime: How long inactive query data stays in cache (ms). Default: 5 minutes
-        // refetchOnWindowFocus: Refetch when browser window gets focus again. Default: true
+        
+        // By default, useQuery retries 3 times. Our test mocks a 404 (Not Found),
+        // which should not be retried. This makes the 'isError' state
+        // set immediately, allowing the test to find the alert.
+        retry: (failureCount, error) => {
+          // Use the built-in Axios type guard to check the error
+          if (axios.isAxiosError(error) && error.response?.status === 404) {
+            return false; // Do not retry on 404
+          }
+          // For all other errors, use the default behavior (retry 3 times)
+          return failureCount < 3;
+        },
       });
   // --- End Data Fetching ---
 
