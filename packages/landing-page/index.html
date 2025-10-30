@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaSyncro | Your First Operations Hire</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple scroll-behavior */
+        html {
+            scroll-behavior: smooth;
+        }
+    </style>
+    <script>
+        // Define our Berry-inspired default blue
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            light: '#e3f2fd',
+                            main: '#2196f3',
+                            dark: '#1e88e5',
+                        },
+                        secondary: {
+                            light: '#ede7f6',
+                            main: '#5e35b1',
+                            dark: '#512da8'
+                        }
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'sans-serif'],
+                    },
+                },
+            },
+        };
+    </script>
+</head>
+<body class="font-inter bg-white text-slate-900 antialiased">
+
+    <!-- Header -->
+    <header class="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-sm border-b border-slate-200 z-50">
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo -->
+                <a href="#" class="flex items-center space-x-2" aria-label="LaSyncro Homepage">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 0L32 16L16 32L0 16L16 0Z" fill="#2196f3"/>
+                        <path d="M16 5.33301L26.6667 15.9997L16 26.6663L5.33333 15.9997L16 5.33301Z" fill="white"/>
+                    </svg>
+                    <span class="font-bold text-2xl text-slate-900">LaSyncro</span>
+                </a>
+                
+                <!-- Nav Links & CTA -->
+                <div class="flex items-center space-x-6">
+                    <div class="hidden md:flex items-center space-x-6">
+                        <a href="#features" class="text-sm font-medium text-slate-600 hover:text-primary-main transition-colors">Features</a>
+                        <a href="#pricing" class="text-sm font-medium text-slate-600 hover:text-primary-main transition-colors">Pricing</a>
+                        
+                        <!-- Link to your main app's login page -->
+                        <a href="https://app.lasyncro.com/login" class="text-sm font-medium text-slate-600 hover:text-primary-main transition-colors">
+                            Login
+                        </a>
+                    </div>
+                    
+                    <!-- Link to your main app's register page -->
+                    <a href="https://app.lasyncro.com/register" 
+                       class="px-5 py-2.5 text-sm font-medium text-white bg-primary-main rounded-lg shadow-sm hover:bg-primary-dark transition-colors focus:outline-none focus:ring-2 focus:ring-primary-main focus:ring-offset-2">
+                        Start Free Trial
+                    </a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        
+        <!-- Hero Section -->
+        <section class="pt-32 pb-24 md:pt-48 md:pb-32 bg-slate-50 overflow-hidden">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center">
+                    <span class="inline-block px-4 py-1 text-sm font-medium text-primary-dark bg-primary-light rounded-full mb-4">
+                        For Solopreneurs & Small Teams
+                    </span>
+                    <h1 class="text-4xl md:text-6xl font-bold text-slate-900 tracking-tight leading-tight">
+                        Stop drowning in spreadsheets.
+                    </h1>
+                    <h2 class="text-4xl md:text-6xl font-bold text-primary-main tracking-tight leading-tight mt-2">
+                        LaSyncro is your first operations hire.
+                    </h2>
+                    <p class="mt-6 max-w-2xl mx-auto text-lg text-slate-600">
+                        We give time-strapped brands the power of a full ops department for a fraction of the cost. Stop wearing too many hats and get back to growing your business.
+                    </p>
+                    <div class="mt-10 flex justify-center gap-x-4">
+                        <a href="https://app.lasyncro.com/register" 
+                           class="px-8 py-3 text-base font-medium text-white bg-primary-main rounded-lg shadow-lg hover:bg-primary-dark transition-all duration-300 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary-main focus:ring-offset-2">
+                            Get Started Free
+                        </a>
+                        <a href="#features" 
+                           class="px-8 py-3 text-base font-medium text-primary-main bg-white rounded-lg shadow-lg ring-1 ring-slate-200 hover:bg-slate-50 transition-all duration-300 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2">
+                            Learn More
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features (Pain Points) Section -->
+        <section id="features" class="py-24">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h2 class="text-3xl font-bold text-slate-900 tracking-tight">Are you still wearing too many hats?</h2>
+                    <p class="mt-4 text-lg text-slate-600">
+                        Scaling your brand shouldn't mean scaling your manual work. LaSyncro automates the "inefficiency tax" you pay every day.
+                    </p>
+                </div>
+                
+                <div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-10">
+                    <!-- Feature 1 -->
+                    <div class="text-center p-8 bg-white rounded-xl shadow-lg border border-slate-100">
+                        <div class="flex items-center justify-center h-12 w-12 rounded-full bg-primary-light text-primary-main mx-auto">
+                            <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 7.5l3 3m0 0l3-3m-3 3v-5m0 9c-4.418 0-8-3.134-8-7s3.582-7 8-7 8 3.134 8 7-3.582 7-8 7z" />
+                            </svg>
+                        </div>
+                        <h3 class="mt-6 text-xl font-semibold text-slate-900">End Manual Data Entry</h3>
+                        <p class="mt-2 text-base text-slate-600">
+                            Stop copy-pasting order details. LaSyncro unifies your Shopify, shipping, and support data into one central hub.
+                        </p>
+                    </div>
+                    
+                    <!-- Feature 2 -->
+                    <div class="text-center p-8 bg-white rounded-xl shadow-lg border border-slate-100">
+                        <div class="flex items-center justify-center h-12 w-12 rounded-full bg-primary-light text-primary-main mx-auto">
+                            <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 13v-1m4 1v-3m4 3V8M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </div>
+                        <h3 class="mt-6 text-xl font-semibold text-slate-900">Stop Guessing Inventory</h3>
+                        <p class="mt-2 text-base text-slate-600">
+                            Get simple, proactive alerts *before* you oversell. See stock levels, turnover, and dead stock at a glance.
+                        </p>
+                    </div>
+
+                    <!-- Feature 3 -->
+                    <div class="text-center p-8 bg-white rounded-xl shadow-lg border border-slate-100">
+                        <div class="flex items-center justify-center h-12 w-12 rounded-full bg-primary-light text-primary-main mx-auto">
+                            <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <h3 class="mt-6 text-xl font-semibold text-slate-900">Win Back Your Time</h3>
+                        <p class="mt-2 text-base text-slate-600">
+                            Our "Inefficiency Tax" widget shows you exactly how many hours you save each week. See your ROI in real-time.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pricing Section -->
+        <section id="pricing" class="py-24 bg-slate-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h2 class="text-3xl font-bold text-slate-900 tracking-tight">Start saving time for $149/mo.</h2>
+                    <p class="mt-4 text-lg text-slate-600">
+                        Our "Spark" plan is built specifically for solopreneurs and small teams who need to get operations under control.
+                    </p>
+                </div>
+
+                <div class="mt-16 flex justify-center">
+                    <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                        <div class="p-8">
+                            <h3 class="text-2xl font-semibold text-slate-900">Spark Plan</h3>
+                            <p class="mt-2 text-base text-slate-600">Perfect for solopreneurs and growing brands.</p>
+                            
+                            <div class="mt-6 flex items-baseline">
+                                <span class="text-5xl font-bold tracking-tight text-slate-900">$149</span>
+                                <span class="ml-1 text-xl font-medium text-slate-500">/ month</span>
+                            </div>
+                            
+                            <p class="mt-4 text-sm text-slate-500">Billed annually, or $179 monthly.</p>
+                            
+                            <a href="https://app.lasyncro.com/register" 
+                               class="mt-8 w-full block px-6 py-4 text-lg font-medium text-center text-white bg-primary-main rounded-lg shadow-sm hover:bg-primary-dark transition-colors">
+                                Start Your Free Trial
+                            </a>
+                        </div>
+                        <div class="p-8 bg-slate-50 border-t border-slate-200">
+                            <p class="text-base font-medium text-slate-900">What's included:</p>
+                            <ul class="mt-6 space-y-4">
+                                <li class="flex items-center space-x-3">
+                                    <svg class="flex-shrink-0 h-6 w-6 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    <span class="text-base text-slate-600">Revenue Operations Dashboard</span>
+                                </li>
+                                <li class="flex items-center space-x-3">
+                                    <svg class="flex-shrink-0 h-6 w-6 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    <span class="text-base text-slate-600">Inventory Intelligence Center</span>
+                                </li>
+                                <li class="flex items-center space-x-3">
+                                    <svg class="flex-shrink-0 h-6 w-6 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    <span class="text-base text-slate-600">Low-Stock & Oversell Alerts</span>
+                                </li>
+                                <li class="flex items-center space-x-3">
+                                    <svg class="flex-shrink-0 h-6 w-6 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    <span class="text-base text-slate-600">Operational Efficiency Tracker</span>
+                                </li>
+                                <li class="flex items-center space-x-3">
+                                    <svg class="flex-shrink-0 h-6 w-6 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    <span class="text-base text-slate-600">Shopify & Carrier Integrations</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 text-slate-400">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 0L32 16L16 32L0 16L16 0Z" fill="#2196f3"/>
+                        <path d="M16 5.33301L26.6667 15.9997L16 26.6663L5.33333 15.9997L16 5.33301Z" fill="white"/>
+                    </svg>
+                    <span class="font-bold text-xl text-white">LaSyncro</span>
+                </div>
+                <div class="flex space-x-6 mt-4 md:mt-0">
+                    <a href="#features" class="text-sm hover:text-white transition-colors">Features</a>
+                    <a href="#pricing" class="text-sm hover:text-white transition-colors">Pricing</a>
+                    <a href="httpsStorage://app.lasyncro.com/login" class="text-sm hover:text-white transition-colors">Login</a>
+                </div>
+            </div>
+            <div class="mt-8 border-t border-slate-700 pt-8 text-center text-sm">
+                <p>&copy; 2025 LaSyncro. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
