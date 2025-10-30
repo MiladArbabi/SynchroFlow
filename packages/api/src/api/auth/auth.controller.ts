@@ -103,13 +103,6 @@ export const loginUser = async (req: Request, res: Response) => {
     // but the 'user' variable from the DB does)
     const { password_hash, ...publicUser } = user;
 
-    console.log('--- [LOGIN DEBUG 6 - AUTH CONTROLLER] ---');
-    console.log('[BACKEND DEBUG] Sending user and token:', { 
-    user: publicUser, 
-    tokenExists: !!accessToken 
-  });
-  // --------------------
-
     // 2. Send both the token AND the user object in the response
     res.status(200).json({
     accessToken: accessToken,

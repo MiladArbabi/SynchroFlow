@@ -2,7 +2,6 @@
 // packages/ui/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from '../../../api/src/types';
-import { setToken, clearToken } from 'utils/authStore';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -35,13 +34,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     accessToken: null,
   });
 
-  // TODO: Add useEffect here later to check initial auth status
-  // (e.g., call /refresh_token on load to see if session is valid)
-  // For now, we'll just set loading to false immediately.
+  // Re-hydrate session from localStorage on app load
   React.useEffect(() => {
-     setAuthState(prev => ({ ...prev, isLoading: false }));
+    console.log("AuthContext: Initializing...");
+    try {
+      // Playwright's storageState will inject these values
+      const storedToken = localStorage.getItem('accessToken');
+      const storedUser = localStorage.getItem('user');
+      
+      if (storedToken && storedUser) {
+        console.log("AuthContext: Found stored session. Re-hydrating state.");
+        setAuthState({
+          isLoggedIn: true,
+          isLoading: false,
+          user: JSON.parse(storedUser), // Parse the user JSON string
+          accessToken: storedToken,
+        });
+      } else {
+        console.log("AuthContext: No stored session found.");
+        // No session, just finish loading
+        setAuthState(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      console.error("AuthContext: Failed to parse stored user. Logging out.", error);
+      // Clear corrupted storage and finish loading
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
+      setAuthState(prev => ({ ...prev, isLoading: false, isLoggedIn: false, user: null, accessToken: null }));
+    }
   }, []);
 
+  // -- Save to localStorage on login ---
   const login = useCallback((user: PublicUser, accessToken: string) => {
     setAuthState({
       isLoggedIn: true,
@@ -49,10 +72,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       user,
       accessToken,
     });
-    setToken(accessToken); // <-- WRITE to in-memory store
-    console.log("AuthContext: User logged in, token stored in memory."); // Debug log
+    // Save to localStorage so it persists across reloads/tests
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('user', JSON.stringify(user));
+    console.log("AuthContext: User logged in, token/user stored in localStorage.");
   }, []);
 
+  // --- Clear localStorage on logout ---
   const logout = useCallback(() => {
     setAuthState({
       isLoggedIn: false,
@@ -60,15 +86,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       user: null,
       accessToken: null,
     });
-    clearToken();
-    console.log("AuthContext: User logged out, token cleared from memory."); // Debug log
-    // Note: Calling the backend /logout endpoint happens separately
+    // Clear the persistent session
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('user');
+    console.log("AuthContext: User logged out, token/user cleared from localStorage.");
   }, []);
 
+  // This function is for token refresh. It should also update localStorage.
   const setAccessToken = useCallback((token: string | null) => {
       setAuthState(prev => ({ ...prev, accessToken: token }));
-      setToken(token); // <-- UPDATE in-memory store
-      console.log("AuthContext: Access token updated."); // Debug log
+      if (token) {
+        localStorage.setItem('accessToken', token);
+      } else {
+        localStorage.removeItem('accessToken');
+      }
+      console.log("AuthContext: Access token updated in state and localStorage.");
   }, []);
 
   const value = {
@@ -78,6 +110,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setAccessToken,
   };
 
+  // Render children only after initial loading is false
+  // Or, you can let ProtectedRoute handle the loading screen
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
