@@ -34,8 +34,8 @@ import { FormattedMessage } from 'react-intl';
 import UpgradePlanCard from './UpgradePlanCard'; // Use converted component
 import MainCard from 'ui-component/cards/MainCard';
 import Transitions from 'ui-component/extended/Transitions';
-// import useAuth from 'hooks/useAuth'; // --- REMOVE BERRY AUTH ---
-import { UserContext } from 'contexts/UserContext'; // <-- IMPORT OUR UserContext
+import { useAuth } from 'contexts/AuthContext'; 
+import { axiosInstance } from 'api/axiosConfig';
 
 // assets
 import User1 from 'assets/images/users/user-round.svg'; // Use imported asset
@@ -58,9 +58,7 @@ const ProfileSection: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState(-1); // List item selection state
   const [open, setOpen] = useState(false); // Popper open state
 
-  // --- OUR AUTH CONTEXT ---
-  const { user, logout: contextLogout } = React.useContext(UserContext); // Use our context
-  // --- END OUR AUTH ---
+  const { user, logout } = useAuth();
 
   // --- REFS ---
   // Type the anchorRef for Chip and Avatar compatibility (use Element for broader type)
@@ -70,17 +68,17 @@ const ProfileSection: React.FC = () => {
   // --- HANDLERS ---
   const handleLogout = async () => {
     try {
-      // await logout(); // --- REPLACE BERRY LOGIC ---
-      if (contextLogout) {
-          console.log("Logging out...");
-          contextLogout(); // Call our context logout
-          navigate('/authentication/sign-in'); // Redirect after logout
-      } else {
-           console.error("Logout function not available in context");
-      }
-      // --- END REPLACE ---
+      // 1. Call the backend endpoint (this will clear the HttpOnly cookie)
+      await axiosInstance.post('/api/v1/auth/logout');
+      // 2. Clear the frontend state (in-memory token and user)
+      logout();
+      // 3. Redirect to login
+      navigate('/login');
     } catch (err) {
       console.error(err);
+      // Even if API fails, log out the frontend
+      logout();
+      navigate('/login');
     }
   };
 
@@ -201,7 +199,7 @@ const ProfileSection: React.FC = () => {
                           <Typography variant="h4">Good Morning,</Typography>
                           <Typography component="span" variant="h4" sx={{ fontWeight: 400 }}>
                              {/* Use our context user name */}
-                             {user?.username || 'User'}
+                             {user?.email || 'User'}
                           </Typography>
                         </Stack>
                          {/* Replace with actual user role from context if available */}
