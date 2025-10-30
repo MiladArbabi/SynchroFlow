@@ -60,3 +60,6 @@ __pycache__/
 *$py.class
 # UI Template/Asset directory
 material-dashboard-react-main/
+
+# Playwright auth state
+playwright/.auth/

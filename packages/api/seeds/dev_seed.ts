@@ -1,5 +1,6 @@
 // packages/api/seeds/dev_seed.ts
 import type { Knex } from "knex";
+import bcrypt from 'bcrypt';
 
 export async function seed(knex: Knex): Promise<void> {
     // --- Deletes ALL existing entries ---
@@ -36,6 +37,20 @@ export async function seed(knex: Knex): Promise<void> {
         { shop_id: shop.id, order_id: '1003', status: 'delivered' }, // Add more examples
         { shop_id: shop.id, order_id: '1004', status: 'cancelled' },
     ]);
+
+    // --- ADD TEST USER ---
+    console.log('Seeding: Adding test user...');
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash('password123', saltRounds);
+
+    await knex('users').insert({
+        shop_id: shop.id,
+        email: 'test@example.com',
+        password_hash: passwordHash,
+        first_name: 'Test',
+        last_name: 'User',
+    }).onConflict('email').ignore(); // Ignore if user already exists
+    // --- END ADD TEST USER ---
 
     // --- Seed Other Tables (Optional) ---
     // Add inserts for inventory_truth, historical_sales, etc. if needed
