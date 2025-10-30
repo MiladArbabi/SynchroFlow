@@ -5,6 +5,7 @@ import axios from "axios";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
 import Customization from "./layout/Customization";
 import routes from "./routes";
 import { PlanLevel } from "./widgets/widgetRegistry";
@@ -100,12 +101,15 @@ export default function App() {
         ))}
 
         {/* All other routes are nested inside the AppLayout */}
-        <Route element={<LayoutManager />}>
+        {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<LayoutManager />}>
           {routes
             .filter((route) => route.key !== 'login' && route.key !== 'register') // Filter OUT auth keys
             .map((route) => (
               <Route path={route.route} element={route.component} key={route.key} />
             ))}
+          </Route>
         </Route>
 
         {/* A default redirect to the dashboard */}
