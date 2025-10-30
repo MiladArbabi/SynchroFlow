@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { axiosInstance as axios } from 'api/axiosConfig';
 
 // material-ui
@@ -44,6 +44,7 @@ interface LoginFormValues {
 
 export default function JWTLogin({ ...others }: JWTLoginProps) {
   const auth = useAuth(); // <-- GET AUTH CONTEXT
+  const navigate = useNavigate();
   // const { login, isLoggedIn } = useAuth(); // <-- COMMENT OUT
   // const scriptedRef = useScriptRef(); // <-- COMMENT OUT
   const [checked, setChecked] = useState(true);
@@ -73,26 +74,50 @@ export default function JWTLogin({ ...others }: JWTLoginProps) {
         password: Yup.string()
           .required('Password is required')
           .test('no-leading-trailing-whitespace', 'Password can not start or end with spaces', (value) => value === value.trim())
-          .max(10, 'Password must be less than 10 characters')
+          .max(25, 'Password must be less than 25 characters')
       })}
       onSubmit={async (values, { setErrors, setStatus, setSubmitting }: FormikHelpers<LoginFormValues>) => { // <-- Add FormikHelpers type
+
+        console.log('--- [LOGIN DEBUG 1] ---');
+        console.log('Form submitted with:', { email: values.email });
+
         try {          
           // --- Call the backend API ---
           const response = await axios.post('/api/v1/auth/login', {
             email: values.email.trim(), // Send trimmed email
             password: values.password // Send password as is
           });
+
+          console.log('--- [LOGIN DEBUG 2] ---');
+          console.log('Received response from API:', response.data);
           
           // --- Call AuthContext to store token and user data ---
           if (response.data.accessToken && response.data.user) {
+            console.log('--- [LOGIN DEBUG 3] ---');
+            console.log('Token and user found. Calling auth.login() and navigate()');
+
             auth.login(response.data.user, response.data.accessToken);
+            navigate('/dashboard');
+          } else {
+
+            console.error('--- [LOGIN DEBUG 4] ---');
+            console.error('API response missing "accessToken" or "user" object!', response.data);
+            throw new Error('Invalid login response from server.');
           }
-          
+
           setStatus({ success: true });
           setSubmitting(false);
           // if (scriptedRef.current) { ... } // <-- Removed script ref check
         } catch (err) {
-          console.error("Login error:", err); // <-- Temporary log
+
+          console.error('--- [LOGIN DEBUG 5] ---');
+          console.error('Login failed, entered CATCH block:', err.message);
+          
+          // Log the full error response if it's an API error
+          if (err.response) {
+            console.error('API Error Data:', err.response.data);
+            console.error('API Error Status:', err.response.status);
+          }
           setStatus({ success: false });
           setErrors({ submit: err.message || 'Login failed' }); // Use generic message
           setSubmitting(false);

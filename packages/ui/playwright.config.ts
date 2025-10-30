@@ -1,81 +1,87 @@
+// packages/ui/playwright.config.ts
 import { defineConfig, devices } from '@playwright/test';
 
-/**
- * Read environment variables from file.
- * https://github.com/motdotla/dotenv
- */
-// import dotenv from 'dotenv';
-// import path from 'path';
-// dotenv.config({ path: path.resolve(__dirname, '.env') });
+// ... (dotenv comments)
 
-/**
- * See https://playwright.dev/docs/test-configuration.
- */
+const AUTH_FILE_PATH = 'playwright/.auth/user.json';
+
 export default defineConfig({
   testDir: '../../tests/e2e',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
+  // ... (fullyParallel, forbidOnly, etc.)
   reporter: 'html',
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
-  use: {
-    /* Base URL to use in actions like `await page.goto('')`. */
-    baseURL: 'http://localhost:5173',
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+  use: {
+    baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
   },
 
-  /* Configure projects for major browsers */
+  /* Configure projects */
   projects: [
+    /* 1. SETUP PROJECT */
+    // This project runs first, authenticates, and creates the auth file.
     {
-      name: 'chromium',
+      name: 'setup',
+      testMatch: /auth\.setup\.spec\.ts/, // Correctly points to our setup test
+    },
+
+    /* 2. AUTHENTICATED PROJECTS */
+    // These projects run all tests *except* the auth flow test.
+    // They *depend on* setup and *use* the saved auth state.
+    {
+      name: 'chromium-auth',
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: AUTH_FILE_PATH,
+      },
+      dependencies: ['setup'],
+      testIgnore: 'auth.spec.ts',
+    },
+    {
+      name: 'firefox-auth',
+      use: {
+        ...devices['Desktop Firefox'],
+        storageState: AUTH_FILE_PATH,
+      },
+      dependencies: ['setup'],
+      testIgnore: 'auth.spec.ts', 
+    },
+    {
+      name: 'webkit-auth',
+      use: {
+        ...devices['Desktop Safari'],
+        storageState: AUTH_FILE_PATH,
+      },
+      dependencies: ['setup'],
+      testIgnore: 'auth.spec.ts', //
+    },
+
+    /* 3. UNAUTHENTICATED PROJECTS */
+    // These projects run *only* the auth flow test.
+    // They do *not* depend on setup and do *not* use any auth state.
+    {
+      name: 'chromium-noauth',
       use: { ...devices['Desktop Chrome'] },
+      testMatch: 'auth.spec.ts', // <-- ONLY run the auth test
     },
-
     {
-      name: 'firefox',
+      name: 'firefox-noauth',
       use: { ...devices['Desktop Firefox'] },
+      testMatch: 'auth.spec.ts', // <-- ONLY run the auth test
     },
-
     {
-      name: 'webkit',
+      name: 'webkit-noauth',
       use: { ...devices['Desktop Safari'] },
+      testMatch: 'auth.spec.ts ', // <-- ONLY run the auth test
     },
 
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
+    /* Note: The old 'chromium', 'firefox', and 'webkit' projects are now replaced by the '...-auth' and '...-noauth' variants. */
   ],
 
-  /* Run your local dev server before starting the tests */
+  /* Web Server config remains the same */
   webServer: {
-      command: 'npm run dev -- --mode e2e',
-      //cwd: './packages/ui', // Make sure this path is correct!
-      url: 'http://localhost:5173', // Your app's URL
-      reuseExistingServer: !process.env.CI,
-      timeout: 120 * 1000,
-   },
+    command: 'npm run dev:full -- --mode e2e',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120 * 1000,
+  },
 });

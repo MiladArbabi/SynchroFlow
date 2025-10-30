@@ -70,14 +70,13 @@ export const loginUser = async (req: Request, res: Response) => {
       .first(); // Select password_hash too
 
     if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password.' }); // 401 Unauthorized
+    return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // --- Verify password ---
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
     if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid email or password.' }); // 401 Unauthorized
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     // --- Issue JWT ---
@@ -99,8 +98,23 @@ export const loginUser = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds (must match token expiry)
     });
 
-    // Send only the access token in the response body
-    res.status(200).json({ accessToken });
+    // 1. Omit the password hash from the user object for security
+    // (Assuming your User type from api-types doesn't have password_hash,
+    // but the 'user' variable from the DB does)
+    const { password_hash, ...publicUser } = user;
+
+    console.log('--- [LOGIN DEBUG 6 - AUTH CONTROLLER] ---');
+    console.log('[BACKEND DEBUG] Sending user and token:', { 
+    user: publicUser, 
+    tokenExists: !!accessToken 
+  });
+  // --------------------
+
+    // 2. Send both the token AND the user object in the response
+    res.status(200).json({
+    accessToken: accessToken,
+    user: publicUser
+  });
 
   } catch (error) {
     console.error('Error during login:', error);
