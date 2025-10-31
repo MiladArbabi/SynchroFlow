@@ -8,6 +8,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- === [START POSTHOG SNIPPET] === -->
+    <script>
+        !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host||"https://app.posthog.com",p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset is_identified get_distinct_id get_session_id get_session_data get_property".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+        
+        // IMPORTANT: Replace with your key
+        // This key is PUBLIC, it is safe to be here.
+        posthog.init('YOUR_POSTHOG_API_KEY', {
+            api_host: 'https://app.posthog.com',
+            autocapture: true, // Capture clicks, form submits, etc.
+            capture_pageview: true // Capture page views
+        });
+    </script>
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -18,7 +32,6 @@
         }
     </style>
     <script>
-        // Define our Berry-inspired default blue
         tailwind.config = {
             theme: {
                 extend: {
@@ -63,14 +76,14 @@
                         <a href="#features" class="text-sm font-medium text-slate-600 hover:text-primary-main transition-colors">Features</a>
                         <a href="#pricing" class="text-sm font-medium text-slate-600 hover:text-primary-main transition-colors">Pricing</a>
                         
-                        <!-- Link to your main app's login page -->
                         <a href="https://app.lasyncro.com/login" class="text-sm font-medium text-slate-600 hover:text-primary-main transition-colors">
                             Login
                         </a>
                     </div>
                     
-                    <!-- Link to your main app's register page -->
+                    <!-- === [START #442 Event Tracking] === -->
                     <a href="https://app.lasyncro.com/register" 
+                       onclick="posthog.capture('clicked_signup', { location: 'header' })"
                        class="px-5 py-2.5 text-sm font-medium text-white bg-primary-main rounded-lg shadow-sm hover:bg-primary-dark transition-colors focus:outline-none focus:ring-2 focus:ring-primary-main focus:ring-offset-2">
                         Start Free Trial
                     </a>
@@ -82,7 +95,7 @@
     <!-- Main Content -->
     <main>
         
-        <!-- Hero Section -->
+       <!-- Hero Section -->
         <section class="pt-32 pb-24 md:pt-48 md:pb-32 bg-slate-50 overflow-hidden">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="text-center">
@@ -99,10 +112,13 @@
                         We give time-strapped brands the power of a full ops department for a fraction of the cost. Stop wearing too many hats and get back to growing your business.
                     </p>
                     <div class="mt-10 flex justify-center gap-x-4">
+                        <!-- === [START #442 Event Tracking] === -->
                         <a href="https://app.lasyncro.com/register" 
+                           onclick="posthog.capture('clicked_signup', { location: 'hero' })"
                            class="px-8 py-3 text-base font-medium text-white bg-primary-main rounded-lg shadow-lg hover:bg-primary-dark transition-all duration-300 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary-main focus:ring-offset-2">
                             Get Started Free
                         </a>
+                        <!-- === [END #442 Event Tracking] === -->
                         <a href="#features" 
                            class="px-8 py-3 text-base font-medium text-primary-main bg-white rounded-lg shadow-lg ring-1 ring-slate-200 hover:bg-slate-50 transition-all duration-300 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2">
                             Learn More

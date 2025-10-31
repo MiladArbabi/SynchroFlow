@@ -1,19 +1,25 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/main.tsx
-import { StrictMode } from 'react';
+import React, { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+
+
+// --- OUR CONTEXTS ---
 import { UserProvider } from './contexts/UserContext.tsx';
-import { AuthProvider } from './contexts/AuthContext';
-import { User } from '../../api/src/types';
+import { AuthProvider } from "./contexts/AuthContext.tsx";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // --- TanStack Query Imports ---
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 // --- BERRY THEME IMPORTS ---
 import { ConfigProvider } from './contexts/ConfigContext.tsx';
+
+// --- [START POSTHOG IMPORT] ---
+import { PostHogProvider } from '@posthog/react';
 
 // --- REACT-INTL IMPORT ---
 import { IntlProvider } from 'react-intl';
@@ -36,13 +42,33 @@ import '@fontsource/poppins/500.css';
 import '@fontsource/poppins/600.css';
 import '@fontsource/poppins/700.css';
 
-// --- BASIC INTL CONFIG ---
-// We'll just use English for now and let FormattedMessage use defaultMessage
-const messages = {
-  // Add actual translations here later if needed
+// --- CSS / STYLING ---
+/* import "assets/css/nucleo-icons.css";
+import "assets/css/nucleo-svg.css"; */
+import "./index.css";
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
+
+// --- Create React Query Client ---
+const container = document.getElementById("root");
+if (!container) throw new Error("Failed to find the root element");
+const root = createRoot(container);
+
+// --- [START POSTHOG OPTIONS] ---
+const posthogKey = import.meta.env.VITE_POSTHOG_KEY;
+
+const options = {
+  api_host: 'https://app.posthog.com',
+  loaded: (posthog: any) => {
+    if (!posthogKey) {
+      console.warn("PostHog API key is not set. Analytics are disabled.");
+    }
+  },
 };
+
+// --- BASIC INTL CONFIG ---
+const messages = {}; // No translations yet
 const defaultLocale = 'en';
-// --- END INTL CONFIG ---
 
 // Check if we are in the Playwright E2E test environment
 const isE2ETest = import.meta.env.MODE === 'e2e';
@@ -50,48 +76,51 @@ const isE2ETest = import.meta.env.MODE === 'e2e';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Example default: Refetch on window focus
       refetchOnWindowFocus: true,
+      // Disable retries in E2E tests for faster, more predictable failure
       retry: isE2ETest ? false : 3,
-      // Configure staleTime/gcTime later if needed
-      // staleTime: 5 * 60 * 1000, // 5 minutes
-      // gcTime: 10 * 60 * 1000, // 10 minutes
     },
   },
 });
 
-createRoot(document.getElementById('root')!).render(
+root.render(
   <StrictMode>
-    <ConfigProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <UserProvider>
+    {/* 1. PostHog (Analytics) */}
+    <PostHogProvider 
+      apiKey={posthogKey} 
+      options={options}
+    > 
+      {/* 2. ConfigProvider (Berry Theme) */}
+      <ConfigProvider>
+        {/* 3. React Query (Data Fetching) */}
+        <QueryClientProvider client={queryClient}>
+          {/* 4. AuthProvider (Our Auth + User state) */}
+          <AuthProvider>
+            {/* 5. React Router */}
             <BrowserRouter>
-              <ConfigProvider>
+              {/* 6. IntlProvider (Localization) */}
               <IntlProvider
                 locale={defaultLocale}
                 defaultLocale={defaultLocale}
-                messages={messages} // Provide empty messages for now
+                messages={messages}
                 onError={(err) => {
-                  // Suppress missing translation errors for now, rely on defaultMessage
                   if (err.code === 'MISSING_TRANSLATION') {
-                    // console.warn('Missing translation:', err.message);
-                    return;
+                    return; // Suppress missing translation warnings
                   }
                   console.error(err);
                 }}
-                >
-                  <UserProvider>
-                    <App />
-                  </UserProvider>
+              >
+                {/* The App itself */}
+                <App />
+
               </IntlProvider>
-              </ConfigProvider>
             </BrowserRouter>
-          </UserProvider>
-        </AuthProvider>
-      {/* Add DevTools outside other providers, but inside QueryClientProvider */}
-      <ReactQueryDevtools initialIsOpen={false} />
-    </QueryClientProvider>
-    </ConfigProvider>
+          </AuthProvider>
+          
+          {/* React Query DevTools */}
+          <ReactQueryDevtools initialIsOpen={false} />
+        </QueryClientProvider>
+      </ConfigProvider>
+    </PostHogProvider>
   </StrictMode>
 );

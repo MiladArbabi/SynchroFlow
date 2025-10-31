@@ -2,6 +2,7 @@
 // packages/ui/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from '../../../api/src/types';
+import { usePostHog } from '@posthog/react';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -33,6 +34,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user: null,
     accessToken: null,
   });
+
+  // --- [START POSTHOG HOOK] ---
+  const posthog = usePostHog();
 
   // Re-hydrate session from localStorage on app load
   React.useEffect(() => {
@@ -75,8 +79,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Save to localStorage so it persists across reloads/tests
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('user', JSON.stringify(user));
-    console.log("AuthContext: User logged in, token/user stored in localStorage.");
-  }, []);
+
+    // --- [START ISSUE#442 User Identification] ---
+    if (posthog) {
+      posthog.identify(
+        user.id.toString(), // Unique ID for the user
+        {
+          email: user.email,
+          name: `${user.first_name} ${user.last_name}`,
+        }
+      );
+    }
+    console.log("AuthContext: User logged in and identified.");
+  }, [posthog]);
 
   // --- Clear localStorage on logout ---
   const logout = useCallback(() => {
@@ -89,8 +104,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Clear the persistent session
     localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
-    console.log("AuthContext: User logged out, token/user cleared from localStorage.");
-  }, []);
+    
+    // --- [START POSTHOG RESET] ---
+      if (posthog) {
+        posthog.reset(); // Resets the user ID
+      }
+      // --- [END POSTHOG RESET] ---
+
+      console.log("AuthContext: User logged out and PostHog reset.");
+    }, [posthog]);
 
   // This function is for token refresh. It should also update localStorage.
   const setAccessToken = useCallback((token: string | null) => {
@@ -111,7 +133,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Render children only after initial loading is false
-  // Or, you can let ProtectedRoute handle the loading screen
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
