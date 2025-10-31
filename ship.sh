@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# --- Ship Script ---
-# Automates adding, committing, pushing, creating PR, merging, and cleanup.
+# --- Ship Script (v2) ---
+# Automates E2E testing, add, commit, push, PR creation, merge, and cleanup.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -35,7 +35,17 @@ fi
 
 echo "🚀 Starting ship process for branch '$CURRENT_BRANCH' (Issue #$ISSUE_NUMBER)..."
 
-# --- 2. Git Operations ---
+# --- 2. THE E2E TEST GATE ---
+
+echo "   Running E2E test suite as a final CI gate..."
+if ! npm run test:e2e; then
+    echo "❌ E2E Tests Failed. Aborting ship."
+    echo "   Please fix the tests before running ./ship.sh again."
+    exit 1
+fi
+echo "✅ E2E Tests Passed."
+
+# --- 3. Git Operations ---
 
 # Stage all changes
 echo "   Adding all changes..."
@@ -49,7 +59,7 @@ git commit -m "$COMMIT_MESSAGE"
 echo "   Pushing branch '$CURRENT_BRANCH' to origin..."
 git push origin HEAD # Use HEAD to push the current branch safely
 
-# --- 3. GitHub PR Creation ---
+# --- 4. GitHub PR Creation ---
 
 echo "   Creating Pull Request..."
 # Extract the type (e.g., feat, fix, chore) from the commit message for the title
@@ -67,7 +77,7 @@ PR_URL=$(gh pr create \
 echo "✅ Pull Request created successfully!"
 echo "   PR URL: $PR_URL"
 
-# --- 4. Merge PR and Cleanup ---
+# --- 5. Merge PR and Cleanup ---
 
 # Extract PR number from URL (assuming standard GitHub URL format)
 PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
@@ -97,7 +107,7 @@ echo "   Deleting local branch '$CURRENT_BRANCH'..."
 git branch -d "$CURRENT_BRANCH"
 echo "✅ Local branch '$CURRENT_BRANCH' deleted."
 
-# --- 5. Output ---
+# --- 6. Output ---
 
 echo "🚢 Ship process complete."
 

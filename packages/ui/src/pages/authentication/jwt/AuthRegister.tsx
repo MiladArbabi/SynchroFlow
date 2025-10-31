@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { axiosInstance as axios } from 'api/axiosConfig';
+import { usePostHog } from '@posthog/react';
 // import { useDispatch } from 'store';
 
 // material-ui
@@ -19,18 +20,18 @@ import OutlinedInput from '@mui/material/OutlinedInput';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 // third party
 import * as Yup from 'yup';
 import { Formik, FormikHelpers } from 'formik';
 
 // project imports
-import AnimateButton from 'ui-component/extended/AnimateButton'; // <-- Verify alias
-import CustomFormControl from 'ui-component/extended/Form/CustomFormControl'; // <-- Verify alias
-// import useAuth from 'hooks/useAuth'; // <-- COMMENT OUT
-// import useScriptRef from 'hooks/useScriptRef'; // <-- COMMENT OUT
-// import { strengthColor, strengthIndicator } from 'utils/password-strength'; // <-- COMMENT OUT
-// import { openSnackbar } from 'store/slices/snackbar';
+import AnimateButton from 'ui-component/extended/AnimateButton';
+import CustomFormControl from 'ui-component/extended/Form/CustomFormControl';
+import { strengthColor, strengthIndicator } from 'utils/password-strength'; // Assuming this util exists
+import { StringColorProps } from 'types';
 
 // assets
 import Visibility from '@mui/icons-material/Visibility';
@@ -54,16 +55,17 @@ interface RegisterFormValues {
 interface StrengthLevel { color: string; label: string; }
 
 export default function JWTRegister({ ...others }: JWTRegisterProps) {
-  const navigate = useNavigate();
-  //const scriptedRef = useScriptRef();
-  //const dispatch = useDispatch();
-
+  const theme = useTheme();
+  const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const [showPassword, setShowPassword] = useState(false);
   const [checked, setChecked] = useState(true);
 
   const [strength, setStrength] = useState(0);
-  const [level, setLevel] = useState<StrengthLevel | undefined>();
-  // const { register } = useAuth();
+  const [level, setLevel] = useState<StringColorProps>();
+
+  const navigate = useNavigate();
+  // --- [START POSTHOG HOOK] ---
+  const posthog = usePostHog();
 
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -73,10 +75,7 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
     event.preventDefault();
   };
 
-  // const [searchParams] = useSearchParams(); // <-- Not used, can remove if desired
-  // const authParam = searchParams.get('auth');
-
-  const changePassword = (value) => {
+  const changePassword = (value: string) => {
     const temp = strengthIndicator(value);
     setStrength(temp);
     setLevel(strengthColor(temp));
@@ -132,12 +131,26 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
             const trimmedEmail = values.email.trim();
             // await register?.(trimmedEmail, values.password, trimmedFirstName, trimmedLastName);
 
-            await axios.post('/api/v1/auth/register', {
+            const response = await axios.post('/api/v1/auth/register', {
               firstName: trimmedFirstName,
               lastName: trimmedLastName,
               email: trimmedEmail,
               password: values.password // Send password as is
             });
+
+            // --- [START ISSUE#442 Registration Event] ---
+            if (posthog) {
+              posthog.capture('registration_complete', {
+                email: values.email,
+              });
+              // We also alias this user ID to their new ID
+              // so PostHog can connect their anonymous pre-signup
+              // activity to their new user account.
+              posthog.alias(
+                response.data.id.toString(), // New User ID from backend
+                posthog.get_distinct_id()    // Old anonymous ID
+              );
+            }
  
             // --- Handle Success ---
             setStatus({ success: true });
