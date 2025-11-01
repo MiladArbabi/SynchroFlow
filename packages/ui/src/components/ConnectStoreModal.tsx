@@ -22,6 +22,10 @@ import {
 import { styled } from '@mui/material/styles';
 import IconComponent from './Icon';
 
+// --- [START POSTHOG] ---
+import { usePostHog } from 'posthog-js/react';
+// --- [END POSTHOG] ---
+
 // --- Define our Platform Card (inspired by Berry's SubCard) ---
 const PlatformCard = styled(ButtonBase)(({ theme }: { theme: Theme }) => ({
   width: '100%',
@@ -59,12 +63,24 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
   const [syncState, setSyncState] = useState<'form' | 'syncing' | 'error'>('form');
   const [error, setError] = useState('');
 
+  // --- [START POSTHOG] ---
+  const posthog = usePostHog();
+  // --- [END POSTHOG] ---
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!selectedPlatform) return;
 
     setSyncState('syncing');
     setError('');
+
+    // --- [START POSTHOG] ---
+    posthog.capture('store_connection_initiated', {
+      platform: selectedPlatform,
+      // Only include shop_name if it's relevant (for Shopify)
+      shop_name: selectedPlatform === 'shopify' ? shopName : undefined
+    });
+    // --- [END POSTHOG] ---
 
     try {
       // Step 1: Call our new BE endpoint
@@ -80,10 +96,19 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
         window.location.href = data.authorizationUrl;
       }
     } catch (_err) {
-      setError('Failed to initiate connection. Please try again.');
+      const errorMessage = 'Failed to initiate connection. Please try again.';
+      setError(errorMessage);
       setSyncState('form'); // Return to the form
+
+      // --- [START POSTHOG] ---
+      posthog.capture('store_connection_failed', {
+        platform: selectedPlatform,
+        shop_name: selectedPlatform === 'shopify' ? shopName : undefined,
+        error_message: errorMessage
+      });
+      // --- [END POSTHOG] ---
+    }
   };
-};
 
   const resetForm = () => {
     setSelectedPlatform(null);
@@ -96,6 +121,15 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
   const handleClose = () => {
     // Only allow close if not in the middle of syncing
     if (syncState !== 'syncing') {
+      
+      // --- [START POSTHOG] ---
+      // Capture a "cancel" event
+      posthog.capture('store_connection_cancelled', {
+        // This tells us which step they cancelled on
+        current_step: selectedPlatform ? PLATFORMS.find(p => p.id === selectedPlatform)?.name : 'platform_selection'
+      });
+      // --- [END POSTHOG] ---
+
       onClose();
       setTimeout(resetForm, 300);
     }
@@ -105,6 +139,17 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
     setSelectedPlatform(null);
     setError('');
   };
+
+  // --- [START POSTHOG] ---
+  // New handler to track which platform was selected
+  const handlePlatformSelect = (platform: PlatformID, platformName: string) => {
+    setSelectedPlatform(platform);
+    posthog.capture('store_platform_selected', {
+      platform_id: platform,
+      platform_name: platformName
+    });
+  };
+  // --- [END POSTHOG] ---
 
   // --- Dynamic Content Rendering ---
   let dialogTitle = 'Connect a Data Source';
@@ -144,7 +189,10 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
         <Grid container spacing={2}>
           {PLATFORMS.map((platform) => (
             <Grid size={{ xs: 12, sm: 4 }} key={platform.id}>
-              <PlatformCard onClick={() => setSelectedPlatform(platform.id)}>
+              {/* --- [START POSTHOG] --- */}
+              {/* Updated onClick to use the new tracking handler */}
+              <PlatformCard onClick={() => handlePlatformSelect(platform.id, platform.name)}>
+              {/* --- [END POSTHOG] --- */}
                 <Box>
                   {/* Assuming IconComponent can take a name prop */}
                   <IconComponent name={platform.icon as any} size="xl" />

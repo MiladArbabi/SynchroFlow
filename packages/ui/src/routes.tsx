@@ -1,8 +1,8 @@
 //packages/ui/src/routes.tsx
 import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
-import LoginPage from "./pages/authentication/Login"; // Assuming Login.tsx has default export
-import RegisterPage from "./pages/authentication/Register"; // Assuming Register.tsx has default export
+import LoginPage from "./pages/authentication/LoginPage"; // Assuming x has default export
+import RegisterPage from "./pages/authentication/RegisterPage"; // Assuming Register.tsx has default export
 import { ProductsPage } from "./pages/ProductsPage";
 import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
 import DataMapper from "./components/DataMapper/DataMapper";

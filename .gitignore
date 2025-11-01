@@ -63,3 +63,4 @@ material-dashboard-react-main/
 
 # Playwright auth state
 playwright/.auth/
+playwright-report/

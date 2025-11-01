@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { axiosInstance as axios } from 'api/axiosConfig';
 import { usePostHog } from '@posthog/react';
-// import { useDispatch } from 'store';
+
+// -- ANALYTICS 
+import { PostHog } from 'posthog-js';
+import { useAuth } from 'contexts/AuthContext';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -59,10 +61,12 @@ export interface StringColorProps {
     secondary?: string;
 }
 
-// Placeholder for password strength level
-interface StrengthLevel { color: string; label: string; }
+// Define the prop interface we expect from Register.tsx
+interface AuthRegisterProps {
+  posthog: PostHog;
+}
 
-export default function JWTRegister({ ...others }: JWTRegisterProps) {
+export default function JWTRegister({ posthog, ...others }: AuthRegisterProps & JWTRegisterProps) {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const [showPassword, setShowPassword] = useState(false);
@@ -72,8 +76,7 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
   const [level, setLevel] = useState<StringColorProps>();
 
   const navigate = useNavigate();
-  // --- [START POSTHOG HOOK] ---
-  const posthog = usePostHog();
+  const auth = useAuth();
 
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -90,9 +93,9 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
   };
 
   // Placeholder functions (replace or remove)
-  const strengthIndicator = (value: string): number => value.length; // Simple length check
+  /* const strengthIndicator = (value: string): number => value.length; // Simple length check
   const strengthColor = (level: number): StrengthLevel => // Simple color logic
-    level < 5 ? { color: 'error.main', label: 'Weak' } : { color: 'success.main', label: 'Strong' };
+    level < 5 ? { color: 'error.main', label: 'Weak' } : { color: 'success.main', label: 'Strong' }; */
 
   useEffect(() => {
     changePassword('');
@@ -146,26 +149,66 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
               password: values.password // Send password as is
             });
 
-            // --- [START ISSUE#442 Registration Event] ---
-            if (posthog) {
-              posthog.capture('registration_complete', {
-                email: values.email,
-              });
-              // We also alias this user ID to their new ID
-              // so PostHog can connect their anonymous pre-signup
-              // activity to their new user account.
+            // --- [START POSTHOG ANALYTICS] ---
+            if (posthog && response.data.id) { // Check that we have a user ID
+              const newUserId = response.data.id.toString();
+
+              // 1. Alias the new user ID with the old anonymous ID
               posthog.alias(
-                response.data.id.toString(), // New User ID from backend
-                posthog.get_distinct_id()    // Old anonymous ID
+                newUserId,
+                posthog.get_distinct_id()
               );
+
+              // 2. Identify the new user and set their properties
+              posthog.identify(
+                newUserId,
+                {
+                  email: trimmedEmail,
+                }
+              );
+
+              // 3. Capture the sign-up event
+              posthog.capture('user_signup_success');
             }
+            // --- [END POSTHOG] ---
  
-            // --- Handle Success ---
-            setStatus({ success: true });
-            setSubmitting(false);
-            console.log('Registration simulated successfully.');
-            
-            navigate('/login', { replace: true }); // Redirect to login after successful registration
+            // --- [START NEW SUCCESS HANDLER] ---
+            // Check for the *new* response (token + user)
+            if (response.data.accessToken && response.data.user) {
+              const user = response.data.user;
+
+              // 1. Log the user in using the AuthContext
+              auth.login(user, response.data.accessToken);
+
+              // 2. Handle PostHog Analytics
+              if (posthog) {
+                const newUserId = user.id.toString();
+
+                // Alias the old ID with the new user ID
+                posthog.alias(
+                  newUserId,
+                  posthog.get_distinct_id()
+                );
+
+                // Identify the user
+                posthog.identify(
+                  newUserId,
+                  { email: user.email }
+                );
+
+                // Capture the event
+                posthog.capture('user_signup_success');
+              }
+
+              // 3. Handle Success & Navigation
+              setStatus({ success: true });
+              setSubmitting(false);
+              navigate('/dashboard'); // <-- NAVIGATE TO DASHBOARD
+
+              } else {
+                // This case should not happen, but good to have
+                throw new Error('Invalid response from server.');
+              }
           } catch (err: any) { // <-- Add Type
             console.error("Register error:", err); // <-- Temporary log
             setStatus({ success: false });
