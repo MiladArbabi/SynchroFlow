@@ -56,6 +56,7 @@
     "amqplib": "^0.10.9",
     "axios": "^1.12.2",
     "connect-pg-simple": "^10.0.0",
+    "posthog-js": "^1.283.0",
     "react-hooks": "^1.0.1"
   }
 }

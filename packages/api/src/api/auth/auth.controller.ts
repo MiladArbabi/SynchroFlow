@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import db from '../../db';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { User } from 'api-types'; 
 import jwt, { JwtPayload } from 'jsonwebtoken';
 
@@ -26,12 +27,16 @@ export const registerUser = async (req: Request, res: Response) => {
 
     // --- Hash the password ---
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-
+    const authSecret = crypto.randomBytes(32).toString('hex'); // <-- ADD THIS LINE
+    
     // --- Create a new shop for this user ---
     const [newShop] = await db('shops')
       .insert({
-        name: `${firstName || email}'s Shop`, // Placeholder name
-        // Add other shop defaults if needed
+        name: `${firstName || email}'s Shop`,
+        contact_email: email.toLowerCase(),
+        auth_secret: authSecret,
+        primary_erp_type: 'none', 
+  	  	primary_ecomm_type: 'none'
       })
       .returning('id');
 
@@ -40,14 +45,40 @@ export const registerUser = async (req: Request, res: Response) => {
       .insert({
         email: email.toLowerCase(),
         password_hash: passwordHash,
-        first_name: firstName, 
+        first_name: firstName,
         last_name: lastName,
-        shop_id: newShop.id,   
+        shop_id: newShop.id,
       })
-      .returning(['id', 'email', 'first_name', 'last_name', 'created_at', 'updated_at']); // Return safe fields
+      .returning('*');
 
-    // --- Respond with success ---
-    res.status(201).json(newUser); // 201 Created
+    // --- Issue JWT (Copied from loginUser) ---
+    const jwtSecret = process.env.JWT_SECRET;
+    const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || jwtSecret;
+    if (!jwtSecret || !jwtRefreshSecret) throw new Error('JWT secrets are not set.');
+
+    // 1. Short-lived Access Token
+    const accessToken = jwt.sign({ userId: newUser.id }, jwtSecret, { expiresIn: '15m' });
+
+    // 2. Long-lived Refresh Token
+    const refreshToken = jwt.sign({ userId: newUser.id }, jwtRefreshSecret, { expiresIn: '7d' });
+
+    // Set cookie options
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    // 1. Omit the password hash for security
+    const { password_hash, ...publicUser } = newUser;
+
+    // 2. Respond with success (201) and the same payload as login
+    res.status(201).json({
+      accessToken: accessToken,
+      user: publicUser
+    });
+    // --- [END NEW LOGIN LOGIC] ---
 
   } catch (error) {
     console.error('Error during registration:', error);

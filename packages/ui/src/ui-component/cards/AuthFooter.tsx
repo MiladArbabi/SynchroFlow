@@ -9,10 +9,10 @@ import Stack from '@mui/material/Stack';
 export default function AuthFooter() {
   return (
     <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
-      <Typography variant="subtitle2" component={Link} href="https://synchroflow.com" target="_blank" underline="hover"> {/* <-- Update URL */}
-        synchroflow.com 
+      <Typography variant="subtitle2" component={Link} href="https://laSyncro.com" target="_blank" underline="hover"> {/* <-- Update URL */}
+        laSyncro.com 
       </Typography>
-      <Typography variant="subtitle2" component={Link} href="https://synchroflow.com/privacy" target="_blank" underline="hover"> {/* <-- Update URL */}
+      <Typography variant="subtitle2" component={Link} href="https://laSyncro.com/privacy" target="_blank" underline="hover"> {/* <-- Update URL */}
         Privacy Policy 
       </Typography>
     </Stack>

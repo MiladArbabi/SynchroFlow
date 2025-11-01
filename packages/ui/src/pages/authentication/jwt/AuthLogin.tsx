@@ -3,6 +3,9 @@ import React, { useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { axiosInstance as axios } from 'api/axiosConfig';
 
+// -- ANALYTICS 
+import { PostHog } from 'posthog-js/react';
+
 // material-ui
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
@@ -42,8 +45,11 @@ interface LoginFormValues {
   submit: string | null;
 }
 
-export default function JWTLogin({ ...others }: JWTLoginProps) {
-  const auth = useAuth(); // <-- GET AUTH CONTEXT
+interface AuthLoginProps {
+  posthog: PostHog;
+}
+
+export default function JWTLogin({ posthog, ...others }: AuthLoginProps & JWTLoginProps) {  const auth = useAuth(); // <-- GET AUTH CONTEXT
   const navigate = useNavigate();
   // const { login, isLoggedIn } = useAuth(); // <-- COMMENT OUT
   // const scriptedRef = useScriptRef(); // <-- COMMENT OUT
@@ -97,6 +103,23 @@ export default function JWTLogin({ ...others }: JWTLoginProps) {
             console.log('Token and user found. Calling auth.login() and navigate()');
 
             auth.login(response.data.user, response.data.accessToken);
+            
+            // --- [START POSTHOG ANALYTICS] ---
+            const user = response.data.user;
+
+            // 1. Identify the user in PostHog
+            posthog.identify(
+              user.id, // Or user.uuid, whatever your unique user ID is
+              {
+                email: user.email,
+                name: user.name // Add any other user properties
+              }
+            );
+
+            // 2. Capture the login event
+            posthog.capture('user_login_success');
+            // --- [END POSTHOG] ---
+
             navigate('/dashboard');
           } else {
 

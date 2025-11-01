@@ -6,8 +6,18 @@ import { MemoryRouter, MemoryRouterProps } from 'react-router-dom'; // Use Memor
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { UserProvider } from './contexts/UserContext';
-import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntlProvider } from 'react-intl';
+import { PostHogProvider } from 'posthog-js/react';
+
+// PostHog configuration for tests
+const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string;
+const posthogOptions = {
+  api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+  defaults: '2025-05-24',
+  capture_exceptions: true, // This enables capturing exceptions using Error Tracking
+  debug: import.meta.env.MODE === 'development',
+};
 
 // This is our enhanced render options type
 interface ExtendedRenderOptions extends Omit<RenderOptions, 'wrapper'> {
@@ -30,18 +40,20 @@ const renderWithProviders = (
     const queryClient = createTestQueryClient();
 
     return (
-      <QueryClientProvider client={queryClient}> 
-        <IntlProvider locale="en" defaultLocale="en" messages={{}}>
-          <MemoryRouter {...routerProps}>
-            <ThemeProvider theme={theme}>
-              <CssBaseline />
-              <UserProvider>
-                {children}
-              </UserProvider>
-            </ThemeProvider>
-          </MemoryRouter>
-        </IntlProvider>
-      </QueryClientProvider>
+      <PostHogProvider apiKey={posthogKey} options={posthogOptions}>
+        <QueryClientProvider client={queryClient}>
+          <IntlProvider locale="en" defaultLocale="en" messages={{}}>
+            <MemoryRouter {...routerProps}>
+              <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <UserProvider>
+                  {children}
+                </UserProvider>
+              </ThemeProvider>
+            </MemoryRouter>
+          </IntlProvider>
+        </QueryClientProvider>
+      </PostHogProvider>
     );
   };
 
