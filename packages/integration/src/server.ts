@@ -43,8 +43,9 @@ const verifyShopifyWebhook = (req: Request, res: Response, next: NextFunction) =
   }
 };
 
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).send('Integration service is running!');
+app.get('/health', (req, res) => {
+  console.log('[DEBUG] Health check hit. Responding OK.');
+  res.status(200).send({ status: 'ok' });
 });
 
 // --- Webhook Ingestion Route ---

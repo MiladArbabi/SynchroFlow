@@ -1,39 +1,37 @@
-// packages/api/src/db.ts
 import knex, { Knex } from 'knex';
 // Use this import syntax for files that use `module.exports`
 import knexfile = require('../knexfile');
 
-// --- Environment Validation ---
-const requiredEnvVars = [
-  'PG_HOST',
-  'PG_PORT',
-  'PG_USER',
-  'PG_PASSWORD',
-  'PG_DATABASE',
-];
-
-const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-
-if (missingVars.length > 0) {
-  throw new Error(
-    `FATAL: Missing required environment variables: ${missingVars.join(', ')}. Please check your .env file.`
-  );
-}
-// --- End Validation ---
-
-// Define the shape of the config object we expect to import.
+// Define the shape of the config object
 type KnexConfig = { [key: string]: Knex.Config };
-
-// Assert that our imported knexfile matches the shape we defined.
 const config = knexfile as KnexConfig;
 
-// Now, TypeScript knows that config.development is a valid property.
-const db = knex(config.development);
+// 1. Determine the environment
+// The Dockerfile sets this to "production" on Fly.io
+const environment = process.env.NODE_ENV || 'development';
 
-// FIX: Add connection test and detailed error logging
+// 2. Select the correct configuration
+const dbConfig = config[environment];
+
+if (!dbConfig) {
+  throw new Error(`FATAL: Knex config for environment "${environment}" not found.`);
+}
+
+// 3. Add a check for the *actual* production variable
+if (environment === 'production' && !process.env.DATABASE_URL) {
+  throw new Error('FATAL: DATABASE_URL environment variable is not set for production.');
+}
+
+// 4. Initialize Knex with the *correct* config
+const db = knex(dbConfig);
+
+// 5. Run the connection test (with better logging)
 db.raw('SELECT 1+1 AS result').then(() => {
+    console.log(`Database connected successfully in ${environment} mode.`);
 }).catch((err) => {
-  process.exit(1); // Exit if connection fails
+    console.error('!!!!!!!!!!!! DATABASE CONNECTION FAILED !!!!!!!!!!!!');
+    console.error(err);
+    process.exit(1); // Exit if connection fails
 });
 
 export default db;

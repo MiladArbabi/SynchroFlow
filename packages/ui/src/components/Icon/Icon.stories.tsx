@@ -33,7 +33,7 @@ type Story = StoryObj<typeof IconComponent>;
 
 export const Default: Story = {
   args: {
-    name: 'Home', // Default icon
+    name: 'Menu', // Default icon
     color: 'primary',
     size: 'medium',
   },
@@ -41,7 +41,7 @@ export const Default: Story = {
 
 export const LargeError: Story = {
     args: {
-      name: 'AlertCircle',
+      name: 'AlarmClock',
       color: 'error',
       size: 'large',
     },

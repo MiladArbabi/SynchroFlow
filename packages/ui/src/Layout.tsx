@@ -9,14 +9,7 @@ import {
   Panel,
   PanelResizeHandle,
 } from "react-resizable-panels";
-
-// You will need to define your routes here.
-// This is just a placeholder example.
-const routes = [
-    { type: "title", title: "Main", key: "title-main" },
-    { type: "collapse", name: "Dashboard", key: "dashboard", href: "/dashboard", icon: <div>D</div> },
-    { type: "collapse", name: "Products", key: "products", href: "/products", icon: <div>P</div> },
-]as const;
+import routes from "routes";
 
 export default function Layout() {
     const [isSidenavOpen, setSidenavOpen] = useState(true);

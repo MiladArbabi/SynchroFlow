@@ -1,11 +1,23 @@
 // packages/api/src/server.ts
+process.on('uncaughtException', (err: any) => {
+  console.error('!!!!!!!!!!!! UNCAUGHT EXCEPTION !!!!!!!!!!!!');
+  console.error(err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: any, promise: any) => {
+  console.error('!!!!!!!!!!!! UNHANDLED REJECTION !!!!!!!!!!!!');
+  console.error(reason);
+  process.exit(1);
+});
+
 import dotenv from 'dotenv';
 dotenv.config();
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
-import crypto from 'crypto';
 import db from './db';
+import connectPgSimple from 'connect-pg-simple';
 import { 
   getDemandForecastForSku, 
   calculateTotalInventoryValue,
@@ -40,21 +52,36 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
+// --- TO FIX FLY DEPLOY ---
+const PGStore = connectPgSimple(session);
+const sessionStore = new PGStore({
+  conObject: db.client.config.connection, // <-- Give it the connection object
+  tableName: 'user_sessions',
+});
+
 // --- SESSION MIDDLEWARE ---
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'a-very-strong-dev-secret-key', // <-- Use env var
+    store: sessionStore, // <-- USE THE NEW PGStore
+    secret: process.env.SESSION_SECRET || 'fallback-secret-please-set-in-prod',
     resave: false,
-    saveUninitialized: true,
-    store: new session.MemoryStore(), // <-- Use MemoryStore for dev
+    saveUninitialized: false,
     cookie: {
-      secure: process.env.NODE_ENV === 'production', // Use secure cookies in prod
+      secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
-      maxAge: 600000 // 10 minutes
-    }
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+    },
   })
 );
-const port = 3000;
+
+// --- THE DUMB HEALTH CHECK ---
+// This stops the app from crashing on the health check.
+app.get('/health', (req, res) => {
+  console.log('THE DUMB HEALTH CHECK IN API/SERVER');
+  res.status(200).send({ status: 'ok' });
+});
+
+const port = Number(process.env.PORT) || 8080; 
 
 // --- Routes ---
 app.get('/', (req, res) => {
@@ -469,11 +496,25 @@ app.put('/api/v1/mappings/:id', async (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(port, () => {
+  app.listen(port, "0.0.0.0", () => {
     console.log(`Server is listening on port ${port}`);
-    // Start the queue worker
-    startWorker();
-    startSyncWorker();
+    // console.log('[DEBUG] Workers are temporarily disabled for debugging.');
+
+    try {
+      // Start the queue worker
+      startWorker();
+    } catch (err: any) { // Added ': any' to fix the implicit 'any' error
+      console.error('!!! FAILED TO START API WORKER !!!', err);
+      process.exit(1); // Exit with an error
+    }
+
+    try {
+      // Start the sync worker
+      startSyncWorker();
+    } catch (err: any) { // Added ': any' to fix the implicit 'any' error
+      console.error('!!! FAILED TO START SYNC WORKER !!!', err);
+      process.exit(1); // Exit with an error
+    }
   });
 }
 

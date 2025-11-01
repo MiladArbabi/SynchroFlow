@@ -103,7 +103,7 @@ const Customer360Page: React.FC = () => {
       {customerData && !isLoading && !isError && (
         <Grid container spacing={3}>
           {/* Profile Section */}
-          <Grid xs={12} md={4}>
+          <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2, height: '100%' }}>
               {/* Pass the fetched profile data to the CustomerProfile component */}
               <CustomerProfile customer={customerData.profile} />
@@ -111,7 +111,7 @@ const Customer360Page: React.FC = () => {
           </Grid>
 
           {/* Key Metrics Section */}
-          <Grid xs={12} md={8}>
+          <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2, height: '100%' }}>
               {/* Pass the fetched metrics data to the CustomerKeyMetrics component */}
               <CustomerKeyMetrics metrics={customerData.metrics} />
@@ -119,7 +119,7 @@ const Customer360Page: React.FC = () => {
           </Grid>
 
           {/* Order History Section (Still uses static mock data for now) */}
-          <Grid xs={12}>
+          <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2 }}>
                <Typography variant="h6" gutterBottom>Order History</Typography>
                {/* Pass the real (or mock) data from the API */}
@@ -128,7 +128,7 @@ const Customer360Page: React.FC = () => {
           </Grid>
 
           {/* Support History Section (Now uses data from the query) */}
-          <Grid xs={12}>
+          <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>Support History</Typography>
               {/* Pass the real (or mock) data from the API */}

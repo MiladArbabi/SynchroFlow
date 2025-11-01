@@ -59,11 +59,11 @@ const BorderRadius: React.FC = () => {
             <Typography variant="h5">Border Radius</Typography>
             {/* Use Grid container for layout */}
             <Grid container spacing={1.25} alignItems="center" justifyContent="center">
-                <Grid item> {/* Use item prop */}
+                <Grid > {/* Use item prop */}
                     <Typography variant="h6">4px</Typography>
                 </Grid>
                 {/* Use item prop with xs='auto' or flexible sizing */}
-                <Grid item xs> {/* Use xs for flexible grow */}
+                <Grid > {/* Use xs for flexible grow */}
                     <Slider
                         size="small"
                         value={borderRadius}
@@ -78,7 +78,7 @@ const BorderRadius: React.FC = () => {
                         sx={sliderSx} // Apply SX
                     />
                 </Grid>
-                <Grid item> {/* Use item prop */}
+                <Grid > {/* Use item prop */}
                     <Typography variant="h6">24px</Typography>
                 </Grid>
             </Grid>

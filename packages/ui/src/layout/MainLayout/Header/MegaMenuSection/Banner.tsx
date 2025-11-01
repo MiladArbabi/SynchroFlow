@@ -3,11 +3,11 @@ import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 
 // project imports
-import useConfig from 'hooks/useConfig';
+//import useConfig from 'hooks/useConfig';
 
 export default function MegaMenuBanner() {
   const theme = useTheme();
-  const { borderRadius } = useConfig();
+  //const { borderRadius } = useConfig();
 
   return (
     <Box
@@ -15,7 +15,7 @@ export default function MegaMenuBanner() {
         py: 1,
         pl: 1,
         height: '100%',
-        '& svg': { width: '100%', height: '100%', verticalAlign: 'middle', borderRadius: `${borderRadius}px` }
+        //'& svg': { width: '100%', height: '100%', verticalAlign: 'middle', borderRadius: `${borderRadius}px` }
       }}
     >
       <svg width="267" height="352" viewBox="0 0 267 352" fill="none" xmlns="http://www.w3.org/2000/svg">

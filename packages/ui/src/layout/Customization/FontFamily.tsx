@@ -84,7 +84,7 @@ const FontFamily: React.FC = () => {
             >
                 <Grid container spacing={1.25}> {/* Use container spacing */}
                     {fonts.map((item) => ( // Use item.id as key
-                        <Grid item xs={12} key={item.id}> {/* Use item prop and xs */}
+                        <Grid size={{ xs: 1}}  key={item.id}> {/* Use item prop and xs */}
                             <MainCard
                                 content={false}
                                 sx={getOuterCardSx(item.value)}
