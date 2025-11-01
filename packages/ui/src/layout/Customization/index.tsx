@@ -103,7 +103,7 @@ const Customization: React.FC = () => {
     setMode(DEFAULT_THEME_MODE as 'light' | 'dark' | 'system'); // Cast type
     // Dispatch actions to reset our config state to defaults
     // Note: You might need to add a RESET action or dispatch individual SET actions
-    dispatch({ type: 'SET_THEME_DIRECTION', payload: theme.direction }); // Example reset
+    // dispatch({ type: 'SET_THEME_DIRECTION', payload: theme.direction }); // Example reset
     dispatch({ type: 'SET_PRESET_COLOR', payload: 'default' }); // Example reset
     dispatch({ type: 'SET_BORDER_RADIUS', payload: 8 }); // Example reset
     // Add dispatch calls for other config properties...
@@ -203,32 +203,32 @@ const Customization: React.FC = () => {
               {/* Tab Panels */}
               <CustomTabPanel value={value} index={0}>
                 <Grid container spacing={2.5}> {/* Use spacing prop */}
-                  <Grid item xs={12}> {/* Use item and xs props */}
+                  <Grid size={{ xs: 12 }}> {/* Use item and xs props */}
                     <ThemeModeLayout />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}> 
                     <PresetColor />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}> 
                     <InputFilled />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}> 
                     <BoxContainer />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>
                   {/* --- Temporarily comment out unused sections --- */}
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}> 
                     <Layout />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid> 
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}> 
                     <SidebarDrawer />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid> 
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}> 
                     <MenuOrientation />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>
@@ -237,11 +237,11 @@ const Customization: React.FC = () => {
               </CustomTabPanel>
               <CustomTabPanel value={value} index={1}>
                 <Grid container spacing={2}> {/* Use spacing */}
-                  <Grid item xs={12}> {/* Use item and xs */}
+                  <Grid size={{ xs: 12 }}>  {/* Use item and xs */}
                     <FontFamily />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}> 
                     <BorderRadius />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid>

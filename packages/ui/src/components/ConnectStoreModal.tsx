@@ -143,7 +143,7 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
         </DialogContentText>
         <Grid container spacing={2}>
           {PLATFORMS.map((platform) => (
-            <Grid item xs={12} sm={4} key={platform.id}>
+            <Grid size={{ xs: 12, sm: 4 }} key={platform.id}>
               <PlatformCard onClick={() => setSelectedPlatform(platform.id)}>
                 <Box>
                   {/* Assuming IconComponent can take a name prop */}
@@ -192,12 +192,12 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
     dialogActions = (
       <DialogActions sx={{ p: 3 }}>
         <Grid container spacing={2} sx={{ width: '100%' }}>
-          <Grid item xs={12} sm={6}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <Button fullWidth onClick={handleBack} variant="outlined" color="secondary">
               Back
             </Button>
           </Grid>
-          <Grid item xs={12} sm={6}>
+         <Grid size={{ xs: 12, sm: 4 }}>
             <Button fullWidth type="submit" variant="contained" color="primary">
               Connect
             </Button>
@@ -219,12 +219,12 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
     dialogActions = (
       <DialogActions sx={{ p: 3 }}>
         <Grid container spacing={2} sx={{ width: '100%' }}>
-          <Grid item xs={12} sm={6}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <Button fullWidth onClick={handleBack} variant="outlined" color="secondary">
               Back
             </Button>
           </Grid>
-          <Grid item xs={12} sm={6}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <Button fullWidth type="submit" variant="contained" color="primary">
               Connect
             </Button>

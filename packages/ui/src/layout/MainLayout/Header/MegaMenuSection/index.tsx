@@ -200,10 +200,10 @@ const MegaMenuSection: React.FC = () => {
                   >
                     {/* Use Grid v2 container/item props */}
                     <Grid container spacing={gridSpacing}>
-                      <Grid item md={4}> {/* Use item prop */}
+                       <Grid > {/* Use item prop */}
                         <Banner />
                       </Grid>
-                      <Grid item md={8}> {/* Use item prop */}
+                      <Grid > {/* Use item prop */}
                         <Grid
                           container
                           spacing={gridSpacing}
@@ -217,7 +217,7 @@ const MegaMenuSection: React.FC = () => {
                           }}
                         >
                           {linkList.map((links) => ( // Removed index from map key
-                            <Grid item xs={12} sm={4} key={links.id}> {/* Use item prop, adjust breakpoints */}
+                             <Grid size={{ xs: 12, sm: 4 }} key={links.id}> {/* Use item prop, adjust breakpoints */}
                               <List
                                 component="nav"
                                 aria-labelledby={`list-${links.id}`}

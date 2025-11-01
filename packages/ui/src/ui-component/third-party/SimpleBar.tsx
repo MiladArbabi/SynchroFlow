@@ -12,7 +12,8 @@ import { withAlpha } from 'utils/colorUtils'; // Ensure this utility exists and 
 
 // third party
 import { BrowserView, MobileView } from 'react-device-detect';
-import SimpleBar, { Props as SimpleBarProps } from 'simplebar-react';
+import SimpleBar from 'simplebar-react';
+import { ComponentProps } from 'react';
 
 // root style
 const RootStyle = styled(BrowserView)({
@@ -34,10 +35,9 @@ const SimpleBarStyle = styled(SimpleBar)(({ theme }: { theme: Theme }) => ({
 }));
 
 // Define props interface extending SimpleBarProps and BoxProps
-interface SimpleBarScrollProps extends Omit<SimpleBarProps, 'children'>, Omit<BoxProps, 'children'> {
-  children: React.ReactNode;
-  sx?: SxProps<Theme>;
-}
+interface SimpleBarScrollProps extends 
+  Omit<ComponentProps<typeof SimpleBar>, 'children'>, Omit<BoxProps, 'children'> { 
+    children: React.ReactNode; sx?: SxProps<Theme>; }
 
 // ==============================|| SIMPLE SCROLL BAR  ||============================== //
 

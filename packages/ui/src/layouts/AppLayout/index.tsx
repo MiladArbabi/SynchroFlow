@@ -1,11 +1,13 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/layouts/AppLayout/index.tsx
-import React, { ReactNode, useRef, useEffect } from "react"; // Import useRef, useEffect
+import React, { ReactNode, useRef, useEffect, useState } from "react"; // Import useRef, useEffect
 // --- PANEL IMPORTS ---
 import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; // Import ImperativePanelHandle
 // --- END PANEL IMPORTS ---
 import { Box } from "@mui/material";
-import SidenavContent from "./SidenavContent";
+import Sidenav from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
+import routes from "routes";
 
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
@@ -40,6 +42,9 @@ const AppLayout = ({
   // --- GET STATE & REF ---
   const { state } = useConfig();
   const sidenavPanelRef = useRef<ImperativePanelHandle>(null); // Ref for the Sidenav panel
+  const [isSidenavOpen, setSidenavOpen] = useState(true);
+
+  const handleSidenavToggle = () => setSidenavOpen(!isSidenavOpen);
   // --- END GET STATE & REF ---
 
   // --- EFFECT TO CONTROL PANEL ---
@@ -88,7 +93,11 @@ const AppLayout = ({
         >
           {/* Use overflow: hidden and flex column for content */}
           <Box sx={{ height: "100%", borderRight: "1px solid #e0e0e0", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <SidenavContent />
+           <Sidenav
+              brandName="SynchroFlow"
+              routes={routes}
+              isSidenavOpen={isSidenavOpen}
+            />
           </Box>
         </Panel>
         <PanelResizeHandle style={handleStyle} />

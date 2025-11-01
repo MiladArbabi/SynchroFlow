@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { Box, useMediaQuery, Chip, Stack } from '@mui/material'; // Import necessary MUI components
 import { useTheme } from '@mui/material/styles';
+import routes from 'routes';
 
 // --- BERRY COMPONENT IMPORTS ---
 import LogoSection from 'layout/MainLayout/LogoSection'; // Use the alias
@@ -21,7 +22,9 @@ import useConfig from 'hooks/useConfig';
 
 // ==============================|| NEW SIDENAV CONTENT ||============================== //
 
-const SidenavContent: React.FC = () => {
+const SidenavContent: React.FC<{ 
+  brandName: string; routes; isSidenavOpen: boolean }> = ({ 
+    brandName, routes, isSidenavOpen }) => {
   const theme = useTheme();
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
 

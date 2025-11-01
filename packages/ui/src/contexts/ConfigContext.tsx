@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/contexts/ConfigContext.tsx
 import React, { createContext, useReducer } from 'react';
-import config, { ConfigProps, ThemeDirection, ThemeMode } from '/Users/miladarbabi/Codes/projects/SynchroFlow/packages/ui/src/config.ts'; // Import our new TS config
+import config, { ConfigProps, ThemeDirection, ThemeMode } from '../../src/config';
 
 // Define action types
 type ActionType =

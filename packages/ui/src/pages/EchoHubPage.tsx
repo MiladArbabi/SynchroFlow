@@ -24,9 +24,8 @@ const EchoHubPage: React.FC = () => {
 
         {/* --- Left Pane (Sources/Filters) --- */}
         <Grid
-          item
-          sx={{ height: { xs: '30%', sm: '100%' } }} // Adjust height when stacked
-          xs={12} sm={3} md={2}
+          size={{ xs: 12, sm: 3 }} 
+          height={{ xs: '30%', sm: '100%' }}
         >
           <Paper sx={{ height: '100%', p: 1, overflowY: 'auto' }}>
             {/* Use the actual Left Pane component */}
@@ -36,10 +35,9 @@ const EchoHubPage: React.FC = () => {
 
         {/* --- Middle Pane (Conversations) --- */}
         <Grid
-          item
           // Stack on xs, take 5/12 on sm, take 7/12 on md and up
-          sx={{ height: { xs: '40%', sm: '100%' } }} // Adjust height when stacked
-          xs={12} sm={5} md={7}
+          size={{ xs: 12, sm: 5 }} 
+          height={{ xs: '40%', sm: '100%' }}
         >
           <Paper sx={{ height: '100%', p: 1, overflowY: 'auto' }}>
             {/* Use the actual Middle Pane component, passing state and handler */}
@@ -48,7 +46,10 @@ const EchoHubPage: React.FC = () => {
         </Grid>
 
         {/* --- Right Pane (Details/Context) --- */}
-        <Grid item xs={12} sm={5} md={7} sx={{ height: '100%' }}>
+        <Grid 
+          size={{ xs: 12, sm: 5 }} 
+          height={{ xs: '40%', sm: '100%' }}
+        >
           <Paper sx={{ height: '100%', p: 1, overflowY: 'auto' }}>
             {/* Use the actual Right Pane component, passing selected ID */}
             <EchoHubRightPane selectedId={selectedConversationId} />

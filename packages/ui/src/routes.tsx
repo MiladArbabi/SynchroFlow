@@ -1,4 +1,5 @@
 //packages/ui/src/routes.tsx
+import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import LoginPage from "./pages/authentication/Login"; // Assuming Login.tsx has default export
 import RegisterPage from "./pages/authentication/Register"; // Assuming Register.tsx has default export
@@ -11,6 +12,7 @@ import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
 import CustomersPage from "./pages/CustomersPage";
 
+
 const routes = [
   {
     type: "collapse",
@@ -18,7 +20,7 @@ const routes = [
     key: "dashboard",
     icon: "🏠",
     route: "/dashboard",
-    component: <DashboardPage />,
+    component: <DashboardPage children={<></>} handleSidenavToggle={() => {}} />,
   },
   {
     type: "collapse",

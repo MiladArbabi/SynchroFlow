@@ -45,8 +45,8 @@ export default function Header() {
           <Avatar
             variant="rounded"
             sx={{
-              ...theme.typography.commonAvatar,
-              ...theme.typography.mediumAvatar,
+              ...theme.typography.overline,
+              ...theme.typography.overline,
               overflow: 'hidden',
               transition: 'all .2s ease-in-out',
               color: theme.vars.palette.secondary.dark,

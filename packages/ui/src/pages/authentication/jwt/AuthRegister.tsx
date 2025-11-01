@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useState } from 'react';
@@ -31,7 +32,6 @@ import { Formik, FormikHelpers } from 'formik';
 import AnimateButton from 'ui-component/extended/AnimateButton';
 import CustomFormControl from 'ui-component/extended/Form/CustomFormControl';
 import { strengthColor, strengthIndicator } from 'utils/password-strength'; // Assuming this util exists
-import { StringColorProps } from 'types';
 
 // assets
 import Visibility from '@mui/icons-material/Visibility';
@@ -49,6 +49,14 @@ interface RegisterFormValues {
   firstName: string;
   lastName: string;
   submit: string | null;
+}
+
+export interface StringColorProps {
+    id?: string;
+    label?: string;
+    color?: string;
+    primary?: string;
+    secondary?: string;
 }
 
 // Placeholder for password strength level
@@ -78,7 +86,7 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
   const changePassword = (value: string) => {
     const temp = strengthIndicator(value);
     setStrength(temp);
-    setLevel(strengthColor(temp));
+    //setLevel(strengthColor(temp));
   };
 
   // Placeholder functions (replace or remove)

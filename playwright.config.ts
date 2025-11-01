@@ -6,7 +6,7 @@ import { defineConfig, devices } from '@playwright/test';
 const AUTH_FILE_PATH = 'playwright/.auth/user.json';
 
 export default defineConfig({
-  testDir: '../../tests/e2e',
+  testDir: 'tests',
   // ... (fullyParallel, forbidOnly, etc.)
   reporter: 'html',
 

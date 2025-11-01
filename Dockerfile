@@ -1,0 +1,47 @@
+# syntax = docker/dockerfile:1
+
+# Adjust NODE_VERSION as desired
+ARG NODE_VERSION=20.19.5
+FROM node:${NODE_VERSION}-slim as base
+
+LABEL fly_launch_runtime="NodeJS"
+
+# NodeJS app lives here
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV=production
+
+
+# Throw-away build stage to reduce size of final image
+FROM base as build
+
+# Install packages needed to build node modules
+RUN apt-get update -qq && \
+    apt-get install -y python-is-python3 pkg-config build-essential libpqxx-dev
+
+# Copy ALL application code first, including workspace package.json files
+COPY --link . .
+
+# Install node modules for all workspaces
+RUN npm install --production=false
+
+# Build your TypeScript code
+RUN npm run build
+
+# Remove development dependencies
+RUN npm prune --production
+
+# Final stage for app image
+FROM base
+
+# Install the C++ addon's runtime dependencies (libpq and libpqxx)
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends libpq5 libpqxx-6.4 ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy built application
+COPY --from=build /app /app
+
+# Start the server by default, this can be overwritten at runtime
+CMD [ "npm", "run", "start" ]

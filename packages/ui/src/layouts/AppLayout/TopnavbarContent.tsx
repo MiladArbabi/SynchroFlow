@@ -56,7 +56,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         </IconButton>
         <MuiBreadcrumbs aria-label="breadcrumb">
           <Link component={RouterLink} underline="hover" color="inherit" to="/dashboard">
-            <IconComponent name="Home" size="small" color="inherit" />
+            <IconComponent name="Menu" size="small" color="inherit" />
           </Link>
           {pathnames.map((value, index) => {
             const last = index === pathnames.length - 1;

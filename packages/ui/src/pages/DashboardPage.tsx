@@ -102,7 +102,9 @@ const getWidgetProps = (
   }
 };
 
-export const DashboardPage = () => {
+export const DashboardPage = ({ 
+  children, handleSidenavToggle }: { 
+    children: React.ReactNode; handleSidenavToggle: () => void }) => {
   const [layout, setLayout] = useState(initialLayout);
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);

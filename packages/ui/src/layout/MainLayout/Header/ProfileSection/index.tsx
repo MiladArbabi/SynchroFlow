@@ -85,7 +85,7 @@ const ProfileSection: React.FC = () => {
   // Type the event as React.MouseEvent
   const handleListItemClick = (event: React.MouseEvent<HTMLDivElement>, index: number, route = '') => {
     setSelectedIndex(index);
-    handleClose(event);
+    //handleClose(event);
 
     if (route && route !== '') {
       navigate(route);

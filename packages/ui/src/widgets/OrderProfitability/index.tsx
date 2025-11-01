@@ -60,7 +60,7 @@ const OrderProfitability: React.FC<OrderProfitabilityProps> = ({ data }) => {
       <Box sx={{ p: 2 }}>
         <Grid container spacing={2} justifyContent="space-around" textAlign="center">
           {/* Revenue */}
-          <Grid item xs={4}>
+          <Grid size={{ xs: 4 }}>
             <Stack spacing={0.5}>
               <Typography variant="caption" color="textSecondary">Revenue</Typography>
               <Typography variant="h5">{formatRoundedCurrency(data.revenue)}</Typography>
@@ -68,7 +68,7 @@ const OrderProfitability: React.FC<OrderProfitabilityProps> = ({ data }) => {
           </Grid>
 
           {/* COGS */}
-          <Grid item xs={4}>
+          <Grid size={{ xs: 4 }}>
             <Stack spacing={0.5}>
               <Typography variant="caption" color="textSecondary">COGS</Typography>
               <Typography variant="h5">{formatRoundedCurrency(data.cogs)}</Typography>
@@ -76,7 +76,7 @@ const OrderProfitability: React.FC<OrderProfitabilityProps> = ({ data }) => {
           </Grid>
 
           {/* Margin */}
-          <Grid item xs={4}>
+          <Grid size={{ xs: 4 }}>
             <Stack spacing={0.5}>
               <Typography variant="caption" color="textSecondary">Margin</Typography>
               {/* Use different color based on profit/loss */}
