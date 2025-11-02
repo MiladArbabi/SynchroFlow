@@ -65,7 +65,6 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
     [themeDirection, themeTypography, palette, themeCustomShadows, themeCustomShadowsDark]
   );
 
-  // @ts-expect-error: We'll fix this later if needed
   const themes = createTheme(themeOptions);
   themes.components = useMemo(() => componentsOverrides(themes, borderRadius, outlinedFilled), [themes, borderRadius, outlinedFilled]); 
 

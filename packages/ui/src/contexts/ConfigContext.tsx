@@ -48,7 +48,7 @@ const configReducer = (state: ConfigProps, action: ActionType): ConfigProps => {
     case 'SET_THEME_DIRECTION':
       return { ...state, themeDirection: action.payload };
     case 'SET_CONTAINER':
-      return { ...state, container: action.payload };;
+      return { ...state, container: action.payload };
     default:
       return state;
   }
