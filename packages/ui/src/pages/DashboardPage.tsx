@@ -7,7 +7,7 @@ import axios from 'axios';
 import { useQuery } from '@tanstack/react-query';
 import IconComponent from 'components/Icon';
 import WidgetLibrary from 'components/WidgetLibrary';
-import { PlanLevel, WIDGET_REGISTRY } from '../widgets/widgetRegistry';
+import { PlanLevel, WIDGET_REGISTRY, getWidgetConfigByVariantId } from '../widgets/widgetRegistry';
 import {
   IconButton,
   Box,
@@ -38,29 +38,47 @@ const mockInventoryHealthData: InventoryHealthRow[] = [
 
 // Defines the widgets that are active on the dashboard by default
 const initialActiveWidgets = [
-  { instanceId: 'kpi-revenue-1', widgetId: 'kpi-revenue' },
-  { instanceId: 'kpi-margin-1', widgetId: 'kpi-margin' },
-  { instanceId: 'kpi-inventory-1', widgetId: 'kpi-inventory' },
-  { instanceId: 'a-opex-gauge-1', widgetId: 'a-opex-gauge' },
-  { instanceId: 'cashflow-chart-1', widgetId: 'cashflow-chart' },
-  { instanceId: 'inventory-health-1', widgetId: 'inventory-health' }
+  { instanceId: 'kpi-revenue-1', variantId: 'kpi-revenue' },
+ { instanceId: 'kpi-margin-1', variantId: 'kpi-margin' },
+ { instanceId: 'kpi-inventory-1', variantId: 'kpi-inventory' },
+ { instanceId: 'a-opex-gauge-1', variantId: 'a-opex-gauge' },
+ { instanceId: 'cashflow-chart-1', variantId: 'cashflow-chart-large' },
+ { instanceId: 'inventory-health-1', variantId: 'inventory-health-table' }
 ];
 
-// Defines the initial layout for those widgets
-const initialLayout: RGL.Layout[] = [
-  { i: 'kpi-revenue-1', x: 0, y: 0, w: 3, h: 1 },
-  { i: 'kpi-margin-1', x: 3, y: 0, w: 3, h: 1 },
-  { i: 'kpi-inventory-1', x: 6, y: 0, w: 3, h: 1 },
-  { i: 'a-opex-gauge-1', x: 9, y: 0, w: 3, h: 2 },
-  { i: 'cashflow-chart-1', x: 0, y: 1, w: 6, h: 4 },
-  { i: 'inventory-health-1', x: 0, y: 4, w: 6, h: 4 }
-];
+// Helper to build layout from registry, using hardcoded positions for v1
+const buildLayoutFromWidgets = (widgets: typeof initialActiveWidgets): RGL.Layout[] => {
+  // In a real app, x/y would come from the DB. Here we hardcode them.
+  const positions: Record<string, { x: number; y: number }> = {
+    'kpi-revenue-1': { x: 0, y: 0 },
+    'kpi-margin-1': { x: 3, y: 0 },
+    'kpi-inventory-1': { x: 6, y: 0 },
+    'a-opex-gauge-1': { x: 9, y: 0 },
+    'cashflow-chart-1': { x: 0, y: 1 },
+    'inventory-health-1': { x: 0, y: 5 }, // Adjusted 'y' to fit cashflow
+  };
+
+  return widgets.map(({ instanceId, variantId }) => {
+    const config = getWidgetConfigByVariantId(variantId);
+    const pos = positions[instanceId] || { x: 0, y: 0 };
+    const layout = config?.variant || { w: 3, h: 1, isResizable: false }; // Fallback
+
+    return {
+      i: instanceId,
+      x: pos.x,
+      y: pos.y,
+      w: layout.w,
+      h: layout.h,
+      isResizable: layout.isResizable,
+    };
+  });
+};
 
 const getWidgetProps = (
-  widgetId: string,
+  variantId: string,
   opsIntelData: OpsIntelData | undefined
 ) => {
-  switch (widgetId) {
+  switch (variantId) {
     case 'kpi-revenue':
       return {
         title: 'Gross Revenue',
@@ -88,9 +106,9 @@ const getWidgetProps = (
         value: opsIntelData?.labor_cost_saved ?? 0,
         target: 10000 // Hardcode target for v1
       };
-    case 'cashflow-chart':
+    case 'cashflow-chart-large':
       return {};
-    case 'inventory-health':
+    case 'inventory-health-table':
       return { data: mockInventoryHealthData };
     default:
       return {};
@@ -100,7 +118,7 @@ const getWidgetProps = (
 export const DashboardPage = ({ 
   children, handleSidenavToggle }: { 
     children: React.ReactNode; handleSidenavToggle: () => void }) => {
-  const [layout, setLayout] = useState(initialLayout);
+  const [layout, setLayout] = useState(() => buildLayoutFromWidgets(initialActiveWidgets));
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
 
   const fetchOpsIntel = async (): Promise<OpsIntelSummaryResponse> => {
@@ -141,63 +159,67 @@ export const DashboardPage = ({
   );
 
   // Handler for adding a new widget from the library
-  const handleAddWidget = (widgetId: string) => {
-    const widgetConfig = WIDGET_REGISTRY[widgetId];
-    if (!widgetConfig) return;
+ const handleAddWidget = (variantId: string) => {
+  const config = getWidgetConfigByVariantId(variantId);
+  if (!config) {
+      console.error(`No widget config found for variantId: ${variantId}`);
+      return;
+    }
 
-    const newInstanceId = `${widgetId}-${Date.now()}`;
+  const newInstanceId = `${variantId}-${Date.now()}`;
 
-    setActiveWidgets((prev) => [
-      ...prev,
-      { instanceId: newInstanceId, widgetId }
-    ]);
-    setLayout((prev) => [
-      ...prev,
-      {
-        i: newInstanceId,
-        x: 0, // New widgets appear at the top-left
-        y: 0,
-        ...widgetConfig.defaultLayout,
-        static: false
-      }
-    ]);
-  };
+  setActiveWidgets((prev) => [
+   ...prev,
+   { instanceId: newInstanceId, variantId: variantId } // Save variantId
+  ]);
+  setLayout((prev) => [
+   ...prev,
+   {
+    i: newInstanceId,
+    x: 0, // New widgets appear at the top-left
+    y: Infinity, // Stack new widgets at the bottom
+        w: config.variant.w,
+        h: config.variant.h,
+        isResizable: config.variant.isResizable,
+    static: false
+   }
+  ]);
+ };
 
   // Handler for removing a widget from the dashboard
-  const handleRemoveWidget = (instanceId: string) => {
-    setActiveWidgets((prev) =>
-      prev.filter((w) => w.instanceId !== instanceId)
-    );
-    setLayout((prev) => prev.filter((l) => l.i !== instanceId));
-  };
+ const handleRemoveWidget = (instanceId: string) => {
+  setActiveWidgets((prev) =>
+   prev.filter((w) => w.instanceId !== instanceId)
+  );
+  setLayout((prev) => prev.filter((l) => l.i !== instanceId));
+ };
 
-  // --- Display loading/error state for OpsIntel data ---
-  if (opsIntelLoading) {
-    // Or return a more integrated loading state within the GridLayout
-    return (
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '100vh'
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-  if (opsIntelIsError) {
-    // Or display the error more gracefully within the dashboard layout
-    return (
-      <Box sx={{ p: 2 }}>
-        <Alert severity="error">
-          Failed to load dashboard data: {opsIntelError?.message}
-        </Alert>
-      </Box>
-    );
-  }
-  // --- End Optional Loading/Error Display ---
+ // --- Display loading/error state for OpsIntel data ---
+ if (opsIntelLoading) {
+  // Or return a more integrated loading state within the GridLayout
+  return (
+   <Box
+    sx={{
+     display: 'flex',
+     justifyContent: 'center',
+     alignItems: 'center',
+     height: '100vh'
+    }}
+   >
+    <CircularProgress />
+   </Box>
+  );
+ }
+ if (opsIntelIsError) {
+  // Or display the error more gracefully within the dashboard layout
+  return (
+   <Box sx={{ p: 2 }}>
+    <Alert severity="error">
+     Failed to load dashboard data: {opsIntelError?.message}
+    </Alert>
+   </Box>
+  );
+ }
 
   return (
     <>
@@ -211,23 +233,25 @@ export const DashboardPage = ({
         isResizable={isEditing}
         onLayoutChange={onLayoutChange}
         // Add a class for styling the grid items in edit mode
-        className={isEditing ? 'grid-editing' : ''}
+        className={isEditing ? 'grid-editing grid-wiggling' : ''}
       >
-        {activeWidgets.map(({ instanceId, widgetId }) => {
-          const WidgetComponent = WIDGET_REGISTRY[widgetId]?.component; // Add safe navigation
-          if (!WidgetComponent) {
+        {activeWidgets.map(({ instanceId, variantId }) => {
+          const config = getWidgetConfigByVariantId(variantId);
+            if (!config) {
             console.warn(
-              `Widget component for ID "${widgetId}" not found.`
+              `Widget config for variantId "${variantId}" not found.`
             );
             return <div key={instanceId}>Error: Widget not found</div>; // Render fallback
           }
+          const WidgetComponent = config.parentConfig.component;
+
           return (
             <div
               key={instanceId}
               style={{ width: '100%', height: '100%', position: 'relative' }}
             >
               {/* Pass the data fetched by useQuery */}
-              <WidgetComponent {...getWidgetProps(widgetId, opsIntelData)} />
+              <WidgetComponent {...getWidgetProps(variantId, opsIntelData)} />
               {isEditing && (
                 <IconButton
                   onMouseDown={(e) => e.stopPropagation()}
