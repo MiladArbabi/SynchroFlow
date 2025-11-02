@@ -8,6 +8,7 @@ import { Box } from "@mui/material";
 import Sidenav from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
+import Customization from "layout/Customization";
 
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
@@ -136,6 +137,7 @@ const AppLayout = ({
           </Box>
         </Panel>
       </PanelGroup>
+      <Customization />
     </Box>
   );
 };

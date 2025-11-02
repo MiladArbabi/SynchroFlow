@@ -39,16 +39,14 @@ import { axiosInstance } from 'api/axiosConfig';
 
 // assets
 import User1 from 'assets/images/users/user-round.svg'; // Use imported asset
-import { IconLogout, IconSearch, IconSettings, IconUser } from '@tabler/icons-react';
-import useConfig from 'hooks/useConfig';
+import { IconLogout, IconSearch, IconSettings, IconUser, IconPalette } from '@tabler/icons-react';import useConfig from 'hooks/useConfig';
 
 // ==============================|| PROFILE MENU ||============================== //
 
 const ProfileSection: React.FC = () => {
   const theme = useTheme();
-  const {
-    state: { borderRadius }
-  } = useConfig();
+  // Get state AND dispatch
+  const { state: { borderRadius }, dispatch } = useConfig();
   const navigate = useNavigate();
 
   // --- STATE ---
@@ -57,6 +55,12 @@ const ProfileSection: React.FC = () => {
   const [notification, setNotification] = useState(false); // Notification toggle state
   const [selectedIndex, setSelectedIndex] = useState(-1); // List item selection state
   const [open, setOpen] = useState(false); // Popper open state
+
+  // --- NEW HANDLER ---
+ const handleOpenCustomization = () => {
+    dispatch({ type: 'SET_CUSTOMIZATION_DRAWER', payload: true });
+    setOpen(false); // Close the profile popper
+ };
 
   const { user, logout } = useAuth();
 
@@ -118,7 +122,6 @@ const ProfileSection: React.FC = () => {
 
   // Popper placement adjustment
   const popperPlacement: PopperPlacementType = 'bottom-end'; // More common placement
-
 
   return (
     <>
@@ -262,7 +265,17 @@ const ProfileSection: React.FC = () => {
                         >
                           <ListItemIcon> <IconSettings stroke={1.5} size="20px" /> </ListItemIcon>
                           <ListItemText primary={<Typography variant="body2"><FormattedMessage id="account-settings" defaultMessage="Account Settings" /></Typography>} />
-                        </ListItemButton>
+                            </ListItemButton>
+                            {/* --- ADDED CUSTOMIZATION BUTTON --- */}
+                            <ListItemButton
+                            sx={{ borderRadius: `${borderRadius}px` }}
+                            selected={selectedIndex === 2} // Use a new index
+                            onClick={handleOpenCustomization}
+                            >
+                            <ListItemIcon> <IconPalette stroke={1.5} size="20px" /> </ListItemIcon>
+                            <ListItemText primary={<Typography variant="body2">Appearance</Typography>} />
+                            </ListItemButton>
+                        {/* --- END CUSTOMIZATION BUTTON --- */}
                         <ListItemButton
                           sx={{ borderRadius: `${borderRadius}px` }}
                           selected={selectedIndex === 1}

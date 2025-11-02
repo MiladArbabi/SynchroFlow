@@ -10,11 +10,11 @@ type ActionType =
   | { type: 'SET_FONT_FAMILY'; payload: ConfigProps['fontFamily'] }
   | { type: 'SET_BORDER_RADIUS'; payload: ConfigProps['borderRadius'] }
   | { type: 'SET_OUTLINED_FILLED'; payload: ConfigProps['outlinedFilled'] }
+  | { type: 'SET_CUSTOMIZATION_DRAWER'; payload: boolean }
   | { type: 'SET_PRESET_COLOR'; payload: ConfigProps['presetColor'] }
   | { type: 'SET_I18N'; payload: ConfigProps['i18n'] }
   | { type: 'SET_THEME_DIRECTION'; payload: ConfigProps['themeDirection'] }
   | { type: 'SET_CONTAINER'; payload: ConfigProps['container'] }
-  | { type: 'SET_OUTLINED_FILLED'; payload: ConfigProps['outlinedFilled'] };
 
 // Define context state
 export type ConfigContextState = {
@@ -49,6 +49,8 @@ const configReducer = (state: ConfigProps, action: ActionType): ConfigProps => {
       return { ...state, themeDirection: action.payload };
     case 'SET_CONTAINER':
       return { ...state, container: action.payload };
+    case 'SET_CUSTOMIZATION_DRAWER':
+     return { ...state, customizationDrawerOpen: action.payload };
     default:
       return state;
   }
