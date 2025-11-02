@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/DashboardPage.tsx
 import React, { useState, useCallback, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom'; // Added for redirect
 import RGL, { WidthProvider } from 'react-grid-layout';
 import axios from 'axios';
 import { useQuery } from '@tanstack/react-query';
@@ -13,14 +12,10 @@ import {
   IconButton,
   Box,
   CircularProgress,
-  Alert,
-  Snackbar // Added for toast
+  Alert
 } from '@mui/material';
 import { InventoryHealthRow } from 'widgets/InventoryHealthWidget'; 
 import { useLayoutContext } from '../App'; 
-import { ConnectStoreModal } from 'components/ConnectStoreModal'; 
-import { ConnectStoreBanner } from 'components/ConnectStoreBanner';
-import { DataSyncingModal } from 'components/DataSyncingModal';
 
 const GridLayout = WidthProvider(RGL);
 
@@ -107,10 +102,6 @@ export const DashboardPage = ({
     children: React.ReactNode; handleSidenavToggle: () => void }) => {
   const [layout, setLayout] = useState(initialLayout);
   const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
-  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  const [showConnectBanner, setShowConnectBanner] = useState(false);
-  const [isSyncingModalOpen, setIsSyncingModalOpen] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams(); // New hook for URL
 
   const fetchOpsIntel = async (): Promise<OpsIntelSummaryResponse> => {
     const { data } = await axios.get<OpsIntelSummaryResponse>(
@@ -148,66 +139,6 @@ export const DashboardPage = ({
     },
     [isEditing]
   );
-
-  // Fetch layout or check for success redirect on mount
-  useEffect(() => {
-    // 1. Check for the success param FIRST
-    if (searchParams.get('connect') === 'success') {
-      // Ensure the banner is hidden
-      setIsSyncingModalOpen(true);
-      // Ensure the banner is hidden
-      setShowConnectBanner(false);
-      // Clean the URL
-      setSearchParams({}, { replace: true });
-
-      // We still proceed to fetch the layout
-      const fetchLayout = async () => {
-        try {
-          const response = await axios.get('/api/v1/layouts/dashboard');
-          if (response.data) {
-            setLayout(response.data.layout);
-            setActiveWidgets(response.data.activeWidgets);
-          }
-        } catch (error) {
-          // Even on 404, we don't show the banner, as we just connected.
-          console.log('No saved layout found, but connection was successful.');
-        }
-      };
-      fetchLayout();
-    } else {
-      // 2. Normal flow (no success param)
-      const fetchLayout = async () => {
-        try {
-          const response = await axios.get('/api/v1/layouts/dashboard');
-          if (response.data) {
-            setLayout(response.data.layout);
-            setActiveWidgets(response.data.activeWidgets);
-          }
-        } catch (error) {
-          // This is the original 404 logic
-          console.log('No saved layout found, showing connect banner.');
-          setShowConnectBanner(true);
-        }
-      };
-      fetchLayout();
-    }
-    // We only want this to run on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // --- HANDLE MODAL CLOSE ---
-  const handleModalClose = () => {
-    setIsConnectModalOpen(false); // Close the modal
-    setShowConnectBanner(false); // Hide the banner on success
-    // Simple reload to refresh all data.
-    window.location.reload();
-  };
-
-  // --- HANDLE SYNC MODAL CLOSE ---
-  const handleSyncModalClose = () => {
-    setIsSyncingModalOpen(false);
-    // We'll refetch or reload here in the future
-  };
 
   // Handler for adding a new widget from the library
   const handleAddWidget = (widgetId: string) => {
@@ -270,20 +201,6 @@ export const DashboardPage = ({
 
   return (
     <>
-      {/* --- RENDER BANNER & MODAL --- */}
-      {showConnectBanner && (
-        <ConnectStoreBanner onOpenModal={() => setIsConnectModalOpen(true)} />
-      )}
-      <ConnectStoreModal
-        isOpen={isConnectModalOpen}
-        onClose={handleModalClose}
-      />
-
-      <DataSyncingModal
-        open={isSyncingModalOpen}
-        onClose={handleSyncModalClose}
-      />
-
       <GridLayout
         layout={layout}
         cols={12}

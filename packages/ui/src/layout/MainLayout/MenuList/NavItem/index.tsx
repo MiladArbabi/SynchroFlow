@@ -77,7 +77,6 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
 
   const { menuMaster } = useGetMenuMaster(); // Uses our refactored hook
   const isDrawerOpen = !menuMaster.isDashboardDrawerOpened; // Reads from ConfigContext state via hook
-  console.log(`[NavItem] Item: ${item.id}, isDrawerOpen (visual):`, isDrawerOpen);
 
   const isSelected = !!matchPath({ path: item?.link ? item.link : item.url, end: false }, pathname);
 
