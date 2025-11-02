@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// packages/ui/src/pages/authentication/jwt/AuthRegister.tsx
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { axiosInstance as axios } from 'api/axiosConfig';
@@ -61,7 +62,7 @@ export interface StringColorProps {
     secondary?: string;
 }
 
-// Define the prop interface we expect from Register.tsx
+// Define the prop interface we expect from RegisterPage.tsx
 interface AuthRegisterProps {
   posthog: PostHog;
 }
