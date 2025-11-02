@@ -1,18 +1,23 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/layouts/AppLayout/index.tsx
-import React, { ReactNode, useRef, useEffect, useState } from "react"; // Import useRef, useEffect
+import React, { ReactNode, useRef, useEffect, useState } from "react"; 
+import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 // --- PANEL IMPORTS ---
 import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; // Import ImperativePanelHandle
-// --- END PANEL IMPORTS ---
+
 import { Box } from "@mui/material";
 import Sidenav from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
 import Customization from "layout/Customization";
 
+// --- MODAL/BANNER IMPORTS ---
+import { ConnectStoreModal } from 'components/ConnectStoreModal';
+import { DataSyncingModal } from 'components/DataSyncingModal';
+
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
-// --- END CONTEXT ---
 
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
@@ -46,7 +51,55 @@ const AppLayout = ({
   const [isSidenavOpen, setSidenavOpen] = useState(true);
 
   const handleSidenavToggle = () => setSidenavOpen(!isSidenavOpen);
-  // --- END GET STATE & REF ---
+
+  // --- STATE LIFTED FROM DASHBOARD ---
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [isSyncingModalOpen, setIsSyncingModalOpen] = useState(false);
+  const [isConnected, setIsConnected] = useState(false); 
+  const [searchParams, setSearchParams] = useSearchParams();
+  // --- END STATE LIFTED ---
+
+  // --- LOGIC LIFTED FROM DASHBOARD ---
+  useEffect(() => {
+    // 1. Check for the success param FIRST
+    if (searchParams.get('connect') === 'success') {
+      setIsSyncingModalOpen(true);
+      setIsConnected(true); // They just connected
+      setSearchParams({}, { replace: true }); // Clean the URL
+
+      // We still fetch the layout, but we know they are connected
+      axios.get('/api/v1/layouts/dashboard').catch(() => {
+        console.log('No saved layout found, but connection was successful.');
+      });
+    } else {
+      // 2. Normal flow (no success param)
+      const fetchLayout = async () => {
+        try {
+          await axios.get('/api/v1/layouts/dashboard');
+          // If this succeeds, they have a layout, so they must be connected.
+          setIsConnected(true);
+        } catch (error) {
+          // 404 error means no layout, which we assume means no connection.
+          setIsConnected(false);
+        }
+      };
+      fetchLayout();
+    }
+    // We only want this to run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- MODAL HANDLERS LIFTED FROM DASHBOARD ---
+  const handleModalClose = () => {
+    setIsConnectModalOpen(false);
+    // Simple reload to refresh all data.
+    window.location.reload();
+  };
+
+  const handleSyncModalClose = () => {
+    setIsSyncingModalOpen(false);
+    // We'll refetch or reload here in the future
+  };
 
   // --- EFFECT TO CONTROL PANEL ---
   useEffect(() => {
@@ -97,7 +150,9 @@ const AppLayout = ({
            <Sidenav
               brandName="SynchroFlow"
               routes={routes}
-              isSidenavOpen={isSidenavOpen}
+              isSidenavOpen={isSidenavOpen} // This is for the old menu
+              isConnected={isConnected} // <-- Pass connection status
+              onOpenModal={() => setIsConnectModalOpen(true)}
             />
           </Box>
         </Panel>
@@ -138,6 +193,18 @@ const AppLayout = ({
         </Panel>
       </PanelGroup>
       <Customization />
+
+      {/* --- RENDER MODALS AT LAYOUT LEVEL --- */}
+      <ConnectStoreModal
+        isOpen={isConnectModalOpen}
+        onClose={handleModalClose}
+      />
+      <DataSyncingModal
+        open={isSyncingModalOpen}
+        onClose={handleSyncModalClose}
+      />
+      {/* --- END MODALS --- */}
+
     </Box>
   );
 };

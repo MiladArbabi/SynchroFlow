@@ -25,9 +25,7 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
   } = useConfig();
   
   const palette = useMemo(() => {
-    console.log('[ThemeCustomization] Building palette for presetColor:', presetColor); // Log before building
      const built = buildPalette(presetColor);
-    console.log('[ThemeCustomization] Built palette:', built); 
      return built;
     }, [presetColor]);
   const themeTypography = useMemo(() => Typography(fontFamily), [fontFamily]);
