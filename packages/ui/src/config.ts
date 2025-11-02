@@ -46,6 +46,7 @@ export type ConfigProps = {
   i18n: string;
   themeDirection: ThemeDirection;
   container: boolean;
+  customizationDrawerOpen: boolean
 };
 
 const config: ConfigProps = {
@@ -58,6 +59,7 @@ const config: ConfigProps = {
   i18n: 'en',
   themeDirection: ThemeDirection.LTR,
   container: true,
+  customizationDrawerOpen: false
 };
 
 export default config;

@@ -8,13 +8,11 @@ import { useColorScheme, useTheme, Theme } from '@mui/material/styles'; // Impor
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import Drawer from '@mui/material/Drawer';
-import Fab from '@mui/material/Fab';
 import Grid from '@mui/material/Grid'; // Use v2 Grid
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { SxProps } from '@mui/system';
@@ -39,7 +37,7 @@ import useConfig from 'hooks/useConfig'; // Use our hook
 import { ConfigContext } from 'contexts/ConfigContext'; // Import context for dispatch
 
 // assets
-import { IconSettings, IconPlus, IconTextSize, IconColorSwatch } from '@tabler/icons-react';
+import { IconPlus, IconTextSize, IconColorSwatch } from '@tabler/icons-react';
 
 // Helper interface for CustomTabPanel props
 interface TabPanelProps {
@@ -78,17 +76,15 @@ function a11yProps(index: number) {
 
 const Customization: React.FC = () => {
   const theme = useTheme();
-  // --- FIX: Use dispatch from ConfigContext ---
-  // const { resetState } = useConfig(); // Removed resetState (handle via dispatch)
-  const { dispatch } = useContext(ConfigContext);
-  // --- END FIX ---
+  const { state, dispatch } = useConfig();
+  const { customizationDrawerOpen } = state;
+
   const { setMode } = useColorScheme(); // MUI's hook for light/dark/system mode
 
   // drawer open state
-  const [open, setOpen] = useState(false);
-  const handleToggle = () => {
-    setOpen(!open);
-  };
+  const handleDrawerClose = () => {
+   dispatch({ type: 'SET_CUSTOMIZATION_DRAWER', payload: false });
+  }
 
   // tabs state
   const [value, setValue] = useState(0);
@@ -101,9 +97,8 @@ const Customization: React.FC = () => {
   const handleReset = () => {
     // Reset MUI's color scheme mode
     setMode(DEFAULT_THEME_MODE as 'light' | 'dark' | 'system'); // Cast type
-    // Dispatch actions to reset our config state to defaults
-    // Note: You might need to add a RESET action or dispatch individual SET actions
-    // dispatch({ type: 'SET_THEME_DIRECTION', payload: theme.direction }); // Example reset
+    
+    dispatch({ type: 'SET_CUSTOMIZATION_DRAWER', payload: false });
     dispatch({ type: 'SET_PRESET_COLOR', payload: 'default' }); // Example reset
     dispatch({ type: 'SET_BORDER_RADIUS', payload: 8 }); // Example reset
     // Add dispatch calls for other config properties...
@@ -111,54 +106,16 @@ const Customization: React.FC = () => {
   };
   // --- END FIX ---
 
-
-  // Define Fab SX with type safety
-  const fabSx: SxProps<Theme> = {
-        borderRadius: 0,
-        borderTopLeftRadius: '50%',
-        borderBottomLeftRadius: '50%',
-        borderTopRightRadius: '50%',
-        borderBottomRightRadius: '4px',
-        top: '25%',
-        position: 'fixed',
-        right: 10,
-        zIndex: theme.zIndex.drawer + 1, // Ensure above drawer temporarily if needed
-        // Use standard theme shadows
-        boxShadow: theme.shadows[8], // Example shadow
-        // Add hover styles if needed
-         '&:hover': {
-             boxShadow: theme.shadows[16]
-         }
-  };
-
   return (
     <>
-      {/* toggle button */}
-      <Tooltip title="Live Customize">
-        <Fab
-          component="div"
-          onClick={handleToggle}
-          size="medium"
-          variant="circular"
-          color="secondary"
-          sx={fabSx}
-        >
-          <AnimateButton type="rotate">
-            <IconButton color="inherit" size="large" disableRipple aria-label="live customize">
-              <IconSettings />
-            </IconButton>
-          </AnimateButton>
-        </Fab>
-      </Tooltip>
-
       <Drawer
         anchor="right"
-        onClose={handleToggle}
-        open={open}
+        onClose={handleDrawerClose}
+        open={customizationDrawerOpen}
         // Use slotProps for Paper styles
         slotProps={{ paper: { sx: { width: 375, border: 'none' } } }} // Adjust width if needed
       >
-        {open && (
+        {customizationDrawerOpen && (
           <SimpleBar sx={{ height: '100%' }}>
             <MainCard title="Theme Customization" content={false} border={false} sx={{ height: '100%' }}>
               {/* Header with Reset and Close */}
@@ -174,8 +131,7 @@ const Customization: React.FC = () => {
                   <Button variant="outlined" color="error" size="small" onClick={handleReset}>
                     Reset
                   </Button>
-                  <IconButton sx={{ p: 0, color: 'grey.600' }} onClick={handleToggle} aria-label="close customization drawer">
-                    <IconPlus size={24} style={{ transform: 'rotate(45deg)' }} />
+                   <IconButton sx={{ p: 0, color: 'grey.600' }} onClick={handleDrawerClose} aria-label="close customization drawer">                    <IconPlus size={24} style={{ transform: 'rotate(45deg)' }} />
                   </IconButton>
                 </Stack>
               </Stack>

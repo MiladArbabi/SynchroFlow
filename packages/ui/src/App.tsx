@@ -6,22 +6,11 @@ import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Customization from "./layout/Customization";
 import routes from "./routes";
 import { PlanLevel } from "./widgets/widgetRegistry";
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
-// --- END BERRY IMPORT ---
-
-// --- REMOVED OLD THEME ---
-// import { ThemeProvider } from "@mui/material/styles";
-// import CssBaseline from "@mui/material/CssBaseline";
-// import { createTheme } from "@mui/material/styles";
-// const spikeTheme = createTheme();
-// import { UserProvider } from "./contexts/UserContext"; // This is now in main.tsx
-// --- END REMOVED ---
-
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -115,7 +104,6 @@ export default function App() {
         {/* A default redirect to the dashboard */}
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
-      <Customization />
     </ThemeCustomization>
   );
 }
