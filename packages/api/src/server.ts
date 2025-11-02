@@ -1,16 +1,4 @@
 // packages/api/src/server.ts
-process.on('uncaughtException', (err: any) => {
-  console.error('!!!!!!!!!!!! UNCAUGHT EXCEPTION !!!!!!!!!!!!');
-  console.error(err);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason: any, promise: any) => {
-  console.error('!!!!!!!!!!!! UNHANDLED REJECTION !!!!!!!!!!!!');
-  console.error(reason);
-  process.exit(1);
-});
-
 import dotenv from 'dotenv';
 dotenv.config();
 import cookieParser from 'cookie-parser';
