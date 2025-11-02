@@ -8,6 +8,7 @@ import Divider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import { CircularProgress } from '@mui/material';
 
 // Analytics 
 import { usePostHog } from 'posthog-js/react';
@@ -83,7 +84,13 @@ export default function Login() {
                     Enter your credentials to continue
                   </Typography>
                 </Stack>
-                <Box sx={{ width: 1 }}>{AuthLoginComponent && <AuthLoginComponent posthog={posthog} />}</Box>
+                <Box sx={{ width: 1, minHeight: 250, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {AuthLoginComponent ? (
+                    <AuthLoginComponent posthog={posthog} />
+                  ) : (
+                    <CircularProgress color="secondary" />
+                  )}
+                </Box>
                 <Divider sx={{ width: 1 }} />
                 <Stack sx={{ alignItems: 'center' }}>
                   <Typography

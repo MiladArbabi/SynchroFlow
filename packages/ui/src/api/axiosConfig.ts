@@ -55,8 +55,17 @@ axiosInstance.interceptors.response.use(
     const originalRequest = error.config;
 
     // Check for 401 and ensure it's not a retry or a failed refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      
+    // Add exclusion for login/register routes ---
+    const isAuthRoute =
+      originalRequest.url === '/api/v1/auth/login' ||
+      originalRequest.url === '/api/v1/auth/register';
+
+      if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthRoute // <-- Do not attempt to refresh token on auth routes
+      ) {
+
       if (isRefreshing) {
         // If already refreshing, wait for the new token
         return new Promise((resolve, reject) => {
