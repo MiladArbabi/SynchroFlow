@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/layouts/AppLayout/TopnavbarContent.tsx
 import React, { useContext } from "react";
 import { useLocation, Link as RouterLink } from "react-router-dom";
-import { Box, IconButton, Button, Typography, Breadcrumbs as MuiBreadcrumbs, Link } from "@mui/material"; // Renamed Breadcrumbs import
+import { Box, IconButton, Button, Typography, Breadcrumbs as MuiBreadcrumbs, Link, Tooltip } from "@mui/material"; // Renamed Breadcrumbs import
 import IconComponent from "../../components/Icon";
 
 import { ConfigContext } from 'contexts/ConfigContext';
@@ -17,7 +18,6 @@ import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
 import MobileSection from 'layout/MainLayout/Header/MobileSection';
 // --- END BERRY IMPORTS ---
-
 
 interface TopnavbarContentProps {
   isEditing: boolean;
@@ -83,19 +83,23 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box>
         
         {/* Layout Edit Buttons (Keep these for now) */}
-        {isEditing && (
-          <Button
-            variant="contained" color="info" size="small"
-            onClick={onAddWidget} startIcon={<IconComponent name="Plus" size="small" />}
-            sx={{ display: { xs: 'none', sm: 'inline-flex' } }} // Hide on very small screens if needed
-          > Add Widget </Button>
-        )}
-        <Button
-           variant={isEditing ? "contained" : "outlined"} color={isEditing ? "success" : "info"} size="small"
-           onClick={onEditToggle} startIcon={<IconComponent name={isEditing ? "Save" : "Pencil"} size="small" />}
-           sx={{ display: { xs: 'none', sm: 'inline-flex' } }} // Hide on very small screens if needed
-        > {isEditing ? "Done" : "Edit Layout"} </Button>
-         <ProfileSection />
+        <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 0.5 }}>
+          {isEditing && (
+            <Tooltip title="Add Widget">
+              <IconButton onClick={onAddWidget} color="info">
+                <IconComponent name="Plus" size="medium" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <Tooltip title={isEditing ? "Save Layout" : "Edit Layout"}>
+            <IconButton onClick={onEditToggle} color={isEditing ? "success" : "info"}>
+              <IconComponent name={isEditing ? "Save" : "Pencil"} size="medium" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+        {/* --- END REPLACEMENT --- */}
+
+        <ProfileSection />
          {/* --- End Berry Sections --- */}
          {/* Mobile Section - Renders only on 'xs' screens */}
         <Box sx={{ display: { xs: 'block', sm: 'none' } }}> {/* Show only on xs */}

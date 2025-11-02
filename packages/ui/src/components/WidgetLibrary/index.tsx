@@ -1,7 +1,7 @@
 //packages/ui/src/components/WidgetLibrary/index.tsx
 import React from "react";
 import Drawer from "@mui/material/Drawer";
-import { WIDGET_REGISTRY, WidgetConfig, PlanLevel } from "../../widgets/widgetRegistry";
+import { WIDGET_REGISTRY, WidgetVariant, PlanLevel } from "../../widgets/widgetRegistry"; // Import WidgetVariant
 import { Box } from "@mui/material";
 import {Typography} from "@mui/material";
 import IconButton from "@mui/material/IconButton";
@@ -12,7 +12,7 @@ import LockIcon from "@mui/icons-material/Lock";
 interface WidgetLibraryProps {
   open: boolean;
   onClose: () => void;
-  onAddWidget: (widgetId: string) => void;
+  onAddWidget: (variantId: string) => void; 
   currentPlan: PlanLevel;
 }
 
@@ -23,14 +23,14 @@ const WidgetCard = ({
   onAdd,
   isLocked,
 }: {
-  widget: WidgetConfig;
+  widget: WidgetVariant;
   onAdd: () => void;
   isLocked: boolean;
 }) => (
   <Box sx={{ width: "50%", padding: "0.5rem" }}>
   {/* FIX: Wrap the card in a button to ensure click events are handled */}
     <Box
-      onClick={isLocked ? () => alert(`Requires ${widget.requiredPlan} plan`) : onAdd} // Placeholder alert for locked state
+      onClick={isLocked ? () => alert(`This widget requires a higher plan.`) : onAdd}
       sx={{
         border: "1px dashed #e0e0e0",
         borderRadius: "0.75rem",
@@ -57,7 +57,7 @@ const WidgetCard = ({
         />
       )}
    <Typography variant="h6" color="secondary">
-        {widget.name}
+       {widget.displayName}
       </Typography>
     </Box> 
   </Box>
@@ -87,17 +87,22 @@ const WidgetLibrary: React.FC<WidgetLibraryProps> = ({ open, onClose, onAddWidge
           <TextField fullWidth variant="outlined" placeholder="Search widgets..." />
         </Box>
         <Box sx={{ display: "flex", flexWrap: "wrap", margin: "-0.5rem" }}>
-          {Object.values(WIDGET_REGISTRY).map((widget) => {
-            const locked = isWidgetLocked(widget.requiredPlan);
-            return (
-              <WidgetCard
-                key={widget.id}
-                widget={widget}
-                onAdd={() => onAddWidget(widget.id)}
-                isLocked={locked}
-              />
-            );
-          })}
+          {/* Use flatMap to create a single list of all variants */}
+          {Object.values(WIDGET_REGISTRY).flatMap((parentWidget) => 
+            // For each parent, map over its variants
+            parentWidget.variants.map((variant) => {
+              // Check plan level from the PARENT config
+              const locked = isWidgetLocked(parentWidget.requiredPlan);
+              return (
+                <WidgetCard
+                  key={variant.variantId}
+                  widget={variant} // Pass the variant to the card
+                  onAdd={() => onAddWidget(variant.variantId)} // Pass the variantId
+                  isLocked={locked}
+                />
+              );
+            })
+          )}
         </Box>
       </Box>
     </Drawer>
