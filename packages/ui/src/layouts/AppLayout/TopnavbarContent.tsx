@@ -2,7 +2,7 @@
 // packages/ui/src/layouts/AppLayout/TopnavbarContent.tsx
 import React, { useContext } from "react";
 import { useLocation, Link as RouterLink } from "react-router-dom";
-import { Box, IconButton, Button, Typography, Breadcrumbs as MuiBreadcrumbs, Link, Tooltip } from "@mui/material"; // Renamed Breadcrumbs import
+import { Box, IconButton, Button, Typography, Breadcrumbs as MuiBreadcrumbs, Link, Tooltip, useTheme } from "@mui/material";
 import IconComponent from "../../components/Icon";
 
 import { ConfigContext } from 'contexts/ConfigContext';
@@ -30,6 +30,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   onAddWidget,
 }) => {
   const location = useLocation();
+  const theme = useTheme();
   const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -81,19 +82,39 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box>
         
         {/* Layout Edit Buttons (Keep these for now) */}
-        <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 0.5 }}>
-          {isEditing && (
-            <Tooltip title="Add Widget">
-              <IconButton onClick={onAddWidget} color="info">
-                <IconComponent name="Plus" size="medium" />
-              </IconButton>
-            </Tooltip>
-          )}
+        {/* --- MODIFIED: Group buttons when editing --- */}
+        <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center' }}>
+          {isEditing ? (
+            // 2. If editing, show the grouped container
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                border: '1px solid',
+                borderColor: theme.palette.divider,
+                borderRadius: '8px', // Adjust as needed
+                padding: '4px',
+              }}
+            >
+              <Tooltip title="Add Widget">
+                <IconButton onClick={onAddWidget} color="info" size="small">
+                  <IconComponent name="Plus" size="medium" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Save Layout">
+                <IconButton onClick={onEditToggle} color="success" size="small">
+                  <IconComponent name="Save" size="medium" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          ) : (
           <Tooltip title={isEditing ? "Save Layout" : "Edit Layout"}>
-            <IconButton onClick={onEditToggle} color={isEditing ? "success" : "info"}>
+            <IconButton onClick={onEditToggle} color="info">
               <IconComponent name={isEditing ? "Save" : "Pencil"} size="medium" />
             </IconButton>
           </Tooltip>
+          )}
         </Box>
         {/* --- END REPLACEMENT --- */}
 
