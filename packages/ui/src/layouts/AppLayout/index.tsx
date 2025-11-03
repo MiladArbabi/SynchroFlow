@@ -19,7 +19,7 @@ import { DataSyncingModal } from 'components/DataSyncingModal';
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
 
-import { OpsContextProvider } from 'contexts/OpsContext'; // <-- 1. IMPORT
+import { OpsContextProvider } from 'contexts/OpsContext';
 import { OpsCommandCenter } from 'components/OpsCommandCenter';
 
 // Define simple styles for the handles
@@ -51,9 +51,10 @@ const AppLayout = ({
   // --- GET STATE & REF ---
   const { state, dispatch } = useConfig();
   const sidenavPanelRef = useRef<ImperativePanelHandle>(null); // Ref for the Sidenav panel
+  const opsPanelRef = useRef<ImperativePanelHandle>(null);
   const [isSidenavOpen, setSidenavOpen] = useState(true);
 
-  const handleSidenavToggle = () => setSidenavOpen(!isSidenavOpen);
+  // const handleSidenavToggle = () => setSidenavOpen(!isSidenavOpen);
 
   // --- STATE LIFTED FROM DASHBOARD ---
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
@@ -132,11 +133,29 @@ const AppLayout = ({
       }
     }
   }, [state.miniDrawer]);
-  // --- END EFFECT ---
+  // --- END SIDENAV EFFECT ---
+
+  // --- EFFECT TO CONTROL OPS CONSOLE PANEL (NEW) ---
+  useEffect(() => {
+    const panel = opsPanelRef.current;
+    if (panel) {
+      if (state.isOpsConsoleOpen) { // <-- 4. READ FROM CONFIG STATE
+        if (panel.isCollapsed()) {
+          panel.expand();
+          panel.resize(25); // Resize to default 25%
+        }
+      } else {
+        if (!panel.isCollapsed()) {
+          panel.collapse();
+        }
+      }
+    }
+  }, [state.isOpsConsoleOpen]); // <-- 5. DEPEND ON CONFIG STATE
+  // --- END OPS CONSOLE EFFECT ---
 
   return (
     <OpsContextProvider>
-    <Box sx={{ width: "100vw", height: "100vh" }}> 
+     <Box sx={{ width: "100vw", height: "100vh" }}> 
       <PanelGroup direction="horizontal">
         {/* Sidenav Panel */}
         <Panel
@@ -163,6 +182,7 @@ const AppLayout = ({
           </Box>
         </Panel>
         <PanelResizeHandle style={handleStyle} />
+
         {/* Main Content Panel */}
         <Panel order={2}> {/* Define order */}
           <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -186,19 +206,43 @@ const AppLayout = ({
                     {children}
                   </Box>
                 </Panel>
+
                 <PanelResizeHandle style={verticalHandleStyle} />
+
                 {/* Ops Console Panel */}
-                <Panel defaultSize={25} minSize={10} collapsible={true} order={2}> {/* Define order */}
-                  <Box sx={{ height: "100%", borderTop: "1px solid #e0e0e0" }}>
-                    Ops Console Placeholder
-                  </Box>
-                </Panel>
-              </PanelGroup>
+                {/* Ops Console Panel - MODIFIED */}
+                  <Panel
+                    ref={opsPanelRef} // <-- 6. ASSIGN REF
+                    defaultSize={0} // <-- 7. DEFAULT TO 0 (collapsed)
+                    minSize={10}
+                    collapsible={true}
+                    collapsedSize={0} // <-- 8. EXPLICITLY 0
+                    onCollapse={() => {
+                      // 9. Sync state if user manually collapses
+                      if (state.isOpsConsoleOpen) {
+                        dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
+                      }
+                    }}
+                    onExpand={() => {
+                      // 10. Sync state if user manually expands
+                      if (!state.isOpsConsoleOpen) {
+                        dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
+                      }
+                    }}
+                    order={2}
+                  >
+                    <Box sx={{ height: '100%', borderTop: '1px solid #e0e0e0' }}>
+                      {/* 11. Render real component ONLY if open */}
+                      {/* This makes the E2E test pass */}
+                      {state.isOpsConsoleOpen && <OpsCommandCenter />}
+                    </Box>
+                  </Panel>
+                </PanelGroup>
+              </Box>
             </Box>
-          </Box>
-        </Panel>
-      </PanelGroup>
-      <Customization />
+          </Panel>
+        </PanelGroup>
+        <Customization />
 
       {/* --- RENDER MODALS AT LAYOUT LEVEL --- */}
       <ConnectStoreModal

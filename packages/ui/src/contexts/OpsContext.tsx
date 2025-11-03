@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, {
   createContext,
   useContext,
@@ -13,6 +14,7 @@ import React, {
 
 // The core state of the OpsContext
 export interface OpsContextState {
+  // isOpsConsoleOpen(isOpsConsoleOpen: any): React.ReactNode; // <-- REMOVED
   page: string;
   entityId?: string;
   entityType?: 'order' | 'customer' | 'product';
@@ -26,6 +28,7 @@ export interface OpsContextState {
 export enum OpsActionType {
   SET_CONTEXT = 'SET_CONTEXT',
   SET_PERMISSIONS = 'SET_PERMISSIONS',
+  // TOGGLE_OPS_CONSOLE = "TOGGLE_OPS_CONSOLE", // <-- REMOVED (This is in ConfigContext)
   // --- Placeholders for future layers ---
   // SET_CONVERSATION = 'SET_CONVERSATION',
   // CLEAR_CONVERSATION = 'CLEAR_CONVERSATION',
@@ -43,7 +46,10 @@ export type OpsAction =
         entityType?: 'order' | 'customer' | 'product';
       };
     }
-  | { type: OpsActionType.SET_PERMISSIONS; payload: string[] };
+  | {
+      type: OpsActionType.SET_PERMISSIONS;
+      payload: string[];
+    };
 // | { type: OpsActionType.SET_CONVERSATION; payload: KoreConversation | null }
 // | { type: OpsActionType.CLEAR_CONVERSATION }
 // | { type: OpsActionType.ADD_INSIGHT; payload: ProactiveInsight }
@@ -56,6 +62,7 @@ export const initialState: OpsContextState = {
   entityId: undefined,
   entityType: undefined,
   userPermissions: [],
+  // isOpsConsoleOpen: false, // <-- REMOVED
   // conversation: null,
   // proactiveInsights: [],
 };
@@ -79,6 +86,7 @@ export const opsReducer = (
         ...state,
         userPermissions: action.payload,
       };
+    // <-- REMOVED TOGGLE_OPS_CONSOLE CASE
     default:
       return state;
   }
