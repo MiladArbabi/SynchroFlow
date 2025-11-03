@@ -99,7 +99,7 @@ export interface IOpsContext {
   dispatch: React.Dispatch<OpsAction>;
 }
 
-const OpsContext = createContext<IOpsContext>({
+export const OpsContext = createContext<IOpsContext>({
   context: initialState,
   dispatch: () => null,
 });
