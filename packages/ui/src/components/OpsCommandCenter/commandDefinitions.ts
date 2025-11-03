@@ -1,5 +1,4 @@
 // packages/ui/src/components/OpsCommandCenter/commandDefinitions.ts
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { OpsAction } from './types';
 
 // This is the "single source of truth" for all Layer 1 commands.
