@@ -133,9 +133,28 @@ const AppLayout = ({
       }
     }
   }, [state.miniDrawer]);
-  // --- END SIDENAV EFFECT ---
 
-  // --- EFFECT TO CONTROL OPS CONSOLE PANEL (NEW) ---
+  // --- GLOBAL HOTKEY LISTENER ---
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Cmd+J (Mac) or Ctrl+J (Windows/Linux)
+      if ((event.metaKey || event.ctrlKey) && event.key === 'j') {
+        event.preventDefault();
+        // Dispatch the action to toggle the console
+        dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
+      }
+    };
+
+    // Add event listener
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Clean up on unmount
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [dispatch]); // Dependency array with dispatch
+
+  // --- EFFECT TO CONTROL OPS CONSOLE PANEL ---
   useEffect(() => {
     const panel = opsPanelRef.current;
     if (panel) {
@@ -210,7 +229,6 @@ const AppLayout = ({
                 <PanelResizeHandle style={verticalHandleStyle} />
 
                 {/* Ops Console Panel */}
-                {/* Ops Console Panel - MODIFIED */}
                   <Panel
                     ref={opsPanelRef} // <-- 6. ASSIGN REF
                     defaultSize={0} // <-- 7. DEFAULT TO 0 (collapsed)
@@ -231,11 +249,15 @@ const AppLayout = ({
                     }}
                     order={2}
                   >
-                    <Box sx={{ height: '100%', borderTop: '1px solid #e0e0e0' }}>
-                      {/* 11. Render real component ONLY if open */}
-                      {/* This makes the E2E test pass */}
-                      {state.isOpsConsoleOpen && <OpsCommandCenter />}
-                    </Box>
+                   <Box 
+                    sx={{ 
+                      height: '100%', 
+                      borderTop: state.isOpsConsoleOpen ? '1px solid #e0e0e0' : 'none' 
+                    }}
+                    data-testid="ops-command-center-panel"
+                   >
+                    {state.isOpsConsoleOpen && <OpsCommandCenter />}
+                  </Box>
                   </Panel>
                 </PanelGroup>
               </Box>
