@@ -47,11 +47,11 @@ const SidenavContent: React.FC<{
   // Memoize the Logo section
   const logo = useMemo(
     () => (
-      <Box sx={{ display: 'flex', p: 2, justifyContent: 'center' }}> {/* Center logo */}
-        <LogoSection />
+      <Box sx={{ display: 'flex', p: 2, justifyContent: drawerOpen ? 'flex-start' : 'center' }}>
+         <LogoSection isCollapsed={!drawerOpen} />
       </Box>
     ),
-    []
+    [drawerOpen]
   );
 
   // Memoize the main menu drawer content
