@@ -1,5 +1,4 @@
 // tests/unit/ui/components/OpsCommandCenter/index.test.tsx
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { OpsCommandCenter } from 'components/OpsCommandCenter'; // This import will fail
