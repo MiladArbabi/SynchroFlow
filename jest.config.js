@@ -8,9 +8,7 @@ module.exports = {
       testEnvironment: 'node',
       setupFiles: ['<rootDir>/jest.env.js'],
       testMatch: [
-        '<rootDir>/tests/unit/api/**/*.test.ts',
-        '<rootDir>/tests/unit/core-engine/**/*.test.ts',
-        '<rootDir>/tests/unit/integration/**/*.test.ts',
+        '<rootDir>/tests/**/*.test.ts',
       ],
       transform: {
         '^.+\\.ts$': 'babel-jest',
