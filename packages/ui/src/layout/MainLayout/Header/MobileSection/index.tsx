@@ -12,7 +12,6 @@ import Box from '@mui/material/Box';
 import { useTheme } from '@mui/material/styles'; // Import useTheme
 
 // project imports
-import LocalizationSection from '../LocalizationSection'; // Use converted component
 import Transitions from 'ui-component/extended/Transitions'; // Use converted component
 
 // assets
@@ -106,8 +105,6 @@ const MobileSection: React.FC = () => {
                   // Use AppBar for structure and background
                   <AppBar color="inherit" position="static" elevation={0}>
                     <Toolbar sx={{ py: 1, justifyContent: 'flex-end' }}> {/* Align content */}
-                      {/* Render only LocalizationSection inside */}
-                      <LocalizationSection />
                       {/* Add other sections here if needed for mobile */}
                     </Toolbar>
                   </AppBar>

@@ -5,6 +5,15 @@ import React, { useMemo } from 'react';
 import { Box, useMediaQuery, Chip, Stack } from '@mui/material'; // Import necessary MUI components
 import { useTheme } from '@mui/material/styles';
 import routes from 'routes';
+import { useNavigate, useLocation } from 'react-router-dom';
+
+// --- MUI List Imports for Settings ---
+import List from '@mui/material/List';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import { IconSettings } from '@tabler/icons-react';
+import { Typography } from '@mui/material';
 
 // --- BERRY COMPONENT IMPORTS ---
 import LogoSection from 'layout/MainLayout/LogoSection'; 
@@ -36,6 +45,8 @@ const SidenavContent: React.FC<{
 }) => {
   const theme = useTheme();
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   const { menuMaster } = useGetMenuMaster(); // Reads drawerOpen state from our ConfigContext via the hook
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
@@ -94,24 +105,47 @@ const SidenavContent: React.FC<{
             <MenuList />
          </Box>
 
-         {/* --- Render Card outside of 'extraContent' --- */}
+        {/* --- Render Card outside of 'extraContent' --- */}
         {/* Show the card if NOT connected, regardless of drawer state */}
         {/* Use padding to match 'extraContent' when open, and minimal when collapsed */}
-        <Box sx={{ p: drawerOpen ? 2 : 0.5, pt: 2 }}>
+        <Box sx={{ p: drawerOpen ? 2 : 2, pt: 2 }}>
           {!isConnected && <ConnectStoreCard onOpenModal={onOpenModal} />}
         </Box>
+
+         {/* --- ACCOUNT SETTINGS LINK (PINNED TO BOTTOM) --- */}
+         {/* This List is outside the flexGrow box, so it pins to the bottom */}
+         <List sx={{ p: drawerOpen ? 1 : 0.5 }}>
+           <ListItemButton
+             sx={{ borderRadius: '8px' }} // Use theme.shape.borderRadius
+             onClick={() => navigate('/account/settings')}
+             selected={pathname === '/account/settings'}
+           >
+             <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
+               <IconSettings stroke={1.5} size="20px" />
+             </ListItemIcon>
+             {/* Only show text if drawer is open */}
+             {drawerOpen && (
+               <ListItemText 
+                 primary={
+                   <Typography variant="body2">Account Settings</Typography>
+                 } 
+               />
+             )}
+           </ListItemButton>
+         </List>
+         {/* --- END ACCOUNT SETTINGS LINK --- */}
 
         {/* Render extra content only when the drawer is fully open */}
         {isVerticalOpen && extraContent}
       </SimpleBar>
     );
-  }, [drawerOpen, isConnected, onOpenModal]); 
+  }, [drawerOpen, isConnected, navigate, onOpenModal, pathname]); 
 
   return (
     // Use a Box that fills the height and acts as the main container
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Render the logo */}
-      {logo}
+        {logo}
       {/* Render the drawer content (MenuList + Extras inside SimpleBar) */}
       {drawerContent}
     </Box>
