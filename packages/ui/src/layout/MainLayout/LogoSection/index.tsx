@@ -11,11 +11,15 @@ import Logo from 'ui-component/Logo';
 
 // ==============================|| MAIN LOGO ||============================== //
 
+interface LogoSectionProps {
+  isCollapsed?: boolean;
+}
+
 // Define the component type using React.FC
-const LogoSection: React.FC = () => {
+const LogoSection: React.FC<LogoSectionProps> = ({ isCollapsed = false }) => {
   return (
     <Link component={RouterLink} to={DASHBOARD_PATH} aria-label="theme-logo">
-      <Logo />
+      <Logo isCollapsed={isCollapsed} />
     </Link>
   );
 };

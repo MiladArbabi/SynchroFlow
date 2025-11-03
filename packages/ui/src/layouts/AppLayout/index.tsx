@@ -46,7 +46,7 @@ const AppLayout = ({
 }: AppLayoutProps) => {
 
   // --- GET STATE & REF ---
-  const { state } = useConfig();
+  const { state, dispatch } = useConfig();
   const sidenavPanelRef = useRef<ImperativePanelHandle>(null); // Ref for the Sidenav panel
   const [isSidenavOpen, setSidenavOpen] = useState(true);
 
@@ -142,8 +142,10 @@ const AppLayout = ({
           maxSize={SIDENAV_MAX_SIZE}
           collapsible={true} // Ensure it's collapsible
           // We can optionally set collapsedSize if needed, but minSize might be sufficient
-           collapsedSize={SIDENAV_MIN_SIZE} // Explicitly set collapsed size
-           order={1} // Define order for layout
+          onCollapse={() => dispatch({ type: 'SET_MINI_DRAWER', payload: true })} // <-- 2. Sync drag-to-collapse
+          onExpand={() => dispatch({ type: 'SET_MINI_DRAWER', payload: false })}   // <-- 3. Sync drag-to-expand
+          collapsedSize={SIDENAV_MIN_SIZE} // Explicitly set collapsed size
+          order={1} // Define order for layout
         >
           {/* Use overflow: hidden and flex column for content */}
           <Box sx={{ height: "100%", borderRight: "1px solid #e0e0e0", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

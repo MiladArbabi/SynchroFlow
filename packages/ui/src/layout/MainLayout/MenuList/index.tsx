@@ -95,7 +95,7 @@ function MenuList() {
     }
   });
 
-  return !isHorizontal ? <Box {...(drawerOpen && { sx: { mt: 1.5 } })}>{navItems}</Box> : <>{navItems}</>;
+  return <Box>{navItems}</Box>;
 }
 
 export default memo(MenuList);
