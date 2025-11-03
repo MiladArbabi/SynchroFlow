@@ -19,6 +19,9 @@ import { DataSyncingModal } from 'components/DataSyncingModal';
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
 
+import { OpsContextProvider } from 'contexts/OpsContext'; // <-- 1. IMPORT
+import { OpsCommandCenter } from 'components/OpsCommandCenter';
+
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
 const verticalHandleStyle = { height: "4px", background: "#e0e0e0" };
@@ -132,6 +135,7 @@ const AppLayout = ({
   // --- END EFFECT ---
 
   return (
+    <OpsContextProvider>
     <Box sx={{ width: "100vw", height: "100vh" }}> 
       <PanelGroup direction="horizontal">
         {/* Sidenav Panel */}
@@ -205,9 +209,9 @@ const AppLayout = ({
         open={isSyncingModalOpen}
         onClose={handleSyncModalClose}
       />
-      {/* --- END MODALS --- */}
 
     </Box>
+    </OpsContextProvider>
   );
 };
 
