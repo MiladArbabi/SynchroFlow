@@ -46,7 +46,6 @@ export const ALL_ACTIONS: OpsAction[] = [
   },
 
   // --- Search/Action Placeholders ---
-  // We'll wire these up in future tickets
   {
     id: 'find-order-by-id',
     name: 'Find Order by ID...',
@@ -86,6 +85,9 @@ export const ALL_ACTIONS: OpsAction[] = [
       pages: ['dashboard', 'orders'],
       requiredPermissions: ['refund:write'],
     },
+
+    confirmationMessage: 'Are you sure you want to refund the last order?',
+    
     execute: async () => {
       console.log('TODO: Open refund modal for last order');
       return { success: true, message: 'Opening refund modal...' };
