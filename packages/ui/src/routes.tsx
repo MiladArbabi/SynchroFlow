@@ -11,7 +11,7 @@ import OrdersPage from "./pages/OrdersPage";
 import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
 import CustomersPage from "./pages/CustomersPage";
-
+import AccountSettingsPage from "./pages/AccountSettingsPage";
 
 const routes = [
   {
@@ -82,6 +82,13 @@ const routes = [
     key: "order-details",
     route: "/orders/:id", // Use a parameter for the order ID
     component: <Order360Page />,
+  },
+  {
+  type: "route", // Doesn't show in nav
+  name: "Account Settings",
+  key: "account-settings",
+  route: "/account/settings",
+  component: <AccountSettingsPage />,
   },
    {
     type: "route", // Doesn't show in nav

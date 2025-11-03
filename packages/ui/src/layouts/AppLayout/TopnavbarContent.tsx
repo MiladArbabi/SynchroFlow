@@ -12,7 +12,6 @@ import useConfig from 'hooks/useConfig';
 // Import the *stub* components we just created
 import SearchSection from 'layout/MainLayout/Header/SearchSection';
 import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
-import LocalizationSection from 'layout/MainLayout/Header/LocalizationSection';
 import NotificationSection from 'layout/MainLayout/Header/NotificationSection';
 import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
@@ -78,8 +77,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         {/* --- Berry Sections in Order --- */}
         <SearchSection />
         <Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box>
-        {/* Render Localization OR MobileSection based on screen size */}
-        <Box sx={{ display: { xs: 'none', sm: 'block' } }}><LocalizationSection /></Box>
         <NotificationSection />
         <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box>
         

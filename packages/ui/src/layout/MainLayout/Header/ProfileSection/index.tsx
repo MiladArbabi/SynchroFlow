@@ -89,7 +89,7 @@ const ProfileSection: React.FC = () => {
   // Type the event as React.MouseEvent
   const handleListItemClick = (event: React.MouseEvent<HTMLDivElement>, index: number, route = '') => {
     setSelectedIndex(index);
-    //handleClose(event);
+    setOpen(false); // <-- Close the popper on click
 
     if (route && route !== '') {
       navigate(route);
@@ -258,24 +258,17 @@ const ProfileSection: React.FC = () => {
                       </Card>
                       <Divider />
                       <List component="nav" sx={{ '& .MuiListItemButton-root': { mt: 0.5 } }}>
+                        {/* --- APPEARANCE --- */}
                         <ListItemButton
                           sx={{ borderRadius: `${borderRadius}px` }}
-                          selected={selectedIndex === 0}
-                          onClick={(event) => handleListItemClick(event, 0, '#!')} // Example route
-                        >
-                          <ListItemIcon> <IconSettings stroke={1.5} size="20px" /> </ListItemIcon>
-                          <ListItemText primary={<Typography variant="body2"><FormattedMessage id="account-settings" defaultMessage="Account Settings" /></Typography>} />
-                            </ListItemButton>
-                            {/* --- ADDED CUSTOMIZATION BUTTON --- */}
-                            <ListItemButton
-                            sx={{ borderRadius: `${borderRadius}px` }}
-                            selected={selectedIndex === 2} // Use a new index
-                            onClick={handleOpenCustomization}
-                            >
-                            <ListItemIcon> <IconPalette stroke={1.5} size="20px" /> </ListItemIcon>
-                            <ListItemText primary={<Typography variant="body2">Appearance</Typography>} />
-                            </ListItemButton>
-                        {/* --- END CUSTOMIZATION BUTTON --- */}
+                          selected={selectedIndex === 2} // Use a new index
+                          onClick={handleOpenCustomization}
+                          >
+                          <ListItemIcon> <IconPalette stroke={1.5} size="20px" /> </ListItemIcon>
+                          <ListItemText primary={<Typography variant="body2">Appearance</Typography>} />
+                          </ListItemButton>
+                        
+                        {/* --- SOCIAL PROFILES --- */}
                         <ListItemButton
                           sx={{ borderRadius: `${borderRadius}px` }}
                           selected={selectedIndex === 1}
