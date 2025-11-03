@@ -55,8 +55,9 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
           <IconComponent name="PanelLeft" size="medium" color="inherit" style={{ transform: state.miniDrawer ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }} />
         </IconButton>
         <MuiBreadcrumbs aria-label="breadcrumb">
-          <Link component={RouterLink} underline="hover" color="inherit" to="/dashboard">
-            <IconComponent name="PanelLeft" size="medium" color="inherit" style={{ transform: state.miniDrawer ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }} />
+          {/* --- ADDED HOME LINK --- */}
+          <Link component={RouterLink} underline="hover" color="inherit" to="/dashboard" sx={{display: 'flex', alignItems: 'center'}}>
+            <IconComponent name="Home" size="small" color="inherit" />
           </Link>
           {pathnames.map((value, index) => {
             const last = index === pathnames.length - 1;
