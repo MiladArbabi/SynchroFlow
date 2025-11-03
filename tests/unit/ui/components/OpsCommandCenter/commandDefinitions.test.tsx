@@ -15,5 +15,7 @@ describe('Kore Command Definitions', () => {
     expect(firstAction).toHaveProperty('name');
     expect(firstAction).toHaveProperty('keywords');
     expect(firstAction).toHaveProperty('context');
+
+    expect(firstAction).toHaveProperty('category');
   });
 });
