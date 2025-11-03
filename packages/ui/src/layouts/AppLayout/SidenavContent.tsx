@@ -127,7 +127,7 @@ const SidenavContent: React.FC<{
              {drawerOpen && (
                <ListItemText 
                  primary={
-                   <Typography variant="body2">Account Settings</Typography>
+                   <Typography variant="body2" color="inherit">Account Settings</Typography>
                  } 
                />
              )}
