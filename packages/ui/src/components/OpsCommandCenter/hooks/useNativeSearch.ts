@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+<<<<<<< HEAD
 //packages/ui/src/components/OpsCommandCenter/hooks/useNativeSearch.ts
+=======
+// packages/ui/src/components/OpsCommandCenter/hooks/useNativeSearch.ts
+>>>>>>> chore/kore-L1-495-native-search
 import { useMemo } from 'react';
 
 // Define weights for ranking. Higher is better.
