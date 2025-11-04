@@ -18,7 +18,7 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     ).not.toBeVisible(); // .not.toBeVisible() also checks for non-existence
   });
 
-  test('should open, search, execute, clear, and refocus', async ({ page }) => {
+  test('should open, search, execute, and navigate *without* reloading', async ({ page }) => {
     await loginAs(page, 'default-user');
     await page.waitForURL(/.*dashboard/);
 
@@ -37,14 +37,10 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     // 3. Verify navigation
     await page.waitForURL('**/orders');
     await expect(page).toHaveURL(/.*orders/);
-
+    
     // 4. --- THIS IS THE "RED" STEP ---
-    // Re-open the panel
-    await page.locator('body').click();
-    await page.keyboard.press(`${modifier}+j`);
-
-    // 5. Assert the input is now empty
-    // This will fail, the input will still have "Orders" in it.
-    await expect(page.getByTestId('kore-command-input')).toHaveValue('');
+    // Assert that the console is *still open* after navigation.
+    // This will fail because the page reload unmounted it.
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
   });
 });

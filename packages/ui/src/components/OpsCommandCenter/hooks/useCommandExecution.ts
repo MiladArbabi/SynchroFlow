@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from 'contexts/ToastContext';
 import { useOpsContext } from 'contexts/OpsContext';
 import { OpsAction, CommandResult } from 'components/OpsCommandCenter/types';
@@ -13,6 +14,7 @@ export const useCommandExecution = () => {
   const [isExecuting, setIsExecuting] = useState(false);
   const { show: showToast } = useToast();
   const { context } = useOpsContext();
+  const navigate = useNavigate();
 
   const executeCommand = async (
     action: OpsAction,
@@ -33,7 +35,7 @@ export const useCommandExecution = () => {
       }
 
       // 2. Execute the Action
-      const result = await action.execute(context);
+      const result = await action.execute(context, navigate);
 
       // 3. Show Success Feedback
       showToast(result.message, 'success');
