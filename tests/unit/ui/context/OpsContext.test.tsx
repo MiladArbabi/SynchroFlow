@@ -2,7 +2,12 @@
 import { ReactNode } from 'react';
 import { render, screen, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { OpsContextProvider, useOpsContext, OpsActionType } from 'contexts/OpsContext';
+import { 
+  OpsContextProvider, 
+  useOpsContext, 
+  OpsActionType,
+  KoreConversation 
+} from 'contexts/OpsContext';
 
 // A simple test component to consume the context
 const TestConsumer = () => {
@@ -22,13 +27,32 @@ const TestConsumer = () => {
     });
   };
 
+  const setConvo = () => {
+    const mockConvo: KoreConversation = {
+      topic: 'find-orders',
+      entities: { status: 'pending' },
+      timestamp: 12345,
+    };
+    dispatch({ type: OpsActionType.SET_CONVERSATION, payload: mockConvo });
+  };
+
+  const clearConvo = () => {
+    dispatch({ type: OpsActionType.CLEAR_CONVERSATION });
+  };
+
   return (
     <div>
       <div data-testid="page">{context.page}</div>
       <div data-testid="entity">{context.entityId}</div>
       <div data-testid="perms">{context.userPermissions.join(',')}</div>
+      {/* Add a simple way to see conversation state */}
+      <div data-testid="convo-topic">
+        {context.conversation?.topic || 'null'}
+      </div>
       <button onClick={() => setPage('orders', '123')}>Set Page</button>
       <button onClick={() => setPerms(['admin', 'refund'])}>Set Perms</button>
+      <button onClick={setConvo}>Set Conversation</button>
+      <button onClick={clearConvo}>Clear Conversation</button>
     </div>
   );
 };
@@ -44,6 +68,7 @@ describe('OpsContext', () => {
     expect(screen.getByTestId('page')).toHaveTextContent('dashboard');
     expect(screen.getByTestId('entity')).toBeEmptyDOMElement();
     expect(screen.getByTestId('perms')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('convo-topic')).toHaveTextContent('null');
   });
 
   it('should update context state via the SET_CONTEXT action', () => {
@@ -65,5 +90,28 @@ describe('OpsContext', () => {
     });
 
     expect(screen.getByTestId('perms')).toHaveTextContent('admin,refund');
+  });
+});
+
+describe('OpsContext: Conversation State', () => {
+  it('should set the conversation state', () => {
+    renderWithProvider(<TestConsumer />);
+
+    act(() => {
+      screen.getByText('Set Conversation').click();
+    });
+
+    expect(screen.getByTestId('convo-topic')).toHaveTextContent('find-orders');
+  });
+
+  it('should clear the conversation state', () => {
+    renderWithProvider(<TestConsumer />);
+
+    // Set it first, then clear it
+    act(() => screen.getByText('Set Conversation').click());
+    expect(screen.getByTestId('convo-topic')).toHaveTextContent('find-orders');
+
+    act(() => screen.getByText('Clear Conversation').click());
+    expect(screen.getByTestId('convo-topic')).toHaveTextContent('null');
   });
 });
