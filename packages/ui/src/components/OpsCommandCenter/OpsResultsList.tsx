@@ -50,21 +50,38 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
             aria-selected={isSelected} // Set aria-selected for the test
           >
             <ListItemButton
-              selected={isSelected} // This controls the MUI visual highlight
+              selected={isSelected}
               onClick={() => onCommandSelect(action)}
               sx={{
+                // Reduce vertical padding to make list denser
+                py: 0.25, //  Value 1 is default
                 borderBottom: '1px solid',
                 borderColor: 'divider',
               }}
             >
               <ListItemText
                 primary={
-                  <Typography variant="body1" fontWeight={500}>
+                  <Typography
+                    variant="body1"
+                    color="text.secondary"
+                    fontWeight={900}
+                    sx={{
+                      // Description size
+                      fontSize: '0.75',
+                    }}
+                  >
                     {action.name}
                   </Typography>
                 }
                 secondary={
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      // Description size
+                      fontSize: '0.75rem',
+                    }}
+                  >
                     {action.description}
                   </Typography>
                 }

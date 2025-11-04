@@ -18,6 +18,7 @@ export const useCommandExecution = () => {
 
   const executeCommand = async (
     action: OpsAction,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     intent: any, // <-- 2. SET TO 'any' FOR NOW (was Intent | null)
   ): Promise<CommandResult> => {
     setIsExecuting(true);
