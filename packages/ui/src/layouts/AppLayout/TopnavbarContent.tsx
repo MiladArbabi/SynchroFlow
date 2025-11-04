@@ -2,7 +2,27 @@
 // packages/ui/src/layouts/AppLayout/TopnavbarContent.tsx
 import React, { useContext } from "react";
 import { useLocation, Link as RouterLink } from "react-router-dom";
-import { Box, IconButton, Button, Typography, Breadcrumbs as MuiBreadcrumbs, Link, Tooltip, useTheme } from "@mui/material";
+import { 
+  Box, 
+  IconButton, 
+  Button, 
+  Typography, 
+  Breadcrumbs as MuiBreadcrumbs, 
+  useMediaQuery, 
+  Link, 
+  Tooltip, 
+  useTheme 
+} from "@mui/material";
+import {
+  Menu as MenuIcon,
+  Search as SearchIcon,
+  Bell as BellIcon,
+  Settings as SettingsIcon,
+  Maximize as MaximizeIcon,
+  User as UserIcon,
+  // --- 1. IMPORT KORE ICON ---
+  Sparkles as KoreIcon 
+} from 'lucide-react';
 import IconComponent from "../../components/Icon";
 
 import { ConfigContext } from 'contexts/ConfigContext';
@@ -11,7 +31,7 @@ import useConfig from 'hooks/useConfig';
 // --- BERRY HEADER SECTION IMPORTS ---
 // Import the *stub* components we just created
 import SearchSection from 'layout/MainLayout/Header/SearchSection';
-import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
+// import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
 import NotificationSection from 'layout/MainLayout/Header/NotificationSection';
 import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
@@ -34,12 +54,19 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-  const { state } = useConfig();
-  const { dispatch } = useContext(ConfigContext);
+  const { state, dispatch } = useConfig();
 
+  const matchDownMd = useMediaQuery(theme.breakpoints.down('md'));
+
+  // ---  SIDEBAR HANDLER ---
   const handleToggleSidenav = () => {
   dispatch({ type: 'SET_MINI_DRAWER', payload: !state.miniDrawer });
-};
+  };
+
+  // ---  OPS CONSOLE HANDLER ---
+  const handleToggleOpsConsole = () => {
+    dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
+  };
 
   return (
     <Box
@@ -49,7 +76,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
       height="100%"
       px={2}
     >
-      {/* === Left Side: Stays the Same === */}
+      {/* === Left Side === */}
       <Box display="flex" alignItems="center" gap={2}>
         <IconButton onClick={handleToggleSidenav} size="small" disableRipple>
           <IconComponent name="PanelLeft" size="medium" color="inherit" style={{ transform: state.miniDrawer ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }} />
@@ -77,9 +104,23 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
       <Box display="flex" alignItems="center" gap={{ xs: 0.5, sm: 1, md: 1.5 }}> {/* Adjust gap */}
         {/* --- Berry Sections in Order --- */}
         <SearchSection />
-        <Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box>
+
+        {/* --- KORE BUTTON --- */}
+        <Tooltip title="Open Kore Command (Cmd+J)">
+          <IconButton
+            color="inherit"
+            onClick={handleToggleOpsConsole}
+            data-testid="kore-navbar-button"
+            size="small" // Match the other buttons
+            disableRipple
+          >
+            <IconComponent name="Sparkles" size="medium" />
+          </IconButton>
+        </Tooltip>
+
+        {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
         <NotificationSection />
-        <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box>
+        {/* <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box> */}
         
         {/* Layout Edit Buttons (Keep these for now) */}
         {/* --- MODIFIED: Group buttons when editing --- */}
@@ -116,7 +157,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
           </Tooltip>
           )}
         </Box>
-        {/* --- END REPLACEMENT --- */}
 
         <ProfileSection />
          {/* --- End Berry Sections --- */}
