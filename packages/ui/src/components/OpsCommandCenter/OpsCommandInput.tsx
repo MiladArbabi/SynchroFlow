@@ -67,7 +67,7 @@ export const OpsCommandInput = React.forwardRef<
             <InputAdornment position="start" sx={{ pl: 1, pr: 0.5 }}>
               <LucideSparkles
                 size={18}
-                color={isExecuting ? '#ccc' : '#F0B432'}
+                color={isExecuting ? '#ccc' : '#a309caff'}
               />
             </InputAdornment>
           ),
@@ -78,7 +78,7 @@ export const OpsCommandInput = React.forwardRef<
           borderBottom: '1px solid',
           borderColor: 'divider',
           '& .MuiInputBase-input': {
-            fontSize: '1.1rem',
+            fontSize: '1 rem',
             padding: 0,
           },
         }}
