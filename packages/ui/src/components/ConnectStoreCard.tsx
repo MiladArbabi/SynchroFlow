@@ -21,10 +21,10 @@ export const ConnectStoreCard: React.FC<ConnectStoreCardProps> = ({ onOpenModal 
       }}
     >
       <Box sx={{ textAlign: 'center' }}>
-        <Typography variant="h5" gutterBottom>
+        <Typography variant="h5" color='text.secondary' gutterBottom>
           Connect Store
         </Typography>
-        <Typography variant="body2" sx={{ mb: 2 }}>
+        <Typography variant="body2" color='text.secondary' sx={{ mb: 2 }}>
           Your data sources aren't connected. Get started now.
         </Typography>
         <Button

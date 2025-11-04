@@ -2,8 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // We will expand these types in future tickets
 // (e.g., for NLP, Proactive, etc.)
-
 import { OpsContextState } from 'contexts/OpsContext';
+import { NavigateFunction } from 'react-router-dom';
 
 // --- Core Action Types ---
 
@@ -30,7 +30,10 @@ export interface OpsAction {
   };
   
   // Execution
-  execute: (context: OpsContextState) => Promise<CommandResult>;
+  execute: (
+    context: OpsContextState,
+    navigate: NavigateFunction, // Add navigate function
+  ) => Promise<CommandResult>;
   
   // Safety (for future tickets)
   preview?: (context: OpsContextState) => Promise<any>;

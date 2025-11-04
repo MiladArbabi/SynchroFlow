@@ -1,13 +1,18 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/components/OpsCommandCenter/commandDefinitions.ts
 import { OpsAction } from './types';
+import { NavigateFunction } from 'react-router-dom';
 
 // This is the "single source of truth" for all Layer 1 commands.
 // We will add 10+ actions here as we build out features.
 
-const executeNavigate = (path: string) => async () => {
-  // In a real app, we'd use a navigate() hook.
-  // For now, window.location is a fine placeholder for the action.
-  window.location.pathname = path;
+const executeNavigate = (path: string) => async (
+  _context: any, // context is unused here
+  navigate: NavigateFunction, // <-- Accept navigate
+) => {
+  // --- USE NAVIGATE, NOT window.location ---
+  navigate(path);
   return { success: true, message: `Navigating to ${path}` };
 };
 
@@ -53,7 +58,7 @@ export const ALL_ACTIONS: OpsAction[] = [
     icon: 'search',
     category: 'analytical',
     context: { pages: ['dashboard', 'orders'] },
-    execute: async () => {
+    execute: async (_context, _navigate) => { // <-- Accept navigate
       console.log('TODO: Open "Find Order" modal');
       return { success: true, message: 'Opening order search...' };
     },
@@ -66,7 +71,7 @@ export const ALL_ACTIONS: OpsAction[] = [
     icon: 'search',
     category: 'analytical',
     context: { pages: ['dashboard', 'customers'] },
-    execute: async () => {
+    execute: async (_context, _navigate) => { // <-- Accept navigate
       console.log('TODO: Open "Find Customer" modal');
       return { success: true, message: 'Opening customer search...' };
     },
@@ -80,14 +85,12 @@ export const ALL_ACTIONS: OpsAction[] = [
     keywords: ['refund', 'return', 'cancel', 'money'],
     icon: 'refund',
     category: 'destructive',
+    confirmationMessage: 'Are you sure you want to refund the last order?',
     context: {
       pages: ['dashboard', 'orders'],
       requiredPermissions: ['refund:write'],
     },
-
-    confirmationMessage: 'Are you sure you want to refund the last order?',
-    
-    execute: async () => {
+    execute: async (_context, _navigate) => { // <-- Accept navigate
       console.log('TODO: Open refund modal for last order');
       return { success: true, message: 'Opening refund modal...' };
     },
