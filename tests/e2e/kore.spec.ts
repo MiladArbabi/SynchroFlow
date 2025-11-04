@@ -43,4 +43,23 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     // This will fail because the page reload unmounted it.
     await expect(page.getByTestId('kore-command-input')).toBeVisible();
   });
+
+  test('should open the console panel when user clicks the navbar icon', async ({ page }) => {
+    await loginAs(page, 'default-user');
+    await page.waitForURL(/.*dashboard/);
+
+    // 1. Verify it's closed
+    await expect(page.getByTestId('kore-command-input')).not.toBeVisible();
+
+    // 2. This is the "Red" step. It will fail.
+    // Find and click the new icon button in the top navbar
+    await page.getByTestId('kore-navbar-button').click();
+
+    // 3. Assert the panel is now open
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
+
+    // 4. (Bonus) Click it again to close
+    await page.getByTestId('kore-navbar-button').click();
+    await expect(page.getByTestId('kore-command-input')).not.toBeVisible();
+  });
 });
