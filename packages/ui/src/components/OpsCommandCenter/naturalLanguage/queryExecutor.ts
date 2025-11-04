@@ -1,5 +1,6 @@
 //packages/ui/src/components/OpsCommandCenter/naturalLanguage/queryExecutor.ts
-import { OpsAction, OpsContextState } from 'components/OpsCommandCenter/types';
+import { OpsAction } from 'components/OpsCommandCenter/types';
+import { OpsContextState } from 'contexts/OpsContext';
 import { Intent, EntityMap } from 'components/OpsCommandCenter/naturalLanguage/types';
 import { NavigateFunction } from 'react-router-dom';
 
