@@ -6,6 +6,7 @@ import React, {
   ReactNode,
   useMemo,
 } from 'react';
+import { KoreConversation } from 'components/OpsCommandCenter/naturalLanguage/types';
 
 // We'll import these from types.ts in a future ticket
 //import { ProactiveInsight, KoreConversation } from 'components/OpsCommandCenter/types';
@@ -19,8 +20,8 @@ export interface OpsContextState {
   entityId?: string;
   entityType?: 'order' | 'customer' | 'product';
   userPermissions: string[];
-  // --- Placeholders for future layers ---
-  // conversation: KoreConversation | null;
+  // --- 2. ADD conversation TO STATE ---
+  conversation: KoreConversation | null;
   // proactiveInsights: ProactiveInsight[];
 }
 
@@ -28,6 +29,10 @@ export interface OpsContextState {
 export enum OpsActionType {
   SET_CONTEXT = 'SET_CONTEXT',
   SET_PERMISSIONS = 'SET_PERMISSIONS',
+  // ADD_INSIGHT = 'ADD_INSIGHT',
+  // UPDATE_INSIGHT_STATUS = 'UPDATE_INSIGHT_STATUS',
+  SET_CONVERSATION = "SET_CONVERSATION",
+  CLEAR_CONVERSATION = "CLEAR_CONVERSATION",
   // TOGGLE_OPS_CONSOLE = "TOGGLE_OPS_CONSOLE", // <-- REMOVED (This is in ConfigContext)
   // --- Placeholders for future layers ---
   // SET_CONVERSATION = 'SET_CONVERSATION',
@@ -46,10 +51,10 @@ export type OpsAction =
         entityType?: 'order' | 'customer' | 'product';
       };
     }
-  | {
-      type: OpsActionType.SET_PERMISSIONS;
-      payload: string[];
-    };
+  | { type: OpsActionType.SET_PERMISSIONS; payload: string[] }
+// --- 4. ADD NEW ACTION PAYLOADS ---
+  | { type: OpsActionType.SET_CONVERSATION; payload: KoreConversation | null }
+  | { type: OpsActionType.CLEAR_CONVERSATION };
 // | { type: OpsActionType.SET_CONVERSATION; payload: KoreConversation | null }
 // | { type: OpsActionType.CLEAR_CONVERSATION }
 // | { type: OpsActionType.ADD_INSIGHT; payload: ProactiveInsight }
@@ -63,12 +68,11 @@ export const initialState: OpsContextState = {
   entityType: undefined,
   userPermissions: [],
   // isOpsConsoleOpen: false, // <-- REMOVED
-  // conversation: null,
+  conversation: null,
   // proactiveInsights: [],
 };
 
 // --- REDUCER ---
-
 export const opsReducer = (
   state: OpsContextState,
   action: OpsAction,
@@ -86,7 +90,17 @@ export const opsReducer = (
         ...state,
         userPermissions: action.payload,
       };
-    // <-- REMOVED TOGGLE_OPS_CONSOLE CASE
+    // --- 6. ADD NEW REDUCER CASES ---
+    case OpsActionType.SET_CONVERSATION:
+      return {
+        ...state,
+        conversation: action.payload,
+      };
+    case OpsActionType.CLEAR_CONVERSATION:
+      return {
+        ...state,
+        conversation: null,
+      };
     default:
       return state;
   }
