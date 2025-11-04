@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+//packages/ui/src/components/OpsCommandCenter/index.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, CircularProgress } from '@mui/material';
 import { OpsAction } from './types';
@@ -12,19 +13,36 @@ import { OpsCommandInput } from './OpsCommandInput';
 import { OpsResultsList } from './OpsResultsList';
 import { ConfirmationDialog } from './ConfirmationDialog';
 
+// --- L2 IMPORTS ---
+import { Intent } from './naturalLanguage/types';
+import { parseIntent } from './naturalLanguage/intentParser';
+import { executeNaturalLanguage } from './naturalLanguage/queryExecutor';
+import { InterpretationBanner } from './InterpretationBanner';
+
+// --- Define the Interpretation state type ---
+interface Interpretation {
+  originalQuery: string;
+  interpretedAction: OpsAction | null;
+  intent: Intent;
+  confidence: number;
+}
+
 /**
  * Kore v1.0: OpsCommandCenter
  *
  * This is the main container for the entire Kore co-pilot UI.
  * It connects all the Layer 1 hooks and components.
  */
+
 export const OpsCommandCenter = () => {
-  // --- STATE ---
+  // --- L1 STATE ---
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-
-  // Confirmation dialog state
   const [confirmingAction, setConfirmingAction] = useState<OpsAction | null>(
+    null,
+  );
+  // --- L2 STATE ---
+  const [interpretation, setInterpretation] = useState<Interpretation | null>(
     null,
   );
 
@@ -35,11 +53,52 @@ export const OpsCommandCenter = () => {
   const { context } = useOpsContext();
   const { executeCommand, isExecuting } = useCommandExecution();
 
-  // The "brain" - gets the list of commands based on context and search query
-  const commands = useOpsCommands(searchQuery);
+  // --- L1 HOOK (LOW-CONFIDENCE FALLBACK) ---
+  // This hook now only runs its search logic when there's no interpretation
+  const commands = useOpsCommands(interpretation ? '' : searchQuery);
+
+  // --- L2 "BRAIN" (NEW EFFECT) ---
+  // This effect runs on every keystroke to check for a L2 intent
+  useEffect(() => {
+    // Don't parse empty queries
+    if (searchQuery.trim().length < 3) {
+      setInterpretation(null); // Clear any previous interpretation
+      return;
+    }
+
+    // Call the NLP parser
+    // (We pass 'null' for conversation context for now)
+    const intent = parseIntent(searchQuery, null);
+
+    // Check if confidence is high enough for L2
+    if (intent.confidence > 0.45) {
+      // We have a high-confidence match.
+      // Build the dynamic action (e.g., "Find orders with status...")
+      const interpretedAction = executeNaturalLanguage(intent);
+      setInterpretation({
+        originalQuery: searchQuery,
+        interpretedAction,
+        intent,
+        confidence: intent.confidence,
+      });
+    } else {
+      // Low confidence. Fall back to L1 search.
+      setInterpretation(null);
+    }
+  }, [searchQuery]);
 
   // --- KEYBOARD NAVIGATION & EXECUTION ---
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    // If L2 Banner is showing, "Enter" executes that
+    if (interpretation && interpretation.interpretedAction) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        handleExecute(interpretation.interpretedAction);
+      }
+      return; // Disable ArrowUp/Down when banner is showing
+    }
+
+    // L1 List Navigation
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setSelectedIndex((prev) => (prev + 1) % commands.length);
@@ -56,36 +115,41 @@ export const OpsCommandCenter = () => {
 
   // --- ACTION EXECUTION HANDLER ---
   const handleExecute = (action: OpsAction) => {
-    // Check if the action is 'destructive'
     if (action.category === 'destructive' && action.confirmationMessage) {
-      // Open the confirmation dialog
       setConfirmingAction(action);
     } else {
-      // Execute "safe" or "analytical" actions immediately
-      executeCommand(action, null);
+      executeCommand(action, interpretation ? interpretation.intent : null);
     }
   };
 
   // --- CONFIRMATION DIALOG HANDLERS ---
   const onConfirmExecute = () => {
     if (confirmingAction) {
-      executeCommand(confirmingAction, null);
-      setConfirmingAction(null); // Close dialog
+      executeCommand(
+        confirmingAction,
+        interpretation ? interpretation.intent : null,
+      );
+      setConfirmingAction(null);
     }
   };
 
   const onCancelConfirm = () => {
-    setConfirmingAction(null); // Close dialog
-    inputRef.current?.focus(); // Refocus input
+    setConfirmingAction(null);
+    inputRef.current?.focus();
   };
 
-  // --- EFFECTS ---
+  // --- L2 BANNER CANCEL HANDLER ---
+  const onCancelInterpretation = () => {
+    setInterpretation(null); // Fall back to L1 search list
+    inputRef.current?.focus();
+  };
+
   // Reset selection when search query changes
   useEffect(() => {
     setSelectedIndex(0);
   }, [searchQuery]);
 
-  // Reset search query after successful execution (for rapid-fire)
+  // Reset search query after successful execution
   useEffect(() => {
     if (!isExecuting) {
       setSearchQuery('');
@@ -116,13 +180,23 @@ export const OpsCommandCenter = () => {
         >
           <CircularProgress size={24} />
         </Box>
+      ) : // --- THE CONFIDENCE SPECTRUM ROUTER ---
+      interpretation && interpretation.interpretedAction ? (
+        // L2: High Confidence - Show the Banner
+        <InterpretationBanner
+          interpretation={interpretation}
+          onExecute={() => handleExecute(interpretation.interpretedAction!)}
+          onCancel={onCancelInterpretation}
+        />
       ) : (
+        // L1: Low Confidence - Show the Search List
         <OpsResultsList
           commands={commands}
           selectedIndex={selectedIndex}
           onCommandSelect={handleExecute}
         />
       )}
+      {/* --- END ROUTER --- */}
 
       <ConfirmationDialog
         isOpen={!!confirmingAction}
