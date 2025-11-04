@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 
 // We'll import these from types.ts in a future ticket
-// import { ProactiveInsight, KoreConversation } from 'components/OpsCommandCenter/types';
+//import { ProactiveInsight, KoreConversation } from 'components/OpsCommandCenter/types';
 
 // --- STATE & TYPES ---
 

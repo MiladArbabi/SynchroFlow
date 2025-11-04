@@ -31,3 +31,12 @@ export interface IntentTrainingData {
 export interface TrainingData {
   [intentName: string]: IntentTrainingData;
 }
+
+/**
+ * The structure of Kore's short-term memory (for Layer 2.5)
+ */
+export interface KoreConversation {
+  topic: string; // e.g., 'find-orders'
+  entities: EntityMap;
+  timestamp: number;
+}
