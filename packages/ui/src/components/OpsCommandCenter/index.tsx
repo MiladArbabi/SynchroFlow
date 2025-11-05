@@ -1,7 +1,8 @@
 //packages/ui/src/components/OpsCommandCenter/index.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, CircularProgress } from '@mui/material';
+import { Box, CircularProgress, Alert } from '@mui/material';
 import { OpsAction } from './types';
+import { useHealthContext } from 'contexts/HealthContext';
 import { OpsActionType, useOpsContext } from 'contexts/OpsContext';
 import useConfig from 'hooks/useConfig'; // We need this to read the open state
 
@@ -58,6 +59,7 @@ export const OpsCommandCenter = () => {
   // --- HOOKS ---
   const { state: configState } = useConfig();
   const { context, dispatch } = useOpsContext();
+  const { isKoreHealthy } = useHealthContext();
   const { executeCommand, isExecuting } = useCommandExecution();
 
   // --- 2. DEBOUNCE THE SEARCH QUERY ---
@@ -73,6 +75,12 @@ export const OpsCommandCenter = () => {
   // --- L2 "BRAIN" ---
   // This effect runs on every keystroke to check for a L2 intent
   useEffect(() => {
+    //  --- DEGRADATION CHECK ---
+    // If the API is unhealthy, do NOT attempt to run L2 NLP.
+    if (!isKoreHealthy) {
+      return;
+    }
+
     // Don't parse empty queries
     if (debouncedSearchQuery.trim().length < 3) {
       setInterpretation(null); // Clear any previous interpretation
@@ -105,7 +113,7 @@ export const OpsCommandCenter = () => {
       setInterpretation(null);
       setClarificationOptions(null);
     }
-  }, [debouncedSearchQuery, searchQuery]);
+  }, [debouncedSearchQuery, isKoreHealthy, searchQuery]);
 
   // --- KEYBOARD NAVIGATION & EXECUTION ---
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -198,6 +206,12 @@ export const OpsCommandCenter = () => {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* 5. --- RENDER DEGRADATION WARNING --- */}
+      {!isKoreHealthy && (
+        <Alert severity="warning" sx={{ borderRadius: 0 }}>
+          Kore is in degraded mode. Search is limited.
+        </Alert>
+      )}
       <OpsCommandInput
         ref={inputRef}
         searchQuery={searchQuery}

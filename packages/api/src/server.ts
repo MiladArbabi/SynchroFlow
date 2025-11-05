@@ -209,6 +209,26 @@ app.get('/api/v1/kore/subscribe', (req, res) => {
   });
 });
 
+// --- KORE HEALTH CHECK ---
+app.get('/api/v1/kore/health', async (req, res) => {
+  try {
+    // 1. Check database connection
+    await db.raw('SELECT 11 AS result');
+
+    // 2. Add more checks later (e.g., SSE emitter health)
+    
+    res.status(200).json({
+      status: 'healthy',
+      services: {
+        database: 'connected',
+      },
+    });
+  } catch (error: any) {
+    console.error('[Kore Health] Health check failed:', error.message);
+    res.status(503).json({ status: 'unhealthy', services: { database: 'disconnected' } });
+  }
+});
+
 app.post('/v1/inventory', async (req, res) => {
   try {
     // Separate the incoming 'quantity' from the rest of the request body
