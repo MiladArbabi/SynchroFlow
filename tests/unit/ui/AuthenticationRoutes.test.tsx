@@ -5,8 +5,8 @@ import App from 'App'; // Import the main App component using alias
 import { useAuth } from 'contexts/AuthContext'; // Import useAuth to mock
 
 // Mock child components simplified for routing test
-jest.mock('pages/authentication/Login', () => () => <div>Login Page Content</div>);
-jest.mock('pages/authentication/Register', () => () => <div>Register Page Content</div>);
+jest.mock('pages/authentication/LoginPage', () => () => <div>Login Page Content</div>);
+jest.mock('pages/authentication/RegisterPage', () => () => <div>Register Page Content</div>);
 // Add mocks for other pages if App tries to render them based on routes
 jest.mock('pages/DashboardPage', () => ({ // <-- FIX: Mock the NAMED export
   DashboardPage: () => <div>Dashboard Page Content</div>

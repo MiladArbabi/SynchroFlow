@@ -17,7 +17,8 @@ export interface Intent {
   confidence: number;
   entities: EntityMap;
   // For Layer 2.75
-  clarificationOptions?: any[]; 
+  clarificationOptions?: ClarificationOption[];
+  clarificationReason?: 'ambiguous-entities' | 'multiple-intents' | 'low-confidence';
 }
 
 /**
@@ -39,4 +40,12 @@ export interface KoreConversation {
   topic: string; // e.g., 'find-orders'
   entities: EntityMap;
   timestamp: number;
+}
+
+/**
+ * The structure for a single clarification option
+ */
+export interface ClarificationOption {
+  label: string; // The text shown to the user (e.g., "Filter your last search for 'unfulfilled'?")
+  intent: Intent; // The *actual* intent Kore would run if this is selected
 }
