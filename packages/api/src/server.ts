@@ -5,6 +5,8 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
 import db from './db';
+
+import { federatedSearch } from './services/koreSearch';
 import { opsIntelEmitter } from './services/opsIntel/emitter';
 import connectPgSimple from 'connect-pg-simple';
 import { 
@@ -77,19 +79,7 @@ app.use(
   })
 );
 
-// --- THE DUMB HEALTH CHECK ---
-// This stops the app from crashing on the health check.
-app.get('/health', (req, res) => {
-  console.log('THE DUMB HEALTH CHECK IN API/SERVER');
-  res.status(200).send({ status: 'ok' });
-});
-
 const port = Number(process.env.PORT) || 8080; 
-
-// --- Routes ---
-app.get('/', (req, res) => {
-  res.send('SynchroFlow API is running!');
-});
 
 // Integrate the new layout routes
 app.use("/api/v1/layouts", layoutRoutes);
@@ -98,6 +88,30 @@ app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
 app.use("/api/v1/auth", authRoutes);
+
+// --- Routes ---
+app.get('/', (req, res) => {
+  res.send('SynchroFlow API is running!');
+});
+
+// --- THE DUMB HEALTH CHECK ---
+// This stops the app from crashing on the health check.
+app.get('/health', (req, res) => {
+  console.log('THE DUMB HEALTH CHECK IN API/SERVER');
+  res.status(200).send({ status: 'ok' });
+});
+
+app.get('/api/v1/kore/search', async (req, res) => {
+  const query = req.query.q as string;
+
+  if (!query) {
+    return res.status(400).json({ error: 'Missing query parameter "q"' });
+  }
+
+  // Call our new search service
+  const results = await federatedSearch(query);
+  res.status(200).json(results);
+});
 
 app.get('/v1/inventory/:sku', (req, res) => {
   const { sku } = req.params;
