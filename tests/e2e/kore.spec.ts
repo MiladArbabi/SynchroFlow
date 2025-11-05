@@ -32,18 +32,19 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     const modifier = isMac ? 'Meta' : 'Control';
     await page.locator('body').click();
     await page.keyboard.press(`${modifier}+j`);
-    await expect(page.getByTestId('kore-command-input')).toBeVisible();
 
-    // 2. Type a *low confidence* query that will NOT match L2
+    // 2. Assert that the console is "clean" and L1 results are NOT visible yet
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
+    await expect(page.getByText('Go to Dashboard')).not.toBeVisible();
+
+    // 3. Type a *low confidence* query that will NOT match L2
     await page.getByTestId('kore-command-input').fill('dash');
 
-    // 3. --- THIS IS THE FIX ---
-    // We MUST wait for the UI to react to the 'fill' command.
+    // 4. We MUST wait for the UI to react to the 'fill' command.
     // We'll wait for the "Go to Dashboard" text to appear.
-    // This makes the test robust.
     await expect(page.getByText('Go to Dashboard')).toBeVisible();
 
-    // 4. And we assert the L2 banner is NOT visible
+    // 5s. And we assert the L2 banner is NOT visible
     await expect(page.getByText('Understood:')).not.toBeVisible();
   });
 
