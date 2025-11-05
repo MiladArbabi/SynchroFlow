@@ -5,8 +5,10 @@ import React, {
   useReducer,
   ReactNode,
   useMemo,
+  useEffect
 } from 'react';
 import { KoreConversation } from 'components/OpsCommandCenter/naturalLanguage/types';
+import { ProactiveInsight } from 'components/OpsCommandCenter/types';
 
 // We'll import these from types.ts in a future ticket
 //import { ProactiveInsight, KoreConversation } from 'components/OpsCommandCenter/types';
@@ -20,25 +22,21 @@ export interface OpsContextState {
   entityId?: string;
   entityType?: 'order' | 'customer' | 'product';
   userPermissions: string[];
-  // --- 2. ADD conversation TO STATE ---
+  // --- ADD conversation TO STATE ---
   conversation: KoreConversation | null;
-  // proactiveInsights: ProactiveInsight[];
+  proactiveInsights: ProactiveInsight[];
 }
 
 // All possible actions our reducer can handle
 export enum OpsActionType {
   SET_CONTEXT = 'SET_CONTEXT',
   SET_PERMISSIONS = 'SET_PERMISSIONS',
-  // ADD_INSIGHT = 'ADD_INSIGHT',
-  // UPDATE_INSIGHT_STATUS = 'UPDATE_INSIGHT_STATUS',
+  // --- ADD NEW ACTION TYPES ---
   SET_CONVERSATION = "SET_CONVERSATION",
   CLEAR_CONVERSATION = "CLEAR_CONVERSATION",
-  // TOGGLE_OPS_CONSOLE = "TOGGLE_OPS_CONSOLE", // <-- REMOVED (This is in ConfigContext)
-  // --- Placeholders for future layers ---
-  // SET_CONVERSATION = 'SET_CONVERSATION',
-  // CLEAR_CONVERSATION = 'CLEAR_CONVERSATION',
-  // ADD_INSIGHT = 'ADD_INSIGHT',
-  // UPDATE_INSIGHT_STATUS = 'UPDATE_INSIGHT_STATUS',
+  // --- ADD NEW INSIGHT ACTIONS ---
+  ADD_INSIGHT = 'ADD_INSIGHT',
+  UPDATE_INSIGHT_STATUS = 'UPDATE_INSIGHT_STATUS',
 }
 
 // The action payload structure
@@ -54,22 +52,19 @@ export type OpsAction =
   | { type: OpsActionType.SET_PERMISSIONS; payload: string[] }
 // --- 4. ADD NEW ACTION PAYLOADS ---
   | { type: OpsActionType.SET_CONVERSATION; payload: KoreConversation | null }
-  | { type: OpsActionType.CLEAR_CONVERSATION };
-// | { type: OpsActionType.SET_CONVERSATION; payload: KoreConversation | null }
-// | { type: OpsActionType.CLEAR_CONVERSATION }
-// | { type: OpsActionType.ADD_INSIGHT; payload: ProactiveInsight }
-// | { type: OpsActionType.UPDATE_INSIGHT_STATUS; payload: { id: string; status: 'viewed' | 'acted-upon' | 'dismissed' } };
+  | { type: OpsActionType.CLEAR_CONVERSATION }
+  // --- 5. ADD NEW INSIGHT PAYLOADS ---
+  | { type: OpsActionType.ADD_INSIGHT; payload: ProactiveInsight }
+  | { type: OpsActionType.UPDATE_INSIGHT_STATUS; payload: { id: string; status: 'viewed' | 'acted-upon' | 'dismissed' } };
 
-// --- INITIAL STATE ---
 
 export const initialState: OpsContextState = {
   page: 'dashboard', // Default page context
   entityId: undefined,
   entityType: undefined,
   userPermissions: [],
-  // isOpsConsoleOpen: false, // <-- REMOVED
   conversation: null,
-  // proactiveInsights: [],
+  proactiveInsights: [],
 };
 
 // --- REDUCER ---
@@ -96,10 +91,29 @@ export const opsReducer = (
         ...state,
         conversation: action.payload,
       };
-    case OpsActionType.CLEAR_CONVERSATION:
+      case OpsActionType.CLEAR_CONVERSATION:
       return {
         ...state,
         conversation: null,
+      };
+    case OpsActionType.ADD_INSIGHT:
+      // Prevent duplicates
+      if (state.proactiveInsights.find(i => i.id === action.payload.id)) {
+        return state;
+      }
+      return {
+        ...state,
+        // Add new insights to the top
+        proactiveInsights: [action.payload, ...state.proactiveInsights],
+      };
+    case OpsActionType.UPDATE_INSIGHT_STATUS:
+      return {
+        ...state,
+        proactiveInsights: state.proactiveInsights.map(insight =>
+          insight.id === action.payload.id
+            ? { ...insight, status: action.payload.status }
+            : insight
+        )
       };
     default:
       return state;
@@ -120,6 +134,40 @@ export const OpsContext = createContext<IOpsContext>({
 
 export const OpsContextProvider = ({ children }: { children: ReactNode }) => {
   const [context, dispatch] = useReducer(opsReducer, initialState);
+
+  // --- 8. ADD THE "KORE COMLINK" (SSE LISTENER) ---
+  useEffect(() => {
+    console.log('[Kore Comlink] Attempting to connect to SSE...');
+    // TODO: Add auth token to this URL
+    const eventSource = new EventSource('/api/v1/kore/subscribe');
+
+    eventSource.onopen = () => {
+      console.log('[Kore Comlink] SSE Connection Established.');
+    };
+
+    // Listen for our custom "insight" event
+    eventSource.addEventListener('insight', (event) => {
+      try {
+        const insight = JSON.parse(event.data) as ProactiveInsight;
+        console.log(`[Kore Comlink] Received insight: ${insight.title}`);
+        dispatch({ type: OpsActionType.ADD_INSIGHT, payload: insight });
+      } catch (error) {
+        console.error('[Kore Comlink] Failed to parse insight event', error);
+      }
+    });
+
+    eventSource.onerror = (err) => {
+      console.error('[Kore Comlink] SSE Error:', err);
+      eventSource.close();
+      // We can add retry logic here later
+    };
+
+    // Clean up the connection on unmount
+    return () => {
+      console.log('[Kore Comlink] Closing SSE Connection.');
+      eventSource.close();
+    };
+  }, []); // Runs once on app load
 
   // Memoize the context value to prevent unnecessary re-renders
   const value = useMemo(() => ({ context, dispatch }), [context]);

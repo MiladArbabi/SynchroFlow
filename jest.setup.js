@@ -6,7 +6,14 @@ global.TextEncoder = require('util').TextEncoder;
 global.TextDecoder = require('util').TextDecoder;
 global.ResizeObserver = require('resize-observer-polyfill');
 
-// --- ADD THIS MOCK ---
+// Mock EventSource for JSDOM
+global.EventSource = jest.fn(() => ({
+  onopen: jest.fn(),
+  addEventListener: jest.fn(),
+  onerror: jest.fn(),
+  close: jest.fn(),
+}));
+
 // Mock Vite's import.meta.env
 Object.defineProperty(global, 'import.meta', {
   value: {
@@ -17,7 +24,6 @@ Object.defineProperty(global, 'import.meta', {
   },
   writable: true 
 });
-// --- END ADDITION ---
 
 jest.spyOn(console, 'error').mockImplementation(() => {});
 

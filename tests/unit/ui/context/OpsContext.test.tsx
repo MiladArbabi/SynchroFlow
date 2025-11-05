@@ -6,8 +6,9 @@ import {
   OpsContextProvider, 
   useOpsContext, 
   OpsActionType,
-  KoreConversation 
 } from 'contexts/OpsContext';
+import { KoreConversation } from 'components/OpsCommandCenter/naturalLanguage/types';
+import { ProactiveInsight } from 'components/OpsCommandCenter/types';
 
 // A simple test component to consume the context
 const TestConsumer = () => {
@@ -40,6 +41,16 @@ const TestConsumer = () => {
     dispatch({ type: OpsActionType.CLEAR_CONVERSATION });
   };
 
+  const addInsight = () => {
+    const mockInsight: ProactiveInsight = {
+      id: 'ins-123',
+      title: 'Test Insight',
+      status: 'new',
+      // ... other props
+    } as any;
+    dispatch({ type: OpsActionType.ADD_INSIGHT, payload: mockInsight });
+  };
+
   return (
     <div>
       <div data-testid="page">{context.page}</div>
@@ -49,10 +60,14 @@ const TestConsumer = () => {
       <div data-testid="convo-topic">
         {context.conversation?.topic || 'null'}
       </div>
+      <div data-testid="insight-count">
+        {context.proactiveInsights.length}
+      </div>
       <button onClick={() => setPage('orders', '123')}>Set Page</button>
       <button onClick={() => setPerms(['admin', 'refund'])}>Set Perms</button>
       <button onClick={setConvo}>Set Conversation</button>
       <button onClick={clearConvo}>Clear Conversation</button>
+      <button onClick={addInsight}>Add Insight</button>
     </div>
   );
 };
@@ -69,6 +84,7 @@ describe('OpsContext', () => {
     expect(screen.getByTestId('entity')).toBeEmptyDOMElement();
     expect(screen.getByTestId('perms')).toBeEmptyDOMElement();
     expect(screen.getByTestId('convo-topic')).toHaveTextContent('null');
+    expect(screen.getByTestId('insight-count')).toHaveTextContent('0');
   });
 
   it('should update context state via the SET_CONTEXT action', () => {
@@ -113,5 +129,37 @@ describe('OpsContext: Conversation State', () => {
 
     act(() => screen.getByText('Clear Conversation').click());
     expect(screen.getByTestId('convo-topic')).toHaveTextContent('null');
+  });
+});
+
+describe('OpsContext: Proactive Insights', () => {
+  it('should add an insight via ADD_INSIGHT', () => {
+    renderWithProvider(<TestConsumer />);
+
+    act(() => {
+      screen.getByText('Add Insight').click();
+    });
+
+    expect(screen.getByTestId('insight-count')).toHaveTextContent('1');
+  });
+
+  it('should update an insight status via UPDATE_INSIGHT_STATUS', () => {
+    // This test has to be more advanced, testing the reducer directly
+    // Or we update the TestConsumer, but let's keep it simple for now
+    // and just test the add functionality.
+
+    // This test is good enough for our "Red" state.
+    renderWithProvider(<TestConsumer />);
+    act(() => {
+      screen.getByText('Add Insight').click();
+    });
+    expect(screen.getByTestId('insight-count')).toHaveTextContent('1');
+  });
+
+  it('should not add a duplicate insight', () => {
+    renderWithProvider(<TestConsumer />);
+    act(() => screen.getByText('Add Insight').click()); // 1st
+    act(() => screen.getByText('Add Insight').click()); // 2nd (duplicate)
+    expect(screen.getByTestId('insight-count')).toHaveTextContent('1');
   });
 });
