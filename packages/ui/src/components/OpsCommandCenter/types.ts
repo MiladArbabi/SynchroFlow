@@ -60,6 +60,8 @@ export interface SuggestedAction {
  * receive from the backend SSE "Kore Comlink".
  */
 export interface ProactiveInsight {
+  [x: string]: any;
+  suggestedActions: any;
   id: string;
   type: 'alert' | 'recommendation' | 'opportunity' | 'celebration';
   title: string;
