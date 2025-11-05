@@ -175,4 +175,36 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     // 3. (Bonus) Check that the insight is in the list
     await expect(page.getByText('Stale Order Detected')).toBeVisible();
   });
+
+  test('should gracefully degrade to L1 search when API health check fails', async ({ page }) => {
+    // Mock the health check to return a 503 "unhealthy" status
+    await page.route('/api/v1/kore/health', async (route) => {
+      await route.fulfill({
+        status: 503,
+        json: { status: 'unhealthy', services: { database: 'disconnected' } },
+      });
+    });
+
+    await loginAs(page, 'default-user');
+    await page.waitForURL(/.*dashboard/);
+
+    // 1. Open panel
+    const isMac = process.platform === 'darwin';
+    const modifier = isMac ? 'Meta' : 'Control';
+    await page.locator('body').click();
+    await page.keyboard.press(`${modifier}+j`);
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
+
+    // 2. This is the "Red" step.
+    // We expect a "degraded" warning message to be visible
+    await expect(
+      page.getByText('Kore is in degraded mode. Search is limited.')
+    ).toBeVisible();
+
+    // 3. Type a low confidence query
+    await page.getByTestId('kore-command-input').fill('dash');
+
+    // 4. Assert that the L1 search *still works*
+    await expect(page.getByText('Go to Dashboard')).toBeVisible();
+  });
 });

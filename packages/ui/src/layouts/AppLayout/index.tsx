@@ -22,6 +22,7 @@ import useConfig from 'hooks/useConfig';
 import { OpsContextProvider } from 'contexts/OpsContext';
 import { OpsCommandCenter } from 'components/OpsCommandCenter';
 import { ToastProvider } from 'contexts/ToastContext';
+import { HealthProvider } from "contexts/HealthContext";
 import { ToastContainer } from 'components/ToastContainer';
 
 // Define simple styles for the handles
@@ -175,113 +176,115 @@ const AppLayout = ({
   // --- END OPS CONSOLE EFFECT ---
 
   return (
-    <ToastProvider>
-      <OpsContextProvider>
-        <Box sx={{ width: "100vw", height: "100vh" }}> 
-          <PanelGroup direction="horizontal">
-            {/* Sidenav Panel */}
-            <Panel
-              ref={sidenavPanelRef} // Assign the ref
-              defaultSize={SIDENAV_DEFAULT_SIZE}
-              minSize={SIDENAV_MIN_SIZE}
-              maxSize={SIDENAV_MAX_SIZE}
-              collapsible={true} // Ensure it's collapsible
-              // We can optionally set collapsedSize if needed, but minSize might be sufficient
-              onCollapse={() => dispatch({ type: 'SET_MINI_DRAWER', payload: true })} // <-- 2. Sync drag-to-collapse
-              onExpand={() => dispatch({ type: 'SET_MINI_DRAWER', payload: false })}   // <-- 3. Sync drag-to-expand
-              collapsedSize={SIDENAV_MIN_SIZE} // Explicitly set collapsed size
-              order={1} // Define order for layout
-            >
-              {/* Use overflow: hidden and flex column for content */}
-              <Box sx={{ height: "100%", borderRight: "1px solid #e0e0e0", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <Sidenav
-                  brandName="SynchroFlow"
-                  routes={routes}
-                  isSidenavOpen={isSidenavOpen} // This is for the old menu
-                  isConnected={isConnected} // <-- Pass connection status
-                  onOpenModal={() => setIsConnectModalOpen(true)}
-                />
-              </Box>
-            </Panel>
-            <PanelResizeHandle style={handleStyle} />
-
-            {/* Main Content Panel */}
-            <Panel order={2}> {/* Define order */}
-              <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-                {/* Topnavbar Area */}
-                <Box sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
-                  {/* Pass necessary props, but NOT the toggle handler */}
-                  <TopnavbarContent
-                    // handleSidenavToggle={onToggleSidenav} // REMOVED
-                    isEditing={isEditing}
-                    onEditToggle={onEditToggle}
-                    onAddWidget={onAddWidget}
+    <HealthProvider>
+      <ToastProvider>
+        <OpsContextProvider>
+          <Box sx={{ width: "100vw", height: "100vh" }}> 
+            <PanelGroup direction="horizontal">
+              {/* Sidenav Panel */}
+              <Panel
+                ref={sidenavPanelRef} // Assign the ref
+                defaultSize={SIDENAV_DEFAULT_SIZE}
+                minSize={SIDENAV_MIN_SIZE}
+                maxSize={SIDENAV_MAX_SIZE}
+                collapsible={true} // Ensure it's collapsible
+                // We can optionally set collapsedSize if needed, but minSize might be sufficient
+                onCollapse={() => dispatch({ type: 'SET_MINI_DRAWER', payload: true })} // <-- 2. Sync drag-to-collapse
+                onExpand={() => dispatch({ type: 'SET_MINI_DRAWER', payload: false })}   // <-- 3. Sync drag-to-expand
+                collapsedSize={SIDENAV_MIN_SIZE} // Explicitly set collapsed size
+                order={1} // Define order for layout
+              >
+                {/* Use overflow: hidden and flex column for content */}
+                <Box sx={{ height: "100%", borderRight: "1px solid #e0e0e0", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Sidenav
+                    brandName="SynchroFlow"
+                    routes={routes}
+                    isSidenavOpen={isSidenavOpen} // This is for the old menu
+                    isConnected={isConnected} // <-- Pass connection status
+                    onOpenModal={() => setIsConnectModalOpen(true)}
                   />
                 </Box>
-
-                {/* Resizable area for Workspace and Ops Console */}
-                <Box sx={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
-                  <PanelGroup direction="vertical">
-                    {/* Workspace Panel (Outlet) */}
-                    <Panel defaultSize={75} minSize={50} order={1}> {/* Define order */}
-                      <Box sx={{ height: "100%", width: "100%", overflowY: "auto", position: "relative" }}>
-                        {children}
-                      </Box>
-                    </Panel>
-
-                    <PanelResizeHandle style={verticalHandleStyle} />
-
-                    {/* Ops Console Panel */}
-                      <Panel
-                        ref={opsPanelRef} // <-- 6. ASSIGN REF
-                        defaultSize={0} // <-- 7. DEFAULT TO 0 (collapsed)
-                        minSize={10}
-                        collapsible={true}
-                        collapsedSize={0} // <-- 8. EXPLICITLY 0
-                        onCollapse={() => {
-                          // 9. Sync state if user manually collapses
-                          if (state.isOpsConsoleOpen) {
-                            dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
-                          }
-                        }}
-                        onExpand={() => {
-                          // 10. Sync state if user manually expands
-                          if (!state.isOpsConsoleOpen) {
-                            dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
-                          }
-                        }}
-                        order={2}
-                      >
-                      <Box 
-                        sx={{ 
-                          height: '100%', 
-                          borderTop: state.isOpsConsoleOpen ? '1px solid #e0e0e0' : 'none' 
-                        }}
-                        data-testid="ops-command-center-panel"
-                      >
-                        {state.isOpsConsoleOpen && <OpsCommandCenter />}
-                      </Box>
-                      </Panel>
-                    </PanelGroup>
-                  </Box>
-                </Box>
               </Panel>
-            </PanelGroup>
-            <Customization />
+              <PanelResizeHandle style={handleStyle} />
 
-          {/* --- RENDER MODALS AT LAYOUT LEVEL --- */}
-          <ConnectStoreModal
-            isOpen={isConnectModalOpen}
-            onClose={handleModalClose}
-          />
-          <DataSyncingModal
-            open={isSyncingModalOpen}
-            onClose={handleSyncModalClose}
-          />
+              {/* Main Content Panel */}
+              <Panel order={2}> {/* Define order */}
+                <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                  {/* Topnavbar Area */}
+                  <Box sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
+                    {/* Pass necessary props, but NOT the toggle handler */}
+                    <TopnavbarContent
+                      // handleSidenavToggle={onToggleSidenav} // REMOVED
+                      isEditing={isEditing}
+                      onEditToggle={onEditToggle}
+                      onAddWidget={onAddWidget}
+                    />
+                  </Box>
 
-        </Box>
-      </OpsContextProvider>
-    </ToastProvider>  
+                  {/* Resizable area for Workspace and Ops Console */}
+                  <Box sx={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
+                    <PanelGroup direction="vertical">
+                      {/* Workspace Panel (Outlet) */}
+                      <Panel defaultSize={75} minSize={50} order={1}> {/* Define order */}
+                        <Box sx={{ height: "100%", width: "100%", overflowY: "auto", position: "relative" }}>
+                          {children}
+                        </Box>
+                      </Panel>
+
+                      <PanelResizeHandle style={verticalHandleStyle} />
+
+                      {/* Ops Console Panel */}
+                        <Panel
+                          ref={opsPanelRef} // <-- 6. ASSIGN REF
+                          defaultSize={0} // <-- 7. DEFAULT TO 0 (collapsed)
+                          minSize={10}
+                          collapsible={true}
+                          collapsedSize={0} // <-- 8. EXPLICITLY 0
+                          onCollapse={() => {
+                            // 9. Sync state if user manually collapses
+                            if (state.isOpsConsoleOpen) {
+                              dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
+                            }
+                          }}
+                          onExpand={() => {
+                            // 10. Sync state if user manually expands
+                            if (!state.isOpsConsoleOpen) {
+                              dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
+                            }
+                          }}
+                          order={2}
+                        >
+                        <Box 
+                          sx={{ 
+                            height: '100%', 
+                            borderTop: state.isOpsConsoleOpen ? '1px solid #e0e0e0' : 'none' 
+                          }}
+                          data-testid="ops-command-center-panel"
+                        >
+                          {state.isOpsConsoleOpen && <OpsCommandCenter />}
+                        </Box>
+                        </Panel>
+                      </PanelGroup>
+                    </Box>
+                  </Box>
+                </Panel>
+              </PanelGroup>
+              <Customization />
+
+            {/* --- RENDER MODALS AT LAYOUT LEVEL --- */}
+            <ConnectStoreModal
+              isOpen={isConnectModalOpen}
+              onClose={handleModalClose}
+            />
+            <DataSyncingModal
+              open={isSyncingModalOpen}
+              onClose={handleSyncModalClose}
+            />
+
+          </Box>
+        </OpsContextProvider>
+      </ToastProvider>
+    </HealthProvider>    
   );
 };
 
