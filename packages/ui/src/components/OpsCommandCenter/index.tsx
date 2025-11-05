@@ -239,15 +239,16 @@ export const OpsCommandCenter = () => {
             dispatch({ type: OpsActionType.UPDATE_INSIGHT_STATUS, payload: { id: insightId, status: 'dismissed' } })
           }
         />
-      ) : (
-        // L1: Low Confidence - Show the Search List
+      ) : searchQuery.length > 0 ? (
         <OpsResultsList
           commands={commands}
           selectedIndex={selectedIndex}
           onCommandSelect={handleExecute}
         />
+        ) : (
+        // L0: Idle + Clean - Show nothing (or a "welcome" message later)
+        <Box sx={{ flexGrow: 1 }} /> // Render an empty box
       )}
-      {/* --- END ROUTER --- */}
 
       <ConfirmationDialog
         isOpen={!!confirmingAction}
