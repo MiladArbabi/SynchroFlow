@@ -1,6 +1,7 @@
 //packages/api/src/services/opsIntel/index.ts
 
 import { ProactiveInsight } from "./types";
+import { opsIntelEmitter } from "./emitter";
 /**
  * A BusinessRule defines a single piece of proactive logic.
  * - 'schedule' is a simple cron-like check (e.g., 'every 1 minute').
@@ -69,7 +70,8 @@ export class OpsIntelEngine {
         if (insight) {
           // In the next issues, we will push this insight
           // to the SSE stream ("Kore Comlink")
-          console.log(`[OpsIntelEngine] Found insight: ${insight.title}`);
+          // --- USE THE EMITTER ---
+          opsIntelEmitter.emit('insight', insight);
         }
       }, intervalMs);
 
