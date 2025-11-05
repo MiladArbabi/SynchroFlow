@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
 import db from './db';
+import { opsIntelEmitter } from './services/opsIntel/emitter';
 import connectPgSimple from 'connect-pg-simple';
 import { 
   getDemandForecastForSku, 
@@ -165,6 +166,33 @@ app.get('/api/v1/mappings', async (req, res) => {
       res.status(500).json({ error: 'An unknown database error occurred' });
     }
   }
+});
+
+// --- SSE ENDPOINT ---
+app.get('/api/v1/kore/subscribe', (req, res) => {
+  // Set headers for Server-Sent Events
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders(); // Send headers immediately
+
+  // The handler function that sends data to the client
+  const sendInsight = (insight: any) => {
+    res.write(`event: insight\n`);
+    res.write(`data: ${JSON.stringify(insight)}\n\n`);
+  };
+
+  // Add this client to the emitter's listener pool
+  opsIntelEmitter.on('insight', sendInsight);
+
+  // Send a simple "connected" message
+  res.write('data: {"type":"connection_established"}\n\n');
+
+  // Remove the listener when the client disconnects
+  req.on('close', () => {
+    opsIntelEmitter.off('insight', sendInsight);
+    res.end();
+  });
 });
 
 app.post('/v1/inventory', async (req, res) => {
