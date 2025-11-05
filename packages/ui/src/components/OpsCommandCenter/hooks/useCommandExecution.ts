@@ -2,9 +2,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from 'contexts/ToastContext';
-import { useOpsContext } from 'contexts/OpsContext';
+import { OpsActionType, useOpsContext } from 'contexts/OpsContext'; // Import Action Type
 import { OpsAction, CommandResult } from 'components/OpsCommandCenter/types';
-// import { Intent } from 'components/OpsCommandCenter/naturalLanguage/types'; // <-- 1. COMMENT OUT
+import { Intent } from 'components/OpsCommandCenter/naturalLanguage/types'; // Import Intent
 
 /**
  * A hook to safely execute Kore OpsActions.
@@ -13,13 +13,12 @@ import { OpsAction, CommandResult } from 'components/OpsCommandCenter/types';
 export const useCommandExecution = () => {
   const [isExecuting, setIsExecuting] = useState(false);
   const { show: showToast } = useToast();
-  const { context } = useOpsContext();
+  const { context, dispatch } = useOpsContext(); // Get dispatch
   const navigate = useNavigate();
 
   const executeCommand = async (
     action: OpsAction,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    intent: any, // <-- 2. SET TO 'any' FOR NOW (was Intent | null)
+    intent: Intent | null, // Use the correct type
   ): Promise<CommandResult> => {
     setIsExecuting(true);
 
@@ -41,10 +40,24 @@ export const useCommandExecution = () => {
       // 3. Show Success Feedback
       showToast(result.message, 'success');
       setIsExecuting(false);
+
+      // 4. SAVE TO CONVERSATION MEMORY (NEW)
+      // If this was a high-confidence NLP action (not null and not 'search')
+      if (intent && intent.name !== 'search' && intent.confidence > 0.4) {
+        dispatch({
+          type: OpsActionType.SET_CONVERSATION,
+          payload: {
+            topic: intent.name,
+            entities: intent.entities,
+            timestamp: Date.now(),
+          },
+        });
+      }
+
       return result;
 
     } catch (error: any) {
-      // 4. Show Error Feedback
+      // 5. Show Error Feedback
       const errorMessage = error.message || 'An unknown error occurred';
       showToast(errorMessage, 'error');
       setIsExecuting(false);
