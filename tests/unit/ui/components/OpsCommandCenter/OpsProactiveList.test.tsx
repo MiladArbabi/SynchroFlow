@@ -37,6 +37,18 @@ const mockInsights: ProactiveInsight[] = [
     actionPayload: [],
     suggestedActions: [],
   },
+  {
+    id: 'ins-789',
+    type: 'recommendation',
+    title: 'Dismissed Insight',
+    message: 'This should not be visible.',
+    urgency: 'low',
+    timestamp: Date.now(),
+    source: 'inventory',
+    status: 'dismissed', // <-- This one is dismissed
+    actionPayload: [],
+    suggestedActions: [],
+  }
 ];
 
 const mockOnActionClick = jest.fn();
@@ -101,5 +113,20 @@ describe('OpsProactiveList', () => {
     // Verify the callback was called with the correct insight ID
     expect(mockOnDismiss).toHaveBeenCalledTimes(1);
     expect(mockOnDismiss).toHaveBeenCalledWith('ins-123');
+  });
+
+  it('should not render dismissed or acted-upon insights', () => {
+    render(
+      <OpsProactiveList
+        insights={mockInsights} // mockInsights now contains a 'dismissed' one
+        onActionClick={mockOnActionClick}
+        onDismiss={mockOnDismiss}
+      />
+    );
+
+    // Assert the 'new' insights ARE visible
+    expect(screen.getByText('Stale Order Detected')).toBeInTheDocument();
+    // Assert the 'dismissed' insight is NOT visible
+    expect(screen.queryByText('Dismissed Insight')).not.toBeInTheDocument();
   });
 });
