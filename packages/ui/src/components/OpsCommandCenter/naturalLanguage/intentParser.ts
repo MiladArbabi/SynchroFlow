@@ -40,6 +40,14 @@ const isResetQuery = (query: string): boolean => {
   return resetPhrases.includes(lowerQuery);
 };
 
+
+/**
+ * Merges new entities into old ones, overriding any existing keys.
+ */
+const mergeEntities = (oldEntities: EntityMap, newEntities: EntityMap): EntityMap => {
+  return { ...oldEntities, ...newEntities };
+};
+
 /**
  * Finds the best matching intent from our training data.
  * @param query The user's search query
@@ -100,6 +108,7 @@ export const parseIntent = (
   query: string,
   conversation: KoreConversation | null, // We'll use this in Layer 2.5
 ): Intent => {
+  const lowerQuery = query.toLowerCase();
 
   // --- 1. CHECK FOR RESET ---
   // Always check for a reset command first.
@@ -110,13 +119,49 @@ export const parseIntent = (
       entities: {},
     };
   }
-  // 1. Find the best matching intent (the "verb")
+
+  // --- 2. CHECK FOR A NEW HIGH-CONFIDENCE INTENT ---
+  // We check for a *new* command before checking for a follow-up.
+  // This allows "find customer" to override a "find-orders" conversation.
   const bestIntent = findBestIntent(query);
 
-  if (bestIntent) {
-    // 2. If we found an intent, extract the "nouns"
+  if (bestIntent && bestIntent.confidence === 1.0) {
     const entities = extractEntities(query, bestIntent.entitiesToFind);
-    
+    return {
+      name: bestIntent.name,
+      confidence: 1.0,
+      entities: entities,
+    };
+  }
+
+  // --- 3. CHECK FOR A FOLLOW-UP ---
+  // If it's not a reset and not a new high-confidence command,
+  // check if it's a follow-up to the existing conversation.
+  if (conversation) {
+    // Extract any *new* entities from the query
+    // We must check for *all* known entity types.
+    const allEntityTypes = [
+      'status', 'date', 'customer', 'product', 'orderId',
+      'amount', 'reason', 'threshold', 'customerName',
+      'email', 'phone', 'metrics'
+    ];
+    const newEntities = extractEntities(query, allEntityTypes);
+
+    // If we found new entities, assume it's a follow-up
+    if (Object.keys(newEntities).length > 0) {
+      return {
+        name: conversation.topic, // Use the *old* topic
+        confidence: 0.9, // High-confidence follow-up
+        entities: mergeEntities(conversation.entities, newEntities),
+      };
+    }
+  }
+
+  // --- 4. CHECK FOR A REGULAR (NON-EXACT) NEW INTENT ---
+  // This is the original logic.
+  // This must come *after* the follow-up check.
+  if (bestIntent) {
+    const entities = extractEntities(query, bestIntent.entitiesToFind);
     return {
       name: bestIntent.name,
       confidence: bestIntent.confidence,
@@ -124,7 +169,6 @@ export const parseIntent = (
     };
   }
 
-  // 3. Fallback: If no intent is found, treat it as a Layer 1 "search"
   return {
     name: 'search',
     confidence: 0.1, // Very low confidence
