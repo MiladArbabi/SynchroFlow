@@ -1,19 +1,26 @@
 //tests/unit/ui/hooks/useCommandExecution.test.tsx
 import { renderHook, act } from '@testing-library/react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from 'contexts/ToastContext';
-import { useOpsContext } from 'contexts/OpsContext';
-import { OpsAction } from 'components/OpsCommandCenter/types';
+import { OpsActionType, useOpsContext } from 'contexts/OpsContext';
+import { OpsAction, CommandResult } from 'components/OpsCommandCenter/types';
 // This import will fail
 import { useCommandExecution } from 'components/OpsCommandCenter/hooks/useCommandExecution';
+import { Intent } from 'components/OpsCommandCenter/naturalLanguage/types';
 
 // Mock our dependencies
 jest.mock('contexts/ToastContext');
 jest.mock('contexts/OpsContext');
+jest.mock('react-router-dom', () => ({
+  useNavigate: jest.fn(),
+}));
 
 // Create typed mocks
 const mockUseToast = useToast as jest.Mock;
 const mockUseOpsContext = useOpsContext as jest.Mock;
 const mockToastShow = jest.fn();
+const mockDispatch = jest.fn();
+const mockNavigate = jest.fn();
 
 // A successful action
 const mockSuccessAction: OpsAction = {
@@ -24,6 +31,20 @@ const mockSuccessAction: OpsAction = {
   execute: async () => ({ success: true, message: 'It worked!' }),
   keywords: [],
   description: '',
+};
+
+// A mock NLP intent
+const mockNLPIntent: Intent = {
+  name: 'find-orders',
+  confidence: 0.9,
+  entities: { status: 'pending' },
+};
+
+// A mock "search" intent (low confidence)
+const mockSearchIntent: Intent = {
+  name: 'search',
+  confidence: 0.1,
+  entities: {},
 };
 
 // A failing action
@@ -61,7 +82,10 @@ describe('useCommandExecution', () => {
       context: {
         userPermissions: ['user:read'], // Default user has no admin perms
       },
+     dispatch: mockDispatch, // Provide the mock dispatch 
     });
+    // --- 3. APPLY THE MOCK ---
+    (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
   });
 
   it('should set isExecuting to true during execution and false after', async () => {
@@ -69,7 +93,7 @@ describe('useCommandExecution', () => {
 
     expect(result.current.isExecuting).toBe(false);
 
-    let promise: Promise<any>;
+    let promise: Promise<CommandResult | void>;
     act(() => {
       promise = result.current.executeCommand(mockSuccessAction, null);
     });
@@ -127,5 +151,44 @@ describe('useCommandExecution', () => {
       'Insufficient permissions',
       'error',
     );
+  });
+  // --- ADD THESE NEW TESTS ---
+  it('should NOT save to conversation memory for a non-NLP (Layer 1) action', async () => {
+    const { result } = renderHook(() => useCommandExecution());
+
+    await act(async () => {
+      // Pass 'null' for the intent
+      await result.current.executeCommand(mockSuccessAction, null);
+    });
+
+    expect(mockDispatch).not.toHaveBeenCalled();
+  });
+
+  it('should save to conversation memory for a high-confidence NLP action', async () => {
+    const { result } = renderHook(() => useCommandExecution());
+
+    await act(async () => {
+      await result.current.executeCommand(mockSuccessAction, mockNLPIntent);
+    });
+
+    // Check that dispatch was called with the correct action and payload
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: OpsActionType.SET_CONVERSATION,
+      payload: {
+        topic: 'find-orders',
+        entities: { status: 'pending' },
+        timestamp: expect.any(Number), // Timestamp will be generated, so we check for type
+      },
+    });
+  });
+
+  it('should NOT save to conversation memory for a "search" intent', async () => {
+    const { result } = renderHook(() => useCommandExecution());
+
+    await act(async () => {
+      await result.current.executeCommand(mockSuccessAction, mockSearchIntent);
+    });
+
+    expect(mockDispatch).not.toHaveBeenCalled();
   });
 });
