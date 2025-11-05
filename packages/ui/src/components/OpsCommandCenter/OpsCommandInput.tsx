@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { TextField, InputAdornment } from '@mui/material';
-import { LucideSparkles } from 'lucide-react'; // Using lucide for our Kore icon
+import { KoreIcon } from 'components/KoreIcon';
 
 // Define the component's props
 interface OpsCommandInputProps {
@@ -65,10 +65,9 @@ export const OpsCommandInput = React.forwardRef<
           disableUnderline: true, // Remove the bottom border
           startAdornment: (
             <InputAdornment position="start" sx={{ pl: 1, pr: 0.5 }}>
-              <LucideSparkles
-                size={18}
-                color={isExecuting ? '#ccc' : '#a309caff'}
-              />
+              <KoreIcon
+                isActive={isExecuting} // Pass isExecuting to the animation prop
+                size={18} />
             </InputAdornment>
           ),
         }}

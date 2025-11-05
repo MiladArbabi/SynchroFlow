@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
-// This import will fail
+import { KoreIcon } from 'components/KoreIcon';
 import { OpsCommandInput } from 'components/OpsCommandCenter/OpsCommandInput';
 
 describe('OpsCommandInput', () => {
@@ -33,6 +33,9 @@ describe('OpsCommandInput', () => {
     // We'll use a data-testid for the input
     const input = screen.getByTestId('kore-command-input');
     expect(input).toBeInTheDocument();
+    
+    // Check that our custom KoreIcon is rendered
+    expect(screen.getByTestId('kore-icon-svg')).toBeInTheDocument();
     expect(input).toHaveAttribute(
       'placeholder',
       "Ask Kore..."
