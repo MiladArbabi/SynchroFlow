@@ -163,13 +163,11 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     await loginAs(page, 'default-user');
     await page.waitForURL(/.*dashboard/);
 
-    // 1. This is the "Red" step. It will fail.
-    // We expect the badge to be visible on the navbar button.
-    // We'll give the badge a data-testid="kore-navbar-badge".
-    await expect(
-      page.getByTestId('kore-navbar-badge')
-    ).toBeVisible();
-
+    // 1. This is the "Red" step.
+    // We expect our new custom SVG icon to be rendered and to have the 'active' class.
+    const koreIcon = page.getByTestId('kore-icon-svg');
+    await expect(koreIcon).toBeVisible();
+    await expect(koreIcon).toHaveClass(/kore-icon-active/); // Check for the animation class
     // 2. (Bonus) Open the console
     await page.getByTestId('kore-navbar-button').click();
     await expect(page.getByTestId('kore-command-input')).toBeVisible();

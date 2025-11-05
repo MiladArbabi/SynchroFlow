@@ -4,17 +4,16 @@ import React, { useContext } from "react";
 import { useLocation, Link as RouterLink } from "react-router-dom";
 import { 
   Box, 
-  IconButton, 
-  Button, 
+  IconButton,
   Typography, 
   Breadcrumbs as MuiBreadcrumbs, 
   useMediaQuery, 
   Link, 
   Tooltip, 
   useTheme,
-  Badge
 } from "@mui/material";
 import IconComponent from "../../components/Icon";
+import { KoreIcon } from "components/KoreIcon";
 
 import useConfig from 'hooks/useConfig';
 import { useOpsContext } from 'contexts/OpsContext';
@@ -103,25 +102,17 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         <SearchSection />
 
         {/* --- KORE ICON --- */}
-        {/* 5. Wrap in Badge component */}
-        <Badge
-          color="error"
-          variant="dot"
-          invisible={newInsightCount === 0} // Show badge if count > 0
-          data-testid="kore-navbar-badge" // For our test
-        >
-          <Tooltip title="Open Kore Command (Cmd+J)">
-            <IconButton
-              color="inherit"
-              onClick={handleToggleOpsConsole}
-              data-testid="kore-navbar-button"
-              size="small" // Match the other buttons
-              disableRipple
-            >
-              <IconComponent name="Sparkles" size="medium" />
-            </IconButton>
-          </Tooltip>
-        </Badge>
+        <Tooltip title="Open Kore Command (Cmd+J)">
+          <IconButton
+            color="inherit"
+            onClick={handleToggleOpsConsole}
+            data-testid="kore-navbar-button"
+            size="small" 
+            disableRipple
+          >
+            <KoreIcon isActive={newInsightCount > 0} />
+          </IconButton>
+        </Tooltip>
 
         {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
         <NotificationSection />
