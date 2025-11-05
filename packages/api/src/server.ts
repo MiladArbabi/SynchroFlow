@@ -22,11 +22,15 @@ import { startWorker } from './worker';
 import { startSyncWorker } from './sync.worker';
 import { seedSandboxData } from './db/seeder';
 import layoutRoutes from "./api/layouts/layout.routes";
-import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
 import orderRoutes from "./api/orders/orders.routes";
 import customerRoutes from "./api/customers/customers.routes";
 import integrationRoutes from "./api/integrations/integration.routes";
 import authRoutes from "./api/auth/auth.routes";
+
+// OPS-INTEL Imports
+import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
+import { OpsIntelEngine } from './services/opsIntel';
+import { staleOrderRule } from './services/opsIntel/rules';
 
 // Use 'path' to create a reliable, absolute path to the addon file
 import path from 'path';
@@ -47,6 +51,16 @@ const sessionStore = new PGStore({
   conObject: db.client.config.connection, // <-- Give it the connection object
   tableName: 'user_sessions',
 });
+
+// --- 3. INITIALIZE AND START THE KORE ENGINE ---
+const koreEngine = new OpsIntelEngine();
+
+// Register all our business rules
+koreEngine.registerRule(staleOrderRule);
+// koreEngine.registerRule(lowInventoryRule);
+
+// Start the engine's cron jobs
+koreEngine.start();
 
 // --- SESSION MIDDLEWARE ---
 app.use(
