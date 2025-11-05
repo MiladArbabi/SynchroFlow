@@ -3,7 +3,6 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
-import { KoreIcon } from 'components/KoreIcon';
 import { OpsCommandInput } from 'components/OpsCommandCenter/OpsCommandInput';
 
 describe('OpsCommandInput', () => {

@@ -8,6 +8,7 @@ import useConfig from 'hooks/useConfig'; // We need this to read the open state
 // Import all our new hooks and components
 import { useOpsCommands } from './hooks/useOpsCommands';
 import { useCommandExecution } from './hooks/useCommandExecution';
+import { useDebounce } from 'hooks/useDebounce';
 import { OpsCommandInput } from './OpsCommandInput';
 import { OpsResultsList } from './OpsResultsList';
 import { ConfirmationDialog } from './ConfirmationDialog';
@@ -59,18 +60,21 @@ export const OpsCommandCenter = () => {
   const { context, dispatch } = useOpsContext();
   const { executeCommand, isExecuting } = useCommandExecution();
 
+  // --- 2. DEBOUNCE THE SEARCH QUERY ---
+  const debouncedSearchQuery = useDebounce(searchQuery, 150);
+
   // --- L1 HOOK (LOW-CONFIDENCE FALLBACK) ---
   // This hook now only runs its search logic when there's no interpretation
   // 3. Don't run search if we are interpreting OR clarifying
   const commands = useOpsCommands(
-    interpretation || clarificationOptions || !searchQuery ? '' : searchQuery,
+    interpretation || clarificationOptions ? '' : debouncedSearchQuery,
   );
 
   // --- L2 "BRAIN" ---
   // This effect runs on every keystroke to check for a L2 intent
   useEffect(() => {
     // Don't parse empty queries
-    if (searchQuery.trim().length < 3) {
+    if (debouncedSearchQuery.trim().length < 3) {
       setInterpretation(null); // Clear any previous interpretation
       setClarificationOptions(null); // Clear clarifications
       return;
@@ -78,7 +82,7 @@ export const OpsCommandCenter = () => {
 
     // Call the NLP parser
     // (We pass 'null' for conversation context for now)
-    const intent = parseIntent(searchQuery, null);
+    const intent = parseIntent(debouncedSearchQuery, null);
 
     // --- 4. UPDATE ROUTER LOGIC ---
     if (intent.name === 'clarify' && intent.clarificationOptions) {
@@ -101,7 +105,7 @@ export const OpsCommandCenter = () => {
       setInterpretation(null);
       setClarificationOptions(null);
     }
-  }, [searchQuery]);
+  }, [debouncedSearchQuery, searchQuery]);
 
   // --- KEYBOARD NAVIGATION & EXECUTION ---
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -182,7 +186,7 @@ export const OpsCommandCenter = () => {
   // Reset selection when search query changes
   useEffect(() => {
     setSelectedIndex(0);
-  }, [searchQuery]);
+  }, [debouncedSearchQuery]);
 
   // Reset search query after successful execution
   useEffect(() => {
