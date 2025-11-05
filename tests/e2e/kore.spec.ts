@@ -76,4 +76,31 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     // 5. And we assert the L1 list is NOT visible
     await expect(page.getByText('Go to Dashboard')).not.toBeVisible();
   });
+
+  test('should show the ClarificationList for an ambiguous query', async ({ page }) => {
+    await loginAs(page, 'default-user');
+    await page.waitForURL(/.*dashboard/);
+
+    // 1. Open panel
+    const isMac = process.platform === 'darwin';
+    const modifier = isMac ? 'Meta' : 'Control';
+    await page.locator('body').click();
+    await page.keyboard.press(`${modifier}+j`);
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
+
+    // 2. Type an ambiguous query
+    await page.getByTestId('kore-command-input').fill('yesterday');
+
+    // 3. This is the "Red" step. It will fail.
+    // We expect the ClarificationList header to be visible.
+    await expect(page.getByText('What did you mean?')).toBeVisible();
+
+    // 4. We also expect the options to be visible
+    await expect(page.getByText('Show orders from yesterday?')).toBeVisible();
+    await expect(page.getByText('Show customers created yesterday?')).toBeVisible();
+
+    // 5. And the L1/L2 UIs should be hidden
+    await expect(page.getByText('Understood:')).not.toBeVisible();
+    await expect(page.getByText('Go to Dashboard')).not.toBeVisible();
+  });
 });

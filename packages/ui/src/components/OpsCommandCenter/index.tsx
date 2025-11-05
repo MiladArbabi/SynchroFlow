@@ -14,10 +14,11 @@ import { OpsResultsList } from './OpsResultsList';
 import { ConfirmationDialog } from './ConfirmationDialog';
 
 // --- L2 IMPORTS ---
-import { Intent } from './naturalLanguage/types';
+import { ClarificationOption, Intent } from './naturalLanguage/types';
 import { parseIntent } from './naturalLanguage/intentParser';
 import { executeNaturalLanguage } from './naturalLanguage/queryExecutor';
 import { InterpretationBanner } from './InterpretationBanner';
+import { OpsClarificationList } from './OpsClarificationList';
 
 // --- Define the Interpretation state type ---
 interface Interpretation {
@@ -46,6 +47,11 @@ export const OpsCommandCenter = () => {
     null,
   );
 
+  // --- L2.75 STATE (NEW) ---
+  const [clarificationOptions, setClarificationOptions] = useState<
+    ClarificationOption[] | null
+  >(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   // --- HOOKS ---
@@ -55,14 +61,18 @@ export const OpsCommandCenter = () => {
 
   // --- L1 HOOK (LOW-CONFIDENCE FALLBACK) ---
   // This hook now only runs its search logic when there's no interpretation
-  const commands = useOpsCommands(interpretation ? '' : searchQuery);
+  // 3. Don't run search if we are interpreting OR clarifying
+  const commands = useOpsCommands(
+    interpretation || clarificationOptions ? '' : searchQuery,
+  );
 
-  // --- L2 "BRAIN" (NEW EFFECT) ---
+  // --- L2 "BRAIN" ---
   // This effect runs on every keystroke to check for a L2 intent
   useEffect(() => {
     // Don't parse empty queries
     if (searchQuery.trim().length < 3) {
       setInterpretation(null); // Clear any previous interpretation
+      setClarificationOptions(null); // Clear clarifications
       return;
     }
 
@@ -70,8 +80,12 @@ export const OpsCommandCenter = () => {
     // (We pass 'null' for conversation context for now)
     const intent = parseIntent(searchQuery, null);
 
-    // Check if confidence is high enough for L2
-    if (intent.confidence > 0.45) {
+    // --- 4. UPDATE ROUTER LOGIC ---
+    if (intent.name === 'clarify' && intent.clarificationOptions) {
+      // MEDIUM CONFIDENCE: Show clarification list
+      setInterpretation(null);
+      setClarificationOptions(intent.clarificationOptions);
+    } else if (intent.confidence > 0.45) {
       // We have a high-confidence match.
       // Build the dynamic action (e.g., "Find orders with status...")
       const interpretedAction = executeNaturalLanguage(intent);
@@ -81,9 +95,11 @@ export const OpsCommandCenter = () => {
         intent,
         confidence: intent.confidence,
       });
+      setClarificationOptions(null);
     } else {
       // Low confidence. Fall back to L1 search.
       setInterpretation(null);
+      setClarificationOptions(null);
     }
   }, [searchQuery]);
 
@@ -94,9 +110,14 @@ export const OpsCommandCenter = () => {
       if (event.key === 'Enter') {
         event.preventDefault();
         handleExecute(interpretation.interpretedAction);
+        }
+        return; // Disable ArrowUp/Down when banner is showing
       }
-      return; // Disable ArrowUp/Down when banner is showing
-    }
+
+      // If Clarification is showing, disable keyboard nav
+      if (clarificationOptions) {
+        return;
+      }
 
     // L1 List Navigation
     if (event.key === 'ArrowDown') {
@@ -144,6 +165,20 @@ export const OpsCommandCenter = () => {
     inputRef.current?.focus();
   };
 
+  // --- L2.75 CLARIFICATION HANDLER (NEW) ---
+  const onClarificationSelect = (option: ClarificationOption) => {
+    // User answered the question.
+    // 1. Set the new interpretation
+    setInterpretation({
+      originalQuery: option.label,
+      interpretedAction: executeNaturalLanguage(option.intent),
+      intent: option.intent,
+      confidence: option.intent.confidence,
+    });
+    // 2. Clear the questions
+    setClarificationOptions(null);
+  };
+
   // Reset selection when search query changes
   useEffect(() => {
     setSelectedIndex(0);
@@ -187,6 +222,12 @@ export const OpsCommandCenter = () => {
           interpretation={interpretation}
           onExecute={() => handleExecute(interpretation.interpretedAction!)}
           onCancel={onCancelInterpretation}
+        />
+      ) : clarificationOptions ? (
+        // L2.75: Medium Confidence - Show the Clarification List
+        <OpsClarificationList
+          options={clarificationOptions}
+          onSelect={onClarificationSelect}
         />
       ) : (
         // L1: Low Confidence - Show the Search List

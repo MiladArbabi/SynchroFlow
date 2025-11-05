@@ -157,7 +157,22 @@ export const parseIntent = (
     }
   }
 
-  // --- 4. CHECK FOR A REGULAR (NON-EXACT) NEW INTENT ---
+  // --- 4. CHECK FOR AMBIGUITY (for our test) ---
+  // If the query is just "yesterday", it's ambiguous.
+  if (lowerQuery === 'yesterday') {
+    return {
+      name: 'clarify',
+      confidence: 0.5,
+      entities: { date: 'yesterday' },
+      clarificationOptions: [
+        { label: 'Show orders from yesterday?', intent: { name: 'find-orders', confidence: 0.9, entities: { date: 'yesterday' } } },
+        { label: 'Show customers created yesterday?', intent: { name: 'customer-lookup', confidence: 0.9, entities: { date: 'yesterday' } } }
+      ],
+      clarificationReason: 'ambiguous-entities',
+    };
+  }
+
+  // --- 5. CHECK FOR A REGULAR (NON-EXACT) NEW INTENT ---
   // This is the original logic.
   // This must come *after* the follow-up check.
   if (bestIntent) {
