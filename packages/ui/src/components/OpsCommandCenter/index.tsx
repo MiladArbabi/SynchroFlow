@@ -1,9 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 //packages/ui/src/components/OpsCommandCenter/index.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, CircularProgress } from '@mui/material';
 import { OpsAction } from './types';
-import { useOpsContext } from 'contexts/OpsContext';
+import { OpsActionType, useOpsContext } from 'contexts/OpsContext';
 import useConfig from 'hooks/useConfig'; // We need this to read the open state
 
 // Import all our new hooks and components
@@ -19,6 +18,7 @@ import { parseIntent } from './naturalLanguage/intentParser';
 import { executeNaturalLanguage } from './naturalLanguage/queryExecutor';
 import { InterpretationBanner } from './InterpretationBanner';
 import { OpsClarificationList } from './OpsClarificationList';
+import { OpsProactiveList } from './OpsProactiveList';
 
 // --- Define the Interpretation state type ---
 interface Interpretation {
@@ -56,14 +56,14 @@ export const OpsCommandCenter = () => {
 
   // --- HOOKS ---
   const { state: configState } = useConfig();
-  const { context } = useOpsContext();
+  const { context, dispatch } = useOpsContext();
   const { executeCommand, isExecuting } = useCommandExecution();
 
   // --- L1 HOOK (LOW-CONFIDENCE FALLBACK) ---
   // This hook now only runs its search logic when there's no interpretation
   // 3. Don't run search if we are interpreting OR clarifying
   const commands = useOpsCommands(
-    interpretation || clarificationOptions ? '' : searchQuery,
+    interpretation || clarificationOptions || !searchQuery ? '' : searchQuery,
   );
 
   // --- L2 "BRAIN" ---
@@ -228,6 +228,16 @@ export const OpsCommandCenter = () => {
         <OpsClarificationList
           options={clarificationOptions}
           onSelect={onClarificationSelect}
+        />
+      ) : !searchQuery && context.proactiveInsights.filter(i => i.status === 'new').length > 0 ? (
+        // L3: Idle + Proactive Insights - Show the Proactive List
+        <OpsProactiveList
+          insights={context.proactiveInsights}
+          onActionClick={(_insight, action) => handleExecute(action.action)} // TODO: Pass intent
+          // 2. Use the enum, not the string
+          onDismiss={(insightId) =>
+            dispatch({ type: OpsActionType.UPDATE_INSIGHT_STATUS, payload: { id: insightId, status: 'dismissed' } })
+          }
         />
       ) : (
         // L1: Low Confidence - Show the Search List
