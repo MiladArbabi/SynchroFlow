@@ -143,4 +143,37 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     await expect(page.getByText('Understood:')).not.toBeVisible();
     await expect(page.getByText('Go to Dashboard')).not.toBeVisible();
   });
+
+  test('should show a notification badge when a new insight arrives', async ({ page }) => {
+    // --- MOCKING ---
+    // Intercept the SSE route to simulate a new insight
+    await page.route('/api/v1/kore/subscribe', async (route) => {
+      const ssePayload =
+        'event: insight\n' +
+        'data: {"id":"ins-123","type":"alert","title":"Stale Order Detected","message":"Order #1001 is stale.","urgency":"high","status":"new","actionPayload":[]}\n\n';
+      await route.fulfill({
+        contentType: 'text/event-stream',
+        body: ssePayload,
+        status: 200,
+      });
+    });
+    // --- END MOCKING ---
+
+    await loginAs(page, 'default-user');
+    await page.waitForURL(/.*dashboard/);
+
+    // 1. This is the "Red" step. It will fail.
+    // We expect the badge to be visible on the navbar button.
+    // We'll give the badge a data-testid="kore-navbar-badge".
+    await expect(
+      page.getByTestId('kore-navbar-badge')
+    ).toBeVisible();
+
+    // 2. (Bonus) Open the console
+    await page.getByTestId('kore-navbar-button').click();
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
+
+    // 3. (Bonus) Check that the insight is in the list
+    await expect(page.getByText('Stale Order Detected')).toBeVisible();
+  });
 });

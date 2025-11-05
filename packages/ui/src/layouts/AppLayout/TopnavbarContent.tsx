@@ -11,29 +11,19 @@ import {
   useMediaQuery, 
   Link, 
   Tooltip, 
-  useTheme 
+  useTheme,
+  Badge
 } from "@mui/material";
-import {
-  Menu as MenuIcon,
-  Search as SearchIcon,
-  Bell as BellIcon,
-  Settings as SettingsIcon,
-  Maximize as MaximizeIcon,
-  User as UserIcon,
-  // --- 1. IMPORT KORE ICON ---
-  Sparkles as KoreIcon 
-} from 'lucide-react';
 import IconComponent from "../../components/Icon";
 
-import { ConfigContext } from 'contexts/ConfigContext';
 import useConfig from 'hooks/useConfig';
+import { useOpsContext } from 'contexts/OpsContext';
 
 // --- BERRY HEADER SECTION IMPORTS ---
-// Import the *stub* components we just created
 import SearchSection from 'layout/MainLayout/Header/SearchSection';
 // import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
 import NotificationSection from 'layout/MainLayout/Header/NotificationSection';
-import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
+// import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
 import MobileSection from 'layout/MainLayout/Header/MobileSection';
 // --- END BERRY IMPORTS ---
@@ -53,14 +43,19 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   const theme = useTheme();
   const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
+  const { context: opsContext } = useOpsContext();
   const { state, dispatch } = useConfig();
 
   const matchDownMd = useMediaQuery(theme.breakpoints.down('md'));
 
+  // 4. Calculate new insights
+  const newInsightCount = opsContext.proactiveInsights.filter(
+    (i) => i.status === 'new'
+  ).length;
+
   // ---  SIDEBAR HANDLER ---
   const handleToggleSidenav = () => {
-  dispatch({ type: 'SET_MINI_DRAWER', payload: !state.miniDrawer });
+   dispatch({ type: 'SET_MINI_DRAWER', payload: !state.miniDrawer });
   };
 
   // ---  OPS CONSOLE HANDLER ---
@@ -70,14 +65,16 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
 
   return (
     <Box
-      display="flex"
-      justifyContent="space-between"
-      alignItems="center"
-      height="100%"
-      px={2}
+      sx={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px'
+      }}
     >
       {/* === Left Side === */}
-      <Box display="flex" alignItems="center" gap={2}>
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
         <IconButton onClick={handleToggleSidenav} size="small" disableRipple>
           <IconComponent name="PanelLeft" size="medium" color="inherit" /* style={{ transform: state.miniDrawer ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }} */ />
         </IconButton>
@@ -105,18 +102,26 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         {/* --- Berry Sections in Order --- */}
         <SearchSection />
 
-        {/* --- KORE BUTTON --- */}
-        <Tooltip title="Open Kore Command (Cmd+J)">
-          <IconButton
-            color="inherit"
-            onClick={handleToggleOpsConsole}
-            data-testid="kore-navbar-button"
-            size="small" // Match the other buttons
-            disableRipple
-          >
-            <IconComponent name="Sparkles" size="medium" />
-          </IconButton>
-        </Tooltip>
+        {/* --- KORE ICON --- */}
+        {/* 5. Wrap in Badge component */}
+        <Badge
+          color="error"
+          variant="dot"
+          invisible={newInsightCount === 0} // Show badge if count > 0
+          data-testid="kore-navbar-badge" // For our test
+        >
+          <Tooltip title="Open Kore Command (Cmd+J)">
+            <IconButton
+              color="inherit"
+              onClick={handleToggleOpsConsole}
+              data-testid="kore-navbar-button"
+              size="small" // Match the other buttons
+              disableRipple
+            >
+              <IconComponent name="Sparkles" size="medium" />
+            </IconButton>
+          </Tooltip>
+        </Badge>
 
         {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
         <NotificationSection />
