@@ -74,4 +74,18 @@ describe('Kore NLP Intent Parser', () => {
     expect(intent.name).toBe('customer-lookup');
     expect(intent.confidence).toBe(1.0);
   });
+
+  it('should return a "reset" intent for reset keywords', () => {
+    const resetQueries = ['reset', 'clear', 'start over', 'new search'];
+
+    for (const query of resetQueries) {
+      const intent: Intent = parseIntent(query, {
+        topic: 'find-orders',
+        entities: {},
+        timestamp: 0,
+      });
+      expect(intent.name).toBe('reset');
+      expect(intent.confidence).toBe(1.0);
+    }
+  });
 });

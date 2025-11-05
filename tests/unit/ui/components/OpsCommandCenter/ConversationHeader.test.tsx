@@ -17,7 +17,6 @@
  * and topics with multiple hyphens (noting that the component only replaces the first hyphen).
  */
 
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { KoreConversation } from 'components/OpsCommandCenter/naturalLanguage/types';

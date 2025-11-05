@@ -30,6 +30,17 @@ const calculateConfidence = (query: string, trainingPhrase: string): number => {
 };
 
 /**
+ * Checks if the query is a command to reset the conversation.
+ */
+const isResetQuery = (query: string): boolean => {
+  const lowerQuery = query.toLowerCase().trim();
+  const resetPhrases = ['reset', 'clear', 'start over', 'new search', 'nevermind'];
+
+  // Check if the query *is* one of the reset phrases
+  return resetPhrases.includes(lowerQuery);
+};
+
+/**
  * Finds the best matching intent from our training data.
  * @param query The user's search query
  * @returns The highest-confidence matching intent, or null.
@@ -89,6 +100,16 @@ export const parseIntent = (
   query: string,
   conversation: KoreConversation | null, // We'll use this in Layer 2.5
 ): Intent => {
+
+  // --- 1. CHECK FOR RESET ---
+  // Always check for a reset command first.
+  if (isResetQuery(query)) {
+    return {
+      name: 'reset',
+      confidence: 1.0,
+      entities: {},
+    };
+  }
   // 1. Find the best matching intent (the "verb")
   const bestIntent = findBestIntent(query);
 
