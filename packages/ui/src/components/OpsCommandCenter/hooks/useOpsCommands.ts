@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useOpsContext } from 'contexts/OpsContext';
 import { ALL_ACTIONS } from 'components/OpsCommandCenter/commandDefinitions';
 import { OpsAction } from 'components/OpsCommandCenter/types';
-import { useNativeSearch } from './useNativeSearch';
+import { useFuseSearch } from './useFuseSearch';
 
 // Define the keys we want our search hook to look at.
 const SEARCH_KEYS: ('name' | 'keywords' | 'description')[] = ['name', 'keywords', 'description'];
@@ -48,7 +48,7 @@ export const useOpsCommands = (searchQuery: string): OpsAction[] => {
 
   // Step 2: Filter by Search Query
   // We pass the already context-aware list to our native search hook.
-  const searchFilteredActions = useNativeSearch(
+  const searchFilteredActions = useFuseSearch(
     contextFilteredActions,
     searchQuery,
     SEARCH_KEYS,

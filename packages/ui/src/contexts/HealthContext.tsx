@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 //packages/ui/src/contexts/HealthContext.tsx
 /* eslint-disable react-refresh/only-export-components */
 import React, {
