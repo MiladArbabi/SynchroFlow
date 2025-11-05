@@ -40,3 +40,39 @@ export interface OpsAction {
   confirmationMessage?: string | ((previewData: any) => string);
   undoable?: boolean;
 }
+
+// --- LAYER 3: PROACTIVE INSIGHT TYPES ---
+
+/**
+ * This defines the structure of the *suggested action* that the
+ * frontend will build and show to the user.
+ */
+export interface SuggestedAction {
+  label: string;
+  description?: string;
+  action: OpsAction; // It re-uses our core OpsAction!
+  icon?: string;
+  primary?: boolean;
+}
+
+/**
+ * This defines the shape of the data payload we expect to
+ * receive from the backend SSE "Kore Comlink".
+ */
+export interface ProactiveInsight {
+  id: string;
+  type: 'alert' | 'recommendation' | 'opportunity' | 'celebration';
+  title: string;
+  message: string;
+  urgency: 'high' | 'medium' | 'low';
+  timestamp: number;
+  source: 'inventory' | 'orders' | 'customers' | 'marketing' | 'shipping';
+  status: 'new' | 'viewed' | 'acted-upon' | 'dismissed';
+
+  // This is the raw data from the backend. We will
+  // use this to *build* the 'SuggestedAction' objects.
+  actionPayload: {
+    actionId: string; // e.g., 'nav-order-detail'
+    context: Record<string, any>; // e.g., { orderId: 123 }
+  }[];
+}
