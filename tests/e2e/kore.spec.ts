@@ -103,4 +103,44 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     await expect(page.getByText('Understood:')).not.toBeVisible();
     await expect(page.getByText('Go to Dashboard')).not.toBeVisible();
   });
+
+  test('should show the ProactiveList when idle and insights are available', async ({ page }) => {
+    // --- MOCKING ---
+    // Intercept the /api/v1/kore/subscribe route to *simulate* a real-time insight
+    await page.route('/api/v1/kore/subscribe', async (route) => {
+      // 1. Define the SSE payload as a string
+      const ssePayload =
+        'event: insight\n' +
+        'data: {"id":"ins-123","type":"alert","title":"Stale Order Detected","message":"Order #1001 is stale.","urgency":"high","status":"new","actionPayload":[]}\n\n';
+      // 2. Fulfill the request with the correct type and body
+      await route.fulfill({
+        contentType: 'text/event-stream',
+        body: ssePayload,
+        status: 200,
+      });
+    });
+
+    await loginAs(page, 'default-user');
+    await page.waitForURL(/.*dashboard/);
+
+    // 1. Open panel
+    const isMac = process.platform === 'darwin';
+    const modifier = isMac ? 'Meta' : 'Control';
+    await page.locator('body').click();
+    await page.keyboard.press(`${modifier}+j`);
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
+
+    // We expect the L3 PROACTIVE list to be visible.
+    // This will fail (it will show L1 results or nothing).
+    await expect(
+      page.getByText("Kore: Here's what needs your attention:")
+    ).toBeVisible();
+
+    // 3. Assert the insight content is there
+    await expect(page.getByText('Stale Order Detected')).toBeVisible();
+
+    // 4. Assert the L1/L2 UIs are hidden
+    await expect(page.getByText('Understood:')).not.toBeVisible();
+    await expect(page.getByText('Go to Dashboard')).not.toBeVisible();
+  });
 });
