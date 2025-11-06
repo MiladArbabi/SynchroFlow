@@ -13,6 +13,7 @@ import useConfig from 'hooks/useConfig'; // We need this to read the open state
 import { useOpsCommands } from './hooks/useOpsCommands';
 import { useCommandExecution } from './hooks/useCommandExecution';
 import { useKoreRanking } from './hooks/useKoreRanking';
+import { useSemanticQuery } from './hooks/useSemanticQuery';
 import { useDebounce } from 'hooks/useDebounce';
 import { OpsCommandInput } from './OpsCommandInput';
 import { OpsResultsList } from './OpsResultsList';
@@ -64,34 +65,33 @@ export const OpsCommandCenter = () => {
   const { isKoreHealthy } = useHealthContext();
   const { executeCommand, isExecuting } = useCommandExecution();
 
-  // --- 2. DEBOUNCE THE SEARCH QUERY ---
+  // --- DEBOUNCE THE SEARCH QUERY ---
   const debouncedSearchQuery = useDebounce(searchQuery, 150);
+
+  // --- EXPAND THE QUERY WITH SYNONYMS ---
+  const semanticQuery = useSemanticQuery(debouncedSearchQuery);
 
   // --- L1 HOOK (LOW-CONFIDENCE FALLBACK) ---
   // This hook now only runs its search logic when there's no interpretation
   // 3. Don't run search if we are interpreting OR clarifying
   const commands = useOpsCommands(
-    interpretation || clarificationOptions ? '' : debouncedSearchQuery,
+    interpretation || clarificationOptions ? '' : semanticQuery,
   );
 
   // --- L2 FEDERATED SEARCH (NEW) ---
   // This hook calls our /api/v1/kore/search endpoint
   const { data: entities = [] } = useQuery<SearchResult[]>({
-    queryKey: ['kore-federated-search', debouncedSearchQuery],
+    queryKey: ['kore-federated-search', semanticQuery],
     queryFn: async () => {
       // Only run if the query is valid and L2 is healthy
-      if (debouncedSearchQuery.trim().length < 2 || !isKoreHealthy) {
+      if (semanticQuery.trim().length < 2 || !isKoreHealthy) {
         return [];
       }
-      // --- DEBUG LOG 1 ---
-      console.log(`[DEBUG] Calling useQuery with: ${debouncedSearchQuery.toLowerCase()}`);
 
       const { data } = await axios.get(
-        `/api/v1/kore/search?q=${debouncedSearchQuery.toLowerCase()}`,
+        `/api/v1/kore/search?q=${semanticQuery.toLowerCase()}`,
       );
-      // --- DEBUG LOG 2 ---
-      console.log('[DEBUG] useQuery received data:', JSON.stringify(data));
-
+      
       return data;
     },
     // We don't want this to refetch constantly
@@ -111,7 +111,7 @@ export const OpsCommandCenter = () => {
     }
 
     // Don't parse empty queries
-    if (debouncedSearchQuery.trim().length < 3) {
+    if (semanticQuery.trim().length < 3) {
       setInterpretation(null); // Clear any previous interpretation
       setClarificationOptions(null); // Clear clarifications
       return;
@@ -119,7 +119,7 @@ export const OpsCommandCenter = () => {
 
     // Call the NLP parser
     // (We pass 'null' for conversation context for now)
-    const intent = parseIntent(debouncedSearchQuery, null);
+    const intent = parseIntent(semanticQuery, null);
 
     // --- 4. UPDATE ROUTER LOGIC ---
     if (intent.name === 'clarify' && intent.clarificationOptions) {
@@ -142,7 +142,7 @@ export const OpsCommandCenter = () => {
       setInterpretation(null);
       setClarificationOptions(null);
     }
-  }, [debouncedSearchQuery, isKoreHealthy]);
+  }, [semanticQuery, isKoreHealthy]);
 
   // --- KEYBOARD NAVIGATION & EXECUTION ---
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -237,7 +237,7 @@ export const OpsCommandCenter = () => {
   // Reset selection when search query changes
   useEffect(() => {
     setSelectedIndex(0);
-  }, [debouncedSearchQuery]);
+  }, [semanticQuery]);
 
   // Reset search query after successful execution
   useEffect(() => {

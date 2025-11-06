@@ -5,7 +5,7 @@ test.describe('Order 360 Page', () => {
   // Mock the new consolidated API response
   test.beforeEach(async ({ page }) => {
     await page.route(/.*\/api\/v1\/orders\/1001/, async (route) => {
-      console.log(`[TEST MOCK] Intercepted: ${route.request().url()}`);
+      //console.log(`[TEST MOCK] Intercepted: ${route.request().url()}`);
       
       const mockOrderDetails = {
         id: '1001',

@@ -5,7 +5,7 @@ test.describe('Orders Page', () => {
   // Mock the API response for the orders list
   test.beforeEach(async ({ page }) => {
     await page.route(/.*\/api\/v1\/orders/, async (route) => {
-      console.log(`[TEST MOCK] Intercepted: ${route.request().url()}`);
+      //console.log(`[TEST MOCK] Intercepted: ${route.request().url()}`);
       const mockOrders = [
         { id: '1001', customer_name: 'Alice Smith (Mock)', total: 50.00, status: 'Pending', created_at: new Date() },
         { id: '1002', customer_name: 'Bob Johnson (Mock)', total: 75.50, status: 'Shipped', created_at: new Date() },
