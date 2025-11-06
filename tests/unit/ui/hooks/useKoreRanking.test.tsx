@@ -4,8 +4,25 @@ import { useKoreRanking } from 'components/OpsCommandCenter/hooks/useKoreRanking
 import { OpsContextState } from 'contexts/OpsContext';
 import { OpsAction, SearchResult } from 'components/OpsCommandCenter/types';
 import { NavigateFunction } from 'react-router-dom';
+import { usePersonalization } from 'components/OpsCommandCenter/hooks/usePersonalization';
+
+jest.mock('components/OpsCommandCenter/hooks/usePersonalization');
+
+const mockUsePersonalization = usePersonalization as jest.Mock;
+const mockGetRankingBoost = jest.fn();
+
+const mockPersonalizationHook = {
+  trackActionSelection: jest.fn(),
+  getRankingBoost: mockGetRankingBoost,
+};
 
 describe('useKoreRanking', () => {
+  beforeEach(() => {
+    // Setup the mock before each test
+    mockUsePersonalization.mockReturnValue(mockPersonalizationHook);
+    // Default boost is 1.0
+    mockGetRankingBoost.mockReturnValue(1.0);
+  });
 
   const createMockAction = (overrides: Partial<OpsAction> = {}): OpsAction => ({
     id: 'default-action',
@@ -178,5 +195,46 @@ describe('useKoreRanking', () => {
 
     expect(result.current[0].id).toBe('action-no-boost');
     expect(result.current[1].id).toBe('entity-no-boost');
+  });
+
+  // --- ADD THIS NEW TEST ---
+  it('should boost personalized results higher than context results', () => {
+
+    // --- FIX: Define variables locally ---
+    const actions: OpsAction[] = [
+      createMockAction({
+        id: 'find-order',
+        context: { pages: ['orders'], requiredPermissions: [] },
+      }),
+      createMockAction({
+        id: 'find-customer',
+        context: { pages: ['customers'], requiredPermissions: [] },
+      }),
+    ];
+
+    const entities: SearchResult[] = [
+      createMockEntity({ id: 'ord-1', type: 'order' }),
+      createMockEntity({ id: 'cust-1', type: 'customer' }),
+    ];
+
+    const context: OpsContextState = {
+      ...defaultContext,
+      page: 'orders',
+    } as OpsContextState;
+
+    // Mock that 'find-customer' is the user's favorite, even on the orders page
+    mockGetRankingBoost.mockImplementation((id: string) => {
+      if (id === 'find-customer') return 2.0; // High personal boost
+      return 1.0;
+    });
+
+    const { result } = renderHook(() =>
+      useKoreRanking(actions, entities, context),
+    );
+
+    // Even though 'find-order' has a 1.5 context boost,
+    // 'find-customer' has a 2.0 personal boost and should be first.
+    expect(result.current.length).toBe(4);
+    expect(result.current[0].id).toBe('find-customer');
   });
 });

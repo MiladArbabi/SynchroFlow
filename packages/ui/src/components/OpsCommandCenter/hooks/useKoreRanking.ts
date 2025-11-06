@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import { OpsContextState } from 'contexts/OpsContext';
 import { OpsAction, SearchResult } from 'components/OpsCommandCenter/types';
+import { usePersonalization } from './usePersonalization';
 
 type SearchItem = OpsAction | SearchResult;
 
@@ -24,6 +25,8 @@ export const useKoreRanking = (
   entities: SearchResult[],
   context: OpsContextState,
 ): SearchItem[] => {
+  const { getRankingBoost } = usePersonalization();
+
   return useMemo(() => {
     const combinedItems = [...actions, ...entities];
 
@@ -67,6 +70,10 @@ export const useKoreRanking = (
         }
       }
 
+      // --- 3. Personalization Boosting ---
+      const personalizationBoost = getRankingBoost(String(item.id));
+      score *= personalizationBoost;
+
       return { item, score };
     });
 
@@ -74,5 +81,5 @@ export const useKoreRanking = (
     return rankedItems
       .sort((a, b) => b.score - a.score)
       .map((ranked) => ranked.item);
-  }, [actions, entities, context]);
+  }, [actions, entities, getRankingBoost, context]);
 };
