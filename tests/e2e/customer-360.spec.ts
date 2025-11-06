@@ -7,7 +7,7 @@ test.describe('Customer 360 Page', () => {
   test.beforeEach(async ({ page }) => {
     // 1. MOCK THE SUCCESSFUL API CALL (for John Doe / cust_abc)
     await page.route(/.*\/api\/v1\/customers\/cust_abc/, async (route) => {
-      console.log(`[TEST MOCK] Intercepted: ${route.request().url()}`);
+      // console.log(`[TEST MOCK] Intercepted: ${route.request().url()}`);
       const mockSuccessData = {
         id: 'cust_abc',
         profile: {
@@ -40,7 +40,7 @@ test.describe('Customer 360 Page', () => {
 
     // 2. MOCK THE FAILED API CALL (for Jane Smith / cust_def)
    await page.route(/.*\/api\/v1\/customers\/cust_def/, async (route) => {
-      console.log(`[TEST MOCK] Intercepted and FAKING 404: ${route.request().url()}`);
+      //console.log(`[TEST MOCK] Intercepted and FAKING 404: ${route.request().url()}`);
       await route.fulfill({
         status: 404,
         contentType: 'application/json',

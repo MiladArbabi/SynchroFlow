@@ -62,7 +62,8 @@ test.describe('Kore OpsCommandCenter Integration', () => {
       // Check that the query parameter is correct, case-insensitive
       const params = new URL(route.request().url()).searchParams;
       // --- DEBUG LOG 3 ---
-      console.log(`[DEBUG] E2E mock intercepted API call with query: ${params.get('q')}`);
+      // console.log(`[DEBUG] E2E mock intercepted API call with query: ${params.get('q')}`);
+      const query = params.get('q')?.toLowerCase() || '';
 
       if (params.get('q')?.toLowerCase() !== 'test') {
         return route.abort();
@@ -254,5 +255,25 @@ test.describe('Kore OpsCommandCenter Integration', () => {
 
     // 4. Assert that the L1 search *still works*
     await expect(page.getByText('Go to Dashboard')).toBeVisible();
+  });
+
+  test('should find commands using a synonym (L1 fuzzy)', async ({ page }) => {
+    await loginAs(page, 'default-user');
+    await page.waitForURL(/.*dashboard/);
+
+    // 1. Open panel
+    const isMac = process.platform === 'darwin';
+    const modifier = isMac ? 'Meta' : 'Control';
+    await page.locator('body').click();
+    await page.keyboard.press(`${modifier}+j`);
+    await expect(page.getByTestId('kore-command-input')).toBeVisible();
+    
+    // 2. Type a *synonym* (e.g., "return")
+    await page.getByTestId('kore-command-input').fill('return');
+
+    // 3. This is the "Red" step.
+    // We expect the *target* ("Refund Last Order...") to be visible.
+    // This will fail because "return" is not in the keywords for "Refund".
+    await expect(page.getByText('Refund Last Order...')).toBeVisible();
   });
 });

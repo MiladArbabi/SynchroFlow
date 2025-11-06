@@ -131,7 +131,7 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
         // Clear any previous errors on a new submission
         setSubmitError(null);
         // DEBUG: Log when submission starts.
-        console.log('[DEBUG] onSubmit START. isSubmitting should be true.');
+        // console.log('[DEBUG] onSubmit START. isSubmitting should be true.');
 
         try {
           // --- Call the backend API ---
@@ -176,7 +176,7 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
           // --- RELIABLE BUTTON RE-ENABLE ---
           // This block runs every time, on success or failure.
           // DEBUG: Log right before we re-enable the button.
-          console.log('[DEBUG] onSubmit FINALLY block. Calling setSubmitting(false).');
+          // console.log('[DEBUG] onSubmit FINALLY block. Calling setSubmitting(false).');
           setSubmitting(false);
           // --- END RELIABLE BUTTON RE-ENABLE ---
         }
