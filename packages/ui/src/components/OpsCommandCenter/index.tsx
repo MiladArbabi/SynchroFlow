@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 //packages/ui/src/components/OpsCommandCenter/index.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, CircularProgress, Alert } from '@mui/material';
 import { useQuery } from '@tanstack/react-query'; 
 import axios from 'axios'; 
-import { OpsAction, SearchResult } from './types';
+import { OpsAction, SearchResult, VirtualItem } from './types';
 import { useHealthContext } from 'contexts/HealthContext';
 import { OpsActionType, useOpsContext } from 'contexts/OpsContext';
 import useConfig from 'hooks/useConfig'; // We need this to read the open state
@@ -101,6 +102,25 @@ export const OpsCommandCenter = () => {
   // ---  RANK THE COMBINED RESULTS ---
   const combinedResults = useKoreRanking(commands, entities, context);
 
+  // --- FLATTEN RESULTS FOR VIRTUALIZER (LIFTED FROM OpsResultsList) ---
+  // This array now drives navigation and rendering
+  const items: VirtualItem[] = useMemo(() => {
+    const newItems: VirtualItem[] = [];
+    if (commands.length > 0) {
+      newItems.push({ type: 'header', label: 'Actions' });
+      newItems.push(
+        ...commands.map((cmd): VirtualItem => ({ type: 'item', data: cmd })),
+      );
+    }
+    if (entities.length > 0) {
+      newItems.push({ type: 'header', label: 'Entities' });
+      newItems.push(
+        ...entities.map((ent): VirtualItem => ({ type: 'item', data: ent })),
+      );
+    }
+    return newItems;
+  }, [commands, entities]);
+
   // --- L2 "BRAIN" ---
   // This effect runs on every keystroke to check for a L2 intent
   useEffect(() => {
@@ -156,23 +176,47 @@ export const OpsCommandCenter = () => {
       }
 
       // If Clarification is showing, disable keyboard nav
-      if (clarificationOptions) {
-        return;
-      }
+    if (clarificationOptions) {
+      return;
+    }
+
+    // --- NEW "SMART" NAVIGATION LOGIC ---
+    const findNextSelectable = (startIndex: number, direction: 'down' | 'up') => {
+      if (items.length === 0) return 0;
+
+      let newIndex = startIndex;
+      const step = direction === 'down' ? 1 : -1;
+
+      // Move at least once
+      do {
+        newIndex = (newIndex + step + items.length) % items.length;
+        // Keep moving if the new index is a header and we haven't looped
+      } while (items[newIndex].type === 'header' && newIndex !== startIndex);
+      
+      // If we looped all the way and are *still* on a header (e.g., a list with only headers)
+      if (newIndex === startIndex && items[newIndex].type === 'header') return startIndex;
+
+      return newIndex;
+    };
 
     // L1 List Navigation
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setSelectedIndex((prev) => (prev + 1) % combinedResults.length);
+      setSelectedIndex((prev) => findNextSelectable(prev, 'down'));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setSelectedIndex((prev) => (prev - 1 + combinedResults.length) % combinedResults.length);
+      setSelectedIndex((prev) => findNextSelectable(prev, 'up'));
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      if (combinedResults[selectedIndex]) {
-        handleItemSelect(combinedResults[selectedIndex]); 
-      }
     }
+
+    // Get the selected item from the *new* items array
+      const selectedItem = items[selectedIndex];
+
+      // Only execute if it's an 'item'
+      if (selectedItem && selectedItem.type === 'item') {
+        handleItemSelect(selectedItem.data);
+      }
   };
 
   // --- ACTION EXECUTION HANDLER ---
@@ -236,8 +280,9 @@ export const OpsCommandCenter = () => {
 
   // Reset selection when search query changes
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [semanticQuery]);
+    // Set to first *selectable* item (index 1), or 0 if list is empty
+    setSelectedIndex(items.length > 0 ? 1 : 0);
+  }, [semanticQuery]); // Rerun when query changes
 
   // Reset search query after successful execution
   useEffect(() => {
@@ -302,8 +347,7 @@ export const OpsCommandCenter = () => {
         />
       ) : searchQuery.length > 0 ? (
         <OpsResultsList
-          commands={commands} // Pass L1 results
-          entities={entities} // Pass L2 results
+          items={items} // Pass the new items array
           selectedIndex={selectedIndex}
           onCommandSelect={handleItemSelect}
         />

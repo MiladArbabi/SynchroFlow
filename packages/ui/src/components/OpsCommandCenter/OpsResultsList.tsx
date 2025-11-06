@@ -1,5 +1,5 @@
 //packages/ui/src/components/OpsCommandCenter/OpsResultsList.tsx
-import React, { useMemo, useRef } from 'react';
+import React, { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Box,
@@ -10,59 +10,25 @@ import {
   Typography,
   ListSubheader
 } from '@mui/material';
-import { OpsAction, SearchResult } from './types';
+import { OpsAction, SearchResult, VirtualItem } from './types';
 
 // Define the component's props
 interface OpsResultsListProps {
-  commands: OpsAction[]; // L1 results
-  entities: SearchResult[];
+  items: VirtualItem[];
   selectedIndex: number;
   onCommandSelect: (item: OpsAction | SearchResult) => void; // 1. Update prop
 }
-
-// Define types for our new flattened item list
-type ListItemHeader = {
- type: 'header';
- label: string;
-};
-type ListItemRow = {
- type: 'item';
- data: OpsAction | SearchResult;
-};
-type VirtualItem = ListItemHeader | ListItemRow;
-
 /**
  * Renders the list of available commands (Layer 1 search results).
  * Handles keyboard selection highlighting and click events.
  */
 export const OpsResultsList: React.FC<OpsResultsListProps> = ({
-  commands,
-  entities,
+  items,
   selectedIndex,
   onCommandSelect,
 }) => {
   // 1. Create a ref for the scrolling parent element
  const parentRef = useRef<HTMLUListElement>(null);
-
- // 2. Flatten commands and entities into one array with headers
- const items: VirtualItem[] = useMemo(() => {
-  const newItems: VirtualItem[] = [];
-  if (commands.length > 0) {
-   newItems.push({ type: 'header', label: 'Actions' });
-   newItems.push(
-    ...commands.map((cmd): VirtualItem => ({ type: 'item', data: cmd })),
-   );
-  }
-  if (entities.length > 0) {
-   newItems.push({ type: 'header', label: 'Entities' });
-   newItems.push(
-    ...entities.map((ent): VirtualItem => ({ type: 'item', data: ent })),
-   );
-  }
-  return newItems;
- }, [commands, entities]);
-
- const combinedItems = items; // Use new items array for empty check
 
  // 3. Set up the virtualizer
  // HOOKS MUST be called *before* any early returns.
@@ -78,7 +44,7 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
  });
 
   // Handle the empty state
-  if (combinedItems.length === 0) {
+  if (items.length === 0) {
     return (
       <Box sx={{ p: 2, textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
@@ -94,6 +60,7 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
     <List
       ref={parentRef} // Attach the ref here
       sx={{ p: 0, maxHeight: 400, overflowY: 'auto', position: 'relative' }} // Add relative positioning
+      data-testid="virtual-scroll-container"
       dense
     >
     {/* Render a container for the total size */}

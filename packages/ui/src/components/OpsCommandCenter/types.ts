@@ -90,3 +90,18 @@ export interface ProactiveInsight {
     context: Record<string, any>; // e.g., { orderId: 123 }
   }[];
 }
+
+// --- VIRTUAL LIST ITEM TYPES ---
+// Moved from OpsResultsList.tsx to be shared
+
+export type ListItemHeader = {
+  type: 'header';
+  label: string;
+};
+
+export type ListItemRow = {
+  type: 'item';
+  data: OpsAction | SearchResult;
+};
+
+export type VirtualItem = ListItemHeader | ListItemRow;
