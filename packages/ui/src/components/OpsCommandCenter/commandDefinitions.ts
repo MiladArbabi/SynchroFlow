@@ -67,7 +67,7 @@ export const ALL_ACTIONS: OpsAction[] = [
     id: 'find-customer-by-email',
     name: 'Find Customer by Email...',
     description: 'Look up a specific customer by their email',
-    keywords: ['customer', 'find', 'search', 'email'],
+    keywords: ['customer', 'find', 'search', 'email', 'test'],
     icon: 'search',
     category: 'analytical',
     context: { pages: ['dashboard', 'customers'] },
