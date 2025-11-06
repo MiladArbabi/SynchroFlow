@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/test-utils.tsx
 import React, { ReactElement } from 'react';
 import { render, RenderOptions } from '@testing-library/react';
