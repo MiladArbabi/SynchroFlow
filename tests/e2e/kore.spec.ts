@@ -3,6 +3,36 @@ import { loginAs } from './utils/login';
 
 test.describe('Kore OpsCommandCenter Integration', () => {
 
+  // --- GLOBAL HEALTH MOCK ---
+  // We must mock this before each test so the HealthContext
+  // believes the API is healthy *before* the test runs.
+  test.beforeEach(async ({ page }) => {
+    await page.route('/api/v1/kore/health', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: { status: 'healthy', services: { database: 'connected' } },
+      });
+    });
+  });
+
+  // --- MOCK API RESPONSE for Federated Search ---
+  const mockFederatedSearch = (page: any, query: string, delay = 100) => {
+    return page.route(`/api/v1/kore/search?q=${query}`, async (route: any) => {
+      // Simulate a network delay
+      await new Promise(f => setTimeout(f, delay));
+      await route.fulfill({
+        status: 200,
+        json: [{
+          type: 'customer',
+          id: 1,
+          title: 'test@example.com', // Our seeded user
+          description: 'Customer: Test User',
+          url: '/customers/1',
+        }],
+      });
+    });
+  };
+
   // --- Test 1: Default State (Unchanged) ---
   test('should replace the old placeholder and be collapsed by default', async ({ page }) => {
     await loginAs(page, 'default-user');
@@ -21,35 +51,53 @@ test.describe('Kore OpsCommandCenter Integration', () => {
     await expect(page.getByTestId('kore-command-input')).toBeVisible();
   });
 
-  // --- Test 3: L1 Query (FIXED) ---
-  // This test now uses a query that is *guaranteed* to be L1
-  test('should open, search (L1), and show L1 results', async ({ page }) => {
+  // --- Test 3: L1/L2 Progressive Load ---
+  test('should progressively load L1 (fast) and L2 (slow) results', async ({ page }) => {
     await loginAs(page, 'default-user');
     await page.waitForURL(/.*dashboard/);
 
-    // 1. Open panel
+    // --- 1. MOCK the API call for "Orders" ---
+    // We use a RegExp to catch all /api/v1/kore/search calls
+    await page.route(/\/api\/v1\/kore\/search/, async (route) => {
+      // Check that the query parameter is correct, case-insensitive
+      const params = new URL(route.request().url()).searchParams;
+      // --- DEBUG LOG 3 ---
+      console.log(`[DEBUG] E2E mock intercepted API call with query: ${params.get('q')}`);
+
+      if (params.get('q')?.toLowerCase() !== 'test') {
+        return route.abort();
+      }
+      await new Promise(f => setTimeout(f, 100)); // 100ms delay
+      await route.fulfill({
+        status: 200,
+        json: [{
+          type: 'customer',
+          id: 1,
+          title: 'test@example.com',
+          description: 'Customer: Test User',
+          url: '/customers/1',
+        }],
+      });
+    });
+
+    // 2. Open panel
     const isMac = process.platform === 'darwin';
     const modifier = isMac ? 'Meta' : 'Control';
     await page.locator('body').click();
     await page.keyboard.press(`${modifier}+j`);
-
-    // 2. Assert that the console is "clean" and L1 results are NOT visible yet
     await expect(page.getByTestId('kore-command-input')).toBeVisible();
-    await expect(page.getByText('Go to Dashboard')).not.toBeVisible();
 
-    // 3. Type a *low confidence* query that will NOT match L2
-    await page.getByTestId('kore-command-input').fill('dash');
+    // 3. Type a query
+    await page.getByTestId('kore-command-input').fill('test');
 
-    // 4. We MUST wait for the UI to react to the 'fill' command.
-    // We'll wait for the "Go to Dashboard" text to appear.
-    await expect(page.getByText('Go to Dashboard')).toBeVisible();
-
-    // 5s. And we assert the L2 banner is NOT visible
-    await expect(page.getByText('Understood:')).not.toBeVisible();
+    // 4. Assert L1 result ("Find Customer...") appears immediately
+    await expect(page.getByText('Find Customer by Email...')).toBeVisible(); // <-- FIX: Assert correct L1 result
+    
+    // 5. Assert that the L2 result ("test@example.com") also appears
+   await expect(page.getByText('test@example.com')).toBeVisible();
   });
 
-
-  // --- Test 4: L2 Query (FIXED) ---
+  // --- Test 4: L2 Query ---
   test.skip('should show the InterpretationBanner for a Layer 2 query', async ({ page }) => {
     await loginAs(page, 'default-user');
     await page.waitForURL(/.*dashboard/);

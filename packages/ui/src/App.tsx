@@ -4,6 +4,8 @@ import React from "react";
 import axios from "axios";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import routes from "./routes";
@@ -27,6 +29,8 @@ type LayoutContextType = {
 export function useLayoutContext() {
   return useOutletContext<LayoutContextType>();
 }
+
+const queryClient = new QueryClient();
 
 // Helper Component to manage layout state and render AppLayout
 const LayoutManager = () => {
@@ -80,6 +84,7 @@ export default function App() {
   return (
     // Wrap the entire app in Berry's ThemeCustomization
     // This reads from ConfigProvider and provides the MUI theme + CssBaseline
+  <QueryClientProvider client={queryClient}> 
     <ThemeCustomization>
       <Routes>
         {/* Render the sign-in route standalone */}
@@ -105,5 +110,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
     </ThemeCustomization>
+  </QueryClientProvider> 
   );
 }

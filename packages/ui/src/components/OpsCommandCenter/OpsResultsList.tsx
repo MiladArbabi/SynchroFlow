@@ -7,14 +7,16 @@ import {
   ListItemButton,
   ListItemText,
   Typography,
+  ListSubheader
 } from '@mui/material';
-import { OpsAction } from './types';
+import { OpsAction, SearchResult } from './types';
 
 // Define the component's props
 interface OpsResultsListProps {
-  commands: OpsAction[];
+  commands: OpsAction[]; // L1 results
+  entities: SearchResult[];
   selectedIndex: number;
-  onCommandSelect: (action: OpsAction) => void;
+  onCommandSelect: (item: OpsAction | SearchResult) => void; // 1. Update prop
 }
 
 /**
@@ -23,11 +25,14 @@ interface OpsResultsListProps {
  */
 export const OpsResultsList: React.FC<OpsResultsListProps> = ({
   commands,
+  entities,
   selectedIndex,
   onCommandSelect,
 }) => {
+  const combinedItems = [...commands, ...entities];
+
   // Handle the empty state
-  if (commands.length === 0) {
+  if (combinedItems.length === 0) {
     return (
       <Box sx={{ p: 2, textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
@@ -38,7 +43,11 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
   }
 
   return (
-    <List sx={{ p: 0, maxHeight: 400, overflowY: 'auto' }} dense>
+    <List sx={{ p: 0, maxHeight: 400, overflowY: 'auto' }} dense subheader={<li />}>
+      {/* --- L1 ACTIONS SECTION --- */}
+      {commands.length > 0 && (
+        <ListSubheader sx={{ bgcolor: 'background.paper' }}>Actions</ListSubheader>
+      )}
       {commands.map((action, index) => {
         const isSelected = selectedIndex === index;
 
@@ -67,7 +76,7 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
                     fontWeight={900}
                     sx={{
                       // Description size
-                      fontSize: '0.75',
+                      fontSize: '0.75rem',
                     }}
                   >
                     {action.name}
@@ -83,6 +92,47 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
                     }}
                   >
                     {action.description}
+                  </Typography>
+                }
+              />
+            </ListItemButton>
+          </ListItem>
+        );
+      })}
+      
+      {/* --- L2 ENTITIES SECTION --- */}
+      {entities.length > 0 && (
+        <ListSubheader sx={{ bgcolor: 'background.paper' }}>Entities</ListSubheader>
+      )}
+      {entities.map((entity, index) => {
+        const itemIndex = commands.length + index; // Offset by L1 commands
+        const isSelected = selectedIndex === itemIndex;
+
+        return (
+          <ListItem
+            key={entity.id}
+            disablePadding
+            role="listitem"
+            aria-selected={isSelected}
+          >
+            <ListItemButton
+              selected={isSelected}
+              onClick={() => onCommandSelect(entity)}
+              sx={{
+                py: 0.75,
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <ListItemText
+                primary={
+                  <Typography variant="body1" fontWeight={500}>
+                    {entity.title}
+                  </Typography>
+                }
+                secondary={
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.825rem' }}>
+                    {entity.description}
                   </Typography>
                 }
               />

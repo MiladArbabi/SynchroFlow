@@ -41,6 +41,18 @@ export interface OpsAction {
   undoable?: boolean;
 }
 
+/**
+ * Represents a dynamic entity result from the
+ * federated search API (/api/v1/kore/search)
+ */
+export interface SearchResult {
+  type: 'customer' | 'order' | 'product';
+  id: string | number;
+  title: string;
+  description: string;
+  url: string;
+}
+
 // --- LAYER 3: PROACTIVE INSIGHT TYPES ---
 
 /**

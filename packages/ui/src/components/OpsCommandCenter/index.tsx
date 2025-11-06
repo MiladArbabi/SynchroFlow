@@ -1,7 +1,10 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 //packages/ui/src/components/OpsCommandCenter/index.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, CircularProgress, Alert } from '@mui/material';
-import { OpsAction } from './types';
+import { useQuery } from '@tanstack/react-query'; 
+import axios from 'axios'; 
+import { OpsAction, SearchResult } from './types';
 import { useHealthContext } from 'contexts/HealthContext';
 import { OpsActionType, useOpsContext } from 'contexts/OpsContext';
 import useConfig from 'hooks/useConfig'; // We need this to read the open state
@@ -32,9 +35,7 @@ interface Interpretation {
 
 /**
  * Kore v1.0: OpsCommandCenter
- *
  * This is the main container for the entire Kore co-pilot UI.
- * It connects all the Layer 1 hooks and components.
  */
 
 export const OpsCommandCenter = () => {
@@ -71,6 +72,33 @@ export const OpsCommandCenter = () => {
   const commands = useOpsCommands(
     interpretation || clarificationOptions ? '' : debouncedSearchQuery,
   );
+
+  // --- L2 FEDERATED SEARCH (NEW) ---
+  // This hook calls our /api/v1/kore/search endpoint
+  const { data: entities = [] } = useQuery<SearchResult[]>({
+    queryKey: ['kore-federated-search', debouncedSearchQuery],
+    queryFn: async () => {
+      // Only run if the query is valid and L2 is healthy
+      if (debouncedSearchQuery.trim().length < 2 || !isKoreHealthy) {
+        return [];
+      }
+      // --- DEBUG LOG 1 ---
+      console.log(`[DEBUG] Calling useQuery with: ${debouncedSearchQuery.toLowerCase()}`);
+
+      const { data } = await axios.get(
+        `/api/v1/kore/search?q=${debouncedSearchQuery.toLowerCase()}`,
+      );
+      // --- DEBUG LOG 2 ---
+      console.log('[DEBUG] useQuery received data:', JSON.stringify(data));
+
+      return data;
+    },
+    // We don't want this to refetch constantly
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // --- COMBINE L1 & L2 RESULTS ---
+  const combinedResults = [...commands, ...entities];
 
   // --- L2 "BRAIN" ---
   // This effect runs on every keystroke to check for a L2 intent
@@ -113,7 +141,7 @@ export const OpsCommandCenter = () => {
       setInterpretation(null);
       setClarificationOptions(null);
     }
-  }, [debouncedSearchQuery, isKoreHealthy, searchQuery]);
+  }, [debouncedSearchQuery, isKoreHealthy]);
 
   // --- KEYBOARD NAVIGATION & EXECUTION ---
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -134,14 +162,14 @@ export const OpsCommandCenter = () => {
     // L1 List Navigation
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setSelectedIndex((prev) => (prev + 1) % commands.length);
+      setSelectedIndex((prev) => (prev + 1) % combinedResults.length);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setSelectedIndex((prev) => (prev - 1 + commands.length) % commands.length);
+      setSelectedIndex((prev) => (prev - 1 + combinedResults.length) % combinedResults.length);
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      if (commands[selectedIndex]) {
-        handleExecute(commands[selectedIndex]);
+      if (combinedResults[selectedIndex]) {
+        handleItemSelect(combinedResults[selectedIndex]); 
       }
     }
   };
@@ -152,6 +180,20 @@ export const OpsCommandCenter = () => {
       setConfirmingAction(action);
     } else {
       executeCommand(action, interpretation ? interpretation.intent : null);
+    }
+  };
+
+  // --- IMPLEMENT handleItemSelect ---
+  const handleItemSelect = (item: OpsAction | SearchResult) => {
+    // Check if it's an OpsAction (it has 'keywords')
+    if ('keywords' in item) {
+      handleExecute(item);
+    } else {
+      // It's a SearchResult (entity).
+      // We use 'window.location' for now.
+      // In a future ticket, we'll replace this with client-side routing
+      // by passing 'navigate' from 'useNavigate' into this function.
+      window.location.href = item.url;
     }
   };
 
@@ -251,7 +293,7 @@ export const OpsCommandCenter = () => {
         // L3: Idle + Proactive Insights - Show the Proactive List
         <OpsProactiveList
           insights={context.proactiveInsights}
-          onActionClick={(_insight, action) => handleExecute(action.action)} // TODO: Pass intent
+          onActionClick={(_insight, action) => handleItemSelect(action.action)}
           // 2. Use the enum, not the string
           onDismiss={(insightId) =>
             dispatch({ type: OpsActionType.UPDATE_INSIGHT_STATUS, payload: { id: insightId, status: 'dismissed' } })
@@ -259,9 +301,10 @@ export const OpsCommandCenter = () => {
         />
       ) : searchQuery.length > 0 ? (
         <OpsResultsList
-          commands={commands}
+          commands={commands} // Pass L1 results
+          entities={entities} // Pass L2 results
           selectedIndex={selectedIndex}
-          onCommandSelect={handleExecute}
+          onCommandSelect={handleItemSelect}
         />
         ) : (
         // L0: Idle + Clean - Show nothing (or a "welcome" message later)
