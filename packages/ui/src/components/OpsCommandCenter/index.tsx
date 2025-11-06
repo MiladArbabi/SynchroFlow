@@ -12,6 +12,7 @@ import useConfig from 'hooks/useConfig'; // We need this to read the open state
 // Import all our new hooks and components
 import { useOpsCommands } from './hooks/useOpsCommands';
 import { useCommandExecution } from './hooks/useCommandExecution';
+import { useKoreRanking } from './hooks/useKoreRanking';
 import { useDebounce } from 'hooks/useDebounce';
 import { OpsCommandInput } from './OpsCommandInput';
 import { OpsResultsList } from './OpsResultsList';
@@ -97,8 +98,8 @@ export const OpsCommandCenter = () => {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // --- COMBINE L1 & L2 RESULTS ---
-  const combinedResults = [...commands, ...entities];
+  // ---  RANK THE COMBINED RESULTS ---
+  const combinedResults = useKoreRanking(commands, entities, context);
 
   // --- L2 "BRAIN" ---
   // This effect runs on every keystroke to check for a L2 intent
