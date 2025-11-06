@@ -1,5 +1,6 @@
 //packages/ui/src/components/OpsCommandCenter/OpsResultsList.tsx
-import React from 'react';
+import React, { useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Box,
   List,
@@ -19,6 +20,17 @@ interface OpsResultsListProps {
   onCommandSelect: (item: OpsAction | SearchResult) => void; // 1. Update prop
 }
 
+// Define types for our new flattened item list
+type ListItemHeader = {
+ type: 'header';
+ label: string;
+};
+type ListItemRow = {
+ type: 'item';
+ data: OpsAction | SearchResult;
+};
+type VirtualItem = ListItemHeader | ListItemRow;
+
 /**
  * Renders the list of available commands (Layer 1 search results).
  * Handles keyboard selection highlighting and click events.
@@ -29,7 +41,41 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
   selectedIndex,
   onCommandSelect,
 }) => {
-  const combinedItems = [...commands, ...entities];
+  // 1. Create a ref for the scrolling parent element
+ const parentRef = useRef<HTMLUListElement>(null);
+
+ // 2. Flatten commands and entities into one array with headers
+ const items: VirtualItem[] = useMemo(() => {
+  const newItems: VirtualItem[] = [];
+  if (commands.length > 0) {
+   newItems.push({ type: 'header', label: 'Actions' });
+   newItems.push(
+    ...commands.map((cmd): VirtualItem => ({ type: 'item', data: cmd })),
+   );
+  }
+  if (entities.length > 0) {
+   newItems.push({ type: 'header', label: 'Entities' });
+   newItems.push(
+    ...entities.map((ent): VirtualItem => ({ type: 'item', data: ent })),
+   );
+  }
+  return newItems;
+ }, [commands, entities]);
+
+ const combinedItems = items; // Use new items array for empty check
+
+ // 3. Set up the virtualizer
+ // HOOKS MUST be called *before* any early returns.
+ const rowVirtualizer = useVirtualizer({
+  count: items.length,
+  getScrollElement: () => parentRef.current,
+  estimateSize: (index) => {
+   // Give headers a bit less space than items
+   const item = items[index];
+   return item.type === 'header' ? 32 : 58; // Estimated heights
+  },
+  overscan: 10, // Render 10 items above/below the viewport
+ });
 
   // Handle the empty state
   if (combinedItems.length === 0) {
@@ -42,97 +88,92 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
     );
   }
 
-  return (
-    <List sx={{ p: 0, maxHeight: 400, overflowY: 'auto' }} dense subheader={<li />}>
-      {/* --- L1 ACTIONS SECTION --- */}
-      {commands.length > 0 && (
-        <ListSubheader sx={{ bgcolor: 'background.paper' }}>Actions</ListSubheader>
-      )}
-      {commands.map((action, index) => {
-        const isSelected = selectedIndex === index;
+ const virtualItems = rowVirtualizer.getVirtualItems();
 
-        return (
+  return (
+    <List
+      ref={parentRef} // Attach the ref here
+      sx={{ p: 0, maxHeight: 400, overflowY: 'auto', position: 'relative' }} // Add relative positioning
+      dense
+    >
+    {/* Render a container for the total size */}
+    <Box sx={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%' }} />  
+      {/* 5. Iterate over virtual items and position them absolutely */}
+      {virtualItems.map((virtualItem) => {
+      const item = items[virtualItem.index];
+      const isSelected = selectedIndex === virtualItem.index;
+
+      // --- RENDER HEADER ---
+    if (item.type === 'header') {
+     return (
+      <ListSubheader
+       data-testid={`header-${item.label.toLowerCase()}`}
+       key={virtualItem.key}
+       component="div" // Required for positioning
+       sx={{
+        bgcolor: 'background.paper',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: `${virtualItem.size}px`,
+        transform: `translateY(${virtualItem.start}px)`,
+       }}
+      >
+       {item.label}
+      </ListSubheader>
+     );
+    }
+
+    // --- RENDER ITEM (ACTION OR ENTITY) ---
+    const itemData = item.data;
+    const isAction = 'category' in itemData; // Check if it's an OpsAction
+
+    return (
           <ListItem
-            key={action.id}
+            key={itemData.id}
             disablePadding
-            role="listitem" // Explicitly set role for our test
-            aria-selected={isSelected} // Set aria-selected for the test
+            role="listitem"
+            aria-selected={isSelected}
+            component="div" // Required for positioning
+            data-testid={`item-${itemData.id}`}
+              sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: `${virtualItem.size}px`,
+              transform: `translateY(${virtualItem.start}px)`,
+              }}
           >
             <ListItemButton
               selected={isSelected}
-              onClick={() => onCommandSelect(action)}
+              onClick={() => onCommandSelect(itemData)}
               sx={{
-                // Reduce vertical padding to make list denser
-                py: 0.25, //  Value 1 is default
+                py: isAction ? 0.25 : 0.75,
                 borderBottom: '1px solid',
                 borderColor: 'divider',
+                height: '100%',
               }}
             >
               <ListItemText
                 primary={
                   <Typography
                     variant="body1"
-                    color="text.secondary"
-                    fontWeight={900}
-                    sx={{
-                      // Description size
-                      fontSize: '0.75rem',
-                    }}
+                    color={isAction ? 'text.secondary' : 'inherit'}
+                    fontWeight={isAction ? 900 : 500}
+                    sx={{ fontSize: isAction ? '0.75rem' : '1rem' }}
                   >
-                    {action.name}
+                    {isAction ? itemData.name : itemData.title}
                   </Typography>
                 }
                 secondary={
                   <Typography
                     variant="body2"
                     color="text.secondary"
-                    sx={{
-                      // Description size
-                      fontSize: '0.75rem',
-                    }}
+                    sx={{ fontSize: isAction ? '0.75rem' : '0.825rem' }}
                   >
-                    {action.description}
-                  </Typography>
-                }
-              />
-            </ListItemButton>
-          </ListItem>
-        );
-      })}
-      
-      {/* --- L2 ENTITIES SECTION --- */}
-      {entities.length > 0 && (
-        <ListSubheader sx={{ bgcolor: 'background.paper' }}>Entities</ListSubheader>
-      )}
-      {entities.map((entity, index) => {
-        const itemIndex = commands.length + index; // Offset by L1 commands
-        const isSelected = selectedIndex === itemIndex;
-
-        return (
-          <ListItem
-            key={entity.id}
-            disablePadding
-            role="listitem"
-            aria-selected={isSelected}
-          >
-            <ListItemButton
-              selected={isSelected}
-              onClick={() => onCommandSelect(entity)}
-              sx={{
-                py: 0.75,
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              <ListItemText
-                primary={
-                  <Typography variant="body1" fontWeight={500}>
-                    {entity.title}
-                  </Typography>
-                }
-                secondary={
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.825rem' }}>
-                    {entity.description}
+                    {itemData.description}
                   </Typography>
                 }
               />
