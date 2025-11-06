@@ -208,8 +208,6 @@ export const OpsCommandCenter = () => {
       setSelectedIndex((prev) => findNextSelectable(prev, 'up'));
     } else if (event.key === 'Enter') {
       event.preventDefault();
-    }
-
     // Get the selected item from the *new* items array
       const selectedItem = items[selectedIndex];
 
@@ -217,6 +215,7 @@ export const OpsCommandCenter = () => {
       if (selectedItem && selectedItem.type === 'item') {
         handleItemSelect(selectedItem.data);
       }
+    }
   };
 
   // --- ACTION EXECUTION HANDLER ---
@@ -280,8 +279,8 @@ export const OpsCommandCenter = () => {
 
   // Reset selection when search query changes
   useEffect(() => {
-    // Set to first *selectable* item (index 1), or 0 if list is empty
-    setSelectedIndex(items.length > 0 ? 1 : 0);
+    // Reset to 0 (the top). The first ArrowDown will then select the first item.
+    setSelectedIndex(0);
   }, [semanticQuery]); // Rerun when query changes
 
   // Reset search query after successful execution
