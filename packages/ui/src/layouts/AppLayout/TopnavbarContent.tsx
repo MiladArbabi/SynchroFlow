@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import IconComponent from "../../components/Icon";
 import { KoreIcon } from "components/KoreIcon";
+import KoreTrigger from 'components/KoreTrigger';
 
 import useConfig from 'hooks/useConfig';
 import { useOpsContext } from 'contexts/OpsContext';
@@ -97,19 +98,9 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
       <Box sx={{ flexGrow: 1 }} />
 
       <Box display="flex" alignItems="center" gap={{ xs: 0.5, sm: 1, md: 1.5 }}> {/* Adjust gap */}
-        {/* --- Berry Sections in Order --- */}
-        {/* --- KORE ICON --- */}
-        <Tooltip title="Open Kore Command (Cmd+J)">
-          <IconButton
-            color="inherit"
-            onClick={handleToggleOpsConsole}
-            data-testid="kore-navbar-button"
-            size="small" 
-            disableRipple
-          >
-            <KoreIcon isActive={newInsightCount > 0} />
-          </IconButton>
-        </Tooltip>
+        {/* -- KORE TRIGGET ICON --  */}
+        <KoreTrigger onClick={handleToggleOpsConsole} isActive={newInsightCount > 0} />
+
 
         {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
         <NotificationSection />
