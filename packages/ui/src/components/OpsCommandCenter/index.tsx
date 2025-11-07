@@ -350,6 +350,7 @@ export const OpsCommandCenter = () => {
           items={items} // Pass the new items array
           selectedIndex={selectedIndex}
           onCommandSelect={handleItemSelect}
+          onItemHover={setSelectedIndex}
         />
       ) : (
         // L0: Idle + Clean - Show nothing (or a "welcome" message later)

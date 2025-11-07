@@ -16,7 +16,8 @@ import { OpsAction, SearchResult, VirtualItem } from './types';
 interface OpsResultsListProps {
   items: VirtualItem[];
   selectedIndex: number;
-  onCommandSelect: (item: OpsAction | SearchResult) => void; // 1. Update prop
+  onCommandSelect: (item: OpsAction | SearchResult) => void; 
+  onItemHover: (index: number) => void;
 }
 /**
  * Renders the list of available commands (Layer 1 search results).
@@ -26,6 +27,7 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
   items,
   selectedIndex,
   onCommandSelect,
+  onItemHover,
 }) => {
   // 1. Create a ref for the scrolling parent element
  const parentRef = useRef<HTMLUListElement>(null);
@@ -105,17 +107,22 @@ export const OpsResultsList: React.FC<OpsResultsListProps> = ({
             component="div" // Required for positioning
             data-testid={`item-${itemData.id}`}
               sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: `${virtualItem.size}px`,
-              transform: `translateY(${virtualItem.start}px)`,
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
               }}
           >
             <ListItemButton
               selected={isSelected}
               onClick={() => onCommandSelect(itemData)}
+              onMouseEnter={() => {
+              if (item.type === 'item') {
+                onItemHover(virtualItem.index);
+              }
+            }}
               sx={{
                 py: isAction ? 0.25 : 0.75,
                 borderBottom: '1px solid',
