@@ -81,7 +81,7 @@ export default function Header() {
       </Box> */}
 
       {/* notification */}
-      <NotificationSection />
+      <NotificationSection/>
 
       {/* full sceen toggler */}
       <Box sx={{ display: { xs: 'none', lg: 'block' } }}>
