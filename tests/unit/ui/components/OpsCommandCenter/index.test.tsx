@@ -114,6 +114,17 @@ jest.mock('components/OpsCommandCenter/OpsProactiveList', () => ({
   ),
 }));
 
+jest.mock('components/OpsCommandCenter/OpsSearchStatus', () => ({
+  OpsSearchStatus: ({ actionCount, entityCount }: any) => (
+    <div data-testid="ops-search-status">
+      {actionCount === 0 && entityCount === 0 && 'No results found'}
+      {actionCount > 0 && entityCount > 0 && `${actionCount} ${actionCount === 1 ? 'Action' : 'Actions'}, ${entityCount} ${entityCount === 1 ? 'Entity' : 'Entities'}`}
+      {actionCount > 0 && entityCount === 0 && `${actionCount} ${actionCount === 1 ? 'Action' : 'Actions'}`}
+      {actionCount === 0 && entityCount > 0 && `${entityCount} ${entityCount === 1 ? 'Entity' : 'Entities'}`}
+    </div>
+  ),
+}));
+
 // Import mocked modules for control in tests
 const mockParseIntent = require('components/OpsCommandCenter/naturalLanguage/intentParser').parseIntent;
 const mockExecuteNaturalLanguage = require('components/OpsCommandCenter/naturalLanguage/queryExecutor').executeNaturalLanguage;
@@ -202,12 +213,7 @@ describe('OpsCommandCenter', () => {
     
     // Setup default mock implementations
     (useOpsCommands as jest.Mock).mockReturnValue(mockActions);
-    (useKoreRanking as jest.Mock).mockReturnValue({
-      commands: mockActions,
-      entities: mockEntities,
-      // Or if it returns a flat array as expected by the component:
-      rankedResults: [...mockActions, ...mockEntities]
-    });
+    (useKoreRanking as jest.Mock).mockReturnValue([...mockActions, ...mockEntities]);
     (useSemanticQuery as jest.Mock).mockImplementation((q) => q);
     (useCommandExecution as jest.Mock).mockReturnValue({
       executeCommand: mockExecuteCommand,
@@ -308,6 +314,75 @@ describe('OpsCommandCenter', () => {
       await typeInSearch('find order');
       
       expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    describe('Search Status', () => {
+      it('should display action and entity counts when search has results', async () => {
+      renderComponent();
+      const input = await typeInSearch('find');
+      
+      // Wait for search results
+      await screen.findByText('Find Order');
+      
+      // Debug: Check what's actually rendered
+      const statusElements = screen.queryAllByText(/Action|Entity/);
+      console.log('Status elements found:', statusElements.map(el => el.textContent));
+      
+      // Check if OpsSearchStatus component is rendered
+      const statusComponent = screen.queryByTestId('ops-search-status');
+      console.log('OpsSearchStatus found:', !!statusComponent);
+      if (statusComponent) {
+        console.log('OpsSearchStatus content:', statusComponent.textContent);
+      }
+      
+      // The actual assertion
+      expect(await screen.findByText('2 Actions, 1 Entity')).toBeInTheDocument();
+    });
+
+      it('should handle singular and plural forms correctly', async () => {
+        // Test with 1 action and 1 entity
+        const singleAction = [mockActions[0]];
+        const singleEntity = [mockEntities[0]];
+        
+        (useOpsCommands as jest.Mock).mockReturnValue(singleAction);
+        (useKoreRanking as jest.Mock).mockReturnValue([...singleAction, ...singleEntity]);
+        (axios.get as jest.Mock).mockResolvedValue({ data: singleEntity });
+
+        renderComponent();
+        await typeInSearch('order');
+        
+        // Check for singular forms
+        expect(await screen.findByText('1 Action, 1 Entity')).toBeInTheDocument();
+      });
+
+      it('should show "No results found" when there are no results', async () => {
+        // Mock empty results
+        (useOpsCommands as jest.Mock).mockReturnValue([]);
+        (useKoreRanking as jest.Mock).mockReturnValue([]);
+        (axios.get as jest.Mock).mockResolvedValue({ data: [] });
+
+        renderComponent();
+        await typeInSearch('nonexistent');
+        
+        expect(await screen.findByText('No results found')).toBeInTheDocument();
+      });
+
+      it('should not show status during natural language interpretation', async () => {
+        // Mock high-confidence intent to trigger interpretation banner
+        mockParseIntent.mockReturnValue({
+          name: 'findOrder',
+          confidence: 0.8,
+          parameters: { orderId: '123' }
+        });
+        
+        renderComponent();
+        await typeInSearch('find order 123');
+        
+        // Should show interpretation banner instead of status
+        expect(screen.getByTestId('interpretation-banner')).toBeInTheDocument();
+        expect(screen.queryByText(/Actions/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Entities/)).not.toBeInTheDocument();
+      });
     });
   });
 
@@ -500,25 +575,45 @@ describe('OpsCommandCenter', () => {
       expect(screen.getByText('Are you sure you want to delete this order?')).toBeInTheDocument();
     });
 
-    it('should execute entity navigation for SearchResult items', async () => {
+      it('should execute entity navigation for SearchResult items', async () => {
+      // Create a spy to capture the handleItemSelect calls
+      const originalHandleItemSelect = require('packages/ui/src/components/OpsCommandCenter/index.tsx').handleItemSelect;
+      
       renderComponent();
       const input = await typeInSearch('order');
       
       await screen.findByText('Order #1001');
       
-      // Navigate to and select the entity
+      // Navigate to the entity item
       for (let i = 0; i < 4; i++) {
         fireEvent.keyDown(input, { key: 'ArrowDown', code: 'ArrowDown' });
       }
       
+      // Verify the entity is selected
       expect(screen.getByTestId('item-e1')).toHaveAttribute('aria-selected', 'true');
       
-      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
-      
-      // Verify execution by checking the input was cleared
-      await waitFor(() => {
-        expect(screen.getByTestId('kore-command-input')).toHaveValue('');
+      // Mock window.location.href briefly
+      const originalHref = window.location.href;
+      let navigatedUrl = '';
+      Object.defineProperty(window.location, 'href', {
+        set: (value) => { navigatedUrl = value; },
+        get: () => navigatedUrl || originalHref,
+        configurable: true
       });
+      
+      try {
+        // Execute the entity navigation
+        fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+        
+        // Verify navigation occurred
+        expect(navigatedUrl).toBe('/orders/e1');
+      } finally {
+        // Restore
+        Object.defineProperty(window.location, 'href', {
+          value: originalHref,
+          writable: true
+        });
+      }
     });
   });
 
