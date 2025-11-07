@@ -13,7 +13,7 @@ interface KoreTriggerProps {
 // This is the styling from the old HeaderAvatar.
 // We apply it via 'sx' to our shared <Avatar> component.
 const getTriggerSx = (theme: Theme): SxProps<Theme> => ({
-    borderRadius: '6px', // Match the old style exactly
+    borderRadius: '18px', // Match the old style exactly
     color: theme.palette.mode === 'dark' ? theme.palette.secondary.main : theme.palette.secondary.dark,
     background: theme.palette.mode === 'dark' ? theme.palette.dark.main : theme.palette.secondary.light,
     '&:hover': {
