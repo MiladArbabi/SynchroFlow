@@ -24,7 +24,7 @@ test.describe('KoreTrigger E2E Tests', () => {
 
   test('should open OpsCommandCenter when clicked', async ({ page }) => {
     const koreTrigger = page.locator('[data-testid="kore-navbar-button"]');
-    const commandCenterInput = page.locator('input[placeholder*="Ask Kore"]');
+    const commandCenterInput = page.locator('input[placeholder*="Ask Kore anything... (Try: refund last order or show stale orders)"]');
     
     // Initially hidden
     await expect(commandCenterInput).not.toBeVisible();

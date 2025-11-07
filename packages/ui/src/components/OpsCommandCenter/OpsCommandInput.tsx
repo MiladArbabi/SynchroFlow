@@ -50,7 +50,7 @@ export const OpsCommandInput = React.forwardRef<
       <TextField
         fullWidth
         variant="standard" // Use standard for a clean, borderless look
-        placeholder="Ask Kore..."
+        placeholder="Ask Kore anything... (Try: refund last order or show stale orders)"
         value={searchQuery}
         onChange={(e) => onSearchChange(e.target.value)}
         onKeyDown={onKeyDown}

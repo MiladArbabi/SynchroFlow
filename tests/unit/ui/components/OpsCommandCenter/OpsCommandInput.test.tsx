@@ -37,7 +37,7 @@ describe('OpsCommandInput', () => {
     expect(screen.getByTestId('kore-icon-svg')).toBeInTheDocument();
     expect(input).toHaveAttribute(
       'placeholder',
-      "Ask Kore..."
+      "Ask Kore anything... (Try: refund last order or show stale orders)"
     );
   });
 
