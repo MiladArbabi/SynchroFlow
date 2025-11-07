@@ -4,7 +4,7 @@ LaSyncro (formerly SynchroFlow) is a B2B SaaS platform engineered to be the cent
 
 Our platform is built on a high-performance C++ core that serves as a single source of truth, evolving from a unified platform into a complete commerce ecosystem.
 
-## 1\. Current Project Status & Key Achievements (v5.6)
+## 1\. Current Project Status & Key Achievements (v5.8)
 
 **Phase 3 (UI Foundation & Core Features)** is complete. We have successfully replaced our custom UI foundation with a professional, robust, and scalable UI kit based on the **Berry Material React Admin Template**. This provides a consistent, theme-aware, and feature-rich user experience.
 
@@ -16,7 +16,7 @@ Our platform is built on a high-performance C++ core that serves as a single sou
 
   * **Sidenav & Navigation Functional:** Replaced the placeholder Sidenav with Berry's `MenuList`, `NavGroup`, `NavCollapse`, and `NavItem` components. The navigation is now data-driven from our `menu-items` config and fully supports collapsed/expanded states.
 
-  * **Dynamic Header Integrated:** Replaced the placeholder top navbar with Berry's header components, including a functional `ProfileSection`, `NotificationSection`, `SearchSection`, `MegaMenuSection`, `LocalizationSection`, and `MobileSection`.
+  * **Dynamic Header Integrated:** Replaced the placeholder top navbar with Berry's header components, including a functional `ProfileSection`, `NotificationSection`, `MegaMenuSection`, `LocalizationSection`, and `MobileSection`. (Note: The legacy `SearchSection` has been deprecated and replaced by the Kore Co-pilot).
 
   * **Live Customization Drawer:** Integrated Berry's full "Live Customize" drawer. All child components (`ThemeMode`, `PresetColor`, `BorderRadius`, `FontFamily`, etc.) are converted and correctly wired to the `ConfigContext`, allowing real-time theme changes.
 
@@ -43,13 +43,20 @@ Our platform is built on a high-performance C++ core that serves as a single sou
 
 **Automated Database Seeding:** Added a Knex seed file (dev\_seed.ts) and integrated it into the `npm run dev:full` startup script. The development database is now automatically reset, migrated, and seeded with consistent test data on every start.
 
+* **Kore v2.0 "Spotlight" Implementation:**
+     * **"Spotlight Trigger" Integrated:** Deprecated and removed the legacy Berry `SearchSection` from the main header.
+     * Replaced it with a new, unified `<KoreTrigger />` component, which serves as the "Spotlight" entry point for all search, commands, and insights.
+     * **L3 Proactive Engine (Frontend) Complete:** The `<KoreTrigger />` is fully wired to the `OpsContext`. It animates (via `isActive`) when new `proactiveInsights` are received.
+     * **L3 "Comlink" (SSE) Integrated:** The `OpsContext` now maintains a persistent Server-Sent Events (SSE) connection to `/api/v1/kore/subscribe` to receive insights from the backend in real-time.
+     * **`OpsCommandCenter` Polished:** The `OpsCommandInput` placeholder has been updated to educate users on the new "search + command" paradigm, completing the "Spotlight" experience.
+
 ## 2\. Core Product Modules & Offerings
 
 ### Core Platform
 
   * **FinOps Command Center:** Unified dashboard for finance and operations. (Foundation Implemented)
   * **Echo Communications Hub:** Unified inbox for customer support. (Planned)
-  * **Ops-Intel Engine:** A cross-platform module to track and quantify labor cost savings. (Planned)
+  * **Ops-Intel Engine:** A cross-platform module to track and quantify labor cost savings. (In Progress)
 
 ### Core Operations Module
 
@@ -237,6 +244,9 @@ Our GTM is a Product-Led Growth (PLG) motion funneling into sales-led conversion
       * **Primary Goal:** To launch the **"Spark"** plan by focusing 100% on features that deliver **immediate, undeniable time or money savings** to our new ICP: the time-strapped **solopreneur**.
       * **Success Validation:** All features will be validated against: 1) **Time to Value**, 2) **Actionability**, 3) **Scalability**, and 4) **Integration Potential**.
       * **Guiding Principle (The "Magic Number"):** Every feature must be validated against its ability to move a single key metric for this ICP: **"weekly time saved"** or **"reduction in manual errors."**
+      #### Foundational Technology: Kore v2.0 Co-pilot
+      
+      *All Phase 4 intelligence and automation features will be built on the **Kore v2.0 platform**. The "Intelligence Layer" (Weeks 5-8) and "Automation Foundation" (Weeks 9-12) will be delivered to the user *through* Kore's proactive `OpsProactiveList` (L3) and conversational `OpsCommandCenter` (L2).*
 
     #### Implementation Strategy
 

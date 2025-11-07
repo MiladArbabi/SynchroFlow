@@ -53,8 +53,8 @@ export const initiateOAuth = (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing required query param: shop' });
     }
     const shopifyApiKey = process.env.SHOPIFY_API_KEY;
-    // These are the "scoped permissions" for the trial
-    const scopes = 'read_products,read_orders,read_inventory';
+    // UPDATED FOR "TRUE PROFIT" MVP: Added read_payouts (for fees) and read_fulfillments (for shipping)
+    const scopes = 'read_products,read_orders,read_inventory,read_payouts,read_fulfillments';
 
     authorizationUrl = `https://{shop}.myshopify.com/admin/oauth/authorize?client_id=${shopifyApiKey}&scope=${scopes}&redirect_uri=${redirectUri}&state=${state}`.replace(
       '{shop}',
