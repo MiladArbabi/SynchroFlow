@@ -6,10 +6,9 @@ import Box from '@mui/material/Box';
 
 // project imports
 import LogoSection from '../LogoSection';
-import SearchSection from './SearchSection';
 import MobileSection from './MobileSection';
 import ProfileSection from './ProfileSection';
-import LocalizationSection from './LocalizationSection';
+//import LocalizationSection from './LocalizationSection';
 import MegaMenuSection from './MegaMenuSection';
 import FullScreenSection from './FullScreenSection';
 import NotificationSection from './NotificationSection';
@@ -71,20 +70,15 @@ export default function Header() {
         )}
       </Box>
 
-      {/* header search */}
-      <SearchSection />
-      <Box sx={{ flexGrow: 1 }} />
-      <Box sx={{ flexGrow: 1 }} />
-
       {/* mega-menu */}
       <Box sx={{ display: { xs: 'none', md: 'block' } }}>
         <MegaMenuSection />
       </Box>
 
       {/* live customization & localization */}
-      <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+      {/* <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
         <LocalizationSection />
-      </Box>
+      </Box> */}
 
       {/* notification */}
       <NotificationSection />

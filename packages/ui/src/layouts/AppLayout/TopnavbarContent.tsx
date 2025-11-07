@@ -19,7 +19,6 @@ import useConfig from 'hooks/useConfig';
 import { useOpsContext } from 'contexts/OpsContext';
 
 // --- BERRY HEADER SECTION IMPORTS ---
-import SearchSection from 'layout/MainLayout/Header/SearchSection';
 // import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
 import NotificationSection from 'layout/MainLayout/Header/NotificationSection';
 // import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
@@ -99,8 +98,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
 
       <Box display="flex" alignItems="center" gap={{ xs: 0.5, sm: 1, md: 1.5 }}> {/* Adjust gap */}
         {/* --- Berry Sections in Order --- */}
-        <SearchSection />
-
         {/* --- KORE ICON --- */}
         <Tooltip title="Open Kore Command (Cmd+J)">
           <IconButton
