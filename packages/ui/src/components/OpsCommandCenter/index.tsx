@@ -8,7 +8,8 @@ import axios from 'axios';
 import { OpsAction, SearchResult, VirtualItem } from './types';
 import { useHealthContext } from 'contexts/HealthContext';
 import { OpsActionType, useOpsContext } from 'contexts/OpsContext';
-import useConfig from 'hooks/useConfig'; // We need this to read the open state
+import useConfig from 'hooks/useConfig'; 
+import { OpsSearchStatus } from './OpsSearchStatus';
 
 // Import all our new hooks and components
 import { useOpsCommands } from './hooks/useOpsCommands';
@@ -350,6 +351,20 @@ export const OpsCommandCenter = () => {
           selectedIndex={selectedIndex}
           onCommandSelect={handleItemSelect}
         />
+      ) : (
+        // L0: Idle + Clean - Show nothing (or a "welcome" message later)
+        <Box sx={{ flexGrow: 1 }} /> // Render an empty box
+      )}
+      {/* --- RENDER THE STATUS BAR (NEW) --- */}
+      {/* Show only when in L1 search mode */}
+      {(searchQuery.length > 0 &&
+        !isExecuting &&
+        !interpretation &&
+        !clarificationOptions) ? (
+          <OpsSearchStatus
+            actionCount={commands.length}
+            entityCount={entities.length}
+          />
         ) : (
         // L0: Idle + Clean - Show nothing (or a "welcome" message later)
         <Box sx={{ flexGrow: 1 }} /> // Render an empty box
