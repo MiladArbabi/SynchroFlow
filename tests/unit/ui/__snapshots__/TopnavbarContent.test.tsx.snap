@@ -1,0 +1,192 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`TopnavbarContent matches snapshot 1`] = `
+<div
+  class="MuiBox-root css-1r6owtj"
+>
+  <div
+    class="MuiBox-root css-70qvj9"
+  >
+    <button
+      class="MuiButtonBase-root MuiIconButton-root MuiIconButton-sizeSmall css-1j5j9z7-MuiButtonBase-root-MuiIconButton-root"
+      tabindex="0"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-panel-left"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        style="vertical-align: middle;"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect
+          height="18"
+          rx="2"
+          width="18"
+          x="3"
+          y="3"
+        />
+        <path
+          d="M9 3v18"
+        />
+      </svg>
+    </button>
+    <nav
+      aria-label="breadcrumb"
+      class="MuiTypography-root MuiTypography-body1 MuiBreadcrumbs-root css-5cvx94-MuiTypography-root-MuiBreadcrumbs-root"
+    >
+      <ol
+        class="MuiBreadcrumbs-ol css-1uwp4ue-MuiBreadcrumbs-ol"
+      >
+        <li
+          class="MuiBreadcrumbs-li"
+        >
+          <a
+            class="MuiTypography-root MuiTypography-inherit MuiLink-root MuiLink-underlineHover css-udzyuc-MuiTypography-root-MuiLink-root"
+            data-discover="true"
+            href="/dashboard"
+          />
+        </li>
+      </ol>
+    </nav>
+  </div>
+  <div
+    class="MuiBox-root css-i9gxme"
+  />
+  <div
+    class="MuiBox-root css-drrmr9"
+  >
+     
+    <div
+      data-is-active="false"
+      data-testid="kore-trigger-mock"
+    >
+      KoreTrigger Mock
+    </div>
+    <div
+      class="MuiBox-root css-19u0ons"
+    >
+      <button
+        aria-haspopup="true"
+        aria-label="Notifications"
+        class="MuiButtonBase-root MuiIconButton-root MuiIconButton-colorInherit MuiIconButton-sizeLarge css-z77o6z-MuiButtonBase-root-MuiIconButton-root"
+        data-mui-internal-clone-element="true"
+        tabindex="0"
+        type="button"
+      >
+        <span
+          class="MuiBadge-root css-63ezxx-MuiBadge-root"
+        >
+          <svg
+            class="tabler-icon tabler-icon-bell "
+            fill="none"
+            height="20px"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.5"
+            viewBox="0 0 24 24"
+            width="20px"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6"
+            />
+            <path
+              d="M9 17v1a3 3 0 0 0 6 0v-1"
+            />
+          </svg>
+          <span
+            class="MuiBadge-badge MuiBadge-dot MuiBadge-anchorOriginTopRight MuiBadge-anchorOriginTopRightRectangular MuiBadge-overlapRectangular MuiBadge-colorError css-9ucyi1-MuiBadge-badge"
+          />
+        </span>
+      </button>
+    </div>
+    <div
+      class="MuiBox-root css-6eu2y8"
+    >
+      <button
+        aria-label="Edit Layout"
+        class="MuiButtonBase-root MuiIconButton-root MuiIconButton-colorInfo MuiIconButton-sizeMedium css-d3mwg2-MuiButtonBase-root-MuiIconButton-root"
+        data-mui-internal-clone-element="true"
+        tabindex="0"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-pencil"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          style="vertical-align: middle;"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
+          />
+          <path
+            d="m15 5 4 4"
+          />
+        </svg>
+      </button>
+    </div>
+    <div
+      data-testid="profile-section-mock"
+    >
+      Profile Section
+    </div>
+    <div
+      class="MuiBox-root css-10q9jzs"
+    >
+       
+      <span
+        class="MuiBox-root css-13fec3q"
+      >
+        <button
+          aria-haspopup="true"
+          aria-label="Open mobile menu"
+          class="MuiButtonBase-root MuiIconButton-root MuiIconButton-sizeMedium css-gscfrz-MuiButtonBase-root-MuiIconButton-root"
+          tabindex="0"
+          type="button"
+        >
+          <svg
+            class="tabler-icon tabler-icon-dots-vertical "
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.5"
+            style="font-size: 1.5rem;"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"
+            />
+            <path
+              d="M12 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"
+            />
+            <path
+              d="M12 5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"
+            />
+          </svg>
+        </button>
+      </span>
+    </div>
+  </div>
+</div>
+`;
