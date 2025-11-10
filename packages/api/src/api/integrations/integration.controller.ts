@@ -6,7 +6,7 @@ import axios from 'axios';
 import db from '../../db';
 import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
-import { getQueueChannel } from '../../queue';
+import { getQueueChannel, connection } from '../../queue';
 
 // --- Helper function for multi-tenancy (copied from dashboard.controller) ---
 /**
@@ -217,5 +217,44 @@ export const getSyncStatus = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[integration.controller] Error in getSyncStatus:', error);
     res.status(500).json({ error: 'Failed to fetch sync status.' });
+  }
+};
+
+/**
+ * Endpoint for the "Pre-flight Check"
+ * Checks if all necessary services (DB, Queue, Env) are ready.
+ */
+export const preFlightCheck = async (req: Request, res: Response) => {
+  const issues: string[] = [];
+  let dbReady = false;
+  let queueReady = false;
+
+  // 1. Check DB Connection
+  try {
+    await db.raw('SELECT 1');
+    dbReady = true;
+  } catch (error) {
+    console.error('[preFlightCheck] DB connection failed:', (error as Error).message);
+    issues.push('Database connection error.');
+  }
+
+  // 2. Check Queue Connection
+  queueReady = connection.isConnected();
+  if (!queueReady) {
+    issues.push('Message queue not connected.');
+  }
+
+  // 3. Check ENV Vars
+  if (!process.env.SHOPIFY_API_KEY || !process.env.SHOPIFY_API_SECRET) {
+    issues.push('Server configuration incomplete.');
+  }
+
+  const isReady = dbReady && queueReady && issues.length === 0;
+
+  if (isReady) {
+    return res.status(200).json({ ready: true, issues: [] });
+  } else {
+    // 503 Service Unavailable is the correct status code for a temporary failure
+    return res.status(503).json({ ready: false, issues });
   }
 };
