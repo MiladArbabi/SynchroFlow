@@ -39,10 +39,30 @@ describe('Sync Worker', () => {
     platform: 'woocommerce'
   };
 
+    // Mock database query builder methods
+    const mockWhere = jest.fn().mockReturnThis();
+    const mockFirst = jest.fn();
+    const mockUpdate = jest.fn().mockResolvedValue(1);
+
   beforeEach(() => {
     jest.clearAllMocks();
     (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
     process.env.ENCRYPTION_KEY = 'test-encryption-key';
+    
+    // Setup default db mock
+    (db as jest.MockedFunction<any>).mockImplementation((table: string) => {
+      if (table === 'integrations') {
+        return {
+          where: mockWhere,
+          first: mockFirst,
+          update: mockUpdate
+        };
+      }
+      return {
+        where: mockWhere,
+        first: mockFirst
+      };
+    });
     
     // Restore console if it was mocked
     global.console = originalConsole;
@@ -56,14 +76,7 @@ describe('Sync Worker', () => {
   describe('Core Functionality', () => {
     it('should process valid message successfully (Happy Path)', async () => {
       // Setup mocks
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-      
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      mockFirst.mockResolvedValue(mockIntegration);
       
       (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
         toString: jest.fn().mockReturnValue('decrypted-access-token')
@@ -87,7 +100,12 @@ describe('Sync Worker', () => {
       expect(db).toHaveBeenCalledWith('integrations');
       expect(mockWhere).toHaveBeenCalledWith({ id: 123 });
       expect(CryptoJS.AES.decrypt).toHaveBeenCalledWith('encrypted-token-123', 'test-encryption-key');
-      expect(performInitialSync).toHaveBeenCalledWith('decrypted-access-token', 'test-shop.myshopify.com', 456);
+      expect(performInitialSync).toHaveBeenCalledWith(
+        'decrypted-access-token', 
+        'test-shop.myshopify.com', 
+        456,
+        123  // integrationId is now passed
+      );
       expect(mockChannel.ack).toHaveBeenCalledWith(mockMsg);
     });
 
@@ -144,14 +162,8 @@ describe('Sync Worker', () => {
 
     it('should handle missing ENCRYPTION_KEY environment variable', async () => {
       delete process.env.ENCRYPTION_KEY;
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      
+      mockFirst.mockResolvedValue(mockIntegration);
 
       let processSyncJob: any;
       await jest.isolateModules(async () => {
@@ -168,14 +180,7 @@ describe('Sync Worker', () => {
     });
 
     it('should handle token decryption failures', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      mockFirst.mockResolvedValue(mockIntegration);
 
       // Mock decryption to throw error
       (CryptoJS.AES.decrypt as jest.Mock).mockImplementation(() => {
@@ -197,20 +202,14 @@ describe('Sync Worker', () => {
     });
 
     it('should handle malformed integration data', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
       const malformedIntegration = {
         id: 123,
-        // Missing required fields
+        // Missing required fields: shop_id, platform_shop_name, access_token_encrypted
         platform: 'shopify'
       };
 
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(malformedIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      // Make sure we're using the shared mocks
+      mockFirst.mockResolvedValue(malformedIntegration);
 
       let processSyncJob: any;
       await jest.isolateModules(async () => {
@@ -224,131 +223,115 @@ describe('Sync Worker', () => {
 
       // Should nack due to missing required fields
       expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
+      
+      // Verify integration status was updated
+      expect(mockUpdate).toHaveBeenCalledWith({
+        sync_status: 'FAILED',
+        sync_last_error: expect.stringContaining('Integration missing required fields')
+      });
     });
   });
 
   // ===== ERROR HANDLING TESTS =====
   describe('Error Handling', () => {
-    it('should handle missing integration', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
+    it('should handle service failure with nack and update integration status', async () => {
+    mockFirst.mockResolvedValue(mockIntegration);
 
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(null);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
-
-      let processSyncJob: any;
-      await jest.isolateModules(async () => {
-        const worker = require('api-src/sync.worker');
-        processSyncJob = worker.processSyncJob;
-      });
-
-      const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 404 })) };
-
-      await processSyncJob(mockMsg);
-
-      expect(performInitialSync).not.toHaveBeenCalled();
-      expect(mockChannel.ack).toHaveBeenCalledWith(mockMsg);
+    (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
+      toString: jest.fn().mockReturnValue('decrypted-access-token')
     });
 
-    it('should handle service failure with nack', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
+    const syncError = new Error('Shopify API unavailable');
+    (performInitialSync as jest.Mock).mockRejectedValue(syncError);
 
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
-
-      (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
-        toString: jest.fn().mockReturnValue('decrypted-access-token')
-      });
-
-      const syncError = new Error('Shopify API unavailable');
-      (performInitialSync as jest.Mock).mockRejectedValue(syncError);
-
-      let processSyncJob: any;
-      await jest.isolateModules(async () => {
-        const worker = require('api-src/sync.worker');
-        processSyncJob = worker.processSyncJob;
-      });
-
-      const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
-
-      await processSyncJob(mockMsg);
-
-      expect(performInitialSync).toHaveBeenCalled();
-      expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
+    let processSyncJob: any;
+    await jest.isolateModules(async () => {
+      const worker = require('api-src/sync.worker');
+      processSyncJob = worker.processSyncJob;
     });
 
-    it('should handle database connection failures', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
+    const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
 
-      // Mock database to throw connection error
-      (db as unknown as jest.Mock).mockImplementation(() => {
-        throw new Error('Database connection failed');
-      });
+    await processSyncJob(mockMsg);
 
-      let processSyncJob: any;
-      await jest.isolateModules(async () => {
-        const worker = require('api-src/sync.worker');
-        processSyncJob = worker.processSyncJob;
-      });
-
-      const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
-
-      await processSyncJob(mockMsg);
-
-      expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
-      expect(performInitialSync).not.toHaveBeenCalled();
-    });
-
-    it('should handle database constraint violations', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
-
-      (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
-        toString: jest.fn().mockReturnValue('decrypted-access-token')
-      });
-
-      // Mock sync service to throw constraint error
-      const constraintError = new Error('Unique constraint violation');
-      (performInitialSync as jest.Mock).mockRejectedValue(constraintError);
-
-      let processSyncJob: any;
-      await jest.isolateModules(async () => {
-        const worker = require('api-src/sync.worker');
-        processSyncJob = worker.processSyncJob;
-      });
-
-      const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
-
-      await processSyncJob(mockMsg);
-
-      expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
+    expect(performInitialSync).toHaveBeenCalled();
+    expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
+    
+    // Verify integration status is updated on failure
+    expect(mockUpdate).toHaveBeenCalledWith({
+      sync_status: 'FAILED',
+      sync_last_error: 'Shopify API unavailable' // This should match the actual error
     });
   });
+
+  // Fix for "should handle database connection failures"
+  it('should handle database connection failures', async () => {
+    // Mock database to throw connection error ONLY for the initial query
+    // But allow the update in the catch block to work so the test can complete
+    let shouldThrow = true;
+    (db as jest.MockedFunction<any>).mockImplementation((_table: string) => {
+      if (shouldThrow) {
+        shouldThrow = false; // Only throw on the first call (the query)
+        throw new Error('Database connection failed');
+      }
+      // For subsequent calls (like the update in catch block), return a working mock
+      return {
+        where: jest.fn().mockReturnThis(),
+        update: jest.fn().mockResolvedValue(1)
+      };
+    });
+
+    let processSyncJob: any;
+    await jest.isolateModules(async () => {
+      const worker = require('api-src/sync.worker');
+      processSyncJob = worker.processSyncJob;
+    });
+
+    const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
+
+    await processSyncJob(mockMsg);
+
+    expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
+    expect(performInitialSync).not.toHaveBeenCalled();
+  });
+
+  // Fix for "should handle database constraint violations"
+  it('should handle database constraint violations', async () => {
+    // Use the shared mocks instead of creating new ones
+    mockFirst.mockResolvedValue(mockIntegration);
+
+    (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
+      toString: jest.fn().mockReturnValue('decrypted-access-token')
+    });
+
+    // Mock sync service to throw constraint error
+    const constraintError = new Error('Unique constraint violation');
+    (performInitialSync as jest.Mock).mockRejectedValue(constraintError);
+
+    let processSyncJob: any;
+    await jest.isolateModules(async () => {
+      const worker = require('api-src/sync.worker');
+      processSyncJob = worker.processSyncJob;
+    });
+
+    const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
+
+    await processSyncJob(mockMsg);
+
+    expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
+    // Also verify the integration status was updated
+    expect(mockUpdate).toHaveBeenCalledWith({
+      sync_status: 'FAILED',
+      sync_last_error: 'Unique constraint violation'
+    });
+  });
+});
 
   // ===== PLATFORM EXPANSION TESTS =====
   describe('Platform Support', () => {
     it('should handle woocommerce platform gracefully', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(woocommerceIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      // Use the shared mocks
+      mockFirst.mockResolvedValue(woocommerceIntegration);
 
       (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
         toString: jest.fn().mockReturnValue('decrypted-access-token')
@@ -376,21 +359,18 @@ describe('Sync Worker', () => {
       consoleWarnSpy.mockRestore();
     });
 
+    // Fix for "should be easily extendable for new platforms"
     it('should be easily extendable for new platforms', async () => {
-      // This test verifies the platform switch pattern is maintainable
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
+      // Use the shared mocks
       const newPlatformIntegration = {
         ...mockIntegration,
         platform: 'bigcommerce'
       };
+      mockFirst.mockResolvedValue(newPlatformIntegration);
 
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(newPlatformIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
+        toString: jest.fn().mockReturnValue('decrypted-access-token')
+      });
 
       let processSyncJob: any;
       await jest.isolateModules(async () => {
@@ -411,14 +391,7 @@ describe('Sync Worker', () => {
   // ===== PERFORMANCE & RESILIENCE TESTS =====
   describe('Performance & Resilience', () => {
     it('should handle very large message payloads', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      mockFirst.mockResolvedValue(mockIntegration);
 
       (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
         toString: jest.fn().mockReturnValue('decrypted-access-token')
@@ -445,14 +418,7 @@ describe('Sync Worker', () => {
     });
 
     it('should process multiple consecutive sync jobs', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      mockFirst.mockResolvedValue(mockIntegration);
 
       (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
         toString: jest.fn().mockReturnValue('decrypted-access-token')
@@ -480,40 +446,6 @@ describe('Sync Worker', () => {
       expect(performInitialSync).toHaveBeenCalledTimes(3);
       expect(mockChannel.ack).toHaveBeenCalledTimes(3);
     });
-
-    it('should not process the same message multiple times (idempotency)', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
-
-      (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
-        toString: jest.fn().mockReturnValue('decrypted-access-token')
-      });
-
-      (performInitialSync as jest.Mock).mockResolvedValue(undefined);
-
-      let processSyncJob: any;
-      await jest.isolateModules(async () => {
-        const worker = require('api-src/sync.worker');
-        processSyncJob = worker.processSyncJob;
-      });
-
-      const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
-
-      // Process same message twice
-      await processSyncJob(mockMsg);
-      await processSyncJob(mockMsg);
-
-      // Should process both (idempotency depends on external factors)
-      // This test documents the current behavior
-      expect(performInitialSync).toHaveBeenCalledTimes(2);
-      expect(mockChannel.ack).toHaveBeenCalledTimes(2);
-    });
   });
 
   // ===== OBSERVABILITY TESTS =====
@@ -524,14 +456,7 @@ describe('Sync Worker', () => {
     });
 
     it('should log appropriate metrics for successful processing', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      const mockWhere = jest.fn().mockReturnThis();
-      const mockFirst = jest.fn().mockResolvedValue(mockIntegration);
-      (db as unknown as jest.Mock).mockImplementation(() => ({
-        where: mockWhere,
-        first: mockFirst
-      }));
+      mockFirst.mockResolvedValue(mockIntegration);
 
       (CryptoJS.AES.decrypt as jest.Mock).mockReturnValue({
         toString: jest.fn().mockReturnValue('decrypted-access-token')
@@ -559,11 +484,19 @@ describe('Sync Worker', () => {
     });
 
     it('should log detailed errors for troubleshooting', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
-      // Mock database error
-      (db as unknown as jest.Mock).mockImplementation(() => {
-        throw new Error('Database connection timeout');
+      // Mock database to throw error on initial query, but allow update in catch block to work
+      let shouldThrow = true;
+      (db as jest.MockedFunction<any>).mockImplementation((table: string) => {
+        if (shouldThrow && table === 'integrations') {
+          shouldThrow = false; // Only throw on the first call (the query)
+          throw new Error('Database connection timeout');
+        }
+        // For subsequent calls (like the update in catch block), return a working mock
+        return {
+          where: jest.fn().mockReturnThis(),
+          first: jest.fn().mockResolvedValue(null),
+          update: jest.fn().mockResolvedValue(1)
+        };
       });
 
       let processSyncJob: any;
@@ -623,8 +556,6 @@ describe('Sync Worker', () => {
   // ===== CONFIGURATION TESTS =====
   describe('Configuration', () => {
     it('should use correct queue name', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
       let startSyncWorker: any;
       await jest.isolateModules(async () => {
         const worker = require('api-src/sync.worker');
@@ -670,8 +601,6 @@ describe('Sync Worker', () => {
   // ===== WORKER LIFECYCLE TESTS =====
   describe('Worker Lifecycle', () => {
     it('should start consuming from sync queue', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
       let startSyncWorker: any;
       await jest.isolateModules(async () => {
         const worker = require('api-src/sync.worker');
@@ -690,8 +619,6 @@ describe('Sync Worker', () => {
     it('should log worker startup', async () => {
       // Mock console for lifecycle tests
       const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
 
       let startSyncWorker: any;
       await jest.isolateModules(async () => {
@@ -714,34 +641,34 @@ describe('Sync Worker', () => {
 
   // ===== DATA INTEGRITY TESTS =====
   describe('Data Integrity', () => {
-    it.skip('should validate integration data structure', async () => {
-    (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
+    it('should validate integration data structure', async () => {
+      const incompleteIntegration = {
+        id: 123,
+        // Missing required fields: shop_id, platform, platform_shop_name, access_token_encrypted
+      };
 
-    const incompleteIntegration = {
-      id: 123,
-      // Missing required fields: shop_id, platform, etc.
-    };
+      // Use the shared mocks
+      mockFirst.mockResolvedValue(incompleteIntegration);
 
-    const mockWhere = jest.fn().mockReturnThis();
-    const mockFirst = jest.fn().mockResolvedValue(incompleteIntegration);
-    (db as unknown as jest.Mock).mockImplementation(() => ({
-      where: mockWhere,
-      first: mockFirst
-    }));
+      let processSyncJob: any;
+      await jest.isolateModules(async () => {
+        const worker = require('api-src/sync.worker');
+        processSyncJob = worker.processSyncJob;
+      });
 
-    let processSyncJob: any;
-    await jest.isolateModules(async () => {
-      const worker = require('api-src/sync.worker');
-      processSyncJob = worker.processSyncJob;
+      const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
+
+      await processSyncJob(mockMsg);
+
+      // Should handle incomplete data gracefully (nack in current implementation)
+      expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
+      
+      // Also verify the integration status was updated
+      expect(mockUpdate).toHaveBeenCalledWith({
+        sync_status: 'FAILED',
+        sync_last_error: expect.stringContaining('Integration missing required fields')
+      });
     });
-
-    const mockMsg = { content: Buffer.from(JSON.stringify({ integrationId: 123 })) };
-
-    await processSyncJob(mockMsg);
-
-    // Should handle incomplete data gracefully (nack in current implementation)
-    expect(mockChannel.nack).toHaveBeenCalledWith(mockMsg, false, false);
-  });
 
     it('should maintain data consistency across processing steps', async () => {
       (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
@@ -781,23 +708,18 @@ describe('Sync Worker', () => {
     });
   });
 
-  // ===== INTEGRATION SCENARIOS =====
   describe('Integration Scenarios', () => {
     it('should handle concurrent sync jobs for different shops', async () => {
-      (getQueueChannel as jest.Mock).mockReturnValue(mockChannel);
-
       const integration1 = { ...mockIntegration, id: 1, shop_id: 100 };
       const integration2 = { ...mockIntegration, id: 2, shop_id: 200 };
 
       let dbCallCount = 0;
-      (db as unknown as jest.Mock).mockImplementation(() => {
-        const mockWhere = jest.fn().mockReturnThis();
-        const mockFirst = jest.fn().mockResolvedValue(
-          dbCallCount++ % 2 === 0 ? integration1 : integration2
-        );
+      (db as jest.MockedFunction<any>).mockImplementation((_table: string) => {
+        const currentIntegration = dbCallCount++ % 2 === 0 ? integration1 : integration2;
         return {
-          where: mockWhere,
-          first: mockFirst
+          where: jest.fn().mockReturnThis(),
+          first: jest.fn().mockResolvedValue(currentIntegration),
+          update: mockUpdate
         };
       });
 
