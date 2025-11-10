@@ -21,5 +21,5 @@
     "knexfile.ts",      // Explicitly include knexfile.ts
     "migrations/**/*.ts", // Explicitly include all .ts files in migrations
     "__tests__/**/*.ts"
-  ]
+, "../../tests/unit/api/integration/shopify.service.test.ts"  ]
 }
