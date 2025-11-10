@@ -5,6 +5,7 @@ import axios from "axios";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { IntegrationProvider } from 'contexts/IntegrationContext';
 
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -82,34 +83,34 @@ const LayoutManager = () => {
 
 export default function App() {
   return (
-    // Wrap the entire app in Berry's ThemeCustomization
-    // This reads from ConfigProvider and provides the MUI theme + CssBaseline
   <QueryClientProvider client={queryClient}> 
-    <ThemeCustomization>
-      <Routes>
-        {/* Render the sign-in route standalone */}
-        {routes
-          .filter((route) => route.key === 'login' || route.key === 'register') // Filter for auth keys
-          .map((route) => (
-             <Route path={route.route} element={route.component} key={route.key} />
-        ))}
-
-        {/* All other routes are nested inside the AppLayout */}
-        {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
-        <Route element={<ProtectedRoute />}>
-          <Route element={<LayoutManager />}>
+    <IntegrationProvider>
+      <ThemeCustomization>
+        <Routes>
+          {/* Render the sign-in route standalone */}
           {routes
-            .filter((route) => route.key !== 'login' && route.key !== 'register') // Filter OUT auth keys
+            .filter((route) => route.key === 'login' || route.key === 'register') // Filter for auth keys
             .map((route) => (
               <Route path={route.route} element={route.component} key={route.key} />
-            ))}
-          </Route>
-        </Route>
+          ))}
 
-        {/* A default redirect to the dashboard */}
-        <Route path="*" element={<Navigate to="/dashboard" />} />
-      </Routes>
-    </ThemeCustomization>
+          {/* All other routes are nested inside the AppLayout */}
+          {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<LayoutManager />}>
+            {routes
+              .filter((route) => route.key !== 'login' && route.key !== 'register') // Filter OUT auth keys
+              .map((route) => (
+                <Route path={route.route} element={route.component} key={route.key} />
+              ))}
+            </Route>
+          </Route>
+
+          {/* A default redirect to the dashboard */}
+          <Route path="*" element={<Navigate to="/dashboard" />} />
+        </Routes>
+      </ThemeCustomization>
+    </IntegrationProvider>
   </QueryClientProvider> 
   );
 }
