@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 //packages/ui/src/contexts/IntegrationContext.tsx
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, ReactNode, useMemo, useCallback } from 'react';
@@ -19,6 +20,7 @@ interface SyncStatus {
 
 // --- Define Context Shape ---
 interface IntegrationContextType {
+  [x: string]: any;
   isLoading: boolean;
   syncStatus: SyncStatus['status'];
   hasIntegrations: boolean;

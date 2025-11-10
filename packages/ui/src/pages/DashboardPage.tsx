@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/DashboardPage.tsx
 import React, { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import RGL, { WidthProvider } from 'react-grid-layout';
 import axios from 'axios';
 import { useQuery } from '@tanstack/react-query';
@@ -16,6 +17,9 @@ import {
 } from '@mui/material';
 import { InventoryHealthRow } from 'widgets/InventoryHealthWidget'; 
 import { useLayoutContext } from '../App'; 
+
+import { DataSyncingModal } from 'components/DataSyncingModal';
+import { useIntegration } from 'contexts/IntegrationContext';
 
 const GridLayout = WidthProvider(RGL);
 
@@ -158,6 +162,34 @@ export const DashboardPage = ({
     [isEditing]
   );
 
+  // --- AHA-FLOW: Handle Redirect & Modals ---
+ const [searchParams, setSearchParams] = useSearchParams();
+ const { refreshIntegrationStatus } = useIntegration();
+
+ // State for our modals
+ const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+ const [connectionError, setConnectionError] = useState<string | null>(null);
+
+ useEffect(() => {
+   const connectStatus = searchParams.get('connect');
+   const errorMessage = searchParams.get('message');
+
+   if (connectStatus === 'success') {
+     // 1. We're back from Shopify successfully!
+     // 2. Refresh the integration state (this starts the polling)
+     refreshIntegrationStatus();
+     // 3. Open the "Syncing" modal
+     setIsSyncModalOpen(true);
+     // 4. Clean the URL
+     setSearchParams({}, { replace: true });
+   } else if (connectStatus === 'error') {
+     // 1. Something went wrong during OAuth
+     setConnectionError(errorMessage || 'An unknown connection error occurred.');
+     // 2. Clean the URL
+     setSearchParams({}, { replace: true });
+   }
+ }, [searchParams, setSearchParams, refreshIntegrationStatus]);
+
   // Handler for adding a new widget from the library
  const handleAddWidget = (variantId: string) => {
   const config = getWidgetConfigByVariantId(variantId);
@@ -223,6 +255,15 @@ export const DashboardPage = ({
 
   return (
     <>
+    {/* --- AHA-FLOW: Render Modals --- */}
+      {/* We'll use a simple Alert for the error for now (Issue #651 will build the modal) */}
+      {connectionError && (
+        <Alert severity="error" onClose={() => setConnectionError(null)} sx={{ m: 2 }}>
+          {connectionError}
+        </Alert>
+      )}
+      <DataSyncingModal open={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
+      
       <GridLayout
         layout={layout}
         cols={12}
