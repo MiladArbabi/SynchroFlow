@@ -28,6 +28,7 @@ import orderRoutes from "./api/orders/orders.routes";
 import customerRoutes from "./api/customers/customers.routes";
 import integrationRoutes from "./api/integrations/integration.routes";
 import authRoutes from "./api/auth/auth.routes";
+import dashboardRoutes from "./api/dashboard/dashboard.routes";
 
 // OPS-INTEL Imports
 import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
@@ -88,6 +89,7 @@ app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 // --- Routes ---
 app.get('/', (req, res) => {
