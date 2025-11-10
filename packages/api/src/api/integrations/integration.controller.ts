@@ -8,6 +8,20 @@ import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
 import { getQueueChannel } from '../../queue';
 
+// --- Helper function for multi-tenancy (copied from dashboard.controller) ---
+/**
+ * Helper function to get the shop_id from an authenticated user.
+ */
+const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
+  if (!req.user) return null;
+  const userId = req.user.userId;
+  
+  // We need the user's shop_id to query data
+  const user = await db<User>('users').where({ id: userId }).first('shop_id');
+  
+  return user?.shop_id || null;
+};
+
 // Define the shape of the session
 interface OAuthSession extends session.Session {
   oauth_state?: string;
@@ -151,5 +165,57 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error in OAuth callback:', err);
     res.status(500).json({ error: 'Internal server error during token exchange.' });
+  }
+};
+
+/**
+ * Endpoint for the "Pizza Tracker"
+ * Fetches the current sync status for the user's Shopify integration.
+ */
+export const getSyncStatus = async (req: Request, res: Response) => {
+  try {
+    const shopId = await getShopIdFromRequest(req);
+    if (!shopId) {
+      return res.status(403).json({ error: 'User shop not found.' });
+    }
+
+    // Find the primary Shopify integration for this shop
+    // In the future, we might support multiple, but for MVP, we take the first.
+    const integration = await db('integrations')
+      .where({ shop_id: shopId, platform: 'shopify' })
+      .first(
+        'sync_status',
+        'sync_progress_current',
+        'sync_progress_total',
+        'sync_last_error'
+      );
+
+    if (!integration) {
+      // This user has no integration, which is fine, but not what this endpoint is for.
+      return res.status(404).json({ error: 'Shopify integration not found.' });
+    }
+
+    // Calculate percentage
+    let percentage = 0;
+    if (integration.sync_progress_total > 0) {
+      percentage = Math.round(
+        (integration.sync_progress_current / integration.sync_progress_total) * 100
+      );
+    } else if (integration.sync_status === 'COMPLETED') {
+      percentage = 100;
+    }
+
+    res.json({
+      status: integration.sync_status,
+      progress: {
+        current: integration.sync_progress_current,
+        total: integration.sync_progress_total,
+        percentage: percentage,
+      },
+      lastError: integration.sync_last_error,
+    });
+  } catch (error) {
+    console.error('[integration.controller] Error in getSyncStatus:', error);
+    res.status(500).json({ error: 'Failed to fetch sync status.' });
   }
 };

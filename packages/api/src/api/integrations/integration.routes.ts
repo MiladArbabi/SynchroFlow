@@ -1,6 +1,10 @@
 // packages/api/src/api/integrations/integration.routes.ts
 import { Router } from 'express';
-import { initiateOAuth, handleOAuthCallback } from './integration.controller';
+import { 
+  initiateOAuth, 
+  handleOAuthCallback, 
+  getSyncStatus 
+} from './integration.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
@@ -10,5 +14,8 @@ router.get('/oauth/initiate', authenticateToken, initiateOAuth);
 
 // Wires GET /api/v1/integrations/oauth/callback/:platform
 router.get('/oauth/callback/:platform', handleOAuthCallback);
+
+// Wires GET /api/v1/integrations/sync-status
+router.get('/sync-status', authenticateToken, getSyncStatus);
 
 export default router;
