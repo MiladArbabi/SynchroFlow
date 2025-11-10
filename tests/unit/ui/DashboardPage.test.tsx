@@ -256,10 +256,10 @@ describe('DashboardPage', () => {
   
   it('should render DataSyncingModal when isSyncModalOpen is true', () => {
     // We'll test the modal rendering directly
-    const { rerender } = renderWithProviders(
+    renderWithProviders(
       <DashboardPage handleSidenavToggle={mockHandleSidenavToggle}>
         {mockChildren}
-      </DashboardPage>,
+      </DashboardPage>
     );
 
     // Initially, modal should not be visible

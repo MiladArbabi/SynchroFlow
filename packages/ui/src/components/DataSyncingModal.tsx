@@ -1,5 +1,5 @@
 // packages/ui/src/components/DataSyncingModal.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -10,13 +10,15 @@ import {
   Step,
   StepLabel,
   StepIconProps,
-  CircularProgress
+  CircularProgress,
+  LinearProgress
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import Check from '@mui/icons-material/Check';
+import { useIntegration } from 'contexts/IntegrationContext';
 
 // Define the steps
-const steps = ['Authenticating', 'Fetching Products', 'Fetching Orders', 'Finalizing'];
+const steps = ['Products', 'Orders', 'Finances', 'Completed'];
 
 // Custom Step Icon styling
 const StepIconRoot = styled('div')<{
@@ -63,33 +65,38 @@ interface DataSyncingModalProps {
 }
 
 export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClose }) => {
-  const [activeStep, setActiveStep] = useState(0);
+
+  // --- [START] GUT THE LIE ---
+  // const [activeStep, setActiveStep] = useState(0); // REMOVED
+
+  // --- [START] USE THE TRUTH ---
+  const { syncStatus, progress } = useIntegration();
+
+  // Map the real API status to the stepper's activeStep
+  const activeStep = React.useMemo(() => {
+    switch (syncStatus) {
+      case 'SYNCING_PRODUCTS':
+        return 0;
+      case 'SYNCING_ORDERS':
+        return 1;
+      case 'SYNCING_FINANCES':
+        return 2;
+      case 'COMPLETED':
+        return 3;
+      default:
+        return 0; // Default to the first step
+    }
+  }, [syncStatus]);
 
   useEffect(() => {
-    if (open) {
-      // Reset step on open
-      setActiveStep(0);
-
-      // Simulate the sync progress
-      const timers: number[] = [];
-      steps.forEach((_, index) => {
-        const timer = setTimeout(() => {
-          setActiveStep(index + 1);
-        }, (index + 1) * 2000); // 2 seconds per step
-        timers.push(timer);
-      });
-
-      // After all steps, auto-close the modal
-      const closeTimer = setTimeout(() => {
+    if (syncStatus === 'COMPLETED') {
+      // Wait 1.5s to let the user see the "Completed" checkmark
+      const timer = setTimeout(() => {
         onClose();
-      }, (steps.length + 1) * 2000);
-      timers.push(closeTimer);
-
-      return () => {
-        timers.forEach(clearTimeout);
-      };
-    }
-  }, [open, onClose]);
+      }, 1500);
+      return () => clearTimeout(timer);
+     }
+  }, [syncStatus, onClose]);
 
   return (
     // We disable backdrop click and escape key to make it a celebratory "moment"
@@ -104,13 +111,20 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
           We're syncing your data from Shopify. This may take a few minutes.
         </Typography>
         <Box sx={{ width: '100%' }}>
-          <Stepper activeStep={activeStep} alternativeLabel>
+          <Stepper activeStep={activeStep} alternativeLabel data-testid="stepper">
             {steps.map((label) => (
               <Step key={label}>
                 <StepLabel StepIconComponent={StepIcon}>{label}</StepLabel>
               </Step>
             ))}
           </Stepper>
+        </Box>
+        {/* Add the real progress bar */}
+        <Box sx={{ width: '100%', mt: 4 }}>
+          <LinearProgress variant="determinate" value={progress.percentage} data-testid="linear-progress"/>
+          <Typography variant="body2" align="center" sx={{ mt: 1 }}>
+            {progress.percentage}%
+          </Typography>
         </Box>
       </DialogContent>
     </Dialog>
