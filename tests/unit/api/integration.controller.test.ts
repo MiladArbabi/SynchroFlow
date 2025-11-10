@@ -4,6 +4,17 @@ import crypto from 'crypto';
 import axios from 'axios';
 import db from 'api-src/db';
 import { getQueueChannel } from 'api-src/queue';
+import { connection } from 'api-src/queue';
+
+const mockedConnection = connection as jest.Mocked<typeof connection>;
+
+// Add connection mock
+jest.mock('api-src/queue', () => ({
+  getQueueChannel: jest.fn(),
+  connection: {
+    isConnected: jest.fn()
+  }
+}));
 
 // Mock dependencies
 jest.mock('crypto');
@@ -14,7 +25,7 @@ jest.mock('api-src/queue');
 
 const mockedCrypto = crypto as jest.Mocked<typeof crypto>;
 const mockedAxios = axios as jest.Mocked<typeof axios>;
-const mockedDb = db as unknown as jest.Mock;
+const mockedDb = db as unknown as jest.Mock & { raw: jest.Mock };
 const mockedCryptoJS = {
   AES: {
     encrypt: jest.fn(),
@@ -525,6 +536,172 @@ describe('Integration Controller', () => {
 
       // The test passes as long as no encryption is attempted without the key
       expect(mockedCryptoJS.AES.encrypt).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('preFlightCheck', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      // Reset environment variables to known state
+      process.env.SHOPIFY_API_KEY = 'test-shopify-key';
+      process.env.SHOPIFY_API_SECRET = 'test-shopify-secret';
+    });
+
+    it('should return 200 when all services are ready (Happy Path)', async () => {
+      // Mock DB connection success
+      (mockedDb.raw as jest.Mock).mockResolvedValue(undefined);
+      
+      // Mock queue connection success
+      mockedConnection.isConnected.mockReturnValue(true);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith({ 
+        ready: true, 
+        issues: [] 
+      });
+    });
+
+    it('should return 503 when database connection fails', async () => {
+      // Mock DB connection failure
+      (mockedDb.raw as jest.Mock).mockRejectedValue(new Error('DB connection failed'));
+      
+      // Mock queue connection success
+      mockedConnection.isConnected.mockReturnValue(true);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(503);
+      expect(mockResponse.json).toHaveBeenCalledWith({ 
+        ready: false, 
+        issues: ['Database connection error.'] 
+      });
+    });
+
+    it('should return 503 when queue connection fails', async () => {
+      // Mock DB connection success
+      (mockedDb.raw as jest.Mock).mockResolvedValue(undefined);
+      
+      // Mock queue connection failure
+      mockedConnection.isConnected.mockReturnValue(false);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(503);
+      expect(mockResponse.json).toHaveBeenCalledWith({ 
+        ready: false, 
+        issues: ['Message queue not connected.'] 
+      });
+    });
+
+    it('should return 503 when Shopify API credentials are missing', async () => {
+      // Remove environment variables
+      delete process.env.SHOPIFY_API_KEY;
+      
+      // Mock DB connection success
+      (mockedDb.raw as jest.Mock).mockResolvedValue(undefined);
+      
+      // Mock queue connection success
+      mockedConnection.isConnected.mockReturnValue(true);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(503);
+      expect(mockResponse.json).toHaveBeenCalledWith({ 
+        ready: false, 
+        issues: ['Server configuration incomplete.'] 
+      });
+    });
+
+    it('should return 503 when multiple issues exist', async () => {
+      // Remove environment variables
+      delete process.env.SHOPIFY_API_KEY;
+      
+      // Mock DB connection failure
+      (mockedDb.raw as jest.Mock).mockRejectedValue(new Error('DB connection failed'));
+      
+      // Mock queue connection failure
+      mockedConnection.isConnected.mockReturnValue(false);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(503);
+      expect(mockResponse.json).toHaveBeenCalledWith({ 
+        ready: false, 
+        issues: [
+          'Database connection error.',
+          'Message queue not connected.',
+          'Server configuration incomplete.'
+        ] 
+      });
+    });
+
+    it('should log database errors to console', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      
+      // Mock DB connection failure
+      const dbError = new Error('DB connection failed');
+      (mockedDb.raw as jest.Mock).mockRejectedValue(dbError);
+      
+      // Mock queue connection success
+      mockedConnection.isConnected.mockReturnValue(true);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        '[preFlightCheck] DB connection failed:',
+        'DB connection failed'
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should handle missing SHOPIFY_API_SECRET', async () => {
+      // Remove secret environment variable
+      delete process.env.SHOPIFY_API_SECRET;
+      
+      // Mock DB connection success
+      (mockedDb.raw as jest.Mock).mockResolvedValue(undefined);
+      
+      // Mock queue connection success
+      mockedConnection.isConnected.mockReturnValue(true);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(503);
+      expect(mockResponse.json).toHaveBeenCalledWith({ 
+        ready: false, 
+        issues: ['Server configuration incomplete.'] 
+      });
+    });
+
+    it('should handle both missing API key and secret', async () => {
+      // Remove both environment variables
+      delete process.env.SHOPIFY_API_KEY;
+      delete process.env.SHOPIFY_API_SECRET;
+      
+      // Mock DB connection success
+      (mockedDb.raw as jest.Mock).mockResolvedValue(undefined);
+      
+      // Mock queue connection success
+      mockedConnection.isConnected.mockReturnValue(true);
+
+      const { preFlightCheck } = await import('api-src/api/integrations/integration.controller');
+      await preFlightCheck(mockRequest as Request, mockResponse as Response);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(503);
+      expect(mockResponse.json).toHaveBeenCalledWith({ 
+        ready: false, 
+        issues: ['Server configuration incomplete.'] 
+      });
     });
   });
 });

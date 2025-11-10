@@ -5,7 +5,8 @@ import { Router } from 'express';
 jest.mock('api-src/api/integrations/integration.controller', () => ({
   initiateOAuth: jest.fn(),
   handleOAuthCallback: jest.fn(), 
-  getSyncStatus: jest.fn()
+  getSyncStatus: jest.fn(),
+  preFlightCheck: jest.fn()
 }));
 
 jest.mock('api-src/middleware/auth.middleware', () => ({
@@ -16,7 +17,8 @@ jest.mock('api-src/middleware/auth.middleware', () => ({
 import { 
   initiateOAuth, 
   handleOAuthCallback, 
-  getSyncStatus 
+  getSyncStatus ,
+  preFlightCheck
 } from 'api-src/api/integrations/integration.controller';
 import { authenticateToken } from 'api-src/middleware/auth.middleware';
 
@@ -82,7 +84,25 @@ describe('Integration Routes', () => {
     expect(syncStatusRoute?.route?.stack[1].handle).toBe(getSyncStatus);
   });
 
-  it('should have exactly 3 routes configured', () => {
+  it('should export a router instance', () => {
+    expect(router).toBeInstanceOf(Function);
+    expect(router.stack).toBeDefined();
+  });
+
+  it('should configure GET /pre-flight with authenticateToken and preFlightCheck', () => {
+  const routeStack = router.stack as RouteLayer[];
+  
+  const preFlightRoute = routeStack.find(layer => 
+    layer.route?.path === '/pre-flight' && 
+    layer.route?.methods.get
+  );
+  
+  expect(preFlightRoute).toBeDefined();
+  expect(preFlightRoute?.route?.stack[0].handle).toBe(authenticateToken);
+  expect(preFlightRoute?.route?.stack[1].handle).toBe(preFlightCheck);
+  });
+
+  it('should have exactly 4 routes configured', () => {
     const routeStack = router.stack as RouteLayer[];
     const routes = routeStack
       .filter(layer => layer.route)
@@ -91,18 +111,14 @@ describe('Integration Routes', () => {
         method: Object.keys(layer.route!.methods || {})[0]
       }));
     
-    expect(routes).toHaveLength(3);
+    expect(routes).toHaveLength(4);
     expect(routes).toEqual(
       expect.arrayContaining([
         { path: '/oauth/initiate', method: 'get' },
         { path: '/oauth/callback/:platform', method: 'get' },
-        { path: '/sync-status', method: 'get' }
+        { path: '/sync-status', method: 'get' },
+        { path: '/pre-flight', method: 'get' }
       ])
     );
-  });
-
-  it('should export a router instance', () => {
-    expect(router).toBeInstanceOf(Function);
-    expect(router.stack).toBeDefined();
   });
 });

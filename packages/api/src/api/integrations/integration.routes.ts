@@ -3,7 +3,8 @@ import { Router } from 'express';
 import { 
   initiateOAuth, 
   handleOAuthCallback, 
-  getSyncStatus 
+  getSyncStatus,
+  preFlightCheck
 } from './integration.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
@@ -17,5 +18,8 @@ router.get('/oauth/callback/:platform', handleOAuthCallback);
 
 // Wires GET /api/v1/integrations/sync-status
 router.get('/sync-status', authenticateToken, getSyncStatus);
+
+// Wires GET /api/v1/integrations/pre-flight
+router.get('/pre-flight', authenticateToken, preFlightCheck);
 
 export default router;
