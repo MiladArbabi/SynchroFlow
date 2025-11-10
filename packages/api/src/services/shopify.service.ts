@@ -17,7 +17,8 @@ const shopify = shopifyApi({
 export const performInitialSync = async (
   accessToken: string,
   platformShopName: string,
-  shopId: number
+  shopId: number,
+  integrationId: number
 ) => {
   console.log(`[ShopifyService] Starting initial sync for shopId: ${shopId}`);
 
@@ -91,6 +92,14 @@ export const performInitialSync = async (
   `;
 
   try {
+    // --- 1. Report: STARTING (Products) ---
+    await db('integrations').where({ id: integrationId }).update({
+      sync_status: 'SYNCING_PRODUCTS',
+      sync_last_error: null,
+      sync_progress_current: 0,
+      sync_progress_total: 0, // We'll estimate this soon
+    });
+
     const response = await client.request(query);
     const data = response.data as any; // Cast to 'any' to access dynamic keys
 
@@ -98,13 +107,32 @@ export const performInitialSync = async (
     await db.transaction(async (trx) => {
       if (data.products) {
         await syncProducts(trx, shopId, data.products.edges);
+        // --- 2. Report: SYNCING_ORDERS ---
+         await trx('integrations').where({ id: integrationId }).update({
+           sync_status: 'SYNCING_ORDERS',
+           sync_progress_total: data.products.edges.length, // MVP: Total is product count
+           sync_progress_current: data.products.edges.length, // We've finished products
+         });
       }
       if (data.orders) {
         await syncOrdersAndFulfillments(trx, shopId, data.orders.edges);
+        // --- 3. Report: SYNCING_FINANCES ---
+         const totalProgress = (data.products?.edges.length || 0) + (data.orders?.edges.length || 0);
+         await trx('integrations').where({ id: integrationId }).update({
+           sync_status: 'SYNCING_FINANCES',
+           sync_progress_total: totalProgress, // This is an estimate, good enough for MVP
+           sync_progress_current: totalProgress,
+         });
       }
       if (data.payouts) {
         await syncPayouts(trx, shopId, data.payouts.edges);
       }
+    });
+
+    // --- 4. Report: COMPLETED ---
+    await db('integrations').where({ id: integrationId }).update({
+      sync_status: 'COMPLETED',
+      sync_last_error: null,
     });
 
     console.log(`[ShopifyService] Sync COMPLETED for shopId: ${shopId}`);
