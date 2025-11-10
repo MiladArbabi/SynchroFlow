@@ -1,8 +1,9 @@
 // packages/api/src/sync.worker.ts
 import { getQueueChannel } from './queue';
-import { Channel } from 'amqplib';
+//import { Channel } from 'amqplib';
 import db from './db';
 import CryptoJS from 'crypto-js';
+import { performInitialSync } from './services/shopify.service';
 
 // --- Helper function for decryption ---
 // (We'll need this to get the token to run the sync)
@@ -36,7 +37,13 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
     // Fetch the integration to get the token
     const integration = await db('integrations')
       .where({ id: integrationId })
-      .first<{ id: number; platform: string; access_token_encrypted: string }>();
+      .first<{ 
+          id: number; 
+          shop_id: number; 
+          platform: string; 
+          platform_shop_name: string;
+          access_token_encrypted: string 
+        }>();
 
     if (!integration) {
       console.error(`[sync.worker] Integration ${integrationId} not found.`);
@@ -47,16 +54,17 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
     // Decrypt the token
     const accessToken = decryptToken(integration.access_token_encrypted);
 
-    // --- TODO: Implement the actual sync logic ---
-    // e.g., if (integration.platform === 'shopify') {
-    //         await shopifyService.fetchProducts(accessToken);
-    //         await shopifyService.fetchOrders(accessToken);
-    //       }
-    console.log(`[sync.worker] FAKE SYNC: Fetching data for ${integration.platform}...`);
-    // Simulate a network request
-    await new Promise(resolve => setTimeout(resolve, 1000)); 
-    console.log(`[sync.worker] FAKE SYNC: Completed for ${integrationId}`);
-    
+    // --- The sync logic ---
+   if (integration.platform === 'shopify') {
+        await performInitialSync(
+          accessToken, 
+          integration.platform_shop_name, 
+          integration.shop_id
+        );
+   } else {
+        console.warn(`[sync.worker] No sync logic implemented for platform: ${integration.platform}`);
+      }
+   console.log(`[sync.worker] Sync job COMPLETED for ${integrationId}`);
     syncChannel.ack(msg as any);
 
   } catch (error) {
