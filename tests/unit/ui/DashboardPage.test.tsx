@@ -471,14 +471,16 @@ describe('DashboardPage', () => {
       expect(screen.getByTestId('data-syncing-modal')).toBeInTheDocument();
     });
 
-    it('should invalidate queries when DataSyncingModal is closed', () => {
+    it('should stagger query invalidations with delays when DataSyncingModal is closed', async () => {
+      jest.useFakeTimers();
+      
       // Mock URL with success parameter
       const searchParams = new URLSearchParams();
       searchParams.set('connect', 'success');
       
       mockUseSearchParams.mockReturnValue([
         searchParams,
-        jest.fn(), // setSearchParams mock
+        jest.fn(),
       ]);
 
       // Mock integration context for syncing state
@@ -492,21 +494,32 @@ describe('DashboardPage', () => {
         <DashboardPage children={<></>} handleSidenavToggle={() => {}} />
       );
 
-      // The modal should be rendered
-      expect(screen.getByTestId('data-syncing-modal')).toBeInTheDocument();
-
       // Click the close button to trigger handleSyncModalClose
       const closeButton = screen.getByTestId('close-sync-modal');
       closeButton.click();
 
-      // Verify that queryClient.invalidateQueries was called with the expected query keys
+      // Immediately after close, no queries should be invalidated yet (due to setTimeout)
+      expect(mockInvalidateQueries).not.toHaveBeenCalled();
+
+      // After 100ms: dashboardPulse and opsIntelSummary should be invalidated
+      jest.advanceTimersByTime(100);
       expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardPulse'] });
-      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardInventory'] });
-      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardShipments'] });
       expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['opsIntelSummary'] });
-      
-      // Verify it was called 4 times (once for each query key)
+      expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+
+      // After 300ms: dashboardInventory should be invalidated
+      jest.advanceTimersByTime(200); // Total: 300ms
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardInventory'] });
+      expect(mockInvalidateQueries).toHaveBeenCalledTimes(3);
+
+      // After 500ms: dashboardShipments should be invalidated
+      jest.advanceTimersByTime(200); // Total: 500ms
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardShipments'] });
       expect(mockInvalidateQueries).toHaveBeenCalledTimes(4);
+
+      // Verify the order and timing
+      const calls = mockInvalidateQueries.mock.calls;
+      expect(calls.map(call => call[0].queryKey[0])).toEqual(['dashboardPulse', 'opsIntelSummary', 'dashboardInventory', 'dashboardShipments']);
     });
 
     it('should render ConnectionErrorModal when connect=error param is present', () => {
