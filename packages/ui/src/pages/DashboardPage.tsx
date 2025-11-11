@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/DashboardPage.tsx
@@ -20,8 +21,10 @@ import { useLayoutContext } from '../App';
 
 import { DataSyncingModal } from 'components/DataSyncingModal';
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
+import { ConnectStoreBanner } from 'components/ConnectStoreBanner';
 import { ConnectionErrorModal } from 'components/ConnectionErrorModal';
 import { useIntegration } from 'contexts/IntegrationContext';
+import { useAuth } from 'contexts/AuthContext';
 
 const GridLayout = WidthProvider(RGL);
 
@@ -166,7 +169,8 @@ export const DashboardPage = ({
 
   // --- AHA-FLOW: Handle Redirect & Modals ---
  const [searchParams, setSearchParams] = useSearchParams();
- const { refreshIntegrationStatus } = useIntegration();
+ const { hasIntegrations, isLoading: isIntegrationLoading, refreshIntegrationStatus } = useIntegration(); // 3. Get state from our "brain"
+ const { accessToken } = useAuth();
  const queryClient = useQueryClient();
 
  // State for our modals
@@ -194,16 +198,40 @@ export const DashboardPage = ({
    }
  }, [searchParams, setSearchParams, refreshIntegrationStatus]);
 
- // --- Modal control functions ---
- const handleOpenConnectModal = () => {
-   // TODO: We will add the pre-flight check (Issue #647) here
-   setIsConnectModalOpen(true);
- };
+ const handleOpenConnectModal = async () => {
+    // 5. Implement the Pre-flight Check
+    try {
+      // Use the accessToken from AuthContext for the protected endpoint
+      await axios.get('/api/v1/integrations/pre-flight', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      
+      // All systems go! Open the modal.
+      setIsConnectModalOpen(true);
+
+    } catch (err: any) {
+      // Pre-flight check failed! Show the error modal.
+      const issues = err.response?.data?.issues || ['An unknown server error occurred.'];
+      setConnectionError(`System check failed: ${issues.join(' ')}`);
+    }
+  };
 
  const handleRetry = () => {
    setConnectionError(null); // Close the error modal
    handleOpenConnectModal(); // Open the connect modal
  };
+
+ // --- [START] Conditional Banner ---
+  // While the integration state is loading, show nothing
+  if (isIntegrationLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
  // 3. Create the "Aha! Refresh" handler
   const handleSyncModalClose = () => {
@@ -286,6 +314,8 @@ export const DashboardPage = ({
   return (
     <>
     {/* --- AHA-FLOW: Render Modals --- */}
+    {/* 6. Conditionally render the banner */}
+      {!hasIntegrations && <ConnectStoreBanner onOpenModal={handleOpenConnectModal} />}
       <ConnectStoreModal
          isOpen={isConnectModalOpen}
          onClose={() => setIsConnectModalOpen(false)}
