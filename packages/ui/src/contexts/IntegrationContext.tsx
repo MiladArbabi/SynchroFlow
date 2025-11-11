@@ -62,6 +62,13 @@ export const IntegrationProvider: React.FC<IntegrationProviderProps> = ({ childr
     queryKey: ['integration-status'],
     queryFn: () => fetchSyncStatus(accessToken),
     enabled: isLoggedIn && !!accessToken, // Only run when logged in
+
+    // --- POLLING LOGIC ---
+    // Poll every 2 seconds *only if* the sync is actively in progress.
+    refetchInterval: (query) =>
+      ['PENDING', 'SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'SYNCING_FINANCES'].includes(query.state.data?.status as string) ? 2000 : false,
+    
+
     refetchOnWindowFocus: true,
     retry: (failureCount, err) => {
       // A 404 is not an "error", it's a "state": NOT_FOUND. Don't retry.

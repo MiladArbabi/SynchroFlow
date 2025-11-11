@@ -346,7 +346,11 @@ export const DashboardPage = ({
     <>
     {/* --- AHA-FLOW: Render Modals --- */}
     {/* 6. Conditionally render the banner */}
-      {!hasIntegrations && <ConnectStoreBanner onOpenModal={handleOpenConnectModal} />}
+      {!hasIntegrations && 
+      <ConnectStoreBanner 
+        onOpenModal={handleOpenConnectModal} 
+        data-testid="connect-store-button" 
+      />}
       <ConnectStoreModal
          isOpen={isConnectModalOpen}
          onClose={() => setIsConnectModalOpen(false)}

@@ -31,11 +31,11 @@ export const ConnectionErrorModal: React.FC<ConnectionErrorModalProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+   <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth data-testid="connection-error-modal">
       <DialogTitle>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           {/* Use a theme-aware error icon */}
-          <IconComponent name="AlertCircle" size="xl" color="error" />
+          <IconComponent name="AlarmClock" size="xl" color="error" />
           <Typography variant="h3">Connection Failed</Typography>
         </Box>
       </DialogTitle>
@@ -65,7 +65,7 @@ export const ConnectionErrorModal: React.FC<ConnectionErrorModalProps> = ({
             Get Help
           </Button>
           {/* "Try Again" button */}
-          <Button onClick={onRetry} variant="contained" color="primary">
+          <Button onClick={onRetry} variant="contained" color="primary" data-testid="retry-button">
             Try Again
           </Button>
         </Box>
