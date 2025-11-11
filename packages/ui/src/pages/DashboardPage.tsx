@@ -279,12 +279,19 @@ export const DashboardPage = ({
     // Ring the "doorbell" for all our data
 
     // a) Refresh the main dashboard data (from Issue #638)
-    queryClient.invalidateQueries({ queryKey: ['dashboardPulse'] });
-    queryClient.invalidateQueries({ queryKey: ['dashboardInventory'] });
-    queryClient.invalidateQueries({ queryKey: ['dashboardShipments'] });
+    // a) Stagger the invalidations for a smooth "roll in" effect
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['dashboardPulse'] });
+      queryClient.invalidateQueries({ queryKey: ['opsIntelSummary'] });
+    }, 100); // KPIs and OpsIntel first
 
-    // b) Refresh any other data, like OpsIntel
-    queryClient.invalidateQueries({ queryKey: ['opsIntelSummary'] });
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['dashboardInventory'] });
+    }, 300); // Inventory second
+
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['dashboardShipments'] });
+    }, 500); // Shipments last
   };
 
   // Handler for adding a new widget from the library
