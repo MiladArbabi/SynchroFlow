@@ -14,7 +14,8 @@ import {
   IconButton,
   Box,
   CircularProgress,
-  Alert
+  Alert,
+  Skeleton
 } from '@mui/material';
 import { InventoryHealthRow } from 'widgets/InventoryHealthWidget'; 
 import { useLayoutContext } from '../App'; 
@@ -124,6 +125,34 @@ const getWidgetProps = (
   }
 };
 
+// 2. Create the "Smart Empty State" (Skeleton) component
+const DashboardSkeleton = ({ layout, showBanner = false }: { layout: RGL.Layout[]; showBanner?: boolean }) => {
+  return (
+    <>
+      {showBanner && (
+        <Box sx={{ p: 2, mb: 2 }}>
+          <Skeleton variant="rectangular" height={80} sx={{ borderRadius: 1 }} />
+        </Box>
+      )}
+      <GridLayout
+        layout={layout}
+        cols={12}
+        rowHeight={120}
+        compactType={null}
+        preventCollision={true}
+        isDraggable={false}
+        isResizable={false}
+      >
+        {layout.map((item) => (
+          <div key={item.i} style={{ width: '100%', height: '100%' }}>
+            <Skeleton variant="rectangular" width="100%" height="100%" sx={{ borderRadius: 1 }} />
+          </div>
+        ))}
+      </GridLayout>
+    </>
+  );
+};
+
 export const DashboardPage = ({ 
   children, handleSidenavToggle }: { 
     children: React.ReactNode; handleSidenavToggle: () => void }) => {
@@ -169,7 +198,12 @@ export const DashboardPage = ({
 
   // --- AHA-FLOW: Handle Redirect & Modals ---
  const [searchParams, setSearchParams] = useSearchParams();
- const { hasIntegrations, isLoading: isIntegrationLoading, refreshIntegrationStatus } = useIntegration(); // 3. Get state from our "brain"
+ const { 
+    hasIntegrations, 
+    isLoading: isIntegrationLoading, 
+    isFirstTimeSync, 
+    syncStatus, 
+    refreshIntegrationStatus } = useIntegration();
  const { accessToken } = useAuth();
  const queryClient = useQueryClient();
 
@@ -223,15 +257,20 @@ export const DashboardPage = ({
    handleOpenConnectModal(); // Open the connect modal
  };
 
- // --- [START] Conditional Banner ---
-  // While the integration state is loading, show nothing
-  if (isIntegrationLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  // --- [START] Smart Rendering Logic ---
+  // Check for modal flows first - modals take precedence over loading states
+ if (isSyncModalOpen || connectionError || isConnectModalOpen) {
+   // Render modals in main return - don't return early
+ } 
+ // Initial integration loading (replace CircularProgress with Skeleton)
+ else if (isIntegrationLoading) {
+   return <DashboardSkeleton layout={layout} />;
+ }
+ // Data refresh loading (AHA-flow and returning users)
+ else if ((isFirstTimeSync && syncStatus === 'COMPLETED' && opsIntelLoading) || 
+          (hasIntegrations && !isFirstTimeSync && opsIntelLoading)) {
+   return <DashboardSkeleton layout={layout} />;
+ }
 
  // 3. Create the "Aha! Refresh" handler
   const handleSyncModalClose = () => {
@@ -284,31 +323,16 @@ export const DashboardPage = ({
   setLayout((prev) => prev.filter((l) => l.i !== instanceId));
  };
 
- // --- Display loading/error state for OpsIntel data ---
- if (opsIntelLoading) {
-  // Or return a more integrated loading state within the GridLayout
-  return (
-   <Box
-    sx={{
-     display: 'flex',
-     justifyContent: 'center',
-     alignItems: 'center',
-     height: '100vh'
-    }}
-   >
-    <CircularProgress />
-   </Box>
-  );
- }
- if (opsIntelIsError) {
-  // Or display the error more gracefully within the dashboard layout
-  return (
-   <Box sx={{ p: 2 }}>
-    <Alert severity="error">
-     Failed to load dashboard data: {opsIntelError?.message}
-    </Alert>
-   </Box>
-  );
+ // 6. Handle OpsIntel fetch error (after loading is complete)
+  if (opsIntelIsError) {
+    // Or display the error more gracefully within the dashboard layout
+    return (
+      <Box sx={{ p: 2 }}>
+        <Alert severity="error">
+          Failed to load dashboard data: {opsIntelError?.message}
+        </Alert>
+      </Box>
+    );
  }
 
   return (
@@ -320,7 +344,7 @@ export const DashboardPage = ({
          isOpen={isConnectModalOpen}
          onClose={() => setIsConnectModalOpen(false)}
        />
-       {/* 2. Replace the Alert with our new modal */}
+       {/* Connection Error Modal */}
        <ConnectionErrorModal
          open={!!connectionError}
          error={connectionError}
@@ -329,7 +353,9 @@ export const DashboardPage = ({
        />
       <DataSyncingModal 
         open={isSyncModalOpen} 
-        onClose={handleSyncModalClose} />
+        onClose={handleSyncModalClose} 
+        data-testid="data-syncing-modal"
+      />
       
       <GridLayout
         layout={layout}
