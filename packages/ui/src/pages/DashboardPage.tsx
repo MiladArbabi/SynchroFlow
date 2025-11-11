@@ -19,6 +19,8 @@ import { InventoryHealthRow } from 'widgets/InventoryHealthWidget';
 import { useLayoutContext } from '../App'; 
 
 import { DataSyncingModal } from 'components/DataSyncingModal';
+import { ConnectStoreModal } from 'components/ConnectStoreModal';
+import { ConnectionErrorModal } from 'components/ConnectionErrorModal';
 import { useIntegration } from 'contexts/IntegrationContext';
 
 const GridLayout = WidthProvider(RGL);
@@ -168,6 +170,7 @@ export const DashboardPage = ({
 
  // State for our modals
  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+ const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
  const [connectionError, setConnectionError] = useState<string | null>(null);
 
  useEffect(() => {
@@ -189,6 +192,17 @@ export const DashboardPage = ({
      setSearchParams({}, { replace: true });
    }
  }, [searchParams, setSearchParams, refreshIntegrationStatus]);
+
+ // --- Modal control functions ---
+ const handleOpenConnectModal = () => {
+   // TODO: We will add the pre-flight check (Issue #647) here
+   setIsConnectModalOpen(true);
+ };
+
+ const handleRetry = () => {
+   setConnectionError(null); // Close the error modal
+   handleOpenConnectModal(); // Open the connect modal
+ };
 
   // Handler for adding a new widget from the library
  const handleAddWidget = (variantId: string) => {
@@ -256,12 +270,17 @@ export const DashboardPage = ({
   return (
     <>
     {/* --- AHA-FLOW: Render Modals --- */}
-      {/* We'll use a simple Alert for the error for now (Issue #651 will build the modal) */}
-      {connectionError && (
-        <Alert severity="error" onClose={() => setConnectionError(null)} sx={{ m: 2 }}>
-          {connectionError}
-        </Alert>
-      )}
+      <ConnectStoreModal
+         isOpen={isConnectModalOpen}
+         onClose={() => setIsConnectModalOpen(false)}
+       />
+       {/* 2. Replace the Alert with our new modal */}
+       <ConnectionErrorModal
+         open={!!connectionError}
+         error={connectionError}
+         onClose={() => setConnectionError(null)} // "Skip for Now"
+         onRetry={handleRetry} // "Try Again"
+       />
       <DataSyncingModal open={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
       
       <GridLayout

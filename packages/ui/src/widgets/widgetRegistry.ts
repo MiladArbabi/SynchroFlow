@@ -7,7 +7,7 @@ import InventoryHealthWidget from './InventoryHealthWidget';
 import AOpexGauge from './AOpexGauge';
 
 // Define possible plan levels
-export type PlanLevel = 'Ignition' | 'Clarity' | 'Autonomous';
+export type PlanLevel = 'Spark' | 'Ignition' | 'Clarity' | 'Autonomous';
 
 /**
  * Defines a specific, addable version of a widget.
