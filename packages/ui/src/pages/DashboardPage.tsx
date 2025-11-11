@@ -5,7 +5,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import RGL, { WidthProvider } from 'react-grid-layout';
 import axios from 'axios';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import IconComponent from 'components/Icon';
 import WidgetLibrary from 'components/WidgetLibrary';
 import { PlanLevel, WIDGET_REGISTRY, getWidgetConfigByVariantId } from '../widgets/widgetRegistry';
@@ -167,6 +167,7 @@ export const DashboardPage = ({
   // --- AHA-FLOW: Handle Redirect & Modals ---
  const [searchParams, setSearchParams] = useSearchParams();
  const { refreshIntegrationStatus } = useIntegration();
+ const queryClient = useQueryClient();
 
  // State for our modals
  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -203,6 +204,21 @@ export const DashboardPage = ({
    setConnectionError(null); // Close the error modal
    handleOpenConnectModal(); // Open the connect modal
  };
+
+ // 3. Create the "Aha! Refresh" handler
+  const handleSyncModalClose = () => {
+    setIsSyncModalOpen(false);
+
+    // Ring the "doorbell" for all our data
+
+    // a) Refresh the main dashboard data (from Issue #638)
+    queryClient.invalidateQueries({ queryKey: ['dashboardPulse'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardInventory'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardShipments'] });
+
+    // b) Refresh any other data, like OpsIntel
+    queryClient.invalidateQueries({ queryKey: ['opsIntelSummary'] });
+  };
 
   // Handler for adding a new widget from the library
  const handleAddWidget = (variantId: string) => {
@@ -281,7 +297,9 @@ export const DashboardPage = ({
          onClose={() => setConnectionError(null)} // "Skip for Now"
          onRetry={handleRetry} // "Try Again"
        />
-      <DataSyncingModal open={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
+      <DataSyncingModal 
+        open={isSyncModalOpen} 
+        onClose={handleSyncModalClose} />
       
       <GridLayout
         layout={layout}
