@@ -5,7 +5,7 @@ import { DashboardPage } from 'pages/DashboardPage';
 import { renderWithProviders } from 'test-utils';
 import { useIntegration } from 'contexts/IntegrationContext';
 import { useAuth } from 'contexts/AuthContext';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLayoutContext } from 'App';
 import { PlanLevel } from 'widgets/widgetRegistry';
 
@@ -30,7 +30,14 @@ jest.mock('@tanstack/react-query', () => ({
     error: null,
     refetch: jest.fn(),
   }),
+  useQueryClient: jest.fn(), // Add this line
 }));
+
+// Create mock query client
+const mockInvalidateQueries = jest.fn();
+const mockQueryClient = {
+  invalidateQueries: mockInvalidateQueries,
+};
 jest.mock('contexts/IntegrationContext', () => ({
   useIntegration: jest.fn(),
 }));
@@ -45,8 +52,15 @@ jest.mock('components/WidgetLibrary', () => ({
     open ? <div data-testid="widget-library">Widget Library</div> : null
 }));
 jest.mock('components/DataSyncingModal', () => ({
-  DataSyncingModal: ({ open }: any) => 
-    open ? <div data-testid="data-syncing-modal">Data Syncing Modal</div> : null
+  DataSyncingModal: ({ open, onClose }: any) => 
+    open ? (
+      <div data-testid="data-syncing-modal">
+        <button onClick={onClose} data-testid="close-sync-modal">
+          Close Modal
+        </button>
+        Data Syncing Modal
+      </div>
+    ) : null
 }));
 jest.mock('components/Icon', () => ({
   __esModule: true,
@@ -121,6 +135,7 @@ const mockedUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mockedUseIntegration = useIntegration as jest.MockedFunction<typeof useIntegration>;
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 const mockedGetWidgetConfigByVariantId = require('widgets/widgetRegistry').getWidgetConfigByVariantId as jest.MockedFunction<any>;
+const mockedUseQueryClient = useQueryClient as jest.MockedFunction<typeof useQueryClient>;
 
 // Default mock for layout context
 const defaultMockLayoutContext = {
@@ -346,6 +361,9 @@ describe('DashboardPage', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       
+      // Reset query client mock
+      mockInvalidateQueries.mockClear();
+      
       // Setup default mocks for all contexts
       mockedUseLayoutContext.mockReturnValue({
         ...defaultMockLayoutContext,
@@ -359,6 +377,9 @@ describe('DashboardPage', () => {
         syncStatus: 'NOT_FOUND',
       });
 
+      // Mock query client
+      mockedUseQueryClient.mockReturnValue(mockQueryClient);
+
       // Default URL params - no OAuth flow
       mockUseSearchParams.mockReturnValue([
         new URLSearchParams(), // No params by default
@@ -366,7 +387,7 @@ describe('DashboardPage', () => {
       ]);
     });
 
-    it('should render DataSyncingModal when connect=success param is present', async () => {
+    it('should render DataSyncingModal when connect=success param is present', () => {
       // Mock URL with success parameter
       const searchParams = new URLSearchParams();
       searchParams.set('connect', 'success');
@@ -389,6 +410,44 @@ describe('DashboardPage', () => {
 
       // The modal should be rendered
       expect(screen.getByTestId('data-syncing-modal')).toBeInTheDocument();
+    });
+
+    it('should invalidate queries when DataSyncingModal is closed', () => {
+      // Mock URL with success parameter
+      const searchParams = new URLSearchParams();
+      searchParams.set('connect', 'success');
+      
+      mockUseSearchParams.mockReturnValue([
+        searchParams,
+        jest.fn(), // setSearchParams mock
+      ]);
+
+      // Mock integration context for syncing state
+      mockedUseIntegration.mockReturnValue({
+        ...defaultMockIntegration,
+        syncStatus: 'SYNCING_PRODUCTS',
+        refreshIntegrationStatus: jest.fn(),
+      });
+
+      renderWithProviders(
+        <DashboardPage children={<></>} handleSidenavToggle={() => {}} />
+      );
+
+      // The modal should be rendered
+      expect(screen.getByTestId('data-syncing-modal')).toBeInTheDocument();
+
+      // Click the close button to trigger handleSyncModalClose
+      const closeButton = screen.getByTestId('close-sync-modal');
+      closeButton.click();
+
+      // Verify that queryClient.invalidateQueries was called with the expected query keys
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardPulse'] });
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardInventory'] });
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardShipments'] });
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['opsIntelSummary'] });
+      
+      // Verify it was called 4 times (once for each query key)
+      expect(mockInvalidateQueries).toHaveBeenCalledTimes(4);
     });
 
     it('should render ConnectionErrorModal when connect=error param is present', () => {
