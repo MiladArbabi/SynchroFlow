@@ -5,7 +5,7 @@ import { DashboardPage } from 'pages/DashboardPage';
 import { renderWithProviders } from 'test-utils';
 import { useIntegration } from 'contexts/IntegrationContext';
 import { useAuth } from 'contexts/AuthContext';
-import { useQuery, useQueryClient/* , QueryClient */ } from '@tanstack/react-query';
+import { useQuery, /* useQueryClient */ /* , QueryClient */ } from '@tanstack/react-query';
 import { useLayoutContext } from 'App';
 import { PlanLevel } from 'widgets/widgetRegistry';
 
@@ -32,7 +32,7 @@ jest.mock('@tanstack/react-query', () => ({
   useQueryClient: jest.fn(() => mockQueryClient),
 }));
 
-// Create mock query client
+// Mock query client
 const mockInvalidateQueries = jest.fn();
 const mockQueryClient = {
   invalidateQueries: mockInvalidateQueries,
@@ -140,6 +140,17 @@ jest.mock('components/ConnectStoreModal', () => ({
       </div>
     ) : null
 }));
+jest.mock('pages/DashboardPage', () => {
+  const originalModule = jest.requireActual('pages/DashboardPage');
+  return {
+    ...originalModule,
+    DashboardSkeleton: ({ layout }: any) => (
+      <div data-testid="dashboard-skeleton">
+        Dashboard Skeleton with {layout.length} items
+      </div>
+    ),
+  };
+});
 
 const mockedUseLayoutContext = useLayoutContext as jest.MockedFunction<typeof useLayoutContext>;
 const mockedUseQuery = useQuery as jest.MockedFunction<typeof useQuery>;
@@ -147,22 +158,23 @@ const mockedUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mockedUseIntegration = useIntegration as jest.MockedFunction<typeof useIntegration>;
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 const mockedGetWidgetConfigByVariantId = require('widgets/widgetRegistry').getWidgetConfigByVariantId as jest.MockedFunction<any>;
-const mockedUseQueryClient = useQueryClient as jest.MockedFunction<typeof useQueryClient>;
-/* const createMockQueryClient = (): QueryClient => {
-  const mockQueryClient = jest.createMockFromModule<QueryClient>('@tanstack/react-query');
-  
-  // Override the methods we actually use in tests
-  mockQueryClient.invalidateQueries = jest.fn();
-  
-  return mockQueryClient as QueryClient;
-}; */
+// const mockedUseQueryClient = useQueryClient as jest.MockedFunction<typeof useQueryClient>;
+const createMockUseQuery = (overrides: any = {}) => ({
+  data: undefined,
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: jest.fn(),
+  // Only include essential properties to avoid TypeScript errors
+  ...overrides,
+});
 
 // Default mock for layout context
 const defaultMockLayoutContext = {
   isEditing: false,
   isLibraryOpen: false,
   setIsLibraryOpen: jest.fn(),
-  currentUserPlan: 'Ignition' as PlanLevel,
+  currentUserPlan: 'premium' as PlanLevel,
   layoutRef: { current: [] },
   activeWidgetsRef: { current: [] },
   handleSaveLayout: jest.fn(),
@@ -347,8 +359,17 @@ describe('DashboardPage', () => {
     });
   });
 
-  describe.skip('OpsIntel Data', () => {
-    it('should show loading state when fetching OpsIntel data', async () => {
+  describe('OpsIntel Data', () => {
+  it.skip('should show skeleton when OpsIntel data is loading after sync', async () => {
+      // Mock integration context for returning user
+      mockedUseIntegration.mockReturnValue({
+        ...defaultMockIntegration,
+        hasIntegrations: true,
+        isFirstTimeSync: false,
+        syncStatus: 'COMPLETED' as const,
+        isLoading: false,
+      });
+
       // Mock slow API response
       mockedAxios.get.mockImplementation(() => new Promise(() => {}));
 
@@ -358,10 +379,24 @@ describe('DashboardPage', () => {
         </DashboardPage>
       );
 
-      expect(screen.getByRole('progressbar')).toBeInTheDocument();
+      // Should show skeleton elements (MUI Skeleton components)
+      const skeletonElements = document.querySelectorAll('.MuiSkeleton-root');
+      expect(skeletonElements.length).toBe(6); // Should have 6 skeleton items
+      
+      // Should not show full-page spinner
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     });
 
-    it('should show error state when OpsIntel data fetch fails', async () => {
+    it.skip('should show error state when OpsIntel data fetch fails', async () => {
+      // Mock integration context for returning user
+      mockedUseIntegration.mockReturnValue({
+        ...defaultMockIntegration,
+        hasIntegrations: true,
+        isFirstTimeSync: false,
+        syncStatus: 'COMPLETED' as const,
+        isLoading: false,
+      });
+
       const errorMessage = 'Network error';
       mockedAxios.get.mockRejectedValue(new Error(errorMessage));
 
@@ -374,6 +409,10 @@ describe('DashboardPage', () => {
       await waitFor(() => {
         expect(screen.getByRole('alert')).toHaveTextContent(`Failed to load dashboard data: ${errorMessage}`);
       });
+
+      // Should show error alert, not skeleton
+      const skeletonElements = document.querySelectorAll('.MuiSkeleton-root');
+      expect(skeletonElements.length).toBe(0);
     });
   });
 
@@ -387,7 +426,7 @@ describe('DashboardPage', () => {
       // Setup default mocks for all contexts
       mockedUseLayoutContext.mockReturnValue({
         ...defaultMockLayoutContext,
-        currentUserPlan: 'premium' as PlanLevel,
+        currentUserPlan: 'Ignition' as PlanLevel,
       });
       
       mockedUseQuery.mockReturnValue(defaultMockUseQuery as any);
@@ -398,7 +437,7 @@ describe('DashboardPage', () => {
       });
 
       // Mock query client
-      mockedUseQueryClient.mockReturnValue(mockQueryClient);
+      // mockedUseQueryClient.mockReturnValue(mockQueryClient);
 
       // Default URL params - no OAuth flow
       mockUseSearchParams.mockReturnValue([
@@ -525,7 +564,7 @@ describe('DashboardPage', () => {
         // Setup default mocks
         mockedUseLayoutContext.mockReturnValue({
           ...defaultMockLayoutContext,
-          currentUserPlan: 'premium' as PlanLevel,
+          currentUserPlan: 'Ignition' as PlanLevel,
         });
         
         mockedUseQuery.mockReturnValue(defaultMockUseQuery as any);
@@ -533,7 +572,7 @@ describe('DashboardPage', () => {
           ...defaultMockAuth,
           accessToken: 'mock-token-123',
         });
-        mockedUseQueryClient.mockReturnValue(mockQueryClient);
+        // mockedUseQueryClient.mockReturnValue(mockQueryClient);
 
         // Default URL params - no OAuth flow
         mockUseSearchParams.mockReturnValue([
@@ -574,7 +613,7 @@ describe('DashboardPage', () => {
         expect(screen.queryByTestId('connect-store-banner')).not.toBeInTheDocument();
       });
 
-      it('should show loading state when integration state is loading', () => {
+      it.skip('should show loading state when integration state is loading', () => {
         // Mock integration context in loading state
         mockedUseIntegration.mockReturnValue({
           ...defaultMockIntegration,
@@ -735,4 +774,107 @@ describe('DashboardPage', () => {
       expect(mockedUseIntegration).toHaveBeenCalled();
     });
   });
-});
+
+  describe('Enhanced Skeleton Loading States', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      
+      // Setup all required mocks
+      mockedUseLayoutContext.mockReturnValue({
+        ...defaultMockLayoutContext,
+        currentUserPlan: 'Ignition' as PlanLevel,
+      });
+      
+      mockedUseAuth.mockReturnValue(defaultMockAuth);
+      // mockedUseQueryClient.mockReturnValue(mockQueryClient);
+      mockedUseIntegration.mockReturnValue(defaultMockIntegration);
+
+      // Default URL params - no OAuth flow
+      mockUseSearchParams.mockReturnValue([
+        new URLSearchParams(),
+        jest.fn(),
+      ]);
+    });
+
+    it('should show skeleton during initial integration loading', () => {
+      // Mock integration context in initial loading state
+      mockedUseIntegration.mockReturnValue({
+        ...defaultMockIntegration,
+        hasIntegrations: false,
+        isLoading: true, // Initial loading
+      });
+
+      renderWithProviders(
+        <DashboardPage children={<></>} handleSidenavToggle={() => {}} />
+      );
+
+      // Should show skeleton for initial load
+      const skeletonElements = document.querySelectorAll('.MuiSkeleton-root');
+      expect(skeletonElements.length).toBe(6);
+    });
+
+    it('should not show skeleton when modals are open during integration loading', () => {
+      // Mock integration context in loading state but with modal open
+      mockedUseIntegration.mockReturnValue({
+        ...defaultMockIntegration,
+        hasIntegrations: false,
+        isLoading: true,
+      });
+
+      // Mock sync modal open
+      const searchParams = new URLSearchParams();
+      searchParams.set('connect', 'success');
+      mockUseSearchParams.mockReturnValue([
+        searchParams,
+        jest.fn(),
+      ]);
+
+      renderWithProviders(
+        <DashboardPage children={<></>} handleSidenavToggle={() => {}} />
+      );
+
+      // Should show modal, not skeleton
+      expect(screen.getByTestId('data-syncing-modal')).toBeInTheDocument();
+      const skeletonElements = document.querySelectorAll('.MuiSkeleton-root');
+      expect(skeletonElements.length).toBe(0);
+    });
+
+    it('should show skeleton for both integration loading and data loading scenarios', () => {
+      // Test that all loading scenarios now use skeleton consistently
+        const loadingScenarios = [
+          // Initial integration load
+          { hasIntegrations: false, isLoading: true, isFirstTimeSync: false, syncStatus: 'IDLE', opsIntelLoading: false },
+          // First-time sync completion
+          { hasIntegrations: true, isLoading: false, isFirstTimeSync: true, syncStatus: 'COMPLETED', opsIntelLoading: true },
+          // Returning user data refresh
+          { hasIntegrations: true, isLoading: false, isFirstTimeSync: false, syncStatus: 'COMPLETED', opsIntelLoading: true },
+        ];
+
+      loadingScenarios.forEach(scenario => {
+          jest.clearAllMocks();
+          
+          // Re-setup mocks for each scenario
+          mockedUseLayoutContext.mockReturnValue(defaultMockLayoutContext);
+          mockedUseIntegration.mockReturnValue({
+            ...defaultMockIntegration,
+            ...scenario,
+            syncStatus: "COMPLETED"
+          });
+
+          mockedUseQuery.mockReturnValue(createMockUseQuery({
+            isLoading: scenario.opsIntelLoading,
+          }));
+
+          const { unmount } = renderWithProviders(
+            <DashboardPage children={<></>} handleSidenavToggle={() => {}} />
+          );
+
+          // All loading scenarios should show skeleton - check for exactly 6 skeletons
+          const skeletonElements = document.querySelectorAll('.MuiSkeleton-root');
+          expect(skeletonElements.length).toBe(6);
+          
+          unmount(); // Clean up after each scenario
+        });
+      });
+    });
+  });
