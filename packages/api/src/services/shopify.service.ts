@@ -37,6 +37,10 @@ export const performInitialSync = async (
   // We fetch the last 50 of each for the MVP.
   const query = `
     query {
+      shop {
+        paymentGateways
+      }
+      
       # Fetch Products
       products(first: 50) {
         edges {
@@ -129,10 +133,16 @@ export const performInitialSync = async (
       }
     });
 
+    // --- Report: COMPLETED (and save discovered data) ---
+  const discoveredGateways = data.shop?.paymentGateways
+    ? JSON.stringify(data.shop.paymentGateways)
+    : null
+
     // --- 4. Report: COMPLETED ---
     await db('integrations').where({ id: integrationId }).update({
       sync_status: 'COMPLETED',
       sync_last_error: null,
+      discovered_payment_gateways: discoveredGateways
     });
 
     console.log(`[ShopifyService] Sync COMPLETED for shopId: ${shopId}`);

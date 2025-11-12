@@ -629,4 +629,30 @@ describe('ShopifyService', () => {
       expect(mockClient.request).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('Payment gateway discovery', () => {
+    it('should update integration with discovered payment gateways', async () => {
+      const mockGraphQLResponseWithPaymentGateways = {
+        data: {
+          shop: {
+            paymentGateways: ['stripe']
+          },
+          products: { edges: [] },
+          orders: { edges: [] },
+          payouts: { edges: [] }
+        }
+      };
+
+      mockClient.request.mockResolvedValue(mockGraphQLResponseWithPaymentGateways);
+
+      await performInitialSync(mockAccessToken, mockPlatformShopName, mockShopId, mockIntegrationId);
+
+      // This will FAIL because the query doesn't include paymentGateways
+      expect(queryBuilderMocks.integrations.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          discovered_payment_gateways: expect.stringContaining('stripe')
+        })
+      );
+    });
+  });
 });
