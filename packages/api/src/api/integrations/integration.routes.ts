@@ -4,7 +4,8 @@ import {
   initiateOAuth, 
   handleOAuthCallback, 
   getSyncStatus,
-  preFlightCheck
+  preFlightCheck,
+  getDiscoveryStatus
 } from './integration.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
@@ -21,5 +22,8 @@ router.get('/sync-status', authenticateToken, getSyncStatus);
 
 // Wires GET /api/v1/integrations/pre-flight
 router.get('/pre-flight', authenticateToken, preFlightCheck);
+
+// This new endpoint must be authenticated
+router.get('/discovery-status', authenticateToken, getDiscoveryStatus);
 
 export default router;
