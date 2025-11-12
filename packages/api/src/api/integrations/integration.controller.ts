@@ -284,3 +284,31 @@ export const preFlightCheck = async (req: Request, res: Response) => {
     return res.status(503).json({ ready: false, issues });
   }
 };
+
+export const getDiscoveryStatus = async (req: Request, res: Response) => {
+  // We get the user ID from the authenticated request
+  const shopId = await getShopIdFromRequest(req);
+  
+  if (!shopId) {
+    return res.status(403).json({ message: 'User shop not found.' });
+  }
+
+  try {
+    const integration = await db('integrations')
+      .where({ shop_id: shopId })
+      .orderBy('created_at', 'desc') // Get the latest one
+      .first('discovered_payment_gateways');
+
+    if (!integration) {
+      return res.status(404).json({ message: 'No integration found' });
+    }
+
+    res.status(200).json({
+      discovered_payment_gateways: integration.discovered_payment_gateways,
+    });
+
+  } catch (error: any) {
+    console.error('[discovery-status] Error fetching discovery status:', error);
+    res.status(500).json({ message: 'Error fetching discovery status', error: error.message });
+  }
+};

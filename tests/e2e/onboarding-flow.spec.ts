@@ -96,6 +96,7 @@ test.describe('Dashboard OAuth Integration Flow', () => {
     console.log('✅ DataSyncingModal closed after sync completion');
 
     // 10. Wait for staggered refresh to complete
+    // (This part is removed for the next test, which stays in the modal)
     await page.waitForTimeout(1000);
 
     // 11. Assert final dashboard state with real data and banner is gone
@@ -105,6 +106,50 @@ test.describe('Dashboard OAuth Integration Flow', () => {
     console.log('✅ ConnectStoreBanner is gone after integration');
     
     console.log('=== OAuth flow test completed successfully ===');
+  });
+
+  test('should display Stripe auto-discovery prompt in sync modal (Issue #718)', async () => {
+    console.log('=== Starting Stripe auto-discovery test ===');
+    
+    // 1. Login and get to the modal
+    await loginAs(page, 'default-user');
+    await page.click('[data-testid="connect-store-button"]');
+    await page.click('[data-testid="connect-store-modal"] >> text=Shopify');
+    await page.fill('input[type="text"]', 'test-store.myshopify.com');
+    await page.route('**/api/v1/integrations/oauth/initiate', route => 
+      route.fulfill({ json: { url: MOCK_OAUTH_URL } })
+    );
+    await page.click('[data-testid="connect-store-modal"] button:has-text("Connect")');
+    // 2. SET UP ALL MOCKS *BEFORE* THE NAVIGATION
+    // Mock the NEW discovery endpoint to return 'stripe'
+    await page.route('**/api/v1/integrations/discovery-status', route => 
+      route.fulfill({ 
+        json: { discovered_payment_gateways: '["stripe", "shopify_payments"]' }
+      })
+    );
+    // Mock a COMPLETED sync status so the modal will close
+    await page.route('**/api/v1/integrations/sync-status', route => 
+      route.fulfill({ json: { status: 'COMPLETED', progress: { current: 100, total: 100 } } })
+    );
+    console.log('✅ Mocked discovery-status and sync-status endpoints');
+
+    // 3. Navigate to the page, which triggers all polling
+    await page.goto('/dashboard?connect=success');
+    
+    // 4. Assert DataSyncingModal is visible
+    await expect(page.getByRole('heading', { name: 'Connection Successful!', level: 3 })).toBeVisible();
+    console.log('✅ DataSyncingModal is visible');
+
+    // 5. Assert the new "magic moment" text appears in the modal
+    await expect(page.getByRole('dialog', { name: 'Connection Successful!' })
+      .locator('text=We see you use Stripe!')).toBeVisible({ timeout: 10000 }); // Poll for up to 10s
+    
+    console.log('✅ Stripe discovery prompt is visible');
+    
+    // 6. (Cleanup) Assert the modal closes (which it now will)
+    await expect(page.getByRole('heading', { name: 'Connection Successful!', level: 3 })).toBeHidden({
+      timeout: 15000
+    });
   });
 
   test('handle pre-flight check failure gracefully', async () => {
