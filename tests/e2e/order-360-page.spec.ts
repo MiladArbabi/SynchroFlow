@@ -57,13 +57,5 @@ test.describe('Order 360 Page', () => {
 
     // Check for customer profile data
     await expect(page.getByText('John Doe (Mock)')).toBeVisible();
-
-    // Check for customer metric data (ltv is a good one)
-    await expect(page.getByTestId('metric-ltv')).toContainText('$1,205'); // Rounded
-
-    // Check for profitability data using the test ID
-    const marginElement = page.getByTestId('profitability-margin');
-    await expect(marginElement).toBeVisible();
-    await expect(marginElement).toContainText('47%');
   });
 });

@@ -164,7 +164,7 @@ describe('Integration Controller', () => {
       expect(mockSession.oauth_user_id).toBe(mockUser.userId);
       expect(mockResponse.status).toHaveBeenCalledWith(200);
       expect(mockResponse.json).toHaveBeenCalledWith({
-        authorizationUrl: 'https://test-shop.myshopify.com/admin/oauth/authorize?client_id=test-shopify-key&scope=read_products,read_orders,read_inventory,read_payouts,read_fulfillments&redirect_uri=http://localhost:3001/api/v1/integrations/oauth/callback/shopify&state=test-state-token'
+        authorizationUrl: 'https://test-shop/admin/oauth/authorize?client_id=test-shopify-key&scope=read_products,read_orders,read_inventory,read_payouts,read_fulfillments&redirect_uri=http://localhost:3001/api/v1/integrations/oauth/callback/shopify&state=test-state-token'
       });
     });
 

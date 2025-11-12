@@ -17,10 +17,12 @@ import {
   CircularProgress,
   Paper, // For the cards
   ButtonBase, // To make cards clickable
-  Theme
+  Theme,
+  InputAdornment,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import IconComponent from './Icon';
+import { useAuth } from 'contexts/AuthContext';
 
 // --- [START POSTHOG] ---
 import { usePostHog } from 'posthog-js/react';
@@ -59,6 +61,7 @@ interface ConnectStoreModalProps {
 
 export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, onClose }) => {
   const [shopName, setShopName] = useState('');
+  const { accessToken } = useAuth(); 
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformID | null>(null);
   const [syncState, setSyncState] = useState<'form' | 'syncing' | 'error'>('form');
   const [error, setError] = useState('');
@@ -89,7 +92,13 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
         ...(selectedPlatform === 'shopify' && { shop: shopName })
       };
 
-      const { data } = await axios.get('/api/v1/integrations/oauth/initiate', { params });
+      // Add the 'headers' object with the access token
+      const { data } = await axios.get('/api/v1/integrations/oauth/initiate', {
+          params,
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+        }
+      });
 
       // Step 2: On success, redirect to the platform's auth URL
       if (data.authorizationUrl) {
@@ -208,7 +217,7 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
     );
     dialogActions = (
       <DialogActions sx={{ p: 3 }}>
-        <Button fullWidth onClick={handleClose} variant="outlined" color="secondary">
+        <Button fullWidth onClick={handleClose} variant="outlined" color="info">
           Cancel
         </Button>
       </DialogActions>
@@ -230,9 +239,18 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
           type="text"
           fullWidth
           variant="outlined"
-          placeholder="my-store.myshopify.com"
+          placeholder="my-store"
           value={shopName}
           onChange={(e) => setShopName(e.target.value)}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <Typography color="info" sx={{ pl: 0.5 }}>
+                  .myshopify.com
+                </Typography>
+              </InputAdornment>
+            )
+          }}
         />
         {error && <Typography color="error" variant="body2" sx={{ mt: 2 }}>{error}</Typography>}
       </>
@@ -241,7 +259,7 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
       <DialogActions sx={{ p: 3 }}>
         <Grid container spacing={2} sx={{ width: '100%' }}>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Button fullWidth onClick={handleBack} variant="outlined" color="secondary">
+            <Button fullWidth onClick={handleBack} variant="outlined" color="info">
               Back
             </Button>
           </Grid>
@@ -268,7 +286,7 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
       <DialogActions sx={{ p: 3 }}>
         <Grid container spacing={2} sx={{ width: '100%' }}>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Button fullWidth onClick={handleBack} variant="outlined" color="secondary">
+            <Button fullWidth onClick={handleBack} variant="outlined" color="info">
               Back
             </Button>
           </Grid>

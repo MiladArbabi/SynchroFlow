@@ -70,9 +70,12 @@ export const initiateOAuth = (req: Request, res: Response) => {
     // UPDATED FOR "TRUE PROFIT" MVP: Added read_payouts (for fees) and read_fulfillments (for shipping)
     const scopes = 'read_products,read_orders,read_inventory,read_payouts,read_fulfillments';
 
-    authorizationUrl = `https://{shop}.myshopify.com/admin/oauth/authorize?client_id=${shopifyApiKey}&scope=${scopes}&redirect_uri=${redirectUri}&state=${state}`.replace(
+    // The user provides "my-store", but Shopify requires "my-store.myshopify.com".
+    const shopDomain = `${shop}.myshopify.com`;
+
+    authorizationUrl = `https://{shop}/admin/oauth/authorize?client_id=${shopifyApiKey}&scope=${scopes}&redirect_uri=${redirectUri}&state=${state}`.replace(
       '{shop}',
-      shop
+      shopDomain
     );
   } else if (platform === 'quickbooks') {
     // ... logic for QuickBooks (different params)
@@ -87,11 +90,34 @@ export const initiateOAuth = (req: Request, res: Response) => {
 
 export const handleOAuthCallback = async (req: Request, res: Response) => {
   const { platform } = req.params as { platform: string };
-  const { code, state, shop } = req.query as { code: string; state: string; shop: string };
+  // Destructure all possible query params, including error ones
+  const { code, state, shop, error, error_description } = req.query as {
+    code: string;
+    state: string;
+    shop: string;
+    error?: string;
+    error_description?: string;
+  };
   const session = req.session as OAuthSession;
   const userId = session.oauth_user_id;
 
-  // --- 1. Security: Validate CSRF State Token ---
+  // --- 1. Handle OAuth Failure (Sad Path) ---
+  // Shopify (and others) send 'error' and 'error_description' on failure.
+  if (error) {
+    const errorMessage = error_description || error || 'Unknown OAuth error';
+    // Clear the session state to prevent retry loops
+    session.oauth_state = undefined;
+    session.oauth_user_id = undefined;
+
+    // Redirect to frontend with the params DashboardPage.tsx expects
+    const redirectUrl = new URL(`${process.env.FRONTEND_URL}/dashboard`);
+    redirectUrl.searchParams.append('connect', 'error');
+    redirectUrl.searchParams.append('message', errorMessage);
+
+    return res.redirect(redirectUrl.toString());
+  }
+
+  // --- 2. Security: Validate CSRF State Token (Happy Path) ---
   const expectedState = session.oauth_state;
 
   // --- NEW: Validate User ID ---
@@ -112,7 +138,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   try {
     let accessToken = '';
     
-    // --- 2. Token Exchange ---
+    // --- 3. Token Exchange ---
     if (platform === 'shopify') {
       const tokenUrl = `https://${shop}/admin/oauth/access_token`;
       const payload = {
@@ -132,14 +158,14 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to retrieve access token.' });
     }
 
-    // --- 3. Get User's Shop ID ---
+    // --- 4. Get User's Shop ID ---
     const user = await db<User>('users').where({ id: userId }).first();
     if (!user || !user.shop_id) {
       return res.status(404).json({ error: 'User account or associated shop not found.' });
     }
     const userShopId = user.shop_id;
 
-    // --- 4. Encrypt and Store Token ---
+    // --- 5. Encrypt and Store Token ---
     const encryptedToken = encryptToken(accessToken);
 
     const [newIntegration] = await db('integrations')
@@ -154,7 +180,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       const integrationId = newIntegration.id;
       console.log(`Successfully stored integration ID: ${integrationId}`);
 
-      // --- 5. Queue the initial sync job ---
+      // --- 6. Queue the initial sync job ---
       const syncChannel = getQueueChannel('sync_jobs');
       const jobPayload = { integrationId };
       syncChannel.sendToQueue('sync_jobs', Buffer.from(JSON.stringify(jobPayload)));
