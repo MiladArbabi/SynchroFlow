@@ -45,5 +45,4 @@ describe('Theme Token Implementation (Issue #710)', () => {
     // This will FAIL. It will get '#f44336' but expects '#DC2626'.
     expect(errorColorElement.textContent).toBe('#DC2626'); 
   });
-
 });
