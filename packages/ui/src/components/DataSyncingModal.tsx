@@ -61,16 +61,12 @@ function StepIcon(props: StepIconProps) {
 
 interface DataSyncingModalProps {
   open: boolean;
-  onClose: () => void;
+  onClose: (error?: string | null) => void;
 }
 
 export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClose }) => {
-
-  // --- [START] GUT THE LIE ---
-  // const [activeStep, setActiveStep] = useState(0); // REMOVED
-
-  // --- [START] USE THE TRUTH ---
-  const { syncStatus, progress } = useIntegration();
+  const { syncStatus, progress, lastError } = useIntegration();
+  const hasCalledOnCloseRef = React.useRef(false);
 
   // Map the real API status to the stepper's activeStep
   const activeStep = React.useMemo(() => {
@@ -83,28 +79,55 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
         return 2;
       case 'COMPLETED':
         return 3;
+      case 'FAILED':
+        return 0; // Show the error at the first step
       default:
         return 0; // Default to the first step
     }
   }, [syncStatus]);
 
   useEffect(() => {
+    // Reset the ref when modal opens
+    if (open) {
+      hasCalledOnCloseRef.current = false;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (syncStatus === 'COMPLETED' && !hasCalledOnCloseRef.current) {
+      hasCalledOnCloseRef.current = true;
+      const timer = setTimeout(() => {
+        onClose(null);
+      }, 1500);
+      return () => clearTimeout(timer);
+    } else if (syncStatus === 'FAILED' && !hasCalledOnCloseRef.current) {
+      hasCalledOnCloseRef.current = true;
+      onClose(lastError || 'An unknown sync error occurred.');
+    }
+  }, [syncStatus, lastError, onClose]);
+
+  useEffect(() => {
     if (syncStatus === 'COMPLETED') {
       // Wait 1.5s to let the user see the "Completed" checkmark
       const timer = setTimeout(() => {
-        onClose();
+        onClose(null);
       }, 1500);
       return () => clearTimeout(timer);
+     } else if (syncStatus === 'FAILED') {
+       // 4. On fail, close immediately and pass the error
+       onClose(lastError || 'An unknown sync error occurred.');
      }
-  }, [syncStatus, onClose]);
+  }, [syncStatus, lastError, onClose]);
 
   return (
     // We disable backdrop click and escape key to make it a celebratory "moment"
     <Dialog open={open} disableEscapeKeyDown={true} fullWidth maxWidth="sm">
-      <DialogTitle>
-        <Typography variant="h3" align="center" gutterBottom sx={{ mt: 2 }}>
-          Connection Successful!
-        </Typography>
+      <DialogTitle
+          variant="h3" 
+          align="center" 
+          gutterBottom 
+          sx={{ mt: 2 }}>
+        Connection Successful!
       </DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}>
         <Typography variant="body1" align="center" sx={{ mb: 4 }}>

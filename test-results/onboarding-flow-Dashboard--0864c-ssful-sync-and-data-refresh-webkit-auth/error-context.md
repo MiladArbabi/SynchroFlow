@@ -1,0 +1,181 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e29]:
+            - list [ref=e30]:
+              - link "Dashboard" [ref=e31] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e33]
+                - heading "Dashboard" [level=5] [ref=e39]
+            - list [ref=e40]:
+              - link "Orders" [ref=e41] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e43]
+                - paragraph [ref=e48]: Orders
+              - link "Customers" [ref=e49] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e51]
+                - paragraph [ref=e57]: Customers
+              - link "Products" [ref=e58] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e60]
+                - paragraph [ref=e65]: Products
+            - list [ref=e66]:
+              - link "Echo Inbox" [ref=e67] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e69]
+                - paragraph [ref=e72]: Echo Inbox
+          - list [ref=e74]:
+            - button [ref=e75] [cursor=pointer]:
+              - img [ref=e77]
+    - separator [ref=e80]
+    - generic [ref=e82]:
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - button [ref=e86] [cursor=pointer]:
+            - img [ref=e87]
+          - navigation "breadcrumb" [ref=e89]:
+            - list [ref=e90]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e91]: /
+              - listitem [ref=e92]:
+                - paragraph [ref=e93]: Dashboard
+        - generic [ref=e94]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e95] [cursor=pointer]:
+            - img [ref=e96]
+          - button "Notifications" [ref=e103] [cursor=pointer]:
+            - img [ref=e105]
+          - button "Edit Layout" [ref=e110] [cursor=pointer]:
+            - img [ref=e111]
+          - button "user-account" [ref=e114] [cursor=pointer]:
+            - img "User Avatar" [ref=e116]
+            - img [ref=e118]
+      - generic [ref=e122]:
+        - generic [ref=e125]:
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - generic [ref=e130]:
+                - paragraph [ref=e131]: Gross Revenue
+                - heading "$750,930" [level=5] [ref=e132]
+              - img [ref=e134]
+            - generic [ref=e138]:
+              - img [ref=e139]
+              - paragraph [ref=e142]: NaN% than last week
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - generic [ref=e147]:
+                - paragraph [ref=e148]: Gross Margin
+                - heading "$320,400" [level=5] [ref=e149]
+              - img [ref=e151]
+            - generic [ref=e155]:
+              - img [ref=e156]
+              - paragraph [ref=e159]: NaN% than last week
+          - generic [ref=e162]:
+            - generic [ref=e163]:
+              - generic [ref=e164]:
+                - paragraph [ref=e165]: Inventory Value
+                - heading "$1.2M" [level=5] [ref=e166]
+              - img [ref=e168]
+            - generic [ref=e172]:
+              - img [ref=e173]
+              - paragraph [ref=e176]: NaN% than last week
+          - generic [ref=e178]:
+            - generic [ref=e181]: Opex Saved
+            - separator [ref=e182]
+            - generic [ref=e184]:
+              - img [ref=e187]:
+                - generic [ref=e202]:
+                  - generic: 50%
+              - heading "$5,000" [level=2] [ref=e204]
+              - paragraph [ref=e205]: "Target: $10,000"
+          - generic [ref=e207]:
+            - generic [ref=e210]: Cash Flow Forecast
+            - separator [ref=e211]
+            - generic [ref=e213]:
+              - heading "$45,890" [level=3] [ref=e214]
+              - paragraph [ref=e215]: Net EOM Balance (Est.)
+            - generic [ref=e217]:
+              - img [ref=e218]:
+                - generic [ref=e221]:
+                  - generic "$60k" [ref=e222]
+                  - generic "$50k" [ref=e223]
+                  - generic "$40k" [ref=e224]
+                  - generic "$30k" [ref=e225]
+                  - generic "$20k" [ref=e226]
+                - generic [ref=e238]:
+                  - generic "Jan" [ref=e239]
+                  - generic "Feb" [ref=e240]
+                  - generic "Mar" [ref=e241]
+                  - generic "Apr" [ref=e242]
+                  - generic "May" [ref=e243]
+                  - generic "Jun" [ref=e244]
+                  - generic "Jul" [ref=e245]
+                  - generic "Aug" [ref=e246]
+                  - generic "Sep" [ref=e247]
+                  - generic "Oct" [ref=e248]
+                  - generic "Nov" [ref=e249]
+                  - generic "Dec" [ref=e250]
+              - generic [ref=e251]:
+                - generic [ref=e252] [cursor=pointer]:
+                  - generic [ref=e253]:
+                    - img
+                  - generic [ref=e254]: Cash In
+                - generic [ref=e255] [cursor=pointer]:
+                  - generic [ref=e256]:
+                    - img
+                  - generic [ref=e257]: Cash Out
+              - generic: ● ●
+          - generic [ref=e259]:
+            - generic [ref=e262]: Inventory Health
+            - separator [ref=e263]
+            - table [ref=e265]:
+              - rowgroup [ref=e266]:
+                - row "SKU Qty. Available Status" [ref=e267]:
+                  - columnheader "SKU" [ref=e268]
+                  - columnheader "Qty. Available" [ref=e269]
+                  - columnheader "Status" [ref=e270]
+              - rowgroup [ref=e271]:
+                - row "SF-TS-BLK-M 150 Healthy" [ref=e272]:
+                  - cell "SF-TS-BLK-M" [ref=e273]:
+                    - paragraph [ref=e274]: SF-TS-BLK-M
+                  - cell "150" [ref=e275]:
+                    - paragraph [ref=e276]: "150"
+                  - cell "Healthy" [ref=e277]:
+                    - generic [ref=e279]: Healthy
+                - row "SF-HD-GRY-L 25 At Risk" [ref=e280]:
+                  - cell "SF-HD-GRY-L" [ref=e281]:
+                    - paragraph [ref=e282]: SF-HD-GRY-L
+                  - cell "25" [ref=e283]:
+                    - paragraph [ref=e284]: "25"
+                  - cell "At Risk" [ref=e285]:
+                    - generic [ref=e287]: At Risk
+                - row "SF-CP-NAV-OS 0 Stockout" [ref=e288]:
+                  - cell "SF-CP-NAV-OS" [ref=e289]:
+                    - paragraph [ref=e290]: SF-CP-NAV-OS
+                  - cell "0" [ref=e291]:
+                    - paragraph [ref=e292]: "0"
+                  - cell "Stockout" [ref=e293]:
+                    - generic [ref=e295]: Stockout
+                - row "SF-TS-WHT-S 80 Healthy" [ref=e296]:
+                  - cell "SF-TS-WHT-S" [ref=e297]:
+                    - paragraph [ref=e298]: SF-TS-WHT-S
+                  - cell "80" [ref=e299]:
+                    - paragraph [ref=e300]: "80"
+                  - cell "Healthy" [ref=e301]:
+                    - generic [ref=e303]: Healthy
+        - separator [ref=e304]
+  - generic [ref=e305]:
+    - img [ref=e307]
+    - button "Open Tanstack query devtools" [ref=e375] [cursor=pointer]:
+      - img [ref=e376]
+```

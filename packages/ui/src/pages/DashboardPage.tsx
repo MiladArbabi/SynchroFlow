@@ -1,8 +1,9 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-empty-object-type */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/DashboardPage.tsx
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import RGL, { WidthProvider } from 'react-grid-layout';
 import axios from 'axios';
@@ -49,11 +50,11 @@ const mockInventoryHealthData: InventoryHealthRow[] = [
 // Defines the widgets that are active on the dashboard by default
 const initialActiveWidgets = [
   { instanceId: 'kpi-revenue-1', variantId: 'kpi-revenue' },
- { instanceId: 'kpi-margin-1', variantId: 'kpi-margin' },
- { instanceId: 'kpi-inventory-1', variantId: 'kpi-inventory' },
- { instanceId: 'a-opex-gauge-1', variantId: 'a-opex-gauge' },
- { instanceId: 'cashflow-chart-1', variantId: 'cashflow-chart-large' },
- { instanceId: 'inventory-health-1', variantId: 'inventory-health-table' }
+  { instanceId: 'kpi-margin-1', variantId: 'kpi-margin' },
+  { instanceId: 'kpi-inventory-1', variantId: 'kpi-inventory' },
+  { instanceId: 'a-opex-gauge-1', variantId: 'a-opex-gauge' },
+  { instanceId: 'cashflow-chart-1', variantId: 'cashflow-chart-large' },
+  { instanceId: 'inventory-health-1', variantId: 'inventory-health-table' }
 ];
 
 // Helper to build layout from registry, using hardcoded positions for v1
@@ -94,7 +95,7 @@ const getWidgetProps = (
         title: 'Gross Revenue',
         value: '$750,930',
         percentage: '55%',
-        icon: 'BarChart3'
+        icon: 'Store' 
       };
     case 'kpi-margin':
       return {
@@ -156,8 +157,11 @@ const DashboardSkeleton = ({ layout, showBanner = false }: { layout: RGL.Layout[
 export const DashboardPage = ({ 
   children, handleSidenavToggle }: { 
     children: React.ReactNode; handleSidenavToggle: () => void }) => {
-  const [layout, setLayout] = useState(() => buildLayoutFromWidgets(initialActiveWidgets));
-  const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
+    const [layout, setLayout] = useState(() => buildLayoutFromWidgets(initialActiveWidgets));
+    const [activeWidgets, setActiveWidgets] = useState(initialActiveWidgets);
+
+    const instanceId = useRef(Math.random().toString(36).substr(2, 9));
+    console.log(`[DashboardPage] RENDERED with instanceId: ${instanceId.current}`);
 
   const fetchOpsIntel = async (): Promise<OpsIntelSummaryResponse> => {
     const { data } = await axios.get<OpsIntelSummaryResponse>(
@@ -203,7 +207,9 @@ export const DashboardPage = ({
     isLoading: isIntegrationLoading, 
     isFirstTimeSync, 
     syncStatus, 
-    refreshIntegrationStatus } = useIntegration();
+    refreshIntegrationStatus,
+    lastError
+  } = useIntegration();
  const { accessToken } = useAuth();
  const queryClient = useQueryClient();
 
@@ -213,24 +219,50 @@ export const DashboardPage = ({
  const [connectionError, setConnectionError] = useState<string | null>(null);
 
  useEffect(() => {
-   const connectStatus = searchParams.get('connect');
-   const errorMessage = searchParams.get('message');
+    console.log('[DashboardPage] IntegrationContext lastError:', lastError);
+  }, [lastError]);
 
-   if (connectStatus === 'success') {
-     // 1. We're back from Shopify successfully!
-     // 2. Refresh the integration state (this starts the polling)
-     refreshIntegrationStatus();
-     // 3. Open the "Syncing" modal
-     setIsSyncModalOpen(true);
-     // 4. Clean the URL
-     setSearchParams({}, { replace: true });
-   } else if (connectStatus === 'error') {
-     // 1. Something went wrong during OAuth
-     setConnectionError(errorMessage || 'An unknown connection error occurred.');
-     // 2. Clean the URL
-     setSearchParams({}, { replace: true });
-   }
- }, [searchParams, setSearchParams, refreshIntegrationStatus]);
+ useEffect(() => {
+  console.log('[DashboardPage] connectionError STATE CHANGED to:', connectionError);
+  }, [connectionError]);
+
+  const setConnectionErrorWithLog = useCallback((newError: React.SetStateAction<string | null>) => {
+  console.log('[DashboardPage] setConnectionError CALLED with:', newError);
+  console.trace('[DashboardPage] setConnectionError stack trace');
+  setConnectionError(newError);
+}, []); 
+
+  const handleErrorModalClose = React.useCallback(() => {
+  console.log('[DashboardPage handleErrorModalClose] Firing', new Date().toISOString());
+  setConnectionErrorWithLog(null); 
+  setSearchParams({}, { replace: true });
+}, [setConnectionErrorWithLog, setSearchParams]);
+
+ useEffect(() => {
+  const connectStatus = searchParams.get('connect');
+  const errorMessage = searchParams.get('message');
+
+  console.log(`[DashboardPage useEffect] Running. connectStatus: ${connectStatus}, current URL: ${window.location.href}`);
+
+  // Use functional update to get the current connectionError state
+  if (connectStatus === 'success') {
+    console.log('[DashboardPage useEffect] Handling connect=success');
+    refreshIntegrationStatus();
+    setIsSyncModalOpen(true);
+    setSearchParams({}, { replace: true });
+
+  } else if (connectStatus === 'error') {
+      // Check current connectionError state using functional update
+      setConnectionErrorWithLog(currentError => {
+      if (!currentError) {
+        console.log('[DashboardPage useEffect] Setting error from URL params');
+        return errorMessage || 'An unknown connection error occurred.';
+      }
+      return currentError;
+    });
+    setSearchParams({}, { replace: true });
+  }
+}, [searchParams, setSearchParams, refreshIntegrationStatus]); 
 
  const handleOpenConnectModal = async () => {
     // 5. Implement the Pre-flight Check
@@ -248,14 +280,37 @@ export const DashboardPage = ({
     } catch (err: any) {
       // Pre-flight check failed! Show the error modal.
       const issues = err.response?.data?.issues || ['An unknown server error occurred.'];
-      setConnectionError(`System check failed: ${issues.join(' ')}`);
+      setConnectionErrorWithLog(`System check failed: ${issues.join(' ')}`);
+      //setConnectionError(`System check failed: ${issues.join(' ')}`);
     }
   };
 
  const handleRetry = () => {
-   setConnectionError(null); // Close the error modal
-   handleOpenConnectModal(); // Open the connect modal
- };
+  setConnectionErrorWithLog(null); // Use the logged version here too
+  setSearchParams({}, { replace: true });
+  handleOpenConnectModal();
+};
+
+useEffect(() => {
+  console.log('[DashboardPage] IntegrationContext syncStatus:', syncStatus);
+  console.log('[DashboardPage] IntegrationContext lastError:', lastError);
+  console.log('[DashboardPage] IntegrationContext hasIntegrations:', hasIntegrations);
+  console.log('[DashboardPage] IntegrationContext isFirstTimeSync:', isFirstTimeSync);
+}, [syncStatus, lastError, hasIntegrations, isFirstTimeSync]);
+
+  useEffect(() => {
+    console.log(`[DashboardPage] COMPONENT MOUNTED with instanceId: ${instanceId.current}`);
+    return () => {
+      console.log(`[DashboardPage] COMPONENT UNMOUNTING with instanceId: ${instanceId.current}`);
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log('[DashboardPage] COMPONENT MOUNTED/RE-RENDERED');
+    return () => {
+      console.log('[DashboardPage] COMPONENT UNMOUNTING');
+    };
+  }, []);
 
   // --- [START] Smart Rendering Logic ---
   // Check for modal flows first - modals take precedence over loading states
@@ -273,25 +328,28 @@ export const DashboardPage = ({
  }
 
  // 3. Create the "Aha! Refresh" handler
-  const handleSyncModalClose = () => {
+  const handleSyncModalClose = (error: string | null = null) => {
     setIsSyncModalOpen(false);
 
-    // Ring the "doorbell" for all our data
+    if (error) {
+      // If the modal passed an error, show the error modal
+      setConnectionErrorWithLog(error);
+    } else {
+      // No error, run the "Aha! Refresh"
+      // a) Stagger the invalidations for a smooth "roll in" effect
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['dashboardPulse'] });
+        queryClient.invalidateQueries({ queryKey: ['opsIntelSummary'] });
+      }, 100); // KPIs and OpsIntel first
+  
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['dashboardInventory'] });
+      }, 300); // Inventory second
 
-    // a) Refresh the main dashboard data (from Issue #638)
-    // a) Stagger the invalidations for a smooth "roll in" effect
-    setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ['dashboardPulse'] });
-      queryClient.invalidateQueries({ queryKey: ['opsIntelSummary'] });
-    }, 100); // KPIs and OpsIntel first
-
-    setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ['dashboardInventory'] });
-    }, 300); // Inventory second
-
-    setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ['dashboardShipments'] });
-    }, 500); // Shipments last
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['dashboardShipments'] });
+      }, 500); // Shipments last
+    }
   };
 
   // Handler for adding a new widget from the library
@@ -359,7 +417,7 @@ export const DashboardPage = ({
        <ConnectionErrorModal
          open={!!connectionError}
          error={connectionError}
-         onClose={() => setConnectionError(null)} // "Skip for Now"
+         onClose={handleErrorModalClose}
          onRetry={handleRetry} // "Try Again"
        />
       <DataSyncingModal 
