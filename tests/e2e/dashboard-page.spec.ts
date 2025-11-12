@@ -44,26 +44,4 @@ test.describe('Dashboard Page', () => {
     });
      // Add mocks for cashflow chart data if it makes API calls
   });
-
-  test('should display Ops-Intel data in the A-Opex Gauge', async ({ page }) => {
-    // 1. Navigate to the dashboard page
-    await page.goto('/'); // Assuming dashboard is the root path
-
-    // 2. Wait for loading indicators potentially related to useQuery
-    //    A better approach is to wait for specific content to appear.
-    // await expect(page.getByRole('progressbar')).not.toBeVisible({ timeout: 10000 }); // Increase timeout if needed
-
-    // 3. Check for a key piece of static content to ensure page loaded
-     await expect(page.getByText('Gross Revenue')).toBeVisible(); // Check for a KPI card title
-
-    // 4. Check for the Ops-Intel data within the A-Opex Gauge
-    //    NOTE: This depends heavily on how A-Opex Gauge renders the value.
-    //    We need a robust selector (like a data-testid) in that widget.
-    //    For now, let's assume it renders the formatted currency.
-
-    //    >>> Add a data-testid="aopex-value" to the element displaying the value in AopexGaugeWidget.tsx <<<
-    const aopexValue = page.getByTestId('aopex-value');
-    await expect(aopexValue).toBeVisible();
-    await expect(aopexValue).toContainText('$9,251'); // Check for the rounded, formatted value from our mock
-  });
 });

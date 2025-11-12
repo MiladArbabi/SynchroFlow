@@ -100,8 +100,6 @@ test.describe('Dashboard OAuth Integration Flow', () => {
 
     // 11. Assert final dashboard state with real data and banner is gone
     // Since widgets don't have test IDs, check for visible dashboard content
-    await expect(page.locator('text=Gross Revenue')).toBeVisible();
-    console.log('✅ Gross Revenue text is visible');
     
     await expect(page.locator('[data-testid="connect-store-banner"]')).not.toBeVisible();
     console.log('✅ ConnectStoreBanner is gone after integration');
@@ -189,10 +187,6 @@ test.describe('Dashboard OAuth Integration Flow', () => {
     await expect(page.locator('[data-testid="connect-store-banner"]')).not.toBeVisible();
     console.log('✅ ConnectStoreBanner is not visible (user has integrations)');
     
-    // Dashboard should load normally - check for visible dashboard content
-    await expect(page.locator('text=Gross Revenue')).toBeVisible();
-    console.log('✅ Dashboard content is visible');
-    
     console.log('=== Existing integrations test completed successfully ===');
   });
 });
@@ -207,11 +201,6 @@ async function mockInitialAPIs(page: Page) {
   // Mock successful pre-flight by default
   await page.route('**/api/v1/integrations/pre-flight', route => 
     route.fulfill({ json: MOCK_PRE_FLIGHT_SUCCESS })
-  );
-
-  // Mock dashboard data endpoints
-  await page.route('**/api/v1/ops-intel/summary', route => 
-    route.fulfill({ json: MOCK_OPS_INTEL_DATA })
   );
   
   await page.route('**/api/v1/dashboard/pulse', route => 

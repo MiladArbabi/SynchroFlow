@@ -9,13 +9,11 @@ import WmsStatusStepper, { OrderStatus } from 'ui-component/WmsStatusStepper/ind
 // Import the customer component types
 import CustomerProfile, { CustomerProfileData } from 'components/Customer360/CustomerProfile.tsx';
 import CustomerKeyMetrics, { CustomerMetricsData } from 'components/Customer360/CustomerKeyMetrics.tsx';
-import OrderProfitability, { OrderProfitabilityData } from 'widgets/OrderProfitability/index.tsx';
 
 // --- DEFINE NEW CONSOLIDATED API RESPONSE ---
 interface Order360ApiResponse {
   id: string;
   status: OrderStatus;
-  profitability: OrderProfitabilityData;
   customer: {
     profile: CustomerProfileData;
     metrics: CustomerMetricsData;
@@ -73,7 +71,6 @@ const Order360Page: React.FC = () => {
               <WmsStatusStepper currentStatus={orderData.status} />
               <CustomerProfile customer={orderData.customer.profile} />
               <CustomerKeyMetrics metrics={orderData.customer.metrics} />
-              <OrderProfitability data={orderData.profitability} />
             </>
           )}
         </Box>
