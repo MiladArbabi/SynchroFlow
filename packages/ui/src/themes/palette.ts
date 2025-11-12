@@ -58,7 +58,7 @@ export function buildPalette(presetColorId: string): BuiltPalette { // Accept pr
              // heading: colors.grey900, // Store in custom property if needed
         },
         divider: colors.grey200,
-        background: { paper: colors.paper, default: colors.paper },
+        background: { paper: colors.paper, default: colors.grey50 },
         common: { black: colors.darkPaper, white: '#fff' }, // Add common colors
          action: { // Add action colors
              active: colors.grey600,

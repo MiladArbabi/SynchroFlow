@@ -32,15 +32,14 @@ interface ColorSet {
   darkSecondary800: string;
 }
 
-// Default Colors
 const defaultColors: ColorSet = {
-  id: 'default',
-  primary: '#0f62fe', primaryDarkSwatch: '#002d9c',
-  secondary: '#1192e8', secondaryDarkSwatch: '#00539a',
-  primaryLight: '#edf5ff', primaryMain: '#0f62fe', primaryDark: '#0043ce', primary200: '#a6c8ff', primary800: '#001d6c',
-  secondaryLight: '#e5f6ff', secondaryMain: '#1192e8', secondaryDark: '#0072c3', secondary200: '#82cfff', secondary800: '#012749',
-  darkPrimaryLight: '#edf5ff', darkPrimaryMain: '#002d9c', darkPrimaryDark: '#001d6c', darkPrimary200: '#a6c8ff', darkPrimary800: '#001141',
-  darkSecondaryLight: '#e5f6ff', darkSecondaryMain: '#00539a', darkSecondaryDark: '#003a6d', darkSecondary200: '#82cfff', darkSecondary800: '#012749',
+ id: 'default',
+ primary: '#2563EB', primaryDarkSwatch: '#2563EB', // Blue-600 (SSOT)
+ secondary: '#64748B', secondaryDarkSwatch: '#64748B', // Slate-500
+ primaryLight: '#DBEAFE', primaryMain: '#2563EB', primaryDark: '#1D4ED8', primary200: '#BFDBFE', primary800: '#1E40AF',
+ secondaryLight: '#E2E8F0', secondaryMain: '#64748B', secondaryDark: '#475569', secondary200: '#CBD5E1', secondary800: '#1E293B',
+ darkPrimaryLight: '#DBEAFE', darkPrimaryMain: '#2563EB', darkPrimaryDark: '#1D4ED8', darkPrimary200: '#BFDBFE', darkPrimary800: '#1E40AF',
+ darkSecondaryLight: '#E2E8F0', darkSecondaryMain: '#64748B', darkSecondaryDark: '#475569', darkSecondary200: '#CBD5E1', darkSecondary800: '#1E293B',
 };
 
 // Mono Light Colors
@@ -109,17 +108,26 @@ const brownBeigeColors: ColorSet = {
   darkSecondaryLight: '#ece7e5', darkSecondaryMain: '#c6b7b2', darkSecondaryDark: '#907a72', darkSecondary200: '#c6b7b2', darkSecondary800: '#403632',
 };
 
-// Base colors (usually consistent across presets) - Copied from _themes-vars
+// Base colors (usually consistent across presets)
+// Replaced error, warning, and success with our new SSOT 'emotional' colors.
 export const baseColors = {
-    paper: '#ffffff',
-    errorLight: '#ef9a9a', errorMain: '#f44336', errorDark: '#c62828',
-    orangeLight: '#fff8e1', orangeMain: '#ffecb3', orangeDark: '#fb8c00',
-    warningLight: '#fff8e1', warningMain: '#ffe57f', warningDark: '#ffc107',
-    successLight: '#b9f6ca', success200: '#69f0ae', successMain: '#00e676', successDark: '#00c853',
-    grey50: '#f8fafc', grey100: '#eef2f6', grey200: '#e3e8ef', grey300: '#cdd5df',
-    grey500: '#697586', grey600: '#4b5565', grey700: '#364152', grey900: '#121926',
-    darkBackground: '#1a223f', darkPaper: '#111936', darkLevel1: '#29314f', darkLevel2: '#212946',
-    darkTextTitle: '#ffffff', darkTextPrimary: '#e5e5e7', darkTextSecondary: '#a5adbb',
+  paper: '#ffffff',
+  // --- SSOT 'emotional' colors ---
+  errorLight: '#FECACA', errorMain: '#DC2626', errorDark: '#991B1B', // urgent (Red-400, 600, 800)
+  orangeLight: '#fff8e1', orangeMain: '#ffecb3', orangeDark: '#fb8c00', // Kept for now, as it's not semantic
+  warningLight: '#FDE68A', warningMain: '#D97706', warningDark: '#92400E', // concerned (Amber-300, 600, 800)
+  successLight: '#A7F3D0', success200: '#6EE7B7', successMain: '#059669', successDark: '#065F46', // celebratory (Emerald-300, 400, 600, 800)
+    // --- SSOT 'ui' colors ---
+  grey50: '#F8FAFC', grey100: '#F1F5F9', grey200: '#E2E8F0', grey300: '#CBD5E1', // Slate-50, 100, 200, 300
+  grey500: '#64748B', grey600: '#475569', grey700: '#334155', grey900: '#0F172A', // Slate-500, 600, 700, 900
+    // --- SSOT 'text' colors ---
+  darkBackground: '#0F172A', // Slate-900
+    darkPaper: '#0F172A',      // Slate-900 (Page BG)
+    darkLevel1: '#475569',      // Slate-600 (Widget Hover/Variant)
+    darkLevel2: '#334155',      // Slate-700 (Widget BG)
+    darkTextTitle: '#F8FAFC', // Slate-50 (was #ffffff)
+    darkTextPrimary: '#E2E8F0', // Slate-200 (was #e5e5e7)
+    darkTextSecondary: '#94A3B8', // Slate-400 (was #a5adbb)
 };
 
 // Exported list of available presets
