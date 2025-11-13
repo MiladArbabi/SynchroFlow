@@ -12,8 +12,9 @@ Systematic verification of SynchroFlow foundations before feature development.
 
 ## Progress Summary
 - **Completed**: 4/22 issues (18%)
-- **In Progress**: 0 issues
-- **Remaining**: 18 issues
+- **In Progress**: 1 issue
+- **Blocked**: 1 issue
+- **Remaining**: 16 issues
 
 ---
 
@@ -55,9 +56,30 @@ Systematic verification of SynchroFlow foundations before feature development.
 
 ---
 
-## P1-High Issues ⏳
+## P0-Critical Issues 🔄
+
+### #749: Implement MVP User State System for Dashboard UX
+**Status**: 🔄 IN PROGRESS  
+**Focus**: Create foundation for First-Week Journey dashboard states
+**Blocking**: #731 (Critical Path E2E Test)
+**MVP Scope**:
+- Extend User type with plan/mode fields
+- Basic mode detection logic
+- Simple milestone tracking
+- Dashboard state management
+
+---
+
+## P1-High Issues ⏸️
 
 ### #731: Write critical path E2E test for user login and dashboard
+**Status**: ⏸️ BLOCKED by #749  
+**Reason**: Cannot test dashboard until basic UX states are implemented
+
+---
+
+## P1-High Issues ⏳
+
 ### #732: Verify loading states during data fetching
 ### #733: Test API error scenarios and error boundaries  
 ### #736: Test EnhancedWidgetShell with real API data
@@ -93,6 +115,15 @@ Systematic verification of SynchroFlow foundations before feature development.
 
 ---
 
+## New Feature Development Queue
+
+### #750: Implement First-Week Journey Dashboard States
+### #751: Build Survival Mode Dashboard Layout
+### #752: Create EnhancedWidgetShell Component
+### #753: Implement GMROIWidget with Emotional Status
+
+---
+
 ## Key Achievements
 
 ### Database Foundation ✅
@@ -117,12 +148,16 @@ Systematic verification of SynchroFlow foundations before feature development.
 
 ---
 
-## Next Up: #731 Critical Path E2E Test
+## Current Focus: #749 MVP User State System
 
-**Focus**: End-to-end test for user login and dashboard access
-**Blocked by**: Nothing - ready to start
-**Expected Duration**: 2 hours
+**Goal**: Unblock dashboard development and First-Week Journey
+**Timeline**: 1-2 weeks for MVP
+**Next Steps**: 
+1. Extend User database schema
+2. Implement basic mode detection
+3. Create dashboard state manager
+4. Resume #731 E2E testing
 
 ---
 
-*Document updated: 2025-11-13 13:45*
+*Document updated: 2025-11-13 14:20*

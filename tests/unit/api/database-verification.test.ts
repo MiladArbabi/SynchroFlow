@@ -81,5 +81,24 @@ describe('Database Migrations and Seeds', () => {
       const shops = await db('shops').select('id');
       expect(typeof shops[0].id).toBe('number');
     });
+
+    it('should have user state tracking columns', async () => {
+      const userColumns = await db('users').columnInfo();
+      expect(userColumns).toHaveProperty('preferred_mode');
+      expect(userColumns).toHaveProperty('detected_mode');
+      expect(userColumns).toHaveProperty('shopify_connected');
+      expect(userColumns).toHaveProperty('stripe_connected');
+      expect(userColumns).toHaveProperty('first_insight_delivered');
+    });
+
+    it('should have user_milestones table', async () => {
+      const exists = await db.schema.hasTable('user_milestones');
+      expect(exists).toBe(true);
+      
+      const milestoneColumns = await db('user_milestones').columnInfo();
+      expect(milestoneColumns).toHaveProperty('user_id');
+      expect(milestoneColumns).toHaveProperty('milestone');
+      expect(milestoneColumns).toHaveProperty('achieved_at');
+    });
   });
 });
