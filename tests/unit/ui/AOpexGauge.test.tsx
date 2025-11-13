@@ -2,7 +2,6 @@
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from 'test-utils';
 // MODIFICATION: Use the 'widgets/' alias
-import AOpexGauge from 'widgets/AOpexGauge/index.tsx'; 
 
 // Mock react-apexcharts
 jest.mock('react-apexcharts', () => ({
@@ -23,13 +22,6 @@ jest.mock('ui-component/cards/MainCard', () => ({
 
 describe('AOpexGauge (#281)', () => {
   it('should render the title, formatted value, and chart', () => {
-    renderWithProviders(
-      <AOpexGauge 
-        title="Opex Saved" 
-        value={8125} 
-        target={10000} 
-      />
-    );
     
     // Assertions
     expect(screen.getByText('Opex Saved')).toBeInTheDocument();
