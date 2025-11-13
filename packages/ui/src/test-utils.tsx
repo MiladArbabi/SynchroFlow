@@ -2,13 +2,11 @@
 import React, { ReactElement } from 'react';
 import { render, RenderOptions } from '@testing-library/react';
 import { MemoryRouter, MemoryRouterProps } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import { UserProvider } from './contexts/UserContext';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntlProvider } from 'react-intl';
 import { PostHogProvider } from 'posthog-js/react';
 import { EnhancedWidgetShellProps } from './components/widgets/types';
+import ThemeCustomization from './themes';
 
 // PostHog configuration for tests
 const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string;
@@ -89,7 +87,6 @@ const renderWithProviders = (
   { routerProps, ...renderOptions }: ExtendedRenderOptions = {}
 ) => {
   const AllTheProviders = ({ children }: { children: React.ReactNode }) => {
-    const theme = createTheme();
     const queryClient = createTestQueryClient();
 
     return (
@@ -97,12 +94,9 @@ const renderWithProviders = (
         <QueryClientProvider client={queryClient}>
           <IntlProvider locale="en" defaultLocale="en" messages={{}}>
             <MemoryRouter {...routerProps}>
-              <ThemeProvider theme={theme}>
-                <CssBaseline />
-                <UserProvider>
+              <ThemeCustomization>
                   {children}
-                </UserProvider>
-              </ThemeProvider>
+                </ThemeCustomization>
             </MemoryRouter>
           </IntlProvider>
         </QueryClientProvider>
@@ -115,12 +109,11 @@ const renderWithProviders = (
 
 // Minimal theme-only render (for unit tests)
 const renderWithTheme = (ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) => {
-  const theme = createTheme();
   
   const ThemeWrapper = ({ children }: { children: React.ReactNode }) => (
-    <ThemeProvider theme={theme}>
+    <ThemeCustomization>
       {children}
-    </ThemeProvider>
+    </ThemeCustomization>
   );
 
   return render(ui, { wrapper: ThemeWrapper, ...options });
@@ -128,8 +121,8 @@ const renderWithTheme = (ui: ReactElement, options?: Omit<RenderOptions, 'wrappe
 
 // ===== MOCK UTILITIES =====
 const mockResizeObserver = () => {
-  // Add proper TypeScript declaration for global
-  (global as typeof globalThis & { ResizeObserver: any }).ResizeObserver = jest.fn().mockImplementation(() => ({
+  // Cast global to avoid TypeScript errors
+  (globalThis as typeof globalThis & { ResizeObserver: any }).ResizeObserver = jest.fn().mockImplementation(() => ({
     observe: jest.fn(),
     unobserve: jest.fn(),
     disconnect: jest.fn(),
