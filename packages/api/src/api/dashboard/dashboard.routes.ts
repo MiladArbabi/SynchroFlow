@@ -1,7 +1,12 @@
 // packages/api/src/api/dashboard/dashboard.routes.ts
 import { Router } from 'express';
 import { authenticateToken } from '../../middleware/auth.middleware';
-import { getPulse, getInventoryHealth, getShipmentStatus } from './dashboard.controller';
+import { 
+    getPulse, 
+    getInventoryHealth, 
+    getShipmentStatus, 
+    getCashTraps 
+} from './dashboard.controller';
 
 const router = Router();
 
@@ -15,5 +20,8 @@ router.get('/inventory-health', authenticateToken, getInventoryHealth);
 
 // GET /api/v1/dashboard/shipment-status
 router.get('/shipment-status', authenticateToken, getShipmentStatus);
+
+// GET /api/v1/dashboard/cash-traps
+router.get('/cash-traps', authenticateToken, getCashTraps);
 
 export default router;
