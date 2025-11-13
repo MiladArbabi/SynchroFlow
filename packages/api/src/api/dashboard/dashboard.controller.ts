@@ -99,3 +99,34 @@ export const getShipmentStatus = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch shipment data.' });
   }
 };
+
+/* Endpoint for the "Cash Traps" widget (Heroes vs. Zeroes - Zeroes part).*/
+export const getCashTraps = async (req: Request, res: Response) => {
+  try {
+    const shopId = await getShopIdFromRequest(req);
+    if (!shopId) {
+      return res.status(403).json({ error: 'User shop not found.' });
+    }
+
+    const cashTraps = await db('shopify_products')
+      .where({ 
+        shop_id: shopId, 
+        status: 'ACTIVE' 
+      })
+      .andWhere('total_inventory', '>', 100)
+      .orderBy('total_inventory', 'desc')
+      .limit(5)
+      .select('title', 'total_inventory', 'platform_product_id as id', 'variants');
+
+    // Parse variants JSON if they exist
+    const cashTrapsWithParsedVariants = cashTraps.map(product => ({
+      ...product,
+      variants: product.variants ? JSON.parse(product.variants) : []
+    }));
+
+    res.json(cashTrapsWithParsedVariants);
+  } catch (error) {
+    console.error('[dashboard.controller] Error in getCashTraps:', error);
+    res.status(500).json({ error: 'Failed to fetch cash trap data.' });
+  }
+};
