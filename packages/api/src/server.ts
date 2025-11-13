@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
 import db from './db';
+import userStateRoutes from './api/user-state/user-state.routes';
 
 import { federatedSearch } from './services/koreSearch';
 import { opsIntelEmitter } from './services/opsIntel/emitter';
@@ -90,6 +91,7 @@ app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
+app.use("/api/v1/user-state", userStateRoutes);
 
 // --- Routes ---
 app.get('/', (req, res) => {
