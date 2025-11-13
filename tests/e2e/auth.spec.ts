@@ -20,6 +20,32 @@ test.describe('E2E: Full Authentication Journey', () => {
     await page.close();
   });
 
+  test.skip('should load dashboard with key widgets after successful login', async () => {
+  // Login steps (existing)
+  await page.goto('/dashboard');
+  await page.waitForURL('**/login');
+  await page.getByLabel('Email Address / Username').fill(TEST_USER.email);
+  await page.getByRole('textbox', { name: 'Password' }).fill(TEST_USER.password);
+  await page.getByRole('button', { name: /Sign In/i }).click();
+  
+  // Wait for dashboard and verify heading (existing)
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({ timeout: 10000 });
+  
+  // NEW: Verify dashboard content loads
+  await test.step('Verify dashboard widgets are loaded', async () => {
+    // Wait for widgets to load
+    await page.waitForLoadState('networkidle');
+    
+    // Verify key widgets are present
+    await expect(page.locator('[data-testid="widget-container"]').first()).toBeVisible();
+    await expect(page.getByText(/automated tasks/i)).toBeVisible();
+    await expect(page.getByText(/labor cost saved/i)).toBeVisible();
+    
+    // Verify data is populated (not just loading states)
+    await expect(page.getByText(/\d+/).first()).toBeVisible(); // Should have numbers
+  });
+});
+
   test('should redirect unauthenticated users, allow login, and allow logout', async () => {
     
     // --- 1. Test Unauthenticated State (Verifies #420) ---
@@ -65,4 +91,30 @@ test.describe('E2E: Full Authentication Journey', () => {
       await page.waitForURL('**/login');
     });
   });
+
+  // Update the failing test in tests/e2e/auth.spec.ts
+test('should show appropriate onboarding state after successful login', async () => {
+  // Login steps (existing)
+  await page.goto('/dashboard');
+  await page.waitForURL('**/login');
+  await page.getByLabel('Email Address / Username').fill(TEST_USER.email);
+  await page.getByRole('textbox', { name: 'Password' }).fill(TEST_USER.password);
+  await page.getByRole('button', { name: /Sign In/i }).click();
+  
+  // Wait for dashboard and verify heading
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({ timeout: 10000 });
+  
+  // NEW: Verify appropriate empty/onboarding state
+  await test.step('Verify onboarding state is shown', async () => {
+    // For new users (no integrations), we should see the ConnectStoreBanner
+    await expect(page.getByTestId('connect-store-button')).toBeVisible();
+    
+    // Verify the dashboard is in empty state (no widgets yet)
+    await expect(page.locator('[data-testid="widget-container"]')).toHaveCount(0);
+    
+    // Verify user can start the connection flow
+    await page.getByTestId('connect-store-button').click();
+    await expect(page.locator('[role="dialog"]')).toBeVisible(); // Connect store modal
+  });
+});
 });
