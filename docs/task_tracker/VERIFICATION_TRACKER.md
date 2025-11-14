@@ -11,10 +11,10 @@ Systematic verification of SynchroFlow foundations before feature development.
 - **P4-Backlog**: Feature development (after verification)
 
 ## Progress Summary
-- **Completed**: 4/22 issues (18%)
-- **In Progress**: 1 issues
+- **Completed**: 5/26 issues (19%)
+- **In Progress**: 1 issue
 - **Blocked**: 1 issue
-- **Remaining**: 14 issues
+- **Remaining**: 19 issues
 
 ---
 
@@ -56,7 +56,7 @@ Systematic verification of SynchroFlow foundations before feature development.
 
 ### #749d: Implement Basic Widget Layout
 **Status**: ✅ COMPLETED  
-+**Results**:
+**Results**:
 - ✅ WidgetLayout component with mode-specific layouts (survival, growth, architect)
 - ✅ Priority-based widget sorting for survival mode
 - ✅ Loading and empty states implemented
@@ -66,19 +66,11 @@ Systematic verification of SynchroFlow foundations before feature development.
 
 ## P0-Critical Issues 🔄
 
- ### #749: Implement MVP User State System for Dashboard UX
- **Status**: 🔄 IN PROGRESS  
- **Focus**: Create foundation for First-Week Journey dashboard states
+### #749: Implement MVP User State System for Dashboard UX
+**Status**: 🔄 IN PROGRESS  
+**Focus**: Create foundation for First-Week Journey dashboard states
 **Completed Sub-tasks**: #749a, #749b, #749c, #749d
-**Remaining**: Integration with DashboardPage
- 
- **Current Progress on #749d: Basic Widget Layout**:
- - ✅ Created WidgetLayout component with mode-specific layouts
-@@ -55,8 +62,7 @@
- - ✅ Added loading and empty states
- - ✅ Integrated with EnhancedWidgetShell
- - 🔄 Tests in progress (1 failing test being fixed)
-- ✅ All tests passing (TDD cycle complete)
+**Remaining**: Integration with DashboardPage and widget population
 
 ---
 
@@ -96,6 +88,30 @@ Systematic verification of SynchroFlow foundations before feature development.
 ### #733: Test API error scenarios and error boundaries  
 ### #736: Test EnhancedWidgetShell with real API data
 
+### #762: Implement Cost-Effective Widget Registry System
+**Status**: ✅ COMPLETED  
+**Results**:
+- ✅ Widget registry system with mode-based widget selection
+- ✅ Priority-based sorting for survival mode
+- ✅ Plan-based feature gating (free vs paid widgets)
+- ✅ Data processing level classification (light/medium/heavy)
+- ✅ React hook for easy widget consumption
+- ✅ 7 comprehensive unit tests passing (TDD cycle complete)
+- ✅ TypeScript errors resolved with proper prop handling
+- ✅ Ready for integration with actual widget components
+
+**Next**: Use this registry in DashboardPage to replace placeholder content"
+
+### #763: Build Survival Mode Widgets with Mock Data
+**Priority**: P1  
+**Estimate**: 6 hours
+**Tasks**:
+- [ ] Create CashFlowSnapshotWidget with mock data
+- [ ] Build InventoryAlertsWidget with sample data
+- [ ] Implement OrderVolumeWidget for recent orders
+- [ ] Add TopProductsWidget (limited to 10 products)
+- [ ] Test full user journey from empty → connected → insights
+
 ---
 
 ## P2-Medium Issues ⏳
@@ -105,6 +121,24 @@ Systematic verification of SynchroFlow foundations before feature development.
 ### #737: Check loading states prevent layout shifts
 ### #738: Verify no console errors in browser
 ### #739: Test multiple widgets rendering simultaneously
+
+### #764: Extract UI Template Components
+**Priority**: P2
+**Estimate**: 4 hours
+**Tasks**:
+- [ ] Extract and adapt MainCard component
+- [ ] Integrate TotalIncomeCard for financial metrics
+- [ ] Add professional skeleton loading components
+- [ ] Ensure compatibility with emotional status system
+
+### #765: Implement Progressive Data Processing
+**Priority**: P2
+**Estimate**: 6 hours
+**Tasks**:
+- [ ] Create light data processing for free users
+- [ ] Implement background processing for paid features
+- [ ] Add data sampling (last 1000 records for free users)
+- [ ] Set up 24-hour caching for expensive calculations
 
 ---
 
@@ -124,42 +158,47 @@ Systematic verification of SynchroFlow foundations before feature development.
 ### #746: Build Day 2 First Aha interception modal
 ### #747: Build Day 3 First Win magic button flow
 ### #748: Build GMROIWidget UI and integration
-### #754: Extract and integrate UI template components system-wide
+### #766: Implement Sandbox Experience for New Users
+**Priority**: P4
+**Estimate**: 8 hours
+**Tasks**:
+- [ ] Create sandbox mode with realistic mock data
+- [ ] Implement "Based on similar stores" preview
+- [ ] Add upgrade prompts for advanced features
+- [ ] Design natural conversion points to paid plans
+
+### #767: Build Paid-Only Advanced Widgets
+**Priority**: P4
+**Estimate**: 12 hours
+**Tasks**:
+- [ ] Implement GMROIWidget with full data processing
+- [ ] Build CustomerLTVWidget with historical analysis
+- [ ] Create SeasonalTrendsWidget with YoY comparisons
+- [ ] Add PredictiveAnalyticsWidget (ML models)
 
 ---
 
-## New Feature Development Queue
+## Cost-Conscious Implementation Strategy
 
-### #750: Implement First-Week Journey Dashboard States
-### #751: Build Survival Mode Dashboard Layout (using UI template)
-### #752: Enhance EnhancedWidgetShell with template components
-### #753: Implement GMROIWidget with Emotional Status
+### Phase 1: Immediate (Current Sprint)
+- **Widget Registry** (#762) - Foundation for dynamic widget loading
+- **Mock Survival Widgets** (#763) - Test full user journey without heavy processing
+- **UI Template Integration** (#764) - Professional design without custom development
 
----
+### Phase 2: Near-term (Next Sprint)  
+- **Progressive Data Processing** (#765) - Cost controls for free users
+- **Sandbox Experience** (#766) - Zero-cost user onboarding
+- **Basic E2E Testing** (#731 unblocked) - Validate core flows
 
-## UI Template Integration Progress
+### Phase 3: Future (Revenue-Funded)
+- **Advanced Paid Widgets** (#767) - Resource-intensive features for paying customers
+- **ML-Powered Insights** - High-cost analytics for enterprise
 
-### ✅ Components Identified for Extraction:
-1. **MainCard** - Base widget container with theme support
-2. **TotalIncome Cards** - Financial metric widgets
-3. **Grid System** - Responsive layout utilities
-4. **Skeleton Components** - Loading states
-5. **Chart Cards** - Analytics and visualization containers
-
-### 🔄 Current Implementation Status:
-- ✅ WidgetLayout component structure implemented
-- ✅ Survival mode layout with priority sorting
-- ✅ TypeScript interfaces defined
-- 🔄 Test suite being refined (1 test to fix)
-- 🔜 Extract MainCard and TotalIncomeCard components
-- 🔜 Update DashboardPage to use new layout system
-
-### Next Steps for #749d:
-1. Fix remaining test failure
-2. Extract MainCard component from UI template
-3. Create SurvivalMode-specific widget components
-4. Update DashboardPage to use WidgetLayout
-5. Complete TDD cycle (red → green → red → green)
+### Cost Control Measures:
+1. **Data Sampling**: Free users process only last 1000 records
+2. **Caching**: 24-hour cache for expensive calculations
+3. **Progressive Loading**: Basic widgets first, advanced features later
+4. **Plan-Based Features**: Reserve heavy processing for paid plans
 
 ---
 
@@ -190,18 +229,29 @@ Systematic verification of SynchroFlow foundations before feature development.
 - WidgetLayout with mode-specific layouts
 - Professional UI template ready for extraction
 
+### Cost Strategy Defined ✅
+- Clear plan for free/paid feature differentiation
+- Data processing controls to manage cloud costs
+- Progressive user journey from sandbox to paid
+
 ---
 
-## Current Focus: #749d Basic Widget Layout
+## Current Focus: #749 Integration & #762 Widget Registry
 
-**Goal**: Complete widget layout system with professional UI components
-**Timeline**: 2-3 days remaining
+**Goal**: Complete end-to-end user journey with cost-effective implementation
+**Timeline**: 1-2 weeks for MVP
 **Immediate Next Steps**: 
-1. Fix test assertion for widget counting
-2. Extract MainCard component from UI template
-3. Create survival mode widget variants
-4. Connect to DashboardStateManager
+1. Integrate WidgetLayout with DashboardPage (#749)
+2. Build widget registry with plan-based features (#762)
+3. Create mock survival widgets for testing (#763)
+4. Extract UI template components (#764)
+
+**Success Metrics**:
+- User can sign up → connect store → see relevant widgets
+- Free users get immediate value without heavy processing
+- Paid features naturally encourage upgrades
+- Cloud costs scale with revenue
 
 ---
 
-*Document updated: 2025-11-14 17:20 - Widget layout implementation in progress*
+*Document updated: 2025-11-14 18:30 - Updated with correct issue numbers #762-#767*
