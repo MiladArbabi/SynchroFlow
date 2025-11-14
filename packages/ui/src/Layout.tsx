@@ -36,9 +36,11 @@ export default function Layout() {
               role="group" // For the test
             >
                 <Sidenav
-                    brandName="SynchroFlow"
-                    routes={routes}
-                    isSidenavOpen={isSidenavOpen}
+                  brandName="SynchroFlow"
+                  routes={routes}
+                  isSidenavOpen={isSidenavOpen} isConnected={false} onOpenModal={function (): void {
+                    throw new Error("Function not implemented.");
+                  } }                
                 />
             </Panel>
 

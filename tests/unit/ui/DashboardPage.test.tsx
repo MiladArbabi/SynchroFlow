@@ -7,7 +7,7 @@ import { useIntegration } from 'contexts/IntegrationContext';
 import { useAuth } from 'contexts/AuthContext';
 import { useQuery, /* useQueryClient */ /* , QueryClient */ } from '@tanstack/react-query';
 import { useLayoutContext } from 'App';
-import { PlanLevel } from 'widgets/widgetRegistry';
+// import { PlanLevel } from 'widgets/widgetRegistry';
 
 const mockUseSearchParams = jest.fn();
 jest.mock('axios');
@@ -174,7 +174,7 @@ const defaultMockLayoutContext = {
   isEditing: false,
   isLibraryOpen: false,
   setIsLibraryOpen: jest.fn(),
-  currentUserPlan: 'premium' as PlanLevel,
+  // currentUserPlan: 'premium' as PlanLevel,
   layoutRef: { current: [] },
   activeWidgetsRef: { current: [] },
   handleSaveLayout: jest.fn(),
@@ -426,7 +426,7 @@ describe('DashboardPage', () => {
       // Setup default mocks for all contexts
       mockedUseLayoutContext.mockReturnValue({
         ...defaultMockLayoutContext,
-        currentUserPlan: 'Ignition' as PlanLevel,
+        // currentUserPlan: 'Ignition' as PlanLevel,
       });
       
       mockedUseQuery.mockReturnValue(defaultMockUseQuery as any);
@@ -577,7 +577,7 @@ describe('DashboardPage', () => {
         // Setup default mocks
         mockedUseLayoutContext.mockReturnValue({
           ...defaultMockLayoutContext,
-          currentUserPlan: 'Ignition' as PlanLevel,
+          // currentUserPlan: 'Ignition' as PlanLevel,
         });
         
         mockedUseQuery.mockReturnValue(defaultMockUseQuery as any);
@@ -795,7 +795,7 @@ describe('DashboardPage', () => {
       // Setup all required mocks
       mockedUseLayoutContext.mockReturnValue({
         ...defaultMockLayoutContext,
-        currentUserPlan: 'Ignition' as PlanLevel,
+        //currentUserPlan: 'Ignition' as PlanLevel,
       });
       
       mockedUseAuth.mockReturnValue(defaultMockAuth);
