@@ -18,6 +18,7 @@ import { ConnectStoreBanner } from 'components/ConnectStoreBanner';
 import { ConnectionErrorModal } from 'components/ConnectionErrorModal';
 import { useIntegration } from 'contexts/IntegrationContext';
 import { useAuth } from 'contexts/AuthContext';
+import { DashboardStateManager } from 'components/DashboardStateManager/DashboardStateManager';
 
 export const DashboardPage = ({ 
   children, handleSidenavToggle }: { 
@@ -117,41 +118,29 @@ export const DashboardPage = ({
     <>
     {/* --- AHA-FLOW: Render Modals --- */}
     {/* 6. Conditionally render the banner */}
-      {!hasIntegrations && 
-      <ConnectStoreBanner 
-        onOpenModal={handleOpenConnectModal} 
-        data-testid="connect-store-button" 
-      />}
-      <ConnectStoreModal
-         isOpen={isConnectModalOpen}
-         onClose={() => setIsConnectModalOpen(false)}
-       />
-       {/* Connection Error Modal */}
-       <ConnectionErrorModal
-         open={!!connectionError}
-         error={connectionError}
-         onClose={() => setConnectionError(null)} // "Skip for Now"
-         onRetry={handleRetry} // "Try Again"
-       />
+       <ConnectStoreModal
+        isOpen={isConnectModalOpen}
+        onClose={() => setIsConnectModalOpen(false)}
+      />
+      <ConnectionErrorModal
+        open={!!connectionError}
+        error={connectionError}
+        onClose={() => setConnectionError(null)}
+        onRetry={handleRetry}
+      />
       <DataSyncingModal 
         open={isSyncModalOpen} 
         onClose={handleSyncModalClose} 
         data-testid="data-syncing-modal"
       />
       
-      {/* <GridLayout
-        layout={layout}
-        cols={12}
-        rowHeight={120}
-        compactType={null}
-        preventCollision={true}
-        isDraggable={isEditing}
-        isResizable={isEditing}
-        onLayoutChange={onLayoutChange}
-        // Add a class for styling the grid items in edit mode
-        className={isEditing ? 'grid-editing grid-wiggling' : ''}
-      >
-      </GridLayout> */}
-    </>
+      <DashboardStateManager onConnectStore={handleOpenConnectModal}>
+        {/* Future dashboard content will go here */}
+        <div style={{ padding: '20px', textAlign: 'center' }}>
+          <h3>Your Dashboard</h3> {/* Changed from "Dashboard Content" */}
+          <p>This area will contain widgets and insights based on your user mode.</p>
+        </div>
+      </DashboardStateManager>
+      </>
   );
 };

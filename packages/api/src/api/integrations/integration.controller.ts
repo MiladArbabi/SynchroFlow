@@ -180,6 +180,22 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       const integrationId = newIntegration.id;
       console.log(`Successfully stored integration ID: ${integrationId}`);
 
+      // --- Update user state and record milestone ---
+      await db('users')
+        .where({ id: userId })
+        .update({ 
+          shopify_connected: true,
+          updated_at: new Date()
+        });
+
+      // Record the milestone
+      await db('user_milestones').insert({
+        user_id: userId,
+        milestone: 'shopify_connected',
+        achieved_at: new Date()
+      }).onConflict(['user_id', 'milestone']).ignore();
+
+      console.log(`Updated user ${userId} shopify_connected status and recorded milestone`);
       // --- 6. Queue the initial sync job ---
       const syncChannel = getQueueChannel('sync_jobs');
       const jobPayload = { integrationId };

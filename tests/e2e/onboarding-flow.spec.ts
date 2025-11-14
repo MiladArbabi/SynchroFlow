@@ -73,13 +73,50 @@ test.describe('Dashboard OAuth Integration Flow', () => {
       return route.fulfill({ json: responses[Math.min(syncPollCount - 1, responses.length - 1)] });
     });
     
-    // Click the Connect button in the Shopify form
-    await page.click('[data-testid="connect-store-modal"] button:has-text("Connect")');
-    console.log('✅ Clicked Connect button in Shopify form');
+      // Click the Connect button in the Shopify form
+      await page.click('[data-testid="connect-store-modal"] button:has-text("Connect")');
+      console.log('✅ Clicked Connect button in Shopify form');
 
+      await page.route('**/api/v1/user-state/state', route => 
+      route.fulfill({ 
+        json: {
+          user: {
+            id: 1,
+            email: 'test@example.com',
+            preferred_mode: 'survival',
+            detected_mode: 'survival',
+            shopify_connected: true, // NOW CONNECTED
+            stripe_connected: false,
+            first_insight_delivered: false
+          },
+          milestones: [{ id: 1, user_id: 1, milestone: 'shopify_connected', achieved_at: new Date().toISOString() }],
+          current_mode: 'survival'
+        }
+      })
+    );
+    
     // 7. Simulate OAuth callback return
     await page.goto('/dashboard?connect=success');
     console.log('✅ Navigated to dashboard with connect=success');
+
+    // Mock user state to reflect successful Shopify connection
+    await page.route('**/api/v1/user-state/state', route => 
+      route.fulfill({ 
+        json: {
+          user: {
+            id: 1,
+            email: 'test@example.com',
+            preferred_mode: 'survival',
+            detected_mode: 'survival',
+            shopify_connected: true, // NOW CONNECTED
+            stripe_connected: false,
+            first_insight_delivered: false
+          },
+          milestones: [{ id: 1, user_id: 1, milestone: 'shopify_connected', achieved_at: new Date().toISOString() }],
+          current_mode: 'survival'
+        }
+      })
+    );
     
     // 8. Assert DataSyncingModal appears immediately
     // Use the actual modal content text with more specific selectors
@@ -223,6 +260,25 @@ test.describe('Dashboard OAuth Integration Flow', () => {
         json: { status: 'COMPLETED', hasIntegrations: true }
       })
     );
+
+    // Mock user state for user WITH existing integrations
+    await page.route('**/api/v1/user-state/state', route => 
+      route.fulfill({ 
+        json: {
+          user: {
+            id: 1,
+            email: 'test@example.com',
+            preferred_mode: 'survival',
+            detected_mode: 'survival',
+            shopify_connected: true, // USER HAS EXISTING INTEGRATIONS
+            stripe_connected: false,
+            first_insight_delivered: false
+          },
+          milestones: [],
+          current_mode: 'survival'
+        }
+      })
+    );
     console.log('✅ Mocked user with existing integrations');
 
     await loginAs(page, 'default-user');
@@ -241,6 +297,25 @@ async function mockInitialAPIs(page: Page) {
   // Mock initial sync status - no integrations (404)
   await page.route('**/api/v1/integrations/sync-status', route => 
     route.fulfill({ status: 404 })
+  );
+
+  // Mock user state for user without integrations
+  await page.route('**/api/v1/user-state/state', route => 
+    route.fulfill({ 
+      json: {
+        user: {
+          id: 1,
+          email: 'test@example.com',
+          preferred_mode: 'survival',
+          detected_mode: 'survival',
+          shopify_connected: false, // User has no Shopify connection
+          stripe_connected: false,
+          first_insight_delivered: false
+        },
+        milestones: [],
+        current_mode: 'survival'
+      }
+    })
   );
 
   // Mock successful pre-flight by default

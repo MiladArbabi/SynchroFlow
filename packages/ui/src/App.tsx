@@ -6,11 +6,11 @@ import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntegrationProvider } from 'contexts/IntegrationContext';
+import { DashboardStateProvider } from "contexts/DashboardStateContext";
 
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import routes from "./routes";
-import { PlanLevel } from "./widgets/widgetRegistry";
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
@@ -20,7 +20,6 @@ type LayoutContextType = {
   isEditing: boolean;
   isLibraryOpen: boolean;
   setIsLibraryOpen: (open: boolean) => void;
-  currentUserPlan: PlanLevel;
   layoutRef: React.MutableRefObject<RGL.Layout[]>;
   activeWidgetsRef: React.MutableRefObject<{ instanceId: string; widgetId: string }[]>;
   handleSaveLayout: () => Promise<void>;
@@ -40,7 +39,6 @@ const LayoutManager = () => {
   // State for managing the Widget Library visibility
   const [isLibraryOpen, setIsLibraryOpen] = React.useState(false);
   // Mock user plan for WidgetLibrary gating
-  const currentUserPlan: PlanLevel = 'Ignition';
   const layoutRef = React.useRef<RGL.Layout[]>([]);
   const activeWidgetsRef = React.useRef<{ instanceId: string; widgetId: string }[]>([]);
 
@@ -63,7 +61,6 @@ const LayoutManager = () => {
     isEditing,
     isLibraryOpen,
     setIsLibraryOpen,
-    currentUserPlan,
     layoutRef,
     activeWidgetsRef,
     handleSaveLayout,
@@ -84,33 +81,35 @@ const LayoutManager = () => {
 export default function App() {
   return (
   <QueryClientProvider client={queryClient}> 
-    <IntegrationProvider>
-      <ThemeCustomization>
-        <Routes>
-          {/* Render the sign-in route standalone */}
-          {routes
-            .filter((route) => route.key === 'login' || route.key === 'register') // Filter for auth keys
-            .map((route) => (
-              <Route path={route.route} element={route.component} key={route.key} />
-          ))}
-
-          {/* All other routes are nested inside the AppLayout */}
-          {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
-          <Route element={<ProtectedRoute />}>
-            <Route element={<LayoutManager />}>
+    <DashboardStateProvider>
+      <IntegrationProvider>
+        <ThemeCustomization>
+          <Routes>
+            {/* Render the sign-in route standalone */}
             {routes
-              .filter((route) => route.key !== 'login' && route.key !== 'register') // Filter OUT auth keys
+              .filter((route) => route.key === 'login' || route.key === 'register') // Filter for auth keys
               .map((route) => (
                 <Route path={route.route} element={route.component} key={route.key} />
-              ))}
-            </Route>
-          </Route>
+            ))}
 
-          {/* A default redirect to the dashboard */}
-          <Route path="*" element={<Navigate to="/dashboard" />} />
-        </Routes>
-      </ThemeCustomization>
-    </IntegrationProvider>
+            {/* All other routes are nested inside the AppLayout */}
+            {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<LayoutManager />}>
+              {routes
+                .filter((route) => route.key !== 'login' && route.key !== 'register') // Filter OUT auth keys
+                .map((route) => (
+                  <Route path={route.route} element={route.component} key={route.key} />
+                ))}
+              </Route>
+            </Route>
+
+            {/* A default redirect to the dashboard */}
+            <Route path="*" element={<Navigate to="/dashboard" />} />
+          </Routes>
+        </ThemeCustomization>
+     </IntegrationProvider>
+    </DashboardStateProvider>
   </QueryClientProvider> 
   );
 }
