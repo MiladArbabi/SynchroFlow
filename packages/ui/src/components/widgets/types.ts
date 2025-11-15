@@ -95,3 +95,5 @@ export interface EnhancedWidgetShellProps {
   isConfigurable?: boolean;
   refreshInterval?: number;
 }
+
+export type WidgetContentProps = Omit<EnhancedWidgetShellProps, 'children'>;

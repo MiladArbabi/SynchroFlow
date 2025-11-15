@@ -20,6 +20,8 @@ import { useIntegration } from 'contexts/IntegrationContext';
 import { useAuth } from 'contexts/AuthContext';
 import { DashboardStateManager } from 'components/DashboardStateManager/DashboardStateManager';
 
+import { WidgetLayoutWithRegistry } from 'components/widgets/WidgetLayoutWithRegistry';
+
 export const DashboardPage = ({ 
   children, handleSidenavToggle }: { 
     children: React.ReactNode; handleSidenavToggle: () => void }) => {
@@ -135,11 +137,8 @@ export const DashboardPage = ({
       />
       
       <DashboardStateManager onConnectStore={handleOpenConnectModal}>
-        {/* Future dashboard content will go here */}
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-          <h3>Your Dashboard</h3> {/* Changed from "Dashboard Content" */}
-          <p>This area will contain widgets and insights based on your user mode.</p>
-        </div>
+        {/* Widget system integration */}
+        <WidgetLayoutWithRegistry />
       </DashboardStateManager>
       </>
   );

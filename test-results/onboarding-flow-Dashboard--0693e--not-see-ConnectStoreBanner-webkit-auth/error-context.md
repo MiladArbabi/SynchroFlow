@@ -1,0 +1,105 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e29]:
+            - list [ref=e30]:
+              - link "Dashboard" [ref=e31] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e33]
+                - heading "Dashboard" [level=5] [ref=e39]
+            - list [ref=e40]:
+              - link "Orders" [ref=e41] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e43]
+                - paragraph [ref=e48]: Orders
+              - link "Customers" [ref=e49] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e51]
+                - paragraph [ref=e57]: Customers
+              - link "Products" [ref=e58] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e60]
+                - paragraph [ref=e65]: Products
+            - list [ref=e66]:
+              - link "Echo Inbox" [ref=e67] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e69]
+                - paragraph [ref=e72]: Echo Inbox
+          - list [ref=e74]:
+            - button [ref=e75] [cursor=pointer]:
+              - img [ref=e77]
+    - separator [ref=e80]
+    - generic [ref=e82]:
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - button [ref=e86] [cursor=pointer]:
+            - img [ref=e87]
+          - navigation "breadcrumb" [ref=e89]:
+            - list [ref=e90]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e91]: /
+              - listitem [ref=e92]:
+                - paragraph [ref=e93]: Dashboard
+        - generic [ref=e94]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e95] [cursor=pointer]:
+            - img [ref=e96]
+          - button "Notifications" [ref=e103] [cursor=pointer]:
+            - img [ref=e105]
+          - button "Edit Layout" [ref=e110] [cursor=pointer]:
+            - img [ref=e111]
+          - button "user-account" [ref=e114] [cursor=pointer]:
+            - img "User Avatar" [ref=e116]
+            - img [ref=e118]
+      - generic [ref=e122]:
+        - generic [ref=e126]:
+          - generic [ref=e129]:
+            - heading "Cash Flow" [level=3] [ref=e131]
+            - generic [ref=e134]:
+              - img [ref=e136]
+              - generic [ref=e138]:
+                - generic [ref=e139]: $0
+                - paragraph [ref=e140]: Current Cash Flow
+          - generic [ref=e143]:
+            - heading "Inventory Alerts" [level=3] [ref=e145]
+            - generic [ref=e147]:
+              - heading "Inventory Alerts" [level=6] [ref=e148]
+              - generic [ref=e149]:
+                - generic [ref=e150]:
+                  - paragraph [ref=e151]: Product A
+                  - generic [ref=e153]: "Low: 5"
+                - generic [ref=e154]:
+                  - paragraph [ref=e155]: Product B
+                  - generic [ref=e157]: Out of Stock
+                - generic [ref=e158]:
+                  - paragraph [ref=e159]: Product C
+                  - generic [ref=e161]: "Low: 3"
+            - generic:
+              - paragraph
+          - generic [ref=e164]:
+            - heading "Order Metrics" [level=3] [ref=e166]
+            - generic [ref=e169]:
+              - generic [ref=e171]:
+                - heading "47" [level=5] [ref=e172]
+                - text: Total Orders
+              - generic [ref=e174]:
+                - heading "$125.5" [level=5] [ref=e175]
+                - text: Avg. Order
+              - generic [ref=e177]:
+                - heading "2.3%" [level=5] [ref=e178]
+                - text: Conversion
+        - separator [ref=e179]
+  - generic [ref=e180]:
+    - img [ref=e182]
+    - button "Open Tanstack query devtools" [ref=e250] [cursor=pointer]:
+      - img [ref=e251]
+```
