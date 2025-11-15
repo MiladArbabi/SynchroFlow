@@ -9,9 +9,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "start": "node packages/api/dist/src/server.js",
-    "dev": "concurrently \"npm:dev-api\" \"npm:dev-cpp\" \"npm:dev-ui\" \"npm:dev-ai\" \"npm:dev-integration\"",
+    "dev": "concurrently \"npm:dev-api\" \"npm:dev-ui\" \"npm:dev-ai\"",
     "dev-api": "wait-on tcp:5432 && npm run dev -w api",
-    "dev-cpp": "npm run dev -w core-engine",
     "dev-ui": "wait-on tcp:3000 && npm run dev -w ui",
     "dev-ai": "npm run dev -w ai-engine",
     "dev-integration": "npm run dev -w integration-service",

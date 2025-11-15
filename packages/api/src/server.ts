@@ -36,15 +36,6 @@ import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
 import { OpsIntelEngine } from './services/opsIntel';
 import { staleOrderRule } from './services/opsIntel/rules';
 
-// Use 'path' to create a reliable, absolute path to the addon file
-import path from 'path';
-
-// Load the C++ addon. The path is different for tests (running from src) vs. dev (running from dist).
-const addonPath = process.env.NODE_ENV === 'test'
-  ? path.join(__dirname, '../../../packages/core-engine/build/Release/sf_core.node') // Path for Jest/ts-jest
-  : path.join(__dirname, './sf_core.node'); // Path for the compiled server.js
-const addon = require(addonPath);
-
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
@@ -117,23 +108,25 @@ app.get('/api/v1/kore/search', async (req, res) => {
   res.status(200).json(results);
 });
 
-app.get('/v1/inventory/:sku', (req, res) => {
+app.get('/v1/inventory/:sku', async (req, res) => {
   const { sku } = req.params;
-  // Get countryCode from query params, e.g., ?countryCode=DE
-  // Default to a null value if not provided
   const countryCode = req.query.countryCode as string || null;
 
   try {
-    // Call the C++ function with the data from the API request
-    const inventoryData = addon.getInventoryItem(sku, countryCode);
+    let query = db('inventory_truth').where({ sku });
+    if (countryCode) {
+      query = query.andWhere({ country_code: countryCode });
+    }
+    const inventoryData = await query.first();
+
+    if (!inventoryData) {
+      return res.status(404).json({ error: 'SKU not found' });
+    }
+
     res.json(inventoryData);
   } catch (error) {
-    // If the C++ addon throws an error, catch it and send a server error response
-    if(error instanceof Error){
-        res.status(500).json({ error: error.message });
-    } else {
-        res.status(500).json({ error: 'An unknown error occurred' });
-    }
+    console.error('Error fetching inventory:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

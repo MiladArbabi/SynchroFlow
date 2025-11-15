@@ -35,11 +35,6 @@ RUN npm prune --production
 # Final stage for app image
 FROM base
 
-# Install the C++ addon's runtime dependencies (libpq and libpqxx)
-RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends libpq5 libpqxx-6.4 ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
 # Copy built application
 COPY --from=build /app /app
 

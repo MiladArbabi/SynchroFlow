@@ -16,7 +16,7 @@ router.get('/', ordersController.httpGetAllOrders);
  * @desc    Get the current fulfillment status of a single order.
  * @access  Private
  */
-router.get('/:id/status', ordersController.httpGetOrderStatus);
+/* router.get('/:id/status', ordersController.httpGetOrderStatus); */
 
 /**
  * @route   GET /api/v1/orders/:id/profitability

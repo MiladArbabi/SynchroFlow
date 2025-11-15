@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "outDir": "./dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "./src",
+    "paths": {
+      "api-server": ["server.ts"],
+      "api-db": ["db.ts"],
+      "api-types": ["types.ts"],
+      "api-src/*": ["./*"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",      // Include all .ts files in the src directory
+    "knexfile.ts",      // Explicitly include knexfile.ts
+    "migrations/**/*.ts", // Explicitly include all .ts files in migrations
+    "__tests__/**/*.ts"
+, "../../tests/unit/api/integration/shopify.service.test.ts"  ]
+}

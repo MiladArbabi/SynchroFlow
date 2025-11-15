@@ -22,7 +22,7 @@ export const httpGetAllOrders = async (req: Request, res: Response) => {
  * @desc    Get the current fulfillment status of a single order.
  * @access  Private
  */
-export const httpGetOrderStatus = async (req: Request, res: Response) => {
+/* export const httpGetOrderStatus = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
     const status = await ordersService.getOrderStatusById(id);
@@ -31,7 +31,7 @@ export const httpGetOrderStatus = async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: `Failed to fetch order status for ${id}: ${message}` });
   }
-};
+}; */
 
 /**
  * @route   GET /api/v1/orders/:id/profitability

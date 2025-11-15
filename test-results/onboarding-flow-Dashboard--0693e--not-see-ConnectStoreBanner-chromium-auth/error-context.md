@@ -1,95 +1,105 @@
 # Page snapshot
 
 ```yaml
-- generic [ref=e1]:
-  - generic [ref=e2]:
-    - generic [ref=e4]:
-      - generic [ref=e7]:
-        - link [ref=e9] [cursor=pointer]:
-          - /url: /sample-page
-          - img [ref=e10]
-        - region [ref=e25]:
-          - generic [ref=e26]:
-            - generic [ref=e28]:
-              - list [ref=e29]:
-                - link [ref=e30] [cursor=pointer]:
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9] [cursor=pointer]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e28]:
+            - list [ref=e29]:
+              - link "Dashboard" [ref=e30] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e32]
+                - heading "Dashboard" [level=5] [ref=e38]
+            - list [ref=e39]:
+              - link "Orders" [ref=e40] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e42]
+                - paragraph [ref=e47]: Orders
+              - link "Customers" [ref=e48] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e50]
+                - paragraph [ref=e56]: Customers
+              - link "Products" [ref=e57] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e59]
+                - paragraph [ref=e64]: Products
+            - list [ref=e65]:
+              - link "Echo Inbox" [ref=e66] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e68]
+                - paragraph [ref=e71]: Echo Inbox
+          - list [ref=e73]:
+            - button [ref=e74] [cursor=pointer]:
+              - img [ref=e76]
+    - separator [ref=e79]
+    - generic [ref=e81]:
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - button [ref=e85] [cursor=pointer]:
+            - img [ref=e86]
+          - navigation "breadcrumb" [ref=e88]:
+            - list [ref=e89]:
+              - listitem:
+                - link:
                   - /url: /dashboard
-                  - img [ref=e32]
-                  - heading [level=5] [ref=e38]: Dashboard
-              - list [ref=e39]:
-                - link [ref=e40] [cursor=pointer]:
-                  - /url: /orders
-                  - img [ref=e42]
-                  - paragraph [ref=e47]: Orders
-                - link [ref=e48] [cursor=pointer]:
-                  - /url: /customers
-                  - img [ref=e50]
-                  - paragraph [ref=e56]: Customers
-                - link [ref=e57] [cursor=pointer]:
-                  - /url: /products
-                  - img [ref=e59]
-                  - paragraph [ref=e64]: Products
-              - list [ref=e65]:
-                - link [ref=e66] [cursor=pointer]:
-                  - /url: /echo-hub
-                  - img [ref=e68]
-                  - paragraph [ref=e71]: Echo Inbox
-            - generic [ref=e75]:
-              - heading [level=5] [ref=e76]: Connect Store
-              - paragraph [ref=e77]: Your data sources aren't connected. Get started now.
-              - button [ref=e78] [cursor=pointer]:
-                - img [ref=e80]
-                - text: Connect
-            - list [ref=e81]:
-              - button [ref=e82] [cursor=pointer]:
-                - img [ref=e84]
-      - separator [ref=e87]
-      - generic [ref=e89]:
-        - generic [ref=e91]:
-          - generic [ref=e92]:
-            - button [ref=e93] [cursor=pointer]:
-              - img [ref=e94]
-            - navigation [ref=e96]:
-              - list [ref=e97]:
-                - listitem [ref=e98]: /
-                - listitem [ref=e99]:
-                  - paragraph [ref=e100]: Dashboard
-          - generic [ref=e101]:
-            - img [ref=e103] [cursor=pointer]
-            - button [ref=e110] [cursor=pointer]:
-              - img [ref=e112]
-            - button [ref=e117] [cursor=pointer]:
-              - img [ref=e118]
-            - button [ref=e121] [cursor=pointer]:
-              - img [ref=e123]
-              - img [ref=e125]
-        - generic [ref=e129]:
-          - generic [ref=e132]:
-            - alert [ref=e134]:
-              - img [ref=e136]
-              - generic [ref=e138]:
-                - generic [ref=e139]: Welcome to SynchroFlow!
-                - text: Connect your data source to get started.
-              - button [ref=e141] [cursor=pointer]: Connect Store
-            - generic [ref=e142]:
-              - heading [level=5] [ref=e143]: Welcome to SynchroFlow!
-              - paragraph [ref=e144]: Connect your Shopify store to unlock powerful insights about your business.
-          - separator [ref=e145]
-    - generic [ref=e146]:
-      - img [ref=e148]
-      - button [ref=e196] [cursor=pointer]:
-        - img [ref=e197]
-  - dialog "Connection Failed" [ref=e247]:
-    - heading "Connection Failed" [level=2] [ref=e248]:
-      - generic [ref=e249]:
-        - img [ref=e250]
-        - heading "Connection Failed" [level=3] [ref=e257]
-    - generic [ref=e258]:
-      - paragraph [ref=e259]: There was an issue connecting your store. Please check your credentials or store name and try again.
-      - paragraph [ref=e260]: "Details: System check failed: Service unavailable Database connection failed"
-    - generic [ref=e261]:
-      - button "Skip for Now" [ref=e262] [cursor=pointer]
-      - generic [ref=e263]:
-        - button "Get Help" [ref=e264] [cursor=pointer]
-        - button "Try Again" [ref=e265] [cursor=pointer]
+              - listitem [ref=e90]: /
+              - listitem [ref=e91]:
+                - paragraph [ref=e92]: Dashboard
+        - generic [ref=e93]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e94] [cursor=pointer]:
+            - img [ref=e95]
+          - button "Notifications" [ref=e102] [cursor=pointer]:
+            - img [ref=e104]
+          - button "Edit Layout" [ref=e109] [cursor=pointer]:
+            - img [ref=e110]
+          - button "user-account" [ref=e113] [cursor=pointer]:
+            - img "User Avatar" [ref=e115]
+            - img [ref=e117]
+      - generic [ref=e121]:
+        - generic [ref=e125]:
+          - generic [ref=e128]:
+            - heading "Cash Flow" [level=3] [ref=e130]
+            - generic [ref=e133]:
+              - img [ref=e135]
+              - generic [ref=e137]:
+                - generic [ref=e138]: $0
+                - paragraph [ref=e139]: Current Cash Flow
+          - generic [ref=e142]:
+            - heading "Inventory Alerts" [level=3] [ref=e144]
+            - generic [ref=e146]:
+              - heading "Inventory Alerts" [level=6] [ref=e147]
+              - generic [ref=e148]:
+                - generic [ref=e149]:
+                  - paragraph [ref=e150]: Product A
+                  - generic [ref=e152]: "Low: 5"
+                - generic [ref=e153]:
+                  - paragraph [ref=e154]: Product B
+                  - generic [ref=e156]: Out of Stock
+                - generic [ref=e157]:
+                  - paragraph [ref=e158]: Product C
+                  - generic [ref=e160]: "Low: 3"
+            - generic:
+              - paragraph
+          - generic [ref=e163]:
+            - heading "Order Metrics" [level=3] [ref=e165]
+            - generic [ref=e168]:
+              - generic [ref=e170]:
+                - heading "47" [level=5] [ref=e171]
+                - text: Total Orders
+              - generic [ref=e173]:
+                - heading "$125.5" [level=5] [ref=e174]
+                - text: Avg. Order
+              - generic [ref=e176]:
+                - heading "2.3%" [level=5] [ref=e177]
+                - text: Conversion
+        - separator [ref=e178]
+  - generic [ref=e179]:
+    - img [ref=e181]
+    - button "Open Tanstack query devtools" [ref=e229] [cursor=pointer]:
+      - img [ref=e230]
 ```

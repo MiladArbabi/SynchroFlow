@@ -1,5 +1,6 @@
-fly.toml
-Dockerfile
-.dockerignore
-node_modules
-.git
+*
+!packages/api/**
+!packages/api/package.json
+!packages/api/tsconfig.json
+!packages/api/knexfile.ts
+!packages/api/dist/**
