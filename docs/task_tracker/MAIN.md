@@ -16,11 +16,11 @@ P4-Backlog: Feature development (after verification)
 Progress Summary
 Completed: 7/32 issues (22%)
 
-In Progress: 0 issues
+In Progress: 1 issue (#763)
 
 Blocked: 1 issue
 
-Remaining: 25 issues
+Remaining: 24 issues
 
 P0-Critical Issues ✅
 #727: Verify database migrations and seed data
@@ -52,16 +52,16 @@ P1-High Issues ⏳
 #732: Verify loading states during data fetching
 #733: Test API error scenarios and error boundaries  
 #736: Test EnhancedWidgetShell with real API data
-#763: Build Survival Mode Widgets with Mock Data
-Priority: P1   Estimate: 6 hours Tasks:
+#763: Build Survival Mode Widgets
+Status: 🔄 IN PROGRESS Priority: P1   Estimate: 6 hours Tasks:
 
-[ ] Create CashFlowSnapshotWidget with mock data
+[x] Create CashFlowSnapshotWidget with real data (TDD Complete)
 
-[ ] Build InventoryAlertsWidget with sample data
+[ ] Build InventoryAlertsWidget with real data
 
-[ ] Implement OrderVolumeWidget for recent orders
+[ ] Implement OrderVolumeWidget with real data
 
-[ ] Add TopProductsWidget (limited to 10 products)
+[ ] Add TopProductsWidget with real data
 
 [ ] Test full user journey from empty → connected → insights
 
@@ -131,31 +131,45 @@ Priority: P4 Estimate: 8 hours Tasks:
 
 [ ] Update ConnectStoreModal with new button and logic
 
-## Cost-Conscious Implementation Strategy
-- Unchanged
+Cost-Conscious Implementation Strategy
+(Unchanged)
 
-## Key Achievements ✅
-- Database Foundation
-- API Data Contracts
-- Authentication Security
-- Environment Configuration
-- Widget System Foundation
-- Cost Strategy Defined
-- Core Sync & Permissions (NEW)  
-  Removed C++ build-blockers for a stable deployment.  
-  Resolved Shopify OAuth scope permissions.  
-  Verified end-to-end data sync (Products & Orders).
+Key Achievements ✅
+Database Foundation
 
-## Current Focus: #763 (Widgets) & #770 (Error Handling)
+API Data Contracts
+
+Authentication Security
+
+Environment Configuration
+
+Widget System Foundation
+
+Cost Strategy Defined
+
+Core Sync & Permissions (NEW)
+
+Removed C++ build-blockers for a stable deployment.
+
+Resolved Shopify OAuth scope permissions.
+
+Verified end-to-end data sync (Products & Orders).
+
+Current Focus: #763 (Widgets) & #770 (Error Handling)
 Goal: Complete the P1 work for a fully functional and robust user experience. We need to populate the dashboard with data (#763) and ensure that users who fail to connect have a clear, actionable path to success (#770).
 
-## Timeline: 1 week Immediate Next Steps:
-- Build mock survival widgets (#763): We must show data in the widgets.
-- Implement backend error mapping (#770): This is the core of our "spot on" error handling principle.
-- Unblock E2E testing (#731): Once widgets are present, we can write the full E2E test.
+Timeline: 1 week Immediate Next Steps:
 
-## Success Metrics:
+Complete remaining survival widgets (#763): CashFlowSnapshotWidget is done. Next is InventoryAlertsWidget.
 
-- A user who connects with an "inactive" store is redirected and sees an actionable error modal.
-- A user who connects with a valid store sees widgets populated with their synced data.
-- Cloud costs remain low as we are only using mock data or light processing.
+Implement backend error mapping (#770): This is the core of our "spot on" error handling principle.
+
+Unblock E2E testing (#731): Once all P1 widgets are present, we can write the full E2E test.
+
+Success Metrics:
+
+A user who connects with an "inactive" store is redirected and sees an actionable error modal.
+
+A user who connects with a valid store sees widgets populated with their synced data.
+
+Cloud costs remain low as we are only using real, light-processing data.

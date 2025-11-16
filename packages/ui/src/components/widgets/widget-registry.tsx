@@ -1,8 +1,9 @@
 // packages/ui/src/components/widgets/widget-registry.ts
 import React from 'react';
 import { EnhancedWidgetShellProps } from './types';
-import { InventoryAlertsWidget, OrderMetricsWidget } from './mock-widgets';
+import { OrderMetricsWidget } from './mock-widgets';
 import { CashFlowSnapshotWidget } from './CashFlowSnapshotWidget';
+import { InventoryAlertsWidget } from './InventoryAlertsWidget';
 
 // Extended definition for widgets in the registry
 export interface WidgetDefinition extends Omit<EnhancedWidgetShellProps, 'children'> {
