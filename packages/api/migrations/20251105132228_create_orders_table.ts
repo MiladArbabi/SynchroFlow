@@ -16,6 +16,8 @@ export async function up(knex: Knex): Promise<void> {
     table.decimal('total_price', 10, 2).notNullable();
     table.string('currency', 3).notNullable().defaultTo('USD');
 
+    table.string('source_name');
+
     table.text('notes');
     
     table.timestamp('created_at').defaultTo(knex.fn.now());
