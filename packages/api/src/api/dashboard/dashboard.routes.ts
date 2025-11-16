@@ -7,6 +7,7 @@ import {
     getShipmentStatus, 
     getCashTraps,
     getTopProducts, 
+    getSalesByTrafficSource,
 } from './dashboard.controller';
 
 const router = Router();
@@ -27,5 +28,8 @@ router.get('/cash-traps', authenticateToken, getCashTraps);
 
 // Endpoint for "Top Products" widget
 router.get('/top-products', authenticateToken, getTopProducts);
+
+// Endpoint for "Sales by Traffic Source" widget
+router.get('/sales-by-traffic-source', authenticateToken, getSalesByTrafficSource);
 
 export default router;

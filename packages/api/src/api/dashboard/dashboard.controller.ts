@@ -163,3 +163,38 @@ export const getTopProducts = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch top products data.' });
   }
 };
+
+export const getSalesByTrafficSource = async (req: Request, res: Response) => {
+  try {
+    const shopId = await getShopIdFromRequest(req);
+    if (!shopId) {
+      return res.status(403).json({ error: 'User shop not found.' });
+    }
+
+    // Group by source_name, sum total_price, and count orders
+    const trafficSources = await db('orders')
+      .where({ shop_id: shopId })
+      .whereNotNull('source_name') // Only include orders with a source
+      .select('source_name')
+      .sum('total_price as totalRevenue')
+      .count('id as orderCount')
+      .groupBy('source_name')
+      .orderBy('totalRevenue', 'desc')
+      .limit(5); // Get top 5 sources
+
+    // Clean up the data (Knex returns bigints/decimals as strings)
+    const formattedSources = trafficSources.map((source) => ({
+      source: source.source_name || 'Unknown',
+      totalRevenue: parseFloat(String(source.totalRevenue)),
+      orderCount: parseInt(String(source.orderCount), 10),
+    }));
+
+    res.json(formattedSources);
+  } catch (error) {
+    console.error(
+      '[dashboard.controller] Error in getSalesByTrafficSource:',
+      error,
+    );
+    res.status(500).json({ error: 'Failed to fetch traffic source data.' });
+  }
+};

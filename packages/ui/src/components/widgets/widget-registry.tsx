@@ -5,6 +5,7 @@ import { OrderMetricsWidget } from './OrderMetricsWidget';
 import { CashFlowSnapshotWidget } from './CashFlowSnapshotWidget';
 import { InventoryAlertsWidget } from './InventoryAlertsWidget';
 import { TopProductsWidget } from './TopProductsWidget';
+import { SalesByTrafficSourceWidget } from './SalesByTrafficSourceWidget';
 
 // Extended definition for widgets in the registry
 export interface WidgetDefinition extends Omit<EnhancedWidgetShellProps, 'children'> {
@@ -90,6 +91,21 @@ export const WIDGET_REGISTRY: WidgetRegistry = {
       isLoading: false,
       isEmpty: false,
       component: TopProductsWidget,
+      priority: 'medium',
+      requiresPaidPlan: false,
+      dataProcessing: 'light',
+    },
+    {
+      id: 'sales-by-traffic-source',
+      title: 'Sales by Traffic Source',
+      intelligenceLevel: 'L1',
+      businessContext: { stage: 'survival' },
+      metricConfig: { type: 'growth' },
+      currentValue: 0,
+      format: 'number',
+      isLoading: false,
+      isEmpty: false,
+      component: SalesByTrafficSourceWidget,
       priority: 'medium',
       requiresPaidPlan: false,
       dataProcessing: 'light',

@@ -64,6 +64,7 @@ export const performInitialSync = async (
             }
             currencyCode
             createdAt
+            sourceName
             # Remove fulfillments for now to simplify
 
             lineItems(first: 20) {
@@ -200,6 +201,7 @@ async function syncOrders(trx: Knex.Transaction, shopId: number, edges: any[]) {
     total_price: node.totalPriceSet?.shopMoney?.amount || 0,
     currency: node.currencyCode,
     created_at: node.createdAt,
+    source_name: node.sourceName,
     // Remove fulfillment_status and financial_status for now
     fulfillment_status: null,
     financial_status: null,
