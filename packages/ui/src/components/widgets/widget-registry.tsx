@@ -1,7 +1,7 @@
 // packages/ui/src/components/widgets/widget-registry.ts
 import React from 'react';
 import { EnhancedWidgetShellProps } from './types';
-import { OrderMetricsWidget } from './mock-widgets';
+import { OrderMetricsWidget } from './OrderMetricsWidget';
 import { CashFlowSnapshotWidget } from './CashFlowSnapshotWidget';
 import { InventoryAlertsWidget } from './InventoryAlertsWidget';
 
