@@ -1,7 +1,8 @@
 // packages/ui/src/components/widgets/widget-registry.ts
 import React from 'react';
 import { EnhancedWidgetShellProps } from './types';
-import { CashFlowWidget, InventoryAlertsWidget, OrderMetricsWidget } from './mock-widgets'; 
+import { InventoryAlertsWidget, OrderMetricsWidget } from './mock-widgets';
+import { CashFlowSnapshotWidget } from './CashFlowSnapshotWidget';
 
 // Extended definition for widgets in the registry
 export interface WidgetDefinition extends Omit<EnhancedWidgetShellProps, 'children'> {
@@ -41,7 +42,7 @@ export const WIDGET_REGISTRY: WidgetRegistry = {
       format: 'currency',
       isLoading: false,
       isEmpty: false,
-      component: CashFlowWidget,
+      component: CashFlowSnapshotWidget,
       priority: 'critical',
       requiresPaidPlan: false,
       dataProcessing: 'light',
@@ -86,7 +87,7 @@ export const WIDGET_REGISTRY: WidgetRegistry = {
       format: 'currency',
       isLoading: false,
       isEmpty: false,
-      component: CashFlowWidget, // Using existing component for demo
+      component: CashFlowSnapshotWidget, // Using existing component for demo
       priority: 'low',
       requiresPaidPlan: true, // This widget requires paid plan
       dataProcessing: 'heavy',
