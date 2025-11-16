@@ -33,15 +33,10 @@ export const performInitialSync = async (
 
   const client = new shopify.clients.Graphql({ session });
 
-  // 3. Define ONE giant GraphQL query for efficiency
-  // We fetch the last 50 of each for the MVP.
+  // MINIMAL, STABLE GraphQL query - only basic fields that exist in all API versions
   const query = `
     query {
-      shop {
-        paymentGateways
-      }
-      
-      # Fetch Products
+      # Fetch Products - basic fields only
       products(first: 50) {
         edges {
           node {
@@ -55,105 +50,101 @@ export const performInitialSync = async (
         }
       }
       
-      # Fetch Orders (and their fulfillments)
+      # Fetch Orders - basic fields only
       orders(first: 50) {
         edges {
           node {
             id
             name
-            fulfillmentStatus
-            financialStatus
-            totalPriceSet { shopMoney { amount } }
-            currencyCode
-            
-            # Fetch fulfillments for THIS order
-            fulfillments(first: 10) {
-              id
-              status
-              trackingInfo { company, number }
-              # We will get shipping cost from the Order itself for now
-              # This API is complex, so we'll stub shipping cost
+            totalPriceSet { 
+              shopMoney { 
+                amount 
+                currencyCode
+              } 
             }
+            currencyCode
+            createdAt
+            # Remove fulfillments for now to simplify
           }
         }
       }
       
-      # Fetch Payouts (for fees)
-      payouts(first: 50) {
-        edges {
-          node {
-            id
-            status
-            date
-            currency
-            amount
-            fee
-            netAmount
-          }
-        }
+      # Fetch basic shop info
+      shop {
+        id
+        name
+        email
+        currencyCode
+        timezoneOffset
       }
     }
   `;
 
   try {
+    console.log(`[ShopifyService] Making GraphQL request to Shopify...`);
+    const response = await client.request(query);
+    const data = response.data as any;
+    console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data));
+
+    const totalProducts = data.products?.edges.length || 0;
+    const totalOrders = data.orders?.edges.length || 0;
+    const totalProgress = totalProducts + totalOrders;
     // --- 1. Report: STARTING (Products) ---
     await db('integrations').where({ id: integrationId }).update({
       sync_status: 'SYNCING_PRODUCTS',
       sync_last_error: null,
       sync_progress_current: 0,
-      sync_progress_total: 0, // We'll estimate this soon
+      sync_progress_total: totalProgress,
     });
-
-    const response = await client.request(query);
-    const data = response.data as any; // Cast to 'any' to access dynamic keys
 
     // 4. Use a transaction to sync all data or none
     await db.transaction(async (trx) => {
       if (data.products) {
+        console.log(`[ShopifyService] Syncing ${data.products.edges.length} products...`);
         await syncProducts(trx, shopId, data.products.edges);
+        
         // --- 2. Report: SYNCING_ORDERS ---
-         await trx('integrations').where({ id: integrationId }).update({
-           sync_status: 'SYNCING_ORDERS',
-           sync_progress_total: data.products.edges.length, // MVP: Total is product count
-           sync_progress_current: data.products.edges.length, // We've finished products
-         });
+        await trx('integrations').where({ id: integrationId }).update({
+          sync_status: 'SYNCING_ORDERS',
+          sync_progress_current: totalProducts,
+        });
       }
+
       if (data.orders) {
-        await syncOrdersAndFulfillments(trx, shopId, data.orders.edges);
-        // --- 3. Report: SYNCING_FINANCES ---
-         const totalProgress = (data.products?.edges.length || 0) + (data.orders?.edges.length || 0);
-         await trx('integrations').where({ id: integrationId }).update({
-           sync_status: 'SYNCING_FINANCES',
-           sync_progress_total: totalProgress, // This is an estimate, good enough for MVP
-           sync_progress_current: totalProgress,
-         });
-      }
-      if (data.payouts) {
-        await syncPayouts(trx, shopId, data.payouts.edges);
+        console.log(`[ShopifyService] Syncing ${data.orders.edges.length} orders...`);
+        await syncOrders(trx, shopId, data.orders.edges);
+        
+        // --- 3. Report: COMPLETING ---
+        await trx('integrations').where({ id: integrationId }).update({
+          sync_status: 'COMPLETING',
+          // Current progress is now all products + all orders
+          sync_progress_current: totalProgress,
+        });
       }
     });
-
-    // --- Report: COMPLETED (and save discovered data) ---
-  const discoveredGateways = data.shop?.paymentGateways
-    ? JSON.stringify(data.shop.paymentGateways)
-    : null
 
     // --- 4. Report: COMPLETED ---
     await db('integrations').where({ id: integrationId }).update({
       sync_status: 'COMPLETED',
       sync_last_error: null,
-      discovered_payment_gateways: discoveredGateways
     });
 
     console.log(`[ShopifyService] Sync COMPLETED for shopId: ${shopId}`);
   } catch (error: any) {
-    console.error(`[ShopifyService] FAILED to sync shopId: ${shopId}`, error.response?.errors || error);
-    throw error; // Re-throw to make the worker nack the message
+    console.error(`[ShopifyService] FAILED to sync shopId: ${shopId}`, error);
+    console.error(`[ShopifyService] Error details:`, error.response?.errors || error.message);
+    
+    // Update integration status to FAILED
+    await db('integrations').where({ id: integrationId }).update({
+      sync_status: 'FAILED',
+      sync_last_error: error.message,
+    });
+    
+    throw error;
   }
 };
 
-// --- Data Sync Helper Functions ---
-
+// Simplified sync functions
 async function syncProducts(trx: Knex.Transaction, shopId: number, edges: any[]) {
   const productsToInsert = edges.map(({ node }: any) => ({
     shop_id: shopId,
@@ -168,9 +159,32 @@ async function syncProducts(trx: Knex.Transaction, shopId: number, edges: any[])
   if (productsToInsert.length > 0) {
     await trx('shopify_products')
       .insert(productsToInsert)
-      .onConflict(['shop_id', 'platform_product_id']) // If product exists
-      .merge(); // Update it
+      .onConflict(['shop_id', 'platform_product_id'])
+      .merge();
     console.log(`[ShopifyService] Synced ${productsToInsert.length} products.`);
+  }
+};
+
+// Simplified orders sync without fulfillments
+async function syncOrders(trx: Knex.Transaction, shopId: number, edges: any[]) {
+  const ordersToInsert = edges.map(({ node }: any) => ({
+    shop_id: shopId,
+    platform_order_id: node.id,
+    order_number: node.name,
+    total_price: node.totalPriceSet?.shopMoney?.amount || 0,
+    currency: node.currencyCode,
+    created_at: node.createdAt,
+    // Remove fulfillment_status and financial_status for now
+    fulfillment_status: null,
+    financial_status: null,
+  }));
+
+  if (ordersToInsert.length > 0) {
+    await trx('orders')
+      .insert(ordersToInsert)
+      .onConflict('platform_order_id')
+      .merge();
+    console.log(`[ShopifyService] Synced ${ordersToInsert.length} orders.`);
   }
 }
 

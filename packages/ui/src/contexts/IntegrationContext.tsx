@@ -65,8 +65,10 @@ export const IntegrationProvider: React.FC<IntegrationProviderProps> = ({ childr
 
     // --- POLLING LOGIC ---
     // Poll every 2 seconds *only if* the sync is actively in progress.
-    refetchInterval: (query) =>
-      ['PENDING', 'SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'SYNCING_FINANCES'].includes(query.state.data?.status as string) ? 2000 : false,
+    // Update the polling logic to match our simplified steps:
+refetchInterval: (query) =>
+  ['PENDING', 'SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'COMPLETING']
+  .includes(query.state.data?.status as string) ? 2000 : false,
     
 
     refetchOnWindowFocus: true,

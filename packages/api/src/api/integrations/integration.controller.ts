@@ -85,6 +85,8 @@ export const initiateOAuth = (req: Request, res: Response) => {
   }
 
   // --- 4. Respond ---
+  // --- DIAGNOSTIC LOG ---
+  console.log('[dev-api] CONSTRUCTED AUTH URL:', authorizationUrl);
   res.status(200).json({ authorizationUrl });
 };
 
@@ -301,7 +303,7 @@ export const preFlightCheck = async (req: Request, res: Response) => {
   }
 };
 
-export const getDiscoveryStatus = async (req: Request, res: Response) => {
+/* export const getDiscoveryStatus = async (req: Request, res: Response) => {
   // We get the user ID from the authenticated request
   const shopId = await getShopIdFromRequest(req);
   
@@ -327,4 +329,4 @@ export const getDiscoveryStatus = async (req: Request, res: Response) => {
     console.error('[discovery-status] Error fetching discovery status:', error);
     res.status(500).json({ message: 'Error fetching discovery status', error: error.message });
   }
-};
+}; */
