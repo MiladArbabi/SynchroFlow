@@ -5,7 +5,8 @@ import {
     getPulse, 
     getInventoryHealth, 
     getShipmentStatus, 
-    getCashTraps 
+    getCashTraps,
+    getTopProducts, 
 } from './dashboard.controller';
 
 const router = Router();
@@ -23,5 +24,8 @@ router.get('/shipment-status', authenticateToken, getShipmentStatus);
 
 // GET /api/v1/dashboard/cash-traps
 router.get('/cash-traps', authenticateToken, getCashTraps);
+
+// Endpoint for "Top Products" widget
+router.get('/top-products', authenticateToken, getTopProducts);
 
 export default router;

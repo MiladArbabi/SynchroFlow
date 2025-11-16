@@ -130,3 +130,36 @@ export const getCashTraps = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch cash trap data.' });
   }
 };
+
+/**
+ * Endpoint for the "Top Selling Products" widget.
+ */
+export const getTopProducts = async (req: Request, res: Response) => {
+  try {
+    const shopId = await getShopIdFromRequest(req);
+    if (!shopId) {
+      return res.status(403).json({ error: 'User shop not found.' });
+    }
+
+    // This query joins line items with products
+    // It groups by product, sums the quantity, and orders by the highest sum
+    const topProducts = await db('order_line_items as oli')
+      .join(
+        'shopify_products as p',
+        'oli.platform_product_id',
+        'p.platform_product_id',
+      )
+      .where('oli.shop_id', shopId)
+      .andWhere('p.status', 'ACTIVE') // Only count active products
+      .select('p.title', 'p.platform_product_id as id')
+      .sum('oli.quantity as totalSold')
+      .groupBy('p.title', 'p.platform_product_id')
+      .orderBy('totalSold', 'desc')
+      .limit(5);
+
+    res.json(topProducts);
+  } catch (error) {
+    console.error('[dashboard.controller] Error in getTopProducts:', error);
+    res.status(500).json({ error: 'Failed to fetch top products data.' });
+  }
+};

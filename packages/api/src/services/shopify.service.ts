@@ -65,6 +65,18 @@ export const performInitialSync = async (
             currencyCode
             createdAt
             # Remove fulfillments for now to simplify
+
+            lineItems(first: 20) {
+              edges {
+                node {
+                  id
+                  quantity
+                  product {
+                    id
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -88,7 +100,12 @@ export const performInitialSync = async (
 
     const totalProducts = data.products?.edges.length || 0;
     const totalOrders = data.orders?.edges.length || 0;
-    const totalProgress = totalProducts + totalOrders;
+
+    const totalLineItems = (data.orders?.edges || []).reduce((acc: number, { node }: any) => {
+      return acc + (node.lineItems?.edges.length || 0);
+    }, 0);
+
+    const totalProgress = totalProducts + totalOrders + totalLineItems;
     // --- 1. Report: STARTING (Products) ---
     await db('integrations').where({ id: integrationId }).update({
       sync_status: 'SYNCING_PRODUCTS',
@@ -113,8 +130,17 @@ export const performInitialSync = async (
       if (data.orders) {
         console.log(`[ShopifyService] Syncing ${data.orders.edges.length} orders...`);
         await syncOrders(trx, shopId, data.orders.edges);
-        
-        // --- 3. Report: COMPLETING ---
+
+        // --- ADD THIS BLOCK ---
+        await trx('integrations').where({ id: integrationId }).update({
+          sync_status: 'SYNCING_LINE_ITEMS',
+          sync_progress_current: totalProducts + totalOrders,
+        });
+        console.log(`[ShopifyService] Syncing ${totalLineItems} line items...`);
+        await syncOrderLineItems(trx, shopId, data.orders.edges);
+        // --- END OF BLOCK ---
+
+       // --- 3. Report: COMPLETING ---
         await trx('integrations').where({ id: integrationId }).update({
           sync_status: 'COMPLETING',
           // Current progress is now all products + all orders
@@ -185,6 +211,42 @@ async function syncOrders(trx: Knex.Transaction, shopId: number, edges: any[]) {
       .onConflict('platform_order_id')
       .merge();
     console.log(`[ShopifyService] Synced ${ordersToInsert.length} orders.`);
+  }
+}
+
+async function syncOrderLineItems(
+  trx: Knex.Transaction,
+  shopId: number,
+  orderEdges: any[],
+) {
+  const lineItemsToInsert: any[] = [];
+
+  // Iterate over each order
+  for (const { node: order } of orderEdges) {
+    const orderId = order.id;
+    const lineItemEdges = order.lineItems?.edges || [];
+
+    // Iterate over each line item in that order
+    for (const { node: lineItem } of lineItemEdges) {
+      lineItemsToInsert.push({
+        shop_id: shopId,
+        platform_order_id: orderId,
+        platform_line_item_id: lineItem.id,
+        platform_product_id: lineItem.product?.id,
+        quantity: lineItem.quantity,
+        // We'll get price later if needed; for now, we just need product/quantity
+      });
+    }
+  }
+
+  if (lineItemsToInsert.length > 0) {
+    await trx('order_line_items')
+      .insert(lineItemsToInsert)
+      .onConflict(['shop_id', 'platform_line_item_id']) // Assumes this conflict target
+      .merge();
+    console.log(
+      `[ShopifyService] Synced ${lineItemsToInsert.length} line items.`,
+    );
   }
 }
 

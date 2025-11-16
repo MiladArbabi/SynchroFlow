@@ -12,7 +12,7 @@ export async function up(knex: Knex): Promise<void> {
       .inTable('shops')
       .onDelete('CASCADE');
 
-    table.string('platform_product_id').notNullable();
+    table.string('platform_product_id').notNullable().unique();
     table.string('title');
     table.string('vendor');
     table.string('product_type');

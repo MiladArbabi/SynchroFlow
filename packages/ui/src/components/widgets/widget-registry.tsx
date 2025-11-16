@@ -4,6 +4,7 @@ import { EnhancedWidgetShellProps } from './types';
 import { OrderMetricsWidget } from './OrderMetricsWidget';
 import { CashFlowSnapshotWidget } from './CashFlowSnapshotWidget';
 import { InventoryAlertsWidget } from './InventoryAlertsWidget';
+import { TopProductsWidget } from './TopProductsWidget';
 
 // Extended definition for widgets in the registry
 export interface WidgetDefinition extends Omit<EnhancedWidgetShellProps, 'children'> {
@@ -74,6 +75,21 @@ export const WIDGET_REGISTRY: WidgetRegistry = {
       isLoading: false,
       isEmpty: false,
       component: OrderMetricsWidget,
+      priority: 'medium',
+      requiresPaidPlan: false,
+      dataProcessing: 'light',
+    },
+    {
+      id: 'top-products',
+      title: 'Top Selling Products',
+      intelligenceLevel: 'L1',
+      businessContext: { stage: 'survival' },
+      metricConfig: { type: 'inventory' },
+      currentValue: 0,
+      format: 'number',
+      isLoading: false,
+      isEmpty: false,
+      component: TopProductsWidget,
       priority: 'medium',
       requiresPaidPlan: false,
       dataProcessing: 'light',

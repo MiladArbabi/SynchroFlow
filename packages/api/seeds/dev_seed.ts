@@ -6,8 +6,10 @@ export async function seed(knex: Knex): Promise<void> {
     // --- Deletes ALL existing entries ---
     // Use raw SQL for TRUNCATE with CASCADE if needed, or delete in reverse order
     console.log("Seeding: Deleting existing data...");
-    await knex('order_fulfillment_status').del();
-    await knex('shops').del(); // Delete shops after statuses due to foreign key
+    await knex('order_line_items').del();
+    await knex('order_fulfillment_status').del(); // Delete child tables first
+    await knex('users').del(); 
+    await knex('shops').del(); // Delete shops after other tables
 
     // --- Seed Shops ---
     console.log("Seeding: Inserting shops...");
