@@ -38,5 +38,5 @@
     }
     // --- END ADDED ---
   },
-  "include": ["src", "types", "../../types"]
+  "include": ["src", "types", "../../types", "../../tests/unit/ui/widgets/CashFlowSnapshotWidget.test.tsx"]
 }
