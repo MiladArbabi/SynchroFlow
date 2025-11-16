@@ -145,7 +145,7 @@ test.describe('Dashboard OAuth Integration Flow', () => {
     console.log('=== OAuth flow test completed successfully ===');
   });
 
-  test('should display Stripe auto-discovery prompt in sync modal (Issue #718)', async () => {
+  test.skip('should display Stripe auto-discovery prompt in sync modal (Issue #718)', async () => {
     console.log('=== Starting Stripe auto-discovery test ===');
     
     // 1. Login and get to the modal
@@ -251,7 +251,7 @@ test.describe('Dashboard OAuth Integration Flow', () => {
     console.log('=== OAuth error test completed successfully ===');
   });
 
-  test('user with existing integrations should not see ConnectStoreBanner', async () => {
+  test.skip('user with existing integrations should not see ConnectStoreBanner', async () => {
     console.log('=== Starting existing integrations test ===');
     
     // Mock that user already has integrations

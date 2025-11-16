@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/pages/DashboardPage.tsx
@@ -43,24 +44,39 @@ export const DashboardPage = ({
  const [connectionError, setConnectionError] = useState<string | null>(null);
 
  useEffect(() => {
-   const connectStatus = searchParams.get('connect');
-   const errorMessage = searchParams.get('message');
+  const connectStatus = searchParams.get('connect');
+  const errorMessage = searchParams.get('message');
 
-   if (connectStatus === 'success') {
-     // 1. We're back from Shopify successfully!
-     // 2. Refresh the integration state (this starts the polling)
-     refreshIntegrationStatus();
-     // 3. Open the "Syncing" modal
-     setIsSyncModalOpen(true);
-     // 4. Clean the URL
-     setSearchParams({}, { replace: true });
-   } else if (connectStatus === 'error') {
-     // 1. Something went wrong during OAuth
-     setConnectionError(errorMessage || 'An unknown connection error occurred.');
-     // 2. Clean the URL
-     setSearchParams({}, { replace: true });
-   }
- }, [searchParams, setSearchParams, refreshIntegrationStatus]);
+  console.log('🔍 OAuth Callback - URL Analysis:', { 
+    connectStatus, 
+    errorMessage,
+    currentUrl: window.location.href,
+    hasIntegrations,
+    syncStatus
+  });
+
+  if (connectStatus === 'success') {
+    console.log('🎯 SUCCESS PATH: OAuth completed, opening sync modal');
+    refreshIntegrationStatus();
+    setIsSyncModalOpen(true);
+    setSearchParams({}, { replace: true });
+  } else if (connectStatus === 'error') {
+    console.log('❌ ERROR PATH:', errorMessage);
+    setConnectionError(errorMessage || 'An unknown connection error occurred.');
+    setSearchParams({}, { replace: true });
+  } else {
+    console.log('ℹ️ NO CONNECT PARAM: User navigated directly to dashboard');
+  }
+}, []);
+
+ console.log('📊 DashboardPage render state:', {
+   isSyncModalOpen,
+   isConnectModalOpen,
+   connectionError,
+   hasIntegrations,
+   isFirstTimeSync,
+   syncStatus
+ });
 
  const handleOpenConnectModal = async () => {
     // 5. Implement the Pre-flight Check

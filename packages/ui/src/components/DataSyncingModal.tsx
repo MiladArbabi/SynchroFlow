@@ -67,19 +67,6 @@ interface DataSyncingModalProps {
   onClose: () => void;
 }
 
-// --- [START] Issue #718: Discovery Polling ---
-// Define the API response type
-interface DiscoveryStatus {
-  discovered_payment_gateways: string | null; // It's a JSON string
-}
-
-// Fetcher function for our polling
-const fetchDiscoveryStatus = async (): Promise<DiscoveryStatus> => {
-  // We don't need to pass shopId, as the auth token will handle it
-  const { data } = await axios.get('/api/v1/integrations/discovery-status');
-  return data;
-};
-// --- [END] Issue #718 ---
 
 export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClose }) => {
 
@@ -88,26 +75,6 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
 
   // --- [START] USE THE TRUTH ---
   const { syncStatus, progress } = useIntegration();
-
-  // --- Poll for Discoveries ---
-  const { data: discoveryData } = useQuery({
-    queryKey: ['discoveryStatus'],
-    queryFn: fetchDiscoveryStatus,
-    // Only poll when the modal is open and the sync is not yet complete
-    enabled: open && syncStatus !== 'COMPLETED',
-    // Poll every 2 seconds
-    refetchInterval: 2000,
-    // Don't refetch when the window is refocused, polling is enough
-    refetchOnWindowFocus: false,
-  });
-
-  // Memoize the check for Stripe
-  const hasDiscoveredStripe = useMemo(() => {
-    try {
-      const gateways = JSON.parse(discoveryData?.discovered_payment_gateways || '[]');
-      return Array.isArray(gateways) && gateways.includes('stripe');
-    } catch (_e) { return false; }
-  }, [discoveryData]);
 
   // Map the real API status to the stepper's activeStep
   const activeStep = React.useMemo(() => {
@@ -147,13 +114,6 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
         <Typography variant="body1" align="center" sx={{ mb: 4 }}>
           We're syncing your data from Shopify. This may take a few minutes.
         </Typography>
-
-        {/* --- Show "Magic Moment" Text --- */}
-        {hasDiscoveredStripe && (
-          <Typography variant="h6" align="center" color="success.main" sx={{ mb: 4 }}>
-            💡 We see you use Stripe! Connect it next to unlock your true cash flow.
-          </Typography>
-        )}
 
         <Box sx={{ width: '100%' }}>
           <Stepper activeStep={activeStep} alternativeLabel data-testid="stepper">
