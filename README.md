@@ -189,7 +189,8 @@ Our GTM is a Product-Led Growth (PLG) motion funneling into sales-led conversion
 
 | Plan      | Target ICP (ARR) | Monthly Price | Annual Price (Upfront) | Core Value Proposition (Positioning)                  |
 |-----------|------------------|---------------|------------------------|-------------------------------------------------------|
-| Spark    | $100K - $1M     | $149 / mo    | **$1,490 / year**     | Your First Operations Hire. Saves time for solopreneurs wearing too many hats. |
+| Starter    | $1 - $$100K     | $0 / mo    | **$0 / year**     | Just beggining my journey |
+| Spark    | $100K - $1M     | $99 / mo    | **$990 / year**     | Your First Operations Hire. Saves time for solopreneurs wearing too many hats. |
 | Ignition | $1M - $10M      | $349 / mo    | **$3,490 / year**     | Spreadsheet Replacement. Unified analytics & team coordination. |
 | Clarity  | $10M - $20M     | $799 / mo    | **$7,990 / year**     | "Franken-Stack" Consolidation. Core operations sync (replaces OMS). |
 | Optimize | $20M - $50M     | $1,999 / mo  | **$19,990 / year**    | Unified Ops + CX.                                     |

@@ -47,14 +47,6 @@ export const DashboardPage = ({
   const connectStatus = searchParams.get('connect');
   const errorMessage = searchParams.get('message');
 
-  console.log('🔍 OAuth Callback - URL Analysis:', { 
-    connectStatus, 
-    errorMessage,
-    currentUrl: window.location.href,
-    hasIntegrations,
-    syncStatus
-  });
-
   if (connectStatus === 'success') {
     console.log('🎯 SUCCESS PATH: OAuth completed, opening sync modal');
     refreshIntegrationStatus();
@@ -68,15 +60,6 @@ export const DashboardPage = ({
     console.log('ℹ️ NO CONNECT PARAM: User navigated directly to dashboard');
   }
 }, []);
-
- console.log('📊 DashboardPage render state:', {
-   isSyncModalOpen,
-   isConnectModalOpen,
-   connectionError,
-   hasIntegrations,
-   isFirstTimeSync,
-   syncStatus
- });
 
  const handleOpenConnectModal = async () => {
     // 5. Implement the Pre-flight Check
