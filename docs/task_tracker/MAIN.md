@@ -15,13 +15,13 @@ P4-Backlog: Future Phases (Spark, Ignition, WMS, etc.)
 
 ## Progress Summary
 
-Completed: 11/32 issues (34%)
+Completed: 12/32 issues (38%)
 
 In Progress: 0 issues
 
 Blocked: 1 issue (#771)
 
-Remaining: 20 issues
+Remaining: 19 issues
 
 ## P0-Critical Issues ✅
 ### #727: Verify database migrations and seed data
@@ -53,12 +53,11 @@ Status: ✅ COMPLETED
 Status: ✅ COMPLETED (C++ completely removed. Scopes verified.)
 
 ### #731: Write critical path E2E test for user login and dashboard
-
-Status: ✅ COMPLETED (E2E Dashboard Happy Path
+Status: ✅ COMPLETED: **E2E Dashboard Happy Path:**
 - Added a full E2E test for the authenticated dashboard.
 - Test verifies all 5 Starter Plan widgets load correct data from mocks.
 - Test confirms the 'Connect Store' banner is hidden for connected users.
-- This locks in progress from #763 and protects our core user journey.)
+- This locks in progress from #763 and protects our core user journey.
 
 ---
 ## P1-High COMPLETED Issues ✅
@@ -72,22 +71,24 @@ Status: ✅ COMPLETED (E2E Dashboard Happy Path
 ✅ Status: ✅ COMPLETED: 
 **Loading States:** Implemented comprehensive loading state tests for all 5 Starter Plan widgets. Verified loading skeletons appear instantly, maintain during API calls, and prevent flickering. All widgets provide consistent loading experience with proper state transitions.
 
+### #736: Test EnhancedWidgetShell with real API data
+ ✅ Status: ✅ COMPLETED
+ **EnhancedWidgetShell Integration:** Verified all 5 Starter Plan widgets work with real API data contracts. Tests validate:
+ - String number handling from database (e.g., "15" → 15)
+ - Currency formatting with exact values ($15,420.75)
+ - Proper error state transitions and error messages
+ - Complete lifecycle: loading → data → rendering
+ - Real API data shapes from backend scans
+ **Fixed:** Multiple h5 element queries in integration tests
+
 ## P1-High Issues ⏳
 
 Status: ⏳ PENDING (UNBLOCKED) Priority: P1
-
-### #736: Test EnhancedWidgetShell with real API data
 
 ### #763: Build Starter Plan Widgets (Phase 1)
 
 Status: ✅ COMPLETED
 **Results**:
-- [x] Built  with TDD cycle.
-- [x] Built  with real data.
-- [x] Built  with TDD cycle.
-- [x] Built  with full-stack debugging (Migration, Seed, Middleware).
-- [x] Built  with full-stack debugging (GraphQL, Migration, Controller).
-- [x] All "Starter Plan" widgets are live and verified.
 
 ### #771: Implement Backend OAuth 'Sad Path' Error Mapping
 
@@ -96,16 +97,8 @@ Priority: P1 Estimate: 3 hours
 Status: ⏳ BLOCKED (Shopify Platform Limitation)
 
 **Current State**: Backend error mapping implemented and tested ✅
-- ✅ Comprehensive Shopify error mapping with user-friendly messages
-- ✅ Frontend ConnectionErrorModal integration complete
-- ✅ Unit tests passing for all error scenarios
-- ✅ Shop domain normalization for various input formats
 
 **Blocking Issue**: Shopify OAuth cancel flow redirects to Shopify admin (`https://admin.shopify.com/store/.../apps?cancelled_app_install=LaSyncro`) instead of our callback URL, despite:
-- ✅ Proper redirect_uri encoding (`http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fv1%2Fintegrations%2Foauth%2Fcallback%2Fshopify`)
-- ✅ Correct shop domain normalization (`development-store-15820042357.myshopify.com`)
-- ✅ Valid authorization URL construction
-- ✅ Matching redirect URIs in Shopify Partner Dashboard
 
 **Root Cause**: This appears to be Shopify platform behavior for canceled installations - they redirect to admin instead of the app's callback URL with error parameters.
 
@@ -181,8 +174,11 @@ Tasks: [ ] PO Management, [ ] Barcode Receiving, [ ] Pick Lists
 - Widget System Foundation & Cost Strategy Defined
 - C++ Dependency 100% Removed from codebase.
 - Core Shopify Sync Verified for Products, Orders & Line Items.
-- **"Starter Plan" Widget Suite 100% Complete:** All 5 widgets are live with real data.
+
+**"Starter Plan" Widget Suite 100% Complete:** All 5 widgets are live with real data.
 - Full-Stack Debugging Complete: Resolved critical bugs across the *entire* stack (Migrations, Seed Script, Auth Middleware, and API) to fix  errors.
+
+**EnhancedWidgetShell Integration Verified:** All widgets confirmed working with real API data contracts and proper state transitions.
 
 ---
 
