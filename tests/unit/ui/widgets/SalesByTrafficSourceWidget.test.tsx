@@ -85,4 +85,60 @@ describe('SalesByTrafficSourceWidget', () => {
       ).toBeInTheDocument();
     });
   });
+
+  describe('Loading State Behavior', () => {
+    test('should show loading skeleton immediately on initial render', () => {
+      mockedAxios.get.mockImplementation(() => new Promise(() => {}));
+      
+      renderWithProviders(<SalesByTrafficSourceWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+    });
+
+    test('should show loading skeleton for minimum time to prevent flicker', async () => {
+      const mockTrafficData = [
+        { id: '1', source: 'Direct', revenue: 5000 },
+        { id: '2', source: 'Organic Search', revenue: 3000 },
+      ];
+      mockedAxios.get.mockResolvedValueOnce({ data: mockTrafficData });
+      
+      renderWithProviders(<SalesByTrafficSourceWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+      
+      await waitFor(() => {
+        expect(screen.getByText('Direct')).toBeInTheDocument();
+      });
+      
+      expect(screen.queryByTestId('loading-skeleton')).not.toBeInTheDocument();
+    });
+
+    test('should maintain loading state during entire API call duration', async () => {
+      let resolveApi: (value: any) => void;
+      const apiPromise = new Promise(resolve => {
+        resolveApi = resolve;
+      });
+      
+      mockedAxios.get.mockImplementation(() => apiPromise);
+      
+      renderWithProviders(<SalesByTrafficSourceWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+      
+      setTimeout(() => {
+        resolveApi({ 
+          data: [
+            { id: '1', source: 'Direct', revenue: 5000 },
+            { id: '2', source: 'Organic Search', revenue: 3000 },
+          ]
+        });
+      }, 100);
+      
+      await waitFor(() => {
+        expect(screen.getByText('Direct')).toBeInTheDocument();
+      });
+      
+      expect(screen.queryByTestId('loading-skeleton')).not.toBeInTheDocument();
+    });
+  });
 });

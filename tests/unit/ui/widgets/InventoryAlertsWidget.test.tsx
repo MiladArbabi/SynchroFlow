@@ -423,4 +423,51 @@ describe('InventoryAlertsWidget', () => {
       });
     });
   });
+
+  describe('Loading State Behavior', () => {
+    test('should show loading skeleton immediately on initial render', () => {
+      mockedAxios.get.mockImplementation(() => new Promise(() => {}));
+      
+      renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+    });
+
+    test('should show loading skeleton for minimum time to prevent flicker', async () => {
+      mockedAxios.get.mockResolvedValueOnce({ data: mockInventoryData.normal });
+      
+      renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+      
+      await waitFor(() => {
+        expect(screen.getByText('Product A')).toBeInTheDocument();
+      });
+      
+      expect(screen.queryByTestId('loading-skeleton')).not.toBeInTheDocument();
+    });
+
+    test('should maintain loading state during entire API call duration', async () => {
+      let resolveApi: (value: any) => void;
+      const apiPromise = new Promise(resolve => {
+        resolveApi = resolve;
+      });
+      
+      mockedAxios.get.mockImplementation(() => apiPromise);
+      
+      renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+      
+      setTimeout(() => {
+        resolveApi({ data: mockInventoryData.normal });
+      }, 100);
+      
+      await waitFor(() => {
+        expect(screen.getByText('Product A')).toBeInTheDocument();
+      });
+      
+      expect(screen.queryByTestId('loading-skeleton')).not.toBeInTheDocument();
+    });
+  });
 });

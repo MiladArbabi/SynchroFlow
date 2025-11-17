@@ -288,4 +288,62 @@ describe('CashFlowSnapshotWidget', () => {
       });
     });
   });
+
+  describe('Loading State Behavior', () => {
+    test('should show loading skeleton immediately on initial render', () => {
+      mockedAxios.get.mockImplementation(() => new Promise(() => {}));
+      
+      renderWithProviders(<CashFlowSnapshotWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+    });
+
+    test('should show loading skeleton for minimum time to prevent flicker', async () => {
+      const mockPulseData = {
+        totalRevenue: 15420,
+        orderCount: 15,
+        unfulfilledCount: 1,
+      };
+      mockedAxios.get.mockResolvedValueOnce({ data: mockPulseData });
+      
+      renderWithProviders(<CashFlowSnapshotWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+      
+      await waitFor(() => {
+        expect(screen.getByText('$15,420')).toBeInTheDocument();
+      });
+      
+      expect(screen.queryByTestId('loading-skeleton')).not.toBeInTheDocument();
+    });
+
+    test('should maintain loading state during entire API call duration', async () => {
+      let resolveApi: (value: any) => void;
+      const apiPromise = new Promise(resolve => {
+        resolveApi = resolve;
+      });
+      
+      mockedAxios.get.mockImplementation(() => apiPromise);
+      
+      renderWithProviders(<CashFlowSnapshotWidget {...mockProps} />);
+
+      expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+      
+      setTimeout(() => {
+        resolveApi({ 
+          data: {
+            totalRevenue: 5000,
+            orderCount: 8,
+            unfulfilledCount: 1,
+          }
+        });
+      }, 100);
+      
+      await waitFor(() => {
+        expect(screen.getByText('$5,000')).toBeInTheDocument();
+      });
+      
+      expect(screen.queryByTestId('loading-skeleton')).not.toBeInTheDocument();
+    });
+  });
 });
