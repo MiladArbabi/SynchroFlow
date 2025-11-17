@@ -13,7 +13,7 @@ export interface EcommerceBusinessContext {
 
 // Commerce-specific metric configurations
 export interface CommerceMetricConfig {
-  type?: 'financial' | 'inventory' | 'customer' | 'team' | 'growth';
+  type?: 'financial' | 'inventory' | 'customer' | 'team' | 'growth' | 'marketing';
   urgencyThresholds?: {
     critical: number;
     high: number;
