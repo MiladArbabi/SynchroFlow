@@ -61,15 +61,16 @@ Status: ✅ COMPLETED (E2E Dashboard Happy Path
 - This locks in progress from #763 and protects our core user journey.)
 
 ---
+## P1-High COMPLETED Issues ✅
+
+### #733: Test API error scenarios and error boundaries
+✅ Status: ✅ COMPLETED: API Error Scenarios: All 5 Starter Plan widgets have comprehensive error handling tests and implementation. Widgets gracefully handle loading, empty, and error states for various API failure scenarios (401, 500, network errors, timeouts).
 
 ## P1-High Issues ⏳
-
 
 Status: ⏳ PENDING (UNBLOCKED) Priority: P1
 
 ### #732: Verify loading states during data fetching
-
-### #733: Test API error scenarios and error boundaries
 
 ### #736: Test EnhancedWidgetShell with real API data
 
@@ -188,4 +189,4 @@ Tasks: [ ] PO Management, [ ] Barcode Receiving, [ ] Pick Lists
 
 1.  **Research Shopify OAuth Cancel Flow:** Investigate Shopify documentation for cancel flow behavior and potential workarounds for #771.
 
-**Note on #771:** While the backend error mapping is complete and tested, the Shopify platform's cancel flow & connect=error behavior prevents proper error handling. This is a platform limitation that requires further investigation.## 
+**Note on #771:** While the backend error mapping is complete and tested, the Shopify platform's cancel flow & connect=error behavior prevents proper error handling. This is a platform limitation that requires further investigation.
