@@ -19,9 +19,9 @@ Completed: 11/32 issues (34%)
 
 In Progress: 0 issues
 
-Blocked: 0 issues
+Blocked: 1 issue (#771)
 
-Remaining: 21 issues
+Remaining: 20 issues
 
 ## P0-Critical Issues ✅
 ### #727: Verify database migrations and seed data
@@ -76,15 +76,27 @@ Status: ✅ COMPLETED
 - [x] Built  with full-stack debugging (GraphQL, Migration, Controller).
 - [x] All "Starter Plan" widgets are live and verified.
 
-### #770: Implement Backend OAuth 'Sad Path' Error Mapping
+### #771: Implement Backend OAuth 'Sad Path' Error Mapping
 
 Priority: P1 Estimate: 3 hours
 
-Tasks:
+Status: ⏳ BLOCKED (Shopify Platform Limitation)
 
-[ ] Update  in 
-[ ] Create a  mapping function
-[ ] Ensure  is correctly passed to frontend
+**Current State**: Backend error mapping implemented and tested ✅
+- ✅ Comprehensive Shopify error mapping with user-friendly messages
+- ✅ Frontend ConnectionErrorModal integration complete
+- ✅ Unit tests passing for all error scenarios
+- ✅ Shop domain normalization for various input formats
+
+**Blocking Issue**: Shopify OAuth cancel flow redirects to Shopify admin (`https://admin.shopify.com/store/.../apps?cancelled_app_install=LaSyncro`) instead of our callback URL, despite:
+- ✅ Proper redirect_uri encoding (`http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fv1%2Fintegrations%2Foauth%2Fcallback%2Fshopify`)
+- ✅ Correct shop domain normalization (`development-store-15820042357.myshopify.com`)
+- ✅ Valid authorization URL construction
+- ✅ Matching redirect URIs in Shopify Partner Dashboard
+
+**Root Cause**: This appears to be Shopify platform behavior for canceled installations - they redirect to admin instead of the app's callback URL with error parameters.
+
+**Next Steps**: Research Shopify OAuth cancel flow documentation and implement workaround if available. Postponing to focus on unblocked P1 issues.
 
 ---
 
@@ -166,5 +178,7 @@ Tasks: [ ] PO Management, [ ] Barcode Receiving, [ ] Pick Lists
 
 **Immediate Next Steps:**
 
-1.  **Implement #770 (Sad Path):** Finalize the "sad path" error handling. This is our *last* P1 feature task.
-2.  **Implement #731 (E2E Test):** Now that all widgets are built, we must write the full E2E test for the complete "happy path" user journey.
+1.  **Implement #731 (E2E Test):** Now that all widgets are built, we must write the full E2E test for the complete "happy path" user journey.
+2.  **Research Shopify OAuth Cancel Flow:** Investigate Shopify documentation for cancel flow behavior and potential workarounds for #771.
+
+**Note on #771:** While the backend error mapping is complete and tested, the Shopify platform's cancel flow & connect=error behavior prevents proper error handling. This is a platform limitation that requires further investigation.

@@ -52,6 +52,7 @@ export const DashboardPage = ({
     refreshIntegrationStatus();
     setIsSyncModalOpen(true);
     setSearchParams({}, { replace: true });
+    
   } else if (connectStatus === 'error') {
     console.log('❌ ERROR PATH:', errorMessage);
     setConnectionError(errorMessage || 'An unknown connection error occurred.');
