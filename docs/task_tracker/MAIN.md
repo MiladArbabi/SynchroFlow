@@ -52,10 +52,18 @@ Status: ✅ COMPLETED
 
 Status: ✅ COMPLETED (C++ completely removed. Scopes verified.)
 
+### #731: Write critical path E2E test for user login and dashboard
+
+Status: ✅ COMPLETED (E2E Dashboard Happy Path
+- Added a full E2E test for the authenticated dashboard.
+- Test verifies all 5 Starter Plan widgets load correct data from mocks.
+- Test confirms the 'Connect Store' banner is hidden for connected users.
+- This locks in progress from #763 and protects our core user journey.)
+
 ---
 
 ## P1-High Issues ⏳
-### #731: Write critical path E2E test for user login and dashboard
+
 
 Status: ⏳ PENDING (UNBLOCKED) Priority: P1
 
@@ -178,7 +186,6 @@ Tasks: [ ] PO Management, [ ] Barcode Receiving, [ ] Pick Lists
 
 **Immediate Next Steps:**
 
-1.  **Implement #731 (E2E Test):** Now that all widgets are built, we must write the full E2E test for the complete "happy path" user journey.
-2.  **Research Shopify OAuth Cancel Flow:** Investigate Shopify documentation for cancel flow behavior and potential workarounds for #771.
+1.  **Research Shopify OAuth Cancel Flow:** Investigate Shopify documentation for cancel flow behavior and potential workarounds for #771.
 
-**Note on #771:** While the backend error mapping is complete and tested, the Shopify platform's cancel flow & connect=error behavior prevents proper error handling. This is a platform limitation that requires further investigation.
+**Note on #771:** While the backend error mapping is complete and tested, the Shopify platform's cancel flow & connect=error behavior prevents proper error handling. This is a platform limitation that requires further investigation.## 

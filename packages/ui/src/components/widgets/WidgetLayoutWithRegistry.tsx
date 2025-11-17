@@ -60,7 +60,7 @@ export const WidgetLayoutWithRegistry: React.FC = () => {
           )
         };
         return (
-          <Box key={widgetDef.id} sx={{ mb: 2 }}>
+          <Box key={widgetDef.id} sx={{ mb: 2 }} data-testid={`widget-${widgetDef.id}`}>
              <EnhancedWidgetShell {...enhancedShellProps} />
           </Box>
         );
