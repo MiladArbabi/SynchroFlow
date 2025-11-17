@@ -13,8 +13,8 @@ import { getQueueChannel, connection } from '../../queue';
  * Helper function to get the shop_id from an authenticated user.
  */
 const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
-  if (!req.user) return null;
-  const userId = req.user.userId;
+  if (!(req as any).user) return null;
+  const userId = (req as any).user.userId;
   
   // We need the user's shop_id to query data
   const user = await db<User>('users').where({ id: userId }).first('shop_id');
@@ -38,10 +38,30 @@ const encryptToken = (token: string): string => {
   return CryptoJS.AES.encrypt(token, secret).toString();
 };
 
+/**
+ * Normalizes shop domain to the correct format for Shopify OAuth
+ */
+export const normalizeShopDomain = (shopInput: string): string => {
+  let shop = shopInput.trim();
+  
+  // Remove protocol if present
+  shop = shop.replace(/^https?:\/\//, '');
+  
+  // Remove path if present (like /admin)
+  shop = shop.replace(/\/.*$/, '');
+  
+  // Ensure it has .myshopify.com suffix
+  if (!shop.includes('.myshopify.com')) {
+    shop = `${shop}.myshopify.com`;
+  }
+  
+  return shop;
+};
+
 export const initiateOAuth = (req: Request, res: Response) => {
   const { platform, shop } = req.query as { platform: string; shop: string };
   const session = req.session as OAuthSession;
- const userId = req.user?.userId;
+  const userId = (req as any).user?.userId; // Temporary fix for TypeScript
 
   // User ID must be present from middleware
   if (!userId) {
@@ -56,7 +76,7 @@ export const initiateOAuth = (req: Request, res: Response) => {
   // --- 2. Security: Generate & Store CSRF State Token ---
   const state = crypto.randomBytes(16).toString('hex');
   session.oauth_state = state;
-  session.oauth_user_id = userId; // <-- STORE THE USER ID
+  session.oauth_user_id = userId;
 
   let authorizationUrl = '';
   const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/${platform}`;
@@ -67,16 +87,24 @@ export const initiateOAuth = (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing required query param: shop' });
     }
     const shopifyApiKey = process.env.SHOPIFY_API_KEY;
-    // UPDATED FOR "TRUE PROFIT" MVP: Added read_payouts (for fees) and read_fulfillments (for shipping)
     const scopes = 'read_products,read_orders,read_inventory,read_payouts,read_fulfillments';
 
-    // The user provides "my-store", but Shopify requires "my-store.myshopify.com".
-    const shopDomain = `${shop}.myshopify.com`;
+    // NORMALIZE the shop domain to ensure correct format
+    const shopDomain = normalizeShopDomain(shop);
 
-    authorizationUrl = `https://{shop}/admin/oauth/authorize?client_id=${shopifyApiKey}&scope=${scopes}&redirect_uri=${redirectUri}&state=${state}`.replace(
-      '{shop}',
-      shopDomain
-    );
+    // PROPERLY encode the redirect URI
+    const encodedRedirectUri = encodeURIComponent(redirectUri);
+
+    authorizationUrl = `https://${shopDomain}/admin/oauth/authorize?client_id=${shopifyApiKey}&scope=${scopes}&redirect_uri=${encodedRedirectUri}&state=${state}`;
+
+    // --- DIAGNOSTIC LOG --- (MOVED INSIDE THE BLOCK)
+    console.log('[dev-api] CONSTRUCTED AUTH URL:', authorizationUrl);
+    console.log('[OAuth Debug] Shop input:', shop);
+    console.log('[OAuth Debug] Normalized shop domain:', shopDomain);
+    console.log('[OAuth Debug] Redirect URI:', redirectUri);
+    console.log('[OAuth Debug] Encoded Redirect URI:', encodedRedirectUri);
+    console.log('[OAuth Debug] Full authorization URL:', authorizationUrl);
+
   } else if (platform === 'quickbooks') {
     // ... logic for QuickBooks (different params)
     return res.status(501).json({ error: 'QuickBooks not yet implemented' });
@@ -85,9 +113,30 @@ export const initiateOAuth = (req: Request, res: Response) => {
   }
 
   // --- 4. Respond ---
-  // --- DIAGNOSTIC LOG ---
-  console.log('[dev-api] CONSTRUCTED AUTH URL:', authorizationUrl);
   res.status(200).json({ authorizationUrl });
+};
+
+// --- NEW HELPER FUNCTION (from our plan) ---
+/**
+ * Maps technical Shopify error codes to user-friendly messages.
+ */
+export const getHumanReadableError = (shopifyError: string, description: string): string => {
+  const errorMap: Record<string, string> = {
+    'access_denied': 'Authorization was canceled. Please try again and approve the installation.',
+    'invalid_scope': 'The app requires additional permissions. Please contact support.',
+    'shopify_plan_required': 'Your Shopify store needs an active paid plan to install this app.',
+    'trial_store': 'This app cannot be installed on trial stores. Please upgrade your Shopify plan.',
+    'suspended_store': 'Your Shopify store is currently suspended. Please resolve any billing issues.',
+    'app_installation_failed': 'App installation failed. Please try again or contact Shopify support.',
+    'invalid_request': 'The installation request was invalid. Please try again.',
+    'unsupported_grant_type': 'Authentication configuration error. Please contact support.',
+    'unauthorized_client': 'This app is not authorized to connect. Please contact support.',
+    'invalid_shop': 'The store URL appears to be invalid. Please check and try again.',
+    'shop_not_found': 'The store was not found. Please check the store name and try again.',
+    'feature_disabled': 'This feature is not available for your store. Please contact Shopify support.',
+  };
+  
+  return errorMap[shopifyError] || description || 'An unknown error occurred during installation.';
 };
 
 export const handleOAuthCallback = async (req: Request, res: Response) => {
@@ -106,7 +155,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   // --- 1. Handle OAuth Failure (Sad Path) ---
   // Shopify (and others) send 'error' and 'error_description' on failure.
   if (error) {
-    const errorMessage = error_description || error || 'Unknown OAuth error';
+    const userFriendlyError = getHumanReadableError(error, error_description || '');
     // Clear the session state to prevent retry loops
     session.oauth_state = undefined;
     session.oauth_user_id = undefined;
@@ -114,7 +163,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     // Redirect to frontend with the params DashboardPage.tsx expects
     const redirectUrl = new URL(`${process.env.FRONTEND_URL}/dashboard`);
     redirectUrl.searchParams.append('connect', 'error');
-    redirectUrl.searchParams.append('message', errorMessage);
+    redirectUrl.searchParams.append('message', userFriendlyError);
 
     return res.redirect(redirectUrl.toString());
   }

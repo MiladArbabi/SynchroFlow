@@ -108,9 +108,9 @@ const SidenavContent: React.FC<{
         {/* --- Render Card outside of 'extraContent' --- */}
         {/* Show the card if NOT connected, regardless of drawer state */}
         {/* Use padding to match 'extraContent' when open, and minimal when collapsed */}
-        <Box sx={{ p: drawerOpen ? 2 : 2, pt: 2 }}>
+        {/* <Box sx={{ p: drawerOpen ? 2 : 2, pt: 2 }}>
           {!isConnected && <ConnectStoreCard onOpenModal={onOpenModal} />}
-        </Box>
+        </Box> */}
 
          {/* --- ACCOUNT SETTINGS LINK (PINNED TO BOTTOM) --- */}
          {/* This List is outside the flexGrow box, so it pins to the bottom */}

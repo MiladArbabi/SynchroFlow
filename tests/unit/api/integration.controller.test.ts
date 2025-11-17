@@ -5,6 +5,8 @@ import axios from 'axios';
 import db from 'api-src/db';
 import { getQueueChannel } from 'api-src/queue';
 import { connection } from 'api-src/queue';
+import { getHumanReadableError } from 'api-src/api/integrations/integration.controller';
+import { normalizeShopDomain } from 'api-src/api/integrations/integration.controller';
 
 const mockedConnection = connection as jest.Mocked<typeof connection>;
 
@@ -153,6 +155,7 @@ describe('Integration Controller', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Authenticated user ID not found.' });
     });
 
+    // Update the existing test to ensure no redundant replace operations
     it('should generate Shopify authorization URL successfully', async () => {
       mockRequest.query = { platform: 'shopify', shop: 'test-shop' };
       mockedCrypto.randomBytes.mockReturnValue({ toString: () => 'test-state-token' } as any);
@@ -163,8 +166,32 @@ describe('Integration Controller', () => {
       expect(mockSession.oauth_state).toBe('test-state-token');
       expect(mockSession.oauth_user_id).toBe(mockUser.userId);
       expect(mockResponse.status).toHaveBeenCalledWith(200);
+      
+      // Verify the URL is constructed correctly without redundant {shop} replacement
+      const expectedRedirectUri = encodeURIComponent('http://localhost:3001/api/v1/integrations/oauth/callback/shopify');
+      const expectedUrl = `https://test-shop.myshopify.com/admin/oauth/authorize?client_id=test-shopify-key&scope=read_products,read_orders,read_inventory,read_payouts,read_fulfillments&redirect_uri=${expectedRedirectUri}&state=test-state-token`;
+      
       expect(mockResponse.json).toHaveBeenCalledWith({
-        authorizationUrl: 'https://test-shop/admin/oauth/authorize?client_id=test-shopify-key&scope=read_products,read_orders,read_inventory,read_payouts,read_fulfillments&redirect_uri=http://localhost:3001/api/v1/integrations/oauth/callback/shopify&state=test-state-token'
+        authorizationUrl: expectedUrl
+      });
+      
+      // Additional verification: ensure no {shop} placeholder remains in the URL
+      const actualUrl = (mockResponse.json as jest.Mock).mock.calls[0][0].authorizationUrl;
+      expect(actualUrl).not.toContain('{shop}');
+      expect(actualUrl).toContain('test-shop.myshopify.com');
+    });
+
+    it('should generate Shopify authorization URL with properly encoded redirect_uri', async () => {
+      mockRequest.query = { platform: 'shopify', shop: 'test-shop' };
+      mockedCrypto.randomBytes.mockReturnValue({ toString: () => 'test-state-token' } as any);
+
+      const { initiateOAuth } = await import('api-src/api/integrations/integration.controller');
+      await initiateOAuth(mockRequest as Request, mockResponse as Response);
+
+      // Verify the redirect_uri is properly encoded
+      const expectedRedirectUri = encodeURIComponent('http://localhost:3001/api/v1/integrations/oauth/callback/shopify');
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        authorizationUrl: expect.stringContaining(`redirect_uri=${expectedRedirectUri}`)
       });
     });
 
@@ -286,6 +313,35 @@ describe('Integration Controller', () => {
 
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Internal server error during token exchange.' });
+    });
+  });
+
+    describe('OAuth Cancel Flow', () => {
+    it('should handle Shopify cancel by redirecting to frontend with error', async () => {
+      // Simulate the callback with error=access_denied (user clicked cancel)
+      mockRequest.params = { platform: 'shopify' };
+      mockRequest.query = {
+        error: 'access_denied',
+        error_description: 'User canceled the authorization',
+        state: 'test-state-token',
+        shop: 'test-shop.myshopify.com'
+      };
+      
+      // Set up the session state to match
+      mockSession.oauth_state = 'test-state-token';
+      mockSession.oauth_user_id = 1;
+
+      const { handleOAuthCallback } = await import('api-src/api/integrations/integration.controller');
+      await handleOAuthCallback(mockRequest as Request, mockResponse as Response);
+
+      // Verify the redirect to frontend with error parameters
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+        'http://localhost:3000/dashboard?connect=error&message=Authorization+was+canceled.+Please+try+again+and+approve+the+installation.'
+      );
+      
+      // Verify session is cleared
+      expect(mockSession.oauth_state).toBeUndefined();
+      expect(mockSession.oauth_user_id).toBeUndefined();
     });
   });
 
@@ -704,4 +760,74 @@ describe('Integration Controller', () => {
       });
     });
   });
+
+  describe('OAuth Error Mapping', () => {
+    test('maps access_denied to user-friendly message', () => {
+      const result = getHumanReadableError('access_denied', 'User denied access');
+      expect(result).toBe('Authorization was canceled. Please try again and approve the installation.');
+    });
+
+    test('maps invalid_scope to appropriate message', () => {
+      const result = getHumanReadableError('invalid_scope', 'Invalid scope requested');
+      expect(result).toBe('The app requires additional permissions. Please contact support.');
+    });
+
+    test('maps trial_store error', () => {
+      const result = getHumanReadableError('trial_store', 'Trial stores cannot install');
+      expect(result).toBe('This app cannot be installed on trial stores. Please upgrade your Shopify plan.');
+    });
+
+    test('maps suspended_store error', () => {
+      const result = getHumanReadableError('suspended_store', 'Store suspended');
+      expect(result).toBe('Your Shopify store is currently suspended. Please resolve any billing issues.');
+    });
+
+    test('maps app_installation_failed error', () => {
+      const result = getHumanReadableError('app_installation_failed', 'Installation failed');
+      expect(result).toBe('App installation failed. Please try again or contact Shopify support.');
+    });
+
+    test('returns description for unknown errors', () => {
+      const result = getHumanReadableError('unknown_error', 'Some weird issue');
+      expect(result).toBe('Some weird issue');
+    });
+
+    test('returns default message for completely unknown errors', () => {
+      const result = getHumanReadableError('completely_unknown', '');
+      expect(result).toBe('An unknown error occurred during installation.');
+    });
+  });
+
+  // Add these tests to integration.controller.test.ts
+describe('Shop Domain Normalization', () => {
+  test('should add .myshopify.com to bare shop name', async () => {
+    const { normalizeShopDomain } = await import('api-src/api/integrations/integration.controller');
+    expect(normalizeShopDomain('mystore')).toBe('mystore.myshopify.com');
+  });
+
+  test('should keep existing .myshopify.com domain', async () => {
+    const { normalizeShopDomain } = await import('api-src/api/integrations/integration.controller');
+    expect(normalizeShopDomain('mystore.myshopify.com')).toBe('mystore.myshopify.com');
+  });
+
+  test('should remove https protocol', async () => {
+    const { normalizeShopDomain } = await import('api-src/api/integrations/integration.controller');
+    expect(normalizeShopDomain('https://mystore.myshopify.com')).toBe('mystore.myshopify.com');
+  });
+
+  test('should remove http protocol', async () => {
+    const { normalizeShopDomain } = await import('api-src/api/integrations/integration.controller');
+    expect(normalizeShopDomain('http://mystore.myshopify.com')).toBe('mystore.myshopify.com');
+  });
+
+  test('should remove /admin path', async () => {
+    const { normalizeShopDomain } = await import('api-src/api/integrations/integration.controller');
+    expect(normalizeShopDomain('mystore.myshopify.com/admin')).toBe('mystore.myshopify.com');
+  });
+
+  test('should handle complex input with protocol and path', async () => {
+    const { normalizeShopDomain } = await import('api-src/api/integrations/integration.controller');
+    expect(normalizeShopDomain('https://mystore.myshopify.com/admin/oauth')).toBe('mystore.myshopify.com');
+  });
+});
 });

@@ -75,17 +75,17 @@ export function buildPalette(presetColorId: string): BuiltPalette { // Accept pr
         mode: 'dark', // Add mode
         primary: {
             light: colors.darkPrimaryLight, main: colors.darkPrimaryMain, dark: colors.darkPrimaryDark,
-            contrastText: colors.darkTextPrimary, // Adjust contrast text for dark mode
+            contrastText: colors.darkPaper,
              '200': colors.darkPrimary200, '800': colors.darkPrimary800,
         },
         secondary: {
             light: colors.darkSecondaryLight, main: colors.darkSecondaryMain, dark: colors.darkSecondaryDark,
-            contrastText: colors.darkTextPrimary, // Adjust contrast text
+            contrastText: colors.darkPaper,
              '200': colors.darkSecondary200, '800': colors.darkSecondary800,
         },
         error: { light: colors.errorLight, main: colors.errorMain, dark: colors.errorDark }, // Keep same? Adjust if needed
         orange: { light: colors.orangeLight, main: colors.orangeMain, dark: colors.orangeDark }, // Keep same?
-        warning: { light: colors.warningLight, main: colors.warningMain, dark: colors.warningDark, contrastText: colors.darkTextTitle }, // Adjust contrast
+        warning: { light: colors.warningLight, main: colors.warningMain, dark: colors.warningDark, contrastText: colors.darkPaper }, // Adjust contrast
         success: { light: colors.successLight, main: colors.successMain, dark: colors.successDark, '200': colors.success200 }, // Keep same?
         grey: { // Adjust grey shades for dark mode text/elements
              '50': colors.grey50, '100': colors.grey100, '200': colors.grey200, '300': colors.grey300,
