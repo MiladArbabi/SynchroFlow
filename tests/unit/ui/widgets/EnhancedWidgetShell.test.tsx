@@ -70,21 +70,56 @@ describe('EnhancedWidgetShell', () => {
       expect(screen.getByTestId('test-children')).toBeInTheDocument();
     });
 
-    it('should render with correct emotional status classes', () => {
+    it('should render urgent emotional border for survival stage', () => {
       const propsWithUrgent: EnhancedWidgetShellProps = {
-           ...mockBaseProps,
-           businessContext: {
-             ...mockBaseProps.businessContext,
-             burningPriority: 'cash-flow', // Use existing prop for urgency
-             stage: 'survival'
-           }
-         };
+        ...mockBaseProps,
+        businessContext: {
+          ...mockBaseProps.businessContext,
+          stage: 'survival',
+          burningPriority: 'inventory'
+        }
+      };
       
       const { container } = renderWithTheme(
         <EnhancedWidgetShell {...propsWithUrgent} />
       );
       
-      // --- [FIX] Assert the style ---
+      const widgetRoot = container.firstChild;
+      expect(widgetRoot).toHaveStyle('border-left: 4px solid #DC2626');
+    });
+
+    it('should render urgent emotional border for cash-flow burning priority', () => {
+      const propsWithUrgent: EnhancedWidgetShellProps = {
+        ...mockBaseProps,
+        businessContext: {
+          ...mockBaseProps.businessContext,
+          stage: 'growth',
+          burningPriority: 'cash-flow'
+        }
+      };
+      
+      const { container } = renderWithTheme(
+        <EnhancedWidgetShell {...propsWithUrgent} />
+      );
+      
+      const widgetRoot = container.firstChild;
+      expect(widgetRoot).toHaveStyle('border-left: 4px solid #DC2626');
+    });
+
+    it('should render no emotional border for neutral business context', () => {
+      
+      const propsWithUrgent: EnhancedWidgetShellProps = {
+        ...mockBaseProps,
+        businessContext: {
+          ...mockBaseProps.businessContext,
+          stage: 'growth',
+          burningPriority: 'cash-flow'
+        }
+      };
+
+      const { container } = renderWithTheme(
+        <EnhancedWidgetShell {...propsWithUrgent} />
+      );
       // Get the first child of the container, which is our root <Box>
       const widgetRoot = container.firstChild;
       // This will FAIL (RED) because the style is not being applied

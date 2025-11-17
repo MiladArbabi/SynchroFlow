@@ -5,7 +5,7 @@ import { ReactNode } from 'react';
 
 // E-commerce specific intelligence contexts
 export interface EcommerceBusinessContext {
-  stage: 'survival' | 'scaling' | 'enterprise';
+  stage: 'survival' | 'growth' | 'architect';
   revenueBand?: '100k' | '1M' | '5M' | '10M' | '50M+';
   burningPriority?: 'cash-flow' | 'inventory' | 'acquisition' | 'team' | 'innovation';
   timeContext?: 'realtime' | 'daily' | 'weekly' | 'monthly' | 'quarterly';
