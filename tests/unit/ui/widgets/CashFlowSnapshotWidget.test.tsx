@@ -23,18 +23,22 @@ import { EnhancedWidgetShellProps } from 'components/widgets/types';
 const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 
 // Mock props for the widget
-const mockProps: EnhancedWidgetShellProps = {
+const mockProps = {
   id: 'cash-flow',
   title: 'Cash Flow',
-  intelligenceLevel: 'L3',
-  businessContext: { stage: 'survival', burningPriority: 'cash-flow' },
-  metricConfig: { type: 'financial' },
+  intelligenceLevel: 'L3' as const,
+  businessContext: { 
+   stage: 'survival' as const, 
+   burningPriority: 'cash-flow' as const 
+ },
+  metricConfig: { type: 'financial' as const },
   currentValue: 15420,
-  format: 'currency',
+  format: 'currency' as const,
   isLoading: false,
   isEmpty: false,
   children: <div>Test Children</div>,
-};
+  insightId: 'cash-flow-insight-123',
+} satisfies EnhancedWidgetShellProps & { insightId: string };
 
 describe('CashFlowSnapshotWidget', () => {
   beforeEach(() => {
