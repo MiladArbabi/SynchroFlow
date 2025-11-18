@@ -1,5 +1,5 @@
 // tests/unit/ui/widgets/TopProductsWidget.test.tsx
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { TopProductsWidget } from 'components/widgets/TopProductsWidget';
 import { EnhancedWidgetShellProps } from 'components/widgets/types';
 import { renderWithProviders } from 'test-utils';
@@ -22,17 +22,19 @@ const mockApiData = [
   { title: 'Product C', totalSold: 95, id: '3' },
 ];
 
-const mockProps: Omit<EnhancedWidgetShellProps, 'children'> = {
+const mockProps = {
   id: 'top-products',
   title: 'Top Products',
-  intelligenceLevel: 'L1',
-  businessContext: { stage: 'survival' },
-  metricConfig: { type: 'inventory' },
+  intelligenceLevel: 'L1' as const,
+  businessContext: { stage: 'survival' as const },
+  metricConfig: { type: 'inventory' as const },
   currentValue: 0,
-  format: 'number',
+  format: 'number' as const,
   isLoading: false,
   isEmpty: false,
-};
+  insightId: 'top-products-insight-123',
+  children: undefined
+} satisfies EnhancedWidgetShellProps & { insightId: string };
 
 describe('TopProductsWidget', () => {
   beforeEach(() => {
@@ -40,6 +42,13 @@ describe('TopProductsWidget', () => {
     mockUseAuth.mockReturnValue({
       accessToken: 'mock-token-123',
       isLoggedIn: true,
+      login: jest.fn(),
+     logout: jest.fn(),
+     user: null,
+     setAccessToken: function (_token: string | null): void {
+       throw new Error('Function not implemented.');
+     },
+     isLoading: false
     } as any);
   });
 
@@ -67,7 +76,7 @@ describe('TopProductsWidget', () => {
     renderWithProviders(<TopProductsWidget {...mockProps} />);
 
     await waitFor(() => {
-      expect(screen.getByText('No top products data available')).toBeInTheDocument();
+      expect(screen.getByText('No data to display.')).toBeInTheDocument();
     });
   });
 
@@ -76,7 +85,7 @@ describe('TopProductsWidget', () => {
     renderWithProviders(<TopProductsWidget {...mockProps} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Error loading top products')).toBeInTheDocument();
+      expect(screen.getByText('Network error')).toBeInTheDocument();
     });
   });
 
@@ -95,7 +104,7 @@ describe('TopProductsWidget', () => {
       // Mock a very fast API response
       mockedAxios.get.mockResolvedValueOnce({ data: mockApiData });
       
-      const { unmount } = renderWithProviders(<TopProductsWidget {...mockProps} />);
+      renderWithProviders(<TopProductsWidget {...mockProps} />);
 
       // Should show loading state immediately
       expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
@@ -143,6 +152,87 @@ describe('TopProductsWidget', () => {
       renderWithProviders(<TopProductsWidget {...loadingProps} />);
 
       expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+    });
+  });
+
+  describe('4 C\'s Retrofit (CoachTrigger Integration)', () => {
+    it('should warn about Concentration Risk when top product dominates', async () => {
+      const mockData = [
+        { id: '1', title: 'Hero Product', totalSold: 800 }, // 80% of 1000 total
+        { id: '2', title: 'Small Item', totalSold: 100 },
+        { id: '3', title: 'Tiny Item', totalSold: 100 },
+      ];
+      mockedAxios.get.mockResolvedValue({ data: mockData });
+
+      renderWithProviders(
+        <TopProductsWidget 
+          {...mockProps} 
+          insightId="top-products-risk"
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Hero Product')).toBeInTheDocument();
+      });
+
+       // Verify 4 C's insights are shown
+       expect(screen.getByText('Product Portfolio Optimization')).toBeInTheDocument();
+       // Check for the specific insight text that should be generated
+       // For dominating product, we expect text about dependency risk
+       expect(screen.getByText(/creates dependency risk/)).toBeInTheDocument();
+       expect(screen.getByText('Product Sales, Revenue Diversification')).toBeInTheDocument();
+    });
+
+    it('should suggest Inventory Protection for balanced portfolio', async () => {
+      const mockData = [
+        { id: '1', title: 'Product A', totalSold: 300 }, // 30% - Balanced
+        { id: '2', title: 'Product B', totalSold: 250 },
+        { id: '3', title: 'Product C', totalSold: 200 },
+      ];
+      mockedAxios.get.mockResolvedValue({ data: mockData });
+
+      renderWithProviders(
+        <TopProductsWidget 
+          {...mockProps} 
+          insightId="top-products-opportunity"
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Product A')).toBeInTheDocument();
+      });
+
+      // Verify insights for balanced portfolio
+      expect(screen.getByText('Product Portfolio Optimization')).toBeInTheDocument();
+      expect(screen.getByText(/All top products are performing well with high sales volume/)).toBeInTheDocument();
+    });
+
+    it('should submit feedback', async () => {
+      const mockData = [{ id: '1', title: 'Item', totalSold: 10 }];
+      mockedAxios.get.mockResolvedValue({ data: mockData });
+      mockedAxios.post.mockResolvedValue({ data: { success: true } });
+
+      // Create a mock feedback handler
+      const mockOnFeedback = jest.fn();
+
+      renderWithProviders(
+        <TopProductsWidget 
+          {...mockProps} 
+          insightId="top-products-feedback"
+          onFeedback={mockOnFeedback}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Item')).toBeInTheDocument();
+      });
+
+      const helpfulBtn = screen.getByLabelText('This was helpful');
+      fireEvent.click(helpfulBtn);
+
+      await waitFor(() => {
+        expect(mockOnFeedback).toHaveBeenCalledWith('top-products-feedback', 'accepted');
+      });
     });
   });
 });
