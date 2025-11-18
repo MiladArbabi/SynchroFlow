@@ -61,3 +61,23 @@ export interface BaseTriggerProps {
    */
   children: React.ReactNode;
 }
+
+// --- Blueprint 5.2: Coach Trigger ---
+export interface CoachTriggerProps extends Omit<BaseTriggerProps, 'triggerType'> {
+  /**
+   * The specific strategy or action being taught (e.g., "Exit Intent Popup").
+   */
+  tactic: string;
+  /**
+   * List of metrics this tactic is expected to improve (e.g., ["AOV", "Conversion"]).
+   */
+  successMetrics: string[];
+  /**
+   * Projected business value (e.g., "$5,000/month" or "+15% Revenue").
+   */
+  estimatedImpact: string;
+  /**
+   * Optional: Title for the recommendation card.
+   */
+  title?: string;
+}
