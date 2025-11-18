@@ -1,0 +1,18 @@
+// packages/api/src/routes/index.ts
+import { Router } from 'express';
+// Placeholder routes - these will be implemented in future issues
+import shopRoutes from './shops'; 
+import integrationRoutes from './integrations';
+import userRoutes from './users';
+import dashboardRoutes from './dashboard';
+import feedbackRoutes from './feedback'; 
+
+const router = Router();
+
+router.use('/shops', shopRoutes);
+router.use('/integrations', integrationRoutes);
+router.use('/users', userRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/feedback', feedbackRoutes); // Add this line
+
+export default router;
