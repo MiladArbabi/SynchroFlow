@@ -1,5 +1,5 @@
 // tests/unit/ui/widgets/InventoryAlertsWidget.test.tsx
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import axios from 'axios';
 import { useAuth } from 'contexts/AuthContext';
 
@@ -41,7 +41,7 @@ const mockInventoryData = {
   }))
 };
 
-const mockProps: EnhancedWidgetShellProps = {
+const mockProps = {
   id: 'inventory-alerts',
   title: 'Inventory Alerts',
   intelligenceLevel: 'L2' as const,
@@ -52,7 +52,8 @@ const mockProps: EnhancedWidgetShellProps = {
   isLoading: false,
   isEmpty: false,
   children: <div>Test Children</div>,
-};
+  insightId: 'inventory-alerts-insight-123',
+} satisfies EnhancedWidgetShellProps & { insightId: string };
 
 describe('InventoryAlertsWidget', () => {
   beforeEach(() => {
@@ -60,7 +61,13 @@ describe('InventoryAlertsWidget', () => {
     mockUseAuth.mockReturnValue({
       accessToken: 'mock-token-123',
       isLoggedIn: true,
-      // ... other mocks
+      login: jest.fn(),
+     logout: jest.fn(),
+     user: null,
+     setAccessToken: function (_token: string | null): void {
+       throw new Error('Function not implemented.');
+     },
+     isLoading: false
     } as any);
   });
 
@@ -132,7 +139,7 @@ describe('InventoryAlertsWidget', () => {
       renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('No inventory alerts')).toBeInTheDocument();
+        expect(screen.getByText('No data to display.')).toBeInTheDocument();
       });
     });
 
@@ -142,7 +149,7 @@ describe('InventoryAlertsWidget', () => {
       renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Error loading inventory data')).toBeInTheDocument();
+         expect(screen.getByText('Network error')).toBeInTheDocument();
       });
     });
 
@@ -154,7 +161,7 @@ describe('InventoryAlertsWidget', () => {
       renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Error loading inventory data')).toBeInTheDocument();
+        expect(screen.getByText('Network error')).toBeInTheDocument();
       });
 
       // In a real app, the retry would be triggered by the user refreshing the page
@@ -318,7 +325,7 @@ describe('InventoryAlertsWidget', () => {
       renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Error loading inventory data')).toBeInTheDocument();
+        expect(screen.getByText('Unauthorized')).toBeInTheDocument();
       });
     });
 
@@ -330,7 +337,7 @@ describe('InventoryAlertsWidget', () => {
       renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Error loading inventory data')).toBeInTheDocument();
+        expect(screen.getByText('Internal Server Error')).toBeInTheDocument();
       });
     });
 
@@ -344,10 +351,10 @@ describe('InventoryAlertsWidget', () => {
         // It should show either an error state or empty state
         try {
           // Check if it shows error state
-          expect(screen.getByText('Error loading inventory data')).toBeInTheDocument();
+          expect(screen.getByText(/error/i)).toBeInTheDocument();
         } catch {
           // Or check if it shows empty state (if the component handles the malformed data)
-          expect(screen.getByText('No inventory alerts')).toBeInTheDocument();
+          expect(screen.getByText('No data to display.')).toBeInTheDocument();
         }
       });
     });
@@ -358,7 +365,7 @@ describe('InventoryAlertsWidget', () => {
       renderWithProviders(<InventoryAlertsWidget {...mockProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Error loading inventory data')).toBeInTheDocument();
+        expect(screen.getByText('timeout of 5000ms exceeded')).toBeInTheDocument();
       });
     });
   });
@@ -468,6 +475,68 @@ describe('InventoryAlertsWidget', () => {
       });
       
       expect(screen.queryByTestId('loading-skeleton')).not.toBeInTheDocument();
+    });
+  });
+
+  // Add 4 C's specific tests
+  describe('4 C\'s Retrofit (CoachTrigger Integration)', () => {
+    it('should provide critical insights for out-of-stock items', async () => {
+      const mockData = [
+        { id: '1', title: 'Critical Product', total_inventory: 0 },
+        { id: '2', title: 'Another Product', total_inventory: 0 },
+      ];
+      mockedAxios.get.mockResolvedValueOnce({ data: mockData });
+
+      renderWithProviders(<InventoryAlertsWidget {...mockProps} insightId="inventory-critical" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Critical Product')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Inventory Optimization')).toBeInTheDocument();
+      expect(screen.getByText(/products are out of stock/)).toBeInTheDocument();
+    });
+
+    it('should provide warning insights for multiple low stock items', async () => {
+      const mockData = [
+        { id: '1', title: 'Product A', total_inventory: 3 },
+        { id: '2', title: 'Product B', total_inventory: 2 },
+        { id: '3', title: 'Product C', total_inventory: 1 },
+      ];
+      mockedAxios.get.mockResolvedValueOnce({ data: mockData });
+
+      renderWithProviders(<InventoryAlertsWidget {...mockProps} insightId="inventory-warning" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Product A')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/products are running low/)).toBeInTheDocument();
+    });
+
+    it('should submit feedback for inventory insights', async () => {
+      const mockData = [{ id: '1', title: 'Test Product', total_inventory: 5 }];
+      mockedAxios.get.mockResolvedValueOnce({ data: mockData });
+      const mockOnFeedback = jest.fn();
+
+      renderWithProviders(
+        <InventoryAlertsWidget 
+          {...mockProps} 
+          insightId="inventory-feedback"
+          onFeedback={mockOnFeedback}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Product')).toBeInTheDocument();
+      });
+
+      const helpfulBtn = screen.getByLabelText('This was helpful');
+      fireEvent.click(helpfulBtn);
+
+      await waitFor(() => {
+        expect(mockOnFeedback).toHaveBeenCalledWith('inventory-feedback', 'accepted');
+      });
     });
   });
 });

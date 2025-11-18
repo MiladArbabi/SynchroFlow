@@ -51,7 +51,7 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 ### ⏳ Phase 1 Backlog (Pending)
 | ID | Task | Status | Details |
 | --- | --- | --- | --- |
-| **#790** | **Meta:** Retrofit 5 Starter Widgets to 4 C's | 🚧 **IN PROGRESS** | CashFlowSnapshotWidget, OrderMetricsWidget, and TopProductsWidget retrofitted (3/5) | (4 C's: Context, Causation, Clear Path Forward, Closed Loop) |"
+| **#790** | **Meta:** Retrofit 5 Starter Widgets to 4 C's | 🚧 **IN PROGRESS** | CashFlowSnapshotWidget, OrderMetricsWidget, TopProductsWidget, and InventoryAlertsWidget retrofitted (4/5) | (4 C's: Context, Causation, Clear Path Forward, Closed Loop) |"
 | **#669** | **[P1]** [Bug] 'Skip for Now' button unresponsive | 🐞 **PENDING** | (High Priority Bug) |
 | **#616** | **[P1]** [Bug] E2E Authentication is flaky | 🐞 **PENDING** | (High Priority Bug) |
 | **#771** | **[P1]** Implement OAuth 'SadPath' | ⛔️ **BLOCKED** | (Shopify platform limitation) |
