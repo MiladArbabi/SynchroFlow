@@ -1,0 +1,79 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e29]:
+            - list [ref=e30]:
+              - link "Dashboard" [ref=e31] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e33]
+                - heading "Dashboard" [level=5] [ref=e39]
+            - list [ref=e40]:
+              - link "Orders" [ref=e41] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e43]
+                - paragraph [ref=e48]: Orders
+              - link "Customers" [ref=e49] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e51]
+                - paragraph [ref=e57]: Customers
+              - link "Products" [ref=e58] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e60]
+                - paragraph [ref=e65]: Products
+            - list [ref=e66]:
+              - link "Echo Inbox" [ref=e67] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e69]
+                - paragraph [ref=e72]: Echo Inbox
+          - list [ref=e73]:
+            - button [ref=e74] [cursor=pointer]:
+              - img [ref=e76]
+    - separator [ref=e79]
+    - generic [ref=e81]:
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - button [ref=e85] [cursor=pointer]:
+            - img [ref=e86]
+          - navigation "breadcrumb" [ref=e88]:
+            - list [ref=e89]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e90]: /
+              - listitem [ref=e91]:
+                - paragraph [ref=e92]: Dashboard
+        - generic [ref=e93]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e94] [cursor=pointer]:
+            - img [ref=e95]
+          - button "Notifications" [ref=e102] [cursor=pointer]:
+            - img [ref=e104]
+          - button "Edit Layout" [ref=e109] [cursor=pointer]:
+            - img [ref=e110]
+          - button "user-account" [ref=e113] [cursor=pointer]:
+            - img "User Avatar" [ref=e115]
+            - img [ref=e117]
+      - generic [ref=e121]:
+        - generic [ref=e124]:
+          - alert [ref=e126]:
+            - img [ref=e128]
+            - generic [ref=e130]:
+              - generic [ref=e131]: Welcome to SynchroFlow!
+              - text: Connect your data source to get started.
+            - button "Connect Store" [ref=e133] [cursor=pointer]
+          - generic [ref=e134]:
+            - heading "Welcome to SynchroFlow!" [level=5] [ref=e135]
+            - paragraph [ref=e136]: Connect your Shopify store to unlock powerful insights about your business.
+        - separator [ref=e137]
+  - generic [ref=e138]:
+    - img [ref=e140]
+    - button "Open Tanstack query devtools" [ref=e208] [cursor=pointer]:
+      - img [ref=e209]
+```

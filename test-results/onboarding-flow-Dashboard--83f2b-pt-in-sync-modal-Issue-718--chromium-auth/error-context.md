@@ -1,0 +1,90 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9] [cursor=pointer]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e28]:
+            - list [ref=e29]:
+              - link "Dashboard" [ref=e30] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e32]
+                - heading "Dashboard" [level=5] [ref=e38]
+            - list [ref=e39]:
+              - link "Orders" [ref=e40] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e42]
+                - paragraph [ref=e47]: Orders
+              - link "Customers" [ref=e48] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e50]
+                - paragraph [ref=e56]: Customers
+              - link "Products" [ref=e57] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e59]
+                - paragraph [ref=e64]: Products
+            - list [ref=e65]:
+              - link "Echo Inbox" [ref=e66] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e68]
+                - paragraph [ref=e71]: Echo Inbox
+          - list [ref=e72]:
+            - button [ref=e73] [cursor=pointer]:
+              - img [ref=e75]
+    - separator [ref=e78]
+    - generic [ref=e80]:
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - button [ref=e84] [cursor=pointer]:
+            - img [ref=e85]
+          - navigation "breadcrumb" [ref=e87]:
+            - list [ref=e88]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e89]: /
+              - listitem [ref=e90]:
+                - paragraph [ref=e91]: Dashboard
+        - generic [ref=e92]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e93] [cursor=pointer]:
+            - img [ref=e94]
+          - button "Notifications" [ref=e101] [cursor=pointer]:
+            - img [ref=e103]
+          - button "Edit Layout" [ref=e108] [cursor=pointer]:
+            - img [ref=e109]
+          - button "user-account" [ref=e112] [cursor=pointer]:
+            - img "User Avatar" [ref=e114]
+            - img [ref=e116]
+      - generic [ref=e120]:
+        - generic [ref=e124]:
+          - generic [ref=e126]:
+            - heading "Cash Flow" [level=3] [ref=e129]
+            - generic [ref=e133]:
+              - img [ref=e135]
+              - generic [ref=e137]:
+                - generic [ref=e138]: $0
+                - paragraph [ref=e139]: Today's Revenue
+          - generic [ref=e142]:
+            - heading "Inventory Alerts" [level=3] [ref=e145]
+            - generic [ref=e148]:
+              - paragraph
+          - generic [ref=e150]:
+            - heading "Order Metrics" [level=3] [ref=e153]
+            - paragraph [ref=e156]: No order data available
+          - generic [ref=e158]:
+            - heading "Top Selling Products" [level=3] [ref=e161]
+            - list [ref=e164]
+          - generic [ref=e166]:
+            - heading "Sales by Traffic Source" [level=3] [ref=e169]
+            - paragraph [ref=e172]: No traffic source data available
+        - separator [ref=e173]
+  - generic [ref=e174]:
+    - img [ref=e176]
+    - button "Open Tanstack query devtools" [ref=e224] [cursor=pointer]:
+      - img [ref=e225]
+```
