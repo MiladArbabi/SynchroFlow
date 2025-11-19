@@ -1,0 +1,127 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9] [cursor=pointer]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e28]:
+            - list [ref=e29]:
+              - link "Dashboard" [ref=e30] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e32]
+                - heading "Dashboard" [level=5] [ref=e38]
+            - list [ref=e39]:
+              - link "Orders" [ref=e40] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e42]
+                - paragraph [ref=e47]: Orders
+              - link "Customers" [ref=e48] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e50]
+                - paragraph [ref=e56]: Customers
+              - link "Products" [ref=e57] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e59]
+                - paragraph [ref=e64]: Products
+            - list [ref=e65]:
+              - link "Echo Inbox" [ref=e66] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e68]
+                - paragraph [ref=e71]: Echo Inbox
+          - list [ref=e72]:
+            - button [ref=e73] [cursor=pointer]:
+              - img [ref=e75]
+    - separator [ref=e78]
+    - generic [ref=e80]:
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - button [ref=e84] [cursor=pointer]:
+            - img [ref=e85]
+          - navigation "breadcrumb" [ref=e87]:
+            - list [ref=e88]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e89]: /
+              - listitem [ref=e90]:
+                - paragraph [ref=e91]: Dashboard
+        - generic [ref=e92]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e93] [cursor=pointer]:
+            - img [ref=e94]
+          - button "Notifications" [ref=e101] [cursor=pointer]:
+            - img [ref=e103]
+          - button "Edit Layout" [ref=e108] [cursor=pointer]:
+            - img [ref=e109]
+          - button "user-account" [ref=e112] [cursor=pointer]:
+            - img "User Avatar" [ref=e114]
+            - img [ref=e116]
+      - generic [ref=e120]:
+        - generic [ref=e124]:
+          - generic [ref=e126]:
+            - heading "Cash Flow" [level=3] [ref=e129]
+            - generic [ref=e132]:
+              - img [ref=e134]
+              - generic [ref=e136]:
+                - generic [ref=e137]: $125,000
+                - paragraph [ref=e138]: Today's Revenue
+          - generic [ref=e141]:
+            - heading "Inventory Alerts" [level=3] [ref=e144]
+            - generic [ref=e147]:
+              - generic [ref=e148]:
+                - paragraph [ref=e149]: Low Stock T-Shirt
+                - generic [ref=e151]: "Low: 5"
+              - generic [ref=e152]:
+                - paragraph [ref=e153]: Out of Stock Jeans
+                - generic [ref=e155]: Out of Stock
+            - generic [ref=e156]:
+              - paragraph
+          - generic [ref=e158]:
+            - heading "Order Metrics" [level=3] [ref=e161]
+            - generic [ref=e164]:
+              - generic [ref=e166]:
+                - heading "1460" [level=5] [ref=e167]
+                - text: Total Orders
+              - generic [ref=e169]:
+                - heading "$86" [level=5] [ref=e170]
+                - text: Avg. Order
+          - generic [ref=e172]:
+            - heading "Top Selling Products" [level=3] [ref=e175]
+            - list [ref=e178]:
+              - listitem [ref=e179]:
+                - img [ref=e181]
+                - generic [ref=e188]: Best-Seller Jacket
+                - generic [ref=e191]: 500 sold
+              - listitem [ref=e192]:
+                - generic [ref=e194]: "2"
+                - generic [ref=e196]: Popular Hat
+                - generic [ref=e199]: 350 sold
+          - generic [ref=e201]:
+            - heading "Sales by Traffic Source" [level=3] [ref=e204]
+            - generic [ref=e206]:
+              - generic [ref=e209]: "Top: google.com"
+              - list [ref=e210]:
+                - listitem [ref=e211]:
+                  - img [ref=e213]
+                  - img [ref=e217]
+                  - generic [ref=e220]:
+                    - paragraph [ref=e222]: google.com
+                    - paragraph [ref=e223]: 500 orders
+                  - paragraph [ref=e226]: $50,000
+                - listitem [ref=e227]:
+                  - img [ref=e229]
+                  - img [ref=e231]
+                  - generic [ref=e234]:
+                    - paragraph [ref=e236]: facebook.com
+                    - paragraph [ref=e237]: 300 orders
+                  - paragraph [ref=e240]: $25,000
+        - separator [ref=e241]
+  - generic [ref=e242]:
+    - img [ref=e244]
+    - button "Open Tanstack query devtools" [ref=e292] [cursor=pointer]:
+      - img [ref=e293]
+```
