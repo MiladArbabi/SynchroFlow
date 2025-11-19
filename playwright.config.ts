@@ -1,8 +1,6 @@
 // packages/ui/playwright.config.ts
 import { defineConfig, devices } from '@playwright/test';
 
-// ... (dotenv comments)
-
 const AUTH_FILE_PATH = 'playwright/.auth/user.json';
 
 export default defineConfig({

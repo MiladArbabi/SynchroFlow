@@ -2,48 +2,46 @@
 import { Page, expect } from '@playwright/test';
 import { TEST_USERS, TestUserKey } from './test-users';
 
-/**
- * A reusable utility to log in as a specific test user.
- * Assumes the page is not already logged in.
- */
-export async function loginAs(page: Page, userKey: TestUserKey) {
+export async function loginAs(page: Page, userKey: TestUserKey = 'default-user') {
   const user = TEST_USERS[userKey];
   if (!user) {
     throw new Error(`Test user '${userKey}' not found in test-users.ts`);
   }
 
-  // Start at the login page
+  // 1. Navigate directly to login page
+  console.log('🔗 Navigating to login page...');
   await page.goto('/login');
   
-  // Fill in credentials
+  // 2. Fill credentials using EXACT selectors from JWT AuthLogin component
+  console.log('📝 Filling login credentials...');
+
   await page.getByLabel('Email Address / Username').fill(user.email);
   await page.getByRole('textbox', { name: 'Password' }).fill(user.password);
   
-  // Click Sign In
+  // 3. Submit login form
+  console.log('🚀 Submitting login form...');
   await page.getByRole('button', { name: /Sign In/i }).click();
 
-  // Wait for the redirect to the dashboard
-  await page.waitForURL('**/dashboard');
-  
-  // Wait for the page to be fully loaded by checking multiple elements
-  // This is more robust than waiting for a single specific element
-  
-  // Wait for either the ConnectStoreBanner OR dashboard content to be visible
-  const connectStoreBanner = page.locator('[data-testid="connect-store-banner"]');
-  const dashboardContent = page.locator('h3:has-text("Your Dashboard")');
-  
-  // Use a loop to check for either element with a timeout
-  const startTime = Date.now();
-  const timeout = 10000;
-  
-  while (Date.now() - startTime < timeout) {
-    if (await connectStoreBanner.isVisible() || await dashboardContent.isVisible()) {
-      console.log('✅ Dashboard loaded successfully');
-      return;
+  // 5. Wait for dashboard redirect with better error handling
+  console.log('⏳ Waiting for dashboard redirect...');
+  try {
+    await page.waitForURL('**/dashboard');
+    console.log('✅ Login successful - redirected to dashboard');
+  } catch (error) {
+    // Check if login failed with error message
+    const errorElement = page.locator('[role="alert"], .MuiFormHelperText-error');
+    if (await errorElement.isVisible()) {
+      const errorText = await errorElement.textContent();
+      throw new Error(`Login failed with error: ${errorText}`);
     }
-    await page.waitForTimeout(100); // Small delay between checks
+    
+    // Take screenshot for debugging
+    await page.screenshot({ path: 'login-failure.png' });
+    throw new Error(`Login failed - stuck on URL: ${page.url()}`);
   }
   
-  // If we get here, neither element was found within timeout
-  throw new Error('Dashboard did not load within expected time');
+  // 6. Verify dashboard is loaded
+  console.log('🔍 Verifying dashboard...');
+  await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible({ timeout: 10000 });
+  console.log('✅ Dashboard loaded successfully');
 }

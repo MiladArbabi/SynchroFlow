@@ -205,6 +205,7 @@ export const CashFlowSnapshotWidget: React.FC<CashFlowWidgetProps> = (props) => 
  // Render without CoachTrigger for backward compatibility in tests
  if (!insightId) {
    return (
+    <Box data-testid="widget-shell-cash-flow">
      <CashFlowWidgetContent
        {...shellProps}
        currentValue={currentValue}
@@ -214,44 +215,47 @@ export const CashFlowSnapshotWidget: React.FC<CashFlowWidgetProps> = (props) => 
        isEmpty={isEmpty}
        error={error?.message}
      />
+    </Box>
    );
  }
 
   return (
-    <CoachTrigger
-     insightId={insightId}
-     tactic="Cash Flow Optimization"
-     successMetrics={["Cash Flow", "Working Capital"]}
-     estimatedImpact="$5,000-$15,000 monthly improvement"
-     onFeedback={onFeedback}
-     feedbackEnabled={true}
-   >
-    <CashFlowWidgetContent
-      {...shellProps}
-      currentValue={currentValue}
-      previousValue={previousValue}
-      format="currency"
-      isLoading={isLoading}
-      isEmpty={isEmpty}
-      error={error?.message}
-      // Enhanced with 4 C's context
-       businessContext={{
-         stage: currentValue < 0 ? 'survival' : 'growth',
-         burningPriority: 'cash-flow',
-         revenueBand: getRevenueBand(currentValue),
-       }}
-       intelligenceLevel="L3"
-       insightText={insight.causation}
-       insightSeverity={insight.severity}
-       primaryAction={{
-         label: "View Cash Flow Plan",
-         onClick: () => console.log("Navigate to cash flow optimization"),
-         variant: 'primary' as const,
-         workflowType: 'cash-optimization',
-         expectedImpact: 'high',
-         timeToComplete: 'minutes'
-       }}
-    />
-    </CoachTrigger>
+    <Box data-testid="widget-shell-cash-flow">
+      <CoachTrigger
+      insightId={insightId}
+      tactic="Cash Flow Optimization"
+      successMetrics={["Cash Flow", "Working Capital"]}
+      estimatedImpact="$5,000-$15,000 monthly improvement"
+      onFeedback={onFeedback}
+      feedbackEnabled={true}
+    >
+      <CashFlowWidgetContent
+        {...shellProps}
+        currentValue={currentValue}
+        previousValue={previousValue}
+        format="currency"
+        isLoading={isLoading}
+        isEmpty={isEmpty}
+        error={error?.message}
+        // Enhanced with 4 C's context
+        businessContext={{
+          stage: currentValue < 0 ? 'survival' : 'growth',
+          burningPriority: 'cash-flow',
+          revenueBand: getRevenueBand(currentValue),
+        }}
+        intelligenceLevel="L3"
+        insightText={insight.causation}
+        insightSeverity={insight.severity}
+        primaryAction={{
+          label: "View Cash Flow Plan",
+          onClick: () => console.log("Navigate to cash flow optimization"),
+          variant: 'primary' as const,
+          workflowType: 'cash-optimization',
+          expectedImpact: 'high',
+          timeToComplete: 'minutes'
+        }}
+      />
+      </CoachTrigger>
+    </Box>  
   );
 };
