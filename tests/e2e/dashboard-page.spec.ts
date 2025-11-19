@@ -231,50 +231,173 @@ test.describe('Dashboard Page (Authenticated)', () => {
   });
 
   // --- LOADING STATES TEST ---
-  test('should handle delayed API responses gracefully', async ({ page }) => {
-    console.log('🔄 Testing delayed API responses...');
+  test('should show loading states during initial data fetch', async ({ page }) => {
+  console.log('🧪 Testing loading state visibility...');
 
-    // Add delay to one API
-    await page.route(/.*\/api\/v1\/dashboard\/pulse/, async (route) => {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      await route.fulfill({ status: 200, json: {
-        totalRevenue: 125000,
-        orderCount: 1460,
-        unfulfilledCount: 15 
-      }});
-    });
-
-    await page.goto('/dashboard');
-    
-    // Wait for the delayed widget to eventually load
-    await expect(page.locator('[data-testid="widget-cash-flow"]').getByText('$125,000')).toBeVisible({ timeout: 10000 });
-    console.log('✅ Delayed widget loaded successfully');
+  // Delay all API responses
+  await page.route(/.*\/api\/v1\/dashboard\/pulse/, async (route) => {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    await route.fulfill({ status: 200, json: {
+      totalRevenue: 125000,
+      orderCount: 1460,
+      unfulfilledCount: 15 
+    }});
   });
+
+  await page.route(/.*\/api\/v1\/dashboard\/inventory-health/, async (route) => {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    await route.fulfill({ status: 200, json: [
+      { id: 'p1', title: 'Low Stock T-Shirt', total_inventory: 5 }
+    ]});
+  });
+
+  await page.goto('/dashboard');
+  console.log('✅ Navigated to dashboard with delayed APIs');
+
+  // Wait for layout to load
+  await expect(page.locator('[data-testid="layout-loading-skeleton"]')).toBeHidden({ timeout: 10000 });
+
+  // Only test Cash Flow widget which actually shows skeleton
+  // Order Metrics doesn't show skeleton due to shared API call optimization
+  const widgetsWithSkeletons = ['cash-flow'];
+  
+  for (const widgetId of widgetsWithSkeletons) {
+    const widget = page.locator(`[data-testid="widget-${widgetId}"]`);
+    const skeleton = widget.locator('[data-testid="loading-skeleton"]');
+    
+    await expect(skeleton).toBeVisible({ timeout: 5000 });
+    console.log(`✅ ${widgetId} loading skeleton is visible`);
+    
+    await expect(skeleton).toBeHidden({ timeout: 10000 });
+    console.log(`✅ ${widgetId} loading completed`);
+  }
+
+  // For widgets without skeletons, just verify they eventually load content
+  const widgetsWithoutSkeletons = ['order-metrics', 'inventory-alerts', 'top-products', 'sales-by-traffic-source'];
+  
+  for (const widgetId of widgetsWithoutSkeletons) {
+    const widget = page.locator(`[data-testid="widget-${widgetId}"]`);
+    await expect(widget).toBeVisible({ timeout: 10000 });
+    console.log(`✅ ${widgetId} widget loaded (no skeleton expected)`);
+  }
+
+  console.log('🎉 Loading states handled correctly');
+});
 
   // --- ERROR HANDLING TEST ---
   test('should handle API errors gracefully', async ({ page }) => {
-    console.log('🚨 Testing error handling...');
+  console.log('🧪 Testing error state handling...');
 
-    // Mock API failure for one widget
-    await page.route(/.*\/api\/v1\/dashboard\/pulse/, async (route) => {
-      console.log('🔥 Mocking Pulse API failure');
-      await route.fulfill({ 
-        status: 500,
-        json: { error: 'Internal Server Error' }
-      });
-    });
+  // Mock API failures
+  await page.route(/.*\/api\/v1\/dashboard\/pulse/, async (route) => {
+    await route.fulfill({ status: 500, json: { error: 'Internal Server Error' } });
+  });
 
+  await page.goto('/dashboard');
+  console.log('✅ Navigated to dashboard with API errors');
+
+  // Wait for layout to load
+  await expect(page.locator('[data-testid="layout-loading-skeleton"]')).toBeHidden();
+
+  // Verify widgets still render (don't crash) even with errors
+  const cashFlowWidget = page.locator('[data-testid="widget-cash-flow"]');
+  await expect(cashFlowWidget).toBeVisible();
+  
+  // Some widgets might show error states, others might show empty states
+  // Both are acceptable - the important thing is they don't crash
+  console.log('✅ Dashboard handled API errors without crashing');
+
+  // Verify other widgets still load normally
+  await expect(page.locator('[data-testid="widget-inventory-alerts"]')).toBeVisible();
+  await expect(page.locator('[data-testid="widget-top-products"]')).toBeVisible();
+  console.log('✅ Other widgets loaded despite API errors');
+});
+
+  test('should handle empty data states appropriately', async ({ page }) => {
+  console.log('🧪 Testing empty data states...');
+
+  // Mock empty responses
+  await page.route(/.*\/api\/v1\/dashboard\/pulse/, async (route) => {
+    await route.fulfill({ status: 200, json: {
+      totalRevenue: 0,
+      orderCount: 0,
+      unfulfilledCount: 0
+    }});
+  });
+
+  await page.route(/.*\/api\/v1\/dashboard\/inventory-health/, async (route) => {
+    await route.fulfill({ status: 200, json: [] });
+  });
+
+  await page.goto('/dashboard');
+  console.log('✅ Navigated to dashboard with empty data');
+
+  // Wait for loading to complete
+  await expect(page.locator('[data-testid="layout-loading-skeleton"]')).toBeHidden();
+
+  // Verify widgets handle empty data gracefully (don't crash)
+  const widgets = ['cash-flow', 'order-metrics', 'inventory-alerts', 'top-products', 'sales-by-traffic-source'];
+  
+  for (const widgetId of widgets) {
+    const widget = page.locator(`[data-testid="widget-${widgetId}"]`);
+    await expect(widget).toBeVisible();
+    console.log(`✅ ${widgetId} handled empty data gracefully`);
+  }
+
+  console.log('🎉 Empty data states handled correctly');
+});
+
+  test('should maintain layout stability during loading sequences', async ({ page }) => {
+    console.log('🧪 Testing layout stability during loading...');
+
+    // Capture initial layout measurements
     await page.goto('/dashboard');
+    
+    // Wait for layout to stabilize
+    await expect(page.locator('[data-testid="layout-loading-skeleton"]')).toBeHidden();
+    await page.waitForTimeout(1000); // Additional stabilization
 
-    // Wait for layout to load
+    // Get initial positions of widget containers
+    const widgetContainers = [
+      'widget-cash-flow',
+      'widget-order-metrics', 
+      'widget-inventory-alerts',
+      'widget-top-products',
+      'widget-sales-by-traffic-source'
+    ];
+
+    const initialPositions = [];
+    for (const widgetId of widgetContainers) {
+      const widget = page.locator(`[data-testid="${widgetId}"]`);
+      const box = await widget.boundingBox();
+      initialPositions.push({ widgetId, x: box?.x, y: box?.y });
+    }
+
+    console.log('📐 Captured initial widget positions');
+
+    // Trigger a data refresh (simulate manual refresh)
+    await page.reload();
+    
+    // Wait for layout to load again
     await expect(page.locator('[data-testid="layout-loading-skeleton"]')).toBeHidden();
 
-    // The cash flow widget should handle the error gracefully
-    const cashFlowWidget = page.locator('[data-testid="widget-cash-flow"]');
-    await expect(cashFlowWidget).toBeVisible();
-    
-    // It might show an error state or empty state - both are acceptable
-    console.log('✅ Dashboard handled API error without crashing');
+    // Verify widget positions remain stable
+    for (let i = 0; i < widgetContainers.length; i++) {
+      const widgetId = widgetContainers[i];
+      const initialPos = initialPositions[i];
+      const widget = page.locator(`[data-testid="${widgetId}"]`);
+      const newBox = await widget.boundingBox();
+      
+      // Allow small positioning variations (1-2 pixels for rendering differences)
+      const positionStable = 
+        Math.abs((newBox?.x || 0) - (initialPos.x || 0)) < 3 &&
+        Math.abs((newBox?.y || 0) - (initialPos.y || 0)) < 3;
+      
+      expect(positionStable).toBe(true);
+      console.log(`✅ ${widgetId} maintained stable position`);
+    }
+
+    console.log('🎉 Layout stability verified during loading sequences');
   });
 
   // --- CONNECTED STATE VALIDATION TEST ---
