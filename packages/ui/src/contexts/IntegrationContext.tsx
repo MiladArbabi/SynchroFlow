@@ -9,7 +9,14 @@ import { useAuth } from './AuthContext'; // We need auth state
 // --- Define State Shape ---
 // This is the shape of the data from our new API endpoint
 interface SyncStatus {
-  status: 'PENDING' | 'SYNCING_PRODUCTS' | 'SYNCING_ORDERS' | 'SYNCING_FINANCES' | 'COMPLETED' | 'FAILED' | 'NOT_FOUND';
+  status: 
+  'PENDING' |
+  'SYNCING_PRODUCTS' |
+  'SYNCING_CUSTOMERS' |
+  'COMPLETED' |
+  'FAILED' |
+  'NOT_FOUND';
+
   progress: {
     current: number;
     total: number;

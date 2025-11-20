@@ -21,7 +21,7 @@ import Check from '@mui/icons-material/Check';
 import { useIntegration } from 'contexts/IntegrationContext';
 
 // Define the steps
-const steps = ['Products', 'Orders', 'Finances', 'Completed'];
+const steps = ['Products', 'Customers', 'Completed'];
 
 // Custom Step Icon styling
 const StepIconRoot = styled('div')<{
@@ -67,13 +67,7 @@ interface DataSyncingModalProps {
   onClose: () => void;
 }
 
-
 export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClose }) => {
-
-  // --- [START] GUT THE LIE ---
-  // const [activeStep, setActiveStep] = useState(0); // REMOVED
-
-  // --- [START] USE THE TRUTH ---
   const { syncStatus, progress } = useIntegration();
 
   // Map the real API status to the stepper's activeStep
@@ -81,14 +75,12 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
     switch (syncStatus) {
       case 'SYNCING_PRODUCTS':
         return 0;
-      case 'SYNCING_ORDERS':
+      case 'SYNCING_CUSTOMERS':
         return 1;
-      case 'SYNCING_FINANCES':
-        return 2;
       case 'COMPLETED':
-        return 3;
+        return 2;
       default:
-        return 0; // Default to the first step
+        return 0;
     }
   }, [syncStatus]);
 
@@ -105,10 +97,16 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
   return (
     // We disable backdrop click and escape key to make it a celebratory "moment"
     <Dialog open={open} disableEscapeKeyDown={true} fullWidth maxWidth="sm">
-      <DialogTitle>
-        <Typography variant="h3" align="center" gutterBottom sx={{ mt: 2 }}>
-          Connection Successful!
-        </Typography>
+      {/* FIXED: Remove Typography wrapper to avoid hydration error */}
+      <DialogTitle 
+        component="div" 
+        sx={{ 
+          textAlign: 'center', 
+          mt: 2,
+          typography: 'h4' // Apply h4 styling without nesting headings
+        }}
+      >
+        Connection Successful!
       </DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}>
         <Typography variant="body1" align="center" sx={{ mb: 4 }}>

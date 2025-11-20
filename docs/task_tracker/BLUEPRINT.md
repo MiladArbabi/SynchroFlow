@@ -6,12 +6,14 @@
 The ACI Platform represents a fundamental evolution from passive analytics to active intelligence. We're not building another dashboard; we're creating a **"Digital Chief of Staff"** for e-commerce operators that learns, adapts, and orchestrates business operations autonomously.
 
 ### **1.2 Core Value Proposition**
+**For Free Tier:** "The market's best free analytics - no setup, no confusion, just answers"
 - **For Survival Mode:** "Stop guessing if you're profitable"
 - **For Growth Mode:** "Systematically scale with confidence"  
 - **For Architect Mode:** "Build a self-optimizing commerce machine"
 
 ### **1.3 The Ultimate Vision**
 A platform that begins as an analytics tool and evolves into an autonomous operating system that anticipates needs, executes workflows, and continuously improves its own intelligence through user interaction.
+**Free Plan Vision:** Create an unbeatable free experience that dominates e-commerce analytics acquisition while driving high-value conversions through demonstrated ROI.
 
 ---
 
@@ -25,8 +27,10 @@ A platform that begins as an analytics tool and evolves into an autonomous opera
 - **Reasoning Engine:** Explains "why" behind every insight
 - **Prediction Models:** Forecast trends and outcomes
 - **Pattern Recognition:** Identifies opportunities and risks
+**Free Tier Intelligence:** Hyper-focused survival insights with strategic teasers
 
 **Key Innovation:** Widgets are not static displays; they're conversational interfaces that understand user context.
+**Free Tier Innovation:** Immediate value delivery in <3 seconds, beating GA4 complexity
 
 ### **2.2 Layer 2: Operations Layer (The "Muscle")**
 **Purpose:** Execute → Orchestrate → Report
@@ -68,6 +72,7 @@ A platform that begins as an analytics tool and evolves into an autonomous opera
 
 | Mode | ARR Range | Primary Question | UX Mantra | Cognitive Load |
 |------|-----------|------------------|-----------|----------------|
+| **Free Tier** | $0 | "Am I okay?" | Instant Value, Zero Setup | < 3 seconds |
 | **Survival** | $1K-$100K | "Am I okay?" | At-a-Glance Confidence | < 3 seconds |
 | **Growth** | $100K-$1M | "How do I go faster?" | Surface Levers, Predict Outcomes | < 10 seconds |
 | **Architect** | $1M-$10M | "Is this system sustainable?" | Orchestrate Systems, Automate Workflows | < 30 seconds |
@@ -79,6 +84,8 @@ A platform that begins as an analytics tool and evolves into an autonomous opera
 **Survival → Growth Trigger:** 
 - "You're tracking 500+ visitors/month - unlock conversion analytics"
 - **Widget Teaser:** Blurred conversion rates in traffic sources
+**Free Tier Enhancement:** "GA4-beating simplicity - no setup, immediate insights"
+**Viral Trigger:** "Share your daily health report - unlock extra widget"
 
 **Growth → Architect Trigger:**
 - "You're processing $50K+/month - unlock profit tracking and WMS"
@@ -233,12 +240,15 @@ context:
   primary_question: "What is the user trying to answer?"
   time_to_understanding: "< 3s"
   data_priority: "critical|important|nice_to_have"
+  free_tier: true|false
+  teaser_strategy: "blurred|limited|temporary"
 ```
 
 ### **4.2 Causation Requirements**
 **Requirement:** Provide root-cause analysis, not just data points.
 
 **Implementation Patterns:**
+- **Free Tier:** "Why this happened" explanations with confidence scoring
 - **Survival:** Simple comparators ("vs. yesterday", "vs. last week")
 - **Growth:** Funnel analysis with drop-off highlighting
 - **Architect:** Multi-variable correlation analysis
@@ -251,6 +261,7 @@ context:
 2. **Simulate** (ActionTrigger) → Test the impact
 3. **Execute** (AutomationTrigger) → Implement the change
 4. **Orchestrate** (OrchestrationTrigger) → Coordinate the team
+4. **Free Tier Limits:** Full Learn access, limited Simulate (3/month), teased Execute/Orchestrate
 
 ### **4.4 Closed Loop Feedback**
 **Requirement:** Every interaction must teach the system.
@@ -462,6 +473,17 @@ Calibration = 1 - |(Predicted Accuracy - Actual Accuracy)|
 - Implement basic feedback collection
 - Create seamless onboarding flow
 - **Key Deliverable:** Best-in-class free dashboard
+**Enhanced Focus:** Market-dominating free plan with GA4-beating simplicity
+**Competitive Angle:** "Setup in 2 minutes, insights in 3 seconds - beats GA4 complexity"
+
+### **Phase 1.5: Data Distribution Infrastructure (Months 3-4)**
+ **Focus:** Bridge Intelligence Layer to initial Operations Layer
+  - Extend Shopify integration to populate Orders/Customers/Products pages
+ - Implement core API endpoints with 4 C's compliance
+ - Add strategic TeaserTriggers for Growth features
+ - Deploy confidence indicators and viral sharing features
+ - **Key Deliverable:** Complete data flow from dashboard to operational pages
+ - **Business Impact:** Transform free plan from dashboard-only to comprehensive operational intelligence
 
 ### **Phase 2: Growth Engine (Months 4-6)**  
 **Focus:** Launch Spark Plan Intelligence
@@ -469,6 +491,8 @@ Calibration = 1 - |(Predicted Accuracy - Actual Accuracy)|
 - Implement interactive simulators
 - Develop sophisticated upgrade paths
 - **Key Deliverable:** Mass-market $99/month conversion machine
+**Enhanced Focus:** Leverage Phase 1.5 data foundation for advanced conversion analytics
+**Conversion Driver:** "You're leaving $X/month on the table - unlock conversion optimization"
 
 ### **Phase 3: Platform Expansion (Months 7-12)**
 **Focus:** Launch Ignition Plan with WMS-lite
@@ -592,22 +616,31 @@ const ProfitMarginWidget = ({ products, userProfile }) => {
 2. **Workflow MoAT:** Once automated workflows are embedded, switching costs become prohibitive  
 3. **Learning MoAT:** Continuous adaptation creates personalized value competitors cannot match
 4. **Trust MoAT:** Governance layer enables enterprise adoption at scale
+5. **Free Tier MoAT:** Unbeatable free experience that dominates acquisition and builds conversion funnel
+6. **Viral MoAT:** Shareable insights and referral engines drive organic growth
 
 ### **9.2 Revenue Projections**
 
 | Plan | Target Customers | Price | Projected Penetration | Revenue Contribution |
 |------|------------------|-------|----------------------|---------------------|
 | Starter | Top-of-funnel | $0 | 100% of signups | 0% (Acquisition) |
+| Starter Enhanced | Active free users | $0 | 80% weekly active | Acquisition engine |
 | Spark | Growth phase | $99 | 40% of paying | 20% of revenue |
 | Ignition | Scaling phase | $349 | 35% of paying | 50% of revenue |
 | Clarity+ | Enterprise | $799+ | 25% of paying | 80% of revenue |
+**Enhanced Metrics:**
+ - Free user activation: >40% (using platform weekly)
+ - Free to paid conversion: 25% within 90 days
+ - Viral coefficient: >0.5 through shareable insights
 
 ### **9.3 Platform Evolution Strategy**
 
 **Year 1:** Dominate analytics → Best free dashboard + growth insights
+**Enhanced:** "Market's best free analytics with operational data access"
 **Year 2:** Expand to operations → WMS-lite captures workflow  
 **Year 3:** Platform consolidation → Replace multiple tools
 **Year 4+:** Autonomous operations → Become indispensable operating system
+**Free Plan Evolution:** From survival dashboard to comprehensive operational intelligence
 
 ---
 
@@ -616,6 +649,8 @@ const ProfitMarginWidget = ({ products, userProfile }) => {
 We are building more than software. We're creating an **adaptive intelligence** that grows with our customers, learns from their behavior, and ultimately becomes the central nervous system of their commerce operations.
 
 The ACI Platform doesn't just report on the business—it actively helps run it. From the Survival-mode entrepreneur wondering if they'll make payroll to the Enterprise operator managing a $50M brand, every user interacts with a system that understands their context, respects their cognitive load, and accelerates their path to success.
+
+**The Free Plan Advantage:** Our market-dominating free tier ensures we acquire users at scale while delivering immediate value that creates unstoppable upgrade momentum. By combining GA4-beating simplicity with operational data access, we create an acquisition engine that fuels our entire growth strategy.
 
 This blueprint provides the complete architecture to execute on that vision, with clear principles, scalable engineering patterns, and a phased roadmap that transforms ambitious vision into shippable reality.
   action: 'accepted' | 'dismissed' | 'ignored';

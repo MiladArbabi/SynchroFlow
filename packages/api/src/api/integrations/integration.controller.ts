@@ -87,7 +87,7 @@ export const initiateOAuth = (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing required query param: shop' });
     }
     const shopifyApiKey = process.env.SHOPIFY_API_KEY;
-    const scopes = 'read_products,read_orders,read_inventory,read_payouts,read_fulfillments';
+    const scopes = 'read_products,read_orders,read_customers,read_inventory,read_payouts,read_fulfillments';
 
     // NORMALIZE the shop domain to ensure correct format
     const shopDomain = normalizeShopDomain(shop);

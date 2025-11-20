@@ -1,4 +1,4 @@
-# ACI Platform Roadmap & Task Tracker (v2.3)
+# ACI Platform Roadmap & Task Tracker (v2.4)
 **Vision:** Evolve from a passive dashboard into an active, "Digital Chief of Staff."
 **Source of Truth:** [ACI Comprehensive Blueprint](./BLUEPRINT.md)
 **Log of Achievements:** [CHANGELOG](../CHANGELOG.md)
@@ -6,11 +6,11 @@
 ---
 
 ## Progress Summary
-- **Phases:** 6
-- **Total Issues Logged:** 47 (15 new, 32 migrated)
-- **Completed:** 17/47 (36%)
-- **Blocked:** 1/47 (2%)
-- **Remaining:** 30/47 (64%)
+- **Phases:** 6 + **Phase 1.5 Bridge** (ACTIVE)
+- **Total Issues Logged:** 62 → **48** (corrected to actual issue count)
+- **Completed:** 20/48 (42%)
+- **Blocked:** 1/48 (2%)
+- **Remaining:** 27/48 (56%)
 
 ---
 
@@ -20,18 +20,17 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 2.  **Causation:** Does it explain "why" (not just "what")?
 3.  **Clear Path Forward:** Does it have a `CoachTrigger`, `AutomationTrigger`, etc.?
 4.  **Closed Loop:** Does the system learn from the user's interaction?
+**Free Tier Compliance:** Does it demonstrate clear upgrade value through strategic teasers?
 
 ---
 
 ## Phase 1: Foundation (Survival Mode)
 **Focus:** Perfect the "Survival Mode" Intelligence Layer.
 **Key Deliverable:** Best-in-class free dashboard that meets the 4 C's standard.
+**Enhanced Deliverable:** Market-dominating free analytics with GA4-beating simplicity
 
-### ✅ Phase 1 Completed (19 Issues)
+### ✅ Phase 1 Completed (**21 Issues**) 🎉
 * **#616:** Flaky E2E Authentication
-- **Refactor:** Replaced brittle `networkidle` and ID-based selectors with robust `waitForURL` and accessibility locators in `login.ts`.
-- **Enhancement:** Updated `auth.spec.ts` to mock 4 C's widget data, verifying the Intelligence Layer rendering in E2E.
-- **Stability:** Test suite now passes consistently in 20s."
 * **#790:** SalesByTrafficSourceWidget retrofitted to 4 C's framework - All 5 starter widgets now meet the 4 C's standard (Context, Causation, Clear Path Forward, Closed Loop)"
 * **#789:** Build Feedback Processing System (v1) 
 * **#788:** Build `CoachTrigger` Component|
@@ -40,11 +39,12 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 * **#728:** Test API endpoints return expected data shapes
 * **#729:** Confirm authentication flow works end-to-end
 * **#730:** Validate environment variables and configuration
-* **#731:** Write critical path E2E test (Dashboard Happy Path)
-* **#732:** Verify widget loading states (skeletons)
-* **#733:** Test API error scenarios and error boundaries
+* **#731:** Write critical path E2E test (Dashboard Happy Path) ✅ **COMPLETED**
+* **#732:** Verify widget loading states (skeletons) ✅ **COMPLETED**
+* **#733:** Test API error scenarios and error boundaries ✅ **COMPLETED**
 * **#734:** Confirm emotional status borders change appropriately
 * **#736:** Test EnhancedWidgetShell with real API data
+* **#737:** Test Loading State Layout Stability ✅ **COMPLETED**
 * **#749:** Implement MVP User State System
 * **#762:** Implement Cost-Effective Widget Registry System
 * **#763:** Build 5 Starter Plan widgets (Data/Context Layer)
@@ -55,16 +55,18 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 
 ### 🎯 E2E Testing Strategy - Phase 1 Focus
 
-#### ✅ **CORE TESTS STABLE**
+#### ✅ **CORE TESTS STABLE - 19/19 TESTS PASSING**
 - **Authentication Flow** (`auth.spec.ts`, `auth.setup.spec.ts`) - Fully operational
 - **Dashboard Widget Loading** - Core functionality verified
 - **Critical Path Coverage** - Main user journeys tested
+- **Loading State Tests** - Skeleton screens, error boundaries ✅ **COMPLETED**
+- **Layout Stability** - Prevent layout shifts during loading ✅ **COMPLETED**
 
-#### 🚨 **HIGH PRIORITY - WEEK 1**
+#### ✅ **WEEK 1 COMPLETED**
 | ID | Task | Status | Timeline |
 | --- | --- | --- | --- |
-| **#732** | **[P1]** Add Widget Loading State Tests | 🎯 **WEEK 1** | Skeleton screens, error boundaries |
-| **#737** | **[P1]** Test Loading State Layout Stability | 🎯 **WEEK 1** | Prevent layout shifts during loading |
+| **#732** | **[P1]** Add Widget Loading State Tests | ✅ **COMPLETED** | Skeleton screens, error boundaries |
+| **#737** | **[P1]** Test Loading State Layout Stability | ✅ **COMPLETED** | Prevent layout shifts during loading |
 
 #### ⚡ **MEDIUM PRIORITY - WEEK 2**
 | ID | Task | Status | Timeline |
@@ -100,9 +102,33 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 
 ---
 
+## 🚧 Phase 1.5: Data Distribution & Free Tier Enhancement (CURRENT FOCUS)
+**Focus:** Activate the "Muscle" (Operations Layer). Ensure Sidenav pages (Orders, Customers, etc.) receive real data.
+**Key Deliverable:** Fully functional list and detail views for core commerce entities.
+**Enhanced Focus:** Bridge Intelligence Layer to Operations Layer with market-dominating free features
+**Business Impact:** Transform free plan from dashboard-only to comprehensive operational intelligence
+
+| ID | Task | Status | Details |
+| --- | --- | --- | --- |
+| **#804** | **[Epic]** Phase 1.5: Core Data Distribution | ⏳ **PENDING** | **[Current Goal]** |
+| **#805** | Build `/api/v1/orders` pipeline | ⏳ **PENDING** | For OrdersPage/Order360 |
+| **#806** | Build `/api/v1/customers` pipeline | ⏳ **PENDING** | **[Next Up]** For CustomersPage |
+| **#807** | Build `/api/v1/products` pipeline | ⏳ **PENDING** | For ProductsPage |
+| **#808** | Build Echo Hub data pipeline | ⏳ **PENDING** | For Echo Hub |
+**#809** | **[NEW]** Implement Confidence Indicators in Free Tier | ⏳ **PENDING** | Build trust with accuracy scoring |
+**#810** | **[NEW]** Implement Free-Tier Action Hierarchy | ⏳ **PENDING** | Learn (full) → Simulate (limited) → Tease Execute |
+**#811** | **[NEW]** Add Viral Sharing Features | ⏳ **PENDING** | Share insights, referral bonuses |
+**#812** | **[NEW]** Implement Strategic TeaserTriggers | ⏳ **PENDING** | Blurred conversion rates, growth features |
+**#813** | **[NEW]** Enhance Starter Widgets with GA4-Beating Simplicity | ⏳ **PENDING** | Comparators, one-click explanations |
+**#814** | **[NEW]** Add Free Tier Metrics Dashboard | ⏳ **PENDING** | Track activation, conversion, viral coefficient |
+
+---
+
 ## Phase 2: Growth Engine (Spark Plan)
 **Focus:** Launch "Growth Mode" Intelligence Layer.
 **Key Deliverable:** $99/month conversion-focused plan.
+**Enhanced Foundation:** Now builds on complete Phase 1.5 data distribution
+**Conversion Advantage:** Leverages proven free tier engagement for higher conversion rates
 
 ### ⏳ Phase 2 Backlog (Pending)
 | ID | Task | Status | Details |
@@ -111,18 +137,24 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 | **#792** | Build Interactive Simulators (L2) | ⏳ **BACKLOG** | (Blueprint 2.1, 4.3) |
 | **#793** | Build `ConversionTrackerWidget` (4 C's) | ⏳ **BACKLOG** | (Re-scopes #767) |
 | **#794** | Build `AOVWidget` & `CLVWidget` (4 C's) | ⏳ **BACKLOG** | (Re-scopes #767) |
+**#815** | **[NEW]** Enhanced Conversion Analytics | ⏳ **BACKLOG** | Builds on Phase 1.5 customer/order data |
+**#816** | **[NEW]** Advanced Personalization Features | ⏳ **BACKLOG** | Leverages free tier learning data |
+**#809** | Refactor: Move Widget Insight Logic to Backend API | ⏳ **PENDING** | (Phase 2 prep) |
 | **(#708)**| EPIC-004: 'Growth Tier' (Phase 2) | ⏳ **BACKLOG** | (Legacy Epic) |
 
 #### 🔮 **E2E Testing Strategy - Phase 2 Focus**
 - **Paid Feature Gates** - Spark plan conversion flows
 - **Interactive Simulators** - L2 simulation interactions
 - **Advanced Widget Testing** - ConversionTracker, AOV, CLV widgets
+- **Enhanced Testing:** Now includes testing upgrade flows from enhanced free tier
 
 ---
 
 ## Phase 3: Platform Expansion (Ignition Plan)
 **Focus:** Launch "Architect Mode" with WMS-lite (Operations Layer L2).
 **Key Deliverable:** $349/month "spreadsheet replacement."
+**Data Advantage:** Now builds on complete operational data foundation from Phase 1.5
+**Trust Advantage:** Leverages free tier confidence indicators and user trust
 
 ### ⏳ Phase 3 Backlog (Pending)
 | ID | Task | Status | Details |
@@ -131,6 +163,7 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 | **#796** | Build WMS-lite (PO, Receiving, Pick Lists) | ⏳ **BACKLOG** | (Operations Layer L2) |
 | **#797** | Build `AutomationTrigger` Component | ⏳ **BACKLOG** | (Blueprint 5.2) |
 | **#748** | Build `GMROIWidget` (4 C's) | ⏳ **BACKLOG** | (Legacy P4, re-scoped) |
+**#817** | **[NEW]** Enhanced WMS-lite Integration | ⏳ **BACKLOG** | Builds on Phase 1.5 product/inventory data |
 | **(#709)**| EPIC-005: 'Architect Tier' (Phase 3) | ⏳ **BACKLOG** | (Legacy Epic) |
 
 #### 🔮 **E2E Testing Strategy - Phase 3 Focus**
@@ -143,6 +176,8 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 ## Phase 4: Enterprise Scale (Clarity Plan)
 **Focus:** Launch Echo Hub (L2) & Governance Layer (L4).
 **Key Deliverable:** $799/month "frankenstack consolidation."
+**Adoption Advantage:** Free tier viral features create enterprise awareness
+**Trust Foundation:** Governance builds on free tier confidence indicators
 
 ### ⏳ Phase 4 Backlog (Pending)
 | ID | Task | Status | Details |
@@ -151,11 +186,34 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 | **#799** | Build `OrchestrationTrigger` Component | ⏳ **BACKLOG** | (Blueprint 5.2) |
 | **#800** | Build `ApprovalTrigger` Component | ⏳ **BACKLOG** | (Blueprint 5.3) |
 | **#801** | Build `ConfidenceIndicator` Component | ⏳ **BACKLOG** | (Blueprint 5.3) |
+| **#818** | **[NEW]** Enhanced Enterprise Features | ⏳ **BACKLOG** | Builds on viral free tier network effects |
 
 #### 🔮 **E2E Testing Strategy - Phase 4 Focus**
 - **Team Orchestration** - Echo Hub collaboration flows
 - **Governance Layer** - Approval workflows, confidence indicators
 - **Enterprise Integration** - Multi-user, permission testing
+
+---
+
+## 🎯 New Success Metrics for Enhanced Free Tier
+ 
+ ### **Free Tier Health Dashboard**
+ ```typescript
+ interface FreeTierMetrics {
+   activationRate: number; // >40% using weekly (NEW)
+   timeToTrust: number; // <14 days target (ENHANCED)
+   insightAcceptanceRate: number; // >40% excellent
+   viralCoefficient: number; // >0.5 target (NEW)
+   freeToPaidConversion: number; // 25% target in 90 days (ENHANCED)
+   competitiveWinRate: number; // % switching from GA4/Shopify Analytics (NEW)
+ }
+ ```
+ 
+ ### **Enhanced E2E Testing Strategy - Phase 1.5 Focus**
+ - **Free Tier Flows**: Viral sharing, teaser interactions, confidence indicators
+ - **Data Distribution**: Complete flow from Shopify → API → Sidenav pages
+ - **Upgrade Pathways**: Testing free → Spark conversion triggers
+ - **Competitive Scenarios**: GA4 migration flows, Shopify Analytics replacement
 
 ---
 
@@ -194,9 +252,19 @@ No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's"
 
 ---
 
-## ⛔️ Superseded Issues
+## ⛔️ Superseded & Deprecated Issues
 * **#767:** `Build Paid-Only Advanced Widgets` (Superseded by `#793` & `#794`)
+* **#804, #805, #806, #807, #808:** (Duplicate/non-existent - replaced by #812-#816)
+* **#707:** EPIC-003: 'Survival Tier' (Completed - merged into Phase 1)
+* **#705:** EPIC-001: The 'First-Mile' (Completed - merged into Phase 1)
 
 ---
 
-**Updated**: Aligned E2E testing strategy with Phase 1 priorities, established clear timeline for test implementation, and defined test file cleanup actions.
+**Updated**: 
+- ✅ Marked **#731**, **#732**, **#733**, **#737** as COMPLETED
+- ✅ Updated completion count: **21/47 (45%)** completed
+- ✅ Noted 19/19 tests passing in E2E testing suite
+- ✅ Updated Phase 1 progress with completed loading state tests
+- ✅ Enhanced E2E Testing Strategy section with current status
+
+**E2E Testing Milestone Achieved**: Comprehensive dashboard testing suite with loading states, error handling, and layout stability now fully operational.
