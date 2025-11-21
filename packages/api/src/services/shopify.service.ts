@@ -1,16 +1,27 @@
 // packages/api/src/services/shopify.service.ts
+// packages/api/src/services/shopify.service.ts
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import db from '../db';
 import { Knex } from 'knex';
 
-// 1. Initialize the Shopify API library context
+// Add required scopes for Protected Customer Data
+const REQUIRED_SCOPES = [
+  'read_orders',
+  'read_customers', 
+  'read_products',
+  'read_inventory',
+  'read_fulfillments'
+];
+
+// Initialize the Shopify API library context WITH SCOPES
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET!,
   apiVersion: process.env.SHOPIFY_API_VERSION as ApiVersion,
   isEmbeddedApp: false,
-  hostName: 'localhost', // This doesn't matter for an offline token
+  hostName: 'localhost',
+  scopes: REQUIRED_SCOPES, 
 });
 
 // 2. The main function to run the sync
@@ -50,6 +61,38 @@ export const performInitialSync = async (
         }
       }
       
+      # Fetch Orders - basic fields only
+      orders(first: 50) {
+        edges {
+          node {
+            id
+            name
+            totalPriceSet { 
+              shopMoney { 
+                amount 
+                currencyCode
+              } 
+            }
+            currencyCode
+            createdAt
+            sourceName
+            # Remove fulfillments for now to simplify
+
+            lineItems(first: 20) {
+              edges {
+                node {
+                  id
+                  quantity
+                  product {
+                    id
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      
       # Fetch basic shop info
       shop {
         id
@@ -68,9 +111,13 @@ export const performInitialSync = async (
     console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data));
 
     const totalProducts = data.products?.edges.length || 0;
-    const totalCustomers = data.customers?.edges.length || 0;
-    const totalProgress = totalProducts + totalCustomers;
-    
+    const totalOrders = data.orders?.edges.length || 0;
+
+    const totalLineItems = (data.orders?.edges || []).reduce((acc: number, { node }: any) => {
+      return acc + (node.lineItems?.edges.length || 0);
+    }, 0);
+
+    const totalProgress = totalProducts + totalOrders + totalLineItems;
     // --- 1. Report: STARTING (Products) ---
     await db('integrations').where({ id: integrationId }).update({
       sync_status: 'SYNCING_PRODUCTS',
@@ -85,21 +132,30 @@ export const performInitialSync = async (
         console.log(`[ShopifyService] Syncing ${data.products.edges.length} products...`);
         await syncProducts(trx, shopId, data.products.edges);
         
-        // --- 2. Report: SYNCING_CUSTOMERS ---
+        // --- 2. Report: SYNCING_ORDERS ---
         await trx('integrations').where({ id: integrationId }).update({
-          sync_status: 'SYNCING_CUSTOMERS',
+          sync_status: 'SYNCING_ORDERS',
           sync_progress_current: totalProducts,
         });
       }
 
-      if (data.customers) {
-        console.log(`[ShopifyService] Syncing ${data.customers.edges.length} customers...`);
-        await syncCustomers(trx, shopId, data.customers.edges);
+      if (data.orders) {
+        console.log(`[ShopifyService] Syncing ${data.orders.edges.length} orders...`);
+        await syncOrders(trx, shopId, data.orders.edges);
+
+        // --- ADD THIS BLOCK ---
+        await trx('integrations').where({ id: integrationId }).update({
+          sync_status: 'SYNCING_LINE_ITEMS',
+          sync_progress_current: totalProducts + totalOrders,
+        });
+        console.log(`[ShopifyService] Syncing ${totalLineItems} line items...`);
+        await syncOrderLineItems(trx, shopId, data.orders.edges);
+        // --- END OF BLOCK ---
 
        // --- 3. Report: COMPLETING ---
         await trx('integrations').where({ id: integrationId }).update({
           sync_status: 'COMPLETING',
-          // Current progress is now all products + all customers
+          // Current progress is now all products + all orders
           sync_progress_current: totalProgress,
         });
       }
@@ -277,24 +333,3 @@ async function syncPayouts(trx: Knex.Transaction, shopId: number, edges: any[]) 
     console.log(`[ShopifyService] Synced ${payoutsToInsert.length} payouts.`);
   }
 }
-
-// Customer sync function
-async function syncCustomers(trx: Knex.Transaction, shopId: number, edges: any[]) {
-  const customersToInsert = edges.map(({ node }: any) => ({
-    shop_id: shopId,
-    platform_customer_id: node.id,
-    email: node.email,
-    first_name: node.firstName,
-    last_name: node.lastName,
-    phone: node.phone || null,
-    verified_email: node.verifiedEmail || false,
-  }));
-
-  if (customersToInsert.length > 0) {
-    await trx('customers')
-      .insert(customersToInsert)
-      .onConflict(['shop_id', 'platform_customer_id'])
-      .merge();
-    console.log(`[ShopifyService] Synced ${customersToInsert.length} customers.`);
-    }
-  }

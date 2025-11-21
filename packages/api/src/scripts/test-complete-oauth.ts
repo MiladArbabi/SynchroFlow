@@ -37,14 +37,23 @@ testCases.forEach(({ input, expected }) => {
 
 // Test complete URL construction
 console.log('\nComplete URL Construction:');
+
+// Define all variables at the top before using them
+const apiUrl = 'http://localhost:3000';
 const shopInput = 'mystore';
-const normalized = normalizeShopDomain(shopInput);
-/* const redirectUri = 'http://localhost:3000/api/v1/integrations/oauth/callback/shopify';
-const encodedRedirectUri = encodeURIComponent(redirectUri); */
-const authUrl = `https://${normalized}/admin/oauth/authorize?client_id=test-key&redirect_uri=${encodedRedirectUri}&state=test-state`;
+const shopDomain = normalizeShopDomain(shopInput);
+const apiKey = 'test-key';
+const scopes = 'read_products,read_orders';
+const state = 'test-state';
+const redirectUri = `${apiUrl}/api/v1/integrations/oauth/callback/shopify`;
+const encodedRedirectUri = encodeURIComponent(redirectUri);
+
+// Now build URLs with properly declared variables
+const authUrl = `https://${shopDomain}/admin/oauth/authorize?client_id=${apiKey}&redirect_uri=${encodedRedirectUri}&state=${state}`;
+const authorizationUrl = `https://${shopDomain}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&redirect_uri=${encodedRedirectUri}&state=${state}`;
 
 console.log('Input shop:', shopInput);
-console.log('Normalized domain:', normalized);
-console.log('Authorization URL:', authUrl);
+console.log('Normalized domain:', shopDomain);
+console.log('Authorization URL:', authorizationUrl);
 console.log('\nExpected cancel flow:');
-console.log('Shopify should redirect to:', `${redirectUri}?error=access_denied&state=test-state`);
+console.log('Shopify should redirect to:', `${redirectUri}?error=access_denied&state=${state}`);
