@@ -213,9 +213,11 @@ async function syncOrders(trx: Knex.Transaction, shopId: number, edges: any[]) {
     currency: node.currencyCode,
     created_at: node.createdAt,
     source_name: node.sourceName,
-    // Remove fulfillment_status and financial_status for now
-    fulfillment_status: null,
-    financial_status: null,
+    // Provide default values for NOT NULL columns
+    fulfillment_status: 'pending', // Default value instead of null
+    financial_status: 'pending',   // Default value instead of null  
+    customer_id: null, // Will be resolved later by customer resolution service
+    platform_customer_id: null, // Will be populated when we have customer data
   }));
 
   if (ordersToInsert.length > 0) {

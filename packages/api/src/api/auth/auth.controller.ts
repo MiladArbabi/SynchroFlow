@@ -194,3 +194,28 @@ export const logoutUser = (req: Request, res: Response) => {
   });
   res.status(204).send(); // Send 204 No Content
 };
+
+export const getDevToken = async (req: Request, res: Response) => {
+  // Only allow in development
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Not available in production' });
+  }
+
+  try {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({ error: 'JWT_SECRET not configured' });
+    }
+
+    // Create a token for a default user (user ID 1)
+    const token = jwt.sign({ userId: 1 }, jwtSecret, { expiresIn: '24h' });
+    
+    res.json({ 
+      token,
+      message: 'Dev token generated for user ID 1. Use in Authorization header as: Bearer <token>'
+    });
+  } catch (error) {
+    console.error('[AuthController] Error generating dev token:', error);
+    res.status(500).json({ error: 'Failed to generate token' });
+  }
+};

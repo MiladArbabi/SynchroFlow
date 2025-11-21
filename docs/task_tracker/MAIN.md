@@ -1,6 +1,6 @@
 # ACI Platform Roadmap & Task Tracker (v2.6)
 
-**Vision:** Evolve from a passive dashboard into an active, \"Digital Chief of Staff.\"
+**Vision:** Evolve from a passive dashboard into an active, "Digital Chief of Staff."
 **Source of Truth:** [ACI Comprehensive Blueprint](./BLUEPRINT.md)
 **Log of Achievements:** [CHANGELOG](../CHANGELOG.md)
 
@@ -37,21 +37,21 @@
 
 ---
 
-## 🎯 Definition of Done (The \"4 C's\")
-No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C's\" framework](BLUEPRINT.md#4-operational-framework-the-4-cs-litmus-test).
+## 🎯 Definition of Done (The "4 C's")
+No feature is "done" until it is verifiable against the [ACI Blueprint's "4 C's" framework](BLUEPRINT.md#4-operational-framework-the-4-cs-litmus-test).
 1.  **Context:** Is the mode-specific question answered in < 3s?
-2.  **Causation:** Does it explain \"why\" (not just \"what\")?
-3.  **Clear Path Forward:** Does it have a \`CoachTrigger\`, \`AutomationTrigger\`, etc.?
+2.  **Causation:** Does it explain "why" (not just "what")?
+3.  **Clear Path Forward:** Does it have a `CoachTrigger`, `AutomationTrigger`, etc.?
 4.  **Closed Loop:** Does the system learn from the user's interaction?
 **Free Tier Compliance:** Does it demonstrate clear upgrade value through strategic teasers?
 
 ---
 
 ## Phase 1: Foundation (Survival Mode) - ✅ COMPLETED
-**Focus:** Perfect the \"Survival Mode\" Intelligence Layer.
+**Focus:** Perfect the "Survival Mode" Intelligence Layer.
 **Key Deliverable:** Best-in-class free dashboard that meets the 4 C's standard.
 
-### ✅ Phase 1 Completed (**21 Issues**) 🎉
+### ✅ Phase 1 Completed (**21 Issues**) ��
 *All previous Phase 1 issues completed*
 
 ---
@@ -65,12 +65,12 @@ No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C
 | ID | Task | Status | Details |
 | --- | --- | --- | --- |
 | **#804** | **[Epic]** Phase 1.5: Core Data Distribution | ✅ **COMPLETED** | Orders API foundation built |
-| **#805** | Build \`/api/v1/orders\` pipeline | ✅ **COMPLETED** | Real orders data flowing (7 orders synced) |
+| **#805** | Build `/api/v1/orders` pipeline | ✅ **COMPLETED** | Real orders data flowing (7 orders synced) |
 | **#819** | Implement Smart Sync Orchestrator | ✅ **COMPLETED** | PCD fallback strategy working |
 | **#820** | Build Shopify Fallback Service | ✅ **COMPLETED** | Non-PCD sync operational |
 | **#821** | **[P1]** Database Restructuring: Customer Relationships | ✅ **COMPLETED** | Fixed customer_id constraints, added platform_customer_id |
-| **#806** | Build \`/api/v1/customers\` pipeline | 🎯 **NEXT** | Ready for implementation |
-| **#807** | Build \`/api/v1/products\` pipeline | 🎯 **NEXT** | Enhanced products data distribution |
+| **#806** | Build `/api/v1/customers` pipeline | �� **NEXT** | Ready for implementation |
+| **#807** | Build `/api/v1/products` pipeline | 🎯 **NEXT** | Enhanced products data distribution |
 | **#824** | **[NEW]** Implement Cross-Entity Analytics | 🎯 **NEXT** | Orders ↔ Customers ↔ Products intelligence |
 
 ### 🔄 Phase 1.5 Active Implementation
@@ -92,14 +92,14 @@ No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C
 ---
 
 ## Phase 2: Customer Intelligence (Spark Plan) - READY TO START
-**Focus:** Launch \"Growth Mode\" Intelligence Layer.
+**Focus:** Launch "Growth Mode" Intelligence Layer.
 **Status:** 🎯 **READY FOR IMPLEMENTATION**
 *Phase 2 tasks can now begin with solid foundation established*
 
 ---
 
 ## Phase 3: Platform Expansion (Ignition Plan) - ON HOLD  
-**Focus:** Launch \"Architect Mode\" with WMS-lite.
+**Focus:** Launch "Architect Mode" with WMS-lite.
 **Status:** ⏳ **AWAITING PHASE 2 COMPLETION**
 
 ---
@@ -143,7 +143,7 @@ No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C
 ## 🎯 Enhanced Success Metrics for PLG SaaS
 
 ### **Free Tier Health Dashboard**
-\`\`\`typescript
+```typescript
 interface FreeTierMetrics {
   activationRate: number; // >40% using weekly
   timeToTrust: number; // <14 days target  
@@ -153,17 +153,17 @@ interface FreeTierMetrics {
   competitiveWinRate: number; // % switching from GA4/Shopify Analytics
   multiPlatformAdoption: number; // % users connecting multiple sales channels
 }
-\`\`\`
+```
 
 ### **Technical Foundation Metrics**
-\`\`\`typescript
+```typescript
 interface TechnicalMetrics {
   pcdApprovalRate: number; // % successful PCD access
   syncSuccessRate: number; // % successful data syncs
   customerResolutionRate: number; // % platform customers matched
   crossPlatformAdoption: number; // % using multiple platforms
 }
-\`\`\`
+```
 
 ---
 
@@ -185,4 +185,4 @@ interface TechnicalMetrics {
 
 **Next Phase**: Customer Intelligence (#806 Customers API) - Building on our solid foundation to deliver cross-entity analytics and customer resolution.
 
-**Key Achievement**: Orders API now serving 7 real orders from Shopify with proper database constraints and sync architecture." 
+**Key Achievement**: Orders API now serving 7 real orders from Shopify with proper database constraints and sync architecture.
