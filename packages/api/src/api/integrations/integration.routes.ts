@@ -4,7 +4,8 @@ import {
   initiateOAuth, 
   handleOAuthCallback, 
   getSyncStatus,
-  preFlightCheck
+  preFlightCheck,
+  triggerManualSync
 } from './integration.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
@@ -25,4 +26,6 @@ router.get('/pre-flight', authenticateToken, preFlightCheck);
 // This new endpoint must be authenticated
 /* router.get('/discovery-status', authenticateToken, getDiscoveryStatus);
  */
+
+router.post('/sync/:integrationId', authenticateToken, triggerManualSync);
 export default router;

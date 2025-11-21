@@ -352,30 +352,37 @@ export const preFlightCheck = async (req: Request, res: Response) => {
   }
 };
 
-/* export const getDiscoveryStatus = async (req: Request, res: Response) => {
-  // We get the user ID from the authenticated request
-  const shopId = await getShopIdFromRequest(req);
-  
-  if (!shopId) {
-    return res.status(403).json({ message: 'User shop not found.' });
-  }
-
+export const triggerManualSync = async (req: Request, res: Response) => {
   try {
-    const integration = await db('integrations')
-      .where({ shop_id: shopId })
-      .orderBy('created_at', 'desc') // Get the latest one
-      .first('discovered_payment_gateways');
-
-    if (!integration) {
-      return res.status(404).json({ message: 'No integration found' });
+    const { integrationId } = req.params;
+    const shopId = await getShopIdFromRequest(req);
+    
+    if (!shopId) {
+      return res.status(403).json({ error: 'User shop not found.' });
     }
 
-    res.status(200).json({
-      discovered_payment_gateways: integration.discovered_payment_gateways,
-    });
+    // Verify the integration belongs to the user's shop
+    const integration = await db('integrations')
+      .where({ id: integrationId, shop_id: shopId })
+      .first();
 
-  } catch (error: any) {
-    console.error('[discovery-status] Error fetching discovery status:', error);
-    res.status(500).json({ message: 'Error fetching discovery status', error: error.message });
+    if (!integration) {
+      return res.status(404).json({ error: 'Integration not found.' });
+    }
+
+    // Queue the sync job
+    const syncChannel = getQueueChannel('sync_jobs');
+    const jobPayload = { integrationId: parseInt(integrationId) };
+    syncChannel.sendToQueue('sync_jobs', Buffer.from(JSON.stringify(jobPayload)));
+    
+    console.log(`Manually queued sync job for integration ID: ${integrationId}`);
+    
+    res.json({ 
+      message: 'Sync job queued successfully',
+      integrationId: integrationId
+    });
+  } catch (error) {
+    console.error('[integration.controller] Error triggering manual sync:', error);
+    res.status(500).json({ error: 'Failed to trigger sync.' });
   }
-}; */
+};
