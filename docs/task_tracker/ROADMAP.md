@@ -1,4 +1,4 @@
-# ACI Platform Roadmap & Task Tracker (v2.6)
+# ACI Platform Roadmap & Task Tracker (v2.7)
 
 **Vision:** Evolve from a passive dashboard into an active, \"Digital Chief of Staff.\"
 **Source of Truth:** [ACI Comprehensive Blueprint](./BLUEPRINT.md)
@@ -14,10 +14,10 @@
 - 🔄 **Tiered Onboarding Experience** - Provide immediate value regardless of PCD status  
 - 🔄 **Customer Resolution Service** - Unified customer identity across platforms
 
-### **Phase 2: Customer Intelligence (NEXT)**
-**Focus:** Complete Data Distribution & Cross-Entity Analytics
+### **Phase 2: Customer Intelligence & Production Readiness (CURRENT)**
+**Focus:** Complete Data Distribution & Production Hardening
 - **Customers API Implementation** - Real customer data pipeline
-- **Products API Enhancement** - Complete products data distribution
+- **Production Readiness** - Scale testing, error handling, App Store submission
 - **Cross-Entity Relationships** - Orders ↔ Customers ↔ Products intelligence
 
 ### **Phase 3: Multi-Platform Scalability (Month 2)**
@@ -30,10 +30,10 @@
 
 ## Progress Summary
 - **Phases:** 6 + **Phase 1.5 Bridge** (COMPLETED)
-- **Total Issues Logged:** 62 → **48** (corrected to actual issue count)
-- **Completed:** 25/48 (52%) - **UPDATED: Database Restructuring & Orders API Complete**
-- **Blocked:** 0/48 (0%) - **UPDATED: All Constraints Resolved**
-- **Remaining:** 23/48 (48%)
+- **Total Issues Logged:** 48 → **55** (updated with production readiness issues)
+- **Completed:** 25/55 (45%) - **UPDATED: Database Restructuring & Orders API Complete**
+- **Blocked:** 0/55 (0%) - **UPDATED: All Constraints Resolved**
+- **Remaining:** 30/55 (55%)
 
 ---
 
@@ -69,32 +69,37 @@ No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C
 | **#819** | Implement Smart Sync Orchestrator | ✅ **COMPLETED** | PCD fallback strategy working |
 | **#820** | Build Shopify Fallback Service | ✅ **COMPLETED** | Non-PCD sync operational |
 | **#821** | **[P1]** Database Restructuring: Customer Relationships | ✅ **COMPLETED** | Fixed customer_id constraints, added platform_customer_id |
-| **#806** | Build \`/api/v1/customers\` pipeline | 🎯 **NEXT** | Ready for implementation |
-| **#807** | Build \`/api/v1/products\` pipeline | 🎯 **NEXT** | Enhanced products data distribution |
-| **#824** | **[NEW]** Implement Cross-Entity Analytics | 🎯 **NEXT** | Orders ↔ Customers ↔ Products intelligence |
-
-### 🔄 Phase 1.5 Active Implementation
-| ID | Task | Status | Timeline |
-| --- | --- | --- | --- |
-| **#822** | **[P1]** Implement Tiered Onboarding Service | 🎯 **WEEK 2** | PCD_APPROVED, PCD_PENDING, BASIC_ACCESS tiers |
-| **#823** | **[P1]** Build Customer Resolution Service | 🎯 **WEEK 2** | Map platform customers to internal records |
-
-### ⏳ Phase 1.5 Backlog (Strategic Enhancements)
-| ID | Task | Status | Strategic Value |
-| --- | --- | --- | --- |
-| **#809** | Implement Confidence Indicators | ⏳ **PENDING** | Build trust with accuracy scoring |
-| **#810** | Implement Free-Tier Action Hierarchy | ⏳ **PENDING** | Learn → Simulate → Tease Execute |
-| **#811** | Add Viral Sharing Features | ⏳ **PENDING** | Share insights, referral bonuses |
-| **#812** | Implement Strategic TeaserTriggers | ⏳ **PENDING** | Blurred conversion rates, growth features |
-| **#813** | Enhance Starter Widgets with GA4-Beating Simplicity | ⏳ **PENDING** | Comparators, one-click explanations |
-| **#814** | Add Free Tier Metrics Dashboard | ⏳ **PENDING** | Track activation, conversion, viral coefficient |
 
 ---
 
-## Phase 2: Customer Intelligence (Spark Plan) - READY TO START
-**Focus:** Launch \"Growth Mode\" Intelligence Layer.
-**Status:** 🎯 **READY FOR IMPLEMENTATION**
-*Phase 2 tasks can now begin with solid foundation established*
+## 🚧 Phase 2: Customer Intelligence & Production Readiness (CURRENT FOCUS)
+
+### 🎯 Stream A: Core Data Intelligence
+| ID | Task | Status | Timeline |
+| --- | --- | --- | --- |
+| **#814** | Build \`/api/v1/customers\` endpoint & data pipeline | 🎯 **IMMEDIATE** | Ready for implementation |
+| **#807** | Build \`/api/v1/products\` pipeline | 🎯 **WEEK 1** | Enhanced products data distribution |
+| **#824** | Implement Cross-Entity Analytics | 🎯 **WEEK 1** | Orders ↔ Customers ↔ Products intelligence |
+| **#822** | Implement Tiered Onboarding Service | 🎯 **WEEK 2** | PCD_APPROVED, PCD_PENDING, BASIC_ACCESS tiers |
+| **#823** | Build Customer Resolution Service | 🎯 **WEEK 2** | Map platform customers to internal records |
+
+### 🚨 Stream B: Production Readiness (Critical Path)
+| ID | Task | Status | Priority |
+| --- | --- | --- | --- |
+| **#840** | **[EPIC]** Production Readiness: Complete Order Object Implementation | 🎯 **ACTIVE** | Epic tracking |
+| **#834** | Test Production PCD Access with Real Merchant Store | 🚨 **CRITICAL** | Must complete before launch |
+| **#837** | Implement Production-Grade Error Handling & Scale Testing | 🔥 **HIGH** | Week 1-2 |
+| **#839** | Prepare for Shopify App Store Submission | 🔥 **HIGH** | Week 2-3 |
+| **#838** | Implement Shopify Webhooks for Real-time Order Updates | ⚡ **MEDIUM** | Week 2-3 |
+| **#835** | Implement Data Retention Policies and Cleanup Strategies | ⚡ **MEDIUM** | Week 3 |
+| **#836** | Optimize Performance for High-Volume Stores | ⚡ **MEDIUM** | Week 3 |
+
+### 🔄 Related Frontend Enhancements
+| ID | Task | Status | Timeline |
+| --- | --- | --- | --- |
+| **#828** | Build ProductsPage with real Shopify product data | 🎯 **WEEK 1** | Frontend integration |
+| **#829** | Enhance CustomersPage with real Shopify data | 🎯 **WEEK 1** | Frontend integration |
+| **#830** | Implement Shopify data sync to operational models | 🎯 **WEEK 2** | Data pipeline enhancement |
 
 ---
 
@@ -126,17 +131,20 @@ No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C
 
 ---
 
-## 📊 Success Metrics for Phase 1.5 Completion
+## 📊 Success Metrics for Phase 2 Completion
 
+### ✅ Phase 1.5 Achieved
 - ✅ **Orders API serving real data**: COMPLETE (7 orders from Shopify)
 - ✅ **Database restructuring**: COMPLETE (customer_id nullable, platform_customer_id added)
 - ✅ **Products sync**: COMPLETE (17 products from Shopify)
 - ✅ **Integration sync**: COMPLETE (Status: COMPLETED, no errors)
-- 🔄 **Tiered onboarding**: IN PROGRESS (#822) 
-- 🔄 **Customer resolution**: IN PROGRESS (#823)
-- 🎯 **Customers API**: READY (#806)
-- 🎯 **Products API enhancement**: READY (#807)
-- 🎯 **Cross-entity analytics**: READY (#824)
+
+### 🎯 Phase 2 Targets
+- 🔄 **Customers API**: IN PROGRESS (#814)
+- 🔄 **Production PCD Access**: TESTING REQUIRED (#834)
+- 🔄 **Error Handling**: IMPLEMENTATION REQUIRED (#837)
+- 🔄 **App Store Submission**: PREPARATION REQUIRED (#839)
+- 🔄 **Webhooks**: IMPLEMENTATION REQUIRED (#838)
 
 ---
 
@@ -169,20 +177,47 @@ interface TechnicalMetrics {
 
 ## 🔄 Updated E2E Testing Strategy - Phase 2 Focus
 
-### **Immediate Testing Priorities**
+### **Immediate Testing Priorities (Week 1)**
 - **Customer Resolution Tests** - Platform customer matching logic
 - **Cross-Entity Analytics** - Orders ↔ Customers ↔ Products relationships
-- **Multi-Platform Sync** - Cross-platform data normalization
+- **PCD Access Testing** - Real merchant store validation (#834)
 
-### **Enhanced Test Coverage**
-- **Customer Intelligence** - Customer 360 views and analytics
-- **Upgrade Pathway Testing** - Seamless transitions between tiers
-- **Data Integrity** - Cross-entity relationship validation
+### **Production Testing (Week 2-3)**
+- **Scale Testing** - High-volume store simulation (#837)
+- **Error Recovery** - Network failure and rate limit handling (#837)
+- **Webhook Integration** - Real-time update validation (#838)
+- **Performance Optimization** - Large dataset handling (#836)
+
+### **Launch Readiness (Week 3)**
+- **App Store Compliance** - Shopify review requirements (#839)
+- **Data Retention** - Compliance and cleanup validation (#835)
+- **End-to-End Flows** - Complete user journey testing
+
+---
+
+## 🚀 Execution Timeline
+
+### **Week 1: Core Data & Critical Path**
+- #814 Customers API implementation
+- #834 PCD Access testing with real merchant
+- #837 Basic error handling implementation
+
+### **Week 2: Production Hardening**
+- #839 App Store submission preparation
+- #838 Webhooks implementation
+- #807 Products API enhancement
+
+### **Week 3: Optimization & Launch**
+- #836 Performance optimization
+- #835 Data retention policies
+- App Store submission and review
 
 ---
 
 **Phase 1.5 Complete**: We've successfully built a robust PLG SaaS foundation with working orders sync, database restructuring, and real Shopify data integration.
 
-**Next Phase**: Customer Intelligence (#806 Customers API) - Building on our solid foundation to deliver cross-entity analytics and customer resolution.
+**Current Focus**: Phase 2 - Customer Intelligence & Production Readiness. We're now executing on two parallel streams: core data intelligence and production hardening.
 
-**Key Achievement**: Orders API now serving 7 real orders from Shopify with proper database constraints and sync architecture." 
+**Key Achievement**: Orders API now serving 7 real orders from Shopify with proper database constraints and sync architecture. Foundation solid for production launch preparation.
+
+**Next Immediate Action**: #814 Customers API implementation to complete core data pipeline, while #834 PCD testing validates production readiness." 
