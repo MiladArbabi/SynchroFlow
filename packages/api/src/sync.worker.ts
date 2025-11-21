@@ -3,6 +3,7 @@ import { getQueueChannel } from './queue';
 import db from './db';
 import CryptoJS from 'crypto-js';
 import { performInitialSync } from './services/shopify.service';
+import { performSmartSync } from './services/shopify-sync-orchestrator.service';
 
 // --- Helper function for decryption ---
 const decryptToken = (encryptedToken: string): string => {
@@ -114,15 +115,16 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 
     // --- The sync logic ---
     if (integration!.platform === 'shopify') {
-      await performInitialSync(
-        accessToken, 
-        integration!.platform_shop_name, 
-        integration!.shop_id,
-        integration!.id
-      );
-    } else {
-      console.warn(`[sync.worker] No sync logic implemented for platform: ${integration!.platform}`);
-    }
+       await performSmartSync(
+         accessToken, 
+         integration!.platform_shop_name, 
+         integration!.shop_id,
+         integration!.id
+       );
+     } else {
+       console.warn(`[sync.worker] No sync logic implemented for platform: ${integration!.platform}`);
+     }
+     
     console.log(`[sync.worker] Sync job COMPLETED for ${integrationId}`);
     syncChannel.ack(msg as any);
 

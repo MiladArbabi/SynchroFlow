@@ -6,6 +6,7 @@ import integrationRoutes from './integrations';
 import userRoutes from './users';
 import dashboardRoutes from './dashboard';
 import feedbackRoutes from './feedback'; 
+import ordersRoutes from '../api/orders/orders.routes'
 
 const router = Router();
 
@@ -13,6 +14,7 @@ router.use('/shops', shopRoutes);
 router.use('/integrations', integrationRoutes);
 router.use('/users', userRoutes);
 router.use('/dashboard', dashboardRoutes);
-router.use('/feedback', feedbackRoutes); // Add this line
+router.use('/feedback', feedbackRoutes);
+router.use('/orders', ordersRoutes);
 
 export default router;

@@ -1,8 +1,24 @@
 // packages/api/src/api/orders/orders.service.ts
-import path from 'path';
+import db from "../../db";
 
-// This interface can be expanded or moved to a shared types package
+// Real database interfaces based on ACTUAL schema
 interface Order {
+  id: number;
+  shop_id: number;
+  customer_id: number;
+  platform_order_id: string;
+  order_number: string;
+  fulfillment_status: string;
+  financial_status: string;
+  total_price: number;
+  currency: string;
+  source_name: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface OrderList {
   id: string;
   customer_name: string;
   total: number;
@@ -10,81 +26,141 @@ interface Order {
   created_at: Date;
 }
 
-// --- MOCK DATA ---
-const mockOrders: Order[] = [
-  { id: '1001', customer_name: 'Alice Smith', total: 50.00, status: 'Pending', created_at: new Date() },
-  { id: '1002', customer_name: 'Bob Johnson', total: 75.50, status: 'Shipped', created_at: new Date() },
-  { id: '1003', customer_name: 'Charlie Brown', total: 120.00, status: 'Picking', created_at: new Date() },
-];
-
-// --- MOCK CUSTOMER DATA (for Order 360) ---
-// In a real app, we'd fetch this via a relation.
-const mockCustomerProfile = {
-  name: 'John Doe (from Order)',
-  email: 'john.doe@example.com',
-  phone: '555-1234',
-  tags: ['VIP'],
-  shippingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
-  billingAddress: { street: '123 Main St', city: 'Anytown', state: 'CA', zip: '12345', country: 'USA' },
-  accountCreated: '2024-01-15T10:00:00Z',
-  source: 'Shopify',
-};
-
-const mockCustomerMetrics = {
-  ltv: 1204.50,
-  aov: 110.40,
-  totalOrders: 11,
-  totalMargin: 550.25,
-  lastOrderDate: '2025-10-15T09:30:00Z',
-};
-// --- END MOCK DATA ---
-
 /**
- * Simulates fetching a list of all orders.
+ * Get all orders for a shop from database
  */
-export const getAllOrders = async (): Promise<Order[]> => {
-  // In v2, this will be: return db('orders').select('*');
-  return mockOrders;
+export const getAllOrders = async (): Promise<OrderList[]> => {
+  try {
+    // TODO: Get shopId from authenticated user/session
+    // For now, using shopId 1 as placeholder
+    const shopId = 1;
+    
+    const orders = await db('orders')
+      .select(
+        'platform_order_id as id',
+        'order_number',
+        'financial_status',
+        'fulfillment_status as status',
+        'total_price as total',
+        'created_at'
+      )
+      .where('shop_id', shopId)
+      .orderBy('created_at', 'desc');
+
+    // Since we don't have shipping_address, we'll create a placeholder customer name
+    return orders.map(order => ({
+      ...order,
+      customer_name: `Customer #${order.order_number}`
+    }));
+  } catch (error) {
+    console.error('[OrdersService] Error fetching orders:', error);
+    throw new Error('Failed to fetch orders');
+  }
 };
 
 /**
- * Simulates fetching the profitability for a single order.
- * @param id The order ID
+ * Get order profitability by ID
  */
 export const getOrderProfitabilityById = async (id: string) => {
-  // In v2, this will be a real calculation
-  return {
-    orderId: id,
-    revenue: 149.99,
-    cogs: 62.50,
-    shippingCost: 12.00,
-    fees: 4.50,
-    margin: 70.99,
-    marginPercent: 47.3
-  };
+  try {
+    const shopId = 1;
+    
+    const order = await db('orders')
+      .select('total_price')
+      .where({
+        shop_id: shopId,
+        platform_order_id: id
+      })
+      .first();
+
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // Simplified profitability calculation using only total_price for now
+    const revenue = order.total_price;
+    const cogs = revenue * 0.6; // Assume 60% COGS for now
+    const shippingCost = revenue * 0.1; // Assume 10% shipping cost
+    const fees = revenue * 0.03; // Assume 3% fees
+    const margin = revenue - cogs - shippingCost - fees;
+    const marginPercent = (margin / revenue) * 100;
+
+    return {
+      orderId: id,
+      revenue,
+      cogs,
+      shippingCost,
+      fees,
+      margin,
+      marginPercent: Math.round(marginPercent * 10) / 10
+    };
+  } catch (error) {
+    console.error('[OrdersService] Error calculating profitability:', error);
+    throw new Error('Failed to calculate order profitability');
+  }
 };
 
 /**
- * Simulates fetching all data for the Order 360 page.
- * @param id The order ID
+ * Get comprehensive order details for Order360 page
  */
 export const getOrderDetailsById = async (id: string) => {
-  // Find the basic order info from our list
-  const orderInfo = mockOrders.find(o => o.id === id);
-  if (!orderInfo) {
-    return null; // Order not found
+  try {
+    const shopId = 1;
+    
+    const order = await db('orders')
+      .select('*')
+      .where({
+        shop_id: shopId,
+        platform_order_id: id
+      })
+      .first();
+
+    if (!order) {
+      return null;
+    }
+
+    const profitability = await getOrderProfitabilityById(id);
+
+    return {
+      id: order.platform_order_id,
+      status: mapFulfillmentStatus(order.fulfillment_status),
+      customer: {
+        profile: {
+          name: `Customer #${order.order_number}`,
+          email: 'customer@example.com', // Placeholder since we don't have email
+          phone: '',
+          tags: [],
+          shippingAddress: {}, // Empty since we don't have shipping_address
+          billingAddress: {},
+          accountCreated: order.created_at,
+          source: order.source_name || 'Unknown'
+        },
+        metrics: {
+          ltv: 0,
+          aov: order.total_price,
+          totalOrders: 1,
+          totalMargin: profitability.margin,
+          lastOrderDate: order.created_at
+        }
+      },
+      profitability
+    };
+  } catch (error) {
+    console.error('[OrdersService] Error fetching order details:', error);
+    throw new Error('Failed to fetch order details');
   }
+};
 
-  // const statusResult = await getOrderStatusById(id); // This now calls C++
-  const profitability = await getOrderProfitabilityById(id);
-
-  return {
-    id: orderInfo.id,
-    customer: {
-      profile: mockCustomerProfile,
-      metrics: mockCustomerMetrics,
-    },
-    // status: statusResult.status,
-    profitability: profitability,
+/**
+ * Map fulfillment status to our OrderStatus
+ */
+const mapFulfillmentStatus = (fulfillmentStatus: string): string => {
+  const statusMap: { [key: string]: string } = {
+    'fulfilled': 'shipped',
+    'partial': 'picking', 
+    'pending': 'pending',
+    'null': 'pending'
   };
+  
+  return statusMap[fulfillmentStatus] || 'pending';
 };

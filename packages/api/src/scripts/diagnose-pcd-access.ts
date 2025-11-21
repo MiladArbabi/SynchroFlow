@@ -1,0 +1,38 @@
+// packages/api/src/scripts/diagnose-pcd-access.ts
+import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
+import '@shopify/shopify-api/adapters/node';
+
+console.log('=== Protected Customer Data Access Diagnosis ===\n');
+
+// Check environment
+console.log('1. ENVIRONMENT CHECK:');
+console.log('SHOPIFY_API_KEY:', process.env.SHOPIFY_API_KEY ? '✓ Set' : '✗ Missing');
+console.log('SHOPIFY_API_SECRET:', process.env.SHOPIFY_API_SECRET ? '✓ Set' : '✗ Missing');
+console.log('SHOPIFY_API_VERSION:', process.env.SHOPIFY_API_VERSION || 'Not set');
+
+// Check scopes from OAuth flow
+console.log('\n2. SCOPES CONFIGURATION:');
+const oauthScopes = 'read_products,read_orders,read_customers,read_inventory,read_payouts,read_fulfillments';
+console.log('OAuth Scopes:', oauthScopes);
+console.log('API Config Scopes:', ['read_orders', 'read_customers', 'read_products', 'read_inventory', 'read_fulfillments'].join(', '));
+
+console.log('\n3. PROTECTED CUSTOMER DATA ACCESS:');
+console.log('Required for: Orders, Customers, Payouts');
+console.log('Current Status: ✗ BLOCKED - App not approved for PCD');
+
+console.log('\n4. IMMEDIATE ACTIONS REQUIRED:');
+console.log('✓ 1. Go to Shopify Partner Dashboard → Your App');
+console.log('✓ 2. Navigate to "App setup" → "Protected customer data"');
+console.log('✓ 3. Request access to: Orders, Customers, Payouts');
+console.log('✓ 4. Provide justification: "Need order and customer data for analytics and operations"');
+console.log('✓ 5. Wait for approval (can take 1-3 business days)');
+
+console.log('\n5. DEVELOPMENT WORKAROUNDS:');
+console.log('• Use a development store with full permissions');
+console.log('• Test with non-PCD data first (products, inventory)');
+console.log('• Implement graceful fallbacks for PCD access errors');
+
+console.log('\n6. VERIFICATION STEPS:');
+console.log('• Reinstall app after PCD approval');
+console.log('• Test GraphQL queries for Orders object');
+console.log('• Verify sync completes without PCD errors');

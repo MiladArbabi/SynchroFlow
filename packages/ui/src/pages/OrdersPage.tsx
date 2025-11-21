@@ -1,3 +1,4 @@
+// packages/ui/src/pages/OrdersPage.tsx
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/OrdersPage.tsx
 import React, { useState, useEffect } from 'react';
@@ -7,28 +8,36 @@ import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import { DataGrid, GridColDef, GridRowParams } from '@mui/x-data-grid';
 import MasterPanel from 'ui-component/MasterPanel/index.tsx';
 
-// Define the structure of an Order (adjust based on actual API)
+// Define the structure of an Order based on actual API response
 interface Order {
-  id: string; // Ensure ID is string if that's what API returns
+  id: string; // platform_order_id from API
   customer_name: string;
   total: number;
   status: string;
-  // Add other relevant fields for the list view
+  order_number: string;
+  created_at: string;
 }
 
 // Define columns for the DataGrid
 const columns: GridColDef<Order>[] = [
-  { field: 'id', headerName: 'Order ID', width: 150 },
-  { field: 'customer_name', headerName: 'Customer', width: 250 },
+  { field: 'order_number', headerName: 'Order #', width: 120 },
+  { field: 'customer_name', headerName: 'Customer', width: 200 },
   {
     field: 'total',
     headerName: 'Total',
     type: 'number',
-    width: 150,
+    width: 130,
     valueFormatter: (value: number) =>
       value?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }),
   },
-  { field: 'status', headerName: 'Status', width: 150 },
+  { field: 'status', headerName: 'Status', width: 130 },
+  { 
+    field: 'created_at', 
+    headerName: 'Created', 
+    width: 150,
+    valueFormatter: (value: string) => 
+      new Date(value).toLocaleDateString()
+  },
 ];
 
 /**
@@ -46,8 +55,7 @@ const OrdersPage: React.FC = () => {
       setError(null);
       try {
         const response = await axios.get<Order[]>('/api/v1/orders');
-        // Ensure IDs are strings if DataGrid expects them
-        setOrders(response.data.map(order => ({ ...order, id: String(order.id) })));
+        setOrders(response.data);
       } catch (err) {
         console.error('Failed to fetch orders:', err);
         setError('Failed to load orders.');
@@ -63,8 +71,6 @@ const OrdersPage: React.FC = () => {
   };
 
   return (
-    // Use MasterPanel with title "Orders"
-    // MasterPanel already sets height: 100%
     <MasterPanel title="Orders">
       {loading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80%' }}>
@@ -77,9 +83,7 @@ const OrdersPage: React.FC = () => {
         </Box>
       )}
       {!loading && !error && (
-        // DataGrid needs explicit height to fill the container
         <Box sx={{ height: 'calc(100vh - 150px)', width: '100%' }}>
-           {/* Adjust height calculation based on header/padding */}
           <DataGrid
             rows={orders}
             columns={columns}
@@ -90,11 +94,10 @@ const OrdersPage: React.FC = () => {
               },
             }}
             pageSizeOptions={[10, 25, 50]}
-            // disableRowSelectionOnClick // Keep selection enabled for visual feedback
             sx={{
-                border: 'none', // Remove default border
+                border: 'none',
                 '& .MuiDataGrid-row:hover': {
-                    cursor: 'pointer', // Indicate rows are clickable
+                    cursor: 'pointer',
                 },
             }}
           />
