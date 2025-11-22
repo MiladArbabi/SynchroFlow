@@ -60,6 +60,18 @@ export const performInitialSync = async (
           }
         }
       }
+
+      # Fetch Customers - minimal safe fields only
+      customers(first: 50) {
+        edges {
+          node {
+            id
+            tags
+            createdAt
+            updatedAt
+          }
+        }
+      }
       
       # Fetch Orders - basic fields only
       orders(first: 50) {
@@ -109,15 +121,18 @@ export const performInitialSync = async (
     const response = await client.request(query);
     const data = response.data as any;
     console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data));
-
+    
+    // The progress calculation
     const totalProducts = data.products?.edges.length || 0;
+    const totalCustomers = data.customers?.edges.length || 0;
     const totalOrders = data.orders?.edges.length || 0;
 
     const totalLineItems = (data.orders?.edges || []).reduce((acc: number, { node }: any) => {
       return acc + (node.lineItems?.edges.length || 0);
     }, 0);
 
-    const totalProgress = totalProducts + totalOrders + totalLineItems;
+    const totalProgress = totalProducts + totalCustomers + totalOrders + totalLineItems;
+    
     // --- 1. Report: STARTING (Products) ---
     await db('integrations').where({ id: integrationId }).update({
       sync_status: 'SYNCING_PRODUCTS',
@@ -128,14 +143,25 @@ export const performInitialSync = async (
 
     // 4. Use a transaction to sync all data or none
     await db.transaction(async (trx) => {
-      if (data.products) {
-        console.log(`[ShopifyService] Syncing ${data.products.edges.length} products...`);
-        await syncProducts(trx, shopId, data.products.edges);
+    if (data.products) {
+      console.log(`[ShopifyService] Syncing ${data.products.edges.length} products...`);
+      await syncProducts(trx, shopId, data.products.edges);
+      
+      // Update progress after products
+      await trx('integrations').where({ id: integrationId }).update({
+        sync_status: 'SYNCING_CUSTOMERS',
+        sync_progress_current: totalProducts,
+      });
+    }
+
+      if (data.customers) {
+        console.log(`[ShopifyService] Syncing ${data.customers.edges.length} customers...`);
+        await syncCustomers(trx, shopId, data.customers.edges);
         
-        // --- 2. Report: SYNCING_ORDERS ---
+        // Update progress after customers
         await trx('integrations').where({ id: integrationId }).update({
           sync_status: 'SYNCING_ORDERS',
-          sync_progress_current: totalProducts,
+          sync_progress_current: totalProducts + totalCustomers,
         });
       }
 
@@ -143,14 +169,12 @@ export const performInitialSync = async (
         console.log(`[ShopifyService] Syncing ${data.orders.edges.length} orders...`);
         await syncOrders(trx, shopId, data.orders.edges);
 
-        // --- ADD THIS BLOCK ---
         await trx('integrations').where({ id: integrationId }).update({
           sync_status: 'SYNCING_LINE_ITEMS',
           sync_progress_current: totalProducts + totalOrders,
         });
         console.log(`[ShopifyService] Syncing ${totalLineItems} line items...`);
         await syncOrderLineItems(trx, shopId, data.orders.edges);
-        // --- END OF BLOCK ---
 
        // --- 3. Report: COMPLETING ---
         await trx('integrations').where({ id: integrationId }).update({
@@ -333,5 +357,36 @@ async function syncPayouts(trx: Knex.Transaction, shopId: number, edges: any[]) 
       .onConflict(['shop_id', 'platform_payout_id'])
       .merge();
     console.log(`[ShopifyService] Synced ${payoutsToInsert.length} payouts.`);
+  }
+}
+
+// The syncCustomers function to handle the new field names
+async function syncCustomers(trx: Knex.Transaction, shopId: number, edges: any[]) {
+  const customersToInsert = edges.map(({ node }: any) => ({
+    shop_id: shopId,
+    platform_customer_id: node.id,
+    email: null, // Protected data - requires PCD approval
+    first_name: null, // Protected data - requires PCD approval
+    last_name: null,  // Protected data - requires PCD approval  
+    phone: null,      // Protected data - requires PCD approval
+    tags: node.tags ? JSON.stringify(node.tags) : null,
+    created_at: node.createdAt,
+    updated_at: node.updatedAt,
+    total_orders: 0, // We'll calculate from orders
+    total_spent: 0,  // We'll calculate from orders
+/*     // All address fields - protected data
+    address1: null,
+    city: null,
+    province: null,
+    country: null,
+    zip: null, */
+  }));
+
+  if (customersToInsert.length > 0) {
+    await trx('customers')
+      .insert(customersToInsert)
+      .onConflict(['shop_id', 'platform_customer_id'])
+      .merge();
+    console.log(`[ShopifyService] Synced ${customersToInsert.length} customers (PCD-limited).`);
   }
 }

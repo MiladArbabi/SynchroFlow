@@ -1,9 +1,7 @@
-// packages/api/src/api/customers/customers.service.ts
+// Update packages/api/src/api/customers/customers.service.ts - Replace mock with real implementation
+import db from '../../db';
 import { CustomerOrder, SupportTicket } from './customers.types';
 
-// We can define the frontend types here, or import them from a shared package later
-// For now, this keeps it simple.
-// (Interfaces copied from Customer360Page.tsx)
 interface CustomerProfileData {
   name: string;
   email: string;
@@ -28,49 +26,110 @@ interface CustomerApiResponse {
   tickets: SupportTicket[];
 }
 
-// --- MOCK DATA ---
-// We're moving the mock data from the frontend and route file here.
-const mockCustomerDetails_ABC: CustomerApiResponse = {
-  id: 'cust_abc',
-  profile: {
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '+1 (555) 123-4567',
-    location: 'New York, USA',
-    joined_date: '2024-01-15T09:30:00Z',
-    tags: ['VIP', 'Frequent Buyer'],
-  },
-  metrics: {
-    total_revenue: 1250.75,
-    total_orders: 5,
-    aov: 250.15,
-    ltv: 1500.00, // Projected LTV
-  },
-  // --- ADDING THE MISSING DATA ---
-  orders: [
-    { id: '1002', orderDate: '2025-10-20T14:00:00Z', status: 'Shipped', total: 75.50 },
-    { id: '1001', orderDate: '2025-09-15T10:30:00Z', status: 'Delivered', total: 50.00 },
-  ],
-  tickets: [
-    { id: 'TKT-501', subject: 'Question about Shipping', date: '2025-10-25T11:00:00Z', status: 'Pending' as const },
-    { id: 'TKT-498', subject: 'Return Request - SF-TS-BLK-M', date: '2025-10-22T16:30:00Z', status: 'Resolved' as const },
-  ]
-};
-// --- END MOCK DATA ---
+/**
+ * Get all customers for a shop from database
+ */
+export const getAllCustomers = async (shopId: number = 1): Promise<any[]> => {
+  try {
+    const customers = await db('customers')
+      .select(
+        'platform_customer_id as id',
+        'email',
+        'first_name',
+        'last_name',
+        'total_orders',
+        'total_spent',
+        'created_at'
+      )
+      .where('shop_id', shopId)
+      .orderBy('created_at', 'desc');
 
+    return customers.map(customer => ({
+      ...customer,
+      name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Unknown Customer'
+    }));
+  } catch (error) {
+    console.error('[CustomersService] Error fetching customers:', error);
+    throw new Error('Failed to fetch customers');
+  }
+};
 
 /**
- * Simulates fetching detailed customer data by ID.
- * @param id The customer ID
- * @returns The complete customer data or null if not found.
+ * Get detailed customer data by ID from database
  */
 export const getCustomerDetailsById = async (id: string): Promise<CustomerApiResponse | null> => {
-  // In a real app: await db('customers')...
-  
-  if (id === 'cust_abc') {
-    return mockCustomerDetails_ABC;
+  try {
+    const shopId = 1; // TODO: Get from authenticated user
+    
+    const customer = await db('customers')
+      .select('*')
+      .where({
+        shop_id: shopId,
+        platform_customer_id: id
+      })
+      .first();
+
+    if (!customer) {
+      return null;
+    }
+
+    // Get customer's orders
+    const orders = await db('orders')
+      .select(
+        'platform_order_id as id',
+        'created_at as orderDate',
+        'fulfillment_status as status',
+        'total_price as total'
+      )
+      .where({
+        shop_id: shopId,
+        platform_customer_id: id
+      })
+      .orderBy('created_at', 'desc');
+
+    // Calculate metrics
+    const totalRevenue = customer.total_spent || 0;
+    const totalOrders = customer.total_orders || 0;
+    const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    return {
+      id: customer.platform_customer_id,
+      profile: {
+        name: `Customer ${customer.platform_customer_id?.split('/').pop() || 'Unknown'}`, // Use last part of ID
+        email: 'Email requires PCD access', // Protected data
+        phone: 'Phone requires PCD access', // Protected data
+        location: 'Location data requires PCD access', // Protected data
+        joined_date: customer.created_at,
+        tags: customer.tags ? JSON.parse(customer.tags) : []
+      },
+      metrics: {
+        total_revenue: totalRevenue,
+        total_orders: totalOrders,
+        aov: Math.round(aov * 100) / 100,
+        ltv: totalRevenue // Simple LTV calculation for now
+      },
+      orders: orders.map(order => ({
+        ...order,
+        status: mapOrderStatus(order.status)
+      })),
+      tickets: [] // TODO: Implement support tickets later
+    };
+  } catch (error) {
+    console.error('[CustomersService] Error fetching customer details:', error);
+    throw new Error('Failed to fetch customer details');
   }
+};
+
+/**
+ * Map order status to frontend status
+ */
+const mapOrderStatus = (status: string): string => {
+  const statusMap: { [key: string]: string } = {
+    'fulfilled': 'Shipped',
+    'partial': 'Picking', 
+    'pending': 'Pending',
+    'null': 'Pending'
+  };
   
-  // Simulate not found
-  return null;
+  return statusMap[status] || 'Pending';
 };
