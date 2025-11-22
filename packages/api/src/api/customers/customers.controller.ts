@@ -1,10 +1,10 @@
-// packages/api/src/api/customers/customers.controller.ts
+// Update packages/api/src/api/customers/customers.controller.ts - Remove duplicate route
 import { Request, Response } from 'express';
 import * as customersService from './customers.service';
 
 /**
  * @route   GET /api/v1/customers/:id
- * @desc    Get full customer details by ID
+ * @desc    Get full customer details by ID from database
  * @access  Private
  */
 export const getCustomerDetails = async (req: Request, res: Response) => {
