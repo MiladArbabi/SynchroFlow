@@ -7,6 +7,7 @@ import axios from 'axios';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import { DataGrid, GridColDef, GridRowParams } from '@mui/x-data-grid';
 import MasterPanel from 'ui-component/MasterPanel/index.tsx';
+import { extractShopifyId } from 'utils/shopifyIdExtractor';
 
 // Define the structure of an Order based on actual API response
 interface Order {
@@ -55,6 +56,7 @@ const OrdersPage: React.FC = () => {
       setError(null);
       try {
         const response = await axios.get<Order[]>('/api/v1/orders');
+        console.log('📦 Orders API Response:', response.data);
         setOrders(response.data);
       } catch (err) {
         console.error('Failed to fetch orders:', err);
@@ -64,10 +66,17 @@ const OrdersPage: React.FC = () => {
       }
     };
     fetchOrders();
-  }, []); // Fetch on mount
+  }, []);
 
   const handleRowClick = (params: GridRowParams<Order>) => {
-    navigate(`/orders/${params.row.id}`);
+    console.log('🖱️ Row clicked:', params.row);
+    console.log('🔍 Original Order ID:', params.row.id);
+    
+    // Extract numeric ID from Shopify GID if needed
+    const orderId = extractShopifyId(params.row.id);
+    console.log('🎯 Extracted Order ID for navigation:', orderId);
+    
+    navigate(`/orders/${orderId}`);
   };
 
   return (

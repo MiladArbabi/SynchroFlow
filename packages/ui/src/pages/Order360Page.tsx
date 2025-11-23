@@ -9,6 +9,7 @@ import WmsStatusStepper, { OrderStatus } from 'ui-component/WmsStatusStepper/ind
 // Import the customer component types
 import CustomerProfile, { CustomerProfileData } from 'components/Customer360/CustomerProfile.tsx';
 import CustomerKeyMetrics, { CustomerMetricsData } from 'components/Customer360/CustomerKeyMetrics.tsx';
+import { extractShopifyId } from 'utils/shopifyIdExtractor';
 
 // --- DEFINE NEW CONSOLIDATED API RESPONSE ---
 interface Order360ApiResponse {
@@ -24,13 +25,18 @@ interface Order360ApiResponse {
  * The Order 360 Page: Displays comprehensive details for a single order.
  */
 const Order360Page: React.FC = () => {
-  const { id } = useParams<{ id: string }>(); // Get order ID from URL
+  const { id } = useParams<{ id: string }>();
+  
+// Extract numeric ID if it's a Shopify GID
+const orderId = id ? extractShopifyId(id) : id;
+console.log('🔍 Order360Page - Original ID from URL:', id);
+console.log('🎯 Order360Page - Extracted ID for API:', orderId);
 
-  // --- REFACTOR TO A SINGLE useQuery ---
-  const fetchOrderDetails = async (orderId: string | undefined): Promise<Order360ApiResponse> => {
-    if (!orderId) {
-      throw new Error('Order ID is required');
-    }
+const fetchOrderDetails = async (orderId: string | undefined): Promise<Order360ApiResponse> => {
+  if (!orderId) {
+    throw new Error('Order ID is required');
+  }
+    console.log('🌐 Fetching order details for ID:', orderId);
     const { data } = await axios.get<Order360ApiResponse>(`/api/v1/orders/${orderId}`);
     return data;
   };
@@ -41,11 +47,10 @@ const Order360Page: React.FC = () => {
     isError,
     error
   } = useQuery<Order360ApiResponse, Error>({
-    queryKey: ['order', id],
-    queryFn: () => fetchOrderDetails(id),
-    enabled: !!id,
+    queryKey: ['order', orderId],
+    queryFn: () => fetchOrderDetails(orderId),
+    enabled: !!orderId,
   });
-  // --- END REFACTOR ---
 
   // Define tabs for the ContextPanel
   const tabs: ContextPanelTab[] = [

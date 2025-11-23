@@ -1,8 +1,8 @@
-//packages/ui/src/routes.tsx
+// packages/ui/src/routes.tsx
 import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
-import LoginPage from "./pages/authentication/LoginPage"; // Assuming x has default export
-import RegisterPage from "./pages/authentication/RegisterPage"; // Assuming Register.tsx has default export
+import LoginPage from "./pages/authentication/LoginPage";
+import RegisterPage from "./pages/authentication/RegisterPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
 import DataMapper from "./components/DataMapper/DataMapper";
@@ -30,41 +30,50 @@ const routes = [
     route: "/products",
     component: <ProductsPage />,
   },
-  {
-      type: "collapse", // Keep as collapse if it's in the Sidenav
-      name: "Orders",   // Match Sidenav item title
-      key: "orders",
-      route: "/orders", // The main list view route
-      component: <OrdersPage />,
-  },
-  {
-    type: "collapse", // Show in Sidenav
-    name: "Customers", // Match Sidenav item title
-    key: "customers",
-    icon: "👥", // Placeholder icon
-    route: "/customers", // The main list view route
-    component: <CustomersPage />,
-  },
-  {
-    type: "collapse", // Show in Sidenav
-    name: "Echo Inbox",
-    key: "echo-hub",
-    icon: "💬", // Placeholder icon
-    route: "/echo-hub",
-    component: <EchoHubPage />,
-  },
+  // FIX: Move the specific route BEFORE the general route
   {
     type: "route",
-    name: "Customer Details",
+    name: "Order Details",
+    key: "order-details", 
+    route: "/orders/:id", // More specific route comes FIRST
+    component: <Order360Page />,
+  },
+  {
+    type: "collapse",
+    name: "Orders",
+    key: "orders",
+    route: "/orders", // General route comes AFTER specific route
+    component: <OrdersPage />,
+  },
+  {
+    type: "collapse",
+    name: "Customers",
+    key: "customers",
+    icon: "👥",
+    route: "/customers",
+    component: <CustomersPage />,
+  },
+  // FIX: Apply same pattern for customers
+  {
+    type: "route",
+    name: "Customer Details", 
     key: "customer-details",
-    route: "/customers/:id", // Route with parameter
+    route: "/customers/:id", // Specific first
     component: <Customer360Page />,
+  },
+  {
+    type: "collapse",
+    name: "Echo Inbox",
+    key: "echo-hub",
+    icon: "💬",
+    route: "/echo-hub",
+    component: <EchoHubPage />,
   },
   {
     type: "collapse",
     name: "Data Mapper",
     key: "data-mapper",
-    icon: "🔗", // Placeholder
+    icon: "🔗",
     route: "/data-mapper", 
     component: <DataMapper />,
   },
@@ -72,33 +81,26 @@ const routes = [
     type: "collapse",
     name: "Product Intelligence",
     key: "product-intelligence",
-    icon: "💡", // Placeholder
+    icon: "💡",
     route: "/product-intelligence",
     component: <ProductIntelligencePage />,
   },
   {
-    type: "route", // Use a different type if not for Sidenav display
-    name: "Order Details",
-    key: "order-details",
-    route: "/orders/:id", // Use a parameter for the order ID
-    component: <Order360Page />,
+    type: "route",
+    name: "Account Settings",
+    key: "account-settings",
+    route: "/account/settings",
+    component: <AccountSettingsPage />,
   },
   {
-  type: "route", // Doesn't show in nav
-  name: "Account Settings",
-  key: "account-settings",
-  route: "/account/settings",
-  component: <AccountSettingsPage />,
-  },
-   {
-    type: "route", // Doesn't show in nav
+    type: "route",
     name: "Login",
     key: "login",
     route: "/login",
     component: <LoginPage />,
   },
   {
-    type: "route", // Doesn't show in nav
+    type: "route",
     name: "Register",
     key: "register",
     route: "/register",
