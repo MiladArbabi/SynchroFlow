@@ -65,13 +65,25 @@ export const getOrderProfitabilityById = async (id: string) => {
   try {
     const shopId = 1;
     
-    const order = await db('orders')
+    // Try to find order by the provided ID (could be numeric or full GID)
+    let order = await db('orders')
       .select('total_price')
       .where({
         shop_id: shopId,
         platform_order_id: id
       })
       .first();
+
+    // If not found with the provided ID, try with the full Shopify GID format
+    if (!order && /^\d+$/.test(id)) {
+      order = await db('orders')
+        .select('total_price')
+        .where({
+          shop_id: shopId,
+          platform_order_id: `gid://shopify/Order/${id}`
+        })
+        .first();
+    }
 
     if (!order) {
       throw new Error('Order not found');
@@ -107,7 +119,8 @@ export const getOrderDetailsById = async (id: string) => {
   try {
     const shopId = 1;
     
-    const order = await db('orders')
+    // Try to find order by the provided ID (could be numeric or full GID)
+    let order = await db('orders')
       .select('*')
       .where({
         shop_id: shopId,
@@ -115,9 +128,34 @@ export const getOrderDetailsById = async (id: string) => {
       })
       .first();
 
+    // If not found with the provided ID, try with the full Shopify GID format
+    if (!order && /^\d+$/.test(id)) {
+      order = await db('orders')
+        .select('*')
+        .where({
+          shop_id: shopId,
+          platform_order_id: `gid://shopify/Order/${id}`
+        })
+        .first();
+    }
+
+    // If still not found, try with the numeric ID as platform_order_id
     if (!order) {
+      order = await db('orders')
+        .select('*')
+        .where({
+          shop_id: shopId,
+          platform_order_id: id
+        })
+        .first();
+    }
+
+    if (!order) {
+      console.log(`[OrdersService] Order not found for ID: ${id}`);
       return null;
     }
+
+    console.log(`[OrdersService] Found order: ${order.order_number} with platform_order_id: ${order.platform_order_id}`);
 
     const profitability = await getOrderProfitabilityById(id);
 
