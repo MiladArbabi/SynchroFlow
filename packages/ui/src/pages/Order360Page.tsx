@@ -135,22 +135,27 @@ const Order360Page: React.FC = () => {
                 <CardContent>
                   <Typography variant="h6" gutterBottom>Customer Information</Typography>
                   <Typography><strong>Name:</strong> {orderData.customer.profile.name}</Typography>
-                  <Typography><strong>Email:</strong> {orderData.customer.profile.email}</Typography>
-                  <Typography><strong>Source:</strong> {orderData.customer.profile.source}</Typography>
-                  <Typography><strong>Account Created:</strong> {new Date(orderData.customer.profile.accountCreated).toLocaleDateString()}</Typography>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>Financial Summary</Typography>
-                  <Typography><strong>Revenue:</strong> {formatCurrency(orderData.profitability.revenue)}</Typography>
-                  <Typography><strong>Margin:</strong> {formatCurrency(orderData.profitability.margin)} ({orderData.profitability.marginPercent}%)</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    <strong>COGS:</strong> {formatCurrency(orderData.profitability.cogs)} • 
-                    <strong> Shipping:</strong> {formatCurrency(orderData.profitability.shippingCost)} • 
-                    <strong> Fees:</strong> {formatCurrency(orderData.profitability.fees)}
+                    <strong>Email:</strong> {orderData.customer.profile.email}
                   </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    <strong>Phone:</strong> {orderData.customer.profile.phone}
+                  </Typography>
+                  {orderData.customer.profile.shippingAddress && Object.keys(orderData.customer.profile.shippingAddress).length > 0 && (
+                    <Box sx={{ mt: 1 }}>
+                      <Typography variant="body2"><strong>Shipping Address:</strong></Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {[
+                          orderData.customer.profile.shippingAddress.name,
+                          orderData.customer.profile.shippingAddress.company,
+                          orderData.customer.profile.shippingAddress.address1,
+                          orderData.customer.profile.shippingAddress.address2,
+                          `${orderData.customer.profile.shippingAddress.city}, ${orderData.customer.profile.shippingAddress.province} ${orderData.customer.profile.shippingAddress.zip}`,
+                          orderData.customer.profile.shippingAddress.country
+                        ].filter(Boolean).join(', ')}
+                      </Typography>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
             </>
@@ -158,46 +163,72 @@ const Order360Page: React.FC = () => {
         </Box>
       ),
     },
-    {
-      label: 'Customer 360',
-      content: orderData ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>Customer Profile</Typography>
-              <Typography><strong>Name:</strong> {orderData.customer.profile.name}</Typography>
-              <Typography><strong>Email:</strong> {orderData.customer.profile.email}</Typography>
-              <Typography><strong>Phone:</strong> {orderData.customer.profile.phone || 'Not provided'}</Typography>
-              <Typography><strong>Account Created:</strong> {new Date(orderData.customer.profile.accountCreated).toLocaleDateString()}</Typography>
-              <Typography><strong>Source:</strong> {orderData.customer.profile.source}</Typography>
-              {orderData.customer.profile.tags.length > 0 && (
-                <Box sx={{ mt: 1 }}>
-                  <Typography variant="body2"><strong>Tags:</strong></Typography>
-                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
-                    {orderData.customer.profile.tags.map((tag, index) => (
-                      <Chip key={index} label={tag} size="small" variant="outlined" />
-                    ))}
-                  </Box>
+      {
+    label: 'Customer 360',
+    content: orderData ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {/* Add PCD Compliance Notice Card */}
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom color="primary">
+              Protected Customer Data (PCD) Notice
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Under Shopify's Protected Customer Data policy, access to customer information 
+              including names, email, phone, and addresses is restricted without explicit approval.
+              Please use the Shopify admin to access customer details and contact customers directly.
+            </Typography>
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="body2">
+                <strong>Available order data:</strong> Order number, total, status, dates
+              </Typography>
+              <Typography variant="body2">
+                <strong>Restricted data:</strong> Customer name, email, phone, shipping/billing addresses
+              </Typography>
+            </Box>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>Customer Profile</Typography>
+            <Typography><strong>Name:</strong> {orderData.customer.profile.name}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              <strong>Email:</strong> {orderData.customer.profile.email}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              <strong>Phone:</strong> {orderData.customer.profile.phone}
+            </Typography>
+            <Typography><strong>Account Created:</strong> {new Date(orderData.customer.profile.accountCreated).toLocaleDateString()}</Typography>
+            <Typography><strong>Source:</strong> {orderData.customer.profile.source}</Typography>
+            {orderData.customer.profile.tags.length > 0 && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2"><strong>Tags:</strong></Typography>
+                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                  {orderData.customer.profile.tags.map((tag, index) => (
+                    <Chip key={index} label={tag} size="small" variant="outlined" />
+                  ))}
                 </Box>
-              )}
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>Customer Metrics</Typography>
-              <Typography><strong>Lifetime Value:</strong> {formatCurrency(orderData.customer.metrics.ltv)}</Typography>
-              <Typography><strong>Average Order Value:</strong> {formatCurrency(orderData.customer.metrics.aov)}</Typography>
-              <Typography><strong>Total Orders:</strong> {orderData.customer.metrics.totalOrders}</Typography>
-              <Typography><strong>Total Margin:</strong> {formatCurrency(orderData.customer.metrics.totalMargin)}</Typography>
-              <Typography><strong>Last Order:</strong> {new Date(orderData.customer.metrics.lastOrderDate).toLocaleDateString()}</Typography>
-            </CardContent>
-          </Card>
-        </Box>
-      ) : (
-        <Typography>Loading customer data...</Typography>
-      ),
-    },
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>Customer Metrics</Typography>
+            <Typography><strong>Lifetime Value:</strong> {formatCurrency(orderData.customer.metrics.ltv)}</Typography>
+            <Typography><strong>Average Order Value:</strong> {formatCurrency(orderData.customer.metrics.aov)}</Typography>
+            <Typography><strong>Total Orders:</strong> {orderData.customer.metrics.totalOrders}</Typography>
+            <Typography><strong>Total Margin:</strong> {formatCurrency(orderData.customer.metrics.totalMargin)}</Typography>
+            <Typography><strong>Last Order:</strong> {new Date(orderData.customer.metrics.lastOrderDate).toLocaleDateString()}</Typography>
+          </CardContent>
+        </Card>
+      </Box>
+    ) : (
+      <Typography>Loading customer data...</Typography>
+    ),
+  },
     {
       label: 'Profitability',
       content: orderData ? (

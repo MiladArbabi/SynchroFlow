@@ -139,37 +139,34 @@ export const getOrderDetailsById = async (id: string) => {
         .first();
     }
 
-    // If still not found, try with the numeric ID as platform_order_id
-    if (!order) {
-      order = await db('orders')
-        .select('*')
-        .where({
-          shop_id: shopId,
-          platform_order_id: id
-        })
-        .first();
-    }
-
     if (!order) {
       console.log(`[OrdersService] Order not found for ID: ${id}`);
       return null;
     }
 
-    console.log(`[OrdersService] Found order: ${order.order_number} with platform_order_id: ${order.platform_order_id}`);
+    console.log(`[OrdersService] Found order: ${order.order_number} with customer: ${order.customer_name}`);
 
     const profitability = await getOrderProfitabilityById(id);
+
+    // Parse shipping address from JSON string
+    let shippingAddress = {};
+    try {
+      shippingAddress = order.shipping_address ? JSON.parse(order.shipping_address) : {};
+    } catch (e) {
+      console.warn('Failed to parse shipping address JSON:', e);
+    }
 
     return {
       id: order.platform_order_id,
       status: mapFulfillmentStatus(order.fulfillment_status),
       customer: {
         profile: {
-          name: `Customer #${order.order_number}`,
-          email: 'customer@example.com', // Placeholder since we don't have email
-          phone: '',
+          name: order.customer_name || `Customer #${order.order_number}`,
+          email: 'Contact customer through Shopify admin (PCD restricted)',
+          phone: 'Contact customer through Shopify admin (PCD restricted)',
           tags: [],
-          shippingAddress: {}, // Empty since we don't have shipping_address
-          billingAddress: {},
+          shippingAddress: {}, // Empty due to PCD restrictions
+          billingAddress: {}, // Empty due to PCD restrictions
           accountCreated: order.created_at,
           source: order.source_name || 'Unknown'
         },

@@ -31,9 +31,9 @@
 ## Progress Summary
 - **Phases:** 6 + **Phase 1.5 Bridge** (COMPLETED)
 - **Total Issues Logged:** 62 → **48** (corrected to actual issue count)
-- **Completed:** 25/48 (52%) - **UPDATED: Database Restructuring & Orders API Complete**
+- **Completed:** 27/48 (56%) - **UPDATED: Order360 Navigation & PCD Compliance Complete**
 - **Blocked:** 0/48 (0%) - **UPDATED: All Constraints Resolved**
-- **Remaining:** 23/48 (48%)
+- **Remaining:** 21/48 (44%)
 
 ---
 
@@ -69,6 +69,7 @@ No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C
 | **#819** | Implement Smart Sync Orchestrator | ✅ **COMPLETED** | PCD fallback strategy working |
 | **#820** | Build Shopify Fallback Service | ✅ **COMPLETED** | Non-PCD sync operational |
 | **#821** | **[P1]** Database Restructuring: Customer Relationships | ✅ **COMPLETED** | Fixed customer_id constraints, added platform_customer_id |
+| **#825** | **[NEW]** Fix Order360 Navigation & PCD Compliance | ✅ **COMPLETED** | Shopify GID conversion, customer fields migration |
 | **#806** | Build \`/api/v1/customers\` pipeline | 🎯 **NEXT** | Ready for implementation |
 | **#807** | Build \`/api/v1/products\` pipeline | 🎯 **NEXT** | Enhanced products data distribution |
 | **#824** | **[NEW]** Implement Cross-Entity Analytics | 🎯 **NEXT** | Orders ↔ Customers ↔ Products intelligence |
@@ -132,6 +133,8 @@ No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C
 - ✅ **Database restructuring**: COMPLETE (customer_id nullable, platform_customer_id added)
 - ✅ **Products sync**: COMPLETE (17 products from Shopify)
 - ✅ **Integration sync**: COMPLETE (Status: COMPLETED, no errors)
+- ✅ **Order360 Navigation**: COMPLETE (Shopify GID conversion, PCD compliance)
+- ✅ **Customer Data Migration**: COMPLETE (customer_name, email, phone fields added)
 - 🔄 **Tiered onboarding**: IN PROGRESS (#822) 
 - 🔄 **Customer resolution**: IN PROGRESS (#823)
 - 🎯 **Customers API**: READY (#806)
@@ -181,8 +184,8 @@ interface TechnicalMetrics {
 
 ---
 
-**Phase 1.5 Complete**: We've successfully built a robust PLG SaaS foundation with working orders sync, database restructuring, and real Shopify data integration.
+**Phase 1.5 Complete**: We've successfully built a robust PLG SaaS foundation with working orders sync, database restructuring, real Shopify data integration, and fully functional Order360 navigation.
 
 **Next Phase**: Customer Intelligence (#806 Customers API) - Building on our solid foundation to deliver cross-entity analytics and customer resolution.
 
-**Key Achievement**: Orders API now serving 7 real orders from Shopify with proper database constraints and sync architecture." 
+**Key Achievement**: Order360 feature now production-ready with PCD compliance, Shopify GID handling, and complete customer data flow from navigation to display.
