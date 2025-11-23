@@ -61,7 +61,7 @@ export const performInitialSync = async (
         }
       }
       
-      # Fetch Orders - basic fields only
+      # Fetch Orders - Minimal PCD compliant (only absolutely safe fields)
       orders(first: 50) {
         edges {
           node {
@@ -76,8 +76,10 @@ export const performInitialSync = async (
             currencyCode
             createdAt
             sourceName
-            # Remove fulfillments for now to simplify
-
+            displayFulfillmentStatus
+            displayFinancialStatus
+            # Remove customer field entirely - all fields are protected
+            # Remove shippingAddress entirely - all fields are protected
             lineItems(first: 20) {
               edges {
                 node {
@@ -205,27 +207,35 @@ async function syncProducts(trx: Knex.Transaction, shopId: number, edges: any[])
 
 // Simplified orders sync without fulfillments
 async function syncOrders(trx: Knex.Transaction, shopId: number, edges: any[]) {
-  const ordersToInsert = edges.map(({ node }: any) => ({
-    shop_id: shopId,
-    platform_order_id: node.id,
-    order_number: node.name,
-    total_price: node.totalPriceSet?.shopMoney?.amount || 0,
-    currency: node.currencyCode,
-    created_at: node.createdAt,
-    source_name: node.sourceName,
-    // Provide default values for NOT NULL columns
-    fulfillment_status: 'pending', // Default value instead of null
-    financial_status: 'pending',   // Default value instead of null  
-    customer_id: null, // Will be resolved later by customer resolution service
-    platform_customer_id: null, // Will be populated when we have customer data
-  }));
+  const ordersToInsert = edges.map(({ node }: any) => {
+    // Under PCD without approval, we cannot access any customer or address data
+    // We can only use the order data itself
+    
+    return {
+      shop_id: shopId,
+      platform_order_id: node.id,
+      order_number: node.name,
+      fulfillment_status: node.displayFulfillmentStatus?.toLowerCase() || 'pending',
+      financial_status: node.displayFinancialStatus?.toLowerCase() || 'pending',
+      total_price: parseFloat(node.totalPriceSet?.shopMoney?.amount || '0'),
+      currency: node.currencyCode,
+      created_at: node.createdAt,
+      source_name: node.sourceName,
+      // No customer data available under PCD without approval
+      customer_name: `Customer #${node.name}`,
+      customer_email: '', 
+      customer_phone: '',
+      platform_customer_id: null,
+      shipping_address: null, // No address data available
+    };
+  });
 
   if (ordersToInsert.length > 0) {
     await trx('orders')
       .insert(ordersToInsert)
       .onConflict('platform_order_id')
       .merge();
-    console.log(`[ShopifyService] Synced ${ordersToInsert.length} orders.`);
+    console.log(`[ShopifyService] Synced ${ordersToInsert.length} orders with minimal PCD-compliant data.`);
   }
 }
 
