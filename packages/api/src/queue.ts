@@ -5,12 +5,18 @@ import { Channel } from 'amqplib';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672';
 
-// We export the connection so our worker can use it
-export const connection: AmqpConnectionManager = amqp.connect([RABBITMQ_URL]);
+// 1. Add heartbeat to keep connection alive and detect drops faster
+export const connection: AmqpConnectionManager = amqp.connect([RABBITMQ_URL], {
+  heartbeatIntervalInSeconds: 5,
+  reconnectTimeInSeconds: 5,
+});
 
-connection.on('disconnect', (e: { err: Error }) => console.log('[api/queue.ts] Disconnected from RabbitMQ', e.err.message));
+connection.on('connect', () => console.log('[api/queue.ts] Connected to RabbitMQ'));
+connection.on('disconnect', (e: { err: Error }) => {
+    // Use console.error so it stands out in logs
+    console.error('[api/queue.ts] Disconnected from RabbitMQ:', e.err?.message);
+});
 
-// We use a map to store our channels so we don't create them more than once
 const channels = new Map<string, ChannelWrapper>();
 
 export const getQueueChannel = (queueName: string): ChannelWrapper => {
@@ -21,6 +27,17 @@ export const getQueueChannel = (queueName: string): ChannelWrapper => {
         return channel.assertQueue(queueName, { durable: true });
       }
     });
+
+    // Handle channel-specific errors
+    // Without this, a channel error (like "Precondition Failed") crashes the whole app
+    channelWrapper.on('error', (err) => {
+        console.error(`[api/queue.ts] Error in channel for queue "${queueName}":`, err.message);
+    });
+    
+    channelWrapper.on('close', () => {
+        console.warn(`[api/queue.ts] Channel for queue "${queueName}" closed`);
+    });
+
     channels.set(queueName, channelWrapper);
   }
   return channels.get(queueName)!;
