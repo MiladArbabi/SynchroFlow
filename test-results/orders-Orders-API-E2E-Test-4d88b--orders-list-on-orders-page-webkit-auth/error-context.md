@@ -1,0 +1,109 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e29]:
+            - list [ref=e30]:
+              - link "Dashboard" [ref=e31] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e33]
+                - paragraph [ref=e39]: Dashboard
+            - list [ref=e40]:
+              - link "Orders" [ref=e41] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e43]
+                - heading "Orders" [level=5] [ref=e48]
+              - link "Customers" [ref=e49] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e51]
+                - paragraph [ref=e57]: Customers
+              - link "Products" [ref=e58] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e60]
+                - paragraph [ref=e65]: Products
+            - list [ref=e66]:
+              - link "Echo Inbox" [ref=e67] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e69]
+                - paragraph [ref=e72]: Echo Inbox
+          - list [ref=e73]:
+            - button [ref=e74] [cursor=pointer]:
+              - img [ref=e76]
+    - separator [ref=e79]
+    - generic [ref=e81]:
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - button [ref=e85] [cursor=pointer]:
+            - img [ref=e86]
+          - navigation "breadcrumb" [ref=e88]:
+            - list [ref=e89]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e90]: /
+              - listitem [ref=e91]:
+                - paragraph [ref=e92]: Orders
+        - generic [ref=e93]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e94] [cursor=pointer]:
+            - img [ref=e95]
+          - button "Notifications" [ref=e102] [cursor=pointer]:
+            - img [ref=e104]
+          - button "Edit Layout" [ref=e109] [cursor=pointer]:
+            - img [ref=e110]
+          - button "user-account" [ref=e113] [cursor=pointer]:
+            - img "User Avatar" [ref=e115]
+            - img [ref=e117]
+      - generic [ref=e121]:
+        - generic [ref=e124]:
+          - generic [ref=e127]: Orders
+          - separator [ref=e128]
+          - generic [ref=e130]:
+            - grid [ref=e131]:
+              - 'row "Order # Customer Total Status Created" [ref=e132]':
+                - 'columnheader "Order #" [ref=e133] [cursor=pointer]':
+                  - generic [ref=e135]: "Order #"
+                  - generic [ref=e136]:
+                    - img
+                - columnheader "Customer" [ref=e137] [cursor=pointer]:
+                  - generic [ref=e139]: Customer
+                  - generic [ref=e140]:
+                    - img
+                - columnheader "Total" [ref=e141] [cursor=pointer]:
+                  - generic [ref=e143]: Total
+                  - generic [ref=e144]:
+                    - img
+                - columnheader "Status" [ref=e145] [cursor=pointer]:
+                  - generic [ref=e147]: Status
+                  - generic [ref=e148]:
+                    - img
+                - columnheader "Created" [ref=e149] [cursor=pointer]:
+                  - generic [ref=e151]: Created
+                  - generic [ref=e152]:
+                    - img
+              - generic [ref=e154]: No rows
+              - rowgroup
+            - generic [ref=e158]:
+              - paragraph [ref=e159]: "Rows per page:"
+              - generic [ref=e160]:
+                - 'combobox "Rows per page: 25" [ref=e161] [cursor=pointer]': "25"
+                - textbox: "25"
+                - img
+              - paragraph [ref=e162]: 0–0 of 0
+              - generic [ref=e163]:
+                - button "Go to previous page" [disabled]:
+                  - img
+                - button "Go to next page" [disabled]:
+                  - img
+        - separator [ref=e164]
+  - generic [ref=e165]:
+    - img [ref=e167]
+    - button "Open Tanstack query devtools" [ref=e235] [cursor=pointer]:
+      - img [ref=e236]
+```

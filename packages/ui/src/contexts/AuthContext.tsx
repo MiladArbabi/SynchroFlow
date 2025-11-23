@@ -3,6 +3,7 @@
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from '../../../api/src/types';
 import { usePostHog } from '@posthog/react';
+import { setToken, clearToken } from 'utils/authStore'; // Import authStore functions
 
 // --- Define State Shape ---
 interface AuthState {
@@ -48,6 +49,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       if (storedToken && storedUser) {
         console.log("AuthContext: Found stored session. Re-hydrating state.");
+        setToken(storedToken); // Sync to authStore for axios interceptors
         setAuthState({
           isLoggedIn: true,
           isLoading: false,
@@ -57,6 +59,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else {
         console.log("AuthContext: No stored session found.");
         // No session, just finish loading
+        clearToken(); // Ensure authStore is cleared
         setAuthState(prev => ({ ...prev, isLoading: false }));
       }
     } catch (error) {
@@ -64,12 +67,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Clear corrupted storage and finish loading
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
+      clearToken(); // Clear authStore
       setAuthState(prev => ({ ...prev, isLoading: false, isLoggedIn: false, user: null, accessToken: null }));
     }
   }, []);
 
   // -- Save to localStorage on login ---
   const login = useCallback((user: PublicUser, accessToken: string) => {
+    setToken(accessToken); // Sync to authStore for axios interceptors
     setAuthState({
       isLoggedIn: true,
       isLoading: false,
@@ -95,6 +100,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // --- Clear localStorage on logout ---
   const logout = useCallback(() => {
+    clearToken(); // Clear authStore
     setAuthState({
       isLoggedIn: false,
       isLoading: false,
@@ -116,6 +122,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // This function is for token refresh. It should also update localStorage.
   const setAccessToken = useCallback((token: string | null) => {
+      if (token) {
+        setToken(token); // Sync to authStore
+      } else {
+        clearToken(); // Clear authStore
+      }
+
       setAuthState(prev => ({ ...prev, accessToken: token }));
       if (token) {
         localStorage.setItem('accessToken', token);

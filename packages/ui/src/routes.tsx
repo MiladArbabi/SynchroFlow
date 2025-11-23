@@ -15,27 +15,18 @@ import AccountSettingsPage from "./pages/AccountSettingsPage";
 
 const routes = [
   {
-    type: "collapse",
-    name: "Dashboard",
-    key: "dashboard",
-    icon: "🏠",
-    route: "/dashboard",
-    component: <DashboardPage children={<></>} handleSidenavToggle={() => {}} />,
+    type: "collapse", // Keep as collapse if it's in the Sidenav
+    name: "Orders",   // Match Sidenav item title
+    key: "orders",
+    route: "/orders", // The main list view route
+    component: <OrdersPage />,
   },
   {
-    type: "collapse",
-    name: "Products",
-    key: "products",
-    icon: "📦",
-    route: "/products",
-    component: <ProductsPage />,
-  },
-  {
-      type: "collapse", // Keep as collapse if it's in the Sidenav
-      name: "Orders",   // Match Sidenav item title
-      key: "orders",
-      route: "/orders", // The main list view route
-      component: <OrdersPage />,
+    type: "route", // Use a different type if not for Sidenav display
+    name: "Order Details",
+    key: "order-details",
+    route: "/orders/:id", // Use a parameter for the order ID
+    component: <Order360Page />,
   },
   {
     type: "collapse", // Show in Sidenav
@@ -46,19 +37,35 @@ const routes = [
     component: <CustomersPage />,
   },
   {
+    type: "route",
+    name: "Customer Details",
+    key: "customer-details",
+    route: "/customers/:id", // Route with parameter
+    component: <Customer360Page />,
+  },
+  {
+    type: "collapse",
+    name: "Products",
+    key: "products",
+    icon: "📦",
+    route: "/products",
+    component: <ProductsPage />,
+  },
+  {
+    type: "collapse",
+    name: "Dashboard",
+    key: "dashboard",
+    icon: "🏠",
+    route: "/dashboard",
+    component: <DashboardPage children={<></>} handleSidenavToggle={() => {}} />,
+  },
+  {
     type: "collapse", // Show in Sidenav
     name: "Echo Inbox",
     key: "echo-hub",
     icon: "💬", // Placeholder icon
     route: "/echo-hub",
     component: <EchoHubPage />,
-  },
-  {
-    type: "route",
-    name: "Customer Details",
-    key: "customer-details",
-    route: "/customers/:id", // Route with parameter
-    component: <Customer360Page />,
   },
   {
     type: "collapse",
@@ -75,13 +82,6 @@ const routes = [
     icon: "💡", // Placeholder
     route: "/product-intelligence",
     component: <ProductIntelligencePage />,
-  },
-  {
-    type: "route", // Use a different type if not for Sidenav display
-    name: "Order Details",
-    key: "order-details",
-    route: "/orders/:id", // Use a parameter for the order ID
-    component: <Order360Page />,
   },
   {
   type: "route", // Doesn't show in nav

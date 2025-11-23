@@ -1,0 +1,69 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - link "theme-logo" [ref=e9] [cursor=pointer]:
+      - /url: /sample-page
+      - img [ref=e10]
+    - region "scrollable content" [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e28]:
+          - list [ref=e29]:
+            - link "Dashboard" [ref=e30] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e32]
+              - paragraph [ref=e38]: Dashboard
+          - list [ref=e39]:
+            - link "Orders" [ref=e40] [cursor=pointer]:
+              - /url: /orders
+              - img [ref=e42]
+              - paragraph [ref=e47]: Orders
+            - link "Customers" [ref=e48] [cursor=pointer]:
+              - /url: /customers
+              - img [ref=e50]
+              - heading "Customers" [level=5] [ref=e56]
+            - link "Products" [ref=e57] [cursor=pointer]:
+              - /url: /products
+              - img [ref=e59]
+              - paragraph [ref=e64]: Products
+          - list [ref=e65]:
+            - link "Echo Inbox" [ref=e66] [cursor=pointer]:
+              - /url: /echo-hub
+              - img [ref=e68]
+              - paragraph [ref=e71]: Echo Inbox
+        - list [ref=e72]:
+          - button [ref=e73] [cursor=pointer]:
+            - img [ref=e75]
+  - separator [ref=e78]
+  - generic [ref=e80]:
+    - generic [ref=e82]:
+      - generic [ref=e83]:
+        - button [ref=e84] [cursor=pointer]:
+          - img [ref=e85]
+        - navigation "breadcrumb" [ref=e87]:
+          - list [ref=e88]:
+            - listitem:
+              - link:
+                - /url: /dashboard
+            - listitem [ref=e89]: /
+            - listitem [ref=e90]:
+              - paragraph [ref=e91]: Customers
+      - generic [ref=e92]:
+        - generic "Open Kore Command (Cmd+J)" [ref=e93] [cursor=pointer]:
+          - img [ref=e94]
+        - button "Notifications" [ref=e101] [cursor=pointer]:
+          - img [ref=e103]
+        - button "Edit Layout" [ref=e108] [cursor=pointer]:
+          - img [ref=e109]
+        - button "user-account" [ref=e112] [cursor=pointer]:
+          - img "User Avatar" [ref=e114]
+          - img [ref=e116]
+    - generic [ref=e120]:
+      - generic [ref=e123]:
+        - generic [ref=e126]: Customers
+        - separator [ref=e127]
+        - progressbar [ref=e129]:
+          - img [ref=e130]
+      - separator [ref=e132]
+```

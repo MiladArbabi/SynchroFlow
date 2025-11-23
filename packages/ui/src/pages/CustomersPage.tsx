@@ -58,6 +58,14 @@ const CustomersPage: React.FC = () => {
   // --- End Data Fetching ---
 
   const handleRowClick = (params: GridRowParams<Customer>) => {
+    console.log('🔍 DEBUG CustomersPage - handleRowClick FIRED');
+    const customerId = encodeURIComponent(params.row.id);
+    console.log('📋 Row params ID:', params.row.id);
+    console.log('🔐 Encoded ID:', customerId);
+    console.log('🎯 Target URL:', `/customers/${customerId}`);
+    console.log('📍 Current path:', window.location.pathname);
+    console.log('🚀 CustomersPage - Navigating to customer:', params.row.id);
+    console.log('📋 Row data:', params.row);
     navigate(`/customers/${params.row.id}`);
   };
 

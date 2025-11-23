@@ -67,6 +67,14 @@ const OrdersPage: React.FC = () => {
   }, []); // Fetch on mount
 
   const handleRowClick = (params: GridRowParams<Order>) => {
+    console.log('🔍 DEBUG OrdersPage - handleRowClick FIRED');
+    const orderId = encodeURIComponent(params.row.id);
+    console.log('📋 Row params ID:', params.row.id);
+    console.log('🔐 Encoded ID:', orderId);
+    console.log('🎯 Target URL:', `/orders/${orderId}`);
+    console.log('📍 Current path:', window.location.pathname);
+    console.log('🚀 OrdersPage - Navigating to order:', params.row.id);
+    console.log('📋 Row data:', params.row);
     navigate(`/orders/${params.row.id}`);
   };
 

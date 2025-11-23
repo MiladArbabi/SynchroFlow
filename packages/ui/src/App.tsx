@@ -1,9 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 // packages/ui/src/App.tsx
 import React from "react";
-import axios from "axios";
+import { axiosInstance } from "api/axiosConfig";
 import RGL from 'react-grid-layout'
-import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useOutletContext, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntegrationProvider } from 'contexts/IntegrationContext';
 import { DashboardStateProvider } from "contexts/DashboardStateContext";
@@ -45,7 +45,7 @@ const LayoutManager = () => {
   // Handler for saving the layout (calls backend)
   const handleSaveLayout = async () => {
     try {
-      await axios.post("/api/v1/layouts/dashboard", {
+      await axiosInstance.post("/api/v1/layouts/dashboard", {
         layout: layoutRef.current, // Use data from refs
         activeWidgets: activeWidgetsRef.current,
       });
@@ -79,6 +79,18 @@ const LayoutManager = () => {
 };
 
 export default function App() {
+
+  const location = useLocation();
+ 
+ // Debug: Log route changes
+ React.useEffect(() => {
+   console.log('🔄 DEBUG App - Route changed:', {
+     pathname: location.pathname,
+     search: location.search,
+     hash: location.hash
+   });
+ }, [location]);
+
   return (
   <QueryClientProvider client={queryClient}> 
     <DashboardStateProvider>
@@ -101,11 +113,10 @@ export default function App() {
                 .map((route) => (
                   <Route path={route.route} element={route.component} key={route.key} />
                 ))}
+                {/* Catch-all route for authenticated users - redirect to dashboard */}
+               <Route path="*" element={<Navigate to="/dashboard" />} />
               </Route>
             </Route>
-
-            {/* A default redirect to the dashboard */}
-            <Route path="*" element={<Navigate to="/dashboard" />} />
           </Routes>
         </ThemeCustomization>
      </IntegrationProvider>

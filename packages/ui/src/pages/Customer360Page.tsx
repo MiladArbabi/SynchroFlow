@@ -30,6 +30,12 @@ interface CustomerApiResponse {
 const Customer360Page: React.FC = () => {
   // --- Hooks ---
   const { id } = useParams<{ id: string }>(); // Get customer ID from URL parameter
+  
+  console.log('🎯 DEBUG Customer360Page - MOUNTED');
+  const decodedId = id ? decodeURIComponent(id) : null;
+  console.log('👤 Customer ID from params (raw):', id);
+  console.log('🔓 Decoded Customer ID:', decodedId);
+  console.log('🔗 Full URL:', window.location.href);
 
   // --- Data Fetching Function ---
   /**

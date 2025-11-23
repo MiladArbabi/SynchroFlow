@@ -62,6 +62,14 @@ export const DashboardPage = ({
   }
 }, []);
 
+// Debug: Log when DashboardPage renders
+ useEffect(() => {
+   console.log('🏠 DEBUG DashboardPage - RENDERED', {
+     pathname: window.location.pathname,
+     searchParams: Object.fromEntries(searchParams.entries())
+   });
+ });
+
  const handleOpenConnectModal = async () => {
     // 5. Implement the Pre-flight Check
     try {

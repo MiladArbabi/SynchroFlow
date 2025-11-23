@@ -25,6 +25,12 @@ interface Order360ApiResponse {
  */
 const Order360Page: React.FC = () => {
   const { id } = useParams<{ id: string }>(); // Get order ID from URL
+  
+  console.log('🎯 DEBUG Order360Page - MOUNTED');
+  const decodedId = id ? decodeURIComponent(id) : null;
+  console.log('📦 Order ID from params (raw):', id);
+  console.log('🔓 Decoded Order ID:', decodedId);
+  console.log('🔗 Full URL:', window.location.href);
 
   // --- REFACTOR TO A SINGLE useQuery ---
   const fetchOrderDetails = async (orderId: string | undefined): Promise<Order360ApiResponse> => {

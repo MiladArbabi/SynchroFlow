@@ -1,43 +1,36 @@
-// tests/e2e/customers.spec.ts
+// Update tests/e2e/customers.spec.ts - Use correct selectors
 import { test, expect } from '@playwright/test';
 
 test.describe('Customers API E2E Tests', () => {
-  test.skip('should display customers list on customers page', async ({ page }) => {
+  test('should display customers list on customers page', async ({ page }) => {
     // Navigate to customers page
     await page.goto('/customers');
     
-    // Check if customers page loads - use more specific selector
-    await expect(page.locator('h5:has-text("Customers")').first()).toBeVisible();
+    // Check if customers page loads - use actual class names
+    await expect(page.locator('.MuiTypography-h5:has-text("Customers")')).toBeVisible();
     
-    // Check if customers table or empty state is displayed
-    const table = page.locator('table');
-    const emptyState = page.locator('text=No customers');
+    // Check if DataGrid is present (MUI DataGrid has role="grid")
+    await expect(page.locator('[role="grid"]')).toBeVisible();
     
-    // Either table or empty state should be visible
-    if (await table.isVisible()) {
-      await expect(table).toBeVisible();
-    } else {
-      await expect(emptyState).toBeVisible();
-    }
+    // Check if there are customer rows
+    const rows = page.locator('[role="row"]:not([aria-rowindex="1"])'); // Skip header row
+    await expect(rows).toHaveCount(3); // Should have 3 customers
   });
 
   test('should show customer details when clicking on customer', async ({ page }) => {
     // Navigate to customers page
     await page.goto('/customers');
     
-    // Check if there are any customers to click
-    const customerRows = page.locator('table tbody tr');
-    const count = await customerRows.count();
+    // Wait for rows to load
+    await page.waitForSelector('[role="row"]:not([aria-rowindex="1"])');
     
-    if (count > 0) {
-      // Click on first customer row
-      await customerRows.first().click();
-      
-      // Check if customer details are shown
-      await expect(page.locator('text=Customer Profile')).toBeVisible();
-    } else {
-      // Skip test if no customers
-      console.log('No customers available for details test');
-    }
+    // Click on first customer row (skip header)
+    await page.locator('[role="row"]:not([aria-rowindex="1"])').first().click();
+    
+    // Check if we navigated to customer details page
+    await expect(page).toHaveURL(/\/customers\//);
+    
+    // Check if customer detail content loads
+    await expect(page.locator('h4:has-text("Details for Customer")')).toBeVisible();
   });
 });

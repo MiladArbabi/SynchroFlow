@@ -11,6 +11,10 @@ import { Box, CircularProgress } from '@mui/material';
 const ProtectedRoute: React.FC = () => {
   const { isLoggedIn, isLoading } = useAuth();
 
+  console.log('🛡️ DEBUG ProtectedRoute - RENDERED');
+  console.log('🔐 Auth state - isLoggedIn:', isLoggedIn, 'isLoading:', isLoading);
+  console.log('📍 Current path:', window.location.pathname);
+
   // 1. Show a full-screen loader while auth status is being checked
   if (isLoading) {
     return (

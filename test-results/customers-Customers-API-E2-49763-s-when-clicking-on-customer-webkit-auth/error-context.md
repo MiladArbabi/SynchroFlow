@@ -1,0 +1,105 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e29]:
+            - list [ref=e30]:
+              - link "Dashboard" [ref=e31] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e33]
+                - paragraph [ref=e39]: Dashboard
+            - list [ref=e40]:
+              - link "Orders" [ref=e41] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e43]
+                - paragraph [ref=e48]: Orders
+              - link "Customers" [ref=e49] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e51]
+                - heading "Customers" [level=5] [ref=e57]
+              - link "Products" [ref=e58] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e60]
+                - paragraph [ref=e65]: Products
+            - list [ref=e66]:
+              - link "Echo Inbox" [ref=e67] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e69]
+                - paragraph [ref=e72]: Echo Inbox
+          - list [ref=e73]:
+            - button [ref=e74] [cursor=pointer]:
+              - img [ref=e76]
+    - separator [ref=e79]
+    - generic [ref=e81]:
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - button [ref=e85] [cursor=pointer]:
+            - img [ref=e86]
+          - navigation "breadcrumb" [ref=e88]:
+            - list [ref=e89]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e90]: /
+              - listitem [ref=e91]:
+                - paragraph [ref=e92]: Customers
+        - generic [ref=e93]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e94] [cursor=pointer]:
+            - img [ref=e95]
+          - button "Notifications" [ref=e102] [cursor=pointer]:
+            - img [ref=e104]
+          - button "Edit Layout" [ref=e109] [cursor=pointer]:
+            - img [ref=e110]
+          - button "user-account" [ref=e113] [cursor=pointer]:
+            - img "User Avatar" [ref=e115]
+            - img [ref=e117]
+      - generic [ref=e121]:
+        - generic [ref=e124]:
+          - generic [ref=e127]: Customers
+          - separator [ref=e128]
+          - generic [ref=e130]:
+            - grid [ref=e131]:
+              - row "Customer ID Name Email Total Orders" [ref=e132]:
+                - columnheader "Customer ID" [ref=e133] [cursor=pointer]:
+                  - generic [ref=e135]: Customer ID
+                  - generic [ref=e136]:
+                    - img
+                - columnheader "Name" [ref=e137] [cursor=pointer]:
+                  - generic [ref=e139]: Name
+                  - generic [ref=e140]:
+                    - img
+                - columnheader "Email" [ref=e141] [cursor=pointer]:
+                  - generic [ref=e143]: Email
+                  - generic [ref=e144]:
+                    - img
+                - columnheader "Total Orders" [ref=e145] [cursor=pointer]:
+                  - generic [ref=e147]: Total Orders
+                  - generic [ref=e148]:
+                    - img
+              - generic [ref=e150]: No rows
+              - rowgroup
+            - generic [ref=e154]:
+              - paragraph [ref=e155]: "Rows per page:"
+              - generic [ref=e156]:
+                - 'combobox "Rows per page: 25" [ref=e157] [cursor=pointer]': "25"
+                - textbox: "25"
+                - img
+              - paragraph [ref=e158]: 0–0 of 0
+              - generic [ref=e159]:
+                - button "Go to previous page" [disabled]:
+                  - img
+                - button "Go to next page" [disabled]:
+                  - img
+        - separator [ref=e160]
+  - generic [ref=e161]:
+    - img [ref=e163]
+    - button "Open Tanstack query devtools" [ref=e231] [cursor=pointer]:
+      - img [ref=e232]
+```

@@ -1,0 +1,105 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - link "theme-logo" [ref=e9] [cursor=pointer]:
+        - /url: /sample-page
+        - img [ref=e10]
+      - region "scrollable content" [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e28]:
+            - list [ref=e29]:
+              - link "Dashboard" [ref=e30] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e32]
+                - paragraph [ref=e38]: Dashboard
+            - list [ref=e39]:
+              - link "Orders" [ref=e40] [cursor=pointer]:
+                - /url: /orders
+                - img [ref=e42]
+                - paragraph [ref=e47]: Orders
+              - link "Customers" [ref=e48] [cursor=pointer]:
+                - /url: /customers
+                - img [ref=e50]
+                - heading "Customers" [level=5] [ref=e56]
+              - link "Products" [ref=e57] [cursor=pointer]:
+                - /url: /products
+                - img [ref=e59]
+                - paragraph [ref=e64]: Products
+            - list [ref=e65]:
+              - link "Echo Inbox" [ref=e66] [cursor=pointer]:
+                - /url: /echo-hub
+                - img [ref=e68]
+                - paragraph [ref=e71]: Echo Inbox
+          - list [ref=e72]:
+            - button [ref=e73] [cursor=pointer]:
+              - img [ref=e75]
+    - separator [ref=e78]
+    - generic [ref=e80]:
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - button [ref=e84] [cursor=pointer]:
+            - img [ref=e85]
+          - navigation "breadcrumb" [ref=e87]:
+            - list [ref=e88]:
+              - listitem:
+                - link:
+                  - /url: /dashboard
+              - listitem [ref=e89]: /
+              - listitem [ref=e90]:
+                - paragraph [ref=e91]: Customers
+        - generic [ref=e92]:
+          - generic "Open Kore Command (Cmd+J)" [ref=e93] [cursor=pointer]:
+            - img [ref=e94]
+          - button "Notifications" [ref=e101] [cursor=pointer]:
+            - img [ref=e103]
+          - button "Edit Layout" [ref=e108] [cursor=pointer]:
+            - img [ref=e109]
+          - button "user-account" [ref=e112] [cursor=pointer]:
+            - img "User Avatar" [ref=e114]
+            - img [ref=e116]
+      - generic [ref=e120]:
+        - generic [ref=e123]:
+          - generic [ref=e126]: Customers
+          - separator [ref=e127]
+          - generic [ref=e129]:
+            - grid [ref=e130]:
+              - row "Customer ID Name Email Total Orders" [ref=e131]:
+                - columnheader "Customer ID" [ref=e132] [cursor=pointer]:
+                  - generic [ref=e134]: Customer ID
+                  - generic [ref=e135]:
+                    - img
+                - columnheader "Name" [ref=e136] [cursor=pointer]:
+                  - generic [ref=e138]: Name
+                  - generic [ref=e139]:
+                    - img
+                - columnheader "Email" [ref=e140] [cursor=pointer]:
+                  - generic [ref=e142]: Email
+                  - generic [ref=e143]:
+                    - img
+                - columnheader "Total Orders" [ref=e144] [cursor=pointer]:
+                  - generic [ref=e146]: Total Orders
+                  - generic [ref=e147]:
+                    - img
+              - generic [ref=e149]: No rows
+              - rowgroup
+            - generic [ref=e153]:
+              - paragraph [ref=e154]: "Rows per page:"
+              - generic [ref=e155]:
+                - 'combobox "Rows per page: 25" [ref=e156] [cursor=pointer]': "25"
+                - textbox: "25"
+                - img
+              - paragraph [ref=e157]: 0–0 of 0
+              - generic [ref=e158]:
+                - button "Go to previous page" [disabled]:
+                  - img
+                - button "Go to next page" [disabled]:
+                  - img
+        - separator [ref=e159]
+  - generic [ref=e160]:
+    - img [ref=e162]
+    - button "Open Tanstack query devtools" [ref=e210] [cursor=pointer]:
+      - img [ref=e211]
+```
