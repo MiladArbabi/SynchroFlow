@@ -26,6 +26,7 @@ services:
       # Default user and password
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DISK_FREE_LIMIT: "50MB"
     networks:
       - synchroflow-net
 
