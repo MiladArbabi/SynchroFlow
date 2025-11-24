@@ -73,7 +73,7 @@ describe('KoreTrigger', () => {
     // The Avatar should be clickable and have proper styling
     const avatar = screen.getByTestId('kore-navbar-button');
     expect(avatar).toHaveStyle('cursor: pointer');
-    expect(avatar).toHaveStyle('border-radius: 6px');
+    expect(avatar).toHaveStyle('border-radius: 18px');
   });
 
   test('renders Avatar and KoreIcon components', () => {
@@ -132,7 +132,7 @@ describe('KoreTrigger', () => {
     
     const avatar = screen.getByTestId('kore-navbar-button');
     expect(avatar).toBeInTheDocument();
-    expect(avatar).toHaveStyle('border-radius: 6px');
+    expect(avatar).toHaveStyle('border-radius: 18px');
     expect(avatar).toHaveStyle('cursor: pointer');
   });
 });

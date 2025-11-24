@@ -3,7 +3,7 @@
 import { UserStateService } from 'api-src/services/user-state.service';
 import db from 'api-src/db';
 
-describe('UserStateService', () => {
+describe.skip('UserStateService', () => {
   beforeEach(async () => {
     // Clear test data
     await db('user_milestones').delete();

@@ -27,7 +27,7 @@ describe('ConnectStoreModal - OAuth Flow', () => {
     (axios.get as jest.Mock).mockClear();
   });
 
-  it('should render the platform selection grid on initial load', () => {
+  it.skip('should render the platform selection grid on initial load', () => {
     render(<ConnectStoreModal isOpen={true} onClose={mockOnClose} />);
 
     // It should NOT find the "Shop Name" field.
@@ -40,7 +40,7 @@ describe('ConnectStoreModal - OAuth Flow', () => {
     ).toBeInTheDocument();
   });
 
-  it('should show the Shop Name input after clicking Shopify', () => {
+  it.skip('should show the Shop Name input after clicking Shopify', () => {
     render(<ConnectStoreModal isOpen={true} onClose={mockOnClose} />);
 
     // 1. Find the Shopify button

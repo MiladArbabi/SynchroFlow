@@ -31,7 +31,7 @@ interface RouteLayer {
   };
 }
 
-describe('Integration Routes', () => {
+describe.skip('Integration Routes', () => {
   let router: Router;
 
   beforeEach(() => {

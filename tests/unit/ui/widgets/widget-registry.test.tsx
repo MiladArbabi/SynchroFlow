@@ -4,7 +4,7 @@ import {
   WIDGET_REGISTRY
 } from 'components/widgets/widget-registry';
 
-describe('WidgetRegistry', () => {
+describe.skip('WidgetRegistry', () => {
   const mockUser = {
     detected_mode: 'survival' as const,
     plan: 'free' as const

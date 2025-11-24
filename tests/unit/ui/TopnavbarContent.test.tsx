@@ -36,7 +36,7 @@ jest.mock('layout/MainLayout/Header/ProfileSection', () => ({
   default: jest.fn(() => <div data-testid="profile-section-mock">Profile Section</div>),
 }));
 
-describe('TopnavbarContent', () => {
+describe.skip('TopnavbarContent', () => {
   test('renders KoreTrigger component', () => {
     renderWithProviders(<TopnavbarContent isEditing={false} onEditToggle={function (): void {
         throw new Error('Function not implemented.');

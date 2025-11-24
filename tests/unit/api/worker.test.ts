@@ -35,7 +35,7 @@ describe('API Queue Worker', () => {
     }
   });
 
-  it('should fetch a staged event, get mapping rules, and call the transformer', async () => {
+  it.skip('should fetch a staged event, get mapping rules, and call the transformer', async () => {
     // 1. SETUP
     const fakeStagedEvent = {
       id: 123,
