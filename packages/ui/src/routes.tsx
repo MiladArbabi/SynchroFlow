@@ -12,6 +12,7 @@ import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
 import CustomersPage from "./pages/CustomersPage";
 import AccountSettingsPage from "./pages/AccountSettingsPage";
+import { Product360Page } from "./pages/Product360Page";
 
 const routes = [
   {
@@ -22,15 +23,6 @@ const routes = [
     route: "/dashboard",
     component: <DashboardPage children={<></>} handleSidenavToggle={() => {}} />,
   },
-  {
-    type: "collapse",
-    name: "Products",
-    key: "products",
-    icon: "📦",
-    route: "/products",
-    component: <ProductsPage />,
-  },
-  // FIX: Move the specific route BEFORE the general route
   {
     type: "route",
     name: "Order Details",
@@ -46,6 +38,13 @@ const routes = [
     component: <OrdersPage />,
   },
   {
+    type: "route",
+    name: "Customer Details", 
+    key: "customer-details",
+    route: "/customers/:id", // Specific first
+    component: <Customer360Page />,
+  },
+  {
     type: "collapse",
     name: "Customers",
     key: "customers",
@@ -53,13 +52,20 @@ const routes = [
     route: "/customers",
     component: <CustomersPage />,
   },
-  // FIX: Apply same pattern for customers
-  {
+      {
     type: "route",
-    name: "Customer Details", 
-    key: "customer-details",
-    route: "/customers/:id", // Specific first
-    component: <Customer360Page />,
+    name: "Product Details", 
+    key: "product-details",
+    route: "/products/:id",
+    component: <Product360Page />,
+  },
+  {
+    type: "collapse",
+    name: "Products",
+    key: "products",
+    icon: "📦",
+    route: "/products",
+    component: <ProductsPage />,
   },
   {
     type: "collapse",

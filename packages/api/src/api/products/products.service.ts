@@ -14,18 +14,56 @@ export interface Product {
   updated_at: string;
 }
 
-export const getProducts = async (): Promise<Product[]> => {
-  console.log('[DEBUG] getProducts service called');
-  // TODO: Get shopId from authenticated user/session
-  // For now, using shopId 1 as placeholder to match orders service pattern
-  const shopId = 1;
-  console.log(`[DEBUG] Querying products for shopId: ${shopId}`);
-  
-  const products = await db('shopify_products')
-    .select('*')
-    .where('shop_id', shopId)
-    .orderBy('created_at', 'desc');
+export interface ProductsResponse {
+  products: Product[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
 
-  console.log(`[DEBUG] Found ${products.length} products in database`);
-  return products;
+export const getProducts = async (
+  page: number = 1,
+  limit: number = 20,
+  search?: string
+): Promise<ProductsResponse> => {
+  const shopId = 1; // TODO: Get from authenticated user/session
+  
+  // Build query with search
+  let query = db('shopify_products')
+    .where('shop_id', shopId);
+
+  // Add search functionality
+  if (search) {
+    query = query.andWhere(function() {
+      this.where('title', 'ilike', `%${search}%`)
+          .orWhere('vendor', 'ilike', `%${search}%`)
+          .orWhere('product_type', 'ilike', `%${search}%`);
+    });
+  }
+
+  // Get total count for pagination
+  const totalResult = await query.clone().count('* as count').first();
+  const total = parseInt(totalResult?.count as string) || 0;
+  const totalPages = Math.ceil(total / limit);
+  const offset = (page - 1) * limit;
+
+  // Get paginated results
+  const products = await query
+    .select('*')
+    .orderBy('created_at', 'desc')
+    .limit(limit)
+    .offset(offset);
+
+  return {
+    products,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages
+    }
+  };
 };
