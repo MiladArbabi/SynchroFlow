@@ -18,6 +18,23 @@ export const getUserState = async (req: Request, res: Response) => {
   }
 };
 
+
+ export const getOnboardingProgress = async (req: Request, res: Response) => {
+   try {
+     const userId = (req as any).user?.userId;
+     
+     if (!userId) {
+       return res.status(401).json({ error: 'Unauthorized' });
+     }
+ 
+     const onboardingProgress = await UserStateService.getOnboardingProgress(userId);
+     return res.status(200).json(onboardingProgress);
+   } catch (error) {
+     console.error('Error getting onboarding progress:', error);
+     return res.status(500).json({ error: 'Failed to get onboarding progress' });
+   }
+ };
+
 export const updateUserMode = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
