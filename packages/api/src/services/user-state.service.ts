@@ -2,7 +2,154 @@
 import db from '../db';
 import { User, UserMilestone } from '../types';
 
+export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
+export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
+
 export class UserStateService {
+
+  /**
+    * Detect user's onboarding tier based on PCD status and platform connections
+    */
+   static async detectOnboardingTier(userId: number): Promise<OnboardingTier> {
+     const user = await db<User>('users').where({ id: userId }).first();
+     
+     if (!user) {
+       return 'BASIC_ACCESS';
+     }
+ 
+     // Check if user has PCD-approved access (we'll need to implement this check)
+     const hasPCDAccess = await this.checkPCDAccess(userId);
+     
+     if (hasPCDAccess) {
+       return 'PCD_APPROVED';
+     }
+ 
+     // Check if user has attempted PCD access but is pending
+     const hasPendingPCD = await this.hasPendingPCDAccess(userId);
+     
+     if (hasPendingPCD) {
+       return 'PCD_PENDING';
+     }
+ 
+     return 'BASIC_ACCESS';
+   }
+ 
+   /**
+    * Check if user has PCD-approved access
+    */
+   private static async checkPCDAccess(userId: number): Promise<boolean> {
+     // For now, return false - we'll implement actual PCD check later
+     // This would check if the Shopify app has PCD permissions
+     return false;
+   }
+ 
+   /**
+    * Check if user has pending PCD access
+    */
+   private static async hasPendingPCDAccess(userId: number): Promise<boolean> {
+     // Check if user has Shopify connected but no PCD access yet
+     const user = await db<User>('users').where({ id: userId }).first();
+     return user?.shopify_connected === true;
+   }
+ 
+   /**
+    * Get user's connected platforms
+    */
+   static async getConnectedPlatforms(userId: number): Promise<PlatformConnection[]> {
+     const user = await db<User>('users').where({ id: userId }).first();
+     const connected: PlatformConnection[] = [];
+ 
+     if (user?.shopify_connected) {
+       connected.push('shopify');
+     }
+     if (user?.stripe_connected) {
+       connected.push('stripe');
+     }
+     // Add other platform checks as we implement them
+ 
+     return connected;
+   }
+ 
+   /**
+    * Get onboarding progress and recommendations
+    */
+   static async getOnboardingProgress(userId: number) {
+     const tier = await this.detectOnboardingTier(userId);
+     const connectedPlatforms = await this.getConnectedPlatforms(userId);
+     const userState = await this.getUserState(userId);
+ 
+     return {
+       tier,
+       connectedPlatforms,
+       recommendedNextSteps: this.getRecommendedNextSteps(tier, connectedPlatforms),
+       unlockedFeatures: this.getUnlockedFeatures(tier, connectedPlatforms),
+       userState
+     };
+   }
+ 
+   /**
+    * Get recommended next steps based on current tier and platforms
+    */
+   private static getRecommendedNextSteps(tier: OnboardingTier, platforms: PlatformConnection[]) {
+     const steps = [];
+ 
+     if (tier === 'BASIC_ACCESS') {
+       steps.push('Connect Shopify store to unlock order and customer data');
+       if (!platforms.includes('shopify')) {
+         steps.push('Complete Shopify app installation for PCD access');
+       }
+     }
+ 
+     if (tier === 'PCD_PENDING') {
+       steps.push('Request PCD access approval from Shopify');
+       steps.push('Connect financial platforms (QuickBooks, Stripe) for profitability insights');
+     }
+ 
+     if (tier === 'PCD_APPROVED') {
+       if (!platforms.includes('stripe')) {
+         steps.push('Connect Stripe for payment analytics and fee tracking');
+       }
+       if (!platforms.includes('quickbooks')) {
+         steps.push('Connect QuickBooks for true cost accounting');
+       }
+       steps.push('Explore advanced analytics and financial intelligence features');
+     }
+ 
+     return steps;
+   }
+ 
+   /**
+    * Get unlocked features based on tier and platforms
+    */
+   private static getUnlockedFeatures(tier: OnboardingTier, platforms: PlatformConnection[]) {
+     const features = [
+       'Basic dashboard widgets',
+       'Product inventory tracking'
+     ];
+ 
+     if (platforms.includes('shopify')) {
+       features.push('Order management');
+       features.push('Customer profiles (limited)');
+     }
+ 
+     if (tier === 'PCD_APPROVED') {
+       features.push('Full customer intelligence');
+       features.push('Cross-platform analytics');
+     }
+ 
+     if (platforms.includes('stripe')) {
+       features.push('Payment analytics');
+       features.push('Revenue tracking');
+     }
+ 
+     if (platforms.includes('quickbooks')) {
+       features.push('True profitability');
+       features.push('Cost accounting');
+     }
+ 
+     return features;
+   }
+
   /**
    * Detect the appropriate mode for a user based on their current state
    */
@@ -51,6 +198,8 @@ export class UserStateService {
       .orderBy('achieved_at', 'desc');
 
     const detectedMode = await this.detectUserMode(userId);
+      const onboardingTier = await this.detectOnboardingTier(userId);
+      const connectedPlatforms = await this.getConnectedPlatforms(userId);
 
     return {
       user: {
@@ -58,6 +207,8 @@ export class UserStateService {
         email: user.email,
         preferred_mode: user.preferred_mode,
         detected_mode: detectedMode,
+          onboarding_tier: onboardingTier,
+          connected_platforms: connectedPlatforms,
         shopify_connected: user.shopify_connected,
         stripe_connected: user.stripe_connected,
         first_insight_delivered: user.first_insight_delivered,
