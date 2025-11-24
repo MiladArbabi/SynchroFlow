@@ -1,200 +1,350 @@
-# ACI Platform Roadmap & Task Tracker (v2.6)
+# **🚀 Enhanced ACI Platform Roadmap: Central Nervous System Edition (v3.0)**
 
-**Vision:** Evolve from a passive dashboard into an active, \"Digital Chief of Staff.\"
-**Source of Truth:** [ACI Comprehensive Blueprint](./BLUEPRINT.md)
-**Log of Achievements:** [CHANGELOG](../CHANGELOG.md)
-
----
-
-**Progress Summary**
-- **Phases:** 6 + **Phase 1.5 Bridge** (COMPLETED)
-- **Total Issues Logged:** 62 → **48** (corrected to actual issue count)
-- **Completed:** 28/48 (58%) - **UPDATED: Products API & UI Integration Complete**
-- **Blocked:** 0/48 (0%) - **UPDATED: All Constraints Resolved**
-- **Remaining:** 20/48 (42%)
+**Vision:** Evolve from passive dashboard to active "Central Nervous System" for commerce operations
+**Strategic Pivot:** From multi-platform analytics to unified commerce operating system
+**Source of Truth:** [ACI Comprehensive Blueprint + CNS Architecture](./../blueprint/BLUEPRINT.md)
 
 ---
 
-## 🎯 Strategic Implementation Strategy
+## **📊 Progress Summary & CNS Readiness**
 
-### **Phase 1: Immediate Stabilization (COMPLETED)**
-**Focus:** Robust PLG SaaS Foundation with Tiered Onboarding
-- ✅ **Database Architecture Restructuring** - Separated platform users from store customers
-- 🔄 **Tiered Onboarding Experience** - Provide immediate value regardless of PCD status  
-- 🔄 **Customer Resolution Service** - Unified customer identity across platforms
-
-### **Phase 2: Customer Intelligence (NEXT)**
-**Focus:** Complete Data Distribution & Cross-Entity Analytics
-- **Customers API Implementation** - Real customer data pipeline
-- **Products API Enhancement** - Complete products data distribution
-- **Cross-Entity Relationships** - Orders ↔ Customers ↔ Products intelligence
-
-### **Phase 3: Multi-Platform Scalability (Month 2)**
-**Focus:** Platform Abstraction & Advanced Intelligence
-- **Platform Abstraction Layer** - Shopify, WooCommerce, Amazon adapters
-- **Unified Data Model** - Cross-platform customer resolution
-- **Advanced Intelligence** - Predictive analytics across platforms
+- **Phases:** 6 + **Phase 1.5 Bridge** (COMPLETED) + **CNS Enhancement**
+- **Total Issues Logged:** 48 → **58** (with new CNS tasks)
+- **Completed:** 28/48 (58%) - **Solid Foundation Built**
+- **CNS Ready:** **YES** - Architecture supports nervous system evolution
+- **Blocked:** 0/58 (0%) - **All systems go for CNS implementation**
 
 ---
 
-## Progress Summary
-- **Phases:** 6 + **Phase 1.5 Bridge** (COMPLETED)
-- **Total Issues Logged:** 62 → **48** (corrected to actual issue count)
-- **Completed:** 27/48 (56%) - **UPDATED: Order360 Navigation & PCD Compliance Complete**
-- **Blocked:** 0/48 (0%) - **UPDATED: All Constraints Resolved**
-- **Remaining:** 21/48 (44%)
+## **🎯 Central Nervous System Architecture**
 
----
-
-## 🎯 Definition of Done (The \"4 C's\")
-No feature is \"done\" until it is verifiable against the [ACI Blueprint's \"4 C's\" framework](BLUEPRINT.md#4-operational-framework-the-4-cs-litmus-test).
-1.  **Context:** Is the mode-specific question answered in < 3s?
-2.  **Causation:** Does it explain \"why\" (not just \"what\")?
-3.  **Clear Path Forward:** Does it have a \`CoachTrigger\`, \`AutomationTrigger\`, etc.?
-4.  **Closed Loop:** Does the system learn from the user's interaction?
-**Free Tier Compliance:** Does it demonstrate clear upgrade value through strategic teasers?
-
----
-
-## Phase 1: Foundation (Survival Mode) - ✅ COMPLETED
-**Focus:** Perfect the \"Survival Mode\" Intelligence Layer.
-**Key Deliverable:** Best-in-class free dashboard that meets the 4 C's standard.
-
-### ✅ Phase 1 Completed (**21 Issues**) 🎉
-*All previous Phase 1 issues completed*
-
----
-
-## ✅ Phase 1.5: Robust PLG SaaS Foundation (COMPLETED)
-**Focus:** Database restructuring, tiered onboarding, and customer resolution for multi-platform scalability.
-**Key Deliverable:** Robust foundation that provides immediate value regardless of PCD status.
-**Strategic Impact:** Transform from dashboard to indispensable commerce operations platform.
-
-### ✅ Phase 1.5 Completed
-| ID | Task | Status | Details |
-| --- | --- | --- | --- |
-| **#804** | **[Epic]** Phase 1.5: Core Data Distribution | ✅ **COMPLETED** | Orders API foundation built |
-| **#805** | Build \`/api/v1/orders\` pipeline | ✅ **COMPLETED** | Real orders data flowing (7 orders synced) |
-| **#819** | Implement Smart Sync Orchestrator | ✅ **COMPLETED** | PCD fallback strategy working |
-| **#820** | Build Shopify Fallback Service | ✅ **COMPLETED** | Non-PCD sync operational |
-| **#821** | **[P1]** Database Restructuring: Customer Relationships | ✅ **COMPLETED** | Fixed customer_id constraints, added platform_customer_id |
-| **#825** | **[NEW]** Fix Order360 Navigation & PCD Compliance | ✅ **COMPLETED** | Shopify GID conversion, customer fields migration |
-| **#806** | Build \`/api/v1/customers\` pipeline | 🎯 **NEXT** | Ready for implementation |
-| **#807** | Build \`/api/v1/products\` pipeline | ✅ **COMPLETED** | Products API with real Shopify data, JWT authentication, and full UI integration |
-| **#824** | **[NEW]** Implement Cross-Entity Analytics | 🎯 **NEXT** | Orders ↔ Customers ↔ Products intelligence |
-
-### 🔄 Phase 1.5 Active Implementation
-| ID | Task | Status | Timeline |
-| --- | --- | --- | --- |
-| **#822** | **[P1]** Implement Tiered Onboarding Service | 🎯 **WEEK 2** | PCD_APPROVED, PCD_PENDING, BASIC_ACCESS tiers |
-| **#823** | **[P1]** Build Customer Resolution Service | 🎯 **WEEK 2** | Map platform customers to internal records |
-
-### ⏳ Phase 1.5 Backlog (Strategic Enhancements)
-| ID | Task | Status | Strategic Value |
-| --- | --- | --- | --- |
-| **#809** | Implement Confidence Indicators | ⏳ **PENDING** | Build trust with accuracy scoring |
-| **#810** | Implement Free-Tier Action Hierarchy | ⏳ **PENDING** | Learn → Simulate → Tease Execute |
-| **#811** | Add Viral Sharing Features | ⏳ **PENDING** | Share insights, referral bonuses |
-| **#812** | Implement Strategic TeaserTriggers | ⏳ **PENDING** | Blurred conversion rates, growth features |
-| **#813** | Enhance Starter Widgets with GA4-Beating Simplicity | ⏳ **PENDING** | Comparators, one-click explanations |
-| **#814** | Add Free Tier Metrics Dashboard | ⏳ **PENDING** | Track activation, conversion, viral coefficient |
-
----
-
-## Phase 2: Customer Intelligence (Spark Plan) - READY TO START
-**Focus:** Launch \"Growth Mode\" Intelligence Layer.
-**Status:** 🎯 **READY FOR IMPLEMENTATION**
-*Phase 2 tasks can now begin with solid foundation established*
-
----
-
-## Phase 3: Platform Expansion (Ignition Plan) - ON HOLD  
-**Focus:** Launch \"Architect Mode\" with WMS-lite.
-**Status:** ⏳ **AWAITING PHASE 2 COMPLETION**
-
----
-
-## Phase 4: Enterprise Scale (Clarity Plan) - ON HOLD
-**Focus:** Launch Echo Hub & Governance Layer.
-**Status:** ⏳ **AWAITING PHASE 2 COMPLETION**
-
----
-
-## 🛡️ Strategic Defense Layers Built
-
-### **Technical Moats (Phase 1.5 COMPLETED)**
-1. **Unified Customer Intelligence** - Cross-platform customer views foundation
-2. **Multi-Platform Data Normalization** - Single source of truth established
-3. **Adaptive Onboarding** - Works immediately regardless of platform restrictions
-4. **Real-time Sync Architecture** - Continuous data flow with graceful degradation
-
-### **Business Moats (Phase 1.5 COMPLETED)**
-1. **PLG Funnel** - Free tier → Growth → Enterprise natural progression
-2. **Multi-Platform Stickiness** - Integrated across channels = high switching cost
-3. **Data Network Effects** - More platforms → Better insights → More value
-4. **Workflow Embedding** - Deep operational integration creates dependency
-
----
-
-## 📊 Success Metrics for Phase 1.5 Completion
-
-- ✅ **Orders API serving real data**: COMPLETE (7 orders from Shopify)
-- ✅ **Database restructuring**: COMPLETE (customer_id nullable, platform_customer_id added)
-- ✅ **Products sync**: COMPLETE (17 products from Shopify)
-- ✅ **Integration sync**: COMPLETE (Status: COMPLETED, no errors)
-- ✅ **Order360 Navigation**: COMPLETE (Shopify GID conversion, PCD compliance)
-- ✅ **Customer Data Migration**: COMPLETE (customer_name, email, phone fields added)
-- 🔄 **Tiered onboarding**: IN PROGRESS (#822) 
-- 🔄 **Customer resolution**: IN PROGRESS (#823)
-- 🎯 **Customers API**: READY (#806)
-- ✅ **Products API enhancement**: COMPLETE (#807) - Full products data distribution with UI integration
-- 🎯 **Cross-entity analytics**: READY (#824)
-
----
-
-## 🎯 Enhanced Success Metrics for PLG SaaS
-
-### **Free Tier Health Dashboard**
-\`\`\`typescript
-interface FreeTierMetrics {
-  activationRate: number; // >40% using weekly
-  timeToTrust: number; // <14 days target  
-  insightAcceptanceRate: number; // >40% excellent
-  viralCoefficient: number; // >0.5 target
-  freeToPaidConversion: number; // 25% target in 90 days
-  competitiveWinRate: number; // % switching from GA4/Shopify Analytics
-  multiPlatformAdoption: number; // % users connecting multiple sales channels
+### **The Four-Layer CNS Stack**
+```typescript
+interface CentralNervousSystem {
+  // LAYER 1: Intelligence Layer (COMPLETED FOUNDATION)
+  intelligence: 'Blueprint Widgets, Reasoning Engine, Prediction Models',
+  
+  // LAYER 2: Data Distribution Foundation (COMPLETED) 
+  dataDistribution: 'Multi-Platform Sync, Real-time Pipeline, PCD Compliance',
+  
+  // LAYER 3: Learning Layer (NEW - PHASE 2+)
+  learning: 'Feedback Processing, User Behavior Modeling, Reinforcement Learning',
+  
+  // LAYER 4: Operations Layer (NEW - PHASE 2.5+)
+  operations: 'WMS-lite, Echo Hub, Autonomous Workflows'
 }
-\`\`\`
+```
 
-### **Technical Foundation Metrics**
-\`\`\`typescript
-interface TechnicalMetrics {
-  pcdApprovalRate: number; // % successful PCD access
-  syncSuccessRate: number; // % successful data syncs
-  customerResolutionRate: number; // % platform customers matched
-  crossPlatformAdoption: number; // % using multiple platforms
+### **CNS Data Flow Architecture**
+```
+[Shopify] → [Platform Adapters] → [Identity Resolution] → [Intelligence Layer] → [Action Engine]
+[QuickBooks] ↗                    ↗                       ↗                      ↗
+[Stripe] ↗                         [Estimation Engine] → [Confidence Scoring] → [Automated Workflows]
+[Manual Data] ↗
+```
+
+---
+
+## **🔄 Enhanced Phase Structure: CNS Implementation**
+
+### **Phase 1.5: Data Distribution Foundation** ✅ **COMPLETED & CNS-ENHANCED**
+**Status:** Strong foundation built - ready for CNS evolution
+**CNS Enhancement:** Event-driven architecture patterns established
+
+#### **✅ Phase 1.5 CNS-Completion Status**
+| ID | Task | Status | CNS Enhancement |
+| --- | --- | --- | --- |
+| **#804** | Core Data Distribution | ✅ **COMPLETED** | Real-time pipeline foundation |
+| **#805** | Orders API Pipeline | ✅ **COMPLETED** | 7+ orders synced, PCD compliant |
+| **#807** | Products API Pipeline | ✅ **COMPLETED** | 17+ products, full UI integration |
+| **#819** | Smart Sync Orchestrator | ✅ **COMPLETED** | Graceful degradation pattern |
+| **#820** | Shopify Fallback Service | ✅ **COMPLETED** | Multi-platform readiness |
+| **#821** | Database Restructuring | ✅ **COMPLETED** | Customer relationship foundation |
+| **#825** | Order360 Navigation | ✅ **COMPLETED** | Shopify GID conversion, PCD compliance |
+
+#### **🔄 Phase 1.5 Active CNS Implementation**
+| ID | Task | Status | CNS Focus | Timeline |
+| --- | --- | --- | --- | --- |
+| **#822** | Tiered Onboarding Service | 🎯 **WEEK 2** | Progressive CNS adoption | Immediate |
+| **#823** | Customer Resolution Service | 🎯 **WEEK 2** | Identity graph foundation | Immediate |
+| **#806** | Customers API Pipeline | 🎯 **WEEK 1** | Identity resolution engine | Immediate |
+
+---
+
+## **🎯 PHASE 2: CNS CORE IMPLEMENTATION** 
+**Timeline:** Weeks 1-8 (Months 1-2)
+**Focus:** Build Central Nervous System Foundation
+**Key Deliverable:** Multi-platform intelligence with manual data bridges
+
+### **Phase 2.1: Identity Resolution Engine (Weeks 1-2)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#806** | **Enhanced Customers API** | Identity Graph | Multi-platform customer resolution |
+| **#826** | **Cross-Platform Customer Matching** | Identity Resolution | Shopify → Klaviyo → Zendesk mapping |
+| **#827** | **PCD-Compliant Profiles** | Statistical Intelligence | Cohort analysis, behavioral segmentation |
+| **#828** | **Unified Customer 360** | CNS Core View | Orders ↔ Customers ↔ Products intelligence |
+
+### **Phase 2.2: Manual Data Bridges (Weeks 3-4)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#829** | **Cost Data Entry Portal** | Manual Bridge | CSV import, bulk product cost entry |
+| **#830** | **Shipping Cost Tracker** | Manual Bridge | Carrier invoice OCR, receipt processing |
+| **#831** | **Spreadsheet Sync Engine** | Manual Bridge | Google Sheets bidirectional synchronization |
+| **#832** | **Expense Allocation Dashboard** | Manual Bridge | Overhead cost distribution by product |
+
+### **Phase 2.3: Platform Adapter Framework (Weeks 5-6)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#833** | **Platform Adapter SDK** | CNS Scalability | QuickBooks/Stripe template adapters |
+| **#834** | **Real-Time Event Bus** | CNS Communication | Kafka/RabbitMQ for cross-service events |
+| **#835** | **Integration Health Monitoring** | CNS Reliability | Platform connection status & sync metrics |
+| **#836** | **Graceful Degradation Engine** | CNS Resilience | Fallback strategies when integrations fail |
+
+### **Phase 2.4: Estimation Intelligence (Weeks 7-8)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#837** | **Statistical Estimation Engine** | CNS Intelligence | COGS, shipping cost models |
+| **#838** | **Confidence Scoring System** | CNS Trust | Accuracy calibration & transparency |
+| **#839** | **Benchmark Library** | CNS Knowledge | Industry-specific data patterns |
+| **#840** | **Estimation Validation Workflows** | CNS Learning | User feedback for model improvement |
+
+---
+
+## **💰 PHASE 2.5: FINANCIAL NERVOUS SYSTEM**
+**Timeline:** Months 3-4
+**Focus:** True Profitability Intelligence & Cash Flow Optimization
+**Key Deliverable:** Financial truth engine with predictive cash flow
+
+### **Phase 2.5.1: Financial Platform Integration (Month 3)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#841** | **QuickBooks Adapter** | Financial Truth | COGS, overhead, true cost data |
+| **#842** | **Stripe/PayPal Integration** | Financial Truth | Payment fees, chargebacks, processing costs |
+| **#843** | **True Margin Calculator** | Financial Intelligence | Beyond Shopify revenue calculations |
+| **#844** | **Overhead Allocation Engine** | Financial Intelligence | Cost distribution across products/channels |
+
+### **Phase 2.5.2: Cash Flow Intelligence (Month 4)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#845** | **Cash Flow Forecasting** | Predictive Intelligence | 30/60/90 day predictions |
+| **#846** | **Financial Health Dashboard** | CNS Monitoring | Burn rate, runway, profitability trends |
+| **#847** | **Cash Trap Detection** | Risk Intelligence | Slow inventory, high overhead alerts |
+| **#848** | **Vendor Payment Optimization** | Operational Intelligence | Terms analysis, early payment discounts |
+
+---
+
+## **📈 PHASE 3: MARKETING NERVOUS SYSTEM**
+**Timeline:** Months 5-6
+**Focus:** Multi-Touch Attribution & Customer Journey Intelligence
+**Key Deliverable:** True CAC calculation & ROAS optimization
+
+### **Phase 3.1: Marketing Platform Integration (Month 5)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#849** | **Google Analytics 4 Adapter** | Attribution Engine | Visitor behavior, acquisition channels |
+| **#850** | **Meta Ads Integration** | Marketing Intelligence | Ad spend, audience performance |
+| **#851** | **Klaviyo Customer Journey** | Marketing Intelligence | Email engagement, segmentation scoring |
+| **#852** | **Multi-Touch Attribution** | Marketing Intelligence | True CAC by channel calculation |
+
+### **Phase 3.2: Customer Journey Intelligence (Month 6)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#853** | **Lifetime Value Calculator** | Customer Intelligence | Cross-platform LTV modeling |
+| **#854** | **Churn Prediction Engine** | Predictive Intelligence | Multi-signal risk assessment |
+| **#855** | **Next Best Action Engine** | Prescriptive Intelligence | Personalized recommendations |
+| **#856** | **Customer Health Scoring** | Monitoring | Engagement, satisfaction, risk metrics |
+
+---
+
+## **🚚 PHASE 4: OPERATIONS NERVOUS SYSTEM**
+**Timeline:** Months 7-9
+**Focus:** Supply Chain Intelligence & Inventory Optimization
+**Key Deliverable:** WMS-lite with predictive inventory management
+
+### **Phase 4.1: Supply Chain Integration (Month 7)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#857** | **Shipping Carrier Adapters** | Operations Intelligence | UPS, FedEx, USPS rate shopping |
+| **#858** | **Inventory Forecasting** | Predictive Intelligence | Demand planning, stockout prevention |
+| **#859** | **Supplier Performance Dashboard** | Vendor Intelligence | Lead times, quality, cost tracking |
+| **#860** | **Returns Analysis Engine** | Operational Intelligence | Pattern detection, reduction strategies |
+
+### **Phase 4.2: WMS-lite Launch (Months 8-9)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#861** | **Purchase Order Management** | WMS Core | Automated PO generation, approval workflows |
+| **#862** | **Barcode Receiving System** | WMS Core | Mobile scanning, inventory updates |
+| **#863** | **Optimized Pick Lists** | WMS Core | Warehouse efficiency optimization |
+| **#864** | **Multi-Warehouse Management** | WMS Advanced | Location transfers, stock balancing |
+
+---
+
+## **🤖 PHASE 5: AUTONOMOUS OPERATIONS**
+**Timeline:** Months 10-12
+**Focus:** Reinforcement Learning & Self-Optimizing Systems
+**Key Deliverable:** Autonomous decision-making with governance
+
+### **Phase 5.1: Learning Layer Activation (Month 10)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#865** | **Feedback Processing System** | Learning Core | User interaction analysis |
+| **#866** | **Insight Quality Optimization** | Learning Core | Continuous improvement from feedback |
+| **#867** | **User Behavior Modeling** | Personalization | Adaptive insight ranking |
+| **#868** | **Reinforcement Learning Engine** | Autonomous Core | Self-improving recommendation engine |
+
+### **Phase 5.2: Autonomous Features (Months 11-12)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#869** | **Automated PO Generation** | Autonomous Ops | AI-driven purchase orders |
+| **#870** | **Dynamic Pricing Engine** | Autonomous Ops | Real-time price optimization |
+| **#871** | **Inventory Replenishment AI** | Autonomous Ops | Predictive stock management |
+| **#872** | **Cross-Channel Optimization** | Autonomous Ops | Unified platform performance |
+
+---
+
+## **🛡️ PHASE 6: ENTERPRISE GOVERNANCE**
+**Timeline:** Year 2
+**Focus:** Enterprise Scale, Security & Compliance
+**Key Deliverable:** SOC 2 compliance with advanced governance
+
+### **Phase 6.1: Governance Layer (Year 2, Q1)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#873** | **Approval Workflow Engine** | Governance Core | Multi-level approval processes |
+| **#874** | **Audit Trail System** | Compliance | Full action traceability |
+| **#875** | **Role-Based Access Control** | Security | Granular permission management |
+| **#876** | **Data Encryption & Security** | Compliance | Enterprise-grade data protection |
+
+### **Phase 6.2: Enterprise Features (Year 2, Q2-4)**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#877** | **Multi-Store Management** | Enterprise | Consolidated cross-store analytics |
+| **#878** | **Advanced Reporting API** | Enterprise | Custom report building, data export |
+| **#879** | **SLA & Performance Guarantees** | Enterprise | 99.9% uptime, support agreements |
+| **#880** | **Custom ML Model Training** | Enterprise | Brand-specific AI model customization |
+
+---
+
+## **🎯 Enhanced Success Metrics: CNS Edition**
+
+### **CNS Adoption Metrics**
+```typescript
+interface CNSMetrics {
+  dataCompleteness: {
+    platformConnectionsPerUser: 'Target: 3+ platforms',
+    manualDataAdoptionRate: 'Target: 60%+ users entering cost data',
+    estimationAccuracyScore: 'Target: 85%+ vs. actual data'
+  },
+  
+  intelligenceQuality: {
+    crossPlatformInsightRate: 'Target: 70%+ insights use multi-source data',
+    userTrustScore: 'Target: 80%+ confidence in estimations',
+    actionAdoptionRate: 'Target: 50%+ recommended actions implemented'
+  },
+  
+  businessImpact: {
+    timeToValue: 'Target: <14 days to first "aha moment"',
+    operationalEfficiency: 'Target: 30%+ time reduction in manual tasks',
+    revenueImpact: 'Target: 15%+ margin improvement for active users'
+  }
 }
-\`\`\`
+```
+
+### **Technical CNS Metrics**
+```typescript
+interface CNSTechnicalMetrics {
+  systemHealth: {
+    syncSuccessRate: 'Target: 95%+ successful platform syncs',
+    eventProcessingTime: 'Target: <100ms for cross-service events',
+    estimationConfidence: 'Target: 0.8+ calibration score'
+  },
+  
+  scalability: {
+    concurrentUsers: 'Target: 10,000+ simultaneous users',
+    dataProcessingVolume: 'Target: 1M+ events/hour',
+    platformAdapterPerformance: 'Target: <2s response time all adapters'
+  }
+}
+```
 
 ---
 
-## 🔄 Updated E2E Testing Strategy - Phase 2 Focus
+## **🛡️ CNS Risk Mitigation Framework**
 
-### **Immediate Testing Priorities**
-- **Customer Resolution Tests** - Platform customer matching logic
-- **Cross-Entity Analytics** - Orders ↔ Customers ↔ Products relationships
-- **Multi-Platform Sync** - Cross-platform data normalization
-
-### **Enhanced Test Coverage**
-- **Customer Intelligence** - Customer 360 views and analytics
-- **Upgrade Pathway Testing** - Seamless transitions between tiers
-- **Data Integrity** - Cross-entity relationship validation
+### **Critical Risk Management**
+```typescript
+interface CNSRisks {
+  estimationAccuracy: {
+    mitigation: 'Conservative modeling + clear confidence scoring',
+    fallback: 'Manual data as primary, estimation as bridge',
+    monitoring: 'Continuous A/B testing vs. manual verification'
+  },
+  
+  userAdoption: {
+    mitigation: 'Prove value first, then request platform connections',
+    psychology: 'Make manual entry feel powerful with immediate ROI',
+    incentives: 'Clear value demonstration at each adoption step'
+  },
+  
+  platformDependency: {
+    mitigation: 'Multi-platform strategy reduces Shopify dependency',
+    contingency: 'Rapid adaptation to API changes',
+    monitoring: 'Early detection of platform policy changes'
+  }
+}
+```
 
 ---
 
-**Phase 1.5 Complete**: We've successfully built a robust PLG SaaS foundation with working orders sync, database restructuring, real Shopify data integration, and fully functional Order360 navigation.
+## **🚀 Immediate Next Steps (Next 4 Weeks)**
 
-**Next Phase**: Customer Intelligence (#806 Customers API) - Building on our solid foundation to deliver cross-entity analytics and customer resolution.
+### **Week 1-2: CNS Foundation**
+1. **Enhance #806 Customers API** → Identity Resolution Engine
+2. **Build #826 Cross-Platform Customer Matching** 
+3. **Implement #827 PCD-Compliant Statistical Profiles**
 
-**Key Achievement**: Products tab now fully functional with real Shopify data, JWT authentication, and professional UI displaying product inventory, vendor info, and stock status alongside the existing Order360 capabilities.
+### **Week 3-4: Manual Data Bridges**
+1. **Build #829 Cost Data Entry Portal**
+2. **Implement #830 Shipping Cost Tracker**
+3. **Launch #831 Spreadsheet Sync Engine**
+
+### **Week 5-6: Platform Framework**
+1. **Develop #833 Platform Adapter SDK**
+2. **Implement #834 Real-Time Event Bus**
+3. **Build #835 Integration Health Monitoring**
+
+### **Week 7-8: Estimation Intelligence**
+1. **Launch #837 Statistical Estimation Engine**
+2. **Implement #838 Confidence Scoring System**
+3. **Deploy #839 Benchmark Library**
+
+---
+
+## **🎯 The Big Picture: CNS Evolution Timeline**
+
+```
+QUARTER 1 (Now):      CNS CORE            → Identity + Manual Bridges + Estimation
+QUARTER 2:            FINANCIAL CNS        → Profitability + Cash Flow  
+QUARTER 3:            MARKETING CNS        → Attribution + Customer Journey
+QUARTER 4:            OPERATIONS CNS       → WMS-lite + Supply Chain
+YEAR 2:               AUTONOMOUS CNS       → AI + Governance + Enterprise
+```
+
+---
+
+## **✅ Conclusion: Ready for CNS Implementation**
+
+**Current Status:** Foundation solidly built ✅  
+**CNS Architecture:** Clearly defined ✅  
+**Implementation Plan:** Phased and achievable ✅  
+**Risk Mitigation:** Comprehensive framework ✅  
+
+**The enhanced roadmap transforms ACI from a dashboard to the Central Nervous System for commerce operations.** Each phase builds compound value while maintaining backward compatibility and progressive user adoption.
+
+**Ready to begin Phase 2 CNS Core implementation immediately.** The foundation is proven, the architecture is sound, and the market need is undeniable.
+
+---
+
+**🎯 NEXT ACTION:** Begin Phase 2.1 - Identity Resolution Engine (#806 Enhanced)  
+**TIMELINE:** Immediate (Week 1)  
+**SUCCESS CRITERIA:** Multi-platform customer matching with PCD-compliant intelligence
