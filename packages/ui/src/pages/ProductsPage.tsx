@@ -1,71 +1,160 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/pages/ProductsPage.tsx
 import React, { useState } from 'react';
-import axios from 'axios';
+import {
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  CircularProgress,
+  Alert
+} from '@mui/material';
+import { Search } from 'lucide-react';
+import { useProducts } from '../api/products';
 
-// This will eventually be replaced with a real inventory list component
-const PlaceholderProductList: React.FC = () => (
-  <div className="mt-8">
-    <p className="text-gray-500">A table of all products will be displayed here.</p>
-  </div>
-);
+const ProductsPage: React.FC = () => {
+  const [searchSku, setSearchSku] = useState('');
+  const { products, isLoading, isError } = useProducts();
 
-export function ProductsPage() {
-  const [sku, setSku] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const handleSearch = () => {
+    // Search functionality to be implemented in future task
+    console.log('Search for SKU:', searchSku);
+  };
 
-  const handleSearch = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      // Note: This endpoint `/api/v1/products/${sku}/details` doesn't exist yet.
-      // This is expected and will be built in a future task.
-      await axios.get(`/api/v1/products/${sku}/details`);
-    } catch (err) {
-        console.error(err.message);
-        setError('Search functionality is not yet implemented.');
-    } finally {
-      setLoading(false);
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'active':
+        return 'success';
+      case 'draft':
+        return 'warning';
+      case 'archived':
+        return 'error';
+      default:
+        return 'default';
     }
   };
 
+  const getInventoryStatus = (inventory: number) => {
+    if (inventory === 0) return { color: 'error', label: 'Out of Stock' };
+    if (inventory <= 10) return { color: 'warning', label: 'Low Stock' };
+    return { color: 'success', label: 'In Stock' };
+  };
+
+  if (isError) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Failed to load products. Please try again later.
+        </Alert>
+      </Box>
+    );
+  }
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold">Products</h1>
-      <p className="mt-2 text-sm text-gray-500">Your single source of truth for all product and inventory data.</p>
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h4" component="h1" gutterBottom>
+        Products
+      </Typography>
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+        Your single source of truth for all product and inventory data.
+      </Typography>
       
-      <div className="mt-4" style={{ display: 'flex', gap: '0.5rem' }}>
-        <input
-          type="search"
-          placeholder="Search by SKU..."
-          aria-label="Search by SKU"
-          value={sku}
-          onChange={(e) => setSku(e.target.value)}
-          style={{
-            flex: 1,
-            border: '1px solid #D1D5DB',
-            padding: '0.5rem 0.75rem',
-          }}
+      {/* Search Bar */}
+      <Box sx={{ display: 'flex', gap: 1, mb: 3, maxWidth: 400 }}>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Search by SKU or product name..."
+          value={searchSku}
+          onChange={(e) => setSearchSku(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
         />
-        <button
-          type="button"
+        <Button
+          variant="contained"
           onClick={handleSearch}
-          style={{
-            backgroundColor: '#2F54EB', // Primary Blue
-            color: 'white',
-            fontWeight: '600',
-            padding: '0.5rem 1rem',
-            border: 'none',
-          }}
+          startIcon={<Search size={16} />}
         >
           Search
-        </button>
-      </div>
+        </Button>
+      </Box>
 
-      {loading && <p style={{ marginTop: '2rem' }}>Loading...</p>}
-      {error && <p style={{ marginTop: '2rem', color: '#F84D4D' }}>{error}</p>}
-      
-      <PlaceholderProductList />
-    </div>
+      {/* Products Table */}
+      {isLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : products.length === 0 ? (
+        <Alert severity="info">
+          No products found. Connect your store to start syncing products.
+        </Alert>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table sx={{ minWidth: 650 }} aria-label="products table">
+            <TableHead>
+              <TableRow>
+                <TableCell>Product</TableCell>
+                <TableCell>Vendor</TableCell>
+                <TableCell>Type</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Inventory</TableCell>
+                <TableCell>Stock Status</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {products.map((product) => {
+                const inventoryStatus = getInventoryStatus(product.total_inventory);
+                return (
+                  <TableRow
+                    key={product.id}
+                    sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                  >
+                    <TableCell component="th" scope="row">
+                      <Typography variant="body2" fontWeight="medium">
+                        {product.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        ID: {product.platform_product_id}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{product.vendor || '-'}</TableCell>
+                    <TableCell>{product.product_type || '-'}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={product.status || 'Unknown'}
+                        color={getStatusColor(product.status) as any}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2">
+                        {product.total_inventory}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={inventoryStatus.label}
+                        color={inventoryStatus.color as any}
+                        size="small"
+                        variant="outlined"
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Box>
   );
-}
+};
+
+export { ProductsPage };

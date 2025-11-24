@@ -24,6 +24,7 @@ import layoutRoutes from "./api/layouts/layout.routes";
 import orderRoutes from "./api/orders/orders.routes";
 import customerRoutes from "./api/customers/customers.routes";
 import integrationRoutes from "./api/integrations/integration.routes";
+import productsRoutes from "./api/products/products.routes";
 import authRoutes from "./api/auth/auth.routes";
 import dashboardRoutes from "./api/dashboard/dashboard.routes";
 
@@ -76,6 +77,8 @@ app.use("/api/v1/ops-intel", opsIntelRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
+app.use("/api/v1/products", productsRoutes);
+console.log('[DEBUG] Server: Registered /api/v1/products route');
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/user-state", userStateRoutes);
