@@ -7,6 +7,8 @@ import dashboard from './dashboard';
 import orders from './orders';
 import customers from './customers';
 import products from './products';
+import analytics from './analytics';
+import finances from './finances';
 
 // ==============================|| MENU ITEMS ||============================== //
 
@@ -39,7 +41,15 @@ const menuItems: MenuItems = {
         products,
       ]
     },
-    // --- ADD ECHO HUB GROUP/ITEM ---
+      {
+     id: 'intelligence-group',
+     title: 'Intelligence',
+     type: 'group',
+     children: [
+       analytics,
+       finances,
+     ]
+   },
     {
       id: 'communication-group',
       type: 'group',

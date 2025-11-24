@@ -13,6 +13,8 @@ import Customer360Page from "./pages/Customer360Page";
 import CustomersPage from "./pages/CustomersPage";
 import AccountSettingsPage from "./pages/AccountSettingsPage";
 import { Product360Page } from "./pages/Product360Page";
+import AnalyticsPage from "./pages/AnalyticsPage";
+import FinancesPage from "./pages/FinancesPage";
 
 const routes = [
   {
@@ -23,6 +25,22 @@ const routes = [
     route: "/dashboard",
     component: <DashboardPage children={<></>} handleSidenavToggle={() => {}} />,
   },
+  {
+   type: "collapse",
+   name: "Analytics",
+   key: "analytics",
+   icon: "📈",
+   route: "/analytics",
+   component: <AnalyticsPage />,
+ },
+ {
+   type: "collapse",
+   name: "Finances",
+   key: "finances",
+   icon: "💰",
+   route: "/finances",
+   component: <FinancesPage />,
+ },
   {
     type: "route",
     name: "Order Details",
