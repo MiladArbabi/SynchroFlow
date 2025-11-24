@@ -1,100 +1,148 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/CustomersPage.tsx
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { Box, CircularProgress, Typography, Alert } from '@mui/material';
-import { DataGrid, GridColDef, GridRowParams } from '@mui/x-data-grid';
-import { useQuery } from '@tanstack/react-query';
+import { Box, Typography, Button, Card, CardContent, Grid, Paper, Alert } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import {
+   ConnectWithoutContact,
+   Analytics,
+   Group,
+   TrendingUp,
+   LockOpen
+ } from '@mui/icons-material';
 import MasterPanel from 'ui-component/MasterPanel/index.tsx';
 
-// Define the structure of a Customer for the list
-interface Customer {
-  id: string; // Ensure ID is string
-  name: string;
-  email: string;
-  total_orders: number; // Example metric
-  // Add other relevant fields for the list view
-}
-
-// Define columns for the DataGrid
-const columns: GridColDef<Customer>[] = [
-  { field: 'id', headerName: 'Customer ID', width: 150 },
-  { field: 'name', headerName: 'Name', width: 250 },
-  { field: 'email', headerName: 'Email', width: 250 },
-  {
-    field: 'total_orders',
-    headerName: 'Total Orders',
-    type: 'number',
-    width: 150,
-    align: 'right',
-    headerAlign: 'right',
-  },
-];
-
 /**
- * CustomersPage: Displays a list of customers in the MasterPanel.
- */
+ * CustomersPage: Identity Resolution Teaser - Shows the vision for multi-platform customer intelligence
+ * and guides users to connect platforms for unified customer insights.
+*/
+
 const CustomersPage: React.FC = () => {
-  const navigate = useNavigate();
-
-  // --- Data Fetching with useQuery ---
-  const fetchCustomers = async (): Promise<Customer[]> => {
-    const { data } = await axios.get<Customer[]>('/api/v1/customers');
-    // Ensure IDs are strings right after fetching
-    return data.map(cust => ({ ...cust, id: String(cust.id) }));
-  };
-
-  const {
-    data: customers, // Renamed data to customers
-    isLoading,      // Use isLoading from useQuery
-    isError,        // Use isError from useQuery
-    error           // Use error from useQuery
-  } = useQuery<Customer[], Error>({ // Add type safety
-        queryKey: ['customers'], // Unique key for this query
-        queryFn: fetchCustomers, // The function to fetch data
-        // Optional: configure staleTime, gcTime etc. here if needed
-      });
-  // --- End Data Fetching ---
-
-  const handleRowClick = (params: GridRowParams<Customer>) => {
-    navigate(`/customers/${params.row.id}`);
-  };
-
+  
   return (
-    <MasterPanel title="Customers">
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80%' }}>
-          <CircularProgress />
-        </Box>
-      )}
-      {isError && (
-        <Box sx={{ p: 2 }}>
-           <Alert severity="error">Failed to load customers. {error?.message}</Alert>
-        </Box>
-      )}
-      {!isLoading && !isError && customers && (
-        <Box sx={{ height: 'calc(100vh - 150px)', width: '100%' }}>
-           {/* Adjust height calculation */}
-          <DataGrid
-            rows={customers}
-            columns={columns}
-            onRowClick={handleRowClick}
-            initialState={{
-              pagination: {
-                paginationModel: { pageSize: 25, page: 0 },
-              },
-            }}
-            pageSizeOptions={[10, 25, 50]}
-            sx={{
-                border: 'none',
-                '& .MuiDataGrid-row:hover': {
-                    cursor: 'pointer',
-                },
-            }}
-          />
-        </Box>
-      )}
+    <MasterPanel title="Customer Intelligence">
+       <Box sx={{ p: 3, maxWidth: 1200, margin: '0 auto' }}>
+         {/* Header Section */}
+         <Box sx={{ textAlign: 'center', mb: 6 }}>
+           <ConnectWithoutContact sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
+           <Typography variant="h3" component="h1" gutterBottom>
+             Unified Customer Intelligence
+           </Typography>
+           <Typography variant="h6" color="text.secondary" sx={{ mb: 4 }}>
+             See your customers across all platforms in one place
+           </Typography>
+           
+           <Alert severity="info" sx={{ mb: 3, textAlign: 'left' }}>
+             <strong>Coming Soon:</strong> We're building advanced customer intelligence that connects data from all your platforms.
+           </Alert>
+         </Box>
+
+         {/* Value Proposition Cards */}
+         <Grid container spacing={4} sx={{ mb: 6 }}>
+           <Grid >
+             <Card sx={{ height: '100%', textAlign: 'center' }}>
+               <CardContent>
+                 <Group sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                 <Typography variant="h6" gutterBottom>
+                   Cross-Platform Customer Matching
+                 </Typography>
+                 <Typography variant="body2" color="text.secondary">
+                   Unify customer data from Shopify, email platforms, and support systems to see complete customer journeys.
+                 </Typography>
+               </CardContent>
+             </Card>
+           </Grid>
+           
+           <Grid >
+             <Card sx={{ height: '100%', textAlign: 'center' }}>
+               <CardContent>
+                 <Analytics sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                 <Typography variant="h6" gutterBottom>
+                   Lifetime Value Analysis
+                 </Typography>
+                 <Typography variant="body2" color="text.secondary">
+                   Calculate true customer lifetime value including support costs, marketing spend, and repeat purchase behavior.
+                 </Typography>
+               </CardContent>
+             </Card>
+           </Grid>
+           
+           <Grid >
+             <Card sx={{ height: '100%', textAlign: 'center' }}>
+               <CardContent>
+                 <TrendingUp sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                 <Typography variant="h6" gutterBottom>
+                   Predictive Insights
+                 </Typography>
+                 <Typography variant="body2" color="text.secondary">
+                   Get churn predictions, next purchase dates, and personalized marketing recommendations.
+                 </Typography>
+               </CardContent>
+             </Card>
+           </Grid>
+         </Grid>
+
+         {/* Current Capabilities vs Future State */}
+         <Paper sx={{ p: 4, mb: 4, background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }}>
+           <Typography variant="h5" gutterBottom sx={{ textAlign: 'center' }}>
+             What You See Now vs. What's Coming
+           </Typography>
+           <Grid container spacing={3} sx={{ mt: 2 }}>
+             <Grid >
+               <Box sx={{ p: 2 }}>
+                 <Typography variant="h6" color="text.secondary" gutterBottom>
+                   Current (Basic)
+                 </Typography>
+                 <ul style={{ color: 'text.secondary', paddingLeft: '20px' }}>
+                   <li>Shopify customer data only</li>
+                   <li>Basic order history</li>
+                   <li>Limited customer insights</li>
+                 </ul>
+               </Box>
+             </Grid>
+             <Grid >
+               <Box sx={{ p: 2 }}>
+                 <Typography variant="h6" color="primary.main" gutterBottom>
+                   Future (Intelligent)
+                 </Typography>
+                 <ul style={{ color: 'primary.main', paddingLeft: '20px' }}>
+                   <li>Multi-platform customer profiles</li>
+                   <li>True lifetime value calculations</li>
+                   <li>Predictive behavior analytics</li>
+                   <li>Personalized marketing triggers</li>
+                 </ul>
+               </Box>
+             </Grid>
+           </Grid>
+         </Paper>
+
+         {/* Call to Action */}
+         <Box sx={{ textAlign: 'center', mt: 4 }}>
+           <Typography variant="h6" gutterBottom>
+             Ready to unlock advanced customer intelligence?
+           </Typography>
+           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+             Connect your platforms to get started with unified customer insights
+           </Typography>
+           <Button
+             variant="contained"
+             size="large"
+             startIcon={<LockOpen />}
+             component={RouterLink}
+             to="/integrations"
+             sx={{ mr: 2 }}
+           >
+             Connect Platforms
+           </Button>
+           <Button
+             variant="outlined"
+             size="large"
+             component={RouterLink}
+             to="/dashboard"
+           >
+             Back to Dashboard
+           </Button>
+         </Box>
+       </Box>
     </MasterPanel>
   );
 };
