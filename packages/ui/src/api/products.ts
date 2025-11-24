@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/api/products.ts
 import { useState, useEffect } from 'react';
@@ -15,30 +16,44 @@ export interface Product {
   created_at: string;
   updated_at: string;
 }
+export interface ProductsResponse {
+  products: Product[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
 
-export const useProducts = () => {
-  const [products, setProducts] = useState<Product[]>([]);
+export const useProducts = (page: number = 1, limit: number = 20, search?: string) => {
+  const [data, setData] = useState<ProductsResponse>({
+    products: [],
+    pagination: { page: 1, limit: 20, total: 0, totalPages: 0 }
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
 
-   useEffect(() => {
+  useEffect(() => {
     const fetchProducts = async () => {
       try {
         setIsLoading(true);
-        console.log('[DEBUG] Frontend: Starting products API call to /api/v1/products');
         const token = localStorage.getItem('accessToken');
-        console.log('[DEBUG] Frontend: Using token from localStorage:', !!token);
         
-        const response = await axios.get<Product[]>('/api/v1/products', {
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
+          ...(search && { search })
+        });
+
+        const response = await axios.get<ProductsResponse>(`/api/v1/products?${params}`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
         });
-        console.log(`[DEBUG] Frontend: Received ${response.data.length} products from API`);
-        setProducts(response.data);
+        setData(response.data);
         setIsError(false);
       } catch (error: any) {
-        console.error('[DEBUG] Frontend: Products API call failed:', error.response?.status, error.message);
         setIsError(true);
       } finally {
         setIsLoading(false);
@@ -46,10 +61,52 @@ export const useProducts = () => {
     };
 
     fetchProducts();
-  }, []);
+  }, [page, limit, search]);
 
   return {
-    products,
+    products: data.products,
+    pagination: data.pagination,
+    isLoading,
+    isError,
+  };
+};
+
+export const useProduct = (productId: string) => {
+  const [product, setProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
+
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        setIsLoading(true);
+        const token = localStorage.getItem('accessToken');
+        
+        // For now, we'll filter from the products list since we don't have a single product endpoint
+        const response = await axios.get<ProductsResponse>('/api/v1/products?limit=1000', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        
+        const foundProduct = response.data.products.find(
+          p => p.id.toString() === productId || p.platform_product_id === productId
+        );
+        
+        setProduct(foundProduct || null);
+        setIsError(!foundProduct);
+      } catch (error: any) {
+        setIsError(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [productId]);
+
+  return {
+    product,
     isLoading,
     isError,
   };

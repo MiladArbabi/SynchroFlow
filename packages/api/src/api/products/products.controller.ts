@@ -3,14 +3,15 @@ import { Request, Response } from 'express';
 import { getProducts } from './products.service';
 
 export const fetchProducts = async (req: Request, res: Response) => {
-  console.log('[DEBUG] fetchProducts controller called');
   try {
-    console.log('[DEBUG] Calling getProducts service...');
-    const products = await getProducts();
-    console.log(`[DEBUG] Retrieved ${products.length} products from database`);
-    res.json(products);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const search = req.query.search as string | undefined;
+
+    const result = await getProducts(page, limit, search);
+    res.json(result);
   } catch (error: any) {
-    console.error('[DEBUG] Failed to fetch products:', error);
+    console.error('Failed to fetch products:', error);
     res.status(500).json({ error: 'Failed to fetch products' });
   }
 };

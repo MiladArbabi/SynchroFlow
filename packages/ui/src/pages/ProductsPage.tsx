@@ -15,18 +15,40 @@ import {
   Paper,
   Chip,
   CircularProgress,
-  Alert
+  Alert,
+  MenuItem,
+  FormControl,
+  Select,
+  Pagination
 } from '@mui/material';
 import { Search } from 'lucide-react';
-import { useProducts } from '../api/products';
+import { useProducts, Product } from '../api/products';
+
+import { useNavigate } from 'react-router-dom';
 
 const ProductsPage: React.FC = () => {
-  const [searchSku, setSearchSku] = useState('');
-  const { products, isLoading, isError } = useProducts();
+  const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const { products, pagination, isLoading, isError } = useProducts(page, limit, searchQuery);
 
   const handleSearch = () => {
-    // Search functionality to be implemented in future task
-    console.log('Search for SKU:', searchSku);
+    setSearchQuery(searchQuery);
+    setPage(1); // Reset to first page when searching
+  };
+
+  const handleRowClick = (product: Product) => {
+    navigate(`/products/${product.id}`);
+  };
+
+  const handlePageChange = (event: React.ChangeEvent<unknown>, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleLimitChange = (event: any) => {
+    setLimit(parseInt(event.target.value, 10));
+    setPage(1);
   };
 
   const getStatusColor = (status: string) => {
@@ -73,8 +95,8 @@ const ProductsPage: React.FC = () => {
           fullWidth
           size="small"
           placeholder="Search by SKU or product name..."
-          value={searchSku}
-          onChange={(e) => setSearchSku(e.target.value)}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
         />
         <Button
@@ -109,12 +131,19 @@ const ProductsPage: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {products.map((product) => {
+               {products.map((product) => {
                 const inventoryStatus = getInventoryStatus(product.total_inventory);
                 return (
                   <TableRow
                     key={product.id}
-                    sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                    sx={{ 
+                      '&:last-child td, &:last-child th': { border: 0 },
+                      cursor: 'pointer',
+                      '&:hover': {
+                        backgroundColor: 'action.hover',
+                      }
+                    }}
+                    onClick={() => handleRowClick(product)}
                   >
                     <TableCell component="th" scope="row">
                       <Typography variant="body2" fontWeight="medium">
@@ -152,6 +181,36 @@ const ProductsPage: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
+      )}
+
+        {/* Pagination */}
+        {products.length > 0 && (
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2, p: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, pagination.total)} of {pagination.total} products
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <FormControl size="small" sx={{ minWidth: 80 }}>
+                <Select
+                  value={limit.toString()}
+                  onChange={handleLimitChange}
+                >
+                  <MenuItem value={10}>10</MenuItem>
+                  <MenuItem value={20}>20</MenuItem>
+                  <MenuItem value={50}>50</MenuItem>
+                  <MenuItem value={100}>100</MenuItem>
+                </Select>
+              </FormControl>
+              <Pagination
+                count={pagination.totalPages}
+                page={page}
+                onChange={handlePageChange}
+                color="primary"
+                showFirstButton
+                showLastButton
+              />
+            </Box>
+          </Box>
       )}
     </Box>
   );
