@@ -3,7 +3,7 @@
 **Vision:** Evolve from passive dashboard to active "Central Nervous System" for commerce operations
 **Strategic Pivot:** From multi-platform analytics to unified commerce operating system
 **Source of Truth:** [ACI Comprehensive Blueprint + CNS Architecture](./../blueprint/BLUEPRINT.md)
-**Last Updated:** 2025-11-24 - Analytics & Finances Navigation Placeholders ✅ COMPLETED
+**Last Updated:** 2025-11-24 - Tiered Onboarding Service (#822) ✅ COMPLETED
 
 ---
 
@@ -11,8 +11,8 @@
 
 - **Phases:** 6 + **Phase 1.5 Bridge** (COMPLETED) + **CNS Enhancement**
 - **Total Issues Logged:** 48 → **58** (with new CNS tasks)
-- **Completed:** 28/48 (58%) - **Solid Foundation Built**
-- **CNS Navigation:** ✅ **Analytics & Finances Placeholders Live**
+- **Completed:** 29/58 (50%) - **CNS Foundation Strengthened**
+- **CNS Navigation:** ✅ **Analytics & Finances Placeholders Live + Tiered Onboarding Service ✅**
 - **CNS Ready:** **YES** - Architecture supports nervous system evolution
 - **Blocked:** 0/58 (0%) - **All systems go for CNS implementation**
 
@@ -27,7 +27,7 @@ interface CentralNervousSystem {
   intelligence: 'Blueprint Widgets, Reasoning Engine, Prediction Models',
   
   // LAYER 2: Data Distribution Foundation (COMPLETED) 
-  dataDistribution: 'Multi-Platform Sync, Real-time Pipeline, PCD Compliance, Identity Resolution Teaser ✅, Analytics & Finances Placeholders ✅',
+  dataDistribution: 'Multi-Platform Sync, Real-time Pipeline, PCD Compliance, Identity Resolution Teaser ✅, Analytics & Finances Placeholders ✅, Tiered Onboarding Service ✅',
   
   // LAYER 3: Learning Layer (NEW - PHASE 2+)
   learning: 'Feedback Processing, User Behavior Modeling, Reinforcement Learning',
@@ -51,23 +51,25 @@ interface CentralNervousSystem {
 
 ### **Phase 1.5: Data Distribution Foundation** ✅ **COMPLETED & CNS-ENHANCED**
 **Status:** Strong foundation built - ready for CNS evolution
-**CNS Enhancement:** Event-driven architecture patterns established
+**CNS Enhancement:** Event-driven architecture + Tiered Onboarding Service 
 
 #### **✅ Phase 1.5 CNS-Completion Status**
 | ID | Task | Status | CNS Enhancement |
 | --- | --- | --- | --- |
+| **#822** | Tiered Onboarding Service | 🎯 WEEK 2 | Progressive CNS adoption | Immediate |
+| **#823** | Customer Resolution Service | 🎯 WEEK 2 | Identity graph foundation | Immediate |
+| **#806** | Customers API Pipeline | 🎯 WEEK 1 | Identity resolution engine | Immediate |
 | **#804** | Core Data Distribution | ✅ **COMPLETED** | Real-time pipeline foundation |
 | **#805** | Orders API Pipeline | ✅ **COMPLETED** | 7+ orders synced, PCD compliant |
 | **#807** | Products API Pipeline | ✅ **COMPLETED** | 17+ products, full UI integration |
 | **#819** | Smart Sync Orchestrator | ✅ **COMPLETED** | Graceful degradation pattern |
 | **#820** | Shopify Fallback Service | ✅ **COMPLETED** | Multi-platform readiness |
 | **#821** | Database Restructuring | ✅ **COMPLETED** | Customer relationship foundation |
-| **#825** | Order360 Navigation | ✅ **COMPLETED** | Shopify GID conversion, PCD compliance |
+| **#822** | **Tiered Onboarding Service** | ✅ **COMPLETED** | **Progressive CNS adoption with 3-tier system** |
 
 #### **🔄 Phase 1.5 Active CNS Implementation**
 | ID | Task | Status | CNS Focus | Timeline |
 | --- | --- | --- | --- | --- |
-| **#822** | Tiered Onboarding Service | 🎯 **WEEK 2** | Progressive CNS adoption | Immediate |
 | **#823** | Customer Resolution Service | 🎯 **WEEK 2** | Identity graph foundation | Immediate |
 | **#806** | Customers API Pipeline | 🎯 **WEEK 1** | Identity resolution engine | Immediate |
 
@@ -77,6 +79,7 @@ interface CentralNervousSystem {
 **Timeline:** Weeks 1-8 (Months 1-2)
 **Focus:** Build Central Nervous System Foundation
 **Key Deliverable:** Multi-platform intelligence with manual data bridges
+**Current Status:** **Identity, Analytics, Finances Teasers ✅ LIVE + Tiered Onboarding ✅** - Progressive CNS adoption enabled
 
 ### **Phase 2.1: Identity Resolution Engine (Weeks 1-2)**
 | ID | Task | CNS Component | Details |
@@ -302,8 +305,8 @@ interface CNSRisks {
 
 ### **Week 1-2: CNS Foundation**
 1. **Enhance #806 Customers API** → Identity Resolution Engine
-2. **Build #826 Cross-Platform Customer Matching** 
-3. **Implement #827 PCD-Compliant Statistical Profiles**
+2. **Complete #823 Customer Resolution Service** 
+3. **Build #826 Cross-Platform Customer Matching**
 
 ### **Week 3-4: Manual Data Bridges**
 1. **Build #829 Cost Data Entry Portal**
