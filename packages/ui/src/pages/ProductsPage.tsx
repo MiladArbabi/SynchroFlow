@@ -66,37 +66,37 @@ const ProductsPage: React.FC = () => {
   };
 
   const handleCostSave = async (costData: any) => {
-    try {
-      console.log('🔄 Starting cost save for product:', costData.productId);
-      const result = await updateCostMutation.updateProductCost(costData);
-      console.log('✅ Cost mutation result:', result);
-      
-      // Update local state with the response data
-      setProducts(prev => prev.map(p => 
-        p.id === costData.productId 
-          ? { 
-              ...p, 
-              purchase_price: result.data.purchase_price,
-              shipping_cost: result.data.shipping_cost,
-              customs_duties: result.data.customs_duties,
-              packaging_cost: result.data.packaging_cost,
-              landed_cost_per_unit: result.data.landed_cost_per_unit,
-              selling_price: result.data.selling_price,
-              margin: result.data.margin,
-              last_cost_update: result.data.last_cost_update
-            }
-          : p
-      ));
-      
-      console.log('🔄 Closing modal and clearing selection...');
-      setCostModalOpen(false);
-      setSelectedProduct(null);
-      
-      console.log('✅ Cost save flow completed');
-    } catch (error) {
-      console.error('❌ Failed to save cost data:', error);
-    }
-  };
+  try {
+    console.log('🔄 Starting cost save for product:', costData.productId);
+    const result = await updateCostMutation.updateProductCost(costData);
+    console.log('✅ Cost mutation result:', result);
+    
+    // Update local state with the response data - parse decimal values
+    setProducts(prev => prev.map(p => 
+      p.id === costData.productId 
+        ? { 
+            ...p, 
+            purchase_price: parseFloat(result.data.purchase_price) || result.data.purchase_price,
+            shipping_cost: parseFloat(result.data.shipping_cost) || result.data.shipping_cost,
+            customs_duties: parseFloat(result.data.customs_duties) || result.data.customs_duties,
+            packaging_cost: parseFloat(result.data.packaging_cost) || result.data.packaging_cost,
+            landed_cost_per_unit: parseFloat(result.data.landed_cost_per_unit) || result.data.landed_cost_per_unit,
+            selling_price: parseFloat(result.data.selling_price) || result.data.selling_price,
+            margin: parseFloat(result.data.margin) || result.data.margin,
+            last_cost_update: result.data.last_cost_update
+          }
+        : p
+    ));
+    
+    console.log('🔄 Closing modal and clearing selection...');
+    setCostModalOpen(false);
+    setSelectedProduct(null);
+    
+    console.log('✅ Cost save flow completed');
+  } catch (error) {
+    console.error('❌ Failed to save cost data:', error);
+  }
+};
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, newPage: number) => {
     setPage(newPage);
