@@ -27,6 +27,7 @@ import { useNavigate } from 'react-router-dom';
 import { CostEntryModal } from '../components/CostEntryModal';
 import { CostStatusIndicator } from '../components/CostStatusIndicator';
 import { useUpdateProductCost } from '../api/product-costs';
+import { useQueryClient } from '@tanstack/react-query';
 
 const ProductsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -40,6 +41,7 @@ const ProductsPage: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   
   const updateCostMutation = useUpdateProductCost();
+  const queryClient = useQueryClient();
 
   const handleSearch = () => {
     setSearchQuery(searchQuery);
@@ -56,13 +58,21 @@ const ProductsPage: React.FC = () => {
   };
 
   const handleCostSave = async (costData: any) => {
-    try {
-      await updateCostMutation.updateProductCost(costData);
-      console.log('Cost data saved successfully:', costData);
-    } catch (error) {
-      console.error('Failed to save cost data:', error);
-    }
-  };
+  try {
+    await updateCostMutation.updateProductCost(costData);
+    
+    // CRITICAL: Refresh products data to show updated costs
+    await queryClient.invalidateQueries({ queryKey: ['products'] });
+    
+    // Close modal after successful save
+    setCostModalOpen(false);
+    setSelectedProduct(null);
+    
+    console.log('Cost data saved successfully:', costData);
+  } catch (error) {
+    console.error('Failed to save cost data:', error);
+  }
+};
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, newPage: number) => {
     setPage(newPage);

@@ -16,60 +16,42 @@ export const CostStatusIndicator: React.FC<CostStatusIndicatorProps> = ({
   product,
   onClick
 }) => {
-  // TODO: Replace with actual cost data from API
-  const hasCosts = false; // Placeholder - will be replaced with real data
-  const margin = 42.5; // Placeholder - will be calculated from real data
+  // Check if product has cost data and calculate margin
+  const hasCostData = product.purchase_price && product.landed_cost && product.selling_price;
+  const margin = product.margin || (hasCostData ? 
+    ((product.selling_price - product.landed_cost) / product.selling_price) * 100 : 0
+  );
 
-  if (!hasCosts) {
+  if (hasCostData && margin > 0) {
+    // Determine color based on margin
+    let color: 'success' | 'warning' | 'error' = 'success';
+    if (margin < 15) color = 'error';
+    else if (margin < 30) color = 'warning';
+
     return (
-      <Tooltip title="Add cost data to see profit margins" arrow>
-        <IconButton 
-          size="small" 
-          onClick={onClick}
-          color="primary"
-          sx={{ 
-            border: '1px dashed',
-            borderColor: 'primary.main',
-            borderRadius: 1,
-            width: 32,
-            height: 32
-          }}
-        >
-          <AddIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <Chip 
+        label={`${Math.round(margin)}%`}
+        color={color}
+        size="small"
+        onClick={onClick}
+        sx={{ cursor: 'pointer', minWidth: 60 }}
+      />
     );
   }
-
-  const getMarginColor = (margin: number) => {
-    if (margin >= 40) return 'success';
-    if (margin >= 20) return 'warning';
-    return 'error';
-  };
-
-  const getMarginIcon = (margin: number) => {
-    if (margin >= 40) return <TrendingUpIcon fontSize="small" />;
-    if (margin >= 20) return null;
-    return <WarningIcon fontSize="small" />;
-  };
-
-  return (
-    <Tooltip title={`Click to edit costs - Current margin: ${margin}%`} arrow>
-      <Chip
-        label={`${margin}%`}
-        size="small"
-        color={getMarginColor(margin)}
-        onClick={onClick}
-        variant="outlined"
-        icon={getMarginIcon(margin)}
-        sx={{ 
-          cursor: 'pointer',
-          minWidth: 60,
-          '&:hover': {
-            backgroundColor: 'action.hover'
-          }
-        }}
-      />
-    </Tooltip>
-  );
-};
+  
+    return (
+        <Tooltip title="Add cost data">
+          <IconButton 
+            size="small" 
+            onClick={onClick}
+            sx={{ 
+              border: '1px solid', 
+              borderColor: 'divider',
+              borderRadius: 1
+            }}
+          >
+            <AddIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      );
+    };
