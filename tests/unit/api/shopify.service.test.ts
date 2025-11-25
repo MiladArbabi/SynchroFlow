@@ -14,7 +14,7 @@ const mockedShopifyApi = shopifyApi as jest.MockedFunction<typeof shopifyApi>;
 const mockedSession = Session as jest.MockedClass<typeof Session>;
 const mockedDb = db as jest.Mocked<typeof db>;
 
-describe.skip('ShopifyService', () => {
+describe('ShopifyService', () => {
   const mockAccessToken = 'test-access-token';
   const mockPlatformShopName = 'test-shop.myshopify.com';
   const mockShopId = 123;
