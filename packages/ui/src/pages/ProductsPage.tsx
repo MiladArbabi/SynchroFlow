@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/pages/ProductsPage.tsx
 import React, { useState } from 'react';
@@ -34,14 +35,21 @@ const ProductsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
-  const { products, pagination, isLoading, isError } = useProducts(page, limit, searchQuery);
-
+  const { products: initialProducts, pagination, isLoading, isError } = useProducts(page, limit, searchQuery);
+  const [products, setProducts] = useState<Product[]>(initialProducts || []);
+  
   // Cost modal state
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   
   const updateCostMutation = useUpdateProductCost();
   const queryClient = useQueryClient();
+
+  React.useEffect(() => {
+    if (initialProducts) {
+      setProducts(initialProducts);
+    }
+  }, [initialProducts]);
 
   const handleSearch = () => {
     setSearchQuery(searchQuery);
@@ -59,18 +67,31 @@ const ProductsPage: React.FC = () => {
 
   const handleCostSave = async (costData: any) => {
   try {
-    await updateCostMutation.updateProductCost(costData);
+    console.log('🔄 Starting cost save for product:', costData.productId);
+    const result = await updateCostMutation.updateProductCost(costData);
+    console.log('✅ Cost mutation result:', result);
     
-    // CRITICAL: Refresh products data to show updated costs
-    await queryClient.invalidateQueries({ queryKey: ['products'] });
+    // Update local state with the response data
+    setProducts(prev => prev.map(p => 
+      p.id === costData.productId 
+        ? { 
+            ...p, 
+            purchase_price: result.data.purchase_price,
+            landed_cost_per_unit: result.data.landed_cost_per_unit,
+            selling_price: result.data.selling_price,
+            margin: result.data.margin,
+            last_cost_update: result.data.last_cost_update
+          }
+        : p
+    ));
     
-    // Close modal after successful save
+    console.log('🔄 Closing modal and clearing selection...');
     setCostModalOpen(false);
     setSelectedProduct(null);
     
-    console.log('Cost data saved successfully:', costData);
+    console.log('✅ Cost save flow completed');
   } catch (error) {
-    console.error('Failed to save cost data:', error);
+    console.error('❌ Failed to save cost data:', error);
   }
 };
 
@@ -205,9 +226,22 @@ const ProductsPage: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {product.total_inventory > 0 ? 'Add costs' : '-'}
-                      </Typography>
+                      {product.margin ? (
+                        <Typography 
+                          variant="body2" 
+                          color={
+                            product.margin > 30 ? 'success.main' : 
+                            product.margin > 15 ? 'warning.main' : 'error.main'
+                          }
+                          fontWeight="medium"
+                        >
+                          {Math.round(product.margin)}%
+                        </Typography>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          {product.total_inventory > 0 ? 'Add costs' : '-'}
+                        </Typography>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

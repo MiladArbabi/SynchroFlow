@@ -84,12 +84,15 @@ export const CostEntryModal: React.FC<CostEntryModalProps> = ({
     }
 
     const costData = {
+      productId: product?.id, 
       platform_product_id: product?.platform_product_id,
       purchase_price: purchasePrice,
       landed_cost_per_unit: landedCost,
+      selling_price: sellingPrice,
       currency: 'USD'
     };
 
+    console.log('CostEntryModal: Saving cost data:', costData);
     onSave(costData);
     onClose();
   };

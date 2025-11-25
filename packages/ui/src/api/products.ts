@@ -15,7 +15,14 @@ export interface Product {
   total_inventory: number;
   created_at: string;
   updated_at: string;
+  // Cost fields
+  purchase_price?: number;
+  landed_cost_per_unit?: number;
+  selling_price?: number;
+  margin?: number;
+  last_cost_update?: string;
 }
+
 export interface ProductsResponse {
   products: Product[];
   pagination: {
