@@ -22,15 +22,18 @@
 interface CentralNervousSystem {
   // LAYER 1: Intelligence Layer (COMPLETED FOUNDATION)
   intelligence: 'Blueprint Widgets, Reasoning Engine, Prediction Models',
+  enhancedIntelligence: 'AI-Assisted Entry, Multi-Currency, Bulk Processing',
   
   // LAYER 2: Data Distribution Foundation (COMPLETED & ENHANCED) 
   dataDistribution: 'Multi-Platform Sync, Real-time Pipeline, PCD Compliance, Identity Resolution Engine ✅, Analytics & Finances Placeholders ✅, Tiered Onboarding Service ✅',
   
   // LAYER 3: Learning Layer (NEW - PHASE 2+)
   learning: 'Feedback Processing, User Behavior Modeling, Reinforcement Learning',
+  enhancedDataDistribution: 'GDPR/CCPA Compliance, Security Hardening, Consent Management',
   
   // LAYER 4: Operations Layer (NEW - PHASE 2.5+)
   operations: 'WMS-lite, Echo Hub, Autonomous Workflows'
+  enhancedOperations: 'Mobile OCR, Voice Commands, Offline Support'
 }
 ```
 
@@ -67,25 +70,49 @@ interface CentralNervousSystem {
 ---
 
 ## **🎯 PHASE 2: CNS CORE IMPLEMENTATION** 
-**Timeline:** Weeks 1-8 (Months 1-2)
+**Timeline:** Weeks 1-10 (Months 1-2.5)
 **Focus:** Build Central Nervous System Foundation
 **Key Deliverable:** True profitability intelligence with manual data + identity resolution
 **Current Status:** **Identity Resolution Engine ✅ LIVE + Ready for Manual Data Integration** - Progressive CNS adoption enabled
 
-### **Phase 2.1: Manual Data Bridges (Weeks 1-2)** ← **NEW PRIORITY**
+### **Phase 2.1: Enhanced Manual Data Bridges (Weeks 1-4)** ← **EXPANDED & ENHANCED**
 | ID | Task | CNS Component | Details |
 | --- | --- | --- | --- |
 | **#829** | **Cost Data Entry Portal** | Manual Bridge | CSV import, bulk product cost entry |
+ **Week 1-2** | **Core MVP** | Foundation | Basic cost entry, validation, margin calculation |
+**#829.1** | **AI-Assisted Cost Entry** | Intelligence Layer | ML suggestions, confidence scoring, multi-source validation |
+**Week 3** | **AI Enhancement** | Intelligence | Deploy after core MVP validation |
+**#829.2** | **Advanced Bulk Operations** | Intelligence Layer | Chunked processing, error recovery, progress tracking |
+**Week 3** | **Scalability** | Performance | Handle 1000+ products efficiently |
+**#829.3** | **Multi-Currency Support** | Intelligence Layer | Real-time exchange rates, currency conversion |
+**Week 4** | **Global Ready** | International | ECB integration, fallback sources |
 | **#830** | **Shipping Cost Tracker** | Manual Bridge | Carrier invoice OCR, receipt processing |
+**#830.1** | **Mobile OCR & Voice** | Operations Layer | Camera scanning, voice commands, offline support |
 | **#831** | **Spreadsheet Sync Engine** | Manual Bridge | Google Sheets bidirectional synchronization |
+ **#831.1** | **Enhanced Fuzzy Matching** | Intelligence Layer | Multi-algorithm matching, confidence scoring |
 | **#832** | **Expense Allocation Dashboard** | Manual Bridge | Overhead cost distribution by product |
+**#832.1** | **GDPR/CCPA Compliance** | Governance Layer | Consent management, data retention policies |
 
-### **Phase 2.2: Cross-Platform Customer Matching (Weeks 3-4)** ← **MOVED LATER**
+### **Phase 2.2: Cross-Platform Customer Matching (Weeks 6-7)**
+### **Phase 2.3: Platform Adapter Framework (Weeks 8-9)**  
+### **Phase 2.4: Estimation Intelligence (Weeks 10-11)**
 | ID | Task | CNS Component | Details |
 | --- | --- | --- | --- |
 | **#826** | **Cross-Platform Customer Matching** | Identity Resolution | Shopify → Klaviyo → Zendesk mapping |
 | **#827** | **PCD-Compliant Profiles** | Statistical Intelligence | Cohort analysis, behavioral segmentation |
 | **#828** | **Unified Customer 360** | CNS Core View | Orders ↔ Customers ↔ Products intelligence |
+
+### **Phase 2.25: Security & Compliance Hardening (Weeks 4-5)** ← **NEW PHASE**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#829.4** | **Supplier API Security** | Governance Layer | HMAC verification, rate limiting, IP whitelisting |
+**Week 4** | **Security Foundation** | Protection | Critical for production readiness |
+| **#829.5** | **RBAC & Audit Logging** | Governance Layer | Role-based access, comprehensive audit trails |
+**Week 5** | **Governance** | Compliance | Required for enterprise features |
+| **#829.6** | **Data Encryption** | Governance Layer | End-to-end encryption for cost data |
+**Week 5** | **Data Protection** | Security | GDPR/CCPA compliance requirement |
+| **#829.7** | **Consent Management** | Compliance | GDPR/CCPA compliance, data retention policies |
+**Week 5** | **Legal Compliance** | Mandatory | Required before production deployment |
 
 ### **Phase 2.3: Platform Adapter Framework (Weeks 5-6)**
 | ID | Task | CNS Component | Details |
@@ -229,6 +256,9 @@ interface CNSMetrics {
     platformConnectionsPerUser: 'Target: 3+ platforms',
     manualDataAdoptionRate: 'Target: 60%+ users entering cost data',
     estimationAccuracyScore: 'Target: 85%+ vs. actual data'
+    aiSuggestionAdoption: 'Target: 40%+ AI suggestions accepted',
+    mobileUsageRate: 'Target: 25%+ cost entries via mobile',
+    bulkOperationSuccess: 'Target: 95%+ bulk operations completed'
   },
   
   intelligenceQuality: {
@@ -274,13 +304,21 @@ interface CNSRisks {
     fallback: 'Manual data as primary, estimation as bridge',
     monitoring: 'Continuous A/B testing vs. manual verification'
   },
-  
+  aiReliability: {
+   mitigation: 'Multi-source validation + confidence thresholds',
+   fallback: 'Graceful degradation to manual entry',
+   monitoring: 'AI suggestion acceptance rate tracking'
+  },
+  securityCompliance: {
+    mitigation: 'End-to-end encryption + consent management',
+    fallback: 'Manual verification for sensitive operations', 
+    monitoring: 'Regular security audits + compliance checks'
+  },
   userAdoption: {
     mitigation: 'Prove value first, then request platform connections',
     psychology: 'Make manual entry feel powerful with immediate ROI',
     incentives: 'Clear value demonstration at each adoption step'
   },
-  
   platformDependency: {
     mitigation: 'Multi-platform strategy reduces Shopify dependency',
     contingency: 'Rapid adaptation to API changes',
@@ -296,32 +334,47 @@ interface CNSRisks {
 ### **Week 1-2: Manual Data Foundation**
 1. **Build #829 Cost Data Entry Portal** → True Profitability Engine
 2. **Implement #830 Shipping Cost Tracker** → Complete Cost Picture
+3. **Deploy Basic Consent Framework** → GDPR/CCPA Compliance
 
-### **Week 3-4: Cross-Platform Expansion**
-1. **Build #826 Cross-Platform Customer Matching** → Identity Resolution Expansion
-2. **Launch #831 Spreadsheet Sync Engine** → Manual Data Automation
+ ### **Week 3: Enhanced Data Entry**
+ 1. **Implement #829.1 AI-Assisted Cost Entry** → Intelligence Layer
+ 2. **Build #829.2 Advanced Bulk Operations** → Enterprise Scalability  
+ 
+ ### **Week 4: Global & Security Foundation**
+ 1. **Deploy #829.3 Multi-Currency Support** → Global Readiness
+ 2. **Implement #829.4 Supplier API Security** → Governance Layer
+ 
+ ### **Week 5: Compliance & Governance**
+ 1. **Build #829.5 RBAC & Audit Logging** → Governance Layer
+ 2. **Deploy #829.6 Data Encryption** → Security Hardening
+ 3. **Implement #829.7 Consent Management** → Legal Compliance
 
-### **Week 5-6: Platform Framework**
-1. **Develop #833 Platform Adapter SDK**
-2. **Implement #834 Real-Time Event Bus**
-3. **Build #835 Integration Health Monitoring**
+### **Week 6-7: Cross-Platform Expansion**
+ 1. **Build #826 Cross-Platform Customer Matching** → Identity Resolution Expansion
+ 2. **Launch #831 Enhanced Spreadsheet Sync** → Intelligent Matchin
 
-### **Week 7-8: Estimation Intelligence**
-1. **Launch #837 Statistical Estimation Engine**
-2. **Implement #838 Confidence Scoring System**
-3. **Deploy #839 Benchmark Library**
+### **Week 8-9: Platform Framework**
+ 1. **Develop #833 Platform Adapter SDK**
+ 2. **Implement #834 Real-Time Event Bus**
+ 3. **Build #835 Integration Health Monitoring**
+
+### **Week 10-11: Estimation Intelligence**
+ 1. **Launch #837 Statistical Estimation Engine**
+ 2. **Implement #838 Confidence Scoring System**
+ 3. **Deploy #839 Benchmark Library**
 
 ---
 
 ## **🎯 The Big Picture: CNS Evolution Timeline**
 
-```
-QUARTER 1 (Now):      CNS CORE            → Manual Data + Identity + Estimation
+**QUARTER 1 (Now):** ENHANCED CNS CORE → Manual Data + AI Assistance + Security + Compliance + Identity + Estimation
+**Phase 2 Duration:** 11 weeks → Comprehensive foundation with enterprise-grade features
+**Total Timeline Impact:** +3 weeks for comprehensive enhancements
+**Value Gain:** Enterprise-grade security, AI intelligence, global readines
 QUARTER 2:            FINANCIAL CNS        → Profitability + Cash Flow  
 QUARTER 3:            MARKETING CNS        → Attribution + Customer Journey
 QUARTER 4:            OPERATIONS CNS       → WMS-lite + Supply Chain
 YEAR 2:               AUTONOMOUS CNS       → AI + Governance + Enterprise
-```
 
 ---
 
@@ -340,4 +393,4 @@ YEAR 2:               AUTONOMOUS CNS       → AI + Governance + Enterprise
 
 **🎯 NEXT ACTION:** Begin Phase 2.1 - Cost Data Entry Portal (#829)
 **TIMELINE:** Immediate (Week 1)  
-**SUCCESS CRITERIA:** Merchants can enter product costs and see true profit margins
+**ENHANCED CRITERIA:** Enterprise-grade security, AI-assisted entry, multi-currency support, GDPR/CCPA compliance
