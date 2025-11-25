@@ -69,24 +69,23 @@ interface CentralNervousSystem {
 ## **🎯 PHASE 2: CNS CORE IMPLEMENTATION** 
 **Timeline:** Weeks 1-8 (Months 1-2)
 **Focus:** Build Central Nervous System Foundation
-**Key Deliverable:** Multi-platform intelligence with identity resolution engine
-**Current Status:** **Identity Resolution Engine ✅ LIVE + Analytics & Finances Teasers ✅ + Tiered Onboarding ✅** - Progressive CNS adoption enabled
+**Key Deliverable:** True profitability intelligence with manual data + identity resolution
+**Current Status:** **Identity Resolution Engine ✅ LIVE + Ready for Manual Data Integration** - Progressive CNS adoption enabled
 
-### **Phase 2.1: Identity Resolution Engine (Weeks 1-2)**
-| ID | Task | CNS Component | Details |
-| --- | --- | --- | --- |
-| **#806** | **Enhanced Customers API** | ✅ **COMPLETED** | **Multi-platform customer resolution with confidence scoring** |
-| **#826** | **Cross-Platform Customer Matching** | Identity Resolution | Shopify → Klaviyo → Zendesk mapping |
-| **#827** | **PCD-Compliant Profiles** | Statistical Intelligence | Cohort analysis, behavioral segmentation |
-| **#828** | **Unified Customer 360** | CNS Core View | Orders ↔ Customers ↔ Products intelligence |
-
-### **Phase 2.2: Manual Data Bridges (Weeks 3-4)**
+### **Phase 2.1: Manual Data Bridges (Weeks 1-2)** ← **NEW PRIORITY**
 | ID | Task | CNS Component | Details |
 | --- | --- | --- | --- |
 | **#829** | **Cost Data Entry Portal** | Manual Bridge | CSV import, bulk product cost entry |
 | **#830** | **Shipping Cost Tracker** | Manual Bridge | Carrier invoice OCR, receipt processing |
 | **#831** | **Spreadsheet Sync Engine** | Manual Bridge | Google Sheets bidirectional synchronization |
 | **#832** | **Expense Allocation Dashboard** | Manual Bridge | Overhead cost distribution by product |
+
+### **Phase 2.2: Cross-Platform Customer Matching (Weeks 3-4)** ← **MOVED LATER**
+| ID | Task | CNS Component | Details |
+| --- | --- | --- | --- |
+| **#826** | **Cross-Platform Customer Matching** | Identity Resolution | Shopify → Klaviyo → Zendesk mapping |
+| **#827** | **PCD-Compliant Profiles** | Statistical Intelligence | Cohort analysis, behavioral segmentation |
+| **#828** | **Unified Customer 360** | CNS Core View | Orders ↔ Customers ↔ Products intelligence |
 
 ### **Phase 2.3: Platform Adapter Framework (Weeks 5-6)**
 | ID | Task | CNS Component | Details |
@@ -294,14 +293,13 @@ interface CNSRisks {
 
 ## **🚀 Immediate Next Steps (Next 4 Weeks)**
 
-### **Week 1-2: CNS Foundation**
-1. **Enhance #806 Customers API** → Identity Resolution Engine
-2. **Build #826 Cross-Platform Customer Matching**
+### **Week 1-2: Manual Data Foundation**
+1. **Build #829 Cost Data Entry Portal** → True Profitability Engine
+2. **Implement #830 Shipping Cost Tracker** → Complete Cost Picture
 
-### **Week 3-4: Manual Data Bridges**
-1. **Build #829 Cost Data Entry Portal**
-2. **Implement #830 Shipping Cost Tracker**
-3. **Launch #831 Spreadsheet Sync Engine**
+### **Week 3-4: Cross-Platform Expansion**
+1. **Build #826 Cross-Platform Customer Matching** → Identity Resolution Expansion
+2. **Launch #831 Spreadsheet Sync Engine** → Manual Data Automation
 
 ### **Week 5-6: Platform Framework**
 1. **Develop #833 Platform Adapter SDK**
@@ -318,7 +316,7 @@ interface CNSRisks {
 ## **🎯 The Big Picture: CNS Evolution Timeline**
 
 ```
-QUARTER 1 (Now):      CNS CORE            → Identity + Manual Bridges + Estimation
+QUARTER 1 (Now):      CNS CORE            → Manual Data + Identity + Estimation
 QUARTER 2:            FINANCIAL CNS        → Profitability + Cash Flow  
 QUARTER 3:            MARKETING CNS        → Attribution + Customer Journey
 QUARTER 4:            OPERATIONS CNS       → WMS-lite + Supply Chain
@@ -331,15 +329,15 @@ YEAR 2:               AUTONOMOUS CNS       → AI + Governance + Enterprise
 
 **Current Status:** Foundation solidly built ✅  
 **CNS Architecture:** Clearly defined ✅  
-**Implementation Plan:** Phased and achievable ✅  
+**Implementation Plan:** **Revised for manual-first approach** ✅  
 **Risk Mitigation:** Comprehensive framework ✅  
 
-**The enhanced roadmap transforms ACI from a dashboard to the Central Nervous System for commerce operations.** Each phase builds compound value while maintaining backward compatibility and progressive user adoption.
+**The revised roadmap prioritizes manual data entry to serve 80% of merchants first**, then expands to multi-platform automation. This approach delivers immediate value to Shopify-only merchants while building toward comprehensive platform integration.
 
-**Ready to begin Phase 2 CNS Core implementation immediately.** The foundation is proven, the architecture is sound, and the market need is undeniable.
+**Ready to begin Phase 2.1 Manual Data Bridges immediately.** This strategic pivot ensures we serve the majority of merchants who rely on manual processes while building toward automated multi-platform intelligence.
 
 ---
 
-**🎯 NEXT ACTION:** Continue Phase 2.1 - Cross-Platform Customer Matching (#826)
+**🎯 NEXT ACTION:** Begin Phase 2.1 - Cost Data Entry Portal (#829)
 **TIMELINE:** Immediate (Week 1)  
-**SUCCESS CRITERIA:** Multi-platform customer matching with PCD-compliant intelligence
+**SUCCESS CRITERIA:** Merchants can enter product costs and see true profit margins
