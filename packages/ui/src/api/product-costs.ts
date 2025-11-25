@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 export interface ProductCost {
+  productId: string,
   platform_product_id: string;
   purchase_price: number;
   landed_cost_per_unit: number;
+  selling_price: number,
   currency: string;
   created_at: string;
   updated_at: string;
@@ -64,32 +66,40 @@ export const useUpdateProductCost = () => {
   const [isError, setIsError] = useState(false);
 
   const updateProductCost = async (costData: Partial<ProductCost>) => {
-    try {
-      setIsLoading(true);
-      setIsError(false);
-      
-      const token = localStorage.getItem('accessToken');
-      const { platform_product_id, ...updateData } = costData;
+  try {
+    setIsLoading(true);
+    setIsError(false);
 
-      const response = await axios.post<ProductCost>(
-        `/api/v1/product-costs/${platform_product_id}`,
-        updateData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+    // TEMPORARY MOCK: Simulate successful API call
+    console.log('MOCK: Simulating cost data save for product:', costData.productId);
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-      return response.data;
-    } catch (error: any) {
-      setIsError(true);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    // Mock successful response - ensure we have the product ID
+    const mockResponse = {
+      data: {
+        ...costData,
+        id: costData.productId || costData.platform_product_id,
+        updatedAt: new Date().toISOString(),
+        margin: costData.selling_price && costData.landed_cost_per_unit ? 
+          ((costData.selling_price - costData.landed_cost_per_unit) / costData.selling_price) * 100 : 0,
+        last_cost_update: new Date().toISOString() // Add timestamp
+      }
+    };
+    
+    console.log('MOCK: Cost data saved successfully');
+    return mockResponse;
+    
+    // TODO: Uncomment when backend is ready
+    // const response = await axios.post(`/api/v1/product-costs/${costData.productId}`, costData);
+    // return response;
+  } catch (error) {
+    setIsError(true);
+    console.error('Error saving cost data:', error);
+    throw error;
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return {
     updateProductCost,
