@@ -3,7 +3,7 @@ import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import LoginPage from "./pages/authentication/LoginPage";
 import RegisterPage from "./pages/authentication/RegisterPage";
-import { ProductsPage } from "./pages/ProductsPage";
+import ProductsPage from "./pages/ProductsPage";
 import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
 import DataMapper from "./components/DataMapper/DataMapper";
 import Order360Page from "./pages/Order360Page";

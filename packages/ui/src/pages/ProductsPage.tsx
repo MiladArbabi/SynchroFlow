@@ -23,8 +23,10 @@ import {
 } from '@mui/material';
 import { Search } from 'lucide-react';
 import { useProducts, Product } from '../api/products';
-
 import { useNavigate } from 'react-router-dom';
+import { CostEntryModal } from '../components/CostEntryModal';
+import { CostStatusIndicator } from '../components/CostStatusIndicator';
+import { useUpdateProductCost } from '../api/product-costs';
 
 const ProductsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -33,13 +35,33 @@ const ProductsPage: React.FC = () => {
   const [limit, setLimit] = useState(20);
   const { products, pagination, isLoading, isError } = useProducts(page, limit, searchQuery);
 
+  // Cost modal state
+  const [costModalOpen, setCostModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  
+  const updateCostMutation = useUpdateProductCost();
+
   const handleSearch = () => {
     setSearchQuery(searchQuery);
-    setPage(1); // Reset to first page when searching
+    setPage(1);
   };
 
   const handleRowClick = (product: Product) => {
     navigate(`/products/${product.id}`);
+  };
+
+  const handleCostClick = (product: Product) => {
+    setSelectedProduct(product);
+    setCostModalOpen(true);
+  };
+
+  const handleCostSave = async (costData: any) => {
+    try {
+      await updateCostMutation.updateProductCost(costData);
+      console.log('Cost data saved successfully:', costData);
+    } catch (error) {
+      console.error('Failed to save cost data:', error);
+    }
   };
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, newPage: number) => {
@@ -51,34 +73,20 @@ const ProductsPage: React.FC = () => {
     setPage(1);
   };
 
+  const getInventoryStatus = (inventory: number) => {
+    if (inventory === 0) return { label: 'Out of Stock', color: 'error' };
+    if (inventory < 10) return { label: 'Low Stock', color: 'warning' };
+    return { label: 'In Stock', color: 'success' };
+  };
+
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
-      case 'active':
-        return 'success';
-      case 'draft':
-        return 'warning';
-      case 'archived':
-        return 'error';
-      default:
-        return 'default';
+      case 'active': return 'success';
+      case 'draft': return 'warning';
+      case 'archived': return 'error';
+      default: return 'default';
     }
   };
-
-  const getInventoryStatus = (inventory: number) => {
-    if (inventory === 0) return { color: 'error', label: 'Out of Stock' };
-    if (inventory <= 10) return { color: 'warning', label: 'Low Stock' };
-    return { color: 'success', label: 'In Stock' };
-  };
-
-  if (isError) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to load products. Please try again later.
-        </Alert>
-      </Box>
-    );
-  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -94,7 +102,7 @@ const ProductsPage: React.FC = () => {
         <TextField
           fullWidth
           size="small"
-          placeholder="Search by SKU or product name..."
+          placeholder="Search products..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -108,11 +116,14 @@ const ProductsPage: React.FC = () => {
         </Button>
       </Box>
 
-      {/* Products Table */}
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
           <CircularProgress />
         </Box>
+      ) : isError ? (
+        <Alert severity="error">
+          Failed to load products. Please try again.
+        </Alert>
       ) : products.length === 0 ? (
         <Alert severity="info">
           No products found. Connect your store to start syncing products.
@@ -128,6 +139,8 @@ const ProductsPage: React.FC = () => {
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Inventory</TableCell>
                 <TableCell>Stock Status</TableCell>
+                <TableCell>Cost Status</TableCell>
+                <TableCell>Margin</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -175,6 +188,17 @@ const ProductsPage: React.FC = () => {
                         variant="outlined"
                       />
                     </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <CostStatusIndicator 
+                        product={product}
+                        onClick={() => handleCostClick(product)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {product.total_inventory > 0 ? 'Add costs' : '-'}
+                      </Typography>
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -183,37 +207,43 @@ const ProductsPage: React.FC = () => {
         </TableContainer>
       )}
 
-        {/* Pagination */}
-        {products.length > 0 && (
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2, p: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, pagination.total)} of {pagination.total} products
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <FormControl size="small" sx={{ minWidth: 80 }}>
-                <Select
-                  value={limit.toString()}
-                  onChange={handleLimitChange}
-                >
-                  <MenuItem value={10}>10</MenuItem>
-                  <MenuItem value={20}>20</MenuItem>
-                  <MenuItem value={50}>50</MenuItem>
-                  <MenuItem value={100}>100</MenuItem>
-                </Select>
-              </FormControl>
-              <Pagination
-                count={pagination.totalPages}
-                page={page}
-                onChange={handlePageChange}
-                color="primary"
-                showFirstButton
-                showLastButton
-              />
-            </Box>
+      {/* Pagination */}
+      {products.length > 0 && (
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2, p: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, pagination.total)} of {pagination.total} products
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <FormControl size="small" sx={{ minWidth: 80 }}>
+              <Select
+                value={limit.toString()}
+                onChange={handleLimitChange}
+              >
+                <MenuItem value={10}>10</MenuItem>
+                <MenuItem value={20}>20</MenuItem>
+                <MenuItem value={50}>50</MenuItem>
+                <MenuItem value={100}>100</MenuItem>
+              </Select>
+            </FormControl>
+            <Pagination
+              count={pagination.totalPages}
+              page={page}
+              onChange={handlePageChange}
+              color="primary"
+            />
           </Box>
+        </Box>
       )}
+
+      {/* Cost Entry Modal */}
+      <CostEntryModal
+        open={costModalOpen}
+        product={selectedProduct}
+        onClose={() => setCostModalOpen(false)}
+        onSave={handleCostSave}
+      />
     </Box>
   );
 };
 
-export { ProductsPage };
+export default ProductsPage;
