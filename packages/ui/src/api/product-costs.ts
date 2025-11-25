@@ -4,14 +4,19 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 export interface ProductCost {
-  productId: string,
+  productId: string;
   platform_product_id: string;
   purchase_price: number;
   landed_cost_per_unit: number;
-  selling_price: number,
+  selling_price: number;
   currency: string;
   created_at: string;
   updated_at: string;
+  // Add cost breakdown fields
+  shipping_cost?: number;
+  customs_duties?: number;
+  packaging_cost?: number;
+  additional_costs?: { name: string; amount: number }[];
 }
 
 export const useProductCosts = (platformProductId?: string) => {
@@ -82,7 +87,9 @@ export const useUpdateProductCost = () => {
         updatedAt: new Date().toISOString(),
         margin: costData.selling_price && costData.landed_cost_per_unit ? 
           ((costData.selling_price - costData.landed_cost_per_unit) / costData.selling_price) * 100 : 0,
-        last_cost_update: new Date().toISOString() // Add timestamp
+        last_cost_update: new Date().toISOString(),
+        // Ensure backward compatibility
+        landed_cost: costData.landed_cost_per_unit
       }
     };
     

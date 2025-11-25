@@ -104,7 +104,66 @@ describe('CostEntryModal', () => {
     );
 
     expect(screen.getByLabelText(/purchase price/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/landed cost/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/shipping from supplier/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/customs\/duties/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/packaging materials/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/selling price/i)).toBeInTheDocument();
+    expect(screen.getByText(/total landed cost/i)).toBeInTheDocument();
   });
+
+  describe('Cost Breakdown', () => {
+  it('should render essential cost breakdown fields', () => {
+    render(
+      <CostEntryModal
+        open={true}
+        product={mockProduct}
+        onClose={mockOnClose}
+        onSave={mockOnSave}
+      />
+    );
+
+    expect(screen.getByLabelText('Purchase Price')).toBeInTheDocument();
+    expect(screen.getByLabelText('Shipping from Supplier')).toBeInTheDocument();
+    expect(screen.getByLabelText('Customs/Duties')).toBeInTheDocument();
+    expect(screen.getByLabelText('Packaging Materials')).toBeInTheDocument();
+    
+    // Check for the total landed cost section (it's split across elements)
+    expect(screen.getByText('Total Landed Cost:')).toBeInTheDocument();
+    expect(screen.getByText('$0.00')).toBeInTheDocument();
+  });
+
+  it('should calculate total landed cost from components', () => {
+    render(
+      <CostEntryModal
+        open={true}
+        product={mockProduct}
+        onClose={mockOnClose}
+        onSave={mockOnSave}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Purchase Price'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Shipping from Supplier'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Customs/Duties'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Packaging Materials'), { target: { value: '1' } });
+
+    // The total should now be $18.00
+    expect(screen.getByText('$18.00')).toBeInTheDocument();
+  });
+
+    it('should allow adding dynamic cost fields', () => {
+      render(
+          <CostEntryModal
+            open={true}
+            product={mockProduct}
+            onClose={mockOnClose}
+            onSave={mockOnSave}
+          />
+        );
+
+        expect(screen.getByPlaceholderText('Cost name')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Amount')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /add/i })).toBeInTheDocument();
+      });
+    });
 });

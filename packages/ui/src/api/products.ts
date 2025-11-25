@@ -17,6 +17,9 @@ export interface Product {
   updated_at: string;
   // Cost fields
   purchase_price?: number;
+  shipping_cost?: number;
+  customs_duties?: number;
+  packaging_cost?: number;
   landed_cost_per_unit?: number;
   selling_price?: number;
   margin?: number;
