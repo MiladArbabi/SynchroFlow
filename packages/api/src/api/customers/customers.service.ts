@@ -1,10 +1,9 @@
 // packages/api/src/api/customers/customers.service.ts
 import { CustomerOrder, SupportTicket } from './customers.types';
+import { CustomerResolutionService, UnifiedCustomerProfile } from '../../services/customer-resolution.service';
+import db from '../../db';
 
-// We can define the frontend types here, or import them from a shared package later
-// For now, this keeps it simple.
-// (Interfaces copied from Customer360Page.tsx)
-interface CustomerProfileData {
+export interface CustomerProfileData {
   name: string;
   email: string;
   phone: string;
@@ -13,64 +12,134 @@ interface CustomerProfileData {
   tags: string[];
 }
 
-interface CustomerMetricsData {
+export interface CustomerMetricsData {
   total_revenue: number;
   total_orders: number;
   aov: number;
   ltv: number;
 }
 
-interface CustomerApiResponse {
-  id: string;
+export interface CustomerApiResponse {
+  id: string | number;
   profile: CustomerProfileData;
   metrics: CustomerMetricsData;
   orders: CustomerOrder[];
   tickets: SupportTicket[];
+  resolution?: UnifiedCustomerProfile | null;
 }
 
-// --- MOCK DATA ---
-// We're moving the mock data from the frontend and route file here.
-const mockCustomerDetails_ABC: CustomerApiResponse = {
-  id: 'cust_abc',
-  profile: {
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '+1 (555) 123-4567',
-    location: 'New York, USA',
-    joined_date: '2024-01-15T09:30:00Z',
-    tags: ['VIP', 'Frequent Buyer'],
-  },
-  metrics: {
-    total_revenue: 1250.75,
-    total_orders: 5,
-    aov: 250.15,
-    ltv: 1500.00, // Projected LTV
-  },
-  // --- ADDING THE MISSING DATA ---
-  orders: [
-    { id: '1002', orderDate: '2025-10-20T14:00:00Z', status: 'Shipped', total: 75.50 },
-    { id: '1001', orderDate: '2025-09-15T10:30:00Z', status: 'Delivered', total: 50.00 },
-  ],
-  tickets: [
-    { id: 'TKT-501', subject: 'Question about Shipping', date: '2025-10-25T11:00:00Z', status: 'Pending' as const },
-    { id: 'TKT-498', subject: 'Return Request - SF-TS-BLK-M', date: '2025-10-22T16:30:00Z', status: 'Resolved' as const },
-  ]
-};
-// --- END MOCK DATA ---
+interface DatabaseCustomer {
+  id: number;
+  platform_customer_id: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  total_orders: number;
+  total_spent: number;
+  state: string;
+  created_at: Date;
+  tags?: string;
+}
+ 
+export class CustomersService {
+  /**
+   * Get list of customers for a shop from database
+   */
+  static async getCustomerList(shopId: number): Promise<DatabaseCustomer[]> {
+    try {
+      const customers = await db
+        .select('*')
+        .from('customers')
+        .where({ shop_id: shopId })
+        .orderBy('created_at', 'desc');
 
-
-/**
- * Simulates fetching detailed customer data by ID.
- * @param id The customer ID
- * @returns The complete customer data or null if not found.
- */
-export const getCustomerDetailsById = async (id: string): Promise<CustomerApiResponse | null> => {
-  // In a real app: await db('customers')...
-  
-  if (id === 'cust_abc') {
-    return mockCustomerDetails_ABC;
+return customers;
+    } catch (error) {
+      console.error('Error fetching customer list:', error);
+      throw new Error('Failed to fetch customers');
+    }
   }
-  
-  // Simulate not found
-  return null;
-};
+
+  /**
+   * Get detailed customer data with identity resolution
+   */
+  static async getCustomerDetailsById(customerId: string | number, shopId: number): Promise<CustomerApiResponse | null> {
+    try {
+      // Get customer from database
+      const customer = await db
+        .select('*')
+        .from('customers')
+        .where({ 
+          id: customerId,
+          shop_id: shopId 
+        })
+        .first();
+
+      if (!customer) {
+        return null;
+      }
+
+      // Get identity resolution data
+      let resolution: UnifiedCustomerProfile | null | undefined = undefined;
+      try {
+        resolution = await CustomerResolutionService.findCustomersByEmail(shopId, customer.email);
+      } catch (resolutionError) {
+        console.warn('Customer resolution failed:', resolutionError);
+        // Continue without resolution data
+      }
+
+      // Calculate metrics
+      const aov = customer.total_orders > 0 ? customer.total_spent / customer.total_orders : 0;
+      const ltv = customer.total_spent * 1.2; // Simple LTV projection
+
+      // Parse tags
+      const tags = customer.tags ? customer.tags.split(',').map((tag: string) => tag.trim()) : [];
+
+      return {
+        id: customer.id,
+        profile: {
+          name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Unknown Customer',
+          email: customer.email,
+          phone: customer.phone || '',
+          location: '', // TODO: Extract from customer data
+          joined_date: customer.created_at.toISOString(),
+          tags
+        },
+        metrics: {
+          total_revenue: parseFloat(customer.total_spent.toString()),
+          total_orders: customer.total_orders,
+          aov: parseFloat(aov.toFixed(2)),
+          ltv: parseFloat(ltv.toFixed(2))
+        },
+        resolution,
+        orders: [], // TODO: Fetch orders for this customer
+        tickets: [] // TODO: Fetch support tickets
+      };
+    } catch (error) {
+      console.error('Error fetching customer details:', error);
+      throw new Error('Failed to fetch customer details');
+    }
+  }
+
+  /**
+   * Get customer by email across all platforms (for resolution)
+   */
+  static async getCustomerByEmail(shopId: number, email: string): Promise<DatabaseCustomer | null> {
+    try {
+      const customer = await db
+        .select('*')
+        .from('customers')
+        .where({ 
+          shop_id: shopId,
+          email 
+        })
+        .first();
+
+      return customer || null;
+    } catch (error) {
+      console.error('Error fetching customer by email:', error);
+      throw new Error('Failed to fetch customer by email');
+    }
+  }
+}
