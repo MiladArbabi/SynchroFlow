@@ -9,12 +9,25 @@ export interface ProductCost {
   updated_at: string;
 }
 
-export const getProductCost = async (platformProductId: string): Promise<ProductCost | null> => {
+export const getProductCost = async (platformProductId: string) => {
   const cost = await db('product_costs')
-    .where('platform_product_id', platformProductId)
+    .where({ platform_product_id: platformProductId })
     .first();
-  
-  return cost || null;
+
+  if (cost) {
+    // Parse decimal fields to numbers
+    return {
+      ...cost,
+      purchase_price: cost.purchase_price ? parseFloat(cost.purchase_price) : null,
+      landed_cost_per_unit: cost.landed_cost_per_unit ? parseFloat(cost.landed_cost_per_unit) : null,
+      shipping_cost: cost.shipping_cost ? parseFloat(cost.shipping_cost) : null,
+      customs_duties: cost.customs_duties ? parseFloat(cost.customs_duties) : null,
+      packaging_cost: cost.packaging_cost ? parseFloat(cost.packaging_cost) : null,
+      selling_price: cost.selling_price ? parseFloat(cost.selling_price) : null,
+    };
+  }
+
+  return null;
 };
 
 export const upsertProductCost = async (

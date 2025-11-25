@@ -75,33 +75,21 @@ export const useUpdateProductCost = () => {
     setIsLoading(true);
     setIsError(false);
 
-    // TEMPORARY MOCK: Simulate successful API call
-    console.log('MOCK: Simulating cost data save for product:', costData.productId);
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Mock successful response - ensure we have the product ID
-    const mockResponse = {
-      data: {
-        ...costData,
-        id: costData.productId || costData.platform_product_id,
-        updatedAt: new Date().toISOString(),
-        margin: costData.selling_price && costData.landed_cost_per_unit ? 
-          ((costData.selling_price - costData.landed_cost_per_unit) / costData.selling_price) * 100 : 0,
-        last_cost_update: new Date().toISOString(),
-        // Ensure backward compatibility
-        landed_cost: costData.landed_cost_per_unit
+    // REAL API CALL - Remove mock implementation
+    const token = localStorage.getItem('accessToken');
+    const response = await axios.post(`/api/v1/product-costs/${costData.platform_product_id}`, costData, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
       }
-    };
+    });
+
+    console.log('Cost data saved successfully via backend API:', response.data);
+    return response;
     
-    console.log('MOCK: Cost data saved successfully');
-    return mockResponse;
-    
-    // TODO: Uncomment when backend is ready
-    // const response = await axios.post(`/api/v1/product-costs/${costData.productId}`, costData);
-    // return response;
   } catch (error) {
     setIsError(true);
-    console.error('Error saving cost data:', error);
+    console.error('Error saving cost data to backend API:', error);
     throw error;
   } finally {
     setIsLoading(false);
