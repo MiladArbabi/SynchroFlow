@@ -1,7 +1,6 @@
 // packages/ui/src/components/CostEntryModal.tsx
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// packages/ui/src/components/CostEntryModal.tsx
 import React, { useState, useEffect } from 'react';
 import {
   Modal,
@@ -25,6 +24,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useProductCosts, useUpdateProductCost } from '../api/product-costs';
 import { Product } from '../api/products';
+import { extractShopifyId } from 'utils/shopifyIdExtractor';
 
 interface CostEntryModalProps {
   open: boolean;
@@ -128,14 +128,15 @@ export const CostEntryModal: React.FC<CostEntryModalProps> = ({
       return;
     }
 
+    const platformProductId = extractShopifyId(product?.platform_product_id || '');
+      console.log('🔑 Original GID:', product?.platform_product_id);
+      console.log('🔑 Extracted ID:', platformProductId);
+
     const costData = {
-      productId: product?.id, 
-      platform_product_id: product?.platform_product_id,
+      productId: product?.id,
+      platform_product_id: platformProductId, // For backend
+      original_platform_product_id: product?.platform_product_id, // For localStorage key
       purchase_price: purchasePrice,
-      shipping_cost: shippingCost,
-      customs_duties: customsDuties,
-      packaging_cost: packagingCost,
-      additional_costs: additionalCosts,
       landed_cost_per_unit: totalLandedCost,
       selling_price: sellingPrice,
       currency: 'USD'
