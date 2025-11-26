@@ -10,6 +10,7 @@ import ordersRoutes from '../api/orders/orders.routes'
 import productsRoutes from '../api/products/products.routes'
 import customersRoutes from '../api/customers/customers.routes'
 import productCostsRoutes from '../api/product-costs/product-costs.routes'
+import userStateRoutes from '../api/user-state/user-state.routes'
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use('/orders', ordersRoutes);
 router.use('/products', productsRoutes);
 router.use('/customers', customersRoutes);
 router.use('/product-costs', productCostsRoutes);
+router.use('/user-state', userStateRoutes); 
 
 export default router;
