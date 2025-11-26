@@ -16,16 +16,7 @@ interface CostStatusIndicatorProps {
 export const CostStatusIndicator: React.FC<CostStatusIndicatorProps> = ({
   product,
   onClick
-}) => {
-  console.log('🔍 CostStatusIndicator - Product data:', {
-    id: product.id,
-    purchase_price: product.purchase_price,
-    landed_cost_per_unit: product.landed_cost_per_unit,
-    selling_price: product.selling_price,
-    last_cost_update: product.last_cost_update,
-    margin: product.margin
-  });
-
+  }) => {
   const getCostStatus = () => {
     if (!product.last_cost_update) {
       return { status: 'missing', color: 'error' as const, label: 'Never Set', icon: <ErrorIcon /> };

@@ -27,6 +27,7 @@ import integrationRoutes from "./api/integrations/integration.routes";
 import productsRoutes from "./api/products/products.routes";
 import authRoutes from "./api/auth/auth.routes";
 import dashboardRoutes from "./api/dashboard/dashboard.routes";
+import productCostsRoutes from "./api/product-costs/product-costs.routes";
 
 // OPS-INTEL Imports
 import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
@@ -78,7 +79,7 @@ app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
 app.use("/api/v1/products", productsRoutes);
-console.log('[DEBUG] Server: Registered /api/v1/products route');
+app.use("/api/v1/product-costs", productCostsRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/user-state", userStateRoutes);

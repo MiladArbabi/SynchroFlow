@@ -65,38 +65,80 @@ const ProductsPage: React.FC = () => {
     setCostModalOpen(true);
   };
 
-  const handleCostSave = async (costData: any) => {
-  try {
-    console.log('🔄 Starting cost save for product:', costData.productId);
-    const result = await updateCostMutation.updateProductCost(costData);
-    console.log('✅ Cost mutation result:', result);
-    
-    // Update local state with the response data - parse decimal values
-    setProducts(prev => prev.map(p => 
-      p.id === costData.productId 
-        ? { 
-            ...p, 
-            purchase_price: parseFloat(result.data.purchase_price) || result.data.purchase_price,
-            shipping_cost: parseFloat(result.data.shipping_cost) || result.data.shipping_cost,
-            customs_duties: parseFloat(result.data.customs_duties) || result.data.customs_duties,
-            packaging_cost: parseFloat(result.data.packaging_cost) || result.data.packaging_cost,
-            landed_cost_per_unit: parseFloat(result.data.landed_cost_per_unit) || result.data.landed_cost_per_unit,
-            selling_price: parseFloat(result.data.selling_price) || result.data.selling_price,
-            margin: parseFloat(result.data.margin) || result.data.margin,
-            last_cost_update: result.data.last_cost_update
-          }
-        : p
-    ));
-    
-    console.log('🔄 Closing modal and clearing selection...');
-    setCostModalOpen(false);
-    setSelectedProduct(null);
-    
-    console.log('✅ Cost save flow completed');
-  } catch (error) {
-    console.error('❌ Failed to save cost data:', error);
+  // Add this useEffect to load persisted cost data
+  // Update the useEffect in ProductsPage.tsx:
+
+React.useEffect(() => {
+  const loadPersistedCostData = () => {
+    try {
+      console.log('🔄 Loading persisted cost data for products:', products.length);
+      const savedData = localStorage.getItem('synchroflow_product_costs');
+      if (savedData) {
+        const costData = JSON.parse(savedData);
+        console.log('📊 Available cost data:', Object.keys(costData));
+        
+        const updatedProducts = products.map(p => {
+          const productCostData = costData[p.platform_product_id]; 
+          console.log(`🔍 Checking product ${p.platform_product_id}:`, productCostData);
+          return productCostData ? { ...p, ...productCostData } : p;
+        });
+        
+        console.log('🔄 Setting updated products:', updatedProducts);
+        setProducts(updatedProducts);
+      }
+    } catch (error) {
+      console.error('Error loading persisted cost data:', error);
+    }
+  };
+
+  if (products && products.length > 0) {
+    loadPersistedCostData();
   }
-};
+}, [initialProducts]); 
+
+  const handleCostSave = async (costData: any) => {
+    try {
+      const result = await updateCostMutation.updateProductCost(costData);
+      
+      // Calculate margin
+      const landedCost = parseFloat(result.data.landed_cost_per_unit);
+      const sellingPrice = costData.selling_price;
+      const margin = sellingPrice && landedCost ? 
+        ((sellingPrice - landedCost) / sellingPrice) * 100 : 0;
+
+      // Persist to localStorage
+      const savedData = localStorage.getItem('synchroflow_product_costs') || '{}';
+      const costDataMap = JSON.parse(savedData);
+
+      costDataMap[costData.original_platform_product_id] = {
+        purchase_price: parseFloat(result.data.purchase_price),
+        landed_cost_per_unit: landedCost,
+        selling_price: sellingPrice,
+        margin: margin,
+        last_cost_update: result.data.updated_at
+      };
+
+      localStorage.setItem('synchroflow_product_costs', JSON.stringify(costDataMap));
+      
+      setProducts(prev => prev.map(p => 
+        p.id === costData.productId 
+          ? { 
+              ...p, 
+              purchase_price: parseFloat(result.data.purchase_price),
+              landed_cost_per_unit: landedCost,
+              selling_price: sellingPrice,
+              margin: margin,
+              last_cost_update: result.data.updated_at
+            }
+          : p
+      ));
+
+      setCostModalOpen(false);
+      setSelectedProduct(null);
+    } catch (error) {
+      console.error('Failed to save cost data:', error);
+    }
+  };
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, newPage: number) => {
     setPage(newPage);
