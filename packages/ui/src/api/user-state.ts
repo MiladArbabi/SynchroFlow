@@ -16,6 +16,14 @@ export interface UserProductCosts {
   };
 }
 
+export interface SessionData {
+  sessionId: string;
+  fingerprint: string;
+  pageViews: Array<{ path: string; timestamp: number }>;
+  createdAt: number;
+  lastActivityAt: number;
+}
+
 export const fetchUserProductCosts = async (): Promise<UserProductCosts> => {
   const response = await axiosInstance.get('/api/v1/user-state/product-costs');
   return response.data;
@@ -41,4 +49,14 @@ export const useUpdateUserProductCosts = () => {
       queryClient.invalidateQueries({ queryKey: ['user-state', 'product-costs'] });
     },
   });
+};
+
+export const saveSessionData = async (sessionData: SessionData): Promise<{ success: boolean }> => {
+  try {
+    const response = await axiosInstance.post('/api/user-state/session', sessionData);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to save session data:', error);
+    throw error;
+  }
 };
