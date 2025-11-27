@@ -174,6 +174,7 @@ export const CostEntryModal: React.FC<CostEntryModalProps> = ({
               <CloseIcon fontSize="small" />
             </IconButton>
           }
+          data-testid="cost-entry-modal"
         >
           <CardContent>
             {/* Cost Breakdown */}
@@ -191,6 +192,7 @@ export const CostEntryModal: React.FC<CostEntryModalProps> = ({
                     InputProps={{
                       startAdornment: <InputAdornment position="start">$</InputAdornment>,
                     }}
+                    data-testid="purchase-price-input"
                     placeholder="0.00"
                     error={!!errors.purchasePrice}
                     helperText={errors.purchasePrice}
@@ -217,6 +219,7 @@ export const CostEntryModal: React.FC<CostEntryModalProps> = ({
                     InputProps={{
                       startAdornment: <InputAdornment position="start">$</InputAdornment>,
                     }}
+                    data-testid="shipping-cost-input"
                     placeholder="0.00"
                     error={!!errors.shippingCost}
                     helperText={errors.shippingCost}
@@ -243,6 +246,7 @@ export const CostEntryModal: React.FC<CostEntryModalProps> = ({
                     InputProps={{
                       startAdornment: <InputAdornment position="start">$</InputAdornment>,
                     }}
+                    data-testid="customs-duties-input"
                     placeholder="0.00"
                     error={!!errors.customsDuties}
                     helperText={errors.customsDuties}
@@ -483,6 +487,7 @@ export const CostEntryModal: React.FC<CostEntryModalProps> = ({
               onClick={handleSave} 
               variant="contained"
               disabled={purchasePrice <= 0 || totalLandedCost <= 0}
+              data-testid="save-cost-button"
             >
               Save Costs
             </Button>

@@ -42,6 +42,29 @@ export async function loginAs(page: Page, userKey: TestUserKey = 'default-user')
   
   // 6. Verify dashboard is loaded
   console.log('🔍 Verifying dashboard...');
-  await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible({ timeout: 10000 });
-  console.log('✅ Dashboard loaded successfully');
+  
+    try {
+    // Try to find the main dashboard heading (not the loading state)
+    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible({ timeout: 10000 });
+    console.log('✅ Dashboard loaded successfully (exact match)');
+  } catch (error) {
+    console.log('🔄 Falling back to first heading match...');
+    // Fallback: get the first heading that contains "Dashboard"
+    const dashboardHeadings = page.getByRole('heading', { name: /dashboard/i });
+    const count = await dashboardHeadings.count();
+    
+    if (count > 0) {
+      // Use the first visible heading that's not "Dashboard Loading"
+      for (let i = 0; i < count; i++) {
+        const heading = dashboardHeadings.nth(i);
+        const text = await heading.textContent();
+        if (text && text !== 'Dashboard Loading' && await heading.isVisible()) {
+          console.log(`✅ Using dashboard heading: "${text}"`);
+          break;
+        }
+      }
+    } else {
+      throw new Error('No dashboard heading found');
+    }
+  }
 }

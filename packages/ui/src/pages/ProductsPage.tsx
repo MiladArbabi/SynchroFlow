@@ -242,6 +242,7 @@ const ProductsPage: React.FC = () => {
                 return (
                   <TableRow
                     key={product.id}
+                    data-testid="product-card"
                     sx={{ 
                       '&:last-child td, &:last-child th': { border: 0 },
                       cursor: 'pointer',
@@ -282,12 +283,15 @@ const ProductsPage: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div data-testid="cost-status-indicator">
                       <CostStatusIndicator 
                         product={product}
                         onClick={() => handleCostClick(product)}
                       />
+                      </div>
                     </TableCell>
                     <TableCell>
+                      <div data-testid="margin-display">
                       {product.margin ? (
                         <Typography 
                           variant="body2" 
@@ -304,6 +308,7 @@ const ProductsPage: React.FC = () => {
                           {product.total_inventory > 0 ? 'Add costs' : '-'}
                         </Typography>
                       )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
