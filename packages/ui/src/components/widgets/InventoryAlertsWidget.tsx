@@ -150,9 +150,9 @@ export const InventoryAlertsWidget: React.FC<InventoryAlertsWidgetProps> = (prop
      <InventoryAlertsContent
        {...shellProps}
        items={items}
-       isLoading={isLoading}
-       isEmpty={isEmpty}
-       error={error?.message}
+       //isLoading={isLoading}
+       //isEmpty={isEmpty}
+       //error={error?.message}
      />
    );
  }

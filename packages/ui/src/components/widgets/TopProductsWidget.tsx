@@ -168,9 +168,9 @@ export const TopProductsWidget: React.FC<TopProductsWidgetProps> = (props) => {
      <TopProductsContent
        {...shellProps}
        items={items}
-       isLoading={isLoading}
+       /* isLoading={isLoading}
        isEmpty={isEmpty}
-       error={error?.message}
+       error={error?.message} */
      />
    );
  }

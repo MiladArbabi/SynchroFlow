@@ -1,27 +1,38 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // packages/ui/src/pages/Customer360Page.tsx
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Grid, Paper, Typography, CircularProgress, Alert } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+import { CustomerRFMInsights } from 'components/Customer360/CustomerRFMInsights';
 import axios from 'axios';
-
 // Import Child Components and their data types
 import CustomerProfile, { CustomerProfileData } from 'components/Customer360/CustomerProfile.tsx';
 import CustomerKeyMetrics, { CustomerMetricsData } from 'components/Customer360/CustomerKeyMetrics.tsx';
 import CustomerOrderHistory, { CustomerOrder } from 'components/Customer360/CustomerOrderHistory.tsx';
 import CustomerSupportHistory, { SupportTicket } from 'components/Customer360/CustomerSupportHistory.tsx';
 
-/**
- * Defines the expected structure of the data returned by the
- * GET /api/v1/customers/:id endpoint.
- */
-interface CustomerApiResponse {
-    id: string;
-    profile: CustomerProfileData;
-    metrics: CustomerMetricsData;
-    orders?: CustomerOrder[]; // Mark as optional for now
-    tickets?: SupportTicket[]; // Mark as optional for now
-}
+import { CustomerBehaviorInsights } from 'components/Customer360/CustomerBehaviorInsights';
+import { CustomerSessionHistory } from 'components/Customer360/CustomerSessionHistory';
+import type { CustomerApiResponse } from '../../../api/src/api/customers/customers.service';
+
+const mapApiMetricsToUiMetrics = (apiMetrics: any, orders: any[] = []): any => {
+  // Get the last order date from orders array
+  const lastOrder = orders && orders.length > 0 
+    ? orders.reduce((latest, order) => 
+        new Date(order.orderDate) > new Date(latest.orderDate) ? order : latest
+      )
+    : null;
+
+  return {
+    ltv: apiMetrics.ltv || 0,
+    aov: apiMetrics.aov || 0,
+    totalOrders: apiMetrics.total_orders || 0,
+    totalMargin: apiMetrics.total_revenue ? apiMetrics.total_revenue * 0.3 : 0, // Estimate 30% margin
+    lastOrderDate: lastOrder ? lastOrder.orderDate : null
+  };
+};
 
 /**
  * Customer360Page: Displays the unified view for a single customer.
@@ -105,7 +116,6 @@ const Customer360Page: React.FC = () => {
           {/* Profile Section */}
           <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2, height: '100%' }}>
-              {/* Pass the fetched profile data to the CustomerProfile component */}
               <CustomerProfile customer={customerData.profile} />
             </Paper>
           </Grid>
@@ -113,25 +123,37 @@ const Customer360Page: React.FC = () => {
           {/* Key Metrics Section */}
           <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2, height: '100%' }}>
-              {/* Pass the fetched metrics data to the CustomerKeyMetrics component */}
-              <CustomerKeyMetrics metrics={customerData.metrics} />
+              <CustomerKeyMetrics metrics={mapApiMetricsToUiMetrics(customerData.metrics, customerData.orders)} />
             </Paper>
           </Grid>
 
-          {/* Order History Section (Still uses static mock data for now) */}
+          {/*  Specter Behavior Insights */}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <CustomerBehaviorInsights customerId={id!} />
+          </Grid>
+
+          {/*  Session History */}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <CustomerSessionHistory customerId={id!} />
+          </Grid>
+
+          {/*  RFM Insights */}
+          <Grid size={{ xs: 12 }}>
+             <CustomerRFMInsights customerData={customerData} />
+          </Grid>
+
+          {/* Order History Section */}
           <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2 }}>
-               <Typography variant="h6" gutterBottom>Order History</Typography>
-               {/* Pass the real (or mock) data from the API */}
-               <CustomerOrderHistory orders={customerData.orders || []} />
+              <Typography variant="h6" gutterBottom>Order History</Typography>
+              <CustomerOrderHistory orders={customerData.orders || []} />
             </Paper>
           </Grid>
 
-          {/* Support History Section (Now uses data from the query) */}
+          {/* Support History Section */}
           <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>Support History</Typography>
-              {/* Pass the real (or mock) data from the API */}
               <CustomerSupportHistory tickets={customerData.tickets || []} />
             </Paper>
           </Grid>
