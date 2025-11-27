@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/ui/src/pages/ProductsPage.tsx
 import React, { useState } from 'react';
@@ -28,6 +27,7 @@ import { useNavigate } from 'react-router-dom';
 import { CostEntryModal } from '../components/CostEntryModal';
 import { CostStatusIndicator } from '../components/CostStatusIndicator';
 import { useUpdateProductCost } from '../api/product-costs';
+import { useUserProductCosts, useUpdateUserProductCosts } from '../api/user-state';
 import { useQueryClient } from '@tanstack/react-query';
 
 const ProductsPage: React.FC = () => {
@@ -43,6 +43,8 @@ const ProductsPage: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   
   const updateCostMutation = useUpdateProductCost();
+  const { data: userProductCosts, isLoading: isLoadingUserCosts } = useUserProductCosts();
+  const updateUserProductCostsMutation = useUpdateUserProductCosts();
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
@@ -65,80 +67,95 @@ const ProductsPage: React.FC = () => {
     setCostModalOpen(true);
   };
 
-  // Add this useEffect to load persisted cost data
-  // Update the useEffect in ProductsPage.tsx:
-
-React.useEffect(() => {
-  const loadPersistedCostData = () => {
-    try {
-      console.log('🔄 Loading persisted cost data for products:', products.length);
-      const savedData = localStorage.getItem('synchroflow_product_costs');
-      if (savedData) {
-        const costData = JSON.parse(savedData);
-        console.log('📊 Available cost data:', Object.keys(costData));
-        
-        const updatedProducts = products.map(p => {
-          const productCostData = costData[p.platform_product_id]; 
-          console.log(`🔍 Checking product ${p.platform_product_id}:`, productCostData);
-          return productCostData ? { ...p, ...productCostData } : p;
-        });
-        
-        console.log('🔄 Setting updated products:', updatedProducts);
-        setProducts(updatedProducts);
-      }
-    } catch (error) {
-      console.error('Error loading persisted cost data:', error);
-    }
-  };
-
-  if (products && products.length > 0) {
-    loadPersistedCostData();
-  }
-}, [initialProducts]); 
+  // Load cost data from user-state with localStorage fallback
+ React.useEffect(() => {
+   const loadCostData = () => {
+     try {
+       console.log('🔄 Loading cost data for products:', initialProducts.length);
+       
+       // Phase 1: Try user-state first, fallback to localStorage
+       let costData: any = {};
+       
+       if (userProductCosts && Object.keys(userProductCosts).length > 0) {
+         console.log('📊 Using user-state cost data:', Object.keys(userProductCosts));
+         costData = userProductCosts;
+       } else {
+         // Fallback to localStorage during migration
+         const savedData = localStorage.getItem('synchroflow_product_costs');
+         if (savedData) {
+           console.log('📊 Using localStorage cost data (fallback):', Object.keys(JSON.parse(savedData)));
+           costData = JSON.parse(savedData);
+         }
+       }
+       
+       const updatedProducts = initialProducts.map(p => {
+         const productCostData = costData[p.platform_product_id]; 
+         console.log(`🔍 Checking product ${p.platform_product_id}:`, productCostData);
+         return productCostData ? { ...p, ...productCostData } : p;
+       });
+       
+       setProducts(updatedProducts);
+     } catch (error) {
+       console.error('❌ Error loading cost data:', error);
+     }
+   };
+ 
+   if (initialProducts && initialProducts.length > 0 && !isLoadingUserCosts) {
+     loadCostData();
+   }
+ }, [initialProducts, userProductCosts, isLoadingUserCosts]);
 
   const handleCostSave = async (costData: any) => {
-    try {
-      const result = await updateCostMutation.updateProductCost(costData);
-      
-      // Calculate margin
-      const landedCost = parseFloat(result.data.landed_cost_per_unit);
-      const sellingPrice = costData.selling_price;
-      const margin = sellingPrice && landedCost ? 
-        ((sellingPrice - landedCost) / sellingPrice) * 100 : 0;
-
-      // Persist to localStorage
-      const savedData = localStorage.getItem('synchroflow_product_costs') || '{}';
-      const costDataMap = JSON.parse(savedData);
-
-      costDataMap[costData.original_platform_product_id] = {
-        purchase_price: parseFloat(result.data.purchase_price),
-        landed_cost_per_unit: landedCost,
-        selling_price: sellingPrice,
-        margin: margin,
-        last_cost_update: result.data.updated_at
-      };
-
-      localStorage.setItem('synchroflow_product_costs', JSON.stringify(costDataMap));
-      
-      setProducts(prev => prev.map(p => 
-        p.id === costData.productId 
-          ? { 
-              ...p, 
-              purchase_price: parseFloat(result.data.purchase_price),
-              landed_cost_per_unit: landedCost,
-              selling_price: sellingPrice,
-              margin: margin,
-              last_cost_update: result.data.updated_at
-            }
-          : p
-      ));
-
-      setCostModalOpen(false);
-      setSelectedProduct(null);
-    } catch (error) {
-      console.error('Failed to save cost data:', error);
-    }
-  };
+     try {
+       const result = await updateCostMutation.updateProductCost(costData);
+       
+       // Calculate margin
+       const landedCost = parseFloat(result.data.landed_cost_per_unit);
+       const sellingPrice = costData.selling_price;
+       const margin = sellingPrice && landedCost ? 
+         ((sellingPrice - landedCost) / sellingPrice) * 100 : 0;
+ 
+       // Phase 1: Dual-write to both localStorage AND user-state
+       const costEntry = {
+         purchase_price: parseFloat(result.data.purchase_price),
+         landed_cost_per_unit: landedCost,
+         selling_price: sellingPrice,
+         margin: margin,
+         last_cost_update: result.data.updated_at
+       };
+ 
+       // 1. Update localStorage (existing behavior)
+       const savedData = localStorage.getItem('synchroflow_product_costs') || '{}';
+       const costDataMap = JSON.parse(savedData);
+       costDataMap[costData.original_platform_product_id] = costEntry;
+       localStorage.setItem('synchroflow_product_costs', JSON.stringify(costDataMap));
+ 
+       // 2. Update user-state (new multi-device sync)
+       const updatedUserCosts = {
+         ...userProductCosts,
+         [costData.original_platform_product_id]: {
+           ...costData,
+           ...costEntry
+         }
+       };
+       await updateUserProductCostsMutation.mutateAsync(updatedUserCosts);
+       
+       setProducts(prev => prev.map(p => 
+         p.id === costData.productId 
+           ? { 
+               ...p, 
+               ...costEntry
+             } 
+           : p
+       ));
+       
+       queryClient.invalidateQueries({ queryKey: ['products'] });
+       setCostModalOpen(false);
+       
+     } catch (error) {
+       console.error('Error saving cost data:', error);
+     }
+   };
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, newPage: number) => {
     setPage(newPage);
@@ -225,6 +242,7 @@ React.useEffect(() => {
                 return (
                   <TableRow
                     key={product.id}
+                    data-testid="product-card"
                     sx={{ 
                       '&:last-child td, &:last-child th': { border: 0 },
                       cursor: 'pointer',
@@ -265,12 +283,15 @@ React.useEffect(() => {
                       />
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div data-testid="cost-status-indicator">
                       <CostStatusIndicator 
                         product={product}
                         onClick={() => handleCostClick(product)}
                       />
+                      </div>
                     </TableCell>
                     <TableCell>
+                      <div data-testid="margin-display">
                       {product.margin ? (
                         <Typography 
                           variant="body2" 
@@ -287,6 +308,7 @@ React.useEffect(() => {
                           {product.total_inventory > 0 ? 'Add costs' : '-'}
                         </Typography>
                       )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

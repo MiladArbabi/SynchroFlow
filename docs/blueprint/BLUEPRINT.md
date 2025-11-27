@@ -2,16 +2,21 @@
 
 ## **1. Executive Summary & Vision**
 
-### **1.1 The Paradigm Shift**
-The ACI Platform represents a fundamental evolution from passive analytics to active intelligence. We're not building another dashboard; we're creating a **"Digital Chief of Staff"** for e-commerce operators that learns, adapts, and orchestrates business operations autonomously.
+### **1.1 Vision Statement**
+
+**Vision:** "Autonomous Conversion & Operations Nervous System" for commerce
+**Specter:** Privacy-first conversion intelligence that turns anonymous behavior into predictable revenue growth, integrated with operational intelligence
 
 ### **1.2 Core Value Proposition**
-**For Free Tier:** "The market's best free analytics - no setup, no confusion, just answers"
+
+- **For Free Tier:** "The market's best free analytics - no setup, no confusion, just answers"
 - **For Survival Mode:** "Stop guessing if you're profitable"
 - **For Growth Mode:** "Systematically scale with confidence"  
 - **For Architect Mode:** "Build a self-optimizing commerce machine"
+- **Specter Value Add:** 3.5x conversion lift, 70% LTV increase, PCD-compliant from day one
 
 ### **1.3 The Ultimate Vision**
+
 A platform that begins as an analytics tool and evolves into an autonomous operating system that anticipates needs, executes workflows, and continuously improves its own intelligence through user interaction.
 **Free Plan Vision:** Create an unbeatable free experience that dominates e-commerce analytics acquisition while driving high-value conversions through demonstrated ROI.
 
@@ -19,23 +24,30 @@ A platform that begins as an analytics tool and evolves into an autonomous opera
 
 ## **2. Core Architecture: The Four-Layer Stack**
 
-### **2.1 Layer 1: Intelligence Layer (The "Brain")**
+### **2.1 Enhanced Four-Layer Stack**
+
+### **Layer 1: Intelligence Layer (The "Brain")**
+
 **Purpose:** Sense → Analyze → Suggest
 
 **Components:**
+
 - **Blueprint Widgets:** Context-aware data visualization
 - **Reasoning Engine:** Explains "why" behind every insight
 - **Prediction Models:** Forecast trends and outcomes
 - **Pattern Recognition:** Identifies opportunities and risks
-**Free Tier Intelligence:** Hyper-focused survival insights with strategic teasers
+- **Specter Conversion Engine:** Anonymous visitor intelligence, intent scoring, surgical discounts
+- **PCD Customer Graph:** Hashed identity resolution, RFM scoring, Weibull LTV
 
 **Key Innovation:** Widgets are not static displays; they're conversational interfaces that understand user context.
 **Free Tier Innovation:** Immediate value delivery in <3 seconds, beating GA4 complexity
 
 ### **2.2 Layer 2: Operations Layer (The "Muscle")**
+
 **Purpose:** Execute → Orchestrate → Report
 
 **Components:**
+
 - **WMS-lite/Full WMS:** Inventory, fulfillment, procurement
 - **Echo Hub:** Team coordination and workflow management
 - **Integration Gateway:** Connects to existing tools (Shopify, QuickBooks, etc.)
@@ -43,20 +55,26 @@ A platform that begins as an analytics tool and evolves into an autonomous opera
 **Key Innovation:** Direct execution of insights from the Intelligence Layer.
 
 ### **2.3 Layer 3: Learning Layer (The "Cerebellum")**
+
 **Purpose:** Adapt → Improve → Personalize
 
 **Components:**
+
 - **Feedback Processing System**
 - **Insight Quality Optimization**
 - **User Behavior Modeling**
 - **Reinforcement Learning Engine**
+- **Specter Cart DNA Sequencing:** Product sequence analysis, friction detection
+- **Nudge Performance Learning:** Continuous A/B testing and optimization
 
 **Key Innovation:** Closed-loop learning from every user interaction.
 
 ### **2.4 Layer 4: Governance Layer (The "Prefrontal Cortex")**
+
 **Purpose:** Trust → Control → Comply
 
 **Components:**
+
 - **Confidence Scoring System**
 - **Approval Workflow Engine**
 - **Audit Trail & Compliance**
@@ -81,17 +99,20 @@ A platform that begins as an analytics tool and evolves into an autonomous opera
 
 ### **3.2 The Mode Transition Framework**
 
-**Survival → Growth Trigger:** 
+**Survival → Growth Trigger:**
+
 - "You're tracking 500+ visitors/month - unlock conversion analytics"
 - **Widget Teaser:** Blurred conversion rates in traffic sources
 **Free Tier Enhancement:** "GA4-beating simplicity - no setup, immediate insights"
 **Viral Trigger:** "Share your daily health report - unlock extra widget"
 
 **Growth → Architect Trigger:**
+
 - "You're processing $50K+/month - unlock profit tracking and WMS"
 - **Widget Teaser:** "See true profitability including fulfillment costs"
 
 **Architect → Enterprise Trigger:**
+
 - "Managing multiple warehouses? Unlock multi-location WMS"
 - **Widget Teaser:** "Consolidate your frankenstack into one platform"
 
@@ -100,9 +121,11 @@ A platform that begins as an analytics tool and evolves into an autonomous opera
 ## **4. Operational Framework: The "4 C's" Litmus Test**
 
 ### **4.1 Context Specification**
+
 **Requirement:** Every widget must answer one mode-specific question in under 3 seconds.
 
 **Implementation Template:**
+
 ```yaml
 context:
   mode: "survival|growth|architect"
@@ -114,18 +137,22 @@ context:
 ```
 
 ### **4.2 Causation Requirements**
+
 **Requirement:** Provide root-cause analysis, not just data points.
 
 **Implementation Patterns:**
+
 - **Free Tier:** "Why this happened" explanations with confidence scoring
 - **Survival:** Simple comparators ("vs. yesterday", "vs. last week")
 - **Growth:** Funnel analysis with drop-off highlighting
 - **Architect:** Multi-variable correlation analysis
 
 ### **4.3 Clear Path Forward Triggers**
+
 **Requirement:** Every insight must have an obvious next action.
 
 **Trigger Hierarchy:**
+
 1. **Learn** (CoachTrigger) → Understand the concept
 2. **Simulate** (ActionTrigger) → Test the impact
 3. **Execute** (AutomationTrigger) → Implement the change
@@ -133,9 +160,11 @@ context:
 4. **Free Tier Limits:** Full Learn access, limited Simulate (3/month), teased Execute/Orchestrate
 
 ### **4.4 Closed Loop Feedback**
+
 **Requirement:** Every interaction must teach the system.
 
 **Feedback Data Model:**
+
 ```typescript
 interface InsightFeedback {
   insightId: string;
@@ -158,6 +187,7 @@ interface InsightFeedback {
 ## **5. Engineering Framework: Component Library**
 
 ### **5.1 Base Trigger Component**
+
 ```jsx
 <BaseTrigger
   // Required Props
@@ -186,6 +216,7 @@ interface InsightFeedback {
 ### **5.2 Specialized Trigger Components**
 
 #### **TeaserTrigger**
+
 ```jsx
 <TeaserTrigger
   lockedFeature="conversion_rate"
@@ -198,6 +229,7 @@ interface InsightFeedback {
 ```
 
 #### **CoachTrigger**
+
 ```jsx
 <CoachTrigger
   insightId="cart_abandonment_high"
@@ -210,6 +242,7 @@ interface InsightFeedback {
 ```
 
 #### **AutomationTrigger**
+
 ```jsx
 <AutomationTrigger
   workflow="generate_po"
@@ -227,6 +260,7 @@ interface InsightFeedback {
 ```
 
 #### **OrchestrationTrigger**
+
 ```jsx
 <OrchestrationTrigger
   team="marketing"
@@ -243,9 +277,30 @@ interface InsightFeedback {
 </OrchestrationTrigger>
 ```
 
+#### **SpecterTrigger Components**
+
+ ```jsx
+ <SpecterNudgeTrigger
+   sessionId={currentSession}
+   intentScore={intentData.score}
+   optimalOffer={discountEngine.calculateOffer()}
+   feedbackEnabled={true}
+   onConversion={(data) => adaptiveEngine.logConversion(data)}
+ >
+   <DynamicOfferDisplay />
+ </SpecterNudgeTrigger>
+ 
+ <CartDNAAnalyzer
+   productSequence={session.productsViewed}
+   onFrictionDetected={(point) => nudgeEngine.triggerIntervention(point)}
+   onCrossSellOpportunity={(products) => recommendationEngine.suggest(products)}
+ />
+ ```
+
 ### **5.3 Confidence & Governance Components**
 
 #### **ConfidenceIndicator**
+
 ```jsx
 <ConfidenceIndicator
   confidenceScore={0.87}
@@ -260,6 +315,7 @@ interface InsightFeedback {
 ```
 
 #### **ApprovalTrigger**
+
 ```jsx
 <ApprovalTrigger
   workflow="large_po_approval"
@@ -284,21 +340,25 @@ interface InsightFeedback {
 ### **6.1 Primary Metrics**
 
 #### **Insight Acceptance Rate (IAR)**
+
 ```
 IAR = (Accepted Insights / Total Presented Insights) × 100
 ```
 
 **Benchmarks:**
+
 - Excellent: > 40% IAR
 - Good: 25-40% IAR  
 - Needs Improvement: < 25% IAR
 
 #### **Widget IQ Score**
+
 ```
 Widget IQ = Average IAR across all insights in widget × Confidence Calibration
 ```
 
 #### **User Personalization Profile**
+
 ```json
 {
   "user_123": {
@@ -317,27 +377,40 @@ Widget IQ = Average IAR across all insights in widget × Confidence Calibration
 ### **6.2 Advanced Trust Metrics**
 
 #### **Confidence Calibration Score**
+
 ```
 Calibration = 1 - |(Predicted Accuracy - Actual Accuracy)|
 ```
+
 - Perfect: 1.0 (predictions match reality exactly)
 - Good: > 0.8
 - Poor: < 0.6
 
 #### **Time-to-Trust Metric**
+
 - Measures days until user reaches 30% IAR
 - **Benchmark:** < 14 days for rapid platform adoption
 
 #### **Insight Accuracy Score**
+
 - Tracks prediction vs. actual outcomes
 - Critical for autonomous feature credibility
+
+#### **Specter Conversion Metrics**
+
+- **Nudge Acceptance Rate:** Target: 40%+ presented offers accepted
+- **Conversion Lift:** Target: 2.1% → 4.5% within 30 days
+- **Margin Improvement:** Target: 8-18% through surgical discounts
+- **LTV Increase:** Target: $142 → $241 through better retention
 
 ---
 
 ## **7. Adaptive Roadmap: Phased Evolution**
 
 ### **Phase 1: Foundation (Months 1-3) - ✅ COMPLETED**
+
 **Focus:** Perfect Survival Mode Intelligence
+
 - ✅ **Orders API & Order360** - Complete with PCD compliance and Shopify GID handling
 - ✅ **Database Architecture** - Customer relationships and data normalization
 - ✅ **Products API & Product-360** - Complete product intelligence with inventory health
@@ -350,48 +423,67 @@ Calibration = 1 - |(Predicted Accuracy - Actual Accuracy)|
 **Competitive Angle:** "Setup in 2 minutes, full operational visibility in 3 seconds - beats GA4 complexity"
 
 ### **Phase 1.5: Data Distribution Infrastructure - ✅ COMPLETED**
+
  **Focus:** Bridge Intelligence Layer to initial Operations Layer
- - ✅ **Extend Shopify integration** to populate Orders/Customers/Products pages
- - ✅ **Implement core API endpoints** with 4 C's compliance and JWT authentication
- - ✅ **Products Intelligence Center** - Complete product catalog with inventory health monitoring
- - 🔄 **Add strategic TeaserTriggers** for Growth features
- - 🔄 **Deploy confidence indicators** and viral sharing features
- - **Key Deliverable:** Complete data flow from dashboard to operational pages
- - **Business Impact:** Transform free plan from dashboard-only to comprehensive operational intelligence
- - **Technical Achievement:** Multi-entity data foundation (Orders ↔ Customers ↔ Products) with PCD compliance
+
+- ✅ **Extend Shopify integration** to populate Orders/Customers/Products pages
+- ✅ **Implement core API endpoints** with 4 C's compliance and JWT authentication
+- ✅ **Products Intelligence Center** - Complete product catalog with inventory health monitoring
+- 🔄 **Add strategic TeaserTriggers** for Growth features
+- 🔄 **Deploy confidence indicators** and viral sharing features
+- **Key Deliverable:** Complete data flow from dashboard to operational pages
+- **Business Impact:** Transform free plan from dashboard-only to comprehensive operational intelligence
+- **Technical Achievement:** Multi-entity data foundation (Orders ↔ Customers ↔ Products) with PCD compliance
 
 ### **Phase 2: Growth Engine (Months 4-6)**  
+
 **Focus:** Launch Spark Plan Intelligence
-- Build Conversion Tracker, AOV, CLV widgets
-- Implement interactive simulators
-- Develop sophisticated upgrade paths
+
+**Build Specter Conversion Intelligence** (Anonymous session tracking, intent scoring, exit-intent capture)
+**Implement Specter Nudge Engine** (Basic A/B testing, offer presentation)
+**Develop Specter Customer Graph** (RFM scoring, product affinities, basic LTV)
+
 - **Key Deliverable:** Mass-market $99/month conversion machine
 **Enhanced Focus:** Leverage Phase 1.5 data foundation for advanced conversion analytics
 **Conversion Driver:** "You're leaving $X/month on the table - unlock conversion optimization"
 
 ### **Phase 3: Platform Expansion (Months 7-12)**
-**Focus:** Launch Ignition Plan with WMS-lite
-- Build Profit Margin Tracker with true cost analysis
-- Develop WMS-lite core features
-- Activate AutomationTriggers and basic learning
+
+**Focus:** Launch Ignition Plan with WMS-lite + Specter Surgical Discounts
+
+**Build Specter Surgical Discount Engine** (Margin-aware offers, dynamic pricing)
+**Develop Specter Cart DNA Sequencing** (Product sequence analysis, friction detection)
+**Activate Specter Multi-Channel Automation** (Email, SMS, browser push offers)
+
 - **Key Deliverable:** $349/month "spreadsheet replacement"
 
 ### **Phase 4: Enterprise Scale (Year 2)**
+
 **Focus:** Launch Clarity Plan with Echo Hub
+
 - Develop full WMS and Echo Hub integration
 - Implement ApprovalTriggers and governance
 - Activate personalization based on IAR data
+
+**Develop Specter Autonomous Conversion Engine** (Reinforcement learning, self-optimizing nudges)
+**Implement Specter Cross-Platform Attribution** (Multi-touch, anonymous→known mapping)
+**Activate Specter Predictive LTV** (Weibull survival analysis, Bayesian updates)
+
 - **Key Deliverable:** $799/month "frankenstack consolidation"
 
 ### **Phase 5: Optimization (Year 3)**
+
 **Focus:** Launch Optimize Plan with Predictive AI
+
 - Deploy personalized dashboard ranking
 - Implement advanced forecasting models
 - Activate cross-departmental workflows
 - **Key Deliverable:** $1,999/month "unified ops + CX"
 
 ### **Phase 6: Autonomy (Year 4+)**
+
 **Focus:** Launch Autonomous Plan
+
 - Deploy reinforcement learning models
 - Activate fully autonomous features
 - Implement executive strategy reporting
@@ -404,6 +496,7 @@ Calibration = 1 - |(Predicted Accuracy - Actual Accuracy)|
 ### **8.1 Development Workflow**
 
 **Step 1: 4 C's Specification**
+
 ```markdown
 ## Widget: Profit Margin Tracker
 
@@ -426,6 +519,7 @@ Calibration = 1 - |(Predicted Accuracy - Actual Accuracy)|
 ```
 
 **Step 2: TDD for Intelligence**
+
 ```gherkin
 Feature: Profit Margin Widget provides true cost visibility
 
@@ -444,6 +538,7 @@ Feature: Profit Margin Widget provides true cost visibility
 ```
 
 **Step 3: Component Implementation**
+
 ```jsx
 const ProfitMarginWidget = ({ products, userProfile }) => {
   const insights = useMarginInsights(products);
@@ -475,6 +570,7 @@ const ProfitMarginWidget = ({ products, userProfile }) => {
 ### **8.2 Quality Assurance Framework**
 
 **The Intelligence Scorecard:**
+
 - Context Score: /10 (Understandable in <3s?)
 - Causation Score: /10 (Explains "why" clearly?)  
 - Action Score: /10 (Clear path forward?)
@@ -506,10 +602,19 @@ const ProfitMarginWidget = ({ products, userProfile }) => {
 | Spark | Growth phase | $99 | 40% of paying | 20% of revenue |
 | Ignition | Scaling phase | $349 | 35% of paying | 50% of revenue |
 | Clarity+ | Enterprise | $799+ | 25% of paying | 80% of revenue |
+
+**Specter Impact Metrics:**
+
+- Free→Paid Conversion: 15% → **25%** (+10% from proven conversion lift)
+- Customer Retention: 75% → **88%** (+13% from better engagement) 
+- Average Revenue Per User: $299 → **$349** (+17% from premium features)
+- Year 1 Revenue: $5.4M → **$6.8M** (+26% from Specter value add)
+
 **Enhanced Metrics:**
- - Free user activation: >40% (using platform weekly)
- - Free to paid conversion: 25% within 90 days
- - Viral coefficient: >0.5 through shareable insights
+
+- Free user activation: >40% (using platform weekly)
+- Free to paid conversion: 25% within 90 days
+- Viral coefficient: >0.5 through shareable insights
 
 ### **9.3 Platform Evolution Strategy**
 

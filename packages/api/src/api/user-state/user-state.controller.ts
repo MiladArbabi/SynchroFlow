@@ -55,3 +55,40 @@ export const updateUserMode = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to update user mode' });
   }
 };
+
+export const getUserProductCosts = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const productCosts = await UserStateService.getUserProductCosts(userId);
+    return res.status(200).json(productCosts);
+  } catch (error) {
+    console.error('Error getting user product costs:', error);
+    return res.status(500).json({ error: 'Failed to get product costs' });
+  }
+};
+
+export const updateUserProductCosts = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const { productCosts } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (!productCosts || typeof productCosts !== 'object') {
+      return res.status(400).json({ error: 'Invalid product costs data' });
+    }
+
+    await UserStateService.updateUserProductCosts(userId, productCosts);
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Error updating user product costs:', error);
+    return res.status(500).json({ error: 'Failed to update product costs' });
+  }
+};

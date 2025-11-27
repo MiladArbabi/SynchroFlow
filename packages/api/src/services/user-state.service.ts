@@ -240,4 +240,48 @@ export class UserStateService {
       achieved_at: db.fn.now(),
     }).onConflict(['user_id', 'milestone']).ignore(); // Don't duplicate milestones
   }
-}
+
+  /**
+   * Get user's product costs from user_state
+   */
+  static async getUserProductCosts(userId: number): Promise<Record<string, any>> {
+    const userState = await db('user_states')
+      .where({ user_id: userId, key: 'product_costs' })
+      .first();
+    
+    if (!userState) {
+      return {};
+    }
+
+    // Handle both stringified JSON and direct object storage
+    if (typeof userState.value === 'string') {
+      try {
+        return JSON.parse(userState.value);
+      } catch (error) {
+        console.error('Error parsing user state JSON:', error);
+        return {};
+      }
+    }
+    
+    // If it's already an object, return it directly
+    return userState.value || {};
+  }
+
+  /**
+   * Update user's product costs in user_state
+   */
+  static async updateUserProductCosts(userId: number, productCosts: Record<string, any>) {
+    await db('user_states')
+      .insert({
+        user_id: userId,
+        key: 'product_costs',
+        value: productCosts, // Store as JSONB directly
+        updated_at: db.fn.now()
+      })
+      .onConflict(['user_id', 'key'])
+      .merge({
+        value: productCosts, // Store as JSONB directly
+        updated_at: db.fn.now()
+      });
+  }
+};
