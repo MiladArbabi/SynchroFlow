@@ -132,4 +132,95 @@ describe('sessionUtils', () => {
       expect(isSessionExpired(recentSession)).toBe(false);
     });
   });
+
+  describe('sessionUtils - Edge Cases', () => {
+    describe('getFingerprint - Error Handling', () => {
+      it('should handle missing navigator properties gracefully', () => {
+        // Store original values
+        const originalUserAgent = navigator.userAgent;
+        const originalLanguages = navigator.languages;
+        
+        // Simulate missing properties
+        Object.defineProperty(navigator, 'userAgent', { value: undefined, configurable: true });
+        Object.defineProperty(navigator, 'languages', { value: undefined, configurable: true });
+
+        // Should not throw error
+        expect(() => getFingerprint()).not.toThrow();
+        
+        // Restore
+        Object.defineProperty(navigator, 'userAgent', { value: originalUserAgent, configurable: true });
+        Object.defineProperty(navigator, 'languages', { value: originalLanguages, configurable: true });
+      });
+
+      it('should generate fingerprint even with minimal data', () => {
+        const minimalFingerprint = getFingerprint();
+        expect(minimalFingerprint).toMatch(/^fp_/);
+        expect(minimalFingerprint.length).toBeGreaterThan(5);
+      });
+    });
+
+    describe('shouldCreateNewSession - Edge Cases', () => {
+      it('should return true for corrupted session data', () => {
+        const corruptedSessions = [
+          'invalid json', // This will be parsed as string, not object
+          { sessionId: null, fingerprint: null, createdAt: null },
+        ];
+
+        corruptedSessions.forEach(session => {
+          expect(shouldCreateNewSession(session)).toBe(true);
+        });
+
+        // Test cases that should return false (valid according to current implementation)
+        const validButWrongTypes = [
+          { sessionId: 123, fingerprint: 456, createdAt: Date.now() }, // Current impl accepts numbers
+          { sessionId: '123', fingerprint: 'abc', createdAt: 'invalid' }, // Current impl accepts string timestamps
+        ];
+
+        validButWrongTypes.forEach(session => {
+          expect(shouldCreateNewSession(session)).toBe(false);
+        });
+      });
+
+      it('should handle exactly 3-hour old session (boundary condition)', () => {
+        const boundarySession = {
+          sessionId: 'session_123',
+          fingerprint: 'fp_abc',
+          createdAt: Date.now() - (3 * 60 * 60 * 1000), // exactly 3 hours
+        };
+
+        // Current implementation uses > 3 hours, so exactly 3 hours should NOT be expired
+        expect(shouldCreateNewSession(boundarySession)).toBe(false);
+        
+        // Test that 3 hours + 1ms IS expired
+        const expiredSession = {
+          sessionId: 'session_123',
+          fingerprint: 'fp_abc', 
+          createdAt: Date.now() - (3 * 60 * 60 * 1000 + 1), // 3 hours + 1ms
+        };
+        expect(shouldCreateNewSession(expiredSession)).toBe(true);
+      });
+    });
+
+    describe('isSessionExpired - Edge Cases', () => {
+      it('should handle future dates (clock skew)', () => {
+        const futureSession = {
+          sessionId: 'session_123',
+          fingerprint: 'fp_abc',
+          createdAt: Date.now() + (60 * 60 * 1000), // 1 hour in future
+        };
+
+        expect(isSessionExpired(futureSession)).toBe(false);
+      });
+
+      it('should handle very old sessions', () => {
+        const ancientSession = {
+          sessionId: 'session_123',
+          fingerprint: 'fp_abc',
+          createdAt: Date.now() - (365 * 24 * 60 * 60 * 1000), // 1 year ago
+        };
+
+        expect(isSessionExpired(ancientSession)).toBe(true);
+      });
+    });
+  });
 });
