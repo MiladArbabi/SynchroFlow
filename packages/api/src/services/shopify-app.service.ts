@@ -3,6 +3,7 @@ import '@shopify/shopify-api/adapters/node';
 import db from '../db';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
+import { SpecterSDKService, type SpecterSDKConfig } from './specter-sdk.service';
 
 // Initialize the Shopify API library context
 const shopify = shopifyApi({
@@ -59,32 +60,6 @@ export class ShopifyAppService {
   }
 
   /**
-   * Install Specter SDK script tag on the shop
-   */
-  static async installSpecterSDK(shopDomain: string, accessToken: string): Promise<void> {
-    try {
-      const scriptTagUrl = `https://${shopDomain}/admin/api/2024-01/script_tags.json`;
-      const scriptTagData = {
-        script_tag: {
-          event: 'onload',
-          src: 'https://cdn.lasyncro.com/specter-sdk-v1.js',
-          display_scope: 'online_store'
-        }
-      };
-
-      await axios.post(scriptTagUrl, scriptTagData, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      });
-    } catch (error) {
-      console.error('Failed to install Specter SDK script tag:', error);
-      throw new Error('Failed to install Specter SDK script tag');
-    }
-  }
-
-  /**
    * Register app uninstall webhook
    */
   static async registerAppUninstallWebhook(shopDomain: string, accessToken: string): Promise<void> {
@@ -111,11 +86,11 @@ export class ShopifyAppService {
   }
 
   /**
-   * Complete post-installation setup (script tag and webhooks)
+   * Enhanced post-installation with Specter module awareness
    */
-  static async completePostInstallation(shopDomain: string, accessToken: string, shopId: number): Promise<void> {
-    // Install Specter SDK script tag
-    await this.installSpecterSDK(shopDomain, accessToken);
+  static async completePostInstallation(shopDomain: string, accessToken: string, shopId: number, moduleTier: 'free' | 'specter' | 'growth' | 'operations' = 'free'): Promise<void> {
+    // Install Specter SDK script tag with module-tier awareness
+    await this.installSpecterSDK(shopDomain, accessToken, shopId, moduleTier);
 
     // Register app uninstall webhook
     await this.registerAppUninstallWebhook(shopDomain, accessToken);
@@ -197,5 +172,129 @@ export class ShopifyAppService {
       return null;
     }
     return this.decryptToken(installation.access_token);
+  };
+
+  /**
+   * Generate Specter SDK configuration based on module tier
+   */
+  static async generateSpecterConfig(moduleTier: 'free' | 'specter' | 'growth' | 'operations'): Promise<SpecterSDKConfig> {
+    const baseConfig = {
+      shopId: '', // Will be set when creating the script
+      moduleTier,
+      features: {
+        sessionTracking: true, // Always track sessions
+        basicNudges: moduleTier !== 'free',
+        exitIntent: moduleTier !== 'free', 
+        surgicalDiscounts: moduleTier === 'growth' || moduleTier === 'operations'
+      }
+    };
+
+    return baseConfig;
+  };
+
+  /**
+   * Create Specter SDK script with configuration
+   */
+  static async createSpecterScript(shopId: string, moduleTier: 'free' | 'specter' | 'growth' | 'operations'): Promise<string> {
+    const config = await this.generateSpecterConfig(moduleTier);
+    config.shopId = shopId;
+
+    // Create the SDK initialization script
+    const script = `
+// LaSyncro Specter SDK v1.0
+(function() {
+  window.SpecterSDKConfig = ${JSON.stringify(config)};
+  
+  // Initialize SDK
+  if (typeof window.SpecterSDK === 'undefined') {
+    window.SpecterSDK = new (function() {
+      this.config = window.SpecterSDKConfig;
+      this.session = null;
+      
+      this.init = function() {
+        console.log('Specter SDK initialized for shop:', this.config.shopId);
+        this.trackSession();
+        
+        if (this.config.features.exitIntent) {
+          this.setupExitIntent();
+        }
+      };
+      
+      this.trackSession = function() {
+        this.session = {
+          id: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+          timestamp: new Date(),
+          intentScore: this.calculateIntentScore()
+        };
+        
+        // Send session data to LaSyncro (simplified)
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/lasyncro/specter/session', JSON.stringify(this.session));
+        }
+      };
+      
+      this.calculateIntentScore = function() {
+        // Simplified intent scoring
+        return Math.min((Math.random() * 0.3) + 0.2 + 0.5, 1.0);
+      };
+      
+      this.setupExitIntent = function() {
+        document.addEventListener('mouseleave', function(e) {
+          if (e.clientY < 0) {
+            window.SpecterSDK.showExitIntentNudge();
+          }
+        });
+      };
+      
+      this.showExitIntentNudge = function() {
+        // Simplified nudge display
+        if (this.session && this.session.intentScore > 0.7) {
+          console.log('Showing exit intent nudge for high-intent visitor');
+          // In production, this would show a modal or banner
+        }
+      };
+    })();
+    
+    window.SpecterSDK.init();
+  }
+})();
+    `.trim();
+
+    return script;
+  };
+
+  /**
+   * Install Specter SDK with module-tier awareness
+   */
+  static async installSpecterSDK(shopDomain: string, accessToken: string, shopId: number, moduleTier: 'free' | 'specter' | 'growth' | 'operations' = 'free'): Promise<void> {
+    try {
+      const scriptTagUrl = `https://${shopDomain}/admin/api/2024-01/script_tags.json`;
+      
+      // For free tier, we inject a basic analytics-only version
+      // For paid tiers, we inject the full Specter SDK
+      const scriptSrc = moduleTier === 'free' 
+        ? 'https://cdn.lasyncro.com/specter-analytics-v1.js'
+        : 'https://cdn.lasyncro.com/specter-sdk-v1.js';
+
+      const scriptTagData = {
+        script_tag: {
+          event: 'onload',
+          src: scriptSrc,
+          display_scope: 'online_store'
+        }
+      };
+
+      await axios.post(scriptTagUrl, scriptTagData, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log(`✅ Specter SDK (${moduleTier} tier) installed for ${shopDomain}`);
+    } catch (error) {
+      console.error('Failed to install Specter SDK script tag:', error);
+      throw new Error('Failed to install Specter SDK script tag');
+    }
   }
 }
