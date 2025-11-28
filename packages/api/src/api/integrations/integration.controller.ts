@@ -7,6 +7,7 @@ import db from '../../db';
 import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
 import { getQueueChannel, connection } from '../../queue';
+import { ShopifyAppService } from 'api-src/services/shopify-app.service';
 
 // --- Helper function for multi-tenancy (copied from dashboard.controller) ---
 /**
@@ -141,7 +142,6 @@ export const getHumanReadableError = (shopifyError: string, description: string)
 
 export const handleOAuthCallback = async (req: Request, res: Response) => {
   const { platform } = req.params as { platform: string };
-  // Destructure all possible query params, including error ones
   const { code, state, shop, error, error_description } = req.query as {
     code: string;
     state: string;
@@ -152,55 +152,51 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   const session = req.session as OAuthSession;
   const userId = session.oauth_user_id;
 
+  console.log('🔵 Starting OAuth callback for platform:', platform);
+
   // --- 1. Handle OAuth Failure (Sad Path) ---
-  // Shopify (and others) send 'error' and 'error_description' on failure.
   if (error) {
+    console.log('❌ OAuth error detected:', error);
     const userFriendlyError = getHumanReadableError(error, error_description || '');
-    // Clear the session state to prevent retry loops
     session.oauth_state = undefined;
     session.oauth_user_id = undefined;
-
-    // Redirect to frontend with the params DashboardPage.tsx expects
     const redirectUrl = new URL(`${process.env.FRONTEND_URL}/dashboard`);
     redirectUrl.searchParams.append('connect', 'error');
     redirectUrl.searchParams.append('message', userFriendlyError);
-
     return res.redirect(redirectUrl.toString());
   }
 
-  // --- 2. Security: Validate CSRF State Token (Happy Path) ---
+  console.log('🔵 Validating CSRF state...');
   const expectedState = session.oauth_state;
 
-  // --- NEW: Validate User ID ---
+  console.log('🔵 Validating user ID...');
   if (!userId) {
+    console.log('❌ No user ID found');
     return res.status(403).json({ error: 'Invalid session: No user ID found.' });
   }
 
+  console.log('🔵 Validating state:', { expectedState, state });
   if (!expectedState || !state || expectedState !== state) {
-    // Clear the bad state
+    console.log('❌ Invalid CSRF state');
     session.oauth_state = undefined; 
     return res.status(403).json({ error: 'Invalid CSRF state token.' });
   }
 
-  // State is valid, clear it from session
+  console.log('✅ State validated, clearing session...');
   session.oauth_state = undefined;
   session.oauth_user_id = undefined;
 
   try {
+    console.log('🔵 Starting token exchange...');
     let accessToken = '';
     
-    // --- 3. Token Exchange ---
     if (platform === 'shopify') {
       const tokenUrl = `https://${shop}/admin/oauth/access_token`;
-      const payload = {
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
-        code,
-      };
-
+      const payload = { client_id: process.env.SHOPIFY_API_KEY, client_secret: process.env.SHOPIFY_API_SECRET, code };
+      console.log('🔵 Making token request to:', tokenUrl);
       const tokenResponse = await axios.post(tokenUrl, payload);
       accessToken = tokenResponse.data.access_token;
-      
+      console.log('✅ Token received');
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
     }
@@ -247,13 +243,28 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       }).onConflict(['user_id', 'milestone']).ignore();
 
       console.log(`Updated user ${userId} shopify_connected status and recorded milestone`);
+      console.log('🟢 Integration created, queuing sync job...');
       // --- 6. Queue the initial sync job ---
       const syncChannel = getQueueChannel('sync_jobs');
       const jobPayload = { integrationId };
       syncChannel.sendToQueue('sync_jobs', Buffer.from(JSON.stringify(jobPayload)));
       console.log(`Queued initial sync job for integration ID: ${integrationId}`);
+      console.log('🟢 Sync job queued');
+
+      if (platform === 'shopify') {
+        console.log('🟢 Starting Shopify post-installation setup...');
+        try {
+          await ShopifyAppService.completePostInstallation(shop, accessToken, userShopId);
+          console.log('✅ Successfully completed Shopify app post-installation for', shop);
+        } catch (postInstallError) {
+          console.error('❌ Shopify app post-installation failed:', postInstallError);
+        }
+      }
+
+      console.log('🟢 Redirecting to dashboard...');
       // --- Final Redirect ---
       res.redirect(`${process.env.FRONTEND_URL}/dashboard?connect=success`);
+      console.log('🟢 Redirect called');
 
   } catch (err) {
     console.error('Error in OAuth callback:', err);

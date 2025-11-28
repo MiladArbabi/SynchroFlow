@@ -155,8 +155,7 @@ describe('Integration Controller', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Authenticated user ID not found.' });
     });
 
-    // Update the existing test to ensure no redundant replace operations
-    it.skip('should generate Shopify authorization URL successfully', async () => {
+    it('should generate Shopify authorization URL successfully', async () => {
       mockRequest.query = { platform: 'shopify', shop: 'test-shop' };
       mockedCrypto.randomBytes.mockReturnValue({ toString: () => 'test-state-token' } as any);
 
@@ -169,7 +168,7 @@ describe('Integration Controller', () => {
       
       // Verify the URL is constructed correctly without redundant {shop} replacement
       const expectedRedirectUri = encodeURIComponent('http://localhost:3001/api/v1/integrations/oauth/callback/shopify');
-      const expectedUrl = `https://test-shop.myshopify.com/admin/oauth/authorize?client_id=test-shopify-key&scope=read_products,read_orders,read_inventory,read_payouts,read_fulfillments&redirect_uri=${expectedRedirectUri}&state=test-state-token`;
+      const expectedUrl = `https://test-shop.myshopify.com/admin/oauth/authorize?client_id=test-shopify-key&scope=read_products,read_orders,read_customers,read_inventory,read_payouts,read_fulfillments&redirect_uri=${expectedRedirectUri}&state=test-state-token`;
       
       expect(mockResponse.json).toHaveBeenCalledWith({
         authorizationUrl: expectedUrl
@@ -239,63 +238,86 @@ describe('Integration Controller', () => {
     });
 
     it.skip('should successfully handle OAuth callback and create integration', async () => {
-    // Mock token exchange
-    mockedAxios.post.mockResolvedValue({
-        data: { access_token: 'test-access-token' }
-    });
+      // Mock token exchange
+      mockedAxios.post.mockResolvedValue({
+          data: { access_token: 'test-access-token' }
+      });
 
-    // Mock user lookup
-    const mockUserWhere = jest.fn().mockReturnThis();
-    const mockUserFirst = jest.fn().mockResolvedValue(mockUser);
-    
-    // Mock integration insertion with proper Knex chain
-    const mockReturning = jest.fn().mockResolvedValue([mockIntegration]);
-    const mockInsert = jest.fn().mockReturnValue({
-        returning: mockReturning
-    });
+      // Mock user lookup
+      const mockUserWhere = jest.fn().mockReturnThis();
+      const mockUserFirst = jest.fn().mockResolvedValue(mockUser);
+      
+      // Mock integration insertion with proper Knex chain
+      const mockReturning = jest.fn().mockResolvedValue([mockIntegration]);
+      const mockInsert = jest.fn().mockReturnValue({
+          returning: mockReturning
+      });
 
-    (mockedDb as jest.Mock).mockImplementation((table: string) => {
-        if (table === 'users') {
-        return {
-            where: mockUserWhere,
-            first: mockUserFirst
-        };
-        }
-        if (table === 'integrations') {
-        return {
-            insert: mockInsert
-        };
-        }
-        return {
-        where: jest.fn().mockReturnThis(),
-        first: jest.fn().mockResolvedValue(null)
-        };
-    });
+      // Mock user update operation
+      const mockUserUpdate = jest.fn().mockReturnThis();
+      
+      // Mock milestone insertion with proper chaining
+      const mockMilestoneInsert = jest.fn().mockReturnThis();
+      const mockOnConflict = jest.fn().mockReturnThis();
+      const mockIgnore = jest.fn().mockResolvedValue([1]);
 
-    // Mock encryption
-    (mockedCryptoJS.AES.encrypt as jest.Mock).mockReturnValue('encrypted-token');
+      (mockedDb as jest.Mock).mockImplementation((table: string) => {
+          if (table === 'users') {
+          return {
+              where: mockUserWhere,
+              first: mockUserFirst,
+              update: mockUserUpdate
+            };
+          }
+          if (table === 'integrations') {
+          return {
+              insert: mockInsert
+            };
+          }
+          if (table === 'user_milestones') {
+          return {
+             insert: mockMilestoneInsert,
+             onConflict: mockOnConflict,
+             ignore: mockIgnore
+          };
+         }
+          return {
+          where: jest.fn().mockReturnThis(),
+          first: jest.fn().mockResolvedValue(null)
+          };
+      });
 
-    const { handleOAuthCallback } = await import('api-src/api/integrations/integration.controller');
-    await handleOAuthCallback(mockRequest as Request, mockResponse as Response);
+      // Mock encryption
+      (mockedCryptoJS.AES.encrypt as jest.Mock).mockReturnValue('encrypted-token');
 
-    // Verify the insert was called with correct data
-    expect(mockInsert).toHaveBeenCalledWith({
-        shop_id: mockUser.shop_id,
-        platform: 'shopify',
-        platform_shop_name: 'test-shop.myshopify.com',
-        access_token_encrypted: 'encrypted-token'
-    });
+      // Mock ShopifyAppService
+      jest.mock('api-src/services/shopify-app.service', () => ({
+          ShopifyAppService: {
+              completePostInstallation: jest.fn().mockResolvedValue(undefined),
+          },
+      }));
 
-    // Verify the sync job was queued
-    expect(mockChannel.sendToQueue).toHaveBeenCalledWith(
-        'sync_jobs',
-        Buffer.from(JSON.stringify({ integrationId: mockIntegration.id }))
-    );
+      const { handleOAuthCallback } = await import('api-src/api/integrations/integration.controller');
+      await handleOAuthCallback(mockRequest as Request, mockResponse as Response);
 
-    // Verify redirect
-    expect(mockResponse.redirect).toHaveBeenCalledWith(
-        'http://localhost:3000/dashboard?connect=success'
-    );
+      // Verify the insert was called with correct data
+      expect(mockInsert).toHaveBeenCalledWith({
+          shop_id: mockUser.shop_id,
+          platform: 'shopify',
+          platform_shop_name: 'test-shop.myshopify.com',
+          access_token_encrypted: 'encrypted-token'
+      });
+
+      // Verify the sync job was queued
+      expect(mockChannel.sendToQueue).toHaveBeenCalledWith(
+          'sync_jobs',
+          Buffer.from(JSON.stringify({ integrationId: mockIntegration.id }))
+      );
+
+      // Verify redirect
+      expect(mockResponse.redirect).toHaveBeenCalledWith(
+          'http://localhost:3000/dashboard?connect=success'
+      );
     });
 
     it('should handle token exchange failure', async () => {
