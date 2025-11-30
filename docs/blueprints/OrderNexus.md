@@ -23,6 +23,14 @@
 * Mode-aware profit policies & thresholds (Survival / Growth / Architect)
 * Basic profit interventions (suggestions, not execution)
 
+OrderNexus OWNS `returns_rate_30d`:
+
+* It computes `returns_rate_30d` per product using:
+  * Order history, and
+  * ReturnOutcomeEvent / ReturnAnalyticsEvent from ReturnNexus.
+* It exposes this as part of `product_demand_signals` (or a compatible view).
+* SKU OS MUST NOT recompute returns rate; it only consumes `returns_rate_30d`.
+
 **OrderNexus DOES NOT OWN:**
 
 * Customer behavior & LTV models → **Specter**
@@ -31,6 +39,7 @@
 * Fulfillment routing & warehouse ops → **WMS Lite**
 * Task workflows & approvals → **Echo Hub**
 * Global dashboards & cross-module charts → **Analytics Core**
+* Return case lifecycle, refund / exchange decisions → **ReturnNexus**
 
 ---
 
@@ -427,6 +436,37 @@ export interface ProfitTaskPayload {
   dueDate: string;
 }
 ```
+### 2.5 ReturnNexus → OrderNexus (ReturnOutcomeEvent)
+
+OrderNexus consumes **order-level return impact** from ReturnNexus and persists it
+separately from the original profitability snapshot.
+
+```ts
+// packages/order-nexus/src/contracts/returns-contract.ts
+
+export interface ReturnOutcomeEvent {
+  shopId: number;
+  orderId: string;
+  returnId: string;
+
+  totalRefundAmount: number;    // total refunded for this return
+  totalRestockingCost: number;  // handling / inspection / restocking
+  totalWriteOffCost: number;    // scrapped inventory, etc.
+
+  currency: string;
+  processedAt: string;          // ISO – when ReturnNexus closed the return
+}
+```
+
+Rules:
+
+Exactly one ReturnOutcomeEvent per returnId value at a time.
+
+If a return is adjusted or re-opened, ReturnNexus MUST emit a new
+ReturnOutcomeEvent with the same returnId and updated totals.
+
+OrderNexus MUST treat these as append-only events and MUST NOT mutate
+the canonical order_profitability row.
 
 ---
 
@@ -1016,8 +1056,28 @@ CREATE INDEX idx_order_profit_history_order
 
 CREATE INDEX idx_order_profit_history_version
   ON order_profitability_history(cost_model_version);
-```
 
+CREATE TABLE order_return_impact (
+  id BIGSERIAL PRIMARY KEY,
+  shop_id INTEGER NOT NULL,
+  order_id VARCHAR(64) NOT NULL,
+  return_id VARCHAR(64) NOT NULL,
+
+  total_refund_amount DECIMAL(10,2) NOT NULL,
+  total_restocking_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total_writeoff_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+
+  currency VARCHAR(8) NOT NULL,
+  processed_at TIMESTAMPTZ NOT NULL,       -- from ReturnOutcomeEvent.processedAt
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_order_return_impact_order
+  ON order_return_impact (shop_id, order_id);
+
+CREATE INDEX idx_order_return_impact_return
+  ON order_return_impact (shop_id, return_id);
+```
 ---
 
 ## 11. Repositories & Recomputation Flow
@@ -1042,6 +1102,22 @@ export interface OrderProfitHistoryRecord {
 export interface OrderProfitHistoryRepository {
   save(record: OrderProfitHistoryRecord): Promise<void>;
   getOrderHistory(shopId: number, orderId: string): Promise<OrderProfitHistoryRecord[]>;
+}
+
+export interface OrderReturnImpactRecord {
+  shopId: number;
+  orderId: string;
+  returnId: string;
+  totalRefundAmount: number;
+  totalRestockingCost: number;
+  totalWriteOffCost: number;
+  currency: string;
+  processedAt: Date;
+}
+
+export interface OrderReturnImpactRepository {
+  upsertImpact(record: OrderReturnImpactRecord): Promise<void>;
+  listImpactsForOrder(shopId: number, orderId: string): Promise<OrderReturnImpactRecord[]>;
 }
 ```
 
@@ -1245,9 +1321,11 @@ export class OrderWorker {
 >     * previous cost model version
 >     * history entries in `order_profitability_history`.
 >   * Cost model sources (`finance` vs `local`) and computation reasons (`initial`, `recomputation`, `basic_fallback`) are explicitly stored and queryable.
+>   * Post-return economic impact is stored separately in `order_return_impact`,
+>     sourced exclusively from `ReturnOutcomeEvent` emitted by ReturnNexus.
 > * **Contract Stability**:
 >
->   * `NormalizedOrder`, `OrderProfitability`, `LandedCost`, `SpecterCustomerSignal`, `CostModelSnapshot`, `ProfitIntervention`, `LeakageDetection`, and DB schemas in this blueprint are **locked** for Phase 1 / early Phase 2.
+>   * `NormalizedOrder`, `OrderProfitability`, `LandedCost`, `SpecterCustomerSignal`, `CostModelSnapshot`, `ProfitIntervention`, `LeakageDetection`, `ReturnOutcomeEvent`, and DB schemas in this blueprint are **locked** for Phase 1 / early Phase 2.
 >   * Any changes require a versioned contract (`v2`) and migration plan, not ad-hoc modifications.
 
 This is the blueprint you freeze into your docs and your repo.
