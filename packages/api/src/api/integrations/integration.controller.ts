@@ -7,7 +7,7 @@ import db from '../../db';
 import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
 import { getQueueChannel, connection } from '../../queue';
-import { ShopifyAppService } from 'api-src/services/shopify-app.service';
+import { ShopifyAppService } from '../../services/shopify-app.service';
 
 // --- Helper function for multi-tenancy (copied from dashboard.controller) ---
 /**

@@ -1,794 +1,621 @@
-# **LaSyncro: Adaptive Commerce Intelligence Platform - Unified Blueprint**
-
-## **1. Executive Summary & Vision**
-
-### **1.1 Vision Statement**
-
-**Vision:** "Autonomous Conversion & Operations Nervous System" for commerce
-**Platform Identity:** "LaSyncro - Your Adaptive Commerce Intelligence Platform"
-**Specter:** Privacy-first conversion intelligence that turns anonymous behavior into predictable revenue growth, integrated with operational intelligence
-
-### **1.2 Core Value Proposition**
-
-- **For Free Tier:** "The market's best free analytics - no setup, no confusion, just answers"
-- **For Survival Mode:** "Stop guessing if you're profitable"
-- **For Growth Mode:** "Systematically scale with confidence"  
-- **For Architect Mode:** "Build a self-optimizing commerce machine"
-- **Specter Value Add:** 3.5x conversion lift, 70% LTV increase, PCD-compliant from day one
-
-### **1.3 The Ultimate Vision**
-
-A modular platform that begins as an analytics tool and evolves into an autonomous operating system that anticipates needs, executes workflows, and continuously improves its own intelligence through user interaction.
-**Free Plan Vision:** Create an unbeatable free experience that dominates e-commerce analytics acquisition while driving high-value conversions through demonstrated ROI.
-
-**Dual Go-to-Market Strategy:**
-
-1. **Shopify App Store**: Modular app with à la carte capabilities
-2. **SaaS Platform**: Unified dashboard with integrated workflow intelligence
-
----
-
-## **2. Core Architecture: Modular Four-Layer Stack**
-
-### **2.1 Enhanced Four-Layer Stack**
-
-#### **Layer 1: Intelligence Layer (The "Brain")**
-
-**Purpose:** Sense → Analyze → Suggest
-
-**Components:**
-
-- **Blueprint Widgets:** Context-aware data visualization
-- **Reasoning Engine:** Explains "why" behind every insight
-- **Prediction Models:** Forecast trends and outcomes
-- **Pattern Recognition:** Identifies opportunities and risks
-- **Specter Conversion Engine:** Anonymous visitor intelligence, intent scoring, surgical discounts
-- **PCD Customer Graph:** Hashed identity resolution, RFM scoring, Weibull LTV
-
-**Key Innovation:** Widgets are not static displays; they're conversational interfaces that understand user context.
-**Free Tier Innovation:** Immediate value delivery in <3 seconds, beating GA4 complexity
-
-#### **Layer 2: Operations Layer (The "Muscle")**
-
-**Purpose:** Execute → Orchestrate → Report
-
-**Components:**
-
-- **WMS-lite/Full WMS:** Inventory, fulfillment, procurement
-- **Echo Hub:** Team coordination and workflow management
-- **Integration Gateway:** Connects to existing tools (Shopify, QuickBooks, etc.)
-
-**Key Innovation:** Direct execution of insights from the Intelligence Layer.
-
-#### **Layer 3: Learning Layer (The "Cerebellum")**
-
-**Purpose:** Adapt → Improve → Personalize
-
-**Components:**
-
-- **Feedback Processing System**
-- **Insight Quality Optimization**
-- **User Behavior Modeling**
-- **Reinforcement Learning Engine**
-- **Specter Cart DNA Sequencing:** Product sequence analysis, friction detection
-- **Nudge Performance Learning:** Continuous A/B testing and optimization
-
-**Key Innovation:** Closed-loop learning from every user interaction.
-
-#### **Layer 4: Governance Layer (The "Prefrontal Cortex")**
-
-**Purpose:** Trust → Control → Comply
-
-**Components:**
-
-- **Confidence Scoring System**
-- **Approval Workflow Engine**
-- **Audit Trail & Compliance**
-- **Risk Assessment Models**
-
-**Key Innovation:** Enterprise-grade control for autonomous operations.
-
-### **2.2 Modular Architecture Implementation**
-
-#### **Core Module Structure:**
-
-LaSyncro Platform
-├── **Analytics Core** (Free Forever)
-│   ├── Dashboard360 with 4 C's compliance
-│   ├── Basic performance metrics
-│   ├── TeaserTrigger system
-│   └── Data normalization engine
-├── **Orders Intelligence** ($29/month)
-│   ├── Order360 with PCD compliance
-│   ├── Fulfillment analytics
-│   ├── Profitability engine
-│   └── Customer journey mapping
-├── **Products Intelligence** ($29/month)
-│   ├── Product-360 with inventory health
-│   ├── Margin analysis & sales performance
-│   ├── Replenishment alerts
-│   └── Supplier performance tracking
-├── **Customers/Specter** ($49/month)
-│   ├── Anonymous intent scoring
-│   ├── RFM segmentation & LTV forecasting
-│   ├── Specter Nudge Engine
-│   └── Conversion optimization
-├── **Financial Intelligence** ($39/month)
-│   ├── True profit calculation
-│   ├── Cash flow forecasting
-│   ├── Cost intelligence
-│   └── Tax readiness reporting
-├── **WMS Lite** ($79/month)
-│   ├── Multi-location inventory management
-│   ├── Fulfillment optimization
-│   ├── Procurement automation
-│   └── Warehouse analytics
-└── **Echo Hub** ($49/month)
-    ├── Team coordination & task management
-    ├── Approval workflows
-    ├── Cross-functional collaboration
-    └── Performance analytics
-
-#### **Module Interdependency Matrix:**
-
-mermaid
-graph TB
-    A[Analytics Core] --> B[Orders Intelligence]
-    A --> C[Products Intelligence]
-    B --> D[Customers/Specter]
-    C --> D
-    B --> E[Financial Intelligence]
-    C --> E
-    D --> E
-    C --> F[WMS Lite]
-    B --> F
-    F --> G[Echo Hub]
-    E --> G
-    D --> G
-
----
-
-## **3. Core Philosophy: Contextual Intelligence Framework**
-
-### **3.1 User Mode Definitions**
-
-| Mode | ARR Range | Primary Question | UX Mantra | Cognitive Load |
-|------|-----------|------------------|-----------|----------------|
-| **Free Tier** | $0 | "Am I okay?" | Instant Value, Zero Setup | < 3 seconds |
-| **Survival** | $1K-$100K | "Am I okay?" | At-a-Glance Confidence | < 3 seconds |
-| **Growth** | $100K-$1M | "How do I go faster?" | Surface Levers, Predict Outcomes | < 10 seconds |
-| **Architect** | $1M-$10M | "Is this system sustainable?" | Orchestrate Systems, Automate Workflows | < 30 seconds |
-| **Enterprise** | $10M-$50M | "How do we scale predictably?" | Unified Operations & CX | Interactive |
-| **Autonomous** | $50M+ | "What should we do next?" | Strategic Headcount Reduction | Proactive |
-
-### **3.2 The Mode Transition Framework**
-
-**Free → Survival Trigger:**
-
-- "You're tracking 50+ orders - unlock order intelligence"
-- **Widget Teaser:** Blurred customer lifetime value in dashboard
-
-**Survival → Growth Trigger:**
-
-- "You're tracking 500+ visitors/month - unlock conversion analytics"
-- **Widget Teaser:** Blurred conversion rates in traffic sources
-- **Module Activation:** Customers/Specter + Financial Intelligence
-
-**Growth → Architect Trigger:**
-
-- "You're processing $50K+/month - unlock operational automation"
-- **Widget Teaser:** "See true profitability including fulfillment costs"
-- **Module Activation:** WMS Lite + Echo Hub
-
-**Architect → Enterprise Trigger:**
-
-- "Managing multiple warehouses? Unlock enterprise governance"
-- **Widget Teaser:** "Consolidate your frankenstack into one platform"
-
----
-
-## **4. Operational Framework: The "4 C's" Litmus Test**
-
-### **4.1 Context Specification**
-
-**Requirement:** Every widget must answer one mode-specific question in under 3 seconds.
-
-**Implementation Template:**
-
-yaml
-context:
-  mode: "survival|growth|architect"
-  primary_question: "What is the user trying to answer?"
-  time_to_understanding: "< 3s"
-  data_priority: "critical|important|nice_to_have"
-  free_tier: true|false
-  teaser_strategy: "blurred|limited|temporary"
-  recommended_modules: ["orders", "products"]
-
-### **4.2 Causation Requirements**
-
-**Requirement:** Provide root-cause analysis, not just data points.
-
-**Implementation Patterns:**
-
-- **Free Tier:** "Why this happened" explanations with confidence scoring
-- **Survival:** Simple comparators ("vs. yesterday", "vs. last week")
-- **Growth:** Funnel analysis with drop-off highlighting
-- **Architect:** Multi-variable correlation analysis
-
-### **4.3 Clear Path Forward Triggers**
-
-**Requirement:** Every insight must have an obvious next action.
-
-**Trigger Hierarchy:**
-
-1. **Learn** (CoachTrigger) → Understand the concept
-2. **Simulate** (ActionTrigger) → Test the impact
-3. **Execute** (AutomationTrigger) → Implement the change
-4. **Orchestrate** (OrchestrationTrigger) → Coordinate the team
-
-**Free Tier Limits:** Full Learn access, limited Simulate (3/month), teased Execute/Orchestrate
-
-### **4.4 Closed Loop Feedback**
-
-**Requirement:** Every interaction must teach the system.
-
-**Enhanced Feedback Data Model:**
-
-typescript
-interface InsightFeedback {
-  insightId: string;
-  userId: string;
-  timestamp: Date;
-  module: string;
-  action: 'accepted' | 'dismissed' | 'ignored';
-  feedback?: {
-    reason: 'not_relevant' | 'incorrect' | 'already_done';
-    context: string;
+**LaSyncro** – Locked Technical Blueprint & Contracts (v1)
+
+0. Scope & Non-Negotiables
+
+This document locks:
+
+ 1. Platform architecture & module boundaries
+ 2. Core inter-module contracts (Specter, OrderNexus, SKU OS, Finance, Analytics Core, WMS Lite, Echo Hub)
+ 3. Critical Phase 1 backbone:
+ • Cost Model Versioning & Recompute Scope
+ • PCD Compliance (Specter)
+ • Circuit Breakers for cross-module RPC
+
+Any change to types or contracts marked LOCKED requires a versioned contract (v2) and migration plan. No ad-hoc modifications.
+
+⸻
+
+1. Platform Architecture – Modules & Layers
+
+1.1 Layers
+ • Layer 1 – Intelligence (Brain)
+ • Analytics Core
+ • OrderNexus (Order Profit Intelligence)
+ • SKU OS (Product & Inventory Intelligence)
+ • Specter (Customer & Conversion Intelligence)
+ • Financial Intelligence
+ • Layer 2 – Operations (Muscle)
+ • WMS Lite (Inventory & Fulfillment Execution)
+ • Echo Hub (Workflow & Tasks)
+ • Integration Gateway (Shopify, other platforms)
+ • Layer 3 – Learning (Cerebellum)
+ • Feedback Processor
+ • Reinforcement / adaptive engines (future)
+ • Layer 4 – Governance (Prefrontal Cortex)
+ • Confidence scoring
+ • Approvals
+ • Audit & Risk models
+
+1.2 Module Responsibility Contracts
+
+Analytics Core (READ-ONLY)
+OWNS:
+ • Reporting datasets (orders, products, customers, profit, inventory health, conversion metrics)
+ • Widget API + 4C metadata (Context, Causation, Clear Path, Closed Loop)
+ • Free-tier dashboard semantics and TeaserTriggers
+
+DOES NOT OWN:
+ • Business rules for pricing, profitability, replenishment, conversion, or workflows.
+
+⸻
+
+OrderNexus – Profit-First Order Intelligence
+OWNS:
+ • True order-level profitability:
+ • Landed cost (COGS, shipping, handling, packaging, payment fees, overhead)
+ • Net profit & margin %
+ • Profit status: 'HEALTHY' | 'AT_RISK' | 'UNPROFITABLE'
+ • Profit leakage detection
+ • Mode-aware thresholds (Survival / Growth / Architect)
+ • Profit interventions (suggestions only, not execution)
+ • Order profitability persistence & recomputation history
+
+DOES NOT OWN:
+ • SKU-level stock or replenishment (SKU OS)
+ • Customer behavior & LTV models (Specter)
+ • Cash flow, P&L, forecasting (Financial Intelligence)
+ • Fulfillment & tasks (WMS Lite / Echo Hub)
+
+LOCKED TYPES (excerpt):
+
+export type ProfitStatus = 'HEALTHY' | 'AT_RISK' | 'UNPROFITABLE';
+
+export interface LandedCost {
+  cogs: number;
+  shipping: number;
+  handling: number;
+  packaging: number;
+  paymentFees: number;
+  overhead: number;
+  total: number;
+  currency: string;
+}
+
+export interface OrderProfitability {
+  orderId: string;
+  shopId: number;
+  revenue: number;
+  landedCost: LandedCost;
+  netProfit: number;
+  marginPercent: number;
+  profitStatus: ProfitStatus;
+  leakage: LeakageDetection[];
+  calculatedAt: Date;
+
+  costModelVersion: string;      // LOCKED: filled from CostModelVersioning.versionId
+  costModelSource: 'finance' | 'local';
+  computationSource: 'initial' | 'recomputation' | 'basic_fallback';
+
+  previousNetProfit?: number;
+  previousCostModelVersion?: string;
+}
+
+⸻
+
+SKU OS – Product & Inventory Intelligence
+OWNS:
+ • Product health scoring (stockout risk, overstock, margin health)
+ • Inventory health dashboard
+ • Playbooks:
+ • REORDER_PROTECT
+ • LIQUIDATE_OVERSTOCK
+ • MARGIN_GUARD
+ • Demand signals & co-purchase graph from orders data
+
+DOES NOT OWN:
+ • Order-level profitability or cost (OrderNexus)
+ • Execution of replenishment (WMS Lite)
+ • Customer-centric behavior intelligence (Specter)
+
+LOCKED DATA CONTRACTS:
+
+CREATE TABLE product_demand_signals (
+  product_id INTEGER PRIMARY KEY REFERENCES products(id),
+  order_count_7d INTEGER DEFAULT 0,
+  order_count_30d INTEGER DEFAULT 0,
+  unit_sales_7d INTEGER DEFAULT 0,
+  unit_sales_30d INTEGER DEFAULT 0,
+  returns_rate_30d DECIMAL(4,3),
+  avg_selling_price DECIMAL(10,2),
+  last_order_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE product_affinity_pairs (
+  shop_id INTEGER REFERENCES shops(id),
+  product_a_id INTEGER REFERENCES products(id),
+  product_b_id INTEGER REFERENCES products(id),
+  co_purchase_count INTEGER DEFAULT 0,
+  co_purchase_rate DECIMAL(5,4),
+  lift_score DECIMAL(6,3),
+  first_co_purchase_at TIMESTAMPTZ,
+  last_co_purchase_at TIMESTAMPTZ,
+  PRIMARY KEY (shop_id, product_a_id, product_b_id)
+);
+
+export interface ProductHealthEvents {
+  PRODUCT_HEALTH_UPDATED: {
+    productId: number;
+    healthScore: number;
+    stockoutRisk: number;
+    marginHealth: 'healthy' | 'at_risk' | 'critical';
+    confidence: 'low' | 'medium' | 'high';
   };
-  outcome?: {
-    revenue_impact: number;
-    time_saved: number;
-    module_affinity_change: number;
-  };
-  sequencing_impact: {
-    next_recommended_module: string;
-    activation_confidence: number;
-    expected_impact: number;
+
+  PLAYBOOK_CREATED: {
+    productId: number;
+    playbookType: 'REORDER_PROTECT' | 'LIQUIDATE_OVERSTOCK' | 'MARGIN_GUARD';
+    urgency: 'critical' | 'high' | 'medium';
+    expectedImpact: number;
   };
 }
 
----
+⸻
 
-## **5. Engineering Framework: Modular Component Library**
+Specter – Customer & Conversion Intelligence
+OWNS:
+ • Anonymous session → intent pipeline (PCD-safe)
+ • Customer signal service:
 
-### **5.1 Base Trigger Component**
+async getCustomerSignal(
+  shopId: number,
+  hashedCustomerId: string | null
+): Promise<SpecterCustomerSignal>;
 
-```typescript
-<BaseTrigger
-  // Required Props
-  insightId="profit_margin_alert_q3"
-  triggerType="coach|action|automation|orchestration"
-  module="finance"
-  
-  // Feedback Props
-  feedbackEnabled={true}
-  onFeedback={(insightId, action, feedback) => {
-    telemetry.logInsightInteraction(insightId, action, feedback);
-    adaptiveEngine.updateUserProfile(userId, insightId, action);
-    sequencingEngine.updateModuleAffinity(userId, 'finance', action);
-  }}
-  
-  // Governance Props
-  requiresApproval={amount > userApprovalThreshold}
-  approvalWorkflow="large_po_approval"
-  
-  // Confidence Props
-  confidenceScore={0.87}
-  reasoning={["92% accuracy on similar forecasts", "..."]}
->
-  {children}
-</BaseTrigger>
-```
+ • Nudge engine contracts:
+ • NudgeRecommendation
+ • NudgeExecutionRequest
+ • Latency-bounded decision logic with safe fallback
 
-### **5.2 Enhanced Trigger Components**
+DOES NOT OWN:
+ • Order-level profitability (OrderNexus)
+ • Execution of nudges (onsite, email, SMS)
+ • Customer hashing secrets (shared PcdHasher)
 
-#### **ModuleTeaserTrigger**
+LOCKED v1 HTTP ENTRYPOINT:
 
-```typescript
-<ModuleTeaserTrigger
-  targetModule="customers"
-  currentValueHint="~2.5% conversion rate"
-  upgradeBenefit="Convert 70% of anonymous visitors"
-  activationTriggers={[
-    { type: 'data', condition: 'visitors > 500' },
-    { type: 'behavior', condition: 'cart_abandonment > 70%' }
-  ]}
-  expectedImpact="$2,500/month revenue increase"
->
-  <BlurredConversionMetrics />
-</ModuleTeaserTrigger>
-```
+POST /api/specter/v1/nudge-recommendation
+Content-Type: application/json
 
-#### **CrossModuleAutomationTrigger**
-
-```typescript
-<CrossModuleAutomationTrigger
-  workflow="inventory_replenishment"
-  involvedModules={['products', 'wms', 'echo']}
-  parameters={{
-    productId: "prod_123",
-    forecastDemand: 1000,
-    currentInventory: 250,
-    leadTime: 14
-  }}
-  preflightCheck={() => validateCrossModuleDependencies()}
-  onExecute={(workflowData) => {
-    productsModule.analyzeDemand(workflowData);
-    wmsModule.createPurchaseOrder(workflowData);
-    echoHub.notifyTeam('inventory_alert', workflowData);
-  }}
->
-  <InventoryReplenishmentPreview />
-</CrossModuleAutomationTrigger>
-```
-
-### **5.3 Module Communication Components**
-
-#### **DataSharingGateway**
-
-```typescript
-<DataSharingGateway
-  sourceModule="orders"
-  targetModules={['customers', 'finance', 'analytics']}
-  dataSchema="order_completed"
-  transformationRules={{
-    customers: 'enhance_customer_profile',
-    finance: 'record_revenue_event',
-    analytics: 'update_performance_metrics'
-  }}
-  complianceCheck={pcdComplianceValidator}
-  onDataShared={(results) => moduleRegistry.logDataFlow(results)}
-/>
-```
-
-#### **ModuleDependencyManager**
-
-```typescript
-<ModuleDependencyManager
-  requiredModules={['products', 'orders']}
-  optionalModules={['finance']}
-  activationStrategy="progressive"
-  fallbackBehavior="graceful_degradation"
-  onDependencyCheck={(result) => {
-    if (!result.allSatisfied) {
-      teaserEngine.suggestModuleBundle(result.missing);
-    }
-  }}
-/>
-```
-
----
-
-## **6. Measurement Framework: Intelligence Scoring**
-
-### **6.1 Primary Metrics**
-
-#### **Insight Acceptance Rate (IAR)**
-
-IAR = (Accepted Insights / Total Presented Insights) × 100
-
-**Benchmarks:**
-
-- Excellent: > 40% IAR
-- Good: 25-40% IAR  
-- Needs Improvement: < 25% IAR
-
-#### **Module Adoption Score**
-
-Module Score = (Active Users / Eligible Users) × Feature Usage Rate × IAR
-
-#### **User Personalization Profile**
-
-json
+Body:
 {
-  "user_123": {
-    "preferred_insight_categories": {
-      "inventory_optimization": 0.85,
-      "customer_acquisition": 0.45,
-      "profitability_analysis": 0.72
-    },
-    "trust_threshold": 0.75,
-    "preferred_action_style": "automated",
-    "learning_velocity": 0.63,
-    "module_affinity": {
-      "orders": 0.92,
-      "products": 0.88,
-      "customers": 0.45,
-      "finance": 0.67
-    },
-    "optimal_sequence": ["orders", "products", "finance", "customers"]
+  "shopId": number,
+  "session": RawSession
+}
+
+Response:
+
+- 200 OK: NudgeExecutionRequest | null
+- 400: PCD violation
+
+LOCKED PCD TYPES:
+
+export interface RawSession {
+  shopId: number;
+  customerId?: string;      // MUST NOT be persisted
+  landingPage: string;
+  pagesViewed: string[];
+  exitIntent: boolean;
+}
+
+export interface AnonymousSession {
+  shopId: number;
+  sessionId: string;
+  landingPage: string;
+  pagesViewed: string[];
+  exitIntent: boolean;
+  createdAt: string;        // ISO
+}
+
+⸻
+
+Financial Intelligence
+OWNS:
+ • CostModelSnapshot for each shop
+ • Policy thresholds (min margin, max cost-to-serve)
+ • Cost model evolution and versioning metadata
+
+DOES NOT OWN:
+ • Profit computation (OrderNexus)
+ • Order / product datasets
+
+LOCKED CONTRACT TO ORDERNEXUS:
+
+export interface CostModelSnapshot {
+  shopId: number;
+  currency: string;
+  shippingCostModelId: string;
+  handlingCostPerOrder: number;
+  packagingCostPerUnit: number;
+  paymentFeePercent: number;
+  paymentFeeFixed: number;
+  overheadAllocationPercent: number;
+  taxRatePercent: number;
+  minAcceptableMarginPercent: number;
+  maxCostToServePercentOfRevenue: number;
+  updatedAt: string;
+}
+
+export interface CostModelVersioning {
+  versionId: string;           // 'finance:2025-01-10T12:00:00Z' | 'local:timestamp'
+  source: 'finance' | 'local';
+  updatedAt: string;           // ISO
+  recomputationScope: 'none' | 'new_orders_only' | 'all_orders_since';
+  recomputationSince?: string; // REQUIRED when 'all_orders_since'
+}
+
+⸻
+
+WMS Lite & Echo Hub
+WMS Lite (Ops Execution)
+ • Executes product playbooks & replenishment decisions
+ • Manages inventory locations, POs, fulfillment jobs
+ • Consumes: ReorderRecommendation & FulfillmentProfitSignal
+
+Echo Hub (Workflows)
+ • Turns interventions into tasks & approvals
+ • Consumes: ProfitTaskPayload, inventory/ops tasks
+
+Both are consumers of intelligence, not sources of it.
+
+⸻
+
+2. Phase 1 Backbone – Locked Contracts
+
+2.1 Cost Model Versioning & Profit Recompute
+
+Problem: Cost model changes must not silently corrupt historical profitability.
+
+Contract:
+
+ 1. Every OrderProfitability record MUST set:
+ • costModelVersion: CostModelVersioning.versionId
+ • costModelSource: CostModelVersioning.source
+ 2. Financial Intelligence MUST provide:
+
+async getCostModel(shopId: number): Promise<CostModelSnapshot | null>;
+
+and on update, a CostModelVersioning with explicit recomputationScope.
+
+ 3. OrderNexus MUST NOT recompute historical orders in-line; it MUST queue recomputations via OrderRecomputeQueue.
+
+Repositories (LOCKED extension):
+
+export interface OrderProfitabilityRepository {
+  getOrderProfitability(shopId: number, orderId: string): Promise<OrderProfitability | null>;
+  saveOrderProfitability(profit: OrderProfitability): Promise<void>;
+
+  // Range is interpreted over order_date in order_profitability
+  getOrdersNeedingRecomputation(
+    shopId: number,
+    from: Date,
+    to: Date
+  ): Promise<Array<{ orderId: string }>>;
+}
+
+export interface OrderRecomputeQueueMessage {
+  shopId: number;
+  orderId: string;
+  reason: 'cost_model_update' | string;
+}
+
+export interface OrderRecomputeQueue {
+  enqueue(msg: OrderRecomputeQueueMessage): Promise<void>;
+}
+
+Recomputation Service (LOCKED behavior):
+
+export class ProfitRecomputationService {
+  constructor(
+    private readonly profitRepo: OrderProfitabilityRepository,
+    private readonly queue: OrderRecomputeQueue,
+    private readonly logger: Logger
+  ) {}
+
+  async onCostModelUpdated(
+    shopId: number,
+    costModelVersion: CostModelVersioning
+  ): Promise<void> {
+    const { recomputationScope, recomputationSince, updatedAt } = costModelVersion;
+
+    if (recomputationScope === 'none' || recomputationScope === 'new_orders_only') {
+      return; // future orders only
+    }
+
+    if (recomputationScope === 'all_orders_since') {
+      if (!recomputationSince) {
+        throw new Error('InvalidCostModelVersion: recomputationSince required for all_orders_since');
+      }
+
+      await this.queueRecomputationForRange(
+        shopId,
+        new Date(recomputationSince),
+        new Date(updatedAt)
+      );
+    }
+  }
+
+  private async queueRecomputationForRange(
+    shopId: number,
+    from: Date,
+    to: Date
+  ): Promise<void> {
+    try {
+      const orders = await this.profitRepo.getOrdersNeedingRecomputation(shopId, from, to);
+
+      for (const order of orders) {
+        await this.queue.enqueue({
+          shopId,
+          orderId: order.orderId,
+          reason: 'cost_model_update'
+        });
+      }
+    } catch (error: any) {
+      this.logger.error('Failed to queue profit recomputation', {
+        shopId,
+        from,
+        to,
+        error: error.message
+      });
+      // Metrics: cost_model_recomputation_failed++
+    }
   }
 }
 
-### **6.2 Advanced Trust Metrics**
+OrderRecompute Worker:
+ • MUST call existing OrderProfitService.recomputeOrderProfitability(shopId, orderId, reason).
+
+⸻
+
+2.2 PCD Compliance – Specter URL & Session Guards
+
+Problem: Specter must never process or persist raw PCD (customerId, email, etc.).
 
-#### **Confidence Calibration Score**
-
-Calibration = 1 - |(Predicted Accuracy - Actual Accuracy)|
-
-- Perfect: 1.0 (predictions match reality exactly)
-- Good: > 0.8
-- Poor: < 0.6
-
-#### **Cross-Module Synergy Score**
-
-Synergy = (Combined Performance - Sum(Individual Performances)) / Sum(Individual Performances)
-
-#### **Specter Conversion Metrics**
-
-- **Nudge Acceptance Rate:** Target: 40%+ presented offers accepted
-- **Conversion Lift:** Target: 2.1% → 4.5% within 30 days
-- **Margin Improvement:** Target: 8-18% through surgical discounts
-- **LTV Increase:** Target: $142 → $241 through better retention
-
----
-
-## **7. Adaptive Roadmap: Phased Modular Evolution**
-
-### **Phase 1: Foundation (Months 1-3) - ✅ COMPLETED**
-
-**Focus:** Perfect Survival Mode Intelligence & Core Modules
-
-- ✅ **Orders API & Order360** - Complete with PCD compliance and Shopify GID handling
-- ✅ **Database Architecture** - Customer relationships and data normalization
-- ✅ **Products API & Product-360** - Complete product intelligence with inventory health
-- ✅ **Core Data Distribution** - Orders, Customers, Products APIs with JWT authentication
-- 🔄 **Analytics Core Module** with 4 C's compliance
-- 🔄 **Orders & Products Modules** with basic intelligence
-- 🔄 **Module Marketplace** foundation
-
-**Key Deliverable:** Best-in-class free dashboard with comprehensive operational data access
-**Enhanced Focus:** Market-dominating free plan with complete operational intelligence
-**Competitive Angle:** "Setup in 2 minutes, full operational visibility in 3 seconds - beats GA4 complexity"
-
-### **Phase 1.5: Data Distribution Infrastructure - ✅ COMPLETED**
-
-**Focus:** Bridge Intelligence Layer to initial Operations Layer
-
-- ✅ **Extend Shopify integration** to populate Orders/Customers/Products pages
-- ✅ **Implement core API endpoints** with 4 C's compliance and JWT authentication
-- ✅ **Products Intelligence Center** - Complete product catalog with inventory health monitoring
-- 🔄 **Add strategic TeaserTriggers** for Growth features
-- 🔄 **Deploy confidence indicators** and viral sharing features
-
-**Key Deliverable:** Complete data flow from dashboard to operational pages
-**Business Impact:** Transform free plan from dashboard-only to comprehensive operational intelligence
-
-### **Phase 2: Growth Intelligence (Months 4-6)**
-
-**Focus:** Launch Customers/Specter & Financial Intelligence Modules
-
-- **Build Specter Conversion Intelligence** (Anonymous session tracking, intent scoring, exit-intent capture)
-- **Implement Specter Nudge Engine** (Basic A/B testing, offer presentation)
-- **Develop Specter Customer Graph** (RFM scoring, product affinities, basic LTV)
-- **Financial Intelligence Module** (True profit calculation, cost intelligence)
-- **Advanced Module Bundling** (Essentials & Growth bundles)
-
-**Key Deliverable:** $149/month Growth Bundle with proven conversion optimization
-**Enhanced Focus:** Leverage Phase 1.5 data foundation for advanced conversion analytics
-**Conversion Driver:** "You're leaving $X/month on the table - unlock conversion optimization"
-
-### **Phase 3: Operations Platform (Months 7-12)**
-
-**Focus:** Launch WMS Lite & Echo Hub Modules
-
-- **WMS Lite Module** (Inventory management, fulfillment optimization, procurement)
-- **Echo Hub Module** (Team coordination, approval workflows, task management)
-- **Cross-Module Workflow Automation** (Inventory → Orders → Fulfillment → Team)
-- **Operations Bundle** ($199/month complete operations suite)
-
-**Build Specter Surgical Discount Engine** (Margin-aware offers, dynamic pricing)
-**Develop Specter Cart DNA Sequencing** (Product sequence analysis, friction detection)
-
-**Key Deliverable:** $199/month Operations Bundle - "Spreadsheet replacement with team coordination"
-
-### **Phase 4: Enterprise Scale (Year 2)**
-
-**Focus:** Launch Enterprise Features & Advanced Specter
-
-- **Enterprise Governance** (Approval workflows, audit trails, compliance)
-- **Multi-Location WMS** (Advanced warehouse management)
-- **Advanced Specter Features** (Autonomous conversion engine, predictive LTV)
-- **White-Label Solutions** (Custom deployments for agencies)
-
-**Key Deliverable:** $349+/month Enterprise Bundle - "Frankenstack consolidation with governance"
-
-### **Phase 5: Optimization & AI (Year 3)**
-
-**Focus:** Launch AI Optimization & Autonomous Features
-
-- **Predictive AI Models** (Demand forecasting, price optimization)
-- **Reinforcement Learning** (Self-optimizing workflows)
-- **Autonomous Operations** (Proactive problem solving)
-- **Cross-Platform Expansion** (WooCommerce, BigCommerce, etc.)
-
-**Key Deliverable:** $1,999/month Optimize Plan - "Unified ops + CX with predictive AI"
-
-### **Phase 6: Platform Autonomy (Year 4+)**
-
-**Focus:** Launch Fully Autonomous Platform
-
-- **Strategic Headcount Reduction** features
-- **Executive Strategy Reporting**
-- **Market Intelligence Integration**
-- **API Ecosystem Expansion**
-
-**Key Deliverable:** $4,500+/month Autonomous Plan - "Strategic operating system"
-
----
-
-## **8. Pricing & Packaging Strategy**
-
-### **8.1 Modular Pricing Architecture**
-
-Free Forever:
-
-- Analytics Core Module
-- Basic operational data access
-- 3 automated insights/month
-- TeaserTriggers for paid modules
-
-Module Marketplace:
-
-- Orders Intelligence: $29/month
-- Products Intelligence: $29/month  
-- Customers/Specter: $49/month
-- Financial Intelligence: $39/month
-- WMS Lite: $79/month
-- Echo Hub: $49/month
-
-Strategic Bundles:
-
-- Essentials Bundle (Orders+Products): $49/month (15% off)
-- Growth Bundle (+Customers+Finance): $149/month (25% off)
-- Operations Bundle (All 6 modules): $199/month (35% off)
-- Enterprise Bundle (Premium features): $349+/month (40% off)
-
-### **8.2 Value-Based Pricing Models**
-
-**Performance-Based Options:**
-
-- **Revenue Share:** 15% of incremental revenue from Specter conversions
-- **Success-Based:** Pay 2% of recovered costs/savings
-- **Usage-Based:** Tiered pricing based on order volume/inventory size
-
-**Activation Incentives:**
-
-- 30-day free trials for all modules
-- "Insight credits" earned through viral sharing
-- Personalized bundle discounts based on usage patterns
-
----
-
-## **9. Implementation Playbook**
-
-### **9.1 Modular Development Workflow**
-
-**Step 1: Module Specification**
-
-## Module: Customers/Specter
-
-**Purpose:** Convert anonymous visitors into loyal customers
-**Target Mode:** Growth → Architect
-**Primary Question:** "Who are my valuable customers and how do I find more?"
-
-**Dependencies:**
-
-- Required: Analytics Core, Orders, Products
-- Recommended: Financial Intelligence
-
-**4 C's Compliance:**
-
-- Context: "Customer value segmentation in <3s"
-- Causation: "RFM analysis with behavioral patterns"
-- Clear Path: Specter Nudge triggers + automation
-- Closed Loop: Conversion tracking & LTV measurement
-
-**Integration Points:**
-
-- Orders → Purchase history for RFM scoring
-- Products → Affinity analysis for personalization
-- Analytics → Behavior pattern correlation
-
-**Step 2: Cross-Module TDD**
-
-gherkin
-Feature: Cross-module inventory optimization
-
-  Scenario: Low stock detected triggers automated replenishment
-    Given product "Widget" has inventory below safety stock
-    And Products module is active
-    And WMS Lite module is active
-    When the daily inventory check runs
-    Then Products MUST identify replenishment need
-    And WMS MUST generate purchase order
-    And Echo Hub MUST notify operations team
-    And system MUST track outcome for learning
-
-**Step 3: Module Implementation**
-
-```typescript
-const CustomersSpecterModule = ({ userProfile, dependencies }) => {
-  const { orders, products, analytics } = dependencies;
-  
-  return (
-    <ModuleContainer id="customers">
-      <DataSharingGateway
-        sourceModules={['orders', 'products', 'analytics']}
-        transformation="customer_intelligence"
-      />
-
-      <SpecterConversionEngine
-        ordersData={orders}
-        productsData={products}
-        analyticsData={analytics}
-      />
-      
-      <ModuleTeaserTrigger
-        targetModule="finance"
-        condition="ltv_analysis_available"
-      />
-    </ModuleContainer>
+Contract:
+
+ 1. RawSession.customerId is forbidden; presence MUST trigger a PCD_VIOLATION and a 400 response.
+ 2. URL query params with keys in ['email','e','phone','tel','name','address'] MUST be stripped before persistence / analytics.
+ 3. Specter’s normalization MUST be pure, synchronous, and deterministic.
+
+LOCKED Implementation:
+
+export class PrivacyGuards {
+  private static readonly DEFAULT_PII_KEYS = ['email', 'e', 'phone', 'tel', 'name', 'address'];
+
+  static stripPIIFromUrl(url: string): string {
+    let u: URL;
+    try {
+      u = new URL(url, '<https://dummy.host>');
+    } catch {
+      return '/invalid-url';
+    }
+
+    for (const key of Array.from(u.searchParams.keys())) {
+      if (this.DEFAULT_PII_KEYS.includes(key.toLowerCase())) {
+        u.searchParams.delete(key);
+      }
+    }
+
+    const search = u.searchParams.toString();
+    return search ? `${u.pathname}?${search}` : u.pathname;
+  }
+
+  static assertNoRawCustomerId(raw: RawSession) {
+    if (raw.customerId) {
+      throw new Error('PCD_VIOLATION: Raw customerId found in Specter payload');
+    }
+  }
+
+  static normalizeSession(raw: RawSession): AnonymousSession {
+    this.assertNoRawCustomerId(raw);
+
+    return {
+      shopId: raw.shopId,
+      sessionId: sessionIdService.generate(),
+      landingPage: this.stripPIIFromUrl(raw.landingPage),
+      pagesViewed: raw.pagesViewed.map((p) => this.stripPIIFromUrl(p)),
+      exitIntent: raw.exitIntent,
+      createdAt: new Date().toISOString()
+    };
+  }
+}
+
+API Handler Obligations:
+
+async function handler(req, res) {
+  const { shopId, session: rawSession } = req.body as NudgeRequestBody;
+
+  let normalized: AnonymousSession;
+  try {
+    normalized = PrivacyGuards.normalizeSession(rawSession);
+  } catch (e: any) {
+    if (e.message.startsWith('PCD_VIOLATION')) {
+      logger.warn('PCD_VIOLATION_RAW_CUSTOMER_ID', { shopId });
+      return res.status(400).json({ error: 'Invalid session payload (PCD violation)' });
+    }
+    throw e;
+  }
+
+  if (rawSession.landingPage !== normalized.landingPage) {
+    logger.info('PCD_URL_PARAMS_REMOVED', { shopId, removed: true });
+  }
+
+  // proceed with customerSignal + nudge engine...
+}
+
+PCD Test Suite (MUST exist in CI):
+ • PII params removed.
+ • Non-PII preserved.
+ • Raw customerId throws PCD_VIOLATION.
+
+⸻
+
+2.3 Circuit Breakers – Cross-Module RPC
+
+Problem: Finance / Specter downtime must not cascade into core failures.
+
+Contract:
+
+ 1. Cross-module RPC from OrderNexus to:
+ • FinanceClient.getCostModel
+ • SpecterClient.getCustomerSignal
+MUST go through ModuleCircuitBreaker.
+ 2. When the circuit is open:
+ • Finance → fallback to local cost model
+ • Specter → fallback to inferred/default customer signal
+ • Metrics MUST be incremented.
+
+LOCKED Implementation:
+
+type ModuleName = 'finance' | 'specter';
+
+interface CircuitBreakerConfig {
+  failureThreshold: number;
+  resetTimeoutMs: number;
+}
+
+interface CircuitState {
+  failures: number;
+  lastFailureAt?: number;
+  open: boolean;
+}
+
+export class ModuleCircuitBreaker {
+  private state = new Map<ModuleName, CircuitState>();
+
+  constructor(
+    private readonly config: Record<ModuleName, CircuitBreakerConfig>,
+    private readonly metrics: MetricsClient
+  ) {}
+
+  async callWithCircuitBreaker<T>(
+    module: ModuleName,
+    operation: () => Promise<T>,
+    fallback: () => T
+  ): Promise<T> {
+    if (this.isOpen(module)) {
+      this.metrics.incrementCounter('module_circuit_open', { module });
+      return fallback();
+    }
+
+    try {
+      const result = await operation();
+      this.recordSuccess(module);
+      return result;
+    } catch (error: any) {
+      this.recordFailure(module, error);
+      return fallback();
+    }
+  }
+
+  private isOpen(module: ModuleName): boolean {
+    const s = this.state.get(module);
+    if (!s?.open) return false;
+
+    const cfg = this.config[module];
+    const now = Date.now();
+
+    if (s.lastFailureAt && now - s.lastFailureAt > cfg.resetTimeoutMs) {
+      return false; // half-open
+    }
+
+    return true;
+  }
+
+  private recordSuccess(module: ModuleName): void {
+    this.state.set(module, { failures: 0, open: false });
+  }
+
+  private recordFailure(module: ModuleName, error: Error): void {
+    const cfg = this.config[module];
+    const current = this.state.get(module) || { failures: 0, open: false };
+    const failures = current.failures + 1;
+    const open = failures >= cfg.failureThreshold;
+
+    this.state.set(module, {
+      failures,
+      open,
+      lastFailureAt: Date.now()
+    });
+
+    this.metrics.incrementCounter('module_circuit_failure', {
+      module,
+      error: error.name || 'UnknownError'
+    });
+  }
+}
+
+Bootstrap (single instance per process):
+
+const circuitBreaker = new ModuleCircuitBreaker(
+  {
+    finance: { failureThreshold: 5, resetTimeoutMs: 60000 },
+    specter: { failureThreshold: 5, resetTimeoutMs: 60000 }
+  },
+  metricsClient
+);
+
+// Inject into CostModelService, FallbackManager, etc.
+
+Use in CostModelService (LOCKED behavior):
+
+async getNormalizedCostModel(
+  shopId: number
+): Promise<{ model: NormalizedCostModel; version: CostModelVersioning }> {
+  return this.circuitBreaker.callWithCircuitBreaker(
+    'finance',
+    async () => {
+      const externalModel = await this.financeClient.getCostModel(shopId);
+      if (!externalModel) {
+        throw new Error('NoExternalCostModel');
+      }
+
+      return {
+        model: this.normalizer.normalize(shopId, externalModel),
+        version: {
+          versionId: `finance:${externalModel.updatedAt}`,
+          source: 'finance',
+          updatedAt: externalModel.updatedAt,
+          recomputationScope: 'none'
+        }
+      };
+    },
+    () => this.getLocalFallbackModel(shopId)
   );
+}
+
+⸻
+
+3. Phase 1 Metrics – Minimum Required
+
+These metrics are required, not optional:
+
+const ESSENTIAL_METRICS = {
+  data_consistency: {
+    orders_with_cost_model_version: 'Gauge – should be 100%',
+    cost_model_recomputation_queued: 'Counter – when all_orders_since triggers',
+    cost_model_recomputation_failed: 'Counter – failures in queueRecomputationForRange'
+  },
+  resilience: {
+    module_circuit_open: 'Counter – per module (finance, specter)',
+    module_circuit_failure: 'Counter – per module & error type'
+  },
+  pcd_compliance: {
+    pcd_url_params_removed: 'Counter – per shop (from handler logs)',
+    pcd_violation_attempts: 'Counter – raw customerId attempts'
+  }
 };
 
-### **9.2 Quality Assurance Framework**
+⸻
 
-**The Module Scorecard:**
-
-- Integration Score: /10 (Seamless data flow with dependencies?)
-- Value Score: /10 (Clear ROI and user benefit?)
-- Performance Score: /10 (Meets 4 C's standards?)
-- Adoption Score: /10 (Activation and usage metrics?)
-- **Minimum Ship Score: 32/40**
-
----
-
-## **10. Strategic Implications & Moats**
-
-### **10.1 Competitive Defense Layers**
-
-1. **Data MoAT:** Unified intelligence + operations data across modules creates insights competitors cannot replicate
-2. **Workflow MoAT:** Once cross-module workflows are embedded, switching costs become prohibitive  
-3. **Learning MoAT:** Continuous adaptation creates personalized value competitors cannot match
-4. **Trust MoAT:** Governance layer enables enterprise adoption at scale
-5. **Modular MoAT:** À la carte approach beats all-in-one bloat and point solution fragmentation
-6. **Free Tier MoAT:** Unbeatable free experience with complete operational data access
-7. **Viral MoAT:** Shareable insights and module referral engines drive organic growth
-8. **PCD Compliance MoAT:** Built-in Shopify Protected Customer Data handling from day one
-9. **Platform-Agnostic MoAT:** Multi-platform data normalization across Shopify, WooCommerce, etc.
-
-### **10.2 Enhanced Revenue Projections**
-
-| Plan | Target | Price | Projected Penetration | Revenue Contribution |
-|------|--------|-------|----------------------|---------------------|
-| **Free** | Top-of-funnel | $0 | 100% of signups | Acquisition engine |
-| **Module à la carte** | Specific needs | $29-$79 | 60% of paying | 35% of revenue |
-| **Essentials Bundle** | Survival→Growth | $49 | 25% of paying | 15% of revenue |
-| **Growth Bundle** | Growth mode | $149 | 40% of paying | 30% of revenue |
-| **Operations Bundle** | Architect mode | $199 | 25% of paying | 40% of revenue |
-| **Enterprise Bundle** | Enterprise | $349+ | 10% of paying | 20% of revenue |
-
-**Specter Impact Metrics:**
-
-- Free→Paid Conversion: 15% → **25%** (+10% from proven conversion lift)
-- Customer Retention: 75% → **88%** (+13% from better engagement)
-- Average Revenue Per User: $199 → **$249** (+25% from modular upgrades)
-- Year 1 Revenue: $5.4M → **$7.2M** (+33% from modular strategy)
-
-### **10.3 Platform Evolution Strategy**
-
-**Year 1:** Dominate analytics → Best free dashboard + core modules (✅ COMPLETED)
-**Enhanced:** "Market's best free analytics with complete operational intelligence (Orders, Products, Customers)"
-
-**Year 2:** Expand to intelligence → Specter conversion + financial modules  
-**Business Impact:** "Turn anonymous visitors into predictable revenue"
-
-**Year 3:** Platform consolidation → Operations modules replace multiple tools
-**Value Proposition:** "Replace your frankenstack with one intelligent platform"
-
-**Year 4+:** Autonomous operations → Become indispensable operating system
-**Vision Realization:** "Your commerce nervous system that anticipates and executes"
-
-**Free Plan Evolution:** From survival dashboard to comprehensive operational intelligence with modular upgrade paths
-
----
-
-## **11. Technical Architecture & Implementation**
-
-### **11.1 Microservices Architecture**
-
-typescript
-// Module Microservice Structure
-class ModuleMicroservice {
-  constructor(
-    private moduleId: string,
-    private dependencies: string[],
-    private api: ModuleAPI,
-    private data: ModuleDataManager,
-    private events: CrossModuleEventBus
-  ) {}
-  
-  async initialize(): Promise<void> {
-    await this.registerService();
-    await this.establishDependencies();
-    await this.subscribeToEvents();
-  }
-  
-  // Module Lifecycle Management
-  async activate(userId: string): Promise<ActivationResult> {
-    const validation = await this.validatePrerequisites(userId);
-    if (!validation.valid) {
-      throw new Error(`Activation failed: ${validation.error}`);
-    }
-
-    await this.initializeUserData(userId);
-    await this.setupIntegrations(userId);
-    await this.triggerOnboarding(userId);
-    
-    return { success: true, module: this.moduleId };
-  }
-}
-
-### **11.2 Data Isolation & Sharing**
-
-typescript
-// Cross-Module Data Governance
-class ModuleDataManager {
-  private dataIsolation: DataIsolationStrategy;
-  private sharingProtocol: DataSharingProtocol;
-  
-  async shareData(source: string, target: string, data: SharedData): Promise<void> {
-    const sharingAgreement = await this.sharingProtocol.getAgreement(source, target);
-    const complianceCheck = await this.compliance.validateSharing(sharingAgreement, data);
-
-    if (!complianceCheck.valid) {
-      throw new Error(`Data sharing compliance failure: ${complianceCheck.errors}`);
-    }
-    
-    await this.publishSharedData(target, this.transformData(data, sharingAgreement));
-  }
-}
-
-### **11.3 Module Communication Protocol**
-
-typescript
-// Event-Driven Architecture for Module Communication
-class CrossModuleEventBus {
-  static readonly EVENTS = {
-    MODULE_ACTIVATED: 'module:activated',
-    DATA_ANOMALY_DETECTED: 'data:anomaly',
-    WORKFLOW_TRIGGERED: 'workflow:triggered'
-  };
-  
-  publish(event: ModuleEvent) {
-    const handlers = this.listeners.get(event.type) || [];
-    handlers.forEach(handler => handler(event));
-
-    // Trigger cross-module reactions
-    this.triggerCrossModuleReactions(event);
-  }
-}
-
----
-
-## **12. Conclusion: The LaSyncro Vision**
-
-We are building more than software. We're creating an **adaptive modular intelligence** that grows with our customers, learns from their behavior, and ultimately becomes the central nervous system of their commerce operations.
-
-LaSyncro doesn't just report on the business—it actively helps run it through intelligent modules that work together seamlessly. From the Survival-mode entrepreneur wondering if they'll make payroll to the Enterprise operator managing a $50M brand, every user interacts with a system that understands their context, respects their cognitive load, and accelerates their path to success.
-
-**The Modular Advantage:** Our market-dominating free tier ensures we acquire users at scale while delivering immediate value that creates unstoppable upgrade momentum through our module marketplace. By combining GA4-beating simplicity with operational data access and progressive modular intelligence, we create an acquisition and growth engine that fuels our entire platform strategy.
-
-This unified blueprint provides the complete architecture to execute on that vision, with clear principles, scalable engineering patterns, modular architecture, and a phased roadmap that transforms ambitious vision into shippable reality.
+Whoever builds against this is either building LaSyncro — or something incompatible with it.
