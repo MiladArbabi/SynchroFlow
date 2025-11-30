@@ -1,8 +1,8 @@
-// packages/ui/src/components/PerfectOrderGauge.test.tsx
+// apps/frontend/src/components/PerfectOrderGauge.test.tsx
 import { waitFor, screen } from "@testing-library/react";
 import { renderWithProviders } from "test-utils";
 import axios from "axios";
-import { PerfectOrderGauge } from '../../../packages/ui/src/components/PerfectOrderGauge'
+import { PerfectOrderGauge } from '../../../apps/frontend/src/components/PerfectOrderGauge'
 
 jest.mock('axios');
 const mockedAxiosGet = axios.get as jest.Mock;

@@ -1,5 +1,5 @@
 // tests/unit/ui/api/user-state.hooks.test.ts
-import { fetchUserProductCosts, updateUserProductCosts } from '../../../../packages/ui/src/api/user-state';
+import { fetchUserProductCosts, updateUserProductCosts } from '../../../../apps/frontend/src/api/user-state';
 import axios from 'axios';
 
 // Mock axios

@@ -38,20 +38,20 @@ module.exports = {
       moduleNameMapper: {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
         '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js',
-        '^test-utils$': '<rootDir>/packages/ui/src/test-utils.tsx',
+        '^test-utils$': '<rootDir>/apps/frontend/src/test-utils.tsx',
         
         // Add aliases for 'layout' and 'api'
-        '^layout/(.*)$': '<rootDir>/packages/ui/src/layout/$1',
-        '^api/(.*)$': '<rootDir>/packages/ui/src/api/$1',
-        '^pages/(.*)$': '<rootDir>/packages/ui/src/pages/$1',
+        '^layout/(.*)$': '<rootDir>/apps/frontend/src/layout/$1',
+        '^api/(.*)$': '<rootDir>/apps/frontend/src/api/$1',
+        '^pages/(.*)$': '<rootDir>/apps/frontend/src/pages/$1',
 
-        '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$': '<rootDir>/packages/ui/src/$1/$2',                
+        '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$': '<rootDir>/apps/frontend/src/$1/$2',                
         
-        '^config$': '<rootDir>/packages/ui/src/config.ts',
-        '^menu-items$': '<rootDir>/packages/ui/src/menu-items/index.ts',
+        '^config$': '<rootDir>/apps/frontend/src/config.ts',
+        '^menu-items$': '<rootDir>/apps/frontend/src/menu-items/index.ts',
         
         // Aliases for root files
-        '^(App|Layout|LoginPage|routes)$': '<rootDir>/packages/ui/src/$1.tsx',
+        '^(App|Layout|LoginPage|routes)$': '<rootDir>/apps/frontend/src/$1.tsx',
       },
     },
   ],

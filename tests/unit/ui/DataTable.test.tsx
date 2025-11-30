@@ -1,6 +1,6 @@
-// packages/ui/src/components/DataTable.test.tsx
+// apps/frontend/src/components/DataTable.test.tsx
 import { render, screen } from '@testing-library/react';
-import { DataTable } from '../../../packages/ui/src/components/DataTable';
+import { DataTable } from '../../../apps/frontend/src/components/DataTable';
 import { createColumnHelper } from '@tanstack/react-table';
 
 // Define a sample data type and mock data/columns

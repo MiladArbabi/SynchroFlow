@@ -1,8 +1,8 @@
-// packages/ui/src/components/FulfillmentPipelineChart.test.tsx
+// apps/frontend/src/components/FulfillmentPipelineChart.test.tsx
 import { screen } from '@testing-library/react';
 import axios from 'axios';
 import { renderWithProviders } from 'test-utils';
-import { FulfillmentPipelineChart } from '../../../packages/ui/src/components/FulfillmentPipelineChart';
+import { FulfillmentPipelineChart } from '../../../apps/frontend/src/components/FulfillmentPipelineChart';
 
 jest.mock('axios');
 const mockedAxiosGet = axios.get as jest.Mock;

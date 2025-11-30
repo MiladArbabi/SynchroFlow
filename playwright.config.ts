@@ -1,4 +1,4 @@
-// packages/ui/playwright.config.ts
+// apps/frontend/playwright.config.ts
 import { defineConfig, devices } from '@playwright/test';
 
 const AUTH_FILE_PATH = 'playwright/.auth/user.json';

@@ -1,10 +1,10 @@
-// packages/ui/src/pages/ProductIntelligencePage.test.tsx
+// apps/frontend/src/pages/ProductIntelligencePage.test.tsx
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { ProductIntelligencePage } from '../../../packages/ui/src/pages/ProductIntelligencePage'
+import { ProductIntelligencePage } from '../../../apps/frontend/src/pages/ProductIntelligencePage'
 
 // Mock the DataMapper component
-jest.mock('../../../packages/ui/src/components/DataMapper/DataMapper.tsx', () => () => <div>Mocked DataMapper</div>);
+jest.mock('../../../apps/frontend/src/components/DataMapper/DataMapper.tsx', () => () => <div>Mocked DataMapper</div>);
 
 describe('ProductIntelligencePage', () => {
   it('renders the DataMapper component', () => {

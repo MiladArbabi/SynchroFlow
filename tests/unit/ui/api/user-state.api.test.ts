@@ -1,8 +1,8 @@
 // tests/unit/ui/api/user-state.api.test.ts
-import { fetchUserProductCosts, updateUserProductCosts } from '../../../../packages/ui/src/api/user-state';
+import { fetchUserProductCosts, updateUserProductCosts } from '../../../../apps/frontend/src/api/user-state';
 
 // Mock axiosConfig using factory pattern to avoid hoisting issues
-jest.mock('../../../../packages/ui/src/api/axiosConfig', () => {
+jest.mock('../../../../apps/frontend/src/api/axiosConfig', () => {
   const mockAxiosInstance = {
     get: jest.fn(),
     post: jest.fn(),
@@ -15,7 +15,7 @@ jest.mock('../../../../packages/ui/src/api/axiosConfig', () => {
 });
 
 describe('UserState API - Authentication', () => {
-  const mockAxiosInstance = (require('../../../../packages/ui/src/api/axiosConfig').axiosInstance as any);
+  const mockAxiosInstance = (require('../../../../apps/frontend/src/api/axiosConfig').axiosInstance as any);
   
   beforeEach(() => {
     jest.clearAllMocks();

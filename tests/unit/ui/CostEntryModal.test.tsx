@@ -1,4 +1,4 @@
-// packages/ui/src/components/__tests__/CostEntryModal.test.tsx
+// apps/frontend/src/components/__tests__/CostEntryModal.test.tsx
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CostEntryModal } from 'components/CostEntryModal';
 

@@ -1,6 +1,6 @@
-// packages/ui/src/components/__tests__/CostStatusIndicator.test.tsx
+// apps/frontend/src/components/__tests__/CostStatusIndicator.test.tsx
 import { render, screen, fireEvent } from '@testing-library/react';
-import { CostStatusIndicator } from '../../../packages/ui/src/components/CostStatusIndicator';
+import { CostStatusIndicator } from '../../../apps/frontend/src/components/CostStatusIndicator';
 
 const mockProduct = {
   id: 1,

@@ -2,7 +2,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { OrderMetricsWidget } from 'components/widgets/OrderMetricsWidget';
-import { EnhancedWidgetShellProps } from 'packages/ui/src/components/widgets/types';
+import { EnhancedWidgetShellProps } from 'apps/frontend/src/components/widgets/types';
 import { 
   renderWithProviders, 
   createEnhancedWidgetProps,

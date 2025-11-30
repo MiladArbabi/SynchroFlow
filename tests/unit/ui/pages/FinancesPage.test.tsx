@@ -4,7 +4,7 @@ import renderWithProviders from 'test-utils';
 import FinancesPage from 'pages/FinancesPage';
 
 // Mock the MasterPanel component
-jest.mock('../../../packages/ui/src/ui-component/MasterPanel/index.tsx', () => {
+jest.mock('../../../apps/frontend/src/ui-component/MasterPanel/index.tsx', () => {
   return {
     __esModule: true,
     default: ({ children, title }: { children: React.ReactNode; title: string }) => (

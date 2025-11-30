@@ -1,4 +1,4 @@
-// packages/ui/src/components/TopnavbarContent/TopnavbarContent.test.tsx
+// apps/frontend/src/components/TopnavbarContent/TopnavbarContent.test.tsx
 import { screen } from '@testing-library/react';
 import TopnavbarContent from 'layouts/AppLayout/TopnavbarContent';
 import { renderWithProviders } from 'test-utils';

@@ -1,7 +1,7 @@
 // tests/unit/ui/DashboardStateManager.test.tsx
 import { render, screen } from '@testing-library/react';
-import { DashboardStateProvider, useDashboardState } from '../../../packages/ui/src/contexts/DashboardStateContext';
-import { AuthProvider } from '../../../packages/ui/src/contexts/AuthContext';
+import { DashboardStateProvider, useDashboardState } from '../../../apps/frontend/src/contexts/DashboardStateContext';
+import { AuthProvider } from '../../../apps/frontend/src/contexts/AuthContext';
 
 // Mock the API call
 jest.mock('axios');

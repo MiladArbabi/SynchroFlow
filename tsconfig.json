@@ -22,30 +22,30 @@
 
     "baseUrl": ".",
     "paths": {
-      "test-utils": ["packages/ui/src/test-utils.tsx"],
+      "test-utils": ["apps/frontend/src/test-utils.tsx"],
       
       // Wildcard aliases for directories inside /src
-      "components/*": ["packages/ui/src/components/*"],
-      "contexts/*": ["packages/ui/src/contexts/*"],
-      "pages/*": ["packages/ui/src/pages/*"],
-      "layouts/*": ["packages/ui/src/layouts/*"], 
-      "utils/*": ["packages/ui/src/utils/*"],
-      "hooks/*": ["packages/ui/src/hooks/*"],
-      "assets/*": ["packages/ui/src/assets/*"],
+      "components/*": ["apps/frontend/src/components/*"],
+      "contexts/*": ["apps/frontend/src/contexts/*"],
+      "pages/*": ["apps/frontend/src/pages/*"],
+      "layouts/*": ["apps/frontend/src/layouts/*"], 
+      "utils/*": ["apps/frontend/src/utils/*"],
+      "hooks/*": ["apps/frontend/src/hooks/*"],
+      "assets/*": ["apps/frontend/src/assets/*"],
 
-      "config": ["packages/ui/src/config.ts"],
-      "layout/*": ["packages/ui/src/layout/*"],
-      "api/*": ["packages/ui/src/api/*"],
-      "ui-component/*": ["packages/ui/src/ui-component/*"],
-      "menu-items": ["packages/ui/src/menu-items/index.ts"],
-      "widgets/*": ["packages/ui/src/widgets/*"],
-      "themes/*": ["packages/ui/src/themes/*"],
+      "config": ["apps/frontend/src/config.ts"],
+      "layout/*": ["apps/frontend/src/layout/*"],
+      "api/*": ["apps/frontend/src/api/*"],
+      "ui-component/*": ["apps/frontend/src/ui-component/*"],
+      "menu-items": ["apps/frontend/src/menu-items/index.ts"],
+      "widgets/*": ["apps/frontend/src/widgets/*"],
+      "themes/*": ["apps/frontend/src/themes/*"],
       
       // Aliases for root files
-      "Layout": ["packages/ui/src/Layout.tsx"],
-      "App": ["packages/ui/src/App.tsx"],
-      "LoginPage": ["packages/ui/src/LoginPage.tsx"],
-      "routes": ["packages/ui/src/routes.tsx"],
+      "Layout": ["apps/frontend/src/Layout.tsx"],
+      "App": ["apps/frontend/src/App.tsx"],
+      "LoginPage": ["apps/frontend/src/LoginPage.tsx"],
+      "routes": ["apps/frontend/src/routes.tsx"],
 
       // --- BACKEND ALIASES ---
       "api-src/*": ["apps/backend/src/*"],
@@ -53,11 +53,11 @@
       "api-types": ["apps/backend/src/types.ts"],
       "api-server": ["apps/backend/src/server.ts"],
 
-      "src/*": ["packages/ui/src/*"]
+      "src/*": ["apps/frontend/src/*"]
     }
   },
   "include": [
-    "packages/ui/src",
+    "apps/frontend/src",
     "apps/backend/src",
     "tests/unit/ui",
     "tests/unit/api",

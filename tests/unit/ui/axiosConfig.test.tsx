@@ -1,6 +1,6 @@
 // tests/unit/ui/axiosConfig.test.tsx
-import { axiosInstance } from '../../../packages/ui/src/api/axiosConfig';
-import { getToken } from '../../../packages/ui/src/utils/authStore'; 
+import { axiosInstance } from '../../../apps/frontend/src/api/axiosConfig';
+import { getToken } from '../../../apps/frontend/src/utils/authStore'; 
 
 // Mock the in-memory store module
 jest.mock('utils/authStore', () => ({

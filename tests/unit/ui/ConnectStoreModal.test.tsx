@@ -1,8 +1,8 @@
 // tests/unit/ui/ConnectStoreModal.test.tsx
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-// Correct relative path from tests/unit/ui/ to packages/ui/src/components/
-import { ConnectStoreModal } from '../../../packages/ui/src/components/ConnectStoreModal';
+// Correct relative path from tests/unit/ui/ to apps/frontend/src/components/
+import { ConnectStoreModal } from '../../../apps/frontend/src/components/ConnectStoreModal';
 import axios from 'axios';
 
 // Mock the onClose function
@@ -10,7 +10,7 @@ const mockOnClose = jest.fn();
 
 // Mock the IconComponent to avoid issues with Lucide icons in a unit test
 jest.mock(
-  '../../../packages/ui/src/components/Icon',
+  '../../../apps/frontend/src/components/Icon',
   () =>
     ({ name }: { name: string }) =>
       <span data-testid="icon">{name}</span>

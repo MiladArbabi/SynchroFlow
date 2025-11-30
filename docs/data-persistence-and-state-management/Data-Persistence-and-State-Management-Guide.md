@@ -46,7 +46,7 @@ interface DataPersistenceFlow {
 
 #### **File Organization**
 
-packages/ui/src/api/
+apps/frontend/src/api/
 ├── product-costs.ts          # Product-specific costs (backend)
 ├── user-state.ts             # User-specific state (backend)
 └── axiosConfig.ts            # Shared authentication config
@@ -70,7 +70,7 @@ const response = await axios.get('/api/v1/user-state/product-costs'); // 401 Err
 #### **Dual-Write Implementation**
 
 ```typescript
-// packages/ui/src/api/user-state.ts
+// apps/frontend/src/api/user-state.ts
 export const updateUserProductCosts = async (productCosts: UserProductCosts) => {
   // 1. Write to user-state API (multi-device sync)
   await axiosInstance.post('/api/v1/user-state/product-costs', { productCosts });
@@ -278,7 +278,7 @@ router.post('/product-costs', async (req, res) => {
 
 ```typescript
 // tests/unit/ui/api/user-state.api.test.ts
-jest.mock('../../../../packages/ui/src/api/axiosConfig', () => {
+jest.mock('../../../../apps/frontend/src/api/axiosConfig', () => {
   const mockAxiosInstance = {
     get: jest.fn(),
     post: jest.fn(),
@@ -291,7 +291,7 @@ jest.mock('../../../../packages/ui/src/api/axiosConfig', () => {
 });
 
 describe('UserState API - Authentication', () => {
-  const mockAxiosInstance = (require('../../../../packages/ui/src/api/axiosConfig').axiosInstance as any);
+  const mockAxiosInstance = (require('../../../../apps/frontend/src/api/axiosConfig').axiosInstance as any);
   
   beforeEach(() => {
     jest.clearAllMocks();
