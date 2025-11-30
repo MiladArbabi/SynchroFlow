@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { CustomerApiResponse } from './../../../api/src/api/customers/customers.service';
+import { CustomerApiResponse } from 'api-src/api/customers/customers.service';
 import { useMemo } from 'react';
 import type { CustomerOrder } from '../components/Customer360/CustomerOrderHistory';
 

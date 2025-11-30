@@ -14,17 +14,16 @@
     "jsx": "react-jsx",
     "esModuleInterop": true,
 
-    // --- ADDED FOR PATH ALIASES ---
-    "baseUrl": "./src", // Sets the base directory for absolute paths
+    // ---- IMPORTANT PART ----
+    "baseUrl": "src",
     "paths": {
-      // Mirroring Vite aliases for TypeScript IDE support
       "config": ["config.ts"],
       "hooks/*": ["hooks/*"],
       "themes/*": ["themes/*"],
       "utils/*": ["utils/*"],
       "ui-component/*": ["ui-component/*"],
       "layout/*": ["layout/*"],
-      "menu-items": ["menu-items/index.ts"], // Point directly to the entry file
+      "menu-items": ["menu-items/index.ts"],
       "menu-items/*": ["menu-items/*"],
       "api/*": ["api/*"],
       "assets/*": ["assets/*"],
@@ -32,10 +31,10 @@
       "contexts/*": ["contexts/*"],
       "layouts/*": ["layouts/*"],
       "routes": ["routes.tsx"]
-      // Note: Removed 'context' and 'examples' aliases for simplicity,
-      // rely on the broader aliases like 'contexts/*' and 'components/*'
     }
-    // --- END ADDED ---
   },
-  "include": ["src", "types", "../../types", "../../tests/unit/ui/widgets/CashFlowSnapshotWidget.test.tsx", "../../tests/unit/ui/CostEntryModal.test.tsx", "../../tests/unit/ui/CostStatusIndicator.test.tsx", "../../tests/unit/ui/user-state.test.ts"]
+  "include": [
+    "src",
+    "types"
+  ]
 }

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 // packages/ui/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
-import { PublicUser } from '../../../api/src/types';
+import { PublicUser } from 'api-types';
 import { usePostHog } from '@posthog/react';
 
 // --- Define State Shape ---

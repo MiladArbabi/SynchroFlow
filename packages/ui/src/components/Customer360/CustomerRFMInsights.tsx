@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Typography, Paper, Chip, Grid, Alert, Stack } from '@mui/material';
 import { Psychology, TrendingUp, Warning, Info } from '@mui/icons-material';
 import { useRFMScoring } from 'hooks/useRFMScoring';
-import type { CustomerApiResponse } from '../../../../api/src/api/customers/customers.service';
+import type { CustomerApiResponse } from 'api-src/api/customers/customers.service';
 
 interface CustomerRFMInsightsProps {
   customerData: CustomerApiResponse | null;

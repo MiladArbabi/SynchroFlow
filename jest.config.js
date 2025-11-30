@@ -14,12 +14,10 @@ module.exports = {
         '^.+\\.ts$': 'babel-jest',
       },
       moduleNameMapper: {
-        // Alias for the src directory
-        '^api-src/(.*)$': '<rootDir>/packages/api/src/$1',
-        // Direct aliases for common imports
-        '^api-db$': '<rootDir>/packages/api/src/db.ts',
-        '^api-types$': '<rootDir>/packages/api/src/types.ts',
-        '^api-server$': '<rootDir>/packages/api/src/server.ts',
+        '^api-src/(.*)$': '<rootDir>/apps/backend/src/$1',
+        '^api-db$': '<rootDir>/apps/backend/src/db.ts',
+        '^api-types$': '<rootDir>/apps/backend/src/types.ts',
+        '^api-server$': '<rootDir>/apps/backend/src/server.ts',
       },
     },
     // Configuration for the frontend package

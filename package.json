@@ -4,19 +4,20 @@
   "private": true,
   "description": "The root of the SynchroFlow monorepo.",
   "workspaces": [
-    "packages/*"
+  "packages/*",
+  "apps/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "start": "node packages/api/dist/src/server.js",
+    "start": "node apps/backend/dist/src/server.js",
     "dev": "concurrently \"npm:dev-api\" \"npm:dev-ui\" \"npm:dev-ai\"",
     "dev-api": "wait-on tcp:5432 && npm run dev -w api",
     "dev-ui": "wait-on tcp:3000 && npm run dev -w ui",
     "dev-ai": "npm run dev -w ai-engine",
     "dev-integration": "npm run dev -w integration-service",
     "db:reset": "docker exec synchroflow_db psql -U sf_user -d postgres -c 'DROP DATABASE IF EXISTS synchroflow_db;' && docker exec synchroflow_db psql -U sf_user -d postgres -c 'CREATE DATABASE synchroflow_db;'",
-    "dev:setup": "npm run db:reset && npm run migrate -w api && npm run seed -w api",
-    "test:setup": "npm run db:reset && NODE_ENV=test npm run migrate -w api && NODE_ENV=test npm run seed -w api",
+    "dev:setup": "npm run db:reset && npm run migrate --workspace ./apps/backend && npm run seed --workspace ./apps/backend",
+    "test:setup": "npm run db:reset && NODE_ENV=test npm run migrate --workspace ./apps/backend && NODE_ENV=test npm run seed --workspace ./apps/backend",
     "test": "npm run test:setup && jest --runInBand --verbose --forceExit",
     "test:e2e": "npx playwright test --config=playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=playwright.config.ts --ui",

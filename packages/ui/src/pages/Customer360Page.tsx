@@ -15,7 +15,7 @@ import CustomerSupportHistory, { SupportTicket } from 'components/Customer360/Cu
 
 import { CustomerBehaviorInsights } from 'components/Customer360/CustomerBehaviorInsights';
 import { CustomerSessionHistory } from 'components/Customer360/CustomerSessionHistory';
-import type { CustomerApiResponse } from '../../../api/src/api/customers/customers.service';
+import type { CustomerApiResponse } from 'api-src/api/customers/customers.service';
 
 const mapApiMetricsToUiMetrics = (apiMetrics: any, orders: any[] = []): any => {
   // Get the last order date from orders array

@@ -48,17 +48,17 @@
       "routes": ["packages/ui/src/routes.tsx"],
 
       // --- BACKEND ALIASES ---
-      "api-src/*": ["packages/api/src/*"],
-      "api-db": ["packages/api/src/db.ts"],
-      "api-types": ["packages/api/src/types.ts"],
-      "api-server": ["packages/api/src/server.ts"],
+      "api-src/*": ["apps/backend/src/*"],
+      "api-db": ["apps/backend/src/db.ts"],
+      "api-types": ["apps/backend/src/types.ts"],
+      "api-server": ["apps/backend/src/server.ts"],
 
       "src/*": ["packages/ui/src/*"]
     }
   },
   "include": [
     "packages/ui/src",
-    "packages/api/src", 
+    "apps/backend/src",
     "tests/unit/ui",
     "tests/unit/api",
     "tests/unit/core-engine",

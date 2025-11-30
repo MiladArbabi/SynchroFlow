@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { CustomerRFMInsights } from '../components/Customer360/CustomerRFMInsights';
-import type { CustomerApiResponse } from '../../../api/src/api/customers/customers.service';
+import type { CustomerApiResponse } from 'api-src/api/customers/customers.service';
 
 const meta = {
   title: 'Customer360/RFMInsights',
