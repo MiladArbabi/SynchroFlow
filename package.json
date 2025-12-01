@@ -4,8 +4,8 @@
   "private": true,
   "description": "The root of the SynchroFlow monorepo.",
   "workspaces": [
-  "packages/*",
-  "apps/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",

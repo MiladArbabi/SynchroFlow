@@ -45,13 +45,15 @@ module.exports = {
         '^api/(.*)$': '<rootDir>/apps/frontend/src/api/$1',
         '^pages/(.*)$': '<rootDir>/apps/frontend/src/pages/$1',
 
-        '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$': '<rootDir>/apps/frontend/src/$1/$2',                
+        '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'
+        : '<rootDir>/apps/frontend/src/$1/$2',                
         
         '^config$': '<rootDir>/apps/frontend/src/config.ts',
         '^menu-items$': '<rootDir>/apps/frontend/src/menu-items/index.ts',
         
         // Aliases for root files
-        '^(App|Layout|LoginPage|routes)$': '<rootDir>/apps/frontend/src/$1.tsx',
+        '^(App|Layout|LoginPage|routes)$'
+        : '<rootDir>/apps/frontend/src/$1.tsx',
       },
     },
   ],
