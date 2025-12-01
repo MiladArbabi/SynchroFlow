@@ -3,6 +3,7 @@ import React from 'react';
 import { Button, Typography, Box } from '@mui/material';
 import MainCard from 'ui-component/cards/MainCard';
 import IconComponent from 'components/Icon';
+import type { Theme } from '@mui/material/styles';
 
 interface ConnectStoreCardProps {
   onOpenModal: () => void;
@@ -10,12 +11,16 @@ interface ConnectStoreCardProps {
 
 export const ConnectStoreCard: React.FC<ConnectStoreCardProps> = ({ onOpenModal }) => {
   return (
-    <MainCard 
-      sx={{ 
-        backgroundColor: (theme) => 
-          theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.primary.light,
-        borderColor: (theme) => 
-          theme.palette.mode === 'dark' ? theme.palette.grey[700] : theme.palette.primary.dark,
+    <MainCard
+      sx={{
+        backgroundColor: (theme: Theme) =>
+          theme.palette.mode === 'dark'
+            ? theme.palette.grey[800]
+            : theme.palette.primary.light,
+        borderColor: (theme: Theme) =>
+          theme.palette.mode === 'dark'
+            ? theme.palette.grey[700]
+            : theme.palette.primary.dark,
         borderWidth: '1px',
         borderStyle: 'solid',
       }}

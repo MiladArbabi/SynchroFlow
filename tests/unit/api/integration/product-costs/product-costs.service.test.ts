@@ -3,10 +3,10 @@ import {
   getProductCost, 
   upsertProductCost, 
   deleteProductCost 
-} from '../../../../../packages/api/src/api/product-costs/product-costs.service';
+} from 'api-src/api/product-costs/product-costs.service';
 
 // Mock the database using factory pattern to avoid hoisting issues
-jest.mock('../../../../../packages/api/src/db', () => {
+jest.mock('api-src/db', () => {
   const mockChain = {
     where: jest.fn().mockReturnThis(),
     first: jest.fn(),
@@ -23,7 +23,7 @@ jest.mock('../../../../../packages/api/src/db', () => {
 });
 
 // Create type-safe reference after jest.mock
-const mockDb = require('../../../../../packages/api/src/db').default as jest.MockedFunction<any>;
+const mockDb = require('api-src/db').default as jest.MockedFunction<any>;
 
 describe('Product Costs Service', () => {
   beforeEach(() => {

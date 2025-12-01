@@ -1,10 +1,10 @@
 // tests/unit/api/integration/product-costs.e2e.test.ts
 import request from 'supertest';
 import express from 'express';
-import productCostsRoutes from '../../../../../packages/api/src/api/product-costs/product-costs.routes';
+import productCostsRoutes from 'api-src/api/product-costs/product-costs.routes';
 
 // Mock the authentication middleware
-jest.mock('../../../../../packages/api/src/middleware/auth.middleware', () => ({
+jest.mock('api-src/middleware/auth.middleware', () => ({
   authenticateToken: (req: any, _res: any, next: any) => {
     // Mock user object with shopId
     req.user = { userId: 1, shopId: 1 };
@@ -13,7 +13,7 @@ jest.mock('../../../../../packages/api/src/middleware/auth.middleware', () => ({
 }));
 
 // Mock the service
-jest.mock('../../../../../packages/api/src/api/product-costs/product-costs.service', () => ({
+jest.mock('api-src/api/product-costs/product-costs.service', () => ({
   getProductCost: jest.fn(),
   upsertProductCost: jest.fn(),
   deleteProductCost: jest.fn()
@@ -23,7 +23,7 @@ import {
   getProductCost,
   upsertProductCost,
   deleteProductCost
-} from '../../../../../packages/api/src/api/product-costs/product-costs.service';
+} from 'api-src/api/product-costs/product-costs.service';
 
 const app = express();
 app.use(express.json());

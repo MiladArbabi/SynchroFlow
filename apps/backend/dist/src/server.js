@@ -11,6 +11,7 @@ const express_1 = __importDefault(require("express"));
 const express_session_1 = __importDefault(require("express-session"));
 const db_1 = __importDefault(require("./db"));
 const user_state_routes_1 = __importDefault(require("./api/user-state/user-state.routes"));
+const shopify_routes_1 = __importDefault(require("./api/shopify/shopify.routes"));
 const koreSearch_1 = require("./services/koreSearch");
 const emitter_1 = require("./services/opsIntel/emitter");
 const connect_pg_simple_1 = __importDefault(require("connect-pg-simple"));
@@ -70,6 +71,7 @@ app.use("/api/v1/product-costs", product_costs_routes_1.default);
 app.use("/api/v1/auth", auth_routes_1.default);
 app.use("/api/v1/dashboard", dashboard_routes_1.default);
 app.use("/api/v1/user-state", user_state_routes_1.default);
+app.use("/api/v1/shopify", shopify_routes_1.default);
 // --- Routes ---
 app.get('/', (req, res) => {
     res.send('SynchroFlow API is running!');

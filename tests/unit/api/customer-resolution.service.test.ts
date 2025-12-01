@@ -1,4 +1,4 @@
-import { CustomerResolutionService, PlatformCustomer } from '../../../packages/api/src/services/customer-resolution.service';
+import { CustomerResolutionService, PlatformCustomer } from 'api-src/services/customer-resolution.service';
 
 // Mock the database
 const mockDbInstance = {
@@ -7,7 +7,7 @@ const mockDbInstance = {
   select: jest.fn().mockReturnThis(),
 };
 
-jest.mock('../../../packages/api/src/db', () => ({
+jest.mock('api-src/db', () => ({
   __esModule: true,
   default: jest.fn(() => mockDbInstance)
 }));

@@ -1,6 +1,6 @@
 // packages/api/__tests__/seeder.test.ts
-import { seedSandboxData } from '../../../packages/api/src//db/seeder';
-import db from '../../../packages/api/src//db';
+import { seedSandboxData } from 'api-src//db/seeder';
+import db from 'api-src//db';
 
 beforeAll(async () => {
   await db.migrate.latest();

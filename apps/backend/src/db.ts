@@ -1,6 +1,6 @@
 import knex, { Knex } from 'knex';
 // Use this import syntax for files that use `module.exports`
-import knexfile = require('../knexfile');
+import * as knexfile from '../knexfile'; 
 
 // Define the shape of the config object
 type KnexConfig = { [key: string]: Knex.Config };

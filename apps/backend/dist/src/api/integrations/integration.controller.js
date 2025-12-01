@@ -70,7 +70,17 @@ const initiateOAuth = (req, res) => {
             return res.status(400).json({ error: 'Missing required query param: shop' });
         }
         const shopifyApiKey = process.env.SHOPIFY_API_KEY;
-        const scopes = 'read_products,read_orders,read_customers,read_inventory,read_payouts,read_fulfillments';
+        // Keep this in sync with ShopifyAppService.completePostInstallation
+        const scopes = [
+            'read_products',
+            'read_orders',
+            'read_customers',
+            'read_inventory',
+            'read_payouts',
+            'read_fulfillments',
+            'write_script_tags',
+            'read_script_tags'
+        ].join(',');
         // NORMALIZE the shop domain to ensure correct format
         const shopDomain = (0, exports.normalizeShopDomain)(shop);
         // PROPERLY encode the redirect URI

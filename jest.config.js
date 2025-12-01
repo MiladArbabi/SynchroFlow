@@ -18,6 +18,9 @@ module.exports = {
         '^api-db$': '<rootDir>/apps/backend/src/db.ts',
         '^api-types$': '<rootDir>/apps/backend/src/types.ts',
         '^api-server$': '<rootDir>/apps/backend/src/server.ts',
+
+        // integration-service source alias
+        '^integration-src/(.*)$': '<rootDir>/apps/integration-service/src/$1',
       },
     },
     // Configuration for the frontend package

@@ -1,7 +1,7 @@
 // tests/e2e/orders.e2e.test.ts
 import request from 'supertest';
 import express from 'express';
-import ordersRoutes from '../../../../packages/api/src/api/orders/orders.routes'
+import ordersRoutes from 'api-src/api/orders/orders.routes'
 
 const app = express();
 app.use(express.json());

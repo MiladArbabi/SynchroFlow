@@ -6,6 +6,7 @@ import express from 'express';
 import session from 'express-session';
 import db from './db';
 import userStateRoutes from './api/user-state/user-state.routes';
+import shopifyRoutes from "./api/shopify/shopify.routes";
 
 import { federatedSearch } from './services/koreSearch';
 import { opsIntelEmitter } from './services/opsIntel/emitter';
@@ -83,6 +84,7 @@ app.use("/api/v1/product-costs", productCostsRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/user-state", userStateRoutes);
+app.use("/api/v1/shopify", shopifyRoutes);
 
 // --- Routes ---
 app.get('/', (req, res) => {

@@ -17,8 +17,12 @@ const DataMapper: React.FC = () => {
         const response = await axios.get('/api/v1/mappings?shop_id=1');
         setRules(response.data);
       } catch (err) {
-        console.error(err.message);
-        setError('Failed to fetch mapping rules.');
+        if (err instanceof Error) {
+          console.error(err.message);
+          setError('Failed to fetch mapping rules.');
+        } else {
+          console.error(err);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -44,8 +48,11 @@ const DataMapper: React.FC = () => {
       setSourcePath('');
       setTargetPath('');
     } catch (err) {
-      console.error(err.message);
-      alert('Failed to add new rule.');
+      if (err instanceof Error) {
+        console.error(err.message);
+      } else {
+        console.error(err);
+      }
     }
   };
 
@@ -59,8 +66,11 @@ const DataMapper: React.FC = () => {
       // Remove the rule from the local state to update the UI
       setRules(prevRules => prevRules.filter(rule => rule.id !== ruleId));
     } catch (err) {
-      console.error(err.message);
-      alert('Failed to delete the rule.');
+      if (err instanceof Error) {
+        console.error(err.message);
+      } else {
+        console.error(err);
+      }
     }
   };
 

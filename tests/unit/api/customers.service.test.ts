@@ -1,6 +1,6 @@
-import { CustomersService } from '../../../packages/api/src/api/customers/customers.service';
-import { CustomerResolutionService } from '../../../packages/api/src/services/customer-resolution.service';
-import db from '../../../packages/api/src/db';
+import { CustomersService } from 'api-src/api/customers/customers.service';
+import { CustomerResolutionService } from 'api-src/services/customer-resolution.service';
+import db from 'api-src/db';
 
 // ----------------------------------------------------------------------------
 // MOCK SETUP
@@ -8,7 +8,7 @@ import db from '../../../packages/api/src/db';
 
 // 1. Mock the DB
 // We define the mock implementation INSIDE the factory to avoid hoisting ReferenceErrors.
-jest.mock('../../../packages/api/src/db', () => {
+jest.mock('api-src/db', () => {
   const mockChain = {
     select: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
@@ -23,7 +23,7 @@ jest.mock('../../../packages/api/src/db', () => {
 });
 
 // 2. Mock the Resolution Service
-jest.mock('../../../packages/api/src/services/customer-resolution.service', () => ({
+jest.mock('api-src/services/customer-resolution.service', () => ({
   __esModule: true,
   CustomerResolutionService: {
     findCustomersByEmail: jest.fn()

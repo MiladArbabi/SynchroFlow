@@ -1,5 +1,224 @@
 # **🚀 Enhanced ACI Platform Roadmap: Central Nervous System Edition (v4.1)**
 
+## **FT0.1 – Free Tier Specification Reference**
+
+✔️ Spec location: [`docs/pricing/FreeTierScope.md`](../pricing/FreeTierScope.md)  
+This file defines the finalized scope for the Free Tier launch (Shopify-only, 90-day data window, core dashboard widgets, plan gating & entitlements).  
+All Free Tier–related tasks in this roadmap must reference and comply with that spec.
+
+# 🚀 Free-Tier Launch Roadmap (Shopify + app.lasyncro.com)
+
+**Goal:** Ship a stable, minimal free tier on:
+
+- Shopify App Store (embedded app)
+- app.lasyncro.com (standalone app)
+
+**Principle:** One vertical slice end-to-end:
+Shopify install → store connected → data synced → dashboard usable → settings & uninstall clean.
+
+**Status Legend:**  
+
+- ⬜ Not started  
+- 🟡 In progress  
+- ✅ Done  
+- 🔴 Blocked  
+
+---
+
+## Phase FT0 — Ground Truth & Cleanup
+
+**FT0.1 – Free-Tier Scope & Constraints** – ⬜  
+
+- Define exactly what the free tier includes:
+  - Which data (orders, products, customers – to what depth)
+  - Which widgets/pages are visible
+  - What’s explicitly *out of scope* for v1 (Specter, MarginCore, etc.)
+- Output: `docs/pricing/FreeTierScope.md` (or similar)
+
+**FT0.2 – Codebase Reality Check** – ⬜  
+
+- Document what already works today:
+  - Backend API surface (auth, orders, products, customers, integrations)
+  - Frontend routes & layouts that are actually used
+  - Which workers / queues are active
+- Output: `docs/product-architecture/CurrentState.md` (short, factual)
+
+**FT0.3 – Freeze Non-Free-Tier Modules** – ⬜  
+
+- Mark the following as **Phase 2+** in docs and code:
+  - InsightCore, MarginCore, OrderNexus, ReturnNexus, WmsLite, ProblemSolve, Specter advanced, Financial CNS, Marketing CNS
+- Create `docs/blueprints/PHASE2_ARCHIVE.md` linking to all future-phase blueprints.
+
+---
+
+## Phase FT1 — Shopify App + Auth Foundation
+
+**FT1.1 – Shopify Packaging Alignment** – ⬜  
+
+- Apply `docs/shopify-packaging/ShopifyPackaging.md` to:
+  - App URLs
+  - Redirect URIs
+  - Required scopes
+  - GDPR endpoints
+- Output: Updated Shopify app config + short checklist in `ShopifyPackaging.md`.
+
+**FT1.2 – Auth & Session Flow (Shopify + Email)** – ⬜  
+
+- Verify and stabilize:
+  - Shopify OAuth → DB → session
+  - Email/password login (if used for app.lasyncro.com)
+  - JWT signing/verification consistent with `auth-permissions-contract`
+- Output: `docs/auth-permissions-contract/Auth-and-PermissionsContract.md` updated with what’s actually implemented.
+
+**FT1.3 – Shop & User Model for Free Tier** – ⬜  
+
+- Ensure DB schema has:
+  - `shops` table with plan info
+  - `users` table linked to shop
+  - Minimal fields required by free-tier scope
+- Output: ERD/diagram snippet in `product-architecture.md` under “Free Tier v1 Data Model”.
+
+---
+
+## Phase FT2 — Minimal Data Sync Pipeline
+
+**FT2.1 – Orders Sync (MVP)** – ⬜  
+
+- One-path success:
+  - After installation, orders sync for last N days
+  - Stored in DB
+  - API endpoint for frontend
+- Output: `docs/eventing-backbone-contract/EventBackboneContract.md` updated with the minimal events we actually emit.
+
+**FT2.2 – Products Sync (MVP)** – ⬜  
+
+- Sync minimal product fields used in widgets:
+  - Name, SKU, price, status
+- Output: small section in `Data-Persistence-and-State-Management-Guide.md` for products.
+
+**FT2.3 – Customers Sync (MVP)** – ⬜  
+
+- Sync basic fields:
+  - Name, email, created_at
+- Reuse identity resolution only if it’s already coded and stable; otherwise keep simple.
+- Output: section in `Data-Persistence-and-State-Management-Guide.md` for customers.
+
+**FT2.4 – Sync Status & Health** – ⬜  
+
+- Minimal:
+  - `last_sync_at`
+  - `last_sync_status` (ok/error)
+  - error message if any
+- Used by dashboard to show “is this app working”.
+
+---
+
+## Phase FT3 — Minimal Dashboard UX (Free Tier Only)
+
+**FT3.1 – Route & Navigation Cleanup** – ⬜  
+
+- Remove/hide routes not needed for free tier:
+  - Advanced CNS / modules that don’t exist yet
+- Produce: `docs/dashboard-and-layout/v1.0_overview.md` updated with **only** the screens we actually ship in free tier.
+
+**FT3.2 – Core Widgets for Free Tier** – ⬜  
+Implement *only* these widgets for v1:
+
+- “Sync Status” / “Connection Health”
+- “Recent Orders” list
+- “Basic Sales Summary” (very minimal)
+
+Each widget must be:
+
+- Backed by a real API
+- Tested with mocked data
+- Stable across refresh
+
+**FT3.3 – Onboarding State in UI** – ⬜  
+
+- First-time user experience:
+  - No data → clear “Connect your store” / “Waiting for sync” UX
+- Tie into FT2.4 sync status.
+
+---
+
+## Phase FT4 — Entitlements & Free Plan Enforcement
+
+**FT4.1 – Plan & Entitlement Model (Backend)** – ⬜  
+
+- Implement minimal structure from `GlobalBillingContract.md` and `EntitlementsEngineContract.md`:
+  - `plan_id: 'free'`
+  - `entitlements: [...]` (array of strings or flags)
+- Store per shop.
+
+**FT4.2 – Enforcement (Backend + Frontend)** – ⬜  
+
+- Backend: reject access to modules not allowed by free plan.
+- Frontend: hide/disable locked UI paths.
+
+**FT4.3 – Upgrade Hooks (without full billing yet)** – ⬜  
+
+- Stub “Upgrade” entry points in the UI that:
+  - Log interest / click
+  - Do not require full billing yet
+- This is future monetization ready, but not required to work end-to-end.
+
+---
+
+## Phase FT5 — Settings, Data Privacy & Uninstall
+
+**FT5.1 – Basic Settings Page** – ⬜  
+
+- At minimum:
+  - View connected shop
+  - Trigger manual sync (if supported)
+  - See plan info (Free Tier)
+
+**FT5.2 – Privacy & Data Controls** – ⬜  
+
+- Implement minimum Shopify/GDPR obligations:
+  - Data deletion path
+  - Uninstall webhook handling
+- Document flows in `deployment-and-ops/v1.0_overview.md`.
+
+---
+
+## Phase FT6 — Deployment & Launch
+
+**FT6.1 – Production Deployment Pipeline** – ⬜  
+
+- Backend: production infra defined (Fly.io, etc.)
+- Frontend: `app.lasyncro.com` + Shopify embedded config
+- Workers: sync jobs in production
+
+**FT6.2 – Observability & Error Handling (Minimal)** – ⬜  
+
+- Centralized logging for:
+  - auth failures
+  - sync failures
+  - app crashes
+
+**FT6.3 – Shopify App Store Submission** – ⬜  
+
+- Prepare:
+  - Listing copy
+  - Screenshots
+  - Privacy policy
+- Track status here until approved.
+
+---
+
+## Relationship to CNS Roadmap
+
+The existing **“Enhanced ACI Platform Roadmap: Central Nervous System Edition (v4.1)”** below is treated as:
+
+- Long-term platform and monetization strategy  
+- Phase 2+ work that starts **after** Free Tier Launch (FT6.3 ✅)
+
+Until FT6.3 is completed, this Free-Tier Launch Roadmap is the **primary execution plan**.
+
+________________________________________________________________
+
 **Vision:** Evolve from passive dashboard to active "Central Nervous System" for commerce operations
 **Strategic Pivot:** From multi-platform analytics to unified commerce operating system
 **Source of Truth:** [ACI Comprehensive Blueprint + CNS Architecture](./../blueprint/BLUEPRINT.md)
@@ -53,6 +272,21 @@ interface CentralNervousSystem {
 ---
 
 ## **🔄 Enhanced Phase Structure: CNS Implementation**
+
+### **FT0 – Free Tier GA (Shopify + app.lasyncro.com)**
+
+- **Scope:** Minimal viable free tier that can be installed from the Shopify App Store *and* accessed via `app.lasyncro.com`, as defined in `docs/pricing/FreeTierScope.md`.
+- **Goal:** One coherent free-tier experience, regardless of whether the merchant starts in Shopify or on app.lasyncro.com.
+- **Spec:** `docs/pricing/FreeTierScope.md`
+
+**FT0 Execution Order:**
+
+1. **[#878](https://github.com/MiladArbabi/SynchroFlow/issues/878)** – Shopify app infrastructure (OAuth + script tag injection)
+2. **[#838](https://github.com/MiladArbabi/SynchroFlow/issues/838)** – Shopify webhooks for real-time order updates
+3. **[#881](https://github.com/MiladArbabi/SynchroFlow/issues/881)** – Merchant onboarding & Specter configuration UI
+4. **[#818](https://github.com/MiladArbabi/SynchroFlow/issues/818)** – Free-tier action hierarchy and gating rules
+5. **[#883](https://github.com/MiladArbabi/SynchroFlow/issues/883)** – `app.lasyncro.com` free-tier access & routing
+6. **[#839](https://github.com/MiladArbabi/SynchroFlow/issues/839)** – Shopify App Store submission (packaging FT0 for review)
 
 ### **Phase 1: Foundation (Months 1-3) - ✅ COMPLETED**
 

@@ -48,26 +48,43 @@ class ShopifyAppService {
     /**
      * Register app uninstall webhook
      */
+    /**
+   * Register app uninstall webhook
+   */
     static async registerAppUninstallWebhook(shopDomain, accessToken) {
         try {
+            const baseUrl = process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
+            if (!baseUrl) {
+                console.warn('[ShopifyAppService] No SHOPIFY_WEBHOOK_BASE_URL or API_URL set; skipping uninstall webhook registration.');
+                return;
+            }
+            // In dev, localhost is NOT reachable by Shopify. Skip instead of throwing.
+            if (!baseUrl.startsWith('https://')) {
+                console.warn(`[ShopifyAppService] Webhook base URL is not HTTPS (${baseUrl}). ` +
+                    'Skipping uninstall webhook registration in this environment.');
+                return;
+            }
             const webhookUrl = `https://${shopDomain}/admin/api/2024-01/webhooks.json`;
             const webhookData = {
                 webhook: {
                     topic: 'app/uninstalled',
-                    address: `${process.env.API_URL}/api/v1/shopify/webhooks/app-uninstalled`,
+                    address: `${baseUrl}/api/v1/shopify/webhooks/app-uninstalled`,
                     format: 'json'
                 }
             };
-            await axios_1.default.post(webhookUrl, webhookData, {
+            const response = await axios_1.default.post(webhookUrl, webhookData, {
                 headers: {
                     'X-Shopify-Access-Token': accessToken,
                     'Content-Type': 'application/json'
                 }
             });
+            console.log('✅ Registered app uninstall webhook:', JSON.stringify(response.data, null, 2));
         }
         catch (error) {
-            console.error('Failed to register app uninstall webhook:', error);
-            throw new Error('Failed to register app uninstall webhook');
+            const details = error?.response?.data || error?.message || error;
+            console.error('[ShopifyAppService] Failed to register app uninstall webhook. Details:', JSON.stringify(details, null, 2));
+            // IMPORTANT: Do NOT throw here – webhook failure should not break post-install.
+            // For prod, you can later add alerting instead of throwing.
         }
     }
     /**

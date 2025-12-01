@@ -4,7 +4,7 @@ import {
   getInventoryHealth, 
   getShipmentStatus, 
   getCashTraps 
-} from '../../../packages/api/src/api/dashboard/dashboard.controller';
+} from 'api-src/api/dashboard/dashboard.controller';
 
 // Simple chainable mock that matches Knex behavior
 const mockQueryBuilder: any = {

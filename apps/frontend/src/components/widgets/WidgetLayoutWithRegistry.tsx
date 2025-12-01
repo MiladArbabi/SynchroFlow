@@ -1,12 +1,11 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/components/widgets/WidgetLayoutWithRegistry.tsx
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React from 'react';
 import { Box } from '@mui/material';
 import { EnhancedWidgetShell } from './EnhancedWidgetShell';
-import { 
-  EnhancedWidgetShellProps, 
-  CommerceMetricConfig, 
-  EcommerceBusinessContext 
+import {
+  EnhancedWidgetShellProps,
+  WidgetContentProps,
 } from './types';
 import { useWidgetRegistry } from './useWidgetRegistry';
 import { WidgetDefinition } from './widget-registry';
@@ -42,26 +41,30 @@ export const WidgetLayoutWithRegistry: React.FC = () => {
   return (
     <Box sx={{ p: 2 }}>
       {widgets.map((widgetDef: WidgetDefinition) => {
-        const { component: WidgetComponent, priority, requiresPaidPlan, dataProcessing, ...shellProps } = widgetDef;
-        
-        // Create proper EnhancedWidgetShellProps by reconstructing the required props
-        const enhancedShellProps: EnhancedWidgetShellProps = {
-          ...shellProps,
-          // Ensure all required props are present
-          businessContext: shellProps.businessContext as EcommerceBusinessContext,
-          metricConfig: shellProps.metricConfig as CommerceMetricConfig,
-          children: ( // We provide children here to satisfy TypeScript
-            <WidgetComponent 
-              {...shellProps}
-              businessContext={shellProps.businessContext as EcommerceBusinessContext}
-              metricConfig={shellProps.metricConfig as CommerceMetricConfig}
-              children
-            />
-          )
+        const {
+          component: WidgetComponent,
+          priority,
+          requiresPaidPlan,
+          dataProcessing,
+          ...baseProps
+        } = widgetDef;
+
+        // These are the props the widget itself receives
+        const widgetProps = baseProps as WidgetContentProps;
+
+        // These are the props the shell receives (widget + children)
+        const shellProps: EnhancedWidgetShellProps = {
+          ...widgetProps,
+          children: <WidgetComponent {...widgetProps} />,
         };
+
         return (
-          <Box key={widgetDef.id} sx={{ mb: 2 }} data-testid={`widget-${widgetDef.id}`}>
-             <EnhancedWidgetShell {...enhancedShellProps} />
+          <Box
+            key={widgetDef.id}
+            sx={{ mb: 2 }}
+            data-testid={`widget-${widgetDef.id}`}
+          >
+            <EnhancedWidgetShell {...shellProps} />
           </Box>
         );
       })}

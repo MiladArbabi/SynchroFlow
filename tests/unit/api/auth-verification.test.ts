@@ -2,13 +2,13 @@
 import jwt from 'jsonwebtoken';
 import { authenticateToken } from 'api-src/middleware/auth.middleware';
 import { loginUser } from 'api-src/api/auth/auth.controller';
-import db from '../../../packages/api/src/db';
+import db from 'api-src/db';
 
 console.log('db type:', typeof db);
 console.log('db keys:', Object.keys(db));
 console.log('db is function?', typeof db === 'function');
 
-jest.mock('../../../packages/api/src/db', () => {
+jest.mock('api-src/db', () => {
   const mockQueryBuilder: any = {
     where: jest.fn(() => mockQueryBuilder),
     first: jest.fn(),

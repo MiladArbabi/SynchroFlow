@@ -3,10 +3,10 @@ import {
   getProductCostHandler,
   upsertProductCostHandler,
   deleteProductCostHandler
-} from '../../../../../packages/api/src/api/product-costs/product-costs.controller';
+} from 'api-src/api/product-costs/product-costs.controller';
 
 // Mock the service
-jest.mock('../../../../../packages/api/src/api/product-costs/product-costs.service', () => ({
+jest.mock('api-src/api/product-costs/product-costs.service', () => ({
   getProductCost: jest.fn(),
   upsertProductCost: jest.fn(),
   deleteProductCost: jest.fn()
@@ -16,7 +16,7 @@ import {
   getProductCost,
   upsertProductCost,
   deleteProductCost
-} from '../../../../../packages/api/src/api/product-costs/product-costs.service';
+} from 'api-src/api/product-costs/product-costs.service';
 
 describe('Product Costs Controller', () => {
   let mockRequest: any;

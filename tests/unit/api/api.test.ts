@@ -4,7 +4,7 @@ import app from 'api-server';
 import db from 'api-db';
 import { InventoryItem } from 'api-types';
 import axios from 'axios';
-import { seedSandboxData } from '../../../packages/api/src/db/seeder';
+import { seedSandboxData } from 'api-src/db/seeder';
 
 // Tell Jest to mock the 'axios' library
 jest.mock('axios');
@@ -12,7 +12,7 @@ jest.mock('axios');
 const mockedAxiosPost = axios.post as jest.Mock;
 
 // Mock our new seeder function
-jest.mock('../../../packages/api/src/db/seeder');
+jest.mock('api-src/db/seeder');
 const mockedSeedSandboxData = seedSandboxData as jest.Mock;
 
 beforeAll(async () => {

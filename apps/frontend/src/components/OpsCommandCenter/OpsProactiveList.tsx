@@ -110,7 +110,7 @@ export const OpsProactiveList: React.FC<OpsProactiveListProps> = ({
 
             {/* Action Buttons */}
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              {insight.suggestedActions?.map((action, idx) => (
+              {insight.suggestedActions?.map((action: SuggestedAction, idx: number) => (
                 <Button
                   key={idx}
                   variant={action.primary ? 'contained' : 'outlined'}
