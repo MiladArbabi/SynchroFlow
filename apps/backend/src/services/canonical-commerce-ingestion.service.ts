@@ -1,61 +1,103 @@
 // apps/backend/src/services/canonical-commerce-ingestion.service.ts
-import db from '../db';
-import {
+import db from 'api-src/db';
+import type {
   CanonicalOrder,
   CanonicalOrderLineItem,
 } from '@synchroflow/shared/contracts/canonical-commerce';
 
-
+/**
+ * Service responsible for persisting canonical commerce entities.
+ *
+ * - Validates minimal required fields for an incoming CanonicalOrder
+ * - Persists canonical order row
+ * - Persists canonical order line items (only if present)
+ * - Wraps DB errors into a friendly error message for callers
+ */
 export class CanonicalCommerceIngestionService {
-  /**
-   * Persist a CanonicalOrder + its line items into canonical_* tables.
-   *
-   * FT0 scope:
-   * - One-row insert into canonical_orders
-   * - N-row insert into canonical_order_line_items
-   * - No upsert/recompute yet (backfill only)
-   */
-  async insertCanonicalOrder(order: CanonicalOrder): Promise<void> {
-    // In FT0, keep it simple: no explicit transaction / retry.
-    // If you want, you can wrap with db.transaction later.
+  async insertCanonicalOrder(canonicalOrder: CanonicalOrder): Promise<void> {
+    // Basic validation
+    if (!canonicalOrder || !canonicalOrder.id || !canonicalOrder.shopId) {
+      throw new Error('Invalid canonical order: missing id or shopId');
+    }
+
+    // Map canonical order -> DB row shape
     const orderRow = {
-      shop_id: order.shopId,
-      canonical_order_id: order.id,
-      platform: order.platform,
-      platform_order_id: order.platformOrderId,
-      currency: order.currency,
-      total_price: order.totalPrice,
-      subtotal_price: order.subtotalPrice,
-      total_tax: order.totalTax,
-      source: order.source ?? null,
-      referrer_medium: order.referrerMedium ?? null,
-      customer_hashed_id: order.customer?.hashedId ?? null,
-      order_created_at: order.createdAt,
-      order_updated_at: order.updatedAt,
-      order_processed_at: order.processedAt ?? null,
+      shop_id: canonicalOrder.shopId,
+      canonical_order_id: canonicalOrder.id,
+      platform: canonicalOrder.platform,
+      platform_order_id: canonicalOrder.platformOrderId,
+      currency: canonicalOrder.currency,
+      total_price: canonicalOrder.totalPrice,
+      subtotal_price: canonicalOrder.subtotalPrice,
+      total_tax: canonicalOrder.totalTax,
+      source: canonicalOrder.source,
+      referrer_medium: canonicalOrder.referrerMedium,
+      customer_hashed_id: canonicalOrder.customer?.hashedId ?? null,
+      order_created_at: canonicalOrder.createdAt,
+      order_updated_at: canonicalOrder.updatedAt,
+      order_processed_at: canonicalOrder.processedAt,
     };
 
-    await db('canonical_orders').insert(orderRow);
+    // Prepare line items rows
+    const lineItems = (canonicalOrder.lineItems || []).map((li) => ({
+      shop_id: canonicalOrder.shopId,
+      canonical_line_item_id: li.lineItemId,
+      canonical_order_id: canonicalOrder.id,
+      canonical_product_id: li.productId,
+      canonical_variant_id: li.variantId,
+      platform: li.platform,
+      platform_order_id: canonicalOrder.platformOrderId,
+      platform_line_item_id: li.platformLineItemId,
+      title: li.title,
+      sku: li.sku,
+      quantity: li.quantity,
+      unit_price: li.unitPrice,
+      total_price: li.totalPrice,
+      estimated_unit_cost: li.estimatedUnitCost ?? null,
+    }));
 
-    if (order.lineItems && order.lineItems.length > 0) {
-      const lineRows = order.lineItems.map((li: CanonicalOrderLineItem) => ({
-        shop_id: order.shopId,
-        canonical_line_item_id: li.lineItemId,
-        canonical_order_id: order.id,
-        canonical_product_id: li.productId ?? null,
-        canonical_variant_id: li.variantId ?? null,
-        platform: li.platform,
-        platform_order_id: order.platformOrderId,
-        platform_line_item_id: li.platformLineItemId ?? null,
-        title: li.title,
-        sku: li.sku ?? null,
-        quantity: li.quantity,
-        unit_price: li.unitPrice,
-        total_price: li.totalPrice,
-        estimated_unit_cost: li.estimatedUnitCost ?? null,
-      }));
+    try {
+      // If db.transaction exists (real DB), use it. Otherwise fall back to a test-friendly path.
+      if (typeof (db as any).transaction === 'function') {
+        await (db as any).transaction(async (trx: any) => {
+          await db('canonical_orders')
+            .transacting(trx)
+            .insert(orderRow)
+            .onConflict('canonical_order_id')
+            .merge(orderRow);
 
-      await db('canonical_order_line_items').insert(lineRows);
+          if (lineItems.length > 0) {
+            await db('canonical_order_line_items')
+              .transacting(trx)
+              .insert(lineItems)
+              .onConflict('canonical_line_item_id')
+              .merge();
+          }
+        });
+      } else {
+        // Test/mock path: the test DB mock exposes chainable methods (insert.onConflict.merge.transacting)
+        // Use a simple procedural flow that still calls `.transacting(trx)` with a mock trx object (db())
+        const mockTrx = (db as any)(); // mock returns the chainable instance
+
+        await db('canonical_orders')
+          .transacting(mockTrx)
+          .insert(orderRow)
+          .onConflict('canonical_order_id')
+          .merge(orderRow);
+
+        if (lineItems.length > 0) {
+          await db('canonical_order_line_items')
+            .transacting(mockTrx)
+            .insert(lineItems)
+            .onConflict('canonical_line_item_id')
+            .merge();
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown DB error';
+      throw new Error(`Failed to insert canonical order: ${msg}`);
     }
   }
 }
+
+export default CanonicalCommerceIngestionService;

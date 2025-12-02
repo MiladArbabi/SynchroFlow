@@ -2,17 +2,36 @@
 
 import { Channel } from 'amqplib';
 import { getQueueChannel } from './queue';
-import db from './db.js';
+import db from './db';
 import { transformPayload } from './transformer';
 import { CanonicalCommerceIngestionService } from 'api-src/services/canonical-commerce-ingestion.service';
 import { OrderNexusCanonicalIngestionService } from 'api-src/services/order-nexus-canonical-ingestion.service';
 
-// Get the specific channel for 'events'
-const eventChannel = getQueueChannel('events');
+// Lazily obtain the specific channel for 'events' so tests can safely mock getQueueChannel
+let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
+function getEventChannel() {
+  if (!eventChannel) {
+    eventChannel = getQueueChannel('events');
+  }
+  return eventChannel as NonNullable<typeof eventChannel>;
+}
 
-// Single shared instance for this process
-const canonicalIngestionService = new CanonicalCommerceIngestionService();
-const orderNexusCanonicalIngestionService = new OrderNexusCanonicalIngestionService();
+// Lazily create service instances so test harness can mock the classes before instantiation
+let canonicalIngestionService: InstanceType<typeof CanonicalCommerceIngestionService> | null = null;
+function getCanonicalIngestionService() {
+  if (!canonicalIngestionService) {
+    canonicalIngestionService = new CanonicalCommerceIngestionService();
+  }
+  return canonicalIngestionService as NonNullable<typeof canonicalIngestionService>;
+}
+
+let orderNexusCanonicalIngestionService: InstanceType<typeof OrderNexusCanonicalIngestionService> | null = null;
+function getOrderNexusCanonicalIngestionService() {
+  if (!orderNexusCanonicalIngestionService) {
+    orderNexusCanonicalIngestionService = new OrderNexusCanonicalIngestionService();
+  }
+  return orderNexusCanonicalIngestionService as NonNullable<typeof orderNexusCanonicalIngestionService>;
+}
 
 // This is the function our test is targeting
 export async function processMessage(msg: { content: Buffer } | null) {
@@ -27,7 +46,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
     if (!staged_event_id) {
       console.error('[worker] Message is missing staged_event_id');
-      eventChannel.ack(msg as any);
+      getEventChannel().ack(msg as any);
       return;
     }
 
@@ -44,7 +63,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
       console.error(
         `[worker] Staged event with id ${staged_event_id} not found.`,
       );
-      eventChannel.ack(msg as any);
+      getEventChannel().ack(msg as any);
       return;
     }
 
@@ -67,7 +86,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
     // For FT0 we assume raw_payload is already in CanonicalOrder shape
     // for Shopify order events. Other event types can be handled separately.
     try {
-      await canonicalIngestionService.insertCanonicalOrder(
+       await getCanonicalIngestionService().insertCanonicalOrder(
         stagedEvent.raw_payload as any, // CanonicalOrder
       );
     } catch (e) {
@@ -83,7 +102,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
     try {
       const canonicalOrder = stagedEvent.raw_payload as any;
       if (canonicalOrder && canonicalOrder.id && stagedEvent.shop_id) {
-        await orderNexusCanonicalIngestionService.enqueueOrderForOrderNexus(
+        await getOrderNexusCanonicalIngestionService().enqueueOrderForOrderNexus(
           stagedEvent.shop_id,
           canonicalOrder.id,
         );
@@ -97,16 +116,16 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }
 
     // 4) Success path → ack
-    eventChannel.ack(msg as any);
+    getEventChannel().ack(msg as any);
   } catch (error) {
     console.error('[worker] Error processing message:', error);
-    eventChannel.nack(msg as any, false, false);
+    getEventChannel().nack(msg as any, false, false);
   }
 }
 
 // This function starts the consumer
 export function startWorker() {
   console.log('[worker] Starting API worker...');
-  eventChannel.consume('events', processMessage, { noAck: false });
+  getEventChannel().consume('events', processMessage, { noAck: false });
   console.log('[worker] Worker started. Waiting for events...');
 }

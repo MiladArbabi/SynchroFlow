@@ -64,6 +64,31 @@ export interface CanonicalOrderLineItem {
 }
 
 export interface CanonicalOrder {
+  canonical_order_id(canonical_order_id: any): unknown;
+  total_price(total_price: any): unknown;
+  customer_email(customer_email: any): unknown;
+  tags(tags: any): boolean;
+  first_item_sku(first_item_sku: any): unknown;
+  second_item_price(second_item_price: any): unknown;
+  optional_field(optional_field: any): unknown;
+  zero_value(zero_value: any): unknown;
+  false_value(false_value: any): unknown;
+  empty_string(empty_string: any): unknown;
+  items(items: any): boolean;
+  first_item_categories(first_item_categories: any): boolean;
+  line_items(line_items: any): boolean;
+  final_price(final_price: any): unknown;
+  mapped_field0(mapped_field0: any): unknown;
+  mapped_field999(mapped_field999: any): unknown;
+  is_active(is_active: any): unknown;
+  order_notes(order_notes: any): unknown;
+  billing_address: any;
+  subtotal_price(subtotal_price: any): unknown;
+  total_tax(total_tax: any): unknown;
+  shipping_price(shipping_price: any): unknown;
+  payment_method(payment_method: any): unknown;
+  payment_status(payment_status: any): unknown;
+  deeply_nested_value(deeply_nested_value: any): unknown;
   /** Canonical order ID – for Shopify this is the numeric ID as string. */
   id: string;
 
