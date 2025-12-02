@@ -4,7 +4,7 @@ dotenv.config();
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
-import db from './db';
+import db from './db.js';
 import userStateRoutes from './api/user-state/user-state.routes';
 import shopifyRoutes from "./api/shopify/shopify.routes";
 
@@ -18,8 +18,8 @@ import {
   calculateCostOfStockout,
   getFulfillmentPipeline,
   calculatePerfectOrderPercentage } from './services/analytics.service';
-import { startWorker } from './worker';
-import { startSyncWorker } from './sync.worker';
+/* import { startWorker } from './worker.js';
+import { startSyncWorker } from './sync.worker.js'; */
 import { seedSandboxData } from './db/seeder';
 import layoutRoutes from "./api/layouts/layout.routes";
 import orderRoutes from "./api/orders/orders.routes";
@@ -71,7 +71,11 @@ app.use(
   })
 );
 
-const port = Number(process.env.PORT) || 8080; 
+// Use 3000 as the dev default so UI (vite) proxy and dev scripts match.
+const port = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '127.0.0.1';
+
+// [REMOVED early listen - use require.main block below]
 
 // Integrate the new layout routes
 app.use("/api/v1/layouts", layoutRoutes);
@@ -513,24 +517,25 @@ app.put('/api/v1/mappings/:id', async (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(port, "0.0.0.0", () => {
+  app.listen(port, "0.0.0.0", async () => {
     console.log(`Server is listening on port ${port}`);
-    // console.log('[DEBUG] Workers are temporarily disabled for debugging.');
 
+    // Start queue worker (lazy import) — fail safely in dev if it can't be resolved
     try {
-      // Start the queue worker
-      startWorker();
-    } catch (err: any) { // Added ': any' to fix the implicit 'any' error
-      console.error('!!! FAILED TO START API WORKER !!!', err);
-      process.exit(1); // Exit with an error
+      const { startWorker } = await import('./worker');
+      await startWorker();
+    } catch (err: any) {
+      console.error('!!! FAILED TO START API WORKER (lazy import) !!!', err && err.message ? err.message : err);
+      // don't exit — keep server running for UI/dev work
     }
 
+    // Start sync worker (lazy import)
     try {
-      // Start the sync worker
-      startSyncWorker();
-    } catch (err: any) { // Added ': any' to fix the implicit 'any' error
-      console.error('!!! FAILED TO START SYNC WORKER !!!', err);
-      process.exit(1); // Exit with an error
+      const { startSyncWorker } = await import('./sync.worker');
+      await startSyncWorker();
+    } catch (err: any) {
+      console.error('!!! FAILED TO START SYNC WORKER (lazy import) !!!', err && err.message ? err.message : err);
+      // don't exit
     }
   });
 }

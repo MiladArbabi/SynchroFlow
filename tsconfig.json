@@ -5,7 +5,6 @@
     "module": "ESNext",
     "skipLibCheck": true,
 
-
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -60,16 +59,24 @@
       // --- INTEGRATION SERVICE ALIASES ---
       "integration-src/*": ["apps/integration-service/src/*"],
 
-      "src/*": ["apps/frontend/src/*"]
+     // --- SHARED PACKAGE ALIAS (@synchroflow/shared) ---
+      "@synchroflow/shared/*": ["modules/shared/src/*"],
+      "@synchroflow/shared": ["modules/shared/src/index.ts"]
     }
   },
   "include": [
     "apps/frontend/src",
     "apps/backend/src",
-    "modules/shared/src"
+    "apps/integration-service/src",
+    "modules/shared/src",
+    "tests/**/*.ts",
+    "tests/**/*.tsx"
   ],
   "exclude": [
     "apps/frontend/src/stories/**"
   ],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "references": [
+    { "path": "./modules/shared/tsconfig.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
 }

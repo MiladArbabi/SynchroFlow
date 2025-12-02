@@ -5,14 +5,15 @@
   "description": "The root of the SynchroFlow monorepo.",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "modules/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "start": "node apps/backend/dist/src/server.js",
     "dev": "concurrently \"npm:dev-api\" \"npm:dev-ui\" \"npm:dev-ai\"",
-    "dev-api": "wait-on tcp:5432 && npm run dev -w api",
-    "dev-ui": "wait-on tcp:3000 && npm run dev -w ui",
+    "dev-api": "wait-on tcp:5432 && npm run dev --workspace=api",
+    "dev-ui": "wait-on tcp:3000 && npm run dev --workspace=ui",
     "dev-ai": "npm run dev -w ai-engine",
     "dev-integration": "npm run dev -w integration-service",
     "db:reset": "docker exec synchroflow_db psql -U sf_user -d postgres -c 'DROP DATABASE IF EXISTS synchroflow_db;' && docker exec synchroflow_db psql -U sf_user -d postgres -c 'CREATE DATABASE synchroflow_db;'",
@@ -22,7 +23,7 @@
     "test:e2e": "npx playwright test --config=playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=playwright.config.ts --ui",
     "storybook": "npm run storybook -w ui",
-    "dev:full": "npm run dev:setup && npm run dev"
+    "dev:full": "npm run dev:setup && npm run dev --workspace=api && npm run dev --workspace=ui && npm run dev --workspace=ai-engine"
   },
   "keywords": [],
   "author": "",
@@ -42,6 +43,7 @@
     "babel-plugin-transform-import-meta": "^2.3.3",
     "babel-preset-vite": "^1.1.3",
     "concurrently": "^9.2.1",
+    "dotenv-cli": "^11.0.0",
     "eventsource": "^4.0.0",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
@@ -63,6 +65,7 @@
     "connect-pg-simple": "^10.0.0",
     "fuse.js": "^7.1.0",
     "posthog-js": "^1.283.0",
-    "react-hooks": "^1.0.1"
+    "react-hooks": "^1.0.1",
+    "tsconfig-paths": "^4.2.0"
   }
 }

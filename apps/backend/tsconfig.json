@@ -1,25 +1,25 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "commonjs",
-    "outDir": "./dist",
-    "rootDir": ".",
-    "strict": true,
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "noImplicitAny": false,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": "./src",
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": ".",
     "paths": {
-      "api-server": ["server.ts"],
-      "api-db": ["db.ts"],
-      "api-types": ["types.ts"],
-      "api-src/*": ["./*"]
-    }
+      "api-src/*": ["../../api-src/*"] 
+    },
+    "sourceMap": true,
+    "declaration": false,
+    "incremental": false,
+    "isolatedModules": false
   },
-  "include": [
-    "src/**/*.ts",      // Include all .ts files in the src directory
-    "knexfile.ts",      // Explicitly include knexfile.ts
-    "migrations/**/*.ts", // Explicitly include all .ts files in migrations
-    "__tests__/**/*.ts"
-, "../../tests/unit/api/integration/shopify.service.test.ts"  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }

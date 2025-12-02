@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const product_costs_controller_1 = require("./product-costs.controller");
+const auth_middleware_1 = require("../../middleware/auth.middleware");
+const router = (0, express_1.Router)();
+router.get('/:platformProductId', auth_middleware_1.authenticateToken, product_costs_controller_1.getProductCostHandler);
+router.post('/:platformProductId', auth_middleware_1.authenticateToken, product_costs_controller_1.upsertProductCostHandler);
+router.delete('/:platformProductId', auth_middleware_1.authenticateToken, product_costs_controller_1.deleteProductCostHandler);
+exports.default = router;
+//# sourceMappingURL=product-costs.routes.js.map

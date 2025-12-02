@@ -1,0 +1,39 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "start": "node -r tsconfig-paths/register --env-file=../../.env dist/src/server.js",
+    "dev": "nodemon --watch src --ext ts --exec \"npm run build && node -r tsconfig-paths/register --env-file=../../.env dist/src/server.js\"",
+    "seed": "knex seed:run --specific=dev_seed.ts",
+    "migrate": "knex migrate:latest",
+    "migrate:make": "knex migrate:make",
+    "migrate:rollback": "knex migrate:rollback"
+  },
+  "dependencies": {
+    "@synchroflow/shared": "1.0.0",
+    "amqp-connection-manager": "^5.0.0",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.19.2",
+    "express-session": "^1.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "pg": "^8.12.0",
+    "tsconfig-paths": "^4.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/crypto-js": "^4.2.2",
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.18.2",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.14.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.2"
+  }
+}

@@ -5,9 +5,18 @@ import crypto from 'crypto';
 import db from './db';
 import { publishToQueue } from './queue';
 import { fetchRecentOrders } from './clients/shopify';
+import { mapShopifyOrderToCanonical } from './mappers/canonical-commerce-mapper';
 
 const app = express();
 const port = process.env.INTEGRATION_PORT || 3001;
+
+// Simple PCD-safe customer hashing for CanonicalOrder mapping in FT0
+const hashCustomerId = (shopId: number, rawCustomerId: string): string => {
+  return crypto
+    .createHash('sha256')
+    .update(`${shopId}:${rawCustomerId}`)
+    .digest('hex');
+};
 
 // --- Shopify HMAC Verification Middleware ---
 // IMPORTANT: This middleware needs to run BEFORE express.json() for the webhook route,
@@ -97,18 +106,34 @@ app.post('/integrations/shopify/start-trial-sync', express.json(), async (req: R
     // 1. Fetch the recent orders from Shopify
     const orders = await fetchRecentOrders(shop, accessToken);
 
-    // 2. Process each order by pushing it into our pipeline
+    // 2. Canonicalize & process each order through the pipeline
+
+    // Import canonical mapper + simple hashing
+    // (top of file, but adding here for diff clarity)
+    const { mapShopifyOrderToCanonical } = await import('./mappers/canonical-commerce-mapper.js'); 
+    const hashCustomerId = (shopId: number, rawCustomerId: string) =>
+      `hashed:${shopId}:${rawCustomerId}`; // FT0 safe stub
+    // 2. Process each order by pushing it into our pipeline (canonicalized)
     for (const order of orders) {
-      // Save the raw payload to our staging table
-      const [stagedEvent] = await db('staged_events').insert({
-        shop_id: shopId,
-        source_platform: 'shopify',
-        event_type: 'orders/create', // We treat each synced order as a 'create' event
-        raw_payload: order,
-      }).returning('id');
+      const canonicalOrder = mapShopifyOrderToCanonical(order, {
+        hashCustomerId,
+      });
+
+      // Save the canonical payload to our staging table
+      const [stagedEvent] = await db('staged_events')
+        .insert({
+          shop_id: shopId,
+          source_platform: 'shopify',
+          event_type: 'orders/create', // canonical order create
+          raw_payload: canonicalOrder,
+        })
+        .returning('id');
 
       // Publish the ID of the staged event to the queue
-      await publishToQueue('events', JSON.stringify({ staged_event_id: stagedEvent.id }));
+      await publishToQueue(
+        'events',
+        JSON.stringify({ staged_event_id: stagedEvent.id }),
+      );
     }
 
     console.log(`[trial-sync] Initiated sync for ${orders.length} orders for shop ${shopId}.`);

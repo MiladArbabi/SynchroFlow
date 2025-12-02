@@ -1,6 +1,6 @@
 // packages/api/src/sync.worker.ts (add integration validation)
 import { getQueueChannel } from './queue';
-import db from './db';
+import db from './db.js';
 import CryptoJS from 'crypto-js';
 import { performInitialSync } from './services/shopify.service';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service';

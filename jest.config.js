@@ -21,6 +21,11 @@ module.exports = {
 
         // integration-service source alias
         '^integration-src/(.*)$': '<rootDir>/apps/integration-service/src/$1',
+
+        // Shared modules alias (so imports like '@synchroflow/shared/...' resolve in tests)
+        '^@synchroflow/shared/(.*)$': '<rootDir>/modules/shared/src/$1',
+        '^@synchroflow/shared$': '<rootDir>/modules/shared/src',
+        '^shared-src$': '<rootDir>/modules/shared/src',
       },
     },
     // Configuration for the frontend package

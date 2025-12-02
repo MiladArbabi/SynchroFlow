@@ -1,0 +1,1 @@
+{"version":3,"file":"integrations.js","sourceRoot":"","sources":["../../src/routes/integrations.ts"],"names":[],"mappings":";;AAAA,0CAA0C;AAC1C,qCAAiC;AAEjC,MAAM,MAAM,GAAG,IAAA,gBAAM,GAAE,CAAC;AAExB,sDAAsD;AACtD,MAAM,CAAC,GAAG,CAAC,GAAG,EAAE,CAAC,GAAG,EAAE,GAAG,EAAE,EAAE;IAC3B,GAAG,CAAC,IAAI,CAAC,EAAE,OAAO,EAAE,wCAAwC,EAAE,CAAC,CAAC;AAClE,CAAC,CAAC,CAAC;AAEH,kBAAe,MAAM,CAAC"}
