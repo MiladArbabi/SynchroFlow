@@ -130,16 +130,13 @@ export interface CanonicalOrder {
 
 // ---- Canonical Product ----
 
-export type CanonicalProductStatus =
-  | 'active'
-  | 'draft'
-  | 'archived'
-  | 'unknown';
+export type CanonicalProductStatus = 'active' | 'draft' | 'archived' | 'unknown';
+export type CanonicalInventoryPolicy = 'continue' | 'deny' | 'unknown';
 
-export type CanonicalInventoryPolicy =
-  | 'continue'
-  | 'deny'
-  | 'unknown';
+/**
+ * Full canonical product shape used by downstream engines.
+ * This is the long-term CNS representation, not necessarily 1:1 with FT0 DB schema.
+ */
 
 export interface CanonicalProduct {
   /** Canonical product ID – platform product id as string. */
@@ -183,4 +180,23 @@ export interface CanonicalProduct {
    * For Shopify: variants.length, or undefined when not provided.
    */
   platformVariantCount?: number;
+}
+
+/**
+ * FT0 ingestion shape for canonical_products upsert.
+ *
+ * This is what the backend worker uses to upsert rows into the canonical_products
+ * table. It is intentionally smaller than CanonicalProduct and includes the
+ * platformVariantId used in the DB unique key.
+ */
+export interface CanonicalProductInput {
+  shopId: number;
+  platform: CanonicalPlatform;
+  platformProductId: string;
+  platformVariantId: string | null;
+  sku: string | null;
+  title: string;
+  status: CanonicalProductStatus;
+  createdAt: string;
+  updatedAt: string;
 }

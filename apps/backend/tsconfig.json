@@ -9,11 +9,15 @@
     "strict": true,
     "noImplicitAny": false,
     "skipLibCheck": true,
+    "allowJs": true,
     "rootDir": "./src",
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "api-src/*": ["../../api-src/*"] 
+      "api-src/*": ["src/*"],
+      "api-db": ["src/db.ts"],
+      "api-types": ["src/types.ts"],
+      "api-server": ["src/server.ts"]
     },
     "sourceMap": true,
     "declaration": false,

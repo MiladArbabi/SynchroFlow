@@ -1,6 +1,9 @@
 // apps/backend/src/services/product-normalization.service.ts
 
-import { CanonicalProductInput } from '@synchroflow/shared/contracts/canonical-product';
+import {
+  CanonicalProductInput,
+  CanonicalProductStatus,
+} from '@synchroflow/shared';
 
 export class ProductNormalizationService {
   /**
@@ -42,17 +45,19 @@ export class ProductNormalizationService {
     return withSku ? withSku.sku : null;
   }
 
-  private mapShopifyStatus(status: string | undefined): 'active' | 'inactive' | 'archived' {
-    if (!status) return 'active';
-    switch (status) {
+   private mapShopifyStatus(status: string | undefined): CanonicalProductStatus {
+    const s = status ?? 'active';
+
+    switch (s) {
       case 'active':
       case 'active_online':
         return 'active';
       case 'archived':
         return 'archived';
       case 'draft':
+        return 'draft';
       default:
-        return 'inactive';
+        return 'unknown';
     }
   }
 }

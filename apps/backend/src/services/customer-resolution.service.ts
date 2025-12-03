@@ -119,7 +119,7 @@ export class CustomerResolutionService {
     resolvedIdentity: UnifiedCustomerProfile['resolved_identity']
   ): number {
     let score = 0;
-    const factors = [];
+    const factors: number[] = [];
 
     // Factor 1: Number of platforms with matching data
     const platformCount = platformData.length;

@@ -1,5 +1,5 @@
 //apps/backend/src/services/canonical-mapping-orchestrator.service.ts
-import { CanonicalOrder } from '@synchroflow/shared/contracts/canonical-commerce';
+import { CanonicalOrder } from '@synchroflow/shared';
 import { get } from 'lodash';
 
 export interface MappingRule {

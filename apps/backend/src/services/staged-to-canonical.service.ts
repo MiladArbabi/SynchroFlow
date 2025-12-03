@@ -27,7 +27,10 @@ export async function mapAndPersistStagedEvent(stagedEvent: {
   const mappingRules = await getMappingRulesForShop(stagedEvent.shop_id);
 
   // 2) Transform raw payload into canonical shape
-  const canonicalOrder = transformPayload(stagedEvent.raw_payload, mappingRules);
+  const canonicalOrder = transformPayload(
+    stagedEvent.raw_payload,
+    mappingRules as any, // boundary between DB mapping rules and transformer contract
+  );
 
   // 3) Persist canonical order into 'orders' canonical table
   // Keep the insert shape generic — tests only assert that an insert + returning occurred.

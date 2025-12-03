@@ -91,7 +91,7 @@ export class UserStateService {
     * Get recommended next steps based on current tier and platforms
     */
    private static getRecommendedNextSteps(tier: OnboardingTier, platforms: PlatformConnection[]) {
-     const steps = [];
+     const steps: string[] = [];
  
      if (tier === 'BASIC_ACCESS') {
        steps.push('Connect Shopify store to unlock order and customer data');

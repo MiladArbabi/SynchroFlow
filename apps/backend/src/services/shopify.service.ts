@@ -276,8 +276,8 @@ async function syncOrderLineItems(
 }
 
 async function syncOrdersAndFulfillments(trx: Knex.Transaction, shopId: number, edges: any[]) {
-  const ordersToInsert = [];
-  const fulfillmentsToInsert = [];
+  const ordersToInsert: any[] = [];
+  const fulfillmentsToInsert: any[] = []; 
 
   for (const { node } of edges) {
     ordersToInsert.push({

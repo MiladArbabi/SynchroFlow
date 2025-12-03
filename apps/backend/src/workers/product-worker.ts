@@ -2,7 +2,7 @@
 
 import db from '../db';
 import { ProductNormalizationService } from '../services/product-normalization.service';
-import { CanonicalProductInput } from '@synchroflow/shared/contracts/canonical-product';
+import { CanonicalProductInput } from '@synchroflow/shared';
 
 export interface ProductIngestionMessage {
   shopId: number;
@@ -20,7 +20,8 @@ export async function processProductMessage(msg: ProductIngestionMessage): Promi
     return;
   }
 
-  const canonicalInput: CanonicalProductInput = normalizer.normalizeShopifyProduct(rawProduct, shopId);
+  const canonicalInput: CanonicalProductInput = 
+    normalizer.normalizeShopifyProduct(rawProduct, shopId);
 
   // Upsert into canonical_products using identity (shop, platform, product, variant)
   await db('canonical_products')

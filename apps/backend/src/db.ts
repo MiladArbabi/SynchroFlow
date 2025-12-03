@@ -1,10 +1,12 @@
+//apps/backend/src/db.ts
 import knex, { Knex } from 'knex';
-// Use this import syntax for files that use `module.exports`
-import * as knexfile from '../knexfile'; 
+// Import compiled knexfile.js so TS doesn't try to treat knexfile.ts as a source file
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const knexfile = require('../knexfile.js') as { [key: string]: Knex.Config };
 
 // Define the shape of the config object
 type KnexConfig = { [key: string]: Knex.Config };
-const config = knexfile as KnexConfig;
+const config: KnexConfig = knexfile;
 
 // 1. Determine the environment
 // The Dockerfile sets this to "production" on Fly.io

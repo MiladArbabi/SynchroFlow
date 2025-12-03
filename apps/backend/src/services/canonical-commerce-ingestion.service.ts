@@ -3,7 +3,7 @@ import db from 'api-src/db';
 import type {
   CanonicalOrder,
   CanonicalOrderLineItem,
-} from '@synchroflow/shared/contracts/canonical-commerce';
+} from '@synchroflow/shared';
 
 /**
  * Service responsible for persisting canonical commerce entities.
