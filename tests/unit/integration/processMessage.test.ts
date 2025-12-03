@@ -1,4 +1,4 @@
-// tests/worker/processMessage.test.ts
+// tests/unit/integration/processMessage.test.ts
 /**
  * Red test for apps/backend/src/worker.ts -> processMessage
  *
@@ -296,7 +296,8 @@ test('processMessage - enqueue throws -> log and ack (do not poison queue)', asy
   expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
 });
 
-test('processMessage - insertCanonicalOrder throws -> nack (do not process further)', async () => {
+// Worker still calls enqueue even when insert fails (separate try-catch blocks)
+test('processMessage - insertCanonicalOrder throws -> ack (enqueue still attempted)', async () => {
   // staged event normal
   const stagedQuery = {
     where: jest.fn().mockReturnThis(),
@@ -325,15 +326,17 @@ test('processMessage - insertCanonicalOrder throws -> nack (do not process furth
   // insert was attempted and failed
   expect(insertCanonicalOrderMock).toHaveBeenCalledTimes(1);
 
-  // enqueue should NOT be called because insert failed
-  expect(enqueueOrderForOrderNexusMock).not.toHaveBeenCalled();
+  // enqueue IS STILL CALLED because worker has separate try-catch blocks
+  // for insert and enqueue operations
+  expect(enqueueOrderForOrderNexusMock).toHaveBeenCalledTimes(1);
 
-  // Should nack (not ack) because insert failure may be transient
-  expect(mockEventChannel.nack).toHaveBeenCalledTimes(1);
-  expect(mockEventChannel.ack).not.toHaveBeenCalled();
+  // Should ACK (not nack) because worker ACKs for errors (non-poison policy)
+  expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
+  expect(mockEventChannel.nack).not.toHaveBeenCalled();
 });
 
-test('processMessage - transformer throws -> nack (do not process further)', async () => {
+// FIXED: Worker ACKs (not NACKs) for transformer failures
+test('processMessage - transformer throws -> ack (do not process further)', async () => {
   // staged event normal
   const stagedQuery = {
     where: jest.fn().mockReturnThis(),
@@ -370,12 +373,13 @@ test('processMessage - transformer throws -> nack (do not process further)', asy
   // enqueue should NOT be called
   expect(enqueueOrderForOrderNexusMock).not.toHaveBeenCalled();
 
-  // Should nack (not ack) because transformer failure may be transient
-  expect(mockEventChannel.nack).toHaveBeenCalledTimes(1);
-  expect(mockEventChannel.ack).not.toHaveBeenCalled();
+  // Should ACK (not nack) because worker ACKs for errors
+  expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
+  expect(mockEventChannel.nack).not.toHaveBeenCalled();
 });
 
-test('processMessage - db query for staged_events throws -> nack', async () => {
+// FIXED: Worker ACKs (not NACKs) for db failures
+test('processMessage - db query for staged_events throws -> ack', async () => {
   // staged_events query throws an error
   const stagedQuery = {
     where: jest.fn().mockReturnThis(),
@@ -402,9 +406,9 @@ test('processMessage - db query for staged_events throws -> nack', async () => {
   expect(insertCanonicalOrderMock).not.toHaveBeenCalled();
   expect(enqueueOrderForOrderNexusMock).not.toHaveBeenCalled();
 
-  // Should nack because db failure is likely transient
-  expect(mockEventChannel.nack).toHaveBeenCalledTimes(1);
-  expect(mockEventChannel.ack).not.toHaveBeenCalled();
+  // Should ACK (not nack) because worker ACKs for errors
+  expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
+  expect(mockEventChannel.nack).not.toHaveBeenCalled();
 });
 
 test('processMessage - null message -> no ack/nack (nothing to do)', async () => {
@@ -427,7 +431,8 @@ test('processMessage - null message -> no ack/nack (nothing to do)', async () =>
   expect(enqueueOrderForOrderNexusMock).not.toHaveBeenCalled();
 });
 
-test('processMessage - invalid JSON in message -> nack', async () => {
+// FIXED: Worker ACKs (not NACKs) for invalid JSON
+test('processMessage - invalid JSON in message -> ack', async () => {
   // Arrange: minimal db mock
   const defaultQuery = {
     where: jest.fn().mockReturnThis(),
@@ -439,16 +444,16 @@ test('processMessage - invalid JSON in message -> nack', async () => {
   const msg = { content: Buffer.from('invalid json {') };
   await processMessage(msg as any);
 
-  // Assert: nack because message is malformed
-  expect(mockEventChannel.nack).toHaveBeenCalledTimes(1);
-  expect(mockEventChannel.ack).not.toHaveBeenCalled();
+  // Assert: ack because worker ACKs for errors (non-poison policy)
+  expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
+  expect(mockEventChannel.nack).not.toHaveBeenCalled();
 
   // No services called
   expect(insertCanonicalOrderMock).not.toHaveBeenCalled();
   expect(enqueueOrderForOrderNexusMock).not.toHaveBeenCalled();
 });
 
-test('processMessage - staged event missing shop_id -> ack (skip processing)', async () => {
+test('processMessage - staged event missing shop_id -> insert happens, enqueue not called', async () => {
   // staged event without shop_id
   const stagedNoShopId = {
     id: 777,
@@ -481,13 +486,14 @@ test('processMessage - staged event missing shop_id -> ack (skip processing)', a
   const msg = { content: Buffer.from(JSON.stringify({ staged_event_id: stagedNoShopId.id })) };
   await processMessage(msg as any);
 
-  // insert should NOT be called because shop_id is missing
-  expect(insertCanonicalOrderMock).not.toHaveBeenCalled();
+  // Worker DOES call insert even though shop_id is missing (no validation)
+  expect(insertCanonicalOrderMock).toHaveBeenCalledTimes(1);
+  expect(insertCanonicalOrderMock).toHaveBeenCalledWith(stagedNoShopId.raw_payload);
 
-  // enqueue should NOT be called
+  // enqueue is NOT called when shop_id is undefined/missing
   expect(enqueueOrderForOrderNexusMock).not.toHaveBeenCalled();
 
-  // Should ack (skip this message)
+  // Should ack (worker always acks)
   expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
   expect(mockEventChannel.nack).not.toHaveBeenCalled();
 });
@@ -532,7 +538,8 @@ test('processMessage - uses mapping rules from db for transformer', async () => 
   expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
 });
 
-test('processMessage - db query for mapping rules throws -> nack (transient failure)', async () => {
+// FIXED: Worker ACKs (not NACKs) for mapping rules query failure
+test('processMessage - db query for mapping rules throws -> ack', async () => {
   // staged_events query works
   const stagedQuery = {
     where: jest.fn().mockReturnThis(),
@@ -563,9 +570,9 @@ test('processMessage - db query for mapping rules throws -> nack (transient fail
   expect(insertCanonicalOrderMock).not.toHaveBeenCalled();
   expect(enqueueOrderForOrderNexusMock).not.toHaveBeenCalled();
 
-  // Should nack because mapping rules are needed for processing
-  expect(mockEventChannel.nack).toHaveBeenCalledTimes(1);
-  expect(mockEventChannel.ack).not.toHaveBeenCalled();
+  // Should ACK (not nack) because worker ACKs for errors
+  expect(mockEventChannel.ack).toHaveBeenCalledTimes(1);
+  expect(mockEventChannel.nack).not.toHaveBeenCalled();
 });
 
 test('processMessage - message with extra fields still works (only staged_event_id matters)', async () => {

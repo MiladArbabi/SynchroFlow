@@ -17,6 +17,8 @@ export type CanonicalPlatform = 'shopify' | string;
 
 // ---- Canonical Order ----
 
+export * from './canonical-product';
+
 export interface CanonicalShippingLine {
   title: string;
   code: string | null;

@@ -118,8 +118,16 @@ export async function processMessage(msg: { content: Buffer } | null) {
     // 4) Success path → ack
     getEventChannel().ack(msg as any);
   } catch (error) {
+    // Mapping / processing failed. Our current policy for FT0:
+    // - Do not poison the queue for mapping/validation/runtime errors.
+    // - Log the error and ACK the message so it is not retried endlessly.
     console.error('[worker] Error processing message:', error);
-    getEventChannel().nack(msg as any, false, false);
+    try {
+      getEventChannel().ack(msg as any);
+    } catch (ackErr) {
+      // If ack fails for some reason, log it (but avoid throwing from the handler).
+      console.error('[worker] Failed to ack failed message:', ackErr);
+    }
   }
 }
 
