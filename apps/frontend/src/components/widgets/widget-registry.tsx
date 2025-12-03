@@ -1,5 +1,6 @@
+/* eslint-disable react-refresh/only-export-components */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// apps/frontend/src/components/widgets/widget-registry.ts
+// apps/frontend/src/components/widgets/widget-registry.tsx
 
 import React from 'react';
 import { Box, Typography } from '@mui/material';
@@ -14,13 +15,20 @@ import { SalesByTrafficSourceWidget } from './SalesByTrafficSourceWidget';
 // Extended definition for widgets in the registry
 export interface WidgetDefinition extends WidgetContentProps {
   // The React component to render for this widget
-  component: React.ComponentType<WidgetContentProps>;
+  // NOTE: widgets can have narrower prop types, so we keep this as `any` to avoid TS mismatch.
+  component: React.ComponentType<any>;
   // Priority for ordering in survival mode
   priority: 'critical' | 'high' | 'medium' | 'low';
   // Whether this widget requires a paid plan
   requiresPaidPlan: boolean;
   // Data processing level required (for cost control)
   dataProcessing: 'light' | 'medium' | 'heavy';
+
+  // Entitlement-driven gating
+  // If set, this widget is only available when the user has this module
+  requiredModuleId?: string;
+  // If set, this widget is only available when the user has this feature flag
+  requiredFlagId?: string;
 }
 
 // User configuration for widget selection
@@ -255,6 +263,9 @@ export const WIDGET_REGISTRY: WidgetRegistry = {
       priority: 'low',
       requiresPaidPlan: true,
       dataProcessing: 'heavy',
+
+      // Entitlement-pinned module ID (backend should grant this only for paid tiers)
+      requiredModuleId: 'advanced-analytics',
     },
   ],
   growth: [],
@@ -262,15 +273,41 @@ export const WIDGET_REGISTRY: WidgetRegistry = {
 };
 
 // Helper function to get widgets for a user
-export function getWidgetsForUser(user: UserWidgetConfig): WidgetDefinition[] {
+export function getWidgetsForUser(
+  user: UserWidgetConfig,
+  entitlements?: {
+    hasModule?: (id: string) => boolean;
+    hasFlag?: (id: string) => boolean;
+  }
+): WidgetDefinition[] {
   const modeWidgets = WIDGET_REGISTRY[user.detected_mode] || [];
 
-  // Filter based on plan: if free, remove paid widgets
-  const filteredWidgets = modeWidgets.filter((widget) =>
-    user.plan === 'free' ? !widget.requiresPaidPlan : true
-  );
+  // 1) Plan-based filtering: free plan cannot see paid widgets
+  const filteredWidgets = modeWidgets
+    .filter((widget) =>
+      user.plan === 'free' ? !widget.requiresPaidPlan : true
+    )
+    .filter((widget) => {
+      // 2) Entitlement-based gating (if helpers are provided)
 
-  // Sort by priority (critical first) for survival mode
+      // If this widget requires a module entitlement, enforce it
+      if (widget.requiredModuleId && entitlements?.hasModule) {
+        if (!entitlements.hasModule(widget.requiredModuleId)) {
+          return false;
+        }
+      }
+
+      // If this widget requires a feature flag, enforce it
+      if (widget.requiredFlagId && entitlements?.hasFlag) {
+        if (!entitlements.hasFlag(widget.requiredFlagId)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+  // 3) Sort by priority (critical first) for survival mode
   if (user.detected_mode === 'survival') {
     const priorityOrder: Record<WidgetDefinition['priority'], number> = {
       critical: 0,
@@ -286,3 +323,4 @@ export function getWidgetsForUser(user: UserWidgetConfig): WidgetDefinition[] {
 
   return filteredWidgets;
 }
+

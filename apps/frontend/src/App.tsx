@@ -7,10 +7,13 @@ import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntegrationProvider } from 'contexts/IntegrationContext';
 import { DashboardStateProvider } from "contexts/DashboardStateContext";
+import { EntitlementsProvider } from 'contexts/EntitlementsContext';
 
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import routes from "./routes";
+
+
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
@@ -83,7 +86,8 @@ export default function App() {
   <QueryClientProvider client={queryClient}> 
     <DashboardStateProvider>
       <IntegrationProvider>
-        <ThemeCustomization>
+        <EntitlementsProvider>
+          <ThemeCustomization>
           <Routes>
             {/* Render the sign-in route standalone */}
             {routes
@@ -108,6 +112,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/dashboard" />} />
           </Routes>
         </ThemeCustomization>
+       </EntitlementsProvider>
      </IntegrationProvider>
     </DashboardStateProvider>
   </QueryClientProvider> 

@@ -5,10 +5,12 @@ import { useMemo } from 'react';
 import { useDashboardState } from '../../contexts/DashboardStateContext'; 
 import { useAuth } from '../../contexts/AuthContext';
 import { getWidgetsForUser, UserWidgetConfig } from './widget-registry';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 
 export function useWidgetRegistry() {
   const { userState, currentView, isLoading: dashboardLoading, error } = useDashboardState();
   const { user: authUser } = useAuth();
+  const { hasModule, hasFlag, isLoading: entitlementsLoading } = useEntitlements();
 
   const userConfig: UserWidgetConfig | null = useMemo(() => {
     if (!userState?.user) {
@@ -26,12 +28,16 @@ export function useWidgetRegistry() {
       return [];
     }
 
-    return getWidgetsForUser(userConfig);
-  }, [userConfig]);
+    // Pass entitlement helpers so registry can enforce gating
+    return getWidgetsForUser(userConfig, {
+      hasModule,
+      hasFlag,
+    });
+  }, [userConfig, hasModule, hasFlag]);
 
   return {
     widgets,
-    isLoading: dashboardLoading,
+    isLoading: dashboardLoading || entitlementsLoading,
     error,
   };
 }

@@ -29,6 +29,7 @@ import productsRoutes from "./api/products/products.routes";
 import authRoutes from "./api/auth/auth.routes";
 import dashboardRoutes from "./api/dashboard/dashboard.routes";
 import productCostsRoutes from "./api/product-costs/product-costs.routes";
+import { getMyEntitlements } from './api/entitlements/entitlements.controller';
 
 // OPS-INTEL Imports
 import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
@@ -89,6 +90,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/user-state", userStateRoutes);
 app.use("/api/v1/shopify", shopifyRoutes);
+app.get('/api/v1/entitlements/me', getMyEntitlements);
 
 // --- Routes ---
 app.get('/', (req, res) => {
