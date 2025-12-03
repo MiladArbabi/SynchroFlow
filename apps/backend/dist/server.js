@@ -42,7 +42,7 @@ dotenv_1.default.config();
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const express_1 = __importDefault(require("express"));
 const express_session_1 = __importDefault(require("express-session"));
-const db_js_1 = __importDefault(require("./db.js"));
+const db_1 = __importDefault(require("./db"));
 const user_state_routes_1 = __importDefault(require("./api/user-state/user-state.routes"));
 const shopify_routes_1 = __importDefault(require("./api/shopify/shopify.routes"));
 const koreSearch_1 = require("./services/koreSearch");
@@ -70,7 +70,7 @@ app.use((0, cookie_parser_1.default)());
 // --- TO FIX FLY DEPLOY ---
 const PGStore = (0, connect_pg_simple_1.default)(express_session_1.default);
 const sessionStore = new PGStore({
-    conObject: db_js_1.default.client.config.connection, // <-- Give it the connection object
+    conObject: db_1.default.client.config.connection, // <-- Give it the connection object
     tableName: 'user_sessions',
 });
 // --- 3. INITIALIZE AND START THE KORE ENGINE ---
@@ -131,7 +131,7 @@ app.get('/v1/inventory/:sku', async (req, res) => {
     const { sku } = req.params;
     const countryCode = req.query.countryCode || null;
     try {
-        let query = (0, db_js_1.default)('inventory_truth').where({ sku });
+        let query = (0, db_1.default)('inventory_truth').where({ sku });
         if (countryCode) {
             query = query.andWhere({ country_code: countryCode });
         }
@@ -148,7 +148,7 @@ app.get('/v1/inventory/:sku', async (req, res) => {
 });
 app.get('/v1/inventory', async (req, res) => {
     try {
-        const inventory = await (0, db_js_1.default)('inventory_truth').select('*');
+        const inventory = await (0, db_1.default)('inventory_truth').select('*');
         res.json(inventory);
     }
     catch (error) {
@@ -167,7 +167,7 @@ app.get('/api/v1/mappings', async (req, res) => {
         if (!shop_id) {
             return res.status(400).json({ error: 'shop_id query parameter is required.' });
         }
-        const rules = await (0, db_js_1.default)('data_mapping_rules').where({ shop_id: Number(shop_id) });
+        const rules = await (0, db_1.default)('data_mapping_rules').where({ shop_id: Number(shop_id) });
         res.status(200).json(rules);
     }
     catch (error) {
@@ -206,7 +206,7 @@ app.get('/api/v1/kore/subscribe', (req, res) => {
 app.get('/api/v1/kore/health', async (req, res) => {
     try {
         // 1. Check database connection
-        await db_js_1.default.raw('SELECT 11 AS result');
+        await db_1.default.raw('SELECT 11 AS result');
         // 2. Add more checks later (e.g., SSE emitter health)
         res.status(200).json({
             status: 'healthy',
@@ -231,7 +231,7 @@ app.post('/v1/inventory', async (req, res) => {
             quantity_reserved: 0,
             quantity_buffer: 0
         };
-        const [createdItem] = await (0, db_js_1.default)('inventory_truth').insert(newItemForDb).returning('*');
+        const [createdItem] = await (0, db_1.default)('inventory_truth').insert(newItemForDb).returning('*');
         res.status(201).json(createdItem);
     }
     catch (error) {
@@ -247,7 +247,7 @@ app.post('/v1/inventory', async (req, res) => {
 app.post('/v1/shops', async (req, res) => {
     try {
         const newShop = req.body;
-        const [createdShop] = await (0, db_js_1.default)('shops').insert(newShop).returning('*');
+        const [createdShop] = await (0, db_1.default)('shops').insert(newShop).returning('*');
         res.status(201).json(createdShop);
     }
     catch (error) {
@@ -267,7 +267,7 @@ app.post('/v1/data/sales', async (req, res) => {
         if (!salesData.shop_id || !salesData.sku || !salesData.sale_date || !salesData.quantity_sold) {
             return res.status(400).json({ error: 'shop_id, sku, sale_date, and quantity_sold are required.' });
         }
-        const [loggedSale] = await (0, db_js_1.default)('historical_sales').insert(salesData).returning('*');
+        const [loggedSale] = await (0, db_1.default)('historical_sales').insert(salesData).returning('*');
         res.status(201).json(loggedSale);
     }
     catch (error) {
@@ -286,7 +286,7 @@ app.post('/v1/data/product-costs', async (req, res) => {
         if (!costData.sku || !costData.purchase_price || !costData.landed_cost_per_unit) {
             return res.status(400).json({ error: 'sku, purchase_price, and landed_cost_per_unit are required.' });
         }
-        const [loggedCost] = await (0, db_js_1.default)('product_costs').insert(costData).returning('*');
+        const [loggedCost] = await (0, db_1.default)('product_costs').insert(costData).returning('*');
         res.status(201).json(loggedCost);
     }
     catch (error) {
@@ -302,7 +302,7 @@ app.post('/v1/data/product-costs', async (req, res) => {
 app.post('/v1/transactions', async (req, res) => {
     try {
         const transactionData = req.body;
-        const [loggedTransaction] = await (0, db_js_1.default)('financial_transactions').insert(transactionData).returning('*');
+        const [loggedTransaction] = await (0, db_1.default)('financial_transactions').insert(transactionData).returning('*');
         res.status(201).json(loggedTransaction);
     }
     catch (error) {
@@ -322,7 +322,7 @@ app.post('/api/v1/mappings', async (req, res) => {
         if (!newRule.shop_id || !newRule.source_platform || !newRule.source_field_path || !newRule.target_field_path) {
             return res.status(400).json({ error: 'Missing required fields for mapping rule.' });
         }
-        const [createdRule] = await (0, db_js_1.default)('data_mapping_rules').insert(newRule).returning('*');
+        const [createdRule] = await (0, db_1.default)('data_mapping_rules').insert(newRule).returning('*');
         res.status(201).json(createdRule);
     }
     catch (error) {
@@ -338,7 +338,7 @@ app.post('/api/v1/mappings', async (req, res) => {
 app.delete('/api/v1/mappings/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const deletedCount = await (0, db_js_1.default)('data_mapping_rules').where({ id: Number(id) }).del();
+        const deletedCount = await (0, db_1.default)('data_mapping_rules').where({ id: Number(id) }).del();
         if (deletedCount === 0) {
             return res.status(404).json({ error: 'Mapping rule not found.' });
         }
@@ -461,7 +461,7 @@ app.put('/v1/inventory/:sku', async (req, res) => {
     try {
         const { sku } = req.params;
         const { quantity_available } = req.body;
-        const updatedCount = await (0, db_js_1.default)('inventory_truth')
+        const updatedCount = await (0, db_1.default)('inventory_truth')
             .where({ sku: sku })
             .update({
             quantity_available: quantity_available,
@@ -469,7 +469,7 @@ app.put('/v1/inventory/:sku', async (req, res) => {
         if (updatedCount === 0) {
             return res.status(404).json({ error: 'SKU not found' });
         }
-        const [updatedItem] = await (0, db_js_1.default)('inventory_truth').where({ sku: sku }).select('*');
+        const [updatedItem] = await (0, db_1.default)('inventory_truth').where({ sku: sku }).select('*');
         res.json(updatedItem);
     }
     catch (error) {
@@ -486,11 +486,11 @@ app.put('/api/v1/mappings/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        const updatedCount = await (0, db_js_1.default)('data_mapping_rules').where({ id: Number(id) }).update(updates);
+        const updatedCount = await (0, db_1.default)('data_mapping_rules').where({ id: Number(id) }).update(updates);
         if (updatedCount === 0) {
             return res.status(404).json({ error: 'Mapping rule not found.' });
         }
-        const [updatedRule] = await (0, db_js_1.default)('data_mapping_rules').where({ id: Number(id) });
+        const [updatedRule] = await (0, db_1.default)('data_mapping_rules').where({ id: Number(id) });
         res.status(200).json(updatedRule);
     }
     catch (error) {

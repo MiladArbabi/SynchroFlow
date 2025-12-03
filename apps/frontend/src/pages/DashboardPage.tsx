@@ -118,28 +118,29 @@ export const DashboardPage = ({
 
   return (
     <>
-    {/* --- AHA-FLOW: Render Modals --- */}
-    {/* 6. Conditionally render the banner */}
-       <ConnectStoreModal
+      {/* --- AHA-FLOW: Render Modals --- */}
+      {/* 6. Conditionally render the banner */}
+      <ConnectStoreModal
         isOpen={isConnectModalOpen}
         onClose={() => setIsConnectModalOpen(false)}
       />
+
       <ConnectionErrorModal
         open={!!connectionError}
         error={connectionError}
         onClose={() => setConnectionError(null)}
         onRetry={handleRetry}
       />
-      <DataSyncingModal 
-        open={isSyncModalOpen} 
-        onClose={handleSyncModalClose} 
+      <DataSyncingModal
+        open={isSyncModalOpen}
+        onClose={handleSyncModalClose}
         data-testid="data-syncing-modal"
       />
-      
+
       <DashboardStateManager onConnectStore={handleOpenConnectModal}>
         {/* Widget system integration */}
         <WidgetLayoutWithRegistry />
       </DashboardStateManager>
-      </>
+    </>
   );
 };
