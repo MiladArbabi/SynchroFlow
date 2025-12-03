@@ -4,7 +4,7 @@ dotenv.config();
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
-import db from './db.js';
+import db from './db';
 import userStateRoutes from './api/user-state/user-state.routes';
 import shopifyRoutes from "./api/shopify/shopify.routes";
 

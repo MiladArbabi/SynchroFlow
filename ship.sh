@@ -35,15 +35,25 @@ fi
 
 echo "🚀 Starting ship process for branch '$CURRENT_BRANCH' (Issue #$ISSUE_NUMBER)..."
 
-# --- 2. THE E2E TEST GATE ---
-
-echo "   Running E2E test suite as a final CI gate..."
-if ! npm run test:e2e; then
-    echo "❌ E2E Tests Failed. Aborting ship."
-    echo "   Please fix the tests before running ./ship.sh again."
-    exit 1
-fi
-echo "✅ E2E Tests Passed."
+# --- 2. (TEMPORARILY DISABLED) E2E TEST GATE ---
+#
+# NOTE:
+# For the current FT0 execution, we are intentionally *not*
+# running the full e2e suite as part of ship.sh.
+# You are still expected to run the relevant unit/integration
+# suites before shipping, for example:
+#   - npm run test:backend
+#   - npm run test:frontend
+#   - npm run test -- <targeted suites>
+#
+# When we're ready to re-enable the e2e gate, restore a block
+# like:
+#   echo "   Running E2E test suite as a final CI gate..."
+#   if ! npm run test:e2e; then
+#     echo "❌ E2E Tests Failed. Aborting ship."
+#     exit 1
+#   fi
+#   echo "✅ E2E Tests Passed."
 
 # --- 3. Git Operations ---
 

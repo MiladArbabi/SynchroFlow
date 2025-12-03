@@ -7,7 +7,7 @@ exports.processSyncJob = processSyncJob;
 exports.startSyncWorker = startSyncWorker;
 // packages/api/src/sync.worker.ts (add integration validation)
 const queue_1 = require("./queue");
-const db_js_1 = __importDefault(require("./db.js"));
+const db_1 = __importDefault(require("./db"));
 const crypto_js_1 = __importDefault(require("crypto-js"));
 const shopify_sync_orchestrator_service_1 = require("./services/shopify-sync-orchestrator.service");
 // --- Helper function for decryption ---
@@ -67,7 +67,7 @@ async function processSyncJob(msg) {
         }
         console.log(`[sync.worker] Received sync job for integration ID: ${integrationId}`);
         // Fetch the integration to get the token
-        const integration = await (0, db_js_1.default)('integrations')
+        const integration = await (0, db_1.default)('integrations')
             .where({ id: integrationId })
             .first();
         // Validate integration data
@@ -75,7 +75,7 @@ async function processSyncJob(msg) {
         if (!validation.isValid) {
             console.error(`[sync.worker] Invalid integration data: ${validation.error}`);
             // Update integration status to reflect the error
-            await (0, db_js_1.default)('integrations').where({ id: integrationId }).update({
+            await (0, db_1.default)('integrations').where({ id: integrationId }).update({
                 sync_status: 'FAILED',
                 sync_last_error: validation.error,
             });
@@ -104,7 +104,7 @@ async function processSyncJob(msg) {
     catch (error) {
         // --- START: Pizza Dropped Reporting ---
         if (integrationId) {
-            await (0, db_js_1.default)('integrations').where({ id: integrationId }).update({
+            await (0, db_1.default)('integrations').where({ id: integrationId }).update({
                 sync_status: 'FAILED',
                 sync_last_error: error.message || 'An unknown sync error occurred.',
             });

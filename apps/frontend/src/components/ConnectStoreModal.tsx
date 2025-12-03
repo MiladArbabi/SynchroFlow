@@ -301,7 +301,13 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
   }
 
   return (
-    <Dialog open={isOpen} onClose={handleClose} maxWidth="sm" fullWidth data-testid="connect-store-modal">
+    <Dialog
+      open={isOpen}
+      onClose={handleClose}
+      maxWidth="sm"
+      fullWidth
+      data-testid="connect-store-modal-open"
+    >
       <form onSubmit={handleSubmit}>
         <DialogTitle>{dialogTitle}</DialogTitle>
         <DialogContent>{dialogContent}</DialogContent>

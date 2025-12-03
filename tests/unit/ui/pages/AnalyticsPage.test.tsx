@@ -2,9 +2,10 @@ import React from 'react';
 import { screen } from '@testing-library/react';
 import renderWithProviders from 'test-utils';
 import AnalyticsPage from 'pages/AnalyticsPage';
+import MasterPanel from 'ui-component/MasterPanel';
 
 // Mock the MasterPanel component
-jest.mock('../../../apps/frontend/src/ui-component/MasterPanel/index.tsx', () => {
+jest.mock('ui-component/MasterPanel', () => {
   return {
     __esModule: true,
     default: ({ children, title }: { children: React.ReactNode; title: string }) => (

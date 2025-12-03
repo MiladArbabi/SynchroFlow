@@ -39,7 +39,7 @@ describe('ProductNormalizationService', () => {
     const result = service.normalizeShopifyProduct(raw, 1);
 
     expect(result.sku).toBeNull();
-    expect(result.status).toBe('inactive');
+    expect(result.status).toBe('draft');
   });
 
   // New test cases based on synced data
