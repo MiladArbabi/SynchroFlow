@@ -1,155 +1,408 @@
-# Developer Onboarding – Adding a New Entitlement (Module or Flag)
+# 🚀 Entitlements Onboarding Guide – v2 (Developer Playbook)
 
-This guide walks you through the **exact steps** required to add a new entitlement to LaSyncro, from backend → frontend → UI.
+This guide teaches you **exactly how to introduce new entitlements** — modules, flags, routes, widgets — into SynchroFlow.
 
-This is a mandatory workflow to keep the entitlements contract consistent.
+It reflects the final, stable architecture delivered in:
 
----
-
-# 🧩 Step 1 — Add Entitlement to Backend Schema
-
-Entitlements are stored in:
-
-shop_module_entitlements
-
-markdown
-Copy code
-
-Each row includes:
-
-- `shop_id`
-- `module_id`
-- `flag_id`
-- timestamps
-
-To add a **new module** (recommended):
-
-1. Pick a unique identifier:
-order-insights
-advanced-analytics
-skuos_pro
-
-sql
-Copy code
-2. Add it into:
-EntitlementsService.grantDefaultFreeTierForShop
-
-vbnet
-Copy code
-ONLY if it belongs to FT0.
-
-If it's **paid-only**, DO NOT add it to FT0.
-
-To add a **new flag**:
-
-1. Choose a clean, namespaced identifier:
-view_margins_panel
-use_l4_predictions
-show_skuos_cluster_heatmap
-
-yaml
-Copy code
-2. Insert into entitlements for any shop that should have it.
-
-Flags always follow the same storage path as modules.
+* #878 — OAuth + FT0 module grant
+* #818 — Entitlement service
+* #883 — Route/nav gating
+* Final widget gating pipeline
 
 ---
 
-# 🧠 Step 2 — Backend Entitlements Logic
+# 1. Mental Model: One Source of Truth
 
-If adding capabilities to Free Tier:
+All access control flows from one structure:
 
 ```ts
-await db('shop_module_entitlements').insert({
-shop_id,
-module_id: 'advanced-analytics',
-flag_id: null
-});
-Or flags:
-
-ts
-Copy code
-await db('shop_module_entitlements').insert({
-  shop_id,
-  module_id: null,
-  flag_id: 'view_margins_panel'
-});
-Do this in either:
-
-EntitlementsService.grantDefaultFreeTierForShop
-or
-
-A plan upgrade service you create later.
-
-🌐 Step 3 — Add to Entitlements API (Optional)
-GET /api/v1/entitlements/me requires no change unless you add additional fields.
-Modules and flags automatically flow through.
-
-🖥️ Step 4 — Add Frontend Gating
-Widgets or features can declare:
-
-ts
-Copy code
-requiredModuleId?: string;
-requiredFlagId?: string;
-This ensures:
-
-The widget or component is hidden unless the shop has the entitlement.
-
-No ad-hoc checks scattered around the UI.
-
-Example widget gating:
-
-ts
-Copy code
-{
-  id: 'advanced-analytics',
-  component: AdvancedAnalyticsWidget,
-  requiresPaidPlan: true,
-  requiredModuleId: 'advanced-analytics'
+EntitlementSnapshot = {
+  modules: string[],
+  flags: string[],
 }
-Example feature gating:
+```
 
-ts
-Copy code
-if (!hasFlag('view_margins_panel')) return null;
-📦 Step 5 — Add Tests
-Unit test locations:
+The **backend** grants entitlements.
+The **frontend** consumes entitlements to:
+
+* Show/hide navigation
+* Allow/deny routes
+* Show/hide widgets
+* Unlock premium UX
+
+**You never enforce entitlements inside individual components.**
+They declare their requirements; the entitlement engine does the rest.
+
+---
+
+# 2. Adding a New MODULE (Backend → Frontend)
+
+A **module** unlocks major capabilities such as analytics, finances, SKU intelligence, etc.
+
+### Step 1 — Add the module to backend constants
+
+Location:
+
+```
+apps/backend/src/services/entitlements.service.ts
+```
+
+Modify:
+
+```ts
+export const DEFAULT_FREE_TIER_MODULES = [...];
+
+export type KnownModules =
+  | "core-dashboard"
+  | "core-orders"
+  | "core-products"
+  | "core-customers"
+  | "analytics"
+  | "finances"
+  | "sku-os"
+  | "echo-hub"
+  | "advanced-analytics"; // <-- Add here
+```
+
+### Step 2 — Add upgrade logic (optional)
+
+If module is purchased programmatically:
+
+```ts
+await EntitlementsService.grantModule(shopId, "advanced-analytics");
+```
+
+### Step 3 — Add module-row insertion on upgrade
+
+In future billing hooks:
+
+```
+INSERT INTO shop_module_entitlements (shop_id, module_id)
+```
+
+### Step 4 — Add the module to frontend routing (optional)
+
+In `routes.tsx`:
+
+```ts
+{
+  key: "analytics",
+  route: "/analytics",
+  component: <AnalyticsPage />,
+  requiredModuleId: "analytics",
+}
+```
+
+### Step 5 — Add module gating to widgets (if applicable)
+
+In widget registry:
+
+```ts
+{
+  id: "advanced-analytics",
+  component: AdvancedAnalyticsWidget,
+  requiredModuleId: "advanced-analytics"
+}
+```
+
+### Step 6 — Add tests
 
 Backend:
 
-swift
-Copy code
-tests/unit/api/entitlements/
+```
+tests/unit/services/entitlements.service.test.ts
+```
+
 Frontend:
 
-swift
-Copy code
+```
+tests/unit/ui/components/ProtectedRoute.entitlements.test.tsx
+tests/unit/ui/layout/MenuList.entitlements.test.tsx
 tests/unit/ui/components/widget-registry.test.tsx
-Test both:
+```
 
-Without entitlement → hidden
-With entitlement → visible
-🚀 Step 6 — Release
-Update any docs in this folder.
+---
 
-Run full test suite.
+# 3. Adding a New FLAG (Feature-level Rollout)
 
-Use ./ship.sh with the issue number.
+Flags control smaller feature rollouts (beta features, experiments).
 
-Create a migration plan if adding a new required entitlement.
+### Step 1 — Add flag identifier
 
-✔️ Summary
-To add a new entitlement:
+No backend enum required — flags are strings.
 
-Add to backend entitlements data.
+Just document them:
 
-Add grant logic (FT0 or paid plan).
+```
+advanced-returns
+beta-reorder-predictions
+marketing-experiments
+```
 
-UI gating with requiredModuleId / requiredFlagId.
+### Step 2 — Add flag gating to component/route/widget
 
-Write tests for both visible + hidden states.
+Example widget:
 
-Update documentation.
+```ts
+{
+  id: "reorder-predictions",
+  requiredFlagId: "beta-reorder-predictions"
+}
+```
 
-Follow these steps every time — the entitlements system is a contract, not a suggestion.
+Example route:
+
+```ts
+{
+  route: "/inventory/forecast",
+  requiredFlagId: "beta-reorder-predictions"
+}
+```
+
+### Step 3 — Grant the flag to a shop (backend)
+
+```
+INSERT INTO entitlement_flags (shop_id, flag_id)
+VALUES (123, 'beta-reorder-predictions');
+```
+
+### Step 4 — Tests
+
+Ensure gating works as expected:
+
+```
+widget-registry.test.tsx
+ProtectedRoute.entitlements.test.tsx
+```
+
+---
+
+# 4. Adding a New GATED ROUTE
+
+Routes live in:
+
+```
+apps/frontend/src/routes.tsx
+```
+
+### Step 1 — Add metadata:
+
+```ts
+{
+  key: "finances",
+  route: "/finances",
+  component: <FinancesPage />,
+  requiredModuleId: "finances",
+}
+```
+
+### Step 2 — Navigation automatically respects this
+
+`SidenavContent → MenuList` filters routes using:
+
+```
+filterRoutesByEntitlements()
+```
+
+### Step 3 — Route protection automatically enforced
+
+Because `ProtectedRoute` checks:
+
+```
+isRouteEnabled(route, entitlements)
+```
+
+No extra code required.
+
+---
+
+# 5. Adding a New GATED WIDGET
+
+All widgets are declared in:
+
+```
+apps/frontend/src/components/widgets/widget-registry.tsx
+```
+
+### Step 1 — Add the widget entry:
+
+```ts
+{
+  id: "profit-forecast",
+  title: "Profit Forecasting",
+  component: ProfitForecastWidget,
+  intelligenceLevel: "L2",
+  priority: "high",
+  currentValue: 0,
+  format: "currency",
+  isLoading: false,
+  isEmpty: false,
+  businessContext: {...},
+  metricConfig: {...},
+
+  requiresPaidPlan: true,
+  requiredModuleId: "finances",     // Module-based gating
+  requiredFlagId: "beta-profits"    // Optional fine-grain gating
+}
+```
+
+### Step 2 — Nothing else required
+
+Widget gating happens automatically in:
+
+```
+useWidgetRegistry()
+```
+
+### Step 3 — Add tests
+
+```
+widget-registry.test.tsx
+```
+
+---
+
+# 6. Updating FT0 Entitlements
+
+FT0 grants are defined in:
+
+`EntitlementsService.grantDefaultFreeTierForShop()`
+
+To change what a free store gets:
+
+Modify:
+
+```ts
+DEFAULT_FREE_TIER_MODULES
+```
+
+### Common adjustments:
+
+* Add support for SKU OS (future)
+* Remove modules from free tier
+* Add promotional temporary flags
+
+All UI will update automatically.
+
+---
+
+# 7. Debugging Entitlements
+
+Run:
+
+```
+GET /api/v1/entitlements/me
+```
+
+Verify:
+
+* Correct modules
+* Correct flags
+* Correct shopId
+
+In the frontend, log output:
+
+```ts
+console.log(useEntitlements());
+```
+
+If gating is incorrect:
+
+* Route not appearing → check `requiredModuleId`
+* Widget not appearing → check widget registry entry
+* Navigation missing item → check `allowedRoutes`
+
+Most errors stem from:
+
+* Typos in module/flag identifiers
+* Module granted to wrong shopId
+* Route key not matching route path
+
+---
+
+# 8. Common Patterns
+
+### Pattern: Soft-launch a feature via flag
+
+```ts
+requiredFlagId: "beta-new-feature"
+```
+
+Allows per-shop rollout without affecting paid plans.
+
+---
+
+### Pattern: Multi-level gating
+
+A feature that requires both a paid plan AND a module:
+
+```ts
+requiresPaidPlan: true
+requiredModuleId: "finances"
+```
+
+---
+
+### Pattern: Mode-specific widget availability
+
+Handled in registry by grouping widgets under:
+
+```
+survival / growth / architect
+```
+
+Widgets outside the detected mode are automatically excluded.
+
+---
+
+# 9. Full Capability Pipeline (Updated Diagram)
+
+```
+         ┌───────────────────────┐
+         │ shop_module_entitlements
+         │ entitlement_flags
+         └────────────┬──────────┘
+                      ▼
+         ┌──────────────────────────┐
+         │ EntitlementsService      │
+         │ getForUser()             │
+         └────────────┬─────────────┘
+                      ▼
+         ┌──────────────────────────┐
+         │ /api/v1/entitlements/me │
+         └────────────┬─────────────┘
+                      ▼
+         ┌──────────────────────────┐
+         │ EntitlementsProvider     │
+         │ {modules, flags}         │
+         └──────┬────────┬─────────┘
+                │        │
+                ▼        ▼
+      ┌────────────┐   ┌──────────────────┐
+      │ Protected   │   │ useWidgetRegistry│
+      │ Route       │   │ widget gating    │
+      └────────────┘   └──────────────────┘
+                │
+                ▼
+        ┌──────────────────┐
+        │ Sidenav/MenuList │
+        │ route filtering  │
+        └──────────────────┘
+```
+
+---
+
+# 10. Summary
+
+Adding new capabilities is now:
+
+* Simple
+* Declarative
+* Consistent across UI layers
+* Backed by tests
+* Safe for FT0 and premium users
+* Future-proof for new modules and flags
+
+The entitlement framework is complete, stable, and ready for long-term evolution.
+
+---

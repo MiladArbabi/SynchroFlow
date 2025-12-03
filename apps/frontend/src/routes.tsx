@@ -1,11 +1,10 @@
 // apps/frontend/src/routes.tsx
+/* eslint-disable react-refresh/only-export-components */
 import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import LoginPage from "./pages/authentication/LoginPage";
 import RegisterPage from "./pages/authentication/RegisterPage";
-import ProductsPage from "./pages/ProductsPage";
-import { ProductIntelligencePage } from "./pages/ProductIntelligencePage";
-import DataMapper from "./components/DataMapper/DataMapper";
+import ProductsPage from "./pages/ProductsPage"; 
 import Order360Page from "./pages/Order360Page";
 import OrdersPage from "./pages/OrdersPage";
 import EchoHubPage from "./pages/EchoHubPage";
@@ -16,7 +15,26 @@ import { Product360Page } from "./pages/Product360Page";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import FinancesPage from "./pages/FinancesPage";
 
-const routes = [
+// ✅ Route shape with entitlement metadata
+export interface RouteConfig {
+  type: "collapse" | "route";
+  name: string;
+  key: string;
+  icon?: string;
+  route: string;
+  component: React.ReactNode;
+
+  // --- Entitlement metadata (Slice 1) ---
+  requiredModuleId?: string;
+  requiredFlagId?: string;
+}
+
+export interface EntitlementSnapshot {
+  modules: string[]; // e.g. ['core-dashboard', 'orders-core']
+  flags: string[];   // e.g. ['beta-analytics']
+}
+
+const routes: RouteConfig[] = [
   {
     type: "collapse",
     name: "Dashboard",
@@ -24,42 +42,47 @@ const routes = [
     icon: "🏠",
     route: "/dashboard",
     component: <DashboardPage children={<></>} handleSidenavToggle={() => {}} />,
+    // Core experience – no module gating
   },
   {
-   type: "collapse",
-   name: "Analytics",
-   key: "analytics",
-   icon: "📈",
-   route: "/analytics",
-   component: <AnalyticsPage />,
- },
- {
-   type: "collapse",
-   name: "Finances",
-   key: "finances",
-   icon: "💰",
-   route: "/finances",
-   component: <FinancesPage />,
- },
+    type: "collapse",
+    name: "Analytics",
+    key: "analytics",
+    icon: "📈",
+    route: "/analytics",
+    component: <AnalyticsPage />,
+    // 🔐 Advanced: requires analytics module
+    requiredModuleId: "analytics",
+  },
+  {
+    type: "collapse",
+    name: "Finances",
+    key: "finances",
+    icon: "💰",
+    route: "/finances",
+    component: <FinancesPage />,
+    // 🔐 Advanced: requires finances module
+    requiredModuleId: "finances",
+  },
   {
     type: "route",
     name: "Order Details",
-    key: "order-details", 
-    route: "/orders/:id", // More specific route comes FIRST
+    key: "order-details",
+    route: "/orders/:id",
     component: <Order360Page />,
   },
   {
     type: "collapse",
     name: "Orders",
     key: "orders",
-    route: "/orders", // General route comes AFTER specific route
+    route: "/orders",
     component: <OrdersPage />,
   },
   {
     type: "route",
-    name: "Customer Details", 
+    name: "Customer Details",
     key: "customer-details",
-    route: "/customers/:id", // Specific first
+    route: "/customers/:id",
     component: <Customer360Page />,
   },
   {
@@ -70,9 +93,9 @@ const routes = [
     route: "/customers",
     component: <CustomersPage />,
   },
-      {
+  {
     type: "route",
-    name: "Product Details", 
+    name: "Product Details",
     key: "product-details",
     route: "/products/:id",
     component: <Product360Page />,
@@ -92,23 +115,11 @@ const routes = [
     icon: "💬",
     route: "/echo-hub",
     component: <EchoHubPage />,
+    // You can later gate this with a module, e.g. requiredModuleId: "echo-hub"
   },
-  {
-    type: "collapse",
-    name: "Data Mapper",
-    key: "data-mapper",
-    icon: "🔗",
-    route: "/data-mapper", 
-    component: <DataMapper />,
-  },
-  {
-    type: "collapse",
-    name: "Product Intelligence",
-    key: "product-intelligence",
-    icon: "💡",
-    route: "/product-intelligence",
-    component: <ProductIntelligencePage />,
-  },
+  // 🔻 NOTE: /data-mapper and /product-intelligence have been removed from routes
+  // They’re effectively deprecated for users, but code is still in the repo.
+
   {
     type: "route",
     name: "Account Settings",
@@ -131,5 +142,49 @@ const routes = [
     component: <RegisterPage />,
   },
 ];
+
+/**
+ * Runtime check: is a single route enabled for the given entitlements?
+ * - If a route has no requiredModuleId / requiredFlagId → always enabled.
+ * - If entitlements are missing/null → be conservative and hide gated routes.
+ * - If both module + flag are specified → both must be present.
+ */
+export function isRouteEnabled(
+  route: RouteConfig,
+  entitlements: EntitlementSnapshot | null
+): boolean {
+  // Public routes
+  if (!route.requiredModuleId && !route.requiredFlagId) {
+    return true;
+  }
+
+  // If route is gated and we don't know entitlements yet, hide it
+  if (!entitlements) {
+    return false;
+  }
+
+  const { modules, flags } = entitlements;
+
+  if (route.requiredModuleId && !modules.includes(route.requiredModuleId)) {
+    return false;
+  }
+
+  if (route.requiredFlagId && !flags.includes(route.requiredFlagId)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Pure helper: filter a list of routes by entitlements.
+ * Used later for Sidenav and route guards.
+ */
+export function filterRoutesByEntitlements(
+  allRoutes: RouteConfig[],
+  entitlements: EntitlementSnapshot | null
+): RouteConfig[] {
+  return allRoutes.filter((route) => isRouteEnabled(route, entitlements));
+}
 
 export default routes;

@@ -1,7 +1,7 @@
 //apps/frontend/src/layout/MainLayout/MenuList/index.tsx
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Divider from '@mui/material/Divider';
 import List from '@mui/material/List';
@@ -23,7 +23,7 @@ import { useGetMenuMaster } from 'api/menu';
 
 // ==============================|| SIDEBAR MENU LIST ||============================== //
 
-function MenuList() {
+function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
   const theme = useTheme(); // Get theme instance
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -36,17 +36,42 @@ function MenuList() {
 
   const [selectedID, setSelectedID] = useState('');
 
+  const visibleItems: NavGroupType[] = useMemo(() => {
+    // Base list always comes from menuItems
+    const base = menuItems.items as NavGroupType[];
+
+    if (!allowedRoutes || allowedRoutes.length === 0) {
+      // No gating info → show everything
+      return base;
+    }
+
+    const routeSet = new Set(allowedRoutes);
+
+    return base
+      .map((group) => {
+        const children = group.children?.filter((child: NavItemType) => {
+          const url = (child as NavItemType).url;
+          if (!url) return true; // labels / non-click items
+          return routeSet.has(url);
+        }) as NavItemType[] | undefined;
+
+        return { ...group, children };
+      })
+      // Drop groups that end up with no visible children
+      .filter((group) => !group.children || group.children.length > 0);
+  }, [allowedRoutes]);
+
   // last menu-item to show in horizontal menu bar
   const lastItem = isHorizontal ? HORIZONTAL_MAX_ITEM : null;
 
-  let lastItemIndex = menuItems.items.length - 1;
+  let lastItemIndex = visibleItems.length - 1;
   let remItems: any[] = [];
   let lastItemId;
 
-  if (lastItem && lastItem < menuItems.items.length) {
-    lastItemId = menuItems.items[lastItem - 1].id;
+  if (lastItem && lastItem < visibleItems.length) {
+    lastItemId = visibleItems[lastItem - 1].id;
     lastItemIndex = lastItem - 1;
-    remItems = menuItems.items.slice(lastItem - 1, menuItems.items.length).map((item) => ({
+    remItems = visibleItems.slice(lastItem - 1, visibleItems.length).map((item) => ({
       // Safely access properties based on item type if structure varies
       title: 'title' in item ? item.title : undefined, // Check if title exists
       elements: 'children' in item ? item.children : undefined, // Check for children
@@ -62,7 +87,7 @@ function MenuList() {
     }));
   }
 
-  const navItems = menuItems.items.slice(0, lastItemIndex + 1).map((item: NavGroupType, index) => {
+  const navItems = visibleItems.slice(0, lastItemIndex + 1).map((item: NavGroupType, index) => {
     switch (item.type) {
       case 'group':
         return (

@@ -86,8 +86,8 @@ export default function App() {
   <QueryClientProvider client={queryClient}> 
     <DashboardStateProvider>
       <IntegrationProvider>
-        <EntitlementsProvider>
-          <ThemeCustomization>
+        <ThemeCustomization>
+          <EntitlementsProvider>
           <Routes>
             {/* Render the sign-in route standalone */}
             {routes
@@ -111,8 +111,8 @@ export default function App() {
             {/* A default redirect to the dashboard */}
             <Route path="*" element={<Navigate to="/dashboard" />} />
           </Routes>
-        </ThemeCustomization>
-       </EntitlementsProvider>
+        </EntitlementsProvider>
+      </ThemeCustomization>
      </IntegrationProvider>
     </DashboardStateProvider>
   </QueryClientProvider> 

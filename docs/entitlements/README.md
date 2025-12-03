@@ -1,76 +1,211 @@
-# LaSyncro Entitlements System – Overview (v1, FT0)
+# 🧩 SynchroFlow Entitlements System – README (v2)
 
-Welcome to the LaSyncro **Entitlements System** — the permission, capability, and feature-gating framework powering Free Tier (FT0), Paid Tiers, and Module-Based Access across the entire platform.
+This directory contains the **complete documentation for the SynchroFlow Entitlements System**, which controls access to:
 
-This directory contains all documentation related to:
+* Routes
+* Navigation
+* Widgets
+* Premium features
+* Feature flags
+* Module-based capabilities
 
-- How entitlements work  
-- How they are stored  
-- How they flow from backend → frontend → UI  
-- How widgets and dashboard features are gated  
-- How new modules/flags are added
-
----
-
-## 📦 What Entitlements Do
-
-1. **Define what a shop is allowed to access.**  
-   Modules unlock “capabilities” (e.g., dashboard access, analytics, inventory intelligence).  
-   Flags unlock smaller feature capabilities inside modules.
-
-2. **Power Free Tier (FT0) gating.**  
-   The FT0 bundle is automatically granted upon Shopify OAuth install.
-
-3. **Drive dashboard behavior.**  
-   Widgets, UI elements, and future L4 intelligence features check entitlements before rendering.
-
-4. **Provide a single source of truth.**  
-   No component decides eligibility on its own.  
-   All gating flows through `EntitlementsService` and `EntitlementsProvider`.
+Entitlements unify **backend capability grants** with **frontend gating rules** into a single consistent model.
 
 ---
 
-## 🗂️ Directory Index
+# 1. What Are Entitlements?
 
-| File | Purpose |
-|------|---------|
-| **frontend.md** | How FE loads and uses entitlements |
-| **backend.md** | How BE stores, grants, and exposes entitlements |
-| **widget-gating.md** | How entitlements drive widget visibility & gating |
-| **onboarding.md** | Step-by-step onboarding for developers |
-| **diagram.md** | Visual architecture diagram of the full entitlement flow |
+Entitlements define **what a shop is allowed to do**.
+
+A shop may have:
+
+```ts
+modules: string[];  // capabilities (analytics, finances, etc.)
+flags: string[];    // feature rollouts (beta flags, experiments)
+```
+
+Example:
+
+```json
+{
+  "shopId": 123,
+  "modules": ["analytics", "advanced-analytics"],
+  "flags": ["beta-top-products"]
+}
+```
+
+These values control:
+
+* Which pages the merchant can access
+* Which nav items appear
+* Which widgets are visible
+* What premium features unlock automatically
 
 ---
 
-## 🧠 Mental Model
+# 2. Where Entitlements Come From
 
-Think of entitlements as:
+Backend generates entitlements in:
 
-- **Toggles** for which modules a shop has unlocked  
-- **Keys** that UI components check before rendering  
-- **Contracts** ensuring consistent behavior across all parts of LaSyncro  
+* `EntitlementsService.getForUser()`
+* `shop_module_entitlements` table
+* `entitlement_flags` table
 
-This system is the backbone of:
+Entitlements are fetched by the frontend using:
 
-- Free Tier
-- Paid upgrades
-- Module onboarding
-- Feature launches
-- Experimentation flags
+```
+GET /api/v1/entitlements/me
+```
+
+They are automatically updated:
+
+* After successful Shopify OAuth
+* After module upgrades
+* After admin actions (future)
 
 ---
 
-## 🔒 Versioning
+# 3. How the Frontend Uses Entitlements
 
-This is **Entitlements v1**, used for FT0 rollout.  
-Future versions (v2+) will include:
+Entitlements flow through three major areas:
 
-- Plan management
-- Cross-module capability graphs
-- Time-limited trials
-- Experimentation / A/B flags
-- Admin overrides
+### **3.1. Routing**
 
-All changes must go through a versioned document + migration plan, consistent with LaSyncro’s CNS architecture.
+In `routes.tsx`, each route can declare:
+
+```ts
+requiredModuleId?: string;
+requiredFlagId?: string;
+```
+
+Gating is enforced in:
+
+* `<ProtectedRoute />`
+* `filterRoutesByEntitlements()`
+
+Locked routes → redirect to `/dashboard`.
+
+---
+
+### **3.2. Navigation (Sidenav)**
+
+`SidenavContent → MenuList` receives a filtered route list:
+only allowed routes appear in the navigation.
+
+This ensures:
+
+* No ghost items
+* No broken links
+* No accidental exposure of premium pages
+
+---
+
+### **3.3. Widgets**
+
+Each widget in `widget-registry.tsx` may declare:
+
+```ts
+requiresPaidPlan: boolean;
+requiredModuleId?: string;
+requiredFlagId?: string;
+```
+
+Filtered by:
+
+`useWidgetRegistry()`
+→ Only entitlements-approved widgets are displayed.
+
+This powers the FT0 vs premium dashboard experience.
+
+---
+
+# 4. FT0 Default Entitlements
+
+When a shop connects via Shopify OAuth:
+
+```ts
+modules = [
+  "core-dashboard",
+  "core-orders",
+  "core-products",
+  "core-customers"
+];
+
+flags = [];
+```
+
+These correspond to:
+
+* Free dashboard
+* Core widgets
+* Orders / Products / Customers views
+* No premium intelligence pages
+
+See `ft0-entitlements.md` for the complete FT0 spec.
+
+---
+
+# 5. Premium Upgrades
+
+Adding a module is as simple as one DB insert:
+
+```sql
+INSERT INTO shop_module_entitlements (shop_id, module_id)
+VALUES (123, 'analytics');
+```
+
+Frontend instantly unlocks:
+
+* `/analytics`
+* Analytics widgets
+* Nav item
+
+No further code required.
+
+---
+
+# 6. Developer Reference
+
+Each doc in this directory provides deeper details.
+
+| File                    | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| **overview.md**         | High-level architecture + entitlement flow   |
+| **backend.md**          | DB schema, service logic, API behavior       |
+| **frontend.md**         | Provider, routing, UI behavior               |
+| **widget-gating.md**    | Registry rules + widget capability filtering |
+| **ft0-entitlements.md** | Free-tier specification                      |
+| **diagram.md**          | Visual architecture diagram                  |
+| **onboarding.md**       | How to add a new module/flag end-to-end      |
+| **README.md**           | This index                                   |
+
+---
+
+# 7. Visual Flow Summary
+
+```
+Backend DB → EntitlementsService → /entitlements/me
+                                           │
+                                           ▼
+Frontend EntitlementsProvider
+     │            │               │
+     ▼            ▼               ▼
+ProtectedRoute   Sidenav        useWidgetRegistry
+ Route gating    Nav gating     Widget gating
+```
+
+One entitlement model → 3 enforcement layers → consistent product behavior.
+
+---
+
+# 8. Status
+
+Entitlement v2 is:
+
+* Fully implemented
+* Tested across backend & frontend
+* Modular & extensible
+* Ready for FT1 / Premium plans
+* Ready for App Store submission
 
 ---

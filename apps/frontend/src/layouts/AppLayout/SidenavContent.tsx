@@ -6,6 +6,8 @@ import { Box, useMediaQuery, Chip, Stack } from '@mui/material'; // Import neces
 import { useTheme } from '@mui/material/styles';
 import routes from 'routes';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { RouteConfig, EntitlementSnapshot, filterRoutesByEntitlements } from 'routes';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 
 // --- MUI List Imports for Settings ---
 import List from '@mui/material/List';
@@ -47,9 +49,21 @@ const SidenavContent: React.FC<{
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const { modules, flags } = useEntitlements();
 
   const { menuMaster } = useGetMenuMaster(); // Reads drawerOpen state from our ConfigContext via the hook
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
+
+  const allowedRoutes = useMemo(() => {
+    const snapshot: EntitlementSnapshot = {
+      modules,
+      flags
+    };
+
+    return filterRoutesByEntitlements(routes as RouteConfig[], snapshot)
+      .map((r) => r.route)
+      .filter((path): path is string => typeof path === 'string');
+  }, [modules, flags, routes]);
 
   const {
     state: { menuOrientation } // Read menuOrientation, though we might not use it directly here
@@ -102,7 +116,7 @@ const SidenavContent: React.FC<{
       // The Box inside SimpleBar provides the padding
       <SimpleBar sx={simpleBarSX}>
          <Box sx={{ flexGrow: 1 }}> {/* Box to allow MenuList to take available space */}
-            <MenuList />
+            <MenuList allowedRoutes={allowedRoutes} />
          </Box>
 
         {/* --- Render Card outside of 'extraContent' --- */}
@@ -139,7 +153,7 @@ const SidenavContent: React.FC<{
         {isVerticalOpen && extraContent}
       </SimpleBar>
     );
-  }, [drawerOpen, isConnected, navigate, onOpenModal, pathname]); 
+  }, [drawerOpen, navigate, pathname, allowedRoutes]);
 
   return (
     // Use a Box that fills the height and acts as the main container

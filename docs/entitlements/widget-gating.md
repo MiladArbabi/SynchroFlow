@@ -1,153 +1,282 @@
-# Widget Gating – v1 (FT0)
+# 🧩 Widget Gating – v2 (Entitlements, Plan Gating & Registry Rules)
 
-This document describes how the Free-Tier (FT0) entitlements and plan tiers govern the visibility of dashboard widgets.
+This document explains how **widgets** are gated, displayed, hidden, sorted, and activated in the SynchroFlow frontend using the shared entitlement model:
+
+```
+EntitlementSnapshot = { modules: string[], flags: string[] }
+```
+
+Widget gating integrates with:
+
+* Free-tier enforcement (FT0)
+* Route/nav entitlement gating (#883)
+* Plan-aware registry filtering (free / premium / enterprise)
+* Mode-aware prioritization (survival / growth / architect)
 
 ---
 
-## 1. What a Widget Can Declare
+# 1. Widget Registry Structure
 
-Each widget in the registry may specify:
+All widgets are defined centrally in:
+
+```
+apps/frontend/src/components/widgets/widget-registry.tsx
+```
+
+Each widget definition includes:
 
 ```ts
-requiresPaidPlan: boolean;
-requiredModuleId?: string;
-requiredFlagId?: string;
-priority: 'critical' | 'high' | 'medium' | 'low';
-Meaning:
-Property	Behavior
-requiresPaidPlan	Widget hidden for Free Tier regardless of entitlements
-requiredModuleId	Widget shown only if shop has this module entitlement
-requiredFlagId	Widget shown only if shop has this flag entitlement
-priority	Used to sort widgets for Survival Mode dashboards
+export interface WidgetDefinition extends WidgetContentProps {
+  component: React.ComponentType<WidgetContentProps>;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  requiresPaidPlan: boolean;
+  dataProcessing: 'light' | 'medium' | 'heavy';
 
-2. How Filtering Works (The Pipeline)
-When the dashboard requests widgets, the following steps occur:
-
-Step 1 — Determine user config
-From DashboardStateContext and AuthContext:
-
-ts
-Copy code
-{
-  detected_mode: 'survival',
-  plan: 'free' | 'premium' | ...
+  // NEW (Slice #883)
+  requiredModuleId?: string;
+  requiredFlagId?: string;
 }
-Step 2 — Fetch entitlements
-From useEntitlements():
+```
 
-ts
-Copy code
-modules: ['core_dashboard', ...]
-flags: ['view_basic_sales', ...]
-Step 3 — Apply filtering
-useWidgetRegistry() calls:
+These fields drive:
 
-ts
-Copy code
-getWidgetsForUser(userConfig, { hasModule, hasFlag });
-Which performs:
+* FT0 gating
+* Premium gating
+* Module gating
+* Feature-flag rollout gating
 
-A) Plan filtering
-ts
-Copy code
-if (requiresPaidPlan && plan === 'free') → hide widget
-B) Entitlement filtering
-ts
-Copy code
-if (requiredModuleId && !hasModule(requiredModuleId)) → hide widget
-if (requiredFlagId && !hasFlag(requiredFlagId)) → hide widget
-C) Priority sorting (survival mode only)
-Critical → High → Medium → Low
+---
 
-Only the filtered & sorted widgets reach the UI.
+# 2. WidgetContentProps (What Widgets Receive)
 
-3. Free Tier vs Premium Behavior
-Free Tier
-Visible:
+Widgets implement:
 
-Cash Flow
+```ts
+interface WidgetContentProps {
+  id: string;
+  title: string;
+  businessContext: {...};
+  metricConfig: {...};
+  intelligenceLevel: 'L1' | 'L2' | 'L3' | 'L4';
+  currentValue: number;
+  format: 'number' | 'currency' | 'percentage';
+  isLoading: boolean;
+  isEmpty: boolean;
 
-Inventory Alerts
+  // Optional presentation/event props...
+}
+```
 
-Order Metrics
+This ensures every widget in the registry is:
 
-Top Products
+* Self-contained
+* Declarative
+* Capable of receiving any computed or fetched data from its shell
 
-Sales By Traffic Source
+---
 
-Hidden:
+# 3. How Widget Gating Works (Core Filtering Algorithm)
 
-Advanced Analytics
+Widgets pass through **three layers** of filtering:
 
-Any future widget requiring:
+## **Layer 1 — User Mode Filtering**
 
-premium modules
+```ts
+detected_mode: 'survival' | 'growth' | 'architect'
+```
 
-premium flags
+Widgets are grouped by mode in the registry:
 
-heavy compute access
+```ts
+WIDGET_REGISTRY.survival
+WIDGET_REGISTRY.growth
+WIDGET_REGISTRY.architect
+```
 
-Premium Tier
-Receives everything Free Tier does, plus:
+Only widgets for the detected mode are considered.
 
-Advanced Analytics (because it requires a module)
+---
 
-Any widget gated behind premium flags
+## **Layer 2 — Plan Filtering**
 
-4. Adding A New Widget (Checklist)
-Add widget entry to WIDGET_REGISTRY.
-
-Add:
-
-ts
-Copy code
+```ts
 requiresPaidPlan: boolean
-requiredModuleId?: string
-requiredFlagId?: string
-If it’s premium-only:
+```
 
-Add to module entitlement list
+* Free users (FT0) → hide all paid widgets automatically.
+* Premium/Enterprise → show paid widgets if other conditions pass.
 
-Add to plan gating logic (optional)
+This connects pricing → entitlements → visual display.
 
-Write a test in:
+---
 
-swift
-Copy code
+## **Layer 3 — Entitlement Filtering (NEW, #883)**
+
+A widget may require:
+
+```ts
+requiredModuleId
+requiredFlagId
+```
+
+The check is enforced via the shared model:
+
+```ts
+widget.requiredModuleId && !modules.includes(widget.requiredModuleId)
+widget.requiredFlagId   && !flags.includes(widget.requiredFlagId)
+```
+
+Widgets are only shown when **all** requirements pass.
+
+---
+
+# 4. Filtering Logic (`useWidgetRegistry()`)
+
+`apps/frontend/src/components/widgets/useWidgetRegistry.ts` performs the full gating pipeline:
+
+```ts
+const widgets = getWidgetsForUser(userConfig)
+  .filter(w => !w.requiresPaidPlan || plan !== "free")
+  .filter(w => !w.requiredModuleId || hasModule(w.requiredModuleId))
+  .filter(w => !w.requiredFlagId || hasFlag(w.requiredFlagId))
+```
+
+The UI layer is completely declarative:
+
+* No widget contains entitlement logic
+* No widget contains plan logic
+* Widgets remain portable, reusable components
+
+---
+
+# 5. Widget Sorting (Mode Prioritization)
+
+For **survival mode**, widgets are sorted by:
+
+```
+critical → high → medium → low
+```
+
+This ensures the dashboard surfaces the most important signals first for distressed merchants.
+
+Growth and Architect modes rely on future optimized registries.
+
+---
+
+# 6. FT0 Behavior Summary
+
+A Free-Tier (FT0) merchant sees:
+
+### **Available widgets (default modules + no paid plan requirements):**
+
+* Cash Flow
+* Inventory Alerts
+* Order Metrics
+* Top Products
+* Sales by Traffic Source
+
+### **Unavailable / Hidden:**
+
+* Advanced Analytics widget (requires `advanced-analytics` module)
+* Any L4 or specialized widget requiring:
+
+  * paid plan
+  * module not in FT0
+  * entitlement flag not granted
+
+Widget gating happens silently — FT0 users don’t see “locked” stubs.
+
+---
+
+# 7. Relationship to Routes & Navigation (NEW CROSS-REFERENCE)
+
+Widget gating uses the **same entitlement model** as:
+
+* **Route gating** (via `requiredModuleId` in routes.tsx)
+* **Navigation gating** (Sidenav → MenuList)
+
+This guarantees:
+
+* If you grant a shop `analytics`, both navigation items and widgets appear.
+* If you remove a module, everything disappears consistently.
+
+One source of truth → three enforcement layers.
+
+---
+
+# 8. Adding a New Widget (Developer Playbook)
+
+To add a new gated widget:
+
+### Step 1 — Create the component:
+
+```
+MyNewWidget.tsx
+```
+
+### Step 2 — Add it to the registry:
+
+```ts
+{
+  id: "reorder-predictions",
+  title: "Reorder Predictions",
+  component: ReorderWidget,
+  intelligenceLevel: "L2",
+  priority: "high",
+  requiresPaidPlan: false,
+  requiredModuleId: "sku-os",   // optional
+  requiredFlagId: "beta-reorder", // optional
+  currentValue: 0,
+  format: "number",
+  isLoading: false,
+  isEmpty: false,
+  businessContext: {...},
+  metricConfig: {...}
+}
+```
+
+### Step 3 — Verify entitlements match backend module/flag IDs.
+
+### Step 4 — No additional UI work required
+
+`useWidgetRegistry()` handles gating automatically.
+
+### Step 5 — Write the corresponding unit test:
+
+```
 tests/unit/ui/components/widget-registry.test.tsx
-for:
+```
 
-free → hidden
+---
 
-premium + entitlement → visible
+# 9. Tests
 
-5. Tests Covering Gating Logic
-Located in:
+Widget gating is validated in:
 
-swift
-Copy code
-tests/unit/ui/components/widget-registry.test.tsx
-They verify:
+* `tests/unit/ui/components/widget-registry.test.tsx`
+* `tests/unit/ui/entitlements/EntitlementsContext.test.tsx`
+* `tests/unit/ui/components/ProtectedRoute.entitlements.test.tsx`
 
-Free Tier hides paid widgets
+They confirm:
 
-Premium shows them
+* Paid widgets hidden for FT0 plan
+* Gated widgets hidden unless module/flag present
+* Widgets sorted correctly
+* Fallback behavior consistent with mode & plan rules
 
-Entitlement-based requiredModuleId works
+---
 
-Entitlement-based requiredFlagId works
+# 10. Summary
 
-Mode priority sorting remains correct
+Widget gating is now:
 
-Summary
-Widget gating is now deterministic and handled entirely by:
+* Declarative
+* Composable
+* Consistent with backend capabilities
+* Aligned with routing and navigation rules
+* Backed by unit tests
+* Ready for FT1/FT2 expansion
 
-EntitlementsProvider
+It is powered by a **single entitlement model** that the entire SynchroFlow frontend uses to control visibility, access, and premium upgrades.
 
-useEntitlements
-
-useWidgetRegistry
-
-WIDGET_REGISTRY metadata
-
-This ensures your dashboard always reflects what a shop is actually entitled to, not what the UI “hopes” the plan is.
+---
