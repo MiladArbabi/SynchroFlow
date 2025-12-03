@@ -7,6 +7,8 @@ import { getQueueChannel } from 'api-src/queue';
 import { connection } from 'api-src/queue';
 import { getHumanReadableError } from 'api-src/api/integrations/integration.controller';
 import { normalizeShopDomain, initiateOAuth } from 'api-src/api/integrations/integration.controller';
+import { EntitlementsService } from 'api-src/services/entitlements.service';
+
 
 const mockedConnection = connection as jest.Mocked<typeof connection>;
 
@@ -15,6 +17,12 @@ jest.mock('crypto');
 jest.mock('axios');
 jest.mock('api-src/db');
 jest.mock('api-src/queue');
+
+jest.mock('api-src/services/entitlements.service', () => ({
+  EntitlementsService: {
+    grantDefaultFreeTierForShop: jest.fn(),
+  },
+}));
 
 const mockedCryptoJS = {
   AES: {
@@ -289,7 +297,12 @@ describe('Integration Controller', () => {
           },
       }));
 
-      const { handleOAuthCallback } = await import('api-src/api/integrations/integration.controller');
+      const mockGrantDefaultFreeTierForShop =
+        EntitlementsService.grantDefaultFreeTierForShop as jest.Mock;
+
+      const { handleOAuthCallback } = await import(
+        'api-src/api/integrations/integration.controller'
+      );
       await handleOAuthCallback(mockRequest as Request, mockResponse as Response);
 
       // Verify the insert was called with correct core data
@@ -297,7 +310,7 @@ describe('Integration Controller', () => {
         expect.objectContaining({
           shop_id: mockUser.shop_id,
           platform: 'shopify',
-          platform_shop_name: 'test-shop.myshopify.com'
+          platform_shop_name: 'test-shop.myshopify.com',
         })
       );
 
@@ -305,15 +318,19 @@ describe('Integration Controller', () => {
       const insertedArgs = (mockInsert as jest.Mock).mock.calls[0][0];
       expect(insertedArgs.access_token_encrypted).toEqual(expect.any(String));
 
+      // Verify FT0 entitlements were granted for this shop
+      expect(mockGrantDefaultFreeTierForShop).toHaveBeenCalledWith(mockUser.shop_id);
+      expect(mockGrantDefaultFreeTierForShop).toHaveBeenCalledTimes(1);
+
       // Verify the sync job was queued
       expect(mockChannel.sendToQueue).toHaveBeenCalledWith(
-          'sync_jobs',
-          Buffer.from(JSON.stringify({ integrationId: mockIntegration.id }))
+        'sync_jobs',
+        Buffer.from(JSON.stringify({ integrationId: mockIntegration.id }))
       );
 
       // Verify redirect
       expect(mockResponse.redirect).toHaveBeenCalledWith(
-          'http://localhost:3000/dashboard?connect=success'
+        'http://localhost:3000/dashboard?connect=success'
       );
     });
 

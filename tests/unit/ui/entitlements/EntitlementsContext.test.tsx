@@ -63,6 +63,15 @@ describe('EntitlementsContext', () => {
     // Reset mock auth context to default
     mockAuthContext.accessToken = 'test-access-token';
     mockAuthContext.isLoggedIn = true;
+
+    // Set default axios mock to prevent "Cannot read properties of undefined"
+   mockedAxios.get.mockResolvedValue({
+     data: {
+       shopId: null,
+       modules: [],
+       flags: [],
+     },
+   });
   });
 
   describe('Hook Usage Validation', () => {
@@ -73,13 +82,28 @@ describe('EntitlementsContext', () => {
       );
     });
 
-    it('does not throw when used inside EntitlementsProvider', () => {
+    it('does not throw when used inside EntitlementsProvider', async () => {
+
+    mockedAxios.get.mockResolvedValue({
+       data: {
+         shopId: null,
+         modules: [],
+         flags: [],
+       },
+     });
+
       render(
         <EntitlementsProvider>
           <Capture />
         </EntitlementsProvider>
       );
-      expect(screen.queryByTestId('error-message')).not.toBeInTheDocument();
+      // Wait for the initial load to complete to avoid act warnings
+     await waitFor(() => {
+       expect(screen.getByTestId('isLoading')).toHaveTextContent('ready');
+     });
+     
+     // Verify the hook doesn't throw by checking that our component rendered
+     expect(screen.getByTestId('modules')).toBeInTheDocument();
     });
   });
 

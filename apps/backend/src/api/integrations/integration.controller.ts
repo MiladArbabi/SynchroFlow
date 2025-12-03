@@ -8,6 +8,7 @@ import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
 import { getQueueChannel, connection } from '../../queue';
 import { ShopifyAppService } from '../../services/shopify-app.service';
+import { EntitlementsService } from 'api-src/services/entitlements.service';
 
 // --- Helper function for multi-tenancy (copied from dashboard.controller) ---
 /**
@@ -254,6 +255,16 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       }).onConflict(['user_id', 'milestone']).ignore();
 
       console.log(`Updated user ${userId} shopify_connected status and recorded milestone`);
+
+      // --- Grant default FT0 entitlements for this shop ---
+      if (userShopId) {
+        await EntitlementsService.grantDefaultFreeTierForShop(userShopId);
+        console.log(
+          '[integration.controller] Granted default FT0 entitlements for shop',
+          userShopId
+        );
+      }
+      
       console.log('🟢 Integration created, queuing sync job...');
       // --- 6. Queue the initial sync job ---
       const syncChannel = getQueueChannel('sync_jobs');
