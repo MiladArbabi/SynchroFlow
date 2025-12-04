@@ -1,4 +1,4 @@
-//packages/api/migrations/20251107200132_create_shopify_fulfillments_table.ts
+//apps/backend/migrations/20251107200132_create_shopify_fulfillments_table.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

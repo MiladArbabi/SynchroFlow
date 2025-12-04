@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteProductCost = exports.upsertProductCost = exports.getProductCost = void 0;
-//packages/api/src/api/product-costs/product-costs.service.ts
+//apps/backend/src/api/product-costs/product-costs.service.ts
 const db_1 = __importDefault(require("../../db"));
 const getProductCost = async (platformProductId) => {
     const cost = await (0, db_1.default)('product_costs')

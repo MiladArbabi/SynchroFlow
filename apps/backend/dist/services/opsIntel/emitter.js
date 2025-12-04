@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.opsIntelEmitter = void 0;
-//packages/api/src/services/opsIntel/emitter.ts
+//apps/backend/src/services/opsIntel/emitter.ts
 const events_1 = require("events");
 /**
  * A simple, in-memory event bus.

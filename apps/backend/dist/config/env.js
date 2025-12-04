@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateEnvironment = validateEnvironment;
-// packages/api/src/config/env.ts
+// apps/backend/src/config/env.ts
 function validateEnvironment() {
     const required = {
         JWT_SECRET: 'string',

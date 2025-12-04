@@ -1,4 +1,4 @@
-// packages/api/migrations/20251121152645_fix_orders_customer_relationship.ts
+// apps/backend/migrations/20251121152645_fix_orders_customer_relationship.ts
 import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

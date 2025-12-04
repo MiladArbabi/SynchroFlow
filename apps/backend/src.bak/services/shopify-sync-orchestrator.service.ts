@@ -1,4 +1,4 @@
-// packages/api/src/services/shopify-sync-orchestrator.service.ts
+// apps/backend/src/services/shopify-sync-orchestrator.service.ts
 import { performInitialSync } from './shopify.service';
 import { performNonPCDSync } from './shopify-fallback.service';
 

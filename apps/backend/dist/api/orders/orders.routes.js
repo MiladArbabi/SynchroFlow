@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/api/orders/orders.routes.ts
+// apps/backend/src/api/orders/orders.routes.ts
 const express_1 = require("express");
 const ordersController = __importStar(require("./orders.controller"));
 const router = (0, express_1.Router)();

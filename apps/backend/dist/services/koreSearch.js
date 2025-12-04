@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.federatedSearch = void 0;
-//packages/api/src/services/koreSearch.ts
+//apps/backend/src/services/koreSearch.ts
 const db_1 = __importDefault(require("../db"));
 /**
  * Searches the database for entities (customers, orders, products)

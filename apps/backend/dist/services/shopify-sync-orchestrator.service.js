@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.performSmartSync = void 0;
-// packages/api/src/services/shopify-sync-orchestrator.service.ts
+// apps/backend/src/services/shopify-sync-orchestrator.service.ts
 const shopify_service_1 = require("./shopify.service");
 const shopify_fallback_service_1 = require("./shopify-fallback.service");
 const performSmartSync = async (accessToken, platformShopName, shopId, integrationId) => {

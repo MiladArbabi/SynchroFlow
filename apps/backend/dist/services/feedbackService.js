@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FeedbackService = void 0;
-//packages/api/src/services/feedbackService.ts
+//apps/backend/src/services/feedbackService.ts
 const api_db_1 = __importDefault(require("api-db"));
 class FeedbackService {
     /**

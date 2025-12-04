@@ -1,4 +1,4 @@
-//packages/api/src/services/koreSearch.ts
+//apps/backend/src/services/koreSearch.ts
 import db from '../db';
 
 // Define the shape of a search result

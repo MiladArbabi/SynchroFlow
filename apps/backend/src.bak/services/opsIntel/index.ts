@@ -1,4 +1,4 @@
-//packages/api/src/services/opsIntel/index.ts
+//apps/backend/src/services/opsIntel/index.ts
 
 import { ProactiveInsight } from "./types";
 import { opsIntelEmitter } from "./emitter";

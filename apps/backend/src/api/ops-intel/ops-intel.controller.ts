@@ -1,4 +1,4 @@
-// packages/api/src/api/ops-intel/ops-intel.controller.ts
+// apps/backend/src/api/ops-intel/ops-intel.controller.ts
 import { Request, Response } from 'express';
 import * as opsIntelService from './ops-intel.service';
 

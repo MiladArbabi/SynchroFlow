@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/routes/feedback.ts
+// apps/backend/src/routes/feedback.ts
 const express_1 = require("express");
 const zod_1 = require("zod");
 const db_1 = __importDefault(require("../db"));

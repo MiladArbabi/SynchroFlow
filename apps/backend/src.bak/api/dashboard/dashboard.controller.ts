@@ -1,4 +1,4 @@
-// packages/api/src/api/dashboard/dashboard.controller.ts
+// apps/backend/src/api/dashboard/dashboard.controller.ts
 import { Request, Response } from 'express';
 import db from '../../db';
 import { User } from 'api-types'; // Assuming this type exists

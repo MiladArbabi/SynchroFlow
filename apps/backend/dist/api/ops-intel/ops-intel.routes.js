@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/api/ops-intel/ops-intel.routes.ts
+// apps/backend/src/api/ops-intel/ops-intel.routes.ts
 const express_1 = require("express");
 const opsIntelController = __importStar(require("./ops-intel.controller"));
 const router = (0, express_1.Router)();

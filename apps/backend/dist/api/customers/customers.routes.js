@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/api/customers/customers.routes.ts
+// apps/backend/src/api/customers/customers.routes.ts
 const express_1 = require("express");
 const customers_controller_1 = require("./customers.controller");
 const router = (0, express_1.Router)();

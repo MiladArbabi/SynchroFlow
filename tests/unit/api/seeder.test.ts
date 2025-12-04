@@ -1,4 +1,4 @@
-// packages/api/__tests__/seeder.test.ts
+// apps/backend/__tests__/seeder.test.ts
 import { seedSandboxData } from 'api-src//db/seeder';
 import db from 'api-src//db';
 

@@ -1,4 +1,4 @@
-//packages/api/src/api/product-costs/product-costs.service.ts
+//apps/backend/src/api/product-costs/product-costs.service.ts
 import db from "../../db";
 
 export interface ProductCost {

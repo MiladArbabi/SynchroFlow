@@ -1,6 +1,6 @@
 *
-!packages/api/**
-!packages/api/package.json
-!packages/api/tsconfig.json
-!packages/api/knexfile.ts
-!packages/api/dist/**
+!apps/backend/**
+!apps/backend/package.json
+!apps/backend/tsconfig.json
+!apps/backend/knexfile.ts
+!apps/backend/dist/**

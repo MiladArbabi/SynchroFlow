@@ -1,4 +1,4 @@
-//packages/api/migrations/20251118115045_create_insight_feedback_table.ts
+//apps/backend/migrations/20251118115045_create_insight_feedback_table.ts
 
 import { Knex } from 'knex';
 

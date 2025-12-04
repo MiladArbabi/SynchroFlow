@@ -1,4 +1,4 @@
-// packages/api/src/api/auth/auth.controller.ts
+// apps/backend/src/api/auth/auth.controller.ts
 import { Request, Response } from 'express';
 import db from '../../db';
 import bcrypt from 'bcrypt';

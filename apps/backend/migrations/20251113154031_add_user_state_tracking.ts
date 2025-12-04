@@ -1,4 +1,4 @@
-// In packages/api/migrations/20251113154031_add_user_state_tracking.ts
+// In apps/backend/migrations/20251113154031_add_user_state_tracking.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

@@ -1,4 +1,4 @@
-// packages/api/src/routes/index.ts
+// apps/backend/src/routes/index.ts
 import { Router } from 'express';
 // Placeholder routes - these will be implemented in future issues
 import shopRoutes from './shops'; 

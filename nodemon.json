@@ -1,6 +1,6 @@
 {
   "watch": [
-    "packages/api/src",
+    "apps/backend/src",
     "packages/core-engine/build/Release/sf_core.node"
   ],
   "ext": "ts,json,node",

@@ -1,4 +1,4 @@
-//packages/api/src/services/analytics.service.ts
+//apps/backend/src/services/analytics.service.ts
 import db from '../db';
 
 export async function calculateGrossRevenue(shopId: number): Promise<number> {

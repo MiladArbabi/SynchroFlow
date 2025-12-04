@@ -1,4 +1,4 @@
-// packages/api/src/db/seeder.ts
+// apps/backend/src/db/seeder.ts
 import db from '../db';
 
 export async function seedSandboxData(shopId: number): Promise<void> {

@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.processSyncJob = processSyncJob;
 exports.startSyncWorker = startSyncWorker;
-// packages/api/src/sync.worker.ts (add integration validation)
+// apps/backend/src/sync.worker.ts (add integration validation)
 const queue_1 = require("./queue");
 const db_1 = __importDefault(require("./db"));
 const crypto_js_1 = __importDefault(require("crypto-js"));

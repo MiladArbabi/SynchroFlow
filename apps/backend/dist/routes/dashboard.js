@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/routes/dashboard.ts
+// apps/backend/src/routes/dashboard.ts
 const express_1 = require("express");
 const router = (0, express_1.Router)();
 // TODO: Implement dashboard routes in future issues

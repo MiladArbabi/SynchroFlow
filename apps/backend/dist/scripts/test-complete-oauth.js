@@ -1,5 +1,5 @@
 "use strict";
-// packages/api/src/scripts/test-complete-oauth.ts
+// apps/backend/src/scripts/test-complete-oauth.ts
 console.log('🔄 Complete OAuth Flow Test with Normalization\n');
 // Test the normalization logic directly
 function normalizeShopDomain(shopInput) {

@@ -1,4 +1,4 @@
-// packages/api/migrations/20251010161654_create_data_mapping_rules_table.ts
+// apps/backend/migrations/20251010161654_create_data_mapping_rules_table.ts
 import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

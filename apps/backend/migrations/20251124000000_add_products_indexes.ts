@@ -1,4 +1,4 @@
-// packages/api/migrations/20251124000000_add_products_indexes.ts
+// apps/backend/migrations/20251124000000_add_products_indexes.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

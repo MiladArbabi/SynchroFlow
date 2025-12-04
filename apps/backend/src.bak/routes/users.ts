@@ -1,4 +1,4 @@
-// packages/api/src/routes/users.ts
+// apps/backend/src/routes/users.ts
 import { Router } from 'express';
 
 const router = Router();

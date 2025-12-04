@@ -1,4 +1,4 @@
-// packages/api/migrations/20251013101018_add_shop_id_to_staged_events.ts
+// apps/backend/migrations/20251013101018_add_shop_id_to_staged_events.ts
 import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

@@ -1,4 +1,4 @@
-//packages/api/migrations/20251020184310_create_user_layouts_table.ts
+//apps/backend/migrations/20251020184310_create_user_layouts_table.ts
 import { Knex } from "knex";
 
 export async function up(knex: Knex): Promise<void> {

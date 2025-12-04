@@ -159,7 +159,7 @@ export const useUserProductCosts = () => {
 #### **Migration Creation Pattern**
 
 ```typescript
-// packages/api/migrations/YYYYMMDDHHMMSS_create_feature_table.ts
+// apps/backend/migrations/YYYYMMDDHHMMSS_create_feature_table.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
@@ -186,7 +186,7 @@ export async function up(knex: Knex): Promise<void> {
 #### **Service Layer Pattern**
 
 ```typescript
-// packages/api/src/services/user-state.service.ts
+// apps/backend/src/services/user-state.service.ts
 export class UserStateService {
   static async getUserState(userId: number, key: string): Promise<any> {
     const state = await db('user_states')
@@ -231,7 +231,7 @@ export class UserStateService {
 #### **Authentication & Validation**
 
 ```typescript
-// packages/api/src/routes/user-state.ts
+// apps/backend/src/routes/user-state.ts
 router.get('/product-costs', async (req, res) => {
   try {
     // ✅ Always validate authentication first

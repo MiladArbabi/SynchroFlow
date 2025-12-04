@@ -1,4 +1,4 @@
-// packages/api/src/api/products/products.routes.ts
+// apps/backend/src/api/products/products.routes.ts
 import { Router } from 'express';
 import { fetchProducts } from './products.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';

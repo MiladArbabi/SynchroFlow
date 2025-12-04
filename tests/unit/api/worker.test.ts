@@ -1,4 +1,4 @@
-//packages/api/__tests__/worker.test.ts
+//apps/backend/__tests__/worker.test.ts
 import { processMessage } from 'api-src/worker';
 import db from 'api-src/db';
 import * as queueModule from 'api-src/queue';

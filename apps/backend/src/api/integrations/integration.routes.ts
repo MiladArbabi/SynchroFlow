@@ -1,4 +1,4 @@
-// packages/api/src/api/integrations/integration.routes.ts
+// apps/backend/src/api/integrations/integration.routes.ts
 import { Router } from 'express';
 import { 
   initiateOAuth, 

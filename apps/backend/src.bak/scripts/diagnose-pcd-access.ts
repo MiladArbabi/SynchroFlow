@@ -1,4 +1,4 @@
-// packages/api/src/scripts/diagnose-pcd-access.ts
+// apps/backend/src/scripts/diagnose-pcd-access.ts
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 

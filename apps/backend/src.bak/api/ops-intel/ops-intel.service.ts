@@ -1,4 +1,4 @@
-// packages/api/src/api/ops-intel/ops-intel.service.ts
+// apps/backend/src/api/ops-intel/ops-intel.service.ts
 
 // Define the shape of the summary data
 interface OpsIntelSummary {

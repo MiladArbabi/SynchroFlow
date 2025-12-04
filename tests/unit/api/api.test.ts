@@ -1,4 +1,4 @@
-// packages/api/__tests__/api.test.ts
+// apps/backend/__tests__/api.test.ts
 import request from 'supertest';
 import app from 'api-server';
 import db from 'api-db';

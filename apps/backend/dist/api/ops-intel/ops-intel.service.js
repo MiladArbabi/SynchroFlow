@@ -1,5 +1,5 @@
 "use strict";
-// packages/api/src/api/ops-intel/ops-intel.service.ts
+// apps/backend/src/api/ops-intel/ops-intel.service.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getOpsIntelSummary = void 0;
 /**

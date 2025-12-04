@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.seedSandboxData = seedSandboxData;
-// packages/api/src/db/seeder.ts
+// apps/backend/src/db/seeder.ts
 const db_1 = __importDefault(require("../db"));
 async function seedSandboxData(shopId) {
     console.log(`[seeder] Starting sandbox data seed for shopId: ${shopId}`);

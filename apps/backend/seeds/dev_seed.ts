@@ -1,4 +1,4 @@
-// packages/api/seeds/dev_seed.ts
+// apps/backend/seeds/dev_seed.ts
 import type { Knex } from "knex";
 import bcrypt from 'bcrypt';
 

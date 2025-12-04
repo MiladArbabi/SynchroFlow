@@ -1,4 +1,4 @@
-// packages/api/migrations/20251015190331_create_order_fulfillment_status_table.ts
+// apps/backend/migrations/20251015190331_create_order_fulfillment_status_table.ts
 /**
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }

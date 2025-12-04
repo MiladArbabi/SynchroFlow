@@ -1,4 +1,4 @@
-// packages/api/src/api/auth/auth.routes.ts
+// apps/backend/src/api/auth/auth.routes.ts
 import { Router } from 'express';
 import { registerUser, loginUser, refreshToken, logoutUser, getDevToken } from './auth.controller';
 

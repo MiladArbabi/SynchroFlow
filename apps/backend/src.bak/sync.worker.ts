@@ -1,4 +1,4 @@
-// packages/api/src/sync.worker.ts (add integration validation)
+// apps/backend/src/sync.worker.ts (add integration validation)
 import { getQueueChannel } from './queue';
 import db from './db';
 import CryptoJS from 'crypto-js';

@@ -1,4 +1,4 @@
-//packages/api/__tests__/transformer.test.ts
+//apps/backend/__tests__/transformer.test.ts
 import { transformPayload } from 'api-src//transformer';
 
 describe('Payload Transformer', () => {

@@ -1,4 +1,4 @@
-// packages/api/migrations/20251010175656_add_platform_to_shops.ts
+// apps/backend/migrations/20251010175656_add_platform_to_shops.ts
 import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

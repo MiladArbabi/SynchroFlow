@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getProducts = void 0;
-// packages/api/src/api/products/products.service.ts
+// apps/backend/src/api/products/products.service.ts
 const db_1 = __importDefault(require("../../db"));
 const getProducts = async (page = 1, limit = 20, search) => {
     const shopId = 1; // TODO: Get from authenticated user/session

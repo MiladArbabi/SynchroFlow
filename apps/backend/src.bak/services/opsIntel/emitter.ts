@@ -1,4 +1,4 @@
-//packages/api/src/services/opsIntel/emitter.ts
+//apps/backend/src/services/opsIntel/emitter.ts
 import { EventEmitter } from 'events';
 
 /**

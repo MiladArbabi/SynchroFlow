@@ -1,4 +1,4 @@
-// packages/api/src/config/env.ts
+// apps/backend/src/config/env.ts
 export function validateEnvironment(): void {
   const required = {
     JWT_SECRET: 'string',

@@ -1,4 +1,4 @@
-// packages/api/migrations/20251126185033_create_user_states_table.ts
+// apps/backend/migrations/20251126185033_create_user_states_table.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

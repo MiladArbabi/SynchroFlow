@@ -1,4 +1,4 @@
-// packages/api/src/routes/dashboard.ts
+// apps/backend/src/routes/dashboard.ts
 import { Router } from 'express';
 
 const router = Router();

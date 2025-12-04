@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserStateService = void 0;
-//packages/api/src/services/user-state.service.ts
+//apps/backend/src/services/user-state.service.ts
 const db_1 = __importDefault(require("../db"));
 class UserStateService {
     /**

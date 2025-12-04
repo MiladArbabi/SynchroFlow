@@ -1,4 +1,4 @@
-//packages/api/src/api/layouts/layout.service.ts
+//apps/backend/src/api/layouts/layout.service.ts
 import knex from "../../db";
 import { Layout } from "react-grid-layout";
 

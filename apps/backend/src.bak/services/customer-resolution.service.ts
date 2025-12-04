@@ -1,4 +1,4 @@
-// packages/api/src/services/customer-resolution.service.ts
+// apps/backend/src/services/customer-resolution.service.ts
 import db from '../db';
 
 export interface PlatformCustomer {

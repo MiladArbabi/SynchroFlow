@@ -1,4 +1,4 @@
-//packages/api/src/services/user-state.service.ts
+//apps/backend/src/services/user-state.service.ts
 import db from '../db';
 import { User, UserMilestone } from '../types';
 

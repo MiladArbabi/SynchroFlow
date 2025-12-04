@@ -10,8 +10,8 @@ node_modules/
 /dist
 /build
 /out
-/packages/*/dist
-/packages/*/build
+/apps/*/dist
+/apps/*/build
 
 # Package lock files for safety (only exclude if using a monorepo manager like yarn/pnpm, but safe to exclude for now)
 # package-lock.json
@@ -42,8 +42,8 @@ Thumbs.db
 *.lib
 *.exe
 # CMake build directories
-/packages/core-engine/build
-/packages/core-engine/CMakeFiles
+/apps/core-engine/build
+/apps/core-engine/CMakeFiles
 
 # Copied build artifacts
 +**/dist/**/*.node
@@ -52,7 +52,7 @@ Thumbs.db
 # Python / AI Engine Artifacts
 # ----------------------------------------------------------------------
 # Virtual environment
-/packages/ai-engine/venv/
+/apps/ai-engine/venv/
 
 # Python cache
 __pycache__/

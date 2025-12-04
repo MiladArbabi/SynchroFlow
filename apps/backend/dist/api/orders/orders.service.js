@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getOrderDetailsById = exports.getOrderProfitabilityById = exports.getAllOrders = void 0;
-// packages/api/src/api/orders/orders.service.ts
+// apps/backend/src/api/orders/orders.service.ts
 const db_1 = __importDefault(require("../../db"));
 /**
  * Get all orders for a shop from database

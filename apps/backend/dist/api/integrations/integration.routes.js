@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/api/integrations/integration.routes.ts
+// apps/backend/src/api/integrations/integration.routes.ts
 const express_1 = require("express");
 const integration_controller_1 = require("./integration.controller");
 const auth_middleware_1 = require("../../middleware/auth.middleware");

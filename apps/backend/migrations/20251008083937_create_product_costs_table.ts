@@ -1,4 +1,4 @@
-// packages/api/migrations/20251008083937_create_product_costs_table.ts
+// apps/backend/migrations/20251008083937_create_product_costs_table.ts
 import type { Knex } from "knex";
 
 export async function up(knex: Knex): Promise<void> {

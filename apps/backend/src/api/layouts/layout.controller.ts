@@ -1,4 +1,4 @@
-//packages/api/src/api/layouts/layout.controller.ts
+//apps/backend/src/api/layouts/layout.controller.ts
 import { Request, Response } from "express";
 import { User } from 'api-types'; 
 import db from "../../db";

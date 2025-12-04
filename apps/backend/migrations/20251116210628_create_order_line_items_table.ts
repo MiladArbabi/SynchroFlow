@@ -1,4 +1,4 @@
-//packages/api/migrations/20251116210628_create_order_line_items_table.ts
+//apps/backend/migrations/20251116210628_create_order_line_items_table.ts
 import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

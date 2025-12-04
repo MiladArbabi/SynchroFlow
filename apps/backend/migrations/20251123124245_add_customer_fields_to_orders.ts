@@ -1,4 +1,4 @@
-// packages/api/migrations/20251123124245_add_customer_fields_to_orders.ts
+// apps/backend/migrations/20251123124245_add_customer_fields_to_orders.ts
 import type { Knex } from "knex";
 
 export async function up(knex: Knex): Promise<void> {

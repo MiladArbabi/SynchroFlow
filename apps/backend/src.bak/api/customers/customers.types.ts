@@ -1,4 +1,4 @@
-// packages/api/src/api/customers/customers.types.ts
+// apps/backend/src/api/customers/customers.types.ts
 
 // Copied from Customer360Page.tsx
 export interface CustomerOrder {

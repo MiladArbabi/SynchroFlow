@@ -1,4 +1,4 @@
-// packages/api/src/api/dashboard/dashboard.routes.ts
+// apps/backend/src/api/dashboard/dashboard.routes.ts
 import { Router } from 'express';
 import { authenticateToken } from '../../middleware/auth.middleware';
 import { 

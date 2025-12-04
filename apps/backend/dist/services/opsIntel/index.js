@@ -1,5 +1,5 @@
 "use strict";
-//packages/api/src/services/opsIntel/index.ts
+//apps/backend/src/services/opsIntel/index.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpsIntelEngine = void 0;
 const emitter_1 = require("./emitter");

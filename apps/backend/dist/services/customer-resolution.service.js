@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CustomerResolutionService = void 0;
-// packages/api/src/services/customer-resolution.service.ts
+// apps/backend/src/services/customer-resolution.service.ts
 const db_1 = __importDefault(require("../db"));
 class CustomerResolutionService {
     /**

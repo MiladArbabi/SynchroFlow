@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.performNonPCDSync = void 0;
-// packages/api/src/services/shopify-fallback.service.ts
+// apps/backend/src/services/shopify-fallback.service.ts
 const shopify_api_1 = require("@shopify/shopify-api");
 require("@shopify/shopify-api/adapters/node");
 const db_1 = __importDefault(require("../db"));

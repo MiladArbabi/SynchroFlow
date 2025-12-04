@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.upsertLayout = exports.findLayout = void 0;
-//packages/api/src/api/layouts/layout.service.ts
+//apps/backend/src/api/layouts/layout.service.ts
 const db_1 = __importDefault(require("../../db"));
 const TABLE_NAME = "user_layouts";
 const findLayout = async (userId, layoutName) => {

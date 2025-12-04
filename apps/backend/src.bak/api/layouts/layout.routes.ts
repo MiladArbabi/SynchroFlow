@@ -1,4 +1,4 @@
-// packages/api/src/api/layouts/layout.routes.ts
+// apps/backend/src/api/layouts/layout.routes.ts
 import { Router } from "express";
 import * as LayoutController from "./layout.controller";
 import { authenticateToken } from '../../middleware/auth.middleware';

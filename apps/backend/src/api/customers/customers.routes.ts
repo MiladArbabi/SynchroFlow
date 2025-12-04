@@ -1,4 +1,4 @@
-// packages/api/src/api/customers/customers.routes.ts
+// apps/backend/src/api/customers/customers.routes.ts
 import { Router } from 'express';
 import { getCustomerDetails, getCustomerList } from './customers.controller'; const router = Router();
 

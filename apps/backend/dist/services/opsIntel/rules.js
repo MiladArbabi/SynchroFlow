@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.staleOrderRule = void 0;
-//packages/api/src/services/opsIntel/rules.ts
+//apps/backend/src/services/opsIntel/rules.ts
 const db_1 = __importDefault(require("../../db")); // Import our Knex instance
 /**
  * Finds the single most "stale" order (pending for > 24 hours).

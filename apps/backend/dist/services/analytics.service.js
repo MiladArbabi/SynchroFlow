@@ -9,7 +9,7 @@ exports.getInventoryHealth = getInventoryHealth;
 exports.calculateCostOfStockout = calculateCostOfStockout;
 exports.getFulfillmentPipeline = getFulfillmentPipeline;
 exports.calculatePerfectOrderPercentage = calculatePerfectOrderPercentage;
-//packages/api/src/services/analytics.service.ts
+//apps/backend/src/services/analytics.service.ts
 const db_1 = __importDefault(require("../db"));
 async function calculateGrossRevenue(shopId) {
     const result = await (0, db_1.default)('historical_sales as hs')

@@ -10,6 +10,7 @@ const db_1 = __importDefault(require("../../db"));
 const crypto_js_1 = __importDefault(require("crypto-js"));
 const queue_1 = require("../../queue");
 const shopify_app_service_1 = require("../../services/shopify-app.service");
+const entitlements_service_1 = require("api-src/services/entitlements.service");
 // --- Helper function for multi-tenancy (copied from dashboard.controller) ---
 /**
  * Helper function to get the shop_id from an authenticated user.
@@ -209,6 +210,11 @@ const handleOAuthCallback = async (req, res) => {
             achieved_at: new Date()
         }).onConflict(['user_id', 'milestone']).ignore();
         console.log(`Updated user ${userId} shopify_connected status and recorded milestone`);
+        // --- Grant default FT0 entitlements for this shop ---
+        if (userShopId) {
+            await entitlements_service_1.EntitlementsService.grantDefaultFreeTierForShop(userShopId);
+            console.log('[integration.controller] Granted default FT0 entitlements for shop', userShopId);
+        }
         console.log('🟢 Integration created, queuing sync job...');
         // --- 6. Queue the initial sync job ---
         const syncChannel = (0, queue_1.getQueueChannel)('sync_jobs');

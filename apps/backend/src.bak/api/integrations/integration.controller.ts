@@ -1,4 +1,4 @@
-// packages/api/src/api/integrations/integration.controller.ts
+// apps/backend/src/api/integrations/integration.controller.ts
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import session from 'express-session';

@@ -1,4 +1,4 @@
-//packages/api/migrations/20251107200040_create_shopify_payouts_table.ts
+//apps/backend/migrations/20251107200040_create_shopify_payouts_table.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

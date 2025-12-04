@@ -1,4 +1,4 @@
-// packages/api/src/api/ops-intel/ops-intel.routes.ts
+// apps/backend/src/api/ops-intel/ops-intel.routes.ts
 import { Router } from 'express';
 import * as opsIntelController from './ops-intel.controller';
 

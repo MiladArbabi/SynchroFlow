@@ -1,4 +1,4 @@
-//packages/api/migrations/20251110145156_add_sync_status_to_integrations.ts
+//apps/backend/migrations/20251110145156_add_sync_status_to_integrations.ts
 import { Knex } from 'knex';
 
 const TABLE_NAME = 'integrations';

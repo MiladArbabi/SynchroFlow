@@ -1,4 +1,4 @@
-// packages/api/src/scripts/debug-shop-domain.ts
+// apps/backend/src/scripts/debug-shop-domain.ts
 console.log('🛍️  Shopify Domain Format Debug:\n');
 
 // Test different shop domain formats

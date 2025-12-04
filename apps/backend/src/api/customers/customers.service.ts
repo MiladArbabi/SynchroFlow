@@ -1,4 +1,4 @@
-// packages/api/src/api/customers/customers.service.ts
+// apps/backend/src/api/customers/customers.service.ts
 import { CustomerOrder, SupportTicket } from './customers.types';
 import { CustomerResolutionService, UnifiedCustomerProfile } from '../../services/customer-resolution.service';
 import db from '../../db';

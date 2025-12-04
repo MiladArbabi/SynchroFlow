@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getQueueChannel = exports.connection = void 0;
-// packages/api/src/queue.ts
+// apps/backend/src/queue.ts
 const amqp_connection_manager_1 = __importDefault(require("amqp-connection-manager"));
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672';
 // 1. Add heartbeat to keep connection alive and detect drops faster

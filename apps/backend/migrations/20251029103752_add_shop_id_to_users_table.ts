@@ -1,4 +1,4 @@
-// packages/api/migrations/20251029103752_add_shop_id_to_users_table.ts
+// apps/backend/migrations/20251029103752_add_shop_id_to_users_table.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

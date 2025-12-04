@@ -1,4 +1,4 @@
-// packages/api/src/api/customers/customers.controller.ts
+// apps/backend/src/api/customers/customers.controller.ts
  import { Request, Response } from 'express';
 import { CustomersService } from './customers.service';
  

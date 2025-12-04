@@ -1,4 +1,4 @@
-// packages/api/src/types.ts
+// apps/backend/src/types.ts
 // This interface defines the shape of an inventory item
 // as it exists in our database and API responses.
 export interface InventoryItem {

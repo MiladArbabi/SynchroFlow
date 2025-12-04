@@ -1,4 +1,4 @@
-//packages/api/src/services/opsIntel/rules.ts
+//apps/backend/src/services/opsIntel/rules.ts
 import knex from '../../db'; // Import our Knex instance
 import { BusinessRule } from './index';
 import { ProactiveInsight } from './types';

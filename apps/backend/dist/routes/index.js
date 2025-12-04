@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/routes/index.ts
+// apps/backend/src/routes/index.ts
 const express_1 = require("express");
 // Placeholder routes - these will be implemented in future issues
 const shops_1 = __importDefault(require("./shops"));

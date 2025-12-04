@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/api/layouts/layout.routes.ts
+// apps/backend/src/api/layouts/layout.routes.ts
 const express_1 = require("express");
 const LayoutController = __importStar(require("./layout.controller"));
 const auth_middleware_1 = require("../../middleware/auth.middleware");

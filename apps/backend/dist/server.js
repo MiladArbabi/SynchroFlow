@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// packages/api/src/server.ts
+// apps/backend/src/server.ts
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
@@ -60,6 +60,7 @@ const products_routes_1 = __importDefault(require("./api/products/products.route
 const auth_routes_1 = __importDefault(require("./api/auth/auth.routes"));
 const dashboard_routes_1 = __importDefault(require("./api/dashboard/dashboard.routes"));
 const product_costs_routes_1 = __importDefault(require("./api/product-costs/product-costs.routes"));
+const entitlements_controller_1 = require("./api/entitlements/entitlements.controller");
 // OPS-INTEL Imports
 const ops_intel_routes_1 = __importDefault(require("./api/ops-intel/ops-intel.routes"));
 const opsIntel_1 = require("./services/opsIntel");
@@ -108,6 +109,7 @@ app.use("/api/v1/auth", auth_routes_1.default);
 app.use("/api/v1/dashboard", dashboard_routes_1.default);
 app.use("/api/v1/user-state", user_state_routes_1.default);
 app.use("/api/v1/shopify", shopify_routes_1.default);
+app.get('/api/v1/entitlements/me', entitlements_controller_1.getMyEntitlements);
 // --- Routes ---
 app.get('/', (req, res) => {
     res.send('SynchroFlow API is running!');

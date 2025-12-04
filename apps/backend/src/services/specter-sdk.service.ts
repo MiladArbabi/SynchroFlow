@@ -1,4 +1,4 @@
-// packages/api/src/services/specter-sdk.service.ts
+// apps/backend/src/services/specter-sdk.service.ts
 export interface SpecterSDKConfig {
   shopId: string;
   moduleTier: 'free' | 'specter' | 'growth' | 'operations';
