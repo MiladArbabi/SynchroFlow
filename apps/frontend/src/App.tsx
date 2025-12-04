@@ -8,12 +8,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntegrationProvider } from 'contexts/IntegrationContext';
 import { DashboardStateProvider } from "contexts/DashboardStateContext";
 import { EntitlementsProvider } from 'contexts/EntitlementsContext';
+import { SpecterConfigProvider } from "contexts/SpecterConfigContext";
 
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import routes from "./routes";
-
-
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
@@ -83,38 +82,54 @@ const LayoutManager = () => {
 
 export default function App() {
   return (
-  <QueryClientProvider client={queryClient}> 
-    <DashboardStateProvider>
-      <IntegrationProvider>
-        <ThemeCustomization>
-          <EntitlementsProvider>
-          <Routes>
-            {/* Render the sign-in route standalone */}
-            {routes
-              .filter((route) => route.key === 'login' || route.key === 'register') // Filter for auth keys
-              .map((route) => (
-                <Route path={route.route} element={route.component} key={route.key} />
-            ))}
+    <QueryClientProvider client={queryClient}>
+      <DashboardStateProvider>
+        <IntegrationProvider>
+          <ThemeCustomization>
+            <EntitlementsProvider>
+              <SpecterConfigProvider>
+                <Routes>
+                  {/* Render the sign-in route standalone */}
+                  {routes
+                    .filter(
+                      (route) =>
+                        route.key === 'login' || route.key === 'register'
+                    )
+                    .map((route) => (
+                      <Route
+                        path={route.route}
+                        element={route.component}
+                        key={route.key}
+                      />
+                    ))}
 
-            {/* All other routes are nested inside the AppLayout */}
-            {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
-            <Route element={<ProtectedRoute />}>
-              <Route element={<LayoutManager />}>
-              {routes
-                .filter((route) => route.key !== 'login' && route.key !== 'register') // Filter OUT auth keys
-                .map((route) => (
-                  <Route path={route.route} element={route.component} key={route.key} />
-                ))}
-              </Route>
-            </Route>
+                  {/* All other routes are nested inside the AppLayout */}
+                  {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<LayoutManager />}>
+                      {routes
+                        .filter(
+                          (route) =>
+                            route.key !== 'login' && route.key !== 'register'
+                        )
+                        .map((route) => (
+                          <Route
+                            path={route.route}
+                            element={route.component}
+                            key={route.key}
+                          />
+                        ))}
+                    </Route>
+                  </Route>
 
-            {/* A default redirect to the dashboard */}
-            <Route path="*" element={<Navigate to="/dashboard" />} />
-          </Routes>
-        </EntitlementsProvider>
-      </ThemeCustomization>
-     </IntegrationProvider>
-    </DashboardStateProvider>
-  </QueryClientProvider> 
+                  {/* A default redirect to the dashboard */}
+                  <Route path="*" element={<Navigate to="/dashboard" />} />
+                </Routes>
+              </SpecterConfigProvider>
+            </EntitlementsProvider>
+          </ThemeCustomization>
+        </IntegrationProvider>
+      </DashboardStateProvider>
+    </QueryClientProvider>
   );
 }

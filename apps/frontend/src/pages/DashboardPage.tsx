@@ -6,12 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Box,
-  Alert,
-  Skeleton
-} from '@mui/material';
-import { useLayoutContext } from '../App'; 
+
 
 import { DataSyncingModal } from 'components/DataSyncingModal';
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
@@ -22,6 +17,8 @@ import { useAuth } from 'contexts/AuthContext';
 import { DashboardStateManager } from 'components/DashboardStateManager/DashboardStateManager';
 
 import { WidgetLayoutWithRegistry } from 'components/widgets/WidgetLayoutWithRegistry';
+
+import { SpecterOnboardingBanner } from 'components/specter/SpecterOnboardingBanner';
 
 export const DashboardPage = ({ 
   children, handleSidenavToggle }: { 
@@ -138,6 +135,8 @@ export const DashboardPage = ({
       />
 
       <DashboardStateManager onConnectStore={handleOpenConnectModal}>
+        {/* Specter onboarding nudges */}
+        <SpecterOnboardingBanner />
         {/* Widget system integration */}
         <WidgetLayoutWithRegistry />
       </DashboardStateManager>

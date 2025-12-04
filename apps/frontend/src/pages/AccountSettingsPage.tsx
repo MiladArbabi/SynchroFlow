@@ -7,7 +7,9 @@ import MainCard from 'ui-component/cards/MainCard';
 
 // project imports
 import LocalizationSettings from './account-settings/LocalizationSettings';
+
 import IconComponent from 'components/Icon';
+import { SpecterConfigPanel } from 'components/specter/SpecterConfigPanel';
 
 // ==============================|| TAB PANEL HELPER ||============================== //
 
@@ -76,7 +78,14 @@ const AccountSettingsPage: React.FC = () => {
               iconPosition="start"
               {...a11yProps(2)}
             />
+            <Tab
+              label="Specter"
+              icon={<IconComponent name="Activity" size="small" />}
+              iconPosition="start"
+              {...a11yProps(3)}
+            />
           </Tabs>
+
         </Box>
         <TabPanel value={value} index={0}>
           <LocalizationSettings />
@@ -86,6 +95,9 @@ const AccountSettingsPage: React.FC = () => {
         </TabPanel>
         <TabPanel value={value} index={2}>
           <Typography>Security settings placeholder. (e.g., change password, 2FA)</Typography>
+        </TabPanel>
+        <TabPanel value={value} index={3}>
+          <SpecterConfigPanel />
         </TabPanel>
       </Box>
     </MainCard>

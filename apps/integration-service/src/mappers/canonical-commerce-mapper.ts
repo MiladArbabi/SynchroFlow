@@ -22,7 +22,7 @@ interface OrderMapperDeps {
 export function mapShopifyOrderToCanonical(
   rawOrder: any,
   deps: OrderMapperDeps
-): CanonicalOrder {
+): any {
   const shopId: number =
     typeof rawOrder.shop_id === 'number'
       ? rawOrder.shop_id
@@ -92,7 +92,7 @@ export function mapShopifyOrderToCanonical(
   const processedAtRaw =
     rawOrder.processed_at ?? rawOrder.processedAt ?? null;
 
-  const canonical: CanonicalOrder = {
+  const canonical = {
     id,
     shopId,
     createdAt,

@@ -4,7 +4,7 @@
 # Standard Node dependency directories (ignore everywhere)
 node_modules/
 **/node_modules
-/packages/**/node_modules
+/apps/**/node_modules
 
 # Build/Artifacts directories
 /dist
