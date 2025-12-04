@@ -23,7 +23,7 @@
     "test:e2e": "npx playwright test --config=playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=playwright.config.ts --ui",
     "storybook": "npm run storybook -w ui",
-    "dev:full": "npm run dev:setup && npm run dev --workspace=api && npm run dev --workspace=ui && npm run dev --workspace=ai-engine"
+    "dev:full": "npm run dev:setup && npm run dev"
   },
   "keywords": [],
   "author": "",
