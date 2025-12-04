@@ -52,6 +52,14 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
         const children = group.children?.filter((child: NavItemType) => {
           const url = (child as NavItemType).url;
           if (!url) return true; // labels / non-click items
+
+          // ⚡ Cross-sell rule:
+          // Always show Analytics & Finances in the sidenav,
+          // even if the route is not currently "allowed" by entitlements.
+          if (url === '/analytics' || url === '/finances') {
+            return true;
+          }
+
           return routeSet.has(url);
         }) as NavItemType[] | undefined;
 

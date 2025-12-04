@@ -25,6 +25,10 @@ export const SpecterOnboardingBanner: React.FC = () => {
   };
 
   const handleConfigure = () => {
+    // One-shot hint for AccountSettingsPage
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('account-settings-initial-tab', 'specter');
+    }
     navigate('/account/settings');
   };
 

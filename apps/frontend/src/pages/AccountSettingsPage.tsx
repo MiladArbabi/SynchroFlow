@@ -19,6 +19,8 @@ interface TabPanelProps {
   value: number;
 }
 
+const ACCOUNT_SETTINGS_INITIAL_TAB_KEY = 'account-settings-initial-tab';
+
 function TabPanel(props: TabPanelProps) {
   const { children, value, index, ...other } = props;
 
@@ -49,7 +51,30 @@ function a11yProps(index: number) {
 // ==============================|| ACCOUNT SETTINGS PAGE ||============================== //
 
 const AccountSettingsPage: React.FC = () => {
-  const [value, setValue] = useState(0);
+  const [value, setValue] = useState(() => {
+    if (typeof window === 'undefined') return 0;
+
+    try {
+      const stored = window.sessionStorage.getItem(ACCOUNT_SETTINGS_INITIAL_TAB_KEY);
+      if (!stored) return 0;
+
+      // one-shot: clear it once consumed
+      window.sessionStorage.removeItem(ACCOUNT_SETTINGS_INITIAL_TAB_KEY);
+
+      switch (stored) {
+        case 'profile':
+          return 1;
+        case 'security':
+          return 2;
+        case 'specter':
+          return 3;
+        default:
+          return 0;
+      }
+    } catch {
+      return 0;
+    }
+  });
 
   const handleChange = (event: React.SyntheticEvent, newValue: number) => {
     setValue(newValue);
@@ -80,7 +105,7 @@ const AccountSettingsPage: React.FC = () => {
             />
             <Tab
               label="Specter"
-              icon={<IconComponent name="Activity" size="small" />}
+              icon={<IconComponent name="Ghost" size="small" />}
               iconPosition="start"
               {...a11yProps(3)}
             />

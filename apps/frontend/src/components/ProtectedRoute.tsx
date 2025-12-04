@@ -46,14 +46,20 @@ const ProtectedRoute: React.FC = () => {
   );
 
   if (matchingRoute) {
-    const snapshot = {
-      modules,
-      flags
-    } as any;
+    // Cross-sell exception:
+    // Analytics & Finances routes should always be reachable,
+    // even if the user doesn't yet have those modules.
+    const crossSellPaths = ['/analytics', '/finances'];
+    if (!crossSellPaths.includes(currentPath)) {
+      const snapshot = {
+        modules,
+        flags
+      } as any;
 
-    // If the route is gated and the user doesn’t satisfy it, bounce them to dashboard
-    if (!isRouteEnabled(matchingRoute, snapshot)) {
-      return <Navigate to="/dashboard" replace />;
+      // If the route is gated and the user doesn’t satisfy it, bounce them to dashboard
+      if (!isRouteEnabled(matchingRoute, snapshot)) {
+        return <Navigate to="/dashboard" replace />;
+      }
     }
   }
 

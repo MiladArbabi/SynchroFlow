@@ -2,16 +2,12 @@
 import { DollarSign } from 'lucide-react'; 
 import { NavItemType } from './types';
 
-const icons = {
-    DollarSign
-};
-
 const finances: NavItemType = {
     id: 'finances',
     title: 'Finances',
     type: 'item',
     url: '/finances',
-    icon: icons.DollarSign,
+    icon: DollarSign,
     breadcrumbs: false
 };
 
