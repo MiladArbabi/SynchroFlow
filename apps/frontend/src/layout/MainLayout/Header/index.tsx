@@ -1,23 +1,19 @@
-// material-ui
+// apps/frontend/src/layout/MainLayout/Header/index.tsx
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 
-// project imports
 import LogoSection from '../LogoSection';
 import MobileSection from './MobileSection';
 import ProfileSection from './ProfileSection';
-//import LocalizationSection from './LocalizationSection';
 import MegaMenuSection from './MegaMenuSection';
 import FullScreenSection from './FullScreenSection';
-import NotificationSection from './NotificationSection';
 
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
 
-// assets
 import { IconMenu2 } from '@tabler/icons-react';
 
 // ==============================|| MAIN NAVBAR / HEADER ||============================== //
@@ -75,15 +71,7 @@ export default function Header() {
         <MegaMenuSection />
       </Box>
 
-      {/* live customization & localization */}
-      {/* <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-        <LocalizationSection />
-      </Box> */}
-
-      {/* notification */}
-      <NotificationSection/>
-
-      {/* full sceen toggler */}
+      {/* full screen toggler */}
       <Box sx={{ display: { xs: 'none', lg: 'block' } }}>
         <FullScreenSection />
       </Box>

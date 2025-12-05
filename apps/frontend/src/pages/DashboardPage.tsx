@@ -238,7 +238,7 @@ export const DashboardPage = ({
 
       <DashboardStateManager
         onConnectStore={handleOpenConnectModal}
-        forceLoadingSkeleton={showPostSyncSkeleton || isSyncModalOpen}
+        forceLoadingSkeleton={showPostSyncSkeleton}
       >
         {/* Sync progress for initial + recurring syncs */}
         <SyncProgressBanner />

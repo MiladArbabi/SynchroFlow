@@ -21,7 +21,8 @@ import { useOpsContext } from 'contexts/OpsContext';
 
 // --- BERRY HEADER SECTION IMPORTS ---
 // import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
-import NotificationSection from 'layout/MainLayout/Header/NotificationSection';
+import OnboardingTaskListTracker from 'layout/MainLayout/Header/OnboardingTaskListTracker';
+
 // import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
 import MobileSection from 'layout/MainLayout/Header/MobileSection';
@@ -103,7 +104,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
 
 
         {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
-        <NotificationSection />
+        <OnboardingTaskListTracker />
         {/* <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box> */}
         
         {/* Layout Edit Buttons (Keep these for now) */}
