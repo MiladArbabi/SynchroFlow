@@ -596,6 +596,47 @@ async getNormalizedCostModel(
 
 ⸻
 
+2.4 PCD Compliance – Shopify Ingestion & Partial Sync (LOCKED v1)
+
+Problem: Shopify may deny Protected Customer Data (PCD) access for the app.  
+We must not break onboarding or lie about data availability.
+
+Contract:
+
+1. Ingestion Path:
+   - Sync worker pulls jobs from `sync_jobs` queue.
+   - For each job, it:
+     - Loads `integrations` row (includes `sync_status`, `sync_progress_*`, `sync_last_error`).
+     - Decrypts the Shopify access token.
+     - Calls `performSmartSync(accessToken, platformShopName, shopId, integrationId)`.
+
+2. Smart Sync Behavior:
+
+```ts
+// Pseudocode
+try {
+  await performInitialSync(accessToken, platformShopName, shopId, integrationId);
+  // On success:
+  //   integrations.sync_status = "COMPLETED"
+  //   integrations.sync_last_error = null
+} catch (err) {
+  if (err.message includes "Protected Customer Data" ||
+      err.message includes "not approved to access the Order object") {
+    // Fallback path (non-PCD only)
+    await performNonPCDSync(accessToken, platformShopName, shopId, integrationId);
+    // On success:
+    //   integrations.sync_status = "COMPLETED_PARTIAL"
+    //   integrations.sync_last_error = "PCD access required for orders and customers"
+  } else {
+    // Hard failure
+    //   integrations.sync_status = "FAILED"
+    //   integrations.sync_last_error = err.message
+    throw err;
+  }
+```
+
+---
+
 3. Phase 1 Metrics – Minimum Required
 
 These metrics are required, not optional:

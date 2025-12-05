@@ -63,7 +63,23 @@ Dashboard loads → no integration exists → show:
 The dashboard *is* the onboarding.  
 There are **no separate onboarding pages**.
 
-Three states exist:
+The onboarding state machine is driven by the Shopify integration record:
+
+- `sync_status`:  
+  - `PENDING`  
+  - `SYNCING_PRODUCTS`  
+  - `SYNCING_ORDERS`  
+  - `SYNCING_LINE_ITEMS`  
+  - `SYNCING_INVENTORY`  
+  - `SYNCING_SHOP`  
+  - `COMPLETING`  
+  - `COMPLETED`  
+  - `COMPLETED_PARTIAL`  
+  - `FAILED`
+- `sync_progress_{current,total}`
+- `sync_last_error`
+
+The frontend derives three high-level dashboard states from this.
 
 ---
 
@@ -76,35 +92,82 @@ if (!hasIntegrations)
 
 This is the web-signup user's first screen.
 
+- No widgets with real data.
+- No skeletons rendered for FT0 widgets.
+- Primary CTA: “Connect your Shopify store”.
+
 ---
 
-## 2.2 State B — Sync In Progress
+2.2 State B — Sync In Progress
 
-Triggered after Shopify OAuth completes.
+Triggered after Shopify OAuth completes and before we hit a terminal state.
 
-Frontend must show:
+“Sync in progress” means:
 
-```
+hasIntegrations === true &&
+sync_status in [
+  "PENDING",
+  "SYNCING_PRODUCTS",
+  "SYNCING_ORDERS",
+  "SYNCING_LINE_ITEMS",
+  "SYNCING_INVENTORY",
+  "SYNCING_SHOP",
+  "COMPLETING",
+  "COMPLETED_PARTIAL" // partial but still treated as “syncing” in v1
+]
+
+Required frontend behavior:
+
 <DataSyncingModal />
-<SkeletonWidgets />
-```
+<SkeletonWidgets /> // FT0 dashboard skeletons only
 
-User can still interact with the UI.  
-The modal closes automatically when integration sync completes.
+Notes:
 
----
+The user can still move around the UI.
 
-## 2.3 State C — Sync Complete
+No real widget data is shown yet for FT0.
 
-Triggered when `/sync-status` returns `"COMPLETED"`.
+COMPLETED_PARTIAL is treated as “still in onboarding” for v1, until we finalize the UX for partial data.
+
+The modal closes when isFirstTimeSync === false, which currently maps to:
+
+hasIntegrations && sync_status === "COMPLETED"
+
+2.3 State C — Sync Complete (Full Data)
+
+Triggered when /sync-status returns:
+
+status === "COMPLETED"
 
 Dashboard must render:
 
-```
 <OrdersPerMonthBanner />        // Only if segmentation not set
 <SpecterOnboardingBanner />     // Only if entitlements allow & enabled
 <WidgetLayoutWithRegistry />    // Real widgets
-```
+
+This is the only state where FT0 widgets render with live data.
+
+2.4 State C' — Sync Complete (Partial Data, PCD Fallback)
+
+If Shopify denies access to Protected Customer Data (orders/customers), the worker falls back to a non-PCD sync and marks:
+
+status === "COMPLETED_PARTIAL"
+sync_last_error === "PCD access required for orders and customers"
+
+v1 behavior (current reality):
+
+Code treats COMPLETED_PARTIAL as “in progress” for layout gating.
+
+Dashboard uses skeletons + sync banner instead of fully “complete” state.
+
+Widgets that depend only on products / inventory / shop may still have usable data, but we do not yet treat this as “onboarding finished”.
+
+This is a deliberate v1 compromise.
+A future FT0+ spec may:
+
+Promote COMPLETED_PARTIAL to a proper “sync complete (limited data)” state.
+
+Adjust widget registry expectations accordingly.
 
 ---
 
@@ -186,30 +249,60 @@ and hide permanently.
 
 ---
 
-# 7. Gated Navigation (Cross-Sell Behavior)
+# 7. Gated Navigation (FT0 Behavior)
 
-The sidebar must **always show**:
+Navigation visibility and route access are controlled by entitlements:
 
-- Analytics
-- Finances
+- FT0 modules (see `ft0-entitlements.md`):
+  - "core-dashboard"
+  - "core-orders"
+  - "core-products"
+  - "core-customers"
+- Premium modules (not granted in FT0):
+  - "analytics"
+  - "finances"
+  - "advanced-analytics"
+  - "sku-os"
+  - "echo-hub" (future)
 
-Even if user lacks entitlements.
+## 7.1 Sidebar Behavior
 
-### When user clicks a locked route
+The sidebar must **always show** routes that the user’s entitlements allow:
 
-Show:
+- `/dashboard`
+- `/orders`
+- `/products`
+- `/customers`
+- `/echo-hub` (basic)
 
-```
-<LockedFeaturePage />
-```
+Routes that require locked modules (e.g., `/analytics`, `/finances`) are **not shown** in the FT0 sidenav.
 
-NOT a redirect to `/dashboard`.
+## 7.2 Route Protection
 
-Backend must return:
+If a user manually navigates to a locked route (e.g., typing `/finances`):
 
-```
-403 { error: "NOT_ENTITLED", requiredModule: "finances" }
-```
+- `ProtectedRoute` detects missing entitlements.
+- **Behavior in v1 FT0:**
+  - Redirect user back to `/dashboard`.
+  - No premium page is rendered.
+  - No “upgrade page” is shown yet.
+
+Backend APIs for premium features must still enforce:
+
+```json
+403 { "error": "NOT_ENTITLED", "requiredModule": "<module-id>" }
+but most FT0 users will be blocked client-side by ProtectedRoute.
+
+7.3 Deferred Upgrade UX
+Any rich “LockedFeaturePage” or contextual upgrade CTA is deferred to FT1+.
+
+FT0 reality:
+
+No dedicated upgrade page.
+
+No complex upsell flows.
+
+Safety first: FT0 users should never see broken or half-implemented premium pages.
 
 ---
 
@@ -258,18 +351,31 @@ No onboarding manager persona. No complex sequences.
 
 ---
 
-# 10. FT0 Acceptance Criteria
+# 10. FT0 Acceptance Criteria (Reality)
 
 FT0 onboarding is considered **DELIVERED** when:
 
-1. Shopify install → Dashboard in <5 seconds  
-2. Sync begins automatically  
-3. DataSyncingModal displays sync progress  
-4. OrdersPerMonthBanner completes segmentation  
-5. SpecterBanner behaves correctly  
-6. Locked routes show upgrade modal, not redirect  
-7. Widgets load real Shopify data  
-8. No broken paths, no placeholder features exposed  
+1. Shopify install → Dashboard in \<5 seconds.
+2. Sync begins automatically and is visible via `DataSyncingModal` and/or `SyncProgressBanner`.
+3. `sync_status` transitions through the expected states and is persisted in `integrations`.
+4. `COMPLETED` state:
+   - Closes the syncing modal.
+   - Renders FT0 widgets with real Shopify data.
+5. OrdersPerMonthBanner completes segmentation when `orders_per_month_segment` is null.
+6. Specter banner appears only when:
+   - `specter_sdk_free` entitlement is present
+   - onboarding nudges are enabled
+   - sync is fully complete (`COMPLETED`).
+7. Premium routes (`/analytics`, `/finances`) are:
+   - Hidden from FT0 sidenav
+   - Redirected back to `/dashboard` if accessed directly.
+8. Widgets never throw; they show loading / empty / error-safe states instead.
+
+**Explicit non-goals for FT0 v1:**
+
+- No dedicated upgrade page for locked routes.
+- No multi-step onboarding SPA.
+- No guaranteed email sequence (welcome + sync-complete) until implemented and tested.
 
 ---
 

@@ -145,7 +145,8 @@ User sees:
 
 * Connect Store banner
 * Minimal dashboard layout
-* No widgets until the first sync completes
+* No data-driven widgets until the first sync completes.
+* Only skeleton placeholders may be rendered during initial sync.
 
 ### After Successful Shopify Connect
 
