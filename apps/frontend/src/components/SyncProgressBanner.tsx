@@ -16,13 +16,11 @@ export const SyncProgressBanner: React.FC = () => {
   const inProgressStatuses: string[] = [
     'PENDING',
     'SYNCING_PRODUCTS',
-    'SYNCING_CUSTOMERS',
     'SYNCING_ORDERS',
     'SYNCING_LINE_ITEMS',
     'SYNCING_INVENTORY',
     'SYNCING_SHOP',
-    'COMPLETING',
-    'COMPLETED_PARTIAL'
+    'COMPLETING'
   ];
 
   const isInProgress =

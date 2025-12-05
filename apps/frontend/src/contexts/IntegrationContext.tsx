@@ -99,12 +99,21 @@ refetchInterval: (query) => {
     
 
     refetchOnWindowFocus: true,
-    retry: (failureCount, err) => {
+      retry: (failureCount, err) => {
+      const status = err.response?.status;
+
       // A 404 is not an "error", it's a "state": NOT_FOUND. Don't retry.
-      if (err.response?.status === 404) {
+      if (status === 404) {
         return false;
       }
-      // Otherwise, retry 3 times
+
+      // Auth errors (401/403) are also not "integration" errors.
+      // Let the global auth layer deal with them; don't hammer this endpoint.
+      if (status === 401 || status === 403) {
+        return false;
+      }
+
+      // Otherwise, retry a few times for transient issues.
       return failureCount < 3;
     },
   });
@@ -119,7 +128,7 @@ refetchInterval: (query) => {
   const value = useMemo((): IntegrationContextType => {
     const statusCode = error?.response?.status;
 
-    let status: SyncStatus['status'];
+    let status: SyncStatus['status'] = 'PENDING';
     let hasIntegrations = false;
 
     if (data) {
@@ -130,14 +139,13 @@ refetchInterval: (query) => {
       // ✅ Backend explicitly says "no integration"
       status = 'NOT_FOUND';
       hasIntegrations = false;
-    } else if (statusCode) {
-      // ✅ Any other error (401/403/500/etc) we treat as "no usable integration"
-      // for the onboarding flow. We DON'T want to show sync UI for broken auth.
-      status = 'NOT_FOUND';
+    } else if (statusCode === 401 || statusCode === 403) {
+      // ✅ Auth/session problem – not an integration state.
+      // Leave status as 'PENDING' so consumers don't misinterpret this as "no integration".
       hasIntegrations = false;
-    } else {
-      // Initial load before query completes
-      status = 'PENDING';
+    } else if (statusCode) {
+      // ✅ Real server/transport error → treat as FAILED so we can surface it.
+      status = 'FAILED';
       hasIntegrations = false;
     }
 
@@ -148,7 +156,10 @@ refetchInterval: (query) => {
 
     const lastError =
       data?.lastError ||
-      (statusCode && statusCode !== 404
+      (statusCode &&
+        statusCode !== 404 &&
+        statusCode !== 401 &&
+        statusCode !== 403
         ? `Sync status error (${statusCode})`
         : null) ||
       error?.message ||

@@ -220,13 +220,16 @@ describe('IntegrationContext', () => {
 
       render(<TestConsumer />, { wrapper: createWrapper() });
 
+      // Wait until the syncStatus actually reflects the 404 → NOT_FOUND mapping,
+      // not just the initial "PENDING" + hasIntegrations=false state.
       await waitFor(() => {
-        expect(screen.getByTestId('hasIntegrations')).toHaveTextContent('false');
+        expect(screen.getByTestId('syncStatus')).toHaveTextContent('NOT_FOUND');
       });
 
       expect(screen.getByTestId('hasIntegrations')).toHaveTextContent('false');
       expect(screen.getByTestId('syncStatus')).toHaveTextContent('NOT_FOUND');
       expect(screen.getByTestId('isFirstTimeSync')).toHaveTextContent('false');
+
     });
 
     it.skip('should handle network errors gracefully', async () => {

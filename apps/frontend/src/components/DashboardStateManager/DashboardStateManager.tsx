@@ -18,7 +18,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   forceLoadingSkeleton = false,
 }) => {
   const { currentView, userState, isLoading: isStateLoading } = useDashboardState();
-  const { isLoading: isSyncLoading, syncStatus } = useIntegration();
+  const { isLoading: isSyncLoading, syncStatus, hasIntegrations } = useIntegration();
 
   const emptyStateUserData = userState
     ? {
@@ -28,12 +28,22 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     : undefined;
 
   // Combined loading
+  // Combined loading
   const isLoading = isStateLoading || isSyncLoading || forceLoadingSkeleton;
 
-  // Sync is actively running
-  const isSyncing = ['PENDING', 'SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'SYNCING_CUSTOMERS', 'COMPLETING']
-  .includes(syncStatus,
-  );
+  // Sync is actively running *only* when we actually have an integration.
+  const inProgressStatuses: string[] = [
+    'PENDING',
+    'SYNCING_PRODUCTS',
+    'SYNCING_ORDERS',
+    'SYNCING_LINE_ITEMS',
+    'SYNCING_INVENTORY',
+    'SYNCING_SHOP',
+    'COMPLETING',
+  ];
+
+  const isSyncing =
+    hasIntegrations && inProgressStatuses.includes(syncStatus as string);
 
   console.log('[DashboardStateManager] render decision', {
     currentView,

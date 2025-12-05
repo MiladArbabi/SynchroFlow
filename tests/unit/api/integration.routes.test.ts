@@ -6,7 +6,8 @@ jest.mock('api-src/api/integrations/integration.controller', () => ({
   initiateOAuth: jest.fn(),
   handleOAuthCallback: jest.fn(), 
   getSyncStatus: jest.fn(),
-  preFlightCheck: jest.fn()
+  preFlightCheck: jest.fn(),
+  triggerManualSync: jest.fn(),
 }));
 
 jest.mock('api-src/middleware/auth.middleware', () => ({
@@ -18,7 +19,8 @@ import {
   initiateOAuth, 
   handleOAuthCallback, 
   getSyncStatus ,
-  preFlightCheck
+  preFlightCheck,
+  triggerManualSync
 } from 'api-src/api/integrations/integration.controller';
 import { authenticateToken } from 'api-src/middleware/auth.middleware';
 
@@ -31,7 +33,7 @@ interface RouteLayer {
   };
 }
 
-describe.skip('Integration Routes', () => {
+describe('Integration Routes', () => {
   let router: Router;
 
   beforeEach(() => {
@@ -102,7 +104,21 @@ describe.skip('Integration Routes', () => {
   expect(preFlightRoute?.route?.stack[1].handle).toBe(preFlightCheck);
   });
 
-  it('should have exactly 4 routes configured', () => {
+  it('should configure POST /sync/:integrationId with authenticateToken and triggerManualSync', () => {
+    const routeStack = router.stack as RouteLayer[];
+
+    const manualSyncRoute = routeStack.find(layer =>
+      layer.route?.path === '/sync/:integrationId' &&
+      layer.route?.methods.post
+    );
+
+    expect(manualSyncRoute).toBeDefined();
+    expect(manualSyncRoute?.route?.stack[0].handle).toBe(authenticateToken);
+    expect(manualSyncRoute?.route?.stack[1].handle).toBe(triggerManualSync);
+  });
+
+
+    it('should have exactly 5 routes configured', () => {
     const routeStack = router.stack as RouteLayer[];
     const routes = routeStack
       .filter(layer => layer.route)
@@ -111,13 +127,14 @@ describe.skip('Integration Routes', () => {
         method: Object.keys(layer.route!.methods || {})[0]
       }));
     
-    expect(routes).toHaveLength(4);
+    expect(routes).toHaveLength(5);
     expect(routes).toEqual(
       expect.arrayContaining([
         { path: '/oauth/initiate', method: 'get' },
         { path: '/oauth/callback/:platform', method: 'get' },
         { path: '/sync-status', method: 'get' },
-        { path: '/pre-flight', method: 'get' }
+        { path: '/pre-flight', method: 'get' },
+        { path: '/sync/:integrationId', method: 'post' }, 
       ])
     );
   });
