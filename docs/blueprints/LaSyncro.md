@@ -625,7 +625,7 @@ try {
     // Fallback path (non-PCD only)
     await performNonPCDSync(accessToken, platformShopName, shopId, integrationId);
     // On success:
-    //   integrations.sync_status = "COMPLETED_PARTIAL"
+    //   integrations.sync_status = "COMPLETED"
     //   integrations.sync_last_error = "PCD access required for orders and customers"
   } else {
     // Hard failure

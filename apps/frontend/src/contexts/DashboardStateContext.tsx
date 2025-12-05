@@ -14,6 +14,7 @@ interface UserState {
     shopify_connected: boolean;
     stripe_connected: boolean;
     first_insight_delivered: boolean;
+    orders_per_month_segment?: '1-50' | '51-200' | '201-500' | '501-1000' | '1000+' | null;
   };
   milestones: Array<{
     id: number;

@@ -74,7 +74,6 @@ The onboarding state machine is driven by the Shopify integration record:
   - `SYNCING_SHOP`  
   - `COMPLETING`  
   - `COMPLETED`  
-  - `COMPLETED_PARTIAL`  
   - `FAILED`
 - `sync_progress_{current,total}`
 - `sync_last_error`
@@ -113,7 +112,8 @@ sync_status in [
   "SYNCING_INVENTORY",
   "SYNCING_SHOP",
   "COMPLETING",
-  "COMPLETED_PARTIAL" // partial but still treated as “syncing” in v1
+  
+  // partial but still treated as “syncing” in v1
 ]
 
 Required frontend behavior:
@@ -126,8 +126,6 @@ Notes:
 The user can still move around the UI.
 
 No real widget data is shown yet for FT0.
-
-COMPLETED_PARTIAL is treated as “still in onboarding” for v1, until we finalize the UX for partial data.
 
 The modal closes when isFirstTimeSync === false, which currently maps to:
 
@@ -151,12 +149,7 @@ This is the only state where FT0 widgets render with live data.
 
 If Shopify denies access to Protected Customer Data (orders/customers), the worker falls back to a non-PCD sync and marks:
 
-status === "COMPLETED_PARTIAL"
-sync_last_error === "PCD access required for orders and customers"
-
 v1 behavior (current reality):
-
-Code treats COMPLETED_PARTIAL as “in progress” for layout gating.
 
 Dashboard uses skeletons + sync banner instead of fully “complete” state.
 
@@ -164,8 +157,6 @@ Widgets that depend only on products / inventory / shop may still have usable da
 
 This is a deliberate v1 compromise.
 A future FT0+ spec may:
-
-Promote COMPLETED_PARTIAL to a proper “sync complete (limited data)” state.
 
 Adjust widget registry expectations accordingly.
 

@@ -4,6 +4,12 @@ import { User, UserMilestone } from '../types';
 
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
+export type OrdersPerMonthSegment =
+  | '1-50'
+  | '51-200'
+  | '201-500'
+  | '501-1000'
+  | '1000+';
 
 export class UserStateService {
 
@@ -198,8 +204,10 @@ export class UserStateService {
       .orderBy('achieved_at', 'desc');
 
     const detectedMode = await this.detectUserMode(userId);
-      const onboardingTier = await this.detectOnboardingTier(userId);
-      const connectedPlatforms = await this.getConnectedPlatforms(userId);
+    const onboardingTier = await this.detectOnboardingTier(userId);
+    const connectedPlatforms = await this.getConnectedPlatforms(userId);
+    const ordersPerMonthSegment = await this.getOrdersPerMonthSegment(userId);
+
 
     return {
       user: {
@@ -207,11 +215,12 @@ export class UserStateService {
         email: user.email,
         preferred_mode: user.preferred_mode,
         detected_mode: detectedMode,
-          onboarding_tier: onboardingTier,
-          connected_platforms: connectedPlatforms,
+        onboarding_tier: onboardingTier,
+        connected_platforms: connectedPlatforms,
         shopify_connected: user.shopify_connected,
         stripe_connected: user.stripe_connected,
         first_insight_delivered: user.first_insight_delivered,
+        orders_per_month_segment: ordersPerMonthSegment,
       },
       milestones,
       current_mode: user.preferred_mode || detectedMode,
@@ -239,6 +248,78 @@ export class UserStateService {
       milestone,
       achieved_at: db.fn.now(),
     }).onConflict(['user_id', 'milestone']).ignore(); // Don't duplicate milestones
+  }
+
+  /**
+   * Get the user's orders_per_month_segment from user_states
+   */
+  static async getOrdersPerMonthSegment(
+    userId: number
+  ): Promise<OrdersPerMonthSegment | null> {
+    const row = await db('user_states')
+      .where({ user_id: userId, key: 'orders_per_month_segment' })
+      .first();
+
+    if (!row) {
+      return null;
+    }
+
+    const raw = row.value;
+
+    if (raw == null) {
+      return null;
+    }
+
+    // If stored as a plain string in JSONB
+    if (typeof raw === 'string') {
+      const allowed: OrdersPerMonthSegment[] = [
+        '1-50',
+        '51-200',
+        '201-500',
+        '501-1000',
+        '1000+',
+      ];
+      return (allowed as string[]).includes(raw) ? (raw as OrdersPerMonthSegment) : null;
+    }
+
+    // If stored as an object like { segment: "51-200" } (future-proofing)
+    if (typeof raw === 'object' && typeof (raw as any).segment === 'string') {
+      const candidate = (raw as any).segment as string;
+      const allowed: OrdersPerMonthSegment[] = [
+        '1-50',
+        '51-200',
+        '201-500',
+        '501-1000',
+        '1000+',
+      ];
+      return (allowed as string[]).includes(candidate)
+        ? (candidate as OrdersPerMonthSegment)
+        : null;
+    }
+
+    // Unknown format → treat as unset
+    return null;
+  }
+
+  /**
+   * Update the user's orders_per_month_segment in user_states
+   */
+  static async updateOrdersPerMonthSegment(
+    userId: number,
+    segment: OrdersPerMonthSegment
+  ): Promise<void> {
+    await db('user_states')
+      .insert({
+        user_id: userId,
+        key: 'orders_per_month_segment',
+        value: segment, // stored as JSONB string
+        updated_at: db.fn.now(),
+      })
+      .onConflict(['user_id', 'key'])
+      .merge({
+        value: segment,
+        updated_at: db.fn.now(),
+      });
   }
 
   /**

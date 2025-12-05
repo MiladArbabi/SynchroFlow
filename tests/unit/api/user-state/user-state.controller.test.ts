@@ -87,4 +87,57 @@ describe('UserState API', () => {
       expect(response.body).toEqual({ error: 'Failed to update user mode' });
     });
   });
+    describe('PATCH /api/v1/user-state/state', () => {
+    it('should update orders_per_month_segment and return fresh user state', async () => {
+      const mockState = {
+        user: {
+          id: 1,
+          email: 'test@example.com',
+          detected_mode: 'survival',
+          orders_per_month_segment: '51-200',
+        },
+        milestones: [],
+        current_mode: 'survival',
+      };
+
+      (UserStateService.updateOrdersPerMonthSegment as jest.Mock).mockResolvedValue(undefined);
+      (UserStateService.getUserState as jest.Mock).mockResolvedValue(mockState);
+
+      const response = await request(app)
+        .patch('/api/v1/user-state/state')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ orders_per_month_segment: '51-200' });
+
+      expect(UserStateService.updateOrdersPerMonthSegment).toHaveBeenCalledWith(1, '51-200');
+      expect(UserStateService.getUserState).toHaveBeenCalledWith(1);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockState);
+    });
+
+    it('should reject invalid orders_per_month_segment', async () => {
+      const response = await request(app)
+        .patch('/api/v1/user-state/state')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ orders_per_month_segment: 'invalid' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid orders_per_month_segment');
+      expect(UserStateService.updateOrdersPerMonthSegment).not.toHaveBeenCalled();
+    });
+
+    it('should handle errors when updateUserState fails', async () => {
+      (UserStateService.updateOrdersPerMonthSegment as jest.Mock).mockRejectedValue(
+        new Error('Database error'),
+      );
+
+      const response = await request(app)
+        .patch('/api/v1/user-state/state')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ orders_per_month_segment: '51-200' });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to update user state' });
+    });
+  });
 });

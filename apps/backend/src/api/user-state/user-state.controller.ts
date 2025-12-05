@@ -1,6 +1,6 @@
 // apps/backend/src/api/user-state/user-state.controller.ts
 import { Request, Response } from 'express';
-import { UserStateService } from '../../services/user-state.service';
+import { UserStateService, OrdersPerMonthSegment } from '../../services/user-state.service';
 
 export const getUserState = async (req: Request, res: Response) => {
   try {
@@ -34,6 +34,45 @@ export const getUserState = async (req: Request, res: Response) => {
      return res.status(500).json({ error: 'Failed to get onboarding progress' });
    }
  };
+
+ export const updateUserState = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { orders_per_month_segment } = req.body as {
+      orders_per_month_segment?: OrdersPerMonthSegment;
+    };
+
+    const allowed: OrdersPerMonthSegment[] = [
+      '1-50',
+      '51-200',
+      '201-500',
+      '501-1000',
+      '1000+',
+    ];
+
+    if (!orders_per_month_segment || !allowed.includes(orders_per_month_segment)) {
+      return res.status(400).json({
+        error: 'Invalid orders_per_month_segment',
+        allowedValues: allowed,
+      });
+    }
+
+    // Persist in user_states
+    await UserStateService.updateOrdersPerMonthSegment(userId, orders_per_month_segment);
+
+    // Return the fresh full user state snapshot
+    const userState = await UserStateService.getUserState(userId);
+    return res.status(200).json(userState);
+  } catch (error) {
+    console.error('Error updating user state:', error);
+    return res.status(500).json({ error: 'Failed to update user state' });
+  }
+};
 
 export const updateUserMode = async (req: Request, res: Response) => {
   try {

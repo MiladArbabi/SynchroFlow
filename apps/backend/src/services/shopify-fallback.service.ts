@@ -141,7 +141,7 @@ export const performNonPCDSync = async (accessToken: string, platformShopName: s
 
     // Mark sync as completed (partial data)
     await db('integrations').where({ id: integrationId }).update({
-      sync_status: 'COMPLETED_PARTIAL',
+      sync_status: 'COMPLETED',
       sync_last_error: 'PCD access required for orders and customers',
     });
 

@@ -1,4 +1,4 @@
-import { UserStateService } from 'api-src/services/user-state.service';
+import { UserStateService, OrdersPerMonthSegment } from 'api-src/services/user-state.service';
 
 // Mock the database
 const mockDbInstance = {
@@ -9,14 +9,18 @@ const mockDbInstance = {
    ignore: jest.fn().mockReturnThis(),
    update: jest.fn().mockReturnThis(),
    orderBy: jest.fn(),
+   merge: jest.fn().mockReturnThis(),
  };
 
-jest.mock('api-src/db', () => ({
-  fn: { now: jest.fn() },
-  // Mock the chain: db('users').where().first()
-  __esModule: true,
-  default: jest.fn(() => mockDbInstance)
-}));
+jest.mock('api-src/db', () => {
+  const mockDbFn: any = jest.fn(() => mockDbInstance);
+  mockDbFn.fn = { now: jest.fn() };
+
+  return {
+    __esModule: true,
+    default: mockDbFn,
+  };
+});
 
 describe('UserStateService - Tiered Onboarding', () => {
   beforeEach(() => {
@@ -186,6 +190,59 @@ describe('UserStateService - Tiered Onboarding', () => {
       expect(result.user).toHaveProperty('onboarding_tier');
       expect(result.user).toHaveProperty('connected_platforms');
       expect(Array.isArray(result.user.connected_platforms)).toBe(true);
+    });
+  });
+
+    describe('orders_per_month_segment helpers', () => {
+    test('getOrdersPerMonthSegment returns null when no row', async () => {
+      mockDbInstance.first.mockResolvedValueOnce(null);
+
+      const result = await UserStateService.getOrdersPerMonthSegment(1);
+      expect(result).toBeNull();
+    });
+
+    test('getOrdersPerMonthSegment returns segment when stored as string', async () => {
+      const segment: OrdersPerMonthSegment = '51-200';
+      mockDbInstance.first.mockResolvedValueOnce({ value: segment });
+
+      const result = await UserStateService.getOrdersPerMonthSegment(1);
+      expect(result).toBe(segment);
+    });
+
+    test('getOrdersPerMonthSegment returns segment when stored as object', async () => {
+      const segment: OrdersPerMonthSegment = '201-500';
+      mockDbInstance.first.mockResolvedValueOnce({ value: { segment } });
+
+      const result = await UserStateService.getOrdersPerMonthSegment(1);
+      expect(result).toBe(segment);
+    });
+
+    test('getOrdersPerMonthSegment returns null for invalid value', async () => {
+      mockDbInstance.first.mockResolvedValueOnce({ value: 'not-a-valid-segment' });
+
+      const result = await UserStateService.getOrdersPerMonthSegment(1);
+      expect(result).toBeNull();
+    });
+
+    test('updateOrdersPerMonthSegment upserts into user_states', async () => {
+      const segment: OrdersPerMonthSegment = '51-200';
+
+      await UserStateService.updateOrdersPerMonthSegment(1, segment);
+
+      expect(mockDbInstance.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 1,
+          key: 'orders_per_month_segment',
+          value: segment,
+        }),
+      );
+
+      expect(mockDbInstance.onConflict).toHaveBeenCalledWith(['user_id', 'key']);
+      expect(mockDbInstance.merge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          value: segment,
+        }),
+      );
     });
   });
 });

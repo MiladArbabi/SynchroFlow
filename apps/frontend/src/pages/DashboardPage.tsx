@@ -19,6 +19,8 @@ import { DashboardStateManager } from 'components/DashboardStateManager/Dashboar
 import { WidgetLayoutWithRegistry } from 'components/widgets/WidgetLayoutWithRegistry';
 
 import { SpecterOnboardingBanner } from 'components/specter/SpecterOnboardingBanner';
+import { SyncProgressBanner } from 'components/SyncProgressBanner';
+import { OrdersPerMonthBanner } from 'components/OrdersPerMonthBanner';
 
 export const DashboardPage = ({
   children,
@@ -222,14 +224,21 @@ export const DashboardPage = ({
       />
 
      <DashboardStateManager
-        onConnectStore={handleOpenConnectModal}
-        forceLoadingSkeleton={showPostSyncSkeleton}
-      >
-        {/* Specter onboarding nudges */}
-        <SpecterOnboardingBanner />
-        {/* Widget system integration */}
-        <WidgetLayoutWithRegistry />
-      </DashboardStateManager>
+      onConnectStore={handleOpenConnectModal}
+      forceLoadingSkeleton={showPostSyncSkeleton}
+    >
+      {/* Sync progress for initial + recurring syncs */}
+      <SyncProgressBanner />
+
+      {/* Orders-per-month segmentation (FT0 micro-step #1) */}
+      <OrdersPerMonthBanner />
+
+      {/* Specter onboarding nudges */}
+      <SpecterOnboardingBanner />
+
+      {/* Widget system integration */}
+      <WidgetLayoutWithRegistry />
+    </DashboardStateManager>
     </>
   );
 };

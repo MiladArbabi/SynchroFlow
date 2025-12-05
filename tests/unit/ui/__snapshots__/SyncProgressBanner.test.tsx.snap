@@ -1,0 +1,3 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`SyncProgressBanner renders nothing when there is no integration 1`] = `<div />`;

@@ -642,7 +642,7 @@ export const performNonPCDSync = <span class="fstat-no" title="function not cove
 &nbsp;
     // Mark sync as completed (partial data)
 <span class="cstat-no" title="statement not covered" >    await db('integrations').where({ id: integrationId }).update({</span>
-      sync_status: 'COMPLETED_PARTIAL',
+      sync_status: 'COMPLETED',
       sync_last_error: 'PCD access required for orders and customers',
     });
 &nbsp;

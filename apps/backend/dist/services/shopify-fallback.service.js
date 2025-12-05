@@ -130,7 +130,7 @@ const performNonPCDSync = async (accessToken, platformShopName, shopId, integrat
         });
         // Mark sync as completed (partial data)
         await (0, db_1.default)('integrations').where({ id: integrationId }).update({
-            sync_status: 'COMPLETED_PARTIAL',
+            sync_status: 'COMPLETED',
             sync_last_error: 'PCD access required for orders and customers',
         });
         console.log(`[ShopifyFallback] Non-PCD sync COMPLETED for shopId: ${shopId}`);
