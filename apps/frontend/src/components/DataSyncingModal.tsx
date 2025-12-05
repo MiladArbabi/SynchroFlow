@@ -70,47 +70,92 @@ interface DataSyncingModalProps {
 export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClose }) => {
   const { syncStatus, progress } = useIntegration();
 
-  // Map the real API status to the stepper's activeStep
-  const activeStep = React.useMemo(() => {
-    switch (syncStatus) {
-      case 'SYNCING_PRODUCTS':
-        return 0;
-      case 'SYNCING_CUSTOMERS':
-        return 1;
-      case 'COMPLETED':
-        return 2;
-      default:
-        return 0;
-    }
-  }, [syncStatus]);
+  // Local display progress (purely visual – decoupled from backend speed).
+  // Backend sync is effectively instant in FT0, so we simulate a smooth ramp
+  // so the user *feels* like data is being prepared.
+  const [displayPercent, setDisplayPercent] = React.useState(0);
 
+  // Drive the stepper from the *visual* progress instead of raw syncStatus.
+  // Backend goes to COMPLETED almost instantly in FT0, so if we tie the steps
+  // to syncStatus we skip straight to the last step and lose the "journey".
+  const activeStep = React.useMemo(() => {
+    if (displayPercent < 34) {
+      return 0; // "Products"
+    }
+    if (displayPercent < 67) {
+      return 1; // "Customers"
+    }
+    return 2;   // "Completed"
+  }, [displayPercent]);
+
+    // Smoothly animate 1% -> 99% over ~2.8s whenever the modal opens.
+  // We deliberately ignore how fast the backend completes; this is a UX affordance,
+  // not a literal progress bar.
   useEffect(() => {
-    if (syncStatus === 'COMPLETED') {
-      // Wait 1.5s to let the user see the "Completed" checkmark
-      const timer = setTimeout(() => {
-        onClose();
-      }, 1500);
-      return () => clearTimeout(timer);
-     }
-  }, [syncStatus, onClose]);
+    console.log('[DataSyncingModal] open changed', {
+      open,
+      syncStatus,
+      backendProgress: progress?.percentage,
+    });
+
+    if (!open) {
+      setDisplayPercent(0);
+      return;
+    }
+
+    const START_AT = 1;
+    const TARGET = 99;
+    const DURATION_MS = 2800;
+    const TICK_MS = 50;
+
+    const steps = Math.floor(DURATION_MS / TICK_MS);
+    const delta = (TARGET - START_AT) / steps;
+
+    let current = START_AT;
+    setDisplayPercent(START_AT);
+
+    const timer = window.setInterval(() => {
+      current += delta;
+
+      if (current >= TARGET) {
+        current = TARGET;
+        window.clearInterval(timer);
+      }
+
+      setDisplayPercent(Math.round(current));
+    }, TICK_MS);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [open, syncStatus, progress?.percentage]);
+
+  // Use purely visual progress for FT0 onboarding.
+  // Backend is effectively instant; showing 100% immediately ruins the UX.
+  const effectivePercent = displayPercent;
 
   return (
-    // We disable backdrop click and escape key to make it a celebratory "moment"
-    <Dialog open={open} disableEscapeKeyDown={true} fullWidth maxWidth="sm">
-      {/* FIXED: Remove Typography wrapper to avoid hydration error */}
-      <DialogTitle 
-        component="div" 
-        sx={{ 
-          textAlign: 'center', 
+    <Dialog
+      open={open}
+      disableEscapeKeyDown
+      fullWidth
+      maxWidth="sm"
+    >
+      <DialogTitle
+        component="div"
+        sx={{
+          textAlign: 'center',
           mt: 2,
-          typography: 'h4' // Apply h4 styling without nesting headings
+          typography: 'h4',
         }}
       >
         Connection Successful!
       </DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}>
+      <DialogContent
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}
+      >
         <Typography variant="body1" align="center" sx={{ mb: 4 }}>
-          We're syncing your data from Shopify. This may take a few minutes.
+          We're syncing your data from Shopify. This may take a few moments.
         </Typography>
 
         <Box sx={{ width: '100%' }}>
@@ -122,11 +167,15 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
             ))}
           </Stepper>
         </Box>
-        {/* Add the real progress bar */}
+
         <Box sx={{ width: '100%', mt: 4 }}>
-          <LinearProgress variant="determinate" value={progress.percentage} data-testid="linear-progress"/>
+          <LinearProgress
+            variant="determinate"
+            value={effectivePercent}
+            data-testid="linear-progress"
+          />
           <Typography variant="body2" align="center" sx={{ mt: 1 }}>
-            {progress.percentage}%
+            {effectivePercent}%
           </Typography>
         </Box>
       </DialogContent>

@@ -9,13 +9,18 @@ import { useAuth } from './AuthContext'; // We need auth state
 // --- Define State Shape ---
 // This is the shape of the data from our new API endpoint
 interface SyncStatus {
-  status: 
-  'PENDING' |
-  'SYNCING_PRODUCTS' |
-  'SYNCING_CUSTOMERS' |
-  'COMPLETED' |
-  'FAILED' |
-  'NOT_FOUND';
+  status:
+    | 'PENDING'
+    | 'SYNCING_PRODUCTS'
+    | 'SYNCING_ORDERS'
+    | 'SYNCING_LINE_ITEMS'
+    | 'SYNCING_INVENTORY'
+    | 'SYNCING_SHOP'
+    | 'COMPLETING'
+    | 'COMPLETED'
+    | 'COMPLETED_PARTIAL'
+    | 'FAILED'
+    | 'NOT_FOUND';
 
   progress: {
     current: number;
@@ -73,9 +78,24 @@ export const IntegrationProvider: React.FC<IntegrationProviderProps> = ({ childr
     // --- POLLING LOGIC ---
     // Poll every 2 seconds *only if* the sync is actively in progress.
     // Update the polling logic to match our simplified steps:
-refetchInterval: (query) =>
-  ['PENDING', 'SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'COMPLETING']
-  .includes(query.state.data?.status as string) ? 2000 : false,
+refetchInterval: (query) => {
+      const data = query.state.data as SyncStatus | undefined;
+      const status = data?.status;
+
+      if (!status) return false;
+
+      const inProgressStatuses: SyncStatus['status'][] = [
+        'PENDING',
+        'SYNCING_PRODUCTS',
+        'SYNCING_ORDERS',
+        'SYNCING_LINE_ITEMS',
+        'SYNCING_INVENTORY',
+        'SYNCING_SHOP',
+        'COMPLETING',
+      ];
+
+      return inProgressStatuses.includes(status) ? 2000 : false;
+    },
     
 
     refetchOnWindowFocus: true,
@@ -95,23 +115,62 @@ refetchInterval: (query) =>
   }, [queryClient]);
 
   // Derive our clean state from the raw API data
+    // Derive our clean state from the raw API data
   const value = useMemo((): IntegrationContextType => {
-    const is404 = error?.response?.status === 404;
-    const status = data?.status || (is404 ? 'NOT_FOUND' : 'PENDING');
+    const statusCode = error?.response?.status;
 
-    const hasIntegrations = status !== 'NOT_FOUND';
-    
-    // "First Time Sync" is any state that isn't 'COMPLETED'
-    // (assuming they just connected)
+    let status: SyncStatus['status'];
+    let hasIntegrations = false;
+
+    if (data) {
+      // ✅ We have a real integration record from the API
+      status = data.status;
+      hasIntegrations = status !== 'NOT_FOUND';
+    } else if (statusCode === 404) {
+      // ✅ Backend explicitly says "no integration"
+      status = 'NOT_FOUND';
+      hasIntegrations = false;
+    } else if (statusCode) {
+      // ✅ Any other error (401/403/500/etc) we treat as "no usable integration"
+      // for the onboarding flow. We DON'T want to show sync UI for broken auth.
+      status = 'NOT_FOUND';
+      hasIntegrations = false;
+    } else {
+      // Initial load before query completes
+      status = 'PENDING';
+      hasIntegrations = false;
+    }
+
+    // "First Time Sync" is any non-completed state **when we actually have an integration**
     const isFirstTimeSync = hasIntegrations && status !== 'COMPLETED';
+
+    const progress = data?.progress || { current: 0, total: 0, percentage: 0 };
+
+    const lastError =
+      data?.lastError ||
+      (statusCode && statusCode !== 404
+        ? `Sync status error (${statusCode})`
+        : null) ||
+      error?.message ||
+      null;
+
+    console.log('[IntegrationContext] derived state', {
+      rawData: data,
+      statusCode,
+      status,
+      hasIntegrations,
+      isFirstTimeSync,
+      progress,
+      lastError,
+    });
 
     return {
       isLoading: isLoading && isLoggedIn,
       syncStatus: status,
       hasIntegrations,
       isFirstTimeSync,
-      progress: data?.progress || { current: 0, total: 0, percentage: 0 },
-      lastError: data?.lastError || error?.message || null,
+      progress,
+      lastError,
       refreshIntegrationStatus,
     };
   }, [data, isLoading, error, isLoggedIn, refreshIntegrationStatus]);

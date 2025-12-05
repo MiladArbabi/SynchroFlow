@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/components/DashboardStateManager/DashboardStateManager.tsx
 import * as React from 'react';
 import { Box } from '@mui/material';
@@ -8,55 +9,64 @@ import { EmptyDashboardState } from '../EmptyStates/EmptyDashboardState';
 interface DashboardStateManagerProps {
   onConnectStore: () => void;
   children: React.ReactNode;
+  forceLoadingSkeleton?: boolean;
 }
 
-export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({ 
-  onConnectStore, 
-  children 
+export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
+  onConnectStore,
+  children,
+  forceLoadingSkeleton = false,
 }) => {
   const { currentView, userState, isLoading: isStateLoading } = useDashboardState();
   const { isLoading: isSyncLoading, syncStatus } = useIntegration();
 
-  // Extract the user data for EmptyDashboardState
- const emptyStateUserData = userState ? {
-  shopify_connected: userState.user.shopify_connected,
-  first_insight_delivered: userState.user.first_insight_delivered
- } : undefined;
+  const emptyStateUserData = userState
+    ? {
+        shopify_connected: userState.user.shopify_connected,
+        first_insight_delivered: userState.user.first_insight_delivered,
+      }
+    : undefined;
 
-  // COMBINE THE LOADING CHECKS
-  const isLoading = isStateLoading || isSyncLoading;
+  // Combined loading
+  const isLoading = isStateLoading || isSyncLoading || forceLoadingSkeleton;
 
-  // CHECK IF A SYNC IS IN PROGRESS
-  const isSyncing = ['PENDING', 'SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'COMPLETING'].includes(syncStatus);
-
- // Show loading state or empty state if we are loading OR syncing
- if (isLoading || isSyncing) { // <-- 5. UPDATE THIS CONDITION
-  return (
-   <EmptyDashboardState
-    onConnectStore={onConnectStore}
-    userState={emptyStateUserData}
-    // isSyncing prop removed to fix TS error.
-    // The EmptyDashboardState will now correctly show its own
-    // loading skeleton or 'connected' message based on userState.
-   />
+  // Sync is actively running
+  const isSyncing = ['PENDING', 'SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'SYNCING_CUSTOMERS', 'COMPLETING']
+  .includes(syncStatus,
   );
- }
 
- // Show empty states based on user progression
- if (currentView === 'empty') {
+  console.log('[DashboardStateManager] render decision', {
+    currentView,
+    isStateLoading,
+    isSyncLoading,
+    forceLoadingSkeleton,
+    isSyncing,
+  });
+
+  if (isLoading || isSyncing) {
+    console.log('[DashboardStateManager] Rendering EmptyDashboardState (loading/syncing).');
+    return (
+      <EmptyDashboardState
+        onConnectStore={onConnectStore}
+        userState={emptyStateUserData}
+      />
+    );
+  }
+
+  if (currentView === 'empty') {
+    console.log('[DashboardStateManager] Rendering EmptyDashboardState (empty view).');
+    return (
+      <EmptyDashboardState
+        onConnectStore={onConnectStore}
+        userState={emptyStateUserData}
+      />
+    );
+  }
+
+  console.log('[DashboardStateManager] Rendering dashboard children (widgets).');
   return (
-   <EmptyDashboardState
-    onConnectStore={onConnectStore}
-    userState={emptyStateUserData}
-   />
+    <Box sx={{ p: 2 }}>
+      {children}
+    </Box>
   );
- }
-
- // For now, return children for survival/growth/architect modes
- // We'll enhance this with mode-specific layouts later
- return (
-  <Box sx={{ p: 2 }}>
-   {children}
-  </Box>
- );
 };
