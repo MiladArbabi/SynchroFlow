@@ -18,7 +18,6 @@ interface SyncStatus {
     | 'SYNCING_SHOP'
     | 'COMPLETING'
     | 'COMPLETED'
-    | 'COMPLETED_PARTIAL'
     | 'FAILED'
     | 'NOT_FOUND';
 
