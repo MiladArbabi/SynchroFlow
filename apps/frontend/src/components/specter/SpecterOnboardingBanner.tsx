@@ -3,12 +3,26 @@ import React from 'react';
 import { Alert, AlertTitle, Button, Stack, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useSpecterConfig } from 'contexts/SpecterConfigContext';
+import { useIntegration } from 'contexts/IntegrationContext';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 
 export const SpecterOnboardingBanner: React.FC = () => {
   const navigate = useNavigate();
   const { config, shouldShowOnboardingNudges, saveConfig } = useSpecterConfig();
 
-  if (!shouldShowOnboardingNudges) {
+  const { syncStatus } = useIntegration();
+  const { modules } = useEntitlements() as {
+    modules?: string[];
+    flags?: string[];
+  };
+
+  const hasSpecterFree =
+    Array.isArray(modules) && modules.includes('specter_sdk_free');
+
+  const isSyncComplete = syncStatus === 'COMPLETED';
+
+
+  if (!shouldShowOnboardingNudges || !hasSpecterFree || !isSyncComplete) {
     return null;
   }
 

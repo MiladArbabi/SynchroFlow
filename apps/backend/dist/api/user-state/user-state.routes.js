@@ -9,5 +9,6 @@ router.get('/onboarding-progress', auth_middleware_1.authenticateToken, user_sta
 router.put('/mode', auth_middleware_1.authenticateToken, user_state_controller_1.updateUserMode);
 router.get('/product-costs', auth_middleware_1.authenticateToken, user_state_controller_1.getUserProductCosts);
 router.post('/product-costs', auth_middleware_1.authenticateToken, user_state_controller_1.updateUserProductCosts);
+router.patch('/state', auth_middleware_1.authenticateToken, user_state_controller_1.updateUserState);
 exports.default = router;
 //# sourceMappingURL=user-state.routes.js.map

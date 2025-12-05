@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateUserProductCosts = exports.getUserProductCosts = exports.updateUserMode = exports.getOnboardingProgress = exports.getUserState = void 0;
+exports.updateUserProductCosts = exports.getUserProductCosts = exports.updateUserMode = exports.updateUserState = exports.getOnboardingProgress = exports.getUserState = void 0;
 const user_state_service_1 = require("../../services/user-state.service");
 const getUserState = async (req, res) => {
     try {
@@ -32,6 +32,38 @@ const getOnboardingProgress = async (req, res) => {
     }
 };
 exports.getOnboardingProgress = getOnboardingProgress;
+const updateUserState = async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        const { orders_per_month_segment } = req.body;
+        const allowed = [
+            '1-50',
+            '51-200',
+            '201-500',
+            '501-1000',
+            '1000+',
+        ];
+        if (!orders_per_month_segment || !allowed.includes(orders_per_month_segment)) {
+            return res.status(400).json({
+                error: 'Invalid orders_per_month_segment',
+                allowedValues: allowed,
+            });
+        }
+        // Persist in user_states
+        await user_state_service_1.UserStateService.updateOrdersPerMonthSegment(userId, orders_per_month_segment);
+        // Return the fresh full user state snapshot
+        const userState = await user_state_service_1.UserStateService.getUserState(userId);
+        return res.status(200).json(userState);
+    }
+    catch (error) {
+        console.error('Error updating user state:', error);
+        return res.status(500).json({ error: 'Failed to update user state' });
+    }
+};
+exports.updateUserState = updateUserState;
 const updateUserMode = async (req, res) => {
     try {
         const userId = req.user?.userId;

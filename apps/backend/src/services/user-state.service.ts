@@ -308,16 +308,18 @@ export class UserStateService {
     userId: number,
     segment: OrdersPerMonthSegment
   ): Promise<void> {
+    const payload = { segment }; // valid JSON, plays nicely with jsonb
+
     await db('user_states')
       .insert({
         user_id: userId,
         key: 'orders_per_month_segment',
-        value: segment, // stored as JSONB string
+        value: payload,
         updated_at: db.fn.now(),
       })
       .onConflict(['user_id', 'key'])
       .merge({
-        value: segment,
+        value: payload,
         updated_at: db.fn.now(),
       });
   }

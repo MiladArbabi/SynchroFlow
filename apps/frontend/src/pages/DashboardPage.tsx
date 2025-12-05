@@ -100,24 +100,37 @@ export const DashboardPage = ({
     const prev = lastHasIntegrationsRef.current;
     const curr = hasIntegrations;
 
+    // Read "has seen sync modal" flag from sessionStorage
+    let hasSeenSyncModal = false;
+    if (typeof window !== 'undefined') {
+      hasSeenSyncModal =
+        window.sessionStorage.getItem('hasSeenSyncModal') === 'true';
+    }
+
     console.log('[DashboardPage] hasIntegrations change', {
       previous: prev,
       current: curr,
       isSyncModalOpen,
+      hasSeenSyncModal,
     });
 
-    // Only react when we go from "no integrations" -> "has integrations"
-    if (!prev && curr && !isSyncModalOpen) {
+    // Only react when going from "no integrations" -> "has integrations"
+    // AND we haven't already shown the modal in this browser session.
+    if (!prev && curr && !isSyncModalOpen && !hasSeenSyncModal) {
       console.log(
         '[DashboardPage] Detected first integration connection. Opening DataSyncingModal.'
       );
       openedAtRef.current = Date.now();
       setIsSyncModalOpen(true);
+
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('hasSeenSyncModal', 'true');
+      }
     }
 
-    // Always update the ref to the latest value
     lastHasIntegrationsRef.current = curr;
   }, [hasIntegrations, isSyncModalOpen]);
+
 
     // --- Enforce "modal visible for at least MIN_MODAL_MS" rule ---
     useEffect(() => {
@@ -223,22 +236,22 @@ export const DashboardPage = ({
         data-testid="data-syncing-modal"
       />
 
-     <DashboardStateManager
-      onConnectStore={handleOpenConnectModal}
-      forceLoadingSkeleton={showPostSyncSkeleton}
-    >
-      {/* Sync progress for initial + recurring syncs */}
-      <SyncProgressBanner />
+      <DashboardStateManager
+        onConnectStore={handleOpenConnectModal}
+        forceLoadingSkeleton={showPostSyncSkeleton || isSyncModalOpen}
+      >
+        {/* Sync progress for initial + recurring syncs */}
+        <SyncProgressBanner />
 
-      {/* Orders-per-month segmentation (FT0 micro-step #1) */}
-      <OrdersPerMonthBanner />
+        {/* Orders-per-month segmentation (FT0 micro-step #1) */}
+        <OrdersPerMonthBanner />
 
-      {/* Specter onboarding nudges */}
-      <SpecterOnboardingBanner />
+        {/* Specter onboarding nudges */}
+        <SpecterOnboardingBanner />
 
-      {/* Widget system integration */}
-      <WidgetLayoutWithRegistry />
-    </DashboardStateManager>
+        {/* Widget system integration */}
+        <WidgetLayoutWithRegistry />
+      </DashboardStateManager>
     </>
   );
 };

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/components/DashboardStateManager/DashboardStateManager.tsx
 import * as React from 'react';
-import { Box } from '@mui/material';
+import { Box, Skeleton } from '@mui/material';
 import { useDashboardState } from '../../contexts/DashboardStateContext';
 import { useIntegration } from '../../contexts/IntegrationContext'; 
 import { EmptyDashboardState } from '../EmptyStates/EmptyDashboardState';
@@ -27,9 +27,8 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
       }
     : undefined;
 
-  // Combined loading
-  // Combined loading
-  const isLoading = isStateLoading || isSyncLoading || forceLoadingSkeleton;
+  // Combined "real" loading (excluding the post-sync skeleton flag)
+  const isLoading = isStateLoading || isSyncLoading;
 
   // Sync is actively running *only* when we actually have an integration.
   const inProgressStatuses: string[] = [
@@ -45,7 +44,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   const isSyncing =
     hasIntegrations && inProgressStatuses.includes(syncStatus as string);
 
-  console.log('[DashboardStateManager] render decision', {
+    console.log('[DashboardStateManager] render decision', {
     currentView,
     isStateLoading,
     isSyncLoading,
@@ -53,6 +52,19 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     isSyncing,
   });
 
+  // 1) Post-sync skeleton window: this overrides normal loading/layout
+  if (forceLoadingSkeleton) {
+    console.log('[DashboardStateManager] Rendering post-sync skeleton.');
+    return (
+      <Box sx={{ p: 2 }}>
+        <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={200} />
+      </Box>
+    );
+  }
+
+  // 2) Normal loading / sync in progress
   if (isLoading || isSyncing) {
     console.log('[DashboardStateManager] Rendering EmptyDashboardState (loading/syncing).');
     return (
@@ -63,16 +75,32 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     );
   }
 
+  // 3) Not loading, but effectively "empty"
   if (currentView === 'empty') {
-    console.log('[DashboardStateManager] Rendering EmptyDashboardState (empty view).');
+    if (!hasIntegrations) {
+      console.log('[DashboardStateManager] Rendering EmptyDashboardState (no integrations).');
+      return (
+        <EmptyDashboardState
+          onConnectStore={onConnectStore}
+          userState={emptyStateUserData}
+        />
+      );
+    }
+
+    // We *do* have integrations, so "empty" is just a momentary transition.
+    console.log(
+      '[DashboardStateManager] Rendering skeleton for integrated shop with empty view.'
+    );
     return (
-      <EmptyDashboardState
-        onConnectStore={onConnectStore}
-        userState={emptyStateUserData}
-      />
+      <Box sx={{ p: 2 }}>
+        <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={200} />
+      </Box>
     );
   }
 
+  // 4) Fully ready: render the actual dashboard widgets
   console.log('[DashboardStateManager] Rendering dashboard children (widgets).');
   return (
     <Box sx={{ p: 2 }}>
