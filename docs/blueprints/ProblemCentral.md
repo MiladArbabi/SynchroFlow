@@ -576,3 +576,237 @@ const PROBLEM_SOLVE_METRICS = {
 > * Redefine return policy semantics,
 >
 > is out of contract and **not** ProblemCenter.
+
+---
+
+# 10. Onboarding & Readiness – ProblemCenter (FT0)
+
+**Goal:** Define exactly when a shop is considered **ProblemCenterReady**, what must be true in the **issue lifecycle plane** and **quality-signal plane**, and how this maps to onboarding tasks surfaced in FT0.
+
+## 10.1 Role in FT0 & LaSyncro
+
+ProblemCenter is the **warehouse & product issue brain** of LaSyncro:
+
+* It owns:
+
+  * Canonical issues (`WmsIssue`),
+  * Evidence (`IssueMediaAttachment`),
+  * Root causes / resolutions,
+  * Quality signals (`ProductQualityEvent`, `ReturnQualityContextEvent`),
+  * Issue analytics (`WmsIssueAnalyticsEvent`),
+  * Task payloads (`IssueTaskPayload` → Echo Hub).
+
+* It connects:
+
+  * **WMS-Lite** (physical problems)
+  * **SKU OS** (product health degradation)
+  * **ReturnNexus** (returns context)
+  * **InsightCore** (issue & quality analytics)
+  * **Echo Hub** (workflows & tasks)
+
+Therefore, FT0 onboarding MUST ensure that for any shop using ProblemCenter:
+
+* Issues are actually being created (from WMS intents or direct report),
+* At least one issue has moved through the lifecycle,
+* Quality events are flowing out to the rest of the CNS.
+
+## 10.2 Readiness Definition
+
+Conceptual snapshot:
+
+```typescript
+// Conceptual contract – not implementation detail
+type ProblemCenterReadinessFlag =
+  | 'NO_ISSUES_REPORTED'
+  | 'NO_ISSUE_FROM_WMS_INTENT'
+  | 'NO_HIGH_SEVERITY_LIFECYCLE'
+  | 'NO_QUALITY_EVENTS_EMITTED'
+  | 'NO_TASK_PAYLOADS_EMITTED'
+  | 'EVENT_SINK_DEGRADED'; // SKU OS / Echo Hub / InsightCore / ReturnNexus down
+
+export interface ProblemCenterReadinessSnapshot {
+  shopId: number;
+  isReady: boolean;
+  flags: ProblemCenterReadinessFlag[];
+  lastEvaluatedAt: string; // ISO
+}
+```
+
+For **base FT0** (issue + quality brain ready), `ProblemCenterReady(shopId)` is **true** when:
+
+1. **At least one issue exists for the shop**
+   * `ps_issues` has ≥ 1 row for this shop.
+   * Source can be:
+     * Direct API (`/issues/report`), or
+     * WMS-Lite via `WmsIssueIntentEvent`.
+
+2. **At least one issue originated from WMS-Lite** (if WMS-Lite is installed)
+   * At least one `ps_issues` row exists where:
+     * There is a corresponding `WmsIssueIntentEvent` consumed for this shop, and
+     * `sourceStep` ∈ (`RECEIVE` | `STOW` | `PICK` | `PACK` | `SHIP` | `RETURN_INSPECTION`).
+   * If WMS-Lite is **not installed**, this condition is ignored.
+
+3. **Issue lifecycle exercised at least once**
+   * At least one issue has moved across statuses with a recorded `ps_issue_events` trail:
+     * Example: `OPEN` → `IN_PROGRESS` → `RESOLVED`.
+   * This proves that:
+     * Transitions API works,
+     * Status rules are enforced,
+     * Events are recorded.
+
+4. **At least one quality signal has been emitted**
+   * One of the following has occurred for this shop:
+     * A `ProductQualityEvent` emitted to SKU OS, or
+     * A `ReturnQualityContextEvent` emitted to ReturnNexus, or
+     * A `WmsIssueAnalyticsEvent` emitted to InsightCore.
+   * This proves ProblemCenter is not a dead-end; it's actually feeding the CNS.
+
+5. **Task payload flow exercised** (if Echo Hub is installed)
+   * If Echo Hub is installed:
+     * At least one `IssueTaskPayload` emitted for this shop.
+   * If Echo Hub is **not installed**, this condition is ignored for readiness and treated as a locked/optional enhancement.
+
+If **1–3 fail**, `ProblemCenterReady = false`.  
+**4–5** are required to say **"quality intelligence is live"** when the respective downstream modules are enabled.
+
+## 10.3 Merchant-Facing Onboarding Tasks (What FT0 Should Drive)
+
+From the merchant's perspective, ProblemCenter onboarding should feel like:
+
+> "We help you catch, track, and fix warehouse / product problems – and feed that into returns, product health, and workflows."
+
+**Concrete tasks:**
+
+1. **Report your first issue**
+   * **Task:** "Report your first warehouse or product issue"
+   * **Completes when:**
+     * `ps_issues` has ≥ 1 issue for this shop.
+   * **UX:**
+     * Simple issue-report UI (or WMS-integrated shortcut) with:
+       * Type, severity, source step, title, description, optional media.
+
+2. **Send an issue from WMS-Lite** (conditional on WMS-Lite)
+   * **Task:** "Send an issue from WMS-Lite to ProblemCenter"
+   * **Shown only if** WMS-Lite is installed.
+   * **Completes when:**
+     * At least one `WmsIssueIntentEvent` has been consumed and turned into a `WmsIssue`.
+   * **Purpose:**
+     * Proves the "physical → issues" pipeline is live.
+
+3. **Move an issue through its lifecycle**
+   * **Task:** "Move an issue from open to resolved"
+   * **Completes when:**
+     * At least one issue has:
+       * Initial `OPEN` state, and
+       * A `ps_issue_events` trail showing a valid transition:
+         * e.g. `OPEN` → `IN_PROGRESS` → `RESOLVED`.
+   * **UX:**
+     * Guided CTA: "Click into an issue and mark it as in progress / resolved."
+
+4. **Send quality signals to other modules**
+   * **Task:** "Send a quality signal from an issue"
+   * **Completes when** at least one of:
+     * `ProductQualityEvent` emitted (SKU OS installed), or
+     * `ReturnQualityContextEvent` emitted (ReturnNexus installed), or
+     * `WmsIssueAnalyticsEvent` emitted (InsightCore installed).
+   * **Implementation detail:**
+     * Could trigger on:
+       * Root cause set + resolution code for an issue,
+       * Or explicit "Mark as quality-relevant" action in UI.
+
+5. **Create a task from an issue** (conditional on Echo Hub)
+   * **Task:** "Create a follow-up task from an issue"
+   * **Shown only if** Echo Hub is installed.
+   * **Completes when:**
+     * At least one `IssueTaskPayload` has been emitted for this shop.
+   * **UX:**
+     * Button on issue detail: "Create follow-up task" or "Escalate to ops / supplier".
+
+These tasks map into a **"Issues & Quality (ProblemCenter)"** collapsible section in the OnboardingTaskListTracker.
+
+If the module is not installed, the section can be collapsed with a "Locked – Enable Issues & Quality" label and a short description of what the module unlocks.
+
+## 10.4 Platform-Level Preconditions (Invisible to Merchant, Critical to Readiness)
+
+The following must hold; they are **not** merchant tasks, but if they fail, readiness **must** be false:
+
+* **Schemas applied**
+  * `ps_issues`, `ps_issue_media`, `ps_issue_events` tables exist and migrations applied.
+
+* **WMS-Lite intent wiring**
+  * Event consumer(s) exist for `WmsIssueIntentEvent` and:
+    * They create `WmsIssue` rows and `ps_issue_events` entries idempotently.
+
+* **Outbound event wiring**
+  * Producers for:
+    * `ProductQualityEvent` → SKU OS,
+    * `ReturnQualityContextEvent` → ReturnNexus,
+    * `IssueTaskPayload` → Echo Hub,
+    * `WmsIssueAnalyticsEvent` → InsightCore
+  * are configured and not throwing at publish time (noisy failures must be visible).
+
+* **Permissions / auth wired**
+  * ProblemCenter APIs enforce proper roles (`ROLE_WMS_USER`, `ROLE_WMS_ADMIN`, etc.).
+  * WMS-Lite and other internal modules have correct service-level auth to hit ProblemCenter.
+
+* **Metrics pipeline**
+  * Core metrics from `PROBLEM_SOLVE_METRICS` are being recorded via `MetricsClient` or a no-op.
+
+If any downstream module is unavailable, `ProblemCenterReadinessSnapshot.flags` should include `EVENT_SINK_DEGRADED` but **not** block base readiness unless quality signals are a core part of the marketing promise for that shop's plan.
+
+## 10.5 Degradation & Soft-Readiness Rules
+
+ProblemCenter must remain usable even when other modules are absent or degraded:
+
+* **WMS-Lite missing / down**
+  * Issues can still be:
+    * Reported directly via `/issues/report`,
+    * Managed via lifecycle.
+  * `ProblemCenterReady` can still be true.
+  * The "Send an issue from WMS-Lite" task is:
+    * Hidden if WMS-Lite not installed, or
+    * Shown as locked (cross-sell) if you want to surface the value of tight warehouse integration.
+
+* **SKU OS missing / down**
+  * `ProductQualityEvent` is buffered / discarded according to infra,
+  * `ProblemCenterReady` remains true, but:
+    * "Send quality signals to other modules" task should not require SKU OS-only behavior.
+
+* **ReturnNexus missing / down**
+  * `ReturnQualityContextEvent` is optional; returns-specific context is disabled.
+  * ProblemCenter still provides:
+    * Internal issue tracking,
+    * Product quality events for SKU OS,
+    * Analytics to InsightCore.
+
+* **Echo Hub missing / down**
+  * `IssueTaskPayload` emission is disabled.
+  * "Create a task from an issue" task is hidden or locked.
+
+* **InsightCore missing / down**
+  * `WmsIssueAnalyticsEvent` becomes either no-op or queued.
+  * ProblemCenter still functions as issue system; analytics dashboards just aren't available.
+
+**Rule:** `ProblemCenterReady` is fundamentally about **issues + quality signals** being operational **inside ProblemCenter** and at least one outbound quality pathway working. It is **not** contingent on every consumer being present.
+
+## 10.6 Mapping to OnboardingTaskListTracker
+
+For the FT0 onboarding engine, ProblemCenter can expose a compact derived signal surface:
+
+* `problemCenter.issuesCount: number`
+* `problemCenter.hasWmsOriginIssues: boolean` (if WMS-Lite installed)
+* `problemCenter.hasLifecycleTransitions: boolean`
+* `problemCenter.hasEmittedQualityEvent: boolean`
+* `problemCenter.hasEmittedTaskPayload: boolean` (if Echo Hub installed)
+
+These map 1:1 to the tasks:
+
+1. `issuesCount > 0` → "Report your first issue"
+2. `hasWmsOriginIssues` → "Send an issue from WMS-Lite"
+3. `hasLifecycleTransitions` → "Move an issue from open to resolved"
+4. `hasEmittedQualityEvent` → "Send a quality signal from an issue"
+5. `hasEmittedTaskPayload` → "Create a follow-up task from an issue"
+
+This keeps the OnboardingTaskListTracker logic **simple** while respecting the ProblemCenter blueprint contracts.
+
+---

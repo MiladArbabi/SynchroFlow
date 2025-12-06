@@ -1,6 +1,6 @@
 # OrderNexus – Locked Blueprint
 
-**Role:** Profit-First Order Intelligence Module
+**Role:** Profit-First Order Intelligence Module  
 **Job:** *Single source of truth for order-level profitability and leakage*
 
 ---
@@ -47,7 +47,7 @@ OrderNexus OWNS `returns_rate_30d`:
 
 ### 1.1 Profit & Cost Types
 
-```ts
+```typescript
 // packages/order-nexus/src/types/core-types.ts
 
 export type ProfitStatus = 'HEALTHY' | 'AT_RISK' | 'UNPROFITABLE';
@@ -103,7 +103,7 @@ export interface OrderProfitability {
 
 ### 1.2 NormalizedOrder – The Only Order Type Engines See
 
-```ts
+```typescript
 // packages/order-nexus/src/types/core-types.ts
 
 export interface NormalizedOrder {
@@ -146,7 +146,7 @@ export interface NormalizedOrder {
 
 ### 1.3 Profit Interventions & Leakage
 
-```ts
+```typescript
 // packages/order-nexus/src/types/profit-types.ts
 
 export type ProfitInterventionType =
@@ -182,7 +182,7 @@ export interface LeakageDetection {
 
 ### 1.4 Customer Profit Context
 
-```ts
+```typescript
 // packages/order-nexus/src/types/profit-types.ts
 
 export interface CustomerProfitContext {
@@ -198,7 +198,7 @@ export interface CustomerProfitContext {
 
 Centralized mapper:
 
-```ts
+```typescript
 // packages/order-nexus/src/mappers/customer-signal-mapper.ts
 
 export class CustomerSignalMapper {
@@ -224,7 +224,7 @@ export class CustomerSignalMapper {
 
 ### 2.1 Specter ↔ OrderNexus
 
-```ts
+```typescript
 // packages/order-nexus/src/contracts/specter-contract.ts
 
 export interface SpecterCustomerSignal {
@@ -267,7 +267,7 @@ export interface CustomerProfitabilitySnapshot {
 
 ### 2.2 Financial Intelligence ↔ OrderNexus
 
-```ts
+```typescript
 // packages/order-nexus/src/contracts/finance-contract.ts
 
 export interface CostModelSnapshot {
@@ -322,7 +322,7 @@ export interface CostModelVersioning {
 
 **Cost Model Service:**
 
-```ts
+```typescript
 // packages/order-nexus/src/services/cost-model-service.ts
 
 export class CostModelNormalizer {
@@ -397,7 +397,7 @@ export class CostModelService {
 
 ### 2.3 Analytics Core Contract
 
-```ts
+```typescript
 // packages/order-nexus/src/contracts/analytics-contract.ts
 
 export interface OrderAnalyticsEvent {
@@ -415,7 +415,7 @@ export interface OrderAnalyticsEvent {
 
 ### 2.4 WMS Lite & Echo Hub
 
-```ts
+```typescript
 // packages/order-nexus/src/contracts/operations-contract.ts
 
 export interface FulfillmentProfitSignal {
@@ -436,12 +436,12 @@ export interface ProfitTaskPayload {
   dueDate: string;
 }
 ```
+
 ### 2.5 ReturnNexus → OrderNexus (ReturnOutcomeEvent)
 
-OrderNexus consumes **order-level return impact** from ReturnNexus and persists it
-separately from the original profitability snapshot.
+OrderNexus consumes **order-level return impact** from ReturnNexus and persists it separately from the original profitability snapshot.
 
-```ts
+```typescript
 // packages/order-nexus/src/contracts/returns-contract.ts
 
 export interface ReturnOutcomeEvent {
@@ -458,21 +458,17 @@ export interface ReturnOutcomeEvent {
 }
 ```
 
-Rules:
+**Rules:**
 
-Exactly one ReturnOutcomeEvent per returnId value at a time.
-
-If a return is adjusted or re-opened, ReturnNexus MUST emit a new
-ReturnOutcomeEvent with the same returnId and updated totals.
-
-OrderNexus MUST treat these as append-only events and MUST NOT mutate
-the canonical order_profitability row.
+* Exactly one ReturnOutcomeEvent per returnId value at a time.
+* If a return is adjusted or re-opened, ReturnNexus MUST emit a new ReturnOutcomeEvent with the same returnId and updated totals.
+* OrderNexus MUST treat these as append-only events and MUST NOT mutate the canonical order_profitability row.
 
 ---
 
 ## 3. PCD Hashing – Platform Contract
 
-```ts
+```typescript
 // packages/shared/src/pcd/pcd-hasher.ts
 
 export interface PcdConfig {
@@ -504,7 +500,7 @@ export class PcdHasher {
 
 ## 4. Mode Policies – Survival, Growth, Architect
 
-```ts
+```typescript
 // packages/order-nexus/src/policies/mode-policy-manager.ts
 
 export type Mode = 'survival' | 'growth' | 'architect';
@@ -569,7 +565,7 @@ export class ModePolicyManager {
 
 ## 5. Normalization Boundary – No Raw Shopify Beyond This
 
-```ts
+```typescript
 // packages/order-nexus/src/normalization/order-normalization-service.ts
 
 export class OrderNormalizationService {
@@ -616,7 +612,7 @@ export class OrderNormalizationService {
 
 ## 6. Fallback Manager – Customer Signals
 
-```ts
+```typescript
 // packages/order-nexus/src/resilience/fallback-manager.ts
 
 export interface CustomerSignalResult {
@@ -693,7 +689,7 @@ export class FallbackManager {
 
 ## 7. Module Presence & Capability Flags
 
-```ts
+```typescript
 // packages/order-nexus/src/modules/module-presence.ts
 
 export interface ModulePresence {
@@ -770,7 +766,7 @@ export class ModulePresenceManager {
 
 ## 8. CoreProfitEngine – Mathematically Correct, Mode-Aware
 
-```ts
+```typescript
 // packages/order-nexus/src/core/profit-engine.ts
 
 export class CoreProfitEngine {
@@ -893,7 +889,7 @@ export class CoreProfitEngine {
 
 ## 9. MarginGuardEngine – Confidence & Mode Rules
 
-```ts
+```typescript
 // packages/order-nexus/src/intelligence/margin-guard-engine.ts
 
 /**
@@ -1078,11 +1074,12 @@ CREATE INDEX idx_order_return_impact_order
 CREATE INDEX idx_order_return_impact_return
   ON order_return_impact (shop_id, return_id);
 ```
+
 ---
 
 ## 11. Repositories & Recomputation Flow
 
-```ts
+```typescript
 // packages/order-nexus/src/repositories/order-profit-repositories.ts
 
 export interface OrderProfitabilityRepository {
@@ -1121,7 +1118,7 @@ export interface OrderReturnImpactRepository {
 }
 ```
 
-```ts
+```typescript
 // packages/order-nexus/src/services/order-profit-service.ts
 
 export class OrderProfitService {
@@ -1182,7 +1179,7 @@ export class OrderProfitService {
 
 ### 12.1 Queue Message & Worker
 
-```ts
+```typescript
 // packages/order-nexus/src/ingestion/order-ingestion-queue.ts
 
 import { NormalizedOrder } from '../types/core-types';
@@ -1199,7 +1196,7 @@ export interface OrderIngestionQueue {
 }
 ```
 
-```ts
+```typescript
 // packages/order-nexus/src/metrics/metrics-client.ts
 
 export interface MetricsClient {
@@ -1208,7 +1205,7 @@ export interface MetricsClient {
 }
 ```
 
-```ts
+```typescript
 // packages/order-nexus/src/operations/sla-monitor.ts
 
 export interface SLASpec {
@@ -1272,7 +1269,7 @@ export class OrderProcessingSLA {
 }
 ```
 
-```ts
+```typescript
 // packages/order-nexus/src/ingestion/order-worker.ts
 
 export class OrderWorker {
@@ -1305,29 +1302,255 @@ export class OrderWorker {
 > * **Mode-aware thresholds** and policies for Survival, Growth, and Architect modes.
 > * **Customer profitability tiers** derived from realized order history (whale curve) when Specter is available.
 > * **Graceful degradation**:
->
 >   * If Financial Intelligence is unavailable → falls back to local cost models (`costModelSource = 'local'`, `computationSource = 'basic_fallback'`).
 >   * If Specter is unavailable → uses inferred/default customer signals with explicit confidence.
 > * **Operational SLA**:
->
 >   * Target processing time: **5 seconds** per order under normal load.
 >   * 99% of orders have profit data within **60 seconds** of webhook receipt.
 >   * Queue delay warnings emitted after **25 seconds**.
 > * **Auditability**:
->
 >   * All recomputations tracked with:
->
 >     * previous net profit
 >     * previous cost model version
 >     * history entries in `order_profitability_history`.
 >   * Cost model sources (`finance` vs `local`) and computation reasons (`initial`, `recomputation`, `basic_fallback`) are explicitly stored and queryable.
->   * Post-return economic impact is stored separately in `order_return_impact`,
->     sourced exclusively from `ReturnOutcomeEvent` emitted by ReturnNexus.
+>   * Post-return economic impact is stored separately in `order_return_impact`, sourced exclusively from `ReturnOutcomeEvent` emitted by ReturnNexus.
+
+---
+
+## 14. Onboarding & Readiness – OrderNexus (Draft)
+
+**Goal:** Define exactly when a shop is considered OrderNexusReady, what must be true in the data plane and config plane, and how this maps to onboarding tasks surfaced in FT0 flows.
+
+### 14.1 Role in FT0 & LaSyncro
+
+OrderNexus is the economic backbone of LaSyncro:
+
+It converts raw orders → normalized orders → profitability snapshots.
+
+It feeds:
+
+* InsightCore (analytics events, whale curves, profitability distributions),
+* Specter (profit-aware customer tiers, interventions),
+* ReturnNexus (post-return economics via order_return_impact),
+* MarginCore / Finance (cost model usage + feedback loops),
+* Echo Hub / WMS Lite (fulfilment profit signals, tasks).
+
+Therefore, FT0 onboarding MUST guarantee that OrderNexus is healthy before higher-order intelligence (Specter, InsightCore, ReturnNexus dashboards) is considered "ready".
+
+### 14.2 Readiness Definition
+
+We define a concrete boolean:
+
+```typescript
+// Conceptual contract – not implementation detail
+type OrderNexusReadinessFlag =
+  | 'MISSING_SHOPIFY_INTEGRATION'
+  | 'NO_ORDERS_INGESTED'
+  | 'COST_MODEL_FALLBACK_ACTIVE'
+  | 'COST_MODEL_PRECISE'
+  | 'MODE_AUTODETECTED'
+  | 'MODE_EXPLICITLY_SET'
+  | 'PIPELINE_HEALTHY';
+
+export interface OrderNexusReadinessSnapshot {
+  shopId: number;
+  isReady: boolean;
+  flags: OrderNexusReadinessFlag[];
+  lastEvaluatedAt: string; // ISO
+}
+```
+
+`OrderNexusReady(shopId)` is **true** when **ALL** of the following hold:
+
+1. **Shopify integration exists** for shopId
+   * `hasIntegrations = true` for Shopify in IntegrationContext
+   * At least one order has been pulled into the NormalizedOrder store.
+2. **At least one order ingested & processed**
+   * `order_profitability` has ≥ 1 row for this shop.
+   * For better analytics + mode detection, target N ≥ 20.
+3. **Cost model is hydrated** (local or finance-driven)
+   * `CostModelService.getNormalizedCostModel` returns a valid NormalizedCostModel.
+   * `costModelSource` is:
+     * `'finance'` → precise cost model (preferred), or
+     * `'local'` → fallback allowed, but flagged as `COST_MODEL_FALLBACK_ACTIVE`.
+4. **Mode policy determined**
+   * `ModePolicyManager.getModeForShop(shopId)` returns a valid mode.
+   * This can be:
+     * Autodetected via `determineInitialMode`, or
+     * Explicitly set in shop configuration.
+5. **Ingestion pipeline SLA is healthy**
+   * For the last X orders:
+     * `OrderProcessingSLA.processOrderWithSLA` metrics show:
+       * 99% of orders processed < `MAX_EXPECTED_TIME_MS` (60s),
+       * no sustained spikes in `order_processing_error`.
+
+If any of 1–4 fails, `OrderNexusReady = false`.  
+If 5 is degraded but not catastrophic, `OrderNexusReady` may remain true but flagged with `PIPELINE_HEALTHY` missing or degraded.
+
+### 14.3 Merchant-Facing Onboarding Tasks (What the FT0 UX Should Drive)
+
+From the merchant's perspective, OrderNexus onboarding should feel like:
+
+1. **Connect your store** (prerequisite for everything)
+   * Task: "Connect your Shopify store"
+   * Completes when:
+     * Integration is installed and initial sync is COMPLETED.
+     * System: `IntegrationContext.hasIntegrations === true` and `syncStatus === 'COMPLETED'`.
+2. **Let us compute your first profitability snapshot**
+   * Task: "Let us process your first orders"
+   * Completes when:
+     * `order_profitability` table has ≥ 1 row for shop.
+     * UX: show a checkmark and link like "View profitability for recent orders".
+3. **Calibrate your cost model** (optional but recommended)
+   * Task: "Calibrate your cost model for landed cost"
+   * States:
+     * Pending (fallback only):
+       * `costModelSource === 'local'` and no external Finance config exists.
+     * Completed (precise):
+       * `costModelSource === 'finance'` from CostModelService.
+   * Merchant action:
+     * Either configure Finance module (global cost model), or update local cost config in a simple UI (handling cost, packaging, etc.).
+   * This is **NOT** a hard blocker for `OrderNexusReady`, but:
+     * FT0 should nudge strongly to move from `COST_MODEL_FALLBACK_ACTIVE` → `COST_MODEL_PRECISE`.
+4. **Choose your operating mode** (or confirm auto-detected)
+   * Task: "Confirm your operating mode: Survival, Growth, or Architect"
+   * Logic:
+     * If `ModePolicyManager.determineInitialMode` has run and no explicit override is stored:
+       * show banner: "We've placed you in Survival/Growth/Architect based on last 30 days. Confirm or change?"
+     * Once merchant explicitly confirms/changes:
+       * Set `MODE_EXPLICITLY_SET` flag.
+   * This is important because:
+     * Mode drives `minMarginPercent`, leakage thresholds, and intervention aggressiveness.
+5. **Review your first profit insights**
+   * Task: "Review your first profit and leakage insights"
+   * Completion:
+     * Merchant has visited a profitability view at least once (e.g., `/analytics/profit` or dashboard profitability widgets)
+     * Or, at minimum, we know `order_profitability` has enough rows (e.g., ≥ 20) for a meaningful overview.
+   * This task is not strictly technical readiness but marks "Onboarding done, value delivered".
+
+These 5 tasks map directly into potential `OnboardingTaskListTracker` steps for the "Profitability / OrderNexus" section.
+
+### 14.4 Platform-Level Preconditions (Invisible to Merchant, Critical to Readiness)
+
+The following must be true at the platform level; they are not surfaced as user tasks, but the system should refuse to mark OrderNexus as ready if they're broken:
+
+* **Schemas applied**
+  * `order_profitability`, `order_profitability_history`, `order_return_impact` tables exist and migrations have been applied successfully.
+* **PCD hashing configuration injected**
+  * `PcdHasher` uses shared `PcdConfig` (salt + hmacKey)
+  * No module-specific salting or hashing.
+* **Ingestion queue wiring valid**
+  * An `OrderIngestionQueue` implementation is bound and:
+    * Receives messages from Shopify connectors (or backfill jobs) with topic and NormalizedOrder.
+    * `OrderWorker.handleMessage` is actually running in the worker process.
+* **Metrics pipeline wired**
+  * `MetricsClient` is bound; `OrderProcessingSLA` is recording histograms + counters.
+  * Even if metrics backend is "no-op" locally, the calls must not throw.
+* **ReturnOutcomeEvent consumer bound** (for post-return readiness later)
+  * There must be a consumer listening for `ReturnOutcomeEvent` and writing to `order_return_impact`.
+  * This is **not** required for base FT0 readiness, but is required before we say "post-return economics are live".
+
+### 14.5 Degradation & Soft-Readiness Rules
+
+OrderNexus is intentionally designed to degrade gracefully:
+
+* **Finance module missing / down:**
+  * `CostModelService` falls back to local cost configs.
+  * Onboarding flags: `COST_MODEL_FALLBACK_ACTIVE` present.
+  * `isReady` may still be true, but certain insights are marked as "approximate".
+* **Specter missing / down:**
+  * `FallbackManager` uses inferred/default customer signals.
+  * `OrderNexusReady` does **not** depend on Specter, but:
+    * UI must **NOT** show "customer tier interventions" tasks as part of base FT0 onboarding.
+    * Those become add-on onboarding tasks only if Specter is installed.
+* **Echo Hub / WMS Lite / SKU-OS missing:**
+  * Capability flags in `ModulePresenceManager` will be false.
+  * OrderNexus still computes profitability; it just doesn't drive certain operational interventions.
+
+**Rule:** `OrderNexusReady` is fundamentally about per-order profitability & basic leakage, not about every optional integration being present.
+
+### 14.6 Suggested "OrderNexus Onboarding Checklist" (for the TaskList Tracker)
+
+These are the exact tasks that can be surfaced under an "Order profitability" / "Profit engine" collapsible section in the header task list:
+
+1. **Connect your main Shopify store**
+   * Blocked until IntegrationContext shows at least one active integration.
+2. **Let us process your first batch of orders**
+   * Mark complete when `order_profitability` has ≥ 1 row for the shop.
+3. **Calibrate your cost model** (optional but recommended)
+   * Show as:
+     * "Using basic cost assumptions" (if source = local).
+     * "Using precise cost model from Finance" (if source = finance → mark done).
+4. **Confirm your operating mode** (Survival / Growth / Architect)
+   * Mark done when merchant explicitly saves mode in shop config.
+5. **Review your first profit/leakage insights**
+   * Triggered by a visit to the primary profitability dashboard / widget.
+
+Once 1–3 are done and at least (2 + 4) are satisfied, `OrderNexusReady(shopId) = true` from an FT0 perspective.
+
+### 14.7 Signals exposed to the Onboarding Engine (OrderNexus)
+
+For the global ModuleOnboardingReadiness engine, OrderNexus exposes a small derived signal set:
+
+* `orderNexus.profitabilityActive: boolean`  
+  * `true` if `order_profitability` has ≥ 1 row for this shop.
+
+* `orderNexus.ordersIngestedCount: number`  
+  * Typically backed by `COUNT(*) FROM order_profitability WHERE shop_id = :shopId`.
+  * Onboarding predicates use:
+    * `ordersIngestedCount >= 1` → “Engine activated”
+    * `ordersIngestedCount >= 20` (or whatever you choose) → “Enough data for insights”
+
+* `orderNexus.costModelSource: 'finance' | 'local'`  
+  * Derived from `CostModelService.getNormalizedCostModel(...)`.
+  * Onboarding uses:
+    * `costModelSource === 'finance'` → “Cost model calibrated (precise)”
+    * `costModelSource === 'local'` → “Using fallback assumptions”
+
+* `orderNexus.modeInitialized: boolean`  
+  * `true` if `ModePolicyManager.getModeForShop(shopId)` returns a valid mode and has been explicitly confirmed or set.
+
+Then:
+
+* `OrderNexusReady(shopId)` (for FT0) is **true** when:
+
+  * Shopify integration is connected and initial sync is completed, and
+  * `orderNexus.profitabilityActive === true`, and
+  * `orderNexus.ordersIngestedCount >= 1`, and
+  * `orderNexus.modeInitialized === true`.
+
+Cost model source (`finance` vs `local`) does **not** block readiness, but is surfaced as a “recommended upgrade” task.
+
+### 14.8 Mapping to OnboardingTaskListTracker
+
+In the global OnboardingTaskListTracker, OrderNexus appears as:
+
+**Group:** “Orders & Profitability”
+
+**Tasks:**
+
+1. “Connect your Shopify store”  
+   * Driven by IntegrationContext (not owned by OrderNexus).
+
+2. “Let us process your first orders”  
+   * Complete when `orderNexus.profitabilityActive === true`.
+
+3. “Calibrate your cost model” (recommended)  
+   * Complete when `orderNexus.costModelSource === 'finance'`.
+
+4. “Confirm your operating mode”  
+   * Complete when `orderNexus.modeInitialized === true`.
+
+5. “Review your first profit & leakage insights”  
+   * Optional marker once merchant has visited the profitability dashboard at least once.
+
+---
+
 > * **Contract Stability**:
->
 >   * `NormalizedOrder`, `OrderProfitability`, `LandedCost`, `SpecterCustomerSignal`, `CostModelSnapshot`, `ProfitIntervention`, `LeakageDetection`, `ReturnOutcomeEvent`, and DB schemas in this blueprint are **locked** for Phase 1 / early Phase 2.
 >   * Any changes require a versioned contract (`v2`) and migration plan, not ad-hoc modifications.
 
-This is the blueprint you freeze into your docs and your repo.
+**This is the blueprint you freeze into your docs and your repo.**
 
-If anyone deviates from these contracts, they’re not building *OrderNexus* – they’re building something else.
+If anyone deviates from these contracts, they're not building *OrderNexus* – they're building something else.

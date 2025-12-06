@@ -1,7 +1,6 @@
 # InsightCore – Analytics & Metrics Module (v1 Locked Blueprint)
 
-> **Mission:** Be the **single source of truth** for **metrics, analytics events, and dashboards** across LaSyncro –
-> powered by other modules’ intelligence, **never re-implementing** their domain logic.
+> **Mission:** Be the **single source of truth** for **metrics, analytics events, and dashboards** across LaSyncro – powered by other modules' intelligence, **never re-implementing** their domain logic.
 
 Any change to **locked types or interfaces** in this blueprint requires:
 
@@ -10,7 +9,7 @@ Any change to **locked types or interfaces** in this blueprint requires:
 
 No ad-hoc edits.
 
-> All references to *“Analytics Core”* in other module blueprints map to this module: **InsightCore**.
+> All references to *"Analytics Core"* in other module blueprints map to this module: **InsightCore**.
 
 ---
 
@@ -28,8 +27,7 @@ No ad-hoc edits.
 ### 0.2 Mission
 
 > **InsightCore Mission (v1):**
-> Given analytics events and snapshots from **OrderNexus, MarginCore, SKU OS, Specter, ReturnNexus and other modules**, provide a **single, queryable analytics layer** and **opinionated dashboards** –
-> **without** recomputing domain logic (profit, costs, nudges, product health, returns quality) that belongs elsewhere.
+> Given analytics events and snapshots from **OrderNexus, MarginCore, SKU OS, Specter, ReturnNexus and other modules**, provide a **single, queryable analytics layer** and **opinionated dashboards** – **without** recomputing domain logic (profit, costs, nudges, product health, returns quality) that belongs elsewhere.
 
 ### 0.3 Owns vs Does Not Own
 
@@ -65,9 +63,9 @@ No ad-hoc edits.
 * SKU-level inventory health & playbooks → **SKU OS**
 * Return decisions, refund logic → **ReturnNexus**
 * Fulfillment, workflows, tasks → **WMS Lite**, **Echo Hub**
-* Operational decisions (no “change price”, “auto-reorder”, “send email”)
+* Operational decisions (no "change price", "auto-reorder", "send email")
 
-If InsightCore starts mutating other modules’ state or recomputing profit, returns, or product health, you’ve broken the architecture.
+If InsightCore starts mutating other modules' state or recomputing profit, returns, or product health, you've broken the architecture.
 
 ---
 
@@ -81,7 +79,7 @@ These are **externally visible** and must be implemented exactly.
 
 Already defined in OrderNexus blueprint:
 
-```ts
+```typescript
 // LOCKED – from order-nexus/src/contracts/analytics-contract.ts
 
 export type ProfitStatus = 'HEALTHY' | 'AT_RISK' | 'UNPROFITABLE';
@@ -103,7 +101,7 @@ InsightCore **must not** reinterpret or recompute `netProfit` or `marginPercent`
 
 #### 1.1.2 From Specter → InsightCore (Nudges)
 
-```ts
+```typescript
 // LOCKED – specter → insight-core
 
 export interface NudgeAnalyticsEvent {
@@ -121,7 +119,7 @@ export interface NudgeAnalyticsEvent {
 
 #### 1.1.3 From SKU OS → InsightCore (Product Health)
 
-```ts
+```typescript
 // LOCKED – sku-os → insight-core
 
 export interface ProductHealthAnalyticsEvent {
@@ -137,7 +135,7 @@ export interface ProductHealthAnalyticsEvent {
 
 #### 1.1.4 From MarginCore → InsightCore (Cost Models)
 
-```ts
+```typescript
 // LOCKED – margincore → insight-core
 
 export interface CostModelAnalyticsEvent {
@@ -152,10 +150,9 @@ export interface CostModelAnalyticsEvent {
 
 #### 1.1.5 From ReturnNexus → InsightCore (Returns & Quality)
 
-ReturnNexus emits a **row-per-return-line** analytics event **after** the financial
-decision and (if required) physical inspection are final.
+ReturnNexus emits a **row-per-return-line** analytics event **after** the financial decision and (if required) physical inspection are final.
 
-```ts
+```typescript
 // LOCKED – return-nexus → insight-core
 
 import {
@@ -187,21 +184,18 @@ export interface ReturnAnalyticsEvent {
 
 InsightCore **must not**:
 
-- Re-map `reasonCategory` into new categories,
-- Merge or split `InspectionResult` values,
-- Re-label `IssueRootCause`,
-- Re-derive `restockable`.
+* Re-map `reasonCategory` into new categories,
+* Merge or split `InspectionResult` values,
+* Re-label `IssueRootCause`,
+* Re-derive `restockable`.
 
-These fields must be treated as opaque enums coming from the shared
-`returns-quality-contract`. Any conceptual grouping (e.g. chart buckets)
-must be done purely at the presentation layer, without emitting new enum
-values or persisting alternative category systems.
+These fields must be treated as opaque enums coming from the shared `returns-quality-contract`. Any conceptual grouping (e.g. chart buckets) must be done purely at the presentation layer, without emitting new enum values or persisting alternative category systems.
 
 ---
 
 ### 1.2 Public Query Contract
 
-```ts
+```typescript
 // LOCKED – public API contract for insight-core
 
 export type TimeGrain = 'day' | 'week' | 'month';
@@ -259,7 +253,7 @@ Changing `AnalyticsQuery` or `AnalyticsQueryResult` requires `v2` and migration.
 
 ### 1.3 Metric & Dimension Registry Contract
 
-```ts
+```typescript
 // LOCKED – internal & external (read-only) registry contract
 
 export type MetricAggregation =
@@ -309,7 +303,7 @@ export interface DimensionDefinition {
 
 Dashboards are *configuration*, not hard-coded UI.
 
-```ts
+```typescript
 export interface DashboardWidgetConfig {
   id: string;                  // 'profit_time_series', 'returns_by_reason'
   type: 'line' | 'bar' | 'stacked_bar' | 'pie' | 'table' | 'scatter' | 'funnel';
@@ -332,15 +326,14 @@ export interface DashboardConfig {
 
 InsightCore ingests:
 
-- `ReturnAnalyticsEvent` from ReturnNexus, and
-- `WmsIssueAnalyticsEvent` from WMS-Lite
+* `ReturnAnalyticsEvent` from ReturnNexus, and
+* `WmsIssueAnalyticsEvent` from WMS-Lite
 
-under the assumption that all quality-related enums and buckets are normalized
-according to `docs/shared/returns-quality-mapping.md`.
+under the assumption that all quality-related enums and buckets are normalized according to `docs/shared/returns-quality-mapping.md`.
 
 Specifically:
 
-- `reasonCategory`, `inspectionResult`, and `issueRootCause`
+* `reasonCategory`, `inspectionResult`, and `issueRootCause`
   MUST match the shared types in `packages/shared/src/contracts/returns-quality-contract.ts`
   and their semantics in `docs/shared/returns-quality-mapping.md`.
 
@@ -349,8 +342,7 @@ Any change that adds or reinterprets these enums MUST:
 1. Update `docs/shared/returns-quality-mapping.md`, and  
 2. Introduce a versioned analytics schema / metrics definition (`v2`) as needed.
 
-InsightCore MUST NOT implement its own alternative mapping or silently reinterpret
-the meaning of quality-related enums.
+InsightCore MUST NOT implement its own alternative mapping or silently reinterpret the meaning of quality-related enums.
 
 ---
 
@@ -359,9 +351,7 @@ the meaning of quality-related enums.
 ### 2.1 Subsystems
 
 1. **Event Ingestion & Normalization**
-
    * Consumers for:
-
      * `OrderAnalyticsEvent`
      * `NudgeAnalyticsEvent`
      * `ProductHealthAnalyticsEvent`
@@ -370,25 +360,21 @@ the meaning of quality-related enums.
    * Writes to staging tables → ETL → analytics warehouse (`fact_*` tables).
 
 2. **Metrics Registry Service**
-
    * Stores `MetricDefinition`, `DimensionDefinition`.
    * Validates metric expressions and tables.
    * Provides lookups for Query Engine.
 
 3. **Query Engine**
-
    * Accepts `AnalyticsQuery`.
    * Validates against registry (metric & dimension IDs).
    * Generates warehouse queries (SQL or equivalent).
    * Returns `AnalyticsQueryResult` with `metricVersions`.
 
 4. **Dashboard Service**
-
    * Stores `DashboardConfig` for v1 dashboards.
    * Exposes `/dashboards/:id` → list of widgets with hydrated queries.
 
 5. **Export / Integration Service (Optional v1)**
-
    * CSV export for any `AnalyticsQuery`.
    * Simple API for external BI tools (limited, read-only).
 
@@ -562,7 +548,7 @@ CREATE TABLE dim_customer_tier (
 
 ### 4.1 EventIngestionService
 
-```ts
+```typescript
 export interface OrderAnalyticsEventConsumer {
   handle(event: OrderAnalyticsEvent): Promise<void>;
 }
@@ -613,7 +599,7 @@ Similar consumers exist for:
 
 And for **returns**:
 
-```ts
+```typescript
 export interface ReturnAnalyticsEventConsumer {
   handle(event: ReturnAnalyticsEvent): Promise<void>;
 }
@@ -668,7 +654,7 @@ export class ReturnAnalyticsEventConsumerImpl
 
 *(unchanged contract; now just includes returns-related metrics & dimensions in seeded data)*
 
-```ts
+```typescript
 export interface MetricsRegistry {
   getMetric(id: string): Promise<MetricDefinition | null>;
   listMetrics(): Promise<MetricDefinition[]>;
@@ -703,7 +689,7 @@ export class MetricsRegistryImpl implements MetricsRegistry {
 
 *(unchanged contract; returns metrics are just new rows in `MetricDefinition`)*
 
-```ts
+```typescript
 export interface AnalyticsQueryService {
   execute(query: AnalyticsQuery): Promise<AnalyticsQueryResult>;
 }
@@ -715,7 +701,7 @@ export interface AnalyticsQueryService {
 
 ### 4.4 DashboardService
 
-```ts
+```typescript
 export interface DashboardService {
   getDashboardConfig(id: string, shopId: number): Promise<DashboardConfig>;
   listDashboards(shopId: number): Promise<DashboardConfig[]>;
@@ -781,7 +767,7 @@ Where `DASHBOARD_REGISTRY` now includes a **Returns & Quality** dashboard, e.g.:
 
 InsightCore must expose at least:
 
-```ts
+```typescript
 const INSIGHT_CORE_METRICS = {
   ingestion: {
     events_received_total: 'Counter',
@@ -895,12 +881,185 @@ Trying to bolt any of these into v1 is how you end up with a half-baked blob ins
 >
 >   * Metric definitions are versioned and immutable.
 >   * Each `AnalyticsQueryResult` explicitly states which metric versions were used.
+
+---
+
+## 9. Onboarding & Readiness (Shop-Level Contract)
+
+**Goal:** Prevent "fake confidence" dashboards. InsightCore must expose a clear, machine-readable readiness state per shop so the UI and onboarding flows know when analytics is safe to rely on, and what's still missing.
+
+### 9.1 Readiness Scope
+
+InsightCore readiness is evaluated per shopId and per capability:
+
+* Core profitability analytics → requires OrderAnalyticsEvent
+* Returns & quality analytics → requires ReturnAnalyticsEvent
+* Nudge funnel analytics → requires NudgeAnalyticsEvent
+* Product health analytics → requires ProductHealthAnalyticsEvent
+* Cost model / recomputation analytics → requires CostModelAnalyticsEvent
+
+InsightCore never blocks data ingestion; readiness only governs:
+
+* Which dashboards/cards are shown vs hidden/soft-disabled
+* What the OnboardingTaskListTracker treats as "done", "warming up", or "blocked"
+* Which metrics can be surfaced without "this is probably lying" disclaimers
+
+### 9.2 Readiness States (Per Shop)
+
+At the shop-level, InsightCore MUST expose a coarse readiness state:
+
+```typescript
+export type InsightCoreShopState =
+  | 'NOT_INSTALLED'          // module not provisioned for this shop
+  | 'INSTALLED_NO_DATA'      // migrations done, zero analytics events ingested
+  | 'LEARNING'               // some data, below healthy thresholds
+  | 'READY'                  // healthy coverage for installed modules
+  | 'DEGRADED';              // data gaps or stale feeds detected
+```
+
+### 9.3 Readiness Contract (Per Shop)
+
+```typescript
+export interface InsightCoreReadiness {
+  shopId: number;
+  state: InsightCoreShopState;
+
+  // Per-capability booleans (based purely on ingested events)
+  hasOrderAnalytics: boolean;          // any OrderAnalyticsEvent for this shop
+  hasReturnAnalytics: boolean;         // any ReturnAnalyticsEvent
+  hasNudgeAnalytics: boolean;          // any NudgeAnalyticsEvent
+  hasProductHealthAnalytics: boolean;  // any ProductHealthAnalyticsEvent
+  hasCostModelAnalytics: boolean;      // any CostModelAnalyticsEvent
+
+  // Data coverage & freshness (per capability)
+  lastOrderEventAt?: string;           // ISO
+  lastReturnEventAt?: string;
+  lastNudgeEventAt?: string;
+  lastProductHealthEventAt?: string;
+  lastCostModelEventAt?: string;
+
+  ordersLast30d: number;               // count of OrderAnalyticsEvent in last 30d
+  returnsLast30d: number;              // count of ReturnAnalyticsEvent in last 30d;
+
+  // Derived flags for UX / onboarding
+  canShowProfitabilityDashboards: boolean;
+  canShowReturnsDashboards: boolean;
+  canShowNudgesDashboards: boolean;
+  canShowProductHealthDashboards: boolean;
+
+  blockingReasons: string[];           // Hard blockers for state !== 'READY'
+  warnings: string[];                  // Non-blocking issues (e.g. low volume)
+}
+```
+
+**Contract rule:** InsightCore is the only module allowed to compute `InsightCoreReadiness`. Other modules (OrderNexus, ReturnNexus, Specter, SKU OS, MarginCore) may hint or emit events, but they must not self-declare analytics readiness.
+
+### 9.4 Minimum Thresholds (Opinionated Defaults)
+
+These thresholds are deliberately simple and must be treated as v1 locked until a versioned update:
+
+**Core module presence**
+
+* `hasOrderAnalytics` is required for:
+  * `canShowProfitabilityDashboards = true`
+  * `state` to ever become `'READY'`
+* If a shop has zero OrderAnalyticsEvent rows:
+  * `state` MUST be `'INSTALLED_NO_DATA'` or `'LEARNING'`
+  * Profitability dashboards MUST NOT be marked "ready" in onboarding.
+
+**Minimal viability for profitability**
+
+InsightCore SHOULD consider profitability analytics minimally viable when:
+
+* `ordersLast30d >= 10`
+* AND `lastOrderEventAt` within past 7 days
+
+When this holds:
+
+* `canShowProfitabilityDashboards = true`
+* If no other hard blockers exist:
+  * `state` MAY be `'READY'`
+
+**Returns & quality analytics**
+
+* Returns analytics SHOULD be treated as add-on:
+  * `canShowReturnsDashboards = hasReturnAnalytics`
+* `returnsLast30d` is used for chart messaging only, not for global readiness.
+* Low return volume MUST NOT block `state = 'READY'` if orders are healthy.
+
+**Nudge / Specter analytics**
+
+* `canShowNudgesDashboards = hasNudgeAnalytics`
+* Absence of NudgeAnalyticsEvent MUST NOT block `state = 'READY'` if core order analytics is healthy.
+
+**Product health analytics (SKU OS)**
+
+* `canShowProductHealthDashboards = hasProductHealthAnalytics`
+* Absence of SKU OS data MUST NOT block `state = 'READY'`.
+
+**Degraded state**
+
+* `state` MUST be `'DEGRADED'` when:
+  * Any capability previously active has gone stale, e.g.
+    * `lastOrderEventAt` older than 72 hours and `ordersLast30d > 0`, or
+  * Any ingestion error budget for this shop is exhausted (implementation detail).
+* In degraded state:
+  * Dashboards MAY still render, but
+  * Onboarding / UI MUST show "data freshness" warnings,
+  * OnboardingTaskListTracker MUST NOT present "Unlock analytics" tasks as fully complete.
+
+### 9.5 Onboarding Tasks – How InsightCore Feeds FT0
+
+InsightCore itself does not own header tasks, but it MUST expose enough signal for the onboarding system to derive them.
+
+At minimum, the following task predicates must be derivable:
+
+**"Unlock Profitability Dashboard"**
+
+* Completed when:
+  * `InsightCoreReadiness.state` in `['LEARNING', 'READY', 'DEGRADED']`
+  * AND `InsightCoreReadiness.hasOrderAnalytics = true`
+
+*Recommended UX:*
+* In `'LEARNING'`: show a chip like "Warming up – limited history".
+* In `'READY'`: mark step as Done.
+* In `'DEGRADED'`: mark step as Done but show a warning icon with "Data stale".
+
+**"Unlock Returns & Quality Analytics"** (only if ReturnNexus installed)
+
+* Completed when:
+  * `InsightCoreReadiness.hasReturnAnalytics = true`
+
+*Not having returns MUST NOT block profitability onboarding.*
+
+**"Unlock Nudge Funnel Analytics"** (only if Specter installed)
+
+* Completed when:
+  * `InsightCoreReadiness.hasNudgeAnalytics = true`
+
+**"Unlock Product Health Analytics"** (only if SKU OS installed)
+
+* Completed when:
+  * `InsightCoreReadiness.hasProductHealthAnalytics = true`
+
+### 9.6 Observability & SLAs (Analytics Ingestion)
+
+InsightCore MUST track, per shop:
+
+* `insightcore_events_ingested_total{event_type}`
+* `insightcore_events_lag_ms{event_type}` – ingestion lag vs event timestamp
+* `insightcore_readiness_state{state}` – gauge per shop
+
+**SLA intention (v1):**
+
+* 99% of analytics events ingested within 60 seconds of receipt from upstream module.
+* Readiness updates (`InsightCoreReadiness`) reflect underlying data in < 30 seconds under normal load.
+
+---
+
 > * **Contract stability**:
 >
->   * `OrderAnalyticsEvent`, `NudgeAnalyticsEvent`, `ProductHealthAnalyticsEvent`,
->     `CostModelAnalyticsEvent`, `ReturnAnalyticsEvent`, `AnalyticsQuery`, `AnalyticsQueryResult`,
->     `MetricDefinition`, `DimensionDefinition`, and the warehouse schemas in this blueprint are **locked** for v1.
+>   * `OrderAnalyticsEvent`, `NudgeAnalyticsEvent`, `ProductHealthAnalyticsEvent`, `CostModelAnalyticsEvent`, `ReturnAnalyticsEvent`, `AnalyticsQuery`, `AnalyticsQueryResult`, `MetricDefinition`, `DimensionDefinition`, and the warehouse schemas in this blueprint are **locked** for v1.
 >   * Any changes require a versioned contract (`v2`) and migration plan – not ad-hoc modifications.
 >
-> If anyone builds something that violates these contracts, they’re not building **InsightCore**.
-> They’re building some random analytics thing that will fight the CNS instead of powering it.
+> If anyone builds something that violates these contracts, they're not building **InsightCore**. They're building some random analytics thing that will fight the CNS instead of powering it.

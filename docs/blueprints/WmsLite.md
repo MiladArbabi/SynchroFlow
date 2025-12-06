@@ -596,3 +596,229 @@ const WMS_CORE_METRICS = {
 >   * **Issues & quality** (ProblemCenter)
 >   * **Return lifecycle & money** (ReturnNexus)
 >   * **Profitability** (OrderNexus)
+
+---
+
+# 10. Onboarding & Readiness – WMS-Lite (FT0)
+
+**Goal:** Define exactly when a shop is considered WmsLiteReady, what must be true in the physical / layout plane, the inventory ledger plane, and the returns inspection plane, and how this maps to onboarding tasks surfaced in FT0.
+
+## 10.1 Role in FT0 & LaSyncro
+
+WMS-Lite is the physical-world executor in LaSyncro:
+
+It is the single source of truth for:
+
+* Warehouse layout (zones, shelves, bins),
+* Physical inventory state (quantities and locations),
+* Return inspections and condition codes (via `PhysicalConditionCode`).
+
+It feeds:
+
+* ReturnNexus with `ReturnInspectionEvent` (physical truth for refunds),
+* SKU OS with inspection history (degradation & health),
+* ProblemCenter with `WmsIssueIntentEvent` (raw issue intents),
+* OrderNexus indirectly, by keeping physical flows consistent with economic data.
+
+Therefore, FT0 onboarding MUST ensure that, for any shop using WMS-Lite:
+
+1. The warehouse layout is minimally defined.
+2. The inventory ledger is actually moving (receive → stow → pick).
+3. Return inspections can be performed and emitted when ReturnNexus is present.
+
+## 10.2 Readiness Definition
+
+We define a conceptual snapshot:
+
+```typescript
+// Conceptual contract – not implementation detail
+type WmsLiteReadinessFlag =
+  | 'NO_LAYOUT_DEFINED'
+  | 'NO_BINS_CONFIGURED'
+  | 'NO_PRODUCTS_REGISTERED'
+  | 'NO_INVENTORY_LEDGER_ENTRIES'
+  | 'NO_RETURN_INSPECTIONS'
+  | 'NO_ISSUE_INTENTS_EMITTED'
+  | 'EVENT_SINK_DEGRADED'; // downstream modules unavailable
+
+export interface WmsLiteReadinessSnapshot {
+  shopId: number;
+  isReady: boolean;
+  flags: WmsLiteReadinessFlag[];
+  lastEvaluatedAt: string; // ISO
+}
+```
+
+For base FT0 (warehouse execution ready), `WmsLiteReady(shopId)` is **true** when:
+
+1. **Minimal layout is defined**
+   * At least one `wms_zones` row for each of:
+     * A `RECEIVE` zone (for intake),
+     * A `STORAGE` or `PICKING` zone (for holding stock),
+     * A `RETURN` zone (for return intake / inspection).
+   * At least one `wms_shelves` + `wms_bins` chain exists:
+     * Shelf + bin mapped into `STORAGE`/`PICKING`,
+     * Shelf + bin mapped into `RETURN`.
+
+2. **At least one product is registered**
+   * `wms_products` has ≥ 1 row for this shop.
+   * Ideally, top SKUs by order volume or by returns risk, but v1 only requires "non-empty".
+
+3. **Inventory ledger is active**
+   * `wms_inventory_ledger` has:
+     * At least one `RECEIVED` entry, and
+     * At least one `STOWED` entry.
+   * This proves the core flows receive → stow are wired and persisted.
+
+4. **Pick flow is exercised at least once** (optional but recommended for v1 readiness)
+   * At least one `PICKED` entry exists for this shop.
+   * This validates that WMS-Lite can execute pick flows for orders.
+
+5. **Return inspection path is functional** (only if ReturnNexus is installed)
+   * If ReturnNexus is present for this shop:
+     * At least one `ReturnCaseCreatedEvent` has been consumed, and
+     * At least one `ReturnInspectionEvent` has been emitted.
+   * If ReturnNexus is not installed, this condition is ignored for `WmsLiteReady`, and returns-related tasks are treated as locked cross-sell.
+
+If any of **1–3 fails**, `WmsLiteReady = false`.  
+**4–5** are strongly recommended; they may be treated as:
+
+* Required for "Full Warehouse Readiness", or
+* Optional milestones once basic readiness is achieved.
+
+## 10.3 Merchant-Facing Onboarding Tasks (What FT0 Should Drive)
+
+From the merchant's point of view, WMS-Lite onboarding should feel like:
+
+1. **Define your basic warehouse layout**
+   * **Task:** "Set up your warehouse zones and bins"
+   * **Completes when:**
+     * Shop has at least:
+       * 1 `RECEIVE` zone,
+       * 1 `STORAGE` or `PICKING` zone,
+       * 1 `RETURN` zone,
+     * And at least one shelf + bin exists under `STORAGE`/`PICKING`, and one under `RETURN`.
+   * **UX:**
+     * Simple guided UI to create zones ("Receiving", "Main Storage", "Returns"),
+     * Then shelves & bins inside them.
+
+2. **Register your key products**
+   * **Task:** "Register products in WMS-Lite"
+   * **Completes when:**
+     * `wms_products` has ≥ 1 product for this shop (v1), or
+     * Optionally, when coverage threshold is met (e.g., top N SKUs).
+   * **UX:**
+     * Camera-first or bulk import from Shopify,
+     * Show % of orders covered by registered products (future enhancement).
+
+3. **Receive and stow your first items**
+   * **Task:** "Receive and stow inventory"
+   * **Completes when:**
+     * `wms_inventory_ledger` has at least:
+       * One `RECEIVED` entry, and
+       * One `STOWED` entry.
+   * **Purpose:**
+     * Proves that physical stock is actually in the ledger, not just on paper.
+
+4. **Pick for an order from WMS-Lite** (recommended)
+   * **Task:** "Pick your first order from WMS-Lite"
+   * **Completes when:**
+     * A `PICKED` ledger entry exists for this shop.
+   * This is the bridge from "configured" → "actually running fulfillment through LaSyncro".
+
+5. **Inspect your first return** (conditional on ReturnNexus)
+   * **Task:** "Inspect a return and send results"
+   * **Only shown if** ReturnNexus is installed.
+   * **Completes when:**
+     * At least one `ReturnInspectionEvent` has been emitted for this shop.
+   * **UX:**
+     * Link from ReturnNexus or the Returns view into WMS-Lite's inspection UI,
+     * Show "Return inspection completed and sent to ReturnNexus".
+
+6. **Raise your first warehouse issue** (conditional on ProblemCenter)
+   * **Task:** "Send a warehouse issue to ProblemCenter"
+   * **Only shown if** ProblemCenter is installed.
+   * **Completes when:**
+     * At least one `WmsIssueIntentEvent` has been emitted.
+   * This proves the "physical → issues" pipeline is wired.
+
+These tasks map into a "Warehouse & Returns (WMS-Lite)" collapsible section in the `OnboardingTaskListTracker`. When the module is not installed, the section can appear collapsed with a "Locked – Enable Warehouse Execution" label for cross-sell.
+
+## 10.4 Platform-Level Preconditions (Invisible to Merchant, Critical to Readiness)
+
+The following must be true at the platform level; they are not user tasks, but the system must refuse to mark WMS-Lite as ready if they are broken:
+
+* **Schemas applied**
+  * `wms_products`, `wms_zones`, `wms_shelves`, `wms_bins`, `wms_inventory_ledger` exist and migrations applied.
+* **Event wiring for returns**
+  * A consumer exists for `ReturnCaseCreatedEvent` → kicks off return intake / inspection flows.
+  * A producer exists for `ReturnInspectionEvent` and is publishing to:
+    * ReturnNexus,
+    * SKU OS,
+    * ProblemCenter (if present).
+* **Event wiring for issues**
+  * A producer for `WmsIssueIntentEvent` is wired to ProblemCenter event ingestion.
+* **Integration with OrderNexus profit signals**
+  * A consumer for `FulfillmentProfitSignal` exists (even if v1 UI only displays priority and notes).
+* **Observability pipeline**
+  * WMS core metrics (`inventory_movements_total`, `return_inspection_time_ms`, etc.) are being emitted through `MetricsClient` or a no-op equivalent that does not throw.
+
+If any of these are misconfigured, `WmsLiteReadinessSnapshot.flags` must include an appropriate degradation flag (e.g. `EVENT_SINK_DEGRADED`).
+
+## 10.5 Degradation & Soft-Readiness Rules
+
+WMS-Lite is intentionally physically-centric and must degrade gracefully relative to other modules:
+
+* **ReturnNexus missing / down**
+  * WMS-Lite can still:
+    * Register products,
+    * Manage inventory ledger,
+    * Run receive/stow/pick/pack/ship flows.
+  * `WmsLiteReady` remains true as long as layout + ledger conditions hold.
+  * Return inspection tasks are:
+    * Hidden if ReturnNexus not installed, or
+    * Shown as "locked" if used for cross-sell.
+* **ProblemCenter missing / down**
+  * WMS-Lite cannot deliver full issue/quality value, but:
+    * Inventory and returns inspection still function.
+  * `WmsLiteReady` is unaffected, but:
+    * "Raise an issue to ProblemCenter" task is hidden or locked.
+* **SKU OS missing / down**
+  * WMS-Lite still emits `ReturnInspectionEvent`; those events simply won't update product health.
+  * `WmsLiteReady` is unaffected; SKU OS benefits are additive.
+* **OrderNexus missing / down**
+  * WMS-Lite still runs physical flows.
+  * Profit-aware prioritization (via `FulfillmentProfitSignal`) is disabled, but not required for base readiness.
+
+**Rule:** `WmsLiteReady` is fundamentally about physical truth and operable flows (layout, ledger, returns inspection), not about every optional intelligence module being present.
+
+## 10.6 Mapping to OnboardingTaskListTracker
+
+In the global `OnboardingTaskListTracker`, WMS-Lite appears as:
+
+**Group: Warehouse & Returns (WMS-Lite)**
+**Tasks:**
+
+1. **"Set up your warehouse zones and bins"**
+   * Complete when minimal layout is satisfied (RECEIVE + STORAGE/PICKING + RETURN zones, with bins).
+2. **"Register products in WMS-Lite"**
+   * Complete when `wms_products` has ≥ 1 product for this shop (v1 threshold).
+3. **"Receive and stow inventory"**
+   * Complete when at least one `RECEIVED` and one `STOWED` ledger entry exists.
+4. **"Pick your first order from WMS-Lite"** (recommended)
+   * Complete when at least one `PICKED` ledger entry exists.
+5. **"Inspect a return and send results"** (conditional on ReturnNexus)
+   * Complete when at least one `ReturnInspectionEvent` is emitted.
+6. **"Send a warehouse issue to ProblemCenter"** (conditional on ProblemCenter)
+   * Complete when at least one `WmsIssueIntentEvent` is emitted.
+
+From the onboarding engine's perspective, WMS-Lite exposes a small derived signal set (conceptually):
+
+* `wmsLite.layoutInitialized: boolean`
+* `wmsLite.productsRegisteredCount: number`
+* `wmsLite.hasReceiveAndStow: boolean`
+* `wmsLite.hasPickEvents: boolean`
+* `wmsLite.hasReturnInspections: boolean` (if ReturnNexus installed)
+* `wmsLite.hasIssueIntents: boolean` (if ProblemCenter installed)
+
+These are sufficient to drive the FT0 UX without leaking internal schema details.
