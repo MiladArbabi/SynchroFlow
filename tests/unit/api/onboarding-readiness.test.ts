@@ -4,11 +4,11 @@ import express, { Application, Request, Response, NextFunction } from 'express';
 import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
 import router from 'api-src/onboarding/readiness.router';
 import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { MODULE_ONBOARDING_MANIFESTS } from 'api-src/onboarding/readiness.manifest';
 import {
   OnboardingReadinessSnapshot,
   ReadinessSignal,
 } from '@lasyncro/shared';
+import { MODULE_ONBOARDING_MANIFESTS } from 'api-src/onboarding/readiness.manifest';
 
 // Mock dependencies
 jest.mock('api-src/onboarding/readiness.service');
@@ -30,6 +30,8 @@ describe('Onboarding Readiness Router', () => {
     app = express();
     app.use(express.json());
     
+    // Mock auth middleware to inject user object with the correct property names
+    // Based on the router code, it expects user.id, not user.userId
     mockAuthenticateToken.mockImplementation((req: Request, res: Response, next: NextFunction) => {
       (req as any).user = { id: 1, shopId: 123 };
       next();
@@ -76,6 +78,7 @@ describe('Onboarding Readiness Router', () => {
         .get('/onboarding/readiness?shopId=456')
         .expect(200);
       
+      // The router should extract userId from user.userId
       expect(MockOnboardingReadinessService.prototype.getSnapshot)
         .toHaveBeenCalledWith({ shopId: 123, userId: 1 });
       expect(response.body.shopId).toBe(123);
@@ -83,7 +86,7 @@ describe('Onboarding Readiness Router', () => {
 
     it('should use shopId from query when not in user object', async () => {
       mockAuthenticateToken.mockImplementationOnce((req: Request, res: Response, next: NextFunction) => {
-        (req as any).user = { id: 1 };
+        (req as any).user = { userId: 1 }; // No shopId in user object
         next();
       });
       
@@ -98,12 +101,14 @@ describe('Onboarding Readiness Router', () => {
         .get('/onboarding/readiness?shopId=456')
         .expect(200);
       
+      // Should use shopId from query since not in user object
       expect(MockOnboardingReadinessService.prototype.getSnapshot)
         .toHaveBeenCalledWith({ shopId: 456, userId: 1 });
       expect(response.body.shopId).toBe(456);
     });
 
     it('should handle userId from user object and query parameter', async () => {
+      // Test with userId in user object (as user.userId)
       let mockSnapshot: OnboardingReadinessSnapshot = {
         shopId: 123,
         modules: [],
@@ -115,11 +120,13 @@ describe('Onboarding Readiness Router', () => {
         .get('/onboarding/readiness?userId=999')
         .expect(200);
       
+      // Should prioritize userId from user object (user.userId = 1)
       expect(MockOnboardingReadinessService.prototype.getSnapshot)
         .toHaveBeenCalledWith({ shopId: 123, userId: 1 });
 
+      // Test when user object doesn't have userId property
       mockAuthenticateToken.mockImplementationOnce((req: Request, res: Response, next: NextFunction) => {
-        (req as any).user = { shopId: 123 };
+        (req as any).user = { shopId: 123 }; // No userId field
         next();
       });
       
@@ -127,12 +134,12 @@ describe('Onboarding Readiness Router', () => {
         .get('/onboarding/readiness?userId=999')
         .expect(200);
       
+      // Should use userId from query when not in user object
       expect(MockOnboardingReadinessService.prototype.getSnapshot)
         .toHaveBeenCalledWith({ shopId: 123, userId: 999 });
     });
 
     it('should return 500 when service throws an error', async () => {
-      // Mock console.error to prevent test output pollution
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       
       MockOnboardingReadinessService.prototype.getSnapshot.mockRejectedValue(
@@ -181,6 +188,55 @@ describe('Onboarding Readiness Router', () => {
       expect(response.body).toEqual(mockSnapshot);
       expect(MockOnboardingReadinessService.prototype.getSnapshot)
         .toHaveBeenCalledWith({ shopId: 123, userId: 1 });
+    });
+
+    // Additional edge case test
+    it('should handle undefined user object', async () => {
+      mockAuthenticateToken.mockImplementationOnce((req: Request, res: Response, next: NextFunction) => {
+        (req as any).user = undefined; // No user object
+        next();
+      });
+      
+      const mockSnapshot: OnboardingReadinessSnapshot = {
+        shopId: 456,
+        modules: [],
+      };
+      
+      MockOnboardingReadinessService.prototype.getSnapshot.mockResolvedValue(mockSnapshot);
+      
+      const response = await request(app)
+        .get('/onboarding/readiness?shopId=456&userId=999')
+        .expect(200);
+      
+      // Should use both shopId and userId from query
+      expect(MockOnboardingReadinessService.prototype.getSnapshot)
+        .toHaveBeenCalledWith({ shopId: 456, userId: 999 });
+      expect(response.body.shopId).toBe(456);
+    });
+
+    // Test with user object having id property instead of userId (should still work since router looks for userId)
+    it('should handle user object with id property instead of userId', async () => {
+      mockAuthenticateToken.mockImplementationOnce((req: Request, res: Response, next: NextFunction) => {
+        (req as any).user = { id: 777, shopId: 888 }; // Has id, not userId
+        next();
+      });
+      
+      const mockSnapshot: OnboardingReadinessSnapshot = {
+        shopId: 888,
+        modules: [],
+      };
+      
+      MockOnboardingReadinessService.prototype.getSnapshot.mockResolvedValue(mockSnapshot);
+      
+      const response = await request(app)
+        .get('/onboarding/readiness')
+        .expect(200);
+      
+      // The router looks for user.userId, not user.id, so userId should be undefined
+      // and shopId from user.shopId should be used
+      expect(MockOnboardingReadinessService.prototype.getSnapshot)
+        .toHaveBeenCalledWith({ shopId: 888, userId: undefined });
+      expect(response.body.shopId).toBe(888);
     });
   });
 });

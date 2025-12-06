@@ -92,6 +92,24 @@ const OnboardingTaskListTracker: React.FC = () => {
   const completedSteps = moduleTasks.filter((t) => t.complete).length;
   const remainingSteps = totalSteps - completedSteps;
 
+  // Track previous completion count so we can react when tasks flip to "done"
+  const prevCompletedRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // No module yet → nothing to compare
+    if (!selectedModule) return;
+
+    const prev = prevCompletedRef.current;
+
+    // When completion count increases and the popper is currently closed,
+    // auto-open once so the user sees the new progress.
+    if (prev !== null && completedSteps > prev && !open) {
+      setOpen(true);
+    }
+
+    prevCompletedRef.current = completedSteps;
+  }, [completedSteps, selectedModule?.moduleId, open]);
+
   // Red dot if ANY module has unfinished required tasks
   const hasOutstandingTasks = modules.some((m) =>
     m.tasks.some((t) => t.required && !t.complete)
