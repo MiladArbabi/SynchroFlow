@@ -17,6 +17,7 @@ const customers_routes_1 = __importDefault(require("../api/customers/customers.r
 const product_costs_routes_1 = __importDefault(require("../api/product-costs/product-costs.routes"));
 const user_state_routes_1 = __importDefault(require("../api/user-state/user-state.routes"));
 const specter_controller_1 = require("api-src/api/specter/specter.controller");
+const readiness_router_1 = __importDefault(require("../onboarding/readiness.router"));
 const router = (0, express_1.Router)();
 router.use('/shops', shops_1.default);
 router.use('/integrations', integrations_1.default);
@@ -28,6 +29,7 @@ router.use('/products', products_routes_1.default);
 router.use('/customers', customers_routes_1.default);
 router.use('/product-costs', product_costs_routes_1.default);
 router.use('/user-state', user_state_routes_1.default);
+router.use('/onboarding', readiness_router_1.default);
 router.get('/v1/specter/config', specter_controller_1.getSpecterConfig);
 router.put('/v1/specter/config', specter_controller_1.upsertSpecterConfig);
 exports.default = router;

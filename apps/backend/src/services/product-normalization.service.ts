@@ -3,7 +3,7 @@
 import {
   CanonicalProductInput,
   CanonicalProductStatus,
-} from '@synchroflow/shared';
+} from '@lasyncro/shared';
 
 export class ProductNormalizationService {
   /**

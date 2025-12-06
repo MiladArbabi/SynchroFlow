@@ -5,7 +5,7 @@ import {
   CanonicalOrderLineItem,
   CanonicalCustomer,
   CanonicalShippingLine,
-} from '@synchroflow/shared/contracts/canonical-commerce';
+} from '@lasyncro/shared/contracts/canonical-commerce';
 
 // 1) Mock db with factory pattern
 jest.mock('api-src/db', () => {

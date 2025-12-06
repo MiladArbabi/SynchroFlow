@@ -12,6 +12,7 @@ import customersRoutes from '../api/customers/customers.routes'
 import productCostsRoutes from '../api/product-costs/product-costs.routes'
 import userStateRoutes from '../api/user-state/user-state.routes'
 import { getSpecterConfig, upsertSpecterConfig } from 'api-src/api/specter/specter.controller';
+import onboardingReadinessRouter from '../onboarding/readiness.router';
 
 const router = Router();
 
@@ -25,6 +26,8 @@ router.use('/products', productsRoutes);
 router.use('/customers', customersRoutes);
 router.use('/product-costs', productCostsRoutes);
 router.use('/user-state', userStateRoutes); 
+router.use('/onboarding', onboardingReadinessRouter);
+
 router.get('/v1/specter/config', getSpecterConfig);
 router.put('/v1/specter/config', upsertSpecterConfig);
 

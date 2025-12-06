@@ -2,7 +2,7 @@
 
 import db from '../db';
 import { ProductNormalizationService } from '../services/product-normalization.service';
-import { CanonicalProductInput } from '@synchroflow/shared';
+import { CanonicalProductInput } from '@lasyncro/shared';
 
 export interface ProductIngestionMessage {
   shopId: number;

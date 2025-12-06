@@ -43,11 +43,14 @@ const baseDist = path.resolve(__dirname, '../dist');
 require('tsconfig-paths').register({
   baseUrl: baseDist,
   paths: {
-    "api-server": [ path.resolve(baseDist, 'server.js') ],
-    "api-db":     [ path.resolve(baseDist, 'db.js') ],
-    "api-types":  [ path.resolve(baseDist, 'types.js') ],
-    "api-src/*":  [ path.resolve(baseDist, '*') ],
-    "@synchroflow/shared/*": [ path.resolve(__dirname, '../../modules/shared/dist/*') ]
+    "api-server": [path.resolve(baseDist, 'server.js')],
+    "api-db": [path.resolve(baseDist, 'db.js')],
+    "api-types": [path.resolve(baseDist, 'types.js')],
+    "api-src/*": [path.resolve(baseDist, '*')],
+
+    // IMPORTANT: point to shared DIST, not src
+    "@lasyncro/shared": [path.resolve(__dirname, '../../../modules/shared/dist/index.js')],
+    "@lasyncro/shared/*": [path.resolve(__dirname, '../../../modules/shared/dist/*')]
   },
 });
 

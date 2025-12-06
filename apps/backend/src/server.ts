@@ -2,7 +2,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import cookieParser from 'cookie-parser';
-import express from 'express';
+import express, { Express } from 'express';
 import session from 'express-session';
 import db from './db';
 import userStateRoutes from './api/user-state/user-state.routes';
@@ -29,6 +29,8 @@ import productsRoutes from "./api/products/products.routes";
 import authRoutes from "./api/auth/auth.routes";
 import dashboardRoutes from "./api/dashboard/dashboard.routes";
 import productCostsRoutes from "./api/product-costs/product-costs.routes";
+import onboardingReadinessRouter from './onboarding/readiness.router';
+
 import { getMyEntitlements } from './api/entitlements/entitlements.controller';
 
 // OPS-INTEL Imports
@@ -36,9 +38,8 @@ import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
 import { OpsIntelEngine } from './services/opsIntel';
 import { staleOrderRule } from './services/opsIntel/rules';
 
-const app = express();
+const app: Express = express();
 app.use(express.json());
-app.use(cookieParser());
 
 // --- TO FIX FLY DEPLOY ---
 const PGStore = connectPgSimple(session);
@@ -46,6 +47,21 @@ const sessionStore = new PGStore({
   conObject: db.client.config.connection, // <-- Give it the connection object
   tableName: 'user_sessions',
 });
+
+app.use(cookieParser() as any);
+app.use(
+  session({
+    store: sessionStore,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-please-set-in-prod',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+    },
+  }) as any
+);
 
 // --- 3. INITIALIZE AND START THE KORE ENGINE ---
 const koreEngine = new OpsIntelEngine();
@@ -56,21 +72,6 @@ koreEngine.registerRule(staleOrderRule);
 
 // Start the engine's cron jobs
 koreEngine.start();
-
-// --- SESSION MIDDLEWARE ---
-app.use(
-  session({
-    store: sessionStore, // <-- USE THE NEW PGStore
-    secret: process.env.SESSION_SECRET || 'fallback-secret-please-set-in-prod',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === 'production',
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
-    },
-  })
-);
 
 // Use 3000 as the dev default so UI (vite) proxy and dev scripts match.
 const port = Number(process.env.PORT) || 3000;
@@ -90,6 +91,8 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/user-state", userStateRoutes);
 app.use("/api/v1/shopify", shopifyRoutes);
+app.use("/api/v1/onboarding", onboardingReadinessRouter);
+
 app.get('/api/v1/entitlements/me', getMyEntitlements);
 
 // --- Routes ---

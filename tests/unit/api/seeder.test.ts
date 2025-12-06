@@ -22,7 +22,7 @@ describe('Sandbox Seeder', () => {
     const [shop] = await db('shops').insert({
       name: "Sandbox MegaStore",
       platform: "shopify",
-      contact_email: "sandbox@synchroflow.com",
+      contact_email: "sandbox@lasyncro.com",
       auth_secret: "sandbox-secret",
       primary_erp_type: "NetSuite",
       primary_ecomm_type: "Shopify"

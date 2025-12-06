@@ -1,10 +1,12 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 // apps/frontend/src/layout/MainLayout/Header/OnboardingTaskListTracker/index.tsx
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useRef, useState } from 'react';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
+import { useAuth } from 'contexts/AuthContext';
+import { useDashboardState } from 'contexts/DashboardStateContext';
 
 import Badge from '@mui/material/Badge';
 import IconButton from '@mui/material/IconButton';
@@ -23,22 +25,12 @@ import LinearProgress from '@mui/material/LinearProgress';
 import MainCard from 'ui-component/cards/MainCard';
 import Transitions from 'ui-component/extended/Transitions';
 
-// context imports
-import { useIntegration } from 'contexts/IntegrationContext';
-import { useDashboardState } from 'contexts/DashboardStateContext';
-import { useSpecterConfig } from 'contexts/SpecterConfigContext';
+// onboarding readiness imports
+import type { ModuleOnboardingReadiness } from '@lasyncro/shared';
+import { useOnboardingReadiness } from 'hooks/useOnboardingReadiness';
 
 // assets
 import { IconBell, IconCheck, IconCircle } from '@tabler/icons-react';
-
-// ==============================|| TYPES ||============================== //
-
-interface OnboardingStep {
-  id: string;
-  label: string;
-  description?: string;
-  done: boolean;
-}
 
 // ==============================|| ONBOARDING CHECKLIST / NOTIFICATION SECTION ||============================== //
 /**
@@ -60,67 +52,50 @@ interface OnboardingStep {
 const OnboardingTaskListTracker: React.FC = () => {
   const theme = useTheme();
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
+  
+  const { accessToken } = useAuth();
+  const { userState } = useDashboardState();
+  const ordersPerMonthSegment = userState?.user.orders_per_month_segment;
 
-  // --- Context hooks: source of truth for onboarding state ---
-  const { hasIntegrations, syncStatus } = useIntegration();
-  const { userState, isLoading: isUserStateLoading } = useDashboardState();
-  const { shouldShowOnboardingNudges } = useSpecterConfig();
-
-  // --- Local UI state for the Popper ---
+    // --- Local UI state for the Popper ---
   const [open, setOpen] = useState(false);
 
   // Anchor ref is the bell icon button
   const anchorRef = useRef<HTMLButtonElement | null>(null);
   const prevOpen = useRef(open);
 
-  // --- Derive onboarding booleans from contexts ---
+  // --- Onboarding readiness (from shared engine) ---
+  // NOTE: using shopId=1 for now (matches DashboardPage)
+  const { data, loading, error, refetch } = useOnboardingReadiness({
+    shopId: 1,
+    accessToken: accessToken ?? undefined,
+  });
 
-  // 1) Store connection
-  const shopifyConnected = userState?.user.shopify_connected === true;
+  const modules: ModuleOnboardingReadiness[] = data?.modules ?? [];
 
-  // 2) Initial sync completed
-  const syncCompleted = syncStatus === 'COMPLETED';
+  // Which module's tasks are shown in the tracker ("platform" or "order-nexus")
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
 
-  // 3) Orders-per-month segmentation filled
-  const hasOrdersPerMonthSegment =
-    !!userState?.user.orders_per_month_segment;
-
-  // 4) Specter nudges configured (very simple heuristic:
-  //    if nudges are no longer "first-run" / always-on, we assume they've been reviewed)
-  const specterConfigured = shouldShowOnboardingNudges === false;
-
-  // --- Checklist steps definition ---
-  const steps: OnboardingStep[] = [
-    {
-      id: 'connect-store',
-      label: 'Connect your Shopify store',
-      description: 'Link your main storefront so we can pull products and orders.',
-      done: shopifyConnected
-    },
-    {
-      id: 'complete-sync',
-      label: 'Let us complete your first data sync',
-      description: 'We fetch your products, orders, and line items.',
-      done: syncCompleted
-    },
-    {
-      id: 'orders-per-month',
-      label: 'Tell us your monthly order volume',
-      description: 'Answer the “orders per month” banner on the dashboard.',
-      done: hasOrdersPerMonthSegment
-    },
-    {
-      id: 'specter-config',
-      label: 'Review Specter nudges (optional)',
-      description: 'Tune how and when Specter should surface insights.',
-      done: specterConfigured
+  // When readiness data arrives, default to the first module
+  useEffect(() => {
+    if (!selectedModuleId && modules.length > 0) {
+      setSelectedModuleId(modules[0].moduleId);
     }
-  ];
+  }, [selectedModuleId, modules]);
 
-  const totalSteps = steps.length;
-  const completedSteps = steps.filter((s) => s.done).length;
+  const selectedModule =
+    modules.find((m) => m.moduleId === selectedModuleId) ?? modules[0];
+
+  const moduleTasks = selectedModule?.tasks ?? [];
+
+  const totalSteps = moduleTasks.length;
+  const completedSteps = moduleTasks.filter((t) => t.complete).length;
   const remainingSteps = totalSteps - completedSteps;
-  const hasOutstandingTasks = remainingSteps > 0;
+
+  // Red dot if ANY module has unfinished required tasks
+  const hasOutstandingTasks = modules.some((m) =>
+    m.tasks.some((t) => t.required && !t.complete)
+  );
 
   const progressValue =
     totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
@@ -146,6 +121,20 @@ const OnboardingTaskListTracker: React.FC = () => {
     }
     prevOpen.current = open;
   }, [open]);
+
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (ordersPerMonthSegment === undefined) return;
+
+    // Skip the first time we see a value; only react to *changes* afterwards
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+      return;
+    }
+
+    refetch();
+  }, [ordersPerMonthSegment, refetch]);
 
   const popperPlacement: PopperPlacementType = downMD ? 'bottom' : 'bottom-end';
 
@@ -206,113 +195,176 @@ const OnboardingTaskListTracker: React.FC = () => {
               <Paper sx={{ boxShadow: theme.shadows[16] }}>
                 {open && (
                   <MainCard border={false} elevation={16} content={false}>
-                    {/* Header + progress */}
-                    <Stack spacing={1.5} sx={{ p: 2 }}>
-                      <Stack
-                        direction="row"
-                        alignItems="center"
-                        justifyContent="space-between"
-                      >
+                    {/* Loading / error states */}
+                    {loading && (
+                      <Stack spacing={1.5} sx={{ p: 2 }}>
                         <Typography variant="subtitle1">
                           Onboarding checklist
                         </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Loading onboarding readiness…
+                        </Typography>
+                        <LinearProgress sx={{ borderRadius: 999 }} />
+                      </Stack>
+                    )}
 
+                    {!loading && error && (
+                      <Stack spacing={1.5} sx={{ p: 2 }}>
+                        <Typography variant="subtitle1">
+                          Onboarding checklist
+                        </Typography>
+                        <Typography variant="caption" color="error">
+                          Failed to load onboarding readiness.
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {error.message}
+                        </Typography>
                         <Chip
+                          label="Retry"
                           size="small"
-                          label={
-                            hasOutstandingTasks
-                              ? `${remainingSteps} left`
-                              : 'All done'
-                          }
-                          color={hasOutstandingTasks ? 'warning' : 'success'}
-                          sx={{
-                            color: theme.vars.palette.common.white
-                          }}
+                          onClick={() => refetch()}
+                          color="primary"
+                          variant="outlined"
                         />
                       </Stack>
+                    )}
 
-                      {/* Progress bar */}
-                      <Box sx={{ mt: 0.5 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={progressValue}
-                          sx={{ borderRadius: 999 }}
-                        />
-                        <Typography variant="caption" color="text.secondary">
-                          {completedSteps}/{totalSteps} steps completed
-                        </Typography>
-                      </Box>
-                    </Stack>
+                    {!loading && !error && selectedModule && (
+                      <>
+                        {/* Header + progress for selected module */}
+                        <Stack spacing={1.5} sx={{ p: 2 }}>
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                          >
+                            <Typography variant="subtitle1">
+                              Onboarding – {selectedModule.displayName}
+                            </Typography>
 
-                    <Divider />
-
-                    {/* Checklist items */}
-                    <Box
-                      sx={{
-                        maxHeight: 'calc(100vh - 260px)',
-                        overflowY: 'auto',
-                        overflowX: 'hidden',
-                        '&::-webkit-scrollbar': { width: 5 }
-                      }}
-                    >
-                      <Stack spacing={1.5} sx={{ p: 2, pt: 1.5 }}>
-                        {steps.map((step) => {
-                          const icon = step.done ? (
-                            <IconCheck
-                              size={18}
-                              stroke={1.5}
-                              style={{ color: theme.vars.palette.success.main }}
-                            />
-                          ) : (
-                            <IconCircle
-                              size={18}
-                              stroke={1.5}
-                              style={{
-                                color: theme.vars.palette.text.secondary
+                            <Chip
+                              size="small"
+                              label={
+                                remainingSteps > 0
+                                  ? `${remainingSteps} left`
+                                  : 'All done'
+                              }
+                              color={remainingSteps > 0 ? 'warning' : 'success'}
+                              sx={{
+                                color: theme.vars.palette.common.white
                               }}
                             />
-                          );
+                          </Stack>
 
-                          return (
-                            <Stack
-                              key={step.id}
-                              direction="row"
-                              alignItems="flex-start"
-                              spacing={1.5}
-                            >
-                              <Box sx={{ mt: 0.3 }}>{icon}</Box>
-                              <Box sx={{ flex: 1 }}>
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    fontWeight: step.done ? 500 : 600,
-                                    textDecoration: step.done
-                                      ? 'line-through'
-                                      : 'none'
-                                  }}
-                                >
-                                  {step.label}
-                                </Typography>
-                                {step.description && (
-                                  <Typography
-                                    variant="caption"
-                                    color="text.secondary"
-                                  >
-                                    {step.description}
-                                  </Typography>
-                                )}
-                              </Box>
-                              <Chip
-                                size="small"
-                                label={step.done ? 'Done' : 'To do'}
-                                variant={step.done ? 'filled' : 'outlined'}
-                                color={step.done ? 'success' : 'default'}
-                              />
+                          {/* Module selector chips (if multiple modules) */}
+                          {modules.length > 1 && (
+                            <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+                              {modules.map((m) => (
+                                <Chip
+                                  key={m.moduleId}
+                                  size="small"
+                                  label={m.displayName}
+                                  variant={
+                                    m.moduleId === selectedModule.moduleId
+                                      ? 'filled'
+                                      : 'outlined'
+                                  }
+                                  color={
+                                    m.moduleId === selectedModule.moduleId
+                                      ? 'primary'
+                                      : 'default'
+                                  }
+                                  onClick={() => setSelectedModuleId(m.moduleId)}
+                                />
+                              ))}
                             </Stack>
-                          );
-                        })}
-                      </Stack>
-                    </Box>
+                          )}
+
+                          {/* Progress bar */}
+                          <Box sx={{ mt: 0.5 }}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={progressValue}
+                              sx={{ borderRadius: 999 }}
+                            />
+                            <Typography variant="caption" color="text.secondary">
+                              {completedSteps}/{totalSteps} steps completed
+                            </Typography>
+                          </Box>
+                        </Stack>
+
+                        <Divider />
+
+                        {/* Checklist items for selected module */}
+                        <Box
+                          sx={{
+                            maxHeight: 'calc(100vh - 260px)',
+                            overflowY: 'auto',
+                            overflowX: 'hidden',
+                            '&::-webkit-scrollbar': { width: 5 }
+                          }}
+                        >
+                          <Stack spacing={1.5} sx={{ p: 2, pt: 1.5 }}>
+                            {moduleTasks.map((task) => {
+                              const icon = task.complete ? (
+                                <IconCheck
+                                  size={18}
+                                  stroke={1.5}
+                                  style={{
+                                    color: theme.vars.palette.success.main
+                                  }}
+                                />
+                              ) : (
+                                <IconCircle
+                                  size={18}
+                                  stroke={1.5}
+                                  style={{
+                                    color: theme.vars.palette.text.secondary
+                                  }}
+                                />
+                              );
+
+                              return (
+                                <Stack
+                                  key={task.id}
+                                  direction="row"
+                                  alignItems="flex-start"
+                                  spacing={1.5}
+                                >
+                                  <Box sx={{ mt: 0.3 }}>{icon}</Box>
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        fontWeight: task.complete ? 500 : 600,
+                                        textDecoration: task.complete
+                                          ? 'line-through'
+                                          : 'none'
+                                      }}
+                                    >
+                                      {task.label}
+                                    </Typography>
+                                    {/* Optional: show task.id for debugging */}
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                    >
+                                      {task.required ? 'Required' : 'Optional'}
+                                    </Typography>
+                                  </Box>
+                                  <Chip
+                                    size="small"
+                                    label={task.complete ? 'Done' : 'To do'}
+                                    variant={task.complete ? 'filled' : 'outlined'}
+                                    color={task.complete ? 'success' : 'default'}
+                                  />
+                                </Stack>
+                              );
+                            })}
+                          </Stack>
+                        </Box>
+                      </>
+                    )}
                   </MainCard>
                 )}
               </Paper>

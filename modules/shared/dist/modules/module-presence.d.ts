@@ -17,3 +17,4 @@ export interface CapabilityFlags {
     hasReturnsIntelligence: boolean;
     hasQualityIntelligence: boolean;
 }
+//# sourceMappingURL=module-presence.d.ts.map

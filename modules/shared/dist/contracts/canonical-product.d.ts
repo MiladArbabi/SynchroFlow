@@ -13,3 +13,4 @@ export interface CanonicalProductInput {
 export interface CanonicalProduct extends CanonicalProductInput {
     canonicalProductId: number;
 }
+//# sourceMappingURL=canonical-product.d.ts.map

@@ -22,9 +22,9 @@ module.exports = {
         // integration-service source alias
         '^integration-src/(.*)$': '<rootDir>/apps/integration-service/src/$1',
 
-        // Shared modules alias (so imports like '@synchroflow/shared/...' resolve in tests)
-        '^@synchroflow/shared/(.*)$': '<rootDir>/modules/shared/src/$1',
-        '^@synchroflow/shared$': '<rootDir>/modules/shared/src',
+        // Shared modules alias (so imports like '@lasyncro/shared/...' resolve in tests)
+        '^@lasyncro/shared/(.*)$': '<rootDir>/modules/shared/src/$1',
+        '^@lasyncro/shared$': '<rootDir>/modules/shared/src',
         '^shared-src$': '<rootDir>/modules/shared/src',
       },
     },

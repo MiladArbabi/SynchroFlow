@@ -157,3 +157,4 @@ export interface CanonicalProductInput {
     createdAt: string;
     updatedAt: string;
 }
+//# sourceMappingURL=canonical-commerce.d.ts.map

@@ -11,7 +11,7 @@
     "migrate:rollback": "knex migrate:rollback"
   },
   "dependencies": {
-    "@synchroflow/shared": "1.0.0",
+    "@lasyncro/shared": "1.0.0",
     "amqp-connection-manager": "^5.0.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",

@@ -18,7 +18,7 @@ const MockAuthProvider = ({ children }: { children: React.ReactNode }) => {
     isLoading: false,
     user: { 
       id: 1, 
-      email: 'demo@synchroflow.com', 
+      email: 'demo@lasyncro.com', 
       first_name: 'Demo', 
       last_name: 'User',
       role: 'owner',

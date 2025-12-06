@@ -3,7 +3,7 @@ import {
   CanonicalOrder,
   CanonicalOrderLineItem,
   CanonicalProduct
-} from '@synchroflow/shared/contracts/canonical-commerce';
+} from '@lasyncro/shared/contracts/canonical-commerce';
 
 type HashCustomerIdFn = (shopId: number, rawCustomerId: string) => string;
 

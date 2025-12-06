@@ -60,6 +60,7 @@ const products_routes_1 = __importDefault(require("./api/products/products.route
 const auth_routes_1 = __importDefault(require("./api/auth/auth.routes"));
 const dashboard_routes_1 = __importDefault(require("./api/dashboard/dashboard.routes"));
 const product_costs_routes_1 = __importDefault(require("./api/product-costs/product-costs.routes"));
+const readiness_router_1 = __importDefault(require("./onboarding/readiness.router"));
 const entitlements_controller_1 = require("./api/entitlements/entitlements.controller");
 // OPS-INTEL Imports
 const ops_intel_routes_1 = __importDefault(require("./api/ops-intel/ops-intel.routes"));
@@ -67,13 +68,24 @@ const opsIntel_1 = require("./services/opsIntel");
 const rules_1 = require("./services/opsIntel/rules");
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
-app.use((0, cookie_parser_1.default)());
 // --- TO FIX FLY DEPLOY ---
 const PGStore = (0, connect_pg_simple_1.default)(express_session_1.default);
 const sessionStore = new PGStore({
     conObject: db_1.default.client.config.connection, // <-- Give it the connection object
     tableName: 'user_sessions',
 });
+app.use((0, cookie_parser_1.default)());
+app.use((0, express_session_1.default)({
+    store: sessionStore,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-please-set-in-prod',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 1000 * 60 * 60 * 24 * 7,
+    },
+}));
 // --- 3. INITIALIZE AND START THE KORE ENGINE ---
 const koreEngine = new opsIntel_1.OpsIntelEngine();
 // Register all our business rules
@@ -81,18 +93,6 @@ koreEngine.registerRule(rules_1.staleOrderRule);
 // koreEngine.registerRule(lowInventoryRule);
 // Start the engine's cron jobs
 koreEngine.start();
-// --- SESSION MIDDLEWARE ---
-app.use((0, express_session_1.default)({
-    store: sessionStore, // <-- USE THE NEW PGStore
-    secret: process.env.SESSION_SECRET || 'fallback-secret-please-set-in-prod',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
-    },
-}));
 // Use 3000 as the dev default so UI (vite) proxy and dev scripts match.
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -109,6 +109,7 @@ app.use("/api/v1/auth", auth_routes_1.default);
 app.use("/api/v1/dashboard", dashboard_routes_1.default);
 app.use("/api/v1/user-state", user_state_routes_1.default);
 app.use("/api/v1/shopify", shopify_routes_1.default);
+app.use("/api/v1/onboarding", readiness_router_1.default);
 app.get('/api/v1/entitlements/me', entitlements_controller_1.getMyEntitlements);
 // --- Routes ---
 app.get('/', (req, res) => {

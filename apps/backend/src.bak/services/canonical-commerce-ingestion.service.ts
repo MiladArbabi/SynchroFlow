@@ -3,7 +3,7 @@ import db from '../db';
 import {
   CanonicalOrder,
   CanonicalOrderLineItem,
-} from '@synchroflow/shared/contracts/canonical-commerce';
+} from '@lasyncro/shared/contracts/canonical-commerce';
 
 
 export class CanonicalCommerceIngestionService {

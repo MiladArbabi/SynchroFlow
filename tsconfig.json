@@ -59,9 +59,9 @@
       // --- INTEGRATION SERVICE ALIASES ---
       "integration-src/*": ["apps/integration-service/src/*"],
 
-     // --- SHARED PACKAGE ALIAS (@synchroflow/shared) ---
-      "@synchroflow/shared/*": ["modules/shared/src/*"],
-      "@synchroflow/shared": ["modules/shared/src/index.ts"]
+     // --- SHARED PACKAGE ALIAS (@lasyncro/shared) ---
+      "@lasyncro/shared/*": ["modules/shared/src/*"],
+      "@lasyncro/shared": ["modules/shared/src/index.ts"]
     }
   },
   "include": [

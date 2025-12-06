@@ -1,5 +1,5 @@
 import { get } from 'lodash';
-import { CanonicalOrder } from '@synchroflow/shared';
+import { CanonicalOrder } from '@lasyncro/shared';
 
 export type MappingRule = {
   source?: string | null; // JSON path into raw payload (dot notation). If null and literal provided, use literal.

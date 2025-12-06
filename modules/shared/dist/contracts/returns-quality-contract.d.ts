@@ -110,3 +110,4 @@ export interface IssueRootCauseInference {
  *  3) embed the result into ReturnAnalyticsEvent.issueRootCause.
  */
 export declare function inferIssueRootCause(signal: ReturnInspectionSignal): IssueRootCauseInference;
+//# sourceMappingURL=returns-quality-contract.d.ts.map
