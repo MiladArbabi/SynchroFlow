@@ -5,40 +5,34 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-
+import { useQueryClient } from '@tanstack/react-query';
 import { DataSyncingModal } from 'components/DataSyncingModal';
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
-import { ConnectStoreBanner } from 'components/ConnectStoreBanner';
 import { ConnectionErrorModal } from 'components/ConnectionErrorModal';
+import { Ft0Phase } from 'types/onboarding';
+
 import { useIntegration } from 'contexts/IntegrationContext';
 import { useAuth } from 'contexts/AuthContext';
 import { DashboardStateManager } from 'components/DashboardStateManager/DashboardStateManager';
 
 import { WidgetLayoutWithRegistry } from 'components/widgets/WidgetLayoutWithRegistry';
 
-import { SpecterOnboardingBanner } from 'components/specter/SpecterOnboardingBanner';
+//import { SpecterOnboardingBanner } from 'components/specter/SpecterOnboardingBanner';
 import { SyncProgressBanner } from 'components/SyncProgressBanner';
 import { OrdersPerMonthBanner } from 'components/OrdersPerMonthBanner';
+import { useDashboardState } from 'contexts/DashboardStateContext';
 
-export const DashboardPage = ({
-  children,
-  handleSidenavToggle,
-}: {
+export const DashboardPage = ({ children, handleSidenavToggle } : {
   children: React.ReactNode;
   handleSidenavToggle: () => void;
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const {
-    hasIntegrations,
-    isLoading: isIntegrationLoading,
-    isFirstTimeSync,
-    syncStatus,
-    refreshIntegrationStatus,
-  } = useIntegration();
+  const { hasIntegrations, syncStatus, refreshIntegrationStatus } = useIntegration();
+
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
+  const { userState } = useDashboardState();
 
   // constants + tracking
   const MIN_MODAL_MS = 3200;
@@ -55,9 +49,57 @@ export const DashboardPage = ({
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
+  // For phase transition logs (not just snapshots)
+  const ft0PhaseRef = useRef<Ft0Phase | null>(null);
+
   // post-sync skeleton flag
   const [showPostSyncSkeleton, setShowPostSyncSkeleton] = useState(false);
 
+  /**
+   * FT0 onboarding state machine for the dashboard.
+   *
+   * This derives a single phase value from:
+   * - hasIntegrations
+   * - modal visibility (connect + sync)
+   * - syncStatus
+   * - the short post-sync skeleton window
+   *
+   * DashboardStateManager consumes this to decide between:
+   * - empty state (pre-connect / loading)
+   * - sync/loading views
+   * - post-sync skeleton
+   * - steady-state widgets.
+   */
+
+  const ft0Phase: Ft0Phase = (() => {
+  // No integrations, no modals ⇒ pure pre-connect
+    if (!hasIntegrations && !isConnectModalOpen && !isSyncModalOpen) {
+      return 'PRE_CONNECT';
+    }
+
+    // Actively connecting via modal / OAuth
+    if (isConnectModalOpen) {
+      return 'CONNECTING';
+    }
+
+    // Initial sync modal is visible ⇒ syncing
+    if (isSyncModalOpen) {
+      return 'SYNCING';
+    }
+
+    // Integration exists and sync isn't completed yet ⇒ background sync
+    if (hasIntegrations && syncStatus !== 'COMPLETED') {
+      return 'SYNCING';
+    }
+
+    // Short post-sync staging window with skeleton
+    if (showPostSyncSkeleton) {
+      return 'POST_SYNC_SKELETON';
+    }
+
+    // Normal steady-state dashboard
+    return 'STEADY_STATE';
+  })();
 
   useEffect(() => {
     const connectStatus = searchParams.get('connect');
@@ -131,7 +173,6 @@ export const DashboardPage = ({
     lastHasIntegrationsRef.current = curr;
   }, [hasIntegrations, isSyncModalOpen]);
 
-
     // --- Enforce "modal visible for at least MIN_MODAL_MS" rule ---
     useEffect(() => {
       if (!isSyncModalOpen) return;
@@ -151,6 +192,21 @@ export const DashboardPage = ({
 
       return () => window.clearTimeout(timer);
     }, [isSyncModalOpen]);
+
+    // For phase transition logs (not just snapshots)
+    useEffect(() => {
+      if (ft0PhaseRef.current !== ft0Phase) {
+        console.log('[DashboardPage] FT0 phase changed', {
+          previous: ft0PhaseRef.current,
+          current: ft0Phase,
+          hasIntegrations,
+          syncStatus,
+          showPostSyncSkeleton,
+          userId: userState?.user.id,
+        });
+        ft0PhaseRef.current = ft0Phase;
+      }
+    }, [ft0Phase, hasIntegrations, syncStatus, showPostSyncSkeleton, userState]);
 
  const handleOpenConnectModal = async () => {
     // 5. Implement the Pre-flight Check
@@ -176,13 +232,6 @@ export const DashboardPage = ({
    setConnectionError(null); // Close the error modal
    handleOpenConnectModal(); // Open the connect modal
  };
-
-  // --- Smart Rendering Logic ---
-  // Check for modal flows first - modals take precedence over loading states
- if (isSyncModalOpen || connectionError || isConnectModalOpen) {
-   // Render modals in main return - don't return early
- } 
-
 
   // 3. Create the "Aha! Refresh" handler
   const handleSyncModalClose = () => {
@@ -239,6 +288,7 @@ export const DashboardPage = ({
       <DashboardStateManager
         onConnectStore={handleOpenConnectModal}
         forceLoadingSkeleton={showPostSyncSkeleton}
+        ft0Phase={ft0Phase}
       >
         {/* Sync progress for initial + recurring syncs */}
         <SyncProgressBanner />
@@ -247,7 +297,7 @@ export const DashboardPage = ({
         <OrdersPerMonthBanner />
 
         {/* Specter onboarding nudges */}
-        <SpecterOnboardingBanner />
+        {/* <SpecterOnboardingBanner /> */}
 
         {/* Widget system integration */}
         <WidgetLayoutWithRegistry />
