@@ -86,7 +86,7 @@ const OnboardingTaskListTracker: React.FC = () => {
   const selectedModule =
     modules.find((m) => m.moduleId === selectedModuleId) ?? modules[0];
 
-  const moduleTasks = selectedModule?.tasks ?? [];
+    const moduleTasks = selectedModule?.tasks ?? [];
 
   const totalSteps = moduleTasks.length;
   const completedSteps = moduleTasks.filter((t) => t.complete).length;
@@ -95,20 +95,40 @@ const OnboardingTaskListTracker: React.FC = () => {
   // Track previous completion count so we can react when tasks flip to "done"
   const prevCompletedRef = useRef<number | null>(null);
 
+  // Session-scoped flag so we only "introduce" the tracker once per session
+  const [hasAnnouncedInitialCompletion, setHasAnnouncedInitialCompletion] =
+    useState<boolean>(() => {
+      if (typeof window === 'undefined') return false;
+      return window.sessionStorage.getItem('hasSeenOnboardingTracker') === 'true';
+    });
+
   useEffect(() => {
-    // No module yet → nothing to compare
     if (!selectedModule) return;
 
     const prev = prevCompletedRef.current;
 
-    // When completion count increases and the popper is currently closed,
-    // auto-open once so the user sees the new progress.
+    // 1) Intro: first time in this session we see any completed steps
+    if (!hasAnnouncedInitialCompletion && completedSteps > 0) {
+      setOpen(true);
+      setHasAnnouncedInitialCompletion(true);
+
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('hasSeenOnboardingTracker', 'true');
+      }
+    }
+
+    // 2) Later increments (e.g. orders-per-month) when the popper is closed
     if (prev !== null && completedSteps > prev && !open) {
       setOpen(true);
     }
 
     prevCompletedRef.current = completedSteps;
-  }, [completedSteps, selectedModule?.moduleId, open]);
+  }, [
+    completedSteps,
+    selectedModule?.moduleId,
+    open,
+    hasAnnouncedInitialCompletion,
+  ]);  
 
   // Red dot if ANY module has unfinished required tasks
   const hasOutstandingTasks = modules.some((m) =>

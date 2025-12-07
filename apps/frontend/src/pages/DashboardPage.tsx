@@ -54,6 +54,7 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
 
   // post-sync skeleton flag
   const [showPostSyncSkeleton, setShowPostSyncSkeleton] = useState(false);
+  const forceSkeleton = isSyncModalOpen || showPostSyncSkeleton;
 
   /**
    * FT0 onboarding state machine for the dashboard.
@@ -287,7 +288,7 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
 
       <DashboardStateManager
         onConnectStore={handleOpenConnectModal}
-        forceLoadingSkeleton={showPostSyncSkeleton}
+        forceLoadingSkeleton={forceSkeleton}
         ft0Phase={ft0Phase}
       >
         {/* Sync progress for initial + recurring syncs */}
