@@ -20,7 +20,6 @@
 * Order-level profit status: `HEALTHY | AT_RISK | UNPROFITABLE`
 * Profit leakage classification per order
 * Customer profitability tiers **from realized orders** (whale curve)
-* Mode-aware profit policies & thresholds (Survival / Growth / Architect)
 * Basic profit interventions (suggestions, not execution)
 
 OrderNexus OWNS `returns_rate_30d`:
@@ -40,6 +39,32 @@ OrderNexus OWNS `returns_rate_30d`:
 * Task workflows & approvals → **Echo Hub**
 * Global dashboards & cross-module charts → **Analytics Core**
 * Return case lifecycle, refund / exchange decisions → **ReturnNexus**
+
+## 0.3 CNS Integration (LOCKED v1)
+
+ OrderNexus does NOT own merchant mode, behavior mode selection, or UX emphasis.
+ These are exclusively produced by the CNS Core (Central Nervous System).
+
+ OrderNexus MUST:
+
+* Compute order profitability deterministically.
+* Emit OrderNexusSignal → CNS (profit stability, leakage, trends).
+* Consume CnsContextSnapshot only for **interpretation**, NEVER computation.
+
+ OrderNexus MUST NOT:
+
+* Predict or assign merchant modes.
+* Store mode-related fields.
+* Alter profitability thresholds based on mode.
+
+ CNS Core is the ONLY source of:
+
+* mode: 'survival' | 'growth' | 'architect'
+* revenueBand
+* burningPriority
+* UI timeContext
+
+ OrderNexus remains *mathematically stable*, CNS handles interpretation.
 
 ---
 
@@ -498,68 +523,55 @@ export class PcdHasher {
 
 ---
 
-## 4. Mode Policies – Survival, Growth, Architect
+## 4. Profit Policies & CNS Context (LOCKED v1)
 
-```typescript
-// packages/order-nexus/src/policies/mode-policy-manager.ts
+OrderNexus NO LONGER owns any concept of:
 
-export type Mode = 'survival' | 'growth' | 'architect';
+* `Mode = 'survival' | 'growth' | 'architect'`
+* Mode-specific policy maps
+* Mode determination based on order volume (or any other heuristic)
 
-export const ORDER_NEXUS_MODE_POLICIES: Record<Mode, ModePolicies> = {
-  survival: {
-    minMarginPercent: 5,
-    allowUnprofitableOrders: true,
-    requireApprovalBelowMargin: false,
-    leakageAlertThreshold: 50.0,
-    automatedInterventions: ['SHIPPING_OPTIMIZATION'],
-    maxCustomerAcquisitionCost: 25.0
-  },
-  growth: {
-    minMarginPercent: 10,
-    allowUnprofitableOrders: true,
-    requireApprovalBelowMargin: true,
-    leakageAlertThreshold: 25.0,
-    automatedInterventions: ['SHIPPING_OPTIMIZATION', 'SERVICE_LEVEL_ADJUSTMENT'],
-    maxCustomerAcquisitionCost: 35.0
-  },
-  architect: {
-    minMarginPercent: 15,
-    allowUnprofitableOrders: false,
-    requireApprovalBelowMargin: true,
-    leakageAlertThreshold: 10.0,
-    automatedInterventions: [
-      'SHIPPING_OPTIMIZATION',
-      'SERVICE_LEVEL_ADJUSTMENT',
-      'CUSTOMER_TERMS_ADJUSTMENT'
-    ],
-    maxCustomerAcquisitionCost: 50.0
-  }
-};
+All of the following are now INVALID inside OrderNexus and MUST NOT be (re)implemented:
 
-export class ModePolicyManager {
-  constructor(
-    private readonly shopConfigRepo: ShopConfigRepository,
-    private readonly orderAnalytics: OrderAnalyticsService
-  ) {}
+* `ORDER_NEXUS_MODE_POLICIES`
+* `ModePolicyManager`
+* `determineInitialMode(shopId)`
+* `getModeForShop(shopId)`
 
-  async getPoliciesForShop(shopId: number): Promise<ModePolicies> {
-    const config = await this.shopConfigRepo.getShopMode(shopId);
-    return ORDER_NEXUS_MODE_POLICIES[config.mode];
-  }
+### 4.1 What OrderNexus Owns
 
-  async getModeForShop(shopId: number): Promise<Mode> {
-    const config = await this.shopConfigRepo.getShopMode(shopId);
-    return config.mode;
-  }
+OrderNexus owns ONLY **pure, deterministic** profitability rules:
 
-  async determineInitialMode(shopId: number): Promise<Mode> {
-    const ordersLast30d = await this.orderAnalytics.getOrderCount(shopId, 30);
-    if (ordersLast30d < 100) return 'survival';
-    if (ordersLast30d < 1000) return 'growth';
-    return 'architect';
-  }
-}
-```
+* Landed cost computation
+* Net profit and margin %
+* Profit status classification (e.g. `HEALTHY | AT_RISK | UNPROFITABLE`)
+* Profit leakage detection (shipping, service level, handling, etc.)
+* Historical recomputation and cost-model versioning
+
+These rules may use inputs such as:
+
+* `CostModelSnapshot` (from Financial Intelligence)
+* Per-shop config (hard ceilings/floors explicitly stored as config values)
+
+…but they MUST NOT branch on merchant “mode”.
+
+### 4.2 What CNS Owns
+
+CNS Core is the *only* source of behavioral context:
+
+* `merchantMaturityMode: 'survival' | 'growth' | 'architect'`
+* `revenueBand`
+* `burningPriority`
+* `timeContext`
+
+CNS + InsightCore then **interpret** OrderNexus output:
+
+* Survival → emphasis on cash risk, red/urgent framing
+* Growth → emphasis on leverage & scaling opportunities
+* Architect → emphasis on systems, margin optimization, and workflows
+
+OrderNexus emits neutral, mode-agnostic data and signals.  
+CNS decides how “loud” that should feel for the merchant.
 
 ---
 
@@ -764,7 +776,7 @@ export class ModulePresenceManager {
 
 ---
 
-## 8. CoreProfitEngine – Mathematically Correct, Mode-Aware
+## 8. CoreProfitEngine – Mathematically Correct
 
 ```typescript
 // packages/order-nexus/src/core/profit-engine.ts
@@ -1299,7 +1311,6 @@ export class OrderWorker {
 >
 > * Computation of **true landed cost**, **net profit**, **margin %**, and **profit status** for every ingested order.
 > * **Basic profit leakage detection** (shipping + service overkill at minimum).
-> * **Mode-aware thresholds** and policies for Survival, Growth, and Architect modes.
 > * **Customer profitability tiers** derived from realized order history (whale curve) when Specter is available.
 > * **Graceful degradation**:
 >   * If Financial Intelligence is unavailable → falls back to local cost models (`costModelSource = 'local'`, `computationSource = 'basic_fallback'`).
@@ -1315,6 +1326,25 @@ export class OrderWorker {
 >     * history entries in `order_profitability_history`.
 >   * Cost model sources (`finance` vs `local`) and computation reasons (`initial`, `recomputation`, `basic_fallback`) are explicitly stored and queryable.
 >   * Post-return economic impact is stored separately in `order_return_impact`, sourced exclusively from `ReturnOutcomeEvent` emitted by ReturnNexus.
+
+### 13.1 CNS & Mode Boundary (LOCKED)
+
+OrderNexus MUST:
+
+* Remain **mode-agnostic**: no internal `survival | growth | architect` branching.
+* Produce consistent profitability outputs for the same inputs, regardless of CNS state.
+* Expose signals and metrics that CNS can consume (profit stability, leakage, trend scores).
+
+OrderNexus MUST NOT:
+
+* Store or compute merchant maturity mode.
+* Change thresholds based on mode or psychological framing.
+* Own any UX, urgency, or “tone” decisions.
+
+All behavioral variation (Survival vs Growth vs Architect) is handled by:
+
+* **CNS Core** → generates `CnsContextSnapshot`
+* **InsightCore & Widgets** → render context-aware UI using that snapshot
 
 ---
 
@@ -1374,19 +1404,14 @@ export interface OrderNexusReadinessSnapshot {
    * `costModelSource` is:
      * `'finance'` → precise cost model (preferred), or
      * `'local'` → fallback allowed, but flagged as `COST_MODEL_FALLBACK_ACTIVE`.
-4. **Mode policy determined**
-   * `ModePolicyManager.getModeForShop(shopId)` returns a valid mode.
-   * This can be:
-     * Autodetected via `determineInitialMode`, or
-     * Explicitly set in shop configuration.
-5. **Ingestion pipeline SLA is healthy**
+4. **Ingestion pipeline SLA is healthy**
    * For the last X orders:
      * `OrderProcessingSLA.processOrderWithSLA` metrics show:
        * 99% of orders processed < `MAX_EXPECTED_TIME_MS` (60s),
        * no sustained spikes in `order_processing_error`.
 
-If any of 1–4 fails, `OrderNexusReady = false`.  
-If 5 is degraded but not catastrophic, `OrderNexusReady` may remain true but flagged with `PIPELINE_HEALTHY` missing or degraded.
+If any of 1–3 fails, `OrderNexusReady = false`.  
+If 4 is degraded but not catastrophic, `OrderNexusReady` may remain true but flagged with `PIPELINE_HEALTHY` missing or degraded.
 
 ### 14.3 Merchant-Facing Onboarding Tasks (What the FT0 UX Should Drive)
 
@@ -1413,23 +1438,35 @@ From the merchant's perspective, OrderNexus onboarding should feel like:
      * Either configure Finance module (global cost model), or update local cost config in a simple UI (handling cost, packaging, etc.).
    * This is **NOT** a hard blocker for `OrderNexusReady`, but:
      * FT0 should nudge strongly to move from `COST_MODEL_FALLBACK_ACTIVE` → `COST_MODEL_PRECISE`.
-4. **Choose your operating mode** (or confirm auto-detected)
-   * Task: "Confirm your operating mode: Survival, Growth, or Architect"
-   * Logic:
-     * If `ModePolicyManager.determineInitialMode` has run and no explicit override is stored:
-       * show banner: "We've placed you in Survival/Growth/Architect based on last 30 days. Confirm or change?"
-     * Once merchant explicitly confirms/changes:
-       * Set `MODE_EXPLICITLY_SET` flag.
-   * This is important because:
-     * Mode drives `minMarginPercent`, leakage thresholds, and intervention aggressiveness.
-5. **Review your first profit insights**
-   * Task: "Review your first profit and leakage insights"
-   * Completion:
-     * Merchant has visited a profitability view at least once (e.g., `/analytics/profit` or dashboard profitability widgets)
-     * Or, at minimum, we know `order_profitability` has enough rows (e.g., ≥ 20) for a meaningful overview.
-   * This task is not strictly technical readiness but marks "Onboarding done, value delivered".
 
-These 5 tasks map directly into potential `OnboardingTaskListTracker` steps for the "Profitability / OrderNexus" section.
+## 4. CNS-Driven Interpretation Contract (LOCKED)
+
+ Profitability computation inside OrderNexus is PURE and CANNOT depend on merchant mode.
+ However, **INSIGHT INTERPRETATION** depends on CNS context via InsightCore.
+
+### OrderNexus → CNS (signals)
+
+ OrderNexus MUST emit:
+ {
+   profitStabilityScore: number,     // 0–1
+   leakageSeverityScore: number,     // 0–1
+   fulfillmentCostVolatility: number,// 0–1
+   revenueTrendScore: number         // 0–1
+ }
+
+### CNS → InsightCore → Widgets (interpretation)
+
+ Survival Mode:
+   • leakageSeverityScore drives CRITICAL urgency
+
+ Growth Mode:
+   • leakageSeverityScore drives OPPORTUNITY framing
+
+ Architect Mode:
+   • leakageSeverityScore drives SYSTEM OPTIMIZATION insights
+
+ OrderNexus MUST NOT implement these differences internally.
+ Only InsightCore may render mode-aware interpretations.
 
 ### 14.4 Platform-Level Preconditions (Invisible to Merchant, Critical to Readiness)
 
@@ -1482,9 +1519,7 @@ These are the exact tasks that can be surfaced under an "Order profitability" / 
    * Show as:
      * "Using basic cost assumptions" (if source = local).
      * "Using precise cost model from Finance" (if source = finance → mark done).
-4. **Confirm your operating mode** (Survival / Growth / Architect)
-   * Mark done when merchant explicitly saves mode in shop config.
-5. **Review your first profit/leakage insights**
+4. **Review your first profit/leakage insights**
    * Triggered by a visit to the primary profitability dashboard / widget.
 
 Once 1–3 are done and at least (2 + 4) are satisfied, `OrderNexusReady(shopId) = true` from an FT0 perspective.
