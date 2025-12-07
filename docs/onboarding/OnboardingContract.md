@@ -106,13 +106,11 @@ export type ModuleKey =
 Readiness signals are **module-scoped** and emitted by backend “readiness providers”.
 They are strongly shaped, not arbitrary strings.
 
-```ts
 export interface ReadinessSignal {
   key: string;           // e.g. 'orderNexus.ordersIngested'
   value: number | string | boolean;
   observedAt: string;    // ISO timestamp
 }
-```
 
 **Contract:**
 
@@ -160,7 +158,59 @@ export interface ReadinessSignal {
 // Specter
 'specter.configured': boolean;                // basic config saved
 'specter.firstNudgeSeen': boolean;            // optional
-```
+
+// Free Tier State Signals (Required for all modules)
+// These determine task availability and onboarding CTA behavior
+'platform.freeTierState': string;             // 'active' | 'exhausted' | 'upgraded'
+'platform.freeTierRemaining': number;         // remaining units in free tier
+'platform.freeTierResetsAt': string;          // ISO timestamp of reset
+
+'orderNexus.freeTierState': string;           // 'active' | 'exhausted' | 'upgraded'
+'orderNexus.freeTierRemaining': number;       // remaining orders/units in free tier
+'orderNexus.freeTierResetsAt': string;        // ISO timestamp of reset
+
+'returnNexus.freeTierState': string;          // 'active' | 'exhausted' | 'upgraded'
+'returnNexus.freeTierRemaining': number;      // remaining returns in free tier
+'returnNexus.freeTierResetsAt': string;       // ISO timestamp of reset
+
+'wmsLite.freeTierState': string;              // 'active' | 'exhausted' | 'upgraded'
+'wmsLite.freeTierRemaining': number;          // remaining warehouse operations
+'wmsLite.freeTierResetsAt': string;           // ISO timestamp of reset
+
+'problemCenter.freeTierState': string;        // 'active' | 'exhausted' | 'upgraded'
+'problemCenter.freeTierRemaining': number;    // remaining issues in free tier
+'problemCenter.freeTierResetsAt': string;     // ISO timestamp of reset
+
+'insightCore.freeTierState': string;          // 'active' | 'exhausted' | 'upgraded'
+'insightCore.freeTierRemaining': number;      // remaining analytics events
+'insightCore.freeTierResetsAt': string;       // ISO timestamp of reset
+
+'skuOs.freeTierState': string;                // 'active' | 'exhausted' | 'upgraded'
+'skuOs.freeTierRemaining': number;            // remaining product health events
+'skuOs.freeTierResetsAt': string;             // ISO timestamp of reset
+
+'specter.freeTierState': string;              // 'active' | 'exhausted' | 'upgraded'
+'specter.freeTierRemaining': number;          // remaining customer signals
+'specter.freeTierResetsAt': string;           // ISO timestamp of reset
+
+## Additional Contract for Free Tier Signals
+
+Every module readiness block **MUST** include all three free tier signals:
+
+* **`{moduleId}.freeTierState`** values:
+  - `'active'`: Free tier is active and has remaining capacity
+  - `'exhausted'`: Free tier is exhausted (no remaining units)
+  - `'upgraded'`: Merchant has upgraded beyond free tier
+
+* **`{moduleId}.freeTierRemaining`**: Number of remaining units in the current free tier period
+
+* **`{moduleId}.freeTierResetsAt`**: ISO timestamp indicating when the free tier counter resets
+
+These signals directly determine:
+
+* **Task availability** in the onboarding checklist
+* **CTA (Call To Action) behavior** for each module section
+* **Visual treatment** of locked/available tasks
 
 ### 1.3 Module Readiness Snapshot
 
