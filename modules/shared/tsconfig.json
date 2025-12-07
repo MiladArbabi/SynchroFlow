@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
+    "allowImportingTsExtensions": false,   // ← override to silence TS
     "composite": true,
     "declaration": true,
     "declarationMap": false,

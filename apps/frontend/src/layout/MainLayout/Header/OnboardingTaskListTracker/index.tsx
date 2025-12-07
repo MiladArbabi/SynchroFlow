@@ -28,9 +28,11 @@ import Transitions from 'ui-component/extended/Transitions';
 // onboarding readiness imports
 import type { ModuleOnboardingReadiness } from '@lasyncro/shared';
 import { useOnboardingReadiness } from 'hooks/useOnboardingReadiness';
+import { dispatchOnboardingAction } from '../../../../onboarding/dispatchOnboardingAction';
 
 // assets
 import { IconBell, IconCheck, IconCircle } from '@tabler/icons-react';
+import { useOnboardingUIActions } from 'contexts/OnboardingUIActionsContext';
 
 // ==============================|| ONBOARDING CHECKLIST / NOTIFICATION SECTION ||============================== //
 /**
@@ -70,6 +72,17 @@ const OnboardingTaskListTracker: React.FC = () => {
     shopId: 1,
     accessToken: accessToken ?? undefined,
   });
+
+  const uiActions = useOnboardingUIActions();
+
+  const handleTaskActionClick = (task: ModuleOnboardingReadiness['tasks'][number]) => {
+    if (!uiActions) return;
+
+    dispatchOnboardingAction(task.action, {
+      openModal: uiActions.openModal,
+      navigate: uiActions.navigate,
+    });
+  };
 
   const modules: ModuleOnboardingReadiness[] = data?.modules ?? [];
 
@@ -440,52 +453,63 @@ const OnboardingTaskListTracker: React.FC = () => {
                                                     alignItems="flex-start"
                                                     spacing={1.5}
                                                   >
-                                                    <Box sx={{ mt: 0.3 }}>
-                                                      {icon}
-                                                    </Box>
+                                                    {/* Status icon */}
+                                                    <Box sx={{ mt: 0.3 }}>{icon}</Box>
+
+                                                    {/* Label + required/optional */}
                                                     <Box sx={{ flex: 1 }}>
                                                       <Typography
                                                         variant="body2"
                                                         sx={{
-                                                          fontWeight:
-                                                            task.complete
-                                                              ? 500
-                                                              : 600,
-                                                          textDecoration:
-                                                            task.complete
-                                                              ? 'line-through'
-                                                              : 'none',
+                                                          fontWeight: task.complete ? 500 : 600,
+                                                          textDecoration: task.complete ? 'line-through' : 'none',
                                                         }}
                                                       >
                                                         {task.label}
                                                       </Typography>
-                                                      <Typography
-                                                        variant="caption"
-                                                        color="text.secondary"
-                                                      >
-                                                        {task.required
-                                                          ? 'Required'
-                                                          : 'Optional'}
+                                                      <Typography variant="caption" color="text.secondary">
+                                                        {task.required ? 'Required' : 'Optional'}
                                                       </Typography>
                                                     </Box>
-                                                    <Chip
-                                                      size="small"
-                                                      label={
-                                                        task.complete
-                                                          ? 'Done'
-                                                          : 'To do'
-                                                      }
-                                                      variant={
-                                                        task.complete
-                                                          ? 'filled'
-                                                          : 'outlined'
-                                                      }
-                                                      color={
-                                                        task.complete
-                                                          ? 'success'
-                                                          : 'default'
-                                                      }
-                                                    />
+
+                                                    {/* Right side: status chip + optional CTA chip */}
+                                                    <Stack direction="row" spacing={0.5} alignItems="center">
+                                                      {/* Status chip (always shown) */}
+                                                      <Chip
+                                                        size="small"
+                                                        label={task.complete ? 'Done' : 'To do'}
+                                                        variant={task.complete ? 'filled' : 'outlined'}
+                                                        color={task.complete ? 'success' : 'default'}
+                                                      />
+
+                                                      {/* CTA chip – only if the task has an action and is not complete */}
+                                                      {task.action && !task.complete && (
+                                                        <Chip
+                                                          size="small"
+                                                          label={
+                                                            (() => {
+                                                              switch (task.action?.type) {
+                                                                case 'navigate':
+                                                                  return 'Go to page';
+                                                                case 'openModal':
+                                                                  return 'Open';
+                                                                case 'openExternal':
+                                                                  return 'Open link';
+                                                                default:
+                                                                  return 'Start';
+                                                              }
+                                                            })()
+                                                          }
+                                                          color="primary"
+                                                          variant="outlined"
+                                                          onClick={(event) => {
+                                                            // prevent the section header / accordion from toggling when CTA is pressed
+                                                            event.stopPropagation();
+                                                            handleTaskActionClick(task);
+                                                          }}
+                                                        />
+                                                      )}
+                                                    </Stack>
                                                   </Stack>
                                                 );
                                               })}

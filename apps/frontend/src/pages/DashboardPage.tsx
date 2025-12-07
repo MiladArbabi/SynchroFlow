@@ -23,10 +23,17 @@ import { SyncProgressBanner } from 'components/SyncProgressBanner';
 import { OrdersPerMonthBanner } from 'components/OrdersPerMonthBanner';
 import { useDashboardState } from 'contexts/DashboardStateContext';
 
+import {
+  OnboardingUIActionsContext,
+} from 'contexts/OnboardingUIActionsContext';
+import { useNavigate } from 'react-router-dom';
+
 export const DashboardPage = ({ children, handleSidenavToggle } : {
   children: React.ReactNode;
   handleSidenavToggle: () => void;
 }) => {
+  const navigate = useNavigate();
+
   const [searchParams, setSearchParams] = useSearchParams();
   const { hasIntegrations, syncStatus, refreshIntegrationStatus } = useIntegration();
 
@@ -101,6 +108,20 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
     // Normal steady-state dashboard
     return 'STEADY_STATE';
   })();
+
+  const uiActions = React.useMemo(() => ({
+      openModal: (id: string) => {
+        if (id === 'connect-store') {
+          handleOpenConnectModal();
+        }
+        // later: other modal IDs (specter-config, cost-model, etc.)
+      },
+      navigate: (path: string) => {
+        navigate(path);
+      },
+    }),
+    [navigate] // + any handlers you reference
+  );
 
   useEffect(() => {
     const connectStatus = searchParams.get('connect');
@@ -267,42 +288,44 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
 
   return (
     <>
-      {/* --- AHA-FLOW: Render Modals --- */}
-      {/* 6. Conditionally render the banner */}
-      <ConnectStoreModal
-        isOpen={isConnectModalOpen}
-        onClose={() => setIsConnectModalOpen(false)}
-      />
+      <OnboardingUIActionsContext.Provider value={uiActions}>
+        {/* --- AHA-FLOW: Render Modals --- */}
+        {/* 6. Conditionally render the banner */}
+        <ConnectStoreModal
+          isOpen={isConnectModalOpen}
+          onClose={() => setIsConnectModalOpen(false)}
+        />
 
-      <ConnectionErrorModal
-        open={!!connectionError}
-        error={connectionError}
-        onClose={() => setConnectionError(null)}
-        onRetry={handleRetry}
-      />
-      <DataSyncingModal
-        open={isSyncModalOpen}
-        onClose={handleSyncModalClose}
-        data-testid="data-syncing-modal"
-      />
+        <ConnectionErrorModal
+          open={!!connectionError}
+          error={connectionError}
+          onClose={() => setConnectionError(null)}
+          onRetry={handleRetry}
+        />
+        <DataSyncingModal
+          open={isSyncModalOpen}
+          onClose={handleSyncModalClose}
+          data-testid="data-syncing-modal"
+        />
 
-      <DashboardStateManager
-        onConnectStore={handleOpenConnectModal}
-        forceLoadingSkeleton={forceSkeleton}
-        ft0Phase={ft0Phase}
-      >
-        {/* Sync progress for initial + recurring syncs */}
-        <SyncProgressBanner />
+        <DashboardStateManager
+          onConnectStore={handleOpenConnectModal}
+          forceLoadingSkeleton={forceSkeleton}
+          ft0Phase={ft0Phase}
+        >
+          {/* Sync progress for initial + recurring syncs */}
+          <SyncProgressBanner />
 
-        {/* Orders-per-month segmentation (FT0 micro-step #1) */}
-        <OrdersPerMonthBanner />
+          {/* Orders-per-month segmentation (FT0 micro-step #1) */}
+          <OrdersPerMonthBanner />
 
-        {/* Specter onboarding nudges */}
-        {/* <SpecterOnboardingBanner /> */}
+          {/* Specter onboarding nudges */}
+          {/* <SpecterOnboardingBanner /> */}
 
-        {/* Widget system integration */}
-        <WidgetLayoutWithRegistry />
-      </DashboardStateManager>
+          {/* Widget system integration */}
+          <WidgetLayoutWithRegistry />
+        </DashboardStateManager>
+      </OnboardingUIActionsContext.Provider>
     </>
   );
 };
