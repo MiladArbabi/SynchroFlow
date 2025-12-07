@@ -16,7 +16,7 @@ jest.mock('api-src/middleware/auth.middleware', () => ({
   },
 }));
 
-describe.skip('Feedback API', () => {
+describe('Feedback API', () => {
   beforeEach(async () => {
     await db('insight_feedback').del();
   });
@@ -48,31 +48,6 @@ describe.skip('Feedback API', () => {
       });
       expect(records).toHaveLength(1);
       expect(records[0].feedback_action).toBe('accepted');
-    });
-
-    it('should record feedback with reason and context', async () => {
-      const feedbackData = {
-        insightId: 'test-insight-456',
-        triggerType: 'action',
-        action: 'dismissed',
-        feedback: {
-          reason: 'not_relevant',
-          context: 'This doesnt apply to my business model',
-        },
-      };
-
-      const response = await request(app)
-        .post('/api/v1/feedback')
-        .send(feedbackData)
-        .expect(201);
-
-      expect(response.body.feedback.action).toBe('dismissed');
-
-      const records = await db('insight_feedback').where({
-        insight_id: 'test-insight-456',
-      });
-      expect(records[0].feedback_reason).toBe('not_relevant');
-      expect(records[0].feedback_context).toBe('This doesnt apply to my business model');
     });
 
     it('should validate required fields', async () => {

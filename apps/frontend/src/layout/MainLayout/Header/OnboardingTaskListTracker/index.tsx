@@ -73,24 +73,50 @@ const OnboardingTaskListTracker: React.FC = () => {
 
   const modules: ModuleOnboardingReadiness[] = data?.modules ?? [];
 
-  // Which module's tasks are shown in the tracker ("platform" or "order-nexus")
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+    // Summaries per module (for progress + badge logic)
+  const moduleSummaries = modules.map((module) => {
+    const tasks = module.tasks ?? [];
+    const total = tasks.length;
+    const completed = tasks.filter((t) => t.complete).length;
+    const remaining = total - completed;
+    const hasRequiredOutstanding = tasks.some(
+      (t) => t.required && !t.complete
+    );
 
-  // When readiness data arrives, default to the first module
+    return {
+      module,
+      tasks,
+      total,
+      completed,
+      remaining,
+      hasRequiredOutstanding,
+    };
+  });
+
+  const totalStepsAll = moduleSummaries.reduce(
+    (sum, m) => sum + m.total,
+    0
+  );
+  const completedStepsAll = moduleSummaries.reduce(
+    (sum, m) => sum + m.completed,
+    0
+  );
+
+  // Which module’s tasks are visible in the tracker accordion
+  const [expandedModuleId, setExpandedModuleId] = useState<string | null>(null);
+
+  // Track if we've already applied the initial default expansion
+  const hasSetInitialExpandedRef = useRef(false);
+
+  // Default expanded module: first in the list (usually "platform" / core setup)
   useEffect(() => {
-    if (!selectedModuleId && modules.length > 0) {
-      setSelectedModuleId(modules[0].moduleId);
-    }
-  }, [selectedModuleId, modules]);
+    // Only run this once, the first time modules arrive
+    if (hasSetInitialExpandedRef.current) return;
+    if (modules.length === 0) return;
 
-  const selectedModule =
-    modules.find((m) => m.moduleId === selectedModuleId) ?? modules[0];
-
-    const moduleTasks = selectedModule?.tasks ?? [];
-
-  const totalSteps = moduleTasks.length;
-  const completedSteps = moduleTasks.filter((t) => t.complete).length;
-  const remainingSteps = totalSteps - completedSteps;
+    setExpandedModuleId(modules[0].moduleId);
+    hasSetInitialExpandedRef.current = true;
+  }, [modules]);
 
   // Track previous completion count so we can react when tasks flip to "done"
   const prevCompletedRef = useRef<number | null>(null);
@@ -101,14 +127,15 @@ const OnboardingTaskListTracker: React.FC = () => {
       if (typeof window === 'undefined') return false;
       return window.sessionStorage.getItem('hasSeenOnboardingTracker') === 'true';
     });
-
-  useEffect(() => {
-    if (!selectedModule) return;
+    
+    useEffect(() => {
+    // No tasks at all ⇒ nothing to react to
+    if (totalStepsAll === 0) return;
 
     const prev = prevCompletedRef.current;
 
     // 1) Intro: first time in this session we see any completed steps
-    if (!hasAnnouncedInitialCompletion && completedSteps > 0) {
+    if (!hasAnnouncedInitialCompletion && completedStepsAll > 0) {
       setOpen(true);
       setHasAnnouncedInitialCompletion(true);
 
@@ -118,25 +145,18 @@ const OnboardingTaskListTracker: React.FC = () => {
     }
 
     // 2) Later increments (e.g. orders-per-month) when the popper is closed
-    if (prev !== null && completedSteps > prev && !open) {
+    if (prev !== null && completedStepsAll > prev && !open) {
       setOpen(true);
     }
 
-    prevCompletedRef.current = completedSteps;
-  }, [
-    completedSteps,
-    selectedModule?.moduleId,
-    open,
-    hasAnnouncedInitialCompletion,
-  ]);  
+    prevCompletedRef.current = completedStepsAll;
+  }, [completedStepsAll, totalStepsAll, open, hasAnnouncedInitialCompletion]);
+
 
   // Red dot if ANY module has unfinished required tasks
-  const hasOutstandingTasks = modules.some((m) =>
-    m.tasks.some((t) => t.required && !t.complete)
+  const hasOutstandingTasks = moduleSummaries.some(
+    (m) => m.hasRequiredOutstanding
   );
-
-  const progressValue =
-    totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
 
   // --- Handlers for Popper open/close ---
   const handleToggle = () => {
@@ -267,142 +287,222 @@ const OnboardingTaskListTracker: React.FC = () => {
                       </Stack>
                     )}
 
-                    {!loading && !error && selectedModule && (
+                    {!loading && !error && (
                       <>
-                        {/* Header + progress for selected module */}
-                        <Stack spacing={1.5} sx={{ p: 2 }}>
-                          <Stack
-                            direction="row"
-                            alignItems="center"
-                            justifyContent="space-between"
-                          >
-                            <Typography variant="subtitle1">
-                              Onboarding – {selectedModule.displayName}
-                            </Typography>
-
-                            <Chip
-                              size="small"
-                              label={
-                                remainingSteps > 0
-                                  ? `${remainingSteps} left`
-                                  : 'All done'
-                              }
-                              color={remainingSteps > 0 ? 'warning' : 'success'}
-                              sx={{
-                                color: theme.vars.palette.common.white
-                              }}
-                            />
-                          </Stack>
-
-                          {/* Module selector chips (if multiple modules) */}
-                          {modules.length > 1 && (
-                            <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
-                              {modules.map((m) => (
-                                <Chip
-                                  key={m.moduleId}
-                                  size="small"
-                                  label={m.displayName}
-                                  variant={
-                                    m.moduleId === selectedModule.moduleId
-                                      ? 'filled'
-                                      : 'outlined'
-                                  }
-                                  color={
-                                    m.moduleId === selectedModule.moduleId
-                                      ? 'primary'
-                                      : 'default'
-                                  }
-                                  onClick={() => setSelectedModuleId(m.moduleId)}
-                                />
-                              ))}
-                            </Stack>
-                          )}
-
-                          {/* Progress bar */}
-                          <Box sx={{ mt: 0.5 }}>
-                            <LinearProgress
-                              variant="determinate"
-                              value={progressValue}
-                              sx={{ borderRadius: 999 }}
-                            />
-                            <Typography variant="caption" color="text.secondary">
-                              {completedSteps}/{totalSteps} steps completed
-                            </Typography>
-                          </Box>
+                        {/* Header */}
+                        <Stack spacing={0.5} sx={{ p: 2, pb: 1.5 }}>
+                          <Typography variant="subtitle1">
+                            Onboarding checklist
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Complete these steps to unlock your full dashboard.
+                          </Typography>
                         </Stack>
 
                         <Divider />
 
-                        {/* Checklist items for selected module */}
-                        <Box
-                          sx={{
-                            maxHeight: 'calc(100vh - 260px)',
-                            overflowY: 'auto',
-                            overflowX: 'hidden',
-                            '&::-webkit-scrollbar': { width: 5 }
-                          }}
-                        >
-                          <Stack spacing={1.5} sx={{ p: 2, pt: 1.5 }}>
-                            {moduleTasks.map((task) => {
-                              const icon = task.complete ? (
-                                <IconCheck
-                                  size={18}
-                                  stroke={1.5}
-                                  style={{
-                                    color: theme.vars.palette.success.main
-                                  }}
-                                />
-                              ) : (
-                                <IconCircle
-                                  size={18}
-                                  stroke={1.5}
-                                  style={{
-                                    color: theme.vars.palette.text.secondary
-                                  }}
-                                />
-                              );
+                        {moduleSummaries.length === 0 ? (
+                          <Stack spacing={1.5} sx={{ p: 2 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              No onboarding steps available yet.
+                            </Typography>
+                          </Stack>
+                        ) : (
+                          <Box
+                            sx={{
+                              maxHeight: 'calc(100vh - 260px)',
+                              overflowY: 'auto',
+                              overflowX: 'hidden',
+                              '&::-webkit-scrollbar': { width: 5 }
+                            }}
+                          >
+                            <Stack spacing={1.5} sx={{ p: 2, pt: 1.5 }}>
+                              {moduleSummaries.map(
+                                ({
+                                  module,
+                                  tasks,
+                                  total,
+                                  completed,
+                                  remaining,
+                                }) => {
+                                  const isExpanded =
+                                    module.moduleId === expandedModuleId;
 
-                              return (
-                                <Stack
-                                  key={task.id}
-                                  direction="row"
-                                  alignItems="flex-start"
-                                  spacing={1.5}
-                                >
-                                  <Box sx={{ mt: 0.3 }}>{icon}</Box>
-                                  <Box sx={{ flex: 1 }}>
-                                    <Typography
-                                      variant="body2"
+                                  const progressValue =
+                                    total > 0
+                                      ? (completed / total) * 100
+                                      : 0;
+
+                                  return (
+                                    <Box
+                                      key={module.moduleId}
                                       sx={{
-                                        fontWeight: task.complete ? 500 : 600,
-                                        textDecoration: task.complete
-                                          ? 'line-through'
-                                          : 'none'
+                                        borderRadius: 1.5,
+                                        border: '1px solid',
+                                        borderColor: theme.palette.divider,
+                                        overflow: 'hidden',
                                       }}
                                     >
-                                      {task.label}
-                                    </Typography>
-                                    {/* Optional: show task.id for debugging */}
-                                    <Typography
-                                      variant="caption"
-                                      color="text.secondary"
-                                    >
-                                      {task.required ? 'Required' : 'Optional'}
-                                    </Typography>
-                                  </Box>
-                                  <Chip
-                                    size="small"
-                                    label={task.complete ? 'Done' : 'To do'}
-                                    variant={task.complete ? 'filled' : 'outlined'}
-                                    color={task.complete ? 'success' : 'default'}
-                                  />
-                                </Stack>
-                              );
-                            })}
-                          </Stack>
-                        </Box>
+                                      {/* Section header (clickable) */}
+                                      <Box
+                                        sx={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          px: 1.5,
+                                          py: 1,
+                                          cursor: 'pointer',
+                                          bgcolor: isExpanded
+                                            ? theme.palette.action.hover
+                                            : theme.palette.background.paper,
+                                        }}
+                                        onClick={() =>
+                                          setExpandedModuleId(
+                                            isExpanded
+                                              ? null
+                                              : module.moduleId
+                                          )
+                                        }
+                                      >
+                                        <Box>
+                                          <Typography variant="subtitle2">
+                                            {module.displayName}
+                                          </Typography>
+                                          <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                          >
+                                            {completed}/{total} steps completed
+                                          </Typography>
+                                        </Box>
+
+                                        <Chip
+                                          size="small"
+                                          label={
+                                            remaining > 0
+                                              ? `${remaining} left`
+                                              : 'All done'
+                                          }
+                                          color={
+                                            remaining > 0
+                                              ? 'warning'
+                                              : 'success'
+                                          }
+                                          sx={{
+                                            color:
+                                              theme.vars.palette.common.white,
+                                          }}
+                                        />
+                                      </Box>
+
+                                      {/* Expanded content: progress + tasks */}
+                                      {isExpanded && (
+                                        <>
+                                          <Box sx={{ px: 1.5, pb: 1, pt: 0.5 }}>
+                                            <LinearProgress
+                                              variant="determinate"
+                                              value={progressValue}
+                                              sx={{ borderRadius: 999 }}
+                                            />
+                                          </Box>
+
+                                          <Divider />
+
+                                          <Box sx={{ px: 1.5, py: 1.5 }}>
+                                            <Stack spacing={1.25}>
+                                              {tasks.map((task) => {
+                                                const icon = task.complete ? (
+                                                  <IconCheck
+                                                    size={18}
+                                                    stroke={1.5}
+                                                    style={{
+                                                      color:
+                                                        theme.vars.palette
+                                                          .success.main,
+                                                    }}
+                                                  />
+                                                ) : (
+                                                  <IconCircle
+                                                    size={18}
+                                                    stroke={1.5}
+                                                    style={{
+                                                      color:
+                                                        theme.vars.palette.text
+                                                          .secondary,
+                                                    }}
+                                                  />
+                                                );
+
+                                                return (
+                                                  <Stack
+                                                    key={task.id}
+                                                    direction="row"
+                                                    alignItems="flex-start"
+                                                    spacing={1.5}
+                                                  >
+                                                    <Box sx={{ mt: 0.3 }}>
+                                                      {icon}
+                                                    </Box>
+                                                    <Box sx={{ flex: 1 }}>
+                                                      <Typography
+                                                        variant="body2"
+                                                        sx={{
+                                                          fontWeight:
+                                                            task.complete
+                                                              ? 500
+                                                              : 600,
+                                                          textDecoration:
+                                                            task.complete
+                                                              ? 'line-through'
+                                                              : 'none',
+                                                        }}
+                                                      >
+                                                        {task.label}
+                                                      </Typography>
+                                                      <Typography
+                                                        variant="caption"
+                                                        color="text.secondary"
+                                                      >
+                                                        {task.required
+                                                          ? 'Required'
+                                                          : 'Optional'}
+                                                      </Typography>
+                                                    </Box>
+                                                    <Chip
+                                                      size="small"
+                                                      label={
+                                                        task.complete
+                                                          ? 'Done'
+                                                          : 'To do'
+                                                      }
+                                                      variant={
+                                                        task.complete
+                                                          ? 'filled'
+                                                          : 'outlined'
+                                                      }
+                                                      color={
+                                                        task.complete
+                                                          ? 'success'
+                                                          : 'default'
+                                                      }
+                                                    />
+                                                  </Stack>
+                                                );
+                                              })}
+                                            </Stack>
+                                          </Box>
+                                        </>
+                                      )}
+                                    </Box>
+                                  );
+                                }
+                              )}
+                            </Stack>
+                          </Box>
+                        )}
                       </>
                     )}
+
                   </MainCard>
                 )}
               </Paper>

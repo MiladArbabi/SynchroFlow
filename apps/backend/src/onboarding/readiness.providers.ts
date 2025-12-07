@@ -58,25 +58,14 @@ export const platformOnboardingSignalProvider: OnboardingSignalProvider = {
 export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'order-nexus',
 
-    async getSignals({ shopId, userId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-
+  async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
     // Count canonical orders for this shop.
-    // NOTE: adjust table/column names if your canonical orders table differs.
     const row = await db('canonical_orders')
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
       .first();
 
     const ordersIngested = Number(row?.count ?? 0);
-
-    // Look up explicit preferred mode from users.preferred_mode (if we have a userId)
-    let modeSelected: string | null = null;
-    if (userId) {
-      const userRow = await db('users')
-        .where({ id: userId })
-        .first();
-      modeSelected = userRow?.preferred_mode ?? null;
-    }
 
     return [
       {
@@ -86,10 +75,6 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
       {
         name: 'orderNexus.ordersIngested',
         value: ordersIngested,
-      },
-      {
-        name: 'user.modeSelected',
-        value: modeSelected,
       },
     ];
   },

@@ -49,8 +49,7 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
     requiredSignals: [
       'integration.syncCompleted',
       'orderNexus.profitabilityActive',
-      'orderNexus.ordersIngested',
-      'user.modeSelected'
+      'orderNexus.ordersIngested'
     ],
     tasks: [
       {
@@ -76,18 +75,6 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
           }
         ]
       },
-      {
-        id: 'confirm-business-mode',
-        label: 'Confirm your business mode',
-        required: true,
-        completionRules: [
-          {
-            signal: 'user.modeSelected',
-            operator: 'not_equals',
-            expectedValue: null
-          }
-        ]
-      }
     ]
   }
 ];
