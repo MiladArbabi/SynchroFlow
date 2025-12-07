@@ -112,5 +112,44 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
         ],
       },
     ],
+  },  {
+    moduleId: 'specter',
+    displayName: 'Customer & Conversion (Specter)',
+    requiredSignals: [
+      'specter.sdkInstalled'
+    ],
+    tasks: [
+      {
+        id: 'specter-sdk-installed',
+        label: 'Enable Specter tracking',
+        required: false,
+        completionRules: [
+          { signal: 'specter.sdkInstalled', expectedValue: true }
+        ],
+        action: {
+          type: 'openExternal',
+          target: 'https://docs.lasyncro.com/specter/getting-started'
+        }
+      }
+    ]
   },
+  {
+    moduleId: 'insight-core',
+    displayName: 'Core CNS Intelligence',
+    requiredSignals: [
+      'insightCore.orderCount',
+      'insightCore.productCount',
+      'insightCore.baseSignalsReady'
+    ],
+    tasks: [
+      {
+        id: 'insight-core-base-signals',
+        label: 'Collect enough orders and products for meaningful insights',
+        required: false,
+        completionRules: [
+          { signal: 'insightCore.baseSignalsReady', expectedValue: true }
+        ]
+      }
+    ]
+  }
 ];

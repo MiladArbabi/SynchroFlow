@@ -28,12 +28,16 @@ if (environment === 'production' && !process.env.DATABASE_URL) {
 const db = knex(dbConfig);
 
 // 5. Run the connection test (with better logging)
-db.raw('SELECT 1+1 AS result').then(() => {
-    console.log(`Database connected successfully in ${environment} mode.`);
-}).catch((err) => {
-    console.error('!!!!!!!!!!!! DATABASE CONNECTION FAILED !!!!!!!!!!!!');
-    console.error(err);
-    process.exit(1); // Exit if connection fails
-});
+// Skip this in test to avoid async logs after Jest teardown.
+if (environment !== 'test') {
+  db.raw('SELECT 1+1 AS result')
+    .then(() => {
+      console.log(`Database connected successfully in ${environment} mode.`);
+    })
+    .catch((err) => {
+      console.error('!!!!!!!!!!!! DATABASE CONNECTION FAILED !!!!!!!!!!!!');
+      console.error(err);
+    });
+}
 
 export default db;

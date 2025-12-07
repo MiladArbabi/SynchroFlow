@@ -1,7 +1,7 @@
 // tests/unit/api/sku-os.manifest.test.ts
 import { MODULE_ONBOARDING_MANIFESTS } from 'api-src/onboarding/readiness.manifest';
 
-describe('Onboarding manifest – sku-os module', () => {
+describe('Onboarding manifest - sku-os module', () => {
   const findSkuOsManifest = () =>
     MODULE_ONBOARDING_MANIFESTS.find((m) => m.moduleId === 'sku-os');
 
