@@ -80,8 +80,40 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
   },
 };
 
+// --- SKU OS provider: product catalog & inventory readiness ---
+export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
+  moduleId: 'sku-os',
+
+  async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
+    // IMPORTANT: use the actual table we have in the schema: `shopify_products`
+    const row = await db('shopify_products')
+      .where({ shop_id: shopId })
+      .count<{ count: string }>('id as count')
+      .first();
+
+    const productCount = Number(row?.count ?? 0);
+
+    // v1 heuristic: once we have at least 10 products in the catalog,
+    // we consider SKU-OS "ready" to surface inventory intelligence.
+    const inventoryInsightsReady = productCount >= 10;
+
+    return [
+      {
+        name: 'skuOs.productCount',
+        value: productCount,
+      },
+      {
+        name: 'skuOs.inventoryInsightsReady',
+        value: inventoryInsightsReady,
+      },
+    ];
+  },
+};
+
 // Register providers
 export const onboardingSignalProviders: OnboardingSignalProvider[] = [
   platformOnboardingSignalProvider,
   orderNexusOnboardingSignalProvider,
+  skuOsOnboardingSignalProvider,
 ];
+
