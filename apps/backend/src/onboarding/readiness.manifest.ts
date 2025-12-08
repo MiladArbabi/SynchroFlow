@@ -134,38 +134,47 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
   // --- New: Products & Inventory (SKU-OS) ---
   {
     moduleId: 'sku-os',
-    displayName: 'Products & Inventory',
+    displayName: 'Product Health',
     requiredSignals: [
       'integration.syncCompleted',
-      'skuOs.productCount',
-      'skuOs.inventoryInsightsReady',
+      'skuOs.productHealthEvents',
+      'sku-os.freeTierState',
+      'sku-os.freeTierRemaining'
     ],
     tasks: [
+      // REQUIRED — SKU-OS becomes meaningful once at least one health event exists
       {
-        id: 'review-products',
-        label: 'Review your synced product catalog',
+        id: 'skuOs.firstProductHealthEvent',
+        label: 'Receive your first product health event',
         required: true,
+        completionRules: [
+          {
+            signal: 'skuOs.productHealthEvents',
+            operator: 'gte',
+            expectedValue: 1
+          }
+        ]
+      },
+
+      // OPTIONAL — Encourages merchants to explore SKU-OS insights
+      {
+        id: 'skuOs.reviewProductHealth',
+        label: 'Review your product health insights',
+        required: false,
         completionRules: [
           {
             signal: 'skuOs.productCount',
             operator: 'gte',
-            expectedValue: 1,
-          },
+            expectedValue: 1
+          }
         ],
-      },
-      {
-        id: 'unlock-inventory-intelligence',
-        label: 'Unlock inventory health insights',
-        required: true,
-        completionRules: [
-          {
-            signal: 'skuOs.inventoryInsightsReady',
-            expectedValue: true,
-          },
-        ],
-      },
-    ],
-  },  {
+        action: {
+          type: 'navigate',
+          target: '/products/health'
+        }
+      }
+    ]
+  }, {
     moduleId: 'specter',
     displayName: 'Customer & Conversion (Specter)',
     requiredSignals: [

@@ -127,6 +127,7 @@ export interface ReadinessSignal {
 'orderNexus.profitabilityActive': boolean;    // at least one successful computeInitialProfit
 'orderNexus.costModelHydrated': boolean;      // CostModelService returned a valid model
 'orderNexus.costModelSource': 'finance' | 'local';
+'orderNexus.costConfidenceScore': number;     // 0–1 aggregate confidence in cost data quality
 'orderNexus.modeDetermined': boolean;         // ModePolicyManager has a mode
 'orderNexus.modeExplicitlySet': boolean;      // merchant confirmed mode
 'orderNexus.pipelineHealthy': boolean;        // SLA not catastrophically degraded
@@ -155,7 +156,10 @@ export interface ReadinessSignal {
 'insightCore.hasCostModelAnalytics': boolean; // CostModelAnalyticsEvent ingested
 
 // SKU OS
-'skuOs.productHealthEvents': number;          // ProductHealthAnalyticsEvent count
+'skuOs.productHealthEvents': number;          // ProductHealthAnalyticsEvent count (v1 minimum)
+'skuOs.healthCoverageRatio': number;          // 0–1 fraction of active SKUs with a recent health score
+'skuOs.hasStockoutRiskProducts': boolean;     // true if any product has stockoutRisk above threshold
+'skuOs.attentionListSize': number;            // size of current "needs attention" list from Product Attention API
 
 // Specter
 'specter.configured': boolean;                // basic config saved
@@ -376,7 +380,8 @@ From the OrderNexus blueprint, `OrderNexusReady(shopId)` requires:
 2. At least one order ingested & profitability computed.
 3. Cost model hydrated (local or finance).
 4. Mode policy determined (auto or explicit).
-5. Ingestion pipeline SLA not catastrophically broken.
+5. Ingestion pipeline SLA healthy enough for FT0.
+6. Cost confidence above a minimum floor.
 
 Expressed as signals:
 
@@ -386,7 +391,9 @@ orderNexusReady(shopId) =
   orderNexus.ordersIngested >= 1 &&
   orderNexus.profitabilityActive === true &&
   orderNexus.costModelHydrated === true &&
-  orderNexus.modeDetermined === true
+  orderNexus.modeDetermined === true &&
+  orderNexus.pipelineHealthy === true &&
+  orderNexus.costConfidenceScore >= 0.2
 ```
 
 `orderNexus.costModelSource` and `orderNexus.pipelineHealthy` are **flags**, not blockers, unless the degradation is catastrophic.
@@ -474,7 +481,7 @@ id = 'orderNexus', titleKey = 'onboarding.orderNexus.sectionTitle', lockedIfNotI
 
 Note:
 
-orderNexus.costModelHydrated remains part of the readiness rule (3.1), not of an end-user-facing task. We don’t need a separate “Calibrate cost model” onboarding step to block value; we’ll still introduce that as a UX flow, but it doesn’t belong as a v1 hard task blocker.
+`orderNexus.costModelHydrated`, `orderNexus.pipelineHealthy`, and `orderNexus.costConfidenceScore` remain part of the readiness rule (3.1), not of end-user-facing tasks. We don’t need a separate “Calibrate cost model” onboarding step to block value; we’ll still introduce that as a UX flow, but it doesn’t belong as a v1 hard task blocker.
 
 This keeps the Profit Autopsy and Missing Costs as the core FT0 experience, with Bleed Feed as the first “oh shit” insight and Mode as a phase-2 optimization.
 
@@ -865,12 +872,22 @@ Tasks:
 
 ### 9.1 Readiness Definition
 
-Minimal readiness:
+Minimal readiness for SKU-OS is not “one event fired” — it’s “the health engine is actually covering the catalog enough to be useful.”
+
+For v1, `skuOsReady(shopId)` requires:
+
+1. Store integration & sync completed (so the product set is real).
+2. At least one `ProductHealthAnalyticsEvent` generated.
+3. A minimum fraction of active SKUs having a recent health score.
+
+Expressed as signals:
 
 ```ts
 skuOsReady(shopId) =
-  skuOs.productHealthEvents >= 1
-```
+  platform.integration.syncCompleted === true &&
+  skuOs.productHealthEvents >= 1 &&
+  skuOs.healthCoverageRatio >= 0.5
+  ```
 
 ### 9.2 Tasks
 
@@ -878,21 +895,66 @@ skuOsReady(shopId) =
 
 Tasks:
 
-1. **Receive your first product health event**
+1. **Activate your Product Health Scorecard**
 
-```ts
 {
   id: 'skuOs.firstProductHealthEvent',
   moduleKey: 'skuOs',
   labelKey: 'onboarding.skuOs.firstProductHealthEvent.title',
+  descriptionKey: 'onboarding.skuOs.firstProductHealthEvent.description',
   required: true,
   completionRule: {
+    // SKU-OS has generated at least one ProductHealthAnalyticsEvent
     signalKey: 'skuOs.productHealthEvents',
     operator: '>=',
     value: 1
   }
 }
-```
+
+2. **Reach basic catalog coverage**
+{
+  id: 'skuOs.basicHealthCoverage',
+  moduleKey: 'skuOs',
+  labelKey: 'onboarding.skuOs.basicHealthCoverage.title',
+  descriptionKey: 'onboarding.skuOs.basicHealthCoverage.description',
+  required: true,
+  completionRule: {
+    // At least 50% of active SKUs have a recent health score
+    signalKey: 'skuOs.healthCoverageRatio',
+    operator: '>=',
+    value: 0.5
+  }
+}
+
+3. **Check your Stockout Risk Radar (optional, but ties to the high-leverage widget)**
+{
+  id: 'skuOs.checkStockoutRisk',
+  moduleKey: 'skuOs',
+  labelKey: 'onboarding.skuOs.checkStockoutRisk.title',
+  descriptionKey: 'onboarding.skuOs.checkStockoutRisk.description',
+  required: false,
+  completionRule: {
+    // Only relevant once there is at least one product with elevated stockout risk
+    signalKey: 'skuOs.hasStockoutRiskProducts',
+    operator: '==',
+    value: true
+  }
+}
+
+4. **Review products that need attention (optional attention ranking)**
+{
+  id: 'skuOs.reviewAttentionList',
+  moduleKey: 'skuOs',
+  labelKey: 'onboarding.skuOs.reviewAttentionList.title',
+  descriptionKey: 'onboarding.skuOs.reviewAttentionList.description',
+  required: false,
+  completionRule: {
+    // "Needs attention" list is non-empty
+    signalKey: 'skuOs.attentionListSize',
+    operator: '>',
+    value: 0
+  }
+}
 
 ---
 

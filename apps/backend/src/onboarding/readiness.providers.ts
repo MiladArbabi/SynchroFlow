@@ -4,10 +4,20 @@ import {
   ReadinessSignal,
   ModuleId,
   computeModuleAccessState,
-  ModuleEntitlementAccess
+  ModuleEntitlementAccess,
+  ReadinessSignalName,
+  ReadinessSignalValue
 } from '@lasyncro/shared';
 
 import { UserStateService } from '../services/user-state.service';
+
+const makeSignal = (
+  name: ReadinessSignalName,
+  value: ReadinessSignalValue
+): ReadinessSignal => ({
+  name,
+  value
+});
 
 /**
  * Each module has a provider that outputs readiness signals.
@@ -105,29 +115,32 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
 export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'sku-os',
 
-  async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // IMPORTANT: use the actual table we have in the schema: `shopify_products`
-    const row = await db('shopify_products')
+  async getSignals({ shopId }): Promise<ReadinessSignal[]> {
+    const row = await db('canonical_products')
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
       .first();
 
-    const productCount = Number(row?.count ?? 0);
+    const rawCount = row ? Number(row.count) : 0;
+    const productCount = Number.isFinite(rawCount) ? rawCount : 0;
 
-    // v1 heuristic: once we have at least 10 products in the catalog,
-    // we consider SKU-OS "ready" to surface inventory intelligence.
-    const inventoryInsightsReady = productCount >= 10;
+    // v1 readiness: we treat "health events" as "we have at least some products to score"
+    const productHealthEvents = productCount;
 
-    return [
-      {
-        name: 'skuOs.productCount',
-        value: productCount,
-      },
-      {
-        name: 'skuOs.inventoryInsightsReady',
-        value: inventoryInsightsReady,
-      },
-    ];
+    const freeTier = computeModuleAccessState({
+      moduleId: 'sku-os',
+      usageCount: productCount,
+      entitlementAccess: 'free-tier',
+    });
+
+    const signals: ReadinessSignal[] = [];
+
+    signals.push(makeSignal('skuOs.productCount', productCount));
+    signals.push(makeSignal('skuOs.productHealthEvents', productHealthEvents));
+    signals.push(makeSignal('sku-os.freeTierState', freeTier.state));
+    signals.push(makeSignal('sku-os.freeTierRemaining', freeTier.remaining ?? null));
+
+    return signals;
   },
 };
 

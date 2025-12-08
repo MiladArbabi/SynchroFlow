@@ -1393,25 +1393,37 @@ export interface OrderNexusReadinessSnapshot {
 
 `OrderNexusReady(shopId)` is **true** when **ALL** of the following hold:
 
-1. **Shopify integration exists** for shopId
-   * `hasIntegrations = true` for Shopify in IntegrationContext
-   * At least one order has been pulled into the NormalizedOrder store.
-2. **At least one order ingested & processed**
-   * `order_profitability` has ≥ 1 row for this shop.
-   * For better analytics + mode detection, target N ≥ 20.
-3. **Cost model is hydrated** (local or finance-driven)
-   * `CostModelService.getNormalizedCostModel` returns a valid NormalizedCostModel.
-   * `costModelSource` is:
-     * `'finance'` → precise cost model (preferred), or
-     * `'local'` → fallback allowed, but flagged as `COST_MODEL_FALLBACK_ACTIVE`.
-4. **Ingestion pipeline SLA is healthy**
-   * For the last X orders:
-     * `OrderProcessingSLA.processOrderWithSLA` metrics show:
-       * 99% of orders processed < `MAX_EXPECTED_TIME_MS` (60s),
-       * no sustained spikes in `order_processing_error`.
+1. **Shopify integration exists and initial sync is completed**
+   * `platform.integration.connected === true`
+   * `platform.integration.syncCompleted === true`
 
-If any of 1–3 fails, `OrderNexusReady = false`.  
-If 4 is degraded but not catastrophic, `OrderNexusReady` may remain true but flagged with `PIPELINE_HEALTHY` missing or degraded.
+2. **At least one profitable order has been processed**
+   * `orderNexus.profitabilityActive === true`
+   * `orderNexus.ordersIngested >= 1` (backed by `order_profitability` rows)
+
+3. **Cost model is hydrated (local or finance-driven)**
+   * `orderNexus.costModelHydrated === true`
+   * `orderNexus.costModelSource` is:
+     * `'finance'` → precise cost model (preferred), or
+     * `'local'` → fallback allowed, but flagged via readiness flags / UI.
+
+4. **Operating mode is determined**
+   * `orderNexus.modeDetermined === true`
+   * Mode may be auto-detected or explicitly set by the merchant.
+
+5. **Pipeline is healthy enough for FT0**
+   * `orderNexus.pipelineHealthy === true`
+   * Backed by `OrderProcessingSLA` metrics (99% of orders processed < `MAX_EXPECTED_TIME_MS`).
+
+6. **Cost confidence is above a minimum floor**
+   * `orderNexus.costConfidenceScore >= 0.2`
+   * Below this, insights are considered too noisy to treat the module as fully “ready”.
+
+If any of 1–4 fails, `OrderNexusReady = false`.
+
+If 5 is degraded but not catastrophically broken, `OrderNexusReady` may remain `true` but surfaced with **pipeline health warnings**.
+
+Cost model **source** (`finance` vs `local`) influences nudging and labels, but **does not alone block** readiness as long as `orderNexus.costModelHydrated === true` and `orderNexus.costConfidenceScore >= 0.2`.
 
 ### 14.3 Merchant-Facing Onboarding Tasks (What the FT0 UX Should Drive)
 
@@ -1509,33 +1521,58 @@ OrderNexus is intentionally designed to degrade gracefully:
 
 ### 14.6 Suggested "OrderNexus Onboarding Checklist" (for the TaskList Tracker)
 
-These are the exact tasks that can be surfaced under an "Order profitability" / "Profit engine" collapsible section in the header task list:
+These are the tasks surfaced under an **“Orders & Profitability (OrderNexus)”** section.  
+**Store connection** lives under the **Platform** section and is not duplicated here.
 
-1. **Connect your main Shopify store**
-   * Blocked until IntegrationContext shows at least one active integration.
-2. **Let us process your first batch of orders**
-   * Mark complete when `order_profitability` has ≥ 1 row for the shop.
-3. **Calibrate your cost model** (optional but recommended)
-   * Show as:
-     * "Using basic cost assumptions" (if source = local).
-     * "Using precise cost model from Finance" (if source = finance → mark done).
-4. **Review your first profit/leakage insights**
-   * Triggered by a visit to the primary profitability dashboard / widget.
+1. **Review your first Profit Autopsy**  
+   * Task id: `orderNexus.reviewProfitAutopsy`  
+   * Goal: Make the merchant **see** true profit vs revenue on at least one order.  
+   * Completion rule:
+     * `orderNexus.profitabilityActive === true`  
+   * CTA: Navigate to the orders view / Profit Autopsy surface.
 
-Once 1–3 are done and at least (2 + 4) are satisfied, `OrderNexusReady(shopId) = true` from an FT0 perspective.
+2. **Fix missing costs so your profit is real**  
+   * Task id: `orderNexus.resolveMissingCosts`  
+   * Goal: Drive the merchant to clean up COGS gaps that make profit misleading.  
+   * Completion rule:
+     * `orderNexus.missingCostCount === 0`  
+   * CTA: Navigate to a “Missing COGS” / SKU cost configuration view (owned by SKU-OS / cost settings).
+
+3. **Check your Bleed Feed (unprofitable orders)** *(optional but strongly recommended)*  
+   * Task id: `orderNexus.checkBleedFeed`  
+   * Goal: Show the merchant where they are **actively losing money**.  
+   * Completion rule:
+     * `orderNexus.hasNegativeMarginOrder === true`  
+   * CTA: Navigate to the Bleed Feed orders view.
+
+4. **Confirm your operating mode (Survival / Growth / Architect)**  
+   * Task id: `orderNexus.confirmMode`  
+   * Goal: Get an explicit mode choice to drive thresholds and framing elsewhere in CNS.  
+   * Completion rule:
+     * `orderNexus.modeDetermined === true`  
+   * CTA: Open mode selection modal / settings.
+
+From an FT0 onboarding perspective:
+
+* Platform section tasks ensure **store connection + sync**.
+* OrderNexus section tasks ensure:
+  * Profit engine is actually running (`reviewProfitAutopsy`),
+  * Data is trustworthy (`resolveMissingCosts`),
+  * The merchant has seen their loss-making orders (`checkBleedFeed`),
+  * CNS mode is initialized (`confirmMode`).
 
 ### 14.7 Signals exposed to the Onboarding Engine (OrderNexus)
 
-For the global ModuleOnboardingReadiness engine, OrderNexus exposes a small derived signal set:
+For the global `ModuleOnboardingReadiness` engine, OrderNexus exposes the following **locked signal set**:
 
 * `orderNexus.profitabilityActive: boolean`  
   * `true` if `order_profitability` has ≥ 1 row for this shop.
 
-* `orderNexus.ordersIngestedCount: number`  
-  * Typically backed by `COUNT(*) FROM order_profitability WHERE shop_id = :shopId`.
-  * Onboarding predicates use:
-    * `ordersIngestedCount >= 1` → “Engine activated”
-    * `ordersIngestedCount >= 20` (or whatever you choose) → “Enough data for insights”
+* `orderNexus.ordersIngested: number`  
+  * Backed by `COUNT(*) FROM order_profitability WHERE shop_id = :shopId`.
+  * Used for:
+    * `ordersIngested >= 1` → “Engine activated”
+    * Higher thresholds (e.g. `>= 20`) can be used by analytics, but are not part of FT0 readiness.
 
 * `orderNexus.costModelSource: 'finance' | 'local'`  
   * Derived from `CostModelService.getNormalizedCostModel(...)`.
@@ -1543,19 +1580,41 @@ For the global ModuleOnboardingReadiness engine, OrderNexus exposes a small deri
     * `costModelSource === 'finance'` → “Cost model calibrated (precise)”
     * `costModelSource === 'local'` → “Using fallback assumptions”
 
-* `orderNexus.modeInitialized: boolean`  
-  * `true` if `ModePolicyManager.getModeForShop(shopId)` returns a valid mode and has been explicitly confirmed or set.
+* `orderNexus.costModelHydrated: boolean`  
+  * `true` if a usable cost model (finance or local) is available.
 
-Then:
+* `orderNexus.modeDetermined: boolean`  
+  * `true` if `ModePolicyManager.getModeForShop(shopId)` returns a valid mode (auto or explicit).
 
-* `OrderNexusReady(shopId)` (for FT0) is **true** when:
+* `orderNexus.missingCostCount: number`  
+  * Number of SKUs / lines with missing COGS that affect recent profitability snapshots.
 
-  * Shopify integration is connected and initial sync is completed, and
-  * `orderNexus.profitabilityActive === true`, and
-  * `orderNexus.ordersIngestedCount >= 1`, and
-  * `orderNexus.modeInitialized === true`.
+* `orderNexus.hasNegativeMarginOrder: boolean`  
+  * `true` if there exists at least one `net_profit < 0` order in the recent window.
 
-Cost model source (`finance` vs `local`) does **not** block readiness, but is surfaced as a “recommended upgrade” task.
+* `orderNexus.pipelineHealthy: boolean`  
+  * Derived from `OrderProcessingSLA` metrics. Reflects whether ingestion + profitability computation are within expected SLAs.
+
+* `orderNexus.costConfidenceScore: number` (0–1)  
+  * Aggregated confidence over cost data quality (COGS completeness, override frequency, volatility).
+
+Free tier / entitlement signals (defined in the global FTEP contract):
+
+* `order-nexus.freeTierState: ModuleAccessState`
+* `order-nexus.freeTierRemaining: number | null`
+
+For FT0, `OrderNexusReady(shopId)` is **true** when:
+
+* `platform.integration.connected === true`
+* `platform.integration.syncCompleted === true`
+* `orderNexus.profitabilityActive === true`
+* `orderNexus.ordersIngested >= 1`
+* `orderNexus.costModelHydrated === true`
+* `orderNexus.modeDetermined === true`
+* `orderNexus.pipelineHealthy === true`
+* `orderNexus.costConfidenceScore >= 0.2`
+
+Cost model **source** (`finance` vs `local`) and `missingCostCount` drive **nudges and tasks**, not the ready/not-ready gate.
 
 ### 14.8 Mapping to OnboardingTaskListTracker
 
@@ -1582,7 +1641,7 @@ In the global OnboardingTaskListTracker, OrderNexus appears as:
 
 ---
 
-# 🔵 OrderNexus — CNS Module Blueprint (LOCKED v1.0)
+# 🔵 OrderNexus — CNS Module Blueprint (LOCKED v2.0)
 
 ## 15. Job To Be Done (JBTD)
 
@@ -1603,6 +1662,7 @@ OrderNexus behaves like a forensic profit engine:
 OrderNexus evolves in three phases, which map to feature + pricing maturity, not code branches.
 
 ### Phase 1 — “The Accountant” (FT0–FT1 Core)
+
 **Goal:** Accurate historical reporting.  
 **Question answered:** *“What did I really make yesterday / last week / last month?”*
 
@@ -1623,6 +1683,7 @@ OrderNexus evolves in three phases, which map to feature + pricing maturity, not
 * Review per-order Profit Autopsy.
 
 ### Phase 2 — “The Analyst” (Growth)
+
 **Goal:** Explain drivers of profitability.  
 **Question answered:** *“Why is margin low in this country/channel/segment?”*
 
@@ -1643,6 +1704,7 @@ OrderNexus evolves in three phases, which map to feature + pricing maturity, not
 * Tune tolerance thresholds for alerts (e.g. “flag <15% margin in EU”).
 
 ### Phase 3 — “The CFO” (Architect)
+
 **Goal:** Actively shape future profitability.  
 **Question answered:** *“How do I increase net margin by 2–3 points without reckless guessing?”*
 
@@ -1669,28 +1731,57 @@ OrderNexus evolves in three phases, which map to feature + pricing maturity, not
 
 OrderNexus owns the canonical per-order **Profit Ledger**.
 
-Per `canonical_order_id`, we will persist (names illustrative but directionally locked):
+Per `canonical_order_id`, we persist a **Profit Ledger row** with at least:
 
 * `gross_revenue`
-* `landed_cost_total` (COGS + inbound freight / duties where available)
-* `fulfillment_cost_actual` (pick/pack + label, or best estimate)
-* `transaction_fees_total` (payment gateway + platform fees)
-* `acquisition_cost_attributed` (per-order CAC; can be 0 or estimated)
-* `overhead_allocated` (allocated fixed/variable overhead from MarginCore/Config)
+* `landed_cost_total`  
+  * COGS + inbound freight / duties where available.
+* `fulfillment_cost_actual`  
+  * Pick/pack + label, or best estimate.
+* `transaction_fees_total`  
+  * Payment gateway + platform fees.
+* `acquisition_cost_attributed`  
+  * Per-order CAC; can be 0 or estimated.
+* `overhead_allocated`  
+  * Allocated fixed/variable overhead from MarginCore/Config.
 * `net_profit_absolute`
 * `net_margin_percent`
-* `leakage_amount` (difference vs expected standard model; anomaly budget)
-* `profit_tier` (`'winner'` | `'drifter'` | `'bleeder'` | `'loss_leader'`)
-* `profit_causation`:
-* `primary`: `'shipping'` | `'fees'` | `'cogs'` | `'discounts'` | `'returns'` | `'cac'` | `'overhead'`
-* `secondary`: `string[]`
-* `confidence`: `number`
+* `profit_tier`  
+  * `'winner' | 'drifter' | 'bleeder' | 'loss_leader'`
 
-**Versioning (for auditability):**
+**Leakage + diagnostics**
+
+* `leakage_amount`  
+  * Difference vs the expected standard model; anomaly budget.
+* `leakage_severity_index` (0–1)  
+  * Normalized indicator of how abnormal this order is from a cost/profit perspective.
+* `profitability_dna`  
+  * `'cac-heavy' | 'shipping-heavy' | 'sku-heavy' | 'discount-heavy' | 'refund-prone' | 'cross-sell-seeder' | 'high-margin-hero' | 'low-margin-filler'`.
+
+* `profit_causation`:
+  * `primary`: `'shipping' | 'fees' | 'cogs' | 'discounts' | 'returns' | 'cac' | 'overhead'`
+  * `secondary`: `string[]`
+
+**Confidence & overrides**
+
+* `cost_confidence_score` (0–1)  
+  * Quality of cost inputs (COGS completeness, override frequency, stability).
+* `attribution_confidence_score` (0–1)  
+  * Reliability of acquisition cost attribution.
+* `overrides`:
+  * `user_marked_loss_leader?: boolean`
+  * `user_adjusted_cost?: boolean`
+  * `user_adjusted_attribution?: boolean`
+  * `user_annotated_reason?: string`
+
+**Versioning (for auditability)**
 
 * `profit_version_id`
 * `previous_profit_version_id?`
-* `delta_reason?` (`'cogs_update'` | `'fee_change'` | `'shipping_update'` | `'return_event'` | `'manual_override'`)
+* `delta_reason?`  
+  * `'cogs_update' | 'fee_change' | 'shipping_update' | 'return_event' | 'manual_override' | 'config_change'`
+
+This schema is the **conceptual contract**; the SQL table in §10 must remain compatible with these fields, even if some are stored in JSONB in v1 and later split out into columns.
 
 This allows:
 
@@ -1701,6 +1792,7 @@ This allows:
 ## 18. Core Widgets & Surfaces
 
 ### 18.1 Free Tier / Always-On Surfaces (FT0, within FTEP limits)
+
 These are the minimum experiences OrderNexus must always offer while within free-tier usage.
 
 * **Profit Autopsy Card (Hero)**
@@ -1721,6 +1813,7 @@ These are the minimum experiences OrderNexus must always offer while within free
 *These surfaces remain accessible while `order-nexus.freeTierState === 'free_tier_active'` (see FTEP contract).*
 
 ### 18.2 Growth / Paid Surfaces (Beyond Free Tier)
+
 These become progressively paywalled beyond basic free tier limits and/or plan:
 
 * **Full Profitability Explorer**
@@ -1788,7 +1881,16 @@ Signals produced by readiness providers:
 3. `free_tier_exhausted` - Free Tier limit reached. Read-only experience; CTAs focus on Upgrade and high-level summaries.
 4. `locked` - No access (plan restriction). OrderNexus tab shows a `LockedFeaturePage` with value-driven pitch.
 
-*Advanced features (Simulation, deep Explorer, automated rules, prescriptive pricing) are strictly paid and should never surface as free tier, even within the first 50 orders.*
+**Advanced intelligence surfaces are strictly paid:**
+
+* Full Profitability Explorer (deep pivoting by cohort / DNA)
+* Fee Structure Analysis / Profit Treemaps
+* Simulation Sandbox (“what if cost / price / CAC changes?”)
+* Automated profit rules & alerts
+* Prescriptive pricing / shipping / promo suggestions
+
+These **must never** be fully available on the free tier, even within the first 50 processed orders.  
+Free-tier merchants only see **teaser variants** or upsell stubs, not the complete interactive experience.
 
 ## 22. Contract Stability
 
@@ -1806,6 +1908,6 @@ The following are considered locked for v1 unless explicitly versioned:
 * The existence of the **Profit Autopsy Card** as the hero FT0 experience.
 * The general structure of the **Profit Ledger** fields (names may be refined, but semantics stay).
 
-**This is the blueprint you freeze into your docs and your repo.**
+**This is the v2.0 blueprint you freeze into your docs and your repo.**
 
-If anyone deviates from these contracts, they're not building *OrderNexus* – they're building something else.
+If anyone deviates from these contracts without first versioning them (e.g. `OrderNexus_v3`), they’re not building *OrderNexus* – they’re building something else.
