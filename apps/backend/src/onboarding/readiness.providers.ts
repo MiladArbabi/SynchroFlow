@@ -3,7 +3,10 @@ import db from '../db';
 import {
   ReadinessSignal,
   ModuleId,
+  computeModuleAccessState,
+  ModuleEntitlementAccess
 } from '@lasyncro/shared';
+
 import { UserStateService } from '../services/user-state.service';
 
 /**
@@ -59,7 +62,6 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'order-nexus',
 
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // Count canonical orders for this shop.
     const row = await db('canonical_orders')
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
@@ -67,17 +69,36 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
 
     const ordersIngested = Number(row?.count ?? 0);
 
+    // Temporary assumption:
+    // - FT0 gives OrderNexus "free-tier" access (not fully paid, not locked).
+    // - We use total orders ingested as usage metric for the free tier.
+    const entitlementAccess: ModuleEntitlementAccess = 'free-tier';
+
+    const freeTier = computeModuleAccessState({
+      moduleId: 'order-nexus',
+      usageCount: ordersIngested,
+      entitlementAccess
+    });
+
     return [
       {
         name: 'orderNexus.profitabilityActive',
-        value: ordersIngested > 0,
+        value: ordersIngested > 0
       },
       {
         name: 'orderNexus.ordersIngested',
-        value: ordersIngested,
+        value: ordersIngested
       },
+      {
+        name: 'order-nexus.freeTierState',
+        value: freeTier.state
+      },
+      {
+        name: 'order-nexus.freeTierRemaining',
+        value: freeTier.remaining
+      }
     ];
-  },
+  }
 };
 
 // --- SKU OS provider: product catalog & inventory readiness ---

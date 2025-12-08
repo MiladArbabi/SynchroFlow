@@ -18,3 +18,4 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./contracts/canonical-commerce"), exports);
 __exportStar(require("./contracts/canonical-product"), exports);
 __exportStar(require("./contracts/onboarding"), exports);
+__exportStar(require("./contracts/free-tier"), exports);

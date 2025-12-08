@@ -131,3 +131,72 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
     resetPeriod: 'monthly'
   }
 };
+
+// How entitlements describe module-level access.
+// "allowed"  -> paid / full access
+// "free-tier" -> subject to FTEP limits
+// "locked"  -> no access (plan restriction)
+export type ModuleEntitlementAccess = 'allowed' | 'free-tier' | 'locked';
+
+export interface ModuleAccessComputationInput {
+  moduleId: ModuleId;
+  usageCount: number;
+  entitlementAccess: ModuleEntitlementAccess;
+}
+
+export interface ModuleAccessComputationResult {
+  state: ModuleAccessState;
+  /**
+   * Remaining units in this period.
+   * null = not applicable / unlimited (e.g., paid plan, disabled FTEP, or unlimited policy).
+   */
+  remaining: number | null;
+}
+
+export function computeModuleAccessState(
+  input: ModuleAccessComputationInput
+): ModuleAccessComputationResult {
+  const { moduleId, usageCount, entitlementAccess } = input;
+
+  // 1. Hard lock via entitlements
+  if (entitlementAccess === 'locked') {
+    return {
+      state: 'locked',
+      remaining: 0
+    };
+  }
+
+  const policy = MODULE_FREE_TIER_POLICIES[moduleId];
+
+  // 2. No policy or disabled policy or unlimited maxUnits => no gating
+  if (!policy || !policy.enabled || policy.maxUnits === null) {
+    return {
+      state: 'visible',
+      remaining: null
+    };
+  }
+
+  // 3. Paid plans ("allowed") – unlimited usage but treated as active
+  if (entitlementAccess === 'allowed') {
+    return {
+      state: 'free_tier_active',
+      remaining: null
+    };
+  }
+
+  // 4. Free-tier enforcement
+  const safeUsage = Math.max(0, usageCount); // clamp negative usage to 0
+  const maxUnits = policy.maxUnits;
+
+  if (safeUsage >= maxUnits) {
+    return {
+      state: 'free_tier_exhausted',
+      remaining: 0
+    };
+  }
+
+  return {
+    state: 'free_tier_active',
+    remaining: maxUnits - safeUsage
+  };
+}

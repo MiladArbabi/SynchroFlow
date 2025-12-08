@@ -130,6 +130,8 @@ export interface ReadinessSignal {
 'orderNexus.modeDetermined': boolean;         // ModePolicyManager has a mode
 'orderNexus.modeExplicitlySet': boolean;      // merchant confirmed mode
 'orderNexus.pipelineHealthy': boolean;        // SLA not catastrophically degraded
+'orderNexus.missingCostCount': number;        // count of orders/SKUs missing cost data
+'orderNexus.hasNegativeMarginOrder': boolean; // true if any order has net_profit < 0
 
 // ReturnNexus
 'returnNexus.installationActive': boolean;    // module installed + entitlements
@@ -159,58 +161,65 @@ export interface ReadinessSignal {
 'specter.configured': boolean;                // basic config saved
 'specter.firstNudgeSeen': boolean;            // optional
 
-// Free Tier State Signals (Required for all modules)
-// These determine task availability and onboarding CTA behavior
-'platform.freeTierState': string;             // 'active' | 'exhausted' | 'upgraded'
-'platform.freeTierRemaining': number;         // remaining units in free tier
-'platform.freeTierResetsAt': string;          // ISO timestamp of reset
+Free Tier Signals (FTEP v1.1)
 
-'orderNexus.freeTierState': string;           // 'active' | 'exhausted' | 'upgraded'
-'orderNexus.freeTierRemaining': number;       // remaining orders/units in free tier
-'orderNexus.freeTierResetsAt': string;        // ISO timestamp of reset
+Free-tier behavior is governed by the Module Free Tier Exposure Policy (FTEP v1.1) defined in:
 
-'returnNexus.freeTierState': string;          // 'active' | 'exhausted' | 'upgraded'
-'returnNexus.freeTierRemaining': number;      // remaining returns in free tier
-'returnNexus.freeTierResetsAt': string;       // ISO timestamp of reset
+docs/entitlements/FreeTierPolicy.md
 
-'wmsLite.freeTierState': string;              // 'active' | 'exhausted' | 'upgraded'
-'wmsLite.freeTierRemaining': number;          // remaining warehouse operations
-'wmsLite.freeTierResetsAt': string;           // ISO timestamp of reset
+modules/shared/src/contracts/free-tier.ts
 
-'problemCenter.freeTierState': string;        // 'active' | 'exhausted' | 'upgraded'
-'problemCenter.freeTierRemaining': number;    // remaining issues in free tier
-'problemCenter.freeTierResetsAt': string;     // ISO timestamp of reset
+Each module must expose two free-tier signals into onboarding:
 
-'insightCore.freeTierState': string;          // 'active' | 'exhausted' | 'upgraded'
-'insightCore.freeTierRemaining': number;      // remaining analytics events
-'insightCore.freeTierResetsAt': string;       // ISO timestamp of reset
+{moduleId}.freeTierState
 
-'skuOs.freeTierState': string;                // 'active' | 'exhausted' | 'upgraded'
-'skuOs.freeTierRemaining': number;            // remaining product health events
-'skuOs.freeTierResetsAt': string;             // ISO timestamp of reset
+Type: ModuleAccessState from @lasyncro/shared
 
-'specter.freeTierState': string;              // 'active' | 'exhausted' | 'upgraded'
-'specter.freeTierRemaining': number;          // remaining customer signals
-'specter.freeTierResetsAt': string;           // ISO timestamp of reset
+Allowed values:
 
-## Additional Contract for Free Tier Signals
+visible
 
-Every module readiness block **MUST** include all three free tier signals:
+free_tier_active
 
-* **`{moduleId}.freeTierState`** values:
-  - `'active'`: Free tier is active and has remaining capacity
-  - `'exhausted'`: Free tier is exhausted (no remaining units)
-  - `'upgraded'`: Merchant has upgraded beyond free tier
+free_tier_exhausted
 
-* **`{moduleId}.freeTierRemaining`**: Number of remaining units in the current free tier period
+locked
 
-* **`{moduleId}.freeTierResetsAt`**: ISO timestamp indicating when the free tier counter resets
+{moduleId}.freeTierRemaining
 
-These signals directly determine:
+Type: number | null
 
-* **Task availability** in the onboarding checklist
-* **CTA (Call To Action) behavior** for each module section
-* **Visual treatment** of locked/available tasks
+null means “not applicable or unlimited” (e.g. paid plan or disabled FTEP)
+
+0 means “quota reached / exhausted”
+
+Concretely, for v1.1 we expect (moduleId uses the code IDs, not UI labels):
+
+platform.freeTierState / platform.freeTierRemaining
+
+order-nexus.freeTierState / order-nexus.freeTierRemaining
+
+return-nexus.freeTierState / return-nexus.freeTierRemaining
+
+wms-lite.freeTierState / wms-lite.freeTierRemaining
+
+problem-center.freeTierState / problem-center.freeTierRemaining
+
+insight-core.freeTierState / insight-core.freeTierRemaining
+
+sku-os.freeTierState / sku-os.freeTierRemaining
+
+specter.freeTierState / specter.freeTierRemaining
+
+UI contract:
+
+free_tier_active → tasks and CTAs behave normally
+
+free_tier_exhausted → tasks become read-only, CTA becomes “Upgrade”
+
+locked → module renders as a locked section with upgrade messaging
+
+visible → module tab is visible but not yet “active” (e.g. pre-FT0 module)
 
 ### 1.3 Module Readiness Snapshot
 
@@ -382,57 +391,76 @@ orderNexusReady(shopId) =
 
 `orderNexus.costModelSource` and `orderNexus.pipelineHealthy` are **flags**, not blockers, unless the degradation is catastrophic.
 
-### 3.2 Tasks (Onboarding Checklist)
+**3.2 Tasks (Onboarding Checklist):**
 
-**Section:** `id = 'orderNexus'`, `titleKey = 'onboarding.orderNexus.sectionTitle'`, `lockedIfNotInstalled = true`.
+Section:
+id = 'orderNexus', titleKey = 'onboarding.orderNexus.sectionTitle', lockedIfNotInstalled = true.
 
-Tasks:
-
-1. **Let us process your first orders**
-
-```ts
+1. Review your first Profit Autopsy (hero moment)
 {
-  id: 'orderNexus.ingestFirstOrders',
+  id: 'orderNexus.reviewProfitAutopsy',
   moduleKey: 'orderNexus',
-  labelKey: 'onboarding.orderNexus.ingestFirstOrders.title',
+  labelKey: 'onboarding.orderNexus.reviewProfitAutopsy.title',
+  descriptionKey: 'onboarding.orderNexus.reviewProfitAutopsy.description',
   required: true,
   completionRule: {
-    signalKey: 'orderNexus.ordersIngested',
-    operator: '>=',
-    value: 1
-  }
-}
-```
-
-2. **Calibrate your cost model** (strongly recommended, but base readiness only requires “hydrated”)
-
-```ts
-{
-  id: 'orderNexus.calibrateCostModel',
-  moduleKey: 'orderNexus',
-  labelKey: 'onboarding.orderNexus.calibrateCostModel.title',
-  descriptionKey: 'onboarding.orderNexus.calibrateCostModel.description',
-  required: false, // readiness requires costModelHydrated, not precise finance source
-  completionRule: {
-    signalKey: 'orderNexus.costModelHydrated',
+    // We only consider the task "done" once we have at least one
+    // ingested order AND profitability has been computed.
+    signalKey: 'orderNexus.profitabilityActive',
     operator: '==',
     value: true
   },
   action: {
-    type: 'OPEN_MODULE_SETTINGS',
-    target: 'orderNexus.costModel'
+    type: 'NAVIGATE',
+    target: '/orders' // or specific Profit Autopsy view
   }
 }
-```
 
-3. **Confirm your operating mode (Survival / Growth / Architect)**
+2. Fix missing costs so your profit is real
+{
+  id: 'orderNexus.resolveMissingCosts',
+  moduleKey: 'orderNexus',
+  labelKey: 'onboarding.orderNexus.resolveMissingCosts.title',
+  descriptionKey: 'onboarding.orderNexus.resolveMissingCosts.description',
+  required: true,
+  completionRule: {
+    // Task is "done" when there are no more missing costs in the ledger.
+    signalKey: 'orderNexus.missingCostCount',
+    operator: '==',
+    value: 0
+  },
+  action: {
+    type: 'NAVIGATE',
+    target: '/products' // or a dedicated "Missing Costs" view
+  }
+}
 
-```ts
+3. Check your Bleed Feed (unprofitable orders)
+{
+  id: 'orderNexus.checkBleedFeed',
+  moduleKey: 'orderNexus',
+  labelKey: 'onboarding.orderNexus.checkBleedFeed.title',
+  descriptionKey: 'onboarding.orderNexus.checkBleedFeed.description',
+  required: false,
+  completionRule: {
+    // Becomes relevant when at least one order is negative-margin.
+    signalKey: 'orderNexus.hasNegativeMarginOrder',
+    operator: '==',
+    value: true
+  },
+  action: {
+    type: 'NAVIGATE',
+    target: '/orders/bleeders' // canonical Bleed Feed route
+  }
+}
+
+4. Confirm your operating mode (Survival / Growth / Architect)
 {
   id: 'orderNexus.confirmMode',
   moduleKey: 'orderNexus',
   labelKey: 'onboarding.orderNexus.confirmMode.title',
-  required: true,
+  descriptionKey: 'onboarding.orderNexus.confirmMode.description',
+  required: false, // strongly recommended but not a hard readiness gate
   completionRule: {
     signalKey: 'orderNexus.modeDetermined',
     operator: '==',
@@ -443,27 +471,12 @@ Tasks:
     target: 'orderNexus.mode'
   }
 }
-```
 
-4. **Review your first profit & leakage insights** (value-delivery marker, not readiness)
+Note:
 
-```ts
-{
-  id: 'orderNexus.reviewInsights',
-  moduleKey: 'orderNexus',
-  labelKey: 'onboarding.orderNexus.reviewInsights.title',
-  required: false,
-  completionRule: {
-    signalKey: 'orderNexus.ordersIngested',
-    operator: '>=',
-    value: 20 // example threshold for “meaningful data”
-  },
-  action: {
-    type: 'NAVIGATE',
-    target: '/analytics/profit' // or dashboard anchor
-  }
-}
-```
+orderNexus.costModelHydrated remains part of the readiness rule (3.1), not of an end-user-facing task. We don’t need a separate “Calibrate cost model” onboarding step to block value; we’ll still introduce that as a UX flow, but it doesn’t belong as a v1 hard task blocker.
+
+This keeps the Profit Autopsy and Missing Costs as the core FT0 experience, with Bleed Feed as the first “oh shit” insight and Mode as a phase-2 optimization.
 
 ---
 

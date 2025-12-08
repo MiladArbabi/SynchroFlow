@@ -40,17 +40,21 @@ describe('Onboarding manifest - order-nexus module', () => {
   });
 
   describe('requiredSignals validation', () => {
-    it('declares exactly three required signals', () => {
+    it('declares exactly eight required signals', () => {
       const manifest = findOrderNexusManifest();
-      expect(manifest?.requiredSignals).toHaveLength(3);
+      expect(manifest?.requiredSignals).toHaveLength(8);
     });
 
     it('includes all necessary order-related signals', () => {
       const manifest = findOrderNexusManifest();
       const expectedSignals = [
-        'integration.syncCompleted',
         'orderNexus.profitabilityActive',
-        'orderNexus.ordersIngested'
+        'orderNexus.missingCostCount',
+        'orderNexus.hasNegativeMarginOrder',
+        'orderNexus.modeDetermined',
+        'orderNexus.ordersIngested',
+        'order-nexus.freeTierState',
+        'order-nexus.freeTierRemaining'
       ];
       
       expectedSignals.forEach(signal => {
@@ -79,100 +83,116 @@ describe('Onboarding manifest - order-nexus module', () => {
   });
 
   describe('tasks validation', () => {
-    it('defines exactly two tasks', () => {
+    it('defines exactly four tasks', () => {
       const manifest = findOrderNexusManifest();
-      expect(manifest?.tasks).toHaveLength(2);
+      expect(manifest?.tasks).toHaveLength(4);
     });
 
     it('has tasks with meaningful ids', () => {
       const manifest = findOrderNexusManifest();
       const taskIds = manifest?.tasks.map(t => t.id) || [];
-      expect(taskIds).toEqual(expect.arrayContaining([
-        'profitability-engine',
-        'ingest-first-orders'
-      ]));
-      expect(taskIds).toHaveLength(2);
+      expect(taskIds).toEqual([
+        'orderNexus.reviewProfitAutopsy',
+        'orderNexus.resolveMissingCosts',
+        'orderNexus.checkBleedFeed',
+        'orderNexus.confirmMode'
+      ]);
     });
 
-    describe('profitability-engine task', () => {
-      let task: any;
+    const byId = (id: string) => {
+      const manifest = findOrderNexusManifest();
+      return manifest?.tasks.find(t => t.id === id);
+    };
 
-      beforeEach(() => {
-        const manifest = findOrderNexusManifest();
-        task = manifest?.tasks.find(t => t.id === 'profitability-engine');
-      });
-
-      it('exists', () => {
+    describe('reviewProfitAutopsy task', () => {
+      it('exists and is required', () => {
+        const task = byId('orderNexus.reviewProfitAutopsy');
         expect(task).toBeDefined();
-      });
-
-      it('has action-oriented label', () => {
-        expect(task?.label).toBe('Profitability Engine Activated');
-      });
-
-      it('is required', () => {
         expect(task?.required).toBe(true);
+        expect(task?.label).toBe('Review your first Profit Autopsy');
       });
 
-      it('has exactly one completion rule', () => {
+      it('has correct completion rule and action', () => {
+        const task = byId('orderNexus.reviewProfitAutopsy');
         expect(task?.completionRules).toHaveLength(1);
-      });
-
-      it('completion rule checks boolean activation flag', () => {
-        const rule = task?.completionRules[0];
-        expect(rule).toEqual({
+        expect(task?.completionRules[0]).toEqual({
           signal: 'orderNexus.profitabilityActive',
+          operator: 'equals',
           expectedValue: true
         });
-      });
-
-      it('uses implicit equals operator for boolean', () => {
-        const rule = task?.completionRules[0];
-        expect(rule?.operator).toBeUndefined();
-      });
-
-      it('has no action configured', () => {
-        expect(task?.action).toBeUndefined();
+        expect(task?.action).toEqual({
+          type: 'navigate',
+          target: '/orders'
+        });
       });
     });
 
-    describe('ingest-first-orders task', () => {
-      let task: any;
-
-      beforeEach(() => {
-        const manifest = findOrderNexusManifest();
-        task = manifest?.tasks.find(t => t.id === 'ingest-first-orders');
-      });
-
-      it('exists', () => {
+    describe('resolveMissingCosts task', () => {
+      it('exists and is required', () => {
+        const task = byId('orderNexus.resolveMissingCosts');
         expect(task).toBeDefined();
-      });
-
-      it('has quantitative goal label', () => {
-        expect(task?.label).toBe('Ingest first 5 orders');
-      });
-
-      it('is required', () => {
         expect(task?.required).toBe(true);
+        expect(task?.label).toBe('Fix missing costs so your profit is real');
       });
 
-      it('has exactly one completion rule', () => {
+      it('has correct completion rule and action', () => {
+        const task = byId('orderNexus.resolveMissingCosts');
         expect(task?.completionRules).toHaveLength(1);
-      });
-
-      it('completion rule uses gte operator with threshold', () => {
-        const rule = task?.completionRules[0];
-        expect(rule).toEqual({
-          signal: 'orderNexus.ordersIngested',
-          operator: 'gte',
-          expectedValue: 5
+        expect(task?.completionRules[0]).toEqual({
+          signal: 'orderNexus.missingCostCount',
+          operator: 'equals',
+          expectedValue: 0
+        });
+        expect(task?.action).toEqual({
+          type: 'navigate',
+          target: '/products'
         });
       });
+    });
 
-      it('numeric threshold is appropriate for onboarding', () => {
-        const rule = task?.completionRules[0];
-        expect(rule?.expectedValue).toBe(5);
-        expect(typeof rule?.expectedValue).toBe('number');
+    describe('checkBleedFeed task', () => {
+      it('exists and is optional', () => {
+        const task = byId('orderNexus.checkBleedFeed');
+        expect(task).toBeDefined();
+        expect(task?.required).toBe(false);
+        expect(task?.label).toBe('Check your Bleed Feed');
+      });
+
+      it('has correct completion rule and action', () => {
+        const task = byId('orderNexus.checkBleedFeed');
+        expect(task?.completionRules).toHaveLength(1);
+        expect(task?.completionRules[0]).toEqual({
+          signal: 'orderNexus.hasNegativeMarginOrder',
+          operator: 'equals',
+          expectedValue: true
+        });
+        expect(task?.action).toEqual({
+          type: 'navigate',
+          target: '/orders/bleeders'
+        });
+      });
+    });
+
+    describe('confirmMode task', () => {
+      it('exists and is optional', () => {
+        const task = byId('orderNexus.confirmMode');
+        expect(task).toBeDefined();
+        expect(task?.required).toBe(false);
+        expect(task?.label).toBe('Confirm your operating mode');
+      });
+
+      it('has correct completion rule and action', () => {
+        const task = byId('orderNexus.confirmMode');
+        expect(task?.completionRules).toHaveLength(1);
+        expect(task?.completionRules[0]).toEqual({
+          signal: 'orderNexus.modeDetermined',
+          operator: 'equals',
+          expectedValue: true
+        });
+        expect(task?.action).toEqual({
+          type: 'openModal',
+          target: 'orderNexus.mode'
+        });
       });
     });
 
@@ -180,13 +200,14 @@ describe('Onboarding manifest - order-nexus module', () => {
       it('tasks follow logical progression order', () => {
         const manifest = findOrderNexusManifest();
         const tasks = manifest?.tasks || [];
-        
-        // Profitability engine should come before order ingestion
-        // (though they might be parallel in practice)
-        const profitabilityIndex = tasks.findIndex(t => t.id === 'profitability-engine');
-        const ingestionIndex = tasks.findIndex(t => t.id === 'ingest-first-orders');
-        
-        expect(profitabilityIndex).toBeLessThan(ingestionIndex);
+        const idsInOrder = tasks.map(t => t.id);
+
+        expect(idsInOrder).toEqual([
+          'orderNexus.reviewProfitAutopsy',
+          'orderNexus.resolveMissingCosts',
+          'orderNexus.checkBleedFeed',
+          'orderNexus.confirmMode'
+        ]);
       });
     });
   });
@@ -230,33 +251,17 @@ describe('Onboarding manifest - order-nexus module', () => {
   });
 
   describe('completion rule analysis', () => {
-    it('uses appropriate operators for signal types', () => {
+    it('uses equals operator consistently for boolean and numeric rules', () => {
       const manifest = findOrderNexusManifest();
-      const tasks = manifest?.tasks || [];
-      
-      tasks.forEach(task => {
-        task.completionRules.forEach(rule => {
-          if (rule.signal === 'orderNexus.profitabilityActive') {
-            expect(rule.operator).toBeUndefined(); // Boolean equality
-            expect(rule.expectedValue).toBe(true);
-          } else if (rule.signal === 'orderNexus.ordersIngested') {
-            expect(rule.operator).toBe('gte'); // Numeric comparison
-            expect(rule.expectedValue).toBe(5);
-          }
-        });
+      const rules = manifest?.tasks.flatMap(t => t.completionRules) || [];
+
+      rules.forEach(rule => {
+        expect(rule.operator).toBe('equals');
+        expect(rule.expectedValue).not.toBeUndefined();
       });
     });
-
-    it('numeric threshold follows reasonable onboarding progression', () => {
-      const manifest = findOrderNexusManifest();
-      const orderTask = manifest?.tasks.find(t => t.id === 'ingest-first-orders');
-      const rule = orderTask?.completionRules[0];
-      
-      // 5 orders is a reasonable initial goal
-      expect(rule?.expectedValue).toBe(5);
-      expect(rule?.expectedValue).toBeGreaterThan(0);
-    });
   });
+
 
   describe('manifest integration', () => {
     it('module appears in correct sequence', () => {
