@@ -118,7 +118,7 @@ export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
   async getSignals({ shopId }): Promise<ReadinessSignal[]> {
     const row = await db('canonical_products')
       .where({ shop_id: shopId })
-      .count<{ count: string }>('id as count')
+      .count<{ count: string }>('* as count')
       .first();
 
     const rawCount = row ? Number(row.count) : 0;
