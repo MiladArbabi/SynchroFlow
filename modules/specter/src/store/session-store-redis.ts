@@ -152,28 +152,25 @@ export class RedisSessionStore implements SessionStore {
   }
 
   /** Utility to reset the store (helpful in tests) */
-  reset(): void {
+  async reset(): Promise<void> {
     // clear memory snapshot
     this.snapshot.clear();
 
     // best-effort delete redis keys (do not await here — keep method sync as per interface).
     if (this.client && this.connected) {
       // capture client in local variable to avoid 'this' nullability issues inside async IIFE
-      const client = this.client as unknown as { scanIterator: Function; del: (...k: string[]) => Promise<any> };
-      (async () => {
-        try {
-          // Danger: pattern delete — kept conservative: only keys matching our prefix
-          const iter = client.scanIterator({ MATCH: 'specter:shop:*:sessions', COUNT: 100 });
-          const keys: string[] = [];
-          for await (const k of iter) keys.push(k as string);
-          if (keys.length) {
-            await client.del(...keys);
-            log.info('specter:redis-session-store reset: removed keys', keys.length);
-          }
-        } catch (e: any) {
-          log.warn('specter:redis-session-store reset: redis cleanup failed', e && e.message ? e.message : e);
+      const client = this.client as any;
+      try {
+        const iter = client.scanIterator({ MATCH: 'specter:shop:*:sessions', COUNT: 100 });
+        const keys: string[] = [];
+        for await (const k of iter) keys.push(k as string);
+        if (keys.length) {
+          await client.del(...keys);
+          log.info('specter:redis-session-store reset: removed keys', keys.length);
         }
-      })();
+      } catch (e: any) {
+        log.warn('specter:redis-session-store reset: redis cleanup failed', e && e.message ? e.message : e);
+      }
     }
   }
 }
