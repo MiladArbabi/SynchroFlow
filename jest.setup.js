@@ -1,5 +1,14 @@
-// jest.setup.js
-import '@testing-library/jest-dom';
+// CommonJS-compatible jest setup file (loaded before modules)
+// Keep this file free of ESM `import` so Jest can require() it early.
+
+// Optional: bring in DOM matchers if available in node_modules via require.
+try { require('@testing-library/jest-dom'); } catch (e) { /* optional dev dep */ }
+
+// Ensure test environment is set
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+
+// Ensure queue code is disabled in tests to avoid background connections / logs / open handles
+process.env.DISABLE_QUEUE = '1';
 
 // Polyfill for TextEncoder/TextDecoder which are not available in JSDOM
 global.TextEncoder = require('util').TextEncoder;
@@ -14,23 +23,20 @@ global.EventSource = jest.fn(() => ({
   close: jest.fn(),
 }));
 
-// Mock Vite's import.meta.env
-Object.defineProperty(global, 'import.meta', {
-  value: {
-    env: {
-      VITE_APP_VERSION: 'test-version', // Provide a mock version
-      // Add other env variables used by your app here
-    }
-  },
-  writable: true 
+// Mock Vite's import.meta.env (some frontend code reads import.meta.env during module init)
+Object.defineProperty(global, 'import', {
+  value: { meta: { env: { VITE_APP_VERSION: 'test-version' } } },
+  writable: true,
 });
 
-jest.spyOn(console, 'error').mockImplementation(() => {});
+// Silence noisy console.error in tests (optional)
+try { jest.spyOn(console, 'error').mockImplementation(() => {}); } catch (_) {}
 
+// Lightweight recharts mock so node tests don't require DOM layout
 jest.mock('recharts', () => {
-    const OriginalModule = jest.requireActual('recharts');
-    return {
-        ...OriginalModule,
-        ResponsiveContainer: ({ children }) => children,
-    };
+  const OriginalModule = jest.requireActual('recharts');
+  return {
+    ...OriginalModule,
+    ResponsiveContainer: ({ children }) => children,
+  };
 });

@@ -11,10 +11,18 @@ export interface AnonymousSession {
   [k: string]: any;
 }
 
+/** SessionStore interface (explicit) */
+export interface SessionStore {
+  saveSession(session: AnonymousSession): Promise<string>;
+  getAllSessionsForShop(shopId: number): AnonymousSession[];
+  getSessionsLastNDays(shopId: number, days?: number): Promise<AnonymousSession[]>;
+  reset(): void;
+}
+
 /** In-memory session store used for tests and simple dev setups.
  *  Provides saveSession and retrieval helpers expected by ingestion & tests.
  */
-export class InMemorySessionStore {
+export class InMemorySessionStore implements SessionStore {
   private sessions: AnonymousSession[] = [];
 
   constructor(initial?: AnonymousSession[]) {
@@ -55,10 +63,51 @@ export class InMemorySessionStore {
   }
 }
 
-// Default singleton instance (used in production-ish dev flows)
-const defaultStore = new InMemorySessionStore();
-export const sessionStore = defaultStore;
+// ----------------------------
+// Production factory & test override
+// ----------------------------
 
+let _overriddenStore: SessionStore | null = null;
+
+/**
+ * Create a production store instance based on environment.
+ * Supported values: 'memory' (default), 'redis' (if redis package available)
+ */
+export function createSessionStore(): SessionStore {
+  if (_overriddenStore) return _overriddenStore;
+
+  // Force in-memory in tests for deterministic, synchronous behavior.
+  // Jest sets NODE_ENV=test by default; ensure we never pick Redis for unit tests.
+  if (process.env.NODE_ENV === 'test') {
+    return new InMemorySessionStore();
+  }
+
+  const backend = (process.env.SPECTER_SESSION_STORE || 'memory').toLowerCase();
+  if (backend === 'redis') {
+    // lazy require redis-backed implementation — keep it optional for dev/test
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const redisModule = require('./session-store-redis');
+      if (redisModule && typeof redisModule.RedisSessionStore === 'function') {
+        return new redisModule.RedisSessionStore();
+      }
+    } catch (e) {
+      // if redis not installed or fails, fallback to memory
+      // eslint-disable-next-line no-console
+      console.warn('Redis session store unavailable, falling back to InMemorySessionStore:', (e as any)?.message ?? String(e));
+    }
+  }
+
+  return new InMemorySessionStore();
+}
+
+/** Convenience: current singleton store used by ingestion code */
+export const sessionStore: SessionStore = createSessionStore();
+
+/** Test helper: override the runtime store (useful in tests) */
+export function setSessionStoreForTests(store: SessionStore | null) {
+  _overriddenStore = store;
+}
 
 // ---- CommonJS compatibility shim ----
 // Some test runners / require() consumers (Jest in CommonJS mode) may load this module via
@@ -69,17 +118,12 @@ if (typeof module !== 'undefined' && module.exports) {
   // preserve existing module.exports shape while ensuring default & named props exist
   try {
     module.exports = {
-      default: defaultStore,
+      default: sessionStore,
       InMemorySessionStore,
-      // runtime doesn't need types; keep the default instance for require() consumers
-      // also keep named methods accessible directly on the exported object
-      sessionStore: defaultStore,
-      saveSession: defaultStore.saveSession.bind(defaultStore),
-      getAllSessionsForShop: defaultStore.getAllSessionsForShop.bind(defaultStore),
-      getSessionsLastNDays: defaultStore.getSessionsLastNDays?.bind(defaultStore),
-      reset: defaultStore.reset?.bind(defaultStore),
-      // expose clearAll alias used by tests
-      clearAll: defaultStore.clearAll?.bind(defaultStore)
+      // also export interface-friendly named bindings for CJS consumers
+      sessionStore,
+      createSessionStore,
+      setSessionStoreForTests
     };
   } catch (e) {
     // defensive: do nothing if environment prevents assignment

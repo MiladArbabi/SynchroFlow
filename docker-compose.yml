@@ -29,6 +29,26 @@ services:
       RABBITMQ_DISK_FREE_LIMIT: "50MB"
     networks:
       - synchroflow-net
+  
+  redis:
+    image: redis:7.2-alpine
+    container_name: synchroflow_redis
+    ports:
+      - "6379:6379"
+    # environment must be a mapping; keep blank mapping if you don't set env vars
+    environment:
+      # If you want AUTH, set REDIS_PASSWORD in your env file and uncomment:
+      # REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      # keep env mapping present and valid
+      REDIS_NOT_USED: "1"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - synchroflow-net
 
 volumes:
   postgres_data:

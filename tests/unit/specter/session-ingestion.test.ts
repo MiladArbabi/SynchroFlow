@@ -41,7 +41,7 @@ describe('session ingestion flow (PCD safety + store wiring)', () => {
 
       // clear store between runs (module exports default sessionStore singleton)
       const { sessionStore } = await import('../../../modules/specter/src/store/session-store');
-      sessionStore.clearAll();
+      sessionStore.reset();
 
       // two sessions: one exitIntent=true with /product, one exitIntent=false
       const s1 = {

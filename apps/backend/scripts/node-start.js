@@ -1,10 +1,13 @@
 /**
  * apps/backend/scripts/node-start.js
- * Runtime helper to load the compiled backend from apps/backend/dist
- * Ensures the HTTP server starts even when the module was required.
+ * Robust helper to locate and load the compiled backend.
+ * - Attempts to find `server.js` under apps/backend/dist (supports nested output layouts)
+ * - Registers tsconfig-paths using the directory that contains the compiled server
+ * - Starts the HTTP server and attempts to lazily start worker modules
  */
 const path = require('path');
 const fs = require('fs');
+const child_process = require('child_process');
 
 // load .env from repo root
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
@@ -37,16 +40,58 @@ if (!process.env.apiKey && process.env.SHOPIFY_API_KEY) process.env.apiKey = pro
 if (!process.env.apiSecretKey && process.env.SHOPIFY_API_SECRET) process.env.apiSecretKey = process.env.SHOPIFY_API_SECRET;
 if (!process.env.apiVersion && process.env.SHOPIFY_API_VERSION) process.env.apiVersion = process.env.SHOPIFY_API_VERSION;
 
+// Search for server.js under apps/backend/dist (depth-first)
+function findServerEntry(distRoot) {
+  const stack = [distRoot];
+  while (stack.length) {
+    const cur = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(cur);
+    } catch (e) {
+      continue;
+    }
+    for (const name of entries) {
+      const full = path.join(cur, name);
+      try {
+        const stat = fs.statSync(full);
+        if (stat.isFile() && name === 'server.js') return full;
+        if (stat.isDirectory()) stack.push(full);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+  return null;
+}
+
+const expectedDistRoot = path.resolve(__dirname, '../dist');
+let serverEntry = path.resolve(expectedDistRoot, 'server.js');
+if (!fs.existsSync(serverEntry)) {
+  // attempt discovery for nested layouts
+  const discovered = findServerEntry(expectedDistRoot);
+  if (discovered) {
+    console.warn('Warning: server.js not at expected path; using discovered entry:', discovered);
+    serverEntry = discovered;
+  } else {
+    console.error('ERROR: expected compiled backend entry not found at', path.resolve(expectedDistRoot, 'server.js'));
+    console.error('Checked top-level dist contents:', (() => { try { return fs.readdirSync(expectedDistRoot); } catch(e){ return []; } })());
+    process.exit(1);
+  }
+}
+
+// Determine baseDir for tsconfig-paths registration (use server's parent dir)
+const serverDir = path.dirname(serverEntry);
+const tsConfigBase = serverDir;
+
 // Register tsconfig-paths to map runtime aliases to compiled outputs.
-// backend tsc currently emits files directly under apps/backend/dist
-const baseDist = path.resolve(__dirname, '../dist');
 require('tsconfig-paths').register({
-  baseUrl: baseDist,
+  baseUrl: tsConfigBase,
   paths: {
-    "api-server": [path.resolve(baseDist, 'server.js')],
-    "api-db": [path.resolve(baseDist, 'db.js')],
-    "api-types": [path.resolve(baseDist, 'types.js')],
-    "api-src/*": [path.resolve(baseDist, '*')],
+    "api-server": [path.resolve(tsConfigBase, 'server.js')],
+    "api-db": [path.resolve(tsConfigBase, 'db.js')],
+    "api-types": [path.resolve(tsConfigBase, 'types.js')],
+    "api-src/*": [path.resolve(tsConfigBase, '*')],
 
     // IMPORTANT: point to shared DIST, not src
     "@lasyncro/shared": [path.resolve(__dirname, '../../../modules/shared/dist/index.js')],
@@ -55,17 +100,35 @@ require('tsconfig-paths').register({
   },
 });
 
-// Ensure expected compiled entry exists
-const entry = path.resolve(__dirname, '../dist/server.js');
-if (!fs.existsSync(entry)) {
-  console.error('ERROR: expected compiled backend entry not found at', entry);
-  console.error('Listing dist contents for debugging:');
-  try { console.error(fs.readdirSync(path.resolve(__dirname, '../dist'))); } catch(e){/*ignore*/ }
-  process.exit(1);
+// require compiled server module
+// Ensure compiled code can find a knexfile at a relative path it expects.
+// Compiled files may require('../knexfile.js') relative to compiled file layout.
+try {
+  const expectedKnexPath = path.resolve(serverDir, '..', 'knexfile.js');
+  if (!fs.existsSync(expectedKnexPath)) {
+    const realKnex = path.resolve(__dirname, '../knexfile.js'); // the source knexfile in apps/backend
+    if (fs.existsSync(realKnex)) {
+      // Create a tiny proxy module that re-exports the real knexfile.
+      const proxyContent = `module.exports = require(${JSON.stringify(realKnex)});`;
+      fs.writeFileSync(expectedKnexPath, proxyContent, { encoding: 'utf8' });
+      console.log('Created temporary knexfile proxy at', expectedKnexPath);
+
+      // Best-effort cleanup on exit
+      const removeProxy = () => {
+        try { fs.unlinkSync(expectedKnexPath); console.log('Removed temporary knexfile proxy'); } catch (_) {}
+      };
+      process.on('exit', removeProxy);
+      process.on('SIGINT', () => { removeProxy(); process.exit(130); });
+      process.on('SIGTERM', () => { removeProxy(); process.exit(0); });
+    } else {
+      console.warn('Real knexfile not found at', realKnex, '; compiled code may fail to require knexfile.');
+    }
+  }
+} catch (e) {
+  console.warn('Failed to ensure knexfile proxy:', e && e.message ? e.message : e);
 }
 
-// require compiled server module
-const compiled = require(entry);
+const compiled = require(serverEntry);
 const app = (compiled && compiled.default) ? compiled.default : compiled;
 
 // Validate we have an express app-like object
@@ -78,14 +141,14 @@ if (!app || typeof app.listen !== 'function') {
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 
-// Start HTTP server (this mirrors the behaviour that would happen when running node dist/server.js directly)
+// Start HTTP server (mirrors running node dist/server.js directly)
 const server = app.listen(port, HOST, async () => {
   console.log(`Server is listening on http://${HOST}:${port}`);
 
-  // Lazily start workers if available in dist (fail safely)
+  // Lazily start workers if available relative to the discovered server dir
   const tryStart = async (modulePath, fnName) => {
     try {
-      const resolved = path.resolve(__dirname, '../dist', modulePath);
+      const resolved = path.resolve(serverDir, modulePath);
       if (!fs.existsSync(resolved)) {
         console.warn(`Worker not found at ${resolved} (skipping)`);
         return;
@@ -96,7 +159,6 @@ const server = app.listen(port, HOST, async () => {
         await fn();
         console.log(`Started ${modulePath} -> ${fnName}()`);
       } else {
-        // Some worker modules export a start function named differently; attempt common names
         if (typeof mod.startWorker === 'function') {
           await mod.startWorker();
           console.log(`Started ${modulePath} -> startWorker()`);
@@ -112,7 +174,11 @@ const server = app.listen(port, HOST, async () => {
     }
   };
 
-  // try queue/worker modules emitted in dist
+  // Ensure queue is initialized before workers that may rely on it.
+  // The compiled dist should export `initQueue()` / `closeQueue()` for lifecycle control.
+  await tryStart('queue.js', 'initQueue');
+
+  // Now start workers that rely on queue & other services.
   await tryStart('worker.js', 'startWorker');
   await tryStart('sync.worker.js', 'startSyncWorker');
 });

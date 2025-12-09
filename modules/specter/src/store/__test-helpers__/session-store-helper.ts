@@ -1,8 +1,11 @@
 // modules/specter/src/store/__test-helpers__/session-store-helper.ts
 import { InMemorySessionStore } from '../../store/session-store';
 
-export function clearAll(store: InMemorySessionStore) {
-  // helper wrapper used by tests — delegate to the real reset() method
-  // kept the helper name for test callers; under the hood we call reset()
+// Keep a compatible helper but use the canonical name `reset`
+export function reset(store: InMemorySessionStore) {
+  // delegate to the real reset() method
   store.reset();
 }
+
+// Backwards-compatible export (in case any code still imports clearAll)
+export const clearAll = reset;

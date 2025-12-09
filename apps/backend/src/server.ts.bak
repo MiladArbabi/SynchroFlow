@@ -2,14 +2,13 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import cookieParser from 'cookie-parser';
-import express from 'express';
+import express, { Express } from 'express';
 import session from 'express-session';
 import db from './db';
 import userStateRoutes from './api/user-state/user-state.routes';
 import shopifyRoutes from "./api/shopify/shopify.routes";
 
 import { federatedSearch } from './services/koreSearch';
-import { opsIntelEmitter } from './services/opsIntel/emitter';
 import connectPgSimple from 'connect-pg-simple';
 import { 
   calculateGrossRevenue, 
@@ -18,8 +17,8 @@ import {
   calculateCostOfStockout,
   getFulfillmentPipeline,
   calculatePerfectOrderPercentage } from './services/analytics.service';
-/* import { startWorker } from './worker';
-import { startSyncWorker } from './sync.worker'; */
+/* import { startWorker } from './worker.js';
+import { startSyncWorker } from './sync.worker.js'; */
 import { seedSandboxData } from './db/seeder';
 import layoutRoutes from "./api/layouts/layout.routes";
 import orderRoutes from "./api/orders/orders.routes";
@@ -29,15 +28,16 @@ import productsRoutes from "./api/products/products.routes";
 import authRoutes from "./api/auth/auth.routes";
 import dashboardRoutes from "./api/dashboard/dashboard.routes";
 import productCostsRoutes from "./api/product-costs/product-costs.routes";
+import onboardingReadinessRouter from './onboarding/readiness.router';
 
-// OPS-INTEL Imports
-import opsIntelRoutes from "./api/ops-intel/ops-intel.routes";
-import { OpsIntelEngine } from './services/opsIntel';
-import { staleOrderRule } from './services/opsIntel/rules';
+import { getMyEntitlements } from './api/entitlements/entitlements.controller';
+// Specter session-store (Redis-backed) lifecycle helpers
+// Note: path points at the source module in the monorepo. This matches our runtime/node-start.tsconfig mapping.
+import { initRedisSessionStore, closeRedisSessionStore } from '../../../modules/specter/src/store/session-store-redis';
+import { closeQueue } from './queue';
 
-const app = express();
+const app: Express = express();
 app.use(express.json());
-app.use(cookieParser());
 
 // --- TO FIX FLY DEPLOY ---
 const PGStore = connectPgSimple(session);
@@ -46,8 +46,20 @@ const sessionStore = new PGStore({
   tableName: 'user_sessions',
 });
 
-// --- 3. INITIALIZE AND START THE KORE ENGINE ---
-const koreEngine = new OpsIntelEngine();
+app.use(cookieParser() as any);
+app.use(
+  session({
+    store: sessionStore,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-please-set-in-prod',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+    },
+  }) as any
+);
 
 // Register all our business rules
 koreEngine.registerRule(staleOrderRule);
@@ -56,33 +68,29 @@ koreEngine.registerRule(staleOrderRule);
 // Start the engine's cron jobs
 koreEngine.start();
 
-// --- SESSION MIDDLEWARE ---
-app.use(
-  session({
-    store: sessionStore, // <-- USE THE NEW PGStore
-    secret: process.env.SESSION_SECRET || 'fallback-secret-please-set-in-prod',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === 'production',
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
-    },
-  })
-);
+// --- 3.5 Optional: initialize Specter Redis-backed session store (if enabled) ---
+// We initialize it early so any incoming ingestion code has a ready store.
+// This is intentionally not `await`ed at top-level module load; we'll await before listening below.
+let specterStoreInstance: any = null;
+const maybeInitSpecterStore = async () => {
+  if ((process.env.SPECTER_SESSION_STORE || '').toLowerCase() === 'redis') {
+    try {
+      specterStoreInstance = await initRedisSessionStore();
+      console.log('[server] Specter Redis session store initialized');
+    } catch (err) {
+      console.warn('[server] Failed to initialize Specter Redis session store — continuing with in-memory store', (err && (err as Error).message) || err);
+    }
+  } else {
+    // no-op: default in-memory store will be used by Specter modules
+  }
+};
 
-// Use 3000 as the dev default so UI (vite) proxy and dev scripts match.
+// Determine port/host
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 
-// Start the HTTP server and log the listening address.
-app.listen(port, HOST, () => {
-  console.log(`Server listening on http://${HOST}:${port}`);
-});
-
 // Integrate the new layout routes
 app.use("/api/v1/layouts", layoutRoutes);
-app.use("/api/v1/ops-intel", opsIntelRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
@@ -92,6 +100,75 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/user-state", userStateRoutes);
 app.use("/api/v1/shopify", shopifyRoutes);
+app.use("/api/v1/onboarding", onboardingReadinessRouter);
+
+app.get('/api/v1/entitlements/me', getMyEntitlements);
+
+// Start HTTP server (mirrors running node dist/server.js directly)
+const server = app.listen(port, HOST, async () => {
+  // Ensure optional pieces are ready before we declare the app listening
+  await maybeInitSpecterStore();
+
+  console.log(`Server is listening on http://${HOST}:${port}`);
+
+  // Lazily start workers if available relative to the discovered server dir
+  const tryStart = async (modulePath, fnName) => {
+    try {
+      const resolved = path.resolve(serverDir, modulePath);
+      if (!fs.existsSync(resolved)) {
+        console.warn(`Worker not found at ${resolved} (skipping)`);
+        return;
+      }
+      const mod = require(resolved);
+      const fn = mod && (mod[fnName] || mod.default && mod.default[fnName]);
+      if (typeof fn === 'function') {
+        await fn();
+        console.log(`Started ${modulePath} -> ${fnName}()`);
+      } else {
+        if (typeof mod.startWorker === 'function') {
+          await mod.startWorker();
+          console.log(`Started ${modulePath} -> startWorker()`);
+        } else if (typeof mod.startSyncWorker === 'function') {
+          await mod.startSyncWorker();
+          console.log(`Started ${modulePath} -> startSyncWorker()`);
+        } else {
+          console.warn(`No known start function in ${modulePath} (module exported keys: ${Object.keys(mod).join(', ')})`);
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to start worker ${modulePath}:`, err && err.message ? err.message : err);
+    }
+  };
+
+  // try queue/worker modules emitted in dist (relative to server dir)
+  await tryStart('worker.js', 'startWorker');
+  await tryStart('sync.worker.js', 'startSyncWorker');
+});
+
+// Graceful shutdown: ensure Redis specter-store and queue are closed
+const gracefulShutdown = async (sig?: string) => {
+  console.log('[server] Received shutdown signal', sig || '');
+  try {
+    if (specterStoreInstance) {
+      await closeRedisSessionStore(specterStoreInstance);
+      console.log('[server] Specter Redis session store closed');
+    }
+  } catch (err) {
+    console.warn('[server] Error closing specter redis store', err && (err as Error).message ? (err as Error).message : err);
+  }
+
+  try {
+    await closeQueue();
+    console.log('[server] Queue closed');
+  } catch (err) {
+    console.warn('[server] Error closing queue', err && (err as Error).message ? (err as Error).message : err);
+  }
+
+  try { server.close(() => { console.log('[server] HTTP server closed'); process.exit(0); }); } catch (_) { process.exit(0); }
+};
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // --- Routes ---
 app.get('/', (req, res) => {
@@ -187,19 +264,6 @@ app.get('/api/v1/kore/subscribe', (req, res) => {
     res.write(`event: insight\n`);
     res.write(`data: ${JSON.stringify(insight)}\n\n`);
   };
-
-  // Add this client to the emitter's listener pool
-  opsIntelEmitter.on('insight', sendInsight);
-
-  // Send a simple "connected" message
-  res.write('data: {"type":"connection_established"}\n\n');
-
-  // Remove the listener when the client disconnects
-  req.on('close', () => {
-    opsIntelEmitter.off('insight', sendInsight);
-    res.end();
-  });
-});
 
 // --- KORE HEALTH CHECK ---
 app.get('/api/v1/kore/health', async (req, res) => {

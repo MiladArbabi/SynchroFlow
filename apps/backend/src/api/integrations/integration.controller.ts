@@ -365,9 +365,11 @@ export const preFlightCheck = async (req: Request, res: Response) => {
   }
 
   // 2. Check Queue Connection
-  queueReady = connection.isConnected();
-  if (!queueReady) {
-    issues.push('Message queue not connected.');
+  if (!connection) {
+    console.warn('RabbitMQ connection not initialized; skipping queue operations');
+    queueReady = false;
+  } else {
+    queueReady = typeof connection.isConnected === 'function' ? connection.isConnected() : false;
   }
 
   // 3. Check ENV Vars

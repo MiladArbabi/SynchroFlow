@@ -6,7 +6,7 @@ module.exports = {
     {
       displayName: 'backend',
       testEnvironment: 'node',
-      setupFiles: ['<rootDir>/jest.env.js'],
+      setupFiles: ['<rootDir>/jest.setup.js'],
       testMatch: [
         '<rootDir>/tests/**/*.test.ts',
       ],

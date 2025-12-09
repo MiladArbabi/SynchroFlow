@@ -270,12 +270,6 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
 
     // Ring the "doorbell" for all our data (Aha! moment)
     setTimeout(() => {
-      console.log('[DashboardPage] Invalidating dashboardPulse & opsIntelSummary.');
-      queryClient.invalidateQueries({ queryKey: ['dashboardPulse'] });
-      queryClient.invalidateQueries({ queryKey: ['opsIntelSummary'] });
-    }, 100);
-
-    setTimeout(() => {
       console.log('[DashboardPage] Invalidating dashboardInventory.');
       queryClient.invalidateQueries({ queryKey: ['dashboardInventory'] });
     }, 300);

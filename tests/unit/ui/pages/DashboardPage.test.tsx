@@ -191,11 +191,6 @@ describe('DashboardPage', () => {
       // Immediately after close, no queries should be invalidated yet
       expect(mockInvalidateQueries).not.toHaveBeenCalled();
 
-      // After 100ms: dashboardPulse and opsIntelSummary
-      jest.advanceTimersByTime(100);
-      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardPulse'] });
-      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['opsIntelSummary'] });
-
       // After 300ms: dashboardInventory
       jest.advanceTimersByTime(200);
       expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboardInventory'] });
@@ -208,7 +203,6 @@ describe('DashboardPage', () => {
       const calls = mockInvalidateQueries.mock.calls;
       expect(calls.map(call => call[0].queryKey[0])).toEqual([
         'dashboardPulse', 
-        'opsIntelSummary', 
         'dashboardInventory', 
         'dashboardShipments'
       ]);
