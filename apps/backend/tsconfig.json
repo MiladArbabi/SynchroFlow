@@ -10,20 +10,33 @@
     "noImplicitAny": false,
     "skipLibCheck": true,
     "allowJs": true,
-    "rootDir": "./src",
+    "rootDir": "../..",
     "outDir": "./dist",
-    "baseUrl": ".",
+    "baseUrl": "../..",
     "paths": {
-      "api-src/*": ["src/*"],
-      "api-db": ["src/db.ts"],
-      "api-types": ["src/types.ts"],
-      "api-server": ["src/server.ts"]
+      "api-src/*": ["apps/backend/src/*"],
+      "api-db": ["apps/backend/src/db.ts"],
+      "api-types": ["apps/backend/src/types.ts"],
+      "api-server": ["apps/backend/src/server.ts"],
+
+      /* module-level alias for specter sources used by backend tests & providers */
+      "modules-specter/*": ["modules/specter/src/*"],
+      "modules-specter": ["modules/specter/src/index.ts"],
+
+      /* shared package (point to src for type-checking during development) */
+      "@lasyncro/shared/*": ["modules/shared/src/*"],
+      "@lasyncro/shared": ["modules/shared/src/index.ts"]
     },
     "sourceMap": true,
     "declaration": false,
     "incremental": false,
     "isolatedModules": false
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "../../modules/shared/src/**/*.ts",
+    "../../modules/specter/src/**/*.ts"
+  ],
   "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }

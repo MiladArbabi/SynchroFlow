@@ -61,7 +61,10 @@
 
      // --- SHARED PACKAGE ALIAS (@lasyncro/shared) ---
       "@lasyncro/shared/*": ["modules/shared/src/*"],
-      "@lasyncro/shared": ["modules/shared/src/index.ts"]
+      "@lasyncro/shared": ["modules/shared/src/index.ts"],
+
+      // module-level alias for internal modules (specter etc.)
+      "modules-specter/*": ["modules/specter/src/*"]
     }
   },
   "include": [
@@ -69,6 +72,7 @@
     "apps/backend/src",
     "apps/integration-service/src",
     "modules/shared/src",
+    "modules/specter/src",
     "tests/**/*.ts",
     "tests/**/*.tsx"
   ],

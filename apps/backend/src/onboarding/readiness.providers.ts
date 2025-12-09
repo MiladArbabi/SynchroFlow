@@ -8,6 +8,7 @@ import {
   ReadinessSignalName,
   ReadinessSignalValue
 } from '@lasyncro/shared';
+import SpecterCustomerIntelligenceService from 'modules-specter/public/specter-customer-intelligence-service';
 
 import { UserStateService } from '../services/user-state.service';
 
@@ -174,26 +175,14 @@ export const specterOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'specter',
 
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // FT1: Behavioral readiness signals (DB-safe defaults / stubs).
-    // These are intentionally conservative placeholders until Specter ingestion is wired.
-    //
-    // Semantics:
-    // - specter.sdkInstalled: whether the site has the Specter snippet installed (default: false)
-    // - specter.sessionVolume: number of normalized sessions last 7 days (default: 0)
-    // - specter.intentFeedActive: whether intent events are flowing (boolean or low/medium/high)
-    // - specter.exitIntentRate: ratio 0..1 of sessions with exitIntent (default: 0)
-    // - specter.topPageFunnelsDetected: boolean indicating simple funnel detection (default: false)
-    // - specter.customerSignalFallbackMode: 'default' | 'fallback' | 'integrated' (default: 'default')
-    //
-    // Implementation note:
-    // Keep these DB-safe (no required tables). When Specter ingestion is available,
-    // replace the default code below with real queries to the Specter store.
-
-    // conservative defaults
+    // FT1: conservative, DB-safe stub signals until Specter ingestion is wired.
+    // Avoid calling internal Specter public service here — that service exposes
+    // getCustomerSignal(...) in the current modules/specter implementation,
+    // not a constructor that accepts ({ shopId }) nor a getReadinessSignals() method.
     const sdkInstalled = false;
     const sessionVolume = 0; // sessions last 7 days
-    const intentFeedActive = false; // or 'low'|'medium'|'high' when enriched
-    const exitIntentRate = 0; // 0..1
+    const intentFeedActive = false;
+    const exitIntentRate = 0;
     const topPageFunnelsDetected = false;
     const customerSignalFallbackMode: 'default' | 'fallback' | 'integrated' = 'default';
 

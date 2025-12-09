@@ -50,7 +50,8 @@ require('tsconfig-paths').register({
 
     // IMPORTANT: point to shared DIST, not src
     "@lasyncro/shared": [path.resolve(__dirname, '../../../modules/shared/dist/index.js')],
-    "@lasyncro/shared/*": [path.resolve(__dirname, '../../../modules/shared/dist/*')]
+    "@lasyncro/shared/*": [path.resolve(__dirname, '../../../modules/shared/dist/*')],
+    "modules-specter/*": [path.resolve(__dirname, '../../../modules/specter/dist/*')]
   },
 });
 
