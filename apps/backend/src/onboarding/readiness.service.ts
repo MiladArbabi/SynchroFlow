@@ -49,9 +49,15 @@ export class OnboardingReadinessService {
   }
 
   private isTaskComplete(task: ModuleOnboardingTask, signals: ReadinessSignal[]): boolean {
-    return task.completionRules.every(rule =>
-      this.evaluateRule(rule, signals)
-    );
+    // If no completionRules are defined, treat as incomplete by default.
+    if (!task.completionRules || task.completionRules.length === 0) return false;
+
+    // Default semantics: multiple completionRules are treated as OR.
+    // i.e., the task is complete if ANY of the provided completion rules is satisfied.
+    // This allows manifest authors to express "either A or B" completion without
+    // adding combined-rule syntax. Tasks that must require multiple conditions
+    // should provide a single composite rule object (or change manifest).
+    return task.completionRules.some(rule => this.evaluateRule(rule, signals));
   }
 
   private evaluateRule(rule: OnboardingTaskCompletionRule, signals: ReadinessSignal[]): boolean {

@@ -169,23 +169,45 @@ export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
   },
 };
 
-// --- Specter provider: customer & conversion intelligence readiness ---
+// --- Specter provider: customer & conversion intelligence readiness (FT1 stubs) ---
 export const specterOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'specter',
 
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // For now, we expose a simple, DB-safe stub signal.
-    // Later, this will be wired to real Specter config / SDK health.
+    // FT1: Behavioral readiness signals (DB-safe defaults / stubs).
+    // These are intentionally conservative placeholders until Specter ingestion is wired.
+    //
+    // Semantics:
+    // - specter.sdkInstalled: whether the site has the Specter snippet installed (default: false)
+    // - specter.sessionVolume: number of normalized sessions last 7 days (default: 0)
+    // - specter.intentFeedActive: whether intent events are flowing (boolean or low/medium/high)
+    // - specter.exitIntentRate: ratio 0..1 of sessions with exitIntent (default: 0)
+    // - specter.topPageFunnelsDetected: boolean indicating simple funnel detection (default: false)
+    // - specter.customerSignalFallbackMode: 'default' | 'fallback' | 'integrated' (default: 'default')
+    //
+    // Implementation note:
+    // Keep these DB-safe (no required tables). When Specter ingestion is available,
+    // replace the default code below with real queries to the Specter store.
+
+    // conservative defaults
+    const sdkInstalled = false;
+    const sessionVolume = 0; // sessions last 7 days
+    const intentFeedActive = false; // or 'low'|'medium'|'high' when enriched
+    const exitIntentRate = 0; // 0..1
+    const topPageFunnelsDetected = false;
+    const customerSignalFallbackMode: 'default' | 'fallback' | 'integrated' = 'default';
+
     return [
-      {
-        name: 'specter.sdkInstalled',
-        value: false // placeholder; refined in Specter FT0 issue
-      }
+      { name: 'specter.sdkInstalled', value: sdkInstalled },
+      { name: 'specter.sessionVolume', value: sessionVolume },
+      { name: 'specter.intentFeedActive', value: intentFeedActive },
+      { name: 'specter.exitIntentRate', value: exitIntentRate },
+      { name: 'specter.topPageFunnelsDetected', value: topPageFunnelsDetected },
+      { name: 'specter.customerSignalFallbackMode', value: customerSignalFallbackMode }
     ];
   }
 };
 
-// --- InsightCore provider: base CNS intelligence readiness ---
 // --- InsightCore provider: base CNS intelligence readiness ---
 export const insightCoreOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'insight-core',

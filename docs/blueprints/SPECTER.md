@@ -116,6 +116,239 @@ Specter learns from:
 
 This CNS summary is **descriptive**, not a new code contract; the concrete types and functions for PCD, latency, fallback, and future integration remain as defined in the sections below.
 
+### 0.5 Intelligence-First Role (Option B Expansion)
+
+Specter’s long-term purpose is *not* nudge execution — it is becoming the CNS module that explains and predicts **customer behavior**.
+
+Specter sits upstream of InsightCore:
+
+* It transforms raw, PCD-safe session interactions into behavioral primitives.
+* It reveals which customer behaviors correlate with margin, retention, and funnel outcomes.
+* It provides the customer-side drivers that InsightCore uses to compute global business drivers.
+
+Specter provides three layers of intelligence:
+
+#### **Layer 1 — Behavioral Signals (v1/v1.5)**
+
+Primitive session-level metrics:
+
+* `session_count`
+* `exit_intent_count`
+* `exit_intent_rate`
+* `top_exit_pages`
+* `funnel_touchpoints` (shallow)
+* `page_exit_intent_rate(page_key)`
+* `nudge_opportunity(page_key, expected_lift, confidence)`
+
+These power the FT0 Aha moment and feed InsightCore’s baseline.
+
+#### **Layer 2 — Behavioral Drivers (v2)**
+
+Specter becomes part of causality mapping through:
+
+* `behavior → outcome` correlations
+* repeat-vs-new behavioral patterns
+* `behavioral_cohort_fingerprints`
+* driver confidence scoring (`low | medium | high`)
+* influence maps (“which behaviors move which metrics”)
+
+InsightCore consumes these as behavioral driver inputs.
+
+#### **Layer 3 — Behavioral Forecasting (v3)**
+
+Specter supports forward-looking reasoning:
+
+* projected exit-intent volume
+* predicted engagement shifts
+* early churn-risk signals (PCD-safe)
+* behavioral tiering (value-based clusters)
+* path-simulation (“if behavior X increases, lift Y is expected”)
+
+Specter remains PCD-safe — all intelligence is derived from anonymous or aggregated data.
+
+### Why this matters for CNS
+
+Specter is the *only* module that describes human-side system variance.
+
+* OrderNexus explains **money**
+* SKU-OS explains **inventory**
+* WMS explains **ops**
+* InsightCore explains **causality**
+* **Specter explains people**
+
+Without Specter intelligence, InsightCore cannot compute customer-side drivers or behavioral fingerprints.
+
+Specter is the behavioral backbone of CNS v2.
+
+### 0.6 Behavioral Primitive System (CNS Contract)
+
+Specter must expose behavioral intelligence in three strict phases:  
+**v1 = primitives**, **v2 = drivers**, **v3 = forecasting**.  
+All other CNS modules depend on these signals.
+
+---
+
+## **Phase 1 Behavioral Primitives (v1 / v1.5 — already implementable)**
+
+These signals are PCD-safe, session-derived, and usable by InsightCore immediately.
+
+| Primitive | Description | Notes |
+|----------|-------------|--------|
+| `session_count` | Total normalized sessions ingested | PCD-safe |
+| `exit_intent_count` | Count of sessions with exit intent | Core FT0 input |
+| `exit_intent_rate` | exit_intent_count / session_count | Main v1 metric |
+| `page_exit_intent_rate(page_key)` | Exit intent likelihood per page | Used for FT0 Aha |
+| `top_exit_pages` | Sorted list of pages with highest exit-intent rates | Basis for insight |
+| `nudge_opportunity` | Derived object `{ page_key, exit_intent_rate, expected_lift, confidence }` | FT0 widget |
+
+Specter v1 only needs to **compute or stub** these primitives.  
+They become real in v1.5 when the session ingestion pipeline is active.
+
+---
+
+## **Phase 2 Behavioral Drivers (v2 — CNS Integration Begins)**
+
+Specter contributes customer-side signals to InsightCore’s driver engine.
+
+| Driver | Meaning | Consumed By |
+|--------|---------|-------------|
+| `behavior → conversion correlation` | Which behaviors correlate with conversion rate | InsightCore |
+| `behavior → margin correlation` | Behavioral link to profitability (aggregated only) | InsightCore |
+| `repeat_vs_new_behavior_score` | How behavior differs between customer types | InsightCore |
+| `behavioral_cohort_fingerprint` | Normalized behavior vector representing shop's customer base | InsightCore |
+| `driver_confidence` | low / medium / high | All modules |
+| `behavioral_volatility` | Variance in behavior over time windows | InsightCore |
+
+None of these break PCD rules.  
+All are derived from aggregated or anonymous signals.
+
+---
+
+## **Phase 3 Behavioral Forecasting (v3 — Predictive Layer)**
+
+These primitives enable customer-path simulation & CNS-level behavioral prediction.
+
+| Forecast Primitive | Description | Purpose |
+|-------------------|-------------|----------|
+| `expected_exit_intent_next_7d` | Projected exit-intent volume | Forecasting |
+| `expected_behavior_shift` | Predictive delta in session flows | InsightCore what-if |
+| `behavioral_churn_pressure` | Early signal of decreasing engagement | Warning system |
+| `behavioral_value_tier` | Value-based behavioral clustering | Future personalization |
+| `path_simulation` | “If behavior X increases by Y%, expected lift is Z%” | CNS decisions |
+
+These are *never* tied to individual identities.  
+They are population-level behavioral predictions.
+
+---
+
+## **Why These Primitives Matter**
+
+Specter becomes the **sole owner** of customer behavior intelligence.  
+Modules like OrderNexus or SKU-OS must not define their own versions of:
+
+* intent  
+* funnel steps  
+* behavioral cohorts  
+* session flow  
+* nudgeability  
+* tiering  
+* engagement signals  
+
+If a module needs behavioral understanding, it must read Specter’s primitives.
+
+This ensures CNS v2 has:
+
+* a **single behavioral truth**,  
+* consistent drivers,  
+* consistent reasoning,  
+* stable integration between modules.
+
+Specter = the customer-behavior pillar of the CNS.
+
+### 0.7 Specter → InsightCore Contract (CNS v2 Integration)
+
+InsightCore depends on Specter for all customer-behavioral understanding.  
+To keep CNS stable and predictable, Specter must expose a consistent, versioned behavioral intelligence contract.
+
+This contract never exposes PCD and is always population-level or session-level.
+
+---
+
+## **Specter Guarantees (Hard Contract)**
+
+1. **Behavioral primitives** (v1/v1.5)  
+   InsightCore may always request:  
+   * `session_count`  
+   * `exit_intent_count`  
+   * `exit_intent_rate`  
+   * `top_exit_pages`  
+   * `page_exit_intent_rate(page_key)`  
+   * `nudge_opportunity(page_key)`  
+
+2. **Driver-ready behavior metrics** (v2)  
+   Provided at deterministic shape and naming:  
+   * correlations: `behavior_to_conversion`, `behavior_to_margin`  
+   * `repeat_vs_new_behavior_score`  
+   * `behavioral_cohort_fingerprint`  
+   * `driver_confidence` (low/medium/high)  
+
+3. **Temporal consistency**  
+   All behavior aggregates are time-windowed using identical windows to InsightCore  
+   (e.g., 24h, 7d, 30d).
+
+4. **Anonymous, non-identifying signals only**  
+   Specter does not surface:  
+   * identity  
+   * PII  
+   * deterministic customer identifiers  
+   * per-customer histories  
+   * anything joinable to OrderNexus customer-level data  
+
+5. **Stable access surface**  
+   InsightCore consumes Specter signals only through:  
+   * `SpecterCustomerIntelligenceService` (future v2 enriched)  
+   * Specter’s public metrics API (planned v2)  
+   * shared primitives in CNS driver engine  
+
+---
+
+## **InsightCore Responsibilities (Counter-Contract)**
+
+1. **InsightCore must treat Specter’s signals as behavioral truth**,  
+   not re-compute or reinterpret them.
+
+2. **InsightCore must not join Specter session-level signals with OrderNexus identity-level signals.**  
+   InsightCore can do: aggregated → aggregated correlations.  
+   InsightCore cannot do: per-customer correlation (forbidden).
+
+3. **InsightCore may use Specter signals for:**
+   * driver attribution  
+   * anomaly detection  
+   * behavioral fingerprints  
+   * cross-module correlation graphs  
+   * Clear Path recommendations (behavioral actions)  
+
+4. **InsightCore may not:**
+   * attempt customer re-identification  
+   * infer identity from Specter fingerprints  
+   * request any PCD-bearing input  
+
+---
+
+## **Shared Behavioral Driver Shape (CNS v2)**
+
+All Specter behavioral drivers consumed by InsightCore must follow:
+
+```ts
+interface BehavioralDriver {
+  driverId: string;                 // e.g., 'exit_intent_rate'
+  weight: number;                   // normalized 0–1
+  confidence: 'low' | 'medium' | 'high';
+  evidence: Record<string, any>;    // aggregated-only support
+  timeWindow: '24h' | '7d' | '30d';
+  correlationType: 'positive' | 'negative' | 'none';
+}
+
 ---
 
 ## 1. Core v1 Contract Summary

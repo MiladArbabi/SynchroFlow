@@ -178,7 +178,12 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
     moduleId: 'specter',
     displayName: 'Customer & Conversion (Specter)',
     requiredSignals: [
-      'specter.sdkInstalled'
+      'specter.sdkInstalled',
+      'specter.sessionVolume',
+      'specter.intentFeedActive',
+      'specter.exitIntentRate',
+      'specter.topPageFunnelsDetected',
+      'specter.customerSignalFallbackMode'
     ],
     tasks: [
       {
@@ -192,9 +197,31 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
           type: 'openExternal',
           target: 'https://docs.lasyncro.com/specter/getting-started'
         }
+      },
+      {
+        id: 'specter.reviewBehaviorSnapshot',
+        label: 'Review your Behavior Snapshot',
+        required: false,
+        // Completed when we have at least 1 session OR basic funnels detected
+        completionRules: [
+          {
+            signal: 'specter.sessionVolume',
+            operator: 'gte',
+            expectedValue: 1
+          },
+          {
+            signal: 'specter.topPageFunnelsDetected',
+            operator: 'equals',
+            expectedValue: true
+          }
+        ],
+        action: {
+          type: 'navigate',
+          target: '/insights/specter' // UI route to the Specter behavioral snapshot
+        }
       }
     ]
-  },{
+  }, {
     moduleId: 'insight-core',
     displayName: 'Core CNS Intelligence (InsightCore)',
     requiredSignals: [
