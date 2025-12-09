@@ -9,8 +9,22 @@
 
 ### 0.2 Mission
 
-> **Specter Mission (v1):**
-> Given a Shopify session, provide a **PCD-safe**, **low-latency**, and **margin-safe** nudge recommendation – or explicitly return `null`.
+> **Specter Mission (v1–v3):**  
+> Provide **privacy-preserving**, **low-latency**, and **margin-safe** customer signals and nudge recommendations that make conversion opportunities actionable — while **never** persisting raw PCD or executing channel actions.  
+>
+> In v1, Specter focuses on **exit-intent reminders only** (no discounts), under a strict 100 ms latency budget and PCD guards.  
+> In v2+, Specter becomes CNS-aware (uses aggregated signals from other modules).  
+> In v3, Specter supports privacy-preserving personalization and orchestrated experiments via channel modules — still without owning PCD or execution.
+
+**Job-to-be-done (JTBD):**  
+Make customer behavior **measurable and influenceable** without exposing PCD — by surfacing where a merchant can safely nudge (e.g., exit-intent sessions) and what uplift they can expect.
+
+**FT0 Aha (free-tier moment):**
+
+> “We can recover X% of exit-intent sessions with a safe reminder — here are the pages and the expected uplift.”
+
+Specter does **not** own identity, execution, or pricing.  
+It owns **signals** and **safe recommendations**.
 
 ### 0.3 Owns vs Does Not Own
 
@@ -33,6 +47,74 @@
 * Channel execution (email/SMS/push, etc.) → dedicated channel modules
 
 Specter produces **intelligence** and **NudgeExecutionRequest** events. Execution belongs elsewhere.
+
+### 0.4 CNS Value Blueprint (Summary)
+
+This section ties Specter into the CNS-wide design (InsightCore, OrderNexus, SKU OS, etc.) and is additive to the concrete contracts defined below.
+
+**1. Job To Be Done**
+
+* Make customer behavior **measurable and influenceable** without exposing PCD.
+* Surface **where** a nudge is safe and worthwhile (e.g., exit-intent sessions) and **what uplift** is realistic.
+
+**2. Free-tier Aha (FT0)**
+
+* Single insight:  
+  > “Your top nudge opportunity is on pages X – exit-intent reminders could lift conversions by ~Y% with no discounts.”
+* This leverages existing primitives (exitIntent, sessions) and the v1 REMINDER-only engine.
+
+**3. Phase Plan**
+
+* **Phase 1 (v1)** – what’s already here:
+  * PCD guards, 100 ms latency budget, REMINDER-only, `NudgeExecutionRequest`.
+  * Simple `SpecterCustomerSignal` default.
+  * `specter.sdkInstalled` readiness signal.
+* **Phase 2 (v2)** – extend via existing future contracts:
+  * `CustomerSignalResult` with `source`, `confidence`, `dataSources`.
+  * `SpecterFallbackManager` + OrderNexus / SKU OS enrichment (aggregated).
+  * More nuanced opportunities surfaced (still margin-safe).
+* **Phase 3 (v3)** – build on v2:
+  * Privacy-preserving cohorts and experiments.
+  * Orchestrated, policy-constrained nudges via channel modules.
+
+**4. Analytics Primitives Specter Owns (CNS-level)**
+
+These map onto, but are not limited to, the implementations later in this blueprint:
+
+* `session_count`
+* `exit_intent_count`
+* `exit_intent_rate = exit_intent_count / session_count`
+* `page_exit_intent_rate(page_key)`
+* `nudge_opportunity { page_key, exit_intent_rate, expected_lift_estimate, confidence }`
+* `signal_confidence: 'low' | 'medium' | 'high'`
+
+Other modules may **read** these, but must not redefine them with different semantics.
+
+**5. Core Widgets (for InsightCore dashboards / Specter UIs)**
+
+* **Exit Intent Overview** – sessions, exit_intent_rate, top pages.
+* **Top Nudge Opportunity** – the FT0 Aha widget (page, exit_intent_rate, expected_lift, confidence).
+* **SDK Health** – `specter.sdkInstalled`, recent event timestamps.
+
+**6. Clear Path Actions**
+
+Specter never executes actions, but must feed Clear Path recommendations (via InsightCore or directly) such as:
+
+* `enable_sdk` – “Install and enable Specter tracking.”
+* `enable_page_reminder` – “Turn on exit-intent reminder on high-opportunity pages.”
+* `create_onsite_experiment` – “Test reminder vs no reminder on top exit pages.”
+
+Each action maps to the global `InsightActionRecommendation` contract (targetModule, actionId, rationale, urgency, expectedImpactEstimate, confidence, evidence, context).
+
+**7. Closed Loop**
+
+Specter learns from:
+
+* Aggregated `NudgeOutcome` data (impressions, clicks, conversions) per page/time window.
+* Optional aggregated profit deltas from OrderNexus (no customer-level join).
+* It updates `expected_lift` and `signal_confidence` using simple moving averages in v1 and more robust attribution in v2+.
+
+This CNS summary is **descriptive**, not a new code contract; the concrete types and functions for PCD, latency, fallback, and future integration remain as defined in the sections below.
 
 ---
 

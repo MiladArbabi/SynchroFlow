@@ -67,48 +67,73 @@ export const platformOnboardingSignalProvider: OnboardingSignalProvider = {
   },
 };
 
-// --- OrderNexus provider: orders & profitability readiness ---
+// --- OrderNexus provider: orders & profitability readiness (FT0) ---
 export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'order-nexus',
 
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    const row = await db('canonical_orders')
+    // 1) How many canonical orders did we ingest?
+    const ordersRow = await db('canonical_orders')
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
       .first();
 
-    const ordersIngested = Number(row?.count ?? 0);
+    const ordersIngested = Number(ordersRow?.count ?? 0);
 
-    // Temporary assumption:
-    // - FT0 gives OrderNexus "free-tier" access (not fully paid, not locked).
-    // - We use total orders ingested as usage metric for the free tier.
+    // 2) How many line items are still missing a cost?
+    const missingCostRow = await db('canonical_order_line_items')
+      .where({ shop_id: shopId })
+      .whereNull('estimated_unit_cost')
+      .count<{ count: string }>('id as count')
+      .first();
+
+    const missingCostCount = Number(missingCostRow?.count ?? 0);
+
+    // 3) Free tier access – FT0: everyone gets free-tier OrderNexus, usage based on order count
     const entitlementAccess: ModuleEntitlementAccess = 'free-tier';
 
     const freeTier = computeModuleAccessState({
       moduleId: 'order-nexus',
       usageCount: ordersIngested,
-      entitlementAccess
+      entitlementAccess,
     });
+
+    // 4) FT0 stubs for "profitability" detail; we'll wire real signals later
+    const profitabilityActive = ordersIngested > 0;
+    const hasNegativeMarginOrder = false; // FT0 stub
+    const modeDetermined = false;         // FT0 stub
 
     return [
       {
         name: 'orderNexus.profitabilityActive',
-        value: ordersIngested > 0
+        value: profitabilityActive,
       },
       {
         name: 'orderNexus.ordersIngested',
-        value: ordersIngested
+        value: ordersIngested,
+      },
+      {
+        name: 'orderNexus.missingCostCount',
+        value: missingCostCount,
+      },
+      {
+        name: 'orderNexus.hasNegativeMarginOrder',
+        value: hasNegativeMarginOrder,
+      },
+      {
+        name: 'orderNexus.modeDetermined',
+        value: modeDetermined,
       },
       {
         name: 'order-nexus.freeTierState',
-        value: freeTier.state
+        value: freeTier.state,
       },
       {
         name: 'order-nexus.freeTierRemaining',
-        value: freeTier.remaining
-      }
+        value: freeTier.remaining,
+      },
     ];
-  }
+  },
 };
 
 // --- SKU OS provider: product catalog & inventory readiness ---
@@ -161,21 +186,42 @@ export const specterOnboardingSignalProvider: OnboardingSignalProvider = {
 };
 
 // --- InsightCore provider: base CNS intelligence readiness ---
+// --- InsightCore provider: base CNS intelligence readiness ---
 export const insightCoreOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'insight-core',
 
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // DB-safe placeholder signals.
-    // Later, we can derive these from canonical_orders + product signals.
-    const orderCount = 0;
-    const productCount = 0;
-    const baseSignalsReady = false;
+    // Read counts from canonical tables (DB-safe).
+    // If tables are missing or queries fail, fall back to 0 counts and baseSignalsReady=false.
+    try {
+      const ordersRow = await db('canonical_orders')
+        .where({ shop_id: shopId })
+        .count<{ count: string }>('id as count')
+        .first();
 
-    return [
-      { name: 'insightCore.orderCount', value: orderCount },
-      { name: 'insightCore.productCount', value: productCount },
-      { name: 'insightCore.baseSignalsReady', value: baseSignalsReady }
-    ];
+      const productsRow = await db('canonical_products')
+        .where({ shop_id: shopId })
+        .count<{ count: string }>('id as count')
+        .first();
+
+      const orderCount = Number(ordersRow?.count ?? 0);
+      const productCount = Number(productsRow?.count ?? 0);
+
+      const baseSignalsReady = orderCount > 0 && productCount > 0;
+
+      return [
+        { name: 'insightCore.orderCount', value: orderCount },
+        { name: 'insightCore.productCount', value: productCount },
+        { name: 'insightCore.baseSignalsReady', value: baseSignalsReady }
+      ];
+    } catch (err) {
+      // Safe fallback for environments where the schema isn't present yet.
+      return [
+        { name: 'insightCore.orderCount', value: 0 },
+        { name: 'insightCore.productCount', value: 0 },
+        { name: 'insightCore.baseSignalsReady', value: false }
+      ];
+    }
   }
 };
 

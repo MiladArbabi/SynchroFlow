@@ -194,23 +194,53 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
         }
       }
     ]
-  },
-  {
+  },{
     moduleId: 'insight-core',
-    displayName: 'Core CNS Intelligence',
+    displayName: 'Core CNS Intelligence (InsightCore)',
     requiredSignals: [
       'insightCore.orderCount',
       'insightCore.productCount',
       'insightCore.baseSignalsReady'
     ],
     tasks: [
+      // Availability task: indicates when InsightCore has minimal data to generate FT0 insights.
       {
         id: 'insight-core-base-signals',
         label: 'Collect enough orders and products for meaningful insights',
-        required: false,
+        required: false, // availability only; does not block FT0 onboarding
         completionRules: [
           { signal: 'insightCore.baseSignalsReady', expectedValue: true }
         ]
+      },
+
+      // FT0 Aha exposure: surface the Top Driver widget once base signals exist.
+      // This task is informational: considered satisfied when the base signals are ready.
+      {
+        id: 'insight-core-view-top-driver',
+        label: 'View your Top Driver insight',
+        required: false,
+        completionRules: [
+          { signal: 'insightCore.baseSignalsReady', expectedValue: true }
+        ],
+        action: {
+          type: 'navigate',
+          target: '/insights/top-driver'
+        }
+      },
+
+      // Optional: encourage merchants to explore baseline dashboards.
+      {
+        id: 'insight-core-explore-baseline',
+        label: 'Explore baseline business insights',
+        required: false,
+        completionRules: [
+          { signal: 'insightCore.orderCount', operator: 'gte', expectedValue: 1 },
+          { signal: 'insightCore.productCount', operator: 'gte', expectedValue: 1 }
+        ],
+        action: {
+          type: 'navigate',
+          target: '/insights/overview'
+        }
       }
     ]
   }

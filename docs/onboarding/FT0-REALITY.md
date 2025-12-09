@@ -3,7 +3,7 @@
 ## 📌 Purpose
 
 This document defines the **exact onboarding experience** that Lasyncro will ship for the Free Tier (FT0).  
-It is grounded in the *current production-ready capabilities* of the platform, not future plans.
+It is grounded in the **current production-ready capabilities** of the platform, not future plans.
 
 This is the **single source of truth** for onboarding behavior.
 
@@ -33,8 +33,7 @@ User installs via Shopify → OAuth → redirected automatically to:
 
 ### Required frontend behavior
 
-No signup screens. No partner-shopify page.
-
+No signup screens.
 Dashboard onboarding begins immediately (see Section 2).
 
 ---
@@ -357,10 +356,7 @@ FT0 onboarding is considered **DELIVERED** when:
    - `specter_sdk_free` entitlement is present
    - onboarding nudges are enabled
    - sync is fully complete (`COMPLETED`).
-7. Premium routes (`/analytics`, `/finances`) are:
-   - Hidden from FT0 sidenav
-   - Redirected back to `/dashboard` if accessed directly.
-8. Widgets never throw; they show loading / empty / error-safe states instead.
+7. Widgets never throw; they show loading / empty / error-safe states instead.
 
 **Explicit non-goals for FT0 v1:**
 
@@ -374,7 +370,6 @@ FT0 onboarding is considered **DELIVERED** when:
 
 Items not in FT0 but planned for later:
 
-- Business profile setup  
 - Notification preferences  
 - Multi-platform onboarding  
 - Goal-setting wizard  

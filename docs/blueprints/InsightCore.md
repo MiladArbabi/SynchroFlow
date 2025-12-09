@@ -26,34 +26,95 @@ No ad-hoc edits.
 
 ### 0.2 Mission
 
-> **InsightCore Mission (v1):**
-> Given analytics events and snapshots from **OrderNexus, MarginCore, SKU OS, Specter, ReturnNexus and other modules**, provide a **single, queryable analytics layer** and **opinionated dashboards** – **without** recomputing domain logic (profit, costs, nudges, product health, returns quality) that belongs elsewhere.
+> **InsightCore Mission (v1–v3):**
+> Make the merchant’s business *legible* by identifying the drivers behind outcomes  
+> (profit, sales, retention, stock health, refunds), quantifying their impact, and  
+> directing the merchant toward the module that owns the fix.  
+>
+> InsightCore does NOT compute domain logic.  
+> It explains the system — transforming fragmented module data into  
+> relationships, drivers, and business narratives.
+
+**v1 (FT0–FT1)**  
+InsightCore provides foundational intelligence:
+
+* Event ingestion + warehouse schema  
+* Baseline metrics (orders, products, returns, nudges, health events)  
+* Simple correlations across modules  
+* “Top Driver This Week” heuristic (lightweight, no causality)  
+* Dashboard delivery and readiness signals  
+
+**v2 (CNS Driver Engine)**  
+InsightCore becomes multivariate:
+
+* Cross-module driver weights
+* Driver ranking and contribution scoring  
+* Business fingerprinting  
+* Weekly “What Changed and Why” narratives  
+
+**v3 (Predictive CNS Cortex)**  
+InsightCore becomes forward-looking:
+
+* Scenario simulation (“what if” engine)  
+* Predictive driver shifts  
+* Intervention recommendations  
+* Closed-loop learning based on merchant actions
 
 ### 0.3 Owns vs Does Not Own
 
 **InsightCore OWNS:**
 
-* **Metric & dimension definitions**
+* **Analytics primitives that no other module may implement**
+  * Structural primitives:
+    * order_count
+    * product_count
+    * sku_breadth
+    * catalog_depth
+  * Temporal primitives:
+    * moving_average
+    * delta
+    * volatility
+    * lag
+  * Relationship primitives (v1):
+    * correlation(x, y)
+    * relative_contribution(x → outcome)
+  * Driver primitives (v2):
+    * driver_weight
+    * driver_rank
+    * driver_saturation
+    * cross_module_impact
+  * System primitives (v3):
+    * business_state_vector
+    * anomaly_score
+    * simulation_effect
 
-  * `MetricDefinition`, `DimensionDefinition` with explicit `versionId`
-  * Canonical formulas & units (e.g. `net_profit`, `margin_percent_avg`, `nudge_conversion_rate`, `return_rate`)
-* **Analytics events ingestion**
+* **Metric & dimension registry**
+  * Canonical metric definitions
+  * Canonical dimension definitions
+  * Metric versioning and lineage
 
-  * `OrderAnalyticsEvent` (from OrderNexus)
-  * Nudge analytics (from Specter)
-  * Product health analytics (from SKU OS)
-  * Cost model activation analytics (from MarginCore)
-  * Returns analytics (from ReturnNexus via `ReturnAnalyticsEvent`)
-* **Analytics data model**
+* **Analytics ingestion & normalization**
+  * Order, product health, nudges, cost model, returns
 
-  * Fact tables and dimension tables for cross-module analysis
-* **Query & dashboard APIs**
+* **Warehouse schema**
+  * fact_orders, fact_product_health, fact_nudges, fact_cost_model_events, fact_returns
+  * dim_product, dim_channel, dim_customer_tier, dim_date
 
-  * `AnalyticsQuery` → `AnalyticsQueryResult`
-  * Predefined dashboard configs (Profitability, Product Health, Cost Models, Nudges, Returns & Quality)
-* **Lineage & metric versions**
+* **Query Engine**
+  * Validates metric & dimension IDs
+  * Executes AnalyticsQuery → AnalyticsQueryResult
+  * Computes metricVersions map
 
-  * What metric version and module data each query result is based on
+* **Driver interpretation (v1 lightweight)**
+  * Identify the top correlated driver per outcome
+  * Expose “Top Driver This Week” for FT0/FT1
+
+* **Dashboard delivery**
+  * Opinionated v1 dashboards
+  * Widget configuration mapping to queries
+
+* **Readiness computation (analytics readiness only)**
+  * Base signals for data presence, freshness, and module coverage
 
 **InsightCore DOES NOT OWN:**
 
@@ -66,6 +127,55 @@ No ad-hoc edits.
 * Operational decisions (no "change price", "auto-reorder", "send email")
 
 If InsightCore starts mutating other modules' state or recomputing profit, returns, or product health, you've broken the architecture.
+
+### 0.4 Clear Path Actions (InsightCore → Action Surface)
+
+InsightCore is read-only and MUST NOT execute fixes. Its job is to map insights to the owning module and present a precise, prioritized action path (the "Clear Path") that the merchant can take.
+
+Rules:
+* InsightCore **only recommends** actions. All actions must include:
+  * targetModule: one of 'order-nexus' | 'sku-os' | 'specter' | 'return-nexus' | 'wms-lite' | 'problem-center'
+  * actionId: string (canonical action identifier owned by the target module)
+  * rationale: short human-readable explanation (1–2 sentences)
+  * urgency: 'survival' | 'growth' | 'architect'
+  * expectedImpactEstimate: optional numeric estimate (percent or absolute depending on metric)
+  * evidence: array of one-line pointers to the driver(s) and metrics that motivated the action (e.g. ['stockout_rate ↑ 32% (SKU-OS)', 'net_profit volatility ↑ (OrderNexus)'])
+
+* InsightCore must present a ranked list of recommended actions (score + urgency). Ranking is derived from driver_weight × expected_impact_estimate × confidence.
+
+* InsightCore must **not** perform the action or change state in other modules. It may only:
+  * Provide a deep link (module route) to the owning module UI with context (shopId, affectedProductIds, affectedOrders sample, timeframe).
+  * Emit an `InsightActionRecommended` event (read-only) for audit and automation consumers.
+
+* Canonical Clear Path schema (read-only contract):
+```typescript
+export interface InsightActionRecommendation {
+  id: string; // insightcore:uuid
+  shopId: number;
+  targetModule: 'order-nexus' | 'sku-os' | 'specter' | 'return-nexus' | 'wms-lite' | 'problem-center';
+  actionId: string; // e.g. 'fix_missing_cost', 'create_reorder_protect', 'review_bleed_feed'
+  title: string;
+  rationale: string;
+  urgency: 'survival' | 'growth' | 'architect';
+  expectedImpactEstimate?: number;
+  confidence: 'low' | 'medium' | 'high';
+  evidence: string[]; // human-readable short evidences
+  context: Record<string, any>; // deep-link context: { productIds?: number[], orderIds?: string[], timeframe?: {from,to} }
+  recommendedAt: string; // ISO
+}
+````
+
+* UX guidance:
+
+  * Survival-level recommendations should surface as primary CTAs in the dashboard and link the user to the owning module's remediation workflow.
+  * Growth-level recommendations are surfaced in the Growth pane and may be suggested as experiments.
+  * Architect-level recommendations are surfaced with an option to create a Problem Center task and route to WMS/Echo Hub.
+
+* Observability & audit:
+
+  * Each `InsightActionRecommendation` must be logged (immutable) and traceable to the metricVersions used when the recommendation was generated.
+
+This "Clear Path" contract makes InsightCore the CNS traffic controller — it points to the owning module, gives evidence, ranks urgency, and never mutates other modules' data.
 
 ---
 
@@ -301,26 +411,76 @@ export interface DimensionDefinition {
 
 ### 1.4 Dashboard Config Contract (Frontend & Backend)
 
-Dashboards are *configuration*, not hard-coded UI.
+Dashboards are *configuration*, not hard-coded UI. InsightCore provides a small set of canonical widget types that map directly to InsightCore primitives (v1–v3), plus a query template that the UI hydrates with shop/time/filters.
 
-```typescript
+export type WidgetKind =
+  | 'line'
+  | 'bar'
+  | 'stacked_bar'
+  | 'pie'
+  | 'table'
+  | 'scatter'
+  | 'funnel'
+  // InsightCore-specific semantic widgets:
+  | 'business_baseline'    // small summary cards for counts & freshness
+  | 'top_driver'           // single highlighted driver (FT0 Aha)
+  | 'correlation_panel'    // 3-7 strongest bivariate correlations
+  | 'causal_graph'         // v2: directed dependency graph (read-only)
+  | 'driver_ranking'       // v2: multivariate driver ranking
+  | 'storyboard'           // v2: narrative "what changed and why"
+  | 'simulator'            // v3: intervention simulator (read-only config)
+
 export interface DashboardWidgetConfig {
   id: string;                  // 'profit_time_series', 'returns_by_reason'
-  type: 'line' | 'bar' | 'stacked_bar' | 'pie' | 'table' | 'scatter' | 'funnel';
+  kind: WidgetKind;
   title: string;
   description?: string;
-  query: AnalyticsQuery;       // template; UI fills timeRange/filters/shopId
-  // For funnels and derived charts, UI may apply post-processing.
+
+  // AnalyticsQuery is a template; UI fills timeRange/filters/shopId etc.
+  query?: AnalyticsQuery;
+
+  // Semantic widget extras (optional and widget-specific)
+  // For 'top_driver' widgets: which outcome metric to explain (e.g. 'revenue_total', 'net_profit')
+  outcomeMetric?: string;
+
+  // For 'top_driver' or 'driver_ranking' widgets: top N to return (default 3)
+  topN?: number;
+
+  // For 'correlation_panel': max correlations to show (default 5)
+  correlationLimit?: number;
+
+  // For 'business_baseline': list of primitives to surface (e.g. ['order_count','product_count'])
+  primitives?: string[];
+
+  // For 'simulator': list of allowed levers and constraints (read-only)
+  simulatorSpec?: Record<string, any>;
+
+  // Presentation hints (UI-only; cannot change semantics)
+  display?: {
+    chartType?: 'line' | 'bar' | 'table' | 'bigNumber';
+    emphasize?: boolean;
+  };
+
+  // Whether the widget requires special module presence to be meaningful.
+  requiredModules?: Array<'order-nexus' | 'margincore' | 'specter' | 'sku-os' | 'return-nexus'>;
 }
 
 export interface DashboardConfig {
   id: string;                  // 'profitability_overview', 'returns_and_quality_overview'
   name: string;
-  description: string;
+  description?: string;
   requiredModules: Array<'order-nexus' | 'margincore' | 'specter' | 'sku-os' | 'return-nexus'>;
   widgets: DashboardWidgetConfig[];
 }
+
+Notes / Rules:
+* The 'top_driver' widget is the FT0 Aha and must compute a single driver using InsightCore's lightweight v1 heuristic (lag-correlation × contribution magnitude) when used in FT0 dashboards.
+* Widgets are configuration only. Any widget that requires post-processing (driver ranking, causal graph, simulator) must be implemented as read-only transformations on AnalyticsQuery results or separate read endpoints on InsightCore; they must NOT reimplement upstream domain logic.
+* DashboardConfig objects are versioned and immutable once published for a given versionId; changes require a new version.
+* UIs may disable widgets if the shop's Module Readiness indicates missing required modules.
 ```
+
+---
 
 ### 1.5 Backward-Compatibility Note – Returns & Quality Analytics
 
@@ -801,6 +961,64 @@ export const INSIGHT_CORE_SLAS = {
 };
 ```
 
+### 6.1 Closed Loop & Continuous Learning (InsightCore)
+
+InsightCore is not a passive read-only store — v2+ must measure whether the Clear Path recommendations changed outcomes and use that signal to improve driver weights, confidence, and future recommendations.
+
+Rules and contracts:
+
+* InsightCore emits `InsightActionRecommended` events (read-only) when recommendations are created (see 0.4 Clear Path Actions).
+* Consumers (module UIs, merchant interactions) must emit back an `InsightActionOutcome` event to inform InsightCore whether the recommended action was executed, partially executed, or ignored, and any observed short-term outcome.
+
+Canonical `InsightActionOutcome` (read-only contract):
+```typescript
+export type InsightActionOutcomeStatus = 'executed' | 'partially_executed' | 'ignored' | 'failed';
+
+export interface InsightActionOutcome {
+  recommendationId: string; // InsightActionRecommendation.id
+  shopId: number;
+  reportedByModule?: 'order-nexus' | 'sku-os' | 'specter' | 'return-nexus' | 'wms-lite' | 'ui';
+  status: InsightActionOutcomeStatus;
+  executedAt?: string; // ISO
+  outcomeSummary?: string; // human short summary
+  measuredMetricDeltas?: Record<string, number>; // e.g. { "net_profit": -12.3, "stockout_rate": -0.12 }
+  evidenceWindow?: { from: string; to: string }; // timeframe used for measuredMetricDeltas
+  reportedAt: string; // ISO
+}
+````
+
+* **Measurement contract**: InsightCore must evaluate `measuredMetricDeltas` against the driver and outcome that motivated the recommendation. It must store:
+
+  * preWindow and postWindow snapshots for the outcome metric(s), anchored to `evidenceWindow`.
+  * the delta and percent-change with ingestion timestamps.
+
+* **Attribution rules (v1 lightweight)**:
+
+  * Attribution is built on time-windowed comparison + simple heuristics (e.g. trend reversal within X days). No causal engine required in v1.
+  * InsightCore must store attribution confidence: 'low'|'medium'|'high'.
+
+* **Learning update (v2)**:
+
+  * InsightCore updates `driver_weight` and `confidence` for features when consistent `InsightActionOutcome` evidence is received across multiple shops or repeated experiments within the same shop.
+  * Learning updates must be versioned and auditable (metricDefinition.versionId changes).
+
+* **Data flow & privacy**:
+
+  * `InsightActionOutcome` events are optional. If not provided, InsightCore still measures using raw events it ingests (orders, nudges, returns, product health) but attribution confidence will be lower.
+  * InsightCore must never request or persist PCD. Any context in `InsightActionOutcome.context` must exclude raw customer identifiers.
+
+* **Observability**:
+
+  * Track counts: `insightcore.recommendations_issued_total`, `insightcore.recommendation_outcomes_reported_total`, `insightcore.recommendation_success_rate`.
+  * Track time-to-outcome: histogram `insightcore.time_to_outcome_ms`.
+
+* **UX & audit**:
+
+  * Each recommendation and its outcome must be discoverable in a read-only audit trail (immutable).
+  * UI must surface whether a recommendation has an outcome reported, the measured delta, and attribution confidence.
+
+This Closed Loop contract ensures InsightCore becomes a learning cortex: it issues evidence-driven recommendations, measures actual outcomes, and uses those measurements (with conservative heuristics v1 → robust updates v2) to tighten driver estimates and improve future recommendations.
+
 ---
 
 ## 7. Phase 1 Scope (What v1 Actually Includes)
@@ -1021,6 +1239,7 @@ At minimum, the following task predicates must be derivable:
   * AND `InsightCoreReadiness.hasOrderAnalytics = true`
 
 *Recommended UX:*
+
 * In `'LEARNING'`: show a chip like "Warming up – limited history".
 * In `'READY'`: mark step as Done.
 * In `'DEGRADED'`: mark step as Done but show a warning icon with "Data stale".
