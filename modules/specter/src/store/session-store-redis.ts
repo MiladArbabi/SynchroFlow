@@ -298,35 +298,171 @@ export class RedisSessionStore implements SessionStore {
     }
   }
 
-  /** Utility to reset the store (helpful in tests) */
-  async reset(): Promise<void> {
-    // clear memory snapshots
-    this.snapshot.clear();
-    this.eventsSnapshot.clear();
-    if ((this as any).configsSnapshot) (this as any).configsSnapshot.clear();
 
-    // best-effort delete redis keys (do not await here — keep method sync as per interface).
-    if (this.client && this.connected) {
-      // capture client in local variable to avoid 'this' nullability issues inside async IIFE
-      const client = this.client as any;
-      try {
-        const iterSessions = client.scanIterator({ MATCH: 'specter:shop:*:sessions', COUNT: 100 });
-        const iterEvents = client.scanIterator({ MATCH: 'specter:shop:*:events', COUNT: 100 });
-        const iterConfigs = client.scanIterator({ MATCH: 'specter:shop:*:config', COUNT: 100 });
-
-        const keys: string[] = [];
-        for await (const k of iterSessions) keys.push(k as string);
-        for await (const k of iterEvents) keys.push(k as string);
-        for await (const k of iterConfigs) keys.push(k as string);
-
-        if (keys.length) {
-          await client.del(...keys);
-          log.info('specter:redis-session-store reset: removed keys', keys.length);
-        }
-      } catch (e: any) {
-        log.warn('specter:redis-session-store reset: redis cleanup failed', e && e.message ? e.message : e);
-      }
+  /** Utility to reset the store (helpful in tests)
+   *
+   * Notes:
+   * - This starts a non-blocking, best-effort cleanup job and returns immediately.
+   * - Deletion is done in small batches to avoid argument-count limits.
+   * - Tries UNLINK, falls back to DEL, falls back to sending raw commands, and finally deletes one-by-one.
+   */
+    async reset(): Promise<void> {
+    // synchronous snapshot clears
+    try { this.snapshot.clear(); } catch (_) {}
+    try { this.eventsSnapshot.clear(); } catch (_) {}
+    if ((this as any).configsSnapshot) {
+      try { (this as any).configsSnapshot.clear(); } catch (_) {}
     }
+
+    if (!this.client || !this.connected) {
+      log.debug('specter:redis-session-store reset: no redis client or not connected, skipped redis cleanup');
+      return;
+    }
+
+    (async () => {
+      const client: any = this.client;
+      const patterns = [
+        'specter:shop:*:sessions',
+        'specter:shop:*:events',
+        'specter:shop:*:config'
+      ];
+
+      const collected = new Set<string>();
+      try {
+        // collect keys
+        for (const pattern of patterns) {
+          try {
+            if (typeof client.scanIterator === 'function') {
+              for await (const k of client.scanIterator({ MATCH: pattern, COUNT: 1000 })) {
+                if (typeof k === 'string' && k) collected.add(k);
+              }
+            } else if (typeof client.scan === 'function') {
+              let cursor = '0';
+              do {
+                const res = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 1000);
+                if (!res) break;
+                if (Array.isArray(res) && res.length >= 2) {
+                  cursor = String(res[0]);
+                  const keys = Array.isArray(res[1]) ? res[1] : [];
+                  for (const k of keys) if (typeof k === 'string' && k) collected.add(k);
+                } else break;
+              } while (cursor !== '0');
+            } else {
+              log.debug('specter:redis-session-store reset: client has no scan/scanIterator, skipping', pattern);
+            }
+          } catch (scanErr: any) {
+            log.warn('specter:redis-session-store reset: scan failed for pattern', pattern, scanErr && scanErr.stack ? scanErr.stack : scanErr);
+          }
+        }
+
+        const allKeys = Array.from(collected).filter(Boolean);
+        if (allKeys.length === 0) {
+          log.debug('specter:redis-session-store reset: no redis keys found to remove');
+          return;
+        }
+
+        const CHUNK_SIZE = 200;
+        let totalRemoved = 0;
+
+        for (let i = 0; i < allKeys.length; i += CHUNK_SIZE) {
+          const chunk = allKeys.slice(i, i + CHUNK_SIZE);
+          const safeChunk = chunk.map(k => (typeof k === 'string' ? k : String(k))).filter(Boolean);
+          if (safeChunk.length === 0) continue;
+
+          // log pre-delete diagnostic (cap sample keys to avoid huge logs)
+          const sample = safeChunk.slice(0, 6);
+          log.debug('specter:redis-session-store reset: attempting chunk delete', { chunkIdx: (i / CHUNK_SIZE), chunkLen: safeChunk.length, sample });
+
+          let chunkDeleted = false;
+          // helper to mark and log errors
+          const handleDeleteError = (method: string, err: any) => {
+            const msg = err && err.message ? err.message : String(err);
+            log.warn('specter:redis-session-store reset: chunk delete failed', { method, chunkLen: safeChunk.length, error: msg, stack: err && err.stack ? err.stack : undefined });
+          };
+
+          // Try UNLINK -> DEL -> sendCommand
+          try {
+            if (typeof client.unlink === 'function') {
+              try {
+                await client.unlink(...safeChunk);
+              } catch (e1) {
+                // some clients insist on array argument
+                try { await client.unlink(safeChunk); } catch (e2) { throw e1; }
+              }
+              log.debug('specter:redis-session-store reset: chunk removed via UNLINK', { chunkLen: safeChunk.length });
+              chunkDeleted = true;
+            } else if (typeof client.del === 'function') {
+              try {
+                await client.del(...safeChunk);
+              } catch (e1) {
+                try { await client.del(safeChunk); } catch (e2) { throw e1; }
+              }
+              log.debug('specter:redis-session-store reset: chunk removed via DEL', { chunkLen: safeChunk.length });
+              chunkDeleted = true;
+            } else if (typeof client.sendCommand === 'function') {
+              // low-level raw send
+              try {
+                await client.sendCommand(['UNLINK', ...safeChunk]);
+                log.debug('specter:redis-session-store reset: chunk removed via sendCommand UNLINK', { chunkLen: safeChunk.length });
+                chunkDeleted = true;
+              } catch (eCmd) {
+                try {
+                  await client.sendCommand(['DEL', ...safeChunk]);
+                  log.debug('specter:redis-session-store reset: chunk removed via sendCommand DEL', { chunkLen: safeChunk.length });
+                  chunkDeleted = true;
+                } catch (eCmd2) {
+                  throw eCmd2;
+                }
+              }
+            }
+          } catch (chunkErr: any) {
+            handleDeleteError('bulk-delete', chunkErr);
+            // If the error text matches the specific 'wrong number of arguments' server error,
+            // we will immediately fall back to per-key deletion for this chunk.
+            const errMsg = chunkErr && chunkErr.message ? chunkErr.message : '';
+            if (errMsg.includes('wrong number of arguments')) {
+              log.warn('specter:redis-session-store reset: detected wrong number of args error -> falling back to per-key deletion for this chunk', { sample });
+            } else {
+              log.warn('specter:redis-session-store reset: bulk delete failed, falling back to per-key deletion', { sample });
+            }
+          }
+
+          if (chunkDeleted) {
+            totalRemoved += safeChunk.length;
+            continue;
+          }
+
+          // per-key deletion fallback (isolates malformed keys)
+          for (const key of safeChunk) {
+            try {
+              if (typeof client.unlink === 'function') {
+                try { await client.unlink(key); } catch (_) { await client.del(key); }
+              } else if (typeof client.del === 'function') {
+                try { await client.del(key); } catch (_) {
+                  if (typeof client.sendCommand === 'function') await client.sendCommand(['DEL', key]);
+                }
+              } else if (typeof client.sendCommand === 'function') {
+                await client.sendCommand(['DEL', key]);
+              } else {
+                log.warn('specter:redis-session-store reset: no deletion method found for key', key);
+              }
+              totalRemoved++;
+            } catch (perKeyErr: any) {
+              const perMsg = perKeyErr && perKeyErr.message ? perKeyErr.message : String(perKeyErr);
+              log.warn('specter:redis-session-store reset: failed to delete key', { key, error: perMsg, stack: perKeyErr && perKeyErr.stack ? perKeyErr.stack : undefined });
+            }
+          }
+        } // end chunk loop
+
+        log.info('specter:redis-session-store reset: finished redis cleanup', { requested: allKeys.length, removed: totalRemoved });
+      } catch (outerErr: any) {
+        log.warn('specter:redis-session-store reset: unexpected error in cleanup job', outerErr && outerErr.stack ? outerErr.stack : outerErr);
+      }
+    })().catch(e => {
+      log.warn('specter:redis-session-store reset: cleanup job crashed', e && e.stack ? e.stack : e);
+    });
+
+    return;
   }
 }
 

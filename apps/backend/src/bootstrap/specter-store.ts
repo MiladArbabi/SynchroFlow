@@ -1,6 +1,6 @@
 // apps/backend/src/bootstrap/specter-store.ts
 // Thin wrapper around the modules/specter session-store so the server bootstrap can call init/close
-import { initRedisSessionStore as initImpl, closeRedisSessionStore as closeImpl } from '../../../../modules/specter/src/store/session-store-redis';
+import { initRedisSessionStore as initImpl, closeRedisSessionStore as closeImpl } from 'modules-specter/store/session-store-redis';
 
 let instance: any = null;
 

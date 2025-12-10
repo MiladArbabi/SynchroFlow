@@ -85,20 +85,50 @@ const serverDir = path.dirname(serverEntry);
 const tsConfigBase = serverDir;
 
 // Register tsconfig-paths to map runtime aliases to compiled outputs.
-require('tsconfig-paths').register({
-  baseUrl: tsConfigBase,
-  paths: {
-    "api-server": [path.resolve(tsConfigBase, 'server.js')],
-    "api-db": [path.resolve(tsConfigBase, 'db.js')],
-    "api-types": [path.resolve(tsConfigBase, 'types.js')],
-    "api-src/*": [path.resolve(tsConfigBase, '*')],
+// Strategy:
+// 1) Prefer `tsconfig-paths/register` (simple, uses tsconfig.json automatically).
+// 2) If not available, fall back to programmatic registration via `tsconfig-paths`.
+// 3) If neither is available, continue without fatal error (best-effort).
+(function registerTsConfigPaths() {
+  try {
+    // Fast path: let tsconfig-paths handle everything.
+    require('tsconfig-paths/register');
+    console.log('[node-start] tsconfig-paths/register loaded');
+    return;
+  } catch (_) {
+    // ignore - try programmatic registration below
+  }
 
-    // IMPORTANT: point to shared DIST, not src
-    "@lasyncro/shared": [path.resolve(__dirname, '../../../modules/shared/dist/index.js')],
-    "@lasyncro/shared/*": [path.resolve(__dirname, '../../../modules/shared/dist/*')],
-    "modules-specter/*": [path.resolve(__dirname, '../../../modules/specter/dist/*')]
-  },
-});
+  try {
+    const tsp = require('tsconfig-paths');
+
+    const mappedPaths = {
+      // runtime module IDs -> compiled artifacts
+      "api-server": [path.resolve(tsConfigBase, 'server.js')],
+      "api-db": [path.resolve(tsConfigBase, 'db.js')],
+      "api-types": [path.resolve(tsConfigBase, 'types.js')],
+      "api-src/*": [path.resolve(tsConfigBase, '*')],
+
+      // prefer compiled packages under modules/*/dist
+      "@lasyncro/shared": [path.resolve(__dirname, '../../../modules/shared/dist/index.js')],
+      "@lasyncro/shared/*": [path.resolve(__dirname, '../../../modules/shared/dist/*')],
+
+      // specter compiled outputs
+      "modules-specter/*": [path.resolve(__dirname, '../../../modules/specter/dist/*')],
+      "modules-specter": [path.resolve(__dirname, '../../../modules/specter/dist/index.js')]
+    };
+
+    tsp.register({
+      baseUrl: tsConfigBase,
+      paths: mappedPaths
+    });
+
+    console.log('[node-start] tsconfig-paths registered programmatically (base:', tsConfigBase + ')');
+  } catch (err) {
+    // Non-fatal: log and continue — runtime imports may still resolve via relative requires.
+    console.warn('[node-start] tsconfig-paths not available; continuing without runtime alias registration:', err && err.message ? err.message : err);
+  }
+})();
 
 // require compiled server module
 // Ensure compiled code can find a knexfile at a relative path it expects.

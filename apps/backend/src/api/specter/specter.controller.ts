@@ -82,18 +82,18 @@ export const getSpecterState = async (req: Request, res: Response) => {
     let getRecentEventsFn: ((shopId: number, limit?: number) => Promise<any[]>) | undefined;
 
         const candidates = [
-      // project alias (if present in tsconfig / runtime)
-      'modules-specter/store/session-store',
-      // relative path from this controller to project-root/modules (4 ups) — matches many test mocks
-      path.resolve(__dirname, '../../../../modules/specter/src/store/session-store'),
-      // project-root absolute path (this should match jest.doMock('../../../modules/specter/src/...') resolution)
-      path.resolve(process.cwd(), 'modules/specter/src/store/session-store'),
-      // dist path (in case tests / runtime import compiled files)
-      path.resolve(process.cwd(), 'modules/specter/dist/store/session-store'),
-      // other relative fallbacks (3-up and 5-up)
-      path.resolve(__dirname, '../../../modules/specter/src/store/session-store'),
-      path.resolve(__dirname, '../../../../../modules/specter/src/store/session-store')
-    ];
+          // project alias (if present in tsconfig / runtime)
+          'modules-specter/store/session-store',
+          // relative path from this controller to project-root/modules (4 ups) — matches many test mocks
+          path.resolve(__dirname, '../../../../modules/specter/src/store/session-store'),
+          // project-root absolute path (this should match jest.doMock('../../../modules/specter/src/...') resolution)
+          path.resolve(process.cwd(), 'modules/specter/src/store/session-store'),
+          // dist path (in case tests / runtime import compiled files)
+          path.resolve(process.cwd(), 'modules/specter/dist/store/session-store'),
+          // other relative fallbacks (3-up and 5-up)
+          path.resolve(__dirname, '../../../modules/specter/src/store/session-store'),
+          path.resolve(__dirname, '../../../../../modules/specter/src/store/session-store')
+        ];
 
     for (const candidate of candidates) {
      if (!candidate) continue;
