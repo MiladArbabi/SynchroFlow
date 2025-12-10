@@ -26,6 +26,11 @@ module.exports = {
         '^@lasyncro/shared/(.*)$': '<rootDir>/modules/shared/src/$1',
         '^@lasyncro/shared$': '<rootDir>/modules/shared/src',
         '^shared-src$': '<rootDir>/modules/shared/src',
+
+        // Specter module alias (resolve imports like 'modules-specter/...'
+        // to the source files so tests don't require brittle relative paths)
+        '^modules-specter/(.*)$': '<rootDir>/modules/specter/src/$1',
+        '^modules-specter$': '<rootDir>/modules/specter/src/index.ts',
       },
     },
     // Configuration for the frontend package

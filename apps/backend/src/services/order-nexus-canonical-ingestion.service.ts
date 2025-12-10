@@ -1,7 +1,7 @@
 // apps/backend/src/services/order-nexus-canonical-ingestion.service.ts
 import db from 'api-src/db';
 import { getQueueChannel } from 'api-src/queue';
-import { appendEvent } from 'modules-specter/store/session-store';
+import { appendEvent } from '../../../../modules/specter/src/store/session-store';
 
 interface CanonicalOrderRow {
   id: string;
@@ -124,23 +124,28 @@ export class OrderNexusCanonicalIngestionService {
     };
 
     // Record canonical ingestion event in Specter (best-effort)
-    try {
-      await appendEvent(orderRow.shop_id, {
-        type: 'canonical.ingested',
-        canonicalOrderId: orderRow.id,
-        timestamp: Date.now(),
-        payload: { topic: msg.topic }
-      });
-    } catch (e: any) {
-      // Do not block ingestion on Specter failures — log and continue
-      // eslint-disable-next-line no-console
-      console.warn('[order-nexus-canonical-ingestion] specter appendEvent failed:', e && e.message ? e.message : e);
-    }
-
+    // Enqueue to OrderNexus immediately (critical path)
     this.channel.sendToQueue(
       this.queueName,
       Buffer.from(JSON.stringify(msg))
     );
+
+    // FT0: best-effort, non-blocking specter event — record that a canonical order was enqueued/ingested.
+    // Keep this non-fatal: failures to write Specter events should not break or delay ingestion flow.
+    (async () => {
+      try {
+        await appendEvent(orderRow.shop_id, {
+          type: 'canonical.ingested',
+          canonicalOrderId: orderRow.id,
+          timestamp: Date.now(),
+          payload: { topic: msg.topic }
+        });
+      } catch (e: any) {
+        // Log and move on — do not throw
+        // eslint-disable-next-line no-console
+        console.warn('[order-nexus-canonical-ingestion] specter appendEvent failed:', e && e.message ? e.message : e);
+      }
+    })();
   }
 }
 
