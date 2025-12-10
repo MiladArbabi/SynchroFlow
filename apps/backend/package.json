@@ -2,6 +2,7 @@
   "name": "api",
   "version": "1.0.0",
   "scripts": {
+    "prebuild": "npm --prefix ../.. run build:deps",
     "build": "tsc --project tsconfig.json",
     "start": "node ./scripts/node-start.js",
     "dev": "nodemon --watch src --ext ts --exec \"npm run build && node ./scripts/node-start.js\"",
