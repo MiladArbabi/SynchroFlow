@@ -91,12 +91,14 @@ const tsConfigBase = serverDir;
 // 3) If neither is available, continue without fatal error (best-effort).
 (function registerTsConfigPaths() {
   try {
-    // Fast path: let tsconfig-paths handle everything.
-    require('tsconfig-paths/register');
-    console.log('[node-start] tsconfig-paths/register loaded');
-    return;
+    // Intentionally avoid blindly using tsconfig-paths/register fast-path here.
+    // Instead we register programmatic mappings that prefer compiled `modules/*/dist`
+    // at runtime (so Node requires JS), while TypeScript compilation can still
+    // prefer source `modules/*/src` for types when building.
+    // We still fall back to `tsconfig-paths/register` if programmatic registration fails.
+    // (This prevents runtime mapping from accidentally resolving to .ts source files.)
   } catch (_) {
-    // ignore - try programmatic registration below
+    // ignore - proceed to programmatic registration below
   }
 
   try {
@@ -123,7 +125,7 @@ const tsConfigBase = serverDir;
       paths: mappedPaths
     });
 
-    console.log('[node-start] tsconfig-paths registered programmatically (base:', tsConfigBase + ')');
+    console.log('[node-start] programmatic tsconfig-paths registration complete (runtime -> modules/*/dist)');
   } catch (err) {
     // Non-fatal: log and continue — runtime imports may still resolve via relative requires.
     console.warn('[node-start] tsconfig-paths not available; continuing without runtime alias registration:', err && err.message ? err.message : err);

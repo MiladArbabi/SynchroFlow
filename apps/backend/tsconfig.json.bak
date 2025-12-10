@@ -23,9 +23,9 @@
       "modules-specter/*": ["modules/specter/src/*"],
       "modules-specter": ["modules/specter/src/index.ts"],
 
-      /* shared package (prefer source for type-checking, fallback to dist for runtime) */
-      "@lasyncro/shared/*": ["modules/shared/src/*", "modules/shared/dist/*"],
-      "@lasyncro/shared": ["modules/shared/src/index.ts", "modules/shared/dist/index.js"]
+      /* shared package (point to src for type-checking during development) */
+      "@lasyncro/shared/*": ["modules/shared/dist/*", "modules/shared/src/*"],
+      "@lasyncro/shared": ["modules/shared/dist/index.js", "modules/shared/src/index.ts"]
     },
     "sourceMap": true,
     "declaration": false,
