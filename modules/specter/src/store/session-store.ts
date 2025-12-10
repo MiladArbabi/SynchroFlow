@@ -11,12 +11,25 @@ export interface AnonymousSession {
   [k: string]: any;
 }
 
+/** Event payload stored in the Specter event ledger */
+export interface SpecterEvent {
+  type: string;
+  timestamp?: number;
+  payload?: Record<string, any>;
+  [k: string]: any;
+}
+
 /** SessionStore interface (explicit) */
 export interface SessionStore {
+  /* --- sessions --- */
   saveSession(session: AnonymousSession): Promise<string>;
   getAllSessionsForShop(shopId: number): AnonymousSession[];
   getSessionsLastNDays(shopId: number, days?: number): Promise<AnonymousSession[]>;
   reset(): void;
+
+  /* --- event ledger (optional) --- */
+  appendEvent?(shopId: number, event: SpecterEvent): Promise<void> | void;
+  getRecentEvents?(shopId: number, limit?: number): Promise<SpecterEvent[]>;
 }
 
 /** In-memory session store used for tests and simple dev setups.
@@ -24,6 +37,12 @@ export interface SessionStore {
  */
 export class InMemorySessionStore implements SessionStore {
   private sessions: AnonymousSession[] = [];
+  // in-memory event ledger (new) — newest-first array per shopId
+  private events: Map<number, SpecterEvent[]> = new Map();
+  private eventListMaxLen = 50;
+
+  // in-memory config cache (FT0) — simple per-shop object storage
+  private configs: Map<number, any> = new Map();
 
   constructor(initial?: AnonymousSession[]) {
     if (Array.isArray(initial)) this.sessions = initial.slice();
@@ -51,9 +70,72 @@ export class InMemorySessionStore implements SessionStore {
     });
   }
 
+  /* ------------------------
+   * Event ledger (in-memory)
+   * ------------------------ */
+
+  async appendEvent(shopId: number, event: SpecterEvent): Promise<void> {
+    const id = Number(shopId);
+    const arr = this.events.get(id) || [];
+    const ev: SpecterEvent = { timestamp: event.timestamp || Date.now(), ...event };
+    // newest-first
+    arr.unshift(ev);
+    if (this.eventListMaxLen > 0 && arr.length > this.eventListMaxLen) {
+      arr.length = this.eventListMaxLen;
+    }
+    this.events.set(id, arr);
+  }
+
+  async getRecentEvents(shopId: number, limit = 50): Promise<SpecterEvent[]> {
+    const id = Number(shopId);
+    const arr = this.events.get(id) || [];
+    return arr.slice(0, limit);
+  }
+
+  /* ------------------------
+   * Config cache (in-memory)
+   * ------------------------ */
+
+  /** Read shop config (may return null if absent) */
+  async getShopConfig(shopId: number): Promise<any | null> {
+    const id = Number(shopId);
+    return this.configs.has(id) ? this.configs.get(id) : null;
+  }
+
+  /** Update/patch shop config. If patch is not an object, replace. Returns the new config. */
+  async updateShopConfig(shopId: number, patch: any): Promise<any> {
+    const id = Number(shopId);
+    const existing = this.configs.get(id) ?? null;
+    let updated: any;
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+      // replace entirely
+      updated = patch;
+    } else if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      // replace with a non-object
+      updated = patch;
+    } else {
+      // shallow merge patch into existing
+      updated = { ...existing, ...patch };
+    }
+    this.configs.set(id, updated);
+    return updated;
+  }
+
+  /** Warm the in-memory cache for a shop (accepts full config object) */
+  async warmCache(shopId: number, config: any): Promise<void> {
+    const id = Number(shopId);
+    if (config === null || typeof config === 'undefined') {
+      this.configs.delete(id);
+    } else {
+      this.configs.set(id, config);
+    }
+  }
+
   /** Utility to reset the store (helpful in tests) */
   reset(): void {
     this.sessions = [];
+    this.events.clear();
+    this.configs.clear();
   }
 
   /** Backwards-compatible helper name used by tests/helpers */
@@ -61,7 +143,7 @@ export class InMemorySessionStore implements SessionStore {
     // delegate to reset() so behavior stays in one place
     this.reset();
   }
-}
+};
 
 // ----------------------------
 // Production factory & test override
@@ -104,6 +186,81 @@ export function createSessionStore(): SessionStore {
 /** Convenience: current singleton store used by ingestion code */
 export const sessionStore: SessionStore = createSessionStore();
 
+/** Top-level FT0 helpers (lightweight wrappers around the store) */
+
+/**
+ * recordShopSession(shopId, data)
+ * Thin wrapper to keep existing saveSession semantics but provide stable FT0 name.
+ */
+export async function recordShopSession(shopId: number, data: AnonymousSession): Promise<string> {
+  const s = { ...data, shopId: Number(shopId) };
+  if (!s.sessionId) s.sessionId = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+  // delegate to runtime store
+  // @ts-ignore
+  if (typeof (sessionStore as any).saveSession === 'function') {
+    // @ts-ignore
+    return await (sessionStore as any).saveSession(s);
+  }
+  return Promise.resolve(s.sessionId);
+}
+
+/** getShopSession(shopId) — return the most recent session or null */
+export async function getShopSession(shopId: number): Promise<AnonymousSession | null> {
+  const sessions = sessionStore.getAllSessionsForShop(Number(shopId)) || [];
+  if (sessions.length === 0) return null;
+  return sessions[sessions.length - 1] || null;
+}
+
+/** appendEvent(shopId, event) — delegate to store if supported */
+export async function appendEvent(shopId: number, event: SpecterEvent): Promise<void> {
+  // @ts-ignore
+  if (typeof (sessionStore as any).appendEvent === 'function') {
+    // @ts-ignore
+    return await (sessionStore as any).appendEvent(Number(shopId), event);
+  }
+  return Promise.resolve();
+}
+
+/** getRecentEvents(shopId, limit) — delegate to store if supported */
+export async function getRecentEvents(shopId: number, limit = 50): Promise<SpecterEvent[]> {
+  // @ts-ignore
+  if (typeof (sessionStore as any).getRecentEvents === 'function') {
+    // @ts-ignore
+    return await (sessionStore as any).getRecentEvents(Number(shopId), limit);
+  }
+  return [];
+}
+
+/** getShopConfig(shopId) — delegate to store if supported */
+export async function getShopConfig(shopId: number): Promise<any | null> {
+  // @ts-ignore
+  if (typeof (sessionStore as any).getShopConfig === 'function') {
+    // @ts-ignore
+    return await (sessionStore as any).getShopConfig(Number(shopId));
+  }
+  return null;
+}
+
+/** updateShopConfig(shopId, patch) — delegate to store if supported */
+export async function updateShopConfig(shopId: number, patch: any): Promise<any | null> {
+  // @ts-ignore
+  if (typeof (sessionStore as any).updateShopConfig === 'function') {
+    // @ts-ignore
+    return await (sessionStore as any).updateShopConfig(Number(shopId), patch);
+  }
+  return null;
+}
+
+/** warmCache(shopId, config) — delegate to store if supported */
+export async function warmCache(shopId: number, config: any): Promise<void> {
+  // @ts-ignore
+  if (typeof (sessionStore as any).warmCache === 'function') {
+    // @ts-ignore
+    return await (sessionStore as any).warmCache(Number(shopId), config);
+  }
+  return Promise.resolve();
+}
+
 /** Test helper: override the runtime store (useful in tests) */
 export function setSessionStoreForTests(store: SessionStore | null) {
   _overriddenStore = store;
@@ -117,13 +274,22 @@ declare const module: any;
 if (typeof module !== 'undefined' && module.exports) {
   // preserve existing module.exports shape while ensuring default & named props exist
   try {
-    module.exports = {
+        module.exports = {
       default: sessionStore,
       InMemorySessionStore,
       // also export interface-friendly named bindings for CJS consumers
       sessionStore,
       createSessionStore,
-      setSessionStoreForTests
+      setSessionStoreForTests,
+      // FT0 helpers
+      recordShopSession,
+      getShopSession,
+      appendEvent,
+      getRecentEvents,
+      // FT0 config helpers
+      getShopConfig,
+      updateShopConfig,
+      warmCache
     };
   } catch (e) {
     // defensive: do nothing if environment prevents assignment

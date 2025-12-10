@@ -1,15 +1,12 @@
 // tests/unit/api/worker-canonical-ingestion.test.ts
 
 /**
- * Goal (RED):
+ * 
  * When processMessage consumes a staged Shopify order event,
  * it MUST persist the canonical order via CanonicalCommerceIngestionService.
  *
  * This will fail initially because worker.ts does not yet call the service.
  */
-
-// ❌ REMOVE the import!
-// import { processMessage } from 'api-src/worker';
 
 // ---- Mocks ----
 
