@@ -19,6 +19,9 @@ import shopifyRoutes from '../api/shopify/shopify.routes';
 import onboardingReadinessRouter from '../onboarding/readiness.router';
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
 
+// Specter routes (FT0)
+import specterRouter from '../api/specter/specter.routes';
+
 export function createApp(): Express {
   const app = express();
   app.use(express.json());
@@ -62,6 +65,9 @@ export function createApp(): Express {
   app.use('/api/v1/user-state', userStateRoutes);
   app.use('/api/v1/shopify', shopifyRoutes);
   app.use('/api/v1/onboarding', onboardingReadinessRouter);
+
+  // Mount Specter FT0 routes under /api/v1/specter
+  app.use('/api/v1/specter', specterRouter);
 
   app.get('/api/v1/entitlements/me', getMyEntitlements);
 

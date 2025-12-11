@@ -1,7 +1,7 @@
 // apps/backend/src/services/order-nexus-canonical-ingestion.service.ts
 import db from 'api-src/db';
 import { getQueueChannel } from 'api-src/queue';
-import { appendEvent } from '../../../../modules/specter/src/store/session-store';
+import { appendEvent, recordShopSession } from 'modules-specter/store/session-store';
 
 interface CanonicalOrderRow {
   id: string;
@@ -130,7 +130,8 @@ export class OrderNexusCanonicalIngestionService {
       Buffer.from(JSON.stringify(msg))
     );
 
-    // FT0: best-effort, non-blocking specter event — record that a canonical order was enqueued/ingested.
+  
+  // FT0: best-effort, non-blocking specter event — record that a canonical order was enqueued/ingested.
     // Keep this non-fatal: failures to write Specter events should not break or delay ingestion flow.
     (async () => {
       try {
@@ -140,6 +141,22 @@ export class OrderNexusCanonicalIngestionService {
           timestamp: Date.now(),
           payload: { topic: msg.topic }
         });
+
+        // Also update a lightweight shop session record so Specter has lastIngestion metadata.
+        // Use recordShopSession as a best-effort shallow session write (non-blocking).
+        try {
+          await recordShopSession(orderRow.shop_id, {
+            // minimal session shape — recordShopSession will fill sessionId/shopId if missing
+            createdAt: new Date().toISOString(),
+            exitIntent: false,
+            lastIngestion: Date.now()
+          } as any);
+        } catch (innerErr: any) {
+          // non-fatal — log and continue
+          // eslint-disable-next-line no-console
+          console.warn('[order-nexus-canonical-ingestion] specter recordShopSession(lastIngestion) failed:', innerErr && innerErr.message ? innerErr.message : innerErr);
+        }
+
       } catch (e: any) {
         // Log and move on — do not throw
         // eslint-disable-next-line no-console
