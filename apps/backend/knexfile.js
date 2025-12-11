@@ -12,11 +12,11 @@ const config = {
     development: {
         client: 'pg',
         connection: {
-            host: process.env.PG_HOST,
-            port: Number(process.env.PG_PORT),
-            user: process.env.PG_USER,
-            password: process.env.PG_PASSWORD,
-            database: process.env.PG_DATABASE,
+            host: process.env.PGHOST,
+            port: Number(process.env.PGPORT),
+            user: process.env.PGUSER,
+            password: process.env.PGPASSWORD,
+            database: process.env.PGDATABASE,
         },
         migrations: {
             tableName: 'knex_migrations',
@@ -26,11 +26,11 @@ const config = {
     test: {
         client: 'pg',
         connection: {
-            host: process.env.PG_HOST,
-            port: Number(process.env.PG_PORT),
-            user: process.env.PG_USER,
-            password: process.env.PG_PASSWORD,
-            database: process.env.PG_DATABASE,
+            host: process.env.PGHOST,
+            port: Number(process.env.PGPORT),
+            user: process.env.PGUSER,
+            password: process.env.PGPASSWORD,
+            database: process.env.PGDATABASE,
         },
         migrations: {
             tableName: 'knex_migrations',

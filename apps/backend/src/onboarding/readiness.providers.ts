@@ -8,9 +8,16 @@ import {
   ReadinessSignalName,
   ReadinessSignalValue
 } from '@lasyncro/shared';
-import SpecterCustomerIntelligenceService from 'modules-specter/public/specter-customer-intelligence-service';
 
 import { UserStateService } from '../services/user-state.service';
+
+// canonical module IDs the provider will try to resolve (exported so tests can mock them)
+ export const SPECTER_STORE_CANDIDATES = [
+   'modules-specter/store/session-store',
+   '../../../../modules/specter/src/store/session-store',
+   `${process.cwd()}/modules/specter/src/store/session-store`,
+   `${process.cwd()}/modules/specter/dist/store/session-store`
+ ];
 
 const makeSignal = (
   name: ReadinessSignalName,
@@ -170,30 +177,210 @@ export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
   },
 };
 
-// --- Specter provider: customer & conversion intelligence readiness (FT1 stubs) ---
+// --- Specter provider: customer & conversion intelligence readiness (FT0-aware) ---
 export const specterOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'specter',
 
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // FT1: conservative, DB-safe stub signals until Specter ingestion is wired.
-    // Avoid calling internal Specter public service here — that service exposes
-    // getCustomerSignal(...) in the current modules/specter implementation,
-    // not a constructor that accepts ({ shopId }) nor a getReadinessSignals() method.
-    const sdkInstalled = false;
-    const sessionVolume = 0; // sessions last 7 days
-    const intentFeedActive = false;
-    const exitIntentRate = 0;
-    const topPageFunnelsDetected = false;
-    const customerSignalFallbackMode: 'default' | 'fallback' | 'integrated' = 'default';
+    // Attempt to resolve the Specter store helpers used in FT0:
+    // getSessionsLastNDays(shopId), getRecentEvents(shopId, limit), getShopConfig(shopId)
+    let getSessionsLastNDays: ((shopId: number, days?: number) => Promise<any[]>) | undefined;
+    let getRecentEvents: ((shopId: number, limit?: number) => Promise<any[]>) | undefined;
+    let getShopConfig: ((shopId: number) => Promise<any | null>) | undefined;
 
-    return [
+    const tryAssign = (mod: any) => {
+      if (!mod) return;
+      getSessionsLastNDays = getSessionsLastNDays ?? (mod.getSessionsLastNDays ?? mod.default?.getSessionsLastNDays);
+      getRecentEvents = getRecentEvents ?? (mod.getRecentEvents ?? mod.default?.getRecentEvents);
+      getShopConfig = getShopConfig ?? (mod.getShopConfig ?? mod.default?.getShopConfig);
+    };
+
+    // Prefer the project alias (jest mocks or runtime alias)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod: any = require('modules-specter/store/session-store');
+      tryAssign(mod);
+    } catch (_) {
+      // ignore
+    }
+
+    // Try ESM-style import as fallback
+    if (!getSessionsLastNDays || !getRecentEvents || !getShopConfig) {
+      try {
+        const mod: any = await import('modules-specter/store/session-store');
+        tryAssign(mod);
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    // Additional path fallbacks (src/dist)
+    if (!getSessionsLastNDays || !getRecentEvents || !getShopConfig) {
+      for (const c of SPECTER_STORE_CANDIDATES) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const mod: any = require(c);
+          tryAssign(mod);
+          if (getSessionsLastNDays && getRecentEvents && getShopConfig) break;
+        } catch (_) {
+          // ignore
+        }
+      }
+    }
+
+    // Default conservative values
+    let sdkInstalled = false;
+    let sessionVolume = 0;
+    let intentFeedActive = false;
+    let exitIntentRate = 0;
+    let topPageFunnelsDetected = false;
+    let customerSignalFallbackMode: 'default' | 'fallback' | 'integrated' = 'default';
+    let configObj: any = null;
+
+    const hasSessionsHelper = typeof getSessionsLastNDays === 'function';
+    const hasEventsHelper = typeof getRecentEvents === 'function';
+    const hasConfigHelper = typeof getShopConfig === 'function';
+
+    // DEBUG: reveal which store helpers we managed to resolve in this environment.
+    // This will print in test logs / server logs and is safe to keep as debug-level output.
+    // Example output: { hasGetSessionsLastNDays: true, hasGetRecentEvents: false, hasGetShopConfig: true }
+    try {
+      // eslint-disable-next-line no-console
+      console.debug('[specterOnboarding] resolved helpers', {
+        hasGetSessionsLastNDays: typeof getSessionsLastNDays === 'function',
+        hasGetRecentEvents: typeof getRecentEvents === 'function',
+        hasGetShopConfig: typeof getShopConfig === 'function',
+      });
+    } catch (_) {
+      // ignore any logging errors
+    }
+
+    try {
+      // 1) detect SDK/store presence.
+      // Require *both* core helpers for full "integrated" mode. If only one helper exists,
+      // treat as partial/fragile (fallback mode) so we remain conservative in readiness signals.
+      if (typeof getRecentEvents === 'function' && typeof getSessionsLastNDays === 'function') {
+        sdkInstalled = true;
+        customerSignalFallbackMode = 'integrated';
+      } else if (typeof getRecentEvents === 'function' || typeof getSessionsLastNDays === 'function') {
+        // partial presence — mark as fragile but indicate some SDK bits exist.
+        sdkInstalled = true;
+        customerSignalFallbackMode = 'fallback';
+      } else {
+        // No helpers present — full fallback.
+        sdkInstalled = false;
+        customerSignalFallbackMode = 'fallback';
+      }
+
+      // DEBUG: log the detection result and intended mode (helpful in CI)
+      try {
+        // eslint-disable-next-line no-console
+        console.debug('[specterOnboarding] detection result', {
+          sdkInstalled,
+          customerSignalFallbackMode,
+          resolvedHelpers: {
+            hasGetSessionsLastNDays: typeof getSessionsLastNDays === 'function',
+            hasGetRecentEvents: typeof getRecentEvents === 'function',
+            hasGetShopConfig: typeof getShopConfig === 'function'
+          }
+        });
+      } catch (_) { /* ignore logging errors */ }
+
+      // 2) compute session volume (last 7 days)
+      if (typeof getSessionsLastNDays === 'function') {
+        try {
+          const sessions = await getSessionsLastNDays(shopId, 7);
+          sessionVolume = Array.isArray(sessions) ? sessions.length : 0;
+        } catch (_) {
+          sessionVolume = 0;
+        }
+      } else if (typeof getRecentEvents === 'function') {
+        // fallback heuristic: count session.start events in recent events
+        try {
+          const ev = await getRecentEvents(shopId, 200);
+          const sessionStarts = Array.isArray(ev) ? ev.filter((e: any) => String(e.type).startsWith('session.')).length : 0;
+          sessionVolume = sessionStarts;
+        } catch (_) {
+          sessionVolume = 0;
+        }
+      }
+
+      // 3) compute exitIntent rate and intent feed health from recent events / sessions
+      if (typeof getRecentEvents === 'function') {
+        try {
+          const ev = await getRecentEvents(shopId, 200);
+          const events = Array.isArray(ev) ? ev : [];
+          const exitIntents = events.filter((e: any) => e && e.type === 'exit.intent').length;
+          const pageViews = events.filter((e: any) => e && e.type && String(e.type).startsWith('page.')).length;
+          exitIntentRate = pageViews > 0 ? exitIntents / pageViews : (sessionVolume > 0 ? exitIntents / sessionVolume : 0);
+          intentFeedActive = events.length > 0;
+          // crude funnel detection: presence of specific funnel event types
+          topPageFunnelsDetected = events.some((e: any) => e && (e.type === 'funnel.detected' || e.type === 'page.funnel'));
+        } catch (_) {
+          exitIntentRate = 0;
+          intentFeedActive = false;
+          topPageFunnelsDetected = false;
+        }
+      } else if (typeof getSessionsLastNDays === 'function') {
+        // fallback: analyze sessions for exitIntent boolean
+        try {
+          const sessions = await getSessionsLastNDays(shopId, 7);
+          const sessionsArr = Array.isArray(sessions) ? sessions : [];
+          const exitCount = sessionsArr.filter((s: any) => !!s.exitIntent).length;
+          exitIntentRate = sessionsArr.length > 0 ? exitCount / sessionsArr.length : 0;
+          intentFeedActive = sessionsArr.length > 0;
+          topPageFunnelsDetected = false;
+        } catch (_) {
+          exitIntentRate = 0;
+          intentFeedActive = false;
+          topPageFunnelsDetected = false;
+        }
+      }
+
+      // 4) shop config (optional)
+      if (typeof getShopConfig === 'function') {
+        try {
+          configObj = await getShopConfig(shopId);
+        } catch (_) {
+          configObj = null;
+        }
+      }
+    } catch (err) {
+      // non-fatal: just return stubs if anything fails
+      sdkInstalled = sdkInstalled ?? false;
+      sessionVolume = sessionVolume ?? 0;
+      intentFeedActive = intentFeedActive ?? false;
+      exitIntentRate = exitIntentRate ?? 0;
+      topPageFunnelsDetected = topPageFunnelsDetected ?? false;
+    }
+
+    // Compose signals (FT0-appropriate)
+    const signals: ReadinessSignal[] = [
       { name: 'specter.sdkInstalled', value: sdkInstalled },
       { name: 'specter.sessionVolume', value: sessionVolume },
       { name: 'specter.intentFeedActive', value: intentFeedActive },
       { name: 'specter.exitIntentRate', value: exitIntentRate },
       { name: 'specter.topPageFunnelsDetected', value: topPageFunnelsDetected },
-      { name: 'specter.customerSignalFallbackMode', value: customerSignalFallbackMode }
+      { name: 'specter.customerSignalFallbackMode', value: customerSignalFallbackMode },
+      { name: 'specter.config', value: configObj ?? null }
     ];
+
+        // DEBUG: final computed signal summary for diagnostics
+    try {
+      // eslint-disable-next-line no-console
+      console.debug('[specterOnboarding] computed signals summary', {
+        shopId,
+        sdkInstalled,
+        sessionVolume,
+        intentFeedActive,
+        exitIntentRate,
+        topPageFunnelsDetected,
+        customerSignalFallbackMode,
+        configPresent: !!configObj
+      });
+    } catch (_) { /* ignore */ }
+
+    return signals;
   }
 };
 

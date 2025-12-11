@@ -177,19 +177,17 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
   }, {
     moduleId: 'specter',
     displayName: 'Customer & Conversion (Specter)',
+    // FT0: require only the minimal, high-signal items. Other signals are informative.
     requiredSignals: [
       'specter.sdkInstalled',
       'specter.sessionVolume',
-      'specter.intentFeedActive',
-      'specter.exitIntentRate',
-      'specter.topPageFunnelsDetected',
-      'specter.customerSignalFallbackMode'
+      'specter.topPageFunnelsDetected'
     ],
     tasks: [
       {
         id: 'specter-sdk-installed',
         label: 'Enable Specter tracking',
-        required: false,
+        required: true,
         completionRules: [
           { signal: 'specter.sdkInstalled', expectedValue: true }
         ],
@@ -217,7 +215,23 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
         ],
         action: {
           type: 'navigate',
-          target: '/insights/specter' // UI route to the Specter behavioral snapshot
+          target: '/insights/specter'
+        }
+      },
+      {
+        id: 'specter.checkIntentFeed',
+        label: 'Check your Intent Feed',
+        required: false,
+        completionRules: [
+          {
+            signal: 'specter.intentFeedActive',
+            operator: 'equals',
+            expectedValue: true
+          }
+        ],
+        action: {
+          type: 'navigate',
+          target: '/insights/specter/intent-feed'
         }
       }
     ]
