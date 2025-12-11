@@ -31,7 +31,56 @@ module.exports = {
         // to the source files so tests don't require brittle relative paths)
         '^modules-specter/(.*)$': '<rootDir>/modules/specter/src/$1',
         '^modules-specter$': '<rootDir>/modules/specter/src/index.ts',
+
+        '^routes$': '<rootDir>/apps/frontend/src/routes.tsx',
+        '^utils/(.*)$': '<rootDir>/apps/frontend/src/utils/$1',
+        '^components/(.*)$': '<rootDir>/apps/frontend/src/components/$1',
+        '^contexts/(.*)$': '<rootDir>/apps/frontend/src/contexts/$1',
+        '^ui-component/(.*)$': '<rootDir>/apps/frontend/src/ui-component/$1',
+
+        '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
+        '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
       },
+    },
+    /* paste this object into the `projects` array in jest.config.js */
+    {
+      displayName: 'api-ui',
+      testEnvironment: 'jsdom',
+      testMatch: [
+        '<rootDir>/tests/unit/api/**/*.test.ts',
+        '<rootDir>/tests/unit/api/**/*.test.tsx'
+      ],
+      transform: {
+        '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest'
+      },
+      transformIgnorePatterns: [
+        '/node_modules/(?!(react-github-btn|react-resizable-panels|lodash-es))',
+        '\\.pnp\\.[^\\/]+$'
+      ],
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+      moduleNameMapper: {
+        '^ui/src/(.*)$': '<rootDir>/apps/frontend/src/$1',
+        '^components/(.*)$': '<rootDir>/apps/frontend/src/components/$1',
+        '^contexts/(.*)$': '<rootDir>/apps/frontend/src/contexts/$1',
+        '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
+        '^hooks/(.*)$': '<rootDir>/apps/frontend/src/hooks/$1',
+        '^ui-component/(.*)$': '<rootDir>/apps/frontend/src/ui-component/$1',
+        '^pages/(.*)$': '<rootDir>/apps/frontend/src/pages/$1',
+        '^layout/(.*)$': '<rootDir>/apps/frontend/src/layout/$1',
+        '^api/(.*)$': '<rootDir>/apps/frontend/src/api/$1',
+        '^themes/(.*)$': '<rootDir>/apps/frontend/src/themes/$1',
+        '^routes$': '<rootDir>/apps/frontend/src/routes.tsx',
+        '^config$': '<rootDir>/apps/frontend/src/config.ts',
+        '^test-utils$': '<rootDir>/apps/frontend/src/test-utils.tsx',
+
+        // New / missing mappings:
+        '^utils/(.*)$': '<rootDir>/apps/frontend/src/utils/$1',
+        '^ui-component/(.*)$': '<rootDir>/apps/frontend/src/ui-component/$1',
+        // assets + css
+        '\\.(css|less|scss|sass)$': 'jest-transform-stub',
+        '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js'
+      },
+      moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json']
     },
     // Configuration for the frontend package
     {

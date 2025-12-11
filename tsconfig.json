@@ -43,6 +43,8 @@
       "menu-items": ["apps/frontend/src/menu-items/index.ts"],
       "widgets/*": ["apps/frontend/src/widgets/*"],
       "themes/*": ["apps/frontend/src/themes/*"],
+      "runtime/*": ["apps/frontend/src/runtime/*"],
+      "runtime": ["apps/frontend/src/runtime/index.ts"],
       
       // Aliases for root files
       "Layout": ["apps/frontend/src/Layout.tsx"],

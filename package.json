@@ -40,6 +40,7 @@
     "@types/connect-pg-simple": "^7.0.3",
     "@types/eventsource": "^1.1.15",
     "@types/jest": "^30.0.0",
+    "@types/node": "^25.0.0",
     "@types/supertest": "^6.0.3",
     "@types/uuid": "^10.0.0",
     "babel-jest": "^30.2.0",
