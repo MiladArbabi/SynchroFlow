@@ -66,4 +66,6 @@ export async function register(host: any) {
   };
 }
 
-export default { register, descriptor };
+// Descriptor already contains `id` — export it directly to avoid duplicate-id
+// object-literals (and satisfy the checker).
+export default descriptor;

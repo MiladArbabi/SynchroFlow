@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+process.env.STORYBOOK = "1";
+
 import { createRequire } from "node:module";
 // apps/frontend/.storybook/main.ts
 import type { StorybookConfig } from "@storybook/react-vite";

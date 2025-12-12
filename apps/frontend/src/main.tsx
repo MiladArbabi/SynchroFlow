@@ -22,6 +22,7 @@ import { PostHogProvider } from 'posthog-js/react';
 
 // --- REACT-INTL IMPORT ---
 import { IntlProvider } from 'react-intl';
+import './debug/lasyncro-module-debug';
 
 // style + assets
 import './assets/scss/style.scss'; // Import Berry's global styles
@@ -136,6 +137,12 @@ root.render(
     </PostHogProvider>
   </StrictMode>
 );
+
+(window as any)._lasyncroHost = {
+  addNavItem: (n: any) => console.debug('[lasyncro-host] addNavItem', n),
+  addRoute: (r: any) => console.debug('[lasyncro-host] addRoute', r),
+  // ...other host functions modules expect
+};
 
 loadAllModules()
   .then((loaded) => {

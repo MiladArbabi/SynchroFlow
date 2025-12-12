@@ -233,6 +233,33 @@ Suggested layout inside monorepo (example):
 
 ---
 
+## Contract summary (canonical)
+
+This document defines the *module-first layout contract* used by the host runtime and module authors.
+
+**Authoritative types & reference:** the canonical TypeScript interfaces (ModuleDescriptor, HostApi, ModuleRegistration, ModuleLayoutProps, RouteDescriptor, NavItemDescriptor) are defined in `modules/shared/src/ui-contracts.ts`. Module authors **must** import or mirror these shapes for strong typing and to keep the host-module contract stable.
+
+### Required runtime rules
+* `register(hostApi)` must be **synchronous** and return an object containing at least `{ mount }`. Do **not** perform long-running initialization inside `register()`; place those operations in `onMount`.
+* Modules should provide either:
+  * a `src/descriptor.json` (preferred — validated by CI), **or**
+  * a `src/ui/ModuleEntry` that exports `descriptor` (fallback).
+* Modules must not mutate host internals. Use only methods on `HostApi`.
+
+### Minimal descriptor example
+```json
+{
+  "id": "order-nexus",
+  "version": "0.1.0",
+  "displayName": "Order Nexus",
+  "mountPath": "/orders",
+  "routes": [
+    { "id": "orders-home", "path": "/", "title": "Orders", "requiredModuleId": "order-nexus" }
+  ]
+}
+
+---
+
 *End of UI Layout Contract (Module-first)*
 
 ---

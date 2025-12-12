@@ -3,6 +3,8 @@ import { Plugin } from 'vite';
 import path from 'path';
 import fs from 'fs';
 
+console.log('[lasyncro-plugin] plugin module loaded');
+
 const MODULE_GLOB = /modules\/([^/]+)\/src\/ui\/ModuleEntry\.(ts|tsx)$/;
 
 // The virtual module name the host will import:
@@ -81,10 +83,24 @@ ${exportList}
 
     configResolved(config) {
       rootDir = config.root ?? process.cwd();
+      console.log('[lasyncro-plugin] configResolved rootDir=', rootDir);
+      // Eager scan at config time so dev-server prints what modules (if any) exist.
+      try {
+        const preview = scanModules();
+        // Extract simple list of module ids for quick human-readable terminal output.
+        const ids = (preview.match(/id:\s*'([^']+)'/g) || []).map(m => m.replace(/id:\s*'/, '').replace(/'/g, ''));
+        console.log('[lasyncro-plugin] eager-scan found modules:', ids.length ? ids.join(', ') : '<none>');
+      } catch (err) {
+        console.warn('[lasyncro-plugin] eager-scan failed:', err);
+      }
     },
 
     resolveId(id) {
-      if (id === VIRTUAL_ID) return RESOLVED_VIRTUAL_ID;
+      console.log('[lasyncro-plugin] resolveId called with id=', id);
+      if (id === VIRTUAL_ID) {
+        console.log('[lasyncro-plugin] resolveId -> returning resolved virtual id');
+        return RESOLVED_VIRTUAL_ID;
+      }
       return null;
     },
 

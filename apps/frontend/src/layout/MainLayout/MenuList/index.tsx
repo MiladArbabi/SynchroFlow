@@ -21,6 +21,8 @@ import { useTheme } from '@mui/material/styles';
 import { HORIZONTAL_MAX_ITEM } from 'config';
 import { useGetMenuMaster } from 'api/menu';
 
+import { getNavigation } from "runtime/registerNav";
+
 // ==============================|| SIDEBAR MENU LIST ||============================== //
 
 function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
@@ -37,8 +39,30 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
   const [selectedID, setSelectedID] = useState('');
 
   const visibleItems: NavGroupType[] = useMemo(() => {
-    // Base list always comes from menuItems
-    const base = menuItems.items as NavGroupType[];
+    
+  const dynamicGroupsRaw = getNavigation();
+
+   // 2. Adapt runtime NavGroup → UI NavGroupType
+   const dynamicItems: NavItemType[] = dynamicGroupsRaw.flatMap((g) =>
+      (g.items ?? []).map((item) => ({
+        id: item.id,
+        title: item.label,
+        type: 'item',
+        url: item.path,
+        icon: item.icon
+      }))
+    );
+  
+   // 3. Merge static menu groups + dynamic module nav groups
+   const base: NavGroupType[] = [
+    ...menuItems.items,
+    {
+      id: 'dynamic-modules',
+      title: 'Modules',
+      type: 'group',
+      children: dynamicItems
+    }
+  ];
 
     if (!allowedRoutes || allowedRoutes.length === 0) {
       // No gating info → show everything

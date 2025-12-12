@@ -1,61 +1,105 @@
 // modules/shared/src/ui-contracts.ts
-// Canonical UI host/module contract types for LaSyncro.
-// Keep this file as the single source-of-truth for ModuleDescriptor / HostApi types.
-
 import React from 'react';
 
-export type ModuleId = string; // kebab-case recommended, e.g. 'order-nexus'
+/**
+ * Shared UI contract types — authoritative.
+ * Keep this file small and stable. Import these types from modules and host code.
+ */
 
-export interface EntitlementSnapshot {
-  modules: string[]; // e.g. ['platform','order-nexus']
+/* ---- Basic snapshots ---- */
+export type ThemeSnapshot = {
+  mode: 'light' | 'dark';
+  palette?: Record<string, any>;
+  spacing?: (n: number) => number | string;
+};
+
+export type EntitlementSnapshot = {
+  modules: string[]; // e.g. ['order-nexus']
   flags: string[];   // e.g. ['beta-analytics']
-}
+};
 
-export interface UserSnapshot {
+export type UserSnapshot = {
   id: string;
   email?: string;
   displayName?: string;
   roles?: string[];
+};
+
+/* ---- HostApi ---- */
+export interface ToastOptions {
+  duration?: number;
+  type?: 'info' | 'success' | 'warning' | 'error';
 }
 
-export interface ThemeSnapshot {
-  mode: 'light' | 'dark';
-  palette?: Record<string, any>; // read-only snapshot - modules may read, not mutate
+export interface TelemetryEvent {
+  name: string;
+  payload?: Record<string, any>;
+  ts?: number;
 }
 
-export interface RouteDescriptor {
-  id: string;          // unique within module
-  path: string;        // relative path, e.g. '/orders' (host may resolve with mountPath)
-  exact?: boolean;
-  component: React.ComponentType<any> | React.ReactNode;
-  title?: string;
+export interface RuntimeRouteDescriptor {
+  id: string;
+  name?: string;
+  path: string; // absolute or relative to module mountPath (host normalizes)
+  component: React.ComponentType<any> | React.LazyExoticComponent<any>;
   requiredModuleId?: string;
   requiredFlagId?: string;
+  upgradeRoute?: string | null;
+  meta?: Record<string, any>;
+  order?: number;
 }
 
 export interface NavItemDescriptor {
   id: string;
   label: string;
-  route: string; // absolute or host will resolve mountPath + route
+  path?: string;
   icon?: React.ReactNode;
-  order?: number; // lower = earlier
   requiredModuleId?: string;
-  requiredFlagId?: string;
+  order?: number;
 }
 
 export interface HostApi {
-  getThemeSnapshot: () => ThemeSnapshot;
-  getEntitlements: () => EntitlementSnapshot | null;
-  getUserSnapshot: () => UserSnapshot;
-  navigate: (path: string) => void;
-  registerRoute: (route: RouteDescriptor) => void;
-  addNavItem: (item: NavItemDescriptor) => void;
-  telemetry: (event: { name: string; payload?: any }) => void;
-  openModal: (modalId: string, payload?: any) => void;
-  openGlobalModal?: (modalId: string, payload?: any) => void; // alias
-  publishEvent?: (topic: string, payload?: any) => void;
+  // read-only snapshots
+  getThemeSnapshot(): ThemeSnapshot;
+  getEntitlements(): EntitlementSnapshot | null;
+  getUserSnapshot(): UserSnapshot;
+
+  // navigation
+  navigate(path: string, opts?: { replace?: boolean; state?: any }): void;
+  resolveRoutePathById?(routeId: string): string | null; // optional helper
+
+  // runtime registry
+  registerRoute(route: RuntimeRouteDescriptor): void;
+  unregisterRoute(routeId: string): void;
+  addNavItem(item: NavItemDescriptor): void;
+  removeNavItem(navId: string): void;
+  getRegisteredRoutes(): RuntimeRouteDescriptor[];
+
+  // UI helpers
+  openModal(modalId: string, payload?: any): void;
+  openDrawer(drawerId: string, payload?: any): void;
+  showToast(message: string, opts?: ToastOptions): void;
+
+  // telemetry & logging
+  telemetry(ev: TelemetryEvent): void;
+
+  // event bus (subscribe returns unsubscribe)
+  publishEvent(name: string, payload?: any): void;
+  subscribeEvent(name: string, handler: (payload?: any) => void): () => void;
 }
 
+/* ---- Module registration ---- */
+export interface ModuleDescriptor {
+  id: string; // kebab-case
+  version: string; // semver
+  displayName: string;
+  mountPath?: string; // recommended leading slash
+  entitlements?: string[];
+  lazy?: boolean;
+  // Note: the host loader will look for `descriptor` or `src/descriptor.json`
+}
+
+/* mount props passed into ModuleLayout components */
 export interface ModuleLayoutProps {
   moduleId: string;
   host: {
@@ -63,29 +107,34 @@ export interface ModuleLayoutProps {
     entitlements: EntitlementSnapshot | null;
     user: UserSnapshot;
     navigate: (path: string) => void;
-    openGlobalModal: (id: string, payload?: any) => void;
+    openGlobalModal?: (id: string, payload?: any) => void;
   };
+}
+
+export interface MountContext {
+  host: HostApi;
+  moduleId: string;
+}
+
+export interface ActivateContext {
+  host: HostApi;
+  moduleId: string;
+  route?: string;
 }
 
 export interface ModuleRegistration {
   mount: React.ComponentType<ModuleLayoutProps> | React.ReactNode;
-  onMount?: (ctx: { host: HostApi }) => Promise<void> | void;
-  onActivate?: (ctx: { host: HostApi }) => Promise<void> | void;
-  onDeactivate?: (ctx: { host: HostApi }) => Promise<void> | void;
-  onUnmount?: (ctx: { host: HostApi }) => Promise<void> | void;
+  onMount?: (ctx: MountContext) => Promise<void> | void;
+  onActivate?: (ctx: ActivateContext) => Promise<void> | void;
+  onDeactivate?: (ctx: ActivateContext) => Promise<void> | void;
+  onUnmount?: (ctx: MountContext) => Promise<void> | void;
 }
 
-export interface ModuleDescriptor {
-  id: ModuleId; // required, unique
-  version: string; // semver
-  displayName: string;
-  description?: string;
-  icon?: React.ReactNode;
-  mountPath?: string; // e.g. '/orders'
-  routes?: RouteDescriptor[]; // optional; can also call registerRoute at runtime
-  requiredModules?: string[]; // runtime dependencies
-  requiredFlags?: string[]; // feature flags
-  entitlements?: string[]; // entitlement ids
-  lazy?: boolean; // hint to host
-  register: (hostApi: HostApi) => ModuleRegistration;
+/* ---- Gated placeholder ---- */
+export interface GatedPlaceholderProps {
+  routeName: string;
+  missingModules?: string[];
+  missingFlags?: string[];
+  upgradeRoute?: string | null;
+  backRoute?: string;
 }

@@ -34,57 +34,63 @@ Provide the smallest, stable surface (runtime + component primitives) modules de
 
 ## 2. Minimal runtime API (host → modules)
 
-Host exposes a small `HostApi` object available when modules register:
+The host supplies a small, stable `HostApi` to modules during registration. For exact types, prefer the canonical TypeScript definitions in `modules/shared/src/ui-contracts.ts`. The minimal runtime surface is shown below (paraphrased):
 
 ```ts
+// See modules/shared/src/ui-contracts.ts for the authoritative source
 interface HostApi {
-  // Read-only snapshots
+  // read-only snapshots
   getThemeSnapshot(): ThemeSnapshot;
   getEntitlements(): EntitlementSnapshot | null;
   getUserSnapshot(): UserSnapshot;
 
-  // Navigation / routing
+  // navigation
   navigate(path: string, opts?: { replace?: boolean; state?: any }): void;
-  resolveRoutePathById(routeId: string): string | null;
+  resolveRoutePathById?(routeId: string): string | null; // optional helper
 
-  // Module runtime registry helpers
+  // runtime registry
   registerRoute(route: RuntimeRouteDescriptor): void;
   unregisterRoute(routeId: string): void;
-  addNavItem(nav: NavItemDescriptor): void;
+  addNavItem(item: NavItemDescriptor): void;
   removeNavItem(navId: string): void;
   getRegisteredRoutes(): RuntimeRouteDescriptor[];
 
-  // UI & UX helpers
+  // UI helpers
   openModal(modalId: string, payload?: any): void;
   openDrawer(drawerId: string, payload?: any): void;
   showToast(message: string, opts?: ToastOptions): void;
 
-  // Telemetry & logging
+  // telemetry & logging
   telemetry(event: TelemetryEvent): void;
 
-  // Event bus
+  // event bus
   publishEvent(name: string, payload?: any): void;
   subscribeEvent(name: string, handler: (p?: any) => void): () => void;
 }
-````
+Design notes
 
-**Design notes:** host API functions should be resilient (no thrown errors for no-op) and stable (semver-major required for breaking changes).
+The HostApi should be resilient: calling any of these methods when the host does not implement them must be a no-op (no throw).
+
+Breaking changes require semver-major and a migration plan.
 
 ---
 
 ## 3. Module registration contract (module → host)
 
-A module must export a `register(hostApi: HostApi): ModuleRegistration` function and `ModuleDescriptor`.
+**Authoritative types:** `modules/shared/src/ui-contracts.ts` (importable).
 
-Minimal shapes:
+Modules must export:
+- `descriptor` (object matching `ModuleDescriptor`), and
+- `register(hostApi: HostApi): ModuleRegistration`.
 
-```ts
+Minimal shapes (see types file for exact interfaces):
+
 interface ModuleDescriptor {
   id: string;
-  version: string; // semver
+  version: string;
   displayName: string;
   mountPath?: string;
-  entitlements?: string[]; // required entitlements
+  entitlements?: string[];
   lazy?: boolean;
 }
 
@@ -95,36 +101,32 @@ interface ModuleRegistration {
   onDeactivate?: (ctx: ActivateContext) => Promise<void>|void;
   onUnmount?: (ctx: MountContext) => Promise<void>|void;
 }
-```
 
-**Rules:**
+Rules
 
-* `register()` should be idempotent.
-* `moduleId` must be unique. Host must validate shape on register and reject malformed descriptors.
+register() must be synchronous and idempotent (returns ModuleRegistration quickly). Heavy initialization goes into onMount.
+
+Host validates module descriptor on load (shape and required fields). If invalid, host rejects/load-fails with a clear error.
 
 ---
 
 ## 4. Routing & nav registration
 
-Minimal `RuntimeRouteDescriptor`:
+Minimal `RuntimeRouteDescriptor` (authoritative in `ui-contracts.ts`):
 
-```ts
 interface RuntimeRouteDescriptor {
   id: string;
-  name: string;
-  path: string; // absolute or relative to mountPath (host normalizes)
+  name?: string;
+  path: string; // absolute or relative to mountPath - host normalizes
   component: React.ComponentType<any>;
   requiredModuleId?: string;
   requiredFlagId?: string;
-  upgradeRoute?: string; // optional CTA
+  upgradeRoute?: string | null;
   meta?: Record<string, any>;
   order?: number;
 }
-```
+NavItemDescriptor:
 
-`NavItemDescriptor`:
-
-```ts
 interface NavItemDescriptor {
   id: string;
   label: string;
@@ -133,25 +135,26 @@ interface NavItemDescriptor {
   requiredModuleId?: string;
   order?: number;
 }
-```
-
 Host responsibilities:
 
-* normalize/merge dynamic routes with static routes,
-* enforce entitlements on navigation and route guards,
-* expose `getRegisteredRoutes()` for UI code that needs introspection.
+Normalize and merge dynamic routes with static descriptor routes.
+
+Enforce entitlements on navigation and route resolution.
+
+Expose getRegisteredRoutes() for introspection and tests.
+
+Note: When modules call registerRoute() the host should apply guards and build the final route table; modules should not manipulate host router internals directly.
 
 ---
 
 ## 5. Entitlements & gating primitives
 
-* Modules must declare `entitlements` in their descriptor.
-* Host enforces gating before mounting the module route.
-* If a user lacks entitlement, host renders a standard `GatedPlaceholder` component (canonical primitive) or redirects depending on the route metadata.
+- Modules declare `entitlements` in their descriptor.
+- Host enforces gating prior to mounting/activation.
+- Host provides a canonical `GatedPlaceholder` component; modules should use it when entitlements are missing.
 
-`GatedPlaceholder` contract (minimal props):
+Gated placeholder props (see `ui-contracts.ts`):
 
-```ts
 interface GatedPlaceholderProps {
   routeName: string;
   missingModules?: string[];
@@ -159,53 +162,79 @@ interface GatedPlaceholderProps {
   upgradeRoute?: string | null;
   backRoute?: string;
 }
-```
 
-**Behavior:** `GatedPlaceholder` shows the reason, missing entitlements and CTA to `upgradeRoute` when provided. Modules should not create their own gating UI unless approved.
+Behavior: GatedPlaceholder must show missing entitlement reasons and an optional CTA. Modules must not implement ad-hoc gating UI without review.
 
 ---
 
 ## 6. Canonical UI primitives (approved list + minimal props)
 
-All modules MUST prefer these host-provided primitives. Minimal prop sets shown — primitives may accept more but these are required.
+Modules MUST prefer these host-provided primitives. These are the minimal props each primitive must support; implementations may accept additional props.
 
 ### Core primitives (host-provided)
 
-* `Button` — `({children, onClick, variant?: 'primary'|'secondary'|'ghost', size?: 'sm'|'md'|'lg', disabled?: boolean})`
-* `Input` — `({value, onChange, name, placeholder, type?, label?, required?})`
-* `Select` — `({value, onChange, options, label?, placeholder?})`
-* `Checkbox` — `({checked, onChange, label?})`
-* `RadioGroup` — `({value, onChange, options})`
-* `DataGrid` — (must support: columns[], rows[], pagination, onRowClick)
-* `Card` — (title?, actions?, children)
-* `Modal` — (`open`, `onClose`, `title`, `size?`)
-* `Toast` — (`message`, `type?: 'info'|'success'|'warning'|'error'`)
-* `GatedPlaceholder` — defined above
-* `PageHeader` — (`title`, `breadcrumbs?`, `actions?`)
-* `ContextPanel` — (slide-over panel primitive)
-* `Icon` — consistent icon primitive
+- `Button`  
+  `({ children: React.ReactNode, onClick?: () => void, variant?: 'primary'|'secondary'|'ghost', size?: 'sm'|'md'|'lg', disabled?: boolean })`
+
+- `Input`  
+  `({ value: string, onChange: (v: string) => void, name?: string, placeholder?: string, type?: string, label?: string, required?: boolean })`
+
+- `Select`  
+  `({ value: any, onChange: (v: any) => void, options: Array<{ value: any; label: string }>, label?: string, placeholder?: string })`
+
+- `Checkbox`  
+  `({ checked: boolean, onChange: (checked: boolean) => void, label?: string })`
+
+- `RadioGroup`  
+  `({ value: any, onChange: (v: any) => void, options: Array<{ value: any; label: string }> })`
+
+- `DataGrid`  
+  `(must support: columns: Column[], rows: Row[], pagination?: PaginationProps, onRowClick?: (row: Row) => void)`
+
+- `Card`  
+  `(props: { title?: string; actions?: React.ReactNode; children?: React.ReactNode })`
+
+- `Modal`  
+  `({ open: boolean, onClose: () => void, title?: string, size?: 'sm'|'md'|'lg' })`
+
+- `Toast`  
+  `({ message: string, type?: 'info'|'success'|'warning'|'error' })`
+
+- `GatedPlaceholder`  
+  `(see GatedPlaceholderProps above)`
+
+- `PageHeader`  
+  `({ title: string, breadcrumbs?: Array<{label:string,path?:string}>, actions?: React.ReactNode })`
+
+- `ContextPanel`  
+  `(slide-over panel primitive with open/onClose props)`
+
+- `Icon`  
+  `(consistent icon wrapper helper)`
 
 ### Layout primitives
 
-* `ModuleLayout` wrapper (slot contract already in UI Layout Contract)
-* `HeaderSlot`, `ContentSlot`, `SidePanelSlot`, `FooterSlot`
+- `ModuleLayout` wrapper (slot contract defined in UI Layout Contract)
+- `HeaderSlot`, `ContentSlot`, `SidePanelSlot`, `FooterSlot`
 
 ### Data & UX primitives
 
-* `AsyncBoundary` / `SuspenseFallback` — standardized skeleton loading
-* `ErrorBoundary` — standardized error surface
-* `ConfirmDialog` — for destructive flows
+- `AsyncBoundary` / `SuspenseFallback` — standardized loading skeletons
+- `ErrorBoundary` — standard error surface
+- `ConfirmDialog` — standard confirm UI for destructive flows
 
-**Enforcement:** Storybook previews and unit tests must use these primitives where applicable. Any deviation requires a documented rationale and UI Architecture review.
+**Enforcement**
+- Modules must use these primitives (import path `ui-component/*`).
+- Any deviation must be documented and approved by UI Platform.
 
 ---
 
 ## 7. Theme & design token usage rules
 
-* Host theme (MUI Theme) is authoritative.
-* Modules may request `themeHints: { spacingScale?: number, preferredButtonVariant?: string }` during registration but must not override host theme.
-* Use design tokens (colors, spacing, typography) from `design-tokens` contract. Map tokens to MUI theme variables.
-* CSS variables must be prefixed `--lsyncro-` and scoped to module root.
+- Host theme (MUI Theme) is authoritative. Modules must *read* theme values; they must not provide a nested ThemeProvider that overrides host settings.
+- Modules may request `themeHints` during registration (host may honor them) but MUST NOT mutate the host theme.
+- Use token names from `docs/ui/03-Design-Tokens-Contract.md`; map those to `theme.palette`, `theme.spacing`, etc.
+- CSS variables must be prefixed `--lsyncro-` and scoped to module root selectors.
 
 ---
 
