@@ -15,7 +15,7 @@
 
 export interface ModuleDescriptor {
   id: string;
-  displayName?: string;
+  name?: string;
   version?: string;
   description?: string;
   // optional startup hook the host can call

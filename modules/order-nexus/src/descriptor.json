@@ -1,0 +1,23 @@
+{
+  "id": "order-nexus",
+  "name": "OrderNexus",
+  "version": "0.1.0",
+  "routes": [
+    {
+      "id": "orders",
+      "key": "orders",
+      "name": "Orders",
+      "path": "/orders",
+      "requiredModuleId": "order-nexus",
+      "order": 100
+    }
+  ],
+  "navItems": [
+    {
+      "id": "orders",
+      "title": "Orders",
+      "path": "/orders",
+      "order": 50
+    }
+  ]
+}

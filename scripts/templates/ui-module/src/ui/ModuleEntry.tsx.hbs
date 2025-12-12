@@ -1,0 +1,29 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React from "react";
+import { registerRoute, registerModule } from "runtime";
+import type { ModuleDescriptor } from "./ModuleDescriptor";
+import ModuleLayout from "./layout/ModuleLayout";
+import ExamplePage from "./pages/ExamplePage";
+
+const descriptor: ModuleDescriptor = {
+  id: "{{moduleName}}",
+  displayName: "{{moduleName | capitalize}}",
+  version: "0.0.1"
+};
+
+export default function register() {
+  registerModule(descriptor);
+
+  registerRoute({
+    id: "{{moduleName}}-home",
+    path: "/{{moduleName}}",
+    name: "{{moduleName | capitalize}}",
+    component: ExamplePage,
+    order: 900,
+    meta: {
+      layout: ModuleLayout
+    }
+  });
+
+  return descriptor;
+}

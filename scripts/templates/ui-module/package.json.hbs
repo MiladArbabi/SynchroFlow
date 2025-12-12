@@ -1,0 +1,17 @@
+{
+  "name": "@lasyncro/{{MODULE_ID}}",
+  "version": "{{version}}",
+  "private": true,
+  "description": "{{MODULE_TITLE}} UI module",
+  "main": "dist/ModuleEntry.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && echo \"built\"",
+    "clean": "rimraf dist"
+  },
+  "keywords": ["lasyncro", "ui-module", "{{MODULE_ID}}"],
+  "license": "MIT"
+}

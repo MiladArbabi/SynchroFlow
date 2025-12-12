@@ -3,6 +3,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import tsconfigPaths from 'vite-tsconfig-paths';
+import lasyncroModulesPlugin from './vite-plugins/vite-plugin-lasyncro-modules';
 
 // https://vitejs.dev/config/
 import { fileURLToPath } from 'node:url';
@@ -11,7 +13,11 @@ const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(file
 
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    tsconfigPaths(),            // optional but helpful for path alias resolution in Vite
+    lasyncroModulesPlugin(),    // <<-- ensure this is included for dev + build
+  ],
   server: {
     port: 5173,
     proxy: {
@@ -54,6 +60,11 @@ export default defineConfig({
       'layouts': path.resolve(__dirname, './src/layouts'),
       'routes': path.resolve(__dirname, './src/routes.tsx'),
       'widgets': path.resolve(__dirname, './src/widgets'),
+
+      // Map the bare 'runtime' to the runtime folder (so imports like 'runtime/registerRoute' resolve)
+      'runtime': path.resolve(__dirname, './src/runtime'),
+      // also map bare 'runtime/index' -> explicit index file (optional)
+      'runtime/index': path.resolve(__dirname, './src/runtime/index.ts'),
     }
   },
   test: {
@@ -62,6 +73,9 @@ export default defineConfig({
       plugins: [
       // The plugin will run tests for the stories defined in your Storybook config
       // See options at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon#storybooktest
+      tsconfigPaths(),
+      react(),
+      lasyncroModulesPlugin(),
       storybookTest({
         configDir: path.join(dirname, '.storybook')
       })],

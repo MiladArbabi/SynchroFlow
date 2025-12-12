@@ -1,0 +1,8 @@
+{
+  "id": "@lasyncro/shared",
+  "name": "LaSyncro Shared",
+  "version": "1.0.0",
+  "description": "Shared utilities, types and small runtime building blocks used across LaSyncro.",
+  "routes": [],
+  "navItems": []
+}

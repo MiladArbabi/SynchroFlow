@@ -11,13 +11,36 @@ module.exports = {
         '<rootDir>/tests/**/*.test.ts',
       ],
       transform: {
-        '^.+\\.ts$': 'babel-jest',
+        // handle TS/TSX and JS/JSX in backend tests since some tests import frontend TSX files
+        '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
       },
+      transformIgnorePatterns: [
+        // allow Jest to transform certain ESM packages that ship modern syntax
+        '/node_modules/(?!(react-github-btn|react-resizable-panels|lodash-es|@mui/x-data-grid))',
+        '\\.pnp\\.[^\\/]+$'
+      ],
+      moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
       moduleNameMapper: {
         '^api-src/(.*)$': '<rootDir>/apps/backend/src/$1',
         '^api-db$': '<rootDir>/apps/backend/src/db.ts',
         '^api-types$': '<rootDir>/apps/backend/src/types.ts',
         '^api-server$': '<rootDir>/apps/backend/src/server.ts',
+
+        // FRONTEND ALIASES (so backend tests can import frontend files safely)
+        '^routes$': '<rootDir>/apps/frontend/src/routes.tsx',
+        '^config$': '<rootDir>/apps/frontend/src/config.ts',
+        '^hooks/(.*)$': '<rootDir>/apps/frontend/src/hooks/$1',
+        '^utils/(.*)$': '<rootDir>/apps/frontend/src/utils/$1',
+        '^components/(.*)$': '<rootDir>/apps/frontend/src/components/$1',
+        '^contexts/(.*)$': '<rootDir>/apps/frontend/src/contexts/$1',
+        '^ui-component/(.*)$': '<rootDir>/apps/frontend/src/ui-component/$1',
+        '^pages/(.*)$': '<rootDir>/apps/frontend/src/pages/$1',
+        '^layout/(.*)$': '<rootDir>/apps/frontend/src/layout/$1',
+        '^api/(.*)$': '<rootDir>/apps/frontend/src/api/$1',
+
+         // Static assets + css (important for node_modules CSS like @mui/x-data-grid)
+        '\\.(css|less|scss|sass)$': 'jest-transform-stub',
+        '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js',
 
         // integration-service source alias
         '^integration-src/(.*)$': '<rootDir>/apps/integration-service/src/$1',
@@ -27,16 +50,17 @@ module.exports = {
         '^@lasyncro/shared$': '<rootDir>/modules/shared/src',
         '^shared-src$': '<rootDir>/modules/shared/src',
 
-        // Specter module alias (resolve imports like 'modules-specter/...'
-        // to the source files so tests don't require brittle relative paths)
+        // Specter module alias
         '^modules-specter/(.*)$': '<rootDir>/modules/specter/src/$1',
         '^modules-specter$': '<rootDir>/modules/specter/src/index.ts',
 
+        // Frontend aliases used by tests: map to the frontend source so backend tests can require them
         '^routes$': '<rootDir>/apps/frontend/src/routes.tsx',
         '^utils/(.*)$': '<rootDir>/apps/frontend/src/utils/$1',
         '^components/(.*)$': '<rootDir>/apps/frontend/src/components/$1',
         '^contexts/(.*)$': '<rootDir>/apps/frontend/src/contexts/$1',
         '^ui-component/(.*)$': '<rootDir>/apps/frontend/src/ui-component/$1',
+        '^config$': '<rootDir>/apps/frontend/src/config.ts',
 
         '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
         '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
@@ -54,7 +78,7 @@ module.exports = {
         '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest'
       },
       transformIgnorePatterns: [
-        '/node_modules/(?!(react-github-btn|react-resizable-panels|lodash-es))',
+        '/node_modules/(?!(react-github-btn|react-resizable-panels|lodash-es|@mui/x-data-grid))',
         '\\.pnp\\.[^\\/]+$'
       ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],

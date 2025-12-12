@@ -1,0 +1,8 @@
+{
+  "id": "specter",
+  "name": "Specter",
+  "version": "1.0.0",
+  "description": "Specter analytics & onboarding module (descriptor placeholder for CI).",
+  "routes": [],
+  "navItems": []
+}

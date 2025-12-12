@@ -1,0 +1,48 @@
+name: CI — UI modules
+on:
+  push:
+    paths:
+      - 'modules/**'
+      - 'scripts/**'
+      - 'tests/contract/**'
+  pull_request:
+    paths:
+      - 'modules/**'
+      - 'scripts/**'
+      - 'tests/contract/**'
+
+jobs:
+  validate-modules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Validate module descriptors
+        run: node scripts/validate-modules.js
+
+      - name: Run contract tests
+        run: npx jest tests/contract --runInBand
+
+  contract-tests:
+    runs-on: ubuntu-latest
+    needs: validate-modules
+    steps:
+      - name: Checkout (noop)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify contract tests ran
+        run: echo "Contracts validated in validate-modules job"

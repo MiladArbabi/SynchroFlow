@@ -48,6 +48,16 @@ import "./index.css";
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
+import { loadAllModules } from 'runtime/moduleLoader';
+
+if (!window._lasyncroNavigate) {
+  window._lasyncroNavigate = (path: string) => {
+    // use HTML5 history so router reacts; also dispatch popstate so listeners respond
+    window.history.pushState(null, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+}
+
 // --- Create React Query Client ---
 const container = document.getElementById("root");
 if (!container) throw new Error("Failed to find the root element");
@@ -126,3 +136,11 @@ root.render(
     </PostHogProvider>
   </StrictMode>
 );
+
+loadAllModules()
+  .then((loaded) => {
+    console.info('[lasyncro] loaded modules:', Object.keys(loaded));
+  })
+  .catch((err) => {
+    console.error('[lasyncro] failed to load modules', err);
+  });

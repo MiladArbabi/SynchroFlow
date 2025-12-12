@@ -45,6 +45,8 @@
       "themes/*": ["apps/frontend/src/themes/*"],
       "runtime/*": ["apps/frontend/src/runtime/*"],
       "runtime": ["apps/frontend/src/runtime/index.ts"],
+
+      "ui/src/*": ["apps/frontend/src/*"],
       
       // Aliases for root files
       "Layout": ["apps/frontend/src/Layout.tsx"],
@@ -80,6 +82,7 @@
   },
   "include": [
     "apps/frontend/src",
+    "apps/frontend/src/types",
     "apps/backend/src",
     "apps/integration-service/src",
     "modules/shared/src",
