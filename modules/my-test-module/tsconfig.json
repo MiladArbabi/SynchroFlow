@@ -2,6 +2,11 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "rootDir": "src",
+    "baseUrl": "./",
+    "paths": {
+      "runtime/*": ["src/runtime-stubs/*"],
+      "runtime": ["src/runtime-stubs/index"]
+    },
     "outDir": "dist",
     "module": "ESNext",
     "target": "ES2020",

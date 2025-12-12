@@ -45,6 +45,7 @@
       "themes/*": ["apps/frontend/src/themes/*"],
       "runtime/*": ["apps/frontend/src/runtime/*"],
       "runtime": ["apps/frontend/src/runtime/index.ts"],
+      "types/*": ["apps/frontend/src/types/*"],
 
       "ui/src/*": ["apps/frontend/src/*"],
       
@@ -68,8 +69,8 @@
         "apps/backend/src/server.ts"
       ],
       "api-types": [
-        "apps/backend/dist/apps/backend/src/types.js",
-        "apps/backend/src/types.ts"
+        "apps/backend/src/types.ts",
+        "apps/backend/dist/apps/backend/src/types.js"
       ],
 
       /* Shared package — runtime should resolve to compiled JS in modules/shared/dist */
@@ -81,20 +82,21 @@
     }
   },
   "include": [
-    "apps/frontend/src",
-    "apps/frontend/src/types",
     "apps/backend/src",
+    "apps/frontend/src",
     "apps/integration-service/src",
     "modules/shared/src",
-    "modules/specter/src",
-    "tests/**/*.ts",
-    "tests/**/*.tsx"
+    "modules/specter/src"
   ],
   "exclude": [
-    "apps/frontend/src/stories/**"
+    "apps/frontend/src/stories/**",
+    "tests",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ],
   "references": [
-    { "path": "./modules/shared/tsconfig.json" },
-    { "path": "./tsconfig.node.json" }
+    { "path": "./modules/shared/tsconfig.json" }
   ]
 }

@@ -34,7 +34,17 @@
     }
   },
   "include": [
-    "src",
-    "types"
-  ]
+   "src",
+   "types"
+  ], 
+  // Exclude test-only files from the main build/test-run typecheck to reduce noise.
+  "exclude": [
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "tests",
+    "test-results",
+    "playwright-report"
+  ],
 }

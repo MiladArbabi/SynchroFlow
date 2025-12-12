@@ -94,7 +94,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setError(null);
 
         // expose snapshot for modules that call host APIs during init()
-        window._lasyncroEntitlements = { modules: nextModules, flags: nextFlags };
+        (window as any)._lasyncroEntitlements = { modules: nextModules, flags: nextFlags };
       })
       .catch((err: any) => {
         if (cancelled) return;
@@ -105,7 +105,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setError(err?.message || 'Failed to load entitlements');
 
         // reflect cleared state to modules
-        window._lasyncroEntitlements = null;
+        (window as any)._lasyncroEntitlements = null;
       })
       .finally(() => {
         if (!cancelled) {

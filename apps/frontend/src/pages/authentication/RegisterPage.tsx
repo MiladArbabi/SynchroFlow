@@ -51,12 +51,12 @@ export default function Register() {
   useEffect(() => {
     const selectedAuth = authParam || 'jwt';
 
-    const importAuthRegisterComponent = authRegisterImports[selectedAuth];
-
+    const authRegisterImportsTyped: Record<string, () => Promise<any>> = authRegisterImports as any;
+    const importAuthRegisterComponent = authRegisterImportsTyped[selectedAuth];
     importAuthRegisterComponent()
-      .then((module) => setAuthRegisterComponent(() => module.default))
-      .catch((error) => {
-        console.error(`Error loading ${selectedAuth} AuthRegister`, error);
+      .then((module: any) => setAuthRegisterComponent(() => module.default))
+      .catch((error: any) => {
+        console.error(error);
       });
   }, [authParam]);
 

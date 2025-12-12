@@ -54,12 +54,12 @@ export default function Login() {
   useEffect(() => {
     const selectedAuth = authParam || 'jwt'
 
-    const importAuthLoginComponent = authLoginImports[selectedAuth];
-
+    const authLoginImportsTyped: Record<string, () => Promise<any>> = authLoginImports as any;
+    const importAuthLoginComponent = authLoginImportsTyped[selectedAuth];
     importAuthLoginComponent()
-      .then((module) => setAuthLoginComponent(() => module.default))
-      .catch((error) => {
-        console.error(`Error loading ${selectedAuth} AuthLogin:`, error);
+      .then((module: any) => setAuthLoginComponent(() => module.default))
+      .catch((error: any) => {
+        console.error(error);
       });
   }, [authParam]);
 

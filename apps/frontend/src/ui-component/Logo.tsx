@@ -28,7 +28,10 @@ const ThemeMode = { DARK: 'dark', LIGHT: 'light' }; // <-- Placeholder
 export default function Logo({ dark = false, isCollapsed = false }: LogoProps) {
   const theme = useTheme();
   const { colorScheme } = useColorScheme();
-  const fillColor = colorScheme === ThemeMode.DARK || dark ? theme.vars.palette.common.white : theme.vars.palette.grey[900];
+  const fillColor =
+    colorScheme === ThemeMode.DARK || dark
+      ? (theme as any).vars?.palette?.common?.white ?? '#FFFFFF'
+      : (theme as any).vars?.palette?.grey?.[900] ?? '#111111';
 
   return (
     <svg width="275" height="102" viewBox="0 0 275 102" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -73,9 +73,12 @@ export default function LoginProvider({ currentLoginWith }: LoginProviderProps) 
           <Tooltip title={button.name} key={button.name}>
             <Button
               sx={{
-                borderColor: theme.vars.palette.grey[300],
-                color: theme.vars.palette.grey[900],
-                '&:hover': { borderColor: theme.vars.palette.primary[400], backgroundColor: theme.vars.palette.primary[100] }
+                borderColor: (theme as any).vars?.palette?.grey?.[300] ?? theme.palette.grey[300],
+                color: (theme as any).vars?.palette?.grey?.[900] ?? theme.palette.text.primary,
+                '&:hover': {
+                  borderColor: (theme as any).vars?.palette?.primary?.[400] ?? theme.palette.primary.main,
+                  backgroundColor: (theme as any).vars?.palette?.primary?.[100] ?? theme.palette.primary.light
+                }
               }}
               variant="outlined"
               color="secondary"
