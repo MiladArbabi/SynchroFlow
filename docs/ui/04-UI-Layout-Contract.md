@@ -806,6 +806,34 @@ Tell me which of these two automated file operations you want me to perform now,
 
 ---
 
+### Canonical module export (authoritative)
+
+**Authoritative rule (CI & validator enforce this):**
+
+Each UI module MUST expose a `descriptor` object and MAY default-export it. The repository validator and contract tests rely on this object being present. The `descriptor` must conform to the `ModuleDescriptor` TypeScript interface (see `modules/shared/src/ui-contracts.ts`).
+
+**Minimal required shape (copy/paste ready):**
+
+```ts
+import { ModuleDescriptor } from 'modules/shared/src/ui-contracts';
+
+export const descriptor: ModuleDescriptor = {
+  id: 'my-module',              // kebab-case unique id
+  version: '0.1.0',             // semver
+  displayName: 'My Module',
+  mountPath: '/my-module',      // recommended
+  register: (hostApi) => {
+    // must return a ModuleRegistration with a `mount` property
+    hostApi.registerRoute({ id: 'home', path: '/', component: MyLayout, title: 'My' });
+    hostApi.addNavItem({ id: 'nav-my', label: 'My Module', route: '/my-module', order: 100 });
+    return { mount: MyLayout };
+  }
+};
+
+export default descriptor; // optional
+
+---
+
 # Appendix A — Examples & Code Snippets
 
 This appendix provides concrete, copy-paste-ready examples that implement the contracts and APIs described in the main document. Use these as reference implementations for module authors and for the host runtime integration tests.
