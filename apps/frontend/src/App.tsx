@@ -12,6 +12,7 @@ import { SpecterConfigProvider } from "contexts/SpecterConfigContext";
 
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ModuleHost from "runtime/ModuleHost";
 import routes from "./routes";
 
 // --- BERRY THEME IMPORT ---
@@ -89,7 +90,7 @@ export default function App() {
             <EntitlementsProvider>
               <SpecterConfigProvider>
                 <Routes>
-                  {/* Render the sign-in route standalone */}
+                  {/* Public auth routes */}
                   {routes
                     .filter(
                       (route) =>
@@ -102,9 +103,7 @@ export default function App() {
                         key={route.key}
                       />
                     ))}
-
-                  {/* All other routes are nested inside the AppLayout */}
-                  {/* --- WRAP LAYOUT MANAGER WITH PROTECTED ROUTE --- */}
+                  {/* Protected SaaS app */}
                   <Route element={<ProtectedRoute />}>
                     <Route element={<LayoutManager />}>
                       {routes
@@ -119,10 +118,13 @@ export default function App() {
                             key={route.key}
                           />
                         ))}
+                        {/* Dynamic modules */}
+                      <Route path="/modules/*" element={<ModuleHost />} 
+                    />
                     </Route>
                   </Route>
 
-                  {/* A default redirect to the dashboard */}
+                  {/* Fallback */}
                   <Route path="*" element={<Navigate to="/dashboard" />} />
                 </Routes>
               </SpecterConfigProvider>
