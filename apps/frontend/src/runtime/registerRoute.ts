@@ -21,15 +21,35 @@ type InternalRoute = RouteDescriptor & { _registeredAt?: number };
 const dynamicRoutes: Record<string, InternalRoute> = {};
 let mergedRoutesCache: InternalRoute[] | null = null;
 
+let notifyRoutesChanged: (() => void) | null = null;
+
+export function _setRoutesChangeNotifier(fn: () => void) {
+  notifyRoutesChanged = fn;
+}
+
 export function registerRoute(route: InternalRoute) {
-  if (!route || !route.id) throw new Error('registerRoute: route.id required');
+  console.groupCollapsed(
+    '[registerRoute]',
+    route.id,
+    'path=', route.path
+  );
+  console.trace('called from');
+  console.groupEnd();
+
+  if (!route || !route.id) {
+    throw new Error('registerRoute: route.id required');
+  }
+
   dynamicRoutes[route.id] = { ...route, _registeredAt: Date.now() };
   mergedRoutesCache = null;
+  notifyRoutesChanged?.();
 }
 
 export function unregisterRoute(routeId: string) {
   delete dynamicRoutes[routeId];
   mergedRoutesCache = null;
+
+  notifyRoutesChanged?.();
 }
 
 export function getRegisteredRoutes(): InternalRoute[] {

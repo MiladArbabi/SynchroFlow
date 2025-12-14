@@ -48,7 +48,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
 
     const isPostSyncSkeleton = ft0Phase === 'POST_SYNC_SKELETON' || forceLoadingSkeleton;
 
-    console.log('[DashboardStateManager] render decision', {
+    /* console.log('[DashboardStateManager] render decision', {
       currentView,
       isStateLoading,
       isSyncLoading,
@@ -56,11 +56,11 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
       ft0Phase,
       isSyncing,
       isPostSyncSkeleton,
-    });
+    }); */
 
     // 1) Post-sync skeleton window: this overrides normal loading/layout
     if (isPostSyncSkeleton) {
-      console.log('[DashboardStateManager] Rendering post-sync skeleton.');
+      /* console.log('[DashboardStateManager] Rendering post-sync skeleton.'); */
       return (
         <Box sx={{ p: 2 }}>
           <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
@@ -72,7 +72,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
 
   // 2) Normal loading / sync in progress
   if (isLoading || isSyncing) {
-    console.log('[DashboardStateManager] Rendering EmptyDashboardState (loading/syncing).');
+    /* console.log('[DashboardStateManager] Rendering EmptyDashboardState (loading/syncing).'); */
     return (
       <EmptyDashboardState
         onConnectStore={onConnectStore}
@@ -84,7 +84,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   // 3) Not loading, but effectively "empty"
   if (currentView === 'empty') {
     if (!hasIntegrations) {
-      console.log('[DashboardStateManager] Rendering EmptyDashboardState (no integrations).');
+      /* console.log('[DashboardStateManager] Rendering EmptyDashboardState (no integrations).'); */
       return (
         <EmptyDashboardState
           onConnectStore={onConnectStore}
@@ -94,9 +94,9 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     }
 
     // We *do* have integrations, so "empty" is just a momentary transition.
-    console.log(
+    /* console.log(
       '[DashboardStateManager] Rendering skeleton for integrated shop with empty view.'
-    );
+    ); */
     return (
       <Box sx={{ p: 2 }}>
         <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
@@ -107,7 +107,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   }
 
   // 4) Fully ready: render the actual dashboard widgets
-  console.log('[DashboardStateManager] Rendering dashboard children (widgets).');
+  /* console.log('[DashboardStateManager] Rendering dashboard children (widgets).'); */
   return (
     <Box sx={{ p: 2 }}>
       {children}

@@ -11,7 +11,8 @@ interface ModuleHostProps {
 
 export default function ModuleHost(props: ModuleHostProps) {
   const params = useParams();
-  const resolvedModuleId = props.moduleId || (params.moduleId as string);
+  const resolvedModuleId = props.moduleId ?? params.moduleId;
+  const subPath = props.route ?? window.location.pathname;
 
   const [Component, setComponent] = React.useState<React.ReactNode>(null);
 
@@ -43,10 +44,9 @@ export default function ModuleHost(props: ModuleHostProps) {
           return;
         }
 
-        const selected =
-          (props.route &&
-            descriptor.routes.find((r: any) => r.path === props.route)) ||
-          descriptor.routes[0];
+        const selected = descriptor.routes.find((r: any) =>
+        r.path === subPath || r.path === `/${subPath}`
+        ) ?? descriptor.routes[0];
 
         if (!selected) {
           console.error("[ModuleHost] No matching route found inside:", resolvedModuleId);
@@ -65,7 +65,7 @@ export default function ModuleHost(props: ModuleHostProps) {
     return () => {
       isMounted = false;
     };
-  }, [resolvedModuleId, props.route]);
+  }, [resolvedModuleId, subPath]);
 
   return <>{Component}</>;
 }

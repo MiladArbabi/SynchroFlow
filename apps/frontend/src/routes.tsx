@@ -1,12 +1,9 @@
 // apps/frontend/src/routes.tsx
-/* eslint-disable react-refresh/only-export-components */
 import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import LoginPage from "./pages/authentication/LoginPage";
 import RegisterPage from "./pages/authentication/RegisterPage";
 import ProductsPage from "./pages/ProductsPage"; 
-import Order360Page from "./pages/Order360Page";
-import OrdersPage from "./pages/OrdersPage";
 import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
 import CustomersPage from "./pages/CustomersPage";
@@ -63,20 +60,6 @@ const routes: RouteConfig[] = [
     component: <FinancesPage />,
     // 🔐 Advanced: requires finances module
     requiredModuleId: "finances",
-  },
-  {
-    type: "route",
-    name: "Order Details",
-    key: "order-details",
-    route: "/orders/:id",
-    component: <Order360Page />,
-  },
-  {
-    type: "collapse",
-    name: "Orders",
-    key: "orders",
-    route: "/orders",
-    component: <OrdersPage />,
   },
   {
     type: "route",

@@ -14,6 +14,10 @@ import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ModuleHost from "runtime/ModuleHost";
 import routes from "./routes";
+import ModuleBootstrap from 'runtime/ModuleBootstrap';
+import { getRegisteredRoutes } from 'runtime/registerRoute';
+import { RuntimeRoutesProvider } from "runtime/RuntimeRoutesProvider";
+import { useRuntimeRoutes } from 'runtime/useRuntimeRoutes';
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
@@ -81,35 +85,34 @@ const LayoutManager = () => {
   );
 };
 
+
+function RuntimeRoutesSubscriber() {
+  // This hook ONLY forces rerender when routes change
+  // We intentionally ignore the value
+  useRuntimeRoutes();
+  return null;
+}
+
 export default function App() {
+  /* const { version } = useRuntimeRoutes(); */
+
   return (
     <QueryClientProvider client={queryClient}>
-      <DashboardStateProvider>
-        <IntegrationProvider>
-          <ThemeCustomization>
-            <EntitlementsProvider>
-              <SpecterConfigProvider>
-                <Routes>
-                  {/* Public auth routes */}
-                  {routes
-                    .filter(
-                      (route) =>
-                        route.key === 'login' || route.key === 'register'
-                    )
-                    .map((route) => (
-                      <Route
-                        path={route.route}
-                        element={route.component}
-                        key={route.key}
-                      />
-                    ))}
-                  {/* Protected SaaS app */}
-                  <Route element={<ProtectedRoute />}>
-                    <Route element={<LayoutManager />}>
+      <RuntimeRoutesProvider>
+        <RuntimeRoutesSubscriber />
+
+        <DashboardStateProvider>
+          <IntegrationProvider>
+            <ThemeCustomization>
+              <EntitlementsProvider>
+                <SpecterConfigProvider>
+                  <ModuleBootstrap>
+                    <Routes>
+                      {/* Public auth routes */}
                       {routes
                         .filter(
                           (route) =>
-                            route.key !== 'login' && route.key !== 'register'
+                            route.key === 'login' || route.key === 'register'
                         )
                         .map((route) => (
                           <Route
@@ -118,20 +121,33 @@ export default function App() {
                             key={route.key}
                           />
                         ))}
-                        {/* Dynamic modules */}
-                      <Route path="/modules/*" element={<ModuleHost />} 
-                    />
-                    </Route>
-                  </Route>
+                      {/* Protected SaaS app */}
+                      <Route element={<ProtectedRoute />}>
+                        <Route element={<LayoutManager />}>
+                          {getRegisteredRoutes()
+                            .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
+                            .map(route => (
+                              <Route
+                                key={route.id}
+                                path={route.path}
+                                element={route.component}
+                              />
+                            ))}
+                          {/* Dynamic modules */}
+                          <Route path="modules/:moduleId/*" element={<ModuleHost />} />
+                        </Route>
+                      </Route>
 
-                  {/* Fallback */}
-                  <Route path="*" element={<Navigate to="/dashboard" />} />
-                </Routes>
-              </SpecterConfigProvider>
-            </EntitlementsProvider>
-          </ThemeCustomization>
-        </IntegrationProvider>
-      </DashboardStateProvider>
+                      {/* Fallback */}
+                      <Route path="*" element={<Navigate to="/dashboard" />} />
+                    </Routes>
+                  </ModuleBootstrap>
+                </SpecterConfigProvider>
+              </EntitlementsProvider>
+            </ThemeCustomization>
+          </IntegrationProvider>
+        </DashboardStateProvider>
+      </RuntimeRoutesProvider>
     </QueryClientProvider>
   );
 }

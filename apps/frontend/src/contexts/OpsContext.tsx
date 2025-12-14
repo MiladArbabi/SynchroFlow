@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-refresh/only-export-components */
 import React, {
   createContext,
@@ -137,34 +138,34 @@ export const OpsContextProvider = ({ children }: { children: ReactNode }) => {
 
   // --- 8. ADD THE "KORE COMLINK" (SSE LISTENER) ---
   useEffect(() => {
-    console.log('[Kore Comlink] Attempting to connect to SSE...');
+    /* console.log('[Kore Comlink] Attempting to connect to SSE...'); */
     // TODO: Add auth token to this URL
     const eventSource = new EventSource('/api/v1/kore/subscribe');
 
     eventSource.onopen = () => {
-      console.log('[Kore Comlink] SSE Connection Established.');
+      /* console.log('[Kore Comlink] SSE Connection Established.'); */
     };
 
     // Listen for our custom "insight" event
     eventSource.addEventListener('insight', (event) => {
       try {
         const insight = JSON.parse(event.data) as ProactiveInsight;
-        console.log(`[Kore Comlink] Received insight: ${insight.title}`);
+        /* console.log(`[Kore Comlink] Received insight: ${insight.title}`); */
         dispatch({ type: OpsActionType.ADD_INSIGHT, payload: insight });
       } catch (error) {
-        console.error('[Kore Comlink] Failed to parse insight event', error);
+        /* console.error('[Kore Comlink] Failed to parse insight event', error); */
       }
     });
 
     eventSource.onerror = (err) => {
-      console.error('[Kore Comlink] SSE Error:', err);
+      /* console.error('[Kore Comlink] SSE Error:', err); */
       eventSource.close();
       // We can add retry logic here later
     };
 
     // Clean up the connection on unmount
     return () => {
-      console.log('[Kore Comlink] Closing SSE Connection.');
+      /* console.log('[Kore Comlink] Closing SSE Connection.'); */
       eventSource.close();
     };
   }, []); // Runs once on app load

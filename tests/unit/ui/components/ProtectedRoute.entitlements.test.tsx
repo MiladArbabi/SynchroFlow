@@ -1,6 +1,5 @@
 // tests/unit/ui/components/ProtectedRoute.entitlements.test.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -46,6 +45,17 @@ jest.mock('routes', () => {
   };
 });
 
+jest.mock(
+  'runtime/registerRoute',
+  () => ({
+    getRegisteredRoutes: () => [
+      { path: '/dashboard' },
+      { path: '/analytics', requiredModuleId: 'mod:analytics' }
+    ],
+  }),
+  { virtual: true }
+);
+
 const mockedUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mockedUseEntitlements =
   useEntitlements as jest.MockedFunction<typeof useEntitlements>;
@@ -83,6 +93,7 @@ describe('ProtectedRoute entitlement gating', () => {
       modules: [],
       flags: [],
       isLoading: false,
+      hasResolved: true,
       error: null,
       hasModule: jest.fn(),
       hasFlag: jest.fn(),
@@ -109,6 +120,7 @@ describe('ProtectedRoute entitlement gating', () => {
       modules: [],
       flags: [],
       isLoading: false,
+      hasResolved: true,
       error: null,
       hasModule: jest.fn(),
       hasFlag: jest.fn(),
@@ -135,6 +147,7 @@ describe('ProtectedRoute entitlement gating', () => {
       modules: ['mod:analytics'],
       flags: [],
       isLoading: false,
+      hasResolved: true,
       error: null,
       hasModule: jest.fn(),
       hasFlag: jest.fn(),
@@ -146,7 +159,7 @@ describe('ProtectedRoute entitlement gating', () => {
     expect(screen.getByTestId('analytics-page')).toBeInTheDocument();
   });
 
-  it('redirects to dashboard when entitlements do NOT satisfy the route requirements', async () => {
+  it('allows access to analytics even when entitlements do NOT satisfy requirements (cross-sell)', () => {
     mockedUseAuth.mockReturnValue({
       isLoggedIn: true,
       isLoading: false,
@@ -161,6 +174,7 @@ describe('ProtectedRoute entitlement gating', () => {
       modules: [], // missing mod:analytics
       flags: [],
       isLoading: false,
+      hasResolved: true,
       error: null,
       hasModule: jest.fn(),
       hasFlag: jest.fn(),
@@ -169,8 +183,34 @@ describe('ProtectedRoute entitlement gating', () => {
 
     renderWithRouter('/analytics');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('analytics-page')).toBeInTheDocument();
+  });
+
+  it('blocks routing until entitlements have resolved (no redirect on empty snapshot)', () => {
+    mockedUseAuth.mockReturnValue({
+      isLoggedIn: true,
+      isLoading: false,
+      accessToken: 'token',
+      user: null,
+      login: jest.fn(),
+     logout: jest.fn()
+    } as any);
+
+    mockedUseEntitlements.mockReturnValue({
+      shopId: null,
+      modules: [],
+      flags: [],
+      isLoading: false,
+      hasResolved: false, // NEW invariant
+      error: null,
+      hasModule: jest.fn(),
+      hasFlag: jest.fn(),
+      refresh: jest.fn()
+    } as any);
+
+    renderWithRouter('/analytics');
+
+    // Spinner should be visible, not redirect
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 });

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "moduleResolution": "node",
+    "baseUrl": "..",
+    "types": ["jest", "@testing-library/jest-dom"],
+    "paths": {
+      "components/*": ["apps/frontend/src/components/*"],
+      "contexts/*": ["apps/frontend/src/contexts/*"],
+      "hooks/*": ["apps/frontend/src/hooks/*"],
+      "utils/*": ["apps/frontend/src/utils/*"],
+      "api/*": ["apps/frontend/src/api/*"],
+      "layout/*": ["apps/frontend/src/layout/*"],
+      "pages/*": ["apps/frontend/src/pages/*"],
+      "ui-component/*": ["apps/frontend/src/ui-component/*"],
+      "runtime/*": ["apps/frontend/src/runtime/*"],
+      "routes": ["apps/frontend/src/routes.tsx"],
+      "config": ["apps/frontend/src/config.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

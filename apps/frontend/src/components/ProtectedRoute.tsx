@@ -16,11 +16,11 @@ import GatedPlaceholder from 'ui-component/GatedPlaceholder';
  */
 const ProtectedRoute: React.FC = () => {
   const { isLoggedIn, isLoading: authLoading } = useAuth();
-  const { modules, flags, isLoading: entLoading } = useEntitlements();
+  const { modules, flags, isLoading: entLoading, hasResolved } = useEntitlements();
   const location = useLocation();
 
   // 1. Show a full-screen loader while auth or entitlements are being checked
-  if (authLoading || entLoading) {
+  if (authLoading || !hasResolved) {
     return (
       <Box
         sx={{
@@ -33,9 +33,9 @@ const ProtectedRoute: React.FC = () => {
         <CircularProgress />
       </Box>
     );
-  }
+  };
 
-    // 2. If not authenticated, redirect to the login page
+  // 2. If not authenticated, redirect to the login page
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
   }
@@ -44,7 +44,11 @@ const ProtectedRoute: React.FC = () => {
   const currentPath = location.pathname;
 
   // We only care about routes defined in routes.tsx and runtime-registered routes
-  const matchingRouteRaw = getRegisteredRoutes().find((r) => r.path === currentPath);
+  const matchingRouteRaw = getRegisteredRoutes().find(
+    (r) =>
+      r.path === currentPath ||
+      (r.path !== '/' && currentPath.startsWith(r.path + '/'))
+  );
 
   if (matchingRouteRaw) {
     // Cast to any to avoid strict structural mismatch with RouteConfig (RouteConfig uses `route` key)
@@ -82,6 +86,14 @@ const ProtectedRoute: React.FC = () => {
               upgradeRoute={matchingRoute.upgradeRoute}
             />
           );
+        }
+
+        if (import.meta.env.DEV) {
+          console.warn('[ProtectedRoute] access denied', {
+            path: currentPath,
+            requiredModuleId: matchingRoute.requiredModuleId,
+            userModules: modules,
+          });
         }
         // otherwise fallback redirect
         return <Navigate to="/dashboard" replace />;

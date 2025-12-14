@@ -10,7 +10,7 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from './AuthContext';
 
 // --- Backend payload shape ---
@@ -26,6 +26,7 @@ interface EntitlementsContextValue {
   modules: string[];
   flags: string[];
   isLoading: boolean;
+  hasResolved: boolean;
   error: string | null;
   hasModule: (moduleId: string) => boolean;
   hasFlag: (flagId: string) => boolean;
@@ -49,6 +50,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [modules, setModules] = useState<string[]>([]);
   const [flags, setFlags] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasResolved, setHasResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // simple invalidation token to force re-fetch
@@ -71,27 +73,61 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     let cancelled = false;
     setIsLoading(true);
 
-    axios
-      .get<EntitlementsResponse>('/api/v1/entitlements/me', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      })
+    axiosInstance
+      .get<EntitlementsResponse>('/api/v1/entitlements/me')
       .then((res) => {
         if (cancelled) return;
 
         const payload = res.data || ({} as Partial<EntitlementsResponse>);
         const nextShopId =
           typeof payload.shopId === 'number' ? payload.shopId : null;
+
+        if (import.meta.env.DEV) {
+          console.debug('[Entitlements] token-auth snapshot', {
+            shopId: payload.shopId,
+            modules: payload.modules,
+            flags: payload.flags
+          });
+        }
+
+        /**
+         * TEMPORARY DEV OVERRIDE
+         * ----------------------
+         * Force-enable `order-nexus` module on the frontend until
+         * backend entitlements fully support dynamic module rollout.
+         *
+         * Why:
+         * - Orders UI is implemented as a dynamic module
+         * - Backend `/entitlements/me` does not yet return `order-nexus`
+         * - Without this, ProtectedRoute will redirect `/orders` → `/dashboard`
+         *
+         * Removal condition:
+         * - Backend returns `order-nexus` in `modules[]`
+         *
+         * IMPORTANT:
+         * - This does NOT bypass entitlement checks
+         * - It only augments the entitlement snapshot during development
+         */
         const nextModules = Array.isArray(payload.modules)
           ? payload.modules
           : [];
+
         const nextFlags = Array.isArray(payload.flags) ? payload.flags : [];
+
+        if (import.meta.env.DEV) {
+          console.groupCollapsed('[Entitlements] resolved snapshot');
+          console.log('shopId:', nextShopId);
+          console.log('backend modules:', payload.modules);
+          console.log('effective modules:', nextModules);
+          console.log('flags:', nextFlags);
+          console.groupEnd();
+        }
 
         setShopId(nextShopId);
         setModules(nextModules);
         setFlags(nextFlags);
         setError(null);
+        setHasResolved(true);
 
         // expose snapshot for modules that call host APIs during init()
         (window as any)._lasyncroEntitlements = { modules: nextModules, flags: nextFlags };
@@ -103,6 +139,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setModules([]);
         setFlags([]);
         setError(err?.message || 'Failed to load entitlements');
+        setHasResolved(false);
 
         // reflect cleared state to modules
         (window as any)._lasyncroEntitlements = null;
@@ -133,6 +170,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     modules,
     flags,
     isLoading,
+    hasResolved,
     error,
     hasModule,
     hasFlag,

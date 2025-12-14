@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-refresh/only-export-components */
 // apps/frontend/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
@@ -40,14 +41,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Re-hydrate session from localStorage on app load
   React.useEffect(() => {
-    console.log("AuthContext: Initializing...");
+    /* console.log("AuthContext: Initializing..."); */
     try {
       // Playwright's storageState will inject these values
       const storedToken = localStorage.getItem('accessToken');
       const storedUser = localStorage.getItem('user');
       
       if (storedToken && storedUser) {
-        console.log("AuthContext: Found stored session. Re-hydrating state.");
+        /* console.log("AuthContext: Found stored session. Re-hydrating state."); */
         setAuthState({
           isLoggedIn: true,
           isLoading: false,
@@ -55,12 +56,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           accessToken: storedToken,
         });
       } else {
-        console.log("AuthContext: No stored session found.");
+        /* console.log("AuthContext: No stored session found."); */
         // No session, just finish loading
         setAuthState(prev => ({ ...prev, isLoading: false }));
       }
     } catch (error) {
-      console.error("AuthContext: Failed to parse stored user. Logging out.", error);
+      /* console.error("AuthContext: Failed to parse stored user. Logging out.", error); */
       // Clear corrupted storage and finish loading
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
@@ -90,7 +91,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       );
     }
-    console.log("AuthContext: User logged in and identified.");
+    /* console.log("AuthContext: User logged in and identified."); */
   }, [posthog]);
 
   // --- Clear localStorage on logout ---
@@ -111,7 +112,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       // --- [END POSTHOG RESET] ---
 
-      console.log("AuthContext: User logged out and PostHog reset.");
+      /* console.log("AuthContext: User logged out and PostHog reset."); */
     }, [posthog]);
 
   // This function is for token refresh. It should also update localStorage.
@@ -122,7 +123,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else {
         localStorage.removeItem('accessToken');
       }
-      console.log("AuthContext: Access token updated in state and localStorage.");
+      /* console.log("AuthContext: Access token updated in state and localStorage."); */
   }, []);
 
   const value = {

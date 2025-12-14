@@ -5,7 +5,7 @@ import fs from 'fs';
 
 console.log('[lasyncro-plugin] plugin module loaded');
 
-const MODULE_GLOB = /modules\/([^/]+)\/src\/ui\/ModuleEntry\.(ts|tsx)$/;
+const MODULE_GLOB = /modules\/((?!.*-test)[^/]+)\/src\/ui\/ModuleEntry\.(ts|tsx)$/;
 
 // The virtual module name the host will import:
 const VIRTUAL_ID = 'virtual:lasyncro-modules';
@@ -96,7 +96,7 @@ ${exportList}
     },
 
     resolveId(id) {
-      console.log('[lasyncro-plugin] resolveId called with id=', id);
+      /* console.log('[lasyncro-plugin] resolveId called with id=', id); */
       if (id === VIRTUAL_ID) {
         console.log('[lasyncro-plugin] resolveId -> returning resolved virtual id');
         return RESOLVED_VIRTUAL_ID;

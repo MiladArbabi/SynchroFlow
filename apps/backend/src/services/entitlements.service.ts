@@ -124,6 +124,14 @@ export class EntitlementsService {
         flag_key: null,
         source: 'free_tier_default',
       },
+      
+      // Orders / Order Nexus – core operational module
+      {
+        shop_id: shopId,
+        module_key: 'order-nexus',
+        flag_key: null,
+        source: 'free_tier_default',
+      },
     ];
 
     await db('shop_module_entitlements')

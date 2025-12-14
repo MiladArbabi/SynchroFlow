@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["jest", "@testing-library/jest-dom"],
+    "baseUrl": "."
+  },
+  "include": [
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "apps/frontend/src/**/*.ts",
+    "apps/frontend/src/**/*.tsx"
+  ],
+  "exclude": []
+}

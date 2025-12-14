@@ -127,16 +127,16 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
     const connectStatus = searchParams.get('connect');
     const errorMessage = searchParams.get('message');
 
-    console.log('[DashboardPage] useEffect(searchParams) fired', {
+   /*  console.log('[DashboardPage] useEffect(searchParams) fired', {
       connectStatus,
       errorMessage,
       currentUrl: window.location.href,
-    });
+    }); */
 
     if (connectStatus === 'success') {
-      console.log(
+      /* console.log(
         '[DashboardPage] OAuth success detected via query param. Opening DataSyncingModal.'
-      );
+      ); */
 
       // Refresh the integration/sync status so the modal has the latest info
       refreshIntegrationStatus();
@@ -147,15 +147,15 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
       // Clear the query params to avoid re-triggering on refresh
       setSearchParams({}, { replace: true });
     } else if (connectStatus === 'error') {
-      console.log('[DashboardPage] OAuth error detected via query param.', {
+      /* console.log('[DashboardPage] OAuth error detected via query param.', {
         errorMessage,
-      });
+      }); */
       setConnectionError(errorMessage || 'An unknown connection error occurred.');
       setSearchParams({}, { replace: true });
     } else {
-      console.log(
+      /* console.log(
         '[DashboardPage] No connect query param. Likely direct dashboard navigation.'
-      );
+      ); */
     }
   }, []); // we intentionally run this only once on mount
 
@@ -171,19 +171,19 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
         window.sessionStorage.getItem('hasSeenSyncModal') === 'true';
     }
 
-    console.log('[DashboardPage] hasIntegrations change', {
+    /* console.log('[DashboardPage] hasIntegrations change', {
       previous: prev,
       current: curr,
       isSyncModalOpen,
       hasSeenSyncModal,
-    });
+    }); */
 
     // Only react when going from "no integrations" -> "has integrations"
     // AND we haven't already shown the modal in this browser session.
     if (!prev && curr && !isSyncModalOpen && !hasSeenSyncModal) {
-      console.log(
+     /*  console.log(
         '[DashboardPage] Detected first integration connection. Opening DataSyncingModal.'
-      );
+      ); */
       openedAtRef.current = Date.now();
       setIsSyncModalOpen(true);
 
@@ -203,10 +203,10 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
       const elapsed = Date.now() - openedAt;
       const remaining = Math.max(0, MIN_MODAL_MS - elapsed);
 
-      console.log('[DashboardPage] DataSyncingModal open, scheduling close.', {
+      /* console.log('[DashboardPage] DataSyncingModal open, scheduling close.', {
         elapsed,
         remaining,
-      });
+      }); */
 
       const timer = window.setTimeout(() => {
         handleSyncModalClose();
@@ -218,14 +218,14 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
     // For phase transition logs (not just snapshots)
     useEffect(() => {
       if (ft0PhaseRef.current !== ft0Phase) {
-        console.log('[DashboardPage] FT0 phase changed', {
+        /* console.log('[DashboardPage] FT0 phase changed', {
           previous: ft0PhaseRef.current,
           current: ft0Phase,
           hasIntegrations,
           syncStatus,
           showPostSyncSkeleton,
           userId: userState?.user.id,
-        });
+        }); */
         ft0PhaseRef.current = ft0Phase;
       }
     }, [ft0Phase, hasIntegrations, syncStatus, showPostSyncSkeleton, userState]);
@@ -257,25 +257,25 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
 
   // 3. Create the "Aha! Refresh" handler
   const handleSyncModalClose = () => {
-    console.log('[DashboardPage] Closing DataSyncingModal.');
+    /* console.log('[DashboardPage] Closing DataSyncingModal.'); */
 
     setIsSyncModalOpen(false);
 
     // Short "staging" skeleton after modal closes
     setShowPostSyncSkeleton(true);
     window.setTimeout(() => {
-      console.log('[DashboardPage] Post-sync skeleton window elapsed.');
+      /* console.log('[DashboardPage] Post-sync skeleton window elapsed.'); */
       setShowPostSyncSkeleton(false);
     }, POST_SYNC_SKELETON_MS);
 
     // Ring the "doorbell" for all our data (Aha! moment)
     setTimeout(() => {
-      console.log('[DashboardPage] Invalidating dashboardInventory.');
+      /* console.log('[DashboardPage] Invalidating dashboardInventory.'); */
       queryClient.invalidateQueries({ queryKey: ['dashboardInventory'] });
     }, 300);
 
     setTimeout(() => {
-      console.log('[DashboardPage] Invalidating dashboardShipments.');
+      /* console.log('[DashboardPage] Invalidating dashboardShipments.'); */
       queryClient.invalidateQueries({ queryKey: ['dashboardShipments'] });
     }, 500);
   };

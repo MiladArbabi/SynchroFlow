@@ -164,7 +164,7 @@ refetchInterval: (query) => {
       error?.message ||
       null;
 
-    console.log('[IntegrationContext] derived state', {
+    /* console.log('[IntegrationContext] derived state', {
       rawData: data,
       statusCode,
       status,
@@ -172,7 +172,7 @@ refetchInterval: (query) => {
       isFirstTimeSync,
       progress,
       lastError,
-    });
+    }); */
 
     return {
       isLoading: isLoading && isLoggedIn,

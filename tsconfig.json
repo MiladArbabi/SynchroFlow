@@ -89,12 +89,7 @@
     "modules/specter/src"
   ],
   "exclude": [
-    "apps/frontend/src/stories/**",
-    "tests",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "**/*.spec.ts",
-    "**/*.spec.tsx"
+  "apps/frontend/src/stories/**"
   ],
   "references": [
     { "path": "./modules/shared/tsconfig.json" }

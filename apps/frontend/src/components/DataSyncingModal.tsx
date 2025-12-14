@@ -92,11 +92,11 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
   // We deliberately ignore how fast the backend completes; this is a UX affordance,
   // not a literal progress bar.
   useEffect(() => {
-    console.log('[DataSyncingModal] open changed', {
+    /* console.log('[DataSyncingModal] open changed', {
       open,
       syncStatus,
       backendProgress: progress?.percentage,
-    });
+    }); */
 
     if (!open) {
       setDisplayPercent(0);

@@ -18,6 +18,7 @@ import userStateRoutes from '../api/user-state/user-state.routes';
 import shopifyRoutes from '../api/shopify/shopify.routes';
 import onboardingReadinessRouter from '../onboarding/readiness.router';
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
 
 // Specter routes (FT0)
 import specterRouter from '../api/specter/specter.routes';
@@ -69,7 +70,11 @@ export function createApp(): Express {
   // Mount Specter FT0 routes under /api/v1/specter
   app.use('/api/v1/specter', specterRouter);
 
-  app.get('/api/v1/entitlements/me', getMyEntitlements);
+  app.get(
+    '/api/v1/entitlements/me',
+    authenticateToken,
+    getMyEntitlements
+  );
 
   // basic endpoints preserved
   app.get('/', (_req, res) => res.send('SynchroFlow API is running!'));

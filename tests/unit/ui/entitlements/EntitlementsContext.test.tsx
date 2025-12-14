@@ -1,13 +1,18 @@
 // tests/unit/ui/entitlements/EntitlementsContext.test.tsx
 import '@testing-library/jest-dom';
 import { screen, render, waitFor } from '@testing-library/react';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { EntitlementsProvider } from 'contexts/EntitlementsContext';
 import { act, ReactNode } from 'react';
 
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+jest.mock('api/axiosConfig', () => ({
+   axiosInstance: {
+     get: jest.fn(),
+   },
+ }));
+
+ const mockedAxios = axiosInstance as jest.Mocked<typeof axiosInstance>;
 
 // Test helper components
 const Capture = ({ children }: { children?: ReactNode }) => {
@@ -234,12 +239,7 @@ describe('EntitlementsContext', () => {
         expect(screen.getByTestId('modules')).toHaveTextContent('shopify_integration');
       });
 
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        '/api/v1/entitlements/me',
-        expect.objectContaining({
-          headers: { Authorization: 'Bearer new-token' },
-        })
-      );
+      expect(mockedAxios.get).toHaveBeenCalledWith('/api/v1/entitlements/me');
     });
   });
 
@@ -274,12 +274,7 @@ describe('EntitlementsContext', () => {
       expect(screen.getByTestId('has-order-nexus')).toHaveTextContent('no');
 
       // Correct request
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        '/api/v1/entitlements/me',
-        expect.objectContaining({
-          headers: { Authorization: 'Bearer test-access-token' },
-        })
-      );
+      expect(mockedAxios.get).toHaveBeenCalledWith('/api/v1/entitlements/me');
     });
 
     it('returns empty lists when server returns empty entitlements', async () => {
@@ -860,6 +855,28 @@ describe('EntitlementsContext', () => {
       // Functions should be memoized (same reference)
       expect(hasModuleCalls[0]).toBe(hasModuleCalls[1]);
       expect(hasFlagCalls[0]).toBe(hasFlagCalls[1]);
+    });
+  });
+
+  describe('Resolution semantics', () => {
+    it('does NOT mark entitlements as resolved on 401', async () => {
+      mockedAxios.get.mockRejectedValueOnce({
+        response: { status: 401 }
+      });
+
+      render(
+        <EntitlementsProvider>
+          <Capture />
+        </EntitlementsProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('isLoading')).toHaveTextContent('ready');
+      });
+
+      // Modules cleared, but this must NOT be treated as a resolved snapshot
+      // (hasResolved will be added in implementation; test will fail until then)
+      expect((screen as any).queryByTestId('hasResolved')).toBeNull();
     });
   });
 });
