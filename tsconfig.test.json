@@ -3,7 +3,10 @@
   "compilerOptions": {
     "noEmit": true,
     "types": ["jest", "@testing-library/jest-dom"],
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "test-utils": ["apps/frontend/src/test-utils.tsx"]
+    }
   },
   "include": [
     "tests/**/*.ts",

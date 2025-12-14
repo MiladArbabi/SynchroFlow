@@ -42,13 +42,36 @@ export async function loadModule(entry: { id: string; load: () => Promise<any> }
   }
 
   const desc =
-    imported?.default ??
-    imported?.descriptor ??
-    imported;
+  imported?.default ??
+  imported?.descriptor ??
+  imported;
 
-  if (!desc?.id) {
-    console.error('[lasyncro] ModuleEntry missing id:', id, desc);
-    return null;
+  if (import.meta.env.DEV) {
+    console.debug('[lasyncro] Module load result', {
+      moduleId: id,
+      imported,
+      resolvedDescriptor: desc
+    });
+  };
+
+  if (!desc || typeof desc !== 'object') {
+    throw new Error(
+      `[lasyncro][FATAL] Module '${id}' did not export a valid descriptor object`
+    );
+  }
+
+  if (!desc.id) {
+    throw new Error(
+      `[lasyncro][FATAL] ModuleEntry.id missing for module '${id}'. 
+      This indicates an invalid export or premature load.`
+    );
+  }
+
+  if (desc.id !== id) {
+    console.warn(
+      '[lasyncro][WARN] ModuleEntry.id mismatch',
+      { expected: id, actual: desc.id }
+    );
   }
 
   return desc as UIModule;
@@ -67,6 +90,15 @@ export async function loadAllModules() {
     }
 
     const descriptor = await loadModule(entry);
+    if (import.meta.env.DEV) {
+      console.debug('[lasyncro][module-registered]', {
+        moduleId: descriptor.id,
+        routes: descriptor.routes?.length ?? 0,
+        navItems: descriptor.navItems?.length ?? 0,
+        navGroups: descriptor.navGroups?.length ?? 0
+      });
+    }
+
     if (!descriptor) continue;
 
     // Register module metadata into runtime store

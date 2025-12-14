@@ -4,22 +4,32 @@ import React from 'react';
 import { loadAllModules } from './moduleLoader';
 import { _setRoutesChangeNotifier } from './registerRoute';
 import { useRuntimeRoutes } from './useRuntimeRoutes';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 
 export default function ModuleBootstrap({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = React.useState(false);
   const { bump } = useRuntimeRoutes();
 
+  const { hasResolved } = useEntitlements();
+
   React.useEffect(() => {
-  let mounted = true;
+    if (!hasResolved) {
+      if (import.meta.env.DEV) {
+        console.debug('[ModuleBootstrap] waiting for entitlements to resolve');
+      }
+      return;
+    }
 
-  loadAllModules().then(() => {
-    if (mounted) setReady(true);
-  });
+    let mounted = true;
 
-  return () => {
-    mounted = false;
-  };
-}, []);
+    loadAllModules().then(() => {
+      if (mounted) setReady(true);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [hasResolved]);
 
   if (!ready) return null;
 

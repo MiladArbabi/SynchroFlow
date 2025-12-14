@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/api/product-costs.ts
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { axiosInstance } from './axiosConfig';
 
 export interface ProductCost {
   productId: string;
@@ -35,7 +35,7 @@ export const useProductCosts = (platformProductId?: string) => {
         setIsLoading(true);
         const token = localStorage.getItem('accessToken');
         
-        const response = await axios.get<ProductCost>(
+        const response = await axiosInstance.get<ProductCost>(
           `/api/v1/product-costs/${platformProductId}`,
           {
             headers: {
@@ -77,7 +77,7 @@ export const useUpdateProductCost = () => {
 
     // REAL API CALL - Remove mock implementation
     const token = localStorage.getItem('accessToken');
-    const response = await axios.post(`/api/v1/product-costs/${costData.platform_product_id}`, costData, {
+    const response = await axiosInstance.post(`/api/v1/product-costs/${costData.platform_product_id}`, costData, {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'

@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/api/products.ts
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { axiosInstance } from './axiosConfig';
 
 export interface Product {
   id: number;
@@ -56,7 +56,7 @@ export const useProducts = (page: number = 1, limit: number = 20, search?: strin
           ...(search && { search })
         });
 
-        const response = await axios.get<ProductsResponse>(`/api/v1/products?${params}`, {
+        const response = await axiosInstance.get<ProductsResponse>(`/api/v1/products?${params}`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -93,7 +93,7 @@ export const useProduct = (productId: string) => {
         const token = localStorage.getItem('accessToken');
         
         // For now, we'll filter from the products list since we don't have a single product endpoint
-        const response = await axios.get<ProductsResponse>('/api/v1/products?limit=1000', {
+        const response = await axiosInstance.get<ProductsResponse>('/api/v1/products?limit=1000', {
           headers: {
             Authorization: `Bearer ${token}`
           }

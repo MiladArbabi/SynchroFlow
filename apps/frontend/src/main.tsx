@@ -50,6 +50,7 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
 import { loadAllModules } from 'runtime/moduleLoader';
+import { bootstrapNavGroups } from 'runtime/navBootstrap';
 
 if (!window._lasyncroNavigate) {
   window._lasyncroNavigate = (path: string) => {
@@ -143,6 +144,8 @@ root.render(
   addRoute: (r: any) => console.debug('[lasyncro-host] addRoute', r),
   // ...other host functions modules expect
 };
+
+bootstrapNavGroups();
 
 loadAllModules()
   .then((loaded) => {

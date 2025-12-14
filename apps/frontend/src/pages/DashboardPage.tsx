@@ -4,7 +4,7 @@
 // apps/frontend/src/pages/DashboardPage.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 
 import { useQueryClient } from '@tanstack/react-query';
 import { DataSyncingModal } from 'components/DataSyncingModal';
@@ -234,7 +234,7 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
     // 5. Implement the Pre-flight Check
     try {
       // Use the accessToken from AuthContext for the protected endpoint
-      await axios.get('/api/v1/integrations/pre-flight', {
+      await axiosInstance.get('/api/v1/integrations/pre-flight', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },

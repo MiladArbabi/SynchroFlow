@@ -53,6 +53,13 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [hasResolved, setHasResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
+  const lastGoodSnapshotRef = React.useRef<{
+    shopId: number | null;
+    modules: string[];
+    flags: string[];
+  } | null>(null);
+
   // simple invalidation token to force re-fetch
   const [refreshToken, setRefreshToken] = useState(0);
   const refresh = useCallback(() => {
@@ -129,20 +136,64 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setError(null);
         setHasResolved(true);
 
+        // --- Persist last known good snapshot ---
+        lastGoodSnapshotRef.current = {
+          shopId: nextShopId,
+          modules: nextModules,
+          flags: nextFlags
+        };
+
         // expose snapshot for modules that call host APIs during init()
         (window as any)._lasyncroEntitlements = { modules: nextModules, flags: nextFlags };
+
+        if (import.meta.env.DEV) {
+          console.debug('[Entitlements] snapshot committed', lastGoodSnapshotRef.current);
+        }
+
       })
       .catch((err: any) => {
         if (cancelled) return;
 
-        setShopId(null);
-        setModules([]);
-        setFlags([]);
-        setError(err?.message || 'Failed to load entitlements');
-        setHasResolved(false);
+        if (import.meta.env.DEV) {
+        console.warn(
+          '[Entitlements] fetch failed – attempting fallback',
+          err?.message
+        );
+      }
 
-        // reflect cleared state to modules
-        (window as any)._lasyncroEntitlements = null;
+      // --- Fallback to last known good snapshot if available ---
+      if (lastGoodSnapshotRef.current) {
+        const snap = lastGoodSnapshotRef.current;
+
+        if (import.meta.env.DEV) {
+          console.info('[Entitlements] restored snapshot from memory', snap);
+        }
+
+        setShopId(snap.shopId);
+        setModules(snap.modules);
+        setFlags(snap.flags);
+        setError(null);
+        setHasResolved(true);
+
+        // keep global snapshot in sync
+        (window as any)._lasyncroEntitlements = {
+          modules: snap.modules,
+          flags: snap.flags
+        };
+
+        return;
+      }
+
+      // --- Hard failure only if no snapshot exists ---
+      setShopId(null);
+      setModules([]);
+      setFlags([]);
+      setError(err?.message || 'Failed to load entitlements');
+      setHasResolved(false);
+
+      // reflect cleared state to modules
+      (window as any)._lasyncroEntitlements = null;
+
       })
       .finally(() => {
         if (!cancelled) {

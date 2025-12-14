@@ -131,6 +131,9 @@ module.exports = {
         '^api/(.*)$': '<rootDir>/apps/frontend/src/api/$1',
         '^pages/(.*)$': '<rootDir>/apps/frontend/src/pages/$1',
 
+        '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
+        '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
+
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'
         : '<rootDir>/apps/frontend/src/$1/$2',                
         

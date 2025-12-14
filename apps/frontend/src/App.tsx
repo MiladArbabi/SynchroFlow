@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 // apps/frontend/src/App.tsx
 import React from "react";
-import axios from "axios";
+import { axiosInstance } from "api/axiosConfig";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -52,7 +52,7 @@ const LayoutManager = () => {
   // Handler for saving the layout (calls backend)
   const handleSaveLayout = async () => {
     try {
-      await axios.post("/api/v1/layouts/dashboard", {
+      await axiosInstance.post("/api/v1/layouts/dashboard", {
         layout: layoutRef.current, // Use data from refs
         activeWidgets: activeWidgetsRef.current,
       });

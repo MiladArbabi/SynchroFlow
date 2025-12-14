@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/components/DataSyncingModal.tsx
 import React, { useEffect, useMemo } from 'react';
-import axios from 'axios';
 import { useQuery } from '@tanstack/react-query';
 import {
   Dialog,

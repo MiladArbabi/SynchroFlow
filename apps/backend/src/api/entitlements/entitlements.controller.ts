@@ -18,7 +18,7 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
 
     // 2. Load entitlements
     const entitlements = await EntitlementsService.getForUser(userId);
-
+    
     // 3. No entitlements found → empty safe payload
     if (!entitlements) {
       return res.json({
@@ -26,6 +26,20 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
         modules: [],
         flags: [],
       });
+    }
+
+    // --- DEV-ONLY SMART ASSERTION ---
+    if (process.env.NODE_ENV !== 'production') {
+      const modules = Array.isArray(entitlements.modules) ? entitlements.modules : [];
+
+      if (!modules.includes('order-nexus')) {
+        console.warn('[entitlements][DEV] Expected module missing', {
+          userId,
+          shopId: entitlements.shopId,
+          missingModule: 'order-nexus',
+          resolvedModules: modules
+        });
+      }
     }
 
     // 4. Return normalized snapshot

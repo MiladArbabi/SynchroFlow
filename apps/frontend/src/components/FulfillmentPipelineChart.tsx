@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/components/FulfillmentPipelineChart.tsx
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -44,7 +44,7 @@ export const FulfillmentPipelineChart: React.FC = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const response = await axios.get<PipelineData>('/api/v1/analytics/fulfillment-pipeline?shop_id=1');
+        const response = await axiosInstance.get<PipelineData>('/api/v1/analytics/fulfillment-pipeline?shop_id=1');
         const data = response.data;
 
         setChartData({

@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/components/ConnectStoreModal.tsx
 import React, { useState, FormEvent } from 'react';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 import {
   Button,
   Dialog,
@@ -93,7 +93,7 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
       };
 
       // Add the 'headers' object with the access token
-      const { data } = await axios.get('/api/v1/integrations/oauth/initiate', {
+      const { data } = await axiosInstance.get('/api/v1/integrations/oauth/initiate', {
           params,
           headers: {
             Authorization: `Bearer ${accessToken}`

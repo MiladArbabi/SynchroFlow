@@ -14,7 +14,7 @@ import GatedPlaceholder from 'ui-component/GatedPlaceholder';
  * A component to protect routes from unauthenticated access.
  * It checks the authentication state from AuthContext.
  */
-const ProtectedRoute: React.FC = () => {
+const ProtectedRoute: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const { isLoggedIn, isLoading: authLoading } = useAuth();
   const { modules, flags, isLoading: entLoading, hasResolved } = useEntitlements();
   const location = useLocation();
@@ -102,7 +102,7 @@ const ProtectedRoute: React.FC = () => {
   }
 
   // 4. Authenticated and either ungated or allowed by entitlements → render app
-  return <Outlet />;
+  return children ? <>{children}</> : <Outlet />;
 };
 
 export default ProtectedRoute;

@@ -8,7 +8,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 
 // --- TYPES ---
 
@@ -36,7 +36,7 @@ export const HealthProvider = ({ children }: { children: ReactNode }) => {
     const healthCheck = async () => {
       try {
         // 2. Pass the signal to the axios request
-        await axios.get('/api/v1/kore/health', { signal: controller.signal });
+        await axiosInstance.get('/api/v1/kore/health', { signal: controller.signal });
 
         if (!isKoreHealthy) {
           console.log('[Kore Health] Service has recovered. Re-enabling L2+ features.');

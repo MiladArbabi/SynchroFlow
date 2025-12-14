@@ -1,16 +1,23 @@
 // tests/unit/api/runtime/ProtectedRoute.test.ts
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import ProtectedRoute from 'components/ProtectedRoute';
 import { Navigate, MemoryRouter, Routes, Route } from 'react-router-dom';
 
 // mock hooks
 jest.mock('contexts/AuthContext', () => ({
-  useAuth: () => ({ isLoggedIn: true, isLoading: false })
+  useAuth: () => ({
+    isLoggedIn: true,
+    isLoading: false
+  })
 }));
 
 jest.mock('contexts/EntitlementsContext', () => ({
-  useEntitlements: () => ({ modules: [], flags: [], isLoading: false })
+  useEntitlements: () => ({
+    modules: [],
+    flags: [],
+    hasResolved: true,
+    isLoading: false
+  })
 }));
 
 // mock registered routes

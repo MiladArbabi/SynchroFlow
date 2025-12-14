@@ -40,6 +40,10 @@ export function registerRoute(route: InternalRoute) {
     throw new Error('registerRoute: route.id required');
   }
 
+  if (dynamicRoutes[route.id]) {
+    console.warn('[registerRoute] duplicate route id detected:', route.id);
+  }
+
   dynamicRoutes[route.id] = { ...route, _registeredAt: Date.now() };
   mergedRoutesCache = null;
   notifyRoutesChanged?.();
@@ -89,3 +93,13 @@ export function resolveRoutePathById(routeId: string): string | null {
   const route = getRegisteredRoutes().find((r) => r.id === routeId || r.key === routeId);
   return route ? route.path : null;
 }
+
+// ─────────────────────────────────────────────
+// Test / debug helpers
+// ─────────────────────────────────────────────
+
+export function _resetRoutes() {
+  Object.keys(dynamicRoutes).forEach(k => delete dynamicRoutes[k]);
+  mergedRoutesCache = null;
+  notifyRoutesChanged?.();
+};

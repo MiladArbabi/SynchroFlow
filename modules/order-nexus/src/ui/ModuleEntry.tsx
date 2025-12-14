@@ -1,19 +1,33 @@
-import React from 'react';
-
-const OrdersPage = () => <div style={{padding:20}}>OrderNexus (placeholder)</div>;
+// modules/order-nexus/src/ui/ModuleEntry.tsx
+import OrdersPage from './pages/OrdersPage';
 
 const descriptor = {
   id: 'order-nexus',
   name: 'OrderNexus',
   version: '0.1.0',
-  routes: [
-    { id: 'orders', key: 'orders', name: 'Orders', path: '/orders', component: OrdersPage, requiredModuleId: 'order-nexus', order: 100 }
-  ],
+
   navItems: [
-    { id: 'orders', title: 'Orders', path: '/orders', order: 50 }
+    {
+      id: 'orders',
+      title: 'Orders',
+      path: '/orders',
+      group: 'operations',
+      order: 10,
+      requiredModuleId: 'order-nexus'
+    }
+  ],
+
+  routes: [
+    {
+      id: 'orders',
+      key: 'orders',
+      name: 'Orders',
+      path: '/orders',
+      component: OrdersPage,
+      requiredModuleId: 'order-nexus',
+      order: 100
+    }
   ]
 };
 
-// Descriptor already contains `id` — export it directly to avoid duplicate-id
-// object-literals (and satisfy the checker).
 export default descriptor;

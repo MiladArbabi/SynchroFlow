@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, CircularProgress, Alert } from '@mui/material';
 import { useQuery } from '@tanstack/react-query'; 
-import axios from 'axios'; 
+import { axiosInstance } from 'api/axiosConfig';
 import { OpsAction, SearchResult, VirtualItem } from './types';
 import { useHealthContext } from 'contexts/HealthContext';
 import { OpsActionType, useOpsContext } from 'contexts/OpsContext';
@@ -90,7 +90,7 @@ export const OpsCommandCenter = () => {
         return [];
       }
 
-      const { data } = await axios.get(
+      const { data } = await axiosInstance.get(
         `/api/v1/kore/search?q=${semanticQuery.toLowerCase()}`,
       );
       

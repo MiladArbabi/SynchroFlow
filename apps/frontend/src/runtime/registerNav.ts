@@ -70,8 +70,27 @@ export function getNavigation(): NavGroup[] {
 
   // 2. assign items into groups
   for (const item of Object.values(navItems)) {
-    const group = item.group && groupIndex[item.group];
-    if (group) group.items!.push(item);
+    if (!item.group) {
+      console.warn(
+        '[nav-registry] nav item ignored (no group):',
+        item.id
+      );
+      continue;
+    }
+
+    const group = groupIndex[item.group];
+
+    if (!group) {
+      console.warn(
+        '[nav-registry] nav item ignored (unknown group):',
+        item.id,
+        '→',
+        item.group
+      );
+      continue;
+    }
+
+    group.items!.push(item);
   }
 
   // 3. sort groups + items

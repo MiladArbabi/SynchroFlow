@@ -9,7 +9,7 @@ import {
   ButtonGroup,
   Typography,
 } from '@mui/material';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from 'contexts/AuthContext';
 import { useDashboardState } from 'contexts/DashboardStateContext';
 import { useIntegration } from 'contexts/IntegrationContext';
@@ -59,7 +59,7 @@ export const OrdersPerMonthBanner: React.FC = () => {
     setError(null);
 
     try {
-      await axios.patch(
+      await axiosInstance.patch(
         '/api/v1/user-state/state',
         { orders_per_month_segment: segment },
         {

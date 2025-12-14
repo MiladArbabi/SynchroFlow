@@ -2,7 +2,7 @@
 // apps/frontend/src/layouts/AppLayout/index.tsx
 import React, { ReactNode, useRef, useEffect, useState } from "react"; 
 import { useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import { axiosInstance } from "api/axiosConfig";
 // --- PANEL IMPORTS ---
 import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; // Import ImperativePanelHandle
 
@@ -75,14 +75,14 @@ const AppLayout = ({
       setSearchParams({}, { replace: true }); // Clean the URL
 
       // We still fetch the layout, but we know they are connected
-      axios.get('/api/v1/layouts/dashboard').catch(() => {
+      axiosInstance.get('/api/v1/layouts/dashboard').catch(() => {
         console.log('No saved layout found, but connection was successful.');
       });
     } else {
       // 2. Normal flow (no success param)
       const fetchLayout = async () => {
         try {
-          await axios.get('/api/v1/layouts/dashboard');
+          await axiosInstance.get('/api/v1/layouts/dashboard');
           // If this succeeds, they have a layout, so they must be connected.
           setIsConnected(true);
         } catch (error) {

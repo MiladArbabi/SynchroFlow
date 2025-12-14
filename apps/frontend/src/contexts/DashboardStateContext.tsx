@@ -2,7 +2,7 @@
 // apps/frontend/src/contexts/DashboardStateContext.tsx
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
+import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from './AuthContext';
 
 interface UserState {
@@ -44,7 +44,7 @@ export const DashboardStateProvider: React.FC<DashboardStateProviderProps> = ({ 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['userState'],
     queryFn: async (): Promise<UserState> => {
-      const response = await axios.get('/api/v1/user-state/state', {
+      const response = await axiosInstance.get('/api/v1/user-state/state', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
