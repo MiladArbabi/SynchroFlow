@@ -1,25 +1,23 @@
 // ModuleEntry.stub.js - simple CommonJS stub for contract tests
 exports.descriptor = {
-  id: "order-nexus-test",
-  name: "OrderNexusTest",
+  id: "customers",
+  name: "Customers",
   version: "0.1.0",
   routes: [
     {
-      id: "orders",
-      name: "Orders",
-      path: "/orders",
-      order: 100,
-      requiredModuleId: "order-nexus"
+      id: "customers-home",
+      key: "customers-home",
+      name: "Customers Home",
+      path: "/customers",
+      order: 100
     }
   ],
-    navItems: [
+  navItems: [
     {
-      id: "orders",
-      title: "Orders",
-      path: "/orders",
-      order: 50,
-      group: "operations",
-      requiredModuleId: "order-nexus"
+      id: "customers-home",
+      title: "Customers",
+      path: "/customers",
+      order: 50
     }
   ]
 };

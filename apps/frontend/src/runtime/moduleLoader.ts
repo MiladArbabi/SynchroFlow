@@ -119,7 +119,16 @@ export async function loadAllModules() {
       version: descriptor.version ?? '0.0.0',
     });
 
-    // Register routes
+    // 1️⃣ Lifecycle-based registration (preferred)
+    if (typeof (descriptor as any).register === 'function') {
+      await (descriptor as any).register({
+        registerRoute,
+        registerNavItem,
+        registerNavGroup
+      });
+    }
+
+    // 2️⃣ Static fallback registration (backward compatible)
     if (Array.isArray(descriptor.routes)) {
       for (const r of descriptor.routes) registerRoute(r);
     }

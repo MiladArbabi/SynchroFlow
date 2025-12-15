@@ -89,7 +89,7 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
           if (routeSet.has(url)) return true;
 
           // Dynamic module routes (e.g. /orders) are trusted
-          return url?.startsWith('/orders');
+          return Boolean(url);
         }) as NavItemType[] | undefined;
 
         return { ...group, children };

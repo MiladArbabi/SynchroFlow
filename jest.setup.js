@@ -40,3 +40,17 @@ jest.mock('recharts', () => {
     ResponsiveContainer: ({ children }) => children,
   };
 });
+
+// ─────────────────────────────────────────────
+// Mock Vite virtual module registry for Jest
+// ─────────────────────────────────────────────
+jest.mock('virtual:lasyncro-modules', () => {
+  return [
+    {
+      id: 'order-nexus',
+      load: async () => ({
+        default: require('./modules/order-nexus-test/ModuleEntry.stub.js').descriptor
+      })
+    }
+  ];
+});

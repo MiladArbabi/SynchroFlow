@@ -7,7 +7,6 @@ import RegisterPage from "./pages/authentication/RegisterPage";
 import ProductsPage from "./pages/ProductsPage"; 
 import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
-import CustomersPage from "./pages/CustomersPage";
 import AccountSettingsPage from "./pages/AccountSettingsPage";
 import { Product360Page } from "./pages/Product360Page";
 import AnalyticsPage from "./pages/AnalyticsPage";
@@ -68,14 +67,6 @@ const routes: RouteConfig[] = [
     key: "customer-details",
     route: "/customers/:id",
     component: Customer360Page,
-  },
-  {
-    type: "collapse",
-    name: "Customers",
-    key: "customers",
-    icon: "👥",
-    route: "/customers",
-    component: CustomersPage,
   },
   {
     type: "route",

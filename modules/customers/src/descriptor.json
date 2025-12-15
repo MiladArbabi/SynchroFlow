@@ -1,0 +1,23 @@
+{
+  "id": "customers",
+  "name": "",
+  "version": "0.1.0",
+  "routes": [
+    {
+      "id": "customers-home",
+      "key": "customers-home",
+      "name": " Home",
+      "path": "/customers",
+      "requiredModuleId": "customers",
+      "order": 100
+    }
+  ],
+  "navItems": [
+    {
+      "id": "customers-home",
+      "title": "",
+      "path": "/customers",
+      "order": 50
+    }
+  ]
+}

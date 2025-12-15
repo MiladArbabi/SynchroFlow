@@ -26,6 +26,8 @@ module.exports = {
         '^api-types$': '<rootDir>/apps/backend/src/types.ts',
         '^api-server$': '<rootDir>/apps/backend/src/server.ts',
 
+        '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
+
         // FRONTEND ALIASES (so backend tests can import frontend files safely)
         '^routes$': '<rootDir>/apps/frontend/src/routes.tsx',
         '^config$': '<rootDir>/apps/frontend/src/config.ts',
@@ -97,7 +99,8 @@ module.exports = {
         '^config$': '<rootDir>/apps/frontend/src/config.ts',
         '^test-utils$': '<rootDir>/apps/frontend/src/test-utils.tsx',
 
-        // New / missing mappings:
+        '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
+
         '^utils/(.*)$': '<rootDir>/apps/frontend/src/utils/$1',
         '^ui-component/(.*)$': '<rootDir>/apps/frontend/src/ui-component/$1',
         // assets + css
@@ -125,6 +128,8 @@ module.exports = {
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
         '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js',
         '^test-utils$': '<rootDir>/apps/frontend/src/test-utils.tsx',
+
+        '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
         
         // Add aliases for 'layout' and 'api'
         '^layout/(.*)$': '<rootDir>/apps/frontend/src/layout/$1',

@@ -180,6 +180,11 @@ export default function App() {
                             path="/orders/*"
                             element={<ModuleHost />}
                           />
+                          {/* 🔗 STATIC BRIDGE for Customers */}
+                          <Route
+                            path="/customers/*"
+                            element={<ModuleHost />}
+                          />
                           {/* Dynamic modules */}
                         <Route path="modules/:moduleId/*" element={<ModuleHost />} />
                       </Route>

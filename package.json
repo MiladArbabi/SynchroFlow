@@ -20,6 +20,7 @@
     "dev-integration": "npm run dev -w integration-service",
     "db:reset": "docker exec synchroflow_db psql -U sf_user -d postgres -c 'DROP DATABASE IF EXISTS synchroflow_db;' && docker exec synchroflow_db psql -U sf_user -d postgres -c 'CREATE DATABASE synchroflow_db;'",
     "dev:setup": "npm run db:reset && npm run migrate --workspace ./apps/backend && npm run seed --workspace ./apps/backend",
+    "scaffold:ui-module": "node scripts/scaffold-ui-module.js",
     "test:setup": "npm run db:reset && NODE_ENV=test npm run migrate --workspace ./apps/backend && NODE_ENV=test npm run seed --workspace ./apps/backend",
     "test": "npm run test:setup && jest --runInBand --verbose --forceExit",
     "test:e2e": "npx playwright test --config=playwright.config.ts",
