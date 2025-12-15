@@ -4,11 +4,9 @@ import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import LoginPage from "./pages/authentication/LoginPage";
 import RegisterPage from "./pages/authentication/RegisterPage";
-import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
 import AccountSettingsPage from "./pages/AccountSettingsPage";
 import { Product360Page } from "./pages/Product360Page";
-import FinancesPage from "./pages/FinancesPage";
 
 // ✅ Route shape with entitlement metadata
 export interface RouteConfig {
@@ -40,16 +38,6 @@ const routes: RouteConfig[] = [
     // Core experience – no module gating
   },
   {
-    type: "collapse",
-    name: "Finances",
-    key: "finances",
-    icon: "💰",
-    route: "/finances",
-    component: FinancesPage,
-    // 🔐 Advanced: requires finances module
-    requiredModuleId: "finances",
-  },
-  {
     type: "route",
     name: "Customer Details",
     key: "customer-details",
@@ -62,15 +50,6 @@ const routes: RouteConfig[] = [
     key: "product-details",
     route: "/products/:id",
     component: Product360Page,
-  },
-  {
-    type: "collapse",
-    name: "Echo Inbox",
-    key: "echo-hub",
-    icon: "💬",
-    route: "/echo-hub",
-    component: EchoHubPage,
-    // You can later gate this with a module, e.g. requiredModuleId: "echo-hub"
   },
   // 🔻 NOTE: /data-mapper and /product-intelligence have been removed from routes
   // They’re effectively deprecated for users, but code is still in the repo.

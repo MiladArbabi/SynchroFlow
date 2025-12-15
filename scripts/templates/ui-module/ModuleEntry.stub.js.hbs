@@ -1,40 +1,27 @@
-// ModuleEntry.stub.js - simple CommonJS stub for contract tests
-exports.descriptor = {
-  id: "{{MODULE_ID}}",
-  name: "{{PASCAL_NAME}}",
-  version: "{{version}}",
-  routes: [
-    {
-      id: "{{MODULE_ID}}-home",
-      key: "{{MODULE_ID}}-home",
-      name: "{{PASCAL_NAME}} Home",
-      path: "/{{MODULE_ID}}",
-      order: 100
-    }
-  ],
+// ModuleEntry.stub.js – FT0 contract stub
+
+exports.default = {
+  id: '{{MODULE_ID}}',
+  name: '{{PASCAL_NAME}}',
+  version: '{{version}}',
+
   navItems: [
     {
-      id: "{{MODULE_ID}}-home",
-      title: "{{PASCAL_NAME}}",
-      path: "/{{MODULE_ID}}",
-      order: 50
+      id: '{{MODULE_ID}}',
+      title: '{{PASCAL_NAME}}',
+      path: '/{{MODULE_ID}}',
+      group: 'operations',
+      order: 20,
+      requiredModuleId: '{{MODULE_ID}}'
+    }
+  ],
+
+  routes: [
+    {
+      id: '{{MODULE_ID}}',
+      path: '/{{MODULE_ID}}',
+      requiredModuleId: '{{MODULE_ID}}',
+      order: 100
     }
   ]
-};
-
-exports.register = function (host) {
-  // register routes via host if present (harness uses host.registerRoute)
-  if (host && typeof host.registerRoute === 'function') {
-    (exports.descriptor.routes || []).forEach(r => host.registerRoute(r));
-  }
-  if (host && typeof host.addNavItem === 'function') {
-    (exports.descriptor.navItems || []).forEach(n => host.addNavItem(n));
-  }
-  return {
-    mount: () => null,
-    onMount: async () => {},
-    onActivate: async () => {},
-    onDeactivate: async () => {},
-    onUnmount: async () => {}
-  };
 };

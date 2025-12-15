@@ -9,23 +9,10 @@
  */
 
 
-import { MenuItems, NavItemType } from './types';
-import { MessageSquare } from 'lucide-react';
+import { MenuItems } from './types';
 
 // Import Items
 import dashboard from './dashboard';
-import finances from './finances';
-
-// ==============================|| MENU ITEMS ||============================== //
-
-const echoHub: NavItemType = {
-  id: 'echo-hub',
-  title: 'Echo Inbox',
-  type: 'item',
-  url: '/echo-hub',
-  icon: MessageSquare,
-  breadcrumbs: false
-};
 
 // CORRECTED STRUCTURE: Must conform to MenuItems interface
 const menuItems: MenuItems = {
@@ -47,14 +34,12 @@ const menuItems: MenuItems = {
      id: 'intelligence-group',
      title: 'Intelligence',
      type: 'group',
-     children: [
-       finances,
-     ]
+     children: [] // REMOVED
    },
     {
       id: 'communication-group',
       type: 'group',
-      children: [echoHub]
+      children: []
     }
     // Old, removed items (dataMapper, productIntelligence) are gone.
   ]

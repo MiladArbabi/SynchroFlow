@@ -1,0 +1,23 @@
+{
+  "id": "finances",
+  "name": "",
+  "version": "0.1.0",
+  "routes": [
+    {
+      "id": "finances-home",
+      "key": "finances-home",
+      "name": " Home",
+      "path": "/finances",
+      "requiredModuleId": "finances",
+      "order": 100
+    }
+  ],
+  "navItems": [
+    {
+      "id": "finances-home",
+      "title": "",
+      "path": "/finances",
+      "order": 50
+    }
+  ]
+}
