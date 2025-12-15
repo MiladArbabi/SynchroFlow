@@ -4,7 +4,6 @@ import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import LoginPage from "./pages/authentication/LoginPage";
 import RegisterPage from "./pages/authentication/RegisterPage";
-import ProductsPage from "./pages/ProductsPage"; 
 import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
 import AccountSettingsPage from "./pages/AccountSettingsPage";
@@ -74,14 +73,6 @@ const routes: RouteConfig[] = [
     key: "product-details",
     route: "/products/:id",
     component: Product360Page,
-  },
-  {
-    type: "collapse",
-    name: "Products",
-    key: "products",
-    icon: "📦",
-    route: "/products",
-    component: ProductsPage,
   },
   {
     type: "collapse",

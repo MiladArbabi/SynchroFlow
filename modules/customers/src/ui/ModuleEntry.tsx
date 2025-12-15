@@ -1,5 +1,6 @@
 // modules/customers/src/ui/ModuleEntry.tsx
 import CustomersPage from './pages/CustomersPage';
+import { UsersRound } from 'lucide-react';
 
 const descriptor = {
   id: 'customers',
@@ -13,6 +14,7 @@ const descriptor = {
       path: '/customers',
       group: 'operations',
       order: 20,
+      icon: UsersRound,
       requiredModuleId: 'customers'
     }
   ],

@@ -1,0 +1,23 @@
+{
+  "id": "products",
+  "name": "",
+  "version": "0.1.0",
+  "routes": [
+    {
+      "id": "products-home",
+      "key": "products-home",
+      "name": " Home",
+      "path": "/products",
+      "requiredModuleId": "products",
+      "order": 100
+    }
+  ],
+  "navItems": [
+    {
+      "id": "products-home",
+      "title": "",
+      "path": "/products",
+      "order": 50
+    }
+  ]
+}

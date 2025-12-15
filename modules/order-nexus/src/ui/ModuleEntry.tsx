@@ -1,5 +1,6 @@
 // modules/order-nexus/src/ui/ModuleEntry.tsx
 import OrdersPage from './pages/OrdersPage';
+import { ShoppingCart } from 'lucide-react';
 
 const descriptor = {
   id: 'order-nexus',
@@ -21,6 +22,7 @@ const descriptor = {
       path: '/orders',
       group: 'operations',
       order: 10,
+      icon: ShoppingCart,
       requiredModuleId: 'order-nexus'
     }
   ],

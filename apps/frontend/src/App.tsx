@@ -185,6 +185,11 @@ export default function App() {
                             path="/customers/*"
                             element={<ModuleHost />}
                           />
+                          {/* 🔗 STATIC BRIDGE for Products */}
+                          <Route
+                            path="/products/*"
+                            element={<ModuleHost />}
+                          />
                           {/* Dynamic modules */}
                         <Route path="modules/:moduleId/*" element={<ModuleHost />} />
                       </Route>
