@@ -43,6 +43,19 @@ const ProtectedRoute: React.FC<{ children?: React.ReactNode }> = ({ children }) 
   // 3. Authenticated: enforce entitlement gating for the matched route, if any
   const currentPath = location.pathname;
 
+  // --- Runtime module bootstrap escape hatch ---
+  // If user is authenticated and we're on a known module route
+  // but runtime routes are not registered yet, do NOT redirect.
+  if (
+    isLoggedIn &&
+    (
+      currentPath.startsWith('/orders') ||
+      currentPath.startsWith('/modules/')
+    )
+  ) {
+    return <Outlet />;
+  }
+
   // We only care about routes defined in routes.tsx and runtime-registered routes
   const matchingRouteRaw = getRegisteredRoutes().find(
     (r) =>

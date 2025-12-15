@@ -161,18 +161,25 @@ export default function App() {
                       {/* Protected SaaS app */}
                     <Route element={<ProtectedRoute />}>
                       <Route element={<LayoutManager />}>
-                        {getRegisteredRoutes()
-                          .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
-                          .map(route => {
-                            const Component = route.component;
-                            return (
-                              <Route
-                                key={route.id}
-                                path={route.path}
-                                element={Component ? <Component /> : null}
-                              />
+                        {/* Runtime-registered routes */}
+                          {getRegisteredRoutes()
+                            .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
+                            .map(route => {
+                              const Component = route.component;
+                              return (
+                                <Route
+                                  key={route.id}
+                                  path={route.path}
+                                  element={Component ? <Component /> : null}
+                                />
                               );
                             })}
+
+                          {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
+                          <Route
+                            path="/orders/*"
+                            element={<ModuleHost />}
+                          />
                           {/* Dynamic modules */}
                         <Route path="modules/:moduleId/*" element={<ModuleHost />} />
                       </Route>
