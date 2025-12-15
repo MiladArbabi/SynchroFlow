@@ -40,6 +40,7 @@ import { FormattedMessage } from 'react-intl';
 import { IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
 import { LucideProps } from 'lucide-react';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import SafeMessage from 'ui-component/SafeMessage';
 
 // Define component props
 interface NavCollapseProps {
@@ -342,13 +343,13 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
                                  transition: 'width 0.3s ease-in-out, opacity 0.3s ease-in-out',
                             }}
                         >
-                            <FormattedMessage id={menu.title} defaultMessage={menu.title} />
+                            <SafeMessage id={menu.title} defaultMessage={menu.title} />
                         </Typography>
                     }
                     secondary={
                         menu.caption && drawerOpen && (
                             <Typography variant="caption" display="block" gutterBottom sx={{ color: 'text.secondary' }}>
-                                <FormattedMessage id={menu.caption} defaultMessage={menu.caption} />
+                                <SafeMessage id={menu.caption} defaultMessage={menu.caption} />
                             </Typography>
                         )
                     }
@@ -356,7 +357,7 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
             )}
             {/* Tooltip for Mini variant */}
              {!drawerOpen && (
-                 <Tooltip title={<FormattedMessage id={menu.title} defaultMessage={menu.title} />} placement="right">
+                 <Tooltip title={<SafeMessage id={menu.title} defaultMessage={menu.title} />} placement="right">
                       <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%' }} />
                   </Tooltip>
              )}
@@ -453,7 +454,7 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
              <ListItemText
                 primary={
                     <Typography variant={isSelected ? 'h5' : 'body1'} color="inherit">
-                         <FormattedMessage id={menu.title} defaultMessage={menu.title} />
+                         <SafeMessage id={menu.title} defaultMessage={menu.title} />
                     </Typography>
                 }
              />

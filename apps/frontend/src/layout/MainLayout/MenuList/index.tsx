@@ -46,7 +46,8 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
    const dynamicItems: NavItemType[] = dynamicGroupsRaw.flatMap((g) =>
       (g.items ?? []).map((item) => ({
         id: item.id,
-        title: item.label,
+        title: undefined,
+        label: item.label,
         type: 'item',
         url: item.path,
         icon: item.icon
@@ -84,7 +85,11 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
             return true;
           }
 
-          return routeSet.has(url);
+          // Static routes are gated via routes.tsx
+          if (routeSet.has(url)) return true;
+
+          // Dynamic module routes (e.g. /orders) are trusted
+          return url?.startsWith('/orders');
         }) as NavItemType[] | undefined;
 
         return { ...group, children };

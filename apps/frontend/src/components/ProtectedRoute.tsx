@@ -54,49 +54,29 @@ const ProtectedRoute: React.FC<{ children?: React.ReactNode }> = ({ children }) 
     // Cast to any to avoid strict structural mismatch with RouteConfig (RouteConfig uses `route` key)
     const matchingRoute: any = matchingRouteRaw;
 
-    // Cross-sell exception:
-    // Analytics & Finances routes should always be reachable,
-    // even if the user doesn't yet have those modules.
+    // Cross-sell exception (static routes only)
     const crossSellPaths = ['/analytics', '/finances'];
     if (!crossSellPaths.includes(currentPath)) {
-      const snapshot = {
-        modules,
-        flags
-      } as any;
 
-      // Build a RouteConfig-like object for the entitlement check.
-      // `isRouteEnabled` expects a RouteConfig with a `route` string — runtime uses `path`.
-      const routeForCheck = {
-        ...(matchingRoute as any),
-        route: matchingRoute.path // satisfy RouteConfig shape
-      } as any;
-
-      // If the route is gated and the user doesn’t satisfy it, show placeholder or bounce
-      if (!isRouteEnabled(routeForCheck, snapshot)) {
-        // prefer showing gated placeholder if module provided an upgradeRoute or
-        // if the route has 'showGatedPlaceholder' meta flag
-        const showPlaceholder = !!(matchingRoute.upgradeRoute || matchingRoute.meta?.showGatedPlaceholder);
-
-        if (showPlaceholder) {
-          return (
-            <GatedPlaceholder
-              routeName={matchingRoute.name || matchingRoute.path}
-              missingModules={matchingRoute.requiredModuleId ? [matchingRoute.requiredModuleId] : []}
-              missingFlags={matchingRoute.requiredFlagId ? [matchingRoute.requiredFlagId] : []}
-              upgradeRoute={matchingRoute.upgradeRoute}
-            />
-          );
+      // 🧠 Runtime module route (e.g. /orders)
+      if (matchingRoute.requiredModuleId) {
+        if (!modules.includes(matchingRoute.requiredModuleId)) {
+          return <Navigate to="/dashboard" replace />;
         }
+      }
 
-        if (import.meta.env.DEV) {
-          console.warn('[ProtectedRoute] access denied', {
-            path: currentPath,
-            requiredModuleId: matchingRoute.requiredModuleId,
-            userModules: modules,
-          });
+      // 🧱 Static route (defined in routes.tsx)
+      else {
+        const snapshot = { modules, flags } as any;
+
+        const routeForCheck = {
+          ...(matchingRoute as any),
+          route: matchingRoute.path
+        } as any;
+
+        if (!isRouteEnabled(routeForCheck, snapshot)) {
+          return <Navigate to="/dashboard" replace />;
         }
-        // otherwise fallback redirect
-        return <Navigate to="/dashboard" replace />;
       }
     }
   }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/routes.tsx
 import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -19,7 +20,7 @@ export interface RouteConfig {
   key: string;
   icon?: string;
   route: string;
-  component: React.ReactNode;
+  component: React.ComponentType<any>;
 
   // --- Entitlement metadata (Slice 1) ---
   requiredModuleId?: string;
@@ -38,7 +39,7 @@ const routes: RouteConfig[] = [
     key: "dashboard",
     icon: "🏠",
     route: "/dashboard",
-    component: <DashboardPage children={<></>} handleSidenavToggle={() => {}} />,
+    component: DashboardPage,
     // Core experience – no module gating
   },
   {
@@ -47,7 +48,7 @@ const routes: RouteConfig[] = [
     key: "analytics",
     icon: "📈",
     route: "/analytics",
-    component: <AnalyticsPage />,
+    component: AnalyticsPage,
     // 🔐 Advanced: requires analytics module
     requiredModuleId: "analytics",
   },
@@ -57,7 +58,7 @@ const routes: RouteConfig[] = [
     key: "finances",
     icon: "💰",
     route: "/finances",
-    component: <FinancesPage />,
+    component: FinancesPage,
     // 🔐 Advanced: requires finances module
     requiredModuleId: "finances",
   },
@@ -66,7 +67,7 @@ const routes: RouteConfig[] = [
     name: "Customer Details",
     key: "customer-details",
     route: "/customers/:id",
-    component: <Customer360Page />,
+    component: Customer360Page,
   },
   {
     type: "collapse",
@@ -74,14 +75,14 @@ const routes: RouteConfig[] = [
     key: "customers",
     icon: "👥",
     route: "/customers",
-    component: <CustomersPage />,
+    component: CustomersPage,
   },
   {
     type: "route",
     name: "Product Details",
     key: "product-details",
     route: "/products/:id",
-    component: <Product360Page />,
+    component: Product360Page,
   },
   {
     type: "collapse",
@@ -89,7 +90,7 @@ const routes: RouteConfig[] = [
     key: "products",
     icon: "📦",
     route: "/products",
-    component: <ProductsPage />,
+    component: ProductsPage,
   },
   {
     type: "collapse",
@@ -97,7 +98,7 @@ const routes: RouteConfig[] = [
     key: "echo-hub",
     icon: "💬",
     route: "/echo-hub",
-    component: <EchoHubPage />,
+    component: EchoHubPage,
     // You can later gate this with a module, e.g. requiredModuleId: "echo-hub"
   },
   // 🔻 NOTE: /data-mapper and /product-intelligence have been removed from routes
@@ -108,21 +109,21 @@ const routes: RouteConfig[] = [
     name: "Account Settings",
     key: "account-settings",
     route: "/account/settings",
-    component: <AccountSettingsPage />,
+    component: AccountSettingsPage,
   },
   {
     type: "route",
     name: "Login",
     key: "login",
     route: "/login",
-    component: <LoginPage />,
+    component: LoginPage,
   },
   {
     type: "route",
     name: "Register",
     key: "register",
     route: "/register",
-    component: <RegisterPage />,
+    component: RegisterPage,
   },
 ];
 

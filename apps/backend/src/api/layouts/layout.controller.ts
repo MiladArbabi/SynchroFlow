@@ -7,7 +7,7 @@ import db from "../../db";
 // We'll use a hardcoded user ID for now, as authentication is not yet fully integrated
 const MOCK_USER_ID = "default_user";
 
-export const getLayout = async (req: Request, res: Response): Promise<void> => {
+export const getLayout = async (req: Request, res: Response): Promise<Response | void> => {
   const { layoutName } = req.params;
   const userId = req.user?.userId;
 
@@ -27,9 +27,19 @@ export const getLayout = async (req: Request, res: Response): Promise<void> => {
     const userShopId = user.shop_id;
 
     // 2. Try to find the layout
-    const layout = await db('layouts')
-      .where({ shop_id: userShopId, name: layoutName })
-      .first();
+    let layout;
+    try {
+      layout = await db('layouts')
+        .where({ shop_id: userShopId, name: layoutName })
+        .first();
+    } catch (err: any) {
+      // Table does not exist yet → safe fallback
+      if (err.code === '42P01') {
+        res.status(200).json({ layout: [], activeWidgets: [] });
+        return;
+      }
+      throw err;
+    }
  
      if (layout) {
       // Layout found - return it

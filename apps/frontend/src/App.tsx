@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-refresh/only-export-components */
-// apps/frontend/src/App.tsx
+// apps/frontend/src/
 import React from "react";
 import { axiosInstance } from "api/axiosConfig";
 import RGL from 'react-grid-layout'
@@ -85,12 +86,44 @@ const LayoutManager = () => {
   );
 };
 
-
 function RuntimeRoutesSubscriber() {
   // This hook ONLY forces rerender when routes change
   // We intentionally ignore the value
   useRuntimeRoutes();
   return null;
+}
+
+class IntlErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: any }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any) {
+    console.error('[IntlErrorBoundary] Caught error:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 24 }}>
+          <h2>UI rendering error</h2>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>
+            {String(this.state.error?.message || this.state.error)}
+          </pre>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -106,7 +139,8 @@ export default function App() {
             <ThemeCustomization>
               <EntitlementsProvider>
                 <SpecterConfigProvider>
-                  <ModuleBootstrap>
+                  <ModuleBootstrap />
+                   <IntlErrorBoundary>
                     <Routes>
                       {/* Public auth routes */}
                       {routes
@@ -114,34 +148,43 @@ export default function App() {
                           (route) =>
                             route.key === 'login' || route.key === 'register'
                         )
-                        .map((route) => (
-                          <Route
-                            path={route.route}
-                            element={route.component}
-                            key={route.key}
-                          />
-                        ))}
+                        .map((route) => {
+                          const Component = route.component;
+                          return (
+                            <Route
+                              key={route.key}
+                              path={route.route}
+                              element={Component ? <Component /> : null}
+                            />
+                          );
+                        })}
                       {/* Protected SaaS app */}
-                      <Route element={<ProtectedRoute />}>
-                        <Route element={<LayoutManager />}>
-                          {getRegisteredRoutes()
-                            .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
-                            .map(route => (
+                    <Route element={<ProtectedRoute />}>
+                      <Route element={<LayoutManager />}>
+                        {getRegisteredRoutes()
+                          .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
+                          .map(route => {
+                            const Component = route.component;
+                            return (
                               <Route
                                 key={route.id}
                                 path={route.path}
-                                element={route.component}
+                                element={Component ? <Component /> : null}
                               />
-                            ))}
+                              );
+                            })}
                           {/* Dynamic modules */}
-                          <Route path="modules/:moduleId/*" element={<ModuleHost />} />
-                        </Route>
+                        <Route path="modules/:moduleId/*" element={<ModuleHost />} />
                       </Route>
+                    </Route>
 
-                      {/* Fallback */}
-                      <Route path="*" element={<Navigate to="/dashboard" />} />
-                    </Routes>
-                  </ModuleBootstrap>
+                    {/* Root */}
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+                    {/* Fallback */}
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
+                  </IntlErrorBoundary>
                 </SpecterConfigProvider>
               </EntitlementsProvider>
             </ThemeCustomization>

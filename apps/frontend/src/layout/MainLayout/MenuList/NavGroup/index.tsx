@@ -35,12 +35,10 @@ import {ConfigContext} from 'contexts/ConfigContext';
 import Transitions from 'ui-component/extended/Transitions';
 import { useGetMenuMaster } from 'api/menu';
 
-// third party
-import { FormattedMessage } from 'react-intl';
-
 // assets
 import { IconChevronDown, IconMinusVertical, IconChevronUp } from '@tabler/icons-react';
 import { LucideProps } from 'lucide-react';
+import SafeMessage from 'ui-component/SafeMessage';
 
 // Define the type for remaining items in horizontal mode
 interface RemItemType {
@@ -194,7 +192,7 @@ function NavGroup ({ item, lastItem, remItems = [], lastItemId, selectedID, setS
       ) : (
         itemRem.title && (
           <Typography variant="caption" sx={{ pl: 2, pt: 1, pb: 0.5, display: 'block' }} color="textSecondary">
-            <FormattedMessage id={itemRem.title} defaultMessage={itemRem.title} />
+            <SafeMessage id={itemRem.title} defaultMessage={itemRem.title} />
           </Typography>
         )
       )}
@@ -244,10 +242,10 @@ function NavGroup ({ item, lastItem, remItems = [], lastItemId, selectedID, setS
               currentItem.title &&
               drawerOpen && (
                 <Typography variant="caption" sx={subheaderSx}>
-                  <FormattedMessage id={currentItem.title} defaultMessage={currentItem.title} />
+                  <SafeMessage id={currentItem.title} defaultMessage={currentItem.title} />
                   {currentItem.caption && drawerOpen && (
                     <Typography variant="caption" display="block" sx={{ fontSize: '0.6875rem', fontWeight: 400, color: 'text.disabled', lineHeight: 1.66 }}>
-                      <FormattedMessage id={currentItem.caption} defaultMessage={currentItem.caption} />
+                      <SafeMessage id={currentItem.caption} defaultMessage={currentItem.caption} />
                     </Typography>
                   )}
                 </Typography>
@@ -298,12 +296,12 @@ function NavGroup ({ item, lastItem, remItems = [], lastItemId, selectedID, setS
               sx={{ mr: 1, mb: 0 }}
               primary={
                 <Typography ref={ref} variant={isSelected || openMini ? 'h5' : 'body1'} color="inherit" sx={{ whiteSpace: 'nowrap' }}>
-                  {currentItem.id === lastItemId ? <FormattedMessage id="more-items" defaultMessage="More" /> : <FormattedMessage id={currentItem.title} defaultMessage={currentItem.title} />}
+                  {currentItem.id === lastItemId ? <SafeMessage id="more-items" defaultMessage="More" /> : <SafeMessage id={currentItem.title} defaultMessage={currentItem.title} />}
                 </Typography>
               }
             />
             {hoverStatus && (
-              <Tooltip title={<FormattedMessage id={currentItem.title} defaultMessage={currentItem.title} />} placement="bottom-start">
+              <Tooltip title={<SafeMessage id={currentItem.title} defaultMessage={currentItem.title} />} placement="bottom-start">
                 <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%' }} />
               </Tooltip>
             )}

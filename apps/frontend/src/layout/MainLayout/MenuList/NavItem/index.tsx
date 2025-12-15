@@ -25,6 +25,7 @@ import { withAlpha } from 'utils/colorUtils'; // Ensure this is typed later
 
 // third party
 import { FormattedMessage } from 'react-intl';
+import SafeMessage from 'ui-component/SafeMessage';
 
 // assets
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
@@ -213,13 +214,13 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
                              transition: 'width 0.3s ease-in-out, opacity 0.3s ease-in-out',
                         }}
                     >
-                        <FormattedMessage id={item.title} defaultMessage={item.title} />
+                        <SafeMessage id={item.title} defaultMessage={item.title} />
                     </Typography>
                 }
                 secondary={
                     item.caption && isDrawerOpen && ( // Only show caption if drawer is open
                         <Typography variant="caption" display="block" gutterBottom sx={{ color: 'text.secondary'}}>
-                           <FormattedMessage id={item.caption} defaultMessage={item.caption} />
+                           <SafeMessage id={item.caption} defaultMessage={item.caption} />
                         </Typography>
                     )
                 }
@@ -228,7 +229,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
 
            {/* Tooltip for Mini variant */}
            {!isDrawerOpen && (
-               <Tooltip title={<FormattedMessage id={item.title} defaultMessage={item.title} />} placement="right">
+               <Tooltip title={<SafeMessage id={item.title} defaultMessage={item.title} />} placement="right">
                    {/* This Box acts as the anchor for the tooltip */}
                     <Box sx={{
                         position: 'absolute',
@@ -282,7 +283,7 @@ const NavItem: React.FC<NavItemProps> = ({ item, level, isParents = false, setSe
              <ListItemText
                 primary={
                     <Typography variant={isSelected ? 'h5' : 'body1'} color="inherit">
-                         <FormattedMessage id={item.title} defaultMessage={item.title} />
+                         <SafeMessage id={item.title} defaultMessage={item.title} />
                     </Typography>
                 }
              />

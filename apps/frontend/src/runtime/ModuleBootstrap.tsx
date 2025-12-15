@@ -6,7 +6,7 @@ import { _setRoutesChangeNotifier } from './registerRoute';
 import { useRuntimeRoutes } from './useRuntimeRoutes';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 
-export default function ModuleBootstrap({ children }: { children: React.ReactNode }) {
+export default function ModuleBootstrap() {
   const [ready, setReady] = React.useState(false);
   const { bump } = useRuntimeRoutes();
 
@@ -31,7 +31,5 @@ export default function ModuleBootstrap({ children }: { children: React.ReactNod
     };
   }, [hasResolved]);
 
-  if (!ready) return null;
-
-  return <>{children}</>;
+  return null;
 }

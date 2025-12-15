@@ -74,6 +74,15 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
       setFlags([]);
       setError(null);
       setIsLoading(false);
+      setHasResolved(true); // ✅ CRITICAL: resolve entitlement state for logged-out users
+
+      // keep global snapshot consistent
+      (window as any)._lasyncroEntitlements = { modules: [], flags: [] };
+
+      if (import.meta.env.DEV) {
+        console.debug('[Entitlements] resolved (logged out)');
+      }
+
       return;
     }
 

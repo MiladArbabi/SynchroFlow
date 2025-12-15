@@ -80,7 +80,18 @@ export async function loadModule(entry: { id: string; load: () => Promise<any> }
 /**
  * Load and register all modules.
  */
+let modulesLoaded = false;
+
 export async function loadAllModules() {
+  if (modulesLoaded) {
+    if (import.meta.env.DEV) {
+      console.debug('[lasyncro] loadAllModules skipped (already loaded)');
+    }
+    return {}; // ✅ ALWAYS return an object
+  }
+
+  modulesLoaded = true;
+
   const loaded: Record<string, UIModule> = {};
 
   for (const entry of modules) {

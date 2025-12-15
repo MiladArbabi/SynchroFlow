@@ -6,6 +6,14 @@ const descriptor = {
   name: 'OrderNexus',
   version: '0.1.0',
 
+  navGroups: [
+    {
+      id: 'operations',
+      label: 'Operations',
+      order: 20
+    }
+  ],
+
   navItems: [
     {
       id: 'orders',
@@ -20,8 +28,6 @@ const descriptor = {
   routes: [
     {
       id: 'orders',
-      key: 'orders',
-      name: 'Orders',
       path: '/orders',
       component: OrdersPage,
       requiredModuleId: 'order-nexus',
