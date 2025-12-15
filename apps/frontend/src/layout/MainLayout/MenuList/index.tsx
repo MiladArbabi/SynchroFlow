@@ -43,15 +43,18 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
   const dynamicGroupsRaw = getNavigation();
 
    // 2. Adapt runtime NavGroup → UI NavGroupType
-   const dynamicItems: NavItemType[] = dynamicGroupsRaw.flatMap((g) =>
-    (g.items ?? []).map((item) => ({
-      id: item.id,
-      title: item.title,  
-      type: 'item',
-      url: item.path,
-      icon: item.icon,
-      breadcrumbs: false
-    }))
+    const dynamicItems: NavItemType[] = dynamicGroupsRaw.flatMap((g) =>
+    (g.items ?? []).map((item) => {
+      // Runtime nav items are guaranteed to be NavItem-like
+      return {
+        id: item.id,
+        title: item.title ?? item.id, // safe fallback
+        type: 'item',
+        url: item.path,
+        icon: item.icon,
+        breadcrumbs: false
+      };
+    })
   );
   
    // 3. Merge static menu groups + dynamic module nav groups

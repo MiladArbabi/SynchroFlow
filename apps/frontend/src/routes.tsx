@@ -8,7 +8,6 @@ import EchoHubPage from "./pages/EchoHubPage";
 import Customer360Page from "./pages/Customer360Page";
 import AccountSettingsPage from "./pages/AccountSettingsPage";
 import { Product360Page } from "./pages/Product360Page";
-import AnalyticsPage from "./pages/AnalyticsPage";
 import FinancesPage from "./pages/FinancesPage";
 
 // ✅ Route shape with entitlement metadata
@@ -39,16 +38,6 @@ const routes: RouteConfig[] = [
     route: "/dashboard",
     component: DashboardPage,
     // Core experience – no module gating
-  },
-  {
-    type: "collapse",
-    name: "Analytics",
-    key: "analytics",
-    icon: "📈",
-    route: "/analytics",
-    component: AnalyticsPage,
-    // 🔐 Advanced: requires analytics module
-    requiredModuleId: "analytics",
   },
   {
     type: "collapse",

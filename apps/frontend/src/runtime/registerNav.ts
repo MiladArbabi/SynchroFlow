@@ -3,14 +3,17 @@
 
 export interface NavItem {
   id: string;
-  label: string;
+  title: string;              // ← aligns with ModuleEntry descriptors
   path: string;
   icon?: any;
+
   order?: number;
   group?: string;
+
   requiredModuleId?: string;
   requiredFlagId?: string;
-  meta?: Record<string, any>;
+
+  meta?: Record<string, unknown>;
 }
 
 export interface NavGroup {

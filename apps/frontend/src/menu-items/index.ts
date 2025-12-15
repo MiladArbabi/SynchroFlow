@@ -14,7 +14,6 @@ import { MessageSquare } from 'lucide-react';
 
 // Import Items
 import dashboard from './dashboard';
-import analytics from './analytics';
 import finances from './finances';
 
 // ==============================|| MENU ITEMS ||============================== //
@@ -49,7 +48,6 @@ const menuItems: MenuItems = {
      title: 'Intelligence',
      type: 'group',
      children: [
-       analytics,
        finances,
      ]
    },
