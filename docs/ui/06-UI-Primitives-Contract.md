@@ -1,152 +1,111 @@
-### **UI Primitives Contract — Minimal API Rules & Canonical Approved Primitives (A2)**
+# **06 — UI Primitives Contract (Normative, Enforced)**
+
+**Status:** 🔐 Locked — Enforced
+**Owner:** UI Platform Architecture
+**Audience:** Module authors, platform maintainers
+**Depends on:**
+
+* 02-Component-Library-Contract
+* 03-Design-Tokens-Contract
+* 08-UI-Host-API-Contract
 
 ---
 
-## **Status**
+## 1. Purpose (Normative)
 
-**Draft → Ready for Review**
+This document defines the **exact API, behavior, and accessibility guarantees** of LaSyncro UI primitives.
 
-## **Owner**
+It does **not** define *which* primitives exist — that is owned by **Document 02**.
+This document defines **how they must behave**.
 
-UI Platform Team
-
-## **Purpose**
-
-This document defines the **canonical UI primitives** that all LaSyncro modules must use.
-It provides:
-
-* A **minimal API** for each primitive
-* A **strict allowed set of variants & props**
-* **Design token mapping** requirements
-* **Accessibility rules**
-* **Testing & Storybook obligations**
-* A process for **adding or changing primitives**
-
-**Goal:** Prevent UI fragmentation, stabilize the host surface, guarantee accessibility, and create long-term consistency.
+If a primitive violates this contract, it is considered **platform-broken**.
 
 ---
 
-# 1. Core Principles
+## 2. Import Boundary (Strict)
 
-### **1. Minimal API Surface**
+Modules may import primitives **only** via:
 
-Only essential props. No overloading, no open-ended config bags.
+```ts
+import { Button, Input, DataGrid } from 'ui-component';
+```
 
-### **2. Theme-First Implementation**
+Modules MUST NOT:
 
-All styling must originate from design tokens defined in:
+* import from `@mui/*`
+* import from host source paths
+* wrap or re-export primitives
 
-`03-Design-Tokens-Contract.md`
-
-### **3. Accessibility by Default**
-
-Every primitive must ship with built-in a11y patterns:
-
-* semantic HTML whenever possible
-* aria attributes
-* keyboard navigation
-* focus-visible styling
-
-### **4. Testable & Documented**
-
-Every primitive requires:
-
-* Unit tests
-* Accessibility tests
-* Storybook stories
-
-### **5. Host-Owned & Versioned**
-
-All primitives live under:
-
-`apps/frontend/src/ui-component/*`
-
-Modules **must not** reimplement primitives locally.
+Violations are **CI-fatal**.
 
 ---
 
-# 2. Canonical Primitive List
+## 3. API Stability Rules (Global)
 
-Below is the **approved and required primitive set**.
-Modules may only use primitives from this list (unless explicitly approved through the RFC process).
+For every primitive:
+
+* Required props **must exist**
+* Optional props **must be backward compatible**
+* Behavioral semantics **must not change without major version bump**
+* No `any`-typed escape hatches
 
 ---
 
-## **2.1 Button**
+## 4. Primitive API Contracts (Canonical)
 
-### **Export**
+> Only **representative primitives** are expanded here.
+> All other primitives listed in Document 02 follow the same rules.
 
-`ui-component/Button`
+---
 
-### **Minimal Props**
+### 4.1 Button
 
 ```ts
 interface ButtonProps {
-  children?: React.ReactNode;
-  variant?: 'primary' | 'secondary' | 'tertiary' | 'danger' | 'ghost';
-  size?: 'sm' | 'md' | 'lg';
+  children: React.ReactNode;
+  variant: 'primary' | 'secondary' | 'text' | 'danger';
+  size: 'sm' | 'md' | 'lg';
   disabled?: boolean;
-  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onClick: () => void;
   type?: 'button' | 'submit' | 'reset';
   startIcon?: React.ReactNode;
   endIcon?: React.ReactNode;
-  fullWidth?: boolean;
-  'aria-label'?: string;
 }
 ```
 
-### **Token Mapping**
+**Behavioral guarantees**
 
-* Color: `theme.palette.*`
-* Typography: `typography.button`
-* Padding: `spacing.md`
-* Border radius: `radius.sm`
-
-### **A11y Rules**
-
-* Must render `<button>`.
-* Must expose focus-visible styles.
-* Must support keyboard activation (Enter/Space).
+* Renders a semantic `<button>`
+* Keyboard operable (Enter / Space)
+* Disabled state blocks interaction
+* Focus-visible styles always present
 
 ---
 
-## **2.2 Input (Text)**
-
-### **Export**
-
-`ui-component/Input`
-
-### **Minimal Props**
+### 4.2 Input (Text)
 
 ```ts
 interface InputProps {
-  value?: string;
-  defaultValue?: string;
+  value: string;
+  onChange: (value: string) => void;
   placeholder?: string;
-  type?: 'text'|'email'|'password'|'search'|'number';
-  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  name?: string;
-  required?: boolean;
+  type?: 'text' | 'email' | 'password' | 'search' | 'number';
   error?: boolean;
   helperText?: string;
-  'aria-label'?: string;
+  disabled?: boolean;
 }
 ```
 
-### **A11y**
+**Guarantees**
 
-* `aria-invalid` when `error` is true.
-* Must associate label → input whenever a label exists.
+* Renders `<input>`
+* Emits value only (not event)
+* `aria-invalid` set when `error === true`
+* Label association enforced when label exists
 
 ---
 
-## **2.3 Select (Single)**
-
-### **Export**
-
-`ui-component/Select`
-
-### **Minimal Props**
+### 4.3 Select (Single)
 
 ```ts
 interface SelectOption {
@@ -155,259 +114,172 @@ interface SelectOption {
 }
 
 interface SelectProps {
-  value?: string;
-  onChange?: (value: string) => void;
+  value: string;
   options: SelectOption[];
-  placeholder?: string;
+  onChange: (value: string) => void;
   disabled?: boolean;
 }
 ```
 
-### **A11y**
+**Guarantees**
 
-* Prefer `<select>` element.
-* If custom popover: follow ARIA combobox rules.
+* Accessible name required
+* Keyboard navigation supported
+* Screen-reader compatible
+* No uncontrolled mode
 
 ---
 
-## **2.4 Checkbox / Radio**
-
-### **Exports**
-
-* `ui-component/Checkbox`
-* `ui-component/Radio`
-
-### **Props**
+### 4.4 Checkbox / Radio
 
 ```ts
 interface CheckboxProps {
-  checked?: boolean;
-  onChange?: (v: boolean) => void;
-  label?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
   disabled?: boolean;
 }
 ```
 
-### **A11y**
+**Guarantees**
 
-* True `<input type="checkbox">` / `<input type="radio">`
-* Linked label required.
+* Native `<input>` semantics
+* Click + keyboard support
+* Label is mandatory
 
 ---
 
-## **2.5 DataGrid / Table**
-
-### **Export**
-
-`ui-component/DataGrid`
-
-### **Minimal Props**
+### 4.5 DataGrid
 
 ```ts
 interface DataGridProps {
+  rows: unknown[];
   columns: ColumnDef[];
-  rows: any[];
-  pagination?: boolean;
-  sorting?: boolean;
-  onRowClick?: (row: any) => void;
+  loading?: boolean;
+  onRowClick?: (row: unknown) => void;
 }
 ```
 
-### **A11y Requirements**
+**Guarantees**
 
-* Semantic `<table>` where possible.
-* If virtualized: follow ARIA grid roles with keyboard navigation.
+* Virtualized rendering
+* Deterministic row keys
+* Loading state shows skeleton
+* Keyboard navigation supported
 
 ---
 
-## **2.6 Modal / Dialog**
-
-### **Export**
-
-`ui-component/Modal`
-
-### **Minimal Props**
+### 4.6 Modal / Dialog
 
 ```ts
 interface ModalProps {
   open: boolean;
+  title: string;
   onClose: () => void;
-  title?: string;
-  children?: React.ReactNode;
+  children: React.ReactNode;
   actions?: React.ReactNode;
 }
 ```
 
-### **A11y**
+**Guarantees**
 
-* Focus trap
-* Escape key closes
+* Focus trap enforced
+* Escape closes modal
 * `aria-modal="true"`
-* Title is labeled by `aria-labelledby`
+* Focus restored on close
 
 ---
 
-## **2.7 Toast / Snackbar**
+## 5. Feedback & Notifications (Critical Correction)
 
-### **Export**
+Modules **must not** show global feedback directly.
 
-`ui-component/Toast` (with static `.show()` helper)
-
-### **API**
+❌ **Forbidden**
 
 ```ts
-Toast.show({
-  message: string;
-  severity?: 'info' | 'success' | 'warning' | 'error';
-  duration?: number;
-  action?: { label: string; onClick: () => void };
+Toast.show(...)
+Snackbar.open(...)
+```
+
+✅ **Required**
+
+```ts
+host.showToast({
+  message: string,
+  type?: 'info' | 'success' | 'warning' | 'error'
 });
 ```
 
-### **A11y**
-
-* Must announce via `aria-live="polite"` or `"assertive"` depending on severity.
+Primitives may render **local feedback only**.
 
 ---
 
-## **2.8 Avatar & AvatarGroup**
+## 6. Design Token Binding (Strict)
 
-### **Props**
+Primitives must consume styling exclusively via:
 
-```ts
-interface AvatarProps {
-  src?: string;
-  alt?: string;
-  size?: 'sm'|'md'|'lg';
-}
-```
+* `theme.palette`
+* `theme.spacing()`
+* `theme.typography`
+* `theme.shape`
 
-### **A11y**
-
-* `alt` text required unless decorative.
+Hardcoded values are forbidden.
 
 ---
 
-## **2.9 Other Approved Primitives**
+## 7. Accessibility (Non-Negotiable)
 
-Each with minimal APIs & token binding:
+Every primitive must:
 
-* `Card`
-* `Skeleton`
-* `Chip`
-* `Badge`
-* `Tooltip`
-* `Tabs`
-* `Pagination`
-* `Breadcrumbs`
-* `Spinner`
+* Have a visible focus indicator
+* Be keyboard operable
+* Have a programmatic name
+* Use correct semantic roles
+* Avoid div-based interactivity
 
-Each must ship with:
-
-* TypeScript types
-* Stories
-* Unit tests
-* Accessibility tests
+Accessibility regressions are **release blockers**.
 
 ---
 
-# 3. Export & Import Rules
+## 8. Testing Requirements (CI Enforced)
 
-### **Allowed**
+Each primitive must include:
 
-```ts
-import Button from 'ui-component/Button';
-import Input from 'ui-component/Input';
-```
+* Unit tests (props + behavior)
+* Accessibility tests (axe)
+* Dark / light mode snapshots
+* Storybook stories
 
-### **Forbidden**
+The contract test harness must be able to:
 
-* Importing components directly from `@mui/*`
-* Creating module-specific primitive clones
-* Bypassing `ui-component/*` for 3rd-party wrappers
-
-### **Wrapper Rule**
-
-If a module needs something from MUI:
-→ it must be wrapped *once* inside `ui-component/wrappers/*`
-→ not used directly by modules.
+* Import each primitive
+* Render it inside a module shell
+* Detect no runtime errors
 
 ---
 
-# 4. Accessibility Requirements (Global)
+## 9. Change & RFC Process
 
-For **every primitive**:
+Any change requires:
 
-* Must provide visible focus indicator.
-* Must have a keyboard-accessible activation path.
-* Must support screen reader names (`aria-label`, labels, text).
-* Overlays must trap focus and restore on close.
-* No role misusage or div-based interactive elements (unless ARIA-complete).
-
----
-
-# 5. Storybook & Test Requirements
-
-### **Stories (minimum 3 per primitive)**
-
-1. Default state
-2. Variant(s)
-3. Edge case (error, loading, disabled)
-
-### **Unit Tests**
-
-* Rendering & snapshot
-* Interaction behavior (click, focus, keyboard)
-* Accessibility smoke tests (axe)
-
-### **Contract Test**
-
-The host contract-test harness must be able to:
-
-* import each primitive
-* mount it inside a module
-* validate no runtime or styling errors occur
+1. RFC under `docs/ui/rfcs/`
+2. API impact analysis
+3. Migration notes
+4. Version bump
+5. Contract update
 
 ---
 
-# 6. Versioning & Change Process
+## 10. Relationship to Other Contracts
 
-### **Breaking Change Process**
-
-1. RFC file under `docs/ui/rfcs/YYYYMMDD-primitive-change.md`
-2. Host review + migration steps
-3. 2-release deprecation period with console warnings
-4. Optional codemod for large migrations
-
----
-
-# 7. Adding a New Primitive (RFC Process)
-
-1. Draft RFC with:
-
-   * justification
-   * minimal API
-   * expected variants
-   * token mapping
-   * usage examples
-2. Implement primitive inside `ui-component/<Name>`
-3. Add stories + tests
-4. Update this contract document
-5. Submit to UI Architecture review
+| Document | Responsibility        |
+| -------- | --------------------- |
+| 02       | What primitives exist |
+| 03       | Tokens & theme        |
+| 06       | API + behavior        |
+| 08       | Host-mediated effects |
+| 12       | Enforcement           |
 
 ---
 
-# 8. Acceptance Criteria for This Contract
-
-* All primitives listed here exist under `ui-component/*`.
-* All primitives follow minimal API specifications.
-* All primitives bind exclusively to design tokens.
-* Storybook builds successfully and includes each primitive.
-* Contract test harness can mount an instance of every primitive.
-* CI runs accessibility and behavioral tests for all primitives.
-
----
-
-# End of Document
-
----
+## End of Document 06 — UI Primitives Contract

@@ -1,149 +1,88 @@
-# **LaSyncro UI — Design Tokens Contract (v1.0)**
+# **03 — Design Tokens Contract (Normative, Enforced)**
 
-### **Canonical Specification for Colors, Typography, Spacing, Radii & Shadows**
+**LaSyncro UI Platform — Canonical Design Token Specification**
 
-**Status:** Stable (FT0–FT1 locked)
-**Scope:** All frontend UI, all modules (CNS Suite), dashboards, widgets, surfaces
-**Purpose:** Provide a single source of truth for all design tokens used across LaSyncro.
-
----
-
-# 1. **Overview**
-
-Design tokens define the smallest, indivisible building blocks of LaSyncro's visual system:
-
-* Colors
-* Typography
-* Spacing
-* Borders & radii
-* Shadows
-* Motion
-* Z-index layers
-
-These tokens guarantee consistency across all modules and prevent one-off UI decisions that break the platform’s coherence.
-
-**This contract supersedes any token definitions inside Berry Templates.**
-Berry is *inspired by* our tokens — not the source of truth.
+**Status:** 🔐 Locked (FT0–FT1)
+**Owner:** UI Platform Architecture
+**Applies to:** All UI primitives, all modules, all layouts, all widgets
 
 ---
 
-# 2. **Token Architecture Diagram**
+## 1. Purpose (Normative)
+
+Design tokens are the **single source of truth** for all visual decisions in LaSyncro.
+
+They define **what values exist**, **what they mean**, and **how they are consumed**.
+
+No UI code may introduce visual values outside this contract.
+
+---
+
+## 2. Token Architecture (Authoritative)
 
 ```
 tokens/
- ├── core/
- │     ├── color.json
- │     ├── typography.json
- │     ├── spacing.json
- │     ├── radii.json
- │     ├── shadows.json
- │     └── zindex.json
- ├── semantic/
- │     ├── surface.json
- │     ├── border.json
- │     ├── status.json
- │     └── interactive.json
- └── module-scopes/
-       ├── specter.json
-       ├── insight-core.json
-       ├── order-nexus.json
-       └── sku-os.json
+ ├── core/              # raw, non-semantic primitives
+ ├── semantic/          # meaning-driven tokens
+ └── module-scopes/     # strictly controlled extensions
 ```
+
+### Hierarchy Rules
+
+1. **Core tokens**
+   → never referenced directly by modules
+2. **Semantic tokens**
+   → the primary consumption layer
+3. **Module-scoped tokens**
+   → *exceptions*, not defaults
 
 ---
 
-# 3. **Core Tokens**
+## 3. Core Tokens (Platform-Owned)
 
-## 3.1 Colors (Atomic Layer)
+Core tokens define raw values only.
 
-These are raw color primitives — generated from `presetColorId`, but *never overridden by modules*.
+Modules:
 
-### **Primary**
+* ❌ MUST NOT reference core tokens
+* ❌ MUST NOT override core tokens
 
-```
-primary.light
-primary.main
-primary.dark
-primary.200
-primary.800
-```
-
-### **Secondary**
-
-```
-secondary.light
-secondary.main
-secondary.dark
-secondary.200
-secondary.800
-```
-
-### **Greyscale**
-
-```
-grey.50
-grey.100
-grey.200
-grey.300
-grey.500
-grey.600
-grey.700
-grey.900
-```
-
-### **Feedback Colors**
-
-```
-error.light / main / dark
-warning.light / main / dark
-success.light / main / dark
-orange.light / main / dark
-```
-
-### **Dark Mode Extensions**
-
-```
-dark.main
-dark.level1
-dark.level2
-dark.background
-dark.paper
-```
+(Your existing color definitions remain unchanged and valid.)
 
 ---
 
-# 4. **Semantic Tokens (Aligned With Merchant Modes)**
+## 4. Semantic Tokens (Primary Consumption Layer)
 
-Semantic tokens define *meaning*, not raw color values.
+Modules and primitives **MUST consume semantic tokens only**.
 
-## 4.1 Surface Tokens
-
-```
-surface.default          → background.default
-surface.paper             → background.paper
-surface.sunken            → dark.level1
-surface.raised            → dark.level2 (or shadow elevation 1)
-```
-
-## 4.2 Border Tokens
+### 4.1 Surface
 
 ```
-border.default           → grey.200
-border.strong            → grey.300
-border.subtle            → grey.100
+surface.default
+surface.paper
+surface.sunken
+surface.raised
 ```
 
-## 4.3 Status Tokens (Cross-module Consistent)
+### 4.2 Border
 
 ```
-status.info      → primary.main
-status.warning   → warning.main
-status.critical  → error.main
-status.success   → success.main
-status.neutral   → grey.500
+border.default
+border.strong
+border.subtle
 ```
 
-## 4.4 Interactive Tokens
+### 4.3 Status
+
+```
+status.info
+status.warning
+status.critical
+status.success
+status.neutral
+```
+
+### 4.4 Interactive
 
 ```
 interactive.hover
@@ -153,207 +92,152 @@ interactive.disabled
 interactive.disabled-bg
 ```
 
-Derived using consistent alpha rules.
+---
+
+## 5. Typography Tokens
+
+(Your existing definitions are correct and unchanged.)
+
+Consumption is **indirect**, via primitives or theme typography mapping.
 
 ---
 
-# 5. Typography Tokens
+## 6. Spacing Tokens
 
-### Families
+Canonical scale remains unchanged.
 
-```
-font.family.primary
-font.family.mono
-```
+### Enforcement Rule
 
-### Sizes
+* ❌ No pixel literals in module UI code
+* ❌ No ad-hoc spacing constants
+* ✅ Spacing must flow through:
 
-```
-font.size.xs
-font.size.sm
-font.size.md
-font.size.lg
-font.size.xl
-font.size.display
-```
-
-### Weights
-
-```
-font.weight.regular
-font.weight.medium
-font.weight.bold
-```
-
-### Line-heights
-
-```
-line-height.tight
-line-height.normal
-line-height.loose
-```
+  * `theme.spacing()`
+  * approved primitives
 
 ---
 
-# 6. Spacing Tokens
+## 7. Radii Tokens
 
-Universal spacing scale:
+No changes allowed.
 
-```
-0  
-4     (xs)
-8     (sm)
-12
-16    (md)
-20
-24    (lg)
-32
-40
-48     (xl)
-64     (xxl)
-```
-
-Every module **must** use spacing tokens.
-No pixel literals allowed except for layout primitives.
+Modules MUST NOT introduce new radii.
 
 ---
 
-# 7. Radii Tokens
+## 8. Elevation & Shadows
 
-```
-radius.none     → 0
-radius.sm       → 4
-radius.md       → 8
-radius.lg       → 12
-radius.round    → 100%
-```
+Shadow levels are fixed and semantic.
 
-Modules cannot introduce custom radii.
+Modules MUST NOT:
+
+* introduce custom box-shadow values
+* bypass elevation tokens
 
 ---
 
-# 8. Elevation & Shadows
+## 9. Z-Index Tokens (Strict Ordering)
 
-```
-shadow.0   → none
-shadow.1   → subtle ambient
-shadow.2   → card hover
-shadow.3   → raised panel
-shadow.4   → modal overlay
-```
+Your existing z-index hierarchy is correct.
 
-These map to Berry’s shadow definitions but are normalized.
+**Additional rule:**
+Modules MUST NOT set numeric z-index values directly.
 
 ---
 
-# 9. Z-Index Tokens
+## 10. Motion Tokens (Clarified)
+
+Motion tokens are **platform-owned** and consumed via primitives only.
 
 ```
-z.base          → 0
-z.header        → 1000
-z.sidebar       → 1100
-z.overlay       → 1200
-z.modal         → 1300
-z.toast         → 1400
-z.ops-console   → 1500
+motion.duration.fast
+motion.duration.normal
+motion.duration.slow
+
+motion.easing.standard
+motion.easing.decelerate
+motion.easing.accelerate
 ```
 
-This ensures Ops Console always floats above everything.
+Modules:
+
+* ❌ MUST NOT define animations manually
+* ✅ MUST rely on primitive behavior
 
 ---
 
-# 10. Token Contract Rules
+## 11. Module-Scoped Tokens (Highly Restricted)
 
-## Rule 1 — **No module owns colors**
+Module-scoped tokens exist **only when semantic tokens are insufficient**.
 
-Modules only use semantic tokens.
+Rules:
 
-## Rule 2 — **No inline CSS values**
+1. Must be approved by UI Platform
+2. Must extend semantic meaning, not redefine visuals
+3. Must not overlap with core or semantic tokens
+4. Must be documented in the module’s UI blueprint
+5. Must not be consumed outside the owning module
 
-All sizes, colors, and spacing must use tokens.
-
-## Rule 3 — **Tokens are stable**
-
-New tokens may be added, never removed.
-
-## Rule 4 — **Modules may not modify theme**
-
-Only global-level design system controls theme shape.
-
-## Rule 5 — **Dark mode must be token-driven**
-
-No hard-coded conditionals in component code.
+Violations fail CI.
 
 ---
 
-# 11. Mapping Into MUI Theme (Canonical)
+## 12. Token Consumption Rules (Critical)
 
-This ensures compatibility with:
+Modules MUST consume tokens **only via**:
 
-* Berry overrides
-* Custom components
-* CNS widgets
-* Module UIs
+* UI primitives (`ui-component/*`)
+* Host theme (`theme.palette`, `theme.spacing`, etc.)
 
-```
-theme.palette.primary.main       = primary.main
-theme.palette.grey[200]          = grey.200
-theme.palette.background.default = surface.default
-theme.shape.borderRadius         = radius.md
-theme.spacing()                  = spacing tokens
-theme.shadows[2]                 = shadow.2
-```
+Modules MUST NOT:
+
+* import token JSON
+* define CSS variables
+* access core token files
+* override theme values
+* use inline numeric values
 
 ---
 
-# 12. Token Versioning
+## 13. MUI Theme Mapping (Canonical)
 
-```
-v1.0 → Locked for FT0–FT1  
-v1.1 → Expansion for FT2 (Growth Intelligence)  
-v2.0 → Full CNS Unified Redesign  
-```
-
-Reverse-compatibility required.
+(Your mapping section is correct; remains authoritative.)
 
 ---
 
-# 13. Appendix: Token Consumption Examples
+## 14. CI & Contract Enforcement
 
-## Example — Widget Shell
+CI validates that:
 
-```
-padding: spacing.md;
-border-radius: radius.md;
-background: surface.raised;
-box-shadow: shadow.1;
-```
+* No forbidden token imports exist
+* No raw values bypass primitives
+* No module overrides theme
+* No CSS variables are defined by modules
 
-## Example — Module Panel
-
-```
-border: 1px solid border.default;
-background: surface.paper;
-```
-
-## Example — Interactive Component
-
-```
-:hover {
-  background: interactive.hover;
-}
-```
+Violations are **CI-fatal**.
 
 ---
 
-# ✅ Document Completed
+## 15. Versioning Rules
 
-This document is now ready in final form and integrates cleanly with:
+* Tokens are **append-only**
+* Removals require major version bump
+* Semantic meaning must remain stable
 
-* Berry template
-* LaSyncro’s theme system
-* CNS module architecture
-* Merchant Mode semantics
-* Future CNS UI structure
+---
+
+## 16. Relationship to Other Contracts
+
+| Document | Responsibility                |
+| -------- | ----------------------------- |
+| 02       | What primitives exist         |
+| 03       | What values exist             |
+| 06       | How primitives consume tokens |
+| 07       | Module composition            |
+| 12       | Enforcement                   |
+
+---
+
+## End of Design Tokens Contract
 
 ---

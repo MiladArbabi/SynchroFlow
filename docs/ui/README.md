@@ -1,395 +1,424 @@
-# README — UI Contracts, Blueprints & Module Tooling (LaSyncro)
+# README — UI Contracts, Runtime Architecture & Module Tooling (LaSyncro)
 
-**Purpose:** This repository section holds the canonical UI *contracts*, module blueprints, module scaffolding tooling and the tiny runtime helpers that let frontend feature modules attach themselves to the LaSyncro host safely. This README explains the 12 core UI documents, where related code and templates live, how to scaffold / validate / test modules, and the practical next steps for an engineer picking up the work.
+**Purpose**
+This directory documents the **canonical UI architecture** of LaSyncro: how the host app boots, how runtime UI modules register routes and navigation, how entitlements are enforced, and how engineers safely add or migrate modules without breaking routing, auth, or refresh behavior.
 
-If you only read one thing: follow the *Quick start* and the *Handoff checklist* at the end.
-
----
-
-# Table of contents
-
-1. Quick start — dev commands and immediate tasks
-2. Project map — the 12 docs and their supporting files (one-by-one)
-3. Code & templates locations (what to edit when)
-4. How to add a new UI module (step-by-step)
-5. Contract tests & CI (what runs where)
-6. Migration & runtime helpers (registerRoute, ProtectedRoute semantics, entitlements)
-7. Troubleshooting & common failure modes
-8. Handoff checklist — prioritized tasks for the next engineer
-9. Appendix — examples & useful snippets
+If you read only one thing: read **Quick start**, **Runtime routing model**, and **Handoff checklist**.
 
 ---
 
-# 1 — Quick start
+## Table of contents
 
-Clone, install, and run the validation & contract tests locally:
+1. Quick start
+2. High-level UI runtime architecture (host vs modules)
+3. Project map — the 12 UI contract documents
+4. Runtime routing model (static + dynamic)
+5. Entitlements & ProtectedRoute semantics
+6. Adding a new UI module (step-by-step)
+7. Code & template locations
+8. Contract tests & CI
+9. Troubleshooting & failure modes
+10. Handoff checklist
+11. Appendix — examples
+
+---
+
+## 1 — Quick start
 
 ```bash
-# From repo root
-# prefer a clean lockfile state (we use npm workspaces)
+# from repo root
 npm ci
 
-# Validate module descriptors (fast)
+# validate module descriptors
 node scripts/validate-modules.js
 
-# Run UI contract tests (single-threaded)
+# run UI contract tests
 npx jest tests/contract --runInBand
 
-# Typecheck relevant packages
+# typecheck shared UI contracts
 npx tsc -p modules/shared/tsconfig.json
 ```
 
-If you want to scaffold a module (dev only):
+Scaffold a new UI module (dev only):
 
 ```bash
 node scripts/scaffold-ui-module.js <module-id> --force
-# Example:
+# example
 node scripts/scaffold-ui-module.js order-nexus-test --force
 ```
 
 ---
 
-# 2 — Project map — the 12 documents + what sits with them
+## 2 — High-level UI runtime architecture
 
-The docs live under `docs/ui/`. Each document is described below with its purpose, owner suggestions, and the code/artifacts that must be kept in sync.
+LaSyncro uses a **host-driven, runtime-extensible UI architecture**.
 
-> List of the 12 documents (files):
-> `docs/ui/01-UI-Module-Index.md`
-> `docs/ui/02-Component-Library-Contract.md`
-> `docs/ui/03-Design-Tokens-Contract.md`
-> `docs/ui/04-UI-Layout-Contract.md`
-> `docs/ui/05-Minimal-UI-API-Contract.md`
-> `docs/ui/05-UI-Routing-Contract.md` *(routing draft)*
-> `docs/ui/06-UI-Primitives-Contract.md`
-> `docs/ui/07-UI-Module-Composition-Contract.md`
-> `docs/ui/08-UI-Host-API-Contract.md`
-> `docs/ui/09-UI-Module-Lifecycle-Contract.md`
-> `docs/ui/10-UI-Module-Folder-Structure-Guide.md`
-> `docs/ui/11-UI-Module-Scaffolding-CLI.md`
-> `docs/ui/12-UI-Module-Contract-Rules.md`
+### Host responsibilities (apps/frontend)
 
-Below are short, actionable descriptions for each.
+The host owns:
 
----
+* Authentication & session state
+* Entitlements resolution
+* Static routes (`/dashboard`, `/login`, etc.)
+* Layout (AppLayout, sidenav, topbar)
+* Runtime registries (routes, nav, telemetry)
+* Protection & gating (`ProtectedRoute`)
 
-## 01 — UI Module Index (`docs/ui/01-UI-Module-Index.md`)
+### Module responsibilities (modules/*)
 
-**Purpose:** Single-page inventory of product & infra UI modules (routes, owners, entitlements, blueprint link).
-**Keep in sync with:** `apps/frontend/src/routes.tsx`, `modules/*/descriptor.json`.
-**Action items:** Add blueprint stubs (under `docs/ui/04-Module-UI-Blueprints/`) and set owner/reviewer for each module.
+Each UI module:
+
+* Declares a **descriptor** (`descriptor.json`)
+* Registers routes & nav items at runtime
+* Supplies React components for pages
+* Declares required entitlements
+* Does **not** control auth, routing guards, or layout
+
+Modules attach themselves to the host via **HostApi** at runtime.
 
 ---
 
-## 02 — Component Library Contract (`docs/ui/02-Component-Library-Contract.md`)
+## 3 — Project map: the 12 UI documents
 
-**Purpose:** Authoritative minimal API for host-provided UI primitives (Button/Input/DataGrid/etc).
-**Keep in sync with:** `apps/frontend/src/ui-component/` (implementation), Storybook stories, tests.
-**Action items:** Ensure any new primitive is added in the contract and Storybook + unit tests exist.
+Docs live under `docs/ui/`. These describe **contracts**, not implementation details.
 
----
+```
+docs/ui/
+├─ 01-UI-Module-Index.md
+├─ 02-Component-Library-Contract.md
+├─ 03-Design-Tokens-Contract.md
+├─ 04-UI-Layout-Contract.md
+├─ 05-Minimal-UI-API-Contract.md
+├─ 05-UI-Routing-Contract.md
+├─ 06-UI-Primitives-Contract.md
+├─ 07-UI-Module-Composition-Contract.md
+├─ 08-UI-Host-API-Contract.md
+├─ 09-UI-Module-Lifecycle-Contract.md
+├─ 10-UI-Module-Folder-Structure-Guide.md
+├─ 11-UI-Module-Scaffolding-CLI.md
+└─ 12-UI-Module-Contract-Rules.md
+```
 
-## 03 — Design Tokens Contract (`docs/ui/03-Design-Tokens-Contract.md`)
-
-**Purpose:** Canonical tokens (color, spacing, typography, radii, shadows, z-index).
-**Keep in sync with:** token files (suggested `tokens/` or `modules/shared/src/tokens/`), MUI theme mapping, design-system source of truth.
-**Action items:** Add token JSON + mapping examples to MUI theme. Add token-driven dark-mode examples to Storybook.
-
----
-
-## 04 — UI Layout Contract (`docs/ui/04-UI-Layout-Contract.md`)
-
-**Purpose:** Module-first layout interface: slots, ModuleLayoutProps, HostApi surface shape.
-**Keep in sync with:** `modules/shared/src/ui-contracts.ts` (types), host layout code (slots & providers).
-**Action items:** Convert any ad-hoc layout slot usage in modules to the slot contract.
-
----
-
-## 05 — Minimal UI API Contract (`docs/ui/05-Minimal-UI-API-Contract.md`)
-
-**Purpose:** Minimal runtime API + canonical primitive list modules must rely on (this is the single small host → module surface).
-**Keep in sync with:** `modules/shared/src/ui-contracts.ts` and the runtime helper `apps/frontend/src/runtime/registerRoute.ts`.
-**Action items:** Ensure HostApi functions exist and are stable; list required primitives mapping to `ui-component`.
+Each document must be kept in sync with **code**, not vice-versa.
 
 ---
 
-## 05 (routing) — UI Routing Contract (`docs/ui/05-UI-Routing-Contract.md`)
+## 4 — Runtime routing model (this is critical)
 
-**Purpose:** Canonical route descriptor, static vs dynamic registration, entitlements guard behavior and ProtectedRoute contract.
-**Keep in sync with:** `apps/frontend/src/routes.tsx`, `apps/frontend/src/components/ProtectedRoute.tsx` (or wrapper), runtime `registerRoute` shim.
-**Action items:** Implement `registerRoute()` shim in host and update router to use `mergeRoutes(staticRoutes)`.
+### There are **three kinds of routes** in LaSyncro
 
----
+#### 1. Static host routes (compile-time)
 
-## 06 — UI Primitives Contract (`docs/ui/06-UI-Primitives-Contract.md`)
+Defined in:
 
-**Purpose:** More complete details of primitives not covered in 02 (edge cases, virtualization, performance constraints).
-**Keep in sync with:** primitives implementation and tests (e.g., DataGrid virtualization needs).
-**Action items:** Harden performance tests for heavy primitives.
+```
+apps/frontend/src/routes.tsx
+```
 
----
+Examples:
 
-## 07 — UI Module Composition Contract (`docs/ui/07-UI-Module-Composition-Contract.md`)
+* `/dashboard`
+* `/login`
+* `/analytics`
+* `/finances`
 
-**Purpose:** Rules for composing modules (dependencies / requiredModules / entitlements / allowed imports).
-**Keep in sync with:** module descriptor validation script `scripts/validate-modules.js`.
-**Action items:** Add validation checks for `requiredModules` and `entitlements` shape.
-
----
-
-## 08 — UI Host API Contract (`docs/ui/08-UI-Host-API-Contract.md`)
-
-**Purpose:** The host-side APIs (HostApi, telemetry, nav registry, event bus) with exact method names & behaviours.
-**Keep in sync with:** host runtime implementations (router, nav, telemetry).
-**Action items:** Implement the minimal HostApi and add unit tests for it.
+These always exist and are rendered immediately.
 
 ---
 
-## 09 — UI Module Lifecycle Contract (`docs/ui/09-UI-Module-Lifecycle-Contract.md`)
+#### 2. Runtime-registered module routes
 
-**Purpose:** `register()`, `mount`, `onMount`, `onActivate`, `onDeactivate`, `onUnmount` contract rules.
-**Keep in sync with:** modules' `ModuleEntry.tsx` implementations and `tests/contract` harness.
-**Action items:** Add lifecycle unit tests to modules; ensure host calls hooks in expected order.
+Registered **after boot** via:
 
----
+```ts
+hostApi.registerRoute({
+  id: 'orders-home',
+  path: '/orders',
+  component: OrdersPage,
+  requiredModuleId: 'order-nexus'
+});
+```
 
-## 10 — UI Module Folder Structure Guide (`docs/ui/10-UI-Module-Folder-Structure-Guide.md`)
+Stored in:
 
-**Purpose:** Recommended folder layout inside each `modules/<module>/` package.
-**Keep in sync with:** `scripts/templates/ui-module/` and the scaffold script.
-**Action items:** Keep scaffold templates current with the guide.
+```
+apps/frontend/src/runtime/registerRoute.ts
+```
 
----
+Accessed via:
 
-## 11 — UI Module Scaffolding CLI (`docs/ui/11-UI-Module-Scaffolding-CLI.md`)
+```ts
+getRegisteredRoutes()
+```
 
-**Purpose:** Docs for `scripts/scaffold-ui-module.js` (usage, tokens, templates).
-**Keep in sync with:** `scripts/scaffold-ui-module.js` and `scripts/templates/ui-module/`.
-**Action items:** Update README sections inside the doc when you change template tokens or file list.
-
----
-
-## 12 — UI Module Contract Rules (`docs/ui/12-UI-Module-Contract-Rules.md`)
-
-**Purpose:** High-level governance: review/approval process, deprecation policy, testing & CI requirements.
-**Keep in sync with:** org policies and CI workflows.
-**Action items:** Add explicit UICR process (UI Change Request) and approval owners.
+These routes **do not exist at initial render**.
 
 ---
 
-# 3 — Code & templates locations (what to edit where)
+#### 3. Static bridge routes (required for refresh & deep links)
 
-Small map of important files and directories the handoff engineer will need:
+Because runtime routes are async, **every module with a top-level path MUST have a static bridge**:
 
-* `modules/shared/src/ui-contracts.ts`
-  — canonical TypeScript interfaces for HostApi, ModuleDescriptor, RouteDescriptor, EntitlementSnapshot, etc. **Single source of truth for types.**
+```tsx
+<Route path="/orders/*" element={<ModuleHost />} />
+```
 
-* Module folders: `modules/<module-id>/` (examples present)
+Without this:
 
-  * `modules/order-nexus/` (actual module)
-  * `modules/specter/`
-  * `modules/shared/`
-  * `modules/order-nexus-test/`, `modules/my-test-module/` (scaffolds)
-  * inside each module: `src/ui/ModuleEntry.tsx`, `src/descriptor.json`, `ModuleEntry.stub.js`, `package.json`, `tsconfig.json`
+* `/orders` works on click
+* `/orders` FAILS on refresh
 
-* Scaffolding:
-
-  * `scripts/scaffold-ui-module.js` — create a module scaffold using templates and tokens.
-  * `scripts/templates/ui-module/` — template files:
-
-    * `ModuleEntry.tsx` / `.hbs`
-    * `ModuleDescriptor.ts` / `.hbs`
-    * `package.json.hbs`
-    * `tsconfig.json.hbs`
-    * `src/descriptor.json.hbs`
-    * example page/component files
-
-* Host runtime helpers:
-
-  * `apps/frontend/src/runtime/registerRoute.ts` — *(recommended shim)* where the `registerRoute`, `unregisterRoute`, `mergeRoutes` helpers live.
-  * `apps/frontend/src/components/ProtectedRouteWrapper.tsx` — canonical protective wrapper for gating.
-  * `apps/frontend/src/contexts/EntitlementsContext.tsx` — entitlements provider + `useEntitlements()`.
-
-* CI workflow:
-
-  * `.github/workflows/ci-ui-modules.yml` — validates modules + runs contract tests in CI.
-
-* Contract tests harness:
-
-  * `tests/contract/contractHarness.ts` and `tests/contract/*` — the test harness used to validate modules' `register()` contract.
+This is intentional and documented behavior.
 
 ---
 
-# 4 — How to add a new UI module (step-by-step)
+## 5 — Entitlements & ProtectedRoute semantics
 
-1. Run scaffold:
+### `ProtectedRoute` is authoritative
 
-   ```bash
-   node scripts/scaffold-ui-module.js <module-id> --force
-   ```
+File:
 
-   This creates `modules/<module-id>/` with `src/ui/ModuleEntry.tsx`, `ModuleDescriptor.ts`, `src/descriptor.json`, `package.json`, `tsconfig.json`, example pages.
+```
+apps/frontend/src/components/ProtectedRoute.tsx
+```
 
-2. Fill the module:
+Responsibilities:
 
-   * Implement `ModuleDescriptor` (id, displayName, mountPath, entitlements, register function).
-   * Implement `ModuleEntry.register(hostApi)` to call `hostApi.registerRoute()` and `hostApi.addNavItem()` and return `mount` + lifecycle hooks.
-   * Add UI pages & components under `src/ui/pages` and `src/ui/components`.
+* Block unauthenticated users
+* Wait for entitlements to resolve
+* Enforce route-level entitlements
+* Handle **runtime route timing**
 
-3. Add tests:
+### Critical rule (non-negotiable)
 
-   * Add `modules/<module-id>/tests/route-contract.spec.tsx` (template provided).
-   * Add `ModuleEntry.stub.js` usage if needed for contract harness.
+> Runtime module routes MUST NOT be rejected before modules finish registering.
 
-4. Validate:
+Therefore `ProtectedRoute` **explicitly allows**:
 
-   ```bash
-   node scripts/validate-modules.js
-   npx jest tests/contract --runInBand
-   ```
+```ts
+/orders/*
+/modules/*
+```
 
-5. Commit only the module folder + `package.json` / minor lockfile changes. If lockfile changes after scaffolding, run `npm install` and commit the regenerated `package-lock.json` (we regenerate lockfile once per consistent scaffold).
+during bootstrap if the user is authenticated.
 
----
+This prevents:
 
-# 5 — Contract tests & CI
+* Redirect loops
+* Refresh failures
+* Broken deep links
 
-**What CI does (file):** `.github/workflows/ci-ui-modules.yml`
-It runs:
+If you change this logic, you must update:
 
-* `node scripts/validate-modules.js` — validates module descriptors + presence of `descriptor.json`.
-* `npx jest tests/contract --runInBand` — runs contract tests (host harness + module stubs).
-
-**Per-module checks modules must include:**
-
-* descriptor shape test
-* register() returns `mount` and lifecycle hooks if needed
-* route entitlements resilience tests (entitlements === null, missing entitlement behavior)
-* navigation test (mock host expects `navigate()` calls)
-
-**Where to add new CI checks:** Add to `tests/contract/` or per-module `modules/<module>/tests` and ensure CI picks them up.
+* This README
+* `docs/ui/05-UI-Routing-Contract.md`
 
 ---
 
-# 6 — Migration & runtime helpers (summary & where to change)
+## 6 — Adding a new UI module (step-by-step)
 
-We want to support **dynamic** module registration while keeping a stable static route list during migration.
+1. Scaffold:
 
-**Key helpers you must maintain:**
+```bash
+node scripts/scaffold-ui-module.js <module-id> --force
+```
 
-* `registerRoute(route)` — runtime entry for modules to add routes.
+2. Implement descriptor:
 
-  * Location recommended: `apps/frontend/src/runtime/registerRoute.ts`
-  * Host must call `mergeRoutes(staticRoutes)` and render the merged list.
+```json
+{
+  "id": "order-nexus",
+  "displayName": "Orders",
+  "entitlements": ["order-nexus"]
+}
+```
 
-* `ProtectedRouteWrapper` — enforces gating contract:
-
-  * Location recommended: `apps/frontend/src/components/ProtectedRouteWrapper.tsx`
-  * Rules enforced:
-
-    * No gating metadata → render
-    * `entitlements === null` → show lightweight loading skeleton
-    * Missing entitlement → show `GatedPlaceholder`
-
-* `EntitlementsContext` / `useEntitlements()`:
-
-  * Location: `apps/frontend/src/contexts/EntitlementsContext.tsx`
-  * Must expose `EntitlementSnapshot | null` (null while resolving).
-  * Host should replace placeholder fetch logic with real subscription to entitlement state.
-
-* `modules/shared/src/ui-contracts.ts` is the canonical type shape; keep it updated when HostApi or route/descriptor shapes change.
-
----
-
-# 7 — Troubleshooting — common failure modes & fixes
-
-* **`npm ci` failing due to lockfile mismatch after scaffolding**
-  If new workspace packages were added by scaffold, the lockfile will be out of sync. Fix: run `npm install` at repo root, commit updated `package-lock.json`, then run `npm ci` for clean installs in CI.
-
-* **TypeScript errors complaining about missing `@types`**
-  Ensure `@types/node`, `@types/jest`, etc. are installed at repo root (devDependencies) or in appropriate workspace.
-
-* **Tests failing because entitlements shape differs**
-  Ensure `modules/shared/src/ui-contracts.ts` matches the `EntitlementsContext` shape used in `ProtectedRouteWrapper` and tests.
-
-* **Watchman recrawl warnings on mac**
-  Run `watchman watch-del <path>` and `watchman watch-project <path>` as suggested in the test logs, or increase watch limits.
-
-* **Scaffolded module failing validate-modules**
-  Check `src/descriptor.json` exists (scaffold copies it to module root). `scripts/validate-modules.js` requires descriptor fields; compare to other working modules.
-
-* **Module contract tests pass locally but fail in CI**
-  Ensure CI runs with the same Node/npm version (actions/setup-node@v4 uses node-version: '20' in CI workflows). Also ensure `npm ci` lockfile consistency.
-
----
-
-# 8 — Handoff checklist — prioritized, actionable
-
-High priority (blocking):
-
-1. Wire `mergeRoutes(staticRoutes)` in host router and call `getRegisteredRoutes()` from `apps/frontend/src/runtime/registerRoute.ts`. (So dynamic routes can surface.)
-2. Make `ProtectedRouteWrapper` the canonical wrapper used by the router. Replace duplicates.
-3. Ensure `modules/shared/src/ui-contracts.ts` is imported by modules and host (type-level contract).
-4. Add per-module `route-contract.spec.tsx` templates to module scaffolds so new modules include routing tests.
-
-Medium priority (stability & docs):
-5. Add Storybook stories covering `GatedPlaceholder`, `ModuleLayout` slots, and primitives used widely (DataGrid, Card).
-6. Add token JSON and MUI mapping to shared tokens directory (and link `docs/ui/03-Design-Tokens-Contract.md` to that location).
-7. Add an example module migration PR that converts `apps/frontend/src/pages/OrdersPage` into `modules/order-nexus` `ModuleEntry` with `register()`.
-
-Lower priority (governance & polish):
-8. Add UICR process to `docs/ui/12-UI-Module-Contract-Rules.md` (required reviewers, 2-release deprecation policy).
-9. Add `scripts/generate-module-readme.sh` to automatically populate per-module README from blueprint template.
-
----
-
-# 9 — Appendix — useful snippets & examples
-
-**registerRoute usage (module register()):**
+3. Implement `ModuleEntry.register()`:
 
 ```ts
 export function register(hostApi: HostApi) {
   hostApi.registerRoute({
     id: 'orders-home',
-    name: 'Orders',
-    key: 'orders',
     path: '/orders',
     component: OrdersPage,
-    requiredModuleId: 'order-nexus',
-    order: 100
+    requiredModuleId: 'order-nexus'
   });
-  hostApi.addNavItem({ id: 'orders', label: 'Orders', path: '/orders', order: 200 });
-  return { mount: ModuleLayout };
+
+  hostApi.addNavItem({
+    id: 'orders',
+    label: 'Orders',
+    path: '/orders'
+  });
 }
 ```
 
-**ProtectedRouteWrapper mapping in router:**
+4. Add **static bridge route** in host:
 
 ```tsx
-const final = mergeRoutes(staticRoutes);
-return (
-  <Routes>
-    {final.map(r => (
-      <Route key={r.id} path={r.path} element={
-         <ProtectedRouteWrapper descriptor={r}>
-           <Suspense fallback={<Skeleton/>}>{React.createElement(r.component as any)}</Suspense>
-         </ProtectedRouteWrapper>
-      } />
-    ))}
-  </Routes>
-)
+<Route path="/orders/*" element={<ModuleHost />} />
 ```
 
-**Where to update docs when changing API:**
+5. Validate & test:
 
-* `docs/ui/05-Minimal-UI-API-Contract.md` — small API changes
-* `modules/shared/src/ui-contracts.ts` — types + interfaces
-* `scripts/validate-modules.js` — validation rules (descriptor schema)
+```bash
+node scripts/validate-modules.js
+npx jest tests/contract --runInBand
+```
+
+---
+
+## 7 — Code & template locations
+
+### Canonical contracts (single source of truth)
+
+```
+modules/shared/src/ui-contracts.ts
+```
+
+Defines:
+
+* HostApi
+* RouteDescriptor
+* NavItemDescriptor
+* EntitlementSnapshot
+* ModuleDescriptor
 
 ---
 
-# Final notes & ownership
+### Runtime helpers (host)
 
-* **Owner for this repo area:** `frontend-platform` (recommended).
-* **Immediate next deliverable for the on-call engineer:** implement `registerRoute()` shim and wire `mergeRoutes()` into the host router; ensure `ProtectedRouteWrapper` is used for all route elements. Then run the contract tests.
+```
+apps/frontend/src/runtime/
+├─ registerRoute.ts
+├─ registerNav.ts
+├─ ModuleHost.tsx
+├─ ModuleBootstrap.tsx
+```
 
 ---
+
+### Auth & entitlements
+
+```
+apps/frontend/src/contexts/
+├─ AuthContext.tsx
+├─ EntitlementsContext.tsx
+```
+
+---
+
+## 8 — Contract tests & CI
+
+CI workflow:
+
+```
+.github/workflows/ci-ui-modules.yml
+```
+
+Runs:
+
+* Descriptor validation
+* Contract tests
+* Type checks
+
+Each module **must** have:
+
+* Descriptor schema validity
+* `register()` contract test
+* Route entitlement behavior test
+
+---
+
+## 9 — Troubleshooting (real failure modes)
+
+### ❌ `/orders` works on click but not refresh
+
+Cause:
+
+* Missing static bridge route
+
+Fix:
+
+```tsx
+<Route path="/orders/*" element={<ModuleHost />} />
+```
+
+---
+
+### ❌ Redirect to `/dashboard` on refresh
+
+Cause:
+
+* `ProtectedRoute` rejecting runtime route before registration
+
+Fix:
+
+* Allow `/orders` + `/modules/*` during bootstrap
+
+---
+
+### ❌ White screen on load
+
+Cause:
+
+* `FormattedMessage` without `id`
+* Intl error bubbles without boundary
+
+Fix:
+
+* Always provide `id`
+* Wrap app in `IntlErrorBoundary`
+
+---
+
+## 10 — Handoff checklist (do not skip)
+
+**High priority**
+
+1. Keep static bridge routes in sync with module mount paths
+2. Never entitlement-gate runtime routes synchronously
+3. Treat `modules/shared/src/ui-contracts.ts` as law
+4. Update docs when touching routing or auth
+
+**Medium**
+
+5. Add route-contract tests to every module scaffold
+6. Storybook coverage for gated states
+
+**Low**
+
+7. Governance process (UICR) in doc 12
+8. Auto-generated per-module README
+
+---
+
+## 11 — Appendix
+
+### registerRoute example
+
+```ts
+hostApi.registerRoute({
+  id: 'orders-home',
+  path: '/orders',
+  component: OrdersPage,
+  requiredModuleId: 'order-nexus'
+});
+```
+
+### Static bridge example
+
+```tsx
+<Route path="/orders/*" element={<ModuleHost />} />
+```
+
+---
+
+## Final note (read this)
+
+This architecture is **intentionally conservative**:
+
+* Refresh must never break
+* Auth must never race routing
+* Runtime extensibility must not compromise stability
+
+If you simplify it and something “mysteriously” breaks later — it’s because you violated one of the contracts documented here.

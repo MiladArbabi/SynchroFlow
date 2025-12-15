@@ -1,165 +1,227 @@
-# 11-UI-Module-Scaffolding-CLI.md
+# UI Module Scaffolding CLI
 
-**LaSyncro — UI Module Scaffolding CLI**
-
-**Version:** 1.0
-
-**Status:** Draft — ready for implementation
-
-**Purpose**
-
-Provide a deterministic, auditable, and repeatable CLI to create new UI modules that fully comply with LaSyncro's Module Folder Structure Guide (docs/ui/10-UI-Module-Folder-Structure-Guide.md). The CLI should create files, populate initial boilerplate, wire up TypeScript configs, add CI-friendly test stubs, and optionally register a stub ModuleEntry for local development and contract-test workflow.
+**Version:** 2.0  
+**Status:** Normative — Enforced  
+**Owner:** UI Platform Architecture  
+**Audience:** Module authors, frontend platform maintainers
 
 ---
 
-## Table of contents
+## 0. Purpose
 
-1. Goals and constraints
-2. Installation
-3. CLI commands & flags (full reference)
-4. Generated layout (exact file tree)
-5. File templates (high-level contents)
-6. TypeScript, build & lint integration
-7. Contract-test integration & fixture generation
-8. Best-practice options (presets)
-9. Post-generation checklist and validation command
-10. Implementation notes for maintainers
-11. Example usage scenarios
-12. Security & repository hygiene
+This document specifies the **official CLI** for scaffolding LaSyncro UI modules.
 
----
+The CLI exists to guarantee that **every new module**:
 
-## 1. Goals and constraints
+- conforms to all locked UI contracts
+- compiles and registers correctly on first run
+- passes contract tests by default
+- does not encode deprecated architectural patterns
 
-* **Deterministic:** Running the CLI with the same inputs produces the same files/content.
-* **Safe:** The CLI must never overwrite existing module folders unless `--force` is provided.
-* **CI-friendly:** Includes contract test stub generators and `tsconfig` tuned for isolated build.
-* **Easy to extend:** Add new presets, templates and hooks.
-* **Repo-consistent:** Use monorepo root `tsconfig.json` paths and existing lint/prettier configs.
+The CLI must generate **contract-correct code only**.  
+It must not offer flags or presets that produce invalid modules.
 
 ---
 
-## 2. Installation
+## 1. Authoritative inputs
 
-Two usage forms: (A) Local dev script (preferred for contributors) and (B) global npm package (for automation).
+The CLI MUST stay in sync with:
 
-### A — Local (dev) usage
+- 07 — UI Module Composition Contract
+- 08 — UI Host API Contract
+- 09 — UI Module Lifecycle Contract
+- 10 — UI Module Folder Structure Guide
 
-Add a script to `package.json` at repo root (if not present):
+If any of these change, the CLI **must be updated first**.
+
+---
+
+## 2. Design constraints (non-negotiable)
+
+### 2.1 Deterministic
+
+Same inputs → same output, byte-for-byte.
+
+### 2.2 Safe by default
+
+- Never overwrite unless `--force`
+- Never generate deprecated structures
+- Never generate filesystem-driven runtime behavior
+
+### 2.3 Contract-first
+
+The CLI scaffolds **only what the host runtime supports**.
+No speculative APIs. No future hooks.
+
+---
+
+## 3. Installation & invocation
+
+### Local (canonical)
 
 ```json
-"scripts": {
-  "scaffold:ui-module": "node ./scripts/scaffold-ui-module.js"
+{
+  "scripts": {
+    "scaffold:ui-module": "node scripts/scaffold-ui-module.js"
+  }
 }
-```
+````
 
-Run:
-
-```bash
-# interactive
-npm run scaffold:ui-module -- --interactive
-
-# non-interactive
-npm run scaffold:ui-module -- --name order-nexus --preset standard --module-id order-nexus
-```
-
-### B — Global install (optional)
-
-Publish a small package `@lasyncro/scaffold-ui-module` and install globally:
+Usage:
 
 ```bash
-npm i -g @lasyncro/scaffold-ui-module
-lasyncro-scaffold-ui --name order-nexus --preset standard
+npm run scaffold:ui-module -- --module-id order-nexus
 ```
+
+Interactive mode is optional but recommended for humans.
 
 ---
 
-## 3. CLI commands & flags (full reference)
+## 4. CLI interface (authoritative)
 
 ```
-Usage: lasyncro-scaffold-ui [options]
+Usage: scaffold-ui-module [options]
 
-Options:
-  -n, --name <name>             Human-friendly display name (e.g. "Order Nexus")
-  -i, --module-id <id>          Module folder name / canonical id (kebab-case) (required)
-  -p, --preset <preset>         Preset: minimal|standard|advanced  (default: standard)
-  -t, --template <template>     Base template: react|react-ts|vue (default: react-ts)
-  -f, --force                   Overwrite existing module folder
-  --no-install                  Don't run `npm install` inside module
-  --stub-contract               Create contract fixture in `tests/fixtures/stubs/`
-  --git-commit                  Run `git add` + `git commit -m "feat: scaffold <id>"`
-  --skip-lint                   Don't add lint config files
-  -h, --help                    Display help
+Required:
+  --module-id <id>        kebab-case module id (folder name, descriptor id)
+
+Optional:
+  --display-name <name>   Human-friendly name (defaults to Title Case of id)
+  --force                 Overwrite existing folder
+  --with-contract-test    Generate contract test stub
+  --git-commit            Auto-commit generated files
+  --help
 ```
 
-**Notes**
+### Validation rules
 
-* `module-id` is the authoritative name used across ModuleDescriptor `id` and folder name.
-* The CLI must validate `module-id` to match regex `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
+- `module-id` MUST match:
+  `^[a-z0-9]+(?:-[a-z0-9]+)*$`
+- Folder name MUST equal `module-id`
+- CLI MUST refuse invalid input
 
 ---
 
-## 4. Generated layout (exact file tree)
+## 5. Generated folder structure (MANDATORY)
 
-When run with `--preset standard` (recommended), the CLI generates the following under `modules/<module-id>`:
+The CLI generates **exactly** the structure defined in Doc 10.
 
 ```
 modules/<module-id>/
-├── package.json
-├── tsconfig.json
-├── README.md
-├── src/
-│   ├── ModuleEntry.ts               # REQUIRED
-│   ├── index.ts                     # re-export ModuleEntry
-│   ├── lifecycle.ts                 # optional lifecycle hooks
-│   ├── routes/
-│   │   └── index.ts                 # RouteDescriptor[]
-│   ├── navigation/
-│   │   └── index.ts                 # NavigationItem[]
-│   ├── ui/
-│   │   ├── pages/
-│   │   │   └── HomePage.tsx
-│   │   └── components/
-│   │       └── HelloModule.tsx
-│   ├── api/
-│   │   └── client.ts
-│   ├── state/
-│   │   └── index.ts
-│   ├── domain/
-│   │   └── types.ts
-│   └── assets/
-│       ├── icon.svg
-│       └── locales/en.json
-└── __tests__/ (optional, developer only)
+  src/
+    ui/
+      ModuleEntry.tsx
+      ModuleDescriptor.ts
+      ModuleLayout.tsx
+  package.json
+  tsconfig.json
+  README.md
 ```
 
-If `--preset minimal` the CLI only creates `ModuleEntry.ts`, `routes/index.ts`, `navigation/index.ts`, `tsconfig.json`, and `package.json`.
+Nothing else is generated by default.
 
 ---
 
-## 5. File templates (high-level contents)
+## 6. Generated file contracts (exact)
 
-Below are the canonical contents (sanitized, short) for critical files. The exact templates should be part of the repo under `scripts/templates/ui-module/`.
+### 6.1 `ModuleDescriptor.ts`
 
-### 5.1 `package.json` (module)
+```ts
+export const descriptor = {
+  id: '<module-id>',
+  version: '0.1.0',
+  displayName: '<Display Name>',
+  mountPath: '/<module-id>',
+  entitlements: ['<module-id>']
+};
+```
+
+Rules:
+
+- Metadata only
+- No imports from host
+- No logic
+
+---
+
+### 6.2 `ModuleEntry.tsx`
+
+```ts
+import type { HostApi } from 'runtime';
+import { descriptor } from './ModuleDescriptor';
+import ModuleLayout from './ModuleLayout';
+
+export function register(host: HostApi) {
+  host.registerModule(descriptor);
+
+  host.registerRoute({
+    id: `${descriptor.id}.home`,
+    name: descriptor.displayName,
+    path: descriptor.mountPath!,
+    component: () => null, // placeholder
+    requiredModuleId: descriptor.id,
+    order: 100
+  });
+
+  host.registerNavItem({
+    id: descriptor.id,
+    label: descriptor.displayName,
+    routeId: `${descriptor.id}.home`,
+    order: 200
+  });
+
+  return {
+    mount: ModuleLayout
+  };
+}
+```
+
+Rules:
+
+- Synchronous
+- Idempotent
+- No async work
+- No lifecycle logic
+- No filesystem inference
+
+---
+
+### 6.3 `ModuleLayout.tsx`
+
+```tsx
+import { PropsWithChildren } from 'react';
+
+export default function ModuleLayout({ children }: PropsWithChildren) {
+  return <>{children}</>;
+}
+```
+
+Rules:
+
+- Pure wrapper
+- No router access
+- No theme overrides
+
+---
+
+### 6.4 `package.json`
 
 ```json
 {
   "name": "@lasyncro/module-<module-id>",
-  "version": "0.0.0-dev",
+  "version": "0.1.0",
+  "private": true,
   "main": "dist/ModuleEntry.js",
   "types": "dist/ModuleEntry.d.ts",
   "scripts": {
-    "build": "tsc -p ./tsconfig.json",
-    "test": "echo 'module-local tests are dev-only' && exit 0"
-  },
-  "dependencies": {}
+    "build": "tsc -p tsconfig.json"
+  }
 }
 ```
 
-### 5.2 `tsconfig.json`
+---
 
-(extends root `tsconfig.json`)
+### 6.5 `tsconfig.json`
 
 ```json
 {
@@ -167,219 +229,103 @@ Below are the canonical contents (sanitized, short) for critical files. The exac
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "module": "ESNext",
-    "declaration": true,
-    "sourceMap": true
+    "declaration": true
   },
-  "include": ["src/**/*"]
-}
-```
-
-### 5.3 `src/ModuleEntry.ts` (minimal canonical export)
-
-```ts
-import { ModuleDescriptor } from '@lasyncro/shared'; // optional shared types
-import routes from './routes';
-import navigation from './navigation';
-
-const id = '<module-id>'; // replaced by CLI
-
-export const ModuleDescriptor: ModuleDescriptor = {
-  id,
-  version: '0.0.0-dev',
-  routes,
-  navigation
-};
-
-export default ModuleDescriptor;
-```
-
-### 5.4 `src/routes/index.ts`
-
-```ts
-import HomePage from '../ui/pages/HomePage';
-
-export default [
-  {
-    id: '<module-id>.home',
-    path: '/<module-id>',
-    component: HomePage,
-    order: 100
-  }
-];
-```
-
-### 5.5 `src/navigation/index.ts`
-
-```ts
-export default [
-  {
-    id: '<module-id>.main',
-    label: 'Module Friendly Name',
-    path: '/<module-id>',
-    order: 200
-  }
-];
-```
-
-### 5.6 `src/lifecycle.ts` (recommended)
-
-```ts
-export async function onLoad() {
-  // warm cache, register local handlers, etc
-}
-export async function onUnload() {
-  // cleanup
+  "include": ["src"]
 }
 ```
 
 ---
 
-## 6. TypeScript, build & lint integration
+## 7. Contract test integration (optional but recommended)
 
-* Generated `tsconfig.json` extends the monorepo root config to preserve path aliases.
-* `package.json` script `build` runs `tsc -p tsconfig.json` producing `dist/ModuleEntry.js` and `.d.ts` files. CI should run `npm --workspace ./modules/<id> run build` as part of module promotion.
-* Linting: if repository has ESLint config, the CLI will optionally copy `.eslintrc.js` or a module-specific override if `--skip-lint` is not set.
-* Prettier: copy `.prettierrc` if present.
-
----
-
-## 7. Contract-test integration & fixture generation
-
-The CLI optionally generates a contract fixture when `--stub-contract` is provided.
-
-Generated fixture path:
+If `--with-contract-test` is passed, the CLI generates:
 
 ```
-tests/fixtures/stubs/<module-id>-ModuleEntry.js
+tests/contract/<module-id>.contract.test.ts
 ```
 
-This JS stub exports a minimal `register`/`ModuleDescriptor` object that the existing contract harness can import when the real compiled module is not available during local dev.
+Skeleton asserts:
 
-**Contract harness expectation**
+- `register(host)` exists
+- `registerModule` called once
+- at least one route registered
+- no forbidden imports
 
-* The harness will attempt to resolve `process.env.CONTRACT_MODULE_<MODULE_ID_PREFIX>` environment variable mapping to compiled artifact. If not present, it will fall back to `tests/fixtures/stubs`.
-
-The CLI will also optionally append the contract test skeleton into `tests/contract/<module-id>.contract.test.ts` (if the repo owner wants auto-creation), otherwise it prints a helpful message and commands to add the contract test.
-
----
-
-## 8. Best-practice options (presets)
-
-**minimal** — `ModuleEntry`, routes, navigation, tsconfig, package.json. Good for PoC or very small experience.
-
-**standard** — minimal + pages, components, API client, lifecycle hooks, assets, translations, contract stub.
-
-**advanced** — standard + sample state, queries (RTK Query/React Query), unit-test skeletons, storybook stories, pre-commit hooks, CI job template snippet.
+The CLI MUST NOT generate filesystem-based stubs.
 
 ---
 
-## 9. Post-generation checklist and validation command
+## 8. Explicitly forbidden generation patterns
 
-After scaffolding, run a single validation script to assert minimal compliance:
+The CLI MUST NOT generate:
+
+❌ `routes/` folders
+❌ `navigation/` folders
+❌ `lifecycle.ts`
+❌ descriptor aggregation exports
+❌ async registration logic
+❌ host internals imports
+❌ mock entitlements logic
+
+If a developer wants these, they must add them manually **after review**.
+
+---
+
+## 9. Git integration
+
+If `--git-commit` is passed:
+
+- Stage only generated files
+- Commit message:
+
+  ```
+  feat(ui-module): scaffold <module-id>
+  ```
+
+- Never auto-push
+
+---
+
+## 10. Validation step (mandatory)
+
+After generation, the CLI MUST run:
 
 ```bash
-# run this from repo root
-node ./scripts/validate-module.js --path modules/<module-id>
+tsc -p modules/<module-id>/tsconfig.json
 ```
 
-Validation checks:
-
-* `ModuleEntry.ts` exists and exports `id` matching folder name
-* `src/routes/index.ts` exports array of routes and at least one route path beginning with `/`
-* `src/navigation/index.ts` exports array with at least one item
-* `tsconfig.json` builds cleanly (`tsc -p modules/<module-id>/tsconfig.json`)
-* contract fixture exists in `tests/fixtures/stubs` if `--stub-contract` used
-
-The CLI should run `validate-module` automatically unless `--no-validate` passed.
+Failure aborts scaffolding.
 
 ---
 
-## 10. Implementation notes for maintainers (how to implement the CLI)
+## 11. Implementation notes (for maintainers)
 
-### 10.1 Language & runtime
+- Language: Node 18+
+- No runtime dependencies required
+- Templates live under:
 
-* Recommended: Node.js 18+ using `ts-node` for dev or compile straightforward to JS.
-* Use `enquirer` or `inquirer` for interactive prompts.
+  ```
+  scripts/templates/ui-module/
+  ```
 
-### 10.2 Template location
+- Use token replacement only — no logic in templates
 
-* Keep template files under `scripts/templates/ui-module/`
-* Template tokens must be replaced using a small templating engine (e.g., mustache or simple token replace).
+- Unit tests for CLI live under:
 
-### 10.3 Idempotency & safety
-
-* If target folder exists and is non-empty, refuse to proceed unless `--force`.
-* Always print a final `diff` (files created) and ask to confirm commit.
-
-### 10.4 Git integration
-
-* Use `simple-git` library to stage and commit changes if `--git-commit` is used.
-* Commit message pattern: `feat(ui-module): scaffold <module-id>`
-
-### 10.5 Unit tests for the CLI
-
-* Add tests under `tests/scripts/scaffold-cli.test.ts` using a temporary directory (use `tempy`) to ensure deterministic output.
+  ```
+  tests/scripts/scaffold-ui-module.test.ts
+  ```
 
 ---
 
-## 11. Example usage scenarios
+## 12. Migration notice
 
-### 11.1 Create a standard module interactively
+If you previously used the old CLI:
 
-```bash
-npm run scaffold:ui-module -- --interactive
-# follow prompts: name -> order-nexus, module-id -> order-nexus, preset -> standard
-```
-
-### 11.2 Create minimal module non-interactively
-
-```bash
-npm run scaffold:ui-module -- --module-id sku-os --preset minimal --stub-contract --git-commit
-```
-
-### 11.3 Generate stub fixture only (for contract tests)
-
-```bash
-npm run scaffold:ui-module -- --module-id specter --preset minimal --stub-contract --no-install --skip-lint
-```
+- Delete `routes/`, `navigation/`, `lifecycle.ts`
+- Move logic into `register(host)`
+- Align with Docs 07–10
+- Re-run contract tests
 
 ---
-
-## 12. Security & repository hygiene
-
-* The CLI must never run remote code downloads during scaffolding.
-* Generated files must be deterministic and offline-first.
-* Avoid embedding secrets in generated `package.json`.
-* If `--git-commit` is used, the CLI should only commit created files and must not auto-stage unrelated files.
-
----
-
-## 13. Troubleshooting & FAQ
-
-**Q:** My generated ModuleEntry fails contract harness because of missing compiled files.
-**A:** Use `--stub-contract` to create a fixture. CI must run `npm --workspace ./modules/<id> run build` prior to contract tests for release pipelines.
-
-**Q:** How do I change the tsconfig baseUrl for modules?
-**A:** Module tsconfig must `extends` root `tsconfig.json`. For local dev, ensure the root `tsconfig.json` maps `runtime/*` and other aliases.
-
----
-
-## 14. Changelog & Versioning
-
-* 1.0 — initial design and templates
-* Future versions should bump when module entry contract changes (ModuleDescriptor shape changes)
-
----
-
-## 15. Next steps (for maintainers)
-
-1. Add template files under `scripts/templates/ui-module/`.
-2. Implement CLI script `scripts/scaffold-ui-module.js`.
-3. Add `scaffold:ui-module` npm script at repo root.
-4. Add unit tests for CLI behavior under `tests/scripts/`.
-5. Document usage in the contributor onboarding doc and add to developer handbook.
-
----
-
-*End of 11-UI-Module-Scaffolding-CLI.md*

@@ -1,236 +1,274 @@
-# ✅ **02-Component-Library-Contract.md (Option A2 — Minimal API + Canonical Primitives)**
+# ✅ **02-Component-Library-Contract.md**
 
-**Status:** Authoritative Contract — Stable
-**Scope:** Defines the minimal, official, versioned UI Component Library for LaSyncro modules.
-**Audience:** Module authors, UI architecture, platform maintainers.
+### **(Normative — Enforced, Minimal, Host-Owned)**
 
----
-
-# **1. Purpose**
-
-The Component Library exists to guarantee UI consistency, theme alignment, accessibility, and cross-module compatibility.
-This contract defines:
-
-1. The **canonical list of approved UI primitives**.
-2. The **allowed API surface** exposed to modules.
-3. The **rules governing usage** of the component system.
-4. The **export stability and versioning policy**.
-
-No module may use UI primitives outside this contract unless explicitly approved via Platform Governance.
+**Status:** 🔐 Locked — Authoritative
+**Owner:** UI Platform Architecture
+**Audience:** Module authors, platform maintainers, reviewers
+**Enforcement:** CI + ESLint + Contract Tests
 
 ---
 
-# **2. Canonical Component Inventory (Authoritative)**
+## 1. Purpose (Normative)
 
-Every module MUST source UI building blocks exclusively from the following import namespace:
+The Component Library defines the **only approved UI building blocks** that LaSyncro UI modules may use.
 
-```
-import { <Component> } from "ui-component";
-```
+This contract exists to guarantee:
 
-## **2.1 Core Primitives**
+* Visual consistency across modules
+* Theme & token correctness
+* Accessibility guarantees
+* Safe isolation between modules
+* Predictable CI enforcement
 
-| Component     | Purpose                            | Status   |
-| ------------- | ---------------------------------- | -------- |
-| `Button`      | Primary/secondary/tertiary actions | Required |
-| `Input`       | Text input with variants           | Required |
-| `Select`      | Basic selection control            | Required |
-| `Checkbox`    | Boolean input                      | Required |
-| `Radio`       | Choice set                         | Required |
-| `Switch`      | Boolean toggle                     | Required |
-| `Card`        | Container surface                  | Required |
-| `CardHeader`  | Card title area                    | Required |
-| `CardContent` | Card body                          | Required |
-| `Divider`     | Section divider                    | Required |
-| `Tooltip`     | Hover info                         | Required |
-| `Chip`        | Status tags, labels                | Required |
-| `Avatar`      | Identifiers, entities              | Required |
-
-## **2.2 Data Primitives**
-
-| Component    | Purpose                |
-| ------------ | ---------------------- |
-| `DataGrid`   | Tabular data rendering |
-| `Pagination` | Pagination controls    |
-| `Skeleton`   | Loading placeholder    |
-
-## **2.3 Feedback Primitives**
-
-| Component                                                              | Purpose                                     |
-| ---------------------------------------------------------------------- | ------------------------------------------- |
-| `Alert`                                                                | Inline feedback: success/warning/error/info |
-| `Snackbar`                                                             | Toast messages                              |
-| (If Snackbar is implemented via host → modules MUST use host provider) |                                             |
-
-## **2.4 Layout Primitives**
-
-| Component      | Purpose                                       |
-| -------------- | --------------------------------------------- |
-| `Box`          | General layout container                      |
-| `Grid`         | Responsive layout rows/columns                |
-| `Stack`        | Vertical/horizontal alignment                 |
-| `ContextPanel` | Slide-over contextual panel (module-scoped)   |
-| `MasterPanel`  | Primary-detail layout surface (module-scoped) |
+> **If a component is not defined in this document, it is not part of the public UI contract.**
 
 ---
 
-# **3. Import Rules**
+## 2. Source of Truth (Critical)
 
-### **3.1 Allowed import paths**
+All canonical UI components are:
 
-Only these paths are approved:
+* **Owned by the host**
+* **Implemented on top of MUI**
+* **Re-exported through a controlled namespace**
 
+Modules **must not** import MUI directly.
+
+### ✅ Allowed import namespace
+
+```ts
+import { Button, Card, DataGrid } from 'ui-component';
 ```
-ui-component/<primitive>
-ui-component/cards/<card variants>
-ui-component/extended/<approved extended components>
+
+### ❌ Forbidden imports (CI enforced)
+
+```ts
+@mui/*
+@mui/material/*
+@mui/x-data-grid
+apps/frontend/*
+layouts/*
+contexts/*
+themes/*
 ```
 
-### **3.2 Forbidden imports**
-
-Modules MUST NOT import from:
-
-* `@mui/*` directly (unless explicitly allowed)
-* host layout components (`MainLayout`, `TopnavbarContent`, etc.)
-* theme internals (`palette`, `typography`, override files)
-* unapproved third-party libraries
-
-### **3.3 Extension rule**
-
-If a module requires a custom primitive:
-
-* it MUST be placed under the module folder (`modules/<module>/src/ui/components/...`)
-* it MUST NOT be placed inside the shared `ui-component` namespace
-* it MUST be documented in that module’s UI contract
+Violations **fail CI immediately**.
 
 ---
 
-# **4. Theming Rules**
+## 3. Canonical Component Inventory (Authoritative)
 
-### **4.1 Single Theme Source**
+### 3.1 Core Interaction Primitives (Required)
 
-All primitives MUST consume host theme values (colors, spacing, typography) automatically through MUI’s theme injection.
-Modules MUST NOT instantiate new themes or wrap their content with new ThemeProviders.
+| Component    | Purpose                    |
+| ------------ | -------------------------- |
+| `Button`     | Primary actions            |
+| `IconButton` | Icon-only actions          |
+| `Input`      | Text input                 |
+| `Textarea`   | Multi-line input           |
+| `Select`     | Dropdown selection         |
+| `Checkbox`   | Boolean input              |
+| `RadioGroup` | Mutually exclusive choices |
+| `Switch`     | Boolean toggle             |
 
-### **4.2 Tokens**
+---
 
-Primitives MUST resolve spacing, color, radii, typography via:
+### 3.2 Layout & Structure Primitives
 
+| Component     | Purpose                    |
+| ------------- | -------------------------- |
+| `Box`         | Generic layout container   |
+| `Stack`       | Linear layout (row/column) |
+| `Grid`        | Responsive grid            |
+| `Card`        | Surface container          |
+| `CardHeader`  | Card header                |
+| `CardContent` | Card body                  |
+| `Divider`     | Section separation         |
+
+---
+
+### 3.3 Data & State Primitives
+
+| Component    | Purpose                    |
+| ------------ | -------------------------- |
+| `DataGrid`   | Tabular data (virtualized) |
+| `Pagination` | Page navigation            |
+| `Skeleton`   | Loading placeholder        |
+| `EmptyState` | No-data states             |
+
+---
+
+### 3.4 Feedback & Messaging
+
+| Component  | Purpose           |
+| ---------- | ----------------- |
+| `Alert`    | Inline feedback   |
+| `Snackbar` | Toast messages    |
+| `Tooltip`  | Hover context     |
+| `Chip`     | Status indicators |
+| `Avatar`   | Identity markers  |
+
+---
+
+### 3.5 Navigation / Contextual UI
+
+| Component       | Purpose                  |
+| --------------- | ------------------------ |
+| `ContextPanel`  | Slide-over panel         |
+| `ConfirmDialog` | Destructive confirmation |
+| `Modal`         | Blocking dialogs         |
+| `PageHeader`    | Page title + actions     |
+
+> **Note:** Navigation chrome (side nav, top bar) is **host-owned** and not exposed as primitives.
+
+---
+
+## 4. Component API Rules (Minimal, Enforced)
+
+Each primitive guarantees a **minimal stable API**.
+Implementations may accept more props, but **must support the minimum**.
+
+### Example — `Button`
+
+```ts
+<Button
+  variant="primary | secondary | text"
+  size="small | medium | large"
+  disabled?: boolean
+  onClick: () => void
+>
+  Label
+</Button>
 ```
-theme.spacing()
+
+### Example — `DataGrid`
+
+```ts
+<DataGrid
+  rows={Row[]}
+  columns={Column[]}
+  loading?: boolean
+  onRowClick?: (row) => void
+/>
+```
+
+**Behavioral guarantees:**
+
+* Keyboard accessible
+* Screen-reader compatible
+* Dark/light mode safe
+* Virtualized where applicable
+
+---
+
+## 5. Theming & Tokens (Strict)
+
+### 5.1 Single Theme Source
+
+* Host owns the MUI theme
+* Modules **must not** create `ThemeProvider`
+* Modules **must not** override palette, typography, breakpoints
+
+### 5.2 Token Usage
+
+Components resolve styling exclusively through:
+
+```ts
 theme.palette
+theme.spacing()
 theme.typography
+theme.shape.borderRadius
 ```
 
-### **4.3 CSS Rules**
-
-* No global CSS.
-* Only CSS modules, MUI `sx` props, or styled components with auto-scoping.
-* Every custom variable MUST be prefixed: `--lsyncro-*`.
+Hardcoded colors, spacing, or font sizes are **forbidden**.
 
 ---
 
-# **5. Component API Contract (Minimal Surface)**
+## 6. Styling Rules
 
-The primitives MUST implement the following minimal API guarantees:
+Allowed:
 
-## **5.1 Button**
+* `sx` prop
+* CSS Modules
+* Styled components scoped to module root
 
-Required props:
+Forbidden:
 
-```
-variant: 'primary' | 'secondary' | 'text'
-size: 'small' | 'medium' | 'large'
-onClick: () => void
-disabled?: boolean
-```
+* Global CSS
+* CSS resets
+* Unscoped CSS variables
+* Inline `<style>` blocks
 
-Required theme integration:
-
-* uses theme primary color set
-* uses spacing scale for padding
-* respects disabled opacity rules
-
-## **5.2 Input**
-
-Required props:
+All CSS variables must be prefixed:
 
 ```
-value: string
-onChange: (v: string) => void
-placeholder?: string
-error?: boolean
-helperText?: string
+--lsyncro-*
 ```
-
-Required behavior:
-
-* keyboard accessible
-* supports dark/light mode
-
-## **5.3 DataGrid**
-
-Required props:
-
-```
-rows: Row[]
-columns: Column[]
-loading?: boolean
-pagination?: PaginationProps
-```
-
-Required behavior:
-
-* virtualization for large data sets
-* skeleton support for `loading === true`
-
-*(Other primitives follow similar minimal API rules; omitted here because Option A2 requires contract, not examples.)*
 
 ---
 
-# **6. Versioning & Stability**
+## 7. Extension Rules (Non-Negotiable)
 
-### **6.1 No breaking changes without major version**
+If a module needs a custom component:
 
-Any of the following requires a major version bump:
+* It **must live inside the module**
+* It **must not** be exported via `ui-component`
+* It **must not** be reused across modules without promotion
 
-* Removing a prop
-* Changing component behavior
-* Renaming a component
-* Changing import paths
+Promotion path:
 
-### **6.2 Additive changes allowed**
-
-New components or optional props may be added in minor versions.
-
-### **6.3 Deprecation window**
-
-Deprecated components MUST remain for **2 releases** before removal.
+1. Proposal (design + API + accessibility)
+2. UI Platform approval
+3. Added to this document
+4. Storybook + tests
+5. Version bump
 
 ---
 
-# **7. Testing Requirements**
+## 8. Versioning & Stability
 
-Every primitive MUST include:
+### Breaking changes (require major bump)
 
-* **Unit tests** validating API surface
-* **Theme snapshot tests** validating dark/light behavior
-* **Accessibility checks** (axe-core)
-* **Storybook stories** for each variant
+* Removing a component
+* Removing a required prop
+* Changing visual or behavioral semantics
+* Changing import path
 
-Modules MUST NOT bypass these primitives by rendering raw HTML controls unless explicitly approved.
+### Non-breaking changes
+
+* New optional props
+* New components
+* Internal refactors
+
+### Deprecation policy
+
+* Minimum **2 release cycles**
+* Must log console warnings
+* Must be documented
+
+---
+
+## 9. Testing & Quality Gates
+
+Every primitive must include:
+
+* Unit tests
+* Accessibility tests (axe)
+* Dark/light snapshots
+* Storybook coverage
+
+Modules **must not** bypass primitives by rendering raw HTML or MUI components directly.
 
 ---
 
-# **8. Governance Rules**
+## 10. Governance
 
-* The Component Library is owned by **UI Platform**.
-* All changes require a **UI Change Request (UICR)**.
-* Cross-module primitives must not be created ad-hoc.
-* Any new primitive must be explicitly added to this contract.
-
----
-
-# **End of Component Library Contract (Minimal API + Canonical Primitives)**
+* Owned by **UI Platform**
+* Changes require UICR approval
+* CI enforces compliance
+* Drift is not tolerated
 
 ---
+
+## End of Document 02 — Component Library Contract

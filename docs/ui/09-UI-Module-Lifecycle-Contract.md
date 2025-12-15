@@ -1,330 +1,307 @@
-### **UI Module Lifecycle Contract**
+# UI Module Lifecycle Contract
 
-**Version:** 1.0
-**Status:** Locked
-**Owner:** UI Platform Architecture
-
----
-
-# **1. Purpose**
-
-This contract defines the **complete lifecycle model** for LaSyncro UI modules.
-
-It answers:
-
-* **When does a module load?**
-* **When does it register routes/nav items?**
-* **When does it receive entitlement or context updates?**
-* **How does the host notify modules about runtime events?**
-* **How should modules clean up, reload, or rehydrate?**
-
-This contract provides the *canonical* lifecycle the host guarantees to all modules.
+**Version:** 2.0  
+**Status:** Normative — Enforced  
+**Owner:** UI Platform Architecture  
+**Last updated:** 2025-12
 
 ---
 
-# **2. Design Principles**
+## 1. Purpose
 
-The lifecycle is designed around five principles:
+This contract defines the **authoritative lifecycle model** for LaSyncro UI modules.
 
-1. **Deterministic execution**
-   Modules must initialize in the same order every time.
+It specifies:
 
-2. **Side-effect isolation**
-   Modules must not mutate host state except through official APIs.
+- when a module is initialized,
+- how it registers routes and navigation,
+- how it reacts to routing and entitlement changes,
+- how cleanup must be performed,
+- and how the host communicates lifecycle events.
 
-3. **Graceful degradation**
-   Modules must fail safely and not affect the host shell.
-
-4. **Predictable rehydration**
-   Modules must sync with entitlements, navigation, and layout changes.
-
-5. **Future compatibility**
-   Lifecycle must remain stable even when micro-frontend isolation is introduced.
+This contract is **normative**.  
+Modules that deviate from it are considered non-compliant.
 
 ---
 
-# **3. High-Level Lifecycle Overview**
+## 2. Architectural alignment
+
+This lifecycle contract is explicitly aligned with:
+
+- **08-UI-Host-API-Contract.md** (Host API surface)
+- **05-UI-Routing-Contract.md** (routing & entitlements)
+- **05-Minimal-UI-API-Contract.md** (consumption rules)
+
+### Important clarification
+
+The host **does not call arbitrary lifecycle functions** on modules.
+
+Instead:
+
+- Modules register themselves via `register(hostApi)`
+- Modules subscribe to lifecycle **events** via `host.on(...)`
+
+This ensures:
+
+- deterministic behavior,
+- testability,
+- future MFE compatibility.
+
+---
+
+## 3. High-level lifecycle overview
 
 ```
 ┌─────────────────────────────┐
-│ 0. Module Imported (Static) │
+│ 0. Module Imported          │
+│    (static import)          │
 └───────────────┬─────────────┘
                 │
                 ▼
 ┌─────────────────────────────┐
-│ 1. Module Bootstrap         │  ← host loads module entrypoint
-│    registerModule()         │
+│ 1. Module Registration      │
+│    register(hostApi)        │
 └───────────────┬─────────────┘
                 │
                 ▼
 ┌─────────────────────────────┐
-│ 2. Registration Phase       │  ← module declares routes, nav, assets
+│ 2. Declaration Phase        │
 │    registerRoute()          │
 │    registerNavItem()        │
 └───────────────┬─────────────┘
                 │
                 ▼
 ┌─────────────────────────────┐
-│ 3. Ready Phase              │  ← host acknowledges module as active
-│    lifecycle.onInit()       │
+│ 3. Initialization Event     │
+│    host.on('module:init')   │
 └───────────────┬─────────────┘
                 │
                 ▼
 ┌─────────────────────────────┐
-│ 4. Activation Phase         │  ← user navigates to module page
-│    lifecycle.onRouteEnter() │
+│ 4. Route Activation         │
+│    host.on('route:enter')   │
 └───────────────┬─────────────┘
                 │
                 ▼
 ┌─────────────────────────────┐
 │ 5. Runtime Updates          │
-│    lifecycle.onEntitlementChange()
-│    lifecycle.onContextChange()
+│    entitlements / context   │
 └───────────────┬─────────────┘
                 │
                 ▼
-┌──────────────────────────────┐
-│ 6. Deactivation Phase        │  ← user leaves module route
-│    lifecycle.onRouteLeave()  │
-└───────────────┬──────────────┘
+┌─────────────────────────────┐
+│ 6. Route Deactivation       │
+│    host.on('route:leave')   │
+└───────────────┬─────────────┘
                 │
                 ▼
-┌──────────────────────────────┐
-│ 7. Cleanup Phase (Optional)  │  ← hot reload, module unload
-│    lifecycle.onDestroy()     │
-└──────────────────────────────┘
+┌─────────────────────────────┐
+│ 7. Cleanup / Teardown       │
+│    unsubscribe callbacks    │
+└─────────────────────────────┘
 ```
 
-This lifecycle applies to every module, regardless of whether it is:
+This lifecycle applies to:
 
-* Statically linked
-* Dynamically imported
-* Lazy-loaded
-* Loaded through future MFEs
+- statically bundled modules,
+- dynamically loaded modules,
+- future micro-frontends.
 
 ---
 
-# **4. Lifecycle Phases in Detail**
+## 4. Phase-by-phase contract
 
-## **4.1 Phase 0 — Module Imported (Static)**
+### 4.1 Phase 0 — Module import
 
-Occurs immediately when JS imports the module entrypoint.
-
-The module **must not** execute side effects outside:
-
-* `registerModule()`
-* `registerRoute()`
-* `registerNavItem()`
-
-Anything else (network requests, DOM manipulation) is forbidden at import time.
-
----
-
-## **4.2 Phase 1 — Module Bootstrap**
-
-The module's entrypoint must register itself:
-
-```ts
-registerModule({
-  id: 'order-nexus',
-  name: 'Order Nexus',
-  version: '1.0.0'
-});
-```
-
-**Purpose:**
-
-* Establish the module’s identity
-* Prepare host tracking
-* Enable debugging and analytics
-* Make module visible to contract tests
+Occurs when the module entry file is imported.
 
 **Rules:**
 
-* Must be called once
-* Must be called synchronously during module import
-* Must use the module’s globally unique ID
+- No side effects
+- No network calls
+- No DOM access
+- No host API usage
+
+Only definitions and exports are allowed.
 
 ---
 
-## **4.3 Phase 2 — Registration Phase**
+### 4.2 Phase 1 — Module registration
 
-The module declares its UI contributions:
+Each module **must export** a `register(hostApi)` function.
 
-### **Routes**
+```typescript
+export function register(host: HostApi) {
+  // registration logic
+}
+```
 
-```ts
-registerRoute({
-  id: 'orders-list',
+**Rules:**
+
+- Must be synchronous
+- Must be idempotent
+- Must be called exactly once per module instance
+
+This is the only entry point into the module.
+
+### 4.3 Phase 2 — Declaration phase
+
+Inside `register(hostApi)`, the module declares its contributions.
+
+**Routes**
+
+```typescript
+host.registerRoute({
+  id: 'orders.list',
   path: '/orders',
   component: OrdersPage,
-  layout: ModulePageLayout,
   requiredModuleId: 'order-nexus'
 });
 ```
 
-### **Navigation Items**
+**Navigation**
 
-```ts
-registerNavItem({
-  id: 'orders-nav',
-  routeId: 'orders-list',
+```typescript
+host.registerNavItem({
+  id: 'orders',
+  routeId: 'orders.list',
   label: 'Orders'
 });
 ```
 
-**All registration must be synchronous and deterministic.**
+**Rules:**
 
----
+- All declarations must be synchronous
+- No conditional registration
+- No async registration
+- No re-registration later
 
-## **4.4 Phase 3 — Ready Phase**
+### 4.4 Phase 3 — Initialization event
 
-After registration completes, the host notifies the module:
+The host emits:
 
-```ts
-export const lifecycle = {
-  onInit() {
-    // initialize module-level analytics, preload data, etc.
-  }
-};
+```typescript
+host.on('module:init', () => {
+  // module-level initialization
+});
 ```
+
+**Intended usage:**
+
+- warm caches
+- initialize analytics
+- prepare internal services
 
 **Rules:**
 
-* Called exactly once in module lifetime
-* Must not register additional routes/nav items
-* May start internal lazy loads
-* May prepare caches
+- Fired exactly once
+- Must not register routes or nav items
+- May start async work
 
----
-
-## **4.5 Phase 4 — Activation Phase (Route Enter)**
+### 4.5 Phase 4 — Route activation
 
 Triggered when the user enters a route owned by the module.
 
-```ts
-export const lifecycle = {
-  onRouteEnter(ctx) {
-    // ctx.routeId
-    // ctx.path
-    // ctx.params
-  }
-};
+```typescript
+host.on('route:enter', (ctx) => {
+  // ctx.routeId
+  // ctx.path
+  // ctx.params
+});
 ```
 
-**Use cases:**
+**Allowed behavior:**
 
-* Load module page-level data
-* Start long-poll or subscription
-* Track analytics events
-* Warm caches
+- fetch page-level data
+- start subscriptions
+- log analytics events
 
----
+### 4.6 Phase 5 — Runtime updates
 
-## **4.6 Phase 5 — Runtime Updates**
+**Entitlements changed**
 
-Modules may receive updates from the host:
-
-### **Entitlements Changed**
-
-```ts
-onEntitlementChange(snapshot) {
+```typescript
+host.on('entitlements:changed', (snapshot) => {
   // snapshot.modules
   // snapshot.flags
-}
+});
 ```
 
-### **Host Context Changed**
+**Context updates (future-safe)**
 
-*(Workspace, language, theme, etc.)*
+Context changes may include:
 
-```ts
-onContextChange(ctx) {
-  // ctx.locale, ctx.workspaceId, ctx.theme, etc.
-}
+- locale
+- workspace
+- theme
+
+Modules must adapt without re-registering anything.
+
+### 4.7 Phase 6 — Route deactivation
+
+Triggered when the user leaves a module-owned route.
+
+```typescript
+host.on('route:leave', (ctx) => {
+  // cleanup transient state
+});
 ```
 
-Modules must adapt without a full rerender.
+**Required cleanup:**
+
+- stop timers
+- cancel requests
+- unsubscribe listeners
+
+### 4.8 Phase 7 — Cleanup / teardown
+
+Cleanup is implicit via unsubscribing from host events.
+
+```typescript
+const unsubscribe = host.on('route:enter', handler);
+
+// later
+unsubscribe();
+```
+
+**Occurs during:**
+
+- hot reload
+- module unload (future)
+- host shutdown
+
+No further host calls are allowed.
 
 ---
 
-## **4.7 Phase 6 — Deactivation Phase (Route Leave)**
+## 5. Lifecycle event reference
 
-Triggered when user navigates away from a module route.
+| Event name | Fired when |
+|------------|------------|
+| `module:init` | Module fully registered |
+| `route:enter` | Route owned by module becomes active |
+| `route:leave` | Leaving module-owned route |
+| `entitlements:changed` | Entitlement snapshot updated |
 
-```ts
-onRouteLeave(ctx) {
-  // clean up local transient state
-}
-```
-
-**Use cases:**
-
-* Stop timers/subscriptions
-* Cancel pending requests
-* Release in-memory data
-* Reset transient UI state
+These are the only supported lifecycle events.
 
 ---
 
-## **4.8 Phase 7 — Cleanup Phase**
+## 6. Context object shapes
 
-Called when:
+**Route context**
 
-* A module is hot-reloaded in development
-* A module is disabled/uninstalled (future)
-* The host is shutting down the module context
-
-```ts
-onDestroy() {
-  // full cleanup
-}
-```
-
-**Rules:**
-
-* Module must release all resources
-* No new registration calls allowed
-
----
-
-# **5. Full Lifecycle Hook Specification**
-
-A module may export an optional object:
-
-```ts
-export const lifecycle = {
-  onInit: () => void,
-  onRouteEnter: (ctx) => void,
-  onRouteLeave: (ctx) => void,
-  onEntitlementChange: (snapshot) => void,
-  onContextChange: (ctx) => void,
-  onDestroy: () => void
-};
-```
-
-Hooks may be omitted; the host treats missing hooks as no-ops.
-
----
-
-# **6. Lifecycle Context Shape**
-
-### **6.1 Route Context**
-
-```ts
+```typescript
 {
   routeId: string;
   path: string;
   params?: Record<string, string>;
-  query?: Record<string, string>;
 }
 ```
 
----
+**Entitlement snapshot**
 
-### **6.2 Entitlement Snapshot**
-
-```ts
+```typescript
 {
   modules: string[];
   flags: string[];
@@ -333,57 +310,40 @@ Hooks may be omitted; the host treats missing hooks as no-ops.
 
 ---
 
-### **6.3 Host Context**
+## 7. Forbidden behaviors
 
-```ts
-{
-  locale: string;
-  workspaceId: string | null;
-  theme: 'light' | 'dark' | string;
-}
-```
+Modules must never:
 
----
+- register routes or nav items asynchronously
+- register after `module:init`
+- assume lifecycle order beyond this contract
+- access host internals
+- create cross-module singletons
+- rely on implicit cleanup
 
-# **7. Forbidden Behaviors**
-
-Modules must **never**:
-
-* Register routes/nav items in async callbacks
-* Re-register anything after onInit
-* Modify other modules’ lifecycle handlers
-* Access host context outside of the provided snapshot
-* Create global singletons shared across modules
-* Reliably depend on route order outside the contract
-
-Violations trigger CI failures.
+Violations are CI-fatal.
 
 ---
 
-# **8. Testing Compliance (CI Gate)**
+## 8. Testing & enforcement
 
-The lifecycle contract is validated by:
+This contract is enforced by:
 
-* Contract tests
-* Module entrypoint static analysis
-* Runtime checks
-* Route/nav registration validators
+- static analysis of `register(hostApi)`
+- contract test harness
+- runtime validation
+- CI gating
 
-Any deviation causes module rejection.
-
----
-
-# **9. Versioning & Change Management**
-
-Lifecycle changes require:
-
-* Architecture review
-* Semver major bump
-* Migration documentation
-* Regeneration of runtime type declarations
+A module that violates lifecycle rules will not ship.
 
 ---
 
-# **Lifecycle Contract Complete.**
+## 9. Versioning & change management
 
----
+Any lifecycle change requires:
+
+- architecture approval
+- semver-major bump
+- migration guide
+- updated runtime types
+- updated contract tests

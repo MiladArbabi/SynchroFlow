@@ -1,108 +1,113 @@
-### **Hybrid Composition Contract (Strict externally, flexible internally)**
+# UI Module Composition Contract
 
-**Version:** 1.0
-**Status:** Locked & Governed
-**Owner:** UI Platform Architecture
-**Applies to:** All LaSyncro modules (OrderNexus, Specter, SKU-OS, WMS Lite, ReturnNexus, InsightCore, Problem Center)
-
----
-
-# **1. Purpose**
-
-This contract defines **how a module composes its UI**, including:
-
-* How the module presents itself to the host.
-* How module routes, layouts, and screens must be structured.
-* What the host guarantees and what the module must guarantee.
-* What boundaries **must not be violated**.
-* What lifecycle hooks exist.
-* What minimum exports are required.
-* What naming/structure conventions apply.
-
-This document bridges all previous UI contracts:
-
-* 02 Component Library Contract
-* 03 Design Tokens Contract
-* 04 Layout Contract
-* 05 Routing Contract
-* 06 UI Primitives Contract
-
-This contract ensures that **modules remain autonomous but compatible**, while preventing architecture drift.
+**Version:** 2.0  
+**Status:** Normative — Enforced  
+**Owner:** UI Platform Architecture  
+**Applies to:** All LaSyncro UI modules
 
 ---
 
-# **2. The Composition Model (Hybrid)**
+## 1. Purpose
 
-Modules have:
+This contract defines **how UI modules are composed**, integrated, and isolated within the LaSyncro platform.
 
-### **Strict External Contract (host depends on this)**
+It specifies:
 
-❗ **Cannot be violated**
+- what a module must expose,
+- how it declares routes and navigation,
+- how it integrates with the host (and only the host),
+- what boundaries must never be crossed,
+- how composition remains stable as the platform evolves.
 
-* Must export a **ModuleEntry.tsx**.
-* Must export a **register(host)** function.
-* Must export a **ModuleDescriptor** object.
-* Must register routes using `registerRoute`.
-* Must register module metadata using `registerModule`.
-* Must supply a `ModuleLayout` wrapper.
-* Must use Layout slots correctly.
-* Must define entitlement requirements using fields defined in Routing Contract.
-* Must not import from other modules' internals.
+This document is **normative**.  
+Violations are CI-fatal.
 
 ---
 
-### **Flexible Internal Structure (module developers may choose)**
+## 2. Composition model (hybrid, by design)
 
-✔ Can vary by module
+Modules follow a **hybrid model**:
 
-* How screens, components, hooks, and logic are organized inside the module.
-* Whether screens are nested or flat.
-* Whether features use local state, react-query, zustand, or redux-toolkit (as long as host boundaries aren’t crossed).
-* Whether components are colocated with features.
-* Whether additional sub-layouts exist inside the module.
+### A. Strict external contract (host-facing)
+
+These rules are **non-negotiable**:
+
+- A module **must export** a `register(hostApi)` function
+- A module **must define** a `ModuleDescriptor`
+- A module **must declare** routes via `host.registerRoute()`
+- A module **must declare** navigation via `host.registerNavItem()` (optional)
+- A module **must provide** a `ModuleLayout` for its pages
+- A module **must not** access host internals directly
+- A module **must not** import from other modules
+
+The host depends on this contract.
 
 ---
 
-# **3. Required Top-Level Structure**
+### B. Flexible internal structure (module-owned)
 
-All modules **must** follow this minimal tree:
+Modules are free to decide:
+
+- folder layout
+- state management strategy
+- screen organization
+- internal sub-layouts
+- data fetching approach
+
+As long as the external contract is respected.
+
+---
+
+## 3. Required module structure
+
+Each module **must** expose the following artifacts:
 
 ```
-modules/<module-name>/
-  src/
-    ModuleEntry.tsx
-    ModuleDescriptor.ts
-    ModuleLayout.tsx
-    routes/
-      index.ts     (optional; recommended)
-    screens/       (optional naming)
-    components/    (optional naming)
-    hooks/         (optional)
-    ...
-  dist/
-```
 
-Internal folders are **allowed to vary**, but these three files are **mandatory**:
+modules/<module-id>/
+src/
+ui/
+ModuleEntry.tsx
+ModuleDescriptor.ts
+ModuleLayout.tsx
+components/
+pages/
+hooks/
+tests/
+package.json
 
-### **1 — ModuleDescriptor.ts**
+````
 
-Exports:
+Folder naming inside `ui/` is flexible.  
+The **three files above are mandatory**.
+
+---
+
+## 4. Required exports
+
+### 4.1 ModuleDescriptor
 
 ```ts
-export const ModuleDescriptor = {
+export const descriptor = {
   id: 'order-nexus',
-  name: 'Order Nexus',
   version: '1.0.0',
+  displayName: 'Order Nexus',
+  mountPath: '/orders',
+  entitlements: ['order-nexus']
+};
+````
 
-  // optional but recommended
-  icon: 'orders',
-  category: 'ops'
-} as const;
-```
+**Rules:**
 
-### **2 — ModuleLayout.tsx**
+- `id` must be globally unique
+- Descriptor is **data only**
+- No logic, no side effects
 
-Module-specific layout must wrap all module pages.
+---
+
+### 4.2 ModuleLayout
+
+Every module page is rendered inside this layout.
 
 ```tsx
 export default function ModuleLayout({ children }) {
@@ -114,243 +119,194 @@ export default function ModuleLayout({ children }) {
 }
 ```
 
-### **3 — ModuleEntry.tsx**
+Modules must **not** bypass their layout.
 
-Must export `register(host)`.
+---
+
+### 4.3 ModuleEntry (`register(hostApi)`)
 
 ```ts
 export function register(host: HostApi) {
-  host.registerModule(ModuleDescriptor);
-
   host.registerRoute({
-    id: 'orders-list',
+    id: 'orders.list',
     path: '/orders',
-    name: 'Orders',
-    component: OrdersListScreen,
-    layout: ModuleLayout,
+    component: OrdersListPage,
     requiredModuleId: 'order-nexus'
   });
 
-  // nav items (optional)
   host.registerNavItem({
-    id: 'orders-nav',
-    routeId: 'orders-list',
+    id: 'orders',
+    routeId: 'orders.list',
     label: 'Orders',
-    icon: 'orders',
     order: 200
   });
 }
 ```
 
----
+**Rules:**
 
-# **4. Module Boundaries (Mandatory Rules)**
-
-These protect the platform:
-
-### ❌ Forbidden
-
-* Importing any file from another module (no cross-module leakage).
-* Directly manipulating the host router.
-* Rendering pages without wrapping with ModuleLayout.
-* Bypassing entitlement checks.
-* Using global layout primitives incorrectly.
-* Creating new design tokens — must follow 03 Design Tokens Contract.
-* Creating custom versions of primitives defined in 06 UI Primitives Contract.
-
-### ✔ Allowed
-
-* Internal sub-layouts.
-* Internal state management.
-* Custom domain logic.
-* Colocation of components/screens.
-* Lazy-loading screens using dynamic import.
-* Feature-level conditional rendering.
+- Must be synchronous
+- Must be idempotent
+- Must only use `hostApi`
+- Must not render UI
+- Must not subscribe to lifecycle events here
 
 ---
 
-# **5. Allowed Imports (Strict)**
+## 5. Host API usage rules
 
-Modules may import from:
+Modules may **only** interact with the platform via `HostApi`.
 
-**Host-level APIs:**
-
-```
-runtime/registerRoute
-runtime/registerModule
-runtime/layoutSlots
-runtime/host-api-types
-```
-
-**Platform primitives:**
-
-```
-ui/primitives/*
-ui/components/*
-```
-
-**Design tokens:**
-
-```
-ui/tokens/*
-```
-
-**Shared code:**
-
-```
-@lasyncro/shared/*
-```
-
-**Local module code:**
-
-```
-./components/*
-./screens/*
-./hooks/*
-```
-
----
-
-# **6. Lifecycle Hooks (Optional)**
-
-Modules may define lifecycle hooks:
-
-```
-onInit(host)
-onBeforeRouteEnter(route, host)
-onAfterRouteEnter(route, host)
-```
-
-These are optional and must be exported like:
+Allowed:
 
 ```ts
-export const lifecycle = {
-  onInit: () => { ... },
-  onAfterRouteEnter: (route) => { ... }
-};
+host.registerRoute(...)
+host.registerNavItem(...)
+host.navigate(...)
+host.on('route:enter', ...)
 ```
 
-If present, host automatically calls them.
+Forbidden:
+
+- importing `runtime/*`
+- importing `apps/frontend/*`
+- importing router hooks
+- manipulating layout DOM
+- accessing other modules
 
 ---
 
-# **7. Layout Composition Rules**
+## 6. Lifecycle integration (event-driven)
 
-Modules must wrap every screen using the module’s layout:
+Modules **do not export lifecycle hooks**.
 
-### Correct
+Instead, they subscribe to host lifecycle events:
 
-```tsx
-<Route
-  path="/orders"
-  element={
-    <ModuleLayout>
-      <OrdersListScreen />
-    </ModuleLayout>
-  }
-/>
+```ts
+host.on('module:init', () => { ... });
+host.on('route:enter', ctx => { ... });
+host.on('route:leave', ctx => { ... });
+host.on('entitlements:changed', snapshot => { ... });
 ```
 
-### Incorrect
+This is the **only supported lifecycle mechanism**.
 
-```tsx
-<Route path="/orders" element={<OrdersListScreen />} />   ❌
-```
-
-The host will enforce this by contract tests.
+See:
+📄 `09-UI-Module-Lifecycle-Contract.md`
 
 ---
 
-# **8. Routing Rules (Strict)**
+## 7. Routing composition rules
 
-Modules must use the Minimal Routing Contract:
+Modules:
 
-Required fields for a route:
+- **declare routes**
+- **do not render `<Route>`**
+- **do not control router configuration**
+
+Each route descriptor must follow the Routing Contract (05).
+
+Required fields:
 
 ```
 id
 path
-name
 component
-layout
-requiredModuleId?      // entitlement
+requiredModuleId?
 requiredFlagId?
-meta?
-upgradeRoute?
 order?
+meta?
 ```
 
-Modules **MUST NOT:**
+The host:
 
-* Override global routes.
-* Use unregistered route IDs.
-* Register the same route twice.
+- merges routes
+- applies entitlements
+- renders layouts
+- handles redirects
 
 ---
 
-# **9. Navigation Rules**
+## 8. Navigation composition rules
 
-The module may optionally define nav items:
+Navigation is declarative.
 
 ```ts
 host.registerNavItem({
-  id: 'orders-nav',
-  routeId: 'orders-list',
+  id: 'orders',
+  routeId: 'orders.list',
   label: 'Orders',
-  icon: 'orders',
   order: 200
 });
 ```
 
-Nav items:
+Rules:
 
-* Must point to an existing routeId.
-* Must not exceed order collision handling rules.
+- `routeId` must exist
+- ordering is advisory
+- host owns final rendering
 
 ---
 
-# **10. Required Test Coverage for Each Module**
+## 9. Boundary enforcement (hard rules)
+
+Modules must never:
+
+- import from another module
+- re-register routes dynamically
+- assume route order
+- access host context directly
+- override design tokens
+- introduce global CSS
+- implement their own entitlement logic
+
+---
+
+## 10. Required test coverage
 
 Each module must include:
 
-### **1 — Contract test**
+1. **Composition contract test**
 
-Ensures:
+   - `register()` exists
+   - descriptor valid
+   - routes registered
+   - no forbidden imports
 
-* register() exists
-* ModuleDescriptor valid
-* registerRoute is used correctly
-* layout is exported
-* no boundary violations
+2. **Routing test**
 
-### **2 — Screen-level tests**
+   - route renders when entitled
+   - gated placeholder when not
 
-At least 1 critical screen must have a render test.
+3. **Layout test**
 
-### **3 — Entitlement gating test**
+   - pages render inside ModuleLayout
 
-Confirms 403 screen or placeholder behavior.
-
----
-
-# **11. Future Enforcement (Reserved)**
-
-Future versions may introduce:
-
-* Slot registry tests
-* SSR compatibility rules
-* Micro-frontend federation rules
-* Auto-generated module API docs
+CI enforces all three.
 
 ---
 
-# **12. Governance**
+## 11. Forward compatibility
 
-All changes to this document require:
+This contract is compatible with:
 
-* UI Platform approval
-* Version bump
-* Migration guide (if breaking)
-* CI contract tests updated
+- lazy loading
+- micro-frontends
+- SSR
+- runtime federation
+
+Modules written against this contract **will not need rewrites**.
+
+---
+
+## 12. Governance
+
+Changes require:
+
+- UI Platform approval
+- semver bump
+- migration guide
+- updated contract tests
+- updated runtime types
 
 ---

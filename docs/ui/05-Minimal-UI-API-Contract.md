@@ -1,340 +1,225 @@
-# Minimal UI API Contract + Canonical Primitives (A2)
+# Minimal UI Consumption Contract (A2)
 
-**Status:** Draft — Minimal runtime API and canonical primitive list required for Module-first UI.
-
-**Purpose:**  
-Provide the smallest, stable surface (runtime + component primitives) modules depend on so UI teams can implement module UIs independently, consistently and safely. This contract intentionally focuses on *must-have* APIs and a canonical set of UI primitives (approved components) that guarantee visual and behavioral consistency across LaSyncro.
-
----
-
-## Table of contents
-
-1. Principles
-2. Minimal runtime API (host → modules)
-3. Module registration contract (module → host)
-4. Routing & nav registration
-5. Entitlements & gating primitives
-6. Canonical UI primitives (approved list + minimal props)
-7. Theme & design token usage rules
-8. Component extension rules (how to add new primitives)
-9. Testing & CI contract
-10. File layout & examples
-11. Backwards-compatibility & governance
+**Status:** Normative — Enforced by convention and CI  
+**Owner:** UI Platform Architecture  
+**Last updated:** 2025-12
 
 ---
 
-## 1. Principles (short)
+## Purpose
 
-* Keep the host ↔ module boundary small and explicit.
-* Modules use host APIs; never mutate host internals.
-* Modules use approved primitives for consistent UX.
-* All additions to the API or primitives must be reviewed and versioned.
+This document defines the **minimal, non-negotiable rules** that UI modules must follow when **consuming** the LaSyncro UI platform.
 
----
+It does **not** define host internals, routing mechanics, or lifecycle semantics.
 
-## 2. Minimal runtime API (host → modules)
+Its role is to ensure that:
 
-The host supplies a small, stable `HostApi` to modules during registration. For exact types, prefer the canonical TypeScript definitions in `modules/shared/src/ui-contracts.ts`. The minimal runtime surface is shown below (paraphrased):
+- modules remain decoupled from host implementation details,
+- UI consistency is preserved across teams,
+- future host evolution does not break existing modules.
 
-```ts
-// See modules/shared/src/ui-contracts.ts for the authoritative source
-interface HostApi {
-  // read-only snapshots
-  getThemeSnapshot(): ThemeSnapshot;
-  getEntitlements(): EntitlementSnapshot | null;
-  getUserSnapshot(): UserSnapshot;
-
-  // navigation
-  navigate(path: string, opts?: { replace?: boolean; state?: any }): void;
-  resolveRoutePathById?(routeId: string): string | null; // optional helper
-
-  // runtime registry
-  registerRoute(route: RuntimeRouteDescriptor): void;
-  unregisterRoute(routeId: string): void;
-  addNavItem(item: NavItemDescriptor): void;
-  removeNavItem(navId: string): void;
-  getRegisteredRoutes(): RuntimeRouteDescriptor[];
-
-  // UI helpers
-  openModal(modalId: string, payload?: any): void;
-  openDrawer(drawerId: string, payload?: any): void;
-  showToast(message: string, opts?: ToastOptions): void;
-
-  // telemetry & logging
-  telemetry(event: TelemetryEvent): void;
-
-  // event bus
-  publishEvent(name: string, payload?: any): void;
-  subscribeEvent(name: string, handler: (p?: any) => void): () => void;
-}
-Design notes
-
-The HostApi should be resilient: calling any of these methods when the host does not implement them must be a no-op (no throw).
-
-Breaking changes require semver-major and a migration plan.
+If you are building a UI module, this document defines **what you are allowed to rely on** and **what you must not do**.
 
 ---
 
-## 3. Module registration contract (module → host)
+## Scope (and explicit non-scope)
 
-**Authoritative types:** `modules/shared/src/ui-contracts.ts` (importable).
+### This document **does** define
 
-Modules must export:
-- `descriptor` (object matching `ModuleDescriptor`), and
-- `register(hostApi: HostApi): ModuleRegistration`.
+- Which UI primitives modules may use
+- How modules must consume theme and design tokens
+- Rules for extending UI primitives
+- Testing and compliance expectations
+- Governance and backward-compatibility expectations
 
-Minimal shapes (see types file for exact interfaces):
+### This document **does NOT** define
 
-interface ModuleDescriptor {
-  id: string;
-  version: string;
-  displayName: string;
-  mountPath?: string;
-  entitlements?: string[];
-  lazy?: boolean;
-}
+- Host API shape (see **08-UI-Host-API-Contract.md**)
+- Routing rules or entitlements behavior (see **05-UI-Routing-Contract.md**)
+- Module lifecycle semantics (see **09-UI-Module-Lifecycle-Contract.md**)
+- Folder structure or scaffolding (see **10** and **11**)
 
-interface ModuleRegistration {
-  mount: React.ComponentType<ModuleLayoutProps>;
-  onMount?: (ctx: MountContext) => Promise<void>|void;
-  onActivate?: (ctx: ActivateContext) => Promise<void>|void;
-  onDeactivate?: (ctx: ActivateContext) => Promise<void>|void;
-  onUnmount?: (ctx: MountContext) => Promise<void>|void;
-}
-
-Rules
-
-register() must be synchronous and idempotent (returns ModuleRegistration quickly). Heavy initialization goes into onMount.
-
-Host validates module descriptor on load (shape and required fields). If invalid, host rejects/load-fails with a clear error.
+If this document conflicts with another UI contract, **this document loses**.
 
 ---
 
-## 4. Routing & nav registration
+## Source of Truth Hierarchy
 
-Minimal `RuntimeRouteDescriptor` (authoritative in `ui-contracts.ts`):
+If information appears inconsistent across UI docs, precedence is:
 
-interface RuntimeRouteDescriptor {
-  id: string;
-  name?: string;
-  path: string; // absolute or relative to mountPath - host normalizes
-  component: React.ComponentType<any>;
-  requiredModuleId?: string;
-  requiredFlagId?: string;
-  upgradeRoute?: string | null;
-  meta?: Record<string, any>;
-  order?: number;
-}
-NavItemDescriptor:
+1. **08-UI-Host-API-Contract.md** (authoritative, enforced)
+2. **05-UI-Routing-Contract.md**
+3. **09-UI-Module-Lifecycle-Contract.md**
+4. **This document**
 
-interface NavItemDescriptor {
-  id: string;
-  label: string;
-  path?: string;
-  icon?: React.ReactNode;
-  requiredModuleId?: string;
-  order?: number;
-}
-Host responsibilities:
-
-Normalize and merge dynamic routes with static descriptor routes.
-
-Enforce entitlements on navigation and route resolution.
-
-Expose getRegisteredRoutes() for introspection and tests.
-
-Note: When modules call registerRoute() the host should apply guards and build the final route table; modules should not manipulate host router internals directly.
+This document never overrides host behavior.
 
 ---
 
-## 5. Entitlements & gating primitives
+## Core principles
 
-- Modules declare `entitlements` in their descriptor.
-- Host enforces gating prior to mounting/activation.
-- Host provides a canonical `GatedPlaceholder` component; modules should use it when entitlements are missing.
+1. **Small surface area**  
+   Modules depend on as little host surface as possible.
 
-Gated placeholder props (see `ui-contracts.ts`):
+2. **Consumption-only**  
+   Modules consume platform capabilities; they do not reimplement or mutate them.
 
-interface GatedPlaceholderProps {
-  routeName: string;
-  missingModules?: string[];
-  missingFlags?: string[];
-  upgradeRoute?: string | null;
-  backRoute?: string;
-}
+3. **Consistency over flexibility**  
+   UI uniformity is more important than local optimization.
 
-Behavior: GatedPlaceholder must show missing entitlement reasons and an optional CTA. Modules must not implement ad-hoc gating UI without review.
+4. **Explicit extension**  
+   New primitives or patterns require review and promotion — not silent divergence.
 
 ---
 
-## 6. Canonical UI primitives (approved list + minimal props)
+## Canonical UI primitives
 
-Modules MUST prefer these host-provided primitives. These are the minimal props each primitive must support; implementations may accept additional props.
+Modules **must use host-provided UI primitives where available**.
 
-### Core primitives (host-provided)
+If a needed primitive does not exist, the module **may implement it locally**, but it must **not** be treated as a platform dependency.
 
-- `Button`  
-  `({ children: React.ReactNode, onClick?: () => void, variant?: 'primary'|'secondary'|'ghost', size?: 'sm'|'md'|'lg', disabled?: boolean })`
+### Enforced host primitives
 
-- `Input`  
-  `({ value: string, onChange: (v: string) => void, name?: string, placeholder?: string, type?: string, label?: string, required?: boolean })`
+The following primitives are provided by the host UI layer and are considered stable:
 
-- `Select`  
-  `({ value: any, onChange: (v: any) => void, options: Array<{ value: any; label: string }>, label?: string, placeholder?: string })`
+- **Button**
+- **Input**
+- **Select**
+- **Checkbox**
+- **DataGrid**
+- **Card**
+- **Modal**
+- **Toast**
+- **GatedPlaceholder**
 
-- `Checkbox`  
-  `({ checked: boolean, onChange: (checked: boolean) => void, label?: string })`
+These primitives live under the host UI component library  
+(e.g. `ui-component/*`) and are covered by host-level tests.
 
-- `RadioGroup`  
-  `({ value: any, onChange: (v: any) => void, options: Array<{ value: any; label: string }> })`
-
-- `DataGrid`  
-  `(must support: columns: Column[], rows: Row[], pagination?: PaginationProps, onRowClick?: (row: Row) => void)`
-
-- `Card`  
-  `(props: { title?: string; actions?: React.ReactNode; children?: React.ReactNode })`
-
-- `Modal`  
-  `({ open: boolean, onClose: () => void, title?: string, size?: 'sm'|'md'|'lg' })`
-
-- `Toast`  
-  `({ message: string, type?: 'info'|'success'|'warning'|'error' })`
-
-- `GatedPlaceholder`  
-  `(see GatedPlaceholderProps above)`
-
-- `PageHeader`  
-  `({ title: string, breadcrumbs?: Array<{label:string,path?:string}>, actions?: React.ReactNode })`
-
-- `ContextPanel`  
-  `(slide-over panel primitive with open/onClose props)`
-
-- `Icon`  
-  `(consistent icon wrapper helper)`
-
-### Layout primitives
-
-- `ModuleLayout` wrapper (slot contract defined in UI Layout Contract)
-- `HeaderSlot`, `ContentSlot`, `SidePanelSlot`, `FooterSlot`
-
-### Data & UX primitives
-
-- `AsyncBoundary` / `SuspenseFallback` — standardized loading skeletons
-- `ErrorBoundary` — standard error surface
-- `ConfirmDialog` — standard confirm UI for destructive flows
-
-**Enforcement**
-- Modules must use these primitives (import path `ui-component/*`).
-- Any deviation must be documented and approved by UI Platform.
+Modules must not reimplement these primitives.
 
 ---
 
-## 7. Theme & design token usage rules
+### Non-contractual helpers
 
-- Host theme (MUI Theme) is authoritative. Modules must *read* theme values; they must not provide a nested ThemeProvider that overrides host settings.
-- Modules may request `themeHints` during registration (host may honor them) but MUST NOT mutate the host theme.
-- Use token names from `docs/ui/03-Design-Tokens-Contract.md`; map those to `theme.palette`, `theme.spacing`, etc.
-- CSS variables must be prefixed `--lsyncro-` and scoped to module root selectors.
+The platform may also expose helper components (e.g. headers, layout helpers, panels).
 
----
+These are:
 
-## 8. Component extension rules
+- **optional**
+- **not guaranteed**
+- **not contractually stable**
 
-If a module needs a new primitive not in the canonical list:
-
-1. Prototype the primitive inside the module (module-scoped).
-2. Create a proposal doc that includes:
-
-   * name, props, design mockups, accessibility considerations, tests required
-3. Submit to UI Architecture Review. If approved, it gets promoted to host primitives and added to `docs/ui/` + Storybook global.
-
-Versioning: new primitives are versioned and added with migration guidance.
+Modules may use them if available, but **must not depend on them for correctness**.
 
 ---
 
-## 9. Testing & CI contract
+## Gated UI behavior (consumption rules)
 
-Every module MUST include:
+Modules **must not** implement custom entitlement gating logic.
 
-* Unit tests for `ModuleDescriptor` validation and `register()` behavior.
-* Storybook stories for each primitive usage and layout slot.
-* Accessibility smoke tests for primary screens (axe).
-* A `contract-test` file that the host CI will run to ensure runtime APIs (`registerRoute`, `navigate`, entitlements gating) work in mock host environment.
+Rules for module authors:
 
-Host CI will run the host-provided `contract-test` harness; modules must pass it before merging.
+- If entitlements are missing or unresolved, rely on host gating behavior.
+- When rendering gated content manually, use the host-provided `GatedPlaceholder`.
+- Never attempt to infer entitlement state from route presence, nav visibility, or URL.
 
----
-
-## 10. File layout & examples
-
-Recommended module layout:
-
-```
-/modules/<module-id>/
-  src/
-    ui/
-      ModuleDescriptor.ts
-      ModuleEntry.tsx      // exports register(hostApi)
-      ModuleLayout.tsx
-      /components
-      /hooks
-    tests/
-    stories/
-    package.json
-```
-
-Example `ModuleEntry.tsx` snippet:
-
-```ts
-import { HostApi, ModuleDescriptor } from 'host-types';
-
-export const descriptor: ModuleDescriptor = {
-  id: 'order-nexus',
-  version: '0.1.0',
-  displayName: 'Order Nexus',
-  mountPath: '/orders',
-  entitlements: ['order-nexus']
-};
-
-export function register(host: HostApi) {
-  host.registerRoute({
-    id: 'orders-list',
-    name: 'Orders',
-    path: '/orders',
-    component: OrdersPage,
-    requiredModuleId: 'order-nexus'
-  });
-
-  host.addNavItem({ id: 'orders', label: 'Orders', path: '/orders', order: 200 });
-
-  return {
-    mount: ModuleLayout,
-    onMount: async () => { /* init */ }
-  };
-}
-```
+All entitlement semantics are defined in **05-UI-Routing-Contract.md** and enforced by the host.
 
 ---
 
-## 11. Backwards-compat & governance
+## Theme & design token usage
 
-* Changes to HostApi or primitives must be versioned and documented.
-* Breaking changes require a 2-release deprecation window and migration guide.
-* The UI Platform team owns primitives and the HostApi. Module teams own module-scoped components and tests.
+### Theme access
+
+- The host theme is **authoritative**.
+- Modules may **read** theme values.
+- Modules must **not** wrap themselves in a nested ThemeProvider.
+- Modules must not mutate theme configuration.
+
+### Design tokens
+
+- Use token names defined in `03-Design-Tokens-Contract.md`.
+- Tokens must map to theme values (palette, spacing, typography).
+- Hard-coded colors, spacing, or z-index values are prohibited unless documented.
+
+### CSS rules
+
+- Module-scoped CSS only.
+- CSS variables must be prefixed with `--lsyncro-`.
+- Global selectors are forbidden.
 
 ---
 
-## Appendix: quick checklist before coding a module UI
+## Component extension rules
 
-* [ ] ModuleDescriptor.ts exists and validated
-* [ ] register(host) returns ModuleRegistration
-* [ ] Routes registered via host.registerRoute
-* [ ] Nav item registered via host.addNavItem
-* [ ] All interactive components use canonical primitives
-* [ ] Storybook stories for layout & main screens
-* [ ] Contract-tests pass locally
-* [ ] Accessibility smoke tests included
+If a module requires a UI primitive that does not exist:
 
-End of Minimal UI API Contract + canonical primitives.
+1. Implement it **locally** inside the module.
+2. Do **not** export or reuse it across modules.
+3. If reuse is desired, submit a promotion proposal containing:
+   - API shape
+   - Accessibility considerations
+   - Design references
+   - Test requirements
+
+Only after approval may a primitive be promoted to the host library and documented here.
 
 ---
+
+## Testing & compliance expectations
+
+Modules are expected to:
+
+- Use canonical primitives for all interactive UI
+- Avoid importing host internals
+- Pass host-provided contract tests
+- Include accessibility smoke coverage for primary screens
+- Avoid snapshotting host internals or styles
+
+The host CI is authoritative.  
+If CI fails, the module is non-compliant regardless of local behavior.
+
+---
+
+## Forbidden behaviors (non-exhaustive)
+
+Modules must never:
+
+- Import from `apps/frontend/src/*`
+- Import host routing primitives directly
+- Access host contexts or stores
+- Modify navigation DOM
+- Inject global CSS
+- Mutate theme or tokens
+- Reimplement entitlement logic
+- Depend on undocumented runtime behavior
+
+Violations are treated as contract breaches.
+
+---
+
+## Backward compatibility & governance
+
+- Changes to this document require UI Platform approval.
+- Breaking changes require:
+  - Semver major bump
+  - Migration guidance
+  - CI updates
+- Deprecated patterns must be supported for **at least two releases**.
+
+---
+
+## Summary for module authors
+
+Before shipping a UI module, confirm:
+
+- [ ] Only documented primitives are used
+- [ ] Theme is read-only
+- [ ] No host internals are imported
+- [ ] Gating is delegated to the host
+- [ ] Local primitives are not reused cross-module
+- [ ] Contract tests pass
+
+---
+
+**End of Minimal UI Consumption Contract.**

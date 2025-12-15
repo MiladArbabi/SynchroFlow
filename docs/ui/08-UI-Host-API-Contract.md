@@ -1,85 +1,65 @@
-### **Host → Module API Surface Contract**
+## UI Host API Contract — LaSyncro (Normative)
 
-**Version:** 1.0
-**Status:** Locked & Enforced
-**Owner:** UI Platform Architecture
-
----
-
-# **1. Purpose**
-
-This contract defines the **complete, stable API surface** provided by the LaSyncro **Host UI Platform** to any module.
-
-A module may only use what is defined here.
-
-If it’s not in this contract → the module **must not import or rely on it**.
-
-This ensures:
-
-* No accidental dependency on host internals
-* No cross-module leakage
-* Stable behavior across versions
-* Guaranteed compatibility for all modules
-
-This contract is enforced via:
-
-* Type declarations (`runtime/index.d.ts`)
-* Host unit tests
-* Module contract tests
-* CI bundle checks
+**Version:** 2.0
+**Status:** **Authoritative / Normative**
+**Owner:** frontend-platform
 
 ---
 
-# **2. What Counts as “Host API”?**
+## 1. Purpose (Normative)
 
-Anything exposed under:
+This document defines the **only allowed API surface** exposed by the LaSyncro UI host to frontend modules.
 
+It is **normative**:
+
+* Modules **must** follow it
+* Host implementations **may change**
+* Guarantees defined here **must never break**
+
+If an API is not defined here, **modules must not rely on it**.
+
+---
+
+## 2. Design Principles (Non-negotiable)
+
+1. **Declarative, not imperative**
+2. **Renderer-agnostic**
+3. **Runtime-first**
+4. **Entitlements enforced centrally**
+5. **No JSX or React types at the API boundary**
+
+---
+
+## 3. What Counts as Host API
+
+Modules may import **only** from:
+
+```ts
+import { HostApi } from 'runtime'
+import { registerRoute, registerNavItem } from 'runtime'
 ```
-import { ... } from 'runtime'
-import { ... } from 'runtime/<feature>'
-```
 
-—and nothing else.
-
-Modules are **forbidden** from importing directly from:
+Modules must **never** import from:
 
 ```
 apps/frontend/src/*
 components/*
 contexts/*
-pages/*
 layouts/*
-utils/*
+routes.tsx
 ```
 
-or any implementation detail not explicitly defined in this contract.
+Violations are contract failures.
 
 ---
 
-# **3. Host API Overview**
+## 4. Module Registry API (Required)
 
-| API Category                | Description                                          |
-| --------------------------- | ---------------------------------------------------- |
-| **Module Registry API**     | Register and unregister a module with the host       |
-| **Route Registry API**      | Declare module routes                                |
-| **Navigation Registry API** | Declare sidebar/top-nav items                        |
-| **Layout Slot API**         | Access layout slots (future capability)              |
-| **Host Lifecycle API**      | Callbacks and events the host exposes                |
-| **Utility/Helpers**         | Stable primitives (navigation, entitlement snapshot) |
-
-Everything listed below is part of the *official* API surface.
-
----
-
-# **4. Module Registry API (Required)**
-
-### **4.1 `registerModule(descriptor)`**
-
-Registers a module with the host:
+### `registerModule(descriptor)`
 
 ```ts
 registerModule({
-  id: string;
+  id: string;           // required, stable
   name?: string;
   version?: string;
   icon?: string;
@@ -87,240 +67,166 @@ registerModule({
 });
 ```
 
-**Rules:**
+Rules:
 
-* Must be called exactly **once per module**.
-* `id` must be unique.
-* Module metadata is used by settings pages, analytics, and debugging.
-
----
-
-### **4.2 `unregisterModule(id: string)`**
-
-Used only in:
-
-* Test environments
-* Hot-reload scenarios
-* Module unload environments (future)
-
-Never needed in production code.
+* Must be called **once**
+* `id` is immutable across releases
+* Used for telemetry, settings, debugging
 
 ---
 
-### **4.3 `getRegisteredModules()`**
+## 5. Route Registry API (Authoritative)
 
-Retrieves the list of modules known to the host.
+### 5.1 `registerRoute(route)`
 
-Read-only.
-
----
-
-# **5. Route Registry API (Required)**
-
-## 5.1 `registerRoute(routeDescriptor)`
-
-Registers a route belonging to the module.
+Registers **intent**, not rendering.
 
 ```ts
 registerRoute({
-  id: string;                 // required
-  path: string;               // required
-  name?: string;
-  component: React.FC;        // required
-  layout?: React.FC;          // required for module pages
-  requiredModuleId?: string;
-  requiredFlagId?: string;
-  meta?: Record<string, any>;
-  upgradeRoute?: string;
-  order?: number;             // default: 1000
+  id: string;                    // stable, unique
+  key: string;                   // stable nav/telemetry key
+  name: string;                  // display name
+  path: string;                  // absolute path (/orders)
+  moduleId: string;              // owning module
+  requiredModuleId?: string;     // entitlement gate
+  requiredFlagId?: string;       // entitlement gate
+  order?: number;                // nav ordering
+  meta?: {
+    showGatedPlaceholder?: boolean;
+    [key: string]: any;
+  };
 });
 ```
 
-### **Host guarantees**
+### Explicitly forbidden
 
-The host:
-
-* Stores the route in the merged registry
-* Enforces entitlement checks
-* Renders the module layout for module pages
-* Redirects unauthorized users
-* Makes the route available to navigation registry
-
-### **Module responsibilities**
-
-* Must supply a layout for module pages.
-* Must not define conflicting routes.
-* Must not override host routes.
+* JSX
+* React components
+* Layout references
+* React Router flags
 
 ---
 
-## 5.2 `unregisterRoute(id: string)`
+### 5.2 Host guarantees
 
-Used in tests and future hot-reload systems.
+The host **must**:
 
----
-
-## 5.3 `getRegisteredRoutes()`
-
-Returns the final merged route list (static + dynamic).
-
-Modules should treat this as **read-only**.
+* Persist the route in a runtime registry
+* Enforce entitlements via a single guard
+* Resolve refresh & deep links
+* Delegate rendering to `ModuleHost`
+* Make the route visible to navigation registry
 
 ---
 
-# **6. Navigation Registry API (Optional)**
+## 6. Rendering Model (Mandatory)
 
-Modules may define their navigation items.
+Routes **never render components directly**.
 
-### **6.1 `registerNavItem(navItem)`**
+All module routes resolve through:
+
+```tsx
+<ModuleHost />
+```
+
+Static routes exist **only** as refresh bridges:
+
+```tsx
+<Route path="/orders/*" element={<ModuleHost />} />
+<Route path="/modules/:moduleId/*" element={<ModuleHost />} />
+```
+
+If refresh breaks, the host is incomplete.
+
+---
+
+## 7. Navigation Registry API
+
+### `registerNavItem(navItem)`
 
 ```ts
 registerNavItem({
   id: string;
-  routeId: string;         // must refer to registered route
+  path: string;          // must match registered route
   label: string;
   icon?: string;
-  order?: number;          // determines sidebar position
-  category?: string;       // optional grouping
+  order?: number;
+  category?: string;
 });
 ```
 
-### **6.2 `unregisterNavItem(id)`**
-
-Tests only.
-
-### **6.3 `getRegisteredNavItems()`**
-
-Read-only. The host sorts nav items by order automatically.
+Navigation visibility **must** respect the same entitlement guard as routing.
 
 ---
 
-# **7. Layout Slot API (Reserved / Limited)**
+## 8. Navigation Helper API
 
-The host defines global layout areas:
-
-* **topBar**
-* **sideNav**
-* **modulePageShell**
-* **actionBar** (future)
-* **breadcrumbs** (future)
-
-### Future API Surface (documented now, shipped later)
+### `navigate(path, options?)`
 
 ```ts
-host.layoutSlots.register('my-slot-id', MyComponent);
+navigate('/orders/123', { replace?: boolean });
 ```
 
-Modules **may not use this yet** — implementing modules using future APIs will fail CI.
+Rules:
+
+* Host-owned
+* Router-agnostic
+* Modules must assume navigation may be denied
 
 ---
 
-# **8. Host Lifecycle API**
+## 9. Entitlement Snapshot API
 
-Modules may optionally use lifecycle hooks.
+```ts
+getEntitlements(): {
+  modules: string[];
+  flags: string[];
+} | null;
+```
 
-### **8.1 `host.on(eventName, callback)`**
+Rules:
+
+* `null` = unresolved
+* Modules must not infer or cache entitlements
+* All enforcement is host-owned
+
+---
+
+## 10. Lifecycle & Events
+
+```ts
+host.on(event, callback)
+```
 
 Allowed events:
 
-```
-'route:enter'
-'route:leave'
-'entitlements:changed'
-'module:init'
-```
+* `route:enter`
+* `route:leave`
+* `entitlements:changed`
+* `module:init`
 
-### Example:
-
-```ts
-host.on('route:enter', (ctx) => {
-  console.log('Entered route', ctx.routeId);
-});
-```
-
-### Event context:
-
-```ts
-{
-  routeId: string;
-  path: string;
-  params?: Record<string, string>;
-}
-```
+Lifecycle hooks must **never** mutate routing or nav.
 
 ---
 
-# **9. Navigation Helper API**
+## 11. Forbidden Usage (Hard rules)
 
-### **9.1 `navigate(path: string, options?)`**
+Modules must NOT:
 
-Simple wrapper around `window.history` (and compatible with React Router).
+* Import React Router
+* Register JSX routes
+* Provide layouts to host
+* Redirect based on entitlements
+* Read host state directly
+* Touch DOM outside module root
 
-```ts
-navigate('/orders/123', { replace: true });
-```
-
-### Host guarantees:
-
-* Works in all environments (SPA + micro-frontend future)
-* No dependency on react-router hooks from modules
+Violations are CI failures.
 
 ---
 
-# **10. Entitlement Snapshot API**
+## 12. Runtime Types (Single Source of Truth)
 
-Modules may read the entitlement snapshot at runtime:
-
-```ts
-host.getEntitlements(): {
-  modules: string[];
-  flags: string[];
-}
-```
-
-This is **read-only**.
-
-Modules must **not** implement their own entitlements logic.
-
----
-
-# **11. Error Boundary Hooks (Optional)**
-
-Module screens may throw, and the host will catch them.
-
-Modules may define:
-
-```ts
-export const lifecycle = {
-  onError(error, info) {
-    // module-level crash analytics
-  }
-}
-```
-
----
-
-# **12. Forbidden API Usage**
-
-Modules must NEVER:
-
-* Import from `apps/frontend/src/*`
-* Import from host React Router
-* Access Redux store
-* Import MUI theme directly
-* Add their own global CSS
-* Mutate design tokens
-* Manipulate host navigation DOM
-* Modify host error boundaries
-* Use window-level navigation listeners
-
-Violations break contract and will fail contract tests.
-
----
-
-# **13. Runtime Types Provided to Modules**
-
-All types made available to modules live in:
+All shared types live in:
 
 ```
 runtime/index.d.ts
@@ -328,43 +234,30 @@ runtime/index.d.ts
 
 Including:
 
-* `RouteDescriptor`
-* `ModuleDescriptor`
-* `NavItemDescriptor`
 * `HostApi`
-* `LifecycleHooks`
+* `RuntimeRoute`
+* `NavItemDescriptor`
+* `EntitlementSnapshot`
 
-Modules must not rely on types outside this file.
-
----
-
-# **14. CI Contract Enforcement**
-
-CI ensures that:
-
-* All modules import only allowed APIs
-* No cross-module imports occur
-* All required exports exist
-* No missing layout wrappers
-* Route IDs are unique
-* Module IDs are unique
-
-Contract drift is not tolerated.
+No other types are allowed.
 
 ---
 
-# **15. Versioning & Governance**
+## 13. Governance
 
 Changes require:
 
-* Architecture approval
-* Semver bump
-* Migration guide if breaking
-* Update to contract tests
-* Regeneration of runtime types
+* frontend-platform approval
+* SemVer bump
+* Migration notes
+* Contract test updates
 
 ---
 
-# **Document 08 Complete.**
+## Final Assertion
+
+> **The Host API defines intent.
+> The Host owns execution.
+> Modules declare — they do not control.**
 
 ---
