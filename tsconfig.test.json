@@ -5,7 +5,8 @@
     "types": ["jest", "@testing-library/jest-dom"],
     "baseUrl": ".",
     "paths": {
-      "test-utils": ["apps/frontend/src/test-utils.tsx"]
+      "test-utils": ["apps/frontend/src/test-utils.tsx"],
+      "activation/*": ["apps/frontend/src/activation/*"],
     }
   },
   "include": [

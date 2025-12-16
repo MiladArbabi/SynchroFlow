@@ -1,64 +1,85 @@
-// tests/unit/ui/components/activation/ActivationSurface.test.tsx
-import { screen } from '@testing-library/react';
-import { renderWithTheme } from 'test-utils';
-import '@testing-library/jest-dom';
-
+//tests/ui/components/activation/ActivationSurface.test.tsx
+import { render, screen } from '@testing-library/react';
 import { ActivationSurface } from '@lasyncro/shared/ui';
 
-describe('ActivationSurface (FT-1)', () => {
-  it('renders the activation surface root and module identity', () => {
-    renderWithTheme(
-      <ActivationSurface
-        moduleId="customers"
-        integrationProvider="shopify"
-      />
-    );
+describe('ActivationSurface — canonical slot contract', () => {
+  const baseConfig = {
+    moduleId: 'order-nexus',
+    identity: {
+      title: 'Orders',
+    },
+    blindness: {
+      content: 'Right now, profitable and unprofitable orders are indistinguishable.',
+    },
+    absenceProof: {
+      content: 'This order could be losing money. You wouldn’t know.',
+    },
+    valueAfterActivation: {
+      content: 'Once connected, money-losing orders are identified automatically.',
+    },
+    primaryCTA: {
+      label: 'Connect Shopify Store',
+      onActivate: jest.fn(),
+    },
+    trust: {
+      bullets: [
+        'Read-only access',
+        'No store changes',
+        'Disconnect anytime',
+      ],
+    },
+  };
 
+  it('renders the Blindness slot (mandatory)', () => {
+    render(<ActivationSurface {...(baseConfig as any)} />);
     expect(
-      screen.getByTestId('activation-surface')
-    ).toBeInTheDocument();
-
-    expect(
-      screen.getByText(/customers/i)
-    ).toBeInTheDocument();
-  });
-
-  it('renders an integration prompt placeholder', () => {
-    renderWithTheme(
-      <ActivationSurface
-        moduleId="customers"
-        integrationProvider="shopify"
-      />
-    );
-
-    expect(
-      screen.getByTestId('activation-connect-integration')
-    ).toBeInTheDocument();
-  });
-
-  it('renders a vision preview section', () => {
-    renderWithTheme(
-      <ActivationSurface
-        moduleId="customers"
-        integrationProvider="shopify"
-      />
-    );
-
-    expect(
-      screen.getByTestId('activation-vision-preview')
+      screen.getByText(/indistinguishable/i)
     ).toBeInTheDocument();
   });
 
-  it('changes rendered content based on moduleId', () => {
-    renderWithTheme(
-      <ActivationSurface
-        moduleId="orders"
-        integrationProvider="shopify"
-      />
-    );
+  it('throws if Blindness slot is missing', () => {
+    const { blindness, ...invalidConfig } = baseConfig as any;
+    expect(() =>
+      render(<ActivationSurface {...invalidConfig} />)
+    ).toThrow();
+  });
 
+  it('renders exactly one Primary CTA', () => {
+    render(<ActivationSurface {...(baseConfig as any)} />);
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toHaveTextContent(/connect shopify/i);
+  });
+
+  it('throws if Trust slot is missing', () => {
+    const { trust, ...invalidConfig } = baseConfig as any;
+    expect(() =>
+      render(<ActivationSurface {...invalidConfig} />)
+    ).toThrow();
+  });
+
+  it('renders Trust immediately after the Primary CTA', () => {
+    render(<ActivationSurface {...(baseConfig as any)} />);
+
+    const cta = screen.getByRole('button');
+    const trustText = screen.getByText(/read-only access/i);
+
+    // DOM order assertion
     expect(
-      screen.getByText(/orders/i)
-    ).toBeInTheDocument();
+      cta.compareDocumentPosition(trustText) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('does not accept legacy marketing props (headline / description)', () => {
+    expect(() =>
+      render(
+        <ActivationSurface
+          moduleId="order-nexus"
+          headline="Activate Orders"
+          description="Marketing copy"
+        />
+      )
+    ).toThrow();
   });
 });

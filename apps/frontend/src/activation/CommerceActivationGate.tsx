@@ -1,14 +1,20 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/activation/CommerceActivationGate.tsx
 import React, { useState } from 'react';
 import { ActivationSurface } from '@lasyncro/shared/ui';
 import { useIntegration } from 'contexts/IntegrationContext';
-import { ConnectStoreBanner } from 'components/ConnectStoreBanner';
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
+
+import { orderNexusActivationConfig } from './configs/orderNexus';
 
 interface ActivationGateProps {
   moduleId: string;
   children: React.ReactNode;
 }
+
+const activationConfigs: Record<string, any> = {
+  'order-nexus': orderNexusActivationConfig,
+};
 
 export function CommerceActivationGate({
   moduleId,
@@ -18,19 +24,29 @@ export function CommerceActivationGate({
   const [open, setOpen] = useState(false);
 
   if (!hasIntegrations) {
-     return (
-       <>
-         <ActivationSurface 
-          moduleId={moduleId}
-          headline={`Activate ${moduleId}`} 
-          description="Connect your store to unlock insights and automation."
-          integrationCTA={
-             <ConnectStoreBanner onOpenModal={() => setOpen(true)} />
-          }
+    const baseConfig = activationConfigs[moduleId];
+
+    if (!baseConfig) {
+      throw new Error(
+        `No ActivationSurface config found for moduleId: ${moduleId}`
+      );
+    }
+
+    return (
+      <>
+        <ActivationSurface
+          {...baseConfig}
+          primaryCTA={{
+            ...baseConfig.primaryCTA,
+            onActivate: () => setOpen(true),
+          }}
         />
-       <ConnectStoreModal isOpen={open} onClose={() => setOpen(false)} />
+        <ConnectStoreModal
+          isOpen={open}
+          onClose={() => setOpen(false)}
+        />
       </>
-     ); 
+    );
   }
 
   return <>{children}</>;

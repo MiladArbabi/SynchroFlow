@@ -78,7 +78,9 @@
       "@lasyncro/shared": ["modules/shared/dist/index.js", "modules/shared/src/index.ts"],
 
       /* module-level alias for internal modules (specter etc.) — point to compiled output too */
-      "modules-specter/*": ["modules/specter/dist/*", "modules/specter/src/*"]
+      "modules-specter/*": ["modules/specter/dist/*", "modules/specter/src/*"],
+
+      "activation/*": ["apps/frontend/src/activation/*"],
     }
   },
   "include": [

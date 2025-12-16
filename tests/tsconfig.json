@@ -7,6 +7,9 @@
     "baseUrl": "..",
     "types": ["jest", "@testing-library/jest-dom"],
     "paths": {
+      "@lasyncro/shared/ui": ["modules/shared/src/ui"],
+      "@lasyncro/shared/*": ["modules/shared/src/*"],
+      "activation/*": ["apps/frontend/src/activation/*"],
       "test-utils": ["apps/frontend/src/test-utils.tsx"],
       "components/*": ["apps/frontend/src/components/*"],
       "contexts/*": ["apps/frontend/src/contexts/*"],
