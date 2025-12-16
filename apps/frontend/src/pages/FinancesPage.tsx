@@ -1,11 +1,11 @@
 //apps/frontend/src/pages/FinancesPage.tsx
 import React from 'react';
-import { CommerceFT1Gate } from 'activation/FT1ActivationGate';
+import { CommerceActivationGate } from 'activation/CommerceActivationGate';
 
 export default function FinancesPage() {
   return (
-    <CommerceFT1Gate moduleId="finances">
+    <CommerceActivationGate moduleId="finances">
       <div>Finances module is Under Construction.</div>
-    </CommerceFT1Gate>
+    </CommerceActivationGate>
   );
 }

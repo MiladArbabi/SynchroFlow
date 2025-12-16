@@ -17,6 +17,7 @@
     // ---- IMPORTANT PART ----
     "baseUrl": "src",
     "paths": {
+      "@lasyncro/shared/ui": ["../../../modules/shared/src/ui/index.ts"],
       "config": ["config.ts"],
       "hooks/*": ["hooks/*"],
       "themes/*": ["themes/*"],

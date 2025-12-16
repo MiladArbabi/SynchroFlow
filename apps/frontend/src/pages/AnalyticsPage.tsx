@@ -1,11 +1,11 @@
 //apps/frontend/src/pages/AnalyticsPage.tsx
 import React from 'react';
-import { CommerceFT1Gate } from 'activation/FT1ActivationGate';
+import { CommerceActivationGate } from 'activation/CommerceActivationGate';
 
 export default function AnalyticsPage() {
   return (
-    <CommerceFT1Gate moduleId="analytics">
+    <CommerceActivationGate moduleId="analytics">
       <div>Analytics module is Under Construction.</div>
-    </CommerceFT1Gate>
+    </CommerceActivationGate>
   );
 }

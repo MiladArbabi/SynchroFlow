@@ -1,7 +1,7 @@
 //apps/frontend/src/shells/CommercePageShell.tsx
 
 import React from 'react';
-import { CommerceFT1Gate } from 'activation/FT1ActivationGate';
+import { CommerceActivationGate } from 'activation/CommerceActivationGate';
 
 interface CommercePageShellProps {
   moduleId: string;
@@ -13,8 +13,8 @@ export function CommercePageShell({
   children
 }: CommercePageShellProps) {
   return (
-    <CommerceFT1Gate moduleId={moduleId}>
+    <CommerceActivationGate moduleId={moduleId}>
       {children}
-    </CommerceFT1Gate>
+    </CommerceActivationGate>
   );
 }

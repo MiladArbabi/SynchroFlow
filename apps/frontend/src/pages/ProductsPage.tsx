@@ -1,10 +1,10 @@
 import React from 'react';
-import { CommerceFT1Gate } from 'activation/FT1ActivationGate';
+import { CommerceActivationGate } from 'activation/CommerceActivationGate';
 
 export default function ProductsPage() {
   return (
-    <CommerceFT1Gate moduleId="products">
+    <CommerceActivationGate moduleId="products">
       <div>Products module is Under Construction.</div>
-    </CommerceFT1Gate>
+    </CommerceActivationGate>
   );
 }
