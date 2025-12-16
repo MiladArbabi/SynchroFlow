@@ -4,11 +4,12 @@ import React from 'react';
 
 export interface ActivationSurfaceProps {
   moduleId: string;
-  integrationProvider: string;
+  integrationProvider?: string;
 }
 
 export const ActivationSurface: React.FC<ActivationSurfaceProps> = ({
-  moduleId
+  moduleId,
+  integrationProvider
 }) => {
   return (
     <section data-testid="activation-surface">

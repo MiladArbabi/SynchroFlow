@@ -67,6 +67,7 @@ export default defineConfig({
       'api': path.resolve(__dirname, './src/api'),
       
       // --- OUR EXISTING ALIASES ---
+      '@lasyncro/shared/ui': path.resolve(__dirname, '../../modules/shared/src/ui'),
       'assets': path.resolve(__dirname, './src/assets'),
       'components': path.resolve(__dirname, './src/components'),
       'context': path.resolve(__dirname, './src/contexts/MaterialUI.tsx'),

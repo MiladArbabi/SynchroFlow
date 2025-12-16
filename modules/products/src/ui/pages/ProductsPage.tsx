@@ -1,3 +1,3 @@
 export default function ProductsPage() {
-  return <div>Products module is wired correctly.</div>;
+  return <div>Products module is Under Construction.</div>;
 }
