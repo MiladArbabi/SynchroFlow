@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// apps/frontend/src/pages/ProductsPage.tsx
+// apps/frontend/src/pages/LegacyProductsPage.tsx
 import React, { useState } from 'react';
 import {
   Box,

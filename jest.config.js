@@ -98,6 +98,7 @@ module.exports = {
         '^routes$': '<rootDir>/apps/frontend/src/routes.tsx',
         '^config$': '<rootDir>/apps/frontend/src/config.ts',
         '^test-utils$': '<rootDir>/apps/frontend/src/test-utils.tsx',
+        '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
 
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
@@ -138,6 +139,7 @@ module.exports = {
 
         '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
         '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
+        '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'
         : '<rootDir>/apps/frontend/src/$1/$2',                

@@ -35,8 +35,10 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "../../modules/shared/src/**/*.ts",
-    "../../modules/specter/src/**/*.ts"
+    "../../modules/shared/src/contracts/**/*.ts",
+    "../../modules/shared/src/modules/**/*.ts",
+    "../../modules/shared/src/ui-contracts.ts",
+    "../../modules/specter/src/**/*.ts",
   ],
   "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }

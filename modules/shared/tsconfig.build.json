@@ -3,6 +3,7 @@
     "target": "ES2020",
     "module": "CommonJS",
     "moduleResolution": "node",
+    "jsx": "react-jsx",
 
     "rootDir": "./src",
     "outDir": "./dist",
@@ -17,5 +18,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/index.ts",
+    "src/contracts/**/*",
+    "src/ui/**/*"
+  ]
 }
