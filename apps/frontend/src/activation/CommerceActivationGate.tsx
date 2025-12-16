@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/activation/CommerceActivationGate.tsx
 import React, { useState } from 'react';
-import { ActivationSurface } from '@lasyncro/shared/ui';
 import { useIntegration } from 'contexts/IntegrationContext';
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
 
 import { orderNexusActivationConfig } from './configs/orderNexus';
+import ActivationSurfacePage from './ActivationSurfacePage';
 
 interface ActivationGateProps {
   moduleId: string;
@@ -34,12 +34,9 @@ export function CommerceActivationGate({
 
     return (
       <>
-        <ActivationSurface
-          {...baseConfig}
-          primaryCTA={{
-            ...baseConfig.primaryCTA,
-            onActivate: () => setOpen(true),
-          }}
+        <ActivationSurfacePage
+          config={baseConfig}
+          onActivate={() => setOpen(true)}
         />
         <ConnectStoreModal
           isOpen={open}
