@@ -1,5 +1,4 @@
 // modules/customers/src/ui/ModuleEntry.tsx
-import CustomersPage from './pages/CustomersPage';
 import { UsersRound } from 'lucide-react';
 
 const descriptor = {
@@ -16,16 +15,6 @@ const descriptor = {
       order: 20,
       icon: UsersRound,
       requiredModuleId: 'customers'
-    }
-  ],
-
-  routes: [
-    {
-      id: 'customers',
-      path: '/customers',
-      component: CustomersPage,
-      /* requiredModuleId: 'customers', */ //Ensure to Re-add later
-      order: 110
     }
   ]
 };

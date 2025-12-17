@@ -1,5 +1,4 @@
 // modules/analytics/src/ui/ModuleEntry.tsx
-import AnalyticsPage from './pages/AnalyticsPage';
 import { BarChart } from 'lucide-react';
 
 const descriptor = {
@@ -18,16 +17,6 @@ const descriptor = {
       requiredModuleId: 'analytics'
     }
   ],
-
-  routes: [
-    {
-      id: 'analytics',
-      path: '/analytics',
-      component: AnalyticsPage,
-      requiredModuleId: 'analytics',
-      order: 100
-    }
-  ]
 };
 
 export default descriptor;

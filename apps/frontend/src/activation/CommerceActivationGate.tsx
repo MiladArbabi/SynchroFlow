@@ -6,6 +6,10 @@ import { ConnectStoreModal } from 'components/ConnectStoreModal';
 import { registerActivationAction } from './activationActions';
 
 import { orderNexusActivationConfig } from './configs/orders';
+import { customersActivationConfig } from './configs/customers';
+import { productsActivationConfig } from './configs/products';
+import { analyticsActivationConfig } from './configs/analytics';
+import { financesActivationConfig } from './configs/finances';
 
 import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from 'contexts/AuthContext';
@@ -18,6 +22,10 @@ interface ActivationGateProps {
 
 const activationConfigs: Record<string, any> = {
   'order-nexus': orderNexusActivationConfig,
+  'customers': customersActivationConfig,
+  'products': productsActivationConfig,
+  'analytics': analyticsActivationConfig,
+  'finances': financesActivationConfig,
 };
 
 export function CommerceActivationGate({

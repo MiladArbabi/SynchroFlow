@@ -1,5 +1,4 @@
 // modules/finances/src/ui/ModuleEntry.tsx
-import FinancesPage from './pages/FinancesPage';
 import { DollarSign } from 'lucide-react';
 
 const descriptor = {
@@ -18,16 +17,6 @@ const descriptor = {
       requiredModuleId: 'finances'
     }
   ],
-
-  routes: [
-    {
-      id: 'finances',
-      path: '/finances',
-      component: FinancesPage,
-      requiredModuleId: 'finances',
-      order: 100
-    }
-  ]
 };
 
 export default descriptor;

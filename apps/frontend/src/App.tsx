@@ -25,6 +25,9 @@ import ProductsPage from "pages/ProductsPage";
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
+import { Analytics } from "@mui/icons-material";
+import FinancesPage from "pages/FinancesPage";
+import AnalyticsPage from "pages/AnalyticsPage";
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -192,6 +195,14 @@ export default function App() {
                           <Route
                             path="/products/*"
                             element={<ProductsPage />}
+                          />
+                          <Route
+                            path="/analytics/*"
+                            element={<AnalyticsPage />}
+                          />
+                          <Route
+                            path="/finances/*"
+                            element={<FinancesPage />}
                           />
                           {/* Dynamic modules */}
                         <Route path="modules/:moduleId/*" />

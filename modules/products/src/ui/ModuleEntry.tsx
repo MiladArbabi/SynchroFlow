@@ -1,5 +1,4 @@
 // modules/products/src/ui/ModuleEntry.tsx
-import ProductsPage from './pages/ProductsPage';
 import { Package } from 'lucide-react';
 
 const descriptor = {
@@ -18,16 +17,6 @@ const descriptor = {
       requiredModuleId: 'products'
     }
   ],
-
-  routes: [
-    {
-      id: 'products',
-      path: '/products',
-      component: ProductsPage,
-      /* requiredModuleId: 'products', */
-      order: 120                // after Orders (100) & Customers (110)
-    }
-  ]
 };
 
 export default descriptor;
