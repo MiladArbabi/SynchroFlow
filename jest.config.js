@@ -141,6 +141,7 @@ module.exports = {
 
         '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
         '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
+
         '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'

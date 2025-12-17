@@ -13,11 +13,8 @@ import {
   useTheme,
 } from "@mui/material";
 import IconComponent from "../../components/Icon";
-import { KoreIcon } from "components/KoreIcon";
-import KoreTrigger from 'components/KoreTrigger';
 
 import useConfig from 'hooks/useConfig';
-import { useOpsContext } from 'contexts/OpsContext';
 
 // --- BERRY HEADER SECTION IMPORTS ---
 // import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
@@ -43,15 +40,9 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   const theme = useTheme();
   const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  const { context: opsContext } = useOpsContext();
   const { state, dispatch } = useConfig();
 
   const matchDownMd = useMediaQuery(theme.breakpoints.down('md'));
-
-  // 4. Calculate new insights
-  const newInsightCount = opsContext.proactiveInsights.filter(
-    (i) => i.status === 'new'
-  ).length;
 
   // ---  SIDEBAR HANDLER ---
   const handleToggleSidenav = () => {
@@ -99,10 +90,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
       <Box sx={{ flexGrow: 1 }} />
 
       <Box display="flex" alignItems="center" gap={{ xs: 0.5, sm: 1, md: 1.5 }}> {/* Adjust gap */}
-        {/* -- KORE TRIGGET ICON --  */}
-        <KoreTrigger onClick={handleToggleOpsConsole} isActive={newInsightCount > 0} />
-
-
         {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
         <OnboardingTaskListTracker />
         {/* <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box> */}

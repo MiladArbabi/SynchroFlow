@@ -13,12 +13,15 @@ import { SpecterConfigProvider } from "contexts/SpecterConfigContext";
 
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
-import ModuleHost from "runtime/ModuleHost";
 import routes from "./routes";
 import ModuleBootstrap from 'runtime/ModuleBootstrap';
 import { getRegisteredRoutes } from 'runtime/registerRoute';
 import { RuntimeRoutesProvider } from "runtime/RuntimeRoutesProvider";
 import { useRuntimeRoutes } from 'runtime/useRuntimeRoutes';
+
+import OrdersPage from "pages/OrdersPage";
+import CustomersPage from "pages/CustomersPage";
+import ProductsPage from "pages/ProductsPage";
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
@@ -178,20 +181,20 @@ export default function App() {
                           {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
                           <Route
                             path="/orders/*"
-                            element={<ModuleHost />}
+                            element={<OrdersPage />}
                           />
                           {/* 🔗 STATIC BRIDGE for Customers */}
                           <Route
                             path="/customers/*"
-                            element={<ModuleHost />}
+                            element={<CustomersPage />}
                           />
                           {/* 🔗 STATIC BRIDGE for Products */}
                           <Route
                             path="/products/*"
-                            element={<ModuleHost />}
+                            element={<ProductsPage />}
                           />
                           {/* Dynamic modules */}
-                        <Route path="modules/:moduleId/*" element={<ModuleHost />} />
+                        <Route path="modules/:moduleId/*" />
                       </Route>
                     </Route>
 

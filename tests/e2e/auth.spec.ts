@@ -182,17 +182,6 @@ test.describe('E2E: Full Authentication Journey', () => {
       await route.fulfill({ json: [{ id: '1', title: 'Low Stock Item', total_inventory: 5 }] });
     });
 
-    // Mock additional kore endpoints that the app calls
-    await page.route('**/api/v1/kore/health', async route => {
-      console.log('🟢 Mocking kore/health endpoint');
-      await route.fulfill({ json: { status: 'healthy' } });
-    });
-
-    await page.route('**/api/v1/kore/subscribe', async route => {
-      console.log('🟢 Mocking kore/subscribe endpoint');
-      await route.fulfill({ json: { subscribed: true } });
-    });
-
     // --- 3. Execute Login Flow ---
     await loginAs(page, 'default-user');
 

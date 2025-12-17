@@ -22,7 +22,8 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (token == null) {
-    return res.status(401).json({ error: 'Unauthorized: No token provided.' }); // No token
+    // No token at all → hard unauthenticated
+    return res.status(401).json({ error: 'Unauthorized: No token provided.' });
   }
 
   const jwtSecret = process.env.JWT_SECRET;
@@ -33,12 +34,22 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 
   jwt.verify(token, jwtSecret, (err: any, user: any) => {
     if (err) {
-      console.error('JWT Verification Error:', err.message);
-      return res.status(403).json({ error: 'Forbidden: Invalid token.' }); // Token is invalid or expired
+      // 🔒 Token is structurally invalid (tampered / wrong secret)
+      if (err.name !== 'TokenExpiredError') {
+        console.error('[auth] Invalid JWT:', err.message);
+        return res.status(403).json({ error: 'Forbidden: Invalid token.' });
+      }
+
+      // 🟡 Token expired
+      console.warn('[auth] JWT expired');
+      return res.status(401).json({
+        error: 'TOKEN_EXPIRED',
+        refreshable: true
+      });
     }
 
-    // Attach the decoded payload (which contains userId) to the request object
+    // ✅ Valid token
     req.user = user as JwtPayload;
-    next(); // Proceed to the next middleware or route handler
+    return next();
   });
 };

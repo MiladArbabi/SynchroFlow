@@ -10,18 +10,23 @@ import { getQueueChannel, connection } from '../../queue';
 import { ShopifyAppService } from '../../services/shopify-app.service';
 import { EntitlementsService } from 'api-src/services/entitlements.service';
 
-// --- Helper function for multi-tenancy (copied from dashboard.controller) ---
 /**
  * Helper function to get the shop_id from an authenticated user.
+ *
+ * CONTRACT:
+ * - Authenticated user WITHOUT shop_id → return null (NOT an auth error)
+ * - Caller must decide how to map null (usually NOT_FOUND)
  */
 const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
   if (!(req as any).user) return null;
+
   const userId = (req as any).user.userId;
-  
-  // We need the user's shop_id to query data
-  const user = await db<User>('users').where({ id: userId }).first('shop_id');
-  
-  return user?.shop_id || null;
+
+  const user = await db<User>('users')
+    .where({ id: userId })
+    .first('shop_id');
+
+  return typeof user?.shop_id === 'number' ? user.shop_id : null;
 };
 
 // Define the shape of the session
@@ -301,8 +306,14 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 export const getSyncStatus = async (req: Request, res: Response) => {
   try {
     const shopId = await getShopIdFromRequest(req);
+
     if (!shopId) {
-      return res.status(403).json({ error: 'User shop not found.' });
+      // Authenticated user but no shop yet → treat as no integration
+      return res.status(200).json({
+        status: 'NOT_FOUND',
+        progress: { current: 0, total: 0, percentage: 0 },
+        lastError: null
+      });
     }
 
     // Find the primary Shopify integration for this shop
@@ -318,7 +329,11 @@ export const getSyncStatus = async (req: Request, res: Response) => {
 
     if (!integration) {
       // This user has no integration, which is fine, but not what this endpoint is for.
-      return res.status(404).json({ error: 'Shopify integration not found.' });
+      return res.status(200).json({
+        "status": "NOT_FOUND",
+        "progress": { "current": 0, "total": 0, "percentage": 0 },
+        "lastError": null
+      });
     }
 
     // Calculate percentage

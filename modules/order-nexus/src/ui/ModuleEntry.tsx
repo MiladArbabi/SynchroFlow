@@ -1,18 +1,12 @@
-// modules/order-nexus/src/ui/ModuleEntry.tsx
-import OrdersPage from './pages/OrdersPage';
 import { ShoppingCart } from 'lucide-react';
 
-const descriptor = {
+export default {
   id: 'order-nexus',
   name: 'OrderNexus',
   version: '0.1.0',
 
   navGroups: [
-    {
-      id: 'operations',
-      label: 'Operations',
-      order: 20
-    }
+    { id: 'operations', label: 'Operations', order: 20 }
   ],
 
   navItems: [
@@ -25,17 +19,5 @@ const descriptor = {
       icon: ShoppingCart,
       requiredModuleId: 'order-nexus'
     }
-  ],
-
-  routes: [
-    {
-      id: 'orders',
-      path: '/orders',
-      component: OrdersPage,
-      requiredModuleId: 'order-nexus',
-      order: 100
-    }
   ]
 };
-
-export default descriptor;

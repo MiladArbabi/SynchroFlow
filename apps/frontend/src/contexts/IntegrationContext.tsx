@@ -127,23 +127,32 @@ refetchInterval: (query) => {
   const value = useMemo((): IntegrationContextType => {
     const statusCode = error?.response?.status;
 
-    let status: SyncStatus['status'] = 'PENDING';
+        let status: SyncStatus['status'] = 'PENDING';
     let hasIntegrations = false;
 
     if (data) {
-      // ✅ We have a real integration record from the API
+      // We have an integration record, but DO NOT exit ActivationSurface
+      // until the initial sync is fully completed.
       status = data.status;
-      hasIntegrations = status !== 'NOT_FOUND';
+
+      /**
+       * PHASE GATING (LOCKED)
+       * --------------------
+       * FT-1 (ActivationSurface): any status BEFORE COMPLETED
+       * FT0  (Onboarding/Readiness): status === COMPLETED
+       *
+       * This ensures anticipation → certainty → scoped access.
+       */
+      hasIntegrations = status === 'COMPLETED';
     } else if (statusCode === 404) {
-      // ✅ Backend explicitly says "no integration"
+      // Backend explicitly says "no integration"
       status = 'NOT_FOUND';
       hasIntegrations = false;
     } else if (statusCode === 401 || statusCode === 403) {
-      // ✅ Auth/session problem – not an integration state.
-      // Leave status as 'PENDING' so consumers don't misinterpret this as "no integration".
+      // Auth/session issue – do NOT advance phases
       hasIntegrations = false;
     } else if (statusCode) {
-      // ✅ Real server/transport error → treat as FAILED so we can surface it.
+      // Transport/server error – remain in ActivationSurface
       status = 'FAILED';
       hasIntegrations = false;
     }
@@ -164,7 +173,7 @@ refetchInterval: (query) => {
       error?.message ||
       null;
 
-    /* console.log('[IntegrationContext] derived state', {
+    console.log('[IntegrationContext] derived state', {
       rawData: data,
       statusCode,
       status,
@@ -172,7 +181,7 @@ refetchInterval: (query) => {
       isFirstTimeSync,
       progress,
       lastError,
-    }); */
+    });
 
     return {
       isLoading: isLoading && isLoggedIn,

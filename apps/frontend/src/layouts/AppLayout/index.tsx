@@ -19,11 +19,7 @@ import { DataSyncingModal } from 'components/DataSyncingModal';
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
 
-import { OpsContextProvider } from 'contexts/OpsContext';
-import { OpsCommandCenter } from 'components/OpsCommandCenter';
 import { ToastProvider } from 'contexts/ToastContext';
-import { HealthProvider } from "contexts/HealthContext";
-import { ToastContainer } from 'components/ToastContainer';
 
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
@@ -176,9 +172,7 @@ const AppLayout = ({
   // --- END OPS CONSOLE EFFECT ---
 
   return (
-    <HealthProvider>
       <ToastProvider>
-        <OpsContextProvider>
           <Box sx={{ width: "100vw", height: "100vh" }}> 
             <PanelGroup direction="horizontal">
               {/* Sidenav Panel */}
@@ -254,15 +248,6 @@ const AppLayout = ({
                           }}
                           order={2}
                         >
-                        <Box 
-                          sx={{ 
-                            height: '100%', 
-                            borderTop: state.isOpsConsoleOpen ? '1px solid #e0e0e0' : 'none' 
-                          }}
-                          data-testid="ops-command-center-panel"
-                        >
-                          {state.isOpsConsoleOpen && <OpsCommandCenter />}
-                        </Box>
                         </Panel>
                       </PanelGroup>
                     </Box>
@@ -282,9 +267,7 @@ const AppLayout = ({
             />
 
           </Box>
-        </OpsContextProvider>
       </ToastProvider>
-    </HealthProvider>    
   );
 };
 

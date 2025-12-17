@@ -60,6 +60,8 @@ interface ConnectStoreModalProps {
 }
 
 export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, onClose }) => {
+  console.log('[ConnectStoreModal] render', { isOpen });
+  
   const [shopName, setShopName] = useState('');
   const { accessToken } = useAuth(); 
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformID | null>(null);

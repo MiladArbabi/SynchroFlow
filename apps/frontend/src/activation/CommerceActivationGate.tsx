@@ -3,8 +3,12 @@
 import React, { useState } from 'react';
 import { useIntegration } from 'contexts/IntegrationContext';
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
+import { registerActivationAction } from './activationActions';
 
-import { orderNexusActivationConfig } from './configs/orderNexus';
+import { orderNexusActivationConfig } from './configs/orders';
+
+import { axiosInstance } from 'api/axiosConfig';
+import { useAuth } from 'contexts/AuthContext';
 import ActivationSurfacePage from './ActivationSurfacePage';
 
 interface ActivationGateProps {
@@ -22,6 +26,11 @@ export function CommerceActivationGate({
 }: ActivationGateProps) {
   const { hasIntegrations } = useIntegration();
   const [open, setOpen] = useState(false);
+  const { accessToken } = useAuth();
+
+  React.useEffect(() => {
+    registerActivationAction(moduleId, () => setOpen(true));
+  }, [moduleId]);
 
   if (!hasIntegrations) {
     const baseConfig = activationConfigs[moduleId];
@@ -32,11 +41,29 @@ export function CommerceActivationGate({
       );
     }
 
+    const handleOpenConnectModal = async () => {
+     console.log('[ActivationGate] handleOpenConnectModal called');
+
+      try {
+       console.log('[ActivationGate] running pre-flight check');
+        await axiosInstance.get('/api/v1/integrations/pre-flight', {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+       console.log('[ActivationGate] pre-flight OK → opening modal');
+        setOpen(true);
+      } catch (err) {
+        console.error('[ActivationGate] Pre-flight failed', err);
+      }
+    };
+
     return (
       <>
         <ActivationSurfacePage
           config={baseConfig}
-          onActivate={() => setOpen(true)}
+          onActivate={handleOpenConnectModal}
         />
         <ConnectStoreModal
           isOpen={open}

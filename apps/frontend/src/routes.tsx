@@ -4,9 +4,7 @@ import React from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import LoginPage from "./pages/authentication/LoginPage";
 import RegisterPage from "./pages/authentication/RegisterPage";
-import Customer360Page from "./pages/Customer360Page";
 import AccountSettingsPage from "./pages/AccountSettingsPage";
-import { Product360Page } from "./pages/Product360Page";
 
 // ✅ Route shape with entitlement metadata
 export interface RouteConfig {
@@ -36,20 +34,6 @@ const routes: RouteConfig[] = [
     route: "/dashboard",
     component: DashboardPage,
     // Core experience – no module gating
-  },
-  {
-    type: "route",
-    name: "Customer Details",
-    key: "customer-details",
-    route: "/customers/:id",
-    component: Customer360Page,
-  },
-  {
-    type: "route",
-    name: "Product Details",
-    key: "product-details",
-    route: "/products/:id",
-    component: Product360Page,
   },
   // 🔻 NOTE: /data-mapper and /product-intelligence have been removed from routes
   // They’re effectively deprecated for users, but code is still in the repo.

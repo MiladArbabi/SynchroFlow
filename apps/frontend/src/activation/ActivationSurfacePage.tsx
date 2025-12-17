@@ -1,5 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/activation/ActivationSurfacePage.tsx
+//
+// PURPOSE:
+// Canonical renderer for ActivationSurface doctrine.
+// This file MUST render the full ActivationSurfaceProps contract.
+// No logic. No decisions. No activation state.
+//
+// Instrumentation:
+// - data-testid markers added for doctrine validation & future tests
+//
+
 import React from 'react';
 import {
   Box,
@@ -7,7 +17,7 @@ import {
   Stack,
   Typography,
   Divider,
-  Button
+  Button,
 } from '@mui/material';
 import MainCard from 'ui-component/cards/MainCard';
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
@@ -23,62 +33,97 @@ export default function ActivationSurfacePage({ config, onActivate }: Props) {
     blindness,
     absenceProof,
     valueAfterActivation,
+    momentum,
+    commitmentGradient,
+    postActivation,
     primaryCTA,
-    trust
+    trust,
   } = config;
 
   return (
-    <Container maxWidth="md">
+    <Container maxWidth="md" data-testid="activation-surface-page">
       <Stack spacing={6} sx={{ py: 8 }}>
 
-        {/* Identity */}
+        {/* 1️⃣ Identity */}
         {identity && (
-          <Typography variant="h2" textAlign="center">
+          <Typography
+            variant="h2"
+            textAlign="center"
+            data-testid="activation-identity"
+          >
             {identity.title}
           </Typography>
         )}
 
-        {/* Blindness — HERO */}
-        <MainCard>
+        {/* 2️⃣ Blindness — HERO (MANDATORY) */}
+        <MainCard data-testid="activation-blindness">
           <Typography variant="h4">
             {blindness.content}
           </Typography>
         </MainCard>
 
-        {/* Supporting Proofs */}
-        <Stack spacing={3}>
-          {absenceProof && (
-            <MainCard>
-              <Typography variant="body1">
-                {absenceProof.content}
-              </Typography>
-            </MainCard>
-          )}
+        {/* 3️⃣ Ignorance / Absence Proof */}
+        {absenceProof && (
+          <MainCard data-testid="activation-absence">
+            <Typography variant="body1">
+              {absenceProof.content}
+            </Typography>
+          </MainCard>
+        )}
 
-          {valueAfterActivation && (
-            <MainCard>
-              <Typography variant="body1">
-                {valueAfterActivation.content}
-              </Typography>
-            </MainCard>
-          )}
-        </Stack>
+        {/* 4️⃣ Irreversible Truth (MANDATORY CONCEPT) */}
+        <MainCard data-testid="activation-irreversible-truth">
+          <Typography variant="body1">
+            Decisions are already being made. Activation only determines
+            whether they’re informed.
+          </Typography>
+        </MainCard>
 
-        {/* Conversion Zone */}
-        <MainCard>
+        {/* 5️⃣ Post-Activation Certainty (Single Outcome) */}
+        {valueAfterActivation && (
+          <MainCard data-testid="activation-certainty">
+            <Typography variant="body1">
+              {valueAfterActivation.content}
+            </Typography>
+          </MainCard>
+        )}
+
+        {/* 6️⃣ Momentum / Commitment Gradient (Optional) */}
+        {momentum && (
+          <MainCard data-testid="activation-momentum">
+            {momentum.content}
+          </MainCard>
+        )}
+
+        {commitmentGradient && (
+          <MainCard data-testid="activation-commitment">
+            {commitmentGradient.content}
+          </MainCard>
+        )}
+
+        {/* 7️⃣ Primary CTA + Trust (PLACEMENT IS NON-NEGOTIABLE) */}
+        <MainCard data-testid="activation-cta-zone">
           <Stack spacing={3} alignItems="center">
             <Button
               variant="contained"
               size="large"
               fullWidth
-              onClick={onActivate}
+              onClick={() => {
+                console.log('[ActivationSurfacePage] CTA CLICKED');
+                onActivate();
+              }}
+              data-testid="activation-primary-cta"
             >
               {primaryCTA.label}
             </Button>
 
             <Divider flexItem />
 
-            <Stack spacing={0.5} alignItems="center">
+            <Stack
+              spacing={0.5}
+              alignItems="center"
+              data-testid="activation-trust"
+            >
               {trust.bullets.map((line, idx) => (
                 <Typography
                   key={idx}
@@ -91,6 +136,13 @@ export default function ActivationSurfacePage({ config, onActivate }: Props) {
             </Stack>
           </Stack>
         </MainCard>
+
+        {/* 8️⃣ Post-Click Expectation (Deterministic System Behavior) */}
+        {postActivation && (
+          <MainCard data-testid="activation-post-activation">
+            {postActivation.content}
+          </MainCard>
+        )}
 
       </Stack>
     </Container>

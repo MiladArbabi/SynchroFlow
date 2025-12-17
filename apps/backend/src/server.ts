@@ -4,21 +4,12 @@ dotenv.config();
 import { createApp } from './bootstrap/express';
 import { initSpecterStore, closeSpecterStore } from './bootstrap/specter-store';
 import { initQueue, closeQueue } from './bootstrap/queue';
-import { federatedSearch } from './services/koreSearch';
 import { seedSandboxData } from './db/seeder';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 
 const app = createApp();
-
-// preserve the few non-route endpoints that live in the old server
-app.get('/api/v1/kore/search', async (req, res) => {
-  const query = req.query.q as string;
-  if (!query) return res.status(400).json({ error: 'Missing query parameter "q"' });
-  const results = await federatedSearch(query);
-  return res.status(200).json(results);
-});
 
 // small number of retained helpers (seed, inventory endpoints, analytics etc.).
 // For brevity we keep them here — you can extract them later into route files.

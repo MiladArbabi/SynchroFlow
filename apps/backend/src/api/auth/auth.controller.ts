@@ -57,7 +57,7 @@ export const registerUser = async (req: Request, res: Response) => {
     if (!jwtSecret || !jwtRefreshSecret) throw new Error('JWT secrets are not set.');
 
     // 1. Short-lived Access Token
-    const accessToken = jwt.sign({ userId: newUser.id }, jwtSecret, { expiresIn: '15m' });
+    const accessToken = jwt.sign({ userId: newUser.id }, jwtSecret, { expiresIn: '12h' });
 
     // 2. Long-lived Refresh Token
     const refreshToken = jwt.sign({ userId: newUser.id }, jwtRefreshSecret, { expiresIn: '7d' });

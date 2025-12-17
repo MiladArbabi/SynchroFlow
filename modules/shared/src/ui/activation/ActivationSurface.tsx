@@ -16,14 +16,12 @@ export interface ActivationSurfaceProps {
   blindness: Slot;
 
   absenceProof?: Slot;
-
   valueAfterActivation?: Slot;
-
   momentum?: Slot;
 
   primaryCTA: {
     label: string;
-    onActivate: () => void;
+    actionId: 'connect-store';
   };
 
   trust: {
@@ -31,7 +29,6 @@ export interface ActivationSurfaceProps {
   };
 
   commitmentGradient?: Slot;
-
   postActivation?: Slot;
 }
 
@@ -95,7 +92,24 @@ export const ActivationSurface: React.FC<ActivationSurfaceProps> = (props) => {
 
       {/* Primary CTA (singular) */}
       <div data-testid="activation-cta">
-        <button onClick={primaryCTA.onActivate}>
+        <button
+          type="button"
+          onClick={() => {
+            console.log('[ActivationSurface] CTA CLICKED', {
+               moduleId,
+               actionId: primaryCTA.actionId
+             });
+            // Emit intent — host decides what this means
+            const event = new CustomEvent('activation:action', {
+              detail: {
+                actionId: primaryCTA.actionId,
+                moduleId
+              }
+            });
+            console.log('[ActivationSurface] dispatching activation:action', event.detail);
+            window.dispatchEvent(event);
+          }}
+        >
           {primaryCTA.label}
         </button>
       </div>

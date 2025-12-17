@@ -6,8 +6,12 @@
     "module": "ESNext",
     "declaration": true,
     "sourceMap": true,
-    // optional overrides...
+
+    "allowImportingTsExtensions": false,
+
+    "noEmit": false,
+    "emitDeclarationOnly": false,
+    "composite": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"]
 }
