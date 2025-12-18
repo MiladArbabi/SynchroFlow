@@ -1,0 +1,1 @@
+export { BlindnessVisual } from './BlindnessVisual';

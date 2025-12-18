@@ -1,2 +1,2 @@
-export * from './activation/ActivationSurface';
+export * from './activation';
 export * from './ModuleActivationBoundary';

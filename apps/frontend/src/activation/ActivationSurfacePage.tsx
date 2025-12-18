@@ -34,6 +34,8 @@ import {
   ActivationSurfaceProps,
 } from '@lasyncro/shared/src/ui/activation/types';
 
+import { BlindnessVisual } from '@lasyncro/shared/ui';
+
 /* -------------------------------------------------------------------------- */
 /* Status → Visual Encoding                                                    */
 /* -------------------------------------------------------------------------- */
@@ -216,22 +218,49 @@ export default function ActivationSurfacePage({
             }}
             data-testid="activation-blindness"
           >
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography variant="body1" fontWeight={700}>
-                {blindness.subject}
-              </Typography>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto',
+                alignItems: 'center',
+                gap: 2,
+                height: '100%',
+              }}
+            >
+              {/* LEFT: Blindness text (unchanged semantics) */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Typography variant="body1" fontWeight={700}>
+                  {blindness.subject}
+                </Typography>
 
-              <Typography
-                variant="caption"
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: statusVisual.color,
+                    fontWeight: statusVisual.emphasis ? 600 : 400,
+                  }}
+                >
+                  {blindness.dimension}: {statusVisual.label}
+                </Typography>
+              </Box>
+
+              {/* RIGHT: Blindness visual (square, secondary) */}
+              <Box
                 sx={{
-                  color: statusVisual.color,
-                  fontWeight: statusVisual.emphasis ? 600 : 400,
+                  width: 96,
+                  height: 96,
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
+                data-testid="activation-blindness-visual"
               >
-                {blindness.dimension}: {statusVisual.label}
-              </Typography>
+                <BlindnessVisual status={blindness.status} />
+              </Box>
             </Box>
           </Paper>
+
         </Box>
 
         {/* ------------------------------------------------------------------ */}

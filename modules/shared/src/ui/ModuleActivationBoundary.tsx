@@ -1,9 +1,9 @@
 // modules/shared/src/ui/ModuleActivationBoundary.tsx
 import React from 'react';
 import {
-  ActivationSurface,
-  ActivationSurfaceProps
+  ActivationSurface
 } from './activation/ActivationSurface';
+import { ActivationSurfaceProps } from './activation/types';
 
 export interface ModuleActivationBoundaryProps {
   /**
