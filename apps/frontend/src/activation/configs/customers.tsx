@@ -1,62 +1,46 @@
-// apps/frontend/src/activation/configs/customers.ts
-
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+import { ActivationSurfaceProps } from "@lasyncro/shared/src/ui/activation/types";
 
 export const customersActivationConfig: ActivationSurfaceProps = {
   moduleId: 'customers',
 
   identity: {
     title: 'Customers',
-    subtitle: 'Who is valuable, who is not'
+    subtitle: 'Who creates value and who creates risk',
   },
 
   blindness: {
-    content: (
-      <>
-        Right now, you cannot tell which customers are costing you money.
-      </>
-    ),
+    subject: 'Customer activity',
+    dimension: 'profitability and risk',
+    status: 'not-visible',
   },
 
   absenceProof: {
-    content: (
-      <>
-        Costly and profitable customers are currently indistinguishable.
-      </>
-    ),
+    riskStatement:
+      'You treat costly and profitable customers the same.',
   },
 
   valueAfterActivation: {
-    content: (
-      <>
-        Once connected, Prodcuts identifies which customer behaviors create
-        operational risk.
-      </>
-    ),
+    outcome:
+      'Customer behaviors create operational risk become visible.',
   },
 
   primaryCTA: {
-    label: 'Reveal Customer Risk (Connect Shopify)',
+    label: 'Reveal Customer Risk',
     actionId: 'connect-store',
   },
 
   trust: {
     bullets: [
       'Read-only access',
-      'No customer modifications',
       'Events only, not identities',
-      'No PII stored',
-      'Disconnect anytime',
+      'No personal data stored',
       'Encrypted end-to-end',
+      'Disconnect anytime',
     ],
   },
 
   postActivation: {
-    content: (
-      <>
-        Customer events begin recording immediately. Behavioral patterns form as
-        activity occurs. Risk signals emerge once behavior is sufficient.
-      </>
-    ),
+    reflection:
+      'Behavioral signals emerge as activity occurs and risk becomes measurable.',
   },
 };

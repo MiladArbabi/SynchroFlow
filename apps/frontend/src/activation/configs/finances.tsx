@@ -1,36 +1,27 @@
-/// apps/frontend/src/activation/configs/finances.tsx
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+import { ActivationSurfaceProps } from "@lasyncro/shared/src/ui/activation/types";
 
 export const financesActivationConfig: ActivationSurfaceProps = {
   moduleId: 'finances',
 
   identity: {
     title: 'Finances',
-    subtitle: 'You cannot distinguish correct margins from incorrect ones.',
+    subtitle: 'Margin accuracy cannot be verified',
   },
 
   blindness: {
-    content: (
-      <>
-        Shipping costs, payment fees, taxes, and overhead are applied without verification.
-      </>
-    ),
+    subject: 'Cost assumptions',
+    dimension: 'margin correctness',
+    status: 'unverified',
   },
 
   absenceProof: {
-    content: (
-      <>
-        Every margin decision relies on assumptions you cannot audit.
-      </>
-    ),
+    riskStatement:
+      'Margin decisions rely on assumptions that cannot be audited.',
   },
 
   valueAfterActivation: {
-    content: (
-      <>
-        Cost assumptions become verifiable, versioned, and enforceable.
-      </>
-    ),
+    outcome:
+      'Cost assumptions become verifiable and enforceable.',
   },
 
   primaryCTA: {
@@ -49,10 +40,7 @@ export const financesActivationConfig: ActivationSurfaceProps = {
   },
 
   postActivation: {
-    content: (
-      <>
-        Decisions are already being made. Activation only determines whether they are informed.
-      </>
-    ),
+    reflection:
+      'Financial decisions are already being made. Activation determines whether they are verifiable.',
   },
 };

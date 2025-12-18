@@ -1,44 +1,31 @@
-// apps/frontend/src/activation/configs/analytics.tsx
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+import { ActivationSurfaceProps } from "@lasyncro/shared/src/ui/activation/types";
 
 export const analyticsActivationConfig: ActivationSurfaceProps = {
   moduleId: 'analytics',
 
   identity: {
     title: 'InsightCore',
-    subtitle: 'Why Performance Changed',
+    subtitle: 'Why performance changed',
   },
 
   blindness: {
-    content: (
-      <>
-        Performance changes.
-        You don’t know why.
-      </>
-    ),
+    subject: 'Business performance',
+    dimension: 'root cause of change',
+    status: 'not-visible',
   },
 
   absenceProof: {
-    content: (
-      <>
-        Revenue moves.
-        Margins shift.
-        Returns spike.
-        Causes stay unknown.
-      </>
-    ),
+    riskStatement:
+      'Revenue, margins, and returns change without a clear explanation.',
   },
 
   valueAfterActivation: {
-    content: (
-      <>
-        InsightCore isolates the primary driver behind a change.
-      </>
-    ),
+    outcome:
+      'The primary driver behind performance changes is identified.',
   },
 
   primaryCTA: {
-    label: 'Resolve Performance Blindness',
+    label: 'Fix Operational Blindspots',
     actionId: 'connect-store',
   },
 
@@ -53,12 +40,7 @@ export const analyticsActivationConfig: ActivationSurfaceProps = {
   },
 
   postActivation: {
-    content: (
-      <>
-        Signals connect.
-        Causes surface.
-        Unknown stays unknown when proof is missing.
-      </>
-    ),
+    reflection:
+      'Causes surface when evidence exists. Unknowns remain unknown without proof.',
   },
 };

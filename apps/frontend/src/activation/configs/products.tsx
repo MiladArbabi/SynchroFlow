@@ -1,48 +1,31 @@
-// apps/frontend/src/activation/configs/products.tsx
-// STATUS: LOCKED — Doctrine-aligned ActivationSurface
-// Module: Products (SKU-OS)
-
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+import { ActivationSurfaceProps } from "@lasyncro/shared/src/ui/activation/types";
 
 export const productsActivationConfig: ActivationSurfaceProps = {
   moduleId: 'products',
 
   identity: {
     title: 'Products',
-    subtitle: 'Replenishment decisions are being made blind.',
+    subtitle: 'Replenishment decisions are made without visibility',
   },
 
   blindness: {
-    content: (
-      <div style={{ opacity: 0.75 }}>
-        <div>
-          <strong>P-101 / A-123</strong> — Stockout risk: ⚫ Unknown
-        </div>
-        <div>
-          <strong>Restock first:</strong> ⚫ Unknown
-        </div>
-      </div>
-    ),
+    subject: 'SKU P-101',
+    dimension: 'stockout risk and restock priority',
+    status: 'unknown',
   },
 
   absenceProof: {
-    content: (
-      <>
-        You could be prioritizing the wrong product today — and you wouldn’t know.
-      </>
-    ),
+    riskStatement:
+      'Restocking decisions may prioritize the wrong products.',
   },
 
   valueAfterActivation: {
-    content: (
-      <>
-        Activation determines whether these decisions are informed or blind.
-      </>
-    ),
+    outcome:
+      'Stockout risk and replenishment priority become visible.',
   },
 
   primaryCTA: {
-    label: 'Connect Store to Identify Stockout Risk',
+    label: 'Identify Stockout Risk',
     actionId: 'connect-store',
   },
 
@@ -50,17 +33,14 @@ export const productsActivationConfig: ActivationSurfaceProps = {
     bullets: [
       'Read-only access',
       'No store changes',
-      'Disconnect anytime',
-      'No customer PII stored',
+      'No customer data stored',
       'Encrypted end-to-end',
+      'Disconnect anytime',
     ],
   },
 
-    postActivation: {
-    content: (
-      <>
-        Products sync → sales velocity computed → stockout risk appears.
-      </>
-    ),
+  postActivation: {
+    reflection:
+      'Product data already exists. Activation determines whether it informs decisions.',
   },
 };

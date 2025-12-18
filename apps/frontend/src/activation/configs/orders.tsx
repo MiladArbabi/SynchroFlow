@@ -1,33 +1,32 @@
 //apps/frontend/src/activation/configs/orders.tsx
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+import { ActivationSurfaceProps } from "@lasyncro/shared/src/ui/activation/types";
 
 export const orderNexusActivationConfig: ActivationSurfaceProps = {
   moduleId: 'order-nexus',
 
   identity: {
     title: 'Orders',
-    subtitle: 'Where profit leaks',
+    subtitle: 'Hidden profit loss',
   },
 
   blindness: {
-    content: (
-      <div style={{ opacity: 0.75 }}>
-        <strong>Order #4832</strong>
-        <div>Net margin: ⚫ Unknown</div>
-      </div>
-    ),
+    subject: 'Order 4832',
+    dimension: 'net margin',
+    status: 'unknown',
   },
 
   absenceProof: {
-    content: <>This order could be losing money. You wouldn’t know.</>,
+    riskStatement:
+      'Orders that lose money may already be approved without detection.',
   },
 
   valueAfterActivation: {
-    content: <>Once connected, money-losing orders are identified automatically.</>,
+    outcome:
+      'Orders with negative margins are identified automatically.',
   },
 
   primaryCTA: {
-    label: 'Connect Shopify Store',
+    label: 'Reveal Order Profitability',
     actionId: 'connect-store',
   },
 
@@ -35,18 +34,15 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
     bullets: [
       'Read-only access',
       'No store changes',
-      'No customer PII stored',
+      'No customer data stored',
       'Encrypted end-to-end',
       'Disconnect anytime',
     ],
   },
 
   postActivation: {
-    content: (
-      <>
-        Orders are approved every day.
-        Activation only determines whether those decisions are informed.
-      </>
-    ),
+    reflection:
+      'Orders are approved every day. Activation determines whether those decisions are informed.',
   },
 };
+
