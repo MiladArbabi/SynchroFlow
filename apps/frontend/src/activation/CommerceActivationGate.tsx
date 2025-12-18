@@ -14,6 +14,7 @@ import { financesActivationConfig } from './configs/finances';
 import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from 'contexts/AuthContext';
 import ActivationSurfacePage from './ActivationSurfacePage';
+import SyncSurfacePage from './SyncSurfacePage';
 
 interface ActivationGateProps {
   moduleId: string;
@@ -32,7 +33,7 @@ export function CommerceActivationGate({
   moduleId,
   children,
 }: ActivationGateProps) {
-  const { hasIntegrations } = useIntegration();
+  const { hasIntegrations, syncStatus, progress } = useIntegration();
   const [open, setOpen] = useState(false);
   const { accessToken } = useAuth();
 
@@ -40,6 +41,7 @@ export function CommerceActivationGate({
     registerActivationAction(moduleId, () => setOpen(true));
   }, [moduleId]);
 
+  // FT-1 — No integration exists
   if (!hasIntegrations) {
     const baseConfig = activationConfigs[moduleId];
 
@@ -50,17 +52,17 @@ export function CommerceActivationGate({
     }
 
     const handleOpenConnectModal = async () => {
-     console.log('[ActivationGate] handleOpenConnectModal called');
+      console.log('[ActivationGate] handleOpenConnectModal called');
 
       try {
-       console.log('[ActivationGate] running pre-flight check');
+        console.log('[ActivationGate] running pre-flight check');
         await axiosInstance.get('/api/v1/integrations/pre-flight', {
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
         });
 
-       console.log('[ActivationGate] pre-flight OK → opening modal');
+        console.log('[ActivationGate] pre-flight OK → opening modal');
         setOpen(true);
       } catch (err) {
         console.error('[ActivationGate] Pre-flight failed', err);
@@ -81,5 +83,17 @@ export function CommerceActivationGate({
     );
   }
 
-  return <>{children}</>;
+  // FT-0 — Integration exists, but initial sync not completed
+  if (hasIntegrations && syncStatus !== 'COMPLETED') {
+    return (
+      <SyncSurfacePage
+        moduleTitle={activationConfigs[moduleId]?.identity?.title ?? 'Preparing data'}
+        syncStatus={syncStatus}
+        progress={progress}
+      />
+    );
+  }
+
+return <>{children}</>;
+
 }

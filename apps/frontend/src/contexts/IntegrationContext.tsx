@@ -134,15 +134,6 @@ refetchInterval: (query) => {
       // We have an integration record, but DO NOT exit ActivationSurface
       // until the initial sync is fully completed.
       status = data.status;
-
-      /**
-       * PHASE GATING (LOCKED)
-       * --------------------
-       * FT-1 (ActivationSurface): any status BEFORE COMPLETED
-       * FT0  (Onboarding/Readiness): status === COMPLETED
-       *
-       * This ensures anticipation → certainty → scoped access.
-       */
       hasIntegrations = status === 'COMPLETED';
     } else if (statusCode === 404) {
       // Backend explicitly says "no integration"

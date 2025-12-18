@@ -1,3 +1,4 @@
+//apps/frontend/src/activation/configs/orders.tsx
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 export const orderNexusActivationConfig: ActivationSurfaceProps = {
@@ -9,18 +10,19 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
 
   blindness: {
     content: (
-      <>
-        <div style={{ opacity: 0.7 }}>
-          <strong>Order #4832</strong>
-          <div>Margin: ⚫ Unknown</div>
-          <div>Reason:</div>
-          <ul>
-            <li>Shipping cost missing</li>
-            <li>Payment fees unaccounted</li>
-            <li>True product cost unavailable</li>
-          </ul>
+      <div style={{ opacity: 0.75 }}>
+        <strong>Order #4832</strong>
+        <div>Revenue: $128.00</div>
+        <div>Costs:</div>
+        <ul>
+          <li>⚫ Product cost</li>
+          <li>⚫ Shipping</li>
+          <li>⚫ Payment fees</li>
+        </ul>
+        <div style={{ marginTop: 8 }}>
+          <strong>Net margin: ⚫ Unknown</strong>
         </div>
-      </>
+      </div>
     ),
   },
 
@@ -28,14 +30,6 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
     content: (
       <>
         This order could be losing money. You wouldn’t know.
-      </>
-    ),
-  },
-
-  postActivation: {
-    content: (
-      <>
-        Orders sync → margins compute → loss-making orders appear automatically
       </>
     ),
   },
@@ -49,8 +43,8 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
   },
 
   primaryCTA: {
-    label: 'Connect Shopify',
-    actionId: 'connect-store'
+    label: 'Connect Shopify Store',
+    actionId: 'connect-store',
   },
 
   trust: {
@@ -58,8 +52,17 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
       'Read-only access',
       'No store changes',
       'Disconnect anytime',
+      'No customer PII stored',
       'Encrypted end-to-end',
-      'Verified permissions',
     ],
+  },
+
+    postActivation: {
+    content: (
+      <>
+        Orders are approved every day. Activation only determines whether those
+        decisions are informed.
+      </>
+    ),
   },
 };

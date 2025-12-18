@@ -1,25 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// apps/frontend/src/activation/ActivationSurfacePage.tsx
-//
-// PURPOSE:
-// Canonical renderer for ActivationSurface doctrine.
-// This file MUST render the full ActivationSurfaceProps contract.
-// No logic. No decisions. No activation state.
-//
-// Instrumentation:
-// - data-testid markers added for doctrine validation & future tests
-//
-
 import React from 'react';
 import {
-  Box,
   Container,
-  Stack,
   Typography,
-  Divider,
   Button,
+  Paper,
+  useTheme,
+  Box,
 } from '@mui/material';
-import MainCard from 'ui-component/cards/MainCard';
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 interface Props {
@@ -28,123 +16,197 @@ interface Props {
 }
 
 export default function ActivationSurfacePage({ config, onActivate }: Props) {
+  const theme = useTheme();
+
   const {
     identity,
     blindness,
     absenceProof,
     valueAfterActivation,
-    momentum,
-    commitmentGradient,
     postActivation,
     primaryCTA,
     trust,
   } = config;
 
+  // Shared visual container style (visuals preserved)
+  const shapeStyle = {
+    height: '100%',
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    justifyContent: 'center',
+    borderRadius: 4,
+    p: { xs: 2, sm: 3 },
+    backgroundColor: 'background.default',
+    border: `1px solid ${theme.palette.divider}`,
+    boxSizing: 'border-box' as const,
+    overflow: 'hidden',
+  };
+
   return (
-    <Container maxWidth="md" data-testid="activation-surface-page">
-      <Stack spacing={6} sx={{ py: 8 }}>
+    <Container
+      maxWidth="sm"
+      sx={{
+        minHeight: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        py: 4,
+      }}
+      data-testid="activation-surface-page"
+    >
+      {/* 1️⃣ Identity — isolated */}
+      {identity && (
+        <Typography
+          variant="h4"
+          fontWeight={800}
+          textAlign="center"
+          sx={{ mb: 4, letterSpacing: -0.5 }}
+          data-testid="activation-identity"
+        >
+          {identity.title}
+        </Typography>
+      )}
 
-        {/* 1️⃣ Identity */}
-        {identity && (
-          <Typography
-            variant="h2"
-            textAlign="center"
-            data-testid="activation-identity"
+      {/* 2️⃣ Core Square Outlet */}
+      <Box
+        sx={{
+          width: '100%',
+          aspectRatio: '1 / 1',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateRows: 'repeat(3, 1fr)',
+          gap: 2,
+        }}
+      >
+        {/* BLINDNESS — dominant, broken (row 1, full width) */}
+        <Box sx={{ gridColumn: 'span 3', gridRow: 'span 1' }}>
+          <Paper
+            elevation={0}
+            sx={{
+              ...shapeStyle,
+              borderLeft: `6px solid ${theme.palette.error.main}`,
+            }}
+            data-testid="activation-blindness"
           >
-            {identity.title}
-          </Typography>
-        )}
-
-        {/* 2️⃣ Blindness — HERO (MANDATORY) */}
-        <MainCard data-testid="activation-blindness">
-          <Typography variant="h4">
             {blindness.content}
-          </Typography>
-        </MainCard>
+          </Paper>
+        </Box>
 
-        {/* 3️⃣ Ignorance / Absence Proof */}
+        {/* ABSENCE PROOF — left column (rows 2–3) */}
         {absenceProof && (
-          <MainCard data-testid="activation-absence">
-            <Typography variant="body1">
-              {absenceProof.content}
-            </Typography>
-          </MainCard>
+          <Box sx={{ gridColumn: 'span 1', gridRow: 'span 2' }}>
+            <Paper
+              elevation={0}
+              sx={{
+                ...shapeStyle,
+                borderLeft: `4px solid ${theme.palette.error.main}`,
+              }}
+              data-testid="activation-absence"
+            >
+              <Typography variant="body2" fontWeight={500}>
+                {absenceProof.content}
+              </Typography>
+            </Paper>
+          </Box>
         )}
 
-        {/* 4️⃣ Irreversible Truth (MANDATORY CONCEPT) */}
-        <MainCard data-testid="activation-irreversible-truth">
-          <Typography variant="body1">
-            Decisions are already being made. Activation only determines
-            whether they’re informed.
-          </Typography>
-        </MainCard>
+        {/* IRREVERSIBLE TRUTH — middle cell (row 2, col 2) */}
+        <Box sx={{ gridColumn: 'span 1', gridRow: 'span 1' }}>
+          <Paper
+            elevation={0}
+            sx={{
+              ...shapeStyle,
+              borderLeft: `2px solid ${theme.palette.grey[500]}`,
+              backgroundColor: theme.palette.grey[100],
+            }}
+            data-testid="activation-constraint"
+          >
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ lineHeight: 1.3 }}
+              align='center'
+            >
+              Decisions are already being made. Activation only determines
+              whether those decisions are informed.
+            </Typography>
+          </Paper>
+        </Box>
 
-        {/* 5️⃣ Post-Activation Certainty (Single Outcome) */}
+        {/* VALUE AFTER ACTIVATION — middle row, right */}
         {valueAfterActivation && (
-          <MainCard data-testid="activation-certainty">
-            <Typography variant="body1">
-              {valueAfterActivation.content}
-            </Typography>
-          </MainCard>
+          <Box sx={{ gridColumn: 'span 1', gridRow: 'span 1' }}>
+            <Paper
+              elevation={0}
+              sx={{
+                ...shapeStyle,
+                borderLeft: `3px solid ${theme.palette.success.main}`,
+              }}
+              data-testid="activation-value"
+            >
+              <Typography variant="body2" fontWeight={500}>
+                {valueAfterActivation.content}
+              </Typography>
+            </Paper>
+          </Box>
         )}
 
-        {/* 6️⃣ Momentum / Commitment Gradient (Optional) */}
-        {momentum && (
-          <MainCard data-testid="activation-momentum">
-            {momentum.content}
-          </MainCard>
-        )}
-
-        {commitmentGradient && (
-          <MainCard data-testid="activation-commitment">
-            {commitmentGradient.content}
-          </MainCard>
-        )}
-
-        {/* 7️⃣ Primary CTA + Trust (PLACEMENT IS NON-NEGOTIABLE) */}
-        <MainCard data-testid="activation-cta-zone">
-          <Stack spacing={3} alignItems="center">
+        {/* CTA — bottom right, escape hatch */}
+        <Box sx={{ gridColumn: 'span 2', gridRow: 'span 1' }}>
+          <Paper
+            elevation={0}
+            sx={{
+              ...shapeStyle,
+              backgroundColor: theme.palette.primary.main,
+              color: 'primary.contrastText',
+              alignItems: 'center',
+              border: 'none',
+            }}
+            data-testid="activation-cta-zone"
+          >
             <Button
               variant="contained"
-              size="large"
+              color="secondary"
               fullWidth
-              onClick={() => {
-                console.log('[ActivationSurfacePage] CTA CLICKED');
-                onActivate();
-              }}
+              onClick={onActivate}
+              sx={{ fontWeight: 800, mb: 1, borderRadius: 2 }}
               data-testid="activation-primary-cta"
             >
               {primaryCTA.label}
             </Button>
 
-            <Divider flexItem />
+            {/* Trust — must be immediately under CTA */}
+            {trust.bullets.map((line, idx) => (
+              <Typography
+                key={idx}
+                variant="caption"
+                sx={{ opacity: 0.85, fontSize: '0.65rem' }}
+                data-testid="activation-trust"
+              >
+                {line}
+              </Typography>
+            ))}
+          </Paper>
+        </Box>
+      </Box>
 
-            <Stack
-              spacing={0.5}
-              alignItems="center"
-              data-testid="activation-trust"
-            >
-              {trust.bullets.map((line, idx) => (
-                <Typography
-                  key={idx}
-                  variant="caption"
-                  color="text.secondary"
-                >
-                  {line}
-                </Typography>
-              ))}
-            </Stack>
-          </Stack>
-        </MainCard>
-
-        {/* 8️⃣ Post-Click Expectation (Deterministic System Behavior) */}
-        {postActivation && (
-          <MainCard data-testid="activation-post-activation">
-            {postActivation.content}
-          </MainCard>
-        )}
-
-      </Stack>
+      {/* 3️⃣ Post-Activation — secondary, visible */}
+      {postActivation && (
+        <Typography
+          variant="caption"
+          sx={{
+            mt: 4,
+            opacity: 0.6,
+            textAlign: 'center',
+            maxWidth: '80%',
+          }}
+          data-testid="activation-post"
+        >
+          {postActivation.content}
+        </Typography>
+      )}
     </Container>
   );
 }

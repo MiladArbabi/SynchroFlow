@@ -25,7 +25,6 @@ import ProductsPage from "pages/ProductsPage";
 
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
-import { Analytics } from "@mui/icons-material";
 import FinancesPage from "pages/FinancesPage";
 import AnalyticsPage from "pages/AnalyticsPage";
 

@@ -1,0 +1,84 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`SyncSurfacePage — FT-0 snapshot renders stable FT-0 structure 1`] = `
+<div>
+  <div
+    class="MuiContainer-root MuiContainer-maxWidthSm css-zzzaw2-MuiContainer-root"
+    data-testid="sync-surface-page"
+  >
+    <div
+      class="MuiStack-root css-1xudqkb-MuiStack-root"
+    >
+      <h2
+        class="MuiTypography-root MuiTypography-h2 css-1lpxhkd-MuiTypography-root"
+        data-testid="sync-surface-title"
+      >
+        Orders
+      </h2>
+      <div
+        class="MuiPaper-root MuiPaper-elevation MuiPaper-rounded MuiPaper-elevation1 MuiCard-root css-18s5q1d-MuiPaper-root-MuiCard-root"
+        style="--Paper-shadow: 0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12);"
+      >
+        <div
+          class="MuiCardContent-root css-1lt5qva-MuiCardContent-root"
+        >
+          <div
+            class="MuiStack-root css-v2woy3-MuiStack-root"
+          >
+            <p
+              class="MuiTypography-root MuiTypography-body1 css-rizt0-MuiTypography-root"
+              data-testid="sync-surface-status"
+            >
+              We’re preparing your data. This is a one-time process.
+            </p>
+            <div
+              class="MuiBox-root css-0"
+            >
+              <span
+                aria-valuemax="100"
+                aria-valuemin="0"
+                aria-valuenow="30"
+                class="MuiLinearProgress-root MuiLinearProgress-colorPrimary MuiLinearProgress-determinate css-1txyin7-MuiLinearProgress-root"
+                data-testid="sync-progress-bar"
+                role="progressbar"
+              >
+                <span
+                  class="MuiLinearProgress-bar MuiLinearProgress-bar1 MuiLinearProgress-barColorPrimary MuiLinearProgress-bar1Determinate css-l16vtb-MuiLinearProgress-bar1"
+                  style="transform: translateX(-70%);"
+                />
+              </span>
+              <span
+                class="MuiTypography-root MuiTypography-caption css-5oavz6-MuiTypography-root"
+                data-testid="sync-surface-progress"
+              >
+                30
+                % complete
+              </span>
+            </div>
+            <span
+              class="MuiTypography-root MuiTypography-caption css-1374baf-MuiTypography-root"
+            >
+              Status: 
+              SYNCING_PRODUCTS
+            </span>
+          </div>
+        </div>
+      </div>
+      <div
+        class="MuiPaper-root MuiPaper-elevation MuiPaper-rounded MuiPaper-elevation1 MuiCard-root css-18s5q1d-MuiPaper-root-MuiCard-root"
+        style="--Paper-shadow: 0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12);"
+      >
+        <div
+          class="MuiCardContent-root css-1lt5qva-MuiCardContent-root"
+        >
+          <p
+            class="MuiTypography-root MuiTypography-body2 css-7ctihp-MuiTypography-root"
+          >
+            Once syncing finishes, the full experience unlocks automatically.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;

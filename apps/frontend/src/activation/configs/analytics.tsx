@@ -46,4 +46,13 @@ export const analyticsActivationConfig: ActivationSurfaceProps = {
       'Verified permissions',
     ],
   },
+
+  postActivation: {
+    content: (
+      <>
+        Orders are approved every day. Activation only determines whether those
+        decisions are informed.
+      </>
+    ),
+  },
 };
