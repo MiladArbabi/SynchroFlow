@@ -6,40 +6,24 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
 
   identity: {
     title: 'Orders',
+    subtitle: 'Where profit leaks',
   },
 
   blindness: {
     content: (
       <div style={{ opacity: 0.75 }}>
         <strong>Order #4832</strong>
-        <div>Revenue: $128.00</div>
-        <div>Costs:</div>
-        <ul>
-          <li>⚫ Product cost</li>
-          <li>⚫ Shipping</li>
-          <li>⚫ Payment fees</li>
-        </ul>
-        <div style={{ marginTop: 8 }}>
-          <strong>Net margin: ⚫ Unknown</strong>
-        </div>
+        <div>Net margin: ⚫ Unknown</div>
       </div>
     ),
   },
 
   absenceProof: {
-    content: (
-      <>
-        This order could be losing money. You wouldn’t know.
-      </>
-    ),
+    content: <>This order could be losing money. You wouldn’t know.</>,
   },
 
   valueAfterActivation: {
-    content: (
-      <>
-        Once connected, money-losing orders are identified automatically.
-      </>
-    ),
+    content: <>Once connected, money-losing orders are identified automatically.</>,
   },
 
   primaryCTA: {
@@ -51,17 +35,17 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
     bullets: [
       'Read-only access',
       'No store changes',
-      'Disconnect anytime',
       'No customer PII stored',
       'Encrypted end-to-end',
+      'Disconnect anytime',
     ],
   },
 
-    postActivation: {
+  postActivation: {
     content: (
       <>
-        Orders are approved every day. Activation only determines whether those
-        decisions are informed.
+        Orders are approved every day.
+        Activation only determines whether those decisions are informed.
       </>
     ),
   },

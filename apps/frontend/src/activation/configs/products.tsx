@@ -1,4 +1,6 @@
-//apps/frontend/src/activation/configs/products.tsx
+// apps/frontend/src/activation/configs/products.tsx
+// STATUS: LOCKED — Doctrine-aligned ActivationSurface
+// Module: Products (SKU-OS)
 
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
@@ -7,20 +9,26 @@ export const productsActivationConfig: ActivationSurfaceProps = {
 
   identity: {
     title: 'Products',
+    subtitle: 'Replenishment decisions are being made blind.',
   },
 
   blindness: {
     content: (
-      <>
-        You don’t have a clear view of your product catalog or true product data.
-      </>
+      <div style={{ opacity: 0.75 }}>
+        <div>
+          <strong>P-101 / A-123</strong> — Stockout risk: ⚫ Unknown
+        </div>
+        <div>
+          <strong>Restock first:</strong> ⚫ Unknown
+        </div>
+      </div>
     ),
   },
 
   absenceProof: {
     content: (
       <>
-        Costs, variants, and inventory signals are currently disconnected.
+        You could be prioritizing the wrong product today — and you wouldn’t know.
       </>
     ),
   },
@@ -28,13 +36,13 @@ export const productsActivationConfig: ActivationSurfaceProps = {
   valueAfterActivation: {
     content: (
       <>
-        Once connected, products are synced, normalized, and ready for analysis.
+        Activation determines whether these decisions are informed or blind.
       </>
     ),
   },
 
   primaryCTA: {
-    label: 'Connect Shopify',
+    label: 'Connect Store to Identify Stockout Risk',
     actionId: 'connect-store',
   },
 
@@ -43,16 +51,15 @@ export const productsActivationConfig: ActivationSurfaceProps = {
       'Read-only access',
       'No store changes',
       'Disconnect anytime',
+      'No customer PII stored',
       'Encrypted end-to-end',
-      'Verified permissions',
     ],
   },
 
-  postActivation: {
+    postActivation: {
     content: (
       <>
-        Orders are approved every day. Activation only determines whether those
-        decisions are informed.
+        Products sync → sales velocity computed → stockout risk appears.
       </>
     ),
   },

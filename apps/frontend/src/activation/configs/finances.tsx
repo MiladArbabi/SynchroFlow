@@ -1,4 +1,4 @@
-//apps/frontend/src/activation/configs/finances.tsx
+/// apps/frontend/src/activation/configs/finances.tsx
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 export const financesActivationConfig: ActivationSurfaceProps = {
@@ -6,12 +6,13 @@ export const financesActivationConfig: ActivationSurfaceProps = {
 
   identity: {
     title: 'Finances',
+    subtitle: 'You cannot distinguish correct margins from incorrect ones.',
   },
 
   blindness: {
     content: (
       <>
-        Revenue, costs, and payouts are not yet visible.
+        Shipping costs, payment fees, taxes, and overhead are applied without verification.
       </>
     ),
   },
@@ -19,7 +20,7 @@ export const financesActivationConfig: ActivationSurfaceProps = {
   absenceProof: {
     content: (
       <>
-        Financial performance cannot be assessed without a store connection.
+        Every margin decision relies on assumptions you cannot audit.
       </>
     ),
   },
@@ -27,31 +28,30 @@ export const financesActivationConfig: ActivationSurfaceProps = {
   valueAfterActivation: {
     content: (
       <>
-        Once connected, financial data syncs and profitability becomes clear.
+        Cost assumptions become verifiable, versioned, and enforceable.
       </>
     ),
   },
 
   primaryCTA: {
-    label: 'Connect Shopify',
+    label: 'Verify Cost Assumptions',
     actionId: 'connect-store',
   },
 
   trust: {
     bullets: [
       'Read-only access',
-      'No store changes',
-      'Disconnect anytime',
-      'Encrypted end-to-end',
-      'Verified permissions',
+      'No order recalculation',
+      'No changes without approval',
+      'Versioned cost models',
+      'Full audit trail',
     ],
   },
 
   postActivation: {
     content: (
       <>
-        Orders are approved every day. Activation only determines whether those
-        decisions are informed.
+        Decisions are already being made. Activation only determines whether they are informed.
       </>
     ),
   },

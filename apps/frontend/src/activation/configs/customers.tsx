@@ -1,4 +1,5 @@
-//apps/frontend/src/activation/configs/customers.ts
+// apps/frontend/src/activation/configs/customers.ts
+
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 export const customersActivationConfig: ActivationSurfaceProps = {
@@ -6,12 +7,13 @@ export const customersActivationConfig: ActivationSurfaceProps = {
 
   identity: {
     title: 'Customers',
+    subtitle: 'Who is valuable, who is not'
   },
 
   blindness: {
     content: (
       <>
-        You don’t know which customers actually drive your revenue.
+        Right now, you cannot tell which customers are costing you money.
       </>
     ),
   },
@@ -19,7 +21,7 @@ export const customersActivationConfig: ActivationSurfaceProps = {
   absenceProof: {
     content: (
       <>
-        High-value and low-value customers look the same right now.
+        Costly and profitable customers are currently indistinguishable.
       </>
     ),
   },
@@ -27,31 +29,33 @@ export const customersActivationConfig: ActivationSurfaceProps = {
   valueAfterActivation: {
     content: (
       <>
-        Once connected, customer value and behavior become visible automatically.
+        Once connected, Prodcuts identifies which customer behaviors create
+        operational risk.
       </>
     ),
   },
 
   primaryCTA: {
-    label: 'Connect Shopify',
-    actionId: 'connect-store'
+    label: 'Reveal Customer Risk (Connect Shopify)',
+    actionId: 'connect-store',
   },
 
   trust: {
     bullets: [
       'Read-only access',
-      'No store changes',
+      'No customer modifications',
+      'Events only, not identities',
+      'No PII stored',
       'Disconnect anytime',
       'Encrypted end-to-end',
-      'Verified permissions',
     ],
   },
 
   postActivation: {
     content: (
       <>
-        Orders are approved every day. Activation only determines whether those
-        decisions are informed.
+        Customer events begin recording immediately. Behavioral patterns form as
+        activity occurs. Risk signals emerge once behavior is sufficient.
       </>
     ),
   },

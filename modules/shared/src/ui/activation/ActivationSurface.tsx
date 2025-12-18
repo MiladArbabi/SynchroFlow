@@ -11,6 +11,7 @@ export interface ActivationSurfaceProps {
 
   identity?: {
     title: string;
+    subtitle: string,
   };
 
   blindness: Slot;

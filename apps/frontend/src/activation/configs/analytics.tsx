@@ -1,17 +1,19 @@
-//apps/frontend/src/activation/configs/analytics.tsx
+// apps/frontend/src/activation/configs/analytics.tsx
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 export const analyticsActivationConfig: ActivationSurfaceProps = {
   moduleId: 'analytics',
 
   identity: {
-    title: 'Analytics',
+    title: 'InsightCore',
+    subtitle: 'Why Performance Changed',
   },
 
   blindness: {
     content: (
       <>
-        You cannot see performance trends, signals, or insights yet.
+        Performance changes.
+        You don’t know why.
       </>
     ),
   },
@@ -19,7 +21,10 @@ export const analyticsActivationConfig: ActivationSurfaceProps = {
   absenceProof: {
     content: (
       <>
-        Without data ingestion, analytics and insights remain unavailable.
+        Revenue moves.
+        Margins shift.
+        Returns spike.
+        Causes stay unknown.
       </>
     ),
   },
@@ -27,31 +32,32 @@ export const analyticsActivationConfig: ActivationSurfaceProps = {
   valueAfterActivation: {
     content: (
       <>
-        Once connected, analytics unlock automatically as data flows in.
+        InsightCore isolates the primary driver behind a change.
       </>
     ),
   },
 
   primaryCTA: {
-    label: 'Connect Shopify',
+    label: 'Resolve Performance Blindness',
     actionId: 'connect-store',
   },
 
   trust: {
     bullets: [
-      'Read-only access',
-      'No store changes',
+      'Read-only observer',
+      'Never changes numbers',
+      'Canonical metrics only',
+      'Encrypted access',
       'Disconnect anytime',
-      'Encrypted end-to-end',
-      'Verified permissions',
     ],
   },
 
   postActivation: {
     content: (
       <>
-        Orders are approved every day. Activation only determines whether those
-        decisions are informed.
+        Signals connect.
+        Causes surface.
+        Unknown stays unknown when proof is missing.
       </>
     ),
   },

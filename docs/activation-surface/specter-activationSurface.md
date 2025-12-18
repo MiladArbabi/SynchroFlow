@@ -1,6 +1,6 @@
 # Specter (Customers) ActivationSurface
 
-**Reference Implementation (LOCKED)**
+**Reference Implementation (LOCKED · Conversion-Max)**
 
 ---
 
@@ -8,12 +8,13 @@
 
 **(Doctrine: One Dominant Pain · Binary Ignorance)**
 
-> **“Right now, you don’t know which customers are costing you money.”**
+> **“Right now, you cannot tell which customers are costing you money.”**
 
 **Why this is correct**
 
-* One decision only: *who deserves attention vs restriction*
+* One decision only: *who should be prioritized vs constrained*
 * Not LTV, not segmentation, not growth
+* Frames the problem as **loss of operational control**
 * Pre-integration, this is objectively true
 
 ---
@@ -23,13 +24,13 @@
 **(Doctrine: Visualize Operational Blindness)**
 
 ```
-Customer        Risk Status
-────────────────────────────────
-C-10291         ⚫ Unknown — repeat returns?
-C-18422         ⚫ Unknown — support drain?
+Customer        Operational Risk
+────────────────────────────────────────
+C-10291         ⚫ Unknown — repeated returns?
+C-18422         ⚫ Unknown — support time drain?
 C-22771         ⚫ Unknown — low-margin behavior?
-────────────────────────────────
-Customer prioritization: ⚫ Unknown
+────────────────────────────────────────
+Customer prioritization: ⚫ Undefined
 ```
 
 **Rules enforced**
@@ -37,22 +38,24 @@ Customer prioritization: ⚫ Unknown
 * No invented scores
 * No predictions
 * No “potential”
-* Purely unknown states
+* Unknowns imply **active operational exposure**
+* “Undefined” signals misallocation, not missing data
 
 ---
 
 ## 3️⃣ Absence Statement
 
-**(Doctrine: Absence Pattern)**
+**(Doctrine: Absence Pattern · Misallocation Framing)**
 
-> **“Some customers generate more cost than revenue.
-> Without activation, they’re indistinguishable.”**
+> **“Some customers repeatedly consume refunds, support time, and operational effort.
+> Without visibility, they are treated as equally valuable.”**
 
 This lands because:
 
-* It’s factual
-* It implies *ongoing loss*
-* It’s uncomfortable but accurate
+* Names **real operational costs**
+* Exposes incorrect current behavior
+* Reframes ignorance as **ongoing misallocation**, not lack of insight
+* Uncomfortable, factual, unavoidable
 
 ---
 
@@ -60,8 +63,8 @@ This lands because:
 
 **(Doctrine: Cost of Inaction Must Be Unacceptable)**
 
-> **“Customer decisions are being made anyway.
-> Without visibility, they’re made blind.”**
+> **“Customer decisions are already being made.
+> Without visibility, they are made blind.”**
 
 This removes:
 
@@ -69,62 +72,83 @@ This removes:
 * “When we grow”
 * “Once we have more data”
 
+Inaction is no longer neutral.
+
 ---
 
-## 5️⃣ Post-Activation Certainty
+## 5️⃣ Inevitability Statement (Mandatory)
+
+**(Doctrine: Eliminate Perceived Integration Cost)**
+
+> **“This information already exists in your store.
+> Activation only makes it visible.”**
+
+Why this matters:
+
+* Removes perceived setup complexity
+* Reframes activation as **unlocking**, not installing
+* Collapses OAuth hesitation before it forms
+
+This is a conversion-critical line.
+
+---
+
+## 6️⃣ Post-Activation Certainty
 
 **(Doctrine: One Deterministic Outcome)**
 
-> **“Once connected, Specter reveals which customer behaviors create operational risk.”**
+> **“Once connected, Specter identifies which customer behaviors create operational risk.”**
 
 **Why this wording**
 
 * Behavior-based (matches Specter’s event ledger)
-* No promise of scoring accuracy
+* No promises of uplift or accuracy
 * No time-based claims
 * Fully FT0-true
 
 ---
 
-## 6️⃣ Primary CTA
+## 7️⃣ Primary CTA
 
-**(Doctrine: Single Forward Path)**
+**(Doctrine: Single Forward Path · Decision-Aligned)**
 
 **Button**
 
-> **Connect Shopify Store**
+> **Reveal Customer Risk (Connect Shopify)**
 
-No alternates.
-No “learn more.”
-No navigation escape.
+* One action
+* One verb
+* Maps directly to the blocked decision
+* No alternate paths or detours
 
 ---
 
-## 7️⃣ Trust Intercept (Directly Under CTA)
+## 8️⃣ Trust Intercept (Directly Under CTA)
 
 **(Doctrine: Pre-Hesitation Anxiety Intercept)**
 
 > Read-only access • No customer modifications
-> No PII stored • Events only, not identities
+> Events only, not identities • No PII stored
 > Disconnect anytime • Encrypted end-to-end
 
 **Important**
 
 * “Events only” is critical for Specter trust
-* Avoids surveillance anxiety
+* Avoids surveillance framing
+* Purely factual, non-marketing
 * 100% true
 
 ---
 
-## 8️⃣ Commitment Gradient (Optional, Doctrine-Safe)
+## 9️⃣ Commitment Gradient (Optional, Doctrine-Safe)
 
-Only if UX supports staged flow.
+Only used if the UX supports staged flow.
 
 ---
 
 ### Step 1 — Preview Locked Insight
 
-**(Absence-Driven)**
+**(Absence-Driven · No Promise)**
 
 > **“Example of unavailable insight until connected:”**
 
@@ -137,11 +161,13 @@ Support tickets: [LOCKED]
 Operational risk: Unknown
 ```
 
-*Label:* “Real customer behavior appears after connection”
+*Caption:*
+**“Customer behavior becomes visible only after activation.”**
 
-**Why this converts**
+Why this converts:
 
-* Shows *specific* ignorance
+* Shows *specific* absence
+* Makes ignorance tangible
 * No claims, only gaps
 
 ---
@@ -150,8 +176,9 @@ Operational risk: Unknown
 
 > **“Confirm read-only permissions”**
 
-Exact Shopify scopes shown.
-No summaries. No reassurances here.
+* Exact Shopify scopes shown
+* No summaries
+* No reassurance copy here
 
 ---
 
@@ -163,7 +190,7 @@ Deterministic language only.
 
 ---
 
-## 9️⃣ Post-Click Expectation
+## 🔟 Post-Click Expectation
 
 **(Doctrine: Observable System Behavior)**
 
@@ -172,23 +199,23 @@ Shown **after CTA click, before OAuth**:
 > **What happens next:**
 >
 > 1. Customer events begin recording immediately
-> 2. Behavioral patterns form as sessions occur
-> 3. Risk signals emerge once activity is sufficient
+> 2. Behavioral patterns form as activity occurs
+> 3. Risk signals emerge once behavior is sufficient
 
 No timelines unless system-guaranteed.
 
 ---
 
-## 🔟 No-Scroll Validation
+## 🔁 No-Scroll Validation
 
 **(Doctrine: Cognitive Ease)**
 
 Above the fold **must include**:
 
 * Blind spot headline
-* Unknown customer table
+* Unknown customer risk table
 * Absence statement
-* CTA + trust copy
+* Primary CTA + trust intercept
 
 If scrolling is required → **INVALID**
 
@@ -196,11 +223,12 @@ If scrolling is required → **INVALID**
 
 ## Doctrine Compliance Check
 
-| Requirement               | Specter                   |
+| Requirement               | Specter (Updated)         |
 | ------------------------- | ------------------------- |
 | One blocked decision      | ✅ Customer prioritization |
 | Blindness visualized      | ✅                         |
 | Absence shown             | ✅                         |
+| Misallocation implied     | ✅                         |
 | Cost of inaction explicit | ✅                         |
 | Single CTA                | ✅                         |
 | Trust before hesitation   | ✅                         |
@@ -213,12 +241,13 @@ If scrolling is required → **INVALID**
 
 ## Why This Converts (Uniquely for Customers)
 
-Specter doesn’t promise *better customers*.
-It exposes **hidden operational drain**.
+Specter does not promise *better customers*.
+
+It exposes **hidden operational liability**.
 
 The merchant realizes:
 
-> *“Some customers are silently costing me time, money, and margin — and I’m rewarding them equally.”*
+> *“I am treating customers who drain refunds and support the same as those who don’t — and I have no justification for that.”*
 
 That reframes activation as:
 
@@ -228,11 +257,11 @@ That reframes activation as:
 
 Not analytics.
 Not growth.
-Not “nice to have.”
+Not optional.
 
 ---
 
-## Canonical Specter Principle
+## Canonical Specter Principle (Unchanged)
 
 > **Customers are liabilities until proven otherwise.
 > Specter reveals which ones.**
@@ -247,6 +276,13 @@ Ask:
 
 > **“What is the equivalent of Customer C-10291?”**
 
-If you can’t point to a *specific hidden liability*, the activation is weak.
+If you cannot point to a **specific hidden liability**, the activation is weak.
+
+---
+
+### Status
+
+**This document now matches the shipped activation logic and copy.
+Any deviation requires a versioned update and explicit approval.**
 
 ---
