@@ -31,14 +31,21 @@ interface SyncStatus {
 
 // --- Define Context Shape ---
 interface IntegrationContextType {
-  [x: string]: any;
+  // --- Core contract (authoritative) ---
   isLoading: boolean;
   syncStatus: SyncStatus['status'];
-  hasIntegrations: boolean;
-  isFirstTimeSync: boolean; // For the "Aha!" moment
+  hasIntegrationRecord: boolean;
+  isSyncComplete: boolean;
   progress: SyncStatus['progress'];
   lastError: string | null;
   refreshIntegrationStatus: () => void;
+
+  // --- Legacy / transitional (DO NOT USE FOR NEW LOGIC) ---
+  hasIntegrations: boolean;
+  isFirstTimeSync: boolean;
+
+  // escape hatch (legacy usage audit later)
+  [x: string]: any;
 }
 
 // --- Create Context ---
@@ -127,30 +134,31 @@ refetchInterval: (query) => {
   const value = useMemo((): IntegrationContextType => {
     const statusCode = error?.response?.status;
 
-        let status: SyncStatus['status'] = 'PENDING';
-    let hasIntegrations = false;
+    let status: SyncStatus['status'] = 'PENDING';
+    let hasIntegrationRecord = false;
+    let isSyncComplete = false;
 
     if (data) {
-      // We have an integration record, but DO NOT exit ActivationSurface
-      // until the initial sync is fully completed.
       status = data.status;
-      hasIntegrations = status === 'COMPLETED';
+
+      // Any real backend response except NOT_FOUND means an integration record exists
+      hasIntegrationRecord = status !== 'NOT_FOUND';
+      isSyncComplete = status === 'COMPLETED';
+
     } else if (statusCode === 404) {
-      // Backend explicitly says "no integration"
       status = 'NOT_FOUND';
-      hasIntegrations = false;
+      hasIntegrationRecord = false;
+      isSyncComplete = false;
+
     } else if (statusCode === 401 || statusCode === 403) {
-      // Auth/session issue – do NOT advance phases
-      hasIntegrations = false;
+      hasIntegrationRecord = false;
+      isSyncComplete = false;
+
     } else if (statusCode) {
-      // Transport/server error – remain in ActivationSurface
       status = 'FAILED';
-      hasIntegrations = false;
+      hasIntegrationRecord = false;
+      isSyncComplete = false;
     }
-
-    // "First Time Sync" is any non-completed state **when we actually have an integration**
-    const isFirstTimeSync = hasIntegrations && status !== 'COMPLETED';
-
     const progress = data?.progress || { current: 0, total: 0, percentage: 0 };
 
     const lastError =
@@ -164,24 +172,29 @@ refetchInterval: (query) => {
       error?.message ||
       null;
 
-    console.log('[IntegrationContext] derived state', {
+   /*  console.log('[IntegrationContext] derived state', {
       rawData: data,
       statusCode,
       status,
-      hasIntegrations,
-      isFirstTimeSync,
+      hasIntegrationRecord,
+      isSyncComplete,
       progress,
       lastError,
-    });
+    }); */
 
     return {
+      // --- core truth ---
       isLoading: isLoading && isLoggedIn,
       syncStatus: status,
-      hasIntegrations,
-      isFirstTimeSync,
+      hasIntegrationRecord,
+      isSyncComplete,
       progress,
       lastError,
       refreshIntegrationStatus,
+
+      // --- legacy compatibility layer ---
+      hasIntegrations: hasIntegrationRecord && isSyncComplete,
+      isFirstTimeSync: hasIntegrationRecord && !isSyncComplete,
     };
   }, [data, isLoading, error, isLoggedIn, refreshIntegrationStatus]);
 

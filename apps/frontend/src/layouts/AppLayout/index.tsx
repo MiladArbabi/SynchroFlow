@@ -20,6 +20,7 @@ import { DataSyncingModal } from 'components/DataSyncingModal';
 import useConfig from 'hooks/useConfig';
 
 import { ToastProvider } from 'contexts/ToastContext';
+import { Ft0Phase } from 'types/onboarding';
 
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
@@ -29,7 +30,6 @@ const verticalHandleStyle = { height: "4px", background: "#e0e0e0" };
 const SIDENAV_DEFAULT_SIZE = 16; // Percentage
 const SIDENAV_MIN_SIZE = 5;      // Percentage (for collapsed state)
 const SIDENAV_MAX_SIZE = 25;     // Percentage
-// --- END CONSTANTS ---
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -53,14 +53,32 @@ const AppLayout = ({
   const opsPanelRef = useRef<ImperativePanelHandle>(null);
   const [isSidenavOpen, setSidenavOpen] = useState(true);
 
-  // const handleSidenavToggle = () => setSidenavOpen(!isSidenavOpen);
-
   // --- STATE LIFTED FROM DASHBOARD ---
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isSyncingModalOpen, setIsSyncingModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false); 
   const [searchParams, setSearchParams] = useSearchParams();
-  // --- END STATE LIFTED ---
+
+  // For phase transition logs (not just snapshots)
+  const ft0Phase: Ft0Phase = (() => {
+    // Initial connect flow
+    if (isConnectModalOpen) {
+      return 'CONNECTING';
+    }
+
+    // Syncing modal visible → FT-0 syncing
+    if (isSyncingModalOpen) {
+      return 'SYNCING';
+    }
+
+    // Connected but no modal → steady
+    if (isConnected) {
+      return 'STEADY_STATE';
+    }
+
+    // Default
+    return 'PRE_CONNECT';
+  })();
 
   // --- LOGIC LIFTED FROM DASHBOARD ---
   useEffect(() => {
@@ -264,6 +282,7 @@ const AppLayout = ({
             <DataSyncingModal
               open={isSyncingModalOpen}
               onClose={handleSyncModalClose}
+              ft0Phase={ft0Phase}
             />
 
           </Box>

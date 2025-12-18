@@ -14,7 +14,7 @@
 import { registerNavGroup } from './registerNav';
 
 export function bootstrapNavGroups() {
-  console.info('[nav-bootstrap] registering platform nav groups');
+  /* console.info('[nav-bootstrap] registering platform nav groups'); */
 
   registerNavGroup({ id: 'core', label: 'Core', order: 10 });
   registerNavGroup({ id: 'operations', label: 'Operations', order: 20 });

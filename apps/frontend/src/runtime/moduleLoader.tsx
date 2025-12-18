@@ -88,18 +88,18 @@ function resolveModuleActivation(moduleId: string) {
  */
 export async function loadModule(entry: { id: string; load: () => Promise<any> }): Promise<UIModule | null> {
   if (!entry || typeof entry.load !== 'function') {
-    console.error('[lasyncro] loadModule: invalid entry:', entry);
+    /* console.error('[lasyncro] loadModule: invalid entry:', entry); */
     return null;
   }
 
   const id = entry.id;
-  console.debug('[lasyncro] loadModule ->', id);
+  /* console.debug('[lasyncro] loadModule ->', id); */
 
   let imported;
   try {
     imported = await entry.load();
   } catch (err) {
-    console.error('[lasyncro] loadModule FAILED for', id, err);
+    /* console.error('[lasyncro] loadModule FAILED for', id, err); */
     return null;
   }
 
@@ -108,13 +108,13 @@ export async function loadModule(entry: { id: string; load: () => Promise<any> }
   imported?.descriptor ??
   imported;
 
-  if (import.meta.env.DEV) {
+  /* if (import.meta.env.DEV) {
     console.debug('[lasyncro] Module load result', {
       moduleId: id,
       imported,
       resolvedDescriptor: desc
-    });
-  };
+    });∑
+  }; */
 
   if (!desc || typeof desc !== 'object') {
     throw new Error(

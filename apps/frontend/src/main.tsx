@@ -149,8 +149,8 @@ bootstrapNavGroups();
 
 loadAllModules()
   .then((loaded) => {
-    console.info('[lasyncro] loaded modules:', Object.keys(loaded));
+    /* console.info('[lasyncro] loaded modules:', Object.keys(loaded)); */
   })
   .catch((err) => {
-    console.error('[lasyncro] failed to load modules', err);
+    /* console.error('[lasyncro] failed to load modules', err); */
   });

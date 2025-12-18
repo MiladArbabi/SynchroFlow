@@ -4,18 +4,19 @@ import { render, RenderOptions } from '@testing-library/react';
 import { MemoryRouter, MemoryRouterProps } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntlProvider } from 'react-intl';
-import { PostHogProvider } from 'posthog-js/react';
-import { EnhancedWidgetShellProps } from './components/widgets/types';
+/* import { PostHogProvider } from 'posthog-js/react';
+ */import { EnhancedWidgetShellProps } from './components/widgets/types';
 import ThemeCustomization from './themes';
+import { DashboardStateProvider } from 'contexts/DashboardStateContext';
 
 // PostHog configuration for tests
-const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string;
+/* const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string;
 const posthogOptions = {
   api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
   // Remove the 'defaults' property entirely - it's not needed for tests
   capture_exceptions: false, // Set to false for tests to avoid side effects
   debug: false, // Disable debug in tests
-};
+}; */
 
 // --- Create a new QueryClient for each test ---
 const createTestQueryClient = () => new QueryClient({
@@ -90,17 +91,17 @@ const renderWithProviders = (
     const queryClient = createTestQueryClient();
 
     return (
-      <PostHogProvider apiKey={posthogKey} options={posthogOptions}>
         <QueryClientProvider client={queryClient}>
           <IntlProvider locale="en" defaultLocale="en" messages={{}}>
             <MemoryRouter {...routerProps}>
-              <ThemeCustomization>
+              <DashboardStateProvider>
+                <ThemeCustomization>
                   {children}
                 </ThemeCustomization>
+              </DashboardStateProvider>
             </MemoryRouter>
           </IntlProvider>
         </QueryClientProvider>
-      </PostHogProvider>
     );
   };
 

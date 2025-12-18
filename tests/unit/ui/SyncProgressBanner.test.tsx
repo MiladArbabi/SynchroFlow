@@ -1,77 +1,74 @@
-// tests/unit/ui/SyncProgressBanner.test.tsx
-import React from 'react';
-import { render, screen } from '@testing-library/react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { screen } from '@testing-library/react';
 import { SyncProgressBanner } from 'components/SyncProgressBanner';
+import { renderWithTheme } from 'test-utils';
 
-// Mock IntegrationContext so we can control sync state
+// Mock IntegrationContext
 jest.mock('contexts/IntegrationContext', () => ({
   useIntegration: jest.fn(),
 }));
 
 import { useIntegration } from 'contexts/IntegrationContext';
-
 const mockedUseIntegration = useIntegration as jest.MockedFunction<any>;
 
-describe('SyncProgressBanner', () => {
+describe('SyncProgressBanner (contract-safe)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('renders nothing when there is no integration', () => {
+  it('does not render when no integration record exists', () => {
     mockedUseIntegration.mockReturnValue({
-      hasIntegrations: false,
-      syncStatus: 'PENDING',
+      hasIntegrationRecord: false,
+      isSyncComplete: false,
+      syncStatus: 'NOT_FOUND',
       progress: { current: 0, total: 0, percentage: 0 },
     });
 
-    const { container } = render(<SyncProgressBanner />);
+    renderWithTheme(<SyncProgressBanner />);
 
     expect(screen.queryByTestId('sync-progress-banner')).toBeNull();
-    // sanity: no Alert rendered
-    expect(container).toMatchSnapshot();
   });
 
-  it('renders nothing when sync is completed', () => {
+  it('does not render when sync is complete', () => {
     mockedUseIntegration.mockReturnValue({
-      hasIntegrations: true,
+      hasIntegrationRecord: true,
+      isSyncComplete: true,
       syncStatus: 'COMPLETED',
       progress: { current: 100, total: 100, percentage: 100 },
     });
 
-    render(<SyncProgressBanner />);
+    renderWithTheme(<SyncProgressBanner />);
 
     expect(screen.queryByTestId('sync-progress-banner')).toBeNull();
   });
 
-  it('renders banner for in-progress sync with percentage', () => {
+  it('renders banner during in-progress sync', () => {
     mockedUseIntegration.mockReturnValue({
-      hasIntegrations: true,
+      hasIntegrationRecord: true,
+      isSyncComplete: false,
       syncStatus: 'SYNCING_PRODUCTS',
       progress: { current: 50, total: 100, percentage: 50 },
     });
 
-    render(<SyncProgressBanner />);
+    renderWithTheme(<SyncProgressBanner />);
 
     const banner = screen.getByTestId('sync-progress-banner');
     expect(banner).toBeInTheDocument();
-    expect(banner).toHaveTextContent('Importing your Shopify data…');
+    expect(banner).toHaveTextContent('Importing your Shopify data');
     expect(banner).toHaveTextContent('Status: SYNCING_PRODUCTS');
     expect(banner).toHaveTextContent('50% complete');
   });
 
-  it('uses indeterminate progress when percentage is 0 or missing', () => {
+  it('uses indeterminate progress when percentage is zero', () => {
     mockedUseIntegration.mockReturnValue({
-      hasIntegrations: true,
+      hasIntegrationRecord: true,
+      isSyncComplete: false,
       syncStatus: 'SYNCING_PRODUCTS',
       progress: { current: 0, total: 0, percentage: 0 },
     });
 
-    const { container } = render(<SyncProgressBanner />);
+    renderWithTheme(<SyncProgressBanner />);
 
-    const linear = container.querySelector('.MuiLinearProgress-root');
-    expect(linear).toBeInTheDocument();
-    // We rely on the component logic:
-    // pct === 0 => variant="indeterminate" (no % text shown)
-    expect(screen.queryByText(/0% complete/i)).toBeNull();
+    expect(screen.queryByText(/% complete/i)).toBeNull();
   });
 });

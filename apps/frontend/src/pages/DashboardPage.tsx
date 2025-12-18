@@ -296,10 +296,11 @@ export const DashboardPage = ({ children, handleSidenavToggle } : {
           onClose={() => setConnectionError(null)}
           onRetry={handleRetry}
         />
+
         <DataSyncingModal
           open={isSyncModalOpen}
           onClose={handleSyncModalClose}
-          data-testid="data-syncing-modal"
+          ft0Phase={ft0Phase}
         />
 
         <DashboardStateManager

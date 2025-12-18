@@ -1,7 +1,21 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/components/DataSyncingModal.tsx
-import React, { useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+
+/**
+ * DataSyncingModal — FT-0 Emotional Buffer
+ * --------------------------------------
+ *
+ * PURPOSE:
+ * - Short-lived UX buffer during FT-0 SYNCING
+ * - Smooths emotional transition after store connection
+ * - Does NOT represent backend truth
+ *
+ * HARD BOUNDARY:
+ * - FT-0 only
+ * - ft0Phase === 'SYNCING' only
+ * - MUST NEVER render once syncStatus === 'COMPLETED'
+ */
+
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -13,16 +27,24 @@ import {
   StepLabel,
   StepIconProps,
   CircularProgress,
-  LinearProgress
+  LinearProgress,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import Check from '@mui/icons-material/Check';
+
 import { useIntegration } from 'contexts/IntegrationContext';
+import { Ft0Phase } from 'types/onboarding';
 
-// Define the steps
-const steps = ['Products', 'Customers', 'Completed'];
+// -----------------------------------------------------------------------------
+// Emotional steps (NON-TECHNICAL)
+// -----------------------------------------------------------------------------
 
-// Custom Step Icon styling
+const steps = ['Preparing data', 'Finalizing setup', 'Almost there'];
+
+// -----------------------------------------------------------------------------
+// Step icon styling
+// -----------------------------------------------------------------------------
+
 const StepIconRoot = styled('div')<{
   ownerState: { completed?: boolean; active?: boolean };
 }>(({ theme, ownerState }) => ({
@@ -37,14 +59,13 @@ const StepIconRoot = styled('div')<{
   alignItems: 'center',
   ...(ownerState.active && {
     backgroundColor: theme.palette.primary.main,
-    boxShadow: '0 4px 10px 0 rgba(0,0,0,.25)'
+    boxShadow: '0 4px 10px 0 rgba(0,0,0,.25)',
   }),
   ...(ownerState.completed && {
-    backgroundColor: theme.palette.success.main
-  })
+    backgroundColor: theme.palette.success.main,
+  }),
 }));
 
-// Custom Icon component
 function StepIcon(props: StepIconProps) {
   const { active, completed, className, icon } = props;
 
@@ -55,49 +76,74 @@ function StepIcon(props: StepIconProps) {
       ) : active ? (
         <CircularProgress size={24} sx={{ color: 'white' }} />
       ) : (
-        <Typography sx={{ color: 'white', fontWeight: 'bold' }}>{String(icon)}</Typography>
+        <Typography sx={{ color: 'white', fontWeight: 'bold' }}>
+          {String(icon)}
+        </Typography>
       )}
     </StepIconRoot>
   );
 }
 
+// -----------------------------------------------------------------------------
+// Props
+// -----------------------------------------------------------------------------
+
 interface DataSyncingModalProps {
   open: boolean;
+  ft0Phase: Ft0Phase;
+
+  /** Required by parent, intentionally unused */
   onClose: () => void;
 }
 
-export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClose }) => {
-  const { syncStatus, progress } = useIntegration();
+// -----------------------------------------------------------------------------
+// Runtime guard
+// -----------------------------------------------------------------------------
 
-  // Local display progress (purely visual – decoupled from backend speed).
-  // Backend sync is effectively instant in FT0, so we simulate a smooth ramp
-  // so the user *feels* like data is being prepared.
-  const [displayPercent, setDisplayPercent] = React.useState(0);
+function isDataSyncingModalAllowed(
+  ft0Phase: Ft0Phase,
+  syncStatus: string
+): boolean {
+  if (ft0Phase !== 'SYNCING') return false;
+  if (syncStatus === 'COMPLETED') return false;
 
-  // Drive the stepper from the *visual* progress instead of raw syncStatus.
-  // Backend goes to COMPLETED almost instantly in FT0, so if we tie the steps
-  // to syncStatus we skip straight to the last step and lose the "journey".
-  const activeStep = React.useMemo(() => {
-    if (displayPercent < 34) {
-      return 0; // "Products"
-    }
-    if (displayPercent < 67) {
-      return 1; // "Customers"
-    }
-    return 2;   // "Completed"
+  return [
+    'PENDING',
+    'SYNCING_PRODUCTS',
+    'SYNCING_ORDERS',
+    'SYNCING_LINE_ITEMS',
+    'SYNCING_INVENTORY',
+    'SYNCING_SHOP',
+    'COMPLETING',
+  ].includes(syncStatus);
+}
+
+// -----------------------------------------------------------------------------
+// Component
+// -----------------------------------------------------------------------------
+
+export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
+  open,
+  ft0Phase,
+  onClose,
+}) => {
+  void onClose;
+
+  const { syncStatus } = useIntegration();
+
+  // Hooks MUST come before guards
+  const [displayPercent, setDisplayPercent] = useState<number>(0);
+
+  const isAllowedToRender = isDataSyncingModalAllowed(ft0Phase, syncStatus);
+
+  const activeStep = useMemo(() => {
+    if (displayPercent < 34) return 0;
+    if (displayPercent < 67) return 1;
+    return 2;
   }, [displayPercent]);
 
-    // Smoothly animate 1% -> 99% over ~2.8s whenever the modal opens.
-  // We deliberately ignore how fast the backend completes; this is a UX affordance,
-  // not a literal progress bar.
   useEffect(() => {
-    /* console.log('[DataSyncingModal] open changed', {
-      open,
-      syncStatus,
-      backendProgress: progress?.percentage,
-    }); */
-
-    if (!open) {
+    if (!open || !isAllowedToRender) {
       setDisplayPercent(0);
       return;
     }
@@ -107,8 +153,8 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
     const DURATION_MS = 2800;
     const TICK_MS = 50;
 
-    const steps = Math.floor(DURATION_MS / TICK_MS);
-    const delta = (TARGET - START_AT) / steps;
+    const ticks = Math.floor(DURATION_MS / TICK_MS);
+    const delta = (TARGET - START_AT) / ticks;
 
     let current = START_AT;
     setDisplayPercent(START_AT);
@@ -124,42 +170,36 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
       setDisplayPercent(Math.round(current));
     }, TICK_MS);
 
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [open, syncStatus, progress?.percentage]);
+    return () => window.clearInterval(timer);
+  }, [open, isAllowedToRender]);
 
-  // Use purely visual progress for FT0 onboarding.
-  // Backend is effectively instant; showing 100% immediately ruins the UX.
-  const effectivePercent = displayPercent;
+  if (!open || !isAllowedToRender) {
+    return null;
+  }
+
+  if (import.meta.env.MODE !== 'production') {
+    console.debug('[DataSyncingModal.guard]', {
+      open,
+      ft0Phase,
+      syncStatus,
+      allowed: isAllowedToRender,
+    });
+  }
 
   return (
-    <Dialog
-      open={open}
-      disableEscapeKeyDown
-      fullWidth
-      maxWidth="sm"
-    >
-      <DialogTitle
-        component="div"
-        sx={{
-          textAlign: 'center',
-          mt: 2,
-          typography: 'h4',
-        }}
-      >
+    <Dialog open={open} disableEscapeKeyDown fullWidth maxWidth="sm">
+      <DialogTitle sx={{ textAlign: 'center', mt: 2, typography: 'h4' }}>
         Connection Successful!
       </DialogTitle>
-      <DialogContent
-        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}
-      >
+
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 4 }}>
         <Typography variant="body1" align="center" sx={{ mb: 4 }}>
-          We're syncing your data from Shopify. This may take a few moments.
+          We're preparing your dashboard. This will only take a moment.
         </Typography>
 
         <Box sx={{ width: '100%' }}>
-          <Stepper activeStep={activeStep} alternativeLabel data-testid="stepper">
-            {steps.map((label) => (
+          <Stepper activeStep={activeStep} alternativeLabel>
+            {steps.map(label => (
               <Step key={label}>
                 <StepLabel StepIconComponent={StepIcon}>{label}</StepLabel>
               </Step>
@@ -168,13 +208,9 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({ open, onClos
         </Box>
 
         <Box sx={{ width: '100%', mt: 4 }}>
-          <LinearProgress
-            variant="determinate"
-            value={effectivePercent}
-            data-testid="linear-progress"
-          />
+          <LinearProgress variant="determinate" value={displayPercent} />
           <Typography variant="body2" align="center" sx={{ mt: 1 }}>
-            {effectivePercent}%
+            {displayPercent}%
           </Typography>
         </Box>
       </DialogContent>

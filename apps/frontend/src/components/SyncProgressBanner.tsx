@@ -10,7 +10,12 @@ import { useIntegration } from 'contexts/IntegrationContext';
  * - Disappears automatically when sync completes or no integration exists.
  */
 export const SyncProgressBanner: React.FC = () => {
-  const { hasIntegrations, syncStatus, progress } = useIntegration();
+  const {
+   hasIntegrationRecord,
+   isSyncComplete,
+   syncStatus,
+   progress,
+ } = useIntegration();
 
   // statuses that represent "sync is ongoing / not fully done"
   const inProgressStatuses: string[] = [
@@ -24,7 +29,19 @@ export const SyncProgressBanner: React.FC = () => {
   ];
 
   const isInProgress =
-    hasIntegrations && inProgressStatuses.includes(syncStatus as string);
+    hasIntegrationRecord &&
+    !isSyncComplete &&
+    inProgressStatuses.includes(syncStatus as string);
+  
+  if (import.meta.env.DEV) {
+    console.debug('[SyncProgressBanner]', {
+      hasIntegrationRecord,
+      isSyncComplete,
+      syncStatus,
+      progress,
+      isInProgress,
+    });
+  }
 
   if (!isInProgress) {
     return null;
