@@ -19,68 +19,6 @@ export interface UIModule {
   init?: (ctx: any) => void | Promise<void>;
 }
 
-// FT-1 activation resolver (host-owned)
-function resolveModuleActivation(moduleId: string) {
-  /**
-   * FT-1 RULE:
-   * - No integration → inactive
-   * - Integration exists → active
-   *
-   * IMPORTANT:
-   * This resolver is intentionally dumb for now.
-   * We will extend it later with sync-status, FT0, FT1, etc.
-   */
-
-  // TEMP: global integration snapshot (already exists in host)
-  const integration = (window as any).__LASYNCRO_INTEGRATION_STATE__;
-
-  const active = Boolean(integration?.hasIntegrations);
-
-  return {
-    active,
-    config: {
-      moduleId,
-      identity: {
-        title: 'Connect your store'
-      },
-      blindness: {
-        content: (
-          <p>
-            Your store is not connected yet. Orders, customers and insights
-            are currently invisible.
-          </p>
-        )
-      },
-      absenceProof: {
-        content: (
-          <p>
-            Without a connection, we cannot sync or canonicalize your data.
-          </p>
-        )
-      },
-      valueAfterActivation: {
-        content: (
-          <p>
-            Once connected, your orders will sync automatically and unlock
-            analytics.
-          </p>
-        )
-      },
-      primaryCTA: {
-        label: 'Connect Shopify',
-        actionId: 'connect-store' as const
-      },
-      trust: {
-        bullets: [
-          'Read-only access',
-          'Disconnect anytime',
-          'No impact on your store'
-        ]
-      }
-    }
-  };
-}
-
 /**
  * Load a module using the plugin-provided load() function.
  * The plugin guarantees each entry has:

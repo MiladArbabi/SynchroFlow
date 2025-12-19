@@ -1,20 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// apps/frontend/src/activation/CommerceActivationGate.tsx
-import React, { useState } from 'react';
-import { useIntegration } from 'contexts/IntegrationContext';
-import { ConnectStoreModal } from 'components/ConnectStoreModal';
-import { registerActivationAction } from './activationActions';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { axiosInstance } from 'api/axiosConfig';
+
+import { 
+  mapActivationVerdictToUIState,
+  ActivationUIState
+} from '@lasyncro/shared/src/ui/activation/activation-mapper';
+
+import { ModuleActivationBoundary } from '@lasyncro/shared/ui';
 
 import { orderNexusActivationConfig } from './configs/orders';
 import { customersActivationConfig } from './configs/customers';
 import { productsActivationConfig } from './configs/products';
 import { analyticsActivationConfig } from './configs/analytics';
 import { financesActivationConfig } from './configs/finances';
-
-import { axiosInstance } from 'api/axiosConfig';
-import { useAuth } from 'contexts/AuthContext';
-import ActivationSurfacePage from './ActivationSurfacePage';
-import SyncSurfacePage from './SyncSurfacePage';
+import { OnboardingUIActionsContext } from 'contexts/OnboardingUIActionsContext';
+import { ActivationSurfaceAdapter } from './ActivationSurfaceAdapter';
 
 interface ActivationGateProps {
   moduleId: string;
@@ -23,77 +25,78 @@ interface ActivationGateProps {
 
 const activationConfigs: Record<string, any> = {
   'order-nexus': orderNexusActivationConfig,
-  'customers': customersActivationConfig,
-  'products': productsActivationConfig,
-  'analytics': analyticsActivationConfig,
-  'finances': financesActivationConfig,
+  customers: customersActivationConfig,
+  products: productsActivationConfig,
+  analytics: analyticsActivationConfig,
+  finances: financesActivationConfig,
 };
 
 export function CommerceActivationGate({
   moduleId,
   children,
 }: ActivationGateProps) {
-  const { hasIntegrations, syncStatus, progress } = useIntegration();
-  const [open, setOpen] = useState(false);
-  const { accessToken } = useAuth();
+  const surfaceConfig = activationConfigs[moduleId];
 
-  React.useEffect(() => {
-    registerActivationAction(moduleId, () => setOpen(true));
-  }, [moduleId]);
+  if (!surfaceConfig) {
+    throw new Error(
+      `[ActivationGate] Missing activation config for moduleId: ${moduleId}`
+    );
+  }
 
-  // FT-1 — No integration exists
-  if (!hasIntegrations) {
-    const baseConfig = activationConfigs[moduleId];
+  const { data: verdict, isLoading } = useQuery({
+    queryKey: ['activation-verdict'],
+    queryFn: async () => {
+      const res = await axiosInstance.get('/api/v1/activation/verdict');
+      return res.data;
+    },
+    staleTime: 30_000,
+  });
 
-    if (!baseConfig) {
-      throw new Error(
-        `No ActivationSurface config found for moduleId: ${moduleId}`
-      );
-    }
-
-    const handleOpenConnectModal = async () => {
-      console.log('[ActivationGate] handleOpenConnectModal called');
-
-      try {
-        console.log('[ActivationGate] running pre-flight check');
-        await axiosInstance.get('/api/v1/integrations/pre-flight', {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-
-        console.log('[ActivationGate] pre-flight OK → opening modal');
-        setOpen(true);
-      } catch (err) {
-        console.error('[ActivationGate] Pre-flight failed', err);
+  const uiActions = React.useMemo(() => ({
+    openModal: (id: string) => {
+      if (id === 'connect-store') {
+        // 🔑 this must trigger the SAME flow as Dashboard
+        // either:
+        // 1) emit a global event
+        // 2) call a modal store
+        // 3) navigate to /dashboard?connect=1
+        window.dispatchEvent(new CustomEvent('open-connect-store'));
       }
-    };
+    },
+    navigate: (path: string) => {
+      window.location.assign(path);
+    },
+  }), []);
 
-    return (
-      <>
-        <ActivationSurfacePage
-          config={baseConfig}
-          onActivate={handleOpenConnectModal}
-        />
-        <ConnectStoreModal
-          isOpen={open}
-          onClose={() => setOpen(false)}
-        />
-      </>
-    );
+
+  if (isLoading || !verdict) {
+    return null; // or a lightweight skeleton if you want
   }
 
-  // FT-0 — Integration exists, but initial sync not completed
-  if (hasIntegrations && syncStatus !== 'COMPLETED') {
-    return (
-      <SyncSurfacePage
-        moduleTitle={activationConfigs[moduleId]?.identity?.title ?? 'Preparing data'}
-        syncStatus={syncStatus}
-        progress={progress}
-      />
-    );
+  const activation: ActivationUIState =
+    mapActivationVerdictToUIState(verdict, surfaceConfig);
+
+  if (import.meta.env.DEV) {
+    console.debug('[ActivationGate]', {
+      moduleId,
+      verdict,
+      activationState: activation.state,
+    });
   }
 
-return <>{children}</>;
-
+  return (
+    <OnboardingUIActionsContext.Provider value={uiActions}>
+      <ModuleActivationBoundary
+        activation={activation}
+        renderBlocked={(surface) => (
+          <ActivationSurfaceAdapter
+            surface={surface}
+            onAction={(actionId) => surface.onAction?.(actionId)}
+          />
+        )}
+      >
+        {children}
+      </ModuleActivationBoundary>
+    </OnboardingUIActionsContext.Provider>
+  );
 }

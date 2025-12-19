@@ -52,4 +52,7 @@ export interface ActivationSurfaceProps {
   trust: TrustCopy;
 
   postActivation?: PostActivationCopy;
+
+  /** injected action handler */
+  onAction?: (actionId: string) => void;
 }

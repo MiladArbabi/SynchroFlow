@@ -1,4 +1,13 @@
 // apps/frontend/src/components/DashboardStateManager/DashboardStateManager.tsx
+
+/**
+ * IMPORTANT:
+ * This component assumes activation has already been resolved.
+ * It must never gate content based on integration or activation state.
+ * Activation is handled exclusively by ModuleActivationBoundary.
+ */
+
+
 import * as React from 'react';
 import { Box, Skeleton } from '@mui/material';
 import { useDashboardState } from '../../contexts/DashboardStateContext';
@@ -20,7 +29,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   ft0Phase
 }) => {
   const { currentView, userState, isLoading: isStateLoading } = useDashboardState();
-  const { isLoading: isSyncLoading, syncStatus, hasIntegrations } = useIntegration();
+  const { isLoading: isSyncLoading, syncStatus } = useIntegration();
 
   const emptyStateUserData = userState
     ? {
@@ -44,7 +53,8 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   ];
 
   const isSyncing =
-    hasIntegrations && inProgressStatuses.includes(syncStatus as string);
+       inProgressStatuses.includes(syncStatus as string);
+
 
     const isPostSyncSkeleton = ft0Phase === 'POST_SYNC_SKELETON' || forceLoadingSkeleton;
 
@@ -81,30 +91,21 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     );
   }
 
-  // 3) Not loading, but effectively "empty"
+  // 3) If activation allowed rendering but view is empty,
+  // we show a skeleton while widgets hydrate.
   if (currentView === 'empty') {
-    if (!hasIntegrations) {
-      /* console.log('[DashboardStateManager] Rendering EmptyDashboardState (no integrations).'); */
-      return (
-        <EmptyDashboardState
-          onConnectStore={onConnectStore}
-          userState={emptyStateUserData}
-        />
-      );
-    }
-
     // We *do* have integrations, so "empty" is just a momentary transition.
     /* console.log(
       '[DashboardStateManager] Rendering skeleton for integrated shop with empty view.'
     ); */
     return (
-      <Box sx={{ p: 2 }}>
-        <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
-        <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
-        <Skeleton variant="rectangular" height={200} />
-      </Box>
-    );
-  }
+    <Box sx={{ p: 2 }}>
+      <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
+      <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
+      <Skeleton variant="rectangular" height={200} />
+    </Box>
+  );
+}
 
   // 4) Fully ready: render the actual dashboard widgets
   /* console.log('[DashboardStateManager] Rendering dashboard children (widgets).'); */
