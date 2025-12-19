@@ -5,6 +5,8 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import db from '../db';
 
+import { getActivationVerdict } from '../api/activation/activation.controller';
+
 // routes
 import layoutRoutes from '../api/layouts/layout.routes';
 import orderRoutes from '../api/orders/orders.routes';
@@ -53,6 +55,12 @@ export function createApp(): Express {
       },
     }) as any
   );
+
+  app.get(
+  '/api/v1/activation/verdict',
+  authenticateToken,
+  getActivationVerdict
+);
 
   // Register routes
   app.use('/api/v1/layouts', layoutRoutes);

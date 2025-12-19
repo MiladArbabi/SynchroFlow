@@ -9,6 +9,7 @@ module.exports = {
       setupFiles: ['<rootDir>/jest.setup.js'],
       testMatch: [
         '<rootDir>/tests/**/*.test.ts',
+        '<rootDir>/tests/unit/backend/**/*.test.ts'
       ],
       transform: {
         // handle TS/TSX and JS/JSX in backend tests since some tests import frontend TSX files

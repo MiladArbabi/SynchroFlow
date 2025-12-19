@@ -1,12 +1,9 @@
 // tests/unit/api/entitlements.controller.test.ts
-import { Request, Response } from 'express';
-import db from 'api-src/db';
-import { EntitlementsService } from 'api-src/services/entitlements.service';
+import { EntitlementsService } from 'api/src/services/entitlements.service';
+import { getMyEntitlements } from 'api/src/api/entitlements/entitlements.controller';
 
-jest.mock('api-src/db');
-jest.mock('api-src/services/entitlements.service');
-
-import { getMyEntitlements } from 'api-src/api/entitlements/entitlements.controller';
+jest.mock('apps/backend/src/db');
+jest.mock('api/src/services/entitlements.service');
 
 describe('EntitlementsController', () => {
   let mockReq: Partial<Request>;
@@ -41,7 +38,7 @@ describe('EntitlementsController', () => {
     it('returns 401 when no authenticated user exists', async () => {
       mockReq.user = undefined;
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -53,7 +50,7 @@ describe('EntitlementsController', () => {
     it('returns 401 when user exists but has no userId', async () => {
       mockReq.user = {};
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -65,7 +62,7 @@ describe('EntitlementsController', () => {
     it('returns 401 when userId is null', async () => {
       mockReq.user = { userId: null as any };
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(EntitlementsService.getForUser).not.toHaveBeenCalled();
@@ -74,7 +71,7 @@ describe('EntitlementsController', () => {
     it('works with different user property names if middleware adds them', async () => {
       mockReq.user = { id: 42 } as any;
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(EntitlementsService.getForUser).not.toHaveBeenCalled();
@@ -85,7 +82,7 @@ describe('EntitlementsController', () => {
     it('returns empty entitlements when service returns null', async () => {
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(null);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(42);
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -104,7 +101,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(42);
       expect(mockRes.json).toHaveBeenCalledWith(mockEntitlements);
@@ -119,7 +116,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(42);
       expect(mockRes.json).toHaveBeenCalledWith(mockEntitlements);
@@ -128,7 +125,7 @@ describe('EntitlementsController', () => {
     it('returns empty entitlements when service returns undefined', async () => {
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(undefined);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(42);
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -144,7 +141,7 @@ describe('EntitlementsController', () => {
       mockReq.user = { userId: 'not-a-number' as any };
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(null);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith('not-a-number');
     });
@@ -153,7 +150,7 @@ describe('EntitlementsController', () => {
       mockReq.user = { userId: 0 };
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(null);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(0);
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -167,7 +164,7 @@ describe('EntitlementsController', () => {
       mockReq.user = { userId: -1 };
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(null);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(-1);
     });
@@ -184,7 +181,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(largeId);
       expect(mockRes.json).toHaveBeenCalledWith(mockEntitlements);
@@ -194,7 +191,7 @@ describe('EntitlementsController', () => {
       mockReq.user = { userId: '' as any };
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(null);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith('');
       expect(mockRes.json).toHaveBeenCalledWith({
@@ -222,7 +219,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(42);
       expect(mockRes.json).toHaveBeenCalledWith(mockEntitlements);
@@ -239,7 +236,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.json).toHaveBeenCalledWith(mockEntitlements);
     });
@@ -253,7 +250,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.json).toHaveBeenCalledWith(mockEntitlements);
     });
@@ -266,7 +263,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(unexpectedData as any);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.json).toHaveBeenCalledWith({
         shopId: null,
@@ -284,7 +281,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(partialData as any);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.json).toHaveBeenCalledWith({
         shopId: 123,
@@ -302,7 +299,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(dataWithNullShopId);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.json).toHaveBeenCalledWith({
         shopId: null,
@@ -320,7 +317,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(dataWithUndefined);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.json).toHaveBeenCalledWith({
         shopId: null,
@@ -335,7 +332,7 @@ describe('EntitlementsController', () => {
       const error = new Error('Database connection failed');
       (EntitlementsService.getForUser as jest.Mock).mockRejectedValue(error);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(42);
       expect(mockRes.status).toHaveBeenCalledWith(500);
@@ -349,7 +346,7 @@ describe('EntitlementsController', () => {
       const error = new Error('Some internal database error with sensitive info');
       (EntitlementsService.getForUser as jest.Mock).mockRejectedValue(error);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.json).toHaveBeenCalledWith({
         error: 'Internal Server Error',
@@ -372,7 +369,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       const responseCall = (mockRes.json as jest.Mock).mock.calls[0][0];
       
@@ -391,7 +388,7 @@ describe('EntitlementsController', () => {
         flags: [],
       });
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.status).not.toHaveBeenCalled();
     });
@@ -399,7 +396,7 @@ describe('EntitlementsController', () => {
     it('returns 200 even for empty entitlements', async () => {
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(null);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(mockRes.status).not.toHaveBeenCalled();
     });
@@ -415,7 +412,7 @@ describe('EntitlementsController', () => {
         ip: '127.0.0.1',
         method: 'GET',
         path: '/api/v1/entitlements/me',
-      } as Request;
+      } as unknown as Request;
 
       const mockEntitlements = {
         shopId: 123,
@@ -425,7 +422,7 @@ describe('EntitlementsController', () => {
       
       (EntitlementsService.getForUser as jest.Mock).mockResolvedValue(mockEntitlements);
 
-      await getMyEntitlements(mockReq as Request, mockRes as Response);
+      await getMyEntitlements(mockReq as any, mockRes as any);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(42);
     });
@@ -449,22 +446,22 @@ describe('EntitlementsController', () => {
         .mockResolvedValueOnce(mockEntitlements1)
         .mockResolvedValueOnce(mockEntitlements2);
 
-      const req1 = { user: { userId: 1 } } as Request;
-      const req2 = { user: { userId: 2 } } as Request;
+      const req1 = { user: { userId: 1 } } as unknown as Request;
+      const req2 = { user: { userId: 2 } } as unknown as Request;
       
       const res1 = {
         status: jest.fn().mockReturnThis(),
         json: jest.fn().mockReturnThis(),
-      } as Partial<Response> as Response;
+      } as unknown as Partial<Response> as any;
       
       const res2 = {
         status: jest.fn().mockReturnThis(),
         json: jest.fn().mockReturnThis(),
-      } as Partial<Response> as Response;
+      } as unknown as Partial<Response> as any;
 
       await Promise.all([
-        getMyEntitlements(req1, res1),
-        getMyEntitlements(req2, res2),
+        getMyEntitlements(req1 as any, res1),
+        getMyEntitlements(req2 as any, res2),
       ]);
 
       expect(EntitlementsService.getForUser).toHaveBeenCalledWith(1);
