@@ -58,7 +58,7 @@ export function CommerceActivationGate({
 
       if (id === 'connect-store') {
         window.dispatchEvent(
-          new CustomEvent('open-connect-store')
+          new CustomEvent('ui:connect-store')
         );
       }
     },

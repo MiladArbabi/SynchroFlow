@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 // apps/frontend/src/pages/DashboardPage.tsx
 
@@ -146,13 +147,29 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
   // -------------------------
   // Handlers
   // -------------------------
+
+  const handleOpenConnectModal = async () => {
+    try {
+      // Pre-flight check
+      await refreshIntegrationStatus();
+
+      // Open sync modal (this is FT0 behavior)
+      openedAtRef.current = Date.now();
+      setIsSyncModalOpen(true);
+    } catch (err: any) {
+      const issues =
+        err?.response?.data?.issues || ['An unknown server error occurred.'];
+      setConnectionError(`System check failed: ${issues.join(' ')}`);
+    }
+  };
+
   const handleRetry = () => {
     setConnectionError(null);
-    window.dispatchEvent(new CustomEvent('open-connect-store'));
+    handleOpenConnectModal();
   };
 
   const handleConnectStoreIntent = () => {
-    window.dispatchEvent(new CustomEvent('open-connect-store'));
+    handleOpenConnectModal();
   };
 
   const handleSyncModalClose = () => {

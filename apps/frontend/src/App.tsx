@@ -133,24 +133,22 @@ class IntlErrorBoundary extends React.Component<
 }
 
 export default function App() {
-const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
 
-React.useEffect(() => {
-  const handler = () => {
-    console.log('[App] opening ConnectStoreModal');
-    setIsConnectModalOpen(true);
-  };
+  React.useEffect(() => {
+    const handler = () => {
+      console.log('[App] ui:connect-store received');
+      setIsConnectModalOpen(true);
+    };
 
-  window.addEventListener('open-connect-store', handler);
-  return () => window.removeEventListener('open-connect-store', handler);
-}, []);
+    window.addEventListener('ui:connect-store', handler);
+    return () => {
+      window.removeEventListener('ui:connect-store', handler);
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ConnectStoreModal
-        isOpen={isConnectModalOpen}
-        onClose={() => setIsConnectModalOpen(false)}
-      />
       <RuntimeRoutesProvider>
         <RuntimeRoutesSubscriber />
 
@@ -161,6 +159,10 @@ React.useEffect(() => {
                 <SpecterConfigProvider>
                   <ModuleBootstrap />
                    <IntlErrorBoundary>
+                    <ConnectStoreModal
+                      isOpen={isConnectModalOpen}
+                      onClose={() => setIsConnectModalOpen(false)}
+                    />
                     <Routes>
                       {/* Public auth routes */}
                       {routes
