@@ -24,28 +24,37 @@ export type ActivationUIState =
  */
 export function mapActivationVerdictToUIState(
   verdict: ActivationVerdict,
-  surfaceConfig: ActivationSurfaceProps
+  surfaceConfig: ActivationSurfaceProps,
+  onAction?: (actionId: string) => void
 ): ActivationUIState {
   switch (verdict.verdict) {
     case 'BLOCKED':
       return {
         state: 'BLOCKED',
-        surface: surfaceConfig,
+        surface: {
+          ...surfaceConfig,
+          onAction,
+        },
       };
 
     case 'INTEGRATION_COMPLETE_NOT_READY':
+      console.log('[activation-mapper] BLOCKED mapped', {
+          verdict: verdict.verdict,
+          hasOnAction: Boolean(onAction),
+        });
       return {
         state: 'BLOCKED',
         surface: {
           ...surfaceConfig,
-           ...(surfaceConfig.identity && {
-          identity: {
-            ...surfaceConfig.identity,
-            subtitle: 'Finish setup to unlock this module',
-          },
-        }),
-      }
-    }
+          ...(surfaceConfig.identity && {
+            identity: {
+              ...surfaceConfig.identity,
+              subtitle: 'Finish setup to unlock this module',
+            },
+          }),
+          onAction,
+        },
+      };
 
     case 'ACTIVE':
       return {

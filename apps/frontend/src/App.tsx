@@ -27,6 +27,7 @@ import ProductsPage from "pages/ProductsPage";
 import ThemeCustomization from './themes';
 import FinancesPage from "pages/FinancesPage";
 import AnalyticsPage from "pages/AnalyticsPage";
+import { ConnectStoreModal } from "components/ConnectStoreModal";
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -132,10 +133,24 @@ class IntlErrorBoundary extends React.Component<
 }
 
 export default function App() {
-  /* const { version } = useRuntimeRoutes(); */
+const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
+
+React.useEffect(() => {
+  const handler = () => {
+    console.log('[App] opening ConnectStoreModal');
+    setIsConnectModalOpen(true);
+  };
+
+  window.addEventListener('open-connect-store', handler);
+  return () => window.removeEventListener('open-connect-store', handler);
+}, []);
 
   return (
     <QueryClientProvider client={queryClient}>
+      <ConnectStoreModal
+        isOpen={isConnectModalOpen}
+        onClose={() => setIsConnectModalOpen(false)}
+      />
       <RuntimeRoutesProvider>
         <RuntimeRoutesSubscriber />
 

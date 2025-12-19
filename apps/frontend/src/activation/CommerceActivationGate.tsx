@@ -54,13 +54,12 @@ export function CommerceActivationGate({
 
   const uiActions = React.useMemo(() => ({
     openModal: (id: string) => {
+      console.log('[uiActions.openModal] fired', id);
+
       if (id === 'connect-store') {
-        // 🔑 this must trigger the SAME flow as Dashboard
-        // either:
-        // 1) emit a global event
-        // 2) call a modal store
-        // 3) navigate to /dashboard?connect=1
-        window.dispatchEvent(new CustomEvent('open-connect-store'));
+        window.dispatchEvent(
+          new CustomEvent('open-connect-store')
+        );
       }
     },
     navigate: (path: string) => {
@@ -74,7 +73,11 @@ export function CommerceActivationGate({
   }
 
   const activation: ActivationUIState =
-    mapActivationVerdictToUIState(verdict, surfaceConfig);
+    mapActivationVerdictToUIState(
+      verdict,
+      surfaceConfig,
+      uiActions.openModal
+    );
 
   if (import.meta.env.DEV) {
     console.debug('[ActivationGate]', {
@@ -91,7 +94,7 @@ export function CommerceActivationGate({
         renderBlocked={(surface) => (
           <ActivationSurfaceAdapter
             surface={surface}
-            onAction={(actionId) => surface.onAction?.(actionId)}
+            onAction={(actionId) => uiActions.openModal(actionId)}
           />
         )}
       >

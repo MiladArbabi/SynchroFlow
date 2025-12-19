@@ -23,7 +23,13 @@ export const ActivationSurface: React.FC<ActivationSurfaceProps> = ({
       {valueAfterActivation && <div>{valueAfterActivation.outcome}</div>}
 
       <button
-        onClick={() => onAction?.(primaryCTA.actionId)}
+        onClick={() => {
+          console.log('[ActivationSurface] CTA clicked', {
+            actionId: primaryCTA.actionId,
+            hasOnAction: Boolean(onAction),
+          });
+          onAction?.(primaryCTA.actionId);
+        }}
       >
         {primaryCTA.label}
       </button>
