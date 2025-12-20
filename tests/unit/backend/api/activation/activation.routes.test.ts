@@ -1,5 +1,6 @@
 import request from 'supertest';
-import { createApp } from 'api-src/bootstrap/express';
+import { createActivationTestApp } from 'api-src/api/activation/__tests__/createActivationTestApp';
+const app = createActivationTestApp();
 import db from 'api-src/db';
 import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
 import {
@@ -7,14 +8,12 @@ import {
   OnboardingReadinessSnapshot,
 } from '@lasyncro/shared';
 
-// ─────────────────────────────────────────────
-// DB mock — SAME SHAPE as controller test
-// ─────────────────────────────────────────────
 jest.mock('api-src/db', () => {
   const mockDbInstance = {
     where: jest.fn().mockReturnThis(),
-    andWhere: jest.fn().mockReturnThis(),
+    select: jest.fn(),
     first: jest.fn(),
+    insert: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockDb = jest.fn(() => mockDbInstance);
@@ -78,7 +77,6 @@ const mockReadinessSnapshot = (
 });
 
 describe('GET /api/v1/activation/verdict (route)', () => {
-  const app = createApp();
   const mockDbInstance = (db as any)();
 
   beforeEach(() => {
@@ -109,7 +107,8 @@ describe('GET /api/v1/activation/verdict (route)', () => {
       .set('Authorization', 'Bearer valid-token');
 
     expect(res.status).toBe(200);
-    expect(res.body.verdict).toBe('INTEGRATION_COMPLETE_NOT_READY');
+    expect(res.body.verdict).toBe('PENDING');
+    expect(res.body.reason).toBe('ENTITLEMENT_PENDING');
   });
 
   test('returns ACTIVE when integration and readiness complete', async () => {

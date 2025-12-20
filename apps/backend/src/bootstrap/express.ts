@@ -5,8 +5,6 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import db from '../db';
 
-import { getActivationVerdict } from '../api/activation/activation.controller';
-
 // routes
 import layoutRoutes from '../api/layouts/layout.routes';
 import orderRoutes from '../api/orders/orders.routes';
@@ -21,6 +19,8 @@ import shopifyRoutes from '../api/shopify/shopify.routes';
 import onboardingReadinessRouter from '../onboarding/readiness.router';
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+
+import { registerActivationRoutes } from '../api/activation/activation.routes';
 
 // Specter routes (FT0)
 import specterRouter from '../api/specter/specter.routes';
@@ -56,12 +56,6 @@ export function createApp(): Express {
     }) as any
   );
 
-  app.get(
-  '/api/v1/activation/verdict',
-  authenticateToken,
-  getActivationVerdict
-);
-
   // Register routes
   app.use('/api/v1/layouts', layoutRoutes);
   app.use('/api/v1/orders', orderRoutes);
@@ -74,6 +68,8 @@ export function createApp(): Express {
   app.use('/api/v1/user-state', userStateRoutes);
   app.use('/api/v1/shopify', shopifyRoutes);
   app.use('/api/v1/onboarding', onboardingReadinessRouter);
+  
+  registerActivationRoutes(app);
 
   // Mount Specter FT0 routes under /api/v1/specter
   app.use('/api/v1/specter', specterRouter);

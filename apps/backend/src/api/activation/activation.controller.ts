@@ -27,6 +27,11 @@ import {
   EntitlementSnapshot,
 } from '@lasyncro/shared/activation';
 import { EntitlementsService } from 'api-src/services/entitlements.service';
+import { buildActivationAuditEvent } from './buildActivationAuditEvent';
+
+import {
+  ACTIVATION_DERIVATION_VERSION,
+} from '@lasyncro/shared/activation';
 
 export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;
@@ -103,26 +108,31 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
    * - add frontend-derived fields
    * - mutate derivation logic here
    */
-  const auditPayload = {
+  const auditEvent = buildActivationAuditEvent({
+    derivationVersion: ACTIVATION_DERIVATION_VERSION,
+    userId,
+    shopId,
+    entryChannel,
     identity,
     integrations,
     entitlements,
     ft0Phase,
-  };
+    verdict,
+  });
 
-  await db('activation_audit_events').insert({
-    user_id: userId,
-    shop_id: shopId,
-    entry_channel: entryChannel,
-    verdict: verdict.verdict,
-    reason:
-      verdict.verdict === 'BLOCKED'
-        ? verdict.reason
-        : verdict.verdict === 'PENDING'
-          ? verdict.reason
-          : null,
-
-    payload: auditPayload,
+// Fire-and-forget audit write
+db('activation_audit_events')
+  .insert(auditEvent)
+  .catch((err) => {
+    console.error(
+      JSON.stringify({
+        event: 'activation.audit.failed',
+        auditEventId: auditEvent.event_id,
+        userId,
+        shopId,
+        error: err?.message,
+      })
+    );
   });
 
   console.info(
