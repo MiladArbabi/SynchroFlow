@@ -29,6 +29,11 @@ import FinancesPage from "pages/FinancesPage";
 import AnalyticsPage from "pages/AnalyticsPage";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
 
+import { DashboardPage } from "pages/DashboardPage";
+import { DataSyncingModal } from 'components/DataSyncingModal';
+import { useIntegration } from 'contexts/IntegrationContext';
+import { Ft0Phase } from 'types/onboarding';
+
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
   isEditing: boolean;
@@ -132,20 +137,46 @@ class IntlErrorBoundary extends React.Component<
   }
 }
 
+function AppShell() {
+  const { hasIntegrationRecord, syncStatus } = useIntegration();
+  const [isSyncModalOpen, setIsSyncModalOpen] = React.useState(false);
+
+  const ft0Phase: Ft0Phase =
+    !hasIntegrationRecord
+      ? 'PRE_CONNECT'
+      : syncStatus !== 'COMPLETED'
+        ? 'SYNCING'
+        : 'STEADY_STATE';
+
+  React.useEffect(() => {
+    if (ft0Phase === 'SYNCING') {
+      setIsSyncModalOpen(true);
+    }
+  }, [ft0Phase]);
+
+  return (
+    <DataSyncingModal
+      open={isSyncModalOpen}
+      ft0Phase={ft0Phase}
+      onClose={() => setIsSyncModalOpen(false)}
+    />
+  );
+}
+
 export default function App() {
   const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    const handler = () => {
-      console.log('[App] ui:connect-store received');
-      setIsConnectModalOpen(true);
-    };
-
-    window.addEventListener('ui:connect-store', handler);
-    return () => {
-      window.removeEventListener('ui:connect-store', handler);
-    };
+  const handleConnectStoreIntent = React.useCallback(() => {
+    console.log('[App] ui:connect-store received');
+    setIsConnectModalOpen(true);
   }, []);
+
+  React.useEffect(() => {
+    window.addEventListener('ui:connect-store', handleConnectStoreIntent);
+    return () => {
+      window.removeEventListener('ui:connect-store', handleConnectStoreIntent);
+    };
+  }, [handleConnectStoreIntent]);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -158,79 +189,87 @@ export default function App() {
               <EntitlementsProvider>
                 <SpecterConfigProvider>
                   <ModuleBootstrap />
-                   <IntlErrorBoundary>
                     <ConnectStoreModal
-                      isOpen={isConnectModalOpen}
-                      onClose={() => setIsConnectModalOpen(false)}
-                    />
-                    <Routes>
-                      {/* Public auth routes */}
-                      {routes
-                        .filter(
-                          (route) =>
-                            route.key === 'login' || route.key === 'register'
-                        )
-                        .map((route) => {
-                          const Component = route.component;
-                          return (
-                            <Route
-                              key={route.key}
-                              path={route.route}
-                              element={Component ? <Component /> : null}
-                            />
-                          );
-                        })}
+                        isOpen={isConnectModalOpen}
+                        onClose={() => setIsConnectModalOpen(false)}
+                      />
+                      
+                    <IntlErrorBoundary>
+                     <AppShell />
+                      <Routes>
+                        {/* Public auth routes */}
+                        {routes
+                          .filter(
+                            (route) =>
+                              route.key === 'login' || route.key === 'register'
+                          )
+                          .map((route) => {
+                            const Component = route.component;
+                            return (
+                              <Route
+                                key={route.key}
+                                path={route.route}
+                                element={Component ? <Component /> : null}
+                              />
+                            );
+                          })}
                       {/* Protected SaaS app */}
-                    <Route element={<ProtectedRoute />}>
-                      <Route element={<LayoutManager />}>
-                        {/* Runtime-registered routes */}
-                          {getRegisteredRoutes()
-                            .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
-                            .map(route => {
-                              const Component = route.component;
-                              return (
-                                <Route
-                                  key={route.id}
-                                  path={route.path}
-                                  element={Component ? <Component /> : null}
-                                />
-                              );
-                            })}
+                      <Route element={<ProtectedRoute />}>
+                        <Route element={<LayoutManager />}>
+                        
+                          {/* 🔗 STATIC BRIDGE for DashboardPage */}
+                            <Route
+                              path="/dashboard"
+                              element={<DashboardPage handleSidenavToggle={() => {}} />}
+                            />
 
-                          {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
-                          <Route
-                            path="/orders/*"
-                            element={<OrdersPage />}
-                          />
-                          {/* 🔗 STATIC BRIDGE for Customers */}
-                          <Route
-                            path="/customers/*"
-                            element={<CustomersPage />}
-                          />
-                          {/* 🔗 STATIC BRIDGE for Products */}
-                          <Route
-                            path="/products/*"
-                            element={<ProductsPage />}
-                          />
-                          <Route
-                            path="/analytics/*"
-                            element={<AnalyticsPage />}
-                          />
-                          <Route
-                            path="/finances/*"
-                            element={<FinancesPage />}
-                          />
-                          {/* Dynamic modules */}
-                        <Route path="modules/:moduleId/*" />
+                          {/* Runtime-registered routes */}
+                            {getRegisteredRoutes()
+                              .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
+                              .map(route => {
+                                const Component = route.component;
+                                return (
+                                  <Route
+                                    key={route.id}
+                                    path={route.path}
+                                    element={Component ? <Component /> : null}
+                                  />
+                                );
+                              })}
+                            {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
+                            <Route
+                              path="/orders/*"
+                              element={<OrdersPage />}
+                            />
+                            {/* 🔗 STATIC BRIDGE for Customers */}
+                            <Route
+                              path="/customers/*"
+                              element={<CustomersPage />}
+                            />
+                            {/* 🔗 STATIC BRIDGE for Products */}
+                            <Route
+                              path="/products/*"
+                              element={<ProductsPage />}
+                            />
+                            <Route
+                              path="/analytics/*"
+                              element={<AnalyticsPage />}
+                            />
+                            <Route
+                              path="/finances/*"
+                              element={<FinancesPage />}
+                            />
+                            {/* Dynamic modules */}
+                          <Route path="modules/:moduleId/*" />
+                        </Route>
                       </Route>
-                    </Route>
 
-                    {/* Root */}
-                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                      {/* Root */}
+                      <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-                    {/* Fallback */}
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                  </Routes>
+                      {/* Fallback */}
+                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                    </Routes>
                   </IntlErrorBoundary>
                 </SpecterConfigProvider>
               </EntitlementsProvider>

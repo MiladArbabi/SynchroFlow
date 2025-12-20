@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/DashboardPage.tsx
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useIntegration } from 'contexts/IntegrationContext';
@@ -27,6 +28,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
   } = useIntegration();
 
   const { isLoading: isDashboardStateLoading } = useDashboardState();
+  const wasSyncingRef = useRef(false);
+
+  const hasOpenedSyncModalRef = useRef(false);
+
+  useEffect(() => {
+    console.debug('[Dashboard.sync.open]', {
+      hasIntegrationRecord,
+      syncStatus,
+    });
+    if (
+      hasIntegrationRecord &&
+      syncStatus !== 'COMPLETED' &&
+      !hasOpenedSyncModalRef.current
+    ) {
+      hasOpenedSyncModalRef.current = true;
+      wasSyncingRef.current = true;
+    }
+  }, [hasIntegrationRecord, syncStatus]);
 
   // -------------------------
   // FT0 PHASE — PURE DERIVATION

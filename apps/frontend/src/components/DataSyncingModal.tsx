@@ -127,20 +127,31 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
   ft0Phase,
   onClose,
 }) => {
-  void onClose;
-
+  
+  
   const { syncStatus } = useIntegration();
-
+  
   // Hooks MUST come before guards
   const [displayPercent, setDisplayPercent] = useState<number>(0);
-
+  
   const isAllowedToRender = isDataSyncingModalAllowed(ft0Phase, syncStatus);
-
+  
   const activeStep = useMemo(() => {
     if (displayPercent < 34) return 0;
     if (displayPercent < 67) return 1;
     return 2;
   }, [displayPercent]);
+
+  useEffect(() => {
+    if (open && !isAllowedToRender) {
+        console.debug('[DSM.auto-close]', {
+        open,
+        ft0Phase,
+        syncStatus,
+      });
+      onClose();
+    }
+  }, [open, isAllowedToRender, onClose, ft0Phase, syncStatus]);
 
   useEffect(() => {
     if (!open || !isAllowedToRender) {
@@ -163,6 +174,7 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
       current += delta;
 
       if (current >= TARGET) {
+        console.debug('[DSM.progress.done]', { syncStatus });
         current = TARGET;
         window.clearInterval(timer);
       }
@@ -171,7 +183,14 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
     }, TICK_MS);
 
     return () => window.clearInterval(timer);
-  }, [open, isAllowedToRender]);
+  }, [open, isAllowedToRender, syncStatus]);
+
+  useEffect(() => {
+    if (displayPercent >= 99) {
+      console.debug('[DSM.auto-close:percent]');
+      onClose();
+    }
+  }, [displayPercent, onClose]);
 
   if (!open || !isAllowedToRender) {
     return null;
@@ -185,6 +204,13 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
       allowed: isAllowedToRender,
     });
   }
+
+    console.debug('[DSM.render]', {
+      open,
+      ft0Phase,
+      syncStatus,
+      isAllowedToRender,
+    });
 
   return (
     <Dialog open={open} disableEscapeKeyDown fullWidth maxWidth="sm">

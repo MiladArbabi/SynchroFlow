@@ -1,8 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/Layout.tsx
 import { useState, useEffect } from "react";
 import { useLocation, Outlet } from "react-router-dom";
 import Sidenav from './layouts/AppLayout/SidenavContent'
-import { DashboardPage } from "pages/DashboardPage";
 // Import the correct components from react-resizable-panels
 import {
   PanelGroup,
@@ -14,8 +14,6 @@ import routes from "routes";
 export default function Layout() {
     const [isSidenavOpen, setSidenavOpen] = useState(true);
     const { pathname } = useLocation();
-
-    const handleSidenavToggle = () => setSidenavOpen(!isSidenavOpen);
 
     // Set the document layout for the main page
     useEffect(() => {
@@ -38,9 +36,10 @@ export default function Layout() {
                 <Sidenav
                   brandName="SynchroFlow"
                   routes={routes}
-                  isSidenavOpen={isSidenavOpen} isConnected={false} onOpenModal={function (): void {
-                    throw new Error("Function not implemented.");
-                  } }                
+                  isSidenavOpen={isSidenavOpen} isConnected={false} 
+                  onOpenModal={() => {
+                    window.dispatchEvent(new CustomEvent('ui:connect-store'));
+                  }}               
                 />
             </Panel>
 
@@ -48,13 +47,8 @@ export default function Layout() {
             <PanelResizeHandle style={{ width: '1px', background: '#e0e0e0' }} />
 
             {/* === CONTEXT PANEL (DashboardPage + Outlet) === */}
-            <Panel
-              defaultSize={80}
-              role="group" // For the test
-            >
-                <DashboardPage handleSidenavToggle={handleSidenavToggle}>
-                    <Outlet /> {/* This will render the active page */}
-                </DashboardPage>
+            <Panel defaultSize={80}>
+              <Outlet />
             </Panel>
         </PanelGroup>
     );
