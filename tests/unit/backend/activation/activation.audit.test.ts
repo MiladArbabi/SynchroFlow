@@ -5,27 +5,23 @@ import db from 'api-src/db';
 import { ACTIVATION_DERIVATION_VERSION } from '@lasyncro/shared/activation';
 
 jest.mock('api-src/db', () => {
+  let insertedRow: any = null;
+
   const mockDbInstance = {
     where: jest.fn().mockReturnThis(),
     select: jest.fn().mockReturnThis(),
     first: jest.fn(),
-    insert: jest.fn().mockResolvedValue(undefined),
     del: jest.fn().mockResolvedValue(undefined),
     orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockResolvedValue([{
-      verdict: 'ACTIVE',
-      payload: {
-        identity: { userId: 1, shopId: null, entryChannel: null },
-        integrations: [],
-        entitlements: [],
-        ft0Phase: 'PRE_INTEGRATION',
-        verdict: {
-          verdict: 'BLOCKED',
-          reason: 'NO_SHOP',
-          retryable: false,
-        },
-      },
-    }]),
+
+    insert: jest.fn().mockImplementation((row) => {
+      insertedRow = row;
+      return Promise.resolve(undefined);
+    }),
+
+    limit: jest.fn().mockImplementation(() => {
+      return Promise.resolve(insertedRow ? [insertedRow] : []);
+    }),
   };
 
   const mockDb = jest.fn(() => mockDbInstance);
@@ -79,5 +75,32 @@ describe('Activation Audit Trail', () => {
     expect(audit.payload.identity).toBeDefined();
     expect(audit.payload.integrations).toBeDefined();
     expect(audit.payload.entitlements).toBeDefined();
+  });
+
+  it('writes an audit event when activation is BLOCKED due to missing shop', async () => {
+    await request(app)
+      .get('/api/v1/activation/verdict')
+      .expect(200);
+
+    const rows = await db('activation_audit_events')
+      .select('*')
+      .orderBy('id', 'desc')
+      .limit(1);
+
+    expect(rows.length).toBe(1);
+
+    const audit = rows[0];
+
+    // Core invariant
+    expect(audit.verdict).toBe('BLOCKED');
+
+    // Audit must still be complete
+    expect(audit.payload).toBeDefined();
+    expect(audit.payload.identity).toBeDefined();
+    expect(audit.payload.integrations).toBeDefined();
+    expect(audit.payload.entitlements).toBeDefined();
+
+    // Reason must exist for blocked states
+    expect(audit.reason).toBeDefined();
   });
 });
