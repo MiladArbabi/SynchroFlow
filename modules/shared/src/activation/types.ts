@@ -1,4 +1,6 @@
-//modules/shared/src/activation/types.ts
+// modules/shared/src/activation/types.ts
+// INTERNAL activation domain types (no dependency on contracts)
+
 export type EntryChannel = 'SHOPIFY_APP' | 'WEB';
 
 export type SyncStatus =

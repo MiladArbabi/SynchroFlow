@@ -3,7 +3,7 @@ import {
   IdentitySnapshot,
   IntegrationSnapshot,
   EntitlementSnapshot,
-  ActivationVerdict,
+  ActivationVerdict
 } from './types';
 import { deriveFT0Phase } from './deriveFT0Phase';
 

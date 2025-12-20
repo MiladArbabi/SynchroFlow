@@ -74,8 +74,8 @@
       ],
 
       /* Shared package — runtime should resolve to compiled JS in modules/shared/dist */
-      "@lasyncro/shared/*": ["modules/shared/dist/*", "modules/shared/src/*"],
-      "@lasyncro/shared": ["modules/shared/dist/index.js", "modules/shared/src/index.ts"],
+      "@lasyncro/shared/*": ["modules/shared/dist/*"],
+      "@lasyncro/shared": ["modules/shared/dist/index.js"],
 
       /* module-level alias for internal modules (specter etc.) — point to compiled output too */
       "modules-specter/*": ["modules/specter/dist/*", "modules/specter/src/*"],
@@ -87,7 +87,6 @@
     "apps/backend/src",
     "apps/frontend/src",
     "apps/integration-service/src",
-    "modules/shared/src",
     "modules/specter/src",
     "modules/order-nexus/src",
     "modules/customers/src"

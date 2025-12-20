@@ -1,9 +1,25 @@
 //apps/backend/src/api/activation/activation.controller.ts
+
+/**
+ * Activation Verdict Controller
+ * -----------------------------
+ * - IO-only layer
+ * - Delegates ALL decision logic to shared pure derivation functions
+ * - Writes authoritative audit events
+ *
+ * IMPORTANT:
+ * - Do NOT introduce new verdict states here
+ * - Do NOT duplicate derivation logic
+ * - If a state is missing, it belongs in shared/activation/types.ts
+ */
+
 import { Request, Response } from 'express';
 import db from 'api-src/db';
+import crypto from 'crypto';
+
 import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
-import { ActivationVerdict } from '@lasyncro/shared/contracts/activation';
 import {
+  ActivationVerdict,
   deriveActivationVerdict,
   deriveFT0Phase,
   IdentitySnapshot,
@@ -71,7 +87,58 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     entitlements,
   });
 
-  // --- Response (authoritative, no translation) ---
+  /**
+   * Activation Audit Record
+   * -----------------------
+   * This write is the authoritative, append-only history of:
+   * - why a user was blocked or activated
+   * - what backend truth existed at evaluation time
+   *
+   * Guarantees:
+   * - deterministic (pure derivation inputs)
+   * - reproducible (stored snapshots)
+   * - supportable (human-readable reason)
+   *
+   * DO NOT:
+   * - add frontend-derived fields
+   * - mutate derivation logic here
+   */
+  const auditPayload = {
+    identity,
+    integrations,
+    entitlements,
+    ft0Phase,
+  };
+
+  await db('activation_audit_events').insert({
+    user_id: userId,
+    shop_id: shopId,
+    entry_channel: entryChannel,
+    verdict: verdict.verdict,
+    reason:
+      verdict.verdict === 'BLOCKED'
+        ? verdict.reason
+        : verdict.verdict === 'PENDING'
+          ? verdict.reason
+          : null,
+
+    payload: auditPayload,
+  });
+
+  console.info(
+    JSON.stringify({
+      event: 'activation.verdict.evaluated',
+      userId,
+      shopId,
+      entryChannel,
+      verdict: verdict.verdict,
+      ft0Phase,
+      timestamp: new Date().toISOString(),
+      traceId: crypto.randomUUID(),
+    })
+  );
+
+  // --- Response ---
   res.json({
     meta: {
       userId,
