@@ -17,26 +17,23 @@ import { Request, Response } from 'express';
 import db from 'api-src/db';
 import crypto from 'crypto';
 
-import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
 import {
-  ActivationVerdict,
   deriveActivationVerdict,
   deriveFT0Phase,
   IdentitySnapshot,
   IntegrationSnapshot,
   EntitlementSnapshot,
+  ACTIVATION_DERIVATION_VERSION
 } from '@lasyncro/shared/activation';
+
 import { EntitlementsService } from 'api-src/services/entitlements.service';
 import { buildActivationAuditEvent } from './buildActivationAuditEvent';
-
-import {
-  ACTIVATION_DERIVATION_VERSION,
-} from '@lasyncro/shared/activation';
+import { buildActivationSurface } from './activation.surface';
 
 export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;
 
-  // --- Identity resolution ---
+  // --- Identity ---
   let shopId: number | null = null;
   let entryChannel: 'SHOPIFY_APP' | 'WEB' | null = null;
 
@@ -49,13 +46,9 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     entryChannel = user?.entry_channel ?? null;
   }
 
-  const identity: IdentitySnapshot = {
-    userId,
-    shopId,
-    entryChannel,
-  };
+  const identity: IdentitySnapshot = { userId, shopId, entryChannel };
 
-  // --- Integration snapshots ---
+  // --- Integrations ---
   let integrations: IntegrationSnapshot[] = [];
 
   if (shopId) {
@@ -69,13 +62,12 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     }));
   }
 
-  // --- Entitlement snapshots ---
+  // --- Entitlements ---
   let entitlements: EntitlementSnapshot[] = [];
 
   if (userId) {
     const snapshot = await EntitlementsService.getForUser(userId);
-
-    if (snapshot && Array.isArray(snapshot.modules)) {
+    if (snapshot?.modules) {
       entitlements = snapshot.modules.map((moduleKey: string) => ({
         moduleKey,
         enabled: true,
@@ -92,22 +84,13 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     entitlements,
   });
 
-  /**
-   * Activation Audit Record
-   * -----------------------
-   * This write is the authoritative, append-only history of:
-   * - why a user was blocked or activated
-   * - what backend truth existed at evaluation time
-   *
-   * Guarantees:
-   * - deterministic (pure derivation inputs)
-   * - reproducible (stored snapshots)
-   * - supportable (human-readable reason)
-   *
-   * DO NOT:
-   * - add frontend-derived fields
-   * - mutate derivation logic here
-   */
+  // --- UI surface (NEW SOURCE OF TRUTH FOR FRONTEND) ---
+  const activationSurface = buildActivationSurface({
+    verdict,
+    ft0Phase,
+  });
+
+  // --- Audit (must include surface) ---
   const auditEvent = buildActivationAuditEvent({
     derivationVersion: ACTIVATION_DERIVATION_VERSION,
     userId,
@@ -118,12 +101,10 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     entitlements,
     ft0Phase,
     verdict,
+    activationSurface,
   });
 
-// Fire-and-forget audit write
-db('activation_audit_events')
-  .insert(auditEvent)
-  .catch((err) => {
+  db('activation_audit_events').insert(auditEvent).catch((err: Error) => {
     console.error(
       JSON.stringify({
         event: 'activation.audit.failed',
@@ -143,7 +124,6 @@ db('activation_audit_events')
       entryChannel,
       verdict: verdict.verdict,
       ft0Phase,
-      timestamp: new Date().toISOString(),
       traceId: crypto.randomUUID(),
     })
   );
@@ -156,9 +136,8 @@ db('activation_audit_events')
       entryChannel,
       evaluatedAt: new Date().toISOString(),
     },
-    ft0: {
-      phase: ft0Phase,
-    },
-    verdict,
+    ft0: { phase: ft0Phase },
+    verdict,            // kept temporarily
+    activationSurface,  // ✅ frontend must consume this
   });
 };

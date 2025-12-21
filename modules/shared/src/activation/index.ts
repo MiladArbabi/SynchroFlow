@@ -3,3 +3,4 @@ export * from './types';
 export * from './deriveFT0Phase';
 export * from './deriveActivationVerdict';
 export * from './derivationVersion';
+export * from './deriveActivationSurfaceState';

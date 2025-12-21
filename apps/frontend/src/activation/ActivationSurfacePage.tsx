@@ -30,9 +30,7 @@ import {
   Stack,
 } from '@mui/material';
 
-import {
-  ActivationSurfaceProps,
-} from '@lasyncro/shared/src/ui/activation/types';
+import { ActivationSurfaceProps } from '../../../../modules/shared/src/ui/activation/types';
 
 import { BlindnessVisual } from '@lasyncro/shared/ui';
 
@@ -359,7 +357,7 @@ export default function ActivationSurfacePage({
             </Button>
 
             {/* Trust signals — anxiety reduction only */}
-            {trust.bullets.map((line, idx) => (
+            {trust.bullets.map((line: string, idx: number) => (
               <Typography
                 key={idx}
                 variant="caption"

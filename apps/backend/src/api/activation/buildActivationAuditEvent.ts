@@ -22,8 +22,8 @@ import {
   IntegrationSnapshot,
   EntitlementSnapshot,
   FT0Phase,
+  ACTIVATION_DERIVATION_VERSION
 } from '@lasyncro/shared/activation';
-import { ACTIVATION_DERIVATION_VERSION } from '@lasyncro/shared/activation';
 
 export function buildActivationAuditEvent(input: {
   derivationVersion: string;
@@ -37,6 +37,7 @@ export function buildActivationAuditEvent(input: {
   entitlements: EntitlementSnapshot[];
   ft0Phase: FT0Phase;
   verdict: ActivationVerdict;
+  activationSurface: unknown;
 }) {
   const evaluatedAt = new Date().toISOString();
 
@@ -51,6 +52,7 @@ export function buildActivationAuditEvent(input: {
     entitlements: input.entitlements,
     ft0Phase: input.ft0Phase,
     verdict: input.verdict,
+    activationSurface: input.activationSurface,
   };
 
   const payloadHash = crypto

@@ -1,6 +1,6 @@
 // apps/frontend/src/activation/ActivationSurfaceAdapter.tsx
 import ActivationSurfacePage from './ActivationSurfacePage';
-import { ActivationSurfaceProps } from '@lasyncro/shared/src/ui/activation/types';
+import { ActivationSurfaceProps } from '@lasyncro/shared/ui/activation';
 
 interface Props {
   surface: ActivationSurfaceProps;

@@ -35,7 +35,7 @@ export const ActivationSurface: React.FC<ActivationSurfaceProps> = ({
       </button>
 
       <div>
-        {trust.bullets.map((line, idx) => (
+        {trust.bullets.map((line: string, idx: number) => (
           <div key={idx}>{line}</div>
         ))}
       </div>

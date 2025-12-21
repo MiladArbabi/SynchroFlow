@@ -1,7 +1,8 @@
 // modules/shared/src/ui/activation/activation-mapper.ts
 
-import { ActivationVerdict } from '../../contracts/activation';
+import { ActivationSurfaceState } from '../../activation/deriveActivationSurfaceState';
 import { ActivationSurfaceProps } from './types';
+import { buildActivationSurfaceProps } from './buildActivationSurfaceProps';
 
 /**
  * UI-level activation state.
@@ -18,54 +19,35 @@ export type ActivationUIState =
     };
 
 /**
- * Maps backend ActivationVerdict → UI-safe ActivationUIState
+ * Maps backend ActivationSurface → UI-safe ActivationUIState
  *
- * Frontend must NEVER branch on ActivationVerdict directly.
+ * IMPORTANT:
+ * - Frontend MUST NOT inspect ActivationVerdict anymore
+ * - Backend fully owns activation decisions
  */
-export function mapActivationVerdictToUIState(
-  verdict: ActivationVerdict,
+export function mapActivationSurfaceToUIState(
+  activationSurface: ActivationSurfaceState,
   surfaceConfig: ActivationSurfaceProps,
+  moduleId: string,
   onAction?: (actionId: string) => void
 ): ActivationUIState {
-  switch (verdict.verdict) {
-    case 'BLOCKED':
-      return {
-        state: 'BLOCKED',
-        surface: {
-          ...surfaceConfig,
-          onAction,
-        },
-      };
-
-    case 'INTEGRATION_COMPLETE_NOT_READY':
-      console.log('[activation-mapper] BLOCKED mapped', {
-          verdict: verdict.verdict,
-          hasOnAction: Boolean(onAction),
-        });
-      return {
-        state: 'BLOCKED',
-        surface: {
-          ...surfaceConfig,
-          ...(surfaceConfig.identity && {
-            identity: {
-              ...surfaceConfig.identity,
-              subtitle: 'Finish setup to unlock this module',
-            },
-          }),
-          onAction,
-        },
-      };
-
-    case 'ACTIVE':
-      return {
-        state: 'ACTIVE',
-        active: true,
-      };
-
-    default: {
-      // Exhaustiveness guard — compile-time safety
-      const _exhaustive: never = verdict;
-      return _exhaustive;
-    }
+  if (activationSurface.state === 'ACTIVE') {
+    return {
+      state: 'ACTIVE',
+      active: true,
+    };
   }
+
+  // BLOCKED or PENDING → show surface config
+  return {
+    state: 'BLOCKED',
+    surface: {
+      ...buildActivationSurfaceProps(
+        activationSurface,
+        surfaceConfig,
+        moduleId
+      ),
+      onAction,
+    },
+  };
 }

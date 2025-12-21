@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+//apps/frontend/src/activation/CommerceActivationGate.tsx
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
-import { 
-  mapActivationVerdictToUIState,
+import {
+  mapActivationSurfaceToUIState,
   ActivationUIState
-} from '@lasyncro/shared/src/ui/activation/activation-mapper';
+} from '@lasyncro/shared/ui/activation';
 
 import { ModuleActivationBoundary } from '@lasyncro/shared/ui';
 
@@ -47,7 +48,7 @@ export function CommerceActivationGate({
     queryKey: ['activation-verdict'],
     queryFn: async () => {
       const res = await axiosInstance.get('/api/v1/activation/verdict');
-      return res.data;
+      return res.data.activationSurface;
     },
     staleTime: 30_000,
   });
@@ -73,10 +74,10 @@ export function CommerceActivationGate({
   }
 
   const activation: ActivationUIState =
-    mapActivationVerdictToUIState(
+    mapActivationSurfaceToUIState(
       verdict,
       surfaceConfig,
-      uiActions.openModal
+      moduleId
     );
 
   if (import.meta.env.DEV) {

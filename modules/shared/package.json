@@ -3,8 +3,23 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc --project tsconfig.build.json"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./activation": {
+      "types": "./dist/activation/index.d.ts",
+      "default": "./dist/activation/index.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "default": "./dist/ui/index.js"
+    },
+    "./ui/activation": {
+      "types": "./dist/ui/activation/index.d.ts",
+      "default": "./dist/ui/activation/index.js"
+    }
   },
   "files": [
     "dist"
