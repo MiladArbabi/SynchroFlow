@@ -1,20 +1,42 @@
-//modules/shared/src/activation/deriveActivationVerdict.ts
+// modules/shared/src/activation/deriveActivationVerdict.ts
+
 import {
   IdentitySnapshot,
   IntegrationSnapshot,
   EntitlementSnapshot,
-  ActivationVerdict
+  ActivationVerdict,
 } from './types';
 import { deriveFT0Phase } from './deriveFT0Phase';
 
+/**
+ * deriveActivationVerdict
+ * -----------------------
+ * Canonical backend-owned activation decision function.
+ *
+ * Responsibilities:
+ * - Enforce identity + shop ownership
+ * - Enforce FT0 readiness as a hard invariant (never inferred)
+ * - Gate module activation behind entitlements
+ *
+ * Invariants:
+ * - FT0 readiness is derived, not guessed
+ * - ACTIVE is impossible unless FT0.ready === true
+ * - UI must never re-evaluate these rules
+ */
 export function deriveActivationVerdict(input: {
   identity: IdentitySnapshot;
   integrations: IntegrationSnapshot[];
   entitlements: EntitlementSnapshot[];
+  ft0InsightExecution: {
+    attempted: boolean;
+    status: 'SUCCESS' | 'EMPTY' | 'DEGRADED' | 'FAILED' | null;
+  };
 }): ActivationVerdict {
-  const { identity, integrations, entitlements } = input;
+  const { identity, integrations, entitlements, ft0InsightExecution } = input;
 
-  // 1. Authentication
+  /**
+   * 1. Authentication gate
+   */
   if (!identity.userId) {
     return {
       verdict: 'BLOCKED',
@@ -24,7 +46,9 @@ export function deriveActivationVerdict(input: {
     };
   }
 
-  // 2. Shop ownership
+  /**
+   * 2. Shop ownership gate
+   */
   if (!identity.shopId) {
     return {
       verdict: 'BLOCKED',
@@ -34,10 +58,20 @@ export function deriveActivationVerdict(input: {
     };
   }
 
-  // 3. FT0
-  const ft0Phase = deriveFT0Phase(integrations);
+  /**
+   * 3. FT0 derivation (backend-derived invariant)
+   *
+   * This is the single source of truth for:
+   * - integration completeness
+   * - initial insight execution
+   * - readiness to unlock modules
+   */
+  const { phase, ready } = deriveFT0Phase({
+    integrations,
+    ft0InsightExecution,
+  });
 
-  if (ft0Phase === 'PRE_INTEGRATION') {
+  if (phase === 'PRE_INTEGRATION') {
     return {
       verdict: 'BLOCKED',
       reason: 'NO_INTEGRATION',
@@ -46,7 +80,7 @@ export function deriveActivationVerdict(input: {
     };
   }
 
-  if (ft0Phase === 'SYNCING') {
+  if (phase === 'SYNCING') {
     return {
       verdict: 'PENDING',
       reason: 'FT0_SYNCING',
@@ -55,7 +89,22 @@ export function deriveActivationVerdict(input: {
     };
   }
 
-  // 4. Entitlements
+  /**
+   * FT0 resolved but NOT ready
+   * (e.g. insight not attempted or failed)
+   */
+  if (!ready) {
+    return {
+      verdict: 'PENDING',
+      reason: 'FT0_SYNCING',
+      explanation: 'FT0 initialization is incomplete.',
+      retryable: false,
+    };
+  }
+
+  /**
+   * 4. Entitlement gate
+   */
   const enabledModules = entitlements
     .filter(e => e.enabled)
     .map(e => e.moduleKey);
@@ -69,7 +118,9 @@ export function deriveActivationVerdict(input: {
     };
   }
 
-  // 5. Active
+  /**
+   * 5. ACTIVE — all invariants satisfied
+   */
   return {
     verdict: 'ACTIVE',
     activatedModules: enabledModules,

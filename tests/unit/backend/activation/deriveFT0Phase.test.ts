@@ -1,53 +1,120 @@
-//tests/unit/backend/activation/deriveFT0Phase.test.ts
-import { deriveFT0Phase } from '@lasyncro/shared/activation/deriveFT0Phase';
+// tests/unit/backend/activation/deriveFT0Phase.test.ts
+import { deriveFT0Phase } from '@lasyncro/shared/activation';
+import { IntegrationSnapshot } from '@lasyncro/shared/activation';
 
-describe('deriveFT0Phase', () => {
-  it('returns PRE_INTEGRATION when there are no integrations', () => {
-    const result = deriveFT0Phase([]);
-    expect(result).toBe('PRE_INTEGRATION');
+describe('deriveFT0Phase — backend-derived FT0 invariant', () => {
+  const completedIntegration: IntegrationSnapshot = {
+    platform: 'shopify',
+    syncStatus: 'COMPLETED',
+  };
+
+  const syncingIntegration: IntegrationSnapshot = {
+    platform: 'shopify',
+    syncStatus: 'IN_PROGRESS',
+  };
+
+  it('returns PRE_INTEGRATION and not ready when no integrations exist', () => {
+    const result = deriveFT0Phase({
+      integrations: [],
+      ft0InsightExecution: {
+        attempted: false,
+        status: null,
+      },
+    });
+
+    expect(result).toEqual({
+      phase: 'PRE_INTEGRATION',
+      ready: false,
+    });
   });
 
-  it('returns SYNCING when integration is NOT_STARTED', () => {
-    const result = deriveFT0Phase([
-      { platform: 'shopify', syncStatus: 'NOT_STARTED' },
-    ]);
-    expect(result).toBe('SYNCING');
+  it('returns SYNCING and not ready when integration has not completed', () => {
+    const result = deriveFT0Phase({
+      integrations: [syncingIntegration],
+      ft0InsightExecution: {
+        attempted: false,
+        status: null,
+      },
+    });
+
+    expect(result).toEqual({
+      phase: 'SYNCING',
+      ready: false,
+    });
   });
 
-  it('returns SYNCING when integration is IN_PROGRESS', () => {
-    const result = deriveFT0Phase([
-      { platform: 'shopify', syncStatus: 'IN_PROGRESS' },
-    ]);
-    expect(result).toBe('SYNCING');
+  it('returns RESOLVED but not ready when integration completed but insight not attempted', () => {
+    const result = deriveFT0Phase({
+      integrations: [completedIntegration],
+      ft0InsightExecution: {
+        attempted: false,
+        status: null,
+      },
+    });
+
+    expect(result).toEqual({
+      phase: 'RESOLVED',
+      ready: false,
+    });
   });
 
-  it('returns SYNCING when integration is FAILED', () => {
-    const result = deriveFT0Phase([
-      { platform: 'shopify', syncStatus: 'FAILED' },
-    ]);
-    expect(result).toBe('SYNCING');
+  it('returns RESOLVED and ready when insight execution SUCCESS', () => {
+    const result = deriveFT0Phase({
+      integrations: [completedIntegration],
+      ft0InsightExecution: {
+        attempted: true,
+        status: 'SUCCESS',
+      },
+    });
+
+    expect(result).toEqual({
+      phase: 'RESOLVED',
+      ready: true,
+    });
   });
 
-  it('returns RESOLVED when integration is COMPLETED', () => {
-    const result = deriveFT0Phase([
-      { platform: 'shopify', syncStatus: 'COMPLETED' },
-    ]);
-    expect(result).toBe('RESOLVED');
+  it('returns RESOLVED and ready when insight execution EMPTY', () => {
+    const result = deriveFT0Phase({
+      integrations: [completedIntegration],
+      ft0InsightExecution: {
+        attempted: true,
+        status: 'EMPTY',
+      },
+    });
+
+    expect(result).toEqual({
+      phase: 'RESOLVED',
+      ready: true,
+    });
   });
 
-  it('returns RESOLVED when at least one integration is COMPLETED', () => {
-    const result = deriveFT0Phase([
-      { platform: 'shopify', syncStatus: 'IN_PROGRESS' },
-      { platform: 'stripe', syncStatus: 'COMPLETED' },
-    ]);
-    expect(result).toBe('RESOLVED');
+  it('returns RESOLVED and ready when insight execution DEGRADED', () => {
+    const result = deriveFT0Phase({
+      integrations: [completedIntegration],
+      ft0InsightExecution: {
+        attempted: true,
+        status: 'DEGRADED',
+      },
+    });
+
+    expect(result).toEqual({
+      phase: 'RESOLVED',
+      ready: true,
+    });
   });
 
-  it('returns SYNCING when multiple integrations exist but none are COMPLETED', () => {
-    const result = deriveFT0Phase([
-      { platform: 'shopify', syncStatus: 'FAILED' },
-      { platform: 'stripe', syncStatus: 'IN_PROGRESS' },
-    ]);
-    expect(result).toBe('SYNCING');
+  it('returns RESOLVED but not ready when insight execution FAILED', () => {
+    const result = deriveFT0Phase({
+      integrations: [completedIntegration],
+      ft0InsightExecution: {
+        attempted: true,
+        status: 'FAILED',
+      },
+    });
+
+    expect(result).toEqual({
+      phase: 'RESOLVED',
+      ready: false,
+    });
   });
 });

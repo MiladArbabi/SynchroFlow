@@ -1,4 +1,11 @@
 // apps/frontend/src/onboarding/deriveFt0Phase.ts
+/**
+ * @deprecated
+ * FT0 phase is backend-derived and delivered via activationSurface.
+ * This file exists temporarily for migration only.
+ * DO NOT USE.
+ */
+
 import { Ft0Phase } from 'types/onboarding';
 
 export interface DeriveFt0PhaseInput {
