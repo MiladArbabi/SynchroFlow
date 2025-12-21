@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "build:deps": "npm --workspace ./modules/shared run build && npm --workspace ./modules/specter run build",
+    "build:deps": "npx tsc -p modules/shared/tsconfig.build.json && npm --workspace ./modules/specter run build",
     "build:backend": "npm run build:deps && npm --workspace ./apps/backend run build",
     "start": "node apps/backend/dist/src/server.js",
     "dev": "concurrently \"npm:dev-api\" \"npm:dev-ui\" \"npm:dev-ai\"",
