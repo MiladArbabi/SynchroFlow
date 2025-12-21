@@ -6,10 +6,10 @@
     "build": "tsc --project tsconfig.json",
     "start": "node ./scripts/node-start.js",
     "dev": "nodemon --watch src --ext ts --exec \"npm run build && node ./scripts/node-start.js\"",
-    "seed": "knex seed:run --specific=dev_seed.ts",
-    "migrate": "knex migrate:latest",
-    "migrate:make": "knex migrate:make",
-    "migrate:rollback": "knex migrate:rollback"
+    "migrate": "knex --knexfile knexfile.ts migrate:latest",
+    "migrate:make": "knex --knexfile knexfile.ts migrate:make",
+    "migrate:rollback": "knex --knexfile knexfile.ts migrate:rollback",
+    "seed": "knex --knexfile knexfile.ts seed:run"
   },
   "dependencies": {
     "@lasyncro/shared": "1.0.0",

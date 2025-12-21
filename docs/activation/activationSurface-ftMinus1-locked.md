@@ -116,6 +116,18 @@ apps/backend/src/api/activation
 
 > Backend owns *truth*, not *presentation*
 
+#### Audit Responsibilities (Mandatory)
+
+The backend is responsible for:
+
+* Writing activation audit events **for every evaluation**
+* Ensuring audit schema exists **before** activation routes are enabled
+* Logging (not throwing) on audit persistence failure
+* Emitting identifiers sufficient for forensic reconstruction
+
+Audit writes are **best-effort but mandatory**.
+Silent omission is a system violation.
+
 ---
 
 ### 3.3 Shared UI Activation Layer (Contract + Mapping)
@@ -299,6 +311,19 @@ This is the **only allowed gate**.
 ACTIVATION_DERIVATION_VERSION = 'v1.0.0'
 ```
 
+Source of truth: modules/shared/src/activation
+
+Rules:
+The derivation version is defined and owned by shared
+Backend controllers must not inject or override it
+Audit builders must enforce version consistency
+Any semantic change requires:
+
+Version bump:
+Migration-safe audit compatibility
+Documentation update
+Derivation versioning is non-negotiable for replay safety.
+
 Must be bumped if:
 
 * Verdict rules change
@@ -316,6 +341,37 @@ Audit events are:
 
 They are **not telemetry**.
 They are **historical truth**.
+
+### 8.3 Activation Audit Event Schema (Authoritative)
+
+Activation audit events are **structural records**, not logs.
+
+The table `activation_audit_events` is the **single historical source of truth**
+for why activation decisions were made.
+
+#### Canonical Columns
+
+| Column               | Nullable | Notes |
+|---------------------|----------|-------|
+| `id`                | ❌       | Primary key |
+| `occurred_at`       | ❌       | Evaluation timestamp |
+| `user_id`           | ✅       | Nullable for pre-auth flows |
+| `shop_id`           | ✅       | Nullable until ownership resolved |
+| `entry_channel`     | ❌       | `SHOPIFY_APP` \| `WEB` |
+| `verdict`           | ❌       | Final activation verdict |
+| `reason`            | ✅       | Only for BLOCKED / PENDING |
+| `derivation_version`| ❌       | Must match shared derivation |
+| `payload`           | ❌       | Full evaluation snapshot |
+| `payload_hash`      | ❌       | SHA-256 hash of payload |
+
+#### Guarantees
+
+* Audit rows are **append-only**
+* Columns may be **added**, never removed
+* Existing columns must **never change meaning**
+* Backfills are allowed only via corrective migrations
+
+Audit correctness is a **hard invariant** of FT-1 and FT0.
 
 ---
 
@@ -345,6 +401,11 @@ Any future change must:
    * Derivation version (if applicable)
 
 No exceptions.
+
+4. Comply with database migration rules defined in:
+   `docs/engineering/database-migrations.md`
+
+Activation logic is not complete unless its schema is stable.
 
 ---
 

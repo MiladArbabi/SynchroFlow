@@ -26,11 +26,9 @@ import {
 } from '@lasyncro/shared/activation';
 
 export function buildActivationAuditEvent(input: {
-  derivationVersion: string;
-
   userId: number | null;
   shopId: number | null;
-  entryChannel: 'SHOPIFY_APP' | 'WEB' | null;
+  entryChannel: 'SHOPIFY_APP' | 'WEB';
 
   identity: IdentitySnapshot;
   integrations: IntegrationSnapshot[];
@@ -44,7 +42,7 @@ export function buildActivationAuditEvent(input: {
   const payload = {
     schema: 'activation_audit.v1',
     meta: {
-      derivationVersion: input.derivationVersion,
+      derivationVersion: ACTIVATION_DERIVATION_VERSION,
       evaluatedAt,
     },
     identity: input.identity,
@@ -60,7 +58,33 @@ export function buildActivationAuditEvent(input: {
     .update(JSON.stringify(payload))
     .digest('hex');
 
-    return {
+  // ─────────────────────────────────────────────
+  // Invariant enforcement (DO NOT REMOVE)
+  // ─────────────────────────────────────────────
+
+  if (!ACTIVATION_DERIVATION_VERSION) {
+    throw new Error('[ActivationAudit] ACTIVATION_DERIVATION_VERSION not defined');
+  }
+
+  if (payload.meta.derivationVersion !== ACTIVATION_DERIVATION_VERSION) {
+    throw new Error(
+      '[ActivationAudit] derivationVersion mismatch with builder constant'
+    );
+  }
+
+  if (!payloadHash) {
+    throw new Error('[ActivationAudit] Failed to compute payload_hash');
+  }
+
+  if (!input.entryChannel) {
+    throw new Error('[ActivationAudit] entryChannel must be set');
+  }
+
+  if (!input.verdict?.verdict) {
+    throw new Error('[ActivationAudit] verdict.verdict missing');
+  }
+
+  return {
     event_id: crypto.randomUUID(),
     user_id: input.userId,
     shop_id: input.shopId,

@@ -90,9 +90,11 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     ft0Phase,
   });
 
+  if (!entryChannel) {
+    throw new Error('[Activation] entryChannel missing at controller boundary');
+  }
   // --- Audit (must include surface) ---
   const auditEvent = buildActivationAuditEvent({
-    derivationVersion: ACTIVATION_DERIVATION_VERSION,
     userId,
     shopId,
     entryChannel,
