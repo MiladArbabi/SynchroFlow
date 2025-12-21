@@ -373,6 +373,41 @@ for why activation decisions were made.
 
 Audit correctness is a **hard invariant** of FT-1 and FT0.
 
+The `activation_audit_events` table schema is **finalized at creation time**.
+
+All required audit columns — including but not limited to:
+
+* `derivation_version`
+* `entry_channel`
+* `payload_hash`
+* `payload`
+* `verdict`
+* `reason`
+
+**must be defined in the initial CREATE TABLE migration**.
+
+Any later migration that historically referenced these columns:
+
+* MUST NOT add, alter, or re-declare them
+* MUST be converted to a no-op once schema is stabilized
+* EXISTS solely to preserve migration timeline integrity
+
+#### Rationale
+
+This guarantees:
+
+* Clean bootstrap from an empty database
+* Deterministic audit replay
+* Zero conditional migrations
+* CI / prod parity
+
+#### Hard Rule
+
+> If a column is moved earlier in migration history,  
+> every later migration touching that column **must be neutralized**.
+
+Violating this rule breaks FT-1/FT0 reproducibility.
+
 ---
 
 ## 9. Explicit Non-Goals (DO NOT DO THESE)
@@ -402,7 +437,7 @@ Any future change must:
 
 No exceptions.
 
-4. Comply with database migration rules defined in:
+1. Comply with database migration rules defined in:
    `docs/engineering/database-migrations.md`
 
 Activation logic is not complete unless its schema is stable.

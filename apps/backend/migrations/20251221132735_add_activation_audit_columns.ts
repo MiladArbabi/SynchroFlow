@@ -1,18 +1,15 @@
 //apps/backend/migrations/20251221132735_add_activation_audit_columns.ts
 import { Knex } from 'knex';
 
-export async function up(knex: Knex) {
-  await knex.schema.alterTable('activation_audit_events', (table) => {
-    table.string('derivation_version').notNullable();
-    table.string('entry_channel').notNullable();
-    table.string('payload_hash').notNullable();
-  });
+/**
+ * DEPRECATED
+ * Columns were folded into initial table creation.
+ * This migration is intentionally a no-op.
+ */
+export async function up(_knex: Knex) {
+  // no-op
 }
 
-export async function down(knex: Knex) {
-  await knex.schema.alterTable('activation_audit_events', (table) => {
-    table.dropColumn('derivation_version');
-    table.dropColumn('entry_channel');
-    table.dropColumn('payload_hash');
-  });
+export async function down(_knex: Knex) {
+  // no-op
 }
