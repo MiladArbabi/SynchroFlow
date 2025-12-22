@@ -1,18 +1,15 @@
 import { FT0Phase, IntegrationSnapshot } from './types';
 
 export function deriveFT0Phase(
-  integrations: IntegrationSnapshot[]
+  integrations: IntegrationSnapshot[],
+  ft0Completed: boolean
 ): FT0Phase {
   if (integrations.length === 0) {
     return 'PRE_INTEGRATION';
   }
 
-  const hasCompleted = integrations.some(
-    i => i.syncStatus === 'COMPLETED'
-  );
-
-  if (hasCompleted) {
-    return 'RESOLVED';
+  if (ft0Completed) {
+    return 'READY'; // or READY if you prefer naming
   }
 
   return 'SYNCING';

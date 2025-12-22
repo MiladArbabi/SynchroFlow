@@ -32,15 +32,15 @@ describe('deriveFT0Phase', () => {
     const result = deriveFT0Phase([
       { platform: 'shopify', syncStatus: 'COMPLETED' },
     ]);
-    expect(result).toBe('RESOLVED');
+    expect(result).toBe('READY');
   });
 
-  it('returns RESOLVED when at least one integration is COMPLETED', () => {
+  it('returns READY when at least one integration is COMPLETED', () => {
     const result = deriveFT0Phase([
       { platform: 'shopify', syncStatus: 'IN_PROGRESS' },
       { platform: 'stripe', syncStatus: 'COMPLETED' },
     ]);
-    expect(result).toBe('RESOLVED');
+    expect(result).toBe('READY');
   });
 
   it('returns SYNCING when multiple integrations exist but none are COMPLETED', () => {

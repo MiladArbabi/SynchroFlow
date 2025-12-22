@@ -81,7 +81,7 @@ describe('deriveActivationSurfaceState', () => {
 
     const surface = deriveActivationSurfaceState({
       verdict,
-      ft0Phase: 'RESOLVED',
+      ft0Phase: 'READY',
     });
 
     expect(surface.state).toBe('READY_PENDING_MODULES');
@@ -95,7 +95,7 @@ describe('deriveActivationSurfaceState', () => {
 
     const surface = deriveActivationSurfaceState({
       verdict,
-      ft0Phase: 'RESOLVED',
+      ft0Phase: 'READY',
     });
 
     expect(surface.state).toBe('ACTIVE');

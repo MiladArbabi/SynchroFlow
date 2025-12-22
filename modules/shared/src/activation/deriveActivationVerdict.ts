@@ -5,7 +5,6 @@ import {
   EntitlementSnapshot,
   ActivationVerdict
 } from './types';
-import { deriveFT0Phase } from './deriveFT0Phase';
 
 export function deriveActivationVerdict(input: {
   identity: IdentitySnapshot;
@@ -34,24 +33,13 @@ export function deriveActivationVerdict(input: {
     };
   }
 
-  // 3. FT0
-  const ft0Phase = deriveFT0Phase(integrations);
-
-  if (ft0Phase === 'PRE_INTEGRATION') {
+  // 3. Integration presence (FT0 phase handled elsewhere)
+  if (integrations.length === 0) {
     return {
       verdict: 'BLOCKED',
       reason: 'NO_INTEGRATION',
       explanation: 'No connected platforms found.',
       retryable: true,
-    };
-  }
-
-  if (ft0Phase === 'SYNCING') {
-    return {
-      verdict: 'PENDING',
-      reason: 'FT0_SYNCING',
-      explanation: 'Initial data synchronization is in progress.',
-      retryable: false,
     };
   }
 

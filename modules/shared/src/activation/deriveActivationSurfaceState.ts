@@ -18,14 +18,27 @@ export type ActivationSurfaceState =
   | {
       state: 'SYNC_IN_PROGRESS';
       progress: { phase: 'FT0' };
+      ft0: {
+        phase: 'SYNCING';
+        isBlocking: true;
+      };
     }
   | {
       state: 'READY_PENDING_MODULES';
+      ft0: {
+        phase: 'READY';
+        isBlocking: false;
+      };
     }
   | {
       state: 'ACTIVE';
       primaryAction: { action: 'GO_TO_DASHBOARD' };
+      ft0: {
+        phase: 'READY';
+        isBlocking: false;
+      };
     };
+
 
 export function deriveActivationSurfaceState(input: {
   verdict: ActivationVerdict;
@@ -63,12 +76,20 @@ export function deriveActivationSurfaceState(input: {
       return {
         state: 'SYNC_IN_PROGRESS',
         progress: { phase: 'FT0' },
+        ft0: {
+          phase: 'SYNCING',
+          isBlocking: true,
+        },
       };
     }
 
     if (verdict.reason === 'ENTITLEMENT_PENDING') {
       return {
         state: 'READY_PENDING_MODULES',
+        ft0: {
+          phase: 'READY',
+          isBlocking: false,
+        },
       };
     }
   }
@@ -77,5 +98,9 @@ export function deriveActivationSurfaceState(input: {
   return {
     state: 'ACTIVE',
     primaryAction: { action: 'GO_TO_DASHBOARD' },
+    ft0: {
+      phase: 'READY',
+      isBlocking: false,
+    },
   };
 }

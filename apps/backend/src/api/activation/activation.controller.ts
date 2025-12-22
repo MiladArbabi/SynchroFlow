@@ -30,6 +30,8 @@ import { EntitlementsService } from 'api-src/services/entitlements.service';
 import { buildActivationAuditEvent } from './buildActivationAuditEvent';
 import { buildActivationSurface } from './activation.surface';
 
+import { FT0CompletionService } from 'api-src/services/ft0-completion.service';
+
 export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;
 
@@ -76,7 +78,14 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
   }
 
   // --- Pure derivation ---
-  const ft0Phase = deriveFT0Phase(integrations);
+  let ft0Completed = false;
+
+  if (shopId) {
+    const result = await FT0CompletionService.evaluateAndComplete(shopId);
+    ft0Completed = result.completed;
+  }
+
+  const ft0Phase = deriveFT0Phase(integrations, ft0Completed);
 
   const verdict = deriveActivationVerdict({
     identity,
