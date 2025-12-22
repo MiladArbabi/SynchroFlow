@@ -87,7 +87,6 @@ function StepIcon(props: StepIconProps) {
 
 interface DataSyncingModalProps {
   open: boolean;
-  isBlocking: boolean;
   onClose: () => void;
 }
 
@@ -97,14 +96,11 @@ interface DataSyncingModalProps {
 
 export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
   open,
-  isBlocking,
   onClose,
 }) => {
   
   // Hooks MUST come before guards
   const [displayPercent, setDisplayPercent] = useState<number>(0);
-  
-  const isAllowedToRender = isBlocking;
   
   const activeStep = useMemo(() => {
     if (displayPercent < 34) return 0;
@@ -113,16 +109,7 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
   }, [displayPercent]);
 
   useEffect(() => {
-    if (open && !isBlocking) {
-      onClose();
-    }
-  }, [open, isBlocking, onClose]);
-
-  useEffect(() => {
-    if (!open || !isAllowedToRender) {
-      setDisplayPercent(0);
-      return;
-    }
+    if (!open) return;
 
     const START_AT = 1;
     const TARGET = 99;
@@ -137,21 +124,21 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
 
     const timer = window.setInterval(() => {
       current += delta;
+
+      if (current >= TARGET) {
+        setDisplayPercent(TARGET);
+        window.clearInterval(timer);
+        onClose(); // ✅ CLOSE MODAL HERE
+        return;
+      }
+
       setDisplayPercent(Math.round(current));
     }, TICK_MS);
 
     return () => window.clearInterval(timer);
-    }, [open, isAllowedToRender]);    
+  }, [open, onClose]);
 
-  if (!open || !isAllowedToRender) {
-    return null;
-  }
-
-  console.debug('[DSM.render]', {
-    open,
-    isBlocking,
-    isAllowedToRender,
-  });
+  if (!open) return null;
 
   return (
     <Dialog open={open} disableEscapeKeyDown fullWidth maxWidth="sm">

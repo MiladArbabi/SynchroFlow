@@ -1,9 +1,10 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/DashboardPage.tsx
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 
-import { useIntegration } from 'contexts/IntegrationContext';
+import { axiosInstance } from 'api/axiosConfig';
+
 import { useDashboardState } from 'contexts/DashboardStateContext';
 import { OnboardingUIActionsContext } from 'contexts/OnboardingUIActionsContext';
 
@@ -11,58 +12,62 @@ import { DashboardStateManager } from 'components/DashboardStateManager/Dashboar
 import { WidgetLayoutWithRegistry } from 'components/widgets/WidgetLayoutWithRegistry';
 import { SyncProgressBanner } from 'components/SyncProgressBanner';
 import { OrdersPerMonthBanner } from 'components/OrdersPerMonthBanner';
-
-import { Ft0Phase } from 'types/onboarding';
+import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
+import { DataSyncingModal } from 'components/DataSyncingModal';
 
 interface DashboardPageProps {
   handleSidenavToggle: () => void;
 }
 
+type DashboardPhase =
+  | 'LOADING'
+  | 'FT_MINUS_ONE'
+  | 'FT0_SYNCING'
+  | 'FT0_ANALYZING'
+  | 'FT1_READY';
+
 export const DashboardPage: React.FC<DashboardPageProps> = () => {
   const navigate = useNavigate();
 
-  const {
-    hasIntegrationRecord,
-    syncStatus,
-    isLoading: isIntegrationLoading,
-  } = useIntegration();
+  // --- USER STATE (facts, not orchestration) ---
+  const { userState, isLoading: isUserStateLoading } = useDashboardState();
 
-  const { isLoading: isDashboardStateLoading } = useDashboardState();
-  const wasSyncingRef = useRef(false);
+  // --- ACTIVATION VERDICT (single orchestration truth) ---
+  const { data: activationVerdict, isLoading: isActivationLoading } = useQuery({
+    queryKey: ['activation-verdict'],
+    queryFn: async () => {
+      const res = await axiosInstance.get('/api/v1/activation/verdict');
+      return res.data.activationSurface;
+    },
+    staleTime: 30_000,
+  });
 
-  const hasOpenedSyncModalRef = useRef(false);
+  // --- DASHBOARD PHASE (PURE DERIVATION) ---
+  const dashboardPhase: DashboardPhase = useMemo(() => {
+    if (isActivationLoading || isUserStateLoading) return 'LOADING';
 
-  useEffect(() => {
-    console.debug('[Dashboard.sync.open]', {
-      hasIntegrationRecord,
-      syncStatus,
-    });
-    if (
-      hasIntegrationRecord &&
-      syncStatus !== 'COMPLETED' &&
-      !hasOpenedSyncModalRef.current
-    ) {
-      hasOpenedSyncModalRef.current = true;
-      wasSyncingRef.current = true;
+    const ft0 = activationVerdict?.ft0;
+
+    if (!ft0) return 'FT_MINUS_ONE';
+
+    if (ft0.isBlocking) return 'FT0_SYNCING';
+
+    if (!userState?.user.first_insight_delivered) {
+      return 'FT0_ANALYZING';
     }
-  }, [hasIntegrationRecord, syncStatus]);
 
-  // -------------------------
-  // FT0 PHASE — PURE DERIVATION
-  // -------------------------
-  const ft0Phase: Ft0Phase = useMemo(() => {
-    if (!hasIntegrationRecord) return 'PRE_CONNECT';
-    if (syncStatus !== 'COMPLETED') return 'SYNCING';
-    return 'STEADY_STATE';
-  }, [hasIntegrationRecord, syncStatus]);
+    return 'FT1_READY';
+  }, [
+    activationVerdict,
+    isActivationLoading,
+    isUserStateLoading,
+    userState,
+  ]);
 
-  // -------------------------
-  // UI ACTIONS (PASSIVE)
-  // -------------------------
+  // --- UI ACTIONS (PASSIVE) ---
   const uiActions = useMemo(
     () => ({
       openModal: (id: string) => {
-        // Dashboard never owns modals.
         console.warn(
           '[DashboardPage] openModal called but dashboard is passive:',
           id
@@ -73,30 +78,55 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
     [navigate]
   );
 
-  // -------------------------
-  // CONNECT STORE INTENT
-  // -------------------------
+  // --- CONNECT STORE INTENT ---
   const handleConnectStoreIntent = () => {
-    // Bubble intent upward — App.tsx is the ONLY listener
     window.dispatchEvent(new CustomEvent('ui:connect-store'));
   };
 
-  const forceLoadingSkeleton =
-    isIntegrationLoading || isDashboardStateLoading;
+  // --- LOADING (SKELETONS ONLY) ---
+  if (dashboardPhase === 'LOADING') {
+    return (
+      <OnboardingUIActionsContext.Provider value={uiActions}>
+        <DashboardStateManager
+          children
+          onConnectStore={handleConnectStoreIntent}
+          forceLoadingSkeleton
+        >
+          {/* Skeletons rendered by DashboardStateManager */}
+        </DashboardStateManager>
+      </OnboardingUIActionsContext.Provider>
+    );
+  }
 
-  // -------------------------
-  // RENDER
-  // -------------------------
+  // --- RENDER ---
   return (
     <OnboardingUIActionsContext.Provider value={uiActions}>
-      <DashboardStateManager
-        onConnectStore={handleConnectStoreIntent}
-        forceLoadingSkeleton={forceLoadingSkeleton}
-        ft0Phase={ft0Phase}
-      >
-        <SyncProgressBanner />
-        <OrdersPerMonthBanner />
-        <WidgetLayoutWithRegistry />
+      {/* FT0 emotional buffer — authoritative */}
+      <DataSyncingModal
+        open={dashboardPhase === 'FT0_SYNCING'}
+        onClose={() => {}}
+      />
+
+      <DashboardStateManager onConnectStore={handleConnectStoreIntent}>
+        {dashboardPhase === 'FT_MINUS_ONE' && null}
+
+        {dashboardPhase === 'FT0_ANALYZING' && (
+          <EmptyDashboardState
+            onConnectStore={handleConnectStoreIntent}
+            userState={{
+              shopify_connected: true,
+              first_insight_delivered: false,
+            }}
+          />
+        )}
+
+        {dashboardPhase === 'FT1_READY' && (
+          <>
+            <SyncProgressBanner />
+            <OrdersPerMonthBanner />
+            <WidgetLayoutWithRegistry />
+          </>
+        )}
       </DashboardStateManager>
     </OnboardingUIActionsContext.Provider>
   );

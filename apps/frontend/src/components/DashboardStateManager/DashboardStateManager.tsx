@@ -8,26 +8,22 @@
  * Activation is handled exclusively by ModuleActivationBoundary.
  */
 
-
 import * as React from 'react';
 import { Box, Skeleton } from '@mui/material';
 import { useDashboardState } from '../../contexts/DashboardStateContext';
 import { useIntegration } from '../../contexts/IntegrationContext'; 
 import { EmptyDashboardState } from '../EmptyStates/EmptyDashboardState';
-import { Ft0Phase } from 'types/onboarding';
 
 interface DashboardStateManagerProps {
   onConnectStore: () => void;
   children: React.ReactNode;
   forceLoadingSkeleton?: boolean;
-  ft0Phase: Ft0Phase;
 }
 
 export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   onConnectStore,
   children,
   forceLoadingSkeleton = false,
-  ft0Phase
 }) => {
   const { currentView, userState, isLoading: isStateLoading } = useDashboardState();
   const { isLoading: isSyncLoading, syncStatus } = useIntegration();
@@ -53,26 +49,8 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     'COMPLETING',
   ];
 
-  const isSyncing =
-       inProgressStatuses.includes(syncStatus as string);
-
-
-    const isPostSyncSkeleton = ft0Phase === 'POST_SYNC_SKELETON' || forceLoadingSkeleton;
-
-    // 1) Post-sync skeleton window: this overrides normal loading/layout
-    if (isPostSyncSkeleton) {
-      /* console.log('[DashboardStateManager] Rendering post-sync skeleton.'); */
-      return (
-        <Box sx={{ p: 2 }}>
-          <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
-          <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
-          <Skeleton variant="rectangular" height={200} />
-        </Box>
-      );
-    }
-
   // 2) Normal loading / sync in progress
-  if (isLoading) {
+  if (isLoading || forceLoadingSkeleton) {
     return (
       <Box sx={{ p: 2 }}>
         <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />

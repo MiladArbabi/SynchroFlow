@@ -19,8 +19,6 @@ import { financesActivationConfig } from './configs/finances';
 import { OnboardingUIActionsContext } from 'contexts/OnboardingUIActionsContext';
 import { ActivationSurfaceAdapter } from './ActivationSurfaceAdapter';
 
-import { DataSyncingModal } from 'components/DataSyncingModal';
-
 interface ActivationGateProps {
   moduleId: string;
   children: React.ReactNode;
@@ -74,8 +72,6 @@ export function CommerceActivationGate({
     return null; // or a lightweight skeleton if you want
   }
 
-  const isBlocking = verdict.ft0?.isBlocking === true;
-
   const activation: ActivationUIState =
     mapActivationSurfaceToUIState(
       verdict,
@@ -93,16 +89,6 @@ export function CommerceActivationGate({
 
   return (
     <>
-      {isBlocking && (
-        <DataSyncingModal
-          open
-          isBlocking={true}
-          onClose={() => {
-            // NO-OP: modal auto-closes on phase transition
-          }}
-        />
-      )}
-
       <OnboardingUIActionsContext.Provider value={uiActions}>
         <ModuleActivationBoundary
           activation={activation}
