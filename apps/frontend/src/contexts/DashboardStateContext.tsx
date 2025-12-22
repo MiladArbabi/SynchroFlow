@@ -27,6 +27,7 @@ interface UserState {
 interface DashboardStateContextType {
   userState: UserState | null;
   isLoading: boolean;
+  isResolved: boolean;
   error: Error | null;
   refetchUserState: () => void;
   currentView: 'empty' | 'survival' | 'growth' | 'architect';
@@ -54,9 +55,11 @@ export const DashboardStateProvider: React.FC<DashboardStateProviderProps> = ({ 
     enabled: !!accessToken,
   });
 
+  const isResolved = !isLoading && !!data;
+
   // Determine current view based on user state
   const currentView = (() => {
-    if (isLoading || !data) return 'empty';
+    if (!data) return 'empty';
     if (!data.user.shopify_connected) return 'empty';
     return data.current_mode;
   })();
@@ -64,6 +67,7 @@ export const DashboardStateProvider: React.FC<DashboardStateProviderProps> = ({ 
   const value: DashboardStateContextType = {
     userState: data || null,
     isLoading,
+    isResolved,
     error,
     refetchUserState: refetch,
     currentView,

@@ -3,7 +3,6 @@
 // apps/frontend/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from 'api-types';
-import { usePostHog } from '@posthog/react';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -37,7 +36,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   });
 
   // --- [START POSTHOG HOOK] ---
-  const posthog = usePostHog();
+  /* const posthog = usePostHog(); */
 
   // Re-hydrate session from localStorage on app load
   React.useEffect(() => {
@@ -81,7 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('user', JSON.stringify(user));
 
-    // --- [START ISSUE#442 User Identification] ---
+    /* // --- [START ISSUE#442 User Identification] ---
     if (posthog) {
       posthog.identify(
         user.id.toString(), // Unique ID for the user
@@ -90,9 +89,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           name: `${user.first_name} ${user.last_name}`,
         }
       );
-    }
+    } */
     /* console.log("AuthContext: User logged in and identified."); */
-  }, [posthog]);
+  }, []);
 
   // --- Clear localStorage on logout ---
   const logout = useCallback(() => {
@@ -106,14 +105,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
     
-    // --- [START POSTHOG RESET] ---
+    /* // --- [START POSTHOG RESET] ---
       if (posthog) {
         posthog.reset(); // Resets the user ID
-      }
+      } */
       // --- [END POSTHOG RESET] ---
 
       /* console.log("AuthContext: User logged out and PostHog reset."); */
-    }, [posthog]);
+    }, []);
 
   // This function is for token refresh. It should also update localStorage.
   const setAccessToken = useCallback((token: string | null) => {

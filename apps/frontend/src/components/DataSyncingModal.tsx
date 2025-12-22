@@ -97,28 +97,6 @@ interface DataSyncingModalProps {
 }
 
 // -----------------------------------------------------------------------------
-// Runtime guard
-// -----------------------------------------------------------------------------
-
-function isDataSyncingModalAllowed(
-  ft0Phase: Ft0Phase,
-  syncStatus: string
-): boolean {
-  if (ft0Phase !== 'SYNCING') return false;
-  if (syncStatus === 'COMPLETED') return false;
-
-  return [
-    'PENDING',
-    'SYNCING_PRODUCTS',
-    'SYNCING_ORDERS',
-    'SYNCING_LINE_ITEMS',
-    'SYNCING_INVENTORY',
-    'SYNCING_SHOP',
-    'COMPLETING',
-  ].includes(syncStatus);
-}
-
-// -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
 
@@ -128,13 +106,12 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
   onClose,
 }) => {
   
-  
   const { syncStatus } = useIntegration();
   
   // Hooks MUST come before guards
   const [displayPercent, setDisplayPercent] = useState<number>(0);
   
-  const isAllowedToRender = isDataSyncingModalAllowed(ft0Phase, syncStatus);
+  const isAllowedToRender = ft0Phase === 'SYNCING';
   
   const activeStep = useMemo(() => {
     if (displayPercent < 34) return 0;
@@ -143,15 +120,10 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
   }, [displayPercent]);
 
   useEffect(() => {
-    if (open && !isAllowedToRender) {
-        console.debug('[DSM.auto-close]', {
-        open,
-        ft0Phase,
-        syncStatus,
-      });
+    if (open && ft0Phase !== 'SYNCING') {
       onClose();
     }
-  }, [open, isAllowedToRender, onClose, ft0Phase, syncStatus]);
+  }, [open, ft0Phase, onClose]);
 
   useEffect(() => {
     if (!open || !isAllowedToRender) {
@@ -184,13 +156,6 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
 
     return () => window.clearInterval(timer);
   }, [open, isAllowedToRender, syncStatus]);
-
-  useEffect(() => {
-    if (displayPercent >= 99) {
-      console.debug('[DSM.auto-close:percent]');
-      onClose();
-    }
-  }, [displayPercent, onClose]);
 
   if (!open || !isAllowedToRender) {
     return null;

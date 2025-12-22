@@ -17,8 +17,8 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 // --- BERRY THEME IMPORTS ---
 import { ConfigProvider } from './contexts/ConfigContext.tsx';
 
-// --- [START POSTHOG IMPORT] ---
-import { PostHogProvider } from 'posthog-js/react';
+/* // --- [START POSTHOG IMPORT] ---
+import { PostHogProvider } from 'posthog-js/react'; */
 
 // --- REACT-INTL IMPORT ---
 import { IntlProvider } from 'react-intl';
@@ -65,19 +65,19 @@ const container = document.getElementById("root");
 if (!container) throw new Error("Failed to find the root element");
 const root = createRoot(container);
 
-// --- [START POSTHOG OPTIONS] ---
-const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
+/* // --- [START POSTHOG OPTIONS] ---
+const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY; */
 
 const options = {
-  api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+  /* api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST, */
   capture_exceptions: true, // This enables capturing exceptions using Error Tracking
   debug: import.meta.env.MODE === 'development',
   capture_pageview: true, // Automatically captures page views
-  loaded: (posthog: any) => {
+  /* loaded: (posthog: any) => {
     if (!posthogKey) {
       console.warn("PostHog API key is not set. Analytics are disabled.");
     }
-  },
+  }, */
 };
 
 // --- BASIC INTL CONFIG ---
@@ -100,10 +100,10 @@ const queryClient = new QueryClient({
 root.render(
   <StrictMode>
     {/* 1. PostHog (Analytics) */}
-    <PostHogProvider
+    {/* <PostHogProvider
       apiKey={posthogKey}
       options={options}
-    >
+    > */}
       {/* 2. ConfigProvider (Berry Theme) */}
       <ConfigProvider>
         {/* 3. React Query (Data Fetching) */}
@@ -135,7 +135,7 @@ root.render(
           <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
       </ConfigProvider>
-    </PostHogProvider>
+    {/* </PostHogProvider> */}
   </StrictMode>
 );
 

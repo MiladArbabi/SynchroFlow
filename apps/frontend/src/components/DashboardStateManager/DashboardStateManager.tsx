@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/components/DashboardStateManager/DashboardStateManager.tsx
 
 /**
@@ -39,7 +40,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     : undefined;
 
   // Combined "real" loading (excluding the post-sync skeleton flag)
-  const isLoading = isStateLoading || isSyncLoading;
+  const isLoading = isStateLoading;
 
   // Sync is actively running *only* when we actually have an integration.
   const inProgressStatuses: string[] = [
@@ -58,16 +59,6 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
 
     const isPostSyncSkeleton = ft0Phase === 'POST_SYNC_SKELETON' || forceLoadingSkeleton;
 
-    /* console.log('[DashboardStateManager] render decision', {
-      currentView,
-      isStateLoading,
-      isSyncLoading,
-      forceLoadingSkeleton,
-      ft0Phase,
-      isSyncing,
-      isPostSyncSkeleton,
-    }); */
-
     // 1) Post-sync skeleton window: this overrides normal loading/layout
     if (isPostSyncSkeleton) {
       /* console.log('[DashboardStateManager] Rendering post-sync skeleton.'); */
@@ -81,8 +72,18 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     }
 
   // 2) Normal loading / sync in progress
-  if (isLoading || isSyncing) {
-    /* console.log('[DashboardStateManager] Rendering EmptyDashboardState (loading/syncing).'); */
+  if (isLoading) {
+    return (
+      <Box sx={{ p: 2 }}>
+        <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={200} />
+      </Box>
+    );
+  }
+
+  // 3) No integration yet → show empty dashboard (WELCOME + CTA)
+  if (!userState?.user.shopify_connected) {
     return (
       <EmptyDashboardState
         onConnectStore={onConnectStore}
@@ -90,22 +91,6 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
       />
     );
   }
-
-  // 3) If activation allowed rendering but view is empty,
-  // we show a skeleton while widgets hydrate.
-  if (currentView === 'empty') {
-    // We *do* have integrations, so "empty" is just a momentary transition.
-    /* console.log(
-      '[DashboardStateManager] Rendering skeleton for integrated shop with empty view.'
-    ); */
-    return (
-    <Box sx={{ p: 2 }}>
-      <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
-      <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
-      <Skeleton variant="rectangular" height={200} />
-    </Box>
-  );
-}
 
   // 4) Fully ready: render the actual dashboard widgets
   /* console.log('[DashboardStateManager] Rendering dashboard children (widgets).'); */
