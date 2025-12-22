@@ -30,9 +30,6 @@ import AnalyticsPage from "pages/AnalyticsPage";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
 
 import { DashboardPage } from "pages/DashboardPage";
-import { DataSyncingModal } from 'components/DataSyncingModal';
-import { useIntegration } from 'contexts/IntegrationContext';
-import { Ft0Phase } from 'types/onboarding';
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -137,32 +134,6 @@ class IntlErrorBoundary extends React.Component<
   }
 }
 
-function AppShell() {
-  const { hasIntegrationRecord, syncStatus } = useIntegration();
-  const [isSyncModalOpen, setIsSyncModalOpen] = React.useState(false);
-
-  const ft0Phase: Ft0Phase =
-    !hasIntegrationRecord
-      ? 'PRE_CONNECT'
-      : syncStatus !== 'COMPLETED'
-        ? 'SYNCING'
-        : 'STEADY_STATE';
-
-  React.useEffect(() => {
-    if (ft0Phase === 'SYNCING') {
-      setIsSyncModalOpen(true);
-    }
-  }, [ft0Phase]);
-
-  return (
-    <DataSyncingModal
-      open={isSyncModalOpen}
-      ft0Phase={ft0Phase}
-      onClose={() => setIsSyncModalOpen(false)}
-    />
-  );
-}
-
 export default function App() {
   const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
 
@@ -195,7 +166,6 @@ export default function App() {
                       />
                       
                     <IntlErrorBoundary>
-                     <AppShell />
                       <Routes>
                         {/* Public auth routes */}
                         {routes

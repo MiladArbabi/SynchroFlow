@@ -32,9 +32,6 @@ import {
 import { styled } from '@mui/material/styles';
 import Check from '@mui/icons-material/Check';
 
-import { useIntegration } from 'contexts/IntegrationContext';
-import { Ft0Phase } from 'types/onboarding';
-
 // -----------------------------------------------------------------------------
 // Emotional steps (NON-TECHNICAL)
 // -----------------------------------------------------------------------------
@@ -90,9 +87,7 @@ function StepIcon(props: StepIconProps) {
 
 interface DataSyncingModalProps {
   open: boolean;
-  ft0Phase: Ft0Phase;
-
-  /** Required by parent, intentionally unused */
+  isBlocking: boolean;
   onClose: () => void;
 }
 
@@ -102,16 +97,14 @@ interface DataSyncingModalProps {
 
 export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
   open,
-  ft0Phase,
+  isBlocking,
   onClose,
 }) => {
-  
-  const { syncStatus } = useIntegration();
   
   // Hooks MUST come before guards
   const [displayPercent, setDisplayPercent] = useState<number>(0);
   
-  const isAllowedToRender = ft0Phase === 'SYNCING';
+  const isAllowedToRender = isBlocking;
   
   const activeStep = useMemo(() => {
     if (displayPercent < 34) return 0;
@@ -120,10 +113,10 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
   }, [displayPercent]);
 
   useEffect(() => {
-    if (open && ft0Phase !== 'SYNCING') {
+    if (open && !isBlocking) {
       onClose();
     }
-  }, [open, ft0Phase, onClose]);
+  }, [open, isBlocking, onClose]);
 
   useEffect(() => {
     if (!open || !isAllowedToRender) {
@@ -144,38 +137,21 @@ export const DataSyncingModal: React.FC<DataSyncingModalProps> = ({
 
     const timer = window.setInterval(() => {
       current += delta;
-
-      if (current >= TARGET) {
-        console.debug('[DSM.progress.done]', { syncStatus });
-        current = TARGET;
-        window.clearInterval(timer);
-      }
-
       setDisplayPercent(Math.round(current));
     }, TICK_MS);
 
     return () => window.clearInterval(timer);
-  }, [open, isAllowedToRender, syncStatus]);
+    }, [open, isAllowedToRender]);    
 
   if (!open || !isAllowedToRender) {
     return null;
   }
 
-  if (import.meta.env.MODE !== 'production') {
-    console.debug('[DataSyncingModal.guard]', {
-      open,
-      ft0Phase,
-      syncStatus,
-      allowed: isAllowedToRender,
-    });
-  }
-
-    console.debug('[DSM.render]', {
-      open,
-      ft0Phase,
-      syncStatus,
-      isAllowedToRender,
-    });
+  console.debug('[DSM.render]', {
+    open,
+    isBlocking,
+    isAllowedToRender,
+  });
 
   return (
     <Dialog open={open} disableEscapeKeyDown fullWidth maxWidth="sm">

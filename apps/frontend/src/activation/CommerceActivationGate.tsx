@@ -19,6 +19,8 @@ import { financesActivationConfig } from './configs/finances';
 import { OnboardingUIActionsContext } from 'contexts/OnboardingUIActionsContext';
 import { ActivationSurfaceAdapter } from './ActivationSurfaceAdapter';
 
+import { DataSyncingModal } from 'components/DataSyncingModal';
+
 interface ActivationGateProps {
   moduleId: string;
   children: React.ReactNode;
@@ -68,10 +70,11 @@ export function CommerceActivationGate({
     },
   }), []);
 
-
   if (isLoading || !verdict) {
     return null; // or a lightweight skeleton if you want
   }
+
+  const isBlocking = verdict.ft0?.isBlocking === true;
 
   const activation: ActivationUIState =
     mapActivationSurfaceToUIState(
@@ -89,18 +92,30 @@ export function CommerceActivationGate({
   }
 
   return (
-    <OnboardingUIActionsContext.Provider value={uiActions}>
-      <ModuleActivationBoundary
-        activation={activation}
-        renderBlocked={(surface) => (
-          <ActivationSurfaceAdapter
-            surface={surface}
-            onAction={(actionId) => uiActions.openModal(actionId)}
-          />
-        )}
-      >
-        {children}
-      </ModuleActivationBoundary>
-    </OnboardingUIActionsContext.Provider>
+    <>
+      {isBlocking && (
+        <DataSyncingModal
+          open
+          isBlocking={true}
+          onClose={() => {
+            // NO-OP: modal auto-closes on phase transition
+          }}
+        />
+      )}
+
+      <OnboardingUIActionsContext.Provider value={uiActions}>
+        <ModuleActivationBoundary
+          activation={activation}
+          renderBlocked={(surface) => (
+            <ActivationSurfaceAdapter
+              surface={surface}
+              onAction={(actionId) => uiActions.openModal(actionId)}
+            />
+          )}
+        >
+          {children}
+        </ModuleActivationBoundary>
+      </OnboardingUIActionsContext.Provider>
+    </>
   );
 }

@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/index.tsx
 import React, { ReactNode, useRef, useEffect, useState } from "react"; 
-import { useSearchParams } from 'react-router-dom';
 import { axiosInstance } from "api/axiosConfig";
 // --- PANEL IMPORTS ---
 import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; // Import ImperativePanelHandle
@@ -14,13 +13,11 @@ import Customization from "layout/Customization";
 
 // --- MODAL/BANNER IMPORTS ---
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
-import { DataSyncingModal } from 'components/DataSyncingModal';
 
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
 
 import { ToastProvider } from 'contexts/ToastContext';
-import { Ft0Phase } from 'types/onboarding';
 
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
@@ -55,59 +52,20 @@ const AppLayout = ({
 
   // --- STATE LIFTED FROM DASHBOARD ---
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  const [isSyncingModalOpen, setIsSyncingModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false); 
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // For phase transition logs (not just snapshots)
-  const ft0Phase: Ft0Phase = (() => {
-    // Initial connect flow
-    if (isConnectModalOpen) {
-      return 'CONNECTING';
-    }
-
-    // Syncing modal visible → FT-0 syncing
-    if (isSyncingModalOpen) {
-      return 'SYNCING';
-    }
-
-    // Connected but no modal → steady
-    if (isConnected) {
-      return 'STEADY_STATE';
-    }
-
-    // Default
-    return 'PRE_CONNECT';
-  })();
 
   // --- LOGIC LIFTED FROM DASHBOARD ---
   useEffect(() => {
-    // 1. Check for the success param FIRST
-    if (searchParams.get('connect') === 'success') {
-      setIsSyncingModalOpen(true);
-      setIsConnected(true); // They just connected
-      setSearchParams({}, { replace: true }); // Clean the URL
+    const fetchLayout = async () => {
+      try {
+        await axiosInstance.get('/api/v1/layouts/dashboard');
+        setIsConnected(true);
+      } catch {
+        setIsConnected(false);
+      }
+    };
 
-      // We still fetch the layout, but we know they are connected
-      axiosInstance.get('/api/v1/layouts/dashboard').catch(() => {
-        console.log('No saved layout found, but connection was successful.');
-      });
-    } else {
-      // 2. Normal flow (no success param)
-      const fetchLayout = async () => {
-        try {
-          await axiosInstance.get('/api/v1/layouts/dashboard');
-          // If this succeeds, they have a layout, so they must be connected.
-          setIsConnected(true);
-        } catch (error) {
-          // 404 error means no layout, which we assume means no connection.
-          setIsConnected(false);
-        }
-      };
-      fetchLayout();
-    }
-    // We only want this to run on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchLayout();
   }, []);
 
   // --- MODAL HANDLERS LIFTED FROM DASHBOARD ---
@@ -115,11 +73,6 @@ const AppLayout = ({
     setIsConnectModalOpen(false);
     // Simple reload to refresh all data.
     window.location.reload();
-  };
-
-  const handleSyncModalClose = () => {
-    setIsSyncingModalOpen(false);
-    // We'll refetch or reload here in the future
   };
 
   // --- EFFECT TO CONTROL PANEL ---
@@ -279,12 +232,6 @@ const AppLayout = ({
               isOpen={isConnectModalOpen}
               onClose={handleModalClose}
             />
-            <DataSyncingModal
-              open={isSyncingModalOpen}
-              onClose={handleSyncModalClose}
-              ft0Phase={ft0Phase}
-            />
-
           </Box>
       </ToastProvider>
   );
