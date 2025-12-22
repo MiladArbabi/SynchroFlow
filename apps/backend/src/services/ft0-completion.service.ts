@@ -6,15 +6,6 @@ export class FT0CompletionService {
     shopId: number
   ): Promise<{ completed: boolean; alreadyCompleted?: boolean }> {
 
-    // 1. Check existing FT0 state (idempotency)
-    const existing = await db('ft0_state')
-      .where({ shop_id: shopId })
-      .first();
-
-    if (existing?.status === 'COMPLETED') {
-      return { completed: true, alreadyCompleted: true };
-    }
-
     // 2. Integration must exist
     const integration = await db('integrations')
       .where({ shop_id: shopId })
@@ -62,19 +53,42 @@ export class FT0CompletionService {
     }
 
     // 6. Complete FT0 (single authoritative write)
-    await db('ft0_state').insert({
-      shop_id: shopId,
-      status: 'COMPLETED',
-      completed_at: db.fn.now(),
-      completion_reason: {
-        integration: true,
-        syncCompleted: true,
-        orders: orderCount,
-        products: productCount,
-        firstInsightDelivered: true,
-      },
-    });
+    try {
+      const inserted = await db('ft0_state')
+        .insert({
+          shop_id: shopId,
+          status: 'COMPLETED',
+          completed_at: db.fn.now(),
+          completion_reason: {
+            integration: true,
+            syncCompleted: true,
+            orders: orderCount,
+            products: productCount,
+            firstInsightDelivered: true,
+          },
+        })
+        .onConflict('shop_id')
+        .ignore()
+        .returning('shop_id');
 
-    return { completed: true };
+      // If nothing was inserted, FT0 already existed
+      if (inserted.length === 0) {
+        return { completed: true, alreadyCompleted: true };
+      }
+
+      return { completed: true };
+
+    } catch (err) {
+      // Defensive fallback (should never happen after uniqueness)
+      const existing = await db('ft0_state')
+        .where({ shop_id: shopId })
+        .first();
+
+      if (existing?.status === 'COMPLETED') {
+        return { completed: true, alreadyCompleted: true };
+      }
+
+      throw err;
+    }
   }
 }
