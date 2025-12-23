@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/DashboardPage.tsx
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
@@ -29,6 +29,18 @@ type DashboardPhase =
 export const DashboardPage: React.FC<DashboardPageProps> = () => {
   const navigate = useNavigate();
 
+  /**
+   * FT0-A UX latch
+   * ----------------
+   * Guarantees DataSyncingModal is shown once per session
+   * even if backend FT0 completes instantly.
+   *
+   * This is a UX concern — NOT backend truth.
+   */
+  const [hasShownFT0Syncing, setHasShownFT0Syncing] = useState<boolean>(() => {
+    return sessionStorage.getItem('ft0-syncing-shown') === 'true';
+  });
+
   // --- USER STATE (facts, not orchestration) ---
   const { userState, isLoading: isUserStateLoading } = useDashboardState();
 
@@ -50,6 +62,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
 
     if (!ft0) return 'FT_MINUS_ONE';
 
+    // 🔒 FT0-A must render once, regardless of backend timing
+    if (!hasShownFT0Syncing) {
+      return 'FT0_SYNCING';
+    }
+
     if (ft0.isBlocking) return 'FT0_SYNCING';
 
     if (!userState?.user.first_insight_delivered) {
@@ -58,11 +75,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
 
     return 'FT1_READY';
   }, [
-    activationVerdict,
-    isActivationLoading,
-    isUserStateLoading,
-    userState,
+    activationVerdict?.ft0, 
+    hasShownFT0Syncing, 
+    isActivationLoading, 
+    isUserStateLoading, 
+    userState?.user.first_insight_delivered
   ]);
+
+  const handleFT0ModalClose = () => {
+    sessionStorage.setItem('ft0-syncing-shown', 'true');
+    setHasShownFT0Syncing(true);
+  };
 
   // --- UI ACTIONS (PASSIVE) ---
   const uiActions = useMemo(
@@ -104,7 +127,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
       {/* FT0 emotional buffer — authoritative */}
       <DataSyncingModal
         open={dashboardPhase === 'FT0_SYNCING'}
-        onClose={() => {}}
+        onClose={handleFT0ModalClose}
       />
 
       <DashboardStateManager onConnectStore={handleConnectStoreIntent}>

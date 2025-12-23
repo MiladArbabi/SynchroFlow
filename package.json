@@ -25,8 +25,7 @@
     "test": "npm run test:setup && jest --runInBand --verbose --forceExit",
     "test:e2e": "npx playwright test --config=playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=playwright.config.ts --ui",
-    "storybook": "npm run storybook -w ui",
-    "dev:full": "npm run dev:setup && npm run dev"
+    "storybook": "npm run storybook -w ui"
   },
   "keywords": [],
   "author": "",
