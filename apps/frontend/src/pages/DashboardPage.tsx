@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/DashboardPage.tsx
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
@@ -43,6 +44,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
 
   // --- USER STATE (facts, not orchestration) ---
   const { userState, isLoading: isUserStateLoading } = useDashboardState();
+  const [hasShownFT0Analyzing, setHasShownFT0Analyzing] = useState<boolean>(() => {
+    return sessionStorage.getItem('ft0-analyzing-shown') === 'true';
+  });
 
   // --- ACTIVATION VERDICT (single orchestration truth) ---
   const { data: activationVerdict, isLoading: isActivationLoading } = useQuery({
@@ -62,25 +66,32 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
 
     if (!ft0) return 'FT_MINUS_ONE';
 
-    // 🔒 FT0-A must render once, regardless of backend timing
+    // FT0-A: frontend-latched emotional buffer
     if (!hasShownFT0Syncing) {
       return 'FT0_SYNCING';
     }
 
-    if (ft0.isBlocking) return 'FT0_SYNCING';
-
-    if (!userState?.user.first_insight_delivered) {
+    // 🔑 FT0-B must be shown at least once
+    if (!hasShownFT0Analyzing) {
       return 'FT0_ANALYZING';
     }
 
     return 'FT1_READY';
-  }, [
-    activationVerdict?.ft0, 
-    hasShownFT0Syncing, 
-    isActivationLoading, 
-    isUserStateLoading, 
-    userState?.user.first_insight_delivered
-  ]);
+  }, [isActivationLoading, isUserStateLoading, activationVerdict?.ft0, hasShownFT0Syncing, hasShownFT0Analyzing]);
+
+  useEffect(() => {
+    if (dashboardPhase !== 'FT0_ANALYZING') return;
+
+    const MIN_VISIBLE_MS = 2000;
+
+    const t = setTimeout(() => {
+      sessionStorage.setItem('ft0-analyzing-shown', 'true');
+      setHasShownFT0Analyzing(true);
+    }, MIN_VISIBLE_MS);
+
+    return () => clearTimeout(t);
+  }, [dashboardPhase]);
+
 
   const handleFT0ModalClose = () => {
     sessionStorage.setItem('ft0-syncing-shown', 'true');
