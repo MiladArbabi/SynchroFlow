@@ -25,7 +25,7 @@ export type EntitlementSnapshot = {
   enabled: boolean;
 };
 
-export type FT0Phase = 'PRE_INTEGRATION' | 'SYNCING' | 'READY';
+export type FT0Phase = 'PRE_INTEGRATION' | 'SYNCING' | 'COMPLETED';
 
 export type ActivationVerdict =
   | {

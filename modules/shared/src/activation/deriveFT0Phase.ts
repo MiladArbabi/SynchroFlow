@@ -9,7 +9,7 @@ export function deriveFT0Phase(
   }
 
   if (ft0Completed) {
-    return 'READY'; // or READY if you prefer naming
+    return 'COMPLETED'; 
   }
 
   return 'SYNCING';

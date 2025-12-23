@@ -1,5 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/DashboardPage.tsx
+/**
+ * IMPORTANT ARCHITECTURAL INVARIANT
+ * --------------------------------
+ * Dashboard FT phase MUST be derived from activationSurface.ft0.phase.
+ *
+ * - first_insight_delivered is a UX/content signal ONLY
+ * - It must NEVER promote FT0 → FT1
+ * - Violating this will desync dashboard vs modules
+ */
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -15,6 +25,8 @@ import { SyncProgressBanner } from 'components/SyncProgressBanner';
 import { OrdersPerMonthBanner } from 'components/OrdersPerMonthBanner';
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import { DataSyncingModal } from 'components/DataSyncingModal';
+import { DashboardSkeletons } from 'components/skeletons/DashboardSkeletons';
+import { useFT0Promotion } from 'activation/useFT0Promotion';
 
 interface DashboardPageProps {
   handleSidenavToggle: () => void;
@@ -58,26 +70,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
     staleTime: 30_000,
   });
 
+  useFT0Promotion(activationVerdict?.ft0?.phase);
+
   // --- DASHBOARD PHASE (PURE DERIVATION) ---
   const dashboardPhase: DashboardPhase = useMemo(() => {
     if (isActivationLoading || isUserStateLoading) return 'LOADING';
 
-    const ft0 = activationVerdict?.ft0;
+    const ft0Phase = activationVerdict?.ft0?.phase;
 
-    if (!ft0) return 'FT_MINUS_ONE';
+    if (!ft0Phase) return 'FT_MINUS_ONE';
 
     // FT0-A: frontend-latched emotional buffer
     if (!hasShownFT0Syncing) {
       return 'FT0_SYNCING';
     }
 
-    // 🔑 FT0-B must be shown at least once
-    if (!hasShownFT0Analyzing) {
+    // FT0-B: backend truth
+    if (ft0Phase !== 'COMPLETED') {
       return 'FT0_ANALYZING';
     }
 
+    // FT1: backend truth only
     return 'FT1_READY';
-  }, [isActivationLoading, isUserStateLoading, activationVerdict?.ft0, hasShownFT0Syncing, hasShownFT0Analyzing]);
+  }, [
+    isActivationLoading,
+    isUserStateLoading,
+    activationVerdict?.ft0?.phase,
+    hasShownFT0Syncing,
+  ]);
 
   useEffect(() => {
     if (dashboardPhase !== 'FT0_ANALYZING') return;
@@ -155,11 +175,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
         )}
 
         {dashboardPhase === 'FT1_READY' && (
-          <>
-            <SyncProgressBanner />
-            <OrdersPerMonthBanner />
-            <WidgetLayoutWithRegistry />
-          </>
+          userState?.user.first_insight_delivered ? (
+            <>
+              <SyncProgressBanner />
+              <OrdersPerMonthBanner />
+              <WidgetLayoutWithRegistry />
+            </>
+          ) : (
+            <DashboardSkeletons />
+          )
         )}
       </DashboardStateManager>
     </OnboardingUIActionsContext.Provider>

@@ -26,7 +26,7 @@ export type ActivationSurfaceState =
   | {
       state: 'READY_PENDING_MODULES';
       ft0: {
-        phase: 'READY';
+        phase: 'COMPLETED';
         isBlocking: false;
       };
     }
@@ -34,7 +34,7 @@ export type ActivationSurfaceState =
       state: 'ACTIVE';
       primaryAction: { action: 'GO_TO_DASHBOARD' };
       ft0: {
-        phase: 'READY';
+        phase: 'COMPLETED';
         isBlocking: false;
       };
     };
@@ -87,7 +87,7 @@ export function deriveActivationSurfaceState(input: {
       return {
         state: 'READY_PENDING_MODULES',
         ft0: {
-          phase: 'READY',
+          phase: 'COMPLETED',
           isBlocking: false,
         },
       };
@@ -99,7 +99,7 @@ export function deriveActivationSurfaceState(input: {
     state: 'ACTIVE',
     primaryAction: { action: 'GO_TO_DASHBOARD' },
     ft0: {
-      phase: 'READY',
+      phase: 'COMPLETED',
       isBlocking: false,
     },
   };

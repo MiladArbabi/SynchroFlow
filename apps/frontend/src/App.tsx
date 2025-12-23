@@ -30,6 +30,7 @@ import AnalyticsPage from "pages/AnalyticsPage";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
 
 import { DashboardPage } from "pages/DashboardPage";
+import { FT0PromotionListener } from 'activation/FT0PromotionListener';
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -156,6 +157,9 @@ export default function App() {
 
         <DashboardStateProvider>
           <IntegrationProvider>
+
+           <FT0PromotionListener />
+           
             <ThemeCustomization>
               <EntitlementsProvider>
                 <SpecterConfigProvider>
