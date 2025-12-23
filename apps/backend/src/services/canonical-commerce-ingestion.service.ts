@@ -4,6 +4,8 @@ import type {
   CanonicalOrder,
   CanonicalOrderLineItem,
 } from '@lasyncro/shared';
+import type { FT0CanonicalOrder } 
+  from '@lasyncro/shared/contracts/ft0-canonical-order';
 
 /**
  * Service responsible for persisting canonical commerce entities.
@@ -14,7 +16,9 @@ import type {
  * - Wraps DB errors into a friendly error message for callers
  */
 export class CanonicalCommerceIngestionService {
-  async insertCanonicalOrder(canonicalOrder: CanonicalOrder): Promise<void> {
+  async insertCanonicalOrder(
+    canonicalOrder: FT0CanonicalOrder
+  ): Promise<void> {
     // Basic validation
     if (!canonicalOrder || !canonicalOrder.id || !canonicalOrder.shopId) {
       throw new Error('Invalid canonical order: missing id or shopId');

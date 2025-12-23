@@ -4,6 +4,10 @@ import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import db from '../db';
 import { Knex } from 'knex';
+import CanonicalCommerceIngestionService
+  from './canonical-commerce-ingestion.service';
+import { mapShopifyOrderNodeToCanonical }
+  from './mappers/shopify-to-canonical-order';
 
 // Add required scopes for Protected Customer Data
 const REQUIRED_SCOPES = [
@@ -110,6 +114,14 @@ export const performInitialSync = async (
     console.log(`[ShopifyService] Making GraphQL request to Shopify...`);
     const response = await client.request(query);
     const data = response.data as any;
+
+    if (data?.orders?.edges?.length > 0) {
+      console.log(
+        '[DEBUG] Sample Shopify order node:',
+        JSON.stringify(data.orders.edges[0].node, null, 2)
+      );
+    }
+
     console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data));
 
     const totalProducts = data.products?.edges.length || 0;
@@ -145,7 +157,15 @@ export const performInitialSync = async (
         console.log(`[ShopifyService] Syncing ${data.orders.edges.length} orders...`);
         await syncOrders(trx, shopId, data.orders.edges);
 
-        // --- ADD THIS BLOCK ---
+        const canonicalIngestion = new CanonicalCommerceIngestionService();
+
+        for (const { node } of data.orders.edges) {
+          const canonicalOrder =
+            mapShopifyOrderNodeToCanonical(node, shopId);
+
+          await canonicalIngestion.insertCanonicalOrder(canonicalOrder);
+        }
+
         await trx('integrations').where({ id: integrationId }).update({
           sync_status: 'SYNCING_LINE_ITEMS',
           sync_progress_current: totalProducts + totalOrders,

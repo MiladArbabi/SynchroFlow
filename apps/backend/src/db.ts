@@ -7,7 +7,7 @@ const knexfile = require('../knexfile.js') as { [key: string]: Knex.Config };
 // Define the shape of the config object
 type KnexConfig = { [key: string]: Knex.Config };
 const config: KnexConfig = knexfile;
-
+   
 // 1. Determine the environment
 // The Dockerfile sets this to "production" on Fly.io
 const environment = process.env.NODE_ENV || 'development';

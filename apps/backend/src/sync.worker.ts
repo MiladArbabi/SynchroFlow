@@ -5,6 +5,9 @@ import CryptoJS from 'crypto-js';
 import { performInitialSync } from './services/shopify.service';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service';
 
+import { FirstInsightService } from './services/first-insight.service';
+import { FT0CompletionService } from './services/ft0-completion.service';
+
 // --- Helper function for decryption ---
 const decryptToken = (encryptedToken: string): string => {
   const secret = process.env.ENCRYPTION_KEY;
@@ -126,6 +129,13 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
      }
      
     console.log(`[sync.worker] Sync job COMPLETED for ${integrationId}`);
+
+    // 🔑 FIRST INSIGHT (idempotent)
+    await FirstInsightService.computeAndPersist(integration.shop_id);
+
+    // 🔑 FT0 COMPLETION (depends on first insight)
+    await FT0CompletionService.evaluateAndComplete(integration.shop_id);
+
     syncChannel.ack(msg as any);
 
   } catch (error) {

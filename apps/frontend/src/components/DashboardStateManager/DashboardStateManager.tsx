@@ -1,17 +1,21 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/components/DashboardStateManager/DashboardStateManager.tsx
 
 /**
- * IMPORTANT:
- * This component assumes activation has already been resolved.
- * It must never gate content based on integration or activation state.
- * Activation is handled exclusively by ModuleActivationBoundary.
+ * HARD GUARANTEE:
+ * This component MUST NEVER render dashboard widgets
+ * unless the user has fully exited FT0.
+ *
+ * Conditions required to render children:
+ * - shopify_connected === true
+ * - first_insight_delivered === true
+ *
+ * Activation orchestration lives elsewhere.
+ * This component is a safety gate.
  */
 
 import * as React from 'react';
 import { Box, Skeleton } from '@mui/material';
 import { useDashboardState } from '../../contexts/DashboardStateContext';
-import { useIntegration } from '../../contexts/IntegrationContext'; 
 import { EmptyDashboardState } from '../EmptyStates/EmptyDashboardState';
 
 interface DashboardStateManagerProps {
@@ -25,8 +29,7 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   children,
   forceLoadingSkeleton = false,
 }) => {
-  const { currentView, userState, isLoading: isStateLoading } = useDashboardState();
-  const { isLoading: isSyncLoading, syncStatus } = useIntegration();
+  const { userState, isLoading } = useDashboardState();
 
   const emptyStateUserData = userState
     ? {
@@ -35,21 +38,9 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
       }
     : undefined;
 
-  // Combined "real" loading (excluding the post-sync skeleton flag)
-  const isLoading = isStateLoading;
-
-  // Sync is actively running *only* when we actually have an integration.
-  const inProgressStatuses: string[] = [
-    'PENDING',
-    'SYNCING_PRODUCTS',
-    'SYNCING_ORDERS',
-    'SYNCING_LINE_ITEMS',
-    'SYNCING_INVENTORY',
-    'SYNCING_SHOP',
-    'COMPLETING',
-  ];
-
-  // 2) Normal loading / sync in progress
+  // ---------------------------------------------------------------------------
+  // 1) Loading or forced skeleton → NEVER render children
+  // ---------------------------------------------------------------------------
   if (isLoading || forceLoadingSkeleton) {
     return (
       <Box sx={{ p: 2 }}>
@@ -60,7 +51,9 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     );
   }
 
-  // 3) No integration yet → show empty dashboard (WELCOME + CTA)
+  // ---------------------------------------------------------------------------
+  // 2) No integration yet → FT-1
+  // ---------------------------------------------------------------------------
   if (!userState?.user.shopify_connected) {
     return (
       <EmptyDashboardState
@@ -70,8 +63,21 @@ export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
     );
   }
 
-  // 4) Fully ready: render the actual dashboard widgets
-  /* console.log('[DashboardStateManager] Rendering dashboard children (widgets).'); */
+  // ---------------------------------------------------------------------------
+  // 3) FT0 ANALYZING → ABSOLUTE BLOCK
+  // ---------------------------------------------------------------------------
+  if (!userState.user.first_insight_delivered) {
+    return (
+      <EmptyDashboardState
+        onConnectStore={onConnectStore}
+        userState={emptyStateUserData}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4) FT1 → SAFE TO RENDER DASHBOARD
+  // ---------------------------------------------------------------------------
   return (
     <Box sx={{ p: 2 }}>
       {children}
