@@ -7,6 +7,8 @@ export class FT0CompletionService {
     shopId: number
   ): Promise<{ completed: boolean; alreadyCompleted?: boolean }> {
 
+    console.log('[FT0Completion] evaluateAndComplete called for shopId:', shopId);
+
     // 2. Integration must exist
     const integration = await db('integrations')
       .where({ shop_id: shopId })
@@ -31,16 +33,9 @@ export class FT0CompletionService {
         .count<{ count: string }>('* as count')
         .first();
 
-        const productsRow = await db('canonical_products')
-        .where({ shop_id: shopId })
-        .count<{ count: string }>('* as count')
-        .first();
-
-
     const orderCount = Number(ordersRow?.count ?? 0);
-    const productCount = Number(productsRow?.count ?? 0);
 
-    if (orderCount < 1 || productCount < 1) {
+    if (orderCount < 1) {
       return { completed: false };
     }
 
@@ -53,6 +48,8 @@ export class FT0CompletionService {
       return { completed: false };
     }
 
+    console.log('[FT0Completion] Preconditions passed, writing ft0_state for shopId:', shopId);
+
     // 6. Complete FT0 (single authoritative write)
     try {
       const inserted = await db('ft0_state')
@@ -64,7 +61,6 @@ export class FT0CompletionService {
           integration: true,
           syncCompleted: true,
           orders: orderCount,
-          products: productCount,
           firstInsightDelivered: true,
         },
       })
@@ -85,7 +81,6 @@ export class FT0CompletionService {
       occurred_at: db.fn.now(),
       payload: {
         orders: orderCount,
-        products: productCount,
         firstInsightDelivered: true,
       },
     });
