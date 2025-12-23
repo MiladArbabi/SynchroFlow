@@ -4,9 +4,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 if (process.env.NODE_ENV !== 'production') {
-    require('ts-node/register');
+  require('ts-node/register');
 }
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env'), override: true });
+
 const path_1 = __importDefault(require("path"));
 const config = {
     development: {
@@ -21,6 +21,7 @@ const config = {
         migrations: {
             tableName: 'knex_migrations',
             directory: path_1.default.join(__dirname, './migrations'),
+            extension: 'ts',
         },
     },
     test: {
@@ -35,6 +36,7 @@ const config = {
         migrations: {
             tableName: 'knex_migrations',
             directory: path_1.default.join(__dirname, './migrations'),
+            extension: 'ts',
         },
     },
     production: {
@@ -43,7 +45,7 @@ const config = {
         migrations: {
             directory: path_1.default.join(__dirname, './migrations'),
             tableName: 'knex_migrations',
-            extension: 'js' // Also a good idea to change this to 'js'
+            extension: 'js'
         }
     }
 };

@@ -16,6 +16,7 @@ import authRoutes from '../api/auth/auth.routes';
 import dashboardRoutes from '../api/dashboard/dashboard.routes';
 import userStateRoutes from '../api/user-state/user-state.routes';
 import shopifyRoutes from '../api/shopify/shopify.routes';
+import shopifyDevRoutes from '../api/shopify/dev.routes';
 import onboardingReadinessRouter from '../onboarding/readiness.router';
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
@@ -67,6 +68,7 @@ export function createApp(): Express {
   app.use('/api/v1/dashboard', dashboardRoutes);
   app.use('/api/v1/user-state', userStateRoutes);
   app.use('/api/v1/shopify', shopifyRoutes);
+  app.use('/api/v1/shopify', shopifyDevRoutes);
   app.use('/api/v1/onboarding', onboardingReadinessRouter);
   
   registerActivationRoutes(app);
