@@ -1,4 +1,50 @@
 // apps/backend/src/services/ft0-completion.service.ts
+/**
+ * ============================================================
+ * FT0 COMPLETION — CANONICAL DEFINITION (DO NOT DRIFT)
+ * ============================================================
+ *
+ * FT0 represents *system readiness*, NOT customer success.
+ * It answers exactly one question:
+ *
+ *   “Has the commerce → insight pipeline proven it works end-to-end?”
+ *
+ * -------------------------
+ * FT0 COMPLETES WHEN (ALL):
+ * -------------------------
+ * 1. A platform integration exists for the shop (e.g. Shopify)
+ * 2. At least one canonical order exists (canonical_orders > 0)
+ * 3. First insight has been successfully delivered
+ *
+ * -------------------------
+ * EXPLICITLY NOT REQUIRED:
+ * -------------------------
+ * - Product count
+ * - Store visitors / sessions
+ * - SDK installation
+ * - Traffic volume
+ * - Conversion signals
+ *
+ * These belong to FT1+ and MUST NOT gate FT0.
+ *
+ * -------------------------
+ * GUARANTEES:
+ * -------------------------
+ * - FT0 completion is idempotent
+ * - ft0_state is written exactly once per shop
+ * - Completion is authoritative and irreversible
+ *
+ * -------------------------
+ * WARNING:
+ * -------------------------
+ * Do NOT add new conditions here without updating the
+ * activation contract and frontend expectations.
+ *
+ * Silent FT0 blocking = broken onboarding.
+ *
+ * ============================================================
+ */
+
 import db from 'api-db';
 import crypto from 'crypto';
 
