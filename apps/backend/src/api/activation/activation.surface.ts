@@ -7,7 +7,6 @@ import {
   EntitlementSnapshot,
 } from '@lasyncro/shared/activation';
 import { deriveActivationSurfaceState } from '@lasyncro/shared/activation/deriveActivationSurfaceState';
-import { FT0Phase } from '@lasyncro/shared/activation';
 
 /**
  * Backend → UI adapter
@@ -21,10 +20,8 @@ import { FT0Phase } from '@lasyncro/shared/activation';
  */
 export function buildActivationSurface(input: {
   verdict: ActivationVerdict;
-  ft0Phase: FT0Phase;
 }) {
   return deriveActivationSurfaceState({
     verdict: input.verdict,
-    ft0Phase: input.ft0Phase,
   });
 }

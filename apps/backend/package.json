@@ -7,9 +7,9 @@
     "start": "node ./scripts/node-start.js",
     "dev": "nodemon --watch src --ext ts --exec \"npm run build && node ./scripts/node-start.js\"",
     "seed": "knex seed:run --specific=dev_seed.ts",
-    "migrate": "knex migrate:latest",
-    "migrate:make": "knex migrate:make",
-    "migrate:rollback": "knex migrate:rollback"
+    "migrate": "DOTENV_CONFIG_PATH=../../.env npx knex migrate:latest",
+    "migrate:rollback": "DOTENV_CONFIG_PATH=../../.env npx knex migrate:rollback",
+    "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex migrate:make"
   },
   "dependencies": {
     "@lasyncro/shared": "1.0.0",

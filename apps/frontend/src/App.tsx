@@ -168,80 +168,79 @@ export default function App() {
                         isOpen={isConnectModalOpen}
                         onClose={() => setIsConnectModalOpen(false)}
                       />
-                      
-                    <IntlErrorBoundary>
-                      <Routes>
-                        {/* Public auth routes */}
-                        {routes
-                          .filter(
-                            (route) =>
-                              route.key === 'login' || route.key === 'register'
-                          )
-                          .map((route) => {
-                            const Component = route.component;
-                            return (
+                      <IntlErrorBoundary>
+                        <Routes>
+                          {/* Public auth routes */}
+                          {routes
+                            .filter(
+                              (route) =>
+                                route.key === 'login' || route.key === 'register'
+                            )
+                            .map((route) => {
+                              const Component = route.component;
+                              return (
+                                <Route
+                                  key={route.key}
+                                  path={route.route}
+                                  element={Component ? <Component /> : null}
+                                />
+                              );
+                            })}
+                        {/* Protected SaaS app */}
+                        <Route element={<ProtectedRoute />}>
+                          <Route element={<LayoutManager />}>
+                          
+                            {/* 🔗 STATIC BRIDGE for DashboardPage */}
                               <Route
-                                key={route.key}
-                                path={route.route}
-                                element={Component ? <Component /> : null}
+                                path="/dashboard"
+                                element={<DashboardPage handleSidenavToggle={() => {}} />}
                               />
-                            );
-                          })}
-                      {/* Protected SaaS app */}
-                      <Route element={<ProtectedRoute />}>
-                        <Route element={<LayoutManager />}>
-                        
-                          {/* 🔗 STATIC BRIDGE for DashboardPage */}
-                            <Route
-                              path="/dashboard"
-                              element={<DashboardPage handleSidenavToggle={() => {}} />}
-                            />
 
-                          {/* Runtime-registered routes */}
-                            {getRegisteredRoutes()
-                              .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
-                              .map(route => {
-                                const Component = route.component;
-                                return (
-                                  <Route
-                                    key={route.id}
-                                    path={route.path}
-                                    element={Component ? <Component /> : null}
-                                  />
-                                );
-                              })}
-                            {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
-                            <Route
-                              path="/orders/*"
-                              element={<OrdersPage />}
-                            />
-                            {/* 🔗 STATIC BRIDGE for Customers */}
-                            <Route
-                              path="/customers/*"
-                              element={<CustomersPage />}
-                            />
-                            {/* 🔗 STATIC BRIDGE for Products */}
-                            <Route
-                              path="/products/*"
-                              element={<ProductsPage />}
-                            />
-                            <Route
-                              path="/analytics/*"
-                              element={<AnalyticsPage />}
-                            />
-                            <Route
-                              path="/finances/*"
-                              element={<FinancesPage />}
-                            />
-                            {/* Dynamic modules */}
-                          <Route path="modules/:moduleId/*" />
+                            {/* Runtime-registered routes */}
+                              {getRegisteredRoutes()
+                                .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
+                                .map(route => {
+                                  const Component = route.component;
+                                  return (
+                                    <Route
+                                      key={route.id}
+                                      path={route.path}
+                                      element={Component ? <Component /> : null}
+                                    />
+                                  );
+                                })}
+                              {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
+                              <Route
+                                path="/orders/*"
+                                element={<OrdersPage />}
+                              />
+                              {/* 🔗 STATIC BRIDGE for Customers */}
+                              <Route
+                                path="/customers/*"
+                                element={<CustomersPage />}
+                              />
+                              {/* 🔗 STATIC BRIDGE for Products */}
+                              <Route
+                                path="/products/*"
+                                element={<ProductsPage />}
+                              />
+                              <Route
+                                path="/analytics/*"
+                                element={<AnalyticsPage />}
+                              />
+                              <Route
+                                path="/finances/*"
+                                element={<FinancesPage />}
+                              />
+                              {/* Dynamic modules */}
+                            <Route path="modules/:moduleId/*" />
+                          </Route>
                         </Route>
-                      </Route>
 
-                      {/* Root */}
-                      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                        {/* Root */}
+                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-                      {/* Fallback */}
+                        {/* Fallback */}
                       <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Routes>
                   </IntlErrorBoundary>

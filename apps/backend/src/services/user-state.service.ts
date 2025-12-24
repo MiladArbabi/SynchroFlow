@@ -1,6 +1,9 @@
 //apps/backend/src/services/user-state.service.ts
 import db from '../db';
 import { User, UserMilestone } from '../types';
+import type { LifecyclePhase } from './lifecycle.contract';
+import { LifecycleService } from './lifecycle.service';
+import { LifecycleTransitionService } from './lifecycle-transition.service';
 
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
@@ -79,19 +82,42 @@ export class UserStateService {
    /**
     * Get onboarding progress and recommendations
     */
-   static async getOnboardingProgress(userId: number) {
-     const tier = await this.detectOnboardingTier(userId);
-     const connectedPlatforms = await this.getConnectedPlatforms(userId);
-     const userState = await this.getUserState(userId);
- 
-     return {
-       tier,
-       connectedPlatforms,
-       recommendedNextSteps: this.getRecommendedNextSteps(tier, connectedPlatforms),
-       unlockedFeatures: this.getUnlockedFeatures(tier, connectedPlatforms),
-       userState
-     };
-   }
+    static async getOnboardingProgress(userId: number) {
+      const lifecyclePhase: LifecyclePhase =
+        await LifecycleService.resolveForUser(userId);
+
+      const tier = await this.detectOnboardingTier(userId);
+      const connectedPlatforms = await this.getConnectedPlatforms(userId);
+      const userState = await this.getUserState(userId);
+
+      // ✅ Audit lifecycle transition using existing facts
+      const shopId = userState?.user?.shopify_connected
+        ? userState.user.id && (userState.user as any).shop_id
+        : null;
+
+      if (shopId) {
+        await LifecycleTransitionService.auditIfTransitioned({
+          userId,
+          shopId,
+          currentPhase: lifecyclePhase,
+        });
+      }
+
+      return {
+        lifecyclePhase,
+        tier,
+        connectedPlatforms,
+        recommendedNextSteps: this.getRecommendedNextSteps(
+          tier,
+          connectedPlatforms
+        ),
+        unlockedFeatures: this.getUnlockedFeatures(
+          tier,
+          connectedPlatforms
+        ),
+        userState,
+      };
+    }
  
    /**
     * Get recommended next steps based on current tier and platforms

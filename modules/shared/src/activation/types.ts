@@ -1,6 +1,13 @@
 // modules/shared/src/activation/types.ts
 // INTERNAL activation domain types (no dependency on contracts)
 
+/**
+ * ⚠️ Activation-only FT0 phase
+ * Describes integration technical readiness.
+ * NOT a user lifecycle phase.
+ */
+
+
 export type EntryChannel = 'SHOPIFY_APP' | 'WEB';
 
 export type SyncStatus =

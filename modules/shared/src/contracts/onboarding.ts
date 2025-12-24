@@ -174,9 +174,37 @@ export interface ModuleOnboardingReadiness {
   signals: ReadinessSignal[];
 }
 
+// --- FT1 (Onboarding completion) verdict ---
+
+export interface FT1Verdict {
+  /**
+   * True when the user has completed onboarding
+   * across all required modules.
+   */
+  isComplete: boolean;
+
+  /**
+   * Modules that are blocking FT1 completion.
+   * Empty when isComplete === true.
+   */
+  blockingModules: ModuleId[];
+
+  /**
+   * Modules that are already ready.
+   * Useful for UI progress and diagnostics.
+   */
+  readyModules: ModuleId[];
+}
+
 // --- Top-level snapshot ---
 
 export interface OnboardingReadinessSnapshot {
   shopId: number;
   modules: ModuleOnboardingReadiness[];
+
+  /**
+   * Derived, authoritative onboarding verdict.
+   * Frontend MUST use this to determine FT1.
+   */
+  ft1: FT1Verdict;
 }

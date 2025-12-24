@@ -5,6 +5,7 @@ import {
   ModuleOnboardingTask,
   ReadinessSignal,
   OnboardingTaskCompletionRule,
+  FT1Verdict
 } from '@lasyncro/shared';
 import { onboardingSignalProviders } from './readiness.providers';
 import { MODULE_ONBOARDING_MANIFESTS } from './readiness.manifest';
@@ -42,9 +43,20 @@ export class OnboardingReadinessService {
       };
     });
 
+    const blockingModules = modules
+      .filter(m => !m.isReady)
+      .map(m => m.moduleId);
+
+    const ft1: FT1Verdict = {
+      isComplete: blockingModules.length === 0,
+      blockingModules,
+      readyModules: modules.filter(m => m.isReady).map(m => m.moduleId),
+    };
+
     return {
       shopId,
       modules,
+      ft1,
     };
   }
 

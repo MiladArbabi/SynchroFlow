@@ -19,7 +19,6 @@ import crypto from 'crypto';
 
 import {
   deriveActivationVerdict,
-  deriveFT0Phase,
   IdentitySnapshot,
   IntegrationSnapshot,
   EntitlementSnapshot,
@@ -28,9 +27,9 @@ import {
 
 import { EntitlementsService } from 'api-src/services/entitlements.service';
 import { buildActivationAuditEvent } from './buildActivationAuditEvent';
-import { buildActivationSurface } from './activation.surface';
 
 import { FT0CompletionService } from 'api-src/services/ft0-completion.service';
+import { buildActivationSurface } from './activation.surface';
 
 export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;
@@ -53,6 +52,11 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
   // --- Integrations ---
   let integrations: IntegrationSnapshot[] = [];
 
+    // --- Fact write: FT0 completion (idempotent) ---
+  if (shopId) {
+    await FT0CompletionService.evaluateAndComplete(shopId);
+  }
+
   if (shopId) {
     const rows = await db('integrations')
       .where({ shop_id: shopId })
@@ -64,7 +68,7 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     }));
   }
 
-  // --- Entitlements ---
+    // --- Entitlements ---
   let entitlements: EntitlementSnapshot[] = [];
 
   if (userId) {
@@ -77,26 +81,21 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     }
   }
 
-  // --- Pure derivation ---
-  let ft0Completed = false;
-
+  // --- Fact write: FT0 completion (idempotent, no derivation) ---
   if (shopId) {
-    const result = await FT0CompletionService.evaluateAndComplete(shopId);
-    ft0Completed = result.completed;
+    await FT0CompletionService.evaluateAndComplete(shopId);
   }
 
-  const ft0Phase = deriveFT0Phase(integrations, ft0Completed);
-
+  // --- Pure activation derivation ---
   const verdict = deriveActivationVerdict({
     identity,
     integrations,
     entitlements,
   });
 
-  // --- UI surface (NEW SOURCE OF TRUTH FOR FRONTEND) ---
+  // --- Activation UI surface ---
   const activationSurface = buildActivationSurface({
     verdict,
-    ft0Phase,
   });
 
   // --- Audit (must include surface) ---
@@ -108,7 +107,6 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     identity,
     integrations,
     entitlements,
-    ft0Phase,
     verdict,
     activationSurface,
   });
@@ -132,7 +130,6 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
       shopId,
       entryChannel,
       verdict: verdict.verdict,
-      ft0Phase,
       traceId: crypto.randomUUID(),
     })
   );
@@ -145,7 +142,6 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
       entryChannel,
       evaluatedAt: new Date().toISOString(),
     },
-    ft0: { phase: ft0Phase },
     verdict,            // kept temporarily
     activationSurface,  // ✅ frontend must consume this
   });

@@ -21,7 +21,6 @@ import {
   IdentitySnapshot,
   IntegrationSnapshot,
   EntitlementSnapshot,
-  FT0Phase,
   ACTIVATION_DERIVATION_VERSION
 } from '@lasyncro/shared/activation';
 
@@ -35,7 +34,6 @@ export function buildActivationAuditEvent(input: {
   identity: IdentitySnapshot;
   integrations: IntegrationSnapshot[];
   entitlements: EntitlementSnapshot[];
-  ft0Phase: FT0Phase;
   verdict: ActivationVerdict;
   activationSurface: unknown;
 }) {
@@ -50,7 +48,6 @@ export function buildActivationAuditEvent(input: {
     identity: input.identity,
     integrations: input.integrations,
     entitlements: input.entitlements,
-    ft0Phase: input.ft0Phase,
     verdict: input.verdict,
     activationSurface: input.activationSurface,
   };
