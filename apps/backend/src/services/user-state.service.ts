@@ -4,6 +4,8 @@ import { User, UserMilestone } from '../types';
 import type { LifecyclePhase } from './lifecycle.contract';
 import { LifecycleService } from './lifecycle.service';
 import { LifecycleTransitionService } from './lifecycle-transition.service';
+import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
+import { OnboardingReadinessSnapshot } from '@lasyncro/shared/index';
 
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
@@ -79,45 +81,20 @@ export class UserStateService {
      return connected;
    }
  
-   /**
-    * Get onboarding progress and recommendations
-    */
-    static async getOnboardingProgress(userId: number) {
-      const lifecyclePhase: LifecyclePhase =
-        await LifecycleService.resolveForUser(userId);
+  static async getOnboardingProgress(userId: number) {
+    const {
+      lifecyclePhase,
+      readinessSnapshot,
+      userState,
+    } = await this.getLifecycleContext(userId);
 
-      const tier = await this.detectOnboardingTier(userId);
-      const connectedPlatforms = await this.getConnectedPlatforms(userId);
-      const userState = await this.getUserState(userId);
+    return {
+      lifecyclePhase,
+      readiness: readinessSnapshot,
+      userState,
+    };
+  }
 
-      // ✅ Audit lifecycle transition using existing facts
-      const shopId = userState?.user?.shopify_connected
-        ? userState.user.id && (userState.user as any).shop_id
-        : null;
-
-      if (shopId) {
-        await LifecycleTransitionService.auditIfTransitioned({
-          userId,
-          shopId,
-          currentPhase: lifecyclePhase,
-        });
-      }
-
-      return {
-        lifecyclePhase,
-        tier,
-        connectedPlatforms,
-        recommendedNextSteps: this.getRecommendedNextSteps(
-          tier,
-          connectedPlatforms
-        ),
-        unlockedFeatures: this.getUnlockedFeatures(
-          tier,
-          connectedPlatforms
-        ),
-        userState,
-      };
-    }
  
    /**
     * Get recommended next steps based on current tier and platforms
@@ -391,6 +368,34 @@ export class UserStateService {
       .merge({
         value: productCosts, // Store as JSONB directly
         updated_at: db.fn.now()
-      });
+    });
+  }
+
+  /**
+   * Aggregate canonical lifecycle facts for the user.
+   * Read-only. No derivation. No side effects.
+   */
+  static async getLifecycleContext(userId: number) {
+    const lifecyclePhase = await LifecycleService.resolveForUser(userId);
+
+    const userState = await this.getUserState(userId);
+
+    const shopId =
+      userState?.user && (userState.user as any).shop_id
+        ? (userState.user as any).shop_id
+        : null;
+
+    let readinessSnapshot: OnboardingReadinessSnapshot | null = null;
+
+    if (shopId) {
+      const readinessService = new OnboardingReadinessService();
+      readinessSnapshot = await readinessService.getSnapshot({ shopId, userId });
+    }
+
+    return {
+      lifecyclePhase,
+      readinessSnapshot,
+      userState,
+    };
   }
 };
