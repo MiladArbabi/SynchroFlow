@@ -27,6 +27,8 @@ module.exports = {
         '^api-types$': '<rootDir>/apps/backend/src/types.ts',
         '^api-server$': '<rootDir>/apps/backend/src/server.ts',
 
+        '^activation/(.*)$': '<rootDir>/apps/frontend/src/activation/$1',
+
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
         // FRONTEND ALIASES (so backend tests can import frontend files safely)

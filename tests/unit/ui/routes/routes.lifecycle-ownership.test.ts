@@ -4,16 +4,12 @@ import routes, { isRouteEnabled } from 'routes';
 describe('routes.tsx — lifecycle ownership', () => {
   it('does not encode lifecycle, FT phases, or onboarding semantics', () => {
     for (const route of routes) {
-      // @ts-expect-error — these must NEVER exist
       expect((route as any).lifecyclePhase).toBeUndefined();
 
-      // @ts-expect-error
       expect((route as any).ftPhase).toBeUndefined();
 
-      // @ts-expect-error
       expect((route as any).readiness).toBeUndefined();
 
-      // @ts-expect-error
       expect((route as any).onboardingTier).toBeUndefined();
     }
   });

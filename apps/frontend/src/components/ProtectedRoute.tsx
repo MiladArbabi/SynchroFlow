@@ -8,7 +8,6 @@ import { Box, CircularProgress } from '@mui/material';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import routes, { isRouteEnabled } from 'routes';
 import { getRegisteredRoutes } from 'runtime/registerRoute';
-import GatedPlaceholder from 'ui-component/GatedPlaceholder';
 
 /**
  * A component to protect routes from unauthenticated access.

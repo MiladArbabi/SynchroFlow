@@ -12,23 +12,10 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-
-import { axiosInstance } from 'api/axiosConfig';
-
 import { useDashboardState } from 'contexts/DashboardStateContext';
 import { OnboardingUIActionsContext } from 'contexts/OnboardingUIActionsContext';
 
-import { DashboardStateManager } from 'components/DashboardStateManager/DashboardStateManager';
-import { WidgetLayoutWithRegistry } from 'components/widgets/WidgetLayoutWithRegistry';
-import { SyncProgressBanner } from 'components/SyncProgressBanner';
-import { OrdersPerMonthBanner } from 'components/OrdersPerMonthBanner';
-import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import { DataSyncingModal } from 'components/DataSyncingModal';
-import { DashboardSkeletons } from 'components/skeletons/DashboardSkeletons';
-
-import { useFT1Readiness } from 'onboarding/useFT1Readiness';
-
 
 interface DashboardPageProps {
   handleSidenavToggle: () => void;
@@ -83,11 +70,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
         onClose={handleFT0ModalClose}
         open={false}      
       />
-
-      <DashboardStateManager 
-        onConnectStore={handleConnectStoreIntent}
-        children={''}
-        />
     </OnboardingUIActionsContext.Provider>
   );
 };
