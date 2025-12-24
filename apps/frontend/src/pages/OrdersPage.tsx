@@ -1,12 +1,8 @@
-import { CommerceActivationGate } from 'activation/CommerceActivationGate';
-
+//apps/frontend/src/pages/OrdersPage.tsx
 export default function OrdersPage() {
   return (
-    <CommerceActivationGate moduleId="order-nexus">
-      <section data-testid="orders-host-ui">
-        <h1>Orders</h1>
-        <p>Status: syncing</p>
-      </section>
-    </CommerceActivationGate>
+    <>
+      {/* Orders UI only */}
+    </>
   );
 }

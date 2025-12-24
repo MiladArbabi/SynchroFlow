@@ -1,3 +1,5 @@
+//modules/shared/src/ui/activation/types.ts
+
 export type SemanticStatus =
   | 'unknown'
   | 'unverified'

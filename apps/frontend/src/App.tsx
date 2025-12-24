@@ -13,9 +13,7 @@ import { SpecterConfigProvider } from "contexts/SpecterConfigContext";
 
 import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
-import routes from "./routes";
 import ModuleBootstrap from 'runtime/ModuleBootstrap';
-import { getRegisteredRoutes } from 'runtime/registerRoute';
 import { RuntimeRoutesProvider } from "runtime/RuntimeRoutesProvider";
 import { useRuntimeRoutes } from 'runtime/useRuntimeRoutes';
 
@@ -31,6 +29,10 @@ import { ConnectStoreModal } from "components/ConnectStoreModal";
 
 import { DashboardPage } from "pages/DashboardPage";
 import { FT0PromotionListener } from 'activation/FT0PromotionListener';
+import { LifecycleShell } from "lifecycle/LifecycleShell";
+import { ModuleLifecycleShell } from "lifecycle/ModuleLifecycleShell";
+import LoginPage from "pages/authentication/LoginPage";
+import RegisterPage from "pages/authentication/RegisterPage";
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -170,22 +172,9 @@ export default function App() {
                       />
                       <IntlErrorBoundary>
                         <Routes>
-                          {/* Public auth routes */}
-                          {routes
-                            .filter(
-                              (route) =>
-                                route.key === 'login' || route.key === 'register'
-                            )
-                            .map((route) => {
-                              const Component = route.component;
-                              return (
-                                <Route
-                                  key={route.key}
-                                  path={route.route}
-                                  element={Component ? <Component /> : null}
-                                />
-                              );
-                            })}
+                         {/* Public auth routes */}
+                         <Route path="/login" element={<LoginPage />} />
+                         <Route path="/register" element={<RegisterPage />} />
                         {/* Protected SaaS app */}
                         <Route element={<ProtectedRoute />}>
                           <Route element={<LayoutManager />}>
@@ -193,44 +182,53 @@ export default function App() {
                             {/* 🔗 STATIC BRIDGE for DashboardPage */}
                               <Route
                                 path="/dashboard"
-                                element={<DashboardPage handleSidenavToggle={() => {}} />}
-                              />
-
-                            {/* Runtime-registered routes */}
-                              {getRegisteredRoutes()
-                                .filter(r => r.path && r.key !== 'login' && r.key !== 'register')
-                                .map(route => {
-                                  const Component = route.component;
-                                  return (
-                                    <Route
-                                      key={route.id}
-                                      path={route.path}
-                                      element={Component ? <Component /> : null}
-                                    />
-                                  );
-                                })}
+                                element={
+                                  <LifecycleShell>
+                                    <DashboardPage handleSidenavToggle={() => {}} />
+                                  </LifecycleShell>}
+                                />
                               {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
                               <Route
                                 path="/orders/*"
-                                element={<OrdersPage />}
+                                element={
+                                  <ModuleLifecycleShell moduleId="order-nexus">
+                                    <OrdersPage />
+                                  </ModuleLifecycleShell>
+                                }
                               />
                               {/* 🔗 STATIC BRIDGE for Customers */}
                               <Route
                                 path="/customers/*"
-                                element={<CustomersPage />}
+                                element={
+                                  <ModuleLifecycleShell moduleId="customers">
+                                    <CustomersPage />
+                                  </ModuleLifecycleShell>
+                                }
                               />
                               {/* 🔗 STATIC BRIDGE for Products */}
                               <Route
                                 path="/products/*"
-                                element={<ProductsPage />}
+                                element={
+                                  <ModuleLifecycleShell moduleId="products">
+                                    <ProductsPage />
+                                  </ModuleLifecycleShell>
+                                }
                               />
                               <Route
                                 path="/analytics/*"
-                                element={<AnalyticsPage />}
+                                element={
+                                  <ModuleLifecycleShell moduleId="analytics">
+                                    <AnalyticsPage />
+                                  </ModuleLifecycleShell>
+                                }
                               />
                               <Route
                                 path="/finances/*"
-                                element={<FinancesPage />}
+                                element={
+                                  <ModuleLifecycleShell moduleId="finances">
+                                    <FinancesPage />
+                                  </ModuleLifecycleShell>
+                                }
                               />
                               {/* Dynamic modules */}
                             <Route path="modules/:moduleId/*" />

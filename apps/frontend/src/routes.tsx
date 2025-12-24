@@ -1,21 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/routes.tsx
-import React from "react";
-import { DashboardPage } from "./pages/DashboardPage";
-import LoginPage from "./pages/authentication/LoginPage";
-import RegisterPage from "./pages/authentication/RegisterPage";
-import AccountSettingsPage from "./pages/AccountSettingsPage";
 
 // ✅ Route shape with entitlement metadata
 export interface RouteConfig {
-  type: "collapse" | "route";
-  name: string;
   key: string;
-  icon?: string;
   route: string;
-  component: React.ComponentType<any>;
 
-  // --- Entitlement metadata (Slice 1) ---
   requiredModuleId?: string;
   requiredFlagId?: string;
 }
@@ -27,39 +16,23 @@ export interface EntitlementSnapshot {
 
 const routes: RouteConfig[] = [
   {
-    type: "collapse",
-    name: "Dashboard",
     key: "dashboard",
-    icon: "🏠",
     route: "/dashboard",
-    component: DashboardPage,
-    // Core experience – no module gating
   },
-  // 🔻 NOTE: /data-mapper and /product-intelligence have been removed from routes
-  // They’re effectively deprecated for users, but code is still in the repo.
-
   {
-    type: "route",
-    name: "Account Settings",
     key: "account-settings",
     route: "/account/settings",
-    component: AccountSettingsPage,
   },
   {
-    type: "route",
-    name: "Login",
     key: "login",
     route: "/login",
-    component: LoginPage,
   },
   {
-    type: "route",
-    name: "Register",
     key: "register",
     route: "/register",
-    component: RegisterPage,
   },
 ];
+
 
 /**
  * Runtime check: is a single route enabled for the given entitlements?

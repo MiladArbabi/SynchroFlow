@@ -1,24 +1,30 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/components/ProtectedRoute.tsx
 import React from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from 'contexts/AuthContext';
+import { Navigate, Outlet } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
+
+import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
-import routes, { isRouteEnabled } from 'routes';
-import { getRegisteredRoutes } from 'runtime/registerRoute';
 
 /**
- * A component to protect routes from unauthenticated access.
- * It checks the authentication state from AuthContext.
+ * ProtectedRoute
+ * --------------
+ * Guards the authenticated application shell.
+ *
+ * Responsibilities:
+ * - Wait for auth + entitlements resolution
+ * - Redirect unauthenticated users
+ *
+ * It MUST NOT:
+ * - Inspect routes
+ * - Enforce module access
+ * - Encode lifecycle or activation logic
  */
-const ProtectedRoute: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+const ProtectedRoute: React.FC = () => {
   const { isLoggedIn, isLoading: authLoading } = useAuth();
-  const { modules, flags, isLoading: entLoading, hasResolved } = useEntitlements();
-  const location = useLocation();
+  const { hasResolved } = useEntitlements();
 
-  // 1. Show a full-screen loader while auth or entitlements are being checked
+  // 1️⃣ Wait for auth + entitlements
   if (authLoading || !hasResolved) {
     return (
       <Box
@@ -26,75 +32,21 @@ const ProtectedRoute: React.FC<{ children?: React.ReactNode }> = ({ children }) 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          height: '100vh'
+          height: '100vh',
         }}
       >
         <CircularProgress />
       </Box>
     );
-  };
+  }
 
-  // 2. If not authenticated, redirect to the login page
+  // 2️⃣ Redirect unauthenticated users
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
   }
 
-  // 3. Authenticated: enforce entitlement gating for the matched route, if any
-  const currentPath = location.pathname;
-
-  // --- Runtime module bootstrap escape hatch ---
-  // If user is authenticated and we're on a known module route
-  // but runtime routes are not registered yet, do NOT redirect.
-  if (
-    isLoggedIn &&
-    (
-      currentPath.startsWith('/orders') ||
-      currentPath.startsWith('/modules/')
-    )
-  ) {
-    return <Outlet />;
-  }
-
-  // We only care about routes defined in routes.tsx and runtime-registered routes
-  const matchingRouteRaw = getRegisteredRoutes().find(
-    (r) =>
-      r.path === currentPath ||
-      (r.path !== '/' && currentPath.startsWith(r.path + '/'))
-  );
-
-  if (matchingRouteRaw) {
-    // Cast to any to avoid strict structural mismatch with RouteConfig (RouteConfig uses `route` key)
-    const matchingRoute: any = matchingRouteRaw;
-
-    // Cross-sell exception (static routes only)
-    const crossSellPaths = ['/analytics', '/finances'];
-    if (!crossSellPaths.includes(currentPath)) {
-
-      // 🧠 Runtime module route (e.g. /orders)
-      if (matchingRoute.requiredModuleId) {
-        if (!modules.includes(matchingRoute.requiredModuleId)) {
-          return <Navigate to="/dashboard" replace />;
-        }
-      }
-
-      // 🧱 Static route (defined in routes.tsx)
-      else {
-        const snapshot = { modules, flags } as any;
-
-        const routeForCheck = {
-          ...(matchingRoute as any),
-          route: matchingRoute.path
-        } as any;
-
-        if (!isRouteEnabled(routeForCheck, snapshot)) {
-          return <Navigate to="/dashboard" replace />;
-        }
-      }
-    }
-  }
-
-  // 4. Authenticated and either ungated or allowed by entitlements → render app
-  return children ? <>{children}</> : <Outlet />;
+  // 3️⃣ Authenticated → enter app shell
+  return <Outlet />;
 };
 
 export default ProtectedRoute;

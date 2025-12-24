@@ -4,9 +4,8 @@
 import React, { useMemo } from 'react';
 import { Box, useMediaQuery, Chip, Stack } from '@mui/material'; // Import necessary MUI components
 import { useTheme } from '@mui/material/styles';
-import routes from 'routes';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { RouteConfig, EntitlementSnapshot, filterRoutesByEntitlements } from 'routes';
+import { RouteConfig, EntitlementSnapshot } from 'routes';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 
 // --- MUI List Imports for Settings ---
@@ -21,11 +20,9 @@ import { Typography } from '@mui/material';
 import LogoSection from 'layout/MainLayout/LogoSection'; 
 import MenuList from 'layout/MainLayout/MenuList';     
 import SimpleBar from 'ui-component/third-party/SimpleBar'; 
-import ConnectStoreCard from 'components/ConnectStoreCard';
 
 // --- STATE MANAGEMENT & CONFIG ---
 import { useGetMenuMaster } from 'api/menu'; // Uses our refactored hook (reads from ConfigContext)
-import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
 // import MenuCard from './MenuCard'; // We'll add this later if needed
 
@@ -40,34 +37,12 @@ const SidenavContent: React.FC<{
   isSidenavOpen: boolean;
   isConnected: boolean; // <-- 2. Accept new props
   onOpenModal: () => void; // <-- 2. Accept new props
-}> = ({
-  brandName, routes, isSidenavOpen,
-  isConnected, // <-- 3. Use the new props
-  onOpenModal  // <-- 3. Use the new props
-}) => {
-  const theme = useTheme();
-  const downMD = useMediaQuery(theme.breakpoints.down('md'));
+}> = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { modules, flags } = useEntitlements();
 
   const { menuMaster } = useGetMenuMaster(); // Reads drawerOpen state from our ConfigContext via the hook
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
-
-  const allowedRoutes = useMemo(() => {
-    const snapshot: EntitlementSnapshot = {
-      modules,
-      flags
-    };
-
-    return filterRoutesByEntitlements(routes as RouteConfig[], snapshot)
-      .map((r) => r.route)
-      .filter((path): path is string => typeof path === 'string');
-  }, [modules, flags, routes]);
-
-  const {
-    state: { menuOrientation } // Read menuOrientation, though we might not use it directly here
-  } = useConfig();
 
   // Memoize the Logo section
   const logo = useMemo(
@@ -116,18 +91,10 @@ const SidenavContent: React.FC<{
       // The Box inside SimpleBar provides the padding
       <SimpleBar sx={simpleBarSX}>
          <Box sx={{ flexGrow: 1 }}> {/* Box to allow MenuList to take available space */}
-            <MenuList allowedRoutes={allowedRoutes} />
+            <MenuList />
          </Box>
 
-        {/* --- Render Card outside of 'extraContent' --- */}
-        {/* Show the card if NOT connected, regardless of drawer state */}
-        {/* Use padding to match 'extraContent' when open, and minimal when collapsed */}
-        {/* <Box sx={{ p: drawerOpen ? 2 : 2, pt: 2 }}>
-          {!isConnected && <ConnectStoreCard onOpenModal={onOpenModal} />}
-        </Box> */}
-
          {/* --- ACCOUNT SETTINGS LINK (PINNED TO BOTTOM) --- */}
-         {/* This List is outside the flexGrow box, so it pins to the bottom */}
          <List sx={{ p: drawerOpen ? 1 : 0.5 }}>
            <ListItemButton
              sx={{ borderRadius: '8px' }} // Use theme.shape.borderRadius
@@ -135,7 +102,7 @@ const SidenavContent: React.FC<{
              selected={pathname === '/account/settings'}
            >
              <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
-               <IconSettings stroke={1.5} size="20px" />
+               <IconSettings stroke={1.5} size="5px" />
              </ListItemIcon>
              {/* Only show text if drawer is open */}
              {drawerOpen && (
@@ -153,7 +120,7 @@ const SidenavContent: React.FC<{
         {isVerticalOpen && extraContent}
       </SimpleBar>
     );
-  }, [drawerOpen, navigate, pathname, allowedRoutes]);
+  }, [drawerOpen, navigate, pathname]);
 
   return (
     // Use a Box that fills the height and acts as the main container
