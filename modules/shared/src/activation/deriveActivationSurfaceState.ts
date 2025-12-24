@@ -12,6 +12,7 @@
  */
 
 import type {
+  ActivationSurfaceContext,
   ActivationVerdict,
   FT0Phase,
 } from './types';
@@ -59,6 +60,7 @@ export type ActivationSurfaceState =
 
 export function deriveActivationSurfaceState(input: {
   verdict: ActivationVerdict;
+  context?: ActivationSurfaceContext;
 }): ActivationSurfaceState {
   const { verdict } = input;
 

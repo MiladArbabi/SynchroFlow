@@ -1,7 +1,6 @@
 // modules/shared/src/index.ts
 
 // --- External contracts ONLY ---
-export * from './contracts/activation';
 export * from './contracts/canonical-commerce';
 export * from './contracts/canonical-product';
 export * from './contracts/onboarding';
@@ -13,3 +12,7 @@ export * from './modules/module-presence';
 
 // --- UI contracts ---
 export * from './ui-contracts';
+
+// ⚠️ IMPORTANT
+// Activation is intentionally NOT exported from root.
+// Consumers MUST import from `@lasyncro/shared/activation`.

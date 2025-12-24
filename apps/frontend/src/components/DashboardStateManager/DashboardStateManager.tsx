@@ -1,86 +1,44 @@
 // apps/frontend/src/components/DashboardStateManager/DashboardStateManager.tsx
 
-/**
- * HARD GUARANTEE:
- * This component MUST NEVER render dashboard widgets
- * unless the user has fully exited FT0.
- *
- * Conditions required to render children:
- * - shopify_connected === true
- * - first_insight_delivered === true
- *
- * Activation orchestration lives elsewhere.
- * This component is a safety gate.
- */
-
 import * as React from 'react';
-import { Box, Skeleton } from '@mui/material';
-import { useDashboardState } from '../../contexts/DashboardStateContext';
+import { Box } from '@mui/material';
+
+import { useActivationSurface } from 'activation/useActivationSurface';
 import { EmptyDashboardState } from '../EmptyStates/EmptyDashboardState';
+import { DataSyncingModal } from '../DataSyncingModal';
+import { DashboardSkeletons } from '../skeletons/DashboardSkeletons';
 
 interface DashboardStateManagerProps {
   onConnectStore: () => void;
   children: React.ReactNode;
-  forceLoadingSkeleton?: boolean;
 }
 
 export const DashboardStateManager: React.FC<DashboardStateManagerProps> = ({
   onConnectStore,
   children,
-  forceLoadingSkeleton = false,
 }) => {
-  const { userState, isLoading } = useDashboardState();
+  const { surface, isLoading, dismissFT0Modal } = useActivationSurface({
+    moduleId: 'dashboard',
+  });
 
-  const emptyStateUserData = userState
-    ? {
-        shopify_connected: userState.user.shopify_connected,
-        first_insight_delivered: userState.user.first_insight_delivered,
-      }
-    : undefined;
-
-  // ---------------------------------------------------------------------------
-  // 1) Loading or forced skeleton → NEVER render children
-  // ---------------------------------------------------------------------------
-  if (isLoading || forceLoadingSkeleton) {
-    return (
-      <Box sx={{ p: 2 }}>
-        <Skeleton variant="rectangular" height={48} sx={{ mb: 2 }} />
-        <Skeleton variant="rectangular" height={200} sx={{ mb: 2 }} />
-        <Skeleton variant="rectangular" height={200} />
-      </Box>
-    );
+  if (isLoading || !surface) {
+    return <DashboardSkeletons />;
   }
 
-  // ---------------------------------------------------------------------------
-  // 2) No integration yet → FT-1
-  // ---------------------------------------------------------------------------
-  if (!userState?.user.shopify_connected) {
-    return (
-      <EmptyDashboardState
-        onConnectStore={onConnectStore}
-        userState={emptyStateUserData}
-      />
-    );
-  }
+  switch (surface.state) {
+    case 'BLOCKED_AUTH':
+    case 'BLOCKED_SHOP':
+    case 'CONNECT_INTEGRATION':
+    case 'READY_PENDING_MODULES':
+      return <EmptyDashboardState onConnectStore={onConnectStore} />;
 
-  // ---------------------------------------------------------------------------
-  // 3) FT0 ANALYZING → ABSOLUTE BLOCK
-  // ---------------------------------------------------------------------------
-  if (!userState.user.first_insight_delivered) {
-    return (
-      <EmptyDashboardState
-        onConnectStore={onConnectStore}
-        userState={emptyStateUserData}
-      />
-    );
-  }
+    case 'SYNC_IN_PROGRESS':
+      return <DataSyncingModal open onClose={dismissFT0Modal} />;
 
-  // ---------------------------------------------------------------------------
-  // 4) FT1 → SAFE TO RENDER DASHBOARD
-  // ---------------------------------------------------------------------------
-  return (
-    <Box sx={{ p: 2 }}>
-      {children}
-    </Box>
-  );
+    case 'ACTIVE':
+      return <Box sx={{ p: 2 }}>{children}</Box>;
+
+    default:
+      return null;
+  }
 };

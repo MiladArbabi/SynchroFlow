@@ -34,6 +34,14 @@ export type EntitlementSnapshot = {
 
 export type FT0Phase = 'PRE_INTEGRATION' | 'SYNCING' | 'COMPLETED';
 
+export interface ActivationSurfaceContext {
+  moduleId?: string;
+  quotaExceeded?: boolean;
+  ux?: {
+    hasSeenFT0Modal: boolean;
+  };
+}
+
 export type ActivationVerdict =
   | {
       verdict: 'BLOCKED';

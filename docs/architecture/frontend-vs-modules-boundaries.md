@@ -178,6 +178,37 @@ If it’s not exported:
 
 > **you are not allowed to use it**
 
+## 7.1 Build Format Invariant for Shared Modules (MANDATORY)
+
+All packages under `modules/*` that are consumed by `apps/frontend`
+**MUST be built as native ESM**.
+
+### Rationale
+
+The frontend build uses **Vite + Rollup**, which requires
+**statically analyzable ESM exports**.
+
+CommonJS re-exports (e.g. `module.exports`, `__exportStar`) are NOT
+reliably analyzable by Rollup and will cause build-time failures even
+when TypeScript type-checking passes.
+
+### Enforced Rules
+
+- ✅ `modules/shared` **must emit ESM**
+- ❌ `modules/shared` must NOT emit CommonJS
+- ❌ No frontend consumer may rely on CJS interop
+- ❌ “It works in Jest” is NOT sufficient
+
+### Required Compiler Settings
+
+```json
+{
+  "compilerOptions": {
+    "module": "ES2020"
+  }
+}
+
+
 ---
 
 ## 8. Tests Are Not Special
