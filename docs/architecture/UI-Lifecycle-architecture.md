@@ -1,8 +1,3 @@
-Below is the **UI Lifecycle Architecture — Canonical Documentation (v2.1)**.
-This is a **surgical update** to v2: no philosophy changes, no rewrites, only corrections and clarifications that reflect the system **as it now actually works**.
-
----
-
 # UI Lifecycle Architecture — Canonical Documentation (v2.1)
 
 > **Status:** Canonical

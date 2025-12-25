@@ -1,10 +1,17 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/lifecycle/useOnboardingReadiness.ts
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
 interface OnboardingReadinessResponse {
-  ready: boolean;
+  shopId: number;
+  modules: any[];
+  ft1: {
+    isComplete: boolean;
+    blockingModules: string[];
+    readyModules: string[];
+  };
 }
 
 export function useOnboardingReadiness(
@@ -27,5 +34,6 @@ export function useOnboardingReadiness(
     enabled: enabled && !!shopId,
     refetchOnWindowFocus: true,
     retry: false,
+    staleTime: 30_000,
   });
 }

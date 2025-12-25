@@ -41,7 +41,7 @@ export function ShopLifecycleShell({ children }: { children: React.ReactNode }) 
 
       case 'COMPLETED':
         phase =
-          readiness?.ready === true
+          readiness?.ft1?.isComplete === true
             ? 'FT1_READY'
             : 'FT0_PREPARING';
         break;
@@ -55,7 +55,7 @@ export function ShopLifecycleShell({ children }: { children: React.ReactNode }) 
     console.info('[ShopLifecycle]', {
       shopId,
       integrationStatus: status,
-      readiness: readiness?.ready,
+      readiness: readiness?.ft1,
       resolvedPhase: phase,
     });
   }
