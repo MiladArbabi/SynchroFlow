@@ -1,11 +1,23 @@
+/**
+ * DashboardLifecycleShell
+ * -----------------------
+ *
+ * MODEL A INVARIANT:
+ * - This component MUST ONLY be mounted after FT1_READY.
+ * - It must NEVER handle FT_MINUS_ONE or FT0 phases.
+ * - Structural lifecycle (existence) is handled by ShopLifecycleGate.
+ *
+ * If this component mounts before FT1_READY:
+ * → the routing architecture is broken.
+ */
+
 // apps/frontend/src/lifecycle/DashboardLifecycleShell.tsx
 
 import React from 'react';
-
-import { dashboardActivationConfig } from 'activation/configs/dashboard';
 import { useDashboardState } from 'contexts/DashboardStateContext';
 
 import { GenericLifecycleShell } from './GenericLifecycleShell';
+import { useShopLifecycle } from './ShopLifecycleContext';
 
 /* -------------------------------------------------------------------------- */
 /* Props                                                                       */
@@ -33,31 +45,24 @@ interface DashboardLifecycleShellProps {
  */
 export function DashboardLifecycleShell({
   children,
-  onActivate,
 }: DashboardLifecycleShellProps) {
   const { currentView } = useDashboardState();
+  const { phase: shopPhase } = useShopLifecycle();
 
-  /**
-   * Dashboard readiness:
-   * - empty → NOT ready
-   * - hydrated → ready
-   */
-  const isReady = currentView !== 'empty';
-
-  if (import.meta.env.DEV) {
-    console.debug('[DashboardLifecycleShell]', {
-      isReady,
-    });
+  if (import.meta.env.DEV && shopPhase !== 'FT1_READY') {
+    throw new Error(
+      '[DashboardLifecycleShell] Mounted before FT1_READY. ' +
+      'Structural lifecycle gating is broken.'
+    );
   }
+
+  const isReady = currentView !== 'empty';
 
   return (
     <GenericLifecycleShell
       scopeId="dashboard"
-      activationConfig={dashboardActivationConfig}
       backendPhase="FT1"
-      activationState="ACTIVE"
       isReady={isReady}
-      onActivate={() => onActivate()}
     >
       {children}
     </GenericLifecycleShell>

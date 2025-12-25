@@ -1,39 +1,51 @@
+/**
+ * GenericLifecycleShell
+ * ---------------------
+ *
+ * MODEL A — POST-FT1 UI LIFECYCLE SHELL
+ *
+ * HARD INVARIANTS:
+ * - MUST ONLY mount after FT1_READY
+ * - MUST NEVER receive FT_MINUS_ONE or FT0 phases
+ * - Controls rendering behavior ONLY (not routing)
+ *
+ * RESPONSIBILITY:
+ * - FT1 → render content
+ * - FT2 → render paywall
+ *
+ * If this shell renders incorrectly:
+ * → the routing architecture is broken upstream
+ */
+
 // apps/frontend/src/lifecycle/GenericLifecycleShell.tsx
 
 import React from 'react';
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 /* -------------------------------------------------------------------------- */
 /* Props                                                                       */
 /* -------------------------------------------------------------------------- */
 
-interface GenericLifecycleShellProps {
-  /** Identity */
+export interface GenericLifecycleShellProps {
+  /** Identity (debugging & instrumentation only) */
   scopeId: string;
 
-  /** Activation surface config (shop-owned) */
-  activationConfig: ActivationSurfaceProps;
+  /**
+   * Lifecycle phase (MODEL A)
+   * - FT1: usable
+   * - FT2: paywalled
+   *
+   * Pre-FT1 phases are structurally impossible here.
+   */
+  backendPhase: 'FT1' | 'FT2';
 
-  /** Lifecycle inputs */
-  backendPhase: 'FT_MINUS_ONE' | 'FT0' | 'FT1' | 'FT2';
-  activationState:
-    | 'UNKNOWN'
-    | 'INACTIVE'
-    | 'ACTIVE'
-    | 'SYNC_IN_PROGRESS';
-
-  /** Readiness signal */
+  /** Readiness signal (FT1 only) */
   isReady: boolean;
 
-  /** Monetization (optional) */
+  /** Monetization (FT2 only) */
   requiresPayment?: boolean;
   hasPaidEntitlement?: boolean;
 
-  /** Actions */
-  onActivate: (actionId: string) => void;
-  onDismissSync?: () => void;
-
-  /** Final content */
+  /** Final renderable content */
   children: React.ReactNode;
 }
 
@@ -44,39 +56,40 @@ interface GenericLifecycleShellProps {
 export function GenericLifecycleShell({
   scopeId,
   backendPhase,
-  activationState,
   isReady,
   requiresPayment = false,
   hasPaidEntitlement = false,
   children,
 }: GenericLifecycleShellProps) {
-  /**
-   * 🚨 HARD ARCHITECTURAL RULE
-   * GenericLifecycleShell does NOT decide lifecycle.
-   * The caller MUST pass the resolved backendPhase correctly.
-   */
-  const phase = backendPhase;
-
   if (import.meta.env.DEV) {
     console.debug('[GenericLifecycleShell]', {
       scopeId,
       backendPhase,
-      activationState,
       isReady,
       requiresPayment,
       hasPaidEntitlement,
-      resolvedPhase: phase,
     });
+
+    if (backendPhase === 'FT2' && !requiresPayment) {
+      throw new Error(
+        `[GenericLifecycleShell] FT2 phase requires requiresPayment=true (scope: ${scopeId})`
+      );
+    }
   }
 
   /* ------------------------------------------------------------------------ */
   /* Phase → UI mapping                                                        */
   /* ------------------------------------------------------------------------ */
-  switch (phase) {
+
+  switch (backendPhase) {
     /**
-     * 🔒 FT2 — MODULE-ONLY PAYWALL
+     * 🔒 FT2 — Paywall
      */
     case 'FT2':
+      if (hasPaidEntitlement) {
+        return <>{children}</>;
+      }
+
       return (
         <div style={{ padding: 32 }}>
           <h2>Upgrade required</h2>
@@ -85,16 +98,9 @@ export function GenericLifecycleShell({
       );
 
     /**
-     * ✅ FT1 — fully usable
+     * ✅ FT1 — Fully usable
      */
     case 'FT1':
-      return <>{children}</>;
-
-    /* ---------------- Exhaustiveness -------------------------------------- */
-    default:
-      if (import.meta.env.DEV) {
-        console.error('[GenericLifecycleShell] Unhandled phase', phase);
-      }
-      return null;
+      return isReady ? <>{children}</> : null;
   }
 }

@@ -1,32 +1,11 @@
 // apps/frontend/src/lifecycle/ModuleLifecycleShell.tsx
 
 import React from 'react';
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
-import {
-  analyticsActivationConfig,
-  customersActivationConfig,
-  productsActivationConfig,
-  orderNexusActivationConfig,
-  financesActivationConfig,
-} from 'activation/configs';
-
 import { GenericLifecycleShell } from './GenericLifecycleShell';
 import { ModuleContentHost } from './ModuleContentHost';
-
-/* -------------------------------------------------------------------------- */
-/* Activation configs                                                         */
-/* -------------------------------------------------------------------------- */
-
-const ACTIVATION_CONFIGS: Record<string, ActivationSurfaceProps> = {
-  analytics: analyticsActivationConfig,
-  customers: customersActivationConfig,
-  products: productsActivationConfig,
-  'order-nexus': orderNexusActivationConfig,
-  finances: financesActivationConfig,
-};
 
 /* -------------------------------------------------------------------------- */
 /* Props                                                                      */
@@ -65,19 +44,25 @@ export function ModuleLifecycleShell({
 
   const backendPhase: 'FT1' | 'FT2' =
     hasPaidEntitlement ? 'FT1' : 'FT2';
-    
+
+  const isReady = true; // modules are considered ready immediately at FT1 for now
+  const requiresPayment = backendPhase === 'FT2';
+
   return (
     <GenericLifecycleShell
       scopeId={moduleId}
-      activationConfig={ACTIVATION_CONFIGS[moduleId]}
       backendPhase={backendPhase}
-      activationState="ACTIVE"
-      isReady
-      requiresPayment
+      isReady={isReady}
+      requiresPayment={requiresPayment}
       hasPaidEntitlement={hasPaidEntitlement}
-      onActivate={() => {}}
     >
       {children}
+
+      {/* 
+        ModuleContentHost is mounted regardless of paywall state.
+        GenericLifecycleShell controls visibility.
+        This enables preloading and consistent instrumentation.
+      */}
       <ModuleContentHost
         moduleId={moduleId}
         phase={backendPhase === 'FT1' ? 'FT1_READY' : 'FT2_PAYWALL'}

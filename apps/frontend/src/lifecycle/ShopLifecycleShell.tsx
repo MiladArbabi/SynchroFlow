@@ -3,53 +3,59 @@
 import React from 'react';
 import { useIntegrationSyncStatus } from 'contexts/IntegrationContext';
 import { ShopLifecycleContext } from './ShopLifecycleContext';
+import { useOnboardingReadiness } from './useOnboardingReadiness';
+import { ShopLifecyclePhase } from './types';
+import { useAuth } from 'contexts/AuthContext'; // ← or correct source of shopId
 
-export type ShopLifecyclePhase =
-  | 'FT_MINUS_ONE'
-  | 'FT0_SYNCING'
-  | 'FT0_PREPARING'
-  | 'FT1_READY'; // reserved, not entered yet
-
-interface ShopLifecycleShellProps {
-  children: React.ReactNode;
-}
-
-export function ShopLifecycleShell({ children }: ShopLifecycleShellProps) {
+export function ShopLifecycleShell({ children }: { children: React.ReactNode }) {
   const { status, isLoading } = useIntegrationSyncStatus();
+  const { user } = useAuth();
 
-  if (isLoading) {
-    return null;
-  }
+  const shopId = user?.shop_id ?? null;
+  const syncCompleted = status === 'COMPLETED';
+
+  const { data: readiness } = useOnboardingReadiness(
+    syncCompleted,
+    shopId
+  );
 
   let phase: ShopLifecyclePhase;
 
-  switch (status) {
-    case 'NOT_FOUND':
-      phase = 'FT_MINUS_ONE';
-      break;
+  if (isLoading || !shopId) {
+    phase = 'FT_MINUS_ONE';
+  } else {
+    switch (status) {
+      case 'NOT_FOUND':
+        phase = 'FT_MINUS_ONE';
+        break;
 
-    case 'PENDING':
-    case 'SYNCING_PRODUCTS':
-    case 'SYNCING_ORDERS':
-    case 'SYNCING_LINE_ITEMS':
-    case 'SYNCING_INVENTORY':
-    case 'SYNCING_SHOP':
-    case 'COMPLETING':
-      phase = 'FT0_SYNCING';
-      break;
+      case 'PENDING':
+      case 'SYNCING_PRODUCTS':
+      case 'SYNCING_ORDERS':
+      case 'SYNCING_LINE_ITEMS':
+      case 'SYNCING_INVENTORY':
+      case 'SYNCING_SHOP':
+      case 'COMPLETING':
+        phase = 'FT0_SYNCING';
+        break;
 
-    case 'COMPLETED':
-      phase = 'FT0_PREPARING';
-      break;
+      case 'COMPLETED':
+        phase =
+          readiness?.ready === true
+            ? 'FT1_READY'
+            : 'FT0_PREPARING';
+        break;
 
-    case 'FAILED':
-    default:
-      phase = 'FT_MINUS_ONE';
+      default:
+        phase = 'FT_MINUS_ONE';
+    }
   }
 
   if (import.meta.env.DEV) {
-    console.debug('[ShopLifecycleShell]', {
-      integrationSyncStatus: status,
+    console.info('[ShopLifecycle]', {
+      shopId,
+      integrationStatus: status,
+      readiness: readiness?.ready,
       resolvedPhase: phase,
     });
   }

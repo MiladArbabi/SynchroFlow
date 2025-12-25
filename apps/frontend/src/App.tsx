@@ -154,33 +154,37 @@ export default function App() {
   }, [handleConnectStoreIntent]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <RuntimeRoutesProvider>
-        <RuntimeRoutesSubscriber />
+  <QueryClientProvider client={queryClient}>
+    <RuntimeRoutesProvider>
+      <RuntimeRoutesSubscriber />
 
-        <DashboardStateProvider>
-         <IntegrationProvider>
+      <DashboardStateProvider>
+        <IntegrationProvider>
           <ThemeCustomization>
             <EntitlementsProvider>
               <SpecterConfigProvider>
                 <ModuleBootstrap />
 
-                  <ConnectStoreModal
-                    isOpen={isConnectModalOpen}
-                    onClose={() => setIsConnectModalOpen(false)}
-                  />
-                  
-                  <IntlErrorBoundary>
+                <ConnectStoreModal
+                  isOpen={isConnectModalOpen}
+                  onClose={() => setIsConnectModalOpen(false)}
+                />
+
+                <IntlErrorBoundary>
                   <Routes>
-                    {/* ---------------- Public auth routes ---------------- */}
+                    {/* ================= PUBLIC ROUTES ================= */}
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
 
-                    {/* ---------------- Protected SaaS app ---------------- */}
+                    {/* ================= PROTECTED APP ================= */}
                     <Route element={<ProtectedRoute />}>
-                      {/* 🔑 Layout ALWAYS mounted */}
                       <Route element={<LayoutManager />}>
-                       {/* 1️⃣ Shop lifecycle state */}
+
+                        {/* =================================================
+                            SINGLE STRUCTURAL LIFECYCLE GATE (MODEL A)
+                            - Pre-FT1: renders activation / syncing / empty
+                            - FT1_READY: exposes real app routes
+                        ================================================= */}
                         <Route
                           element={
                             <ShopLifecycleShell>
@@ -188,16 +192,13 @@ export default function App() {
                             </ShopLifecycleShell>
                           }
                         >
-                          {/* 2️⃣ REAL app routes — EXIST ONLY AT FT1 */}
-                          {/* Dashboard */}
+                          {/* -------- Dashboard (FT1+) -------- */}
                           <Route
-                            path="/dashboard"
+                            path="dashboard"
                             element={
                               <DashboardLifecycleShell
                                 onActivate={() =>
-                                  window.dispatchEvent(
-                                    new Event('ui:connect-store')
-                                  )
+                                  window.dispatchEvent(new Event('ui:connect-store'))
                                 }
                               >
                                 <DashboardPage handleSidenavToggle={() => {}} />
@@ -205,9 +206,9 @@ export default function App() {
                             }
                           />
 
-                          {/* Orders */}
+                          {/* -------- Modules (FT1+) -------- */}
                           <Route
-                            path="/orders/*"
+                            path="orders/*"
                             element={
                               <ModuleLifecycleShell moduleId="order-nexus">
                                 <OrdersPage />
@@ -215,9 +216,8 @@ export default function App() {
                             }
                           />
 
-                          {/* Customers */}
                           <Route
-                            path="/customers/*"
+                            path="customers/*"
                             element={
                               <ModuleLifecycleShell moduleId="customers">
                                 <CustomersPage />
@@ -225,9 +225,8 @@ export default function App() {
                             }
                           />
 
-                          {/* Products */}
                           <Route
-                            path="/products/*"
+                            path="products/*"
                             element={
                               <ModuleLifecycleShell moduleId="products">
                                 <ProductsPage />
@@ -235,9 +234,8 @@ export default function App() {
                             }
                           />
 
-                          {/* Analytics */}
                           <Route
-                            path="/analytics/*"
+                            path="analytics/*"
                             element={
                               <ModuleLifecycleShell moduleId="analytics">
                                 <AnalyticsPage />
@@ -245,27 +243,25 @@ export default function App() {
                             }
                           />
 
-                          {/* Finances */}
                           <Route
-                            path="/finances/*"
+                            path="finances/*"
                             element={
                               <ModuleLifecycleShell moduleId="finances">
                                 <FinancesPage />
                               </ModuleLifecycleShell>
                             }
                           />
-
-                          {/* Dynamic modules */}
-                          <Route path="modules/:moduleId/*" />
                         </Route>
                       </Route>
                     </Route>
 
-                    {/* ---------------- Root & fallback ---------------- */}
+                    {/* ================= FALLBACK ================= */}
                     <Route path="/" element={<Navigate to="/dashboard" replace />} />
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
                 </IntlErrorBoundary>
+
+
               </SpecterConfigProvider>
             </EntitlementsProvider>
           </ThemeCustomization>

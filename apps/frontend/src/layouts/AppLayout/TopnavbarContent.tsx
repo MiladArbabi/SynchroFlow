@@ -18,7 +18,6 @@ import useConfig from 'hooks/useConfig';
 
 // --- BERRY HEADER SECTION IMPORTS ---
 // import MegaMenuSection from 'layout/MainLayout/Header/MegaMenuSection'; // Keep commented for now
-import OnboardingTaskListTracker from 'layout/MainLayout/Header/OnboardingTaskListTracker';
 
 // import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
@@ -91,7 +90,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
 
       <Box display="flex" alignItems="center" gap={{ xs: 0.5, sm: 1, md: 1.5 }}> {/* Adjust gap */}
         {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
-        <OnboardingTaskListTracker />
+        {/* <OnboardingTaskListTracker /> */}
         {/* <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box> */}
         
         {/* Layout Edit Buttons (Keep these for now) */}
