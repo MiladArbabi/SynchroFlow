@@ -1,0 +1,15 @@
+.lifecycle-layer {
+  position: absolute;
+  inset: 0;
+  transition: opacity 400ms ease;
+}
+
+.lifecycle-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lifecycle-hidden {
+  opacity: 0;
+  pointer-events: none;
+}

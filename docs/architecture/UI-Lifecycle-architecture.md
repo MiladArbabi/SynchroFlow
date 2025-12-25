@@ -1,12 +1,25 @@
-# UI Lifecycle Architecture — Canonical Documentation (v2)
+Below is the **UI Lifecycle Architecture — Canonical Documentation (v2.1)**.
+This is a **surgical update** to v2: no philosophy changes, no rewrites, only corrections and clarifications that reflect the system **as it now actually works**.
+
+---
+
+# UI Lifecycle Architecture — Canonical Documentation (v2.1)
+
+> **Status:** Canonical
+> **Supersedes:** v2
+> **Change scope:** Clarification + tightening (no architectural changes)
+
+---
 
 ## Purpose
 
-This document defines the **single source of truth** for UI lifecycle handling across **Dashboard and Modules** in SynchroFlow. It explains:
+This document defines the **single source of truth** for UI lifecycle handling across **Dashboard and Modules** in SynchroFlow.
+
+It specifies:
 
 * What lifecycle phases exist
 * Where lifecycle decisions are made
-* How Dashboard and Modules participate
+* How routing, structure, and UI rendering are separated
 * What is **explicitly forbidden**
 
 ---
@@ -21,9 +34,11 @@ There is **exactly one authority** that decides the **shop lifecycle phase**:
 ShopLifecycleShell
 ```
 
-It evaluates **backend integration state** and exposes a **canonical shop phase** via context.
+It evaluates **backend integration + onboarding readiness** and exposes a **canonical shop phase**.
 
 No other component may decide or infer shop lifecycle.
+
+---
 
 ### 1.2 Lifecycle Decision ≠ Lifecycle Rendering
 
@@ -32,10 +47,12 @@ Lifecycle is split into **three strict layers**:
 | Layer                     | Responsibility                            |
 | ------------------------- | ----------------------------------------- |
 | **ShopLifecycleShell**    | Decides *shop phase* (state machine only) |
-| **ShopLifecycleGate**     | Decides *which subtree exists*            |
-| **GenericLifecycleShell** | Maps UI lifecycle → UI                    |
+| **ShopLifecycleGate**     | Decides *what subtree exists*             |
+| **GenericLifecycleShell** | Renders UI *after FT1 only*               |
 
 No layer may absorb responsibility from another.
+
+---
 
 ### 1.3 Dashboard and Modules Are Equal
 
@@ -53,14 +70,14 @@ Any deviation is a bug.
 Defined in:
 
 ```
-apps/frontend/src/lifecycle/ShopLifecycleShell.tsx
+apps/frontend/src/lifecycle/types.ts
 ```
 
 ```ts
 export type ShopLifecyclePhase =
   | 'FT_MINUS_ONE'   // No integration exists
   | 'FT0_SYNCING'    // Backend actively syncing (blocking)
-  | 'FT0_PREPARING'  // Sync done, data not ready
+  | 'FT0_PREPARING'  // Sync completed, UI not yet unlocked
   | 'FT1_READY';     // Fully usable app
 ```
 
@@ -74,17 +91,18 @@ These phases are **shop-level only**.
 apps/frontend/src/lifecycle/ShopLifecycleShell.tsx
 ```
 
-### 3.1 Responsibilities
+### Responsibilities
 
 * Read **integration sync status**
+* Read **onboarding readiness**
 * Resolve **ShopLifecyclePhase**
 * Publish phase via `ShopLifecycleContext`
 
-### 3.2 Explicit Non-Responsibilities
+### Explicit Non-Responsibilities
 
-❌ Render UI  
-❌ Route  
-❌ Show modals  
+❌ Render UI
+❌ Route
+❌ Show modals
 ❌ Decide dashboard/module behavior
 
 > This component is a **pure state machine**.
@@ -97,20 +115,28 @@ apps/frontend/src/lifecycle/ShopLifecycleShell.tsx
 apps/frontend/src/lifecycle/ShopLifecycleGate.tsx
 ```
 
-### 4.1 Purpose
+### Purpose
 
-The **only place** allowed to block or allow routes.
+The **only place** allowed to:
 
-### 4.2 Phase → UI Mapping
+* Block routes
+* Allow routes
+* Render **pre-FT1 UI**
 
-| Shop Phase      | Rendered UI                           |
-| --------------- | ------------------------------------- |
-| `FT_MINUS_ONE`  | Activation surface (dashboard config) |
-| `FT0_SYNCING`   | Blocking `DataSyncingModal`           |
-| `FT0_PREPARING` | `EmptyDashboardState`                 |
-| `FT1_READY`     | `<Outlet />` (real app routes)        |
+---
 
-### 4.3 Hard Rule
+### 4.1 Phase → Structure / UI Mapping
+
+| Shop Phase      | What Exists / Renders                              |
+| --------------- | -------------------------------------------------- |
+| `FT_MINUS_ONE`  | Activation surface (route-aware config)            |
+| `FT0_SYNCING`   | Blocking `DataSyncingModal`                        |
+| `FT0_PREPARING` | `EmptyDashboardState` (“Preparing your dashboard”) |
+| `FT1_READY`     | `<Outlet />` (real application routes)             |
+
+---
+
+### 4.2 Hard Rule
 
 > **If a route is not reachable at a given phase, it must not exist in the tree.**
 
@@ -118,55 +144,101 @@ No conditional rendering inside pages.
 
 ---
 
-## 5. UI Lifecycle (Within FT1 Only)
+## 5. FT0 UI Substates (Presentation Only — NOT Lifecycle)
 
-Once the shop reaches **FT1_READY**, UI lifecycle applies **inside routes**.
+**Important clarification introduced in v2.1**
 
-Defined in:
+FT0 has **UI substates**, not lifecycle phases.
 
-```
-apps/frontend/src/lifecycle/types.ts
-```
+They are **presentation concerns**, handled exclusively by `ShopLifecycleGate`.
+
+### 5.1 FT0-A — Blocking Sync
+
+* Condition: backend sync actively running
+* Lifecycle phase: `FT0_SYNCING`
+* UI:
+
+  * `DataSyncingModal`
+  * App layout blocked
+* Routes: ❌ none
+
+---
+
+### 5.2 FT0-B — Preparing UI
+
+* Condition: backend sync complete, FT1 not unlocked
+* Lifecycle phase: `FT0_PREPARING`
+* UI:
+
+  * `EmptyDashboardState`
+  * “Preparing your dashboard…”
+* Routes: ❌ none
+* Layout: mounted
+
+---
+
+### 5.3 Hard Rule
+
+> FT0-A and FT0-B MUST NOT be modeled as lifecycle phases.
+
+They are **pure UI substates**.
+
+---
+
+## 6. UI Lifecycle (Post-FT1 Only)
+
+UI lifecycle exists **only after** the shop reaches `FT1_READY`.
+
+Defined implicitly by `GenericLifecycleShell`.
+
+### 6.1 Canonical UI Lifecycle Phases
 
 ```ts
 export type UILifecyclePhase =
-  | 'FT_MINUS_ONE'
-  | 'FT0_SYNCING'
-  | 'FT0_PREPARING'
   | 'FT1_READY'
   | 'FT2_PAYWALL';
 ```
 
+There is **no UI lifecycle** for FT-1 or FT0.
+
 ---
 
-## 6. GenericLifecycleShell (Only UI Renderer)
+## 7. GenericLifecycleShell (Renderer Only)
 
 ```
 apps/frontend/src/lifecycle/GenericLifecycleShell.tsx
 ```
 
-### 6.1 Responsibilities
+### Responsibilities
 
 * Accept **facts only**
-* Resolve `UILifecyclePhase`
-* Render exactly one UI per phase
+* Render:
 
-### 6.2 Forbidden
+  * `FT1_READY` → children
+  * `FT2_PAYWALL` → paywall UI
+
+### Forbidden
 
 GenericLifecycleShell must **never**:
 
-❌ Fetch data  
-❌ Decide shop lifecycle  
-❌ Inspect routes  
+❌ Fetch data
+❌ Decide shop lifecycle
+❌ Handle FT-1 / FT0
+❌ Inspect routes
 ❌ Special-case dashboard or modules
+
+> GenericLifecycleShell is a **post-FT1 renderer only**.
 
 ---
 
-## 7. Adapters (Fact Providers Only)
+## 8. Adapters (Fact Providers Only)
 
-Adapters **translate facts → lifecycle inputs**. They contain **zero lifecycle logic**.
+Adapters translate **facts → props**.
+They contain **zero lifecycle logic**.
 
-### 7.1 DashboardLifecycleShell
+---
+
+### 8.1 DashboardLifecycleShell
 
 ```
 apps/frontend/src/lifecycle/DashboardLifecycleShell.tsx
@@ -174,14 +246,19 @@ apps/frontend/src/lifecycle/DashboardLifecycleShell.tsx
 
 Provides:
 
-* `backendPhase` → inherited from shop phase
-* `activationState` → always `ACTIVE` post-FT1
-* `isReady` → derived from `DashboardStateContext`
-* `activationConfig` → dashboard config
+* `backendPhase = 'FT1'`
+* `isReady` (dashboard hydration signal)
+* children
 
-Dashboard **never** promotes lifecycle.
+**Does NOT:**
 
-### 7.2 ModuleLifecycleShell
+* Handle activation surfaces
+* Promote lifecycle
+* Gate routes
+
+---
+
+### 8.2 ModuleLifecycleShell
 
 ```
 apps/frontend/src/lifecycle/ModuleLifecycleShell.tsx
@@ -189,25 +266,25 @@ apps/frontend/src/lifecycle/ModuleLifecycleShell.tsx
 
 Rules:
 
-* Must only render when shop phase = `FT1_READY`
-* May **assert invariants** in DEV
-* Delegates fully to `GenericLifecycleShell`
+* Must render **only when shop phase = FT1_READY**
+* Asserts invariants in DEV
+* Delegates rendering to `GenericLifecycleShell`
 
 Modules do **not**:
 
-❌ Block routes  
-❌ Render activation UI  
-❌ Decide paywalls
+❌ Render activation UI
+❌ Gate routes
+❌ Decide lifecycle
 
 ---
 
-## 8. Activation System (Orthogonal)
+## 9. Activation System (Orthogonal)
 
 Activation:
 
-* Is **runtime state only**
-* Reports `ACTIVE`, `SYNC_IN_PROGRESS`, etc.
-* Does **not** decide readiness or routing
+* Is **runtime / UX state only**
+* Is resolved structurally in `ShopLifecycleGate` (FT-1)
+* Is rendered via `ActivationSurfaceAdapter`
 
 Activation configs live in:
 
@@ -215,32 +292,32 @@ Activation configs live in:
 apps/frontend/src/activation/configs/
 ```
 
-Each config defines **presentation**, not lifecycle.
+They define **presentation only**, never lifecycle.
 
 ---
 
-## 9. Entitlements & Monetization
+## 10. Entitlements & Monetization
 
 Monetization is expressed **only** via:
 
 * `requiresPayment`
 * `hasPaidEntitlement`
 
-Paywalls render **only** in `GenericLifecycleShell`.
+Paywalls render **only** inside `GenericLifecycleShell`.
 
-No page or module may check entitlements directly for UI.
+No page or module may inspect entitlements directly for UI.
 
 ---
 
-## 10. Hard Rules (Enforced)
+## 11. Hard Rules (Enforced)
 
-❌ No lifecycle conditionals outside shells  
-❌ No routing logic outside `ShopLifecycleGate`  
-❌ No lifecycle inference in pages  
-❌ No dashboard special-cases  
+❌ No lifecycle conditionals outside shells
+❌ No routing logic outside `ShopLifecycleGate`
+❌ No lifecycle inference in pages
+❌ No dashboard special-cases
 ❌ No module autonomy
 
-✅ Add behavior only via:
+✅ All behavior added via:
 
 1. ShopLifecycleShell
 2. ShopLifecycleGate
@@ -249,311 +326,33 @@ No page or module may check entitlements directly for UI.
 
 ---
 
-## 11. Mental Model (Updated)
+## 12. Shop Lifecycle — Canonical State Diagram
 
-> **Shop lifecycle decides what exists.  
-> UI lifecycle decides how it looks.  
-> Pages never decide either.**
+```
+FT_MINUS_ONE
+    ↓
+FT0_SYNCING
+    ↓
+FT0_PREPARING
+    ↓
+FT1_READY
+```
+
+### One-Line Invariant
+
+> **If the shop is not FT1_READY, application routes must not exist.**
+
+---
+
+## 13. Final Mental Model (v2.1)
+
+> **Shop lifecycle decides what exists.
+> FT0 UI decides how waiting looks.
+> UI lifecycle decides how usable UI renders.
+> Pages decide nothing.**
 
 If this stops being true, the architecture is broken.
 
 ---
 
-## 12. Shop Lifecycle — Canonical State Diagram
-
-This diagram describes **only the shop-level lifecycle** handled by `ShopLifecycleShell`. It is **authoritative**.
-
-### 12.1 States
-
-```
-FT_MINUS_ONE
-FT0_SYNCING
-FT0_PREPARING
-FT1_READY
-```
-
-### 12.2 State Meanings (Non-Interpretive)
-
-| State           | Meaning                                      |
-| --------------- | -------------------------------------------- |
-| `FT_MINUS_ONE`  | No integration record exists                 |
-| `FT0_SYNCING`   | Backend integration sync is actively running |
-| `FT0_PREPARING` | Sync completed, but UI/data not ready        |
-| `FT1_READY`     | App is fully usable                          |
-
-### 12.3 Transition Diagram (Textual)
-
-```
-┌────────────────────┐
-│    FT_MINUS_ONE    │
-│                    │
-│ No integration     │
-│ exists             │
-└─────────┬──────────┘
-          │
-          │ User connects store
-          │ (integration record created)
-          ▼
-┌────────────────────┐
-│    FT0_SYNCING     │
-│                    │
-│ Backend syncing    │
-│ data               │
-└─────────┬──────────┘
-          │
-          │ Sync completes
-          │ (status = COMPLETED)
-          ▼
-┌────────────────────┐
-│   FT0_PREPARING    │
-│                    │
-│ Data exists but    │
-│ UI not ready       │
-└─────────┬──────────┘
-          │
-          │ UI readiness achieved
-          │ (dashboard/modules hydrated)
-          ▼
-┌────────────────────┐
-│     FT1_READY      │
-│                    │
-│ Fully usable app   │
-└────────────────────┘
-```
-
-### 12.4 Transition Rules (Hard Constraints)
-
-#### 12.4.1 FT_MINUS_ONE → FT0_SYNCING
-
-Occurs **only if**:
-
-* An integration record is created
-* Backend sync starts
-
-❌ Cannot skip directly to FT0_PREPARING  
-❌ Cannot skip directly to FT1_READY
-
-#### 12.4.2 FT0_SYNCING → FT0_PREPARING
-
-Occurs **only if**:
-
-* Backend reports sync complete
-
-❌ UI readiness does NOT matter here  
-❌ Entitlements do NOT matter
-
-#### 12.4.3 FT0_PREPARING → FT1_READY
-
-Occurs **only if**:
-
-* UI declares readiness (dashboard + modules hydrated)
-
-This transition is **frontend-controlled**.
-
-### 12.5 Illegal Transitions (Must Never Happen)
-
-| From          | To            | Why                                 |
-| ------------- | ------------- | ----------------------------------- |
-| FT_MINUS_ONE  | FT0_PREPARING | No integration exists               |
-| FT_MINUS_ONE  | FT1_READY     | No activation                       |
-| FT0_SYNCING   | FT1_READY     | Skips preparation                   |
-| FT0_PREPARING | FT0_SYNCING   | No backward transitions             |
-| FT1_READY     | Any           | Terminal unless integration removed |
-
-### 12.6 Removal / Reset Rule
-
-If integration is **deleted**:
-
-```
-ANY STATE → FT_MINUS_ONE
-```
-
-This is a **hard reset**. No other backward transitions are allowed.
-
-### 12.7 Relationship to Routing
-
-| Phase         | Routes Exist? |
-| ------------- | ------------- |
-| FT_MINUS_ONE  | ❌ No          |
-| FT0_SYNCING   | ❌ No          |
-| FT0_PREPARING | ❌ No          |
-| FT1_READY     | ✅ Yes         |
-
-All routing is gated **structurally** by `ShopLifecycleGate`.
-
-### 12.8 Relationship to UI Lifecycle
-
-* Shop lifecycle decides **what subtree exists**
-* UI lifecycle decides **what UI is rendered**
-* UI lifecycle **cannot override** shop lifecycle
-
-### 12.9 One-Line Invariant
-
-> **If the shop is not FT1_READY, application routes must not exist.**
-
-If you ever see a page rendering outside this rule, something is wired incorrectly.
-
----
-
-## 13. Combined Shop + UI Lifecycle — Canonical Diagram
-
-This diagram shows **who decides what**, **when**, and **what is allowed to render**.
-
-### 13.1 Legend
-
-* **Shop Lifecycle** = structural / routing gate
-* **UI Lifecycle** = rendering decision via `resolveUILifecyclePhase`
-* **Adapters** = fact providers only
-* **Shell** = renderer only
-
-### 13.2 High-Level Flow
-
-```
-┌──────────────────────────────┐
-│        App Layout            │
-│ (TopNav, SideNav, Shell)     │
-│  ALWAYS MOUNTED              │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│     ShopLifecycleShell       │   ← STATE MACHINE
-│  (integration sync status)   │
-└──────────────┬───────────────┘
-               │ provides
-               ▼
-┌──────────────────────────────┐
-│     ShopLifecycleGate        │   ← STRUCTURAL GATE
-│ (what subtree is allowed)    │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│  Dashboard / Modules Exist?  │
-│   (YES only at FT1_READY)    │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│  GenericLifecycleShell       │   ← RENDERER
-│ resolveUILifecyclePhase()    │
-└──────────────────────────────┘
-```
-
-### 13.3 Full State Diagram (Combined)
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                        FT_MINUS_ONE                         │
-│                                                            │
-│ Shop: no integration record                                 │
-│ UI phase: FT_MINUS_ONE                                      │
-│                                                            │
-│ Rendered UI:                                                │
-│ - ActivationSurfaceAdapter (dashboard config)               │
-│ - CTA: Connect Store                                        │
-│                                                            │
-│ Routes exist? ❌ NO                                         │
-└───────────────┬────────────────────────────────────────────┘
-                │
-                │ User connects store
-                │ Integration record created
-                ▼
-┌────────────────────────────────────────────────────────────┐
-│                        FT0_SYNCING                          │
-│                                                            │
-│ Shop: backend syncing                                      │
-│ UI phase: FT0_SYNCING                                      │
-│                                                            │
-│ Rendered UI:                                                │
-│ - DataSyncingModal (blocking)                               │
-│                                                            │
-│ Routes exist? ❌ NO                                         │
-└───────────────┬────────────────────────────────────────────┘
-                │
-                │ Backend sync completed
-                ▼
-┌────────────────────────────────────────────────────────────┐
-│                       FT0_PREPARING                         │
-│                                                            │
-│ Shop: integration complete                                  │
-│ UI: activated but not ready                                 │
-│                                                            │
-│ Rendered UI:                                                │
-│ - EmptyDashboardState                                       │
-│ - "Preparing your dashboard"                                │
-│                                                            │
-│ Routes exist? ❌ NO                                         │
-└───────────────┬────────────────────────────────────────────┘
-                │
-                │ UI readiness achieved
-                │ (dashboard + modules hydrated)
-                ▼
-┌────────────────────────────────────────────────────────────┐
-│                        FT1_READY                            │
-│                                                            │
-│ Shop: fully active                                          │
-│ UI: ready                                                   │
-│                                                            │
-│ Rendered UI (via GenericLifecycleShell):                    │
-│ - Dashboard content                                         │
-│ - Module content                                            │
-│ - (Optional FT2 paywalls inside modules)                    │
-│                                                            │
-│ Routes exist? ✅ YES                                        │
-└────────────────────────────────────────────────────────────┘
-```
-
-### 13.4 Where Each Decision Is Made (Critical)
-
-| Decision            | Location                    | Notes              |
-| ------------------- | --------------------------- | ------------------ |
-| Integration exists? | `IntegrationContext`        | API truth only     |
-| Shop phase          | `ShopLifecycleShell`        | State machine only |
-| Routes exist?       | `ShopLifecycleGate`         | Structural         |
-| UI phase            | `resolveUILifecyclePhase`   | Single brain       |
-| What renders        | `GenericLifecycleShell`     | No logic           |
-| Readiness           | Dashboard / Module adapters | Facts only         |
-
-### 13.5 Dashboard & Modules Participation
-
-```
-Dashboard / Module Adapter
-│
-├─ backendPhase      ← from shop lifecycle
-├─ activationState   ← from activation surface
-├─ isReady           ← from data hydration
-├─ requiresPayment   ← static per module
-└─ hasPaidEntitlement← entitlements context
-            │
-            ▼
-   resolveUILifecyclePhase()
-            │
-            ▼
-   GenericLifecycleShell
-```
-
-They **never**:
-
-* Gate routes
-* Decide FT transitions
-* Render lifecycle UI directly
-
-### 13.6 One Invariant That Must Hold
-
-> **If ShopLifecyclePhase ≠ FT1_READY, no dashboard or module route may exist.**
-
-If violated:
-
-* Errors like you saw **must** occur
-* The architecture is broken
-
-### 13.7 Why This Matters (Blunt Truth)
-
-Right now, your bugs came from **violating layer boundaries**:
-
-* Shop lifecycle leaking into UI
-* UI lifecycle leaking into routing
-* Integration status being interpreted differently in multiple places
-
-This diagram is the **contract** that prevents that.
+**End of Canonical Documentation v2.1**

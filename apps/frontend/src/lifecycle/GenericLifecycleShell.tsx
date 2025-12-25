@@ -19,7 +19,9 @@
 
 // apps/frontend/src/lifecycle/GenericLifecycleShell.tsx
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import './lifecycleFade.css';
+import { DashboardSkeletons } from 'components/skeletons/DashboardSkeletons';
 
 /* -------------------------------------------------------------------------- */
 /* Props                                                                       */
@@ -61,6 +63,50 @@ export function GenericLifecycleShell({
   hasPaidEntitlement = false,
   children,
 }: GenericLifecycleShellProps) {
+
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  const [showContent, setShowContent] = useState(false);
+
+ const skeletonStartTs = React.useRef<number | null>(null);
+ const MIN_SKELETON_MS = 800; // perceptual minimum
+
+  useEffect(() => {
+    if (!isReady) return;
+
+    // First FT1 render
+    if (skeletonStartTs.current === null) {
+      skeletonStartTs.current = performance.now();
+
+      if (import.meta.env.DEV) {
+        console.info('[Lifecycle][FT1][Skeleton] Mounted', {
+          scopeId,
+        });
+      }
+    }
+
+    // Mount content invisibly
+    setShowContent(true);
+
+    const elapsed = performance.now() - skeletonStartTs.current;
+    const remaining = Math.max(0, MIN_SKELETON_MS - elapsed);
+
+    const timer = setTimeout(() => {
+      setShowSkeleton(false);
+
+      if (import.meta.env.DEV) {
+        console.info('[Lifecycle][FT1][Skeleton→Content]', {
+          scopeId,
+          durationMs: performance.now() - (skeletonStartTs.current ?? 0),
+        });
+      }
+
+      skeletonStartTs.current = null;
+    }, remaining);
+
+    return () => clearTimeout(timer);
+  }, [isReady, scopeId]);
+
+
   if (import.meta.env.DEV) {
     console.debug('[GenericLifecycleShell]', {
       scopeId,
@@ -101,6 +147,26 @@ export function GenericLifecycleShell({
      * ✅ FT1 — Fully usable
      */
     case 'FT1':
-      return isReady ? <>{children}</> : null;
+      return (
+        <div style={{ position: 'relative', minHeight: '100%' }}>
+          {/* Skeleton layer */}
+          <div
+            className={`lifecycle-layer ${
+              showSkeleton ? 'lifecycle-visible' : 'lifecycle-hidden'
+            }`}
+          >
+            {scopeId === 'dashboard' && <DashboardSkeletons />}
+          </div>
+
+          {/* Content layer */}
+          <div
+            className={`lifecycle-layer ${
+              showContent ? 'lifecycle-visible' : 'lifecycle-hidden'
+            }`}
+          >
+            {children}
+          </div>
+        </div>
+      );
   }
 }
