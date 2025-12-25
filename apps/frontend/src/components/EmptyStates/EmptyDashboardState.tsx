@@ -1,4 +1,7 @@
 // apps/frontend/src/components/EmptyStates/EmptyDashboardState.tsx
+// IMPORTANT:
+// EmptyDashboardState must NEVER render in FT_MINUS_ONE.
+// If you see it on app load, lifecycle wiring is broken.
 
 import React from 'react';
 import { Box, Typography, Paper } from '@mui/material';
@@ -23,7 +26,7 @@ export const EmptyDashboardState: React.FC<EmptyDashboardStateProps> = ({
         }}
       >
         <Typography variant="h5" gutterBottom color="text.secondary">
-          Preparing your dashboard
+          Preparing your dashboard in EMPTYDASHBOARD
         </Typography>
         <Typography variant="body1" color="text.secondary">
           We’re syncing and analyzing your data. This will only take a moment.

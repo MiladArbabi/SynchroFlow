@@ -1,4 +1,5 @@
 // apps/frontend/src/activation/configs/index.ts
+export * from './dashboard';
 export { analyticsActivationConfig } from './analytics';
 export { customersActivationConfig } from './customers';
 export { productsActivationConfig } from './products';

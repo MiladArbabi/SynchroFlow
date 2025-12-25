@@ -1,7 +1,7 @@
 export default function ProductsPage() {
   return (
     <>
-      {/* ProductsPage UI only */}
+     <div>ProductsPage in apps/frontend/src/pages/AnalyticsPage.tsx</div>
     </>
   );
 }

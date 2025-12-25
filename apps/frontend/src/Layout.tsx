@@ -36,10 +36,9 @@ export default function Layout() {
                 <Sidenav
                   brandName="SynchroFlow"
                   routes={routes}
-                  isSidenavOpen={isSidenavOpen} isConnected={false} 
-                  onOpenModal={() => {
-                    window.dispatchEvent(new CustomEvent('ui:connect-store'));
-                  }}               
+                  isSidenavOpen={isSidenavOpen} isConnected={false} onOpenModal={function (): void {
+                    throw new Error("Function not implemented.");
+                  }}                
                 />
             </Panel>
 

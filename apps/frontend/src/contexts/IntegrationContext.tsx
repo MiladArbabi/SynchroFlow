@@ -209,3 +209,18 @@ export const useIntegration = (): IntegrationContextType => {
   }
   return context;
 };
+
+// contexts/IntegrationContext.ts
+
+export function useIntegrationSyncStatus() {
+  const ctx = React.useContext(IntegrationContext);
+
+  if (!ctx) {
+    throw new Error('useIntegrationSyncStatus must be used within IntegrationProvider');
+  }
+
+  return {
+    status: ctx.syncStatus,   // 'NONE' | 'SYNCING' | 'COMPLETE'
+    isLoading: ctx.isLoading,
+  };
+}

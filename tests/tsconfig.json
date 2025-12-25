@@ -13,6 +13,7 @@
       "api-server": ["apps/backend/src/server.ts"],
       "api-db": ["apps/backend/src/db.ts"],
       "api-src/*": ["apps/backend/src/*"],
+      "lifecycle/*": ["apps/frontend/src/lifecycle/*"],
       "activation/*": ["apps/frontend/src/activation/*"],
       "test-utils": ["apps/frontend/src/test-utils.tsx"],
       "components/*": ["apps/frontend/src/components/*"],

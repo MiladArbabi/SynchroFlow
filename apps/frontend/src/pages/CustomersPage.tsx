@@ -2,7 +2,7 @@
 export default function CustomersPage() {
    return (
     <>
-      {/* CustomersPage UI only */}
+      <div>Customers Page in apps/frontend/src/pages/CustomersPage.tsx</div>
     </>
   );
 }

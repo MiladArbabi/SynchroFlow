@@ -28,11 +28,12 @@ import AnalyticsPage from "pages/AnalyticsPage";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
 
 import { DashboardPage } from "pages/DashboardPage";
-import { FT0PromotionListener } from 'activation/FT0PromotionListener';
-import { LifecycleShell } from "lifecycle/LifecycleShell";
 import { ModuleLifecycleShell } from "lifecycle/ModuleLifecycleShell";
 import LoginPage from "pages/authentication/LoginPage";
 import RegisterPage from "pages/authentication/RegisterPage";
+import { DashboardLifecycleShell } from "lifecycle/DashboardLifecycleShell";
+import { ShopLifecycleShell } from "lifecycle/ShopLifecycleShell";
+import { ShopLifecycleGate } from "lifecycle/ShopLifecycleGate";
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -158,96 +159,119 @@ export default function App() {
         <RuntimeRoutesSubscriber />
 
         <DashboardStateProvider>
-          <IntegrationProvider>
+         <IntegrationProvider>
+          <ThemeCustomization>
+            <EntitlementsProvider>
+              <SpecterConfigProvider>
+                <ModuleBootstrap />
 
-           <FT0PromotionListener />
-           
-            <ThemeCustomization>
-              <EntitlementsProvider>
-                <SpecterConfigProvider>
-                  <ModuleBootstrap />
-                    <ConnectStoreModal
-                        isOpen={isConnectModalOpen}
-                        onClose={() => setIsConnectModalOpen(false)}
-                      />
-                      <IntlErrorBoundary>
-                        <Routes>
-                         {/* Public auth routes */}
-                         <Route path="/login" element={<LoginPage />} />
-                         <Route path="/register" element={<RegisterPage />} />
-                        {/* Protected SaaS app */}
-                        <Route element={<ProtectedRoute />}>
-                          <Route element={<LayoutManager />}>
-                          
-                            {/* 🔗 STATIC BRIDGE for DashboardPage */}
-                              <Route
-                                path="/dashboard"
-                                element={
-                                  <LifecycleShell>
-                                    <DashboardPage handleSidenavToggle={() => {}} />
-                                  </LifecycleShell>}
-                                />
-                              {/* 🔗 STATIC BRIDGE for Orders (required for refresh / deep links) */}
-                              <Route
-                                path="/orders/*"
-                                element={
-                                  <ModuleLifecycleShell moduleId="order-nexus">
-                                    <OrdersPage />
-                                  </ModuleLifecycleShell>
+                  <ConnectStoreModal
+                    isOpen={isConnectModalOpen}
+                    onClose={() => setIsConnectModalOpen(false)}
+                  />
+                  
+                  <IntlErrorBoundary>
+                  <Routes>
+                    {/* ---------------- Public auth routes ---------------- */}
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/register" element={<RegisterPage />} />
+
+                    {/* ---------------- Protected SaaS app ---------------- */}
+                    <Route element={<ProtectedRoute />}>
+                      {/* 🔑 Layout ALWAYS mounted */}
+                      <Route element={<LayoutManager />}>
+                       {/* 1️⃣ Shop lifecycle state */}
+                        <Route
+                          element={
+                            <ShopLifecycleShell>
+                              <ShopLifecycleGate />
+                            </ShopLifecycleShell>
+                          }
+                        >
+                          {/* 2️⃣ REAL app routes — EXIST ONLY AT FT1 */}
+                          {/* Dashboard */}
+                          <Route
+                            path="/dashboard"
+                            element={
+                              <DashboardLifecycleShell
+                                onActivate={() =>
+                                  window.dispatchEvent(
+                                    new Event('ui:connect-store')
+                                  )
                                 }
-                              />
-                              {/* 🔗 STATIC BRIDGE for Customers */}
-                              <Route
-                                path="/customers/*"
-                                element={
-                                  <ModuleLifecycleShell moduleId="customers">
-                                    <CustomersPage />
-                                  </ModuleLifecycleShell>
-                                }
-                              />
-                              {/* 🔗 STATIC BRIDGE for Products */}
-                              <Route
-                                path="/products/*"
-                                element={
-                                  <ModuleLifecycleShell moduleId="products">
-                                    <ProductsPage />
-                                  </ModuleLifecycleShell>
-                                }
-                              />
-                              <Route
-                                path="/analytics/*"
-                                element={
-                                  <ModuleLifecycleShell moduleId="analytics">
-                                    <AnalyticsPage />
-                                  </ModuleLifecycleShell>
-                                }
-                              />
-                              <Route
-                                path="/finances/*"
-                                element={
-                                  <ModuleLifecycleShell moduleId="finances">
-                                    <FinancesPage />
-                                  </ModuleLifecycleShell>
-                                }
-                              />
-                              {/* Dynamic modules */}
-                            <Route path="modules/:moduleId/*" />
-                          </Route>
+                              >
+                                <DashboardPage handleSidenavToggle={() => {}} />
+                              </DashboardLifecycleShell>
+                            }
+                          />
+
+                          {/* Orders */}
+                          <Route
+                            path="/orders/*"
+                            element={
+                              <ModuleLifecycleShell moduleId="order-nexus">
+                                <OrdersPage />
+                              </ModuleLifecycleShell>
+                            }
+                          />
+
+                          {/* Customers */}
+                          <Route
+                            path="/customers/*"
+                            element={
+                              <ModuleLifecycleShell moduleId="customers">
+                                <CustomersPage />
+                              </ModuleLifecycleShell>
+                            }
+                          />
+
+                          {/* Products */}
+                          <Route
+                            path="/products/*"
+                            element={
+                              <ModuleLifecycleShell moduleId="products">
+                                <ProductsPage />
+                              </ModuleLifecycleShell>
+                            }
+                          />
+
+                          {/* Analytics */}
+                          <Route
+                            path="/analytics/*"
+                            element={
+                              <ModuleLifecycleShell moduleId="analytics">
+                                <AnalyticsPage />
+                              </ModuleLifecycleShell>
+                            }
+                          />
+
+                          {/* Finances */}
+                          <Route
+                            path="/finances/*"
+                            element={
+                              <ModuleLifecycleShell moduleId="finances">
+                                <FinancesPage />
+                              </ModuleLifecycleShell>
+                            }
+                          />
+
+                          {/* Dynamic modules */}
+                          <Route path="modules/:moduleId/*" />
                         </Route>
+                      </Route>
+                    </Route>
 
-                        {/* Root */}
-                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-                        {/* Fallback */}
-                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                    </Routes>
-                  </IntlErrorBoundary>
-                </SpecterConfigProvider>
-              </EntitlementsProvider>
-            </ThemeCustomization>
-          </IntegrationProvider>
-        </DashboardStateProvider>
-      </RuntimeRoutesProvider>
-    </QueryClientProvider>
+                    {/* ---------------- Root & fallback ---------------- */}
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
+                </IntlErrorBoundary>
+              </SpecterConfigProvider>
+            </EntitlementsProvider>
+          </ThemeCustomization>
+        </IntegrationProvider>
+      </DashboardStateProvider>
+    </RuntimeRoutesProvider>
+  </QueryClientProvider>
   );
 }

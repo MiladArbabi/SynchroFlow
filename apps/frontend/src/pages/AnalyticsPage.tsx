@@ -2,7 +2,7 @@
 export default function AnalyticsPage() {
    return (
     <>
-      {/* AnalyticsPage UI only */}
+       <div>Anals Page in apps/frontend/src/pages/AnalsPage.tsx</div>
     </>
   );
 }

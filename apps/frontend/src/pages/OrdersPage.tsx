@@ -2,7 +2,7 @@
 export default function OrdersPage() {
   return (
     <>
-      {/* Orders UI only */}
+       <div>OrdersPage in apps/frontend/src/pages/OrdersPage.tsx</div>
     </>
   );
 }

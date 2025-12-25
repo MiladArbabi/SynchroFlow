@@ -136,6 +136,7 @@ module.exports = {
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
         '^activation/(.*)$': '<rootDir>/apps/frontend/src/activation/$1',
+        '^lifecycle/(.*)$': '<rootDir>/apps/frontend/src/lifecycle/$1',
         
         // Add aliases for 'layout' and 'api'
         '^layout/(.*)$': '<rootDir>/apps/frontend/src/layout/$1',

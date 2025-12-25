@@ -80,6 +80,7 @@
       /* module-level alias for internal modules (specter etc.) — point to compiled output too */
       "modules-specter/*": ["modules/specter/dist/*", "modules/specter/src/*"],
 
+      "lifecycle/*": ["apps/frontend/src/lifecycle/*"],
       "activation/*": ["apps/frontend/src/activation/*"],
     }
   },

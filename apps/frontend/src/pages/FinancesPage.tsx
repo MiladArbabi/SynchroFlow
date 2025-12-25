@@ -2,7 +2,7 @@
 export default function FinancesPage() {
   return (
     <>
-      {/* FinancesPage UI only */}
+      <div>Finances Page in apps/frontend/src/pages/Finaces.tsx</div>
     </>
   );
 }

@@ -1,10 +1,10 @@
 // apps/frontend/src/lifecycle/ModuleLifecycleShell.tsx
 
 import React from 'react';
+import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+import { useEntitlements } from 'contexts/EntitlementsContext';
+import { useShopLifecycle } from './ShopLifecycleContext';
 
-import { useActivationSurface } from 'activation/useActivationSurface';
-import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
-import { DataSyncingModal } from 'components/DataSyncingModal';
 import {
   analyticsActivationConfig,
   customersActivationConfig,
@@ -12,79 +12,77 @@ import {
   orderNexusActivationConfig,
   financesActivationConfig,
 } from 'activation/configs';
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+
+import { GenericLifecycleShell } from './GenericLifecycleShell';
+import { ModuleContentHost } from './ModuleContentHost';
+
+/* -------------------------------------------------------------------------- */
+/* Activation configs                                                         */
+/* -------------------------------------------------------------------------- */
 
 const ACTIVATION_CONFIGS: Record<string, ActivationSurfaceProps> = {
-    analytics: analyticsActivationConfig,
-    customers: customersActivationConfig,
-    products: productsActivationConfig,
-    'order-nexus': orderNexusActivationConfig,
-    finances: financesActivationConfig,
+  analytics: analyticsActivationConfig,
+  customers: customersActivationConfig,
+  products: productsActivationConfig,
+  'order-nexus': orderNexusActivationConfig,
+  finances: financesActivationConfig,
 };
+
+/* -------------------------------------------------------------------------- */
+/* Props                                                                      */
+/* -------------------------------------------------------------------------- */
 
 interface ModuleLifecycleShellProps {
   moduleId: string;
   children: React.ReactNode;
 }
 
-/**
- * ModuleLifecycleShell
- * -------------------
- * Owns activation gating for a single module.
- *
- * HARD RULES:
- * - No lifecycle derivation
- * - No FT logic
- * - No onboarding semantics
- * - No UI decisions beyond delegation
- */
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export function ModuleLifecycleShell({
   moduleId,
   children,
 }: ModuleLifecycleShellProps) {
-  const { surface, isLoading, dismissFT0Modal } = useActivationSurface({ moduleId });
+  const { modules: paidModules } = useEntitlements();
+  const { phase: shopPhase } = useShopLifecycle();
 
-    const config = ACTIVATION_CONFIGS[moduleId];
+  const hasPaidEntitlement = paidModules.includes(moduleId);
 
-    // 1️⃣ Still resolving activation
-    if (isLoading || !surface) {
-        return null;
+  /**
+   * 🔒 HARD INVARIANT
+   * Modules MUST NEVER render unless shop is FT1_READY
+   */
+  if (import.meta.env.DEV) {
+    if (shopPhase !== 'FT1_READY') {
+      throw new Error(
+        `[ModuleLifecycleShell] Module "${moduleId}" rendered while shop phase is "${shopPhase}". ` +
+        `Modules must inherit shop activation and only render at FT1.`
+      );
     }
-
-    if (!config) {
-        console.warn(
-        `[ModuleLifecycleShell] Missing activation config for moduleId: ${moduleId}`
-        );
-        return null;
-    }
-
-  // 2️⃣ FT0 syncing modal (session UX)
-  if (surface.state === 'SYNC_IN_PROGRESS') {
-    return (
-      <DataSyncingModal
-        open
-        onClose={dismissFT0Modal}
-      />
-    );
   }
 
-  // 3️⃣ Not active → show activation surface
-    if (surface.state !== 'ACTIVE') {
-    return (
-        <ActivationSurfaceAdapter
-        surface={config}
-        onAction={(actionId) => {
-            window.dispatchEvent(
-            new CustomEvent('activation:action', {
-                detail: { moduleId, actionId },
-            })
-            );
-        }}
-        />
-    );
-    }
-
-  // 4️⃣ ACTIVE → render module
-  return <>{children}</>;
+  const backendPhase: 'FT1' | 'FT2' =
+    hasPaidEntitlement ? 'FT1' : 'FT2';
+    
+  return (
+    <GenericLifecycleShell
+      scopeId={moduleId}
+      activationConfig={ACTIVATION_CONFIGS[moduleId]}
+      backendPhase={backendPhase}
+      activationState="ACTIVE"
+      isReady
+      requiresPayment
+      hasPaidEntitlement={hasPaidEntitlement}
+      onActivate={() => {}}
+    >
+      {children}
+      <ModuleContentHost
+        moduleId={moduleId}
+        phase={backendPhase === 'FT1' ? 'FT1_READY' : 'FT2_PAYWALL'}
+        hasPaidEntitlement={hasPaidEntitlement}
+      />
+    </GenericLifecycleShell>
+  );
 }
