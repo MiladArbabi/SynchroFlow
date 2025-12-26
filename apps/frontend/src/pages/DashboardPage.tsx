@@ -2,6 +2,8 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { OnboardingUIActionsContext } from 'contexts/OnboardingUIActionsContext';
+import { FT1HeroArrival } from 'components/ft1/FT1HeroArrival';
+import { useAuth } from 'contexts/AuthContext';
 
 interface DashboardPageProps {
   handleSidenavToggle: () => void;
@@ -9,6 +11,9 @@ interface DashboardPageProps {
 
 export const DashboardPage: React.FC<DashboardPageProps> = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const shopId = user?.shop_id;
+
   // --- UI ACTIONS (PASSIVE) ---
   const uiActions = useMemo(
     () => ({
@@ -27,6 +32,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
   return (
     <OnboardingUIActionsContext.Provider value={uiActions}>
       <div>
+        {shopId && <FT1HeroArrival shopId={shopId} />}
         <div>This is the dashboard in frontend/src/pages</div>
       </div>
     </OnboardingUIActionsContext.Provider>

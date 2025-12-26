@@ -18,6 +18,7 @@
 // apps/frontend/src/lifecycle/ShopLifecycleGate.tsx
 
 import { Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
@@ -27,6 +28,36 @@ import { resolveActivationConfig } from 'activation/resolveActivationConfig';
 export function ShopLifecycleGate() {
   const { phase } = useShopLifecycle();
   const location = useLocation();
+
+  /**
+   * VISUAL LATCH
+   * Ensures FT0 is painted at least once before FT1 mounts
+   */
+  const [visualPhase, setVisualPhase] = useState<typeof phase | null>(null);
+  const ft0PaintedRef = useRef(false);
+
+  useEffect(() => {
+    // Any FT0 phase → paint immediately
+    if (phase === 'FT0_SYNCING' || phase === 'FT0_PREPARING') {
+      ft0PaintedRef.current = true;
+      setVisualPhase(phase);
+      return;
+    }
+
+    // FT1 reached without FT0 ever painting → force FT0_PREPARING once
+    if (phase === 'FT1_READY' && !ft0PaintedRef.current) {
+      setVisualPhase('FT0_PREPARING');
+
+      const timer = setTimeout(() => {
+        setVisualPhase('FT1_READY');
+      }, 5000); // perceptual minimum
+
+      return () => clearTimeout(timer);
+    }
+
+    // Normal passthrough
+    setVisualPhase(phase);
+  }, [phase]);
 
   /**
    * Resolve moduleId from route.
@@ -58,7 +89,7 @@ export function ShopLifecycleGate() {
     }
   }
 
-  switch (phase) {
+  switch (visualPhase ?? phase) {
     case 'FT_MINUS_ONE': {
       const activationConfig = resolveActivationConfig(moduleId);
 
