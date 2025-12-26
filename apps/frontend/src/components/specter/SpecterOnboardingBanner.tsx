@@ -3,7 +3,7 @@ import React from 'react';
 import { Alert, AlertTitle, Button, Stack, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useSpecterConfig } from 'contexts/SpecterConfigContext';
-import { useIntegration } from 'contexts/IntegrationContext';
+import { useIntegration } from 'contexts/integration';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 
 export const SpecterOnboardingBanner: React.FC = () => {

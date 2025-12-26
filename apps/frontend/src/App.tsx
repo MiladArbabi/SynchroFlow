@@ -6,7 +6,7 @@ import { axiosInstance } from "api/axiosConfig";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { IntegrationProvider } from 'contexts/IntegrationContext';
+import { IntegrationProvider } from 'contexts/integration/IntegrationProvider';
 import { DashboardStateProvider } from "contexts/DashboardStateContext";
 import { EntitlementsProvider } from 'contexts/EntitlementsContext';
 import { SpecterConfigProvider } from "contexts/SpecterConfigContext";
@@ -34,6 +34,7 @@ import RegisterPage from "pages/authentication/RegisterPage";
 import { DashboardLifecycleShell } from "lifecycle/DashboardLifecycleShell";
 import { ShopLifecycleShell } from "lifecycle/ShopLifecycleShell";
 import { ShopLifecycleGate } from "lifecycle/ShopLifecycleGate";
+import { VisualLifecycleGate } from "lifecycle/VisualLifecycleGate";
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -188,7 +189,11 @@ export default function App() {
                         <Route
                           element={
                             <ShopLifecycleShell>
-                              <ShopLifecycleGate />
+                              <VisualLifecycleGate>
+                                {(visualPhase) => (
+                                  <ShopLifecycleGate phase={visualPhase} />
+                                )}
+                              </VisualLifecycleGate>
                             </ShopLifecycleShell>
                           }
                         >
@@ -196,11 +201,7 @@ export default function App() {
                           <Route
                             path="dashboard"
                             element={
-                              <DashboardLifecycleShell
-                                onActivate={() =>
-                                  window.dispatchEvent(new Event('ui:connect-store'))
-                                }
-                              >
+                              <DashboardLifecycleShell>
                                 <DashboardPage handleSidenavToggle={() => {}} />
                               </DashboardLifecycleShell>
                             }

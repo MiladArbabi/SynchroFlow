@@ -1,236 +1,233 @@
-//tests/unit/ui/lifecycle/ShopLifecycleShell.visual-latch.test.tsx
+/**
+ * ShopLifecycleShell.visual-latch.test.tsx
+ *
+ * Visual lifecycle invariants (TDD):
+ *
+ * - FT1 is absorbing while integration exists
+ * - Integration deletion is the ONLY allowed reset
+ * - FT0 is always shown at least once
+ * - FT0 minimum dwell is enforced
+ * - bootResolved gates ALL lifecycle meaning
+ * - Refresh / auth churn never causes flicker
+ */
+
 import React from 'react';
-import { renderWithTheme } from 'test-utils';
-import { act, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
+import '@testing-library/jest-dom';
+
 import { ShopLifecycleShell } from 'lifecycle/ShopLifecycleShell';
-import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
-import { ShopLifecyclePhase } from 'lifecycle/types';
+import { ShopLifecycleContext } from 'lifecycle/ShopLifecycleContext';
 
-/* ------------------------------------------------------------------ */
-/* Mocks                                                              */
-/* ------------------------------------------------------------------ */
+// -----------------------------------------------------------------------------
+// Test setup
+// -----------------------------------------------------------------------------
 
-let mockStatus: string = 'NOT_FOUND';
-let mockIsLoading = false;
-let mockShopId: number | null = 1;
-let mockFt1Complete = false;
+jest.useFakeTimers();
 
-jest.mock('contexts/IntegrationContext', () => ({
-  useIntegrationSyncStatus: () => ({
-    status: mockStatus,
-    isLoading: mockIsLoading,
-  }),
+jest.mock('contexts/integration', () => ({
+  useIntegration: jest.fn(),
 }));
 
 jest.mock('contexts/AuthContext', () => ({
   useAuth: () => ({
-    user: mockShopId ? { shop_id: mockShopId } : null,
+    user: { shop_id: 1 },
   }),
 }));
+
+let mockFt1Complete = false;
 
 jest.mock('lifecycle/useOnboardingReadiness', () => ({
   useOnboardingReadiness: () => ({
     data: {
-      ft1: {
-        isComplete: mockFt1Complete,
-        blockingModules: [],
-        readyModules: [],
-      },
+      ft1: { isComplete: mockFt1Complete },
     },
   }),
 }));
 
-/* ------------------------------------------------------------------ */
-/* Test probe                                                         */
-/* ------------------------------------------------------------------ */
+import { useIntegration } from 'contexts/integration';
 
-function PhaseProbe() {
-  const { phase } = useShopLifecycle();
-  return <div data-testid="phase">{phase}</div>;
-}
+const mockUseIntegration = useIntegration as jest.Mock;
 
-/* ------------------------------------------------------------------ */
-/* Tests                                                              */
-/* ------------------------------------------------------------------ */
+// -----------------------------------------------------------------------------
+// Harness
+// -----------------------------------------------------------------------------
 
-describe('ShopLifecycleShell – visual phase latching (RED)', () => {
-  beforeEach(() => {
-    jest.useFakeTimers();
-    // Mock performance.now to work with jest timers
-    jest.spyOn(performance, 'now').mockImplementation(() => Date.now());
-    mockStatus = 'NOT_FOUND';
-    mockIsLoading = false;
-    mockShopId = 1;
-    mockFt1Complete = false;
-    });
-
-    afterEach(() => {
-    jest.useRealTimers();
-    jest.restoreAllMocks(); // This restores performance.now
-    });
-
-  test('monotonic latch: phase must never regress once FT1 is reached', () => {
-    const { rerender } = renderWithTheme(
-      <ShopLifecycleShell>
-        <PhaseProbe />
-      </ShopLifecycleShell>
-    );
-
-    // FT_MINUS_ONE
-    expect(screen.getByTestId('phase').textContent)
-      .toBe<'FT_MINUS_ONE'>('FT_MINUS_ONE');
-
-    // Move to FT0
-    act(() => {
-      mockStatus = 'SYNCING_PRODUCTS';
-      rerender(
-        <ShopLifecycleShell>
-          <PhaseProbe />
-        </ShopLifecycleShell>
-      );
-    });
-
-    const phaseAfterFt0 =
-      screen.getByTestId('phase').textContent as ShopLifecyclePhase;
-
-    expect(['FT0_SYNCING', 'FT0_PREPARING']).toContain(phaseAfterFt0);
-
-    // Jump to FT1
-    act(() => {
-      mockStatus = 'COMPLETED';
-      mockFt1Complete = true;
-      rerender(
-        <ShopLifecycleShell>
-          <PhaseProbe />
-        </ShopLifecycleShell>
-      );
-    });
-
-    act(() => {
-      jest.runAllTimers();
-    });
-
-    expect(screen.getByTestId('phase').textContent)
-      .toBe<'FT1_READY'>('FT1_READY');
-
-    // Backend regresses (loading / refetch)
-    act(() => {
-      mockStatus = 'NOT_FOUND';
-      rerender(
-        <ShopLifecycleShell>
-          <PhaseProbe />
-        </ShopLifecycleShell>
-      );
-    });
-
-    // ❌ MUST NOT go backward
-    expect(screen.getByTestId('phase').textContent)
-      .toBe<'FT1_READY'>('FT1_READY');
-  });
-
-  test('forces FT0 once when backend jumps directly to FT1', () => {
-    mockStatus = 'COMPLETED';
-    mockFt1Complete = true;
-
-    renderWithTheme(
-      <ShopLifecycleShell>
-        <PhaseProbe />
-      </ShopLifecycleShell>
-    );
-
-    // First paint must NOT be FT1
-    const firstPhase =
-      screen.getByTestId('phase').textContent as ShopLifecyclePhase;
-
-    expect(firstPhase).not.toBe('FT1_READY');
-    expect(['FT0_SYNCING', 'FT0_PREPARING']).toContain(firstPhase);
-
-    act(() => {
-      jest.runAllTimers();
-    });
-
-    expect(screen.getByTestId('phase').textContent)
-      .toBe<'FT1_READY'>('FT1_READY');
-  });
-
-  test('enforces minimum FT0 dwell before FT1 promotion', () => {
-  const VISUAL_MIN_MS = 1400;
-  
-  // Capture the rerender function
-  const { rerender } = renderWithTheme(
+function renderShell() {
+  return render(
     <ShopLifecycleShell>
-      <PhaseProbe />
+      <ShopLifecycleContext.Consumer>
+        {({ phase }) => <div data-testid="phase">{phase}</div>}
+      </ShopLifecycleContext.Consumer>
     </ShopLifecycleShell>
   );
+}
 
-  // Enter FT0 with rerender
-  act(() => {
-    mockStatus = 'SYNCING_PRODUCTS';
-    rerender(
-      <ShopLifecycleShell>
-        <PhaseProbe />
-      </ShopLifecycleShell>
-    );
+function setIntegrationState(
+  partial: Partial<ReturnType<typeof mockUseIntegration>>
+) {
+  mockUseIntegration.mockReturnValue({
+    bootResolved: true,
+    existence: 'EXISTS',
+    syncStatus: 'PENDING',
+    hasIntegration: true,
+    isSyncComplete: false,
+    refresh: jest.fn(),
+    ...partial,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
+  beforeEach(() => {
+    jest.clearAllTimers();
+    localStorage.clear();
+    mockFt1Complete = false;
   });
 
-  // Immediately complete with rerender
-  act(() => {
-    mockStatus = 'COMPLETED';
-    mockFt1Complete = true;
-    rerender(
-      <ShopLifecycleShell>
-        <PhaseProbe />
-      </ShopLifecycleShell>
-    );
-  });
-
-  // Before dwell expires → still FT0
-  act(() => {
-    jest.advanceTimersByTime(VISUAL_MIN_MS - 100);
-  });
-
-  expect(['FT0_SYNCING', 'FT0_PREPARING']).toContain(
-    screen.getByTestId('phase').textContent
-  );
-
-  // After dwell → FT1 allowed
-  act(() => {
-    jest.advanceTimersByTime(200);
-  });
-
-  expect(screen.getByTestId('phase').textContent)
-    .toBe<'FT1_READY'>('FT1_READY');
-});
-
-  test('refresh in FT1 must never flash FT_MINUS_ONE', () => {
-    mockStatus = 'COMPLETED';
+  test('bootResolved === false forces FT_MINUS_ONE regardless of backend', () => {
+    setIntegrationState({
+      bootResolved: false,
+      existence: 'EXISTS',
+      syncStatus: 'COMPLETED',
+      isSyncComplete: true,
+    });
     mockFt1Complete = true;
 
-    const { rerender } = renderWithTheme(
+    renderShell();
+
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
+  });
+
+  test('backend jump to FT1 always synthesizes FT0 first', () => {
+    setIntegrationState({
+      syncStatus: 'COMPLETED',
+      isSyncComplete: true,
+    });
+    mockFt1Complete = true;
+
+    renderShell();
+
+    // First paint must be FT0
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT0_PREPARING');
+
+    act(() => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
+  });
+
+  test('FT0 minimum dwell is enforced before FT1 promotion', () => {
+    setIntegrationState({
+      syncStatus: 'SYNCING',
+    });
+
+    const { rerender } = renderShell();
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT0_SYNCING');
+
+    act(() => {
+      setIntegrationState({
+        syncStatus: 'COMPLETED',
+        isSyncComplete: true,
+      });
+      mockFt1Complete = true;
+    });
+
+    rerender(
       <ShopLifecycleShell>
-        <PhaseProbe />
+        <ShopLifecycleContext.Consumer>
+          {({ phase }) => <div data-testid="phase">{phase}</div>}
+        </ShopLifecycleContext.Consumer>
       </ShopLifecycleShell>
     );
 
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT0_PREPARING');
+
     act(() => {
-      jest.runAllTimers();
+      jest.advanceTimersByTime(2499);
     });
 
-    expect(screen.getByTestId('phase').textContent)
-      .toBe<'FT1_READY'>('FT1_READY');
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT0_PREPARING');
 
-    // Simulate refetch/loading
     act(() => {
-      mockIsLoading = true;
-      rerender(
-        <ShopLifecycleShell>
-          <PhaseProbe />
-        </ShopLifecycleShell>
-      );
+      jest.advanceTimersByTime(1);
     });
 
-    // ❌ must stay FT1
-    expect(screen.getByTestId('phase').textContent)
-      .toBe<'FT1_READY'>('FT1_READY');
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
+  });
+
+  test('refresh / auth churn does not cause FT regression', () => {
+    setIntegrationState({
+      syncStatus: 'COMPLETED',
+      isSyncComplete: true,
+    });
+    mockFt1Complete = true;
+
+    const { rerender } = renderShell();
+
+    act(() => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
+
+    act(() => {
+      setIntegrationState({
+        bootResolved: false,
+        existence: 'NONE',
+        syncStatus: 'IDLE',
+        hasIntegration: false,
+        isSyncComplete: false,
+      });
+    });
+
+    rerender(
+      <ShopLifecycleShell>
+        <ShopLifecycleContext.Consumer>
+          {({ phase }) => <div data-testid="phase">{phase}</div>}
+        </ShopLifecycleContext.Consumer>
+      </ShopLifecycleShell>
+    );
+
+    // FT1 must remain latched during churn
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
+  });
+
+  test('integration deletion is the ONLY allowed lifecycle reset', () => {
+    setIntegrationState({
+      syncStatus: 'COMPLETED',
+      isSyncComplete: true,
+    });
+    mockFt1Complete = true;
+
+    const { rerender } = renderShell();
+
+    act(() => {
+      jest.advanceTimersByTime(2500);
+    });
+
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
+
+    act(() => {
+      setIntegrationState({
+        existence: 'NONE',
+        syncStatus: 'IDLE',
+        hasIntegration: false,
+        isSyncComplete: false,
+      });
+    });
+
+    rerender(
+      <ShopLifecycleShell>
+        <ShopLifecycleContext.Consumer>
+          {({ phase }) => <div data-testid="phase">{phase}</div>}
+        </ShopLifecycleContext.Consumer>
+      </ShopLifecycleShell>
+    );
+
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
   });
 });
