@@ -353,14 +353,3 @@ SELECT COUNT(*) FROM canonical_orders WHERE shop_id = 1;
 * All data-contract changes must be mirrored/locked in `docs/` before migrations (you insisted on this; I preserved that requirement).
 
 ---
-
-## 15) Deliverables I can produce for you now (pick one)
-
-1. **Patch A (fast)**: exact git diff for `apps/backend/src/onboarding/readiness.providers.ts` implementing Option A (provider compute) — ready to drop in and run.
-2. **Patch B (contract+migration)**: docs PR + migration + backfill SQL + provider update referencing new column names.
-3. **Unit tests**: Jest test file for provider.
-4. **Diagnostics script**: a small Node/Knex script that prints `ordersIngested`, `missingCostCount`, `negativeMarginCount` for a shop.
-
-Tell me which patch you want applied first and I’ll produce the exact code diff (Patch A recommended). If you want the diff, I will produce the code ready to paste into the repo.
-
----
