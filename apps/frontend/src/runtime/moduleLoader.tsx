@@ -148,8 +148,8 @@ export async function loadAllModules() {
     loaded[descriptor.id] = descriptor;
   }
 
-  console.info('[lasyncro] Modules loaded:', Object.keys(loaded));
-  return loaded;
+/*   console.info('[lasyncro] Modules loaded:', Object.keys(loaded));
+ */  return loaded;
 }
 
 /**

@@ -6,7 +6,21 @@ import { axiosInstance } from 'api/axiosConfig';
 
 interface OnboardingReadinessResponse {
   shopId: number;
-  modules: any[];
+
+  /**
+   * Raw onboarding signals emitted by backend providers.
+   * This is the current source of truth.
+   */
+  signals?: {
+    name: string;
+    value: unknown;
+  }[];
+
+  /**
+   * Future structured module aggregation (not fully wired yet)
+   */
+  modules?: any[];
+
   ft1: {
     isComplete: boolean;
     blockingModules: string[];

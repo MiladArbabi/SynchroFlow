@@ -110,6 +110,7 @@ root.render(
         <QueryClientProvider client={queryClient}>
           {/* 4. AuthProvider (Our Auth + User state) */}
           <AuthProvider>
+            <UserProvider>
             {/* 5. React Router */}
             <BrowserRouter>
               {/* 6. IntlProvider (Localization) */}
@@ -129,6 +130,7 @@ root.render(
 
               </IntlProvider>
             </BrowserRouter>
+           </UserProvider>
           </AuthProvider>
           
           {/* React Query DevTools */}

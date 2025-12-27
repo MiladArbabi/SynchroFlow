@@ -130,14 +130,14 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
 
         const nextFlags = Array.isArray(payload.flags) ? payload.flags : [];
 
-        if (import.meta.env.DEV) {
+        /* if (import.meta.env.DEV) {
           console.groupCollapsed('[Entitlements] resolved snapshot');
           console.log('shopId:', nextShopId);
           console.log('backend modules:', payload.modules);
           console.log('effective modules:', nextModules);
           console.log('flags:', nextFlags);
           console.groupEnd();
-        }
+        } */
 
         setShopId(nextShopId);
         setModules(nextModules);

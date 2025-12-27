@@ -297,6 +297,82 @@ apps/frontend
 
 The second pattern is **explicitly disallowed**.
 
+## 9.1 Module Pages vs Frontend Pages (CRITICAL CLARIFICATION)
+
+### The Rule (Non-Negotiable)
+
+> **A module owns its FT1 page.  
+> The frontend only mounts it.**
+
+There must never be duplicate or mirrored “page” implementations
+across `modules/*` and `apps/frontend`.
+
+---
+
+### Correct Pattern (Canonical)
+
+```
+modules/order-nexus/
+└─ src/ui/pages/OrdersModule.tsx   ← FT1 page (logic + UI)
+
+apps/frontend/
+└─ src/pages/OrdersPage.tsx        ← route adapter ONLY
+```
+
+```tsx
+// apps/frontend/src/pages/OrdersPage.tsx
+import OrdersModule from '@lasyncro/order-nexus';
+
+export default function OrdersPage() {
+  return <OrdersModule />;
+}
+```
+
+Responsibilities:
+
+| Layer | Responsibility |
+|-----|----------------|
+| `modules/*` | FT1 UI composition, domain logic, deterministic rendering |
+| `apps/frontend` | Routing, lifecycle gating, mounting only |
+
+---
+
+### Forbidden Patterns (Do NOT Do This)
+
+❌ Creating wrapper re-exports inside modules:
+
+```
+modules/order-nexus/src/ui/OrdersModule.tsx
+└─ re-exporting ./pages/OrdersModule
+```
+
+Reason:
+
+* Adds no semantic value
+* Obscures where logic actually lives
+* Creates duplicate build artifacts
+* Reintroduces page ownership ambiguity
+
+---
+
+❌ Duplicating page logic in frontend:
+
+```
+apps/frontend/src/pages/OrdersPage.tsx
+└─ containing FT1 logic, hooks, or derivation
+```
+
+Frontend pages must remain **thin adapters only**.
+
+---
+
+### Enforcement Invariant
+
+> **If a file only re-exports another file without adding semantics,
+> it must not exist.**
+
+Violating this rule is considered an architectural regression.
+
 ---
 
 ## 10. Activation Case Study (Concrete Example)
@@ -389,3 +465,32 @@ It is **structural**.
 🔒 **Locked. Enforced. Non-negotiable.**
 
 ---
+
+## FT1 Data Wiring Pattern (Locked)
+
+**Pattern:** Frontend Adapter → Module Props
+
+apps/frontend
+└─ useOrdersFt1Adapter
+└─ onboarding-readiness API
+└─ backend signal providers
+
+### Rules
+- Modules NEVER fetch data
+- Modules NEVER read lifecycle state
+- Modules ONLY receive props
+- Frontend adapters NEVER infer scenarios
+
+### Example (Orders FT1)
+
+- Frontend:
+  - fetches readiness
+  - maps signals → props
+- Module:
+  - interprets props
+  - renders deterministic UI
+
+Violating this pattern reintroduces:
+- lifecycle leaks
+- duplicated logic
+- untestable UI

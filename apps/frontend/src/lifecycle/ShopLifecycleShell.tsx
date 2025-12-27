@@ -99,11 +99,11 @@ export function ShopLifecycleShell({
       ) {
         localStorage.removeItem(ft1SealKey);
 
-        if (import.meta.env.DEV) {
+        /* if (import.meta.env.DEV) {
           console.warn(
             '[ShopLifecycle] Removed FT1 seal (integration confirmed removed)'
           );
-        }
+        } */
 
         return false;
       }
@@ -129,11 +129,11 @@ export function ShopLifecycleShell({
       // FT1 seal without integration is invalid — purge it
       localStorage.removeItem(ft1SealKey);
 
-      if (import.meta.env.DEV) {
+      /* if (import.meta.env.DEV) {
         console.warn(
           '[ShopLifecycle] Removed stale FT1 seal (no integration exists)'
         );
-      }
+      } */
     }
   }, [bootResolved, integrationExists, ft1SealKey]);
 
@@ -149,9 +149,9 @@ export function ShopLifecycleShell({
     ) {
       localStorage.setItem(ft1SealKey, 'true');
 
-      if (import.meta.env.DEV) {
+      /* if (import.meta.env.DEV) {
         console.info('[ShopLifecycle] FT1 seal persisted');
-      }
+      } */
     }
   }, [ft1SealKey, ft1Sealed, readiness?.ft1?.isComplete]);
 
@@ -357,7 +357,7 @@ export function ShopLifecycleShell({
   /* Instrumentation                                                           */
   /* ------------------------------------------------------------------------ */
 
-  if (import.meta.env.DEV) {
+  /* if (import.meta.env.DEV) {
     console.info('[ShopLifecycle]', {
       shopId,
       integrationExists,
@@ -367,7 +367,7 @@ export function ShopLifecycleShell({
       resolvedPhase,
       latchedPhase,
     });
-  }
+  } */
 
   /* ------------------------------------------------------------------------ */
   /* Final visual phase                                                        */
