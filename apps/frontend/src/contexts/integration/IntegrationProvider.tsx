@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/contexts/integration/IntegrationProvider.tsx
 
 import React, { ReactNode, useCallback, useMemo, useRef } from 'react';
@@ -91,10 +92,10 @@ export function IntegrationProvider({
     if (!bootResolvedRef.current && isLoading) {
       return {
         bootState: 'BOOTING',
-        existence: null,
-        syncState: null,
-        hasIntegration: false,
-        isSyncComplete: false,
+        existence: lastExistenceRef.current, // 👈 preserve truth
+        syncState: lastSyncRef.current,
+        hasIntegration: lastExistenceRef.current === 'EXISTS',
+        isSyncComplete: lastSyncRef.current === 'COMPLETED',
         refresh,
       };
     }

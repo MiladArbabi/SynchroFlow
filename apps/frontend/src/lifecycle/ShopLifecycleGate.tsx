@@ -7,17 +7,14 @@
 // NO lifecycle logic.
 
 import { Outlet, useLocation } from 'react-router-dom';
-import { useShopLifecycle } from './ShopLifecycleContext';
-
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
 import { resolveActivationConfig } from 'activation/resolveActivationConfig';
 
-export function ShopLifecycleGate({
-  phase,
-}: {
-  phase: 'FT_MINUS_ONE' | 'FT0_SYNCING' | 'FT0_PREPARING' | 'FT1_READY';
-}) {
+import { useShopLifecycle } from './ShopLifecycleContext';
+
+export function ShopLifecycleGate() {
+  const { phase } = useShopLifecycle();
   const location = useLocation();
 
   const moduleId = (() => {

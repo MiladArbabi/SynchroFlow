@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/lifecycle/ShopLifecycleShell.tsx
 //
 // ShopLifecycleShell
@@ -31,6 +30,7 @@ import { useIntegration } from 'contexts/integration';
 import { ShopLifecycleContext } from './ShopLifecycleContext';
 import { useOnboardingReadiness } from './useOnboardingReadiness';
 import { ShopLifecyclePhase } from './types';
+import { IntegrationExistence } from 'contexts/integration/_internal/IntegrationContext';
 
 /* -------------------------------------------------------------------------- */
 /* Phase ordering (used to prevent regressions)                                */
@@ -75,7 +75,6 @@ export function ShopLifecycleShell({
   /* ------------------------------------------------------------------------ */
 
   const integrationExists = existence === 'EXISTS';
-  const isBooting = !bootResolved;
   const syncCompleted = syncStatus === 'COMPLETED';
 
   /* ------------------------------------------------------------------------ */
@@ -102,8 +101,18 @@ export function ShopLifecycleShell({
     shopId
   );
 
-  const backendAllowsFT1 =
-    syncCompleted || readiness?.ft1?.isComplete === true;
+  useEffect(() => {
+    if (bootResolved && !integrationExists && ft1SealKey) {
+      // FT1 seal without integration is invalid — purge it
+      localStorage.removeItem(ft1SealKey);
+
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[ShopLifecycle] Removed stale FT1 seal (no integration exists)'
+        );
+      }
+    }
+  }, [bootResolved, integrationExists, ft1SealKey]);
 
   /* ------------------------------------------------------------------------ */
   /* Persist FT1 seal ONLY when backend explicitly confirms readiness           */
@@ -151,13 +160,18 @@ export function ShopLifecycleShell({
 
   const ft0EnteredAtRef = useRef<number | null>(null);
   const hasEverReachedFT1Ref = useRef<boolean>(false);
+  const hasUserInitiatedIntegrationRef = useRef(false);
+  const prevExistenceRef = useRef<IntegrationExistence | null>(null);
 
   useEffect(() => {
-    
     /**
-     * 🚨 HARD RESET (authoritative deletion only)
+     * 🚨 HARD RESET (ONLY on confirmed backend deletion)
      */
-    if (!integrationExists && bootResolved) {
+    if (
+      bootResolved &&
+      prevExistenceRef.current === 'EXISTS' &&
+      existence === 'NONE'
+    ) {
       hasEverReachedFT1Ref.current = false;
       ft0EnteredAtRef.current = null;
 
@@ -166,6 +180,7 @@ export function ShopLifecycleShell({
       }
 
       setLatchedPhase('FT_MINUS_ONE');
+      prevExistenceRef.current = existence;
       return;
     }
 
@@ -186,8 +201,17 @@ export function ShopLifecycleShell({
      * First-ever latch
      */
     if (latchedPhase == null) {
+      if (ft1Sealed) {
+        setLatchedPhase('FT1_READY');
+        return;
+      }
+
+      if (!hasUserInitiatedIntegrationRef.current) {
+        setLatchedPhase('FT_MINUS_ONE');
+        return;
+      }
+
       if (resolvedPhase === 'FT1_READY') {
-        // Backend jumped ahead → synthesize FT0 first
         ft0EnteredAtRef.current = performance.now();
         setLatchedPhase('FT0_PREPARING');
         return;
@@ -244,6 +268,14 @@ export function ShopLifecycleShell({
      * FT1 promotion with enforced dwell
      */
     if (resolvedPhase === 'FT1_READY') {
+      // 🔒 Refresh case: FT1 already valid → restore immediately, no FT0
+      if (ft1Sealed && integrationExists) {
+        hasEverReachedFT1Ref.current = true;
+        setLatchedPhase('FT1_READY');
+        return;
+      }
+
+      // First-time FT1 promotion → go through FT0
       if (ft0EnteredAtRef.current == null) {
         ft0EnteredAtRef.current = performance.now();
         setLatchedPhase('FT0_PREPARING');
@@ -266,9 +298,30 @@ export function ShopLifecycleShell({
         setLatchedPhase('FT1_READY');
       }, Math.max(0, VISUAL_FT0_MIN_MS - elapsed));
 
+      prevExistenceRef.current = existence;
+
       return () => clearTimeout(timer);
     }
-  }, [integrationExists, ft1Sealed, resolvedPhase, latchedPhase, readiness?.ft1?.isComplete, ft1SealKey, bootResolved]);
+  }, [
+    integrationExists, 
+    ft1Sealed, 
+    resolvedPhase, 
+    latchedPhase, 
+    readiness?.ft1?.isComplete, 
+    ft1SealKey, 
+    bootResolved, 
+    existence]
+  );
+
+  useEffect(() => {
+    const onConnect = () => {
+      hasUserInitiatedIntegrationRef.current = true;
+    };
+
+    window.addEventListener('ui:connect-store', onConnect);
+    return () =>
+      window.removeEventListener('ui:connect-store', onConnect);
+  }, []);
 
   /* ------------------------------------------------------------------------ */
   /* Instrumentation                                                           */

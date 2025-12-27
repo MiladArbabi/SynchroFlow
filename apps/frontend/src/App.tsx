@@ -34,7 +34,6 @@ import RegisterPage from "pages/authentication/RegisterPage";
 import { DashboardLifecycleShell } from "lifecycle/DashboardLifecycleShell";
 import { ShopLifecycleShell } from "lifecycle/ShopLifecycleShell";
 import { ShopLifecycleGate } from "lifecycle/ShopLifecycleGate";
-import { VisualLifecycleGate } from "lifecycle/VisualLifecycleGate";
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -189,11 +188,7 @@ export default function App() {
                         <Route
                           element={
                             <ShopLifecycleShell>
-                              <VisualLifecycleGate>
-                                {(visualPhase) => (
-                                  <ShopLifecycleGate phase={visualPhase} />
-                                )}
-                              </VisualLifecycleGate>
+                              <ShopLifecycleGate />
                             </ShopLifecycleShell>
                           }
                         >
