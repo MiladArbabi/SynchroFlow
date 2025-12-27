@@ -3,7 +3,7 @@
 import { useOrdersFt1Scenario } from '../hooks/useOrdersFt1Scenario';
 
 export interface OrdersModuleProps {
-  ordersIngested: number;
+  ordersIngested: number | null;
   hasNegativeMarginOrder: boolean;
   missingCostCount: number;
 }
@@ -21,5 +21,11 @@ export default function OrdersModule(props: OrdersModuleProps) {
       return <section data-testid="orders-ft1-uncertain">Missing costs</section>;
     case 'HEALTHY':
       return <section data-testid="orders-ft1-healthy">Orders healthy</section>;
+    case 'LOADING':
+      return (
+        <section data-testid="orders-ft1-loading">
+          Loading orders…
+        </section>
+      );
+    }
   }
-}

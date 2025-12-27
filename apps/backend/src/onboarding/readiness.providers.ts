@@ -113,6 +113,10 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
 
     return [
       {
+        name: 'orderNexus.ordersKnown',
+        value: true, // query executed → count is known
+      },
+      {
         name: 'orderNexus.profitabilityActive',
         value: profitabilityActive,
       },

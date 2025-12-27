@@ -20,14 +20,6 @@ export function useOrdersFt1Adapter(
   shopId: number
 ): OrdersModuleProps {
   const query = useOnboardingReadiness(enabled, shopId);
-
-  if (!query.isSuccess) {
-    return {
-        ordersIngested: 0,
-        missingCostCount: 0,
-        hasNegativeMarginOrder: false,
-    };
-    }
     
   const data = query.data;
   const orderModule = data?.modules?.find(
@@ -37,15 +29,31 @@ export function useOrdersFt1Adapter(
   const signals = orderModule?.signals ?? [];
 
   const get = (name: string) =>
-    signals.find((s: any) => s.name === name)?.value;
+  signals.find((s: any) => s.name === name)?.value;
+
+  const ordersKnown = get('orderNexus.ordersKnown') === true;
+  const rawOrders = get('orderNexus.ordersIngested');
+
+  const ordersIngested =
+    !ordersKnown || rawOrders === undefined
+      ? null
+      : Number(rawOrders);
 
   const props: OrdersModuleProps = {
-    ordersIngested: Number(get('orderNexus.ordersIngested') ?? 0),
+    ordersIngested,
     missingCostCount: Number(get('orderNexus.missingCostCount') ?? 0),
     hasNegativeMarginOrder: Boolean(
       get('orderNexus.hasNegativeMarginOrder') ?? false
     ),
   };
+
+  if (import.meta.env.DEV) {
+    console.debug('[OrdersFT1Adapter]', {
+      ordersKnown,
+      rawOrders,
+      ordersIngested,
+    });
+  }
 
   if (import.meta.env.DEV) {
       console.debug('[OrdersFT1Adapter] raw readiness data', data);
