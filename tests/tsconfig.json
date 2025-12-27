@@ -26,7 +26,10 @@
       "ui-component/*": ["apps/frontend/src/ui-component/*"],
       "runtime/*": ["apps/frontend/src/runtime/*"],
       "routes": ["apps/frontend/src/routes.tsx"],
-      "config": ["apps/frontend/src/config.ts"]
+      "config": ["apps/frontend/src/config.ts"],
+      "@lasyncro/order-nexus": [
+        "modules/order-nexus/src/ui/index.ts"
+      ]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"]

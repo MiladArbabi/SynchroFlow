@@ -3,15 +3,18 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
+
     "module": "ESNext",
+    "jsx": "react-jsx",
+
     "declaration": true,
     "sourceMap": true,
 
-    "allowImportingTsExtensions": false,
-
     "noEmit": false,
     "emitDeclarationOnly": false,
-    "composite": true
+    "composite": true,
+
+    "allowImportingTsExtensions": false
   },
   "include": ["src/**/*"]
 }

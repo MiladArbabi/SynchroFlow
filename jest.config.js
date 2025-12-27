@@ -53,6 +53,7 @@ module.exports = {
         // Shared modules alias (so imports like '@lasyncro/shared/...' resolve in tests)
         '^@lasyncro/shared/(.*)$': '<rootDir>/modules/shared/src/$1',
         '^@lasyncro/shared$': '<rootDir>/modules/shared/src',
+        '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^shared-src$': '<rootDir>/modules/shared/src',
 
         // Specter module alias
@@ -102,6 +103,7 @@ module.exports = {
         '^config$': '<rootDir>/apps/frontend/src/config.ts',
         '^test-utils$': '<rootDir>/apps/frontend/src/test-utils.tsx',
         '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
+        '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
 
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
@@ -147,6 +149,7 @@ module.exports = {
         '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
 
         '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
+        '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'
         : '<rootDir>/apps/frontend/src/$1/$2',                

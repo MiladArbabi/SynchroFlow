@@ -194,10 +194,10 @@ when TypeScript type-checking passes.
 
 ### Enforced Rules
 
-- ✅ `modules/shared` **must emit ESM**
-- ❌ `modules/shared` must NOT emit CommonJS
-- ❌ No frontend consumer may rely on CJS interop
-- ❌ “It works in Jest” is NOT sufficient
+* ✅ `modules/shared` **must emit ESM**
+* ❌ `modules/shared` must NOT emit CommonJS
+* ❌ No frontend consumer may rely on CJS interop
+* ❌ “It works in Jest” is NOT sufficient
 
 ### Required Compiler Settings
 
@@ -208,6 +208,36 @@ when TypeScript type-checking passes.
   }
 }
 
+---
+
+## 7.2 Package Manager Constraint (MANDATORY)
+
+This monorepo currently assumes **npm workspaces** as the package manager.
+
+As a result:
+
+- ❌ The `workspace:*` dependency protocol is **NOT supported**
+- ✅ Local modules MUST be referenced by **name + exact version**
+
+Example (correct):
+
+```json
+"@lasyncro/order-nexus": "0.1.0"
+```
+
+npm will automatically link the local workspace package when:
+
+* the package name matches
+* the version matches
+
+Using `workspace:*` is only valid under pnpm or Yarn and **will break module
+resolution under npm**, resulting in:
+
+* TypeScript “Cannot find module” errors
+* Jest resolution failures
+* False assumptions that boundaries are broken
+
+This is a **tooling invariant**, not a boundary exception.
 
 ---
 
@@ -228,6 +258,21 @@ If a test needs `src/` imports:
 > **the module’s public API is incomplete**
 
 Fix the module — not the test.
+
+---
+
+## 8.1 tsconfig Path Aliases Are NOT a Substitute for Modules
+
+❌ Using `tsconfig.paths` to simulate workspace module resolution is forbidden.
+
+If a module does not resolve via its **package name and exports**, then:
+
+* the module is not correctly built
+* the workspace dependency is misconfigured
+* or the public API is incomplete
+
+`tsconfig.paths` may be used **inside a package**, but must never be used to
+cross package boundaries.
 
 ---
 

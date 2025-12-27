@@ -56,7 +56,8 @@
     "sass": "^1.93.2",
     "simplebar-react": "^3.3.2",
     "slick-carousel": "^1.8.1",
-    "yup": "^1.7.1"
+    "yup": "^1.7.1",
+    "@lasyncro/order-nexus": "0.1.0"
   },
   "devDependencies": {
     "@chromatic-com/storybook": "^4.1.1",

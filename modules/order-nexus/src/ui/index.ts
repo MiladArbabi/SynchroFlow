@@ -1,2 +1,2 @@
-// modules/order-nexus/src/ui/index.ts
-export { default } from './pages/OrdersPage';
+export { default } from './OrdersModule';
+export * from './hooks/useOrdersFt1Scenario';

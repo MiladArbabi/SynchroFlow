@@ -1,8 +1,6 @@
-//apps/frontend/src/pages/OrdersPage.tsx
+// apps/frontend/src/pages/OrdersPage.tsx
+import OrdersModule from '@lasyncro/order-nexus';
+
 export default function OrdersPage() {
-  return (
-    <>
-       <div>OrdersPage in apps/frontend/src/pages/OrdersPage.tsx</div>
-    </>
-  );
+  return <OrdersModule />;
 }
