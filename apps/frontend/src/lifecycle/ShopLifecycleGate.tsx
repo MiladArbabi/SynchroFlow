@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // ShopLifecycleGate.tsx
 //
 // PURE structural switch.

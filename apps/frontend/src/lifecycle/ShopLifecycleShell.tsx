@@ -85,12 +85,35 @@ export function ShopLifecycleShell({
 
   const ft1Sealed = React.useMemo(() => {
     if (!ft1SealKey) return false;
+
     try {
-      return localStorage.getItem(ft1SealKey) === 'true';
+      const sealed = localStorage.getItem(ft1SealKey) === 'true';
+
+      // 🔒 HARD RULE:
+      // Only invalidate FT1 seal when backend has
+      // CONFIRMED integration does NOT exist
+      if (
+        sealed &&
+        bootResolved &&
+        existence === 'NONE'
+      ) {
+        localStorage.removeItem(ft1SealKey);
+
+        if (import.meta.env.DEV) {
+          console.warn(
+            '[ShopLifecycle] Removed FT1 seal (integration confirmed removed)'
+          );
+        }
+
+        return false;
+      }
+
+      return sealed;
     } catch {
       return false;
     }
-  }, [ft1SealKey]);
+  }, [ft1SealKey, bootResolved, existence]);
+
 
   /* ------------------------------------------------------------------------ */
   /* Backend readiness                                                         */
@@ -156,7 +179,14 @@ export function ShopLifecycleShell({
   /* ------------------------------------------------------------------------ */
 
   const [latchedPhase, setLatchedPhase] =
-    useState<ShopLifecyclePhase | null>(null);
+    useState<ShopLifecyclePhase | null>(() => {
+      // 🔒 Synchronous restore on refresh
+      // If FT1 was reached before, never render FT_MINUS_ONE again
+      if (ft1Sealed) {
+        return 'FT1_READY';
+      }
+      return null;
+    });
 
   const ft0EnteredAtRef = useRef<number | null>(null);
   const hasEverReachedFT1Ref = useRef<boolean>(false);
