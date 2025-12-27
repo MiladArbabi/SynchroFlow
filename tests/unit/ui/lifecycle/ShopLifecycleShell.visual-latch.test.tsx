@@ -230,4 +230,67 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
 
     expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
   });
+
+  test('FT1 seal restores FT1 synchronously on first paint (no FT_MINUS_ONE)', () => {
+    localStorage.setItem('shop:1:ft1-seen', 'true');
+
+    setIntegrationState({
+        syncStatus: 'COMPLETED',
+        isSyncComplete: true,
+    });
+    mockFt1Complete = true;
+
+    renderShell();
+
+    // FIRST render must already be FT1
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
+    });
+
+    test('stale FT1 seal is removed when integration does not exist', () => {
+  localStorage.setItem('shop:1:ft1-seen', 'true');
+
+  setIntegrationState({
+    existence: 'NONE',
+    syncStatus: 'IDLE',
+    hasIntegration: false,
+    isSyncComplete: false,
+  });
+
+  renderShell();
+
+  expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
+  expect(localStorage.getItem('shop:1:ft1-seen')).toBeNull();
+});
+
+test('FT1 seal is ignored if integration does not exist', () => {
+  localStorage.setItem('shop:1:ft1-seen', 'true');
+
+  setIntegrationState({
+    existence: 'NONE',
+    syncStatus: 'COMPLETED',
+    hasIntegration: false,
+    isSyncComplete: true,
+  });
+
+  mockFt1Complete = true;
+
+  renderShell();
+
+  expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
+});
+
+test('cold boot without integration never shows FT0', () => {
+  setIntegrationState({
+    existence: 'NONE',
+    syncStatus: 'IDLE',
+    hasIntegration: false,
+    isSyncComplete: false,
+  });
+
+  renderShell();
+
+  expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
+});
+
+
 });
