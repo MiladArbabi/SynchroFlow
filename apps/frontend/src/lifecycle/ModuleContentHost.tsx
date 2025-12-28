@@ -2,6 +2,7 @@
 import React from 'react';
 
 import { UILifecyclePhase } from './types';
+import { Ft1OnboardingGate } from './Ft1OnboardingGate';
 
 /**
  * ModuleContentHost
@@ -42,7 +43,7 @@ export function ModuleContentHost({
 
   // FT1 onboarding gate: suppress core content for blocking modules only
   if (ft1Incomplete) {
-    return <div data-testid="ft1-onboarding-gate" />;
+    return <Ft1OnboardingGate moduleId={moduleId} />;
   }
 
   // FT2 unpaid → nothing mounts (paywall handled upstream)
