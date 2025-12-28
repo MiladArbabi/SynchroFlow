@@ -40,4 +40,56 @@ describe('useOrdersFt1Scenario', () => {
 
     expect(scenario).toBe('HEALTHY');
   });
+
+  describe('FT1 Orders Scenario Resolution', () => {
+    it('LOADING when ordersIngested is null', () => {
+      expect(
+        useOrdersFt1Scenario({
+          ordersIngested: null,
+          missingCostCount: 0,
+          hasNegativeMarginOrder: false,
+        })
+      ).toBe('LOADING');
+    });
+
+    it('NO_ORDERS when ordersIngested is 0', () => {
+      expect(
+        useOrdersFt1Scenario({
+          ordersIngested: 0,
+          missingCostCount: 0,
+          hasNegativeMarginOrder: false,
+        })
+      ).toBe('NO_ORDERS');
+    });
+
+    it('HEALTHY when orders exist and no issues', () => {
+      expect(
+        useOrdersFt1Scenario({
+          ordersIngested: 7,
+          missingCostCount: 0,
+          hasNegativeMarginOrder: false,
+        })
+      ).toBe('HEALTHY');
+    });
+
+    it('UNCERTAIN when missing costs exist', () => {
+      expect(
+        useOrdersFt1Scenario({
+          ordersIngested: 7,
+          missingCostCount: 2,
+          hasNegativeMarginOrder: false,
+        })
+      ).toBe('UNCERTAIN');
+    });
+
+    it('LOSS when negative margin detected', () => {
+      expect(
+        useOrdersFt1Scenario({
+          ordersIngested: 7,
+          missingCostCount: 0,
+          hasNegativeMarginOrder: true,
+        })
+      ).toBe('LOSS');
+    });
+  });
 });

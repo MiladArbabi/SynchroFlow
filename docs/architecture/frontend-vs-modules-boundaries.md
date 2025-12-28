@@ -494,3 +494,108 @@ Violating this pattern reintroduces:
 - lifecycle leaks
 - duplicated logic
 - untestable UI
+
+## Appendix:
+## FT1 Module Truth Path (LOCKED)
+
+This document captures the **final, enforced FT1 pattern** validated through OrderNexus. All FT1 modules MUST follow this path.
+
+---
+
+### 1. Source of Truth (Database)
+
+* Canonical tables are the single source of truth
+* Absence of data ≠ zero
+* Unknown states MUST be representable (`null` is valid)
+
+---
+
+### 2. Backend Provider (Signals Only)
+
+Providers:
+
+* Read from DB
+* Emit **facts**, not interpretations
+* NEVER infer UI states
+
+Rules:
+
+* Emit `*.known` signals when counts are computable
+* Emit raw numeric values without coercion
+* Never collapse `unknown → 0`
+
+Example:
+
+* `orderNexus.ordersKnown: boolean`
+* `orderNexus.ordersIngested: number`
+
+---
+
+### 3. Readiness Aggregation
+
+* Aggregates provider signals verbatim
+* Does NOT reinterpret values
+* Modules may be absent until providers execute
+
+---
+
+### 4. Frontend Adapter (Pure Mapping)
+
+Adapters:
+
+* Are **pure functions**
+* Accept readiness payload
+* Return module props only
+
+Forbidden:
+
+* Hooks
+* Loading logic
+* Lifecycle checks
+* UI decisions
+
+Allowed:
+
+* Mapping
+* Null preservation
+
+---
+
+### 5. Scenario Resolution (Single Authority)
+
+Scenario hooks:
+
+* Own ALL conditional logic
+* Are exhaustively tested
+* Treat `null` as `LOADING`
+
+Precedence:
+
+1. `null` → `LOADING`
+2. `0` → `NO_ORDERS`
+3. Loss flags → `LOSS`
+4. Missing data → `UNCERTAIN`
+5. Else → `HEALTHY`
+
+---
+
+### 6. UI Rendering
+
+* Switch ONLY on scenario output
+* No data inspection
+* No fallback guessing
+
+---
+
+### 7. Testing Requirements (MANDATORY)
+
+Each FT1 module MUST include:
+
+* Provider DB → signals tests
+* Adapter mapping tests (null vs zero)
+* Scenario resolution tests
+* At least one UI scenario test
+
+If any are missing, FT1 is **NOT COMPLETE**.
+
+---

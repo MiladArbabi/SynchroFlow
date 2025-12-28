@@ -2,7 +2,7 @@
 
 import db from 'api-db';
 
-type SeedCanonicalOrderInput = {
+type SeedCanonicalOrderInput = { 
   shopId: number;
   canonicalOrderId?: string;
   platformOrderId?: string;
