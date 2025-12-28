@@ -59,6 +59,130 @@ tests/unit/
 
 ---
 
+Here’s a **clean, locked update** to `tests/README.md` that incorporates the **Aha / FT1 panel testing pattern** without diluting your existing doctrine.
+
+I’m not rewriting the whole file — I’m **extending it surgically**, so it stays authoritative and coherent.
+
+---
+
+## ✨ Add this section to `tests/README.md`
+
+### (Recommended placement: **after “Directory Structure” or after “UI tests”**)
+
+---
+
+## 🧭 FT1 / Aha Panel Contract Tests (LOCKED)
+
+FT1 diagnostic surfaces (a.k.a. **Aha panels**) follow a **strict, test-enforced contract**.
+
+These are **not normal UI components**. They are **decision surfaces**.
+
+---
+
+### 🎯 Aha Panel Contract (Non-Negotiable)
+
+Every FT1 / Aha panel **must**:
+
+1. Render **exactly one diagnostic message**
+2. Render **at most one CTA**
+3. Emit **exactly one semantic intent**
+4. **Never**:
+
+   * navigate
+   * open drawers
+   * mutate lifecycle
+   * dispatch DOM events directly
+5. Delegate *all* consequences to the host
+
+If an Aha panel “does something” by itself, **FT1 is broken**.
+
+---
+
+### 🧪 Shared Test Helper (MANDATORY)
+
+All Aha panels must be tested using the shared helper:
+
+```
+tests/unit/ui/helpers/assertAhaPanelIntent.ts
+```
+
+This helper **locks the contract** and prevents regressions.
+
+---
+
+### ✅ Required Test Pattern
+
+```ts
+assertAhaPanelIntent({
+  ui,
+  ctaLabel,
+  expectedIntent,
+});
+```
+
+**What this enforces**
+
+* CTA exists when expected
+* CTA is clickable
+* CTA emits **exactly one intent**
+* No routing or lifecycle leakage
+* No silent failures
+
+---
+
+### 📌 Example (Order-Nexus)
+
+```tsx
+assertAhaPanelIntent({
+  ui: (
+    <OrdersModule
+      ordersIngested={3}
+      hasNegativeMarginOrder={false}
+      missingCostCount={2}
+    />
+  ),
+  ctaLabel: 'Complete cost setup',
+  expectedIntent: {
+    type: 'START_ONBOARDING',
+    taskId: 'add-costs',
+  },
+});
+```
+
+If any of the following happens, the test **must fail**:
+
+* CTA label changes silently
+* CTA emits multiple events
+* CTA navigates directly
+* CTA opens checklist internally
+* Intent shape changes
+
+---
+
+### 🧠 Why This Exists
+
+Without this helper, teams tend to:
+
+* “Just navigate here”
+* “Just open the checklist”
+* “Just add analytics here”
+* “Just add one more CTA”
+
+That leads to:
+
+* Fragmented onboarding
+* Inconsistent Aha behavior
+* FT1 lifecycle leaks
+* Impossible-to-debug UX flows
+
+This helper **prevents all of that**.
+
+### 🚨 Rule Going Forward (Tattoo This Too)
+
+> **If an Aha panel is not tested with `assertAhaPanelIntent`, it is not compliant.**
+
+---
+
 ## 🌱 Seeding Rules (CRITICAL)
 
 ### Never inline inserts in tests
