@@ -23,6 +23,7 @@ import useConfig from 'hooks/useConfig';
 // import FullScreenSection from 'layout/MainLayout/Header/FullScreenSection';
 import ProfileSection from 'layout/MainLayout/Header/ProfileSection';
 import MobileSection from 'layout/MainLayout/Header/MobileSection';
+import { openFt1Checklist } from "activation/openFt1Checklist";
 // --- END BERRY IMPORTS ---
 
 interface TopnavbarContentProps {
@@ -51,11 +52,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   // ---  SIDEBAR HANDLER ---
   const handleToggleSidenav = () => {
    dispatch({ type: 'SET_MINI_DRAWER', payload: !state.miniDrawer });
-  };
-
-  // ---  OPS CONSOLE HANDLER ---
-  const handleToggleOpsConsole = () => {
-    dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
   };
 
   return (
@@ -103,9 +99,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
            <IconButton
              size="small"
              onClick={() => {
-               window.dispatchEvent(
-                 new CustomEvent('ft1-checklist:open')
-               );
+               openFt1Checklist();
              }}
            >
              <IconComponent name="ListChecks" size="medium" />

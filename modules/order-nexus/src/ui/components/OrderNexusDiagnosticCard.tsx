@@ -39,9 +39,16 @@ export function OrderNexusDiagnosticCard({
 
         {ctaLabel && onCtaClick && (
           <Button
+            type="button"
             size="small"
             variant="contained"
-            onClick={onCtaClick}
+            onClick={(e) => {
+            console.debug('[OrderNexusDiagnosticCard] CTA clicked', {
+               hasHandler: Boolean(onCtaClick),
+               eventType: e.type,
+             });
+             onCtaClick?.();
+            }}
             sx={{ alignSelf: 'flex-start', mt: 1 }}
           >
             {ctaLabel}

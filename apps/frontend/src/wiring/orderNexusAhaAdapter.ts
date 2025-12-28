@@ -1,21 +1,23 @@
 import { useUiEvents } from 'analytics/useUiEvents';
-import { useNavigate } from 'react-router-dom';
 import { setFt1ChecklistFocus } from 'activation/ft1ChecklistFocus';
+import { openFt1Checklist } from 'activation/openFt1Checklist';
 import type { OrderNexusUiIntent } from '@lasyncro/order-nexus';
 
 export function useOrderNexusAhaAdapter() {
   const { emit } = useUiEvents();
-  const navigate = useNavigate();
 
   return (intent: OrderNexusUiIntent) => {
     if (intent.type === 'START_ONBOARDING') {
-      // 1️⃣ Set experience focus
+      console.debug('[OrderNexusAhaAdapter] START_ONBOARDING', intent);
+
+      // 1️⃣ Set checklist focus (module + task)
       setFt1ChecklistFocus({
         moduleId: 'order-nexus',
+        taskId: intent.taskId,
       });
 
-      // 2️⃣ Navigate to FT1 surface
-      navigate('/ft1'); // keep route canonical
+      // 2️⃣ Open checklist drawer
+      openFt1Checklist();
 
       // 3️⃣ Emit analytics
       emit({
@@ -24,6 +26,7 @@ export function useOrderNexusAhaAdapter() {
           action: 'start_onboarding',
           surface: 'order_nexus_aha',
           moduleId: 'order-nexus',
+          taskId: intent.taskId,
         },
       });
     }

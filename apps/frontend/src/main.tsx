@@ -51,6 +51,7 @@ import 'react-resizable/css/styles.css';
 
 import { loadAllModules } from 'runtime/moduleLoader';
 import { bootstrapNavGroups } from 'runtime/navBootstrap';
+import { RouteLogger } from './debug/RouteLogger';
 
 if (!window._lasyncroNavigate) {
   window._lasyncroNavigate = (path: string) => {
@@ -113,6 +114,7 @@ root.render(
             <UserProvider>
             {/* 5. React Router */}
             <BrowserRouter>
+             <RouteLogger />
               {/* 6. IntlProvider (Localization) */}
               <IntlProvider
                 locale={defaultLocale}

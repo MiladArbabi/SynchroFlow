@@ -48,6 +48,7 @@ export function Ft1ChecklistShell({ checklist }: Ft1ChecklistShellProps) {
         action: `task_click:${taskId}`,
         surface: 'ft1_checklist',
         moduleId,
+        taskId,
       },
     });
     clearFt1ChecklistFocus();
@@ -84,10 +85,6 @@ export function Ft1ChecklistShell({ checklist }: Ft1ChecklistShellProps) {
                 return (
                   <li
                     key={task.id}
-                    data-focused-task={isFocused ? 'true' : undefined}
-                  >
-                  <li
-                    key={task.id}
                     ref={isFocused ? focusedTaskRef : undefined}
                     data-focused-task={isFocused ? 'true' : undefined}
                   >
@@ -100,7 +97,6 @@ export function Ft1ChecklistShell({ checklist }: Ft1ChecklistShellProps) {
                       {task.label}
                     </button>
                   </li>
-                </li>
                 );
               })}
             </ul>

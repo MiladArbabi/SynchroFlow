@@ -16,6 +16,7 @@ export interface UiEvent {
     action: string;
     surface: string;
     moduleId?: string;
+    taskId?: string;
   };
 }
 

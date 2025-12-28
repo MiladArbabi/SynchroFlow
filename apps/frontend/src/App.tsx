@@ -6,6 +6,7 @@ import { axiosInstance } from "api/axiosConfig";
 import RGL from 'react-grid-layout'
 import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
 import { IntegrationProvider } from 'contexts/integration/IntegrationProvider';
 import { DashboardStateProvider } from "contexts/DashboardStateContext";
 import { EntitlementsProvider } from 'contexts/EntitlementsContext';
@@ -136,7 +137,7 @@ class IntlErrorBoundary extends React.Component<
 
     return this.props.children;
   }
-}
+};
 
 export default function App() {
   const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);

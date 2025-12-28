@@ -13,6 +13,7 @@ export function useChecklistIntentAdapter() {
           action: `task_click:${intent.taskId}`,
           surface: 'ft1_checklist',
           moduleId: intent.moduleId,
+          taskId: intent.taskId,
         },
       });
     }

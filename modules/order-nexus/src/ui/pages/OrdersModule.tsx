@@ -21,11 +21,13 @@
 
 import { useOrdersFt1Scenario } from '../hooks/useOrdersFt1Scenario';
 import { OrderNexusDiagnosticCard } from '../components/OrderNexusDiagnosticCard';
+import type { OrderNexusUiIntent } from '../intents';
 
 export interface OrdersModuleProps {
   ordersIngested: number | null;
   hasNegativeMarginOrder: boolean;
   missingCostCount: number;
+  onIntent?: (intent: OrderNexusUiIntent) => void;
 }
 
 export default function OrdersModule(props: OrdersModuleProps) {
@@ -38,6 +40,14 @@ export default function OrdersModule(props: OrdersModuleProps) {
     missingCostCount: props.missingCostCount,
   });
 
+  const emitStartOnboarding = (taskId?: string) => {
+    console.debug('[OrdersModule] emitStartOnboarding', taskId);
+    props.onIntent?.({
+      type: 'START_ONBOARDING',
+      taskId,
+    });
+  };
+
   switch (scenario) {
     case 'NO_ORDERS':
       return (
@@ -45,10 +55,11 @@ export default function OrdersModule(props: OrdersModuleProps) {
           testId="orders-ft1-no-orders"
           title="No orders detected yet"
           message="We haven’t recorded any orders for this store. Once orders are synced, we can evaluate profitability risks."
-          ctaLabel="Sync orders"
-          onCtaClick={() => {
-            /* intent emission handled by host */
-          }}
+          ctaLabel={props.onIntent ? "Sync orders" : undefined}
+          onCtaClick={props.onIntent 
+            ? () => emitStartOnboarding('connect-store') 
+            : undefined
+          }
         />
       );
 
@@ -58,10 +69,11 @@ export default function OrdersModule(props: OrdersModuleProps) {
           testId="orders-ft1-loss"
           title="Profitability risk detected"
           message="One or more orders appear to be losing money based on current cost and revenue data."
-          ctaLabel="Review profitability setup"
-          onCtaClick={() => {
-            /* intent emission handled by host */
-          }}
+          ctaLabel={props.onIntent ? "Review profitability setup" : undefined}
+          onCtaClick={props.onIntent 
+            ? () => emitStartOnboarding('verify-costs') 
+            : undefined
+          }
         />
       );
 
@@ -71,10 +83,11 @@ export default function OrdersModule(props: OrdersModuleProps) {
           testId="orders-ft1-uncertain"
           title="Profitability cannot be determined yet"
           message="Some orders are missing cost information, which prevents accurate margin calculations."
-          ctaLabel="Complete cost setup"
-          onCtaClick={() => {
-            /* intent emission handled by host */
-          }}
+          ctaLabel={props.onIntent ? "Complete cost setup" : undefined}
+          onCtaClick={props.onIntent 
+            ? () => emitStartOnboarding('add-costs') 
+            : undefined
+          }
         />
       );
 

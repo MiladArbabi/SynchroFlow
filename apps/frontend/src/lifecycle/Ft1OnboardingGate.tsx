@@ -32,7 +32,7 @@ export function Ft1OnboardingGate({ moduleId }: Ft1OnboardingGateProps) {
       payload: {
         action: 'continue',
         surface: 'ft1_onboarding_gate',
-        moduleId,
+        moduleId
       },
     });
   };
