@@ -50,7 +50,11 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
     moduleId: 'order-nexus',
       displayName: 'Orders & Profitability',
       requiredSignals: [
-        'integration.syncCompleted'
+        'integration.syncCompleted',
+         'orderNexus.ordersKnown',
+         'orderNexus.ordersIngested',
+         'orderNexus.missingCostCount',
+         'orderNexus.hasNegativeMarginOrder'
       ],
       tasks: [
         {
