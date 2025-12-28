@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/index.tsx
 import React, { ReactNode, useRef, useEffect, useState } from "react"; 
@@ -18,6 +19,7 @@ import { ConnectStoreModal } from 'components/ConnectStoreModal';
 import useConfig from 'hooks/useConfig';
 
 import { ToastProvider } from 'contexts/ToastContext';
+import { Ft1ChecklistDevSurface } from 'ui/ft1-checklist/Ft1ChecklistDevSurface';
 
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
@@ -53,6 +55,10 @@ const AppLayout = ({
   // --- STATE LIFTED FROM DASHBOARD ---
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false); 
+
+  const isDev =
+   typeof import.meta !== 'undefined' &&
+   (import.meta as any).env?.DEV === true;
 
   // --- LOGIC LIFTED FROM DASHBOARD ---
   useEffect(() => {
@@ -233,6 +239,7 @@ const AppLayout = ({
               onClose={handleModalClose}
             />
           </Box>
+       {isDev && <Ft1ChecklistDevSurface />}
       </ToastProvider>
   );
 };

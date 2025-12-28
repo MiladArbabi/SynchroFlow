@@ -16,5 +16,5 @@
 
     "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../shared/src/contracts.ts"]
 }

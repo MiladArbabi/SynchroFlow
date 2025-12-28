@@ -32,7 +32,7 @@ import {
 
 import { ActivationSurfaceProps } from '../../../../modules/shared/src/ui/activation/types';
 
-import { BlindnessVisual } from '@lasyncro/shared/ui';
+import { BlindnessVisual } from '../../../../modules/shared/dist/ui/activation/visuals';
 
 /* -------------------------------------------------------------------------- */
 /* Status → Visual Encoding                                                    */

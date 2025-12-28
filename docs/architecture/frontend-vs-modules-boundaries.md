@@ -602,3 +602,32 @@ Each FT1 module MUST include:
 If any are missing, FT1 is **NOT COMPLETE**.
 
 ---
+
+## 8. Critical distinction (don’t mix these up)
+
+| Command                                        | What it does                         | Status    |
+| ---------------------------------------------- | ------------------------------------ | --------- |
+| `npx tsc -p modules/order-nexus/tsconfig.json` | Type-check + emit (if enabled)       | ✅ Works   |
+| `npm run build -w @lasyncro/order-nexus`       | Workspace build lifecycle            | ❌ Missing |
+| `dist/` existence                              | Prior artifact, not guaranteed fresh | ⚠️ Stale  |
+
+---
+modules/order-nexus/package.json:
+{
+  "name": "@lasyncro/order-nexus",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/ui/index.d.ts",
+      "default": "./dist/ui/index.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "default": "./dist/ui/index.js"
+    }
+  }
+}

@@ -29,7 +29,8 @@
       "config": ["apps/frontend/src/config.ts"],
       "@lasyncro/order-nexus": [
         "modules/order-nexus/src/ui/index.ts"
-      ]
+      ],
+      "wiring/*": ["apps/frontend/src/wiring/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"]

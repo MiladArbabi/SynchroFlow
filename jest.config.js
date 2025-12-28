@@ -28,7 +28,8 @@ module.exports = {
         '^api-server$': '<rootDir>/apps/backend/src/server.ts',
 
         '^activation/(.*)$': '<rootDir>/apps/frontend/src/activation/$1',
-
+        '^analytics/(.*)$': '<rootDir>/apps/frontend/src/analytics/$1',
+        
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
         // FRONTEND ALIASES (so backend tests can import frontend files safely)
@@ -89,6 +90,7 @@ module.exports = {
       ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
       moduleNameMapper: {
+        '^analytics/(.*)$': '<rootDir>/apps/frontend/src/analytics/$1',
         '^ui/src/(.*)$': '<rootDir>/apps/frontend/src/$1',
         '^components/(.*)$': '<rootDir>/apps/frontend/src/components/$1',
         '^contexts/(.*)$': '<rootDir>/apps/frontend/src/contexts/$1',
@@ -131,6 +133,9 @@ module.exports = {
       ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
       moduleNameMapper: {
+        '^analytics/(.*)$': '<rootDir>/apps/frontend/src/analytics/$1',
+        '^wiring/(.*)$': '<rootDir>/apps/frontend/src/wiring/$1',
+        
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
         '\\.(svg|png|jpg|jpeg|gif)$': '<rootDir>/jest.file-mock.js',
         '^test-utils$': '<rootDir>/apps/frontend/src/test-utils.tsx',

@@ -26,6 +26,7 @@
     "paths": {
       "test-utils": ["apps/frontend/src/test-utils.tsx"],
       "menu-items/*": ["apps/frontend/src/menu-items/*"],
+      "wiring/*": ["apps/frontend/src/wiring/*"],
       
       // Wildcard aliases for directories inside /src
       "components/*": ["apps/frontend/src/components/*"],
@@ -91,7 +92,7 @@
     "modules/specter/src",
     "modules/order-nexus/src",
     "modules/customers/src"
-  ],
+, "modules/shared/src/contracts.ts"  ],
   "exclude": [
   "apps/frontend/src/stories/**"
   ],

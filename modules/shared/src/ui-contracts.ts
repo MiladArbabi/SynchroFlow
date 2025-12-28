@@ -138,3 +138,10 @@ export interface GatedPlaceholderProps {
   upgradeRoute?: string | null;
   backRoute?: string;
 }
+
+export type ChecklistUiIntent =
+  | {
+      type: 'TASK_CLICK';
+      moduleId: string;
+      taskId: string;
+    };

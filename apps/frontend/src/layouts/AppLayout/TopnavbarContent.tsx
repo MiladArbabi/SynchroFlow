@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx
 import React, { useContext } from "react";
@@ -42,6 +43,10 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   const { state, dispatch } = useConfig();
 
   const matchDownMd = useMediaQuery(theme.breakpoints.down('md'));
+
+  const isDev =
+   typeof import.meta !== 'undefined' &&
+   (import.meta as any).env?.DEV === true;
 
   // ---  SIDEBAR HANDLER ---
   const handleToggleSidenav = () => {
@@ -92,6 +97,21 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
         {/* <OnboardingTaskListTracker /> */}
         {/* <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box> */}
+
+        {isDev && (
+         <Tooltip title="FT1 Checklist (dev)">
+           <IconButton
+             size="small"
+             onClick={() => {
+               window.dispatchEvent(
+                 new CustomEvent('ft1-checklist:open')
+               );
+             }}
+           >
+             <IconComponent name="ListChecks" size="medium" />
+           </IconButton>
+         </Tooltip>
+       )}
         
         {/* Layout Edit Buttons (Keep these for now) */}
         {/* --- MODIFIED: Group buttons when editing --- */}
