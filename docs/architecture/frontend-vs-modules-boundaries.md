@@ -476,26 +476,29 @@ apps/frontend
 └─ backend signal providers
 
 ### Rules
-- Modules NEVER fetch data
-- Modules NEVER read lifecycle state
-- Modules ONLY receive props
-- Frontend adapters NEVER infer scenarios
+
+* Modules NEVER fetch data
+* Modules NEVER read lifecycle state
+* Modules ONLY receive props
+* Frontend adapters NEVER infer scenarios
 
 ### Example (Orders FT1)
 
-- Frontend:
-  - fetches readiness
-  - maps signals → props
-- Module:
-  - interprets props
-  - renders deterministic UI
+* Frontend:
+  * fetches readiness
+  * maps signals → props
+* Module:
+  * interprets props
+  * renders deterministic UI
 
 Violating this pattern reintroduces:
-- lifecycle leaks
-- duplicated logic
-- untestable UI
 
-## Appendix:
+* lifecycle leaks
+* duplicated logic
+* untestable UI
+
+## Appendix
+
 ## FT1 Module Truth Path (LOCKED)
 
 This document captures the **final, enforced FT1 pattern** validated through OrderNexus. All FT1 modules MUST follow this path.

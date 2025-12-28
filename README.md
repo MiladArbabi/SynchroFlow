@@ -5,7 +5,9 @@ LaSyncro is an AI-powered commerce operations platform that evolves from passive
 ## 🚀 Current Status: Phase 1.5 Complete - Production Ready
 
 ### 🎯 What We've Built
+
 **A complete operational intelligence platform** that delivers immediate value regardless of Shopify PCD status:
+
 - ✅ **Real-time Order Intelligence** - Complete Order360 with PCD compliance
 - ✅ **Product Intelligence Center** - Full product catalog with inventory health monitoring  
 - ✅ **Customer Data Foundation** - Unified customer identity across platforms
@@ -15,23 +17,27 @@ LaSyncro is an AI-powered commerce operations platform that evolves from passive
 ### 🏆 Key Achievements (v6.0)
 
 #### 🎨 Complete UI/UX Foundation
+
 - **Professional Dashboard** - Theme-aware widgets with real-time data
 - **Responsive Navigation** - Sidenav with Orders, Products, Customers tabs
 - **Live Customization** - Real-time theme changes with persistent settings
 - **Accessibility First** - WCAG compliant components throughout
 
 #### 🔄 Robust Data Pipeline
+
 - **Orders API** - Complete order lifecycle with PCD compliance
 - **Products API** - Real product data with inventory status indicators
 - **Customers API** - Foundation for customer intelligence
 - **JWT Authentication** - Secure API access across all endpoints
 
 #### 🧪 Production-Grade Testing
+
 - **100% E2E Test Coverage** - Playwright tests for all critical user flows
 - **Automated Database Seeding** - Consistent test data on every development start
 - **TypeScript Everywhere** - Full type safety across frontend and backend
 
 #### 🛡️ Enterprise Architecture
+
 - **Microservices Ready** - Decoupled Node.js & React architecture
 - **Database Migrations** - Knex.js with proper version control
 - **Error Handling** - Comprehensive "sad path" coverage
@@ -40,6 +46,7 @@ LaSyncro is an AI-powered commerce operations platform that evolves from passive
 ## 🏗️ Technical Architecture
 
 ### Core Stack
+
 ```mermaid
 graph TD
     A[React UI] --> B[Node.js API]
@@ -58,6 +65,7 @@ graph TD
 - **Infrastructure**: Docker, automated migrations, health checks
 
 ### Data Model Excellence
+
 ```sql
 -- Multi-entity relationships with PCD compliance
 Orders ↔ Customers ↔ Products ↔ Order Line Items
@@ -66,18 +74,21 @@ Orders ↔ Customers ↔ Products ↔ Order Line Items
 ## 🎯 Core Features Live Today
 
 ### 📦 Product Intelligence Center
+
 - **Real Product Data** - Live Shopify product catalog
 - **Inventory Health** - Stock status indicators (In Stock/Low Stock/Out of Stock)
 - **Vendor & Category** - Complete product organization
 - **Search & Filter** - Find products by SKU, name, or vendor
 
 ### 📊 Order360 Intelligence
+
 - **Complete Order Lifecycle** - From creation to fulfillment
 - **PCD Compliance** - Protected customer data handling
 - **Financial Tracking** - Revenue, margins, and profitability
 - **Customer Context** - Order history and behavior patterns
 
 ### 🔐 Secure Platform
+
 - **JWT Authentication** - Industry-standard security
 - **Shopify Integration** - OAuth2 with proper scopes
 - **Data Isolation** - Multi-tenant architecture
@@ -86,11 +97,13 @@ Orders ↔ Customers ↔ Products ↔ Order Line Items
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js 18+
 - Docker & Docker Compose
 - Shopify Partner Account (for development)
 
 ### Quick Start
+
 ```bash
 # Clone and setup
 git clone [repository]
@@ -108,6 +121,7 @@ npm run dev:full
 ```
 
 ### Development Workflow
+
 ```bash
 # Run tests
 npm run test:e2e          # End-to-end tests
@@ -125,6 +139,7 @@ npm run seed -w api      # Seed test data
 ## 📈 Roadmap & Vision
 
 ### ✅ Phase 1.5: Foundation Complete
+
 - Operational Intelligence Platform
 - Multi-entity data distribution (Orders, Products, Customers)
 - Professional UI with theme engine
@@ -132,6 +147,7 @@ npm run seed -w api      # Seed test data
 - Shopify integration with PCD compliance
 
 ### 🎯 Phase 2: Customer Intelligence (Next)
+
 - Growth Mode Activation
 - Customer 360 views and segmentation
 - Lifetime value analytics
@@ -139,6 +155,7 @@ npm run seed -w api      # Seed test data
 - Advanced customer behavior tracking
 
 ### 🔮 Phase 3: Multi-Platform Scale
+
 - Architect Mode
 - WooCommerce and Amazon integrations
 - Unified cross-platform analytics
@@ -148,25 +165,30 @@ npm run seed -w api      # Seed test data
 ## 🏆 Why Choose LaSyncro?
 
 ### For Merchants
+
 - **Immediate Value** - Setup in 2 minutes, insights in 3 seconds
 - **Complete Visibility** - Orders, products, and customers in one place
 - **Zero Setup Analytics** - Beats GA4 complexity with operational focus
 - **Growth Ready** - Scales from startup to enterprise
 
 ### For Developers
+
 - **TypeScript First** - Full-stack type safety
 - **Modern Stack** - React 18, Node.js, PostgreSQL
 - **Testing Culture** - 100% E2E coverage from day one
 - **Clean Architecture** - Maintainable and extensible
 
 ### For Businesses
+
 - **PLG Foundation** - Free tier drives organic growth
 - **Multi-Platform** - Shopify today, entire ecosystem tomorrow
 - **Data Moats** - Unified intelligence creates unbeatable insights
 - **Enterprise Ready** - Security, scalability, and compliance built-in
 
 ## 🤝 Contributing
+
 We're building the future of commerce operations together. Our development process:
+
 - **Feature Specification** - Start with 4 C's framework (Context, Causation, Clear Path, Closed Loop)
 - **TDD Approach** - Tests before implementation
 - **Code Review** - Automated checks and peer review
@@ -175,16 +197,19 @@ We're building the future of commerce operations together. Our development proce
 ## 📊 Success Metrics
 
 ### Technical Excellence
+
 - **API Response Time**: < 200ms p95
 - **Test Coverage**: 100% critical paths
 - **Uptime**: 99.9% production readiness
 
 ### Business Impact
+
 - **User Activation**: > 40% weekly usage
 - **Time to Value**: < 3 seconds for first insight
 - **Data Freshness**: < 5 minutes from source systems
 
 ## 📄 License
+
 Proprietary - All rights reserved.
 
 Built with ❤️ for merchants who deserve better tools.

@@ -20,13 +20,31 @@ interface ModuleContentHostProps {
   moduleId: string;
   phase: UILifecyclePhase;
   hasPaidEntitlement: boolean;
+  onboarding?: {
+    ft1?: {
+      isComplete: boolean;
+      blockingModules: string[];
+    };
+  };
 }
 
 export function ModuleContentHost({
   moduleId,
   phase,
   hasPaidEntitlement,
+  onboarding,
 }: ModuleContentHostProps) {
+
+  const ft1Incomplete =
+    phase === 'FT1_READY' &&
+    onboarding?.ft1?.isComplete === false &&
+    onboarding?.ft1?.blockingModules?.includes(moduleId);
+
+  // FT1 onboarding gate: suppress core content for blocking modules only
+  if (ft1Incomplete) {
+    return <div data-testid="ft1-onboarding-gate" />;
+  }
+
   // FT2 unpaid → nothing mounts (paywall handled upstream)
   if (phase === 'FT2_PAYWALL' && !hasPaidEntitlement) {
     return null;
