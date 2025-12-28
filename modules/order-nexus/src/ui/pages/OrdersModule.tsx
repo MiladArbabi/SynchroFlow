@@ -20,6 +20,7 @@
 // modules/order-nexus/src/ui/pages/OrdersModule.tsx
 
 import { useOrdersFt1Scenario } from '../hooks/useOrdersFt1Scenario';
+import { OrderNexusDiagnosticCard } from '../components/OrderNexusDiagnosticCard';
 
 export interface OrdersModuleProps {
   ordersIngested: number | null;
@@ -40,37 +41,59 @@ export default function OrdersModule(props: OrdersModuleProps) {
   switch (scenario) {
     case 'NO_ORDERS':
       return (
-        <section data-testid="orders-ft1-no-orders">
-          No orders have been recorded yet.
-        </section>
+        <OrderNexusDiagnosticCard
+          testId="orders-ft1-no-orders"
+          title="No orders detected yet"
+          message="We haven’t recorded any orders for this store. Once orders are synced, we can evaluate profitability risks."
+          ctaLabel="Sync orders"
+          onCtaClick={() => {
+            /* intent emission handled by host */
+          }}
+        />
       );
 
     case 'LOSS':
       return (
-        <section data-testid="orders-ft1-loss">
-          At least one order has a negative margin based on current data.
-        </section>
+        <OrderNexusDiagnosticCard
+          testId="orders-ft1-loss"
+          title="Profitability risk detected"
+          message="One or more orders appear to be losing money based on current cost and revenue data."
+          ctaLabel="Review profitability setup"
+          onCtaClick={() => {
+            /* intent emission handled by host */
+          }}
+        />
       );
 
     case 'UNCERTAIN':
       return (
-        <section data-testid="orders-ft1-uncertain">
-          Profitability cannot be determined yet due to missing cost data.
-        </section>
+        <OrderNexusDiagnosticCard
+          testId="orders-ft1-uncertain"
+          title="Profitability cannot be determined yet"
+          message="Some orders are missing cost information, which prevents accurate margin calculations."
+          ctaLabel="Complete cost setup"
+          onCtaClick={() => {
+            /* intent emission handled by host */
+          }}
+        />
       );
 
     case 'HEALTHY':
       return (
-        <section data-testid="orders-ft1-healthy">
-          No negative margins detected in the available order data.
-        </section>
+        <OrderNexusDiagnosticCard
+          testId="orders-ft1-healthy"
+          title="Orders look healthy"
+          message="No negative margins were detected in the available order data. We’ll continue monitoring as new orders come in."
+        />
       );
 
     case 'LOADING':
       return (
-        <section data-testid="orders-ft1-loading">
-          Loading orders…
-        </section>
+        <OrderNexusDiagnosticCard
+          testId="orders-ft1-loading"
+          title="Analyzing order data…"
+          message="We’re validating order data to determine profitability signals."
+        />
       );
   }
 }
