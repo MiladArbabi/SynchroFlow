@@ -30,6 +30,7 @@
       "@lasyncro/order-nexus": [
         "modules/order-nexus/src/ui/index.ts"
       ],
+      "@lasyncro/specter": ["modules/specter/src/ui/index.ts"],
       "wiring/*": ["apps/frontend/src/wiring/*"]
     }
   },

@@ -40,5 +40,10 @@
     "../../modules/shared/src/ui-contracts.ts",
     "../../modules/specter/src/**/*.ts",
   ],
-  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "**/*.spec.ts", 
+    "../../modules/*/src/ui/**/*"
+  ]
 }

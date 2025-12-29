@@ -17,7 +17,6 @@
     // ---- IMPORTANT PART ----
     "baseUrl": "src",
     "paths": {
-      "@lasyncro/shared/ui": ["../../../modules/shared/src/ui/index.ts"],
       "config": ["config.ts"],
       "hooks/*": ["hooks/*"],
       "themes/*": ["themes/*"],
@@ -31,7 +30,10 @@
       "components/*": ["components/*"],
       "contexts/*": ["contexts/*"],
       "layouts/*": ["layouts/*"],
-      "routes": ["routes.tsx"]
+      "routes": ["routes.tsx"],
+      "@lasyncro/shared/ui": ["../../../modules/shared/src/ui/index.ts"],
+      "@lasyncro/order-nexus": ["modules/order-nexus/src/ui/index.ts"],
+      "@lasyncro/specter": ["modules/specter/src/ui/index.ts"]
     }
   },
   "include": [

@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+
+    "module": "ES2020",
+    "jsx": "react-jsx",
+
+    "declaration": true,
+    "sourceMap": true,
+
+    "noEmit": false,
+    "emitDeclarationOnly": false,
+    "composite": true,
+
+    "allowImportingTsExtensions": false
+  },
+  "include": ["src/**/*", "../shared/src/contracts.ts"]
+}
