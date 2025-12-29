@@ -59,7 +59,8 @@
     "yup": "^1.7.1",
     "@lasyncro/order-nexus": "0.1.0",
     "@lasyncro/specter": "0.1.0",
-    "@lasyncro/products": "0.1.0"
+    "@lasyncro/products": "0.1.0",
+    "@lasyncro/finances": "0.1.0"
   },
   "devDependencies": {
     "@chromatic-com/storybook": "^4.1.1",

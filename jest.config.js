@@ -58,6 +58,7 @@ module.exports = {
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
         '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
         '^@lasyncro/analytics$': '<rootDir>/modules/analytics/src/ui',
+        '^@lasyncro/finances$': '<rootDir>/modules/finances/src/ui',
 
         '^shared-src$': '<rootDir>/modules/shared/src',
 
@@ -113,6 +114,7 @@ module.exports = {
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
         '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
         '^@lasyncro/analytics$': '<rootDir>/modules/analytics/src/ui',
+        '^@lasyncro/finances$': '<rootDir>/modules/finances/src/ui',
 
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
@@ -165,6 +167,7 @@ module.exports = {
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
         '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
         '^@lasyncro/analytics$': '<rootDir>/modules/analytics/src/ui',
+        '^@lasyncro/finances$': '<rootDir>/modules/finances/src/ui',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'
         : '<rootDir>/apps/frontend/src/$1/$2',                

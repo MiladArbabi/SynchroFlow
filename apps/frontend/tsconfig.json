@@ -33,7 +33,8 @@
       "routes": ["routes.tsx"],
       "@lasyncro/shared/ui": ["../../../modules/shared/src/ui/index.ts"],
       "@lasyncro/order-nexus": ["modules/order-nexus/src/ui/index.ts"],
-      "@lasyncro/specter": ["modules/specter/src/ui/index.ts"]
+      "@lasyncro/specter": ["modules/specter/src/ui/index.ts"],
+      "@lasyncro/finances": ["modules/finances/src/ui/index.ts"],
     }
   },
   "include": [

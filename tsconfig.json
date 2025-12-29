@@ -92,7 +92,7 @@
     "modules/specter/src",
     "modules/order-nexus/src",
     "modules/customers/src"
-, "modules/shared/src/contracts.ts"  ],
+, "modules/shared/src/contracts.ts", "modules/finances/src/ui/FinancesAhaPanel.tsx"  ],
   "exclude": [
   "apps/frontend/src/stories/**"
   ],
