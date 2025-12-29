@@ -631,3 +631,93 @@ modules/order-nexus/package.json:
     }
   }
 }
+
+New Rule: Compiler Mode Split (MANDATORY)
+
+modules/*and apps/* MUST use different TypeScript emit modes.
+
+Layer Compiler Mode Emits JS allowImportingTsExtensions
+apps/frontend bundler ❌ no ✅ allowed
+modules/* node ✅ yes ❌ forbidden
+
+Implication
+
+Modules must override inherited compiler options.
+
+Extending the root tsconfig without overrides is a bug.
+
+2️⃣ FT1 Module Playbook – Add a “Buildability Gate”
+
+Add this as Step 0 (before scenarios).
+
+Step 0 — Module Must Be Buildable (HARD GATE)
+
+A module is invalid unless:
+
+tsc -p modules/<module>/tsconfig.json emits dist/
+
+dist/ui/index.js and index.d.ts exist
+
+node_modules/@lasyncro/<module>/dist/** exists after install
+
+The package exports a runtime default export
+
+If any fail → STOP. Do not write FT1 code.
+
+3️⃣ Public API Rule – Runtime Export Is Mandatory
+
+Add under Package Export Model.
+
+New Invariant
+
+A module package MUST export at least one runtime value from its root.
+
+Forbidden:
+
+// type-only public API
+export type { X } from './types';
+
+Required:
+
+export { default } from './pages/<Module>Module';
+
+Reason:
+
+Type-only entrypoints produce no JS
+
+npm workspace packages become “phantom modules”
+
+TS resolution fails downstream
+
+4️⃣ Reference tsconfig Template for Modules (Canonical)
+
+Add this verbatim to docs so no one guesses again.
+
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "moduleResolution": "node",
+    "allowImportingTsExtensions": false,
+    "isolatedModules": false,
+
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "ES2020",
+    "target": "ES2020",
+
+    "declaration": true,
+    "sourceMap": true
+  }
+}
+
+Any deviation must be justified in review.
+
+5️⃣ Explicit Anti-Pattern Callout (Important)
+
+Add to “Common Failure Modes”:
+
+Symptom Root Cause
+Cannot find module '@lasyncro/<module-name>' but build passes Module inherited noEmit: true
+dist/ missing after build Root tsconfig leaked into module
+Works for one module, fails for new one Stale dist/ artifacts masking bug.

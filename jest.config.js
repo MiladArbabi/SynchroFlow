@@ -56,6 +56,7 @@ module.exports = {
         '^@lasyncro/shared$': '<rootDir>/modules/shared/src',
         '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
+        '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
 
         '^shared-src$': '<rootDir>/modules/shared/src',
 
@@ -109,6 +110,7 @@ module.exports = {
         '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
         '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
+        '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
 
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
@@ -159,6 +161,7 @@ module.exports = {
         '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
         '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
+        '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'
         : '<rootDir>/apps/frontend/src/$1/$2',                

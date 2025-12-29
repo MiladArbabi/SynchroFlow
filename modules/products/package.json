@@ -2,16 +2,18 @@
   "name": "@lasyncro/products",
   "version": "0.1.0",
   "private": true,
-  "description": "Products UI module",
-  "main": "dist/ModuleEntry.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
+  "types": "./dist/ui/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && echo \"built\"",
-    "clean": "rimraf dist"
+    "build": "tsc -p tsconfig.json"
   },
-  "keywords": ["lasyncro", "ui-module", "products"],
-  "license": "MIT"
+  "exports": {
+    ".": {
+      "types": "./dist/ui/index.d.ts",
+      "default": "./dist/ui/index.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "default": "./dist/ui/index.js"
+    }
+  }
 }
