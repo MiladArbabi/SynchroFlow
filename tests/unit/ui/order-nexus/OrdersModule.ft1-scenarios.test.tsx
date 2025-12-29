@@ -44,7 +44,7 @@ describe('OrdersModule – FT1 scenario composition (diagnostic)', () => {
 
     expect(screen.getByTestId('orders-ft1-no-orders')).toBeInTheDocument();
     expect(
-      screen.getByText(/no orders have been recorded yet/i)
+      screen.getByText(/We haven’t recorded any orders for this store/i)
     ).toBeInTheDocument();
   });
 
@@ -61,7 +61,7 @@ describe('OrdersModule – FT1 scenario composition (diagnostic)', () => {
 
     expect(screen.getByTestId('orders-ft1-loss')).toBeInTheDocument();
     expect(
-      screen.getByText(/at least one order has a negative margin/i)
+      screen.getByText(/One or more orders appear to be losing money based on current cost and revenue data./i)
     ).toBeInTheDocument();
   });
 
@@ -95,7 +95,7 @@ describe('OrdersModule – FT1 scenario composition (diagnostic)', () => {
 
     expect(screen.getByTestId('orders-ft1-healthy')).toBeInTheDocument();
     expect(
-      screen.getByText(/no negative margins detected/i)
+      screen.getByText(/No negative margins were detected in the available order data./i)
     ).toBeInTheDocument();
   });
 });

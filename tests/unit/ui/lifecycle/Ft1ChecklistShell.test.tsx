@@ -73,6 +73,7 @@ describe('Ft1ChecklistShell — FT1 onboarding checklist', () => {
         action: 'task_click:sync-orders',
         surface: 'ft1_checklist',
         moduleId: 'order-nexus',
+        taskId: "sync-orders"
       },
     });
   });

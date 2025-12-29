@@ -106,42 +106,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
            </IconButton>
          </Tooltip>
        )}
-        
-        {/* Layout Edit Buttons (Keep these for now) */}
-        {/* --- MODIFIED: Group buttons when editing --- */}
-        <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center' }}>
-          {isEditing ? (
-            // 2. If editing, show the grouped container
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.5,
-                border: '1px solid',
-                borderColor: theme.palette.divider,
-                borderRadius: '8px', // Adjust as needed
-                padding: '4px',
-              }}
-            >
-              <Tooltip title="Add Widget">
-                <IconButton onClick={onAddWidget} color="info" size="small">
-                  <IconComponent name="Plus" size="medium" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Save Layout">
-                <IconButton onClick={onEditToggle} color="success" size="small">
-                  <IconComponent name="Save" size="medium" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          ) : (
-          <Tooltip title={isEditing ? "Save Layout" : "Edit Layout"}>
-            <IconButton onClick={onEditToggle} color="info">
-              <IconComponent name={isEditing ? "Save" : "Pencil"} size="medium" />
-            </IconButton>
-          </Tooltip>
-          )}
-        </Box>
 
         <ProfileSection />
          {/* --- End Berry Sections --- */}

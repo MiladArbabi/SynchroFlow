@@ -32,6 +32,7 @@ describe('Checklist intent adapter → analytics', () => {
         action: 'task_click:sync-orders',
         surface: 'ft1_checklist',
         moduleId: 'order-nexus',
+        taskId: "sync-orders"
       },
     });
   });
