@@ -1,13 +1,5 @@
 //apps/frontend/vite.config.ts
 /// <reference types="vitest/config" />
-// apps/frontend/vite.config.ts (top of file)
-if (!process.env.STORYBOOK) {
-  // ensure downstream storybook Vite plugins do not activate in normal dev
-  process.env.STORYBOOK = "0";
-}
-console.log(`[LASYNCRO] NODE process STORYBOOK=${process.env.STORYBOOK}`);
-
-console.log("[LASYNCRO] vite.config.ts LOADED from", __dirname);
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -16,17 +8,8 @@ import lasyncroModulesPlugin from './vite-plugins/vite-plugin-lasyncro-modules';
 
 // https://vitejs.dev/config/
 import { fileURLToPath } from 'node:url';
-import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
-if (process.env.STORYBOOK === "1") {
-  console.log("[LASYNCRO] Running Storybook mode");
-} else {
-  // hard block Storybook Vite plugins from loading
-  process.env.STORYBOOK = "0";
-}
-
-// More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
   plugins: [
     lasyncroModulesPlugin(),
@@ -83,30 +66,4 @@ export default defineConfig({
       'runtime/index': path.resolve(__dirname, './src/runtime/index.ts'),
     }
   },
-  test: {
-    projects: [{
-      extends: true,
-      plugins: [
-      // The plugin will run tests for the stories defined in your Storybook config
-      // See options at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon#storybooktest
-      tsconfigPaths(),
-      react(),
-      lasyncroModulesPlugin(),
-      storybookTest({
-        configDir: path.join(dirname, '.storybook')
-      })],
-      test: {
-        name: 'storybook',
-        browser: {
-          enabled: true,
-          headless: true,
-          provider: 'playwright',
-          instances: [{
-            browser: 'chromium'
-          }]
-        },
-        setupFiles: ['.storybook/vitest.setup.ts']
-      }
-    }]
-  }
 });

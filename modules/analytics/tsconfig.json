@@ -3,20 +3,19 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "baseUrl": ".",
-    "paths": {
-      "pages/*": ["../../../apps/frontend/src/pages/*"]
-    },
+
     "module": "ESNext",
-    "target": "ES2020",
+    "jsx": "react-jsx",
+
     "declaration": true,
-    "declarationMap": false,
     "sourceMap": true,
-    "moduleResolution": "node",
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true
+
+    "noEmit": false,
+    "emitDeclarationOnly": false,
+    "composite": true,
+
+    "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.spec.*"]
+  "include": ["src/**/*", "../shared/src/contracts.ts"]
 }
+
