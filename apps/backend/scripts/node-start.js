@@ -209,8 +209,4 @@ const server = app.listen(port, HOST, async () => {
   // Ensure queue is initialized before workers that may rely on it.
   // The compiled dist should export `initQueue()` / `closeQueue()` for lifecycle control.
   await tryStart('queue.js', 'initQueue');
-
-  // Now start workers that rely on queue & other services.
-  await tryStart('worker.js', 'startWorker');
-  await tryStart('sync.worker.js', 'startSyncWorker');
 });

@@ -4,7 +4,7 @@ Out-of-the-box "aha" moment — show product health for a subset of SKUs and pro
 
 FT0 Scope
 Core Functionality:
-Ingest canonical_products and seed skuOs.productCount
+Ingest canonical_products and seed sku-os.productCount
 
 Produce simple healthScore computed from:
 
@@ -23,7 +23,7 @@ Provide a single UI widget: Top-10 At-Risk SKUs (stockout risk or margin critica
 Readiness Signals:
 integration.syncCompleted dependency (platform)
 
-skuOs.productHealthEvents (>=1) used in onboarding
+sku-os.productHealthEvents (>=1) used in onboarding
 
 Free Tier Exposure:
 Top-10 at-risk (read-only)

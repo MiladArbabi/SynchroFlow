@@ -278,7 +278,7 @@ LIMIT 10;
 #### 1. Backend Gating Logic:
 ```typescript
 // Example: Feature gating based on tier
-class SKUOSFeatureGate {
+class sku-osFeatureGate {
   canAccessFullProductList(shop: Shop): boolean {
     return shop.tier !== 'free' || 
            shop.freeTierRemaining > 0;
@@ -617,7 +617,7 @@ Week 5-6: Address Business Risks
 ### 2. Readiness Provider Patch
 **File:** `apps/backend/src/onboarding/readiness.providers.ts`
 **Includes:**
-- Accurate `skuOs.productHealthEvents` calculation
+- Accurate `sku-os.productHealthEvents` calculation
 - `lastProductHealthEventAt` timestamp
 - Free tier state integration
 - Test coverage for all signals

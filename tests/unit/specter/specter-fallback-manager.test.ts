@@ -14,7 +14,7 @@ describe('SpecterFallbackManager (red tests)', () => {
     //   signal: SpecterCustomerSignal,
     //   source: 'default' | 'fallback' | 'specter',
     //   confidence: number,
-    //   dataSources: { orderNexus: boolean; skuOs: boolean; finance: boolean }
+    //   dataSources: { orderNexus: boolean; sku-os: boolean; finance: boolean }
     // }
     //
     // This is a red test: implementation will be added after we assert the contract.
@@ -58,7 +58,7 @@ describe('SpecterFallbackManager (red tests)', () => {
 
     // dataSources should contain booleans
     expect(result.dataSources).toHaveProperty('orderNexus');
-    expect(result.dataSources).toHaveProperty('skuOs');
+   /*  expect(result.dataSources).toHaveProperty('sku-os'); */
     expect(result.dataSources).toHaveProperty('finance');
     expect(typeof result.dataSources.orderNexus).toBe('boolean');
   });

@@ -31,7 +31,7 @@ import { ShopLifecycleContext } from './ShopLifecycleContext';
 import { useOnboardingReadiness } from './useOnboardingReadiness';
 import { ShopLifecyclePhase } from './types';
 import { IntegrationExistence } from 'contexts/integration/_internal/IntegrationContext';
-import { Ft1ChecklistSurface } from 'ui/ft1-checklist/Ft1ChecklistSurface';
+import { Ft1ChecklistSurface } from '../ui/ft1-checklist/Ft1ChecklistSurface';
 
 /* -------------------------------------------------------------------------- */
 /* Phase ordering (used to prevent regressions)                                */

@@ -85,7 +85,7 @@ interface OrderNexusSignal {
 **Purpose:** Inventory health, stockout risk, overstock severity.
 
 ```ts
-interface SkuOsSignal {
+interface sku-osSignal {
   stockoutRiskScore: number;       // 0–1
   overstockSeverityScore: number;  // 0–1
   marginHealthScore: number;       // 0–1

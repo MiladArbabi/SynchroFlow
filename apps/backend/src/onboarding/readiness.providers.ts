@@ -10,8 +10,8 @@ import {
 } from '@lasyncro/shared';
 import { specterOnboardingSignalProvider } from './providers/specter.provider';
 
-
 import { UserStateService } from '../services/user-state.service';
+import { deriveKnownCount } from './utils/deriveKnownCount';
 
 // canonical module IDs the provider will try to resolve (exported so tests can mock them)
  export const SPECTER_STORE_CANDIDATES = [
@@ -155,27 +155,41 @@ export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'sku-os',
 
   async getSignals({ shopId }): Promise<ReadinessSignal[]> {
-    const row = await db('canonical_products')
-      .where({ shop_id: shopId })
-      .count<{ count: string }>('* as count')
-      .first();
+    let productsKnown = false;
+    let productCount: number | null = null;
+    let freeTierUsageCount = 0;
 
-    const rawCount = row ? Number(row.count) : 0;
-    const productCount = Number.isFinite(rawCount) ? rawCount : 0;
+    try {
+      const row = await db('canonical_products')
+        .where({ shop_id: shopId })
+        .count<{ count: string }>('* as count')
+        .first();
 
-    // v1 readiness: we treat "health events" as "we have at least some products to score"
-    const productHealthEvents = productCount;
+      const derived = deriveKnownCount(row?.count);
+
+      productsKnown = derived.known;
+      productCount = derived.count;
+      freeTierUsageCount = derived.usageCount;
+    } catch {
+      productsKnown = false;
+      productCount = null;
+      freeTierUsageCount = 0;
+    }
+
+    const productHealthEvents =
+      productsKnown && productCount !== null ? productCount : null;
 
     const freeTier = computeModuleAccessState({
       moduleId: 'sku-os',
-      usageCount: productCount,
+      usageCount: freeTierUsageCount,
       entitlementAccess: 'free-tier',
     });
 
     const signals: ReadinessSignal[] = [];
 
-    signals.push(makeSignal('skuOs.productCount', productCount));
-    signals.push(makeSignal('skuOs.productHealthEvents', productHealthEvents));
+    signals.push(makeSignal('sku-os.productsKnown', productsKnown));
+    signals.push(makeSignal('sku-os.productCount', productCount));
+    signals.push(makeSignal('sku-os.productHealthEvents', productHealthEvents));
     signals.push(makeSignal('sku-os.freeTierState', freeTier.state));
     signals.push(makeSignal('sku-os.freeTierRemaining', freeTier.remaining ?? null));
 
@@ -273,5 +287,3 @@ export const onboardingSignalProviders: OnboardingSignalProvider[] = [
   wmsLiteOnboardingSignalProvider,
   problemCenterOnboardingSignalProvider
 ];
-
-

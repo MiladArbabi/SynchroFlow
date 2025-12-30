@@ -59,6 +59,23 @@ export async function startWorkers(): Promise<void> {
     // Not fatal — specter worker may not exist in tests/dev
     console.warn('[bootstrap/workers] Specter ingestion worker not available (skipping):', err && (err as Error).message ? (err as Error).message : err);
   }
+
+  // start Product ingestion worker (FT0)
+  try {
+    const product = await import('../workers/product-ingestion.worker');
+    if (typeof product.startProductIngestionWorker === 'function') {
+      await Promise.resolve(product.startProductIngestionWorker());
+      if (typeof product.stopProductIngestionWorker === 'function') {
+        workerStopFns.push(async () => await product.stopProductIngestionWorker());
+      }
+      console.log('[bootstrap/workers] Product ingestion worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Product ingestion worker not available (skipping):',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
 }
 
 export async function stopWorkers(): Promise<void> {

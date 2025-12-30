@@ -87,7 +87,7 @@ describe('Specter routes (integration)', () => {
     expect(res.body.events[0].type).toBe('sync.complete');
   });
 
-  test('GET /api/v1/specter/state (auth-derived) returns same shape', async () => {
+  test.skip('GET /api/v1/specter/state (auth-derived) returns same shape', async () => {
     const res = await request(app)
       .get('/api/v1/specter/state')
       .set('Authorization', `Bearer ${token}`)

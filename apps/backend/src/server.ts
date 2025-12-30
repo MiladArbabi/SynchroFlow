@@ -4,6 +4,7 @@ dotenv.config();
 import { createApp } from './bootstrap/express';
 import { initSpecterStore, closeSpecterStore } from './bootstrap/specter-store';
 import { initQueue, closeQueue } from './bootstrap/queue';
+import { startWorkers } from './bootstrap/workers';
 import { seedSandboxData } from './db/seeder';
 
 const port = Number(process.env.PORT) || 3000;
@@ -32,6 +33,7 @@ async function start() {
   // ensure optional infra initialized before declaring ready
   await initSpecterStore();
   await initQueue();
+  await startWorkers();
 
   server = app.listen(port, HOST, () => {
     console.log(`Server is listening on http://${HOST}:${port}`);

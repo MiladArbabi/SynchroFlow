@@ -50,7 +50,7 @@ export type UserId = string;    // UUID v4
 export type MemberId = string;  // UUID v4 (user-in-shop)
 export type ModuleKey =
   | 'returnNexus'
-  | 'skuOs'
+  | 'sku-os'
   | 'wmsLite'
   | 'problemSolve'
   | 'marginCore'
@@ -293,7 +293,7 @@ These are **canonical** O(1) enums used everywhere.
 // modules/module-key.ts
 export type ModuleKey =
   | 'returnNexus'
-  | 'skuOs'
+  | 'sku-os'
   | 'wmsLite'
   | 'problemSolve'
   | 'marginCore'

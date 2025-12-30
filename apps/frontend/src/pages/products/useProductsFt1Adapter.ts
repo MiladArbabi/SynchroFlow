@@ -27,10 +27,15 @@ export function mapProductsFt1Props(
   const get = (name: string) =>
     signals.find((s: any) => s.name === name)?.value;
 
-  const raw = get('skuOs.productCount');
+  const productsKnown = get('sku-os.productsKnown');
+  const rawCount = get('sku-os.productCount');
 
   return {
     productCount:
-      raw === undefined || raw === null ? null : Number(raw),
+      productsKnown === false
+        ? null
+        : rawCount === undefined || rawCount === null
+        ? null
+        : Number(rawCount),
   };
 }

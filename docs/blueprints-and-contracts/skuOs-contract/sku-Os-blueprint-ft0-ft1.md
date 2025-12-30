@@ -10,7 +10,7 @@ SKU-OS: make product health & inventory intelligence automatic — detect risk (
 
 * **Readiness provider (FT0)** added in `apps/backend/src/onboarding/readiness.providers.ts`:
 
-  * Emits `skuOs.productCount`, `skuOs.productHealthEvents`, `sku-os.freeTierState`, `sku-os.freeTierRemaining`.
+  * Emits `sku-os.productCount`, `sku-os.productHealthEvents`, `sku-os.freeTierState`, `sku-os.freeTierRemaining`.
   * Logic uses `canonical_products` / `productCount` and derives `productHealthEvents` as productCount for v1 stub.
 * **Docs / blueprints**: `docs/blueprints/SKU-OS.md` exists and defines high level responsibilities (we referenced it in InsightCore blueprint).
 * **Canonical schema**:
@@ -47,7 +47,7 @@ SKU-OS: make product health & inventory intelligence automatic — detect risk (
 
 **FT0 scope**
 
-* Ingest `canonical_products` and seed `skuOs.productCount`.
+* Ingest `canonical_products` and seed `sku-os.productCount`.
 * Produce simple `healthScore` computed from:
 
   * Recent inventory level (if available),
@@ -59,7 +59,7 @@ SKU-OS: make product health & inventory intelligence automatic — detect risk (
 * Readiness signals:
 
   * `integration.syncCompleted` dependency (platform).
-  * `skuOs.productHealthEvents` (>=1) used in onboarding.
+  * `sku-os.productHealthEvents` (>=1) used in onboarding.
 * Free tier exposure: top-10 at-risk (read-only); full product list gated to paid tiers.
 
 **FT0 API contract (locked):**
@@ -156,14 +156,14 @@ fact_product_health (
 
 **Already added (FT0, in readiness.providers.ts):**
 
-* `skuOs.productCount` — number of canonical products
-* `skuOs.productHealthEvents` — v1 stub = productCount
+* `sku-os.productCount` — number of canonical products
+* `sku-os.productHealthEvents` — v1 stub = productCount
 * `sku-os.freeTierState`, `sku-os.freeTierRemaining`
 
 **What must be refined (next patches):**
 
-* Make `skuOs.productHealthEvents` reflect actual emitted events (count of events in last X days).
-* Add freshness timestamps: `skuOs.lastProductHealthEventAt`.
+* Make `sku-os.productHealthEvents` reflect actual emitted events (count of events in last X days).
+* Add freshness timestamps: `sku-os.lastProductHealthEventAt`.
 * Add readiness predicate for product health dashboards:
 
   * `canShowProductHealthDashboards = has product health events AND productCount >= 1`.
@@ -190,7 +190,7 @@ fact_product_health (
   * margin → marginHealth mapping,
   * daysOfCover calculation.
 * Integration test: seed canonical_products + order_line_items, run SKU-OS recalculation, assert `fact_product_health` rows inserted with expected values.
-* Readiness provider tests: mock DB rows to assert `skuOs.productCount` & `skuOs.productHealthEvents` results.
+* Readiness provider tests: mock DB rows to assert `sku-os.productCount` & `sku-os.productHealthEvents` results.
 * e2e: UI widget shows top-10 at-risk after a sync.
 
 ---
@@ -199,7 +199,7 @@ fact_product_health (
 
 ### Patch 0 — Readiness signal hardening (quick)
 
-**What:** Make `skuOs.productHealthEvents` reflect actual events & add `lastProductHealthEventAt`. Prevent readiness endpoint false negatives.
+**What:** Make `sku-os.productHealthEvents` reflect actual events & add `lastProductHealthEventAt`. Prevent readiness endpoint false negatives.
 **Why:** Onboarding must be honest about SKU-OS readiness.
 **Files:** `apps/backend/src/onboarding/readiness.providers.ts`
 **Deliverable:** provider reads `fact_product_health` or `product_health_events` table (if you emit events).
@@ -222,7 +222,7 @@ fact_product_health (
 
 ### Patch 3 — UI widget & gating (FT0 UI)
 
-**What:** Frontend widget Top-10 At-Risk SKUs; onboarding task uses `skuOs.productHealthEvents` to mark completion.
+**What:** Frontend widget Top-10 At-Risk SKUs; onboarding task uses `sku-os.productHealthEvents` to mark completion.
 **Why:** Merchant aha moment.
 **Files:** ui components; onboarding manifest.
 
@@ -303,7 +303,7 @@ Closed-loop: when action executed (e.g., reorder placed), SKU-OS should observe 
 ## 16) Deliverables
 
 1. Exact TypeScript worker that computes FT0 health scores and emits `ProductHealthAnalyticsEvent` (complete file + tests).
-2. Readiness provider patch to make `skuOs.productHealthEvents` real (if events are present).
+2. Readiness provider patch to make `sku-os.productHealthEvents` real (if events are present).
 3. SQL diagnostics script that prints velocity, sample healthScore, and top risk SKUs for a shop.
 4. Frontend widget spec (props + sample mock data) for Top-10 At-Risk SKUs.
 

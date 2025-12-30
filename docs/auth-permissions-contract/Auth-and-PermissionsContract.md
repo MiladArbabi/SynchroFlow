@@ -199,7 +199,7 @@ Used for:
 
 ```ts
 actor_type: 'system_service';
-service_id: 'returnNexus';     // or 'skuOs', 'wmsLite', ...
+service_id: 'returnNexus';     // or 'sku-os', 'wmsLite', ...
 shop_id: undefined;            // unless acting on a specific shop
 scopes: ['service:events:publish', 'service:core:read', ...];
 ```
@@ -270,7 +270,7 @@ Examples:
 
 * `module:returnNexus:read`
 * `module:returnNexus:write`
-* `module:skuOs:read`
+* `module:sku-os:read`
 * `billing:subscriptions:write`
 * `core:shops:read`
 * `events:publish:analytics`
@@ -312,7 +312,7 @@ const ROLE_SCOPE_MAPPING: Record<ShopRole, string[]> = {
     'module:returnNexus:write',
     'module:wmsLite:read',
     'module:wmsLite:write',
-    'module:skuOs:read'
+    'module:sku-os:read'
   ],
   FINANCE: [
     'billing:*:read',

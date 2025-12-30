@@ -1796,7 +1796,7 @@ Defined as:
 
 ```
 
-skuOs.productHealthEvents >= 1
+sku-os.productHealthEvents >= 1
 
 ```
 Where a “product health event” is:
@@ -1832,8 +1832,8 @@ SKU-OS MUST emit these signals to the onboarding engine:
 
 ```
 
-skuOs.productCount               // number
-skuOs.productHealthEvents        // number
+sku-os.productCount               // number
+sku-os.productHealthEvents        // number
 sku-os.freeTierState             // ModuleAccessState
 sku-os.freeTierRemaining         // number | null
 
@@ -1843,9 +1843,9 @@ Optional signals that MAY be added in v1.2+:
 
 ```
 
-skuOs.healthRecalculatedRecently // boolean
-skuOs.atRiskSkuCount             // number
-skuOs.highStockoutRiskCount      // number
+sku-os.healthRecalculatedRecently // boolean
+sku-os.atRiskSkuCount             // number
+sku-os.highStockoutRiskCount      // number
 
 ```
 
@@ -1856,9 +1856,9 @@ skuOs.highStockoutRiskCount      // number
 **Section:**  
 ```
 
-id = 'skuOs'
-moduleKey = 'skuOs'
-titleKey = 'onboarding.skuOs.sectionTitle'
+id = 'sku-os'
+moduleKey = 'sku-os'
+titleKey = 'onboarding.sku-os.sectionTitle'
 lockedIfNotInstalled = true
 
 ```
@@ -1872,13 +1872,13 @@ SKU-OS has only **one required task** for readiness, and **one optional task** f
 ```
 
 {
-id: 'skuOs.firstProductHealthEvent',
-moduleKey: 'skuOs',
-labelKey: 'onboarding.skuOs.firstProductHealthEvent.title',
-descriptionKey: 'onboarding.skuOs.firstProductHealthEvent.description',
+id: 'sku-os.firstProductHealthEvent',
+moduleKey: 'sku-os',
+labelKey: 'onboarding.sku-os.firstProductHealthEvent.title',
+descriptionKey: 'onboarding.sku-os.firstProductHealthEvent.description',
 required: true,
 completionRule: {
-signalKey: 'skuOs.productHealthEvents',
+signalKey: 'sku-os.productHealthEvents',
 operator: '>=',
 value: 1
 }
@@ -1896,13 +1896,13 @@ SKU-OS becomes meaningful when at least one SKU receives demand, return, or qual
 ```
 
 {
-id: 'skuOs.reviewProductHealth',
-moduleKey: 'skuOs',
-labelKey: 'onboarding.skuOs.reviewProductHealth.title',
-descriptionKey: 'onboarding.skuOs.reviewProductHealth.description',
+id: 'sku-os.reviewProductHealth',
+moduleKey: 'sku-os',
+labelKey: 'onboarding.sku-os.reviewProductHealth.title',
+descriptionKey: 'onboarding.sku-os.reviewProductHealth.description',
 required: false,
 completionRule: {
-signalKey: 'skuOs.productCount',
+signalKey: 'sku-os.productCount',
 operator: '>=',
 value: 1
 },
@@ -1997,7 +1997,7 @@ SKU-OS MUST remain a **pure computing module**.
 A shop is SKU-OS Ready when:
 
 - [ ] `platform.integration.syncCompleted === true`
-- [ ] `skuOs.productHealthEvents >= 1`
+- [ ] `sku-os.productHealthEvents >= 1`
 - [ ] `sku-os.freeTierState !== 'locked'`
 - [ ] SKU-OS provider emits all required signals  
 - [ ] SKU-OS produces valid ProductHealthAnalyticsEvent  

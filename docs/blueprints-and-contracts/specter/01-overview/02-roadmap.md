@@ -173,7 +173,7 @@ interface SpecterCommand {
 interface EnhancedCustomerSignal extends SpecterCustomerSignal {
   dataSources: {
     orderNexus: boolean;  // Profitability data
-    skuOs: boolean;       // Inventory/risk data
+    sku-os: boolean;       // Inventory/risk data
     finance: boolean;     // Cost/margin data
   };
   confidence: 'low' | 'medium' | 'high';

@@ -423,7 +423,7 @@ export class FallbackManager {
 export interface ModulePresence {
   specter: boolean;
   finance: boolean;
-  skuOs: boolean;
+  sku-os: boolean;
   wmsLite: boolean;
   echoHub: boolean;
 }
@@ -456,7 +456,7 @@ export const CAPABILITY_MATRIX = {
     overheadAllocation: true,
     taxAwareProfitability: true
   },
-  withSkuOs: {
+  withsku-os: {
     demandAwarePricing: true,
     stockoutRiskAssessment: true,
     inventoryCostOptimization: true
@@ -467,7 +467,7 @@ export class ModulePresenceManager {
   constructor(private readonly moduleRegistry: ModuleRegistry) {}
 
   async getModulePresence(shopId: number): Promise<ModulePresence> {
-    const [specter, finance, skuOs, wmsLite, echoHub] = await Promise.all([
+    const [specter, finance, sku-os, wmsLite, echoHub] = await Promise.all([
       this.moduleRegistry.isInstalled('specter', shopId),
       this.moduleRegistry.isInstalled('finance', shopId),
       this.moduleRegistry.isInstalled('sku-os', shopId),
@@ -475,14 +475,14 @@ export class ModulePresenceManager {
       this.moduleRegistry.isInstalled('echo-hub', shopId)
     ]);
 
-    return { specter, finance, skuOs, wmsLite, echoHub };
+    return { specter, finance, sku-os, wmsLite, echoHub };
   }
 
   getCapabilityFlags(presence: ModulePresence): CapabilityFlags {
     return {
       hasPreciseCostModels: presence.finance,
       hasCustomerBehaviorData: presence.specter,
-      hasInventoryIntelligence: presence.skuOs,
+      hasInventoryIntelligence: presence.sku-os,
       hasAutomatedFulfillment: presence.wmsLite,
       hasWorkflowAutomation: presence.echoHub
     };

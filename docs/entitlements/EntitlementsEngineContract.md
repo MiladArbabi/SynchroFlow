@@ -127,7 +127,7 @@ export interface ModulePlanLimits {
 
 Examples of `featureId` and `limitKey` are fully namespaced strings:
 
-* Feature IDs: `"returnNexus.autoApproval"`, `"skuOs.reorderPlaybooks"`.
+* Feature IDs: `"returnNexus.autoApproval"`, `"sku-os.reorderPlaybooks"`.
 * Limit keys: `"returnNexus.maxReturnsPerMonth"`, `"wmsLite.maxPicksPerMonth"`.
 
 This JSON is **owned by Pricing/RevOps**, but its structure is locked here.
@@ -376,7 +376,7 @@ Entitlements itself does not add “bonus features” beyond config; it can only
 
 * All limit keys are **namespaced**:
   `"returnNexus.maxReturnsPerMonth"`,
-  `"skuOs.maxActiveProducts"`,
+  `"sku-os.maxActiveProducts"`,
   `"wmsLite.maxPicksPerMonth"`.
 
 * Limit keys in config must match those used by modules + Usage Service.

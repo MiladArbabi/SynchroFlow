@@ -8,8 +8,8 @@
 
 ```typescript
 // Current readiness signals emitted:
-skuOs.productCount           // Number of canonical products
-skuOs.productHealthEvents    // v1 stub = productCount
+sku-os.productCount           // Number of canonical products
+sku-os.productHealthEvents    // v1 stub = productCount
 sku-os.freeTierState        // Module access state
 sku-os.freeTierRemaining    // Remaining free tier units
 ```
@@ -17,8 +17,8 @@ sku-os.freeTierRemaining    // Remaining free tier units
 ### Refinements Required (Next Patches)
 
 #### 1. Signal Accuracy Improvements
-* **Current Issue:** `skuOs.productHealthEvents` currently returns `productCount` as a stub
-* **Required Fix:** Make `skuOs.productHealthEvents` reflect actual emitted events (count of events in last X days)
+* **Current Issue:** `sku-os.productHealthEvents` currently returns `productCount` as a stub
+* **Required Fix:** Make `sku-os.productHealthEvents` reflect actual emitted events (count of events in last X days)
 * **Implementation:**
   ```typescript
   // New logic:
@@ -26,7 +26,7 @@ sku-os.freeTierRemaining    // Remaining free tier units
   ```
 
 #### 2. Freshness Timestamps
-* **New Signal:** `skuOs.lastProductHealthEventAt`
+* **New Signal:** `sku-os.lastProductHealthEventAt`
 * **Purpose:** Track when the most recent health event was emitted
 * **Use Case:** Detect stale health data and trigger recalculations
 
@@ -36,8 +36,8 @@ sku-os.freeTierRemaining    // Remaining free tier units
 * **Implementation:**
   ```typescript
   canShowProductHealthDashboards = 
-    skuOs.productHealthEvents >= 1 && 
-    skuOs.productCount >= 1
+    sku-os.productHealthEvents >= 1 && 
+    sku-os.productCount >= 1
   ```
 
 #### 4. Signal Dependency Graph
@@ -179,13 +179,13 @@ describe('SKU-OS Data Pipeline', () => {
 #### 2. Readiness Provider Tests
 ```typescript
 describe('Readiness Providers', () => {
-  test('skuOs.productCount calculation', () => {
+  test('sku-os.productCount calculation', () => {
     // Mock database rows
     // Verify accurate product count
     // Test edge cases (0 products, large counts)
   });
 
-  test('skuOs.productHealthEvents accuracy', () => {
+  test('sku-os.productHealthEvents accuracy', () => {
     // Mock event data
     // Verify event counting logic
     // Test time window filtering

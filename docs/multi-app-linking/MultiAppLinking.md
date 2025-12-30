@@ -73,7 +73,7 @@ export type ShopifyAppKey =
 
 export type ModuleKey =
   | 'returnNexus'
-  | 'skuOs'
+  | 'sku-os'
   | 'wmsLite'
   | 'problemSolve'
   | 'orderNexus'
@@ -88,7 +88,7 @@ export type ModuleActivationState = 'active' | 'locked';
 
 export interface ModuleStates {
   returnNexus: ModuleActivationState;
-  skuOs: ModuleActivationState;
+  sku-os: ModuleActivationState;
   wmsLite: ModuleActivationState;
   problemSolve: ModuleActivationState;
   orderNexus: ModuleActivationState;
@@ -185,7 +185,7 @@ CREATE TABLE core_module_subscriptions (
 ```ts
 export const SHOPIFY_APP_TO_MODULE: Record<ShopifyAppKey, ModuleKey> = {
   'lasyncro-returns': 'returnNexus',
-  'lasyncro-inventory-health': 'skuOs',
+  'lasyncro-inventory-health': 'sku-os',
   'lasyncro-warehouse-lite': 'wmsLite',
   'lasyncro-quality': 'problemSolve',
   'lasyncro-profitability': 'marginCore' // orderNexus will be activated indirectly

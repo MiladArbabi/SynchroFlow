@@ -42,7 +42,7 @@ Each module appears as a **collapsible section** in the onboarding task list:
 * `wmsLite` – Warehouse Operations
 * `problemCenter` – Issues & Quality
 * `insightCore` – Analytics
-* `skuOs` – Product Health
+* `sku-os` – Product Health
 * `specter` – Customer Signals
 
 Example:
@@ -97,7 +97,7 @@ export type ModuleKey =
   | 'wmsLite'
   | 'problemCenter'
   | 'insightCore'
-  | 'skuOs'
+  | 'sku-os'
   | 'specter';
 ```
 
@@ -156,10 +156,10 @@ export interface ReadinessSignal {
 'insightCore.hasCostModelAnalytics': boolean; // CostModelAnalyticsEvent ingested
 
 // SKU OS
-'skuOs.productHealthEvents': number;          // ProductHealthAnalyticsEvent count (v1 minimum)
-'skuOs.healthCoverageRatio': number;          // 0–1 fraction of active SKUs with a recent health score
-'skuOs.hasStockoutRiskProducts': boolean;     // true if any product has stockoutRisk above threshold
-'skuOs.attentionListSize': number;            // size of current "needs attention" list from Product Attention API
+'sku-os.productHealthEvents': number;          // ProductHealthAnalyticsEvent count (v1 minimum)
+'sku-os.healthCoverageRatio': number;          // 0–1 fraction of active SKUs with a recent health score
+'sku-os.hasStockoutRiskProducts': boolean;     // true if any product has stockoutRisk above threshold
+'sku-os.attentionListSize': number;            // size of current "needs attention" list from Product Attention API
 
 // Specter
 'specter.configured': boolean;                // basic config saved
@@ -868,13 +868,13 @@ Tasks:
 
 ---
 
-## 9. SKU OS – Product Health (`moduleKey: 'skuOs'`)
+## 9. SKU OS – Product Health (`moduleKey: 'sku-os'`)
 
 ### 9.1 Readiness Definition
 
 Minimal readiness for SKU-OS is not “one event fired” — it’s “the health engine is actually covering the catalog enough to be useful.”
 
-For v1, `skuOsReady(shopId)` requires:
+For v1, `sku-osReady(shopId)` requires:
 
 1. Store integration & sync completed (so the product set is real).
 2. At least one `ProductHealthAnalyticsEvent` generated.
@@ -883,29 +883,29 @@ For v1, `skuOsReady(shopId)` requires:
 Expressed as signals:
 
 ```ts
-skuOsReady(shopId) =
+sku-osReady(shopId) =
   platform.integration.syncCompleted === true &&
-  skuOs.productHealthEvents >= 1 &&
-  skuOs.healthCoverageRatio >= 0.5
+  sku-os.productHealthEvents >= 1 &&
+  sku-os.healthCoverageRatio >= 0.5
   ```
 
 ### 9.2 Tasks
 
-**Section:** `id = 'skuOs'`, `titleKey = 'onboarding.skuOs.sectionTitle'`, `lockedIfNotInstalled = true`.
+**Section:** `id = 'sku-os'`, `titleKey = 'onboarding.sku-os.sectionTitle'`, `lockedIfNotInstalled = true`.
 
 Tasks:
 
 1. **Activate your Product Health Scorecard**
 
 {
-  id: 'skuOs.firstProductHealthEvent',
-  moduleKey: 'skuOs',
-  labelKey: 'onboarding.skuOs.firstProductHealthEvent.title',
-  descriptionKey: 'onboarding.skuOs.firstProductHealthEvent.description',
+  id: 'sku-os.firstProductHealthEvent',
+  moduleKey: 'sku-os',
+  labelKey: 'onboarding.sku-os.firstProductHealthEvent.title',
+  descriptionKey: 'onboarding.sku-os.firstProductHealthEvent.description',
   required: true,
   completionRule: {
     // SKU-OS has generated at least one ProductHealthAnalyticsEvent
-    signalKey: 'skuOs.productHealthEvents',
+    signalKey: 'sku-os.productHealthEvents',
     operator: '>=',
     value: 1
   }
@@ -913,14 +913,14 @@ Tasks:
 
 2. **Reach basic catalog coverage**
 {
-  id: 'skuOs.basicHealthCoverage',
-  moduleKey: 'skuOs',
-  labelKey: 'onboarding.skuOs.basicHealthCoverage.title',
-  descriptionKey: 'onboarding.skuOs.basicHealthCoverage.description',
+  id: 'sku-os.basicHealthCoverage',
+  moduleKey: 'sku-os',
+  labelKey: 'onboarding.sku-os.basicHealthCoverage.title',
+  descriptionKey: 'onboarding.sku-os.basicHealthCoverage.description',
   required: true,
   completionRule: {
     // At least 50% of active SKUs have a recent health score
-    signalKey: 'skuOs.healthCoverageRatio',
+    signalKey: 'sku-os.healthCoverageRatio',
     operator: '>=',
     value: 0.5
   }
@@ -928,14 +928,14 @@ Tasks:
 
 3. **Check your Stockout Risk Radar (optional, but ties to the high-leverage widget)**
 {
-  id: 'skuOs.checkStockoutRisk',
-  moduleKey: 'skuOs',
-  labelKey: 'onboarding.skuOs.checkStockoutRisk.title',
-  descriptionKey: 'onboarding.skuOs.checkStockoutRisk.description',
+  id: 'sku-os.checkStockoutRisk',
+  moduleKey: 'sku-os',
+  labelKey: 'onboarding.sku-os.checkStockoutRisk.title',
+  descriptionKey: 'onboarding.sku-os.checkStockoutRisk.description',
   required: false,
   completionRule: {
     // Only relevant once there is at least one product with elevated stockout risk
-    signalKey: 'skuOs.hasStockoutRiskProducts',
+    signalKey: 'sku-os.hasStockoutRiskProducts',
     operator: '==',
     value: true
   }
@@ -943,14 +943,14 @@ Tasks:
 
 4. **Review products that need attention (optional attention ranking)**
 {
-  id: 'skuOs.reviewAttentionList',
-  moduleKey: 'skuOs',
-  labelKey: 'onboarding.skuOs.reviewAttentionList.title',
-  descriptionKey: 'onboarding.skuOs.reviewAttentionList.description',
+  id: 'sku-os.reviewAttentionList',
+  moduleKey: 'sku-os',
+  labelKey: 'onboarding.sku-os.reviewAttentionList.title',
+  descriptionKey: 'onboarding.sku-os.reviewAttentionList.description',
   required: false,
   completionRule: {
     // "Needs attention" list is non-empty
-    signalKey: 'skuOs.attentionListSize',
+    signalKey: 'sku-os.attentionListSize',
     operator: '>',
     value: 0
   }

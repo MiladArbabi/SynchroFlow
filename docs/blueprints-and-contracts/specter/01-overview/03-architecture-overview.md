@@ -306,7 +306,7 @@ interface OrderNexusIntegration {
 
 #### 2. SKU OS Contract
 ```typescript
-interface SkuOsIntegration {
+interface sku-osIntegration {
   // Inventory risk signals
   getInventoryRisk(shopId: number, skuIds: string[]): Promise<RiskAssessment>;
   

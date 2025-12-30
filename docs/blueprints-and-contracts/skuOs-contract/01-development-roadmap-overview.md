@@ -6,7 +6,7 @@ SKU-OS: Make product health & inventory intelligence automatic — detect risk (
 Implemented Components:
 Readiness Provider (FT0) - Added in apps/backend/src/onboarding/readiness.providers.ts:
 
-Emits skuOs.productCount, skuOs.productHealthEvents, sku-os.freeTierState, sku-os.freeTierRemaining
+Emits sku-os.productCount, sku-os.productHealthEvents, sku-os.freeTierState, sku-os.freeTierRemaining
 
 Logic uses canonical_products / productCount and derives productHealthEvents as productCount for v1 stub
 

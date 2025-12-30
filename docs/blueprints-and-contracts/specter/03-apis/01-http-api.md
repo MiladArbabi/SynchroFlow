@@ -943,7 +943,7 @@ GET /customer-signals/:hashedCustomerId
       "freshness": "5 minutes",
       "dataSources": {
         "orderNexus": true,
-        "skuOs": false,
+        "sku-os": false,
         "finance": false
       }
     }

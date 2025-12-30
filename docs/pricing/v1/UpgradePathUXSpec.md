@@ -5,7 +5,7 @@
 1. **Single mental model:**
 
    * Merchant = **Shop** (Shopify shop / LaSyncro org)
-   * Shop has **one plan per moduleKey** (returnNexus, skuOs, wmsLite, problemSolve, marginCore, orderNexus).
+   * Shop has **one plan per moduleKey** (returnNexus, sku-os, wmsLite, problemSolve, marginCore, orderNexus).
    * All UIs (Shopify + web) must show the *same truth*.
 
 2. **Modules are always visible, but not always usable.**
@@ -63,7 +63,7 @@ Each module item shows:
 type ModuleNavStatus = 'ACTIVE' | 'FREE' | 'LOCKED';
 
 interface ModuleNavState {
-  moduleKey: 'returnNexus' | 'skuOs' | 'wmsLite' | 'problemSolve' | 'marginCore' | 'orderNexus';
+  moduleKey: 'returnNexus' | 'sku-os' | 'wmsLite' | 'problemSolve' | 'marginCore' | 'orderNexus';
   status: ModuleNavStatus;
   currentPlanId?: PricingPlanId; // 'FREE' | 'PRO' | ...
 }

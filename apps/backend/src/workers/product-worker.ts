@@ -2,7 +2,7 @@
 
 import db from '../db';
 import { ProductNormalizationService } from '../services/product-normalization.service';
-import { CanonicalProductInput } from '@lasyncro/shared';
+import { CanonicalProductInput, CanonicalProductStatus } from '@lasyncro/shared';
 
 export interface ProductIngestionMessage {
   shopId: number;
@@ -12,7 +12,27 @@ export interface ProductIngestionMessage {
 
 const normalizer = new ProductNormalizationService();
 
+function projectCanonicalStatusToFt0(
+    status: CanonicalProductStatus
+  ): 'active' | 'inactive' | 'archived' {
+    switch (status) {
+      case 'active':
+        return 'active';
+      case 'archived':
+        return 'archived';
+      case 'draft':
+      case 'unknown':
+      default:
+        return 'inactive';
+    }
+  }
+
 export async function processProductMessage(msg: ProductIngestionMessage): Promise<void> {
+  console.log('[product-worker] processProductMessage called', {
+    shopId: msg.shopId,
+    platform: msg.platform,
+  });
+
   const { shopId, platform, rawProduct } = msg;
 
   if (platform !== 'shopify') {
@@ -32,7 +52,7 @@ export async function processProductMessage(msg: ProductIngestionMessage): Promi
       platform_variant_id: canonicalInput.platformVariantId ?? null,
       sku: canonicalInput.sku ?? null,
       title: canonicalInput.title,
-      status: canonicalInput.status ?? 'active',
+      status: projectCanonicalStatusToFt0(canonicalInput.status),
       created_at: canonicalInput.createdAt,
       updated_at: canonicalInput.updatedAt,
     })
@@ -40,7 +60,7 @@ export async function processProductMessage(msg: ProductIngestionMessage): Promi
     .merge({
       sku: canonicalInput.sku ?? null,
       title: canonicalInput.title,
-      status: canonicalInput.status ?? 'active',
+      status: projectCanonicalStatusToFt0(canonicalInput.status),
       updated_at: canonicalInput.updatedAt,
     });
 }

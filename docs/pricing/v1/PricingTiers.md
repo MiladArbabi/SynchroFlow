@@ -59,7 +59,7 @@ Semantics (locked):
 
 ```ts
 export interface ModulePricingPlan {
-  moduleKey: ModuleKey;          // 'returnNexus' | 'skuOs' | ...
+  moduleKey: ModuleKey;          // 'returnNexus' | 'sku-os' | ...
   planId: PricingPlanId;
   basePriceMonthlyUSD: number;
   availableOnShopify: boolean;   // ENTERPRISE is false

@@ -10,7 +10,7 @@ This patch plan outlines a phased implementation approach for SKU-OS, moving fro
 ### Patch 0 — Readiness Signal Hardening (Quick Win)
 
 #### Objective
-Make `skuOs.productHealthEvents` reflect actual events & add `lastProductHealthEventAt`. Prevent readiness endpoint false negatives.
+Make `sku-os.productHealthEvents` reflect actual events & add `lastProductHealthEventAt`. Prevent readiness endpoint false negatives.
 
 #### Why It's Important
 Onboarding must be honest about SKU-OS readiness. Current stub implementation gives false positives.
@@ -32,13 +32,13 @@ Onboarding must be honest about SKU-OS readiness. Current stub implementation gi
   ```
 
 #### Implementation Steps
-1. Update `skuOs.productHealthEvents` to query `fact_product_health` table
-2. Add `skuOs.lastProductHealthEventAt` timestamp field
+1. Update `sku-os.productHealthEvents` to query `fact_product_health` table
+2. Add `sku-os.lastProductHealthEventAt` timestamp field
 3. Update provider logic to handle missing data gracefully
 4. Add test coverage for new signals
 
 #### Success Criteria
-- `skuOs.productHealthEvents` returns actual event count, not product count
+- `sku-os.productHealthEvents` returns actual event count, not product count
 - `lastProductHealthEventAt` accurately reflects most recent health calculation
 - Onboarding tasks show correct completion status
 

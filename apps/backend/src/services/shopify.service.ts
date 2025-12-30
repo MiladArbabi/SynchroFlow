@@ -8,6 +8,9 @@ import CanonicalCommerceIngestionService
   from './canonical-commerce-ingestion.service';
 import { mapShopifyOrderNodeToCanonical }
   from './mappers/shopify-to-canonical-order';
+import { enqueueProductForIngestion } 
+  from './product-ingestion.service';
+
 
 // Add required scopes for Protected Customer Data
 const REQUIRED_SCOPES = [
@@ -144,8 +147,17 @@ export const performInitialSync = async (
     await db.transaction(async (trx) => {
       if (data.products) {
         console.log(`[ShopifyService] Syncing ${data.products.edges.length} products...`);
+
         await syncProducts(trx, shopId, data.products.edges);
-        
+
+        for (const { node } of data.products.edges) {
+          enqueueProductForIngestion({
+            shopId,
+            platform: 'shopify',
+            rawProduct: node,
+          });
+        }
+
         // --- 2. Report: SYNCING_ORDERS ---
         await trx('integrations').where({ id: integrationId }).update({
           sync_status: 'SYNCING_ORDERS',

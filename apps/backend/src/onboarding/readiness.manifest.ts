@@ -89,17 +89,15 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
     {
     moduleId: 'sku-os',
     displayName: 'Product Health',
-    requiredSignals: [
-      'integration.syncCompleted'
-    ],
+    requiredSignals: [],
     tasks: [
       {
-        id: 'skuOs.firstProductHealthEvent',
+        id: 'sku-os.firstProductHealthEvent',
         label: 'Receive your first product health event',
         required: false,
         completionRules: [
           {
-            signal: 'skuOs.productHealthEvents',
+            signal: 'sku-os.productHealthEvents',
             operator: 'gte',
             expectedValue: 1
           }
