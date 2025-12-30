@@ -1,5 +1,5 @@
+//apps/frontend/src/pages/customers/useSpecterFt1Adapter.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
 import type { SpecterModuleProps } from '@lasyncro/specter';
 
 /**
@@ -19,13 +19,12 @@ import type { SpecterModuleProps } from '@lasyncro/specter';
 export function mapSpecterFt1Props(
   readinessData: any
 ): SpecterModuleProps {
-  const specterModule = readinessData?.modules?.find(
-    (m: any) => m.moduleId === 'specter'
-  );
-
-  const signals = specterModule?.signals ?? [];
+  const allSignals =
+    readinessData?.modules
+      ?.flatMap((m: any) => m.signals ?? []) ?? [];
+  
   const get = (name: string) =>
-    signals.find((s: any) => s.name === name)?.value;
+    allSignals.find((s: any) => s.name === name)?.value;
 
   const sessionsKnown = get('specter.sessionsKnown') === true;
   const rawSessionCount = get('specter.sessionCount');

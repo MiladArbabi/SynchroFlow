@@ -22,9 +22,10 @@ export class OnboardingReadinessService {
 
     // 2. Build readiness per module
     const modules: ModuleOnboardingReadiness[] = MODULE_ONBOARDING_MANIFESTS.map((manifest) => {
-      const moduleSignals = allSignals.filter((s) =>
-        manifest.requiredSignals.includes(s.name)
-      );
+      const moduleSignals =
+        manifest.requiredSignals.length === 0
+          ? allSignals.filter(s => s.name.startsWith(`${manifest.moduleId}.`))
+          : allSignals.filter(s => manifest.requiredSignals.includes(s.name));
 
       const tasks = manifest.tasks.map((task) => ({
         ...task,

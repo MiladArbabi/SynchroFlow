@@ -31,7 +31,8 @@
       "@lasyncro/specter": ["modules/specter/src/ui/index.ts"],
       "@lasyncro/products": ["modules/products/src/ui/index.ts"],
       "@lasyncro/finances": ["modules/finances/src/ui/index.ts"],
-      "wiring/*": ["apps/frontend/src/wiring/*"]
+      "wiring/*": ["apps/frontend/src/wiring/*"],
+      "modules-specter/*": ["modules/specter/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"]
