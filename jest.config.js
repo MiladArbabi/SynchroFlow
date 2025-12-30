@@ -41,6 +41,7 @@ module.exports = {
         '^contexts/(.*)$': '<rootDir>/apps/frontend/src/contexts/$1',
         '^ui-component/(.*)$': '<rootDir>/apps/frontend/src/ui-component/$1',
         '^pages/(.*)$': '<rootDir>/apps/frontend/src/pages/$1',
+        '^wiring/(.*)$': '<rootDir>/apps/frontend/src/wiring/$1',
         '^layout/(.*)$': '<rootDir>/apps/frontend/src/layout/$1',
         '^api/(.*)$': '<rootDir>/apps/frontend/src/api/$1',
 

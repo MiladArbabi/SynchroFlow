@@ -19,7 +19,6 @@ import { ConnectStoreModal } from 'components/ConnectStoreModal';
 import useConfig from 'hooks/useConfig';
 
 import { ToastProvider } from 'contexts/ToastContext';
-import { Ft1ChecklistDevSurface } from 'ui/ft1-checklist/Ft1ChecklistDevSurface';
 
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
@@ -238,8 +237,7 @@ const AppLayout = ({
               isOpen={isConnectModalOpen}
               onClose={handleModalClose}
             />
-          </Box>
-       {isDev && <Ft1ChecklistDevSurface />}
+        </Box>
       </ToastProvider>
   );
 };
