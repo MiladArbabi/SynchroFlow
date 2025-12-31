@@ -4,6 +4,12 @@ const TABLE = 'integrations';
 const CONSTRAINT = 'integrations_shop_platform_unique';
 
 export async function up(knex: Knex): Promise<void> {
+
+  const tableExists = await knex.schema.hasTable(TABLE);
+    if (!tableExists) {
+      return;
+    }
+
   // 1️⃣ Defensive cleanup:
   // Keep the newest row per (shop_id, platform)
   await knex.raw(`
@@ -14,14 +20,38 @@ export async function up(knex: Knex): Promise<void> {
       AND a.platform = b.platform
   `);
 
-  // 2️⃣ Enforce the real invariant
-  await knex.schema.alterTable(TABLE, (table) => {
-    table.unique(['shop_id', 'platform'], CONSTRAINT);
-  });
+  // 2️⃣ Enforce invariant ONLY if missing
+  const exists = await knex.raw(
+    `
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = ?
+      AND conrelid = 'integrations'::regclass
+    `,
+    [CONSTRAINT]
+  );
+
+  if (exists.rowCount === 0) {
+    await knex.raw(
+      `
+      ALTER TABLE integrations
+      ADD CONSTRAINT ${CONSTRAINT}
+      UNIQUE (shop_id, platform)
+      `
+    );
+  }
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.alterTable(TABLE, (table) => {
-    table.dropUnique(['shop_id', 'platform'], CONSTRAINT);
-  });
+  const tableExists = await knex.schema.hasTable(TABLE);
+  if (!tableExists) {
+    return;
+  }
+
+  await knex.raw(
+    `
+    ALTER TABLE integrations
+    DROP CONSTRAINT IF EXISTS ${CONSTRAINT}
+    `
+  );
 }

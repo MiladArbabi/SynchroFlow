@@ -1,18 +1,7 @@
-import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
-import '@shopify/shopify-api/adapters/node';
 import db from '../db';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 import { SpecterSDKService, type SpecterSDKConfig } from './specter-sdk.service';
-
-// Initialize the Shopify API library context
-const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET!,
-  apiVersion: process.env.SHOPIFY_API_VERSION as ApiVersion,
-  isEmbeddedApp: false,
-  hostName: 'localhost',
-});
 
 export interface ShopifyAppInstallation {
   id?: number;
@@ -65,8 +54,19 @@ export class ShopifyAppService {
     /**
    * Register app uninstall webhook
    */
-  static async registerAppUninstallWebhook(shopDomain: string, accessToken: string): Promise<void> {
+  static async registerAppUninstallWebhook(
+    shopDomain: string,
+  ): Promise<void> {
     try {
+      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+
+      if (!accessToken) {
+        console.warn('[ShopifyAppService] Missing access token; skipping uninstall webhook registration', {
+          shopDomain,
+        });
+        return;
+      }
+
       const baseUrl = process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
 
       if (!baseUrl) {
@@ -118,16 +118,33 @@ export class ShopifyAppService {
   /**
    * Enhanced post-installation with Specter module awareness
    */
-  static async completePostInstallation(shopDomain: string, accessToken: string, shopId: number, moduleTier: 'free' | 'specter' | 'growth' | 'operations' = 'free'): Promise<void> {
-    // Install Specter SDK script tag with module-tier awareness
-    await this.installSpecterSDK(shopDomain, accessToken, shopId, moduleTier);
+  static async completePostInstallation(
+    shopDomain: string,
+    shopId: number, 
+    moduleTier: 'free' | 'specter' | 'growth' | 'operations' = 'free'
+  ): Promise<void> {
 
-    // Register app uninstall webhook
-    await this.registerAppUninstallWebhook(shopDomain, accessToken);
+    await this.installSpecterSDK(
+      shopDomain,
+      shopId,
+      moduleTier
+    );
+
+    await this.registerAppUninstallWebhook(shopDomain);
 
     // Create app installation record (if not exists)
     const existingInstallation = await this.getAppInstallation(shopDomain);
     if (!existingInstallation) {
+      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+
+      if (!accessToken) {
+        console.warn('[ShopifyAppService] Cannot persist installation — missing access token', {
+          shopDomain,
+          shopId,
+        });
+        return;
+      }
+
       await this.createAppInstallation({
         shop_id: shopId,
         shop_domain: shopDomain,
@@ -141,8 +158,18 @@ export class ShopifyAppService {
   /**
    * Verify installation by checking if script tag is present
    */
-  static async verifyInstallation(shopDomain: string, accessToken: string): Promise<boolean> {
+  static async verifyInstallation(shopDomain: string): Promise<boolean> {
     try {
+
+      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+
+      if (!accessToken) {
+        console.warn('[ShopifyAppService] Cannot verify installation — missing access token', {
+          shopDomain,
+        });
+        return false;
+      }
+
       const scriptTagsUrl = `https://${shopDomain}/admin/api/2024-01/script_tags.json`;
       const response = await axios.get(scriptTagsUrl, {
         headers: {
@@ -179,18 +206,6 @@ export class ShopifyAppService {
     }
     const bytes = CryptoJS.AES.decrypt(encryptedToken, secret);
     return bytes.toString(CryptoJS.enc.Utf8);
-  }
-
-  /**
-   * Store encrypted access token
-   */
-  static async storeEncryptedAccessToken(shopDomain: string, plainToken: string): Promise<void> {
-    const encryptedToken = this.encryptToken(plainToken);
-    // This method is similar to createAppInstallation, but we are only storing the token.
-    // We might not have the shop_id at this point, so we cannot create a full record.
-    // Alternatively, we can update an existing record or create a new one if we have shop_id.
-    // For now, let's assume we have shop_id and create a full record in completePostInstallation.
-    // This method might be redundant if we are using completePostInstallation.
   }
 
   /**
@@ -296,8 +311,21 @@ export class ShopifyAppService {
   /**
    * Install Specter SDK with module-tier awareness
    */
-  static async installSpecterSDK(shopDomain: string, accessToken: string, shopId: number, moduleTier: 'free' | 'specter' | 'growth' | 'operations' = 'free'): Promise<void> {
+  static async installSpecterSDK(
+    shopDomain: string, 
+    shopId: number, 
+    moduleTier: 'free' | 'specter' | 'growth' | 'operations' = 'free'): Promise<void> {
     try {
+      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+
+      if (!accessToken) {
+        console.warn('[ShopifyAppService] Missing access token; skipping Specter SDK install', {
+          shopDomain,
+          shopId,
+        });
+        return;
+      }
+
       const scriptTagUrl = `https://${shopDomain}/admin/api/2024-01/script_tags.json`;
       
       // For free tier, we inject a basic analytics-only version
@@ -323,8 +351,8 @@ export class ShopifyAppService {
 
       console.log(`✅ Specter SDK (${moduleTier} tier) installed for ${shopDomain}`);
     } catch (error) {
-      console.error('Failed to install Specter SDK script tag:', error);
-      throw new Error('Failed to install Specter SDK script tag');
+      console.error('[ShopifyAppService] Specter SDK install failed (non-fatal):', error);
+      return;
     }
   }
 }

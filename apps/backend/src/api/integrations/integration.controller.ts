@@ -290,7 +290,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing OAuth authorization code' });
   }
 
-  let oauthAccessToken: string;
+  let shopifyAccessToken: string;
 
   // --- Step 2.2.2.a: Token exchange (OUTSIDE DB transaction) ---
   try {
@@ -303,12 +303,12 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         code,
       });
 
-      oauthAccessToken = tokenResponse.data?.access_token;
+      shopifyAccessToken = tokenResponse.data?.access_token;
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
     }
 
-    if (!oauthAccessToken) {
+    if (!shopifyAccessToken) {
       throw new Error('ACCESS_TOKEN_MISSING');
     }
   } catch (err) {
@@ -327,7 +327,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         throw new Error('USER_SHOP_NOT_FOUND');
       }
 
-      const encryptedToken = encryptToken(oauthAccessToken);
+      const encryptedToken = encryptToken(shopifyAccessToken);
 
       const [integration] = await trx('integrations')
         .insert({
@@ -343,6 +343,21 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           updated_at: new Date(),
         })
         .returning('*');
+
+        // 🔐 SINGLE SOURCE OF TRUTH FOR SHOPIFY TOKEN
+       await trx('shopify_app_installations')
+         .insert({
+           shop_id: user.shop_id,
+           shop_domain: oauthContext.shopDomain,
+           access_token: encryptedToken,
+           scopes: 'read_products,read_orders,read_customers,read_inventory,read_fulfillments,write_script_tags',
+           installed_at: new Date(),
+         })
+         .onConflict(['shop_domain'])
+         .merge({
+           access_token: encryptedToken,
+           updated_at: new Date(),
+        });
 
       return {
         integration,
@@ -370,7 +385,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
     // 🔐 Issue fresh auth tokens (OAuth = login)
 
-    let authTokens: { accessToken: any; refreshToken: any; };
+    let authTokens: { accessToken: any; refreshToken: any };
 
     try {
       authTokens = await issueAuthTokens(oauthContext.userId);
@@ -379,11 +394,10 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       throw new Error('OAUTH_FATAL: auth token issuance failed');
     }
   
-   const { accessToken, refreshToken } = authTokens;
+    const { accessToken: userJwt, refreshToken } = authTokens;
 
     await ShopifyAppService.completePostInstallation(
       oauthContext.shopDomain!,
-      accessToken,
       result.shopId
     );
 
@@ -412,7 +426,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     });
 
     return res.redirect(
-      `${process.env.FRONTEND_URL}/dashboard?connect=success&token=${accessToken}`
+       `${process.env.FRONTEND_URL}/dashboard?connect=success&token=${userJwt}`
     );
   } catch (err) {
     console.error('[OAuth] Integration persistence failed', err);
