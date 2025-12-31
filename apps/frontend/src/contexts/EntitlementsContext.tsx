@@ -198,7 +198,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
       setModules([]);
       setFlags([]);
       setError(err?.message || 'Failed to load entitlements');
-      setHasResolved(false);
+      setHasResolved(true);
 
       // reflect cleared state to modules
       (window as any)._lasyncroEntitlements = null;

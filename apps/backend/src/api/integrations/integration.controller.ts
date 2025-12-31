@@ -1,14 +1,29 @@
+/**
+ * OAuth Migration Note (Dec 2025)
+ * -------------------------------
+ * This controller is being migrated from session-based OAuth
+ * to stateless, DB-backed OAuth using `integration_oauth_states`.
+ *
+ * Current status:
+ * - initiateOAuth: ✅ stateless + DB-backed
+ * - handleOAuthCallback: ⏳ pending DB-backed validation
+ *
+ * DO NOT reintroduce sessions.
+ * All OAuth state must be resolved via database lookups.
+ */
+
+
 // apps/backend/src/api/integrations/integration.controller.ts
 import { Request, Response } from 'express';
 import crypto from 'crypto';
-import session from 'express-session';
-import axios from 'axios'; 
-import db from '../../db';
+import db from 'api-src/db';
+import axios from 'axios';
+import { ShopifyAppService } from 'api-src/services/shopify-app.service';
+import { EntitlementsService } from 'api-src/services/entitlements.service';
 import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
 import { getQueueChannel, connection } from '../../queue';
-import { ShopifyAppService } from '../../services/shopify-app.service';
-import { EntitlementsService } from 'api-src/services/entitlements.service';
+import { issueAuthTokens } from '../auth/token.service';
 
 /**
  * Helper function to get the shop_id from an authenticated user.
@@ -28,13 +43,6 @@ const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
 
   return typeof user?.shop_id === 'number' ? user.shop_id : null;
 };
-
-// Define the shape of the session
-interface OAuthSession extends session.Session {
-  oauth_state?: string;
-  oauth_user_id?: number; // Store the user ID initiating the flow
-  user_id?: number; // (This might be from a regular login session)
-}
 
 // --- Helper function for encryption ---
 const encryptToken = (token: string): string => {
@@ -65,37 +73,58 @@ export const normalizeShopDomain = (shopInput: string): string => {
   return shop;
 };
 
-export const initiateOAuth = (req: Request, res: Response) => {
-  const { platform, shop } = req.query as { platform: string; shop: string };
-  const session = req.session as OAuthSession;
-  const userId = (req as any).user?.userId; // Temporary fix for TypeScript
+export const initiateOAuth = async (req: Request, res: Response) => {
+  const { platform, shop } = req.query as { platform?: string; shop?: string };
+  const userId = (req as any).user?.userId;
 
-  // User ID must be present from middleware
   if (!userId) {
-    return res.status(500).json({ error: 'Authenticated user ID not found.' });
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // --- 1. Validation ---
   if (!platform) {
     return res.status(400).json({ error: 'Missing required query param: platform' });
   }
 
-  // --- 2. Security: Generate & Store CSRF State Token ---
-  const state = crypto.randomBytes(16).toString('hex');
-  session.oauth_state = state;
-  session.oauth_user_id = userId;
+  if (platform === 'shopify' && !shop) {
+    return res.status(400).json({ error: 'Missing required query param: shop' });
+  }
 
-  let authorizationUrl = '';
+    // --- Generate CSRF state ---
+  const state = crypto.randomBytes(16).toString('hex');
+
+  // --- Normalize shop domain (Shopify only) ---
+  const shopDomain = platform === 'shopify'
+    ? normalizeShopDomain(shop!)
+    : null;
+
+  // --- Hard expiry (10 minutes) ---
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  // --- Opportunistic cleanup of expired OAuth states (defensive) ---
+  await db('integration_oauth_states')
+    .where('expires_at', '<', new Date())
+    .andWhere({ user_id: userId, platform })
+    .delete();
+
+  // --- Persist OAuth intent (stateless) ---
+  await db('integration_oauth_states').insert({
+    user_id: userId,
+    platform,
+    state,
+    shop_domain: shopDomain,
+    expires_at: expiresAt,
+  });
+
   const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/${platform}`;
 
-  // --- 3. Build Platform-Specific URL ---
+  let authorizationUrl = '';
+
   if (platform === 'shopify') {
-    if (!shop) {
-      return res.status(400).json({ error: 'Missing required query param: shop' });
-    }
-    
     const shopifyApiKey = process.env.SHOPIFY_API_KEY;
-    // Keep this in sync with ShopifyAppService.completePostInstallation
+    if (!shopifyApiKey) {
+      return res.status(500).json({ error: 'Shopify API key missing' });
+    }
+
     const scopes = [
       'read_products',
       'read_orders',
@@ -104,34 +133,20 @@ export const initiateOAuth = (req: Request, res: Response) => {
       'read_payouts',
       'read_fulfillments',
       'write_script_tags',
-      'read_script_tags'
+      'read_script_tags',
     ].join(',');
 
-    // NORMALIZE the shop domain to ensure correct format
-    const shopDomain = normalizeShopDomain(shop);
-
-    // PROPERLY encode the redirect URI
-    const encodedRedirectUri = encodeURIComponent(redirectUri);
-
-    authorizationUrl = `https://${shopDomain}/admin/oauth/authorize?client_id=${shopifyApiKey}&scope=${scopes}&redirect_uri=${encodedRedirectUri}&state=${state}`;
-
-    // --- DIAGNOSTIC LOG --- (MOVED INSIDE THE BLOCK)
-    console.log('[dev-api] CONSTRUCTED AUTH URL:', authorizationUrl);
-    console.log('[OAuth Debug] Shop input:', shop);
-    console.log('[OAuth Debug] Normalized shop domain:', shopDomain);
-    console.log('[OAuth Debug] Redirect URI:', redirectUri);
-    console.log('[OAuth Debug] Encoded Redirect URI:', encodedRedirectUri);
-    console.log('[OAuth Debug] Full authorization URL:', authorizationUrl);
-
-  } else if (platform === 'quickbooks') {
-    // ... logic for QuickBooks (different params)
-    return res.status(501).json({ error: 'QuickBooks not yet implemented' });
+    authorizationUrl =
+      `https://${shopDomain}/admin/oauth/authorize` +
+      `?client_id=${shopifyApiKey}` +
+      `&scope=${encodeURIComponent(scopes)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&state=${state}`;
   } else {
     return res.status(400).json({ error: 'Unsupported platform' });
   }
 
-  // --- 4. Respond ---
-  res.status(200).json({ authorizationUrl });
+  return res.status(200).json({ authorizationUrl });
 };
 
 // --- NEW HELPER FUNCTION (from our plan) ---
@@ -166,8 +181,6 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     error?: string;
     error_description?: string;
   };
-  const session = req.session as OAuthSession;
-  const userId = session.oauth_user_id;
 
   console.log('🔵 Starting OAuth callback for platform:', platform);
 
@@ -175,129 +188,181 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   if (error) {
     console.log('❌ OAuth error detected:', error);
     const userFriendlyError = getHumanReadableError(error, error_description || '');
-    session.oauth_state = undefined;
-    session.oauth_user_id = undefined;
     const redirectUrl = new URL(`${process.env.FRONTEND_URL}/dashboard`);
     redirectUrl.searchParams.append('connect', 'error');
     redirectUrl.searchParams.append('message', userFriendlyError);
     return res.redirect(redirectUrl.toString());
   }
 
-  console.log('🔵 Validating CSRF state...');
-  const expectedState = session.oauth_state;
-
-  console.log('🔵 Validating user ID...');
-  if (!userId) {
-    console.log('❌ No user ID found');
-    return res.status(403).json({ error: 'Invalid session: No user ID found.' });
-  }
-
-  console.log('🔵 Validating state:', { expectedState, state });
-  if (!expectedState || !state || expectedState !== state) {
-    console.log('❌ Invalid CSRF state');
-    session.oauth_state = undefined; 
-    return res.status(403).json({ error: 'Invalid CSRF state token.' });
-  }
-
-  console.log('✅ State validated, clearing session...');
-  session.oauth_state = undefined;
-  session.oauth_user_id = undefined;
+  // --- STEP 2.2.1: DB-backed OAuth state validation (NO token exchange yet) ---
+  let oauthContext: {
+    userId: number;
+    shopDomain: string | null;
+  };
 
   try {
-    console.log('🔵 Starting token exchange...');
-    let accessToken = '';
-    
+    oauthContext = await db.transaction(async trx => {
+      const row = await trx('integration_oauth_states')
+        .where({
+          platform,
+          state,
+        })
+        .forUpdate()
+        .first();
+
+      if (!row) {
+        console.warn('[OAuth] Invalid or replayed state', {
+          platform,
+          stateHash: crypto.createHash('sha256').update(state).digest('hex'),
+        });
+        throw new Error('OAUTH_STATE_NOT_FOUND');
+      }
+
+      if (row.expires_at < new Date()) {
+        console.warn('[OAuth] Expired OAuth state', {
+          platform,
+          stateHash: crypto.createHash('sha256').update(state).digest('hex'),
+          expiresAt: row.expires_at,
+        });
+
+        await trx('integration_oauth_states')
+          .where({ id: row.id })
+          .delete();
+
+        throw new Error('OAUTH_STATE_EXPIRED');
+      }
+
+      // Burn the state immediately (replay protection)
+      await trx('integration_oauth_states')
+        .where({ id: row.id })
+        .delete();
+
+      return {
+        userId: row.user_id,
+        shopDomain: row.shop_domain,
+      };
+    });
+  } catch (err: any) {
+    const reason =
+      err.message === 'OAUTH_STATE_NOT_FOUND'
+        ? 'Invalid or reused OAuth state'
+        : err.message === 'OAUTH_STATE_EXPIRED'
+        ? 'Expired OAuth state'
+        : 'OAuth state validation failed';
+
+    return res.status(403).json({ error: reason });
+  }
+
+    console.info('[OAuth] State validated — starting token exchange', {
+    platform,
+    userId: oauthContext.userId,
+    shopDomain: oauthContext.shopDomain,
+  });
+
+  if (!code) {
+    return res.status(400).json({ error: 'Missing OAuth authorization code' });
+  }
+
+  let accessToken: string;
+
+  // --- Step 2.2.2.a: Token exchange (OUTSIDE DB transaction) ---
+  try {
     if (platform === 'shopify') {
-      const tokenUrl = `https://${shop}/admin/oauth/access_token`;
-      const payload = { client_id: process.env.SHOPIFY_API_KEY, client_secret: process.env.SHOPIFY_API_SECRET, code };
-      console.log('🔵 Making token request to:', tokenUrl);
-      const tokenResponse = await axios.post(tokenUrl, payload);
-      accessToken = tokenResponse.data.access_token;
-      console.log('✅ Token received');
+      const tokenUrl = `https://${oauthContext.shopDomain}/admin/oauth/access_token`;
+
+      const tokenResponse = await axios.post(tokenUrl, {
+        client_id: process.env.SHOPIFY_API_KEY,
+        client_secret: process.env.SHOPIFY_API_SECRET,
+        code,
+      });
+
+      accessToken = tokenResponse.data?.access_token;
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
     }
 
     if (!accessToken) {
-      return res.status(500).json({ error: 'Failed to retrieve access token.' });
+      throw new Error('ACCESS_TOKEN_MISSING');
     }
-
-    // --- 4. Get User's Shop ID ---
-    const user = await db<User>('users').where({ id: userId }).first();
-    if (!user || !user.shop_id) {
-      return res.status(404).json({ error: 'User account or associated shop not found.' });
-    }
-    const userShopId = user.shop_id;
-
-    // --- 5. Encrypt and Store Token ---
-    const encryptedToken = encryptToken(accessToken);
-
-    const [newIntegration] = await db('integrations')
-      .insert({
-        shop_id: userShopId, // <-- USE THE USER'S SHOP ID
-        platform: platform,
-        platform_shop_name: shop,
-        access_token_encrypted: encryptedToken,
-      })
-      .returning('*');
-
-      const integrationId = newIntegration.id;
-      console.log(`Successfully stored integration ID: ${integrationId}`);
-
-      // --- Update user state and record milestone ---
-      await db('users')
-        .where({ id: userId })
-        .update({ 
-          shopify_connected: true,
-          updated_at: new Date()
-        });
-
-      // Record the milestone
-      await db('user_milestones').insert({
-        user_id: userId,
-        milestone: 'shopify_connected',
-        achieved_at: new Date()
-      }).onConflict(['user_id', 'milestone']).ignore();
-
-      console.log(`Updated user ${userId} shopify_connected status and recorded milestone`);
-
-      // --- Grant default FT0 entitlements for this shop ---
-      if (userShopId) {
-        await EntitlementsService.grantDefaultFreeTierForShop(userShopId);
-        console.log(
-          '[integration.controller] Granted default FT0 entitlements for shop',
-          userShopId
-        );
-      }
-      
-      console.log('🟢 Integration created, queuing sync job...');
-      // --- 6. Queue the initial sync job ---
-      const syncChannel = getQueueChannel('sync_jobs');
-      const jobPayload = { integrationId };
-      syncChannel.sendToQueue('sync_jobs', Buffer.from(JSON.stringify(jobPayload)));
-      console.log(`Queued initial sync job for integration ID: ${integrationId}`);
-      console.log('🟢 Sync job queued');
-
-      if (platform === 'shopify') {
-        console.log('🟢 Starting Shopify post-installation setup...');
-        try {
-          await ShopifyAppService.completePostInstallation(shop, accessToken, userShopId);
-          console.log('✅ Successfully completed Shopify app post-installation for', shop);
-        } catch (postInstallError) {
-          console.error('❌ Shopify app post-installation failed:', postInstallError);
-        }
-      }
-
-      console.log('🟢 Redirecting to dashboard...');
-      // --- Final Redirect ---
-      res.redirect(`${process.env.FRONTEND_URL}/dashboard?connect=success`);
-      console.log('🟢 Redirect called');
-
   } catch (err) {
-    console.error('Error in OAuth callback:', err);
-    res.status(500).json({ error: 'Internal server error during token exchange.' });
+    console.error('[OAuth] Token exchange failed', err);
+    return res.status(502).json({ error: 'Failed to exchange OAuth token' });
   }
-};
+
+  // --- Step 2.2.2.b: Persist integration atomically ---
+  try {
+    const result = await db.transaction(async trx => {
+      const user = await trx<User>('users')
+        .where({ id: oauthContext.userId })
+        .first();
+
+      if (!user || !user.shop_id) {
+        throw new Error('USER_SHOP_NOT_FOUND');
+      }
+
+      const encryptedToken = encryptToken(accessToken);
+
+      const [integration] = await trx('integrations')
+        .insert({
+          shop_id: user.shop_id,
+          platform,
+          platform_shop_name: oauthContext.shopDomain,
+          access_token_encrypted: encryptedToken,
+          updated_at: new Date(),
+        })
+        .onConflict(['shop_id', 'platform'])
+        .merge({
+          access_token_encrypted: encryptedToken,
+          updated_at: new Date(),
+        })
+        .returning('*');
+
+      return {
+        integration,
+        shopId: user.shop_id,
+      };
+    });
+
+    // --- Step 2.2.2.c: Post-commit side effects ---
+    await EntitlementsService.grantDefaultFreeTierForShop(result.shopId);
+
+    const syncChannel = getQueueChannel('sync_jobs');
+    syncChannel.sendToQueue(
+      'sync_jobs',
+      Buffer.from(JSON.stringify({ integrationId: result.integration.id }))
+    );
+
+    // 🔐 Issue fresh auth tokens (OAuth = login)
+    const { accessToken, refreshToken } =
+      await issueAuthTokens(oauthContext.userId);
+
+    await ShopifyAppService.completePostInstallation(
+      oauthContext.shopDomain!,
+      accessToken,
+      result.shopId
+    );
+
+    console.info('[OAuth] Integration created successfully', {
+      integrationId: result.integration.id,
+      shopId: result.shopId,
+    });
+
+    // Set rotated refresh token cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.redirect(
+      `${process.env.FRONTEND_URL}/dashboard?connect=success&token=${accessToken}`
+    );
+  } catch (err) {
+    console.error('[OAuth] Integration persistence failed', err);
+    return res.status(500).json({ error: 'Failed to finalize integration' });
+  }
+}
 
 /**
  * Endpoint for the "Pizza Tracker"

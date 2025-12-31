@@ -25,27 +25,29 @@ const ProtectedRoute: React.FC = () => {
   const { hasResolved } = useEntitlements();
 
   // 1️⃣ Wait for auth + entitlements
-  if (authLoading || !hasResolved) {
+  // ✅ wait only for auth
+  if (authLoading) {
     return (
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
-        }}
-      >
+      <Box sx={{ display: 'flex', justifyContent: 'center', height: '100vh' }}>
         <CircularProgress />
       </Box>
     );
   }
 
-  // 2️⃣ Redirect unauthenticated users
+  // ✅ unauthenticated users should NEVER wait for entitlements
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
   }
 
-  // 3️⃣ Authenticated → enter app shell
+  // ✅ authenticated users may now wait for entitlements
+  if (!hasResolved) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return <Outlet />;
 };
 

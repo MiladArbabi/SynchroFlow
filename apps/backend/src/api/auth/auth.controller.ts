@@ -5,8 +5,12 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { User } from 'api-types'; 
 import jwt, { JwtPayload } from 'jsonwebtoken';
+import { issueAuthTokens } from './token.service';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
+
+const hashRefreshToken = (token: string) =>
+  crypto.createHash('sha256').update(token).digest('hex');
 
 export const registerUser = async (req: Request, res: Response) => {
   const { email, password, firstName, lastName } = req.body;
@@ -36,7 +40,7 @@ export const registerUser = async (req: Request, res: Response) => {
         contact_email: email.toLowerCase(),
         auth_secret: authSecret,
         primary_erp_type: 'none', 
-  	  	primary_ecomm_type: 'none'
+        primary_ecomm_type: 'none'
       })
       .returning('id');
 
@@ -51,16 +55,10 @@ export const registerUser = async (req: Request, res: Response) => {
       })
       .returning('*');
 
-    // --- Issue JWT (Copied from loginUser) ---
-    const jwtSecret = process.env.JWT_SECRET;
-    const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || jwtSecret;
-    if (!jwtSecret || !jwtRefreshSecret) throw new Error('JWT secrets are not set.');
-
-    // 1. Short-lived Access Token
-    const accessToken = jwt.sign({ userId: newUser.id }, jwtSecret, { expiresIn: '12h' });
-
-    // 2. Long-lived Refresh Token
-    const refreshToken = jwt.sign({ userId: newUser.id }, jwtRefreshSecret, { expiresIn: '7d' });
+    // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE  
+    const authUserId = newUser.id;
+    const { accessToken, refreshToken } =
+      await issueAuthTokens(authUserId);
 
     // Set cookie options
     res.cookie('refreshToken', refreshToken, {
@@ -110,23 +108,16 @@ export const loginUser = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // --- Issue JWT ---
-    const jwtSecret = process.env.JWT_SECRET;
-    const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || jwtSecret; // Use separate secret if defined
-    if (!jwtSecret || !jwtRefreshSecret) throw new Error('JWT secrets are not set.');
+    // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE
+    const authUserId = user.id;
+    const { accessToken, refreshToken } =
+      await issueAuthTokens(authUserId);
 
-    // 1. Short-lived Access Token (sent in body)
-    const accessToken = jwt.sign({ userId: user.id }, jwtSecret, { expiresIn: '15m' }); // e.g., 15 minutes
-
-    // 2. Long-lived Refresh Token (sent as HttpOnly cookie)
-    const refreshToken = jwt.sign({ userId: user.id }, jwtRefreshSecret, { expiresIn: '7d' }); // e.g., 7 days
-
-    // Set cookie options
     res.cookie('refreshToken', refreshToken, {
-      httpOnly: true, // Crucial for security! JS can't access.
-      secure: process.env.NODE_ENV === 'production', // Send only over HTTPS in production
-      sameSite: 'strict', // Helps prevent CSRF
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds (must match token expiry)
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
     // 1. Omit the password hash from the user object for security
@@ -151,7 +142,10 @@ export const refreshToken = async (req: Request, res: Response) => {
   const incomingRefreshToken = req.cookies.refreshToken;
 
   if (!incomingRefreshToken) {
-    return res.status(401).json({ error: 'Unauthorized: No refresh token provided.' });
+    return res.status(401).json({
+      error: 'SESSION_EXPIRED',
+      action: 'LOGOUT_REQUIRED',
+    });
   }
 
   // 2. Verify the refresh token
@@ -165,25 +159,79 @@ export const refreshToken = async (req: Request, res: Response) => {
     const decoded = jwt.verify(incomingRefreshToken, jwtRefreshSecret) as JwtPayload; // Verify & get payload
     const userId = decoded.userId;
 
-    // TODO Optional: Add extra validation here if needed
-    // (e.g., check if user still exists, check against a token denylist for logout)
+    const incomingHash = hashRefreshToken(incomingRefreshToken);
+ 
+     const existingToken = await db('refresh_tokens')
+       .where({ token_hash: incomingHash, revoked_at: null })
+       .first();
+ 
+     if (!existingToken) {
+       return res.status(403).json({ error: 'Forbidden: Refresh token revoked or reused.' });
+    }
 
-    // 3. Issue a new *short-lived* access token
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) throw new Error('JWT_SECRET is not set.');
+    // Revoke old token
+    await db('refresh_tokens')
+      .where({ id: existingToken.id })
+      .update({ revoked_at: new Date() });
 
-    const newAccessToken = jwt.sign({ userId: userId }, jwtSecret, { expiresIn: '15m' }); // New 15 min token
+    // 🔒 Invariant: user must still exist
+    const userExists = await db('users')
+      .where({ id: userId })
+      .first();
 
-    // 4. Send the new access token in the response body
-    res.status(200).json({ accessToken: newAccessToken });
+    if (!userExists) {
+      return res.status(401).json({
+        error: 'Unauthorized: User no longer exists.'
+      });
+    }
+
+    // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE
+    const authUserId = userId;
+    const { accessToken, refreshToken } =
+      await issueAuthTokens(authUserId);
+
+    // 4. Set rotated refresh token cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // 5. Return new access token
+    res.status(200).json({ accessToken });
 
   } catch (err) {
     console.error('Refresh Token Error:', err instanceof Error ? err.message : err);
-    return res.status(403).json({ error: 'Forbidden: Invalid or expired refresh token.' }); // Token failed verification
+
+    // 🔒 Hard logout: clear refresh token cookie
+    res.cookie('refreshToken', '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      expires: new Date(0),
+      maxAge: 0,
+    });
+
+    return res.status(401).json({
+      error: 'SESSION_EXPIRED',
+      action: 'LOGOUT_REQUIRED',
+    });
   }
 };
 
 export const logoutUser = (req: Request, res: Response) => {
+
+  const refreshToken = req.cookies.refreshToken;
+
+  if (refreshToken) {
+    const hash = hashRefreshToken(refreshToken);
+    db('refresh_tokens')
+      .where({ token_hash: hash, revoked_at: null })
+      .update({ revoked_at: new Date() })
+      .catch(() => {});
+  }
+
   // Clear the refresh token cookie
   res.cookie('refreshToken', '', { // Set value to empty string
     httpOnly: true,
