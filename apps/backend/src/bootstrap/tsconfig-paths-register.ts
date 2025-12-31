@@ -1,30 +1,41 @@
-// apps/backend/src/bootstrap/tsconfig-paths-register.ts
-// Lightweight helper to register tsconfig path aliases at runtime.
-// Usage: require('./bootstrap/tsconfig-paths-register') from Node startup
 import path from 'path';
 
 try {
-  // Use require to avoid types/runtime mismatches when compiled.
+  // Runtime-only alias registration for compiled JS
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const tsconfigPaths = require('tsconfig-paths');
 
-  // Resolve project root relative to this file.
-  const projectRoot = path.resolve(__dirname, '../../..');
+  /**
+   * At runtime this file lives at:
+   *   dist/apps/backend/src/bootstrap/tsconfig-paths-register.js
+   *
+   * So the compiled backend root is:
+   *   dist/apps/backend/src
+   */
+  const distRoot = path.resolve(__dirname, '..'); // dist/apps/backend/src
+  const repoRoot = path.resolve(__dirname, '../../../../../../../');
 
-  // Load root tsconfig.json
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const tsconfig = require(path.join(projectRoot, 'tsconfig.json'));
+  tsconfigPaths.register({
+    baseUrl: distRoot,
+    paths: {
+      'api-src/*': [path.join(distRoot, '*')],
+      'api-db': [path.join(distRoot, 'db.js')],
+      'api-types': [path.join(distRoot, 'types.js')],
+      'modules-specter/*': [
+        path.join(repoRoot, 'modules/specter/dist/*'),
+      ],
+    },
+  });
 
-  const baseUrl = projectRoot;
-  const paths = (tsconfig && tsconfig.compilerOptions && tsconfig.compilerOptions.paths) ? tsconfig.compilerOptions.paths : {};
-
-  tsconfigPaths.register({ baseUrl, paths });
   // eslint-disable-next-line no-console
-  console.log('[bootstrap] tsconfig-paths registered (backend)');
+  console.log('[bootstrap] runtime tsconfig-paths registered (dist)');
 } catch (err: any) {
-  // Non-fatal: if the package is not installed or registration fails, log and continue.
+  // Non-fatal, but should never fail in a correct build
   // eslint-disable-next-line no-console
-  console.warn('[bootstrap] tsconfig-paths register failed:', err && err.message ? err.message : err);
+  console.warn(
+    '[bootstrap] runtime tsconfig-paths register failed:',
+    err?.message ?? err
+  );
 }
 
-export {}; // keep module scope explicit for TS
+export {};
