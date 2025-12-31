@@ -63,6 +63,12 @@ export const registerUser = async (req: Request, res: Response) => {
     const { accessToken, refreshToken } =
       await issueAuthTokens(authUserId);
 
+    audit({
+      level: 'INFO',
+      event: 'refresh_token_rotated',
+      userId: authUserId,
+    });
+
     // Set cookie options
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
@@ -162,14 +168,6 @@ export const refreshToken = async (req: Request, res: Response) => {
   // 1. Get refresh token from HttpOnly cookie
   const incomingRefreshToken = req.cookies.refreshToken;
 
-  audit({
-    level: 'SECURITY',
-    event: 'refresh_token_rejected',
-    metadata: {
-      reason: 'invalid_or_expired',
-    },
-  });
-
   if (!incomingRefreshToken) {
     return res.status(401).json({
       error: 'SESSION_EXPIRED',
@@ -195,7 +193,13 @@ export const refreshToken = async (req: Request, res: Response) => {
        .first();
  
      if (!existingToken) {
-       return res.status(403).json({ error: 'Forbidden: Refresh token revoked or reused.' });
+      console.warn('[SECURITY] Refresh token reuse detected', {
+        ip: req.socket.remoteAddress,
+      });
+       return res.status(403).json({ 
+        error: 'SESSION_COMPROMISED',
+        action: 'LOGOUT_REQUIRED',
+      });
     }
 
     // Revoke old token

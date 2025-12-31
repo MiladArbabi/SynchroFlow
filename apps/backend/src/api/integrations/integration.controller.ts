@@ -290,7 +290,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing OAuth authorization code' });
   }
 
-  let accessToken: string;
+  let oauthAccessToken: string;
 
   // --- Step 2.2.2.a: Token exchange (OUTSIDE DB transaction) ---
   try {
@@ -303,12 +303,12 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         code,
       });
 
-      accessToken = tokenResponse.data?.access_token;
+      oauthAccessToken = tokenResponse.data?.access_token;
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
     }
 
-    if (!accessToken) {
+    if (!oauthAccessToken) {
       throw new Error('ACCESS_TOKEN_MISSING');
     }
   } catch (err) {
@@ -327,7 +327,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         throw new Error('USER_SHOP_NOT_FOUND');
       }
 
-      const encryptedToken = encryptToken(accessToken);
+      const encryptedToken = encryptToken(oauthAccessToken);
 
       const [integration] = await trx('integrations')
         .insert({
@@ -359,9 +359,27 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       Buffer.from(JSON.stringify({ integrationId: result.integration.id }))
     );
 
+    // 🔒 Security invariants
+    if (!oauthContext.userId) {
+      throw new Error('OAUTH_INVARIANT_VIOLATION: missing userId');
+    }
+
+    if (platform === 'shopify' && !oauthContext.shopDomain) {
+      throw new Error('OAUTH_INVARIANT_VIOLATION: missing shop domain');
+    }
+
     // 🔐 Issue fresh auth tokens (OAuth = login)
-    const { accessToken, refreshToken } =
-      await issueAuthTokens(oauthContext.userId);
+
+    let authTokens: { accessToken: any; refreshToken: any; };
+
+    try {
+      authTokens = await issueAuthTokens(oauthContext.userId);
+    } catch (err) {
+      console.error('[OAuth] Token issuance invariant failed', err);
+      throw new Error('OAUTH_FATAL: auth token issuance failed');
+    }
+  
+   const { accessToken, refreshToken } = authTokens;
 
     await ShopifyAppService.completePostInstallation(
       oauthContext.shopDomain!,
