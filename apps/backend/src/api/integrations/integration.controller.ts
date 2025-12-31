@@ -24,7 +24,9 @@ import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
 import { getQueueChannel, connection } from '../../queue';
 import { issueAuthTokens } from '../auth/token.service';
+
 import { audit } from 'api-src/utils/audit';
+import { rateLimit } from 'api-src/utils/rateLimit';
 
 /**
  * Helper function to get the shop_id from an authenticated user.
@@ -175,6 +177,24 @@ export const getHumanReadableError = (shopifyError: string, description: string)
 
 export const handleOAuthCallback = async (req: Request, res: Response) => {
   const { platform } = req.params as { platform: string };
+
+ const ip =
+   req.headers['x-forwarded-for']?.toString() ||
+   req.socket.remoteAddress ||
+   'unknown';
+
+ const allowed = rateLimit(
+   `oauth:${platform}:${ip}`,
+    20,              // generous
+    60_000
+ );
+
+ if (!allowed) {
+   return res.status(429).json({
+     error: 'OAUTH_RATE_LIMITED',
+   });
+ }
+
   const { code, state, shop, error, error_description } = req.query as {
     code: string;
     state: string;

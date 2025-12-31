@@ -6,7 +6,9 @@ import crypto from 'crypto';
 import { User } from 'api-types'; 
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { issueAuthTokens } from './token.service';
+
 import { audit } from 'api-src/utils/audit';
+import { rateLimit } from 'api-src/utils/rateLimit';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -139,6 +141,24 @@ export const loginUser = async (req: Request, res: Response) => {
 };
 
 export const refreshToken = async (req: Request, res: Response) => {
+
+  const ip =
+   req.headers['x-forwarded-for']?.toString() ||
+   req.socket.remoteAddress ||
+   'unknown';
+
+  const allowed = rateLimit(
+    `refresh:${ip}`,
+    10,              // max 10 attempts
+    60_000,          // per 1 minute
+  );
+
+  if (!allowed) {
+    return res.status(429).json({
+      error: 'TOO_MANY_REQUESTS',
+      retryAfter: 60,
+    });
+  }
   // 1. Get refresh token from HttpOnly cookie
   const incomingRefreshToken = req.cookies.refreshToken;
 
