@@ -73,7 +73,7 @@ export async function processProductMessage(msg: ProductIngestionMessage): Promi
     .insert({
       shop_id: shopId,
       module_id: 'sku-os',
-      event: 'ingestion_completed',
+      event: 'product_ingested',
     })
     .onConflict(['shop_id', 'module_id', 'event'])
     .ignore();

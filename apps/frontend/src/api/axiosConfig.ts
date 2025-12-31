@@ -58,7 +58,8 @@ axiosInstance.interceptors.response.use(
     // Add exclusion for login/register routes ---
     const isAuthRoute =
       originalRequest.url === '/api/v1/auth/login' ||
-      originalRequest.url === '/api/v1/auth/register';
+      originalRequest.url === '/api/v1/auth/register' ||
+      originalRequest.url === '/api/v1/auth/refresh_token';
 
       if (
       error.response?.status === 401 &&
@@ -81,7 +82,7 @@ axiosInstance.interceptors.response.use(
 
       try {
         // Call the refresh token endpoint
-        const { data } = await axiosInstance.post('/api/v1/auth/refresh_token');
+        const { data } = await axios.post('/api/v1/auth/refresh_token');
         const newAccessToken = data.accessToken;
 
         setToken(newAccessToken); // Update in-memory store
