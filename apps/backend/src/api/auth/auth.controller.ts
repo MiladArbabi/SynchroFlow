@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { User } from 'api-types'; 
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { issueAuthTokens } from './token.service';
+import { audit } from 'api-src/utils/audit';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -140,6 +141,14 @@ export const loginUser = async (req: Request, res: Response) => {
 export const refreshToken = async (req: Request, res: Response) => {
   // 1. Get refresh token from HttpOnly cookie
   const incomingRefreshToken = req.cookies.refreshToken;
+
+  audit({
+    level: 'SECURITY',
+    event: 'refresh_token_rejected',
+    metadata: {
+      reason: 'invalid_or_expired',
+    },
+  });
 
   if (!incomingRefreshToken) {
     return res.status(401).json({

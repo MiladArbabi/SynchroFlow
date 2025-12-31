@@ -24,6 +24,7 @@ import CryptoJS from 'crypto-js';
 import { User } from 'api-types';
 import { getQueueChannel, connection } from '../../queue';
 import { issueAuthTokens } from '../auth/token.service';
+import { audit } from 'api-src/utils/audit';
 
 /**
  * Helper function to get the shop_id from an authenticated user.
@@ -250,6 +251,12 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         ? 'Expired OAuth state'
         : 'OAuth state validation failed';
 
+    audit({
+      level: 'SECURITY',
+      event: 'oauth_state_rejected',
+      metadata: { platform, reason },
+    });
+
     return res.status(403).json({ error: reason });
   }
 
@@ -345,6 +352,17 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     console.info('[OAuth] Integration created successfully', {
       integrationId: result.integration.id,
       shopId: result.shopId,
+    });
+
+    audit({
+      level: 'INFO',
+      event: 'oauth_completed',
+      userId: oauthContext.userId,
+      shopId: result.shopId,
+      metadata: {
+        platform,
+        integrationId: result.integration.id,
+      },
     });
 
     // Set rotated refresh token cookie
