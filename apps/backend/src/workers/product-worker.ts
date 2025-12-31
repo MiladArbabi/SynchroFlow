@@ -33,6 +33,9 @@ export async function processProductMessage(msg: ProductIngestionMessage): Promi
     platform: msg.platform,
   });
 
+  const dbName = await db.raw('select current_database()');
+  console.log('[product-worker][debug] db =', dbName.rows?.[0]?.current_database);
+
   const { shopId, platform, rawProduct } = msg;
 
   if (platform !== 'shopify') {
@@ -63,4 +66,15 @@ export async function processProductMessage(msg: ProductIngestionMessage): Promi
       status: projectCanonicalStatusToFt0(canonicalInput.status),
       updated_at: canonicalInput.updatedAt,
     });
+
+    // Mark SKU-OS ingestion as having occurred for this shop
+  // This is a monotonic signal: once true, always true
+  await db('shop_ingestion_events')
+    .insert({
+      shop_id: shopId,
+      module_id: 'sku-os',
+      event: 'ingestion_completed',
+    })
+    .onConflict(['shop_id', 'module_id', 'event'])
+    .ignore();
 }

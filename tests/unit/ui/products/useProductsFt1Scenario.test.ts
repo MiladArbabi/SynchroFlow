@@ -26,4 +26,13 @@ describe('useProductsFt1Scenario', () => {
       })
     ).toBe('HEALTHY');
   });
+
+  it('treats productCount=0 as HEALTHY when products are known', () => {
+    const scenario = useProductsFt1Scenario({
+      productCount: 0,
+    });
+
+    expect(scenario).toBe('HEALTHY');
+  });
+
 });

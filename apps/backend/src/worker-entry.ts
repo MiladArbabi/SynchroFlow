@@ -6,6 +6,7 @@ import './bootstrap/tsconfig-paths-register';
 import { initQueue } from './queue';
 import { startSyncWorker } from './sync.worker';
 import { startWorker as startEventWorker } from './worker';
+import { startProductIngestionWorker } from './workers/product-ingestion.worker';
 
 async function start() {
   console.log('[worker-entry] Booting worker runtime…');
@@ -15,6 +16,7 @@ async function start() {
 
   startSyncWorker();
   startEventWorker();
+  startProductIngestionWorker();
 
   console.log('[worker-entry] All workers started');
 }

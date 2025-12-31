@@ -164,6 +164,11 @@ export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
         .where({ shop_id: shopId })
         .count<{ count: string }>('* as count')
         .first();
+      
+      console.log('[sku-os][debug]', {
+        shopId,
+        canonicalProductsCount: row?.count,
+      });
 
       const derived = deriveKnownCount(row?.count);
 

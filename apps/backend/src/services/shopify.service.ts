@@ -118,12 +118,12 @@ export const performInitialSync = async (
     const response = await client.request(query);
     const data = response.data as any;
 
-    if (data?.orders?.edges?.length > 0) {
+    /* if (data?.orders?.edges?.length > 0) {
       console.log(
         '[DEBUG] Sample Shopify order node:',
         JSON.stringify(data.orders.edges[0].node, null, 2)
       );
-    }
+    } */
 
     console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data));
 
