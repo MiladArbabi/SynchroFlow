@@ -14,25 +14,21 @@ export interface FinancesModuleProps {
 /**
  * FinancesModule — FT1 Diagnostic Surface
  * --------------------------------------
- * Base data readiness for financial analysis.
+ * Purpose:
+ * - Truthfully report whether a cost model is configured and usable
  *
- * Invariants:
+ * FT1 Invariants:
  * - No data fetching
  * - No lifecycle awareness
- * - No onboarding logic
- * - One scenario → one card
+ * - No financial computation
+ * - One scenario → one diagnostic card
  */
 
 export default function FinancesModule(props: FinancesModuleProps) {
   const scenario = useFinancesFt1Scenario(props);
 
-  console.debug('[FT1][Finances][Scenario]', scenario);
-  console.debug('[FT1][Finances][Props]', props);
-
-  const emitStartOnboarding = (taskId?: string) => {
-    if (!props.onIntent) return;
-
-    props.onIntent({
+  const emitStartOnboarding = (taskId: string) => {
+    props.onIntent?.({
       type: 'START_ONBOARDING',
       taskId,
     });
@@ -43,8 +39,14 @@ export default function FinancesModule(props: FinancesModuleProps) {
       return (
         <FinancesDiagnosticCard
           testId="finances-ft1-no-transactions"
-          title="No financial transactions detected"
-          message="We haven’t detected any completed transactions yet."
+          title="No transactions detected yet"
+          message="Once transactions exist, a cost model will be required so the system can interpret costs correctly."
+          ctaLabel={props.onIntent ? 'Prepare cost setup' : undefined}
+          onCtaClick={
+            props.onIntent
+              ? () => emitStartOnboarding('finances.complete-cost-setup')
+              : undefined
+          }
         />
       );
 
@@ -52,14 +54,14 @@ export default function FinancesModule(props: FinancesModuleProps) {
       return (
         <FinancesDiagnosticCard
           testId="finances-ft1-no-costs"
-          title="Transaction costs missing"
-          message="Transactions exist, but cost data is incomplete. Financial accuracy cannot be determined yet."
-          ctaLabel={props.onIntent ? 'Complete cost setup' : undefined}
+          title="Cost model not configured"
+          message="Transactions exist, but no active cost model is configured. Downstream systems cannot reliably interpret costs until this is completed."
+          ctaLabel={props.onIntent ? 'Configure cost model' : undefined}
           onCtaClick={
             props.onIntent
-            ? () => emitStartOnboarding('finances.complete-cost-setup')
-            : undefined
-         }
+              ? () => emitStartOnboarding('finances.complete-cost-setup')
+              : undefined
+          }
         />
       );
 
@@ -67,8 +69,8 @@ export default function FinancesModule(props: FinancesModuleProps) {
       return (
         <FinancesDiagnosticCard
           testId="finances-ft1-healthy"
-          title="Financial data ready"
-          message="Minimum financial data requirements are met."
+          title="Cost model configured"
+          message="An active cost model is available. Other modules can now rely on your cost configuration."
         />
       );
 
@@ -77,8 +79,8 @@ export default function FinancesModule(props: FinancesModuleProps) {
       return (
         <FinancesDiagnosticCard
           testId="finances-ft1-loading"
-          title="Analyzing financial data…"
-          message="Validating financial base signals."
+          title="Checking cost configuration…"
+          message="We’re verifying whether a cost model is configured for this store."
         />
       );
   }
