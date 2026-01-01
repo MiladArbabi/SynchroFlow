@@ -29,13 +29,15 @@ export function mapFinancesFt1Props(
   const get = (name: string) =>
     signals.find((s: any) => s.name === name)?.value;
 
-   const orderCount = get('finances.orderCount');
-  const productCount = get('finances.productCount');
+  const transactionCount = get('finances.transactionCount');
+  const costDataReady = get('finances.costDataReady');
   const baseSignalsReady = get('finances.baseSignalsReady');
 
   return {
-    orderCount: orderCount === undefined ? null : Number(orderCount),
-    productCount: productCount === undefined ? null : Number(productCount),
+    transactionCount:
+      transactionCount === undefined ? null : Number(transactionCount),
+    costDataReady:
+      costDataReady === undefined ? null : Boolean(costDataReady),
     baseSignalsReady:
       baseSignalsReady === undefined ? null : Boolean(baseSignalsReady),
   };

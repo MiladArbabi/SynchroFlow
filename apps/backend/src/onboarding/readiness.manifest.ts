@@ -159,5 +159,28 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
         ]
       }
     ]
+  },
+
+  {
+    moduleId: 'finances',
+    displayName: 'Finances',
+    requiredSignals: [
+      'finances.transactionCount',
+      'finances.costDataReady',
+      'finances.baseSignalsReady'
+    ],
+    tasks: [
+      {
+        id: 'finances.complete-cost-setup',
+        label: 'Complete cost setup',
+        required: false,
+        completionRules: [
+          {
+            signal: 'finances.costDataReady',
+            expectedValue: true
+          }
+        ]
+      }
+    ]
   }
 ];

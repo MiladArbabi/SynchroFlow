@@ -12,6 +12,7 @@ export type ModuleId =
   | 'return-nexus'
   | 'insight-core'
   | 'analytics'
+  | 'finances'
   | 'specter'
   | 'sku-os'
   | 'wms-lite'

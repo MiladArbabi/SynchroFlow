@@ -106,6 +106,17 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
     resetPeriod: 'monthly'
   },
 
+  // Finances – diagnostic only in FT1, no free-tier gating
+  finances: {
+    enabled: false,
+    maxUnits: null,
+    metric: 'orders',
+    upgradeRoute: '/upgrade/finances',
+    lockedMessage:
+      'Financial diagnostics are always available at the diagnostic level on the Free tier.',
+    resetPeriod: 'monthly'
+  },
+
   // SKU-OS – 5 SKUs
   'sku-os': {
     enabled: true,

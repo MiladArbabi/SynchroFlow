@@ -8,8 +8,10 @@ import {
   ReadinessSignalName,
   ReadinessSignalValue
 } from '@lasyncro/shared';
+
 import { specterOnboardingSignalProvider } from './providers/specter.provider';
 import { analyticsOnboardingSignalProvider } from './providers/analytics.provider';
+import { financesOnboardingSignalProvider } from './providers/finances.provider';
 
 import { UserStateService } from '../services/user-state.service';
 import { deriveKnownCount } from './utils/deriveKnownCount';
@@ -290,6 +292,7 @@ export const onboardingSignalProviders: OnboardingSignalProvider[] = [
   specterOnboardingSignalProvider,
   insightCoreOnboardingSignalProvider,
   analyticsOnboardingSignalProvider,
+  financesOnboardingSignalProvider,
   returnNexusOnboardingSignalProvider,
   wmsLiteOnboardingSignalProvider,
   problemCenterOnboardingSignalProvider
