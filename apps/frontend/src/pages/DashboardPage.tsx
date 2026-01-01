@@ -1,25 +1,29 @@
 // apps/frontend/src/pages/DashboardPage.tsx
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Stack, Typography, Paper } from '@mui/material';
+
 import { OnboardingUIActionsContext } from 'contexts/OnboardingUIActionsContext';
 import { FT1HeroArrival } from 'components/ft1/FT1HeroArrival';
 import { useAuth } from 'contexts/AuthContext';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import MainCard from 'ui-component/cards/MainCard';
-import { Typography } from '@mui/material';
 
 import OrdersModule from '@lasyncro/order-nexus';
 import { mapOrdersFt1Props } from './orders/useOrdersFt1Adapter';
 import { useOrderNexusAhaAdapter } from 'wiring/orderNexusAhaAdapter';
+
 import FinancesModule from '@lasyncro/finances';
 import { mapFinancesFt1Props } from './finances/useFinancesFt1Adapter';
 import { useFinancesAhaAdapter } from 'wiring/financesAhaAdapter';
+
 import { AnalyticsModule } from '@lasyncro/analytics';
 import { mapAnalyticsFt1Props } from './analytics/useAnalyticsFt1Adapter';
 import { useAnalyticsAhaAdapter } from 'wiring/analyticsAhaAdapter';
+
 import { SpecterModule } from '@lasyncro/specter';
 import { mapSpecterFt1Props } from './customers/useSpecterFt1Adapter';
 import { useSpecterAhaAdapter } from 'wiring/specterAhaAdapter';
+
 import ProductsPage from '@lasyncro/products';
 import { mapProductsFt1Props } from './products/useProductsFt1Adapter';
 import { useProductsAhaAdapter } from 'wiring/productsAhaAdapter';
@@ -34,43 +38,28 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
   const shopId = user?.shop_id;
 
   // --- FT1 READINESS (SOURCE OF TRUTH) ---
-  const readinessQuery = useOnboardingReadiness(
-    !!shopId,
-    shopId
-  );
-
-  const platformModule = readinessQuery.data?.modules.find(
-    m => m.moduleId === 'platform'
-  );
+  const readinessQuery = useOnboardingReadiness(!!shopId, shopId);
 
   const ordersProps = readinessQuery.data
     ? mapOrdersFt1Props(readinessQuery.data)
     : null;
-
-  const onOrderNexusIntent = useOrderNexusAhaAdapter();
-
   const financesProps = readinessQuery.data
     ? mapFinancesFt1Props(readinessQuery.data)
     : null;
-
-  const onFinancesIntent = useFinancesAhaAdapter();
-
   const analyticsProps = readinessQuery.data
-  ? mapAnalyticsFt1Props(readinessQuery.data)
-  : null;
-
-  const onAnalyticsIntent = useAnalyticsAhaAdapter();
-
+    ? mapAnalyticsFt1Props(readinessQuery.data)
+    : null;
   const specterProps = readinessQuery.data
-  ? mapSpecterFt1Props(readinessQuery.data)
-  : null;
-
-  const onSpecterIntent = useSpecterAhaAdapter();
-
+    ? mapSpecterFt1Props(readinessQuery.data)
+    : null;
   const productsProps = readinessQuery.data
-  ? mapProductsFt1Props(readinessQuery.data)
-  : null;
+    ? mapProductsFt1Props(readinessQuery.data)
+    : null;
 
+  const onOrderNexusIntent = useOrderNexusAhaAdapter();
+  const onFinancesIntent = useFinancesAhaAdapter();
+  const onAnalyticsIntent = useAnalyticsAhaAdapter();
+  const onSpecterIntent = useSpecterAhaAdapter();
   const onProductsIntent = useProductsAhaAdapter();
 
   // --- UI ACTIONS (PASSIVE) ---
@@ -90,60 +79,62 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
   // --- RENDER ---
   return (
     <OnboardingUIActionsContext.Provider value={uiActions}>
-      <div>
+      <Stack spacing={4}>
         {shopId && <FT1HeroArrival shopId={shopId} />}
-        {/* === FT1 DIAGNOSTICS (READ-ONLY) === */}
-        {platformModule && (
-          <MainCard title={platformModule.displayName}>
-            {import.meta.env.DEV && (
-              console.info('[FT1][Dashboard] Platform diagnostic rendered', {
-                shopId,
-                isReady: platformModule.isReady,
-              })
+
+        {/* ================= FOUNDATION STATUS ================= */}
+        <Paper elevation={1} sx={{ p: 3 }}>
+          <Typography variant="h5" gutterBottom>
+            Foundation Status
+          </Typography>
+
+          <Stack spacing={3}>
+            {ordersProps && (
+              <OrdersModule
+                {...ordersProps}
+                onIntent={onOrderNexusIntent}
+              />
             )}
 
-            <Typography variant="body2" color="text.secondary">
-              {platformModule.tasks?.[0]?.label}
-            </Typography>
-          </MainCard>
-        )}
+            {productsProps && (
+              <ProductsPage
+                {...productsProps}
+                onIntent={onProductsIntent}
+              />
+            )}
 
-        {/* === ORDER-NEXUS FT1 DIAGNOSTICS === */}
-        {ordersProps && (
-          <OrdersModule
-            {...ordersProps}
-            onIntent={onOrderNexusIntent}
-          />
-        )}
+            {financesProps && (
+              <FinancesModule
+                {...financesProps}
+                onIntent={onFinancesIntent}
+              />
+            )}
+          </Stack>
+        </Paper>
 
-        {specterProps && (
-            <SpecterModule
-              {...specterProps}
-              onIntent={onSpecterIntent}
-            />
-        )}
+        {/* ================= BEHAVIOR & SIGNALS ================= */}
+        <Paper elevation={1} sx={{ p: 3 }}>
+          <Typography variant="h5" gutterBottom>
+            Behavior & Signals
+          </Typography>
 
-        {productsProps && (
-          <ProductsPage {...productsProps}
-           onIntent={onProductsIntent}
-          />
-        )}
+          <Stack spacing={3}>
+            {specterProps && (
+              <SpecterModule
+                {...specterProps}
+                onIntent={onSpecterIntent}
+              />
+            )}
 
-        {analyticsProps && (
-          <AnalyticsModule
-            {...analyticsProps}
-            onIntent={onAnalyticsIntent}
-          />
-        )}
-
-        {financesProps && (
-          <FinancesModule
-            {...financesProps}
-            onIntent={onFinancesIntent}
-          />
-        )}
-
-      </div>
+            {analyticsProps && (
+              <AnalyticsModule
+                {...analyticsProps}
+                onIntent={onAnalyticsIntent}
+              />
+            )}
+          </Stack>
+        </Paper>
+      </Stack>
     </OnboardingUIActionsContext.Provider>
   );
 };
