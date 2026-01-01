@@ -28,14 +28,12 @@ export function mapOrdersFt1Props(
   const get = (name: string) =>
     signals.find((s: any) => s.name === name)?.value;
 
-  const ordersKnown = get('orderNexus.ordersKnown') === true;
+  /* const ordersKnown = get('orderNexus.ordersKnown') === true; */
   const rawOrders = get('orderNexus.ordersIngested');
 
   return {
     ordersIngested:
-      !ordersKnown || rawOrders === undefined
-        ? null
-        : Number(rawOrders),
+      rawOrders === undefined ? null : Number(rawOrders),
 
     missingCostCount: Number(get('orderNexus.missingCostCount') ?? 0),
 

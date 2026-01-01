@@ -33,8 +33,8 @@ export interface AnalyticsModuleProps {
 
 export default function AnalyticsModule(props: AnalyticsModuleProps) {
   const scenario = useAnalyticsFt1Scenario(props);
+  
   console.debug('[FT1][Analytics][Scenario]', scenario);
-
   console.debug('[FT1][Analytics][AnalyticsModule] props', {
     orderCount: props.orderCount,
     productCount: props.productCount,
