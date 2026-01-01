@@ -1,6 +1,6 @@
 # InsightCore – Analytics & Metrics Module: Overview & Value Proposition
 
-## **What Is InsightCore?**
+## **Mission & Strategic Positioning**
 
 **InsightCore** is the centralized analytics and metrics module within the LaSyncro platform, designed to be the **"cortex"** or **"single source of truth"** for all business intelligence across the ecosystem. It's not just another dashboarding tool—it's a sophisticated analytics engine that **explains** business performance by connecting dots between specialized modules.
 
@@ -9,6 +9,25 @@
 - **Function:** Transforms fragmented module data into coherent business narratives
 - **Architecture:** Read-only, non-invasive observer that never recomputes domain logic
 - **Evolution:** Phased approach from basic reporting (v1) to predictive intelligence (v3)
+
+## **Mission Statement**
+
+> **InsightCore Mission (v1–v3):**
+> Make the merchant's business *legible* by identifying the drivers behind outcomes  
+> (profit, sales, retention, stock health, refunds), quantifying their impact, and  
+> directing the merchant toward the module that owns the fix.  
+>
+> InsightCore does NOT compute domain logic.  
+> It explains the system — transforming fragmented module data into  
+> relationships, drivers, and business narratives.
+
+### **Evolution Phases:**
+
+| **Phase** | **Capability** | **Merchant Value** |
+|-----------|----------------|---------------------|
+| **v1 (FT0-1)** | Baseline metrics + simple correlations | "What's happening & what's most correlated" |
+| **v2** | Multivariate driver analysis | "What changed & why (with confidence)" |
+| **v3** | Predictive simulation | "What will happen if I change X or Y" |
 
 ## **How It Brings Value as a SaaS Module**
 
@@ -25,11 +44,6 @@
 ### **2. Driver-Based Analysis (Not Just Reporting)**
 **Traditional SaaS Analytics:** Shows charts of what happened.
 **InsightCore Analytics:** Explains **why** it happened and **what matters most.**
-
-**Evolution of Intelligence:**
-- **v1 (FT0-FT1):** Identifies "Top Driver This Week" using lightweight correlations
-- **v2:** Provides multivariate driver ranking with contribution scoring
-- **v3:** Predictive scenario simulation ("what-if" engine)
 
 **Example Value:** A merchant sees "Stockout risk ↑ 32%" isn't just a number—it's identified as the **#1 driver** affecting their revenue volatility this week, with quantified impact and confidence scores.
 
@@ -56,18 +70,7 @@
 
 **Value to User:** Merchants get **one version of truth** that's consistent with their operational tools. No conflicting numbers between "dashboard profit" and "actual profit in orders."
 
-### **5. Phased Intelligence Matching Business Maturity**
-**InsightCore grows with the merchant:**
-
-| **Phase** | **Capability** | **Merchant Value** |
-|-----------|----------------|---------------------|
-| **v1 (FT0-1)** | Baseline metrics + simple correlations | "What's happening & what's most correlated" |
-| **v2** | Multivariate driver analysis | "What changed & why (with confidence)" |
-| **v3** | Predictive simulation | "What will happen if I change X or Y" |
-
-**Value to User:** The analytics system evolves from reactive reporting to proactive guidance as the business scales, without requiring platform switches.
-
-### **6. Readiness-Aware Onboarding**
+### **5. Readiness-Aware Onboarding**
 **Prevents "Fake Confidence" Dashboards:**
 - **Tracks data completeness** per module
 - **Surfaces dashboards only when meaningful**
@@ -75,7 +78,7 @@
 
 **Value to User:** Merchants aren't shown "0% return rate" because returns aren't connected yet. Instead, they see: "Connect ReturnNexus to unlock returns analytics" with a clear setup path.
 
-### **7. Enterprise-Grade Metric Governance**
+### **6. Enterprise-Grade Metric Governance**
 **For Scaling Businesses:**
 - **Versioned metric definitions** (audit trail for how KPIs are calculated)
 - **Immutable metric history** (can't retroactively change old reports)
@@ -83,7 +86,7 @@
 
 **Value to User:** As businesses grow and need compliance/auditing, they have certified metrics rather than "spreadsheet math." Board reports are defensible and consistent.
 
-### **8. Closed-Loop Learning System**
+### **7. Closed-Loop Learning System**
 **From v2 Onward:** InsightCore learns from action outcomes:
 - Recommends action → Tracks if merchant executed it → Measures actual impact → Updates driver weights
 
