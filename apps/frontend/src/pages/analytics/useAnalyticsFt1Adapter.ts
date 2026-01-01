@@ -1,24 +1,29 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-//apps/frontend/src/pages/analytics/useAnalyticsFt1Adapter.ts
+import type { OnboardingReadinessSnapshot } from '@lasyncro/shared';
 
-export function mapAnalyticsFt1Props(readinessData: any) {
-  const module = readinessData?.modules?.find(
-    (m: any) => m.moduleId === 'analytics'
+export function mapAnalyticsFt1Props(
+  snapshot: OnboardingReadinessSnapshot
+) {
+  const analyticsModule = snapshot.modules.find(
+    (m) => m.moduleId === 'analytics'
   );
 
-  const signals = module?.signals ?? [];
-
-  const get = (name: string) =>
-    signals.find((s: any) => s.name === name)?.value;
-
-  const orderCount = get('analytics.orderCount');
-  const productCount = get('analytics.productCount');
-  const baseSignalsReady = get('analytics.baseSignalsReady');
+  const signals = analyticsModule?.signals ?? [];
+  const map = Object.fromEntries(signals.map(s => [s.name, s.value]));
 
   return {
-    orderCount: orderCount === undefined ? null : Number(orderCount),
-    productCount: productCount === undefined ? null : Number(productCount),
+    orderCount:
+      typeof map['analytics.orderCount'] === 'number'
+        ? map['analytics.orderCount']
+        : null,
+
+    productCount:
+      typeof map['analytics.productCount'] === 'number'
+        ? map['analytics.productCount']
+        : null,
+
     baseSignalsReady:
-      baseSignalsReady === undefined ? null : Boolean(baseSignalsReady),
+      typeof map['analytics.baseSignalsReady'] === 'boolean'
+        ? map['analytics.baseSignalsReady']
+        : null,
   };
 }

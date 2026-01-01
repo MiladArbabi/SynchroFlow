@@ -136,5 +136,28 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
         ]
       }
     ]
+  },
+
+  {
+    moduleId: 'analytics',
+    displayName: 'Analytics',
+    requiredSignals: [
+      'analytics.orderCount',
+      'analytics.productCount',
+      'analytics.baseSignalsReady'
+    ],
+    tasks: [
+      {
+        id: 'analytics-base-data',
+        label: 'Prepare analytics data',
+        required: true,
+        completionRules: [
+          {
+            signal: 'analytics.baseSignalsReady',
+            expectedValue: true
+          }
+        ]
+      }
+    ]
   }
 ];

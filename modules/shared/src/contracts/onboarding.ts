@@ -11,6 +11,7 @@ export type ModuleId =
   | 'order-nexus'
   | 'return-nexus'
   | 'insight-core'
+  | 'analytics'
   | 'specter'
   | 'sku-os'
   | 'wms-lite'

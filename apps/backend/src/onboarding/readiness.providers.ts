@@ -9,6 +9,7 @@ import {
   ReadinessSignalValue
 } from '@lasyncro/shared';
 import { specterOnboardingSignalProvider } from './providers/specter.provider';
+import { analyticsOnboardingSignalProvider } from './providers/analytics.provider';
 
 import { UserStateService } from '../services/user-state.service';
 import { deriveKnownCount } from './utils/deriveKnownCount';
@@ -288,6 +289,7 @@ export const onboardingSignalProviders: OnboardingSignalProvider[] = [
   // new CNS spine providers:
   specterOnboardingSignalProvider,
   insightCoreOnboardingSignalProvider,
+  analyticsOnboardingSignalProvider,
   returnNexusOnboardingSignalProvider,
   wmsLiteOnboardingSignalProvider,
   problemCenterOnboardingSignalProvider

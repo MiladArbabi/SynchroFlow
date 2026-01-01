@@ -1,38 +1,14 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/lifecycle/useOnboardingReadiness.ts
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
-
-interface OnboardingReadinessResponse {
-  shopId: number;
-
-  /**
-   * Raw onboarding signals emitted by backend providers.
-   * This is the current source of truth.
-   */
-  signals?: {
-    name: string;
-    value: unknown;
-  }[];
-
-  /**
-   * Future structured module aggregation (not fully wired yet)
-   */
-  modules?: any[];
-
-  ft1: {
-    isComplete: boolean;
-    blockingModules: string[];
-    readyModules: string[];
-  };
-}
+import type { OnboardingReadinessSnapshot } from '@lasyncro/shared';
 
 export function useOnboardingReadiness(
   enabled: boolean,
   shopId?: number
 ) {
-  return useQuery<OnboardingReadinessResponse>({
+  return useQuery<OnboardingReadinessSnapshot>({
     queryKey: ['onboarding-readiness', shopId],
     queryFn: async () => {
       if (!shopId) {

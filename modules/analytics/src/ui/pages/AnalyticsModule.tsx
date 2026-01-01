@@ -54,8 +54,8 @@ export default function AnalyticsModule(props: AnalyticsModuleProps) {
       return (
         <AnalyticsDiagnosticCard
           testId="analytics-ft1-loading"
-          title="Analyzing data…"
-          message="We’re validating your store data to unlock analytics."
+          title="Checking data readiness…"
+          message="We’re verifying whether your store data is available for analytics."
         />
       );
 
@@ -64,7 +64,7 @@ export default function AnalyticsModule(props: AnalyticsModuleProps) {
         <AnalyticsDiagnosticCard
           testId="analytics-ft1-no-orders"
           title="No orders detected"
-          message="Analytics require order data before insights can be generated."
+          message="Analytics cannot run without order data from your store."
           ctaLabel={props.onIntent ? 'Connect store' : undefined}
           onCtaClick={
             props.onIntent
@@ -79,7 +79,7 @@ export default function AnalyticsModule(props: AnalyticsModuleProps) {
         <AnalyticsDiagnosticCard
           testId="analytics-ft1-no-products"
           title="No products found"
-          message="We need product data to calculate performance insights."
+          message="Analytics require product data to interpret order activity."
           ctaLabel={props.onIntent ? 'Sync products' : undefined}
           onCtaClick={
             props.onIntent
@@ -93,12 +93,12 @@ export default function AnalyticsModule(props: AnalyticsModuleProps) {
       return (
         <AnalyticsDiagnosticCard
           testId="analytics-ft1-partial"
-          title="Analytics incomplete"
-          message="Some data is still syncing. Complete setup to unlock insights."
-          ctaLabel={props.onIntent ? 'Complete setup' : undefined}
+          title="Analytics not ready"
+          message="Required data is present but not yet sufficient for analytics."
+          ctaLabel={props.onIntent ? 'Review setup' : undefined}
           onCtaClick={
             props.onIntent
-              ? () => emitStartOnboarding('complete-setup')
+              ? () => emitStartOnboarding('review-setup')
               : undefined
           }
         />
@@ -109,7 +109,7 @@ export default function AnalyticsModule(props: AnalyticsModuleProps) {
         <AnalyticsDiagnosticCard
           testId="analytics-ft1-healthy"
           title="Analytics ready"
-          message="Your analytics foundation is complete. Insights are now available."
+          message="Your store data meets the minimum requirements for analytics."
         />
       );
   }

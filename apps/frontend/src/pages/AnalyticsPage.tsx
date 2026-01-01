@@ -31,9 +31,17 @@ export default function AnalyticsPage() {
     return <div>Analytics not available (no shopId)</div>;
   }
 
-  if (!readinessQuery.isSuccess) {
+  if (readinessQuery.isLoading) {
     return <div>Loading analytics…</div>;
   }
+
+  if (readinessQuery.isError) {
+     console.error(
+       '[FT1][Analytics][ReadinessError]',
+       readinessQuery.error
+     );
+     return <div>Failed to load analytics.</div>;
+   }
 
   const props = mapAnalyticsFt1Props(readinessQuery.data);
   console.debug('[FT1][Analytics][Props]', props);

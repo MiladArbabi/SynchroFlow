@@ -95,6 +95,17 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
     resetPeriod: 'monthly'
   },
 
+  // Analytics – diagnostic only in FT1, no free-tier gating
+  analytics: {
+    enabled: false,
+    maxUnits: null,
+    metric: 'insights',
+    upgradeRoute: '/upgrade/analytics',
+    lockedMessage:
+      'Analytics insights are always available at the diagnostic level on the Free tier.',
+    resetPeriod: 'monthly'
+  },
+
   // SKU-OS – 5 SKUs
   'sku-os': {
     enabled: true,
