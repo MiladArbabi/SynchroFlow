@@ -1,6 +1,6 @@
 // modules/order-nexus/src/ui/components/OrderNexusDiagnosticCard.tsx
 
-import { Paper, Stack, Typography, Button } from '@mui/material';
+import { Paper, Stack, Typography, Button, Box } from '@mui/material';
 
 export type OrderNexusDiagnosticCardProps = {
   title: string;
@@ -29,9 +29,29 @@ export function OrderNexusDiagnosticCard({
   testId,
 }: OrderNexusDiagnosticCardProps) {
   return (
-    <Paper elevation={1} sx={{ p: 2 }} data-testid={testId}>
-      <Stack spacing={1}>
-        <Typography variant="h6">{title}</Typography>
+   <Paper
+      elevation={0}
+      data-testid={testId}
+      sx={{
+        display: 'flex',
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+      }}
+    >
+      {/* Left diagnostic rail */}
+      <Box
+        sx={{
+          width: 4,
+          bgcolor: 'info.main',
+        }}
+      />
+
+      {/* Content */}
+      <Stack spacing={1.25} sx={{ p: 2, flex: 1 }}>
+        <Typography variant="subtitle1" fontWeight={600}>
+          {title}
+        </Typography>
 
         <Typography variant="body2" color="text.secondary">
           {message}
@@ -43,11 +63,11 @@ export function OrderNexusDiagnosticCard({
             size="small"
             variant="contained"
             onClick={(e) => {
-            console.debug('[OrderNexusDiagnosticCard] CTA clicked', {
-               hasHandler: Boolean(onCtaClick),
-               eventType: e.type,
-             });
-             onCtaClick?.();
+              console.debug('[OrderNexusDiagnosticCard] CTA clicked', {
+                hasHandler: Boolean(onCtaClick),
+                eventType: e.type,
+              });
+              onCtaClick?.();
             }}
             sx={{ alignSelf: 'flex-start', mt: 1 }}
           >

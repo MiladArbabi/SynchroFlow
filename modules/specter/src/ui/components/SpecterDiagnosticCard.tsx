@@ -2,7 +2,7 @@
 // This component MUST stay API-compatible with OrderNexusDiagnosticCard.
 // Any prop change must be applied to BOTH.
 
-import { Paper, Stack, Typography, Button } from '@mui/material';
+import { Paper, Stack, Typography, Button, Box } from '@mui/material';
 
 export type SpecterDiagnosticCardProps = {
   title: string;
@@ -27,9 +27,29 @@ export function SpecterDiagnosticCard({
   testId,
 }: SpecterDiagnosticCardProps) {
   return (
-    <Paper elevation={1} sx={{ p: 2 }} data-testid={testId}>
-      <Stack spacing={1}>
-        <Typography variant="h6">{title}</Typography>
+   <Paper
+      elevation={0}
+      data-testid={testId}
+      sx={{
+        display: 'flex',
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+      }}
+    >
+      {/* Left diagnostic rail */}
+      <Box
+        sx={{
+          width: 4,
+          bgcolor: 'secondary.main',
+        }}
+      />
+
+      {/* Content */}
+      <Stack spacing={1.25} sx={{ p: 2, flex: 1 }}>
+        <Typography variant="subtitle1" fontWeight={600}>
+          {title}
+        </Typography>
 
         <Typography variant="body2" color="text.secondary">
           {message}
