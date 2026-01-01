@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import MuiAccordion from '@mui/material/Accordion';
 import MuiAccordionDetails from '@mui/material/AccordionDetails';
 import MuiAccordionSummary from '@mui/material/AccordionSummary';
@@ -17,33 +17,26 @@ export interface AccordionItem {
 
 interface AccordionProps {
   data: AccordionItem[];
-  defaultExpandedId?: string | null;
+  expandedId?: string | null;
   expandIcon?: React.ReactNode | false;
   square?: boolean;
   toggle?: boolean;
+  onToggle?: (id: string | null) => void;
 }
 
 export function Accordion({
   data,
-  defaultExpandedId = null,
+  expandedId = null,
   expandIcon,
   square,
   toggle,
+  onToggle,
 }: AccordionProps) {
-  const [expanded, setExpanded] = useState<string | false>(false);
-
   const handleChange =
     (panel: string) => (_: unknown, newExpanded: boolean) => {
-      if (toggle) {
-        setExpanded(newExpanded ? panel : false);
-      }
+      if (!toggle) return;
+      onToggle?.(newExpanded ? panel : null);
     };
-
-  useEffect(() => {
-    if (defaultExpandedId) {
-      setExpanded(defaultExpandedId);
-    }
-  }, [defaultExpandedId]);
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -60,7 +53,7 @@ export function Accordion({
           }}
           expanded={
             toggle
-              ? expanded === item.id
+              ? expandedId === item.id
               : !item.disabled && !!item.expanded
           }
           onChange={handleChange(item.id)}

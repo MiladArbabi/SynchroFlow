@@ -7,6 +7,7 @@ import { mapFt1Checklist } from 'wiring/ft1ChecklistAdapter';
 
 interface Ft1ChecklistSurfaceProps {
   shopId: number;
+  open: boolean;
 }
 
 /**
@@ -25,7 +26,7 @@ interface Ft1ChecklistSurfaceProps {
  * - No routing
  * - No side effects
  */
-export function Ft1ChecklistDataSurface({ shopId }: Ft1ChecklistSurfaceProps) {
+export function Ft1ChecklistDataSurface({ shopId, open }: Ft1ChecklistSurfaceProps) {
   const readinessQuery = useOnboardingReadiness(true, shopId);
 
   if (!readinessQuery.isSuccess) {
@@ -34,5 +35,5 @@ export function Ft1ChecklistDataSurface({ shopId }: Ft1ChecklistSurfaceProps) {
 
   const checklist = mapFt1Checklist(readinessQuery.data);
 
-  return <Ft1ChecklistShell checklist={checklist} />;
+  return <Ft1ChecklistShell checklist={checklist} open={open} />;
 }

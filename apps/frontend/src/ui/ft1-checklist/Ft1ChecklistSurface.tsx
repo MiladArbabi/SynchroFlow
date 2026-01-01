@@ -28,10 +28,13 @@ export function Ft1ChecklistSurface() {
     <Drawer
       anchor="right"
       open={open}
+      ModalProps={{
+        keepMounted: true,
+      }}
       onClose={() => setOpen(false)}
     >
       <Box sx={{ width: 360, p: 2 }}>
-        <Ft1ChecklistDataSurface shopId={shopId!} />
+        <Ft1ChecklistDataSurface shopId={shopId!} open={open} />
       </Box>
     </Drawer>
   );
