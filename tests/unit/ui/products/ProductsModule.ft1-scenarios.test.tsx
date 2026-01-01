@@ -1,55 +1,108 @@
 // tests/unit/ui/products/ProductsModule.ft1-scenarios.test.tsx
 
-import { render, screen } from '@testing-library/react';
-import ProductsModule, {
-  useProductsFt1Scenario,
-} from '@lasyncro/products';
+import React from 'react';
+import { screen, fireEvent } from '@testing-library/react';
+import ProductsModule from '@lasyncro/products';
+import type ProductsUiIntent from '@lasyncro/products';
+import { renderWithTheme } from 'test-utils';
 
-jest.mock('@lasyncro/products', () => {
-  const actual = jest.requireActual('@lasyncro/products');
-  return {
-    __esModule: true,
-    ...actual,
-    useProductsFt1Scenario: jest.fn(),
-  };
-});
+describe('ProductsModule – FT1 scenarios', () => {
+  test('NO_PRODUCTS shows CTA and emits add-products intent', () => {
+    const onIntent = jest.fn();
 
-describe('ProductsModule – FT1 scenario composition (diagnostic)', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
+    renderWithTheme(
+      <ProductsModule
+        productCount={0}
+        productHealthEvents={null}
+        excludedProductCount={null}
+        onIntent={onIntent}
+      />
+    );
+
+    expect(
+      screen.getByText('No products available')
+    ).toBeInTheDocument();
+
+    const cta = screen.getByRole('button', { name: /add products/i });
+    fireEvent.click(cta);
+
+    expect(onIntent).toHaveBeenCalledWith({
+      type: 'START_ONBOARDING',
+      taskId: 'add-products',
+    });
   });
 
-  it('renders LOADING diagnostic surface', () => {
-    (useProductsFt1Scenario as jest.Mock).mockReturnValue('LOADING');
+  test('PRODUCT_DATA_INCOMPLETE shows CTA and emits complete-product-data intent', () => {
+    const onIntent = jest.fn();
 
-    render(<ProductsModule productCount={null} />);
+    renderWithTheme(
+      <ProductsModule
+        productCount={5}
+        productHealthEvents={0}
+        excludedProductCount={null}
+        onIntent={onIntent}
+      />
+    );
 
     expect(
-      screen.getByTestId('products-ft1-loading')
+      screen.getByText('Product data incomplete')
     ).toBeInTheDocument();
+
+    const cta = screen.getByRole('button', {
+      name: /complete product data/i,
+    });
+    fireEvent.click(cta);
+
+    expect(onIntent).toHaveBeenCalledWith({
+      type: 'START_ONBOARDING',
+      taskId: 'complete-product-data',
+    });
   });
 
-  it('renders NO_PRODUCTS diagnostic surface', () => {
-    (useProductsFt1Scenario as jest.Mock).mockReturnValue('NO_PRODUCTS');
+  test('PARTIALLY_READY shows CTA and emits review-product-readiness intent', () => {
+    const onIntent = jest.fn();
 
-    render(<ProductsModule productCount={0} />);
+    renderWithTheme(
+      <ProductsModule
+        productCount={10}
+        productHealthEvents={4}
+        excludedProductCount={6}
+        onIntent={onIntent}
+      />
+    );
 
     expect(
-      screen.getByTestId('products-ft1-no-products')
+      screen.getByText('Product health partially available')
     ).toBeInTheDocument();
 
-    expect(
-      screen.getByText(/We haven’t detected any products for this store/i)
-    ).toBeInTheDocument();
+    const cta = screen.getByRole('button', {
+      name: /review excluded products/i,
+    });
+    fireEvent.click(cta);
+
+    expect(onIntent).toHaveBeenCalledWith({
+      type: 'START_ONBOARDING',
+      taskId: 'review-product-readiness',
+    });
   });
 
-  it('renders HEALTHY diagnostic surface', () => {
-    (useProductsFt1Scenario as jest.Mock).mockReturnValue('HEALTHY');
+  test('HEALTHY renders no CTA', () => {
+    const onIntent = jest.fn();
 
-    render(<ProductsModule productCount={12} />);
+    renderWithTheme(
+      <ProductsModule
+        productCount={4}
+        productHealthEvents={2}
+        excludedProductCount={0}
+        onIntent={onIntent}
+      />
+    );
 
     expect(
-      screen.getByTestId('products-ft1-healthy')
+      screen.getByText('Products are ready')
     ).toBeInTheDocument();
+
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(onIntent).not.toHaveBeenCalled();
   });
 });

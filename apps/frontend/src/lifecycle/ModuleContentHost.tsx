@@ -41,10 +41,7 @@ export function ModuleContentHost({
     onboarding?.ft1?.isComplete === false &&
     onboarding?.ft1?.blockingModules?.includes(moduleId);
 
-  // FT1 onboarding gate: suppress core content for blocking modules only
-  if (ft1Incomplete) {
-  return <Ft1OnboardingGate moduleId={moduleId} />;
-}
+  
 
   // FT2 unpaid → nothing mounts (paywall handled upstream)
   if (phase === 'FT2_PAYWALL' && !hasPaidEntitlement) {
@@ -53,6 +50,11 @@ export function ModuleContentHost({
 
   return (
     <>
+      {/* FT1 onboarding gate (additive, never suppressive) */}
+      {ft1Incomplete && (
+        <Ft1OnboardingGate moduleId={moduleId} />
+      )}
+
       {/* FT1+ core content */}
       <div data-testid={`${moduleId}-core`} />
 

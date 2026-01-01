@@ -37,5 +37,7 @@ export function mapProductsFt1Props(
         : rawCount === undefined || rawCount === null
         ? null
         : Number(rawCount),
+    productHealthEvents: null,
+    excludedProductCount: null
   };
 }
