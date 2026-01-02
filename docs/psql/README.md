@@ -214,7 +214,7 @@ Simulates real Shopify re-install.
 
 ```sql
 DELETE FROM integrations
-WHERE shop_id = 1
+WHERE shop_id = 9
   AND platform = 'shopify';
 ```
 
@@ -223,7 +223,7 @@ Optional UI reset:
 ```sql
 UPDATE users
 SET shopify_connected = false
-WHERE shop_id = 1;
+WHERE shop_id = 9;
 ```
 
 Then:

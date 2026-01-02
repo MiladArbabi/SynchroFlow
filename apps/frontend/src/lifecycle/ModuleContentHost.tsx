@@ -2,7 +2,7 @@
 //apps/frontend/src/lifecycle/ModuleContentHost.tsx
 import React from 'react';
 
-import { UILifecyclePhase } from './types';
+import { UIModulePhase } from './types';
 import { Ft1OnboardingGate } from './Ft1OnboardingGate';
 
 /**
@@ -20,7 +20,7 @@ import { Ft1OnboardingGate } from './Ft1OnboardingGate';
 
 interface ModuleContentHostProps {
   moduleId: string;
-  phase: UILifecyclePhase;
+  phase: UIModulePhase;
   hasPaidEntitlement: boolean;
   onboarding?: {
     ft1?: {
@@ -40,7 +40,7 @@ export function ModuleContentHost({
 }: ModuleContentHostProps) {
 
   const ft1Incomplete =
-    phase === 'FT1_READY' &&
+    phase === 'FT1_CORE' &&
     onboarding?.ft1?.isComplete === false &&
     onboarding?.ft1?.blockingModules?.includes(moduleId);
 

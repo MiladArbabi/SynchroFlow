@@ -4,6 +4,7 @@ import React from 'react';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { ModuleContentHost } from './ModuleContentHost';
+import { UIModulePhase } from './types';
 
 interface ModuleLifecycleShellProps {
   moduleId: string;
@@ -25,13 +26,17 @@ export function ModuleLifecycleShell({
 
   const hasPaidEntitlement = paidModules.includes(moduleId);
 
+  const modulePhase: UIModulePhase = hasPaidEntitlement
+    ? 'FT2_READY'
+    : 'FT2_PAYWALL';
+
   return (
     <>
       {children}
 
       <ModuleContentHost
         moduleId={moduleId}
-        phase={hasPaidEntitlement ? 'FT1_READY' : 'FT2_PAYWALL'}
+        phase={modulePhase}
         hasPaidEntitlement={hasPaidEntitlement}
       />
     </>

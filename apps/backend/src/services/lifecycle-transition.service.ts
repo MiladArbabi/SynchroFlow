@@ -25,14 +25,20 @@ export class LifecycleTransitionService {
       .orderBy('occurred_at', 'desc')
       .first<{ to_phase: UserLifecyclePhase }>();
 
-    const previousPhase: UserLifecyclePhase =
+    let previousPhase: UserLifecyclePhase =
       last?.to_phase ?? 'FT_MINUS_ONE';
 
-    // 2. No-op if unchanged
-    if (previousPhase === currentPhase) return;
+    let effectivePreviousPhase = previousPhase;
 
-    // 3. Guard: only audit explicit promotions
-    const transitionKey = `${previousPhase}->${currentPhase}`;
+    // Backfill FT1 if jumping directly to FT2
+    if (currentPhase === 'FT2' && previousPhase !== 'FT1') {
+      effectivePreviousPhase = 'FT1';
+    }
+
+    // No-op only if semantically unchanged
+    if (effectivePreviousPhase === currentPhase) return;
+
+    const transitionKey = `${effectivePreviousPhase}->${currentPhase}`;
 
     if (!AUDITABLE_TRANSITIONS.has(transitionKey)) {
       return;
@@ -42,14 +48,12 @@ export class LifecycleTransitionService {
     const existing = await db('lifecycle_audit_events')
     .where({
         user_id: userId,
-        from_phase: previousPhase,
+        from_phase: effectivePreviousPhase,
         to_phase: currentPhase,
     })
     .first();
 
-    if (existing) {
-    return;
-    }
+    if (existing) return;
 
     // 5. Write audit event
     try {
@@ -61,7 +65,7 @@ export class LifecycleTransitionService {
           event_id: eventId,
           user_id: userId,
           shop_id: shopId,
-          from_phase: previousPhase,
+          from_phase: effectivePreviousPhase,
           to_phase: currentPhase,
           occurred_at: occurredAt,
         })

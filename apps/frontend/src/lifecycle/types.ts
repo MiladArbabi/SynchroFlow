@@ -13,3 +13,8 @@ export type ShopLifecyclePhase =
   | 'FT0_PREPARING'
   | 'FT1_READY'
   | 'FT2_READY';
+
+export type UIModulePhase =
+  | 'FT1_CORE'
+  | 'FT2_READY'
+  | 'FT2_PAYWALL';
