@@ -279,20 +279,20 @@ From `readiness.manifest.ts`, only the following modules can block FT1:
 * `connect-store` → `integration.connected === true`
 * `complete-sync` → `integration.syncCompleted === true`
 
-- **analytics**
-  - `analytics-base-data`
-    - analytics.baseSignalsReady === true
+* **analytics**
+  * `analytics-base-data`
+    * analytics.baseSignalsReady === true
 
     **Scan-verified definition (as-is):**
-    - `analytics.baseSignalsReady` resolves to `true` if and only if:
-      - At least **one canonical order exists** (`canonical_orders.count > 0`)
-      - At least **one canonical product exists** (`canonical_products.count > 0`)
+    * `analytics.baseSignalsReady` resolves to `true` if and only if:
+      * At least **one canonical order exists** (`canonical_orders.count > 0`)
+      * At least **one canonical product exists** (`canonical_products.count > 0`)
 
     This check is:
-    - Binary (no thresholds)
-    - Deterministic
-    - Structural only
-    - Independent of analytics correctness or insight quality
+    * Binary (no thresholds)
+    * Deterministic
+    * Structural only
+    * Independent of analytics correctness or insight quality
 
 All other modules define **only optional tasks** and cannot block FT1.
 
@@ -342,11 +342,11 @@ There is no implicit AND-composition across rules.
 
 Several FT1-adjacent signals are stubbed or deliberately minimal:
 
-- order-nexus profitability signals (stubbed)
-- return-nexus, wms-lite, problem-center (disabled)
-- analytics FT1 gating is **purely structural**:
-  - presence of ≥1 canonical order
-  - presence of ≥1 canonical product
+* order-nexus profitability signals (stubbed)
+* return-nexus, wms-lite, problem-center (disabled)
+* analytics FT1 gating is **purely structural**:
+  * presence of ≥1 canonical order
+  * presence of ≥1 canonical product
 
 This confirms FT1 answers:
 
@@ -411,29 +411,31 @@ The FT1 checklist is a **pure projection of backend readiness state**.
 
 Verified properties:
 
-- The checklist UI (`Ft1ChecklistSurface`) performs:
-  - No lifecycle computation
-  - No task definition
-  - No readiness inference
-  - No required/optional logic
-- The checklist content is delegated entirely to:
-  - `Ft1ChecklistDataSurface`
-- `Ft1ChecklistDataSurface` consumes:
-  - `useOnboardingReadiness`
-  - The full backend `OnboardingReadinessSnapshot`
+* The checklist UI (`Ft1ChecklistSurface`) performs:
+  * No lifecycle computation
+  * No task definition
+  * No readiness inference
+  * No required/optional logic
+* The checklist content is delegated entirely to:
+  * `Ft1ChecklistDataSurface`
+* `Ft1ChecklistDataSurface` consumes:
+  * `useOnboardingReadiness`
+  * The full backend `OnboardingReadinessSnapshot`
 
 There are:
-- No hardcoded tasks in the frontend
-- No duplicated manifests
-- No UI-defined completion rules
+
+* No hardcoded tasks in the frontend
+* No duplicated manifests
+* No UI-defined completion rules
 
 All FT1 checklist items originate from backend manifests
 (`readiness.manifest.ts`) and backend readiness evaluation.
 
 This guarantees:
-- Checklist correctness
-- No frontend drift
-- Backend remains the single source of truth for FT1 readiness
+
+* Checklist correctness
+* No frontend drift
+* Backend remains the single source of truth for FT1 readiness
 
 ---
 
@@ -558,3 +560,17 @@ From this point forward:
 * **Any FT2 design that violates this baseline is invalid by definition**
 
 You now have a **hard, immovable foundation**.
+
+---
+
+Before any scenario, remember what cannot change:
+
+## FT1 is truth-only
+
+FT1 is non-latched on backend
+FT1 checklist is diagnostic only
+Frontend has zero authority
+Any FT2 graduation must:
+Be backend-owned
+Introduce a new latch
+Never reinterpret FT1 signals
