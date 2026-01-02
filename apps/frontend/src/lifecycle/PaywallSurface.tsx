@@ -8,6 +8,7 @@ interface PaywallSurfaceProps {
 }
 
 export function PaywallSurface({ scopeId, onUpgrade }: PaywallSurfaceProps) {
+
   return (
     <Box
       sx={{

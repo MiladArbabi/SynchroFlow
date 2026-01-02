@@ -1,6 +1,6 @@
 # 📜 FT2 Capability Graduation Contract
 
-> **Status:** Draft — to be sealed after review
+> **Status:** Draft — implementation-aligned, pending formal seal
 > **Scope:** Defines FT2 as a backend capability graduation.
 > **Relationship:** Additive to **Lifecycle Contract (As-Is)**.
 > **Non-Goals:** Pricing, entitlements, UX onboarding, recommendations.
@@ -122,12 +122,22 @@ If a surface cannot explain *why it is wrong*, it cannot be FT2.
 
 ## 6. Graduation Decision Rules
 
-FT2 graduation must be:
+FT2 graduation is explicitly latched and must be:
 
 * Backend-computed
 * Snapshot-based
 * Deterministic
 * Auditable
+* Persisted
+
+As-Implemented Rule
+
+## FT2 is entered if and only if:
+
+* FT1 is complete and
+* A persisted ft2_state record exists for the shop
+
+The lifecycle resolver reads this latch but never infers it.
 
 ### Explicitly forbidden triggers:
 
@@ -137,6 +147,8 @@ FT2 graduation must be:
 * Time-in-system assumptions
 * Feature usage
 * Payment state
+* Entitlements
+* Plan tier
 
 ---
 
@@ -200,22 +212,28 @@ Checklist and onboarding surfaces **must never reappear**.
 
 ---
 
-## 10. Audit & Observability Requirements
+## 10. Audit & Observability Requirements (As-Built)
 
-FT2 graduation must emit:
+FT2 graduation must emit exactly once:
 
-```
 lifecycle.transition.FT1_TO_FT2
-```
 
-Including:
+This event is emitted at the moment the FT2 latch is written.
 
-* Capability evaluation snapshot
-* Domain readiness matrix
-* Evaluator version
-* Timestamp
+Required payload:
+shopId
+previousPhase
+newPhase (FT2)
+Timestamp
+Evaluator version
+Guarantees:
+Immutable
+Idempotent
+Backend-only
+Non-blocking
 
-This event is immutable and emitted exactly once.
+If emission fails, FT2 must still remain latched.
+Observability failure must never affect lifecycle truth.
 
 ---
 

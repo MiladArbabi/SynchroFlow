@@ -48,9 +48,16 @@ export function ShopLifecycleGate() {
       return <EmptyDashboardState />;
 
     case 'FT1_READY':
+    case 'FT2_READY':
       return <Outlet />;
 
-    default:
+    default: {
+      if (import.meta.env.DEV) {
+        throw new Error(
+          `[Lifecycle Violation] Unhandled UILifecyclePhase in ShopLifecycleGate: ${phase}`
+        );
+      }
       return null;
+    }
   }
 }

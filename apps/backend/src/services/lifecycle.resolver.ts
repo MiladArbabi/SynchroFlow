@@ -1,5 +1,4 @@
 // apps/backend/src/services/lifecycle.resolver.ts
-
 import { UserLifecyclePhase } from './lifecycle.service';
 
 export function resolveLifecyclePhase(input: {
@@ -7,14 +6,15 @@ export function resolveLifecyclePhase(input: {
   hasIntegration: boolean;
   ft0Completed: boolean;
   ft1Complete: boolean;
-  hasPaidEntitlements: boolean;
+  hasPaidEntitlements: boolean; // still allowed, but NOT decisive
+  ft2Completed?: boolean;
 }): UserLifecyclePhase {
   const {
     hasShop,
     hasIntegration,
     ft0Completed,
     ft1Complete,
-    hasPaidEntitlements,
+    ft2Completed,
   } = input;
 
   // FT-1: no shop or no integration
@@ -27,8 +27,7 @@ export function resolveLifecyclePhase(input: {
     return 'FT0';
   }
 
-  // FT2: FT1 complete + paid
-  if (hasPaidEntitlements) {
+  if (ft2Completed) {
     return 'FT2';
   }
 

@@ -18,5 +18,20 @@ export function useShopLifecycle(): ShopLifecycleContextValue {
     );
   }
 
+  if (import.meta.env.DEV && !ctx.phase) {
+    throw new Error(
+      '[Lifecycle Violation] ShopLifecycleContext resolved without a phase'
+    );
+  }
+
+  console.log('[useShopLifecycle] hook called');
+
+  if (import.meta.env.DEV) {
+    console.log('[UI_LIFECYCLE_RENDER]', {
+      phase: ctx.phase,
+      ts: performance.now(),
+    });
+  }
+
   return ctx;
 }

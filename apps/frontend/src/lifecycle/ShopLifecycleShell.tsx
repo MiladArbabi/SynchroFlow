@@ -42,6 +42,7 @@ const PHASE_RANK: Record<ShopLifecyclePhase, number> = {
   FT0_SYNCING: 1,
   FT0_PREPARING: 2,
   FT1_READY: 3,
+  FT2_READY: 4,
 };
 
 const isFt0 = (p: ShopLifecyclePhase) =>
@@ -62,6 +63,8 @@ export function ShopLifecycleShell({
 }: {
   children: React.ReactNode;
 }) {
+
+  console.log('[ShopLifecycleShell] mounted');
   /* ------------------------------------------------------------------------ */
   /* External signals (Model A only)                                           */
   /* ------------------------------------------------------------------------ */
@@ -175,6 +178,17 @@ export function ShopLifecycleShell({
     resolvedPhase = 'FT0_PREPARING';
   }
 
+  if (import.meta.env.DEV) {
+    console.log('[UI_LIFECYCLE_RESOLVED]', {
+      shopId,
+      resolvedPhase,
+      integrationExists,
+      syncStatus,
+      ft1BackendComplete: readiness?.ft1?.isComplete,
+      ts: performance.now(),
+    });
+  }
+
   /* ------------------------------------------------------------------------ */
   /* Visual latch (anti-flicker state machine)                                 */
   /* ------------------------------------------------------------------------ */
@@ -209,6 +223,19 @@ export function ShopLifecycleShell({
       if (ft1SealKey) {
         localStorage.removeItem(ft1SealKey);
       }
+
+      console.log('[UI_LIFECYCLE_LATCH]', {
+        from: latchedPhase,
+        to: 'FT_MINUS_ONE',
+        resolvedPhase,
+        ft1BackendComplete: readiness?.ft1?.isComplete,
+        ft1Sealed,
+        elapsedFt0Ms: ft0EnteredAtRef.current
+          ? performance.now() - ft0EnteredAtRef.current
+          : null,
+        reason: 'integration removed (hard reset)',
+        ts: performance.now(),
+      });
 
       setLatchedPhase('FT_MINUS_ONE');
       prevExistenceRef.current = existence;
@@ -358,7 +385,7 @@ export function ShopLifecycleShell({
   /* Instrumentation                                                           */
   /* ------------------------------------------------------------------------ */
 
-  /* if (import.meta.env.DEV) {
+  if (import.meta.env.DEV) {
     console.info('[ShopLifecycle]', {
       shopId,
       integrationExists,
@@ -368,7 +395,7 @@ export function ShopLifecycleShell({
       resolvedPhase,
       latchedPhase,
     });
-  } */
+  }
 
   /* ------------------------------------------------------------------------ */
   /* Final visual phase                                                        */
@@ -376,6 +403,19 @@ export function ShopLifecycleShell({
 
   const visualPhase: ShopLifecyclePhase =
     latchedPhase ?? resolvedPhase;
+
+  if (import.meta.env.DEV) {
+    console.log('[UI_LIFECYCLE_FINAL]', {
+      resolvedPhase,
+      latchedPhase,
+      visualPhase,
+      integrationExists,
+      syncStatus,
+      ft1BackendComplete: readiness?.ft1?.isComplete,
+      ft1Sealed,
+      ts: performance.now(),
+    });
+  }
 
   return (
     <ShopLifecycleContext.Provider value={{ phase: visualPhase }}>

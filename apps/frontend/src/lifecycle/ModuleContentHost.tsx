@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 //apps/frontend/src/lifecycle/ModuleContentHost.tsx
 import React from 'react';
 
@@ -29,6 +30,8 @@ interface ModuleContentHostProps {
   };
 }
 
+const __DEV__ = import.meta.env.DEV;
+
 export function ModuleContentHost({
   moduleId,
   phase,
@@ -41,11 +44,14 @@ export function ModuleContentHost({
     onboarding?.ft1?.isComplete === false &&
     onboarding?.ft1?.blockingModules?.includes(moduleId);
 
-  
-
-  // FT2 unpaid → nothing mounts (paywall handled upstream)
-  if (phase === 'FT2_PAYWALL' && !hasPaidEntitlement) {
-    return null;
+    if (
+    __DEV__ &&
+    phase !== 'FT2_READY' &&
+    document.querySelector(`[data-testid="${moduleId}-advanced"]`)
+  ) {
+    throw new Error(
+      `[Lifecycle Violation] Advanced content attempted to mount for module "${moduleId}" outside FT2_READY. Current phase: ${phase}`
+    );
   }
 
   return (
@@ -58,8 +64,8 @@ export function ModuleContentHost({
       {/* FT1+ core content */}
       <div data-testid={`${moduleId}-core`} />
 
-      {/* FT2+ advanced content */}
-      {hasPaidEntitlement && (
+      {/* FT2 capability content */}
+      {phase === 'FT2_READY' && (
         <div data-testid={`${moduleId}-advanced`} />
       )}
     </>

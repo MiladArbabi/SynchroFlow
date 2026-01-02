@@ -1,9 +1,11 @@
 // apps/backend/src/services/lifecycle.service.ts
-import db from '../db';
+import db from 'api-src/db';
 import { OnboardingReadinessService } from '../onboarding/readiness.service';
 import { EntitlementsService } from './entitlements.service';
 import { resolveLifecyclePhase } from './lifecycle.resolver';
 import type { LifecyclePhase } from './lifecycle.contract';
+import { FT2CompletionService } from './ft2-completion.service';
+import { FT2LatchService } from './ft2-latch.service';
 
 export type UserLifecyclePhase =
   | 'FT_MINUS_ONE'
@@ -52,13 +54,34 @@ export class LifecycleService {
       (entitlements.flags.includes('paid') ||
         entitlements.flags.includes('premium'));
 
-    // 6. Canonical lifecycle decision
+    // 6. FT2 evaluation + latch (safe, idempotent)
+    if (ft1Complete) {
+      await FT2LatchService.evaluateAndLatch(shopId);
+    }
+
+    const ft2Completed = ft1Complete
+      ? await FT2CompletionService.isCompleted(shopId)
+      : false;
+
     const phase = resolveLifecyclePhase({
       hasShop,
       hasIntegration,
       ft0Completed,
       ft1Complete,
       hasPaidEntitlements,
+      ft2Completed,
+    });
+
+    console.log('[LIFECYCLE_RESOLVE]', {
+      userId,
+      shopId,
+      hasShop,
+      hasIntegration,
+      ft0Completed,
+      ft1Complete,
+      ft2Completed,
+      resolvedPhase: phase,
+      ts: new Date().toISOString(),
     });
 
     return phase;

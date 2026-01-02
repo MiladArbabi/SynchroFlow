@@ -102,11 +102,35 @@ describe('LifecycleService.resolveForUser (unit)', () => {
     expect(phase).toBe('FT1');
   });
 
-  it('returns FT2 when FT1 complete and paid entitlements exist', async () => {
+  it('does not grant FT2 solely based on paid entitlements', async () => {
+   mockDbChain([
+     { id: userId, shop_id: shopId }, // user
+     [{ id: 1 }],                     // integrations
+     { shop_id: shopId },             // ft0_state
+   ]);
+
+   (OnboardingReadinessService as jest.Mock).mockImplementation(() => ({
+     getSnapshot: jest.fn().mockResolvedValue({
+       ft1: { isComplete: true },
+     }),
+   }));
+
+   (EntitlementsService.getForUser as jest.Mock).mockResolvedValue({
+     shopId,
+     modules: [],
+     flags: ['paid'],
+   });
+
+   const phase = await LifecycleService.resolveForUser(userId);
+   expect(phase).toBe('FT1');
+ });
+
+ it('returns FT2 only when FT2 backend latch exists', async () => {
     mockDbChain([
       { id: userId, shop_id: shopId }, // user
       [{ id: 1 }],                     // integrations
       { shop_id: shopId },             // ft0_state
+      { shop_id: shopId },             // ft2_state
     ]);
 
     (OnboardingReadinessService as jest.Mock).mockImplementation(() => ({
@@ -118,10 +142,11 @@ describe('LifecycleService.resolveForUser (unit)', () => {
     (EntitlementsService.getForUser as jest.Mock).mockResolvedValue({
       shopId,
       modules: [],
-      flags: ['paid'],
+      flags: ['paid'], // irrelevant now
     });
 
     const phase = await LifecycleService.resolveForUser(userId);
     expect(phase).toBe('FT2');
   });
+
 });
