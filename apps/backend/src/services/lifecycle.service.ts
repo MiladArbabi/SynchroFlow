@@ -54,11 +54,6 @@ export class LifecycleService {
       (entitlements.flags.includes('paid') ||
         entitlements.flags.includes('premium'));
 
-    // 6. FT2 evaluation + latch (safe, idempotent)
-    if (ft1Complete) {
-      await FT2LatchService.evaluateAndLatch(shopId);
-    }
-
     const ft2Completed = ft1Complete
       ? await FT2CompletionService.isCompleted(shopId)
       : false;
