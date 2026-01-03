@@ -1,5 +1,5 @@
 /**
- * ShopLifecycleShell.visual-latch.test.tsx
+ * VisualLifecycleLatch.test.tsx
  *
  * Visual lifecycle invariants (TDD):
  *
@@ -15,8 +15,7 @@ import React from 'react';
 import { render, screen, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
-import { ShopLifecycleShell } from 'lifecycle/ShopLifecycleShell';
-import { ShopLifecycleContext } from 'lifecycle/ShopLifecycleContext';
+import { VisualLifecycleLatch } from 'lifecycle/VisualLifecycleLatch';
 
 // -----------------------------------------------------------------------------
 // Test setup
@@ -52,13 +51,11 @@ const mockUseIntegration = useIntegration as jest.Mock;
 // Harness
 // -----------------------------------------------------------------------------
 
-function renderShell() {
+function renderLatch() {
   return render(
-    <ShopLifecycleShell>
-      <ShopLifecycleContext.Consumer>
-        {({ phase }) => <div data-testid="phase">{phase}</div>}
-      </ShopLifecycleContext.Consumer>
-    </ShopLifecycleShell>
+    <VisualLifecycleLatch >
+      {(phase) => <div data-testid="phase">{phase}</div>}
+    </VisualLifecycleLatch>
   );
 }
 
@@ -96,7 +93,7 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
     });
     mockFt1Complete = true;
 
-    renderShell();
+    renderLatch();
 
     expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
   });
@@ -108,7 +105,7 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
     });
     mockFt1Complete = true;
 
-    renderShell();
+    renderLatch();
 
     // First paint must be FT0
     expect(screen.getByTestId('phase')).toHaveTextContent('FT0_PREPARING');
@@ -125,7 +122,7 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
       syncStatus: 'SYNCING',
     });
 
-    const { rerender } = renderShell();
+    const { rerender } = renderLatch();
     expect(screen.getByTestId('phase')).toHaveTextContent('FT0_SYNCING');
 
     act(() => {
@@ -135,14 +132,6 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
       });
       mockFt1Complete = true;
     });
-
-    rerender(
-      <ShopLifecycleShell>
-        <ShopLifecycleContext.Consumer>
-          {({ phase }) => <div data-testid="phase">{phase}</div>}
-        </ShopLifecycleContext.Consumer>
-      </ShopLifecycleShell>
-    );
 
     expect(screen.getByTestId('phase')).toHaveTextContent('FT0_PREPARING');
 
@@ -166,7 +155,7 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
     });
     mockFt1Complete = true;
 
-    const { rerender } = renderShell();
+    const { rerender } = renderLatch();
 
     act(() => {
       jest.advanceTimersByTime(2500);
@@ -184,14 +173,6 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
       });
     });
 
-    rerender(
-      <ShopLifecycleShell>
-        <ShopLifecycleContext.Consumer>
-          {({ phase }) => <div data-testid="phase">{phase}</div>}
-        </ShopLifecycleContext.Consumer>
-      </ShopLifecycleShell>
-    );
-
     // FT1 must remain latched during churn
     expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
   });
@@ -203,7 +184,7 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
     });
     mockFt1Complete = true;
 
-    const { rerender } = renderShell();
+    const { rerender } = renderLatch();
 
     act(() => {
       jest.advanceTimersByTime(2500);
@@ -220,14 +201,6 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
       });
     });
 
-    rerender(
-      <ShopLifecycleShell>
-        <ShopLifecycleContext.Consumer>
-          {({ phase }) => <div data-testid="phase">{phase}</div>}
-        </ShopLifecycleContext.Consumer>
-      </ShopLifecycleShell>
-    );
-
     expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
   });
 
@@ -240,7 +213,7 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
     });
     mockFt1Complete = true;
 
-    renderShell();
+    renderLatch();
 
     // FIRST render must already be FT1
     expect(screen.getByTestId('phase')).toHaveTextContent('FT1_READY');
@@ -256,7 +229,7 @@ describe('ShopLifecycleShell – visual lifecycle invariants (RED)', () => {
     isSyncComplete: false,
   });
 
-  renderShell();
+  renderLatch();
 
   expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
   expect(localStorage.getItem('shop:1:ft1-seen')).toBeNull();
@@ -274,23 +247,21 @@ test('FT1 seal is ignored if integration does not exist', () => {
 
   mockFt1Complete = true;
 
-  renderShell();
+  renderLatch();
 
   expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
 });
 
 test('cold boot without integration never shows FT0', () => {
-  setIntegrationState({
-    existence: 'NONE',
-    syncStatus: 'IDLE',
-    hasIntegration: false,
-    isSyncComplete: false,
-  });
+    setIntegrationState({
+        existence: 'NONE',
+        syncStatus: 'IDLE',
+        hasIntegration: false,
+        isSyncComplete: false,
+    });
 
-  renderShell();
+    renderLatch();
 
-  expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
-});
-
-
+    expect(screen.getByTestId('phase')).toHaveTextContent('FT_MINUS_ONE');
+    });
 });

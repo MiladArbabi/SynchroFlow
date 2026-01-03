@@ -1,13 +1,14 @@
 # 📜 Lifecycle Contract (As-Is Contract)
 
-> **Status:** Canonical, observed, scan-verified
+> **Status:** Canonical, observed, scan-verified  
+> **Amendment:** v1 — Frontend lifecycle resolution refactor in progress
 > **Scope:** Documents the *current, implemented* lifecycle from FT_MINUS_ONE through FT1, exactly as it exists today.
 >
 > **Non-Goals:**
 >
 > * No FT2 design
 > * No recommendations
-> * No refactors
+> * No backend refactors
 > * No future intent
 >
 > This document is a **sealed factual baseline**. All future FT2 work must build on this reality.
@@ -20,9 +21,7 @@
 
 Backend defines the canonical lifecycle phases:
 
-```
 FT_MINUS_ONE → FT0 → FT1 → FT2
-```
 
 **Authoritative elements:**
 
@@ -40,20 +39,50 @@ Frontend does **not** compute backend lifecycle.
 
 Frontend resolves a **runtime shop lifecycle** for routing and surfaces:
 
-```
 FT_MINUS_ONE
 FT0_SYNCING
 FT0_PREPARING
 FT1_READY
-```
 
 These are **visual / structural phases**, not capability phases.
 
-Defined in:
+⚠️ **Amendment v1:**
+
+The mechanism used to resolve these phases is undergoing refactor.
+
+Previously resolved via:
 
 * `ShopLifecycleShell`
 * `ShopLifecycleGate`
-* `ShopLifecycleContext`
+* ad-hoc React effects and refs
+
+These mechanisms are being replaced by a **deterministic reducer-driven lifecycle model**.
+
+The semantic meaning of frontend phases is unchanged.
+Only the **resolution mechanism** is being replaced.
+
+---
+
+### 1.3 Frontend Lifecycle Resolution (Amendment v1)
+
+Frontend lifecycle resolution is being migrated to a **deterministic visual state machine**.
+
+Key properties of the new model:
+
+* Reducer-driven (pure, testable)
+* Explicit event-based transitions
+* No lifecycle inference inside React effects
+* No ref-based edge detection
+* No render-cycle-dependent behavior
+
+The frontend lifecycle is being migrated toward resolution via:
+
+* Explicit lifecycle events (e.g. `SYNC_COMPLETED`, `FT0_DWELL_ELAPSED`)
+* A pure lifecycle reducer
+* Side-effects isolated outside lifecycle computation
+
+This change does **not** alter lifecycle semantics.
+It only eliminates non-determinism and race conditions.
 
 ---
 
@@ -204,6 +233,15 @@ FT0 is split **only in frontend runtime** into two substates.
 
 FT0 exists to prevent flicker and false readiness.
 
+⚠️ Amendment v1 (Target State):
+
+FT0 transitions are intended to be enforced via explicit state transitions:
+
+* `FT0_SYNCING → FT0_PREPARING` occurs **exactly once**
+* Once `COMPLETED` is observed, regression to `FT0_SYNCING` is forbidden
+* FT0 dwell time is enforced via explicit lifecycle events, not implicit timing
+* This enforcement is in progress and not yet fully canonical
+
 ---
 
 ## 5. Backend FT0 vs Frontend FT0 (Intentional Split)
@@ -227,6 +265,32 @@ Frontend FT0 substates:
 * Exist solely to manage perception, sync latency, and flicker
 
 They must never be reinterpreted as backend lifecycle phases.
+
+---
+
+### 5.1 Frontend Lifecycle Implementation Boundary (Amendment v1)
+
+Frontend lifecycle resolution is now explicitly split into:
+
+**Lifecycle Computation (Authoritative):**
+
+* Pure reducer
+* No React
+* No timers
+* No persistence
+* No side effects
+
+**Lifecycle Effects (Non-authoritative):**
+
+* Timers (FT0 dwell)
+* FT1 seal persistence
+* Dispatching lifecycle events
+
+React components are consumers only and must not:
+
+* Infer lifecycle state
+* Track prior states via refs
+* Encode lifecycle transitions in render logic
 
 ---
 
@@ -373,8 +437,13 @@ This confirms FT1 answers:
 Once FT1 is reached:
 
 * A **localStorage FT1 seal** is persisted per shop
-* On refresh, FT1 is restored immediately
+* On refresh, FT1 may be restored immediately
 * FT1 does **not regress** unless integration is confirmed removed
+
+⚠️ **Amendment v1:**
+
+The FT1 seal is now applied via explicit lifecycle initialization events.
+It must never override integration deletion and cannot resurrect FT1 after a hard reset.
 
 This guarantees:
 
@@ -466,6 +535,31 @@ This event:
 Frontend **never infers** backend lifecycle.
 It reacts only to backend-derived readiness signals.
 
+### 9.1 Frontend Lifecycle Refactor Status (Amendment v1)
+
+The frontend lifecycle is mid-migration.
+
+**Legacy (to be removed):**
+
+* `ShopLifecycleShell`
+* Effect-driven lifecycle inference
+* Ref-based edge tracking
+
+**New canonical direction:**
+
+* Reducer-driven lifecycle computation
+* Explicit lifecycle events
+* Side-effects isolated from lifecycle truth
+
+Until migration completes, frontend lifecycle behavior must be validated
+against reducer-level invariants, not component behavior.
+
+⚠️ Important:
+
+Until the reducer fully replaces effect-driven lifecycle resolution,
+this document describes the **intended steady-state behavior** where noted.
+Observed deviations during migration do not invalidate backend lifecycle truth.
+
 ---
 
 ## 10. What FT1 Definitively Means (As-Is)
@@ -504,6 +598,21 @@ Any FT2 design **must** respect:
 * FT2 must introduce a **new backend latch**, not inference
 
 Violating this breaks lifecycle monotonicity.
+
+---
+
+## Amendment v1 Declaration
+
+This amendment updates the frontend lifecycle **resolution mechanism only**.
+
+It does **not** change:
+
+* Backend lifecycle semantics
+* FT0 or FT1 meaning
+* Readiness rules
+* Gating logic
+
+This amendment is additive and preserves the As-Is contract.
 
 ---
 
