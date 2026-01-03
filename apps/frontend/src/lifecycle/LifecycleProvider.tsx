@@ -8,6 +8,7 @@ import {
 import { UILifecyclePhase } from './types';
 import { useIntegration } from 'contexts/integration';
 import { useAuth } from 'contexts/AuthContext';
+import { axiosInstance } from 'api/axiosConfig';
 import { useOnboardingReadiness } from './useOnboardingReadiness';
 import { useLifecycleEffects } from './lifecycleEffects';
 
@@ -97,6 +98,40 @@ export function LifecycleProvider({
       dispatch({ type: 'FT1_BACKEND_COMPLETE' });
     }
   }, [data?.ft1?.isComplete]);
+
+  /* ---------------- FT2 restore ---------------- */
+
+  useEffect(() => {
+    if (!integration.bootResolved) return;
+    if (!integration.hasIntegration) return;
+    if (!shopId) return;
+
+    let cancelled = false;
+
+    async function restoreFT2() {
+      try {
+        const { data } = await axiosInstance.get(
+          '/api/v1/lifecycle/ft2/evaluate'
+        );
+
+        if (!cancelled && data?.eligible === true) {
+          dispatch({ type: 'FT2_BACKEND_COMPLETE' });
+        }
+      } catch {
+        // silent by design — FT2 restore is opportunistic
+      }
+    }
+
+    restoreFT2();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    integration.bootResolved,
+    integration.hasIntegration,
+    shopId,
+  ]);
 
   /* ---------------- Side effects ---------------- */
 

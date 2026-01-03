@@ -128,6 +128,22 @@ export function lifecycleReducer(
     return latchedState;
   }
 
+  /* -------------------------------------------------- */
+    /* FT2 restore / promotion                            */
+    /* -------------------------------------------------- */
+
+    case 'FT2_BACKEND_COMPLETE': {
+      // Backend FT2 is authoritative and terminal
+      if (!state.bootResolved || !state.integrationExists) {
+        return state;
+      }
+
+      return {
+        ...state,
+        phase: 'FT2_READY',
+      };
+    }
+
     /* -------------------------------------------------- */
     default:
       nextState = state;

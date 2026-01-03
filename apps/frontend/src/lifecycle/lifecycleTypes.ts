@@ -30,4 +30,5 @@ export type LifecycleEvent =
   | { type: 'SYNC_STARTED' }
   | { type: 'SYNC_COMPLETED' }
   | { type: 'FT0_DWELL_ELAPSED' }
-  | { type: 'FT1_BACKEND_COMPLETE' };
+  | { type: 'FT1_BACKEND_COMPLETE' }
+  | { type: 'FT2_BACKEND_COMPLETE' };
