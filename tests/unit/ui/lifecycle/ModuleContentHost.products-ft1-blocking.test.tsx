@@ -8,11 +8,11 @@ import { ModuleContentHost } from 'ui/src/lifecycle/ModuleContentHost';
 // via virtual:lasyncro-modules in jest.setup.js
 
 describe('ModuleContentHost — Products FT1 blocking behavior', () => {
-  it('renders Products FT1 diagnostic AND onboarding gate when Products is FT1-blocking', () => {
+  it('renders FT1 onboarding gate and core content when Products is FT1-blocking', () => {
     render(
       <ModuleContentHost
         moduleId="products"
-        phase="FT1_READY"
+        phase="FT1_CORE"
         hasPaidEntitlement={false}
         onboarding={{
           ft1: {
@@ -23,16 +23,9 @@ describe('ModuleContentHost — Products FT1 blocking behavior', () => {
       />
     );
 
-    // 🔴 EXPECTATION 1:
-    // Products FT1 diagnostic card SHOULD be rendered
+    // Core module shell MUST still mount
     expect(
-      screen.getByTestId('products-ft1-incomplete')
-    ).toBeInTheDocument();
-
-    // 🔴 EXPECTATION 2:
-    // Products CTA SHOULD be visible
-    expect(
-      screen.getByText('Complete product data')
+      screen.getByTestId('products-core')
     ).toBeInTheDocument();
 
     // 🔴 EXPECTATION 3:

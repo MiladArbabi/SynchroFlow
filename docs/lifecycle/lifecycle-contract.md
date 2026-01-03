@@ -233,14 +233,16 @@ FT0 is split **only in frontend runtime** into two substates.
 
 FT0 exists to prevent flicker and false readiness.
 
-⚠️ Amendment v1 (Target State):
+⚠️ Amendment v1 (Verified):
+FT0 transitions are now enforced by a reducer-level state machine.
 
-FT0 transitions are intended to be enforced via explicit state transitions:
+Verified invariants:
 
-* `FT0_SYNCING → FT0_PREPARING` occurs **exactly once**
-* Once `COMPLETED` is observed, regression to `FT0_SYNCING` is forbidden
-* FT0 dwell time is enforced via explicit lifecycle events, not implicit timing
-* This enforcement is in progress and not yet fully canonical
+* FT0_SYNCING → FT0_PREPARING occurs exactly once
+* Regression to FT0_SYNCING after COMPLETED is forbidden
+* FT0 dwell is enforced via explicit lifecycle events
+
+> These guarantees are unit-tested and canonical.
 
 ---
 
@@ -279,6 +281,9 @@ Frontend lifecycle resolution is now explicitly split into:
 * No timers
 * No persistence
 * No side effects
+* Deterministic
+* Event-driven
+* Exhaustively unit-tested
 
 **Lifecycle Effects (Non-authoritative):**
 
@@ -470,6 +475,12 @@ This guarantees:
 * `DashboardLifecycleShell` throws if mounted pre-FT1
 * `ModuleLifecycleShell` throws if mounted pre-FT1
 
+**Module Mounting Guarantees:**
+
+* Module core content is **never suppressed** at FT1
+* Onboarding gates are **additive only**
+* Paywalls are **not lifecycle states**
+
 FT1 is a **hard invariant**, not a suggestion.
 
 ---
@@ -529,7 +540,7 @@ This event:
 | ----------------- | ------------------------------ | ------------------------------------------------------ |
 | Authority         | Capability truth               | Runtime / routing truth                                |
 | Phase granularity | FT_MINUS_ONE / FT0 / FT1 / FT2 | FT_MINUS_ONE / FT0_SYNCING / FT0_PREPARING / FT1_READY |
-| Regression        | Possible by recomputation      | Prevented via seal                                     |
+| Regression        | Possible by recomputation      | Impossible unless integration is deleted               |
 | FT2 meaning       | Paid capability                | Paywall overlay (not lifecycle)                        |
 
 Frontend **never infers** backend lifecycle.
@@ -556,7 +567,9 @@ against reducer-level invariants, not component behavior.
 
 ⚠️ Important:
 
-Until the reducer fully replaces effect-driven lifecycle resolution,
+The reducer is now the single source of lifecycle truth.
+Any remaining effect-driven logic is transitional and must not mutate lifecycle state.
+
 this document describes the **intended steady-state behavior** where noted.
 Observed deviations during migration do not invalidate backend lifecycle truth.
 

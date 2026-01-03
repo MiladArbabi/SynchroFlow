@@ -10,7 +10,7 @@ describe('ModuleContentHost — FT2 (paid)', () => {
     renderWithTheme(
       <ModuleContentHost
         moduleId="order-nexus"
-        phase="FT2_PAYWALL"
+        phase="FT2_READY"
         hasPaidEntitlement={true}
       />
     );

@@ -23,7 +23,7 @@ describe('Ft1OnboardingGate — analytics instrumentation', () => {
     renderWithTheme(
       <ModuleContentHost
         moduleId="order-nexus"
-        phase="FT1_READY"
+        phase="FT1_CORE"
         hasPaidEntitlement={false}
         onboarding={{
           ft1: {
@@ -55,7 +55,7 @@ describe('Ft1OnboardingGate — analytics instrumentation', () => {
     renderWithTheme(
       <ModuleContentHost
         moduleId="order-nexus"
-        phase="FT1_READY"
+        phase="FT1_CORE"
         hasPaidEntitlement={false}
         onboarding={{
           ft1: {

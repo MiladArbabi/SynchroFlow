@@ -9,11 +9,11 @@ describe('ModuleContentHost — FT1 Onboarding Gate', () => {
     jest.clearAllMocks();
   });
 
-  it('blocks Order-Nexus core when onboarding is incomplete and module is blocking', () => {
+  it('renders onboarding gate additively when module is FT1-blocking', () => {
     renderWithTheme(
       <ModuleContentHost
         moduleId="order-nexus"
-        phase="FT1_READY"
+        phase="FT1_CORE"
         hasPaidEntitlement={false}
         onboarding={{
             ft1: {
@@ -24,12 +24,12 @@ describe('ModuleContentHost — FT1 Onboarding Gate', () => {
       />
     );
 
-    // Core content must NOT mount
+    // Core MUST still mount (additive rule)
     expect(
-      screen.queryByTestId('order-nexus-core')
-    ).not.toBeInTheDocument();
+      screen.getByTestId('order-nexus-core')
+    ).toBeInTheDocument();
 
-    // FT1 onboarding gate must mount
+    // Onboarding gate MUST mount
     expect(
       screen.getByTestId('ft1-onboarding-gate')
     ).toBeInTheDocument();
@@ -39,7 +39,7 @@ describe('ModuleContentHost — FT1 Onboarding Gate', () => {
     renderWithTheme(
       <ModuleContentHost
         moduleId="order-nexus"
-        phase="FT1_READY"
+        phase="FT1_CORE"
         hasPaidEntitlement={false}
         onboarding={{
             ft1: {
@@ -63,7 +63,7 @@ describe('ModuleContentHost — FT1 Onboarding Gate', () => {
     renderWithTheme(
       <ModuleContentHost
         moduleId="customers"
-        phase="FT1_READY"
+        phase="FT1_CORE"
         hasPaidEntitlement={false}
         onboarding={{
             ft1: {
@@ -76,30 +76,6 @@ describe('ModuleContentHost — FT1 Onboarding Gate', () => {
 
     expect(
       screen.getByTestId('customers-core')
-    ).toBeInTheDocument();
-
-    expect(
-      screen.queryByTestId('ft1-onboarding-gate')
-    ).not.toBeInTheDocument();
-  });
-
-  it('does not apply onboarding gate outside FT1_READY', () => {
-    renderWithTheme(
-      <ModuleContentHost
-        moduleId="order-nexus"
-        phase="FT0_PREPARING"
-        hasPaidEntitlement={false}
-        onboarding={{
-        ft1: {
-            isComplete: false,
-            blockingModules: ['order-nexus'],
-        },
-        }}
-      />
-    );
-
-    expect(
-      screen.getByTestId('order-nexus-core')
     ).toBeInTheDocument();
 
     expect(

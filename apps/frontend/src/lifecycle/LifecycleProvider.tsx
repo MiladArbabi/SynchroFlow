@@ -1,8 +1,15 @@
 // apps/frontend/src/lifecycle/LifecycleProvider.tsx
-import React from 'react';
+import React, { useEffect, useReducer } from 'react';
 import { ShopLifecycleContext } from './ShopLifecycleContext';
+import { lifecycleReducer } from './lifecycleReducer';
+import {
+  initialLifecycleState,
+} from './lifecycleTypes';
 import { UILifecyclePhase } from './types';
-import { getLifecycle } from 'api/lifecycle';
+import { useIntegration } from 'contexts/integration';
+import { useAuth } from 'contexts/AuthContext';
+import { useOnboardingReadiness } from './useOnboardingReadiness';
+import { useLifecycleEffects } from './lifecycleEffects';
 
 type LifecycleProviderProps = {
   children: React.ReactNode;
@@ -32,71 +39,70 @@ type LifecycleProviderProps = {
  */
 export function LifecycleProvider({
   children,
-  initialPhase,
 }: LifecycleProviderProps) {
-  const [phase, setPhase] = React.useState<UILifecyclePhase | null>(
-    initialPhase ?? null
+  const [state, dispatch] = useReducer(
+    lifecycleReducer,
+    initialLifecycleState
   );
 
-  React.useEffect(() => {
-    if (initialPhase) {
-      console.info('[LifecycleProvider] using injected phase', {
-        phase: initialPhase,
-      });
-      return;
+  const integration = useIntegration();
+  const { user } = useAuth();
+
+  const shopId = user?.shop_id ?? null;
+
+  const { data } = useOnboardingReadiness(
+    integration.bootResolved && integration.hasIntegration,
+    shopId ?? undefined
+  );
+
+  /* ---------------- Integration → lifecycle events ---------------- */
+
+  useEffect(() => {
+    if (integration.bootResolved) {
+      dispatch({ type: 'BOOT_RESOLVED' });
+    }
+  }, [integration.bootResolved]);
+
+  useEffect(() => {
+    if (integration.existence === 'EXISTS') {
+      dispatch({ type: 'INTEGRATION_CREATED' });
+    } else {
+      dispatch({ type: 'INTEGRATION_DELETED' });
+    }
+  }, [integration.existence]);
+
+  useEffect(() => {
+    if (
+      integration.syncStatus === 'PENDING' ||
+      integration.syncStatus === 'SYNCING'
+    ) {
+      dispatch({ type: 'SYNC_STARTED' });
     }
 
-    let alive = true;
+    if (integration.syncStatus === 'COMPLETED') {
+      dispatch({ type: 'SYNC_COMPLETED' });
+    }
+  }, [integration.syncStatus]);
 
-    console.info('[LifecycleProvider] fetching lifecycle');
+  useEffect(() => {
+    if (data?.ft1?.isComplete) {
+      dispatch({ type: 'FT1_BACKEND_COMPLETE' });
+    }
+  }, [data?.ft1?.isComplete]);
 
-    getLifecycle()
-      .then((res) => {
-        if (!alive) return;
+  /* ---------------- Side effects ---------------- */
 
-        const mapped = mapBackendPhase(res.phase);
+  useLifecycleEffects({
+    state,
+    dispatch,
+    shopId,
+  });
 
-        console.info('[LifecycleProvider] lifecycle resolved', {
-          backendPhase: res.phase,
-          uiPhase: mapped,
-          ts: performance.now(),
-        });
-
-        setPhase(mapped);
-      })
-      .catch((err) => {
-        console.error('[LifecycleProvider] failed to fetch lifecycle', err);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [initialPhase]);
-
-  if (!phase) {
-    return null; // intentional: lifecycle unknown → no UI
-  }
+  if (!state.phase) return null;
 
   return (
-    <ShopLifecycleContext.Provider value={{ phase }}>
+    <ShopLifecycleContext.Provider value={{ phase: state.phase }}>
       {children}
     </ShopLifecycleContext.Provider>
   );
-}
-
-function mapBackendPhase(phase: string): UILifecyclePhase {
-  switch (phase) {
-    case 'FT_MINUS_ONE':
-      return 'FT_MINUS_ONE';
-    case 'FT0':
-      return 'FT0_PREPARING';
-    case 'FT1':
-      return 'FT1_READY';
-    case 'FT2':
-      return 'FT2_READY';
-    default:
-      throw new Error(
-        `[LifecycleProvider] Unknown backend phase: ${phase}`
-      );
-  }
 }
