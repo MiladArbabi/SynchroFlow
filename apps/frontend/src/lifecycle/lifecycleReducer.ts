@@ -81,34 +81,52 @@ export function lifecycleReducer(
     /* -------------------------------------------------- */
 
     case 'FT0_DWELL_ELAPSED': {
-      if (state.ft0DwellCompleted) return state;
+    if (state.ft0DwellCompleted) return state;
 
+    // If backend FT1 already arrived, promote immediately
+    if (
+      state.bootResolved &&
+      state.integrationExists &&
+      state.hasLatchedFT1
+    ) {
       return {
         ...state,
         ft0DwellCompleted: true,
+        phase: 'FT1_READY',
       };
     }
+
+    return {
+      ...state,
+      ft0DwellCompleted: true,
+    };
+  }
 
     /* -------------------------------------------------- */
     /* FT1 promotion                                      */
     /* -------------------------------------------------- */
 
-    case 'FT1_BACKEND_COMPLETE': {
-      if (
-        !state.bootResolved ||
-        !state.integrationExists ||
-        !state.ft0DwellCompleted
-      ) {
-        return state;
-      }
+   case 'FT1_BACKEND_COMPLETE': {
+    // Always latch backend truth
+    const latchedState = {
+      ...state,
+      hasLatchedFT1: true,
+    };
 
-      nextState = {
-        ...state,
+    // Only promote when dwell is done
+    if (
+      latchedState.bootResolved &&
+      latchedState.integrationExists &&
+      latchedState.ft0DwellCompleted
+    ) {
+      return {
+        ...latchedState,
         phase: 'FT1_READY',
-        hasLatchedFT1: true,
       };
-      break;
     }
+
+    return latchedState;
+  }
 
     /* -------------------------------------------------- */
     default:

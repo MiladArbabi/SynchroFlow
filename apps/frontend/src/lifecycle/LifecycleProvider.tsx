@@ -50,10 +50,18 @@ export function LifecycleProvider({
 
   const shopId = user?.shop_id ?? null;
 
+  console.debug('[LIFECYCLE_READINESS_INPUT]', {
+    bootResolved: integration.bootResolved,
+    hasIntegration: integration.hasIntegration,
+    shopId,
+  });
+
   const { data } = useOnboardingReadiness(
     integration.bootResolved && integration.hasIntegration,
     shopId ?? undefined
   );
+
+  console.debug('[LIFECYCLE_READINESS_OUTPUT]', data);
 
   /* ---------------- Integration → lifecycle events ---------------- */
 
