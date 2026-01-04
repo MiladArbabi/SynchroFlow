@@ -46,7 +46,7 @@ FT1_READY
 
 These are **visual / structural phases**, not capability phases.
 
-⚠️ **Amendment v1:**
+⚠️ **Amendment v1–v2:**
 
 The mechanism used to resolve these phases is undergoing refactor.
 
@@ -84,17 +84,40 @@ The frontend lifecycle is being migrated toward resolution via:
 This change does **not** alter lifecycle semantics.
 It only eliminates non-determinism and race conditions.
 
+### 1.4 Frontend Boot Authority (Amendment v2)
+
+Frontend lifecycle boot resolution is owned **exclusively** by the Integration system.
+
+**Authoritative boot signal:**
+
+* `useIntegration().bootResolved`
+
+No other mechanism may gate, delay, or speculate lifecycle state, including:
+
+* Routing
+* Auth hydration
+* Ad-hoc bootstrap gates
+* Placeholder lifecycle defaults
+
+**Invariant (Hard):**
+
+Once `bootResolved === true`, the frontend must never render `FT_MINUS_ONE`, even transiently.
+
+This invariant is enforced by reducer-level logic and locked by unit tests.
+
 ---
 
 ## 2. FT_MINUS_ONE (Pre-System State)
 
 ### 2.1 Entry Conditions (Verified)
 
-Frontend resolves **FT_MINUS_ONE** when **any** of the following are true:
+Frontend resolves **FT_MINUS_ONE** when **and only when**:
 
-* Auth boot not resolved
-* No user shop
-* Integration does not exist
+* Integration truth is unresolved **OR**
+* Integration is confirmed not to exist
+
+⚠️ Auth hydration alone must never reintroduce FT_MINUS_ONE
+once integration truth is known.
 
 Backend also resolves **FT_MINUS_ONE** when:
 
@@ -296,6 +319,16 @@ React components are consumers only and must not:
 * Infer lifecycle state
 * Track prior states via refs
 * Encode lifecycle transitions in render logic
+
+**Invariant: No Lifecycle Flash**
+
+After integration truth is resolved:
+
+* `FT_MINUS_ONE` must never render
+* Prior lifecycle states must not reappear
+* Lifecycle history must not leak across refresh
+
+This invariant is reducer-enforced and unit-tested.
 
 ---
 
@@ -550,11 +583,12 @@ It reacts only to backend-derived readiness signals.
 
 The frontend lifecycle is mid-migration.
 
-**Legacy (to be removed):**
+**Legacy (Removed / Forbidden):**
 
-* `ShopLifecycleShell`
+* AppBootstrapGate
 * Effect-driven lifecycle inference
 * Ref-based edge tracking
+* Render-cycle-dependent lifecycle guards
 
 **New canonical direction:**
 
