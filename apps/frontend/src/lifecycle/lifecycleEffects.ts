@@ -63,6 +63,30 @@ export function useLifecycleEffects({
   }, [state.phase, state.hasLatchedFT1, state.integrationExists, shopId]);
 
   /* -------------------------------------------------- */
+  /* FT2 seal persistence                               */
+  /* -------------------------------------------------- */
+
+  useEffect(() => {
+    if (!shopId) return;
+
+    const key = `shop:${String(shopId)}:ft2-seen`;
+
+    if (state.phase === 'FT2_READY' && state.hasLatchedFT2) {
+      localStorage.setItem(key, 'true');
+      return;
+    }
+
+    if (!state.integrationExists) {
+      localStorage.removeItem(key);
+    }
+  }, [
+    state.phase,
+    state.hasLatchedFT2,
+    state.integrationExists,
+    shopId,
+  ]);
+
+  /* -------------------------------------------------- */
   /* FT1 seal restore (init)                            */
   /* -------------------------------------------------- */
 

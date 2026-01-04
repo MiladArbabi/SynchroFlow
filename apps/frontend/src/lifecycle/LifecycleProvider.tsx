@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 // apps/frontend/src/lifecycle/LifecycleProvider.tsx
 import React, { useEffect, useReducer } from 'react';
 import { ShopLifecycleContext } from './ShopLifecycleContext';
@@ -48,10 +49,26 @@ export function LifecycleProvider({
 
   const integration = useIntegration();
   const { user } = useAuth();
+  const [ft2RestoreResolved, setFt2RestoreResolved] = React.useState(false);
 
   const shopId = user?.shop_id ?? null;
 
-  console.debug('[LIFECYCLE_READINESS_INPUT]', {
+  const hasFT2Seal =
+    shopId != null &&
+    localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true';
+
+  console.log('[FT2_SEAL_CHECK]', {
+    shopId,
+    hasFT2Seal,
+    raw: shopId
+      ? localStorage.getItem(`shop:${shopId}:ft2-seen`)
+      : null,
+  });
+
+  const isFT2Terminal =
+    state.phase === 'FT2_READY';
+
+  console.log('[LIFECYCLE_READINESS_INPUT]', {
     bootResolved: integration.bootResolved,
     hasIntegration: integration.hasIntegration,
     shopId,
@@ -62,17 +79,19 @@ export function LifecycleProvider({
     shopId ?? undefined
   );
 
-  console.debug('[LIFECYCLE_READINESS_OUTPUT]', data);
+  console.log('[LIFECYCLE_READINESS_OUTPUT]', data);
 
   /* ---------------- Integration → lifecycle events ---------------- */
 
   useEffect(() => {
+    if (isFT2Terminal) return;
     if (integration.bootResolved) {
       dispatch({ type: 'BOOT_RESOLVED' });
     }
   }, [integration.bootResolved]);
 
   useEffect(() => {
+    if (isFT2Terminal) return;
     if (integration.existence === 'EXISTS') {
       dispatch({ type: 'INTEGRATION_CREATED' });
     } else {
@@ -81,6 +100,7 @@ export function LifecycleProvider({
   }, [integration.existence]);
 
   useEffect(() => {
+    if (!ft2RestoreResolved || isFT2Terminal) return;
     if (
       integration.syncStatus === 'PENDING' ||
       integration.syncStatus === 'SYNCING'
@@ -94,6 +114,7 @@ export function LifecycleProvider({
   }, [integration.syncStatus]);
 
   useEffect(() => {
+    if (isFT2Terminal) return;
     if (data?.ft1?.isComplete) {
       dispatch({ type: 'FT1_BACKEND_COMPLETE' });
     }
@@ -102,14 +123,37 @@ export function LifecycleProvider({
   /* ---------------- FT2 restore ---------------- */
 
   useEffect(() => {
-    if (!integration.bootResolved) return;
-    if (!integration.hasIntegration) return;
+    console.log('[FT2_RESTORE_EFFECT_ENTER]', {
+      shopId,
+      hasFT2Seal,
+      bootResolved: integration.bootResolved,
+      hasIntegration: integration.hasIntegration,
+    });
+
+    if (hasFT2Seal) {
+      console.log('[FT2_RESTORE_FROM_LOCALSTORAGE]');
+
+      // Allow boot + integration to resolve first
+      dispatch({ type: 'BOOT_RESOLVED' });
+      dispatch({ type: 'INTEGRATION_CREATED' });
+
+      // Then force FT2
+      dispatch({ type: 'FT2_BACKEND_COMPLETE' });
+
+      setFt2RestoreResolved(true);
+      return;
+    }
+
+    if (!state.bootResolved) return;
+    if (!state.integrationExists) return;
     if (!shopId) return;
 
     let cancelled = false;
 
     async function restoreFT2() {
       try {
+        console.log('[FT2_RESTORE_FROM_API]');
+
         const { data } = await axiosInstance.get(
           '/api/v1/lifecycle/ft2/evaluate'
         );
@@ -117,8 +161,10 @@ export function LifecycleProvider({
         if (!cancelled && data?.eligible === true) {
           dispatch({ type: 'FT2_BACKEND_COMPLETE' });
         }
-      } catch {
-        // silent by design — FT2 restore is opportunistic
+      } finally {
+        if (!cancelled) {
+          setFt2RestoreResolved(true);
+        }
       }
     }
 
@@ -131,6 +177,7 @@ export function LifecycleProvider({
     integration.bootResolved,
     integration.hasIntegration,
     shopId,
+    hasFT2Seal,
   ]);
 
   /* ---------------- Side effects ---------------- */

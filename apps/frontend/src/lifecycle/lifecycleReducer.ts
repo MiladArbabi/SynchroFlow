@@ -11,6 +11,12 @@ export function lifecycleReducer(
 ): LifecycleState {
   let nextState: LifecycleState;
 
+  // FT2 is terminal — no further transitions allowed
+  if (state.hasLatchedFT2) {
+    return state;
+  }
+
+
   switch (event.type) {
     /* -------------------------------------------------- */
     /* Boot resolution                                    */
@@ -31,12 +37,24 @@ export function lifecycleReducer(
     /* Integration lifecycle                              */
     /* -------------------------------------------------- */
 
-    case 'INTEGRATION_CREATED':
-      nextState = {
+    case 'INTEGRATION_CREATED': {
+    // If boot is already resolved and we are still at FT-1,
+    // promote directly to FT0_PREPARING (real-world synced case)
+      if (state.bootResolved && state.phase === 'FT_MINUS_ONE') {
+        return {
+          ...state,
+          integrationExists: true,
+          phase: 'FT0_PREPARING',
+          hasSeenFT0: true,
+          ft0DwellCompleted: true,
+        };
+      }
+
+      return {
         ...state,
         integrationExists: true,
       };
-      break;
+    }
 
     case 'INTEGRATION_DELETED':
       nextState = {
@@ -141,6 +159,7 @@ export function lifecycleReducer(
       return {
         ...state,
         phase: 'FT2_READY',
+        hasLatchedFT2: true,
       };
     }
 

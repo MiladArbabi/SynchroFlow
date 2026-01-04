@@ -9,6 +9,7 @@ export type LifecycleState = {
 
   hasSeenFT0: boolean;
   hasLatchedFT1: boolean;
+  hasLatchedFT2: boolean;
   ft0DwellCompleted: boolean;
 };
 
@@ -19,6 +20,7 @@ export const initialLifecycleState: LifecycleState = {
 
   hasSeenFT0: false,
   hasLatchedFT1: false,
+  hasLatchedFT2: false,
   ft0DwellCompleted: false,
 };
 

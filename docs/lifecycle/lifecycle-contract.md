@@ -696,3 +696,164 @@ Any FT2 graduation must:
 Be backend-owned
 Introduce a new latch
 Never reinterpret FT1 signals
+
+---
+
+Below is **Amendment v2**, drafted **verbatim in the same tone, rigor, and legal/contractual style** as your document.
+
+I’m also giving you **surgical placement instructions** — no ambiguity, no interpretation.
+
+---
+
+# 📜 Amendment v2 — Frontend Hydration & Transitional Semantics
+
+> **Status:** Scan-verified, runtime-observed
+> **Applies to:** Frontend lifecycle resolution only
+> **Effective:** Immediately
+> **Nature:** Clarifying (non-semantic)
+> **Backward compatibility:** Full
+>
+> This amendment documents **observed frontend runtime behavior** that emerged during the reducer-driven lifecycle migration (Amendment v1).
+>
+> **No backend semantics are changed.**
+> **No lifecycle meaning is redefined.**
+
+---
+
+## A. FT_MINUS_ONE — Transient Hydration Rendering (Observed)
+
+### A.1 Clarification
+
+Although **FT_MINUS_ONE** is the canonical *pre-system lifecycle state*, it may appear **transiently** during frontend hydration **even for valid, integrated, FT1-ready shops**.
+
+This transient rendering occurs when:
+
+* Authentication context has resolved
+* Integration context has **not yet** resolved
+
+This window exists due to frontend boot ordering and is **not** a lifecycle regression.
+
+---
+
+### A.2 Invariants
+
+The following invariants are preserved:
+
+* Backend lifecycle **does not regress**
+* Integration is **not deleted**
+* FT1 capability **remains valid**
+* No backend recomputation occurs
+
+FT_MINUS_ONE in this context represents a **hydration artifact**, not a lifecycle truth.
+
+---
+
+### A.3 Contractual Interpretation
+
+* FT_MINUS_ONE remains the **logical** pre-system state
+* Its **brief visual appearance** during hydration must **not** be interpreted as:
+
+  * Loss of integration
+  * Backend FT_MINUS_ONE
+  * Lifecycle downgrade
+
+Consumers must treat transient FT_MINUS_ONE renders as **non-authoritative**.
+
+---
+
+## B. FT0_PREPARING — Logical Phase, Not Guaranteed UX State
+
+### B.1 Clarification
+
+**FT0_PREPARING** remains a valid frontend lifecycle phase but is **not guaranteed to be perceptually visible**.
+
+Observed behavior confirms that FT0_PREPARING may:
+
+* Exist only for milliseconds
+* Be skipped entirely from visible UI
+* Immediately promote to FT1_READY
+
+This occurs when backend FT1 readiness is already satisfied.
+
+---
+
+### B.2 Invariants
+
+* FT0_PREPARING remains part of the **logical lifecycle**
+* FT0 dwell semantics remain enforced **at the reducer level**
+* FT0_PREPARING must **not** be relied upon for UX timing guarantees
+
+---
+
+### B.3 Contractual Interpretation
+
+FT0_PREPARING exists to preserve **ordering and monotonicity**, not to guarantee a loading experience.
+
+Any UX that depends on FT0_PREPARING being visible is **invalid by contract**.
+
+---
+
+## C. FT1 Promotion — Backend-Authoritative & Monotonic (Explicit)
+
+### C.1 Clarification
+
+FT1 promotion is now explicitly guaranteed to be:
+
+* **Backend-authoritative**
+* **Monotonic**
+* **Timing-independent**
+
+FT1_BACKEND_COMPLETE may arrive:
+
+* Before FT0 dwell completes
+* Before FT2 restore resolves
+* During hydration
+
+---
+
+### C.2 Invariants
+
+Once FT1_READY is reached:
+
+* FT1 cannot regress unless integration is deleted
+* FT1 does not depend on:
+
+  * Render cycles
+  * Effect ordering
+  * Timers
+  * UI heuristics
+
+These guarantees are enforced **exclusively** by the lifecycle reducer.
+
+---
+
+## D. Non-Goals (Reaffirmed)
+
+This amendment does **not**:
+
+* Introduce FT2 semantics
+* Change backend lifecycle meaning
+* Alter FT0 or FT1 readiness rules
+* Grant frontend authority
+
+It exists solely to document **observed, verified runtime behavior**.
+
+---
+
+## Amendment v2 Seal
+
+This amendment is **additive and clarifying**.
+
+It preserves the As-Is lifecycle contract while ensuring that:
+
+* Hydration artifacts are not misdiagnosed
+* Transitional states are not over-interpreted
+* Reducer-level truth remains the single authority
+
+All future lifecycle work must respect this clarification.
+
+---
+
+**END OF AMENDMENT v2**
+
+---

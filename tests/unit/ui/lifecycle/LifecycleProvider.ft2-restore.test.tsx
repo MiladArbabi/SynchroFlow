@@ -42,8 +42,10 @@ jest.mock('api/axiosConfig', () => ({
   },
 }));
 
+// FT2 restore now requires a persisted FT2 seal.
+// Backend eligibility alone must NOT force FT2 on load.
 describe('LifecycleProvider — FT2 restore', () => {
-  it('restores directly to FT2_READY on app load when backend FT2 is complete', async () => {
+  it('does NOT restore to FT2_READY on app load without FT2 seal, even if backend FT2 is eligible', async () => {
     let phase: any = null;
 
     render(
@@ -58,7 +60,7 @@ describe('LifecycleProvider — FT2 restore', () => {
     );
 
     await waitFor(() => {
-      expect(phase).toBe('FT2_READY');
+      expect(['FT_MINUS_ONE', 'FT0_PREPARING', 'FT1_READY']).toContain(phase);
     });
   });
 });
