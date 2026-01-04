@@ -1,14 +1,21 @@
-# **Entitlements Overview – v2 (Final Architecture)**
+# **Entitlements Overview – As-Is Contract (Scan-Verified)**
 
-This document provides a *complete architectural overview* of the SynchroFlow Entitlements System as implemented across:
+This document describes the **current, implemented entitlements system exactly as it exists today**.
 
-* Backend (EntitlementsService, OAuth, DB)
-* Frontend (EntitlementsProvider, routes, widgets, nav)
-* Cross-module FT0 behavior
-* Upgrade path
-* Design principles for future modules/flags
+Scope (As-Is only):
 
-It reflects the final implementation delivered in issues #878, #883, and FT0 stabilization work.
+* Backend entitlement persistence and APIs
+* Frontend entitlement consumption and gating
+* Default FT0 entitlement grants
+
+Non-scope (explicitly excluded):
+
+* Lifecycle authority
+* Billing, plans, or payment proof
+* FT2 or future capability design
+* Upgrade / downgrade systems
+
+This document is a **factual baseline**, not a forward-looking architecture.
 
 ---
 
@@ -16,23 +23,21 @@ It reflects the final implementation delivered in issues #878, #883, and FT0 sta
 
 Entitlements define **what a shop is allowed to access** across the entire application.
 
-They unify access control across:
+They provide a **single access-projection mechanism** across:
 
 * Routes
 * Navigation
 * Widgets
-* Intelligence levels
 * Module-based capabilities
 * Feature flags
 
 Everything uses **one shared entitlement model**:
 
-```ts
+ts
 interface EntitlementSnapshot {
   modules: string[];
   flags: string[];
 }
-```
 
 ---
 
@@ -42,23 +47,26 @@ interface EntitlementSnapshot {
 
 Features declare requirements:
 
-```ts
+ts
 requiredModuleId?: string;
 requiredFlagId?: string;
 requiresPaidPlan?: boolean;
-```
 
-The entitlement engine enforces them.
-Features don’t embed entitlement logic internally.
+Frontend helpers enforce these declarations at runtime.
+The backend does not evaluate feature-level logic.
 
 ---
 
-### 2.2 ✨ Pure Frontend Enforcement
+### 2.2 Authority Split (As-Is)
 
-Backend only determines **what entitlements the shop has**.
-Frontend determines **how the experience changes**.
+* Backend is authoritative for **which entitlements exist**
+* Frontend is authoritative for **how access is expressed in the UI**
 
-No backend branching on plan/tier.
+Backend does **not**:
+
+* Gate routes
+* Render UI
+* Interpret plans or tiers
 
 ---
 
@@ -73,7 +81,7 @@ If a user cannot access something:
 
 ---
 
-### 2.4 ✨ Automatic UX on Upgrade/Downgrade
+### 2.4 ✨ Automatic UX on Entitlement Changes
 
 When backend entitlements change:
 
@@ -89,12 +97,14 @@ No code changes required.
 
 ### 3.1 DB Schema
 
-Two store-level tables:
+Single entitlement table (as implemented):
 
-```
-shop_module_entitlements (shop_id, module_id)
-entitlement_flags        (shop_id, flag_id)
-```
+* shop_module_entitlements
+* shop_id
+* module_key
+* flag_key
+
+There is **no separate entitlement_flags table** in the current system.
 
 ### 3.2 EntitlementsService
 
@@ -106,10 +116,9 @@ Responsible for:
 
 Key methods:
 
-```ts
+ts
 getForUser(userId)
 grantDefaultFreeTierForShop(shopId)
-```
 
 ### 3.3 OAuth Integration
 
@@ -133,9 +142,7 @@ This creates immediate eligibility for:
 
 Fetches:
 
-```
 GET /api/v1/entitlements/me
-```
 
 Stores:
 
@@ -145,11 +152,10 @@ Stores:
 
 Exposes:
 
-```ts
+ts
 hasModule(moduleId)
 hasFlag(flagId)
 refresh()
-```
 
 Runs automatically after:
 
@@ -163,10 +169,9 @@ Runs automatically after:
 
 Each route in `routes.tsx` may declare:
 
-```ts
+ts
 requiredModuleId
 requiredFlagId
-```
 
 `ProtectedRoute` enforces:
 
@@ -181,9 +186,8 @@ Test coverage ensures expected behavior.
 
 The sidenav receives a filtered list of routes:
 
-```ts
+ts
 filterRoutesByEntitlements(routes, snapshot)
-```
 
 Only allowed routes appear as menu items.
 
@@ -197,35 +201,37 @@ This prevents:
 
 ### 4.4 Widget Gating (useWidgetRegistry)
 
-Widgets have three gating layers:
+Widgets are filtered by:
 
-1. Mode (survival/growth/architect)
-2. Plan (`requiresPaidPlan`)
-3. Entitlement requirements:
+1. Mode (UI-only)
+2. Entitlements (`requiredModuleId`, `requiredFlagId`)
+3. A **frontend-only heuristic** (`requiresPaidPlan`)
 
-```ts
+⚠️ `requiresPaidPlan` is **not backed by backend billing or entitlements**.
+It is a frontend UX heuristic only and must not be interpreted as payment proof.
+
+ts
 requiredModuleId
 requiredFlagId
-```
 
 This is fully automatic.
 
 ---
 
-# 5. FT0 Entitlements (Default Free-Tier)
+# 5. Default Free-Tier Entitlements (FT0 Grant Only)
 
-FT0 shops receive:
+On initial installation, the backend grants a **default free-tier entitlement bundle**.
+This grant is **not a lifecycle latch** and does not determine readiness.
 
-```
 modules = [
-  "core-dashboard",
-  "core-orders",
-  "core-products",
-  "core-customers"
+
+* core_dashboard
+* shopify_integration
+* specter_sdk_free
+* order-nexus
 ]
 
 flags = []
-```
 
 They have access to:
 
@@ -248,10 +254,9 @@ See `ft0-entitlements.md` for full spec.
 
 Upgrades simply insert new module rows:
 
-```sql
+sql
 INSERT INTO shop_module_entitlements (shop_id, module_id)
 VALUES (123, "analytics");
-```
 
 Frontend automatically unlocks:
 
@@ -267,13 +272,13 @@ No code modifications required.
 
 The entitlement system is now tested across layers:
 
-### Backend:
+### Backend
 
 * EntitlementsService tests
 * Controller tests
 * OAuth callback FT0 grants
 
-### Frontend:
+### Frontend
 
 * EntitlementsContext tests
 * Widget gating tests
@@ -284,27 +289,7 @@ Everything is deterministic and well-isolated.
 
 ---
 
-# 8. Future Extensions (v3+)
-
-### a) Usage-based gating
-
-Limit access based on historical consumption.
-
-### b) Plan-tier hierarchies
-
-Auto-generate entitlement bundles per plan.
-
-### c) Feature-flag rollouts
-
-Gradual rollout for new widgets or intelligence engines.
-
-### d) Dynamic entitlements from InsightCore
-
-Enable feature unlocks driven by analytics thresholds (gamified progressive unlock).
-
----
-
-# 9. Summary
+# 8. Summary
 
 The entitlement system is now:
 
@@ -315,11 +300,25 @@ The entitlement system is now:
 * **Fully test-covered**
 * **Easy to extend**
 
-It is the long-term access-control foundation for:
+It is the **current access-projection mechanism** for the application UI.
 
-* FT0 onboarding
-* Premium upgrades
-* Advanced analytics bundles
-* Future product modules
+It does **not**:
+
+* Define lifecycle truth
+* Prove payment
+* Represent plans or tiers
+* Predict future capability systems
 
 ---
+
+## 🔒 As-Is Contract Seal
+
+This document reflects **only scan-verified, implemented behavior**.
+
+Any change requires:
+
+1. Code scans
+2. Explicit diffs
+3. Contract amendment
+
+Forward-looking intent is intentionally excluded.

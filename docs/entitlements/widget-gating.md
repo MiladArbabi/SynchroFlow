@@ -1,55 +1,61 @@
-# 🧩 Widget Gating – v2 (Entitlements, Plan Gating & Registry Rules)
+# 🧩 Widget Gating – As-Is (Frontend Access Filtering)
 
-This document explains how **widgets** are gated, displayed, hidden, sorted, and activated in the SynchroFlow frontend using the shared entitlement model:
+This document describes **how widgets are filtered, sorted, and rendered in the frontend**, based on **entitlements and frontend-only heuristics**, exactly as implemented today.
 
-```
-EntitlementSnapshot = { modules: string[], flags: string[] }
-```
-
-Widget gating integrates with:
-
-* Free-tier enforcement (FT0)
-* Route/nav entitlement gating (#883)
-* Plan-aware registry filtering (free / premium / enterprise)
-* Mode-aware prioritization (survival / growth / architect)
+This is an **As-Is description**, not a policy or future design.
 
 ---
 
-# 1. Widget Registry Structure
+## Scope (As-Is Only)
+
+This document covers:
+- How widgets are filtered using entitlements
+- How frontend heuristics influence widget visibility
+- How widget ordering is determined
+- How widget gating stays consistent with routes and navigation
+
+This document explicitly does **not** define:
+- Lifecycle phases (FT0 / FT1 / FT2)
+- Billing, plans, or payment proof
+- Usage limits or quotas
+- Commercial upgrade logic
+- Backend capability truth
+
+---
+
+## 1. Widget Registry Structure
 
 All widgets are defined centrally in:
 
 ```
-apps/frontend/src/components/widgets/widget-registry.tsx
-```
 
-Each widget definition includes:
+apps/frontend/src/components/widgets/widget-registry.tsx
+
+````
+
+Each widget is declared with metadata used **only by frontend filtering logic**.
 
 ```ts
 export interface WidgetDefinition extends WidgetContentProps {
   component: React.ComponentType<WidgetContentProps>;
   priority: 'critical' | 'high' | 'medium' | 'low';
-  requiresPaidPlan: boolean;
-  dataProcessing: 'light' | 'medium' | 'heavy';
 
-  // NEW (Slice #883)
+  // Frontend-only heuristic
+  requiresPaidPlan: boolean;
+
+  // Entitlement-based filters
   requiredModuleId?: string;
   requiredFlagId?: string;
 }
-```
+````
 
-These fields drive:
-
-* FT0 gating
-* Premium gating
-* Module gating
-* Feature-flag rollout gating
+No widget contains entitlement, billing, or lifecycle logic internally.
 
 ---
 
-# 2. WidgetContentProps (What Widgets Receive)
+## 2. WidgetContentProps (What Widgets Receive)
 
-Widgets implement:
+Widgets receive presentation and data props only:
 
 ```ts
 interface WidgetContentProps {
@@ -57,226 +63,194 @@ interface WidgetContentProps {
   title: string;
   businessContext: {...};
   metricConfig: {...};
+
+  // Presentation hints only
   intelligenceLevel: 'L1' | 'L2' | 'L3' | 'L4';
+
   currentValue: number;
   format: 'number' | 'currency' | 'percentage';
   isLoading: boolean;
   isEmpty: boolean;
-
-  // Optional presentation/event props...
 }
 ```
 
-This ensures every widget in the registry is:
-
-* Self-contained
-* Declarative
-* Capable of receiving any computed or fetched data from its shell
+⚠️ `intelligenceLevel` is **purely descriptive**.
+It is **not** used for gating or entitlement decisions.
 
 ---
 
-# 3. How Widget Gating Works (Core Filtering Algorithm)
+## 3. Widget Filtering Pipeline
 
-Widgets pass through **three layers** of filtering:
+Widgets are filtered exclusively inside:
 
-## **Layer 1 — User Mode Filtering**
-
-```ts
-detected_mode: 'survival' | 'growth' | 'architect'
+```
+useWidgetRegistry()
 ```
 
-Widgets are grouped by mode in the registry:
-
-```ts
-WIDGET_REGISTRY.survival
-WIDGET_REGISTRY.growth
-WIDGET_REGISTRY.architect
-```
-
-Only widgets for the detected mode are considered.
+Filtering is **declarative, deterministic, and frontend-owned**.
 
 ---
 
-## **Layer 2 — Plan Filtering**
+### Layer 1 — Mode Filtering (Frontend Context)
+
+Widgets are grouped by UI mode:
+
+```
+survival
+growth
+architect
+```
+
+Only widgets belonging to the active mode are considered.
+
+This is a **presentation concern only**.
+
+---
+
+### Layer 2 — Frontend Heuristic (`requiresPaidPlan`)
 
 ```ts
 requiresPaidPlan: boolean
 ```
 
-* Free users (FT0) → hide all paid widgets automatically.
-* Premium/Enterprise → show paid widgets if other conditions pass.
+Widgets marked with `requiresPaidPlan: true` may be hidden based on frontend user context.
 
-This connects pricing → entitlements → visual display.
+⚠️ **Important**
+
+* This is **not backed by billing**
+* This is **not an entitlement**
+* This is **not lifecycle-aware**
+
+It is a **UI heuristic only**.
 
 ---
 
-## **Layer 3 — Entitlement Filtering (NEW, #883)**
+### Layer 3 — Entitlement Filtering
 
-A widget may require:
+Widgets may declare:
 
 ```ts
 requiredModuleId
 requiredFlagId
 ```
 
-The check is enforced via the shared model:
+Filtering logic:
 
 ```ts
-widget.requiredModuleId && !modules.includes(widget.requiredModuleId)
-widget.requiredFlagId   && !flags.includes(widget.requiredFlagId)
+!requiredModuleId || hasModule(requiredModuleId)
+!requiredFlagId   || hasFlag(requiredFlagId)
 ```
 
-Widgets are only shown when **all** requirements pass.
+Widgets render **only if all declared requirements pass**.
 
 ---
 
-# 4. Filtering Logic (`useWidgetRegistry()`)
+## 4. Filtering Implementation (`useWidgetRegistry`)
 
-`apps/frontend/src/components/widgets/useWidgetRegistry.ts` performs the full gating pipeline:
+`useWidgetRegistry()` performs all filtering in one place.
+
+Conceptually:
 
 ```ts
-const widgets = getWidgetsForUser(userConfig)
-  .filter(w => !w.requiresPaidPlan || plan !== "free")
-  .filter(w => !w.requiredModuleId || hasModule(w.requiredModuleId))
-  .filter(w => !w.requiredFlagId || hasFlag(w.requiredFlagId))
+widgets
+  .filter(byMode)
+  .filter(byFrontendHeuristics)
+  .filter(byEntitlements)
 ```
 
-The UI layer is completely declarative:
+Key invariants:
 
-* No widget contains entitlement logic
-* No widget contains plan logic
-* Widgets remain portable, reusable components
+* Widgets never fetch entitlements
+* Widgets never infer lifecycle
+* Widgets never inspect billing state
+* All gating is centralized and testable
 
 ---
 
-# 5. Widget Sorting (Mode Prioritization)
+## 5. Widget Sorting (Priority Only)
 
-For **survival mode**, widgets are sorted by:
+Within each mode, widgets are sorted by:
 
 ```
 critical → high → medium → low
 ```
 
-This ensures the dashboard surfaces the most important signals first for distressed merchants.
-
-Growth and Architect modes rely on future optimized registries.
+Sorting is **not influenced by entitlements**.
 
 ---
 
-# 6. FT0 Behavior Summary
+## 6. Visibility Behavior
 
-A Free-Tier (FT0) merchant sees:
+When a widget fails any filter:
 
-### **Available widgets (default modules + no paid plan requirements):**
+* It is **not rendered**
+* No locked stub is shown
+* No placeholder is mounted
 
-* Cash Flow
-* Inventory Alerts
-* Order Metrics
-* Top Products
-* Sales by Traffic Source
-
-### **Unavailable / Hidden:**
-
-* Advanced Analytics widget (requires `advanced-analytics` module)
-* Any L4 or specialized widget requiring:
-
-  * paid plan
-  * module not in FT0
-  * entitlement flag not granted
-
-Widget gating happens silently — FT0 users don’t see “locked” stubs.
+Widget gating is **silent and non-disruptive**.
 
 ---
 
-# 7. Relationship to Routes & Navigation (NEW CROSS-REFERENCE)
+## 7. Consistency with Routes & Navigation
 
-Widget gating uses the **same entitlement model** as:
+Widget gating uses the **same entitlement snapshot** as:
 
-* **Route gating** (via `requiredModuleId` in routes.tsx)
-* **Navigation gating** (Sidenav → MenuList)
+* Route gating (`requiredModuleId` in routes)
+* Navigation gating (Sidenav → MenuList)
 
-This guarantees:
+This guarantees consistency:
 
-* If you grant a shop `analytics`, both navigation items and widgets appear.
-* If you remove a module, everything disappears consistently.
+* If a module is granted → routes, nav items, and widgets appear
+* If a module is missing → everything disappears together
 
-One source of truth → three enforcement layers.
-
----
-
-# 8. Adding a New Widget (Developer Playbook)
-
-To add a new gated widget:
-
-### Step 1 — Create the component:
-
-```
-MyNewWidget.tsx
-```
-
-### Step 2 — Add it to the registry:
-
-```ts
-{
-  id: "reorder-predictions",
-  title: "Reorder Predictions",
-  component: ReorderWidget,
-  intelligenceLevel: "L2",
-  priority: "high",
-  requiresPaidPlan: false,
-  requiredModuleId: "sku-os",   // optional
-  requiredFlagId: "beta-reorder", // optional
-  currentValue: 0,
-  format: "number",
-  isLoading: false,
-  isEmpty: false,
-  businessContext: {...},
-  metricConfig: {...}
-}
-```
-
-### Step 3 — Verify entitlements match backend module/flag IDs.
-
-### Step 4 — No additional UI work required
-
-`useWidgetRegistry()` handles gating automatically.
-
-### Step 5 — Write the corresponding unit test:
-
-```
-tests/unit/ui/components/widget-registry.test.tsx
-```
+One entitlement snapshot → multiple enforcement layers.
 
 ---
 
-# 9. Tests
+## 8. Adding a New Widget (As-Is Playbook)
 
-Widget gating is validated in:
+1. Create the widget component
+2. Register it in `widget-registry.tsx`
+3. Declare any required module or flag
+4. Optionally mark `requiresPaidPlan` (frontend heuristic)
+5. Write or update unit tests
 
-* `tests/unit/ui/components/widget-registry.test.tsx`
-* `tests/unit/ui/entitlements/EntitlementsContext.test.tsx`
-* `tests/unit/ui/components/ProtectedRoute.entitlements.test.tsx`
-
-They confirm:
-
-* Paid widgets hidden for FT0 plan
-* Gated widgets hidden unless module/flag present
-* Widgets sorted correctly
-* Fallback behavior consistent with mode & plan rules
+No additional wiring is required.
 
 ---
 
-# 10. Summary
+## 9. Tests
 
-Widget gating is now:
+Widget gating behavior is validated by:
 
-* Declarative
-* Composable
-* Consistent with backend capabilities
-* Aligned with routing and navigation rules
-* Backed by unit tests
-* Ready for FT1/FT2 expansion
+* `widget-registry.test.tsx`
+* `EntitlementsContext.test.tsx`
+* `ProtectedRoute.entitlements.test.tsx`
 
-It is powered by a **single entitlement model** that the entire SynchroFlow frontend uses to control visibility, access, and premium upgrades.
+These tests validate **filtering correctness**, not business semantics.
+
+---
+
+## 10. Summary
+
+* Widget gating is **frontend-owned**
+* Entitlements are used as **access filters only**
+* No lifecycle, billing, or plan truth is involved
+* All logic is centralized, declarative, and test-covered
+* The system is intentionally minimal and deterministic
+
+---
+
+## 🔒 As-Is Contract Seal
+
+This document reflects **only implemented, scan-verified behavior**.
+
+Any change requires:
+
+1. Code scans
+2. Explicit diffs
+3. Contract amendment
+
+Forward-looking intent is intentionally excluded.
 
 ---

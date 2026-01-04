@@ -10,7 +10,7 @@ This version replaces your existing doc.
 
 ---
 
-# 🌟 Frontend Entitlements – v2 (FT0 / FT1 Foundation)
+# 🌟 Frontend Entitlements – As-Is (Access Gating Only)
 
 This document describes how the SynchroFlow frontend loads, stores, and enforces **entitlements** across:
 
@@ -23,7 +23,7 @@ It now includes all work delivered in Issues #878 and #883.
 
 ---
 
-# 1. EntitlementsProvider (Global Source of Truth)
+# 1. EntitlementsProvider (Frontend Access Adapter)
 
 The entire frontend tree is wrapped with:
 
@@ -176,8 +176,11 @@ requiresPaidPlan?: boolean;
 `useWidgetRegistry()` applies **all three layers**:
 
 1. **Mode**     → survival / growth / architect
-2. **Plan**     → free / premium / enterprise
+2. **Frontend heuristic** → `requiresPaidPlan` (non-authoritative)
 3. **Entitlements** → has required module/flag
+
+⚠️ `requiresPaidPlan` is a frontend-only UX heuristic.
+It is not backed by billing, entitlements, or lifecycle truth.
 
 Final output → a clean list of allowed widgets.
 
@@ -195,14 +198,14 @@ If a widget requires:
 
 `tests/unit/ui/components/widget-registry.test.tsx` validates:
 
-* Free-plan hides premium widgets
-* Premium-plan shows everything
+* Widgets with `requiresPaidPlan` are hidden for non-eligible users
+* Widgets without restrictions render normally
 * Priorities sort correctly
 * Unsupported modes return empty arrays
 
 ---
 
-# 5. Practical FT0 Behavior (User Experience)
+# 5. Default Access Behavior (Free-Tier Entitlements)
 
 ### A Free-Tier user will see:
 

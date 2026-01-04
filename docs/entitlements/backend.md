@@ -1,4 +1,4 @@
-# 🛠 Backend Entitlements – v2 (Modules, Flags, & Integration Path)
+# 🛠 Backend Entitlements – As-Is (Modules, Flags, & OAuth Granting)
 
 This document explains how backend entitlements work, how they are stored, produced, and consumed by the frontend, and how new modules or flags should be added.
 
@@ -17,10 +17,8 @@ they determine *what a shop is allowed to access* across routes, widgets, and fe
 
 Backend entitlements consist of:
 
-```ts
 modules: string[]  // Ex: ["analytics", "finances"]
 flags: string[]    // Ex: ["beta-top-products"]
-```
 
 These correspond 1:1 to frontend-routing and widget metadata.
 
@@ -28,26 +26,21 @@ These correspond 1:1 to frontend-routing and widget metadata.
 
 # 2. Persistence Model
 
-### 2.1 Tables
+### 2.1 Tables (As-Implemented)
 
 **shop_module_entitlements**
 
-| column     | type     | description                                |
-| ---------- | -------- | ------------------------------------------ |
-| shop_id    | integer  | The tenant/shop this applies to            |
-| module_id  | text     | The module/capability ID, e.g. "analytics" |
-| created_at | datetime | Audit                                      |
+| column      | type     | description                              |
+|------------|----------|------------------------------------------|
+| shop_id    | integer  | The tenant / shop                        |
+| module_key | text     | Module capability identifier             |
+| flag_key   | text     | Optional feature flag (nullable)         |
+| source     | text     | Grant source (e.g. `free_tier_default`)  |
 
-Composite PK: `(shop_id, module_id)`
+Composite uniqueness enforced across:
+`(shop_id, module_key, flag_key)`
 
-**entitlement_flags**
-
-| column  | type    | description                         |
-| ------- | ------- | ----------------------------------- |
-| shop_id | integer | The tenant/shop                     |
-| flag_id | text    | Feature flag, e.g. "beta-charts-v2" |
-
-Composite PK: `(shop_id, flag_id)`
+There is **no separate entitlement_flags table** in the current system.
 
 ---
 
@@ -55,29 +48,23 @@ Composite PK: `(shop_id, flag_id)`
 
 Backend source of truth:
 
-```ts
 EntitlementsService.getForUser(userId)
 EntitlementsService.grantDefaultFreeTierForShop(shopId)
-```
 
 ## 3.1 getForUser()
 
 * Looks up the user → shop_id
 * Returns entitlements for the shop:
 
-```ts
 {
   shopId: number | null,
   modules: string[],
   flags: string[]
 }
-```
 
 If user or shop is missing → returns:
 
-```ts
 { shopId: null, modules: [], flags: [] }
-```
 
 ## 3.2 grantDefaultFreeTierForShop()
 
@@ -86,16 +73,14 @@ Executed:
 * On first-time Shopify installation (OAuth callback)
 * When a new shop is created in SynchroFlow (self-signup)
 
-Default FT0 modules:
+Default FT0 entitlement bundle (exact module_key values):
 
-```
-core-dashboard
-core-orders
-core-products
-core-customers
-```
+core_dashboard
+shopify_integration
+specter_sdk_free
+order-nexus
 
-Flags are empty by default.
+Flags may also be granted alongside modules.
 
 ---
 
@@ -103,19 +88,19 @@ Flags are empty by default.
 
 ### Endpoint
 
-```
 GET /api/v1/entitlements/me
-```
 
 ### Response
 
-```ts
 {
   shopId: 123,
-  modules: ["core-dashboard", "core-orders", ...],
+  modules: {
+    shopId: 123,
+    modules: ["<module_key>", "..."],
+    flags: []
+  }
   flags: [],
 }
-```
 
 Used by the frontend to determine route and widget access.
 
@@ -130,16 +115,13 @@ Inside `handleOAuthCallback`:
 3. Queue initial sync job
 4. Call:
 
-```ts
 EntitlementsService.grantDefaultFreeTierForShop(shopId)
-```
 
 This ensures every newly connected Shopify store receives the FT0 entitlement baseline.
 
-Later upgrades simply insert new rows into:
+Later changes simply insert new rows into:
 
 * `shop_module_entitlements`
-* `entitlement_flags`
 
 The frontend reacts automatically.
 
@@ -149,12 +131,9 @@ The frontend reacts automatically.
 
 Backend → Frontend mapping is direct:
 
-| Backend Module       | Meaning                       | Unlocks in UI                    |
-| -------------------- | ----------------------------- | -------------------------------- |
-| `analytics`          | Shop has Analytics capability | `/analytics`, analytics widgets  |
-| `finances`           | Shop has Finances capability  | `/finances`, margin/COGS widgets |
-| `advanced-analytics` | Paid L4 widgets               | Advanced Analytics widget        |
-| `echo-hub` (future)  | Workflow automations          | Echo Inbox module gating         |
+| Backend Module | Meaning              | Unlocks in UI               |
+|---------------|----------------------|-----------------------------|
+| `analytics`   | Analytics capability | `/analytics`, analytics UI  |
 
 Backend does **not** decide *how* these modules appear in the UI.
 It only decides *whether the shop has the module*.
@@ -166,7 +145,7 @@ The UI decides:
 
 ---
 
-# 7. Adding a New Premium Feature (Backend Steps)
+# 7. Adding a New Module Entitlement (Backend Steps)
 
 To introduce a new premium feature:
 
@@ -174,16 +153,13 @@ To introduce a new premium feature:
 
 Example:
 
-```
 "returns-analytics"
-```
 
 ### Step 2 — Add to entitlement tables as needed
 
-```sql
-INSERT INTO shop_module_entitlements (shop_id, module_id)
-VALUES (123, 'returns-analytics');
-```
+sql
+INSERT INTO shop_module_entitlements (shop_id, module_key, flag_key)
+VALUES (123, 'returns-analytics', NULL);
 
 ### Step 3 — Update `/entitlements/me` response automatically
 
@@ -191,9 +167,7 @@ No code needed — the service already returns all rows.
 
 ### Step 4 — Frontend team tags the route or widget
 
-```ts
 requiredModuleId: "returns-analytics"
-```
 
 Everything else becomes automatic.
 
@@ -227,6 +201,7 @@ Backend entitlements v2:
 * Require only DB inserts to unlock new features
 * Are 100% reactive on the frontend
 
-This establishes a clean, scalable model for FT1, FT2, and enterprise plan features.
+This documents the **current backend entitlements mechanism only**.
+It does not define lifecycle, billing, plans, or future capability systems.
 
 ---

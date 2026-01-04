@@ -1,225 +1,196 @@
-# 🆓 FT0 Entitlements – Free-Tier Capability Specification (v2)
+# 🆓 FT0 Default Entitlements – As-Is Snapshot
 
-This document defines the **authoritative entitlement contract** for Free-Tier (FT0) merchants in SynchroFlow.
-It describes:
+This document describes the **default entitlements granted at FT0**, exactly as implemented today.
 
-* What modules a free shop receives
-* What modules and flags it does NOT receive
-* What pages/routes are accessible
-* What widgets are visible
-* What the user experience is before & after Shopify connection
-* How the upgrade path works
+It is a **descriptive snapshot**, not a tier definition, contract, or capability guarantee.
 
-It reflects implementation across:
+## Scope (As-Is Only)
 
-* Backend: `EntitlementsService`
-* Frontend: `EntitlementsProvider`, route gating, sidenav gating, widget gating
-* Shopify OAuth (#878)
-* Dashboard routing (#883)
+This document covers:
 
----
+- Which entitlements are granted by default at FT0
+- How those entitlements affect frontend access (routes, widgets, navigation)
+- How additional entitlements expand access
 
-# 1. FT0 Modules (Capabilities Granted)
+This document explicitly does **not** define:
 
-Upon initial signup or Shopify installation, the backend assigns:
-
-```ts
-modules = [
-  "core-dashboard",
-  "core-orders",
-  "core-products",
-  "core-customers"
-]
-
-flags = []
-```
-
-Meaning FT0 shops can:
-
-* Access the dashboard
-* View and navigate orders
-* View and navigate customers
-* View and navigate products
-* Use basic intelligence widgets
-* Use ingestion and syncing features
-
-They **do not receive** any premium modules.
+- Lifecycle phases or readiness
+- Billing, plans, or payment proof
+- Upgrade systems or commercial policy
+- Usage limits or quotas
+- Future modules or features
 
 ---
 
-# 2. FT0 Restricted Modules (Not Granted)
+## 1. What FT0 Means in Practice
 
-These modules remain **locked** unless a shop upgrades:
+**FT0** refers to the point at which a shop has:
 
-| Module ID            | Unlocks                                      |
-| -------------------- | -------------------------------------------- |
-| `analytics`          | Analytics dashboard, advanced charts         |
-| `finances`           | Finances page, profitability deep-dive tools |
-| `advanced-analytics` | Premium widget bundle (L4 intelligence)      |
-| `sku-os`             | Advanced SKU intelligence (future gating)    |
-| `echo-hub`           | Workflow orchestration (future)              |
+- Successfully connected an integration (e.g. Shopify)
+- Received the **default entitlement grant** from the backend
 
-A shop that does NOT have these modules will:
-
-* Not see corresponding routes in navigation
-* Be redirected if trying to open `/analytics` or `/finances`
-* Not see widgets requiring these modules
+FT0 is **not** a billing tier and **not** a lifecycle authority.  
+It is simply the first moment at which entitlements exist for a shop.
 
 ---
 
-# 3. FT0 Allowed Routes
+## 2. Default FT0 Entitlement Grant (Backend)
 
-FT0 merchants can access:
+Upon initial Shopify installation or first-time shop creation, the backend grants a small, explicit set of entitlements.
 
-| Route               | Purpose                                |
-| ------------------- | -------------------------------------- |
-| `/dashboard`        | Core dashboard with FT0 widgets        |
-| `/orders`           | Order list                             |
-| `/orders/:id`       | Order 360 view                         |
-| `/products`         | Product list                           |
-| `/products/:id`     | Product 360 view                       |
-| `/customers`        | Customer list                          |
-| `/customers/:id`    | Customer 360 view                      |
-| `/echo-hub`         | Basic workflow inbox (ungated for now) |
-| `/account/settings` | Access account details                 |
+### Granted Entitlements (Exact `module_key` Values)
 
-All these routes appear in the sidenav automatically.
 
----
 
-# 4. FT0 Blocked Routes
+core_dashboard
+shopify_integration
+specter_sdk_free
+order-nexus
 
-| Route                   | Reason                       |
-| ----------------------- | ---------------------------- |
-| `/analytics`            | Requires `analytics` module  |
-| `/finances`             | Requires `finances` module   |
-| `/product-intelligence` | Legacy — no longer shown     |
-| `/data-mapper`          | Deprecated — no longer shown |
 
-Attempting to navigate to a locked route triggers:
 
-→ **ProtectedRoute redirect → `/dashboard`**
+These rows are inserted into:
+
+
+
+shop_module_entitlements
+
+`
+
+using `EntitlementsService.grantDefaultFreeTierForShop(shopId)`.
+
+### Flags
+
+No flags are granted by default at FT0.
 
 ---
 
-# 5. FT0 Widget Availability
+## 3. What These Entitlements Enable (Access Projection)
 
-FT0 merchants see the following widgets:
+The presence of the FT0 entitlement bundle allows the frontend to:
 
-### ✔ Available
+- Render the core dashboard shell
+- Display operational surfaces backed by `order-nexus`
+- Run ingestion and synchronization flows via `shopify_integration`
+- Render widgets and UI that do **not** declare restricted module or flag requirements
 
-| Widget ID                 | Notes                    |
-| ------------------------- | ------------------------ |
-| `cash-flow`               | L3 cash-flow stabilizer  |
-| `inventory-alerts`        | L2 stock/velocity basics |
-| `order-metrics`           | L1 order analytics       |
-| `top-products`            | L1 product performance   |
-| `sales-by-traffic-source` | L1 traffic attribution   |
+Entitlements do **not** guarantee:
 
-These reflect **light** or **medium** computation cost and do not require paid entitlements.
+- Data completeness
+- Readiness
+- Analytics correctness
+- Business insight quality
 
----
-
-### ❌ Hidden in FT0
-
-| Widget ID            | Required                    |
-| -------------------- | --------------------------- |
-| `advanced-analytics` | `advanced-analytics` module |
-
-Any widget in the registry that declares:
-
-```ts
-requiresPaidPlan: true
-requiredModuleId: "advanced-analytics"
-```
-
-is removed by `useWidgetRegistry()` for FT0 shops.
+Those concerns are handled elsewhere in the system.
 
 ---
 
-# 6. FT0 User Experience
+## 4. Route Access Under Default Entitlements
 
-### Before Shopify Connect
+Route visibility is determined by **frontend gating logic** using entitlements.
 
-User sees:
+Under the default FT0 entitlement set:
 
-* Connect Store banner
-* Minimal dashboard layout
-* No data-driven widgets until the first sync completes.
-* Only skeleton placeholders may be rendered during initial sync.
+- Routes that do **not** declare `requiredModuleId` are visible
+- Routes that declare a missing `requiredModuleId` are hidden
+- Deep-link attempts to gated routes are redirected by `ProtectedRoute`
 
-### After Successful Shopify Connect
-
-Flow:
-
-1. OAuth redirect with `connect=success`
-2. Entitlements load (`FT0 default`)
-3. Initial sync begins (DataSyncingModal → completion)
-4. Dashboard populated with FT0 widgets
-5. No Analytics / Finances menu entries
-
-### If Shopify Connect Fails
-
-User sees:
-
-* ConnectionErrorModal with friendly message
-* Ability to retry
+This behavior is **reactive**, not declarative.  
+The list of visible routes is an outcome of gating logic, not a contract.
 
 ---
 
-# 7. FT0 → Upgrade Path
+## 5. Widget Rendering Under Default Entitlements
 
-When a shop upgrades:
+Widgets render if they:
 
-1. Backend inserts module rows, e.g.:
+- Do **not** declare a required module or flag
+- Are not filtered out by frontend-only heuristics
 
-```
-INSERT INTO shop_module_entitlements (shop_id, module_id)
-VALUES (123, 'analytics');
-```
+### Important Clarification
 
-2. `/entitlements/me` automatically returns:
+⚠️ `requiresPaidPlan` is a **frontend-only UX heuristic**.  
+It is **not backed by billing, entitlements, or lifecycle truth**.
 
-```
-modules: ["core-dashboard", ..., "analytics"]
-```
-
-3. Frontend immediately unlocks:
-
-* `/analytics` route
-* Analytics nav item
-* Analytics widgets
-
-No additional code changes needed.
+Widgets filtered by `requiresPaidPlan` are hidden purely by frontend logic and must not be interpreted as paid or premium enforcement.
 
 ---
 
-# 8. Tests Validating FT0 Behavior
+## 6. Observed User Experience Under Default Entitlements
 
-Unit & integration tests cover:
+This section is **descriptive only**.
 
-| Area                | Test File                              |
-| ------------------- | -------------------------------------- |
-| Entitlement loading | `EntitlementsContext.test.tsx`         |
-| Widget gating       | `widget-registry.test.tsx`             |
-| Route gating        | `ProtectedRoute.entitlements.test.tsx` |
-| Navigation gating   | `MenuList.entitlements.test.tsx`       |
-| OAuth → FT0 grant   | `integration.controller.test.ts`       |
+User experience at FT0 is influenced by:
 
-These ensure deterministic FT0 behavior.
+- Integration state
+- Sync progress
+- Lifecycle readiness
+- Entitlements (access projection)
+
+Entitlements alone do **not** explain:
+
+- Empty states
+- Loading behavior
+- Checklists
+- Readiness indicators
+
+Those behaviors are governed by other systems.
 
 ---
 
-# 9. Summary
+## 7. Adding Additional Module Entitlements
 
-FT0 entitlements are:
+Expanding access is done by **adding new entitlement rows**.
 
-* Minimal
-* Stable
-* Safe for App Store approval
-* Reactive across the stack
-* Enough to deliver the full free trial experience
+Example:
 
-Upgrades expand functionality by **adding modules**, not by modifying code.
+sql
+INSERT INTO shop_module_entitlements (shop_id, module_key, flag_key)
+VALUES (123, 'analytics', NULL);
+`
+
+Once present:
+
+* `/api/v1/entitlements/me` includes the new `module_key`
+* Frontend routing, navigation, and widgets react automatically
+* No code changes are required
+
+This operation does **not** imply billing, payment, or plan validation.
+
+---
+
+## 8. Tests Covering FT0 Entitlements
+
+Current tests validate:
+
+* Default entitlement grants on install
+* Entitlement loading and normalization
+* Route, navigation, and widget gating behavior
+
+These tests ensure deterministic behavior of **access projection**, not business outcomes.
+
+---
+
+## 9. Summary
+
+* FT0 is the moment when **default entitlements exist**
+* Entitlements are **access projections**, not capabilities or tiers
+* The FT0 entitlement bundle is intentionally small and explicit
+* Additional access is granted only by adding entitlements
+* Lifecycle, billing, and readiness remain separate concerns
+
+---
+
+## 🔒 As-Is Snapshot Seal
+
+This document reflects **scan-verified, implemented behavior only**.
+
+Any change requires:
+
+1. Code scans
+2. Explicit diffs
+3. A documented amendment
+
+Forward-looking intent is intentionally excluded.
 
 ---

@@ -153,9 +153,7 @@ It is a **latched, single-write capability fact** persisted in the database.
 
 FT0 completion is recorded by the presence of a row in:
 
-```
 ft0_state
-```
 
 **Verified properties:**
 
@@ -172,9 +170,7 @@ FT0 is therefore a **capability milestone**, not a transient signal.
 
 FT0 completion is owned exclusively by:
 
-```
 FT0CompletionService.evaluateAndComplete(shopId)
-```
 
 **Verified guarantees:**
 
@@ -345,9 +341,7 @@ Signal providers:
 
 FT1 readiness computation flow:
 
-```
 signals → tasks → module readiness → FT1 verdict
-```
 
 ---
 
@@ -355,9 +349,7 @@ signals → tasks → module readiness → FT1 verdict
 
 FT1 is complete **if and only if**:
 
-```
 blockingModules.length === 0
-```
 
 Where:
 
@@ -422,9 +414,7 @@ The following task was intentionally removed from FT1 gating:
 
 Annotated in code as:
 
-```
 // ⬇️ MOVED OUT OF FT1 GATING
-```
 
 This confirms FT1 is intentionally minimal and focused on **structural truth**, not segmentation or optimization.
 
