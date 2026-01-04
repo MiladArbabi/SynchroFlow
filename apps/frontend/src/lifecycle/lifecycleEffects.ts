@@ -25,6 +25,19 @@ export function useLifecycleEffects({
   const ft0TimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+  // FT2 is terminal — no FT0 semantics allowed
+  if (state.hasLatchedFT2) return;
+
+    // 🔒 If FT1 is already latched, SKIP dwell immediately
+    if (
+      state.hasLatchedFT1 &&
+      state.phase === 'FT0_PREPARING' &&
+      !state.ft0DwellCompleted
+    ) {
+      dispatch({ type: 'FT0_DWELL_ELAPSED' });
+      return;
+    }
+
     if (state.phase !== 'FT0_PREPARING') return;
     if (state.ft0DwellCompleted) return;
 
@@ -41,7 +54,13 @@ export function useLifecycleEffects({
         ft0TimerRef.current = null;
       }
     };
-  }, [state.phase, state.ft0DwellCompleted, dispatch]);
+  }, [
+    state.phase,
+    state.ft0DwellCompleted,
+    state.hasLatchedFT1,
+    state.hasLatchedFT2,
+    dispatch,
+  ]);
 
   /* -------------------------------------------------- */
   /* FT1 seal persistence                               */

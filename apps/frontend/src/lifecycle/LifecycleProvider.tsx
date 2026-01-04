@@ -3,15 +3,13 @@
 import React, { useEffect, useReducer } from 'react';
 import { ShopLifecycleContext } from './ShopLifecycleContext';
 import { lifecycleReducer } from './lifecycleReducer';
-import {
-  initialLifecycleState,
-} from './lifecycleTypes';
 import { UILifecyclePhase } from './types';
 import { useIntegration } from 'contexts/integration';
 import { useAuth } from 'contexts/AuthContext';
 import { axiosInstance } from 'api/axiosConfig';
 import { useOnboardingReadiness } from './useOnboardingReadiness';
 import { useLifecycleEffects } from './lifecycleEffects';
+import { deriveInitialLifecycleState } from './deriveInitialLifecycleState';
 
 type LifecycleProviderProps = {
   children: React.ReactNode;
@@ -42,16 +40,23 @@ type LifecycleProviderProps = {
 export function LifecycleProvider({
   children,
 }: LifecycleProviderProps) {
-  const [state, dispatch] = useReducer(
-    lifecycleReducer,
-    initialLifecycleState
+  
+  const { user } = useAuth();
+  const shopId = user?.shop_id ?? null;
+
+  const initialState = React.useMemo(
+    () =>
+      deriveInitialLifecycleState(shopId, {
+        bootResolved: false,
+        integrationExists: false,
+      }),
+    []
   );
 
-  const integration = useIntegration();
-  const { user } = useAuth();
-  const [ft2RestoreResolved, setFt2RestoreResolved] = React.useState(false);
+  const [state, dispatch] = useReducer(lifecycleReducer, initialState);
 
-  const shopId = user?.shop_id ?? null;
+  const integration = useIntegration();
+  const [ft2RestoreResolved, setFt2RestoreResolved] = React.useState(false);
 
   const hasFT2Seal =
     shopId != null &&
@@ -65,8 +70,11 @@ export function LifecycleProvider({
       : null,
   });
 
-  const isFT2Terminal =
-    state.phase === 'FT2_READY';
+  /* const isFT2Terminal =
+    state.phase === 'FT2_READY'; */
+
+  const isHydratedTerminal =
+    state.phase === 'FT1_READY' || state.phase === 'FT2_READY';
 
   console.log('[LIFECYCLE_READINESS_INPUT]', {
     bootResolved: integration.bootResolved,
@@ -84,23 +92,25 @@ export function LifecycleProvider({
   /* ---------------- Integration → lifecycle events ---------------- */
 
   useEffect(() => {
-    if (isFT2Terminal) return;
+    if (isHydratedTerminal) return;
     if (integration.bootResolved) {
       dispatch({ type: 'BOOT_RESOLVED' });
     }
-  }, [integration.bootResolved]);
+  }, [integration.bootResolved, isHydratedTerminal]);
 
   useEffect(() => {
-    if (isFT2Terminal) return;
+    if (isHydratedTerminal) return;
     if (integration.existence === 'EXISTS') {
       dispatch({ type: 'INTEGRATION_CREATED' });
     } else {
       dispatch({ type: 'INTEGRATION_DELETED' });
     }
-  }, [integration.existence]);
+  }, [integration.existence, isHydratedTerminal]);
 
   useEffect(() => {
-    if (!ft2RestoreResolved || isFT2Terminal) return;
+    if (isHydratedTerminal) return;
+    if (!ft2RestoreResolved) return;
+
     if (
       integration.syncStatus === 'PENDING' ||
       integration.syncStatus === 'SYNCING'
@@ -111,25 +121,28 @@ export function LifecycleProvider({
     if (integration.syncStatus === 'COMPLETED') {
       dispatch({ type: 'SYNC_COMPLETED' });
     }
-  }, [integration.syncStatus]);
+  }, [integration.syncStatus, ft2RestoreResolved, isHydratedTerminal]);
+
 
   useEffect(() => {
-    if (isFT2Terminal) return;
+    if (isHydratedTerminal) return;
     if (data?.ft1?.isComplete) {
       dispatch({ type: 'FT1_BACKEND_COMPLETE' });
     }
-  }, [data?.ft1?.isComplete]);
+  }, [data?.ft1?.isComplete, isHydratedTerminal]);
 
   /* ---------------- FT2 restore ---------------- */
 
   useEffect(() => {
+    if (isHydratedTerminal) return;
+
     console.log('[FT2_RESTORE_EFFECT_ENTER]', {
       shopId,
       hasFT2Seal,
       bootResolved: integration.bootResolved,
       hasIntegration: integration.hasIntegration,
     });
-
+    
     if (hasFT2Seal) {
       console.log('[FT2_RESTORE_FROM_LOCALSTORAGE]');
 

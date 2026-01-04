@@ -88,7 +88,24 @@ export function IntegrationProvider({
     });
   }, [queryClient]);
 
-  const value = useMemo<IntegrationContextValue>(() => {
+    const value = useMemo<IntegrationContextValue>(() => {
+    // DEV debug: surface ordering info and FT1 seal if present
+    if (import.meta.env?.DEV) {
+      try {
+        const ft1Seal = localStorage.getItem('ft1_seal'); // generic key — update if yours differs
+        console.debug('[IntegrationProvider][DEV]', {
+          bootResolvedRef: bootResolvedRef.current,
+          lastExistence: lastExistenceRef.current,
+          lastSync: lastSyncRef.current,
+          isLoading,
+          data,
+          ft1Seal,
+        });
+      } catch (err) {
+        console.debug('[IntegrationProvider][DEV] localStorage read failed', err);
+      }
+    }
+
     if (!bootResolvedRef.current && isLoading) {
       return {
         bootState: 'BOOTING',
