@@ -30,6 +30,8 @@ export interface UseIntegrationResult {
    */
   bootResolved: boolean;
 
+  isResolved: boolean;
+
   /**
    * Structural existence of an integration.
    * - NONE    → no integration record exists
@@ -76,6 +78,8 @@ export function useIntegration(): UseIntegrationResult {
 
   return {
     bootResolved: ctx.bootState === 'READY',
+
+    isResolved: ctx.bootState === 'READY',
 
     existence,
     syncStatus,

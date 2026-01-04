@@ -36,6 +36,7 @@ import { DashboardLifecycleShell } from "lifecycle/DashboardLifecycleShell";
 import { ShopLifecycleShell } from "lifecycle/ShopLifecycleShell";
 import { ShopLifecycleGate } from "lifecycle/ShopLifecycleGate";
 import { LifecycleProvider } from "lifecycle/LifecycleProvider";
+import { useIntegration } from "contexts/integration/useIntegration";
 
 // Define the type for the context passed via Outlet
 type LayoutContextType = {
@@ -140,6 +141,31 @@ class IntlErrorBoundary extends React.Component<
   }
 };
 
+function LifecycleGate() {
+  const integration = useIntegration();
+
+  if (import.meta.env.DEV) {
+    console.debug('[APP_LIFECYCLE_GATE]', {
+      isResolved: integration.isResolved,
+      existence: integration.existence,
+      ts: performance.now(),
+    });
+  }
+
+  // 🔒 Hard gate: lifecycle must not mount until integration is authoritative
+  if (!integration.isResolved) {
+    return null;
+  }
+
+  return (
+    <LifecycleProvider>
+      <ShopLifecycleShell>
+        <ShopLifecycleGate />
+      </ShopLifecycleShell>
+    </LifecycleProvider>
+  );
+}
+
 export default function App() {
   const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
 
@@ -183,18 +209,10 @@ export default function App() {
                       <Route element={<LayoutManager />}>
 
                         {/* =================================================
-                            SINGLE STRUCTURAL LIFECYCLE GATE (MODEL A)
-                            - Pre-FT1: renders activation / syncing / empty
-                            - FT1_READY: exposes real app routes
+                            SINGLE STRUCTURAL LIFECYCLE GATE
                         ================================================= */}
                         <Route
-                          element={
-                          <LifecycleProvider>
-                            <ShopLifecycleShell>
-                              <ShopLifecycleGate />
-                            </ShopLifecycleShell>
-                          </LifecycleProvider>
-                          }
+                          element={ <LifecycleGate />}
                         >
                           {/* -------- Dashboard (FT1+) -------- */}
                           <Route
