@@ -19,63 +19,43 @@ export default function lasyncroModulesPlugin(): Plugin {
     const modulesDir = path.resolve(rootDir, '../../modules');
 
     if (!fs.existsSync(modulesDir)) {
-      console.warn(`[lasyncro-modules] No ./modules directory found.`);
-      return `export default [];`;
+      return `exports.default = [];`;
     }
 
-    const moduleEntries: Array<{ id: string; entry: string }> = [];
+    const modulePkgs = fs
+      .readdirSync(modulesDir)
+      .filter((name) => {
+        const pkgPath = path.join(modulesDir, name, 'package.json');
+        return fs.existsSync(pkgPath);
+      })
+      .map((name) => {
+        const pkgPath = path.join(modulesDir, name, 'package.json');
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        return {
+          pkgName: pkg.name as string,
+          id: pkg.name.replace(/^@lasyncro\//, ''),
+        };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id)); // deterministic
 
-    function walk(dir: string) {
-      const files = fs.readdirSync(dir, { withFileTypes: true });
-      for (const file of files) {
-        const fullPath = path.join(dir, file.name);
-
-        if (file.isDirectory()) {
-          walk(fullPath);
-          continue;
-        }
-
-        const rel = fullPath.replace(rootDir + '/', '');
-
-        if (MODULE_GLOB.test(rel)) {
-          const match = rel.match(MODULE_GLOB);
-          const moduleId = match?.[1];
-          if (!moduleId) continue;
-
-          moduleEntries.push({
-            id: moduleId,
-            entry: fullPath,
-          });
-        }
-      }
+    const entries = modulePkgs
+      .map(
+        (m) => `
+  {
+    id: '${m.id}',
+    load: async () => {
+      const mod = require('${m.pkgName}');
+      return mod.default;
     }
-
-    walk(modulesDir);
-
-    // deterministic ordering for reproducible builds
-    moduleEntries.sort((a, b) => a.id.localeCompare(b.id));
-
-    const imports = moduleEntries
-      .map(
-        (m, i) =>
-          `import * as m${i} from '${m.entry.split(path.sep).join('/')}';`
-      )
-      .join('\n');
-
-    const exportList = moduleEntries
-      .map(
-        (m, i) =>
-          `{ id: '${m.id}', load: async () => m${i}.default }`
+  }`
       )
       .join(',\n');
 
     return `
-${imports}
-
-export default [
-${exportList}
-];
-    `;
+  export default [
+  ${entries}
+  ];
+  `;
   }
 
   return {
