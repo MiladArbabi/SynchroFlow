@@ -13,10 +13,10 @@ import { FT1HeroArrival } from 'components/ft1/FT1HeroArrival';
 import { useAuth } from 'contexts/AuthContext';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 
-import OrdersModule from '@lasyncro/order-nexus';
-import FinancesModule from '@lasyncro/finances';
+import { OrdersModule } from '@lasyncro/order-nexus';
+import { FinancesModule } from '@lasyncro/finances';
 import { SpecterModule } from '@lasyncro/specter';
-import ProductsPage from '@lasyncro/products';
+import { ProductsModule } from '@lasyncro/products';
 import { AnalyticsModule } from '@lasyncro/analytics';
 
 import { mapOrdersFt1Props } from './orders/useOrdersFt1Adapter';
@@ -111,7 +111,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = () => {
                 <Grid container spacing={3}>
                  <Grid size={{ xs: 12, md: 6 }}>
                    {productsProps && (
-                     <ProductsPage
+                     <ProductsModule
                        {...productsProps}
                        onIntent={productsIntent}
                      />

@@ -1,7 +1,8 @@
 // modules/products/src/ui/index.ts
+export { default } from './ModuleEntry';
 
 // DEFAULT EXPORT — REQUIRED (runtime value)
-export { default } from './pages/ProductsPage';
+export { default as ProductsModule } from './pages/ProductsPage';
 
 // hooks
 export { useProductsFt1Scenario } from './hooks/useProductsFt1Scenario';

@@ -1,6 +1,6 @@
-import { FinancesUiIntent } from './intents';
+export { default } from './ModuleEntry';
 /* modules/finances/src/ui/index.ts */
-export { default } from './pages/FinancesModule';
+export { default as FinancesModule } from './pages/FinancesModule';
 export type { FinancesModuleProps } from './pages/FinancesModule'
 
 export * from './hooks/useFinancesFt1Scenario';

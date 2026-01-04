@@ -45,10 +45,16 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
   const visibleItems: NavGroupType[] = useMemo(() => {
     // 1️⃣ Dynamic module nav
     const dynamicGroupsRaw = getNavigation();
+    console.log('[NAV_DEBUG][groups]', dynamicGroupsRaw);
 
     const dynamicItems: NavItemType[] = dynamicGroupsRaw
       .flatMap((g) => g.items ?? [])
       .map((item) => {
+            console.log('[NAV_DEBUG]', {
+              item: item.id,
+              requiredModuleId: item.requiredModuleId,
+              entitlementsModules: modules
+            });
         const visibility = !item.requiredModuleId
           ? 'enabled'
           : CORE_MODULES.has(item.requiredModuleId)

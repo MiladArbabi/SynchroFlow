@@ -36,6 +36,9 @@ export async function loadModule(entry: { id: string; load: () => Promise<any> }
   let imported;
   try {
     imported = await entry.load();
+
+    // TEMP: normalize CJS/ESM interop
+    imported = imported?.default ?? imported;
   } catch (err) {
     /* console.error('[lasyncro] loadModule FAILED for', id, err); */
     return null;
@@ -101,6 +104,12 @@ export async function loadAllModules() {
     }
 
     const descriptor = await loadModule(entry);
+
+    if (!descriptor) {
+      console.warn('[lasyncro] Module failed to load:', entry.id);
+      continue;
+    }
+
     if (import.meta.env.DEV) {
       console.debug('[lasyncro][module-registered]', {
         moduleId: descriptor.id,
@@ -109,8 +118,6 @@ export async function loadAllModules() {
         navGroups: descriptor.navGroups?.length ?? 0
       });
     }
-
-    if (!descriptor) continue;
 
     // Register module metadata into runtime store
     registerModule({

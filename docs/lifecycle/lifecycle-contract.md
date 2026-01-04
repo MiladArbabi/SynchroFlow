@@ -881,3 +881,90 @@ All future lifecycle work must respect this clarification.
 **END OF AMENDMENT v2**
 
 ---
+
+---
+
+# 📜 Amendment v3 — Frontend Reset Semantics Post-FT1
+
+> **Status:** Scan-verified, test-enforced  
+> **Applies to:** Frontend lifecycle reducer only  
+> **Effective:** Immediately  
+> **Nature:** Clarifying (non-semantic)  
+> **Backward compatibility:** Full
+>
+> This amendment documents **observed and now test-enforced frontend behavior**
+> regarding lifecycle reset events after FT1 has been reached.
+>
+> **No backend lifecycle semantics are changed.**
+
+---
+
+## A. BOOT_UNRESOLVED — Scope Limitation (Observed & Enforced)
+
+### A.1 Clarification
+
+`BOOT_UNRESOLVED` is a **pre-FT1 lifecycle concern only**.
+
+Once **FT1_READY** has been reached and latched in the frontend lifecycle reducer:
+
+* `BOOT_UNRESOLVED` **must be ignored**
+* Frontend lifecycle **must not regress**
+
+This behavior is enforced at the reducer level and locked by unit tests.
+
+---
+
+### A.2 Invariants
+
+Once `hasLatchedFT1 === true`:
+
+* Lifecycle phase **must not regress**
+* `FT1_READY` **must be preserved**
+* `BOOT_UNRESOLVED` **has no effect**
+
+This guarantees frontend lifecycle monotonicity independent of:
+
+* Hydration timing
+* Boot sequencing
+* Effect ordering
+
+---
+
+## B. FT2 Interaction (Reaffirmed)
+
+This amendment reaffirms existing behavior:
+
+* FT2 remains **terminal**
+* FT2 overrides **all reset events**, including:
+  * `BOOT_UNRESOLVED`
+  * `INTEGRATION_DELETED`
+
+No additional FT2 semantics are introduced.
+
+---
+
+## C. Non-Goals (Explicit)
+
+This amendment does **not**:
+
+* Introduce new lifecycle phases
+* Alter backend lifecycle meaning
+* Change FT0 or FT1 readiness rules
+* Define FT2 graduation semantics
+
+It exists solely to document **observed, implemented, and tested frontend behavior**.
+
+---
+
+## Amendment v3 Seal
+
+This amendment is **additive and factual**.
+
+It reflects reducer-level behavior that is:
+
+* Scan-verified
+* Test-enforced
+* Required for lifecycle monotonicity guarantees
+
+All future lifecycle work must respect this clarification.
+

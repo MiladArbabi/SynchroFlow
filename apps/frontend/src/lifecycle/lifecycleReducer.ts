@@ -30,6 +30,10 @@ export function lifecycleReducer(
       break;
 
     case 'BOOT_UNRESOLVED':
+      // BOOT_UNRESOLVED is only valid before FT1 is latched
+      if (state.hasLatchedFT1) {
+        return state;
+      }
       nextState = initialLifecycleState;
       break;
 

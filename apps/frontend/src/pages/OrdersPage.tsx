@@ -1,5 +1,5 @@
 //apps/frontend/src/pages/OrdersPage.tsx
-import OrdersModule from '@lasyncro/order-nexus';
+import { OrdersModule } from '@lasyncro/order-nexus';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';

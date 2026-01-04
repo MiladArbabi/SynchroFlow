@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/ProductsPage.tsx
-import ProductsModule from '@lasyncro/products';
+import { ProductsModule } from '@lasyncro/products';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';

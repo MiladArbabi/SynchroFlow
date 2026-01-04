@@ -64,6 +64,11 @@ export default defineConfig({
       'runtime': path.resolve(__dirname, './src/runtime'),
       // also map bare 'runtime/index' -> explicit index file (optional)
       'runtime/index': path.resolve(__dirname, './src/runtime/index.ts'),
+      // --- TEMP: force Vite to resolve built customers module ---
+      '@lasyncro/customers': path.resolve(
+        __dirname,
+        '../../modules/customers/dist/index.js'
+      ),
     }
   },
 });

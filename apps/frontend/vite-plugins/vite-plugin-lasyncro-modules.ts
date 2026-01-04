@@ -24,7 +24,9 @@ export default function lasyncroModulesPlugin(): Plugin {
 
     const modulePkgs = fs
       .readdirSync(modulesDir)
+      .filter((name) => name !== 'specter') // 🚫 NOT a UI module
       .filter((name) => {
+        if (name === 'my-test-module') return false;
         const pkgPath = path.join(modulesDir, name, 'package.json');
         return fs.existsSync(pkgPath);
       })
@@ -44,7 +46,7 @@ export default function lasyncroModulesPlugin(): Plugin {
   {
     id: '${m.id}',
     load: async () => {
-      const mod = require('${m.pkgName}');
+      const mod = await import('${m.pkgName}');
       return mod.default;
     }
   }`

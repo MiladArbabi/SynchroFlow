@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/FinancesPage.tsx
-import FinancesModule from '@lasyncro/finances';
+import { FinancesModule } from '@lasyncro/finances';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
