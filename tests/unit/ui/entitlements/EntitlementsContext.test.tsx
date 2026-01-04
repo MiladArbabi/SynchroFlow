@@ -880,3 +880,119 @@ describe('EntitlementsContext', () => {
     });
   });
 });
+
+describe('EntitlementsContext — purity invariants (RED)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete (window as any)._lasyncroEntitlements;
+  });
+
+  it('does not write entitlement data to window', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        shopId: 1,
+        modules: ['customers'],
+        flags: ['beta'],
+      },
+    });
+
+    render(
+      <EntitlementsProvider>
+        <Capture />
+      </EntitlementsProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('isLoading')).toHaveTextContent('ready');
+    });
+
+    expect((window as any)._lasyncroEntitlements).toBeUndefined();
+  });
+
+  it('does not augment backend-provided modules under any condition', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        shopId: 1,
+        modules: ['customers'],
+        flags: [],
+      },
+    });
+
+    render(
+      <EntitlementsProvider>
+        <Capture />
+      </EntitlementsProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('modules')).toHaveTextContent(
+        JSON.stringify(['customers'])
+      );
+    });
+
+    expect(screen.getByTestId('modules').textContent).not.toContain('order-nexus');
+    expect(screen.getByTestId('modules').textContent).not.toContain('order_nexus');
+  });
+
+  it('does not imply lifecycle or readiness semantics beyond fetch resolution', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        shopId: 1,
+        modules: [],
+        flags: [],
+      },
+    });
+
+    render(
+      <EntitlementsProvider>
+        <Capture />
+      </EntitlementsProvider>
+    );
+
+    // hasResolved may flip — but no other state should imply readiness
+    await waitFor(() => {
+      expect(screen.getByTestId('isLoading')).toHaveTextContent('ready');
+    });
+
+    // Guard: no lifecycle surface is derived from entitlements
+    expect(screen.queryByText(/ft1/i)).toBeNull();
+    expect(screen.queryByText(/onboarding/i)).toBeNull();
+  });
+
+  it('fallback logic reuses last snapshot verbatim without mutation', async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          shopId: 1,
+          modules: ['customers'],
+          flags: [],
+        },
+      })
+      .mockRejectedValueOnce(new Error('network error'));
+
+    render(
+      <EntitlementsProvider>
+        <Capture />
+      </EntitlementsProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('modules')).toHaveTextContent(
+        JSON.stringify(['customers'])
+      );
+    });
+
+    // Trigger refresh
+    await act(async () => {
+      screen.getByTestId('refresh-button').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('modules')).toHaveTextContent(
+        JSON.stringify(['customers'])
+      );
+    });
+
+    expect(screen.getByTestId('modules').textContent).not.toContain('order-nexus');
+  });
+});

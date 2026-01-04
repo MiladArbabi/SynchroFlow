@@ -76,9 +76,6 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
       setIsLoading(false);
       setHasResolved(true); // ✅ CRITICAL: resolve entitlement state for logged-out users
 
-      // keep global snapshot consistent
-      (window as any)._lasyncroEntitlements = { modules: [], flags: [] };
-
       if (import.meta.env.DEV) {
         console.debug('[Entitlements] resolved (logged out)');
       }
@@ -152,9 +149,6 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           flags: nextFlags
         };
 
-        // expose snapshot for modules that call host APIs during init()
-        (window as any)._lasyncroEntitlements = { modules: nextModules, flags: nextFlags };
-
         if (import.meta.env.DEV) {
           console.debug('[Entitlements] snapshot committed', lastGoodSnapshotRef.current);
         }
@@ -184,12 +178,6 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setError(null);
         setHasResolved(true);
 
-        // keep global snapshot in sync
-        (window as any)._lasyncroEntitlements = {
-          modules: snap.modules,
-          flags: snap.flags
-        };
-
         return;
       }
 
@@ -199,10 +187,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
       setFlags([]);
       setError(err?.message || 'Failed to load entitlements');
       setHasResolved(true);
-
-      // reflect cleared state to modules
-      (window as any)._lasyncroEntitlements = null;
-
+      
       })
       .finally(() => {
         if (!cancelled) {

@@ -29,6 +29,7 @@ describe('lifecycleReducer — FT1 promotion ordering', () => {
         ...initialLifecycleState,
         bootResolved: true,
         integrationExists: true,
+        hasSeenFT0: true,
         phase: 'FT0_PREPARING',
         ft0DwellCompleted: false,
         };

@@ -3,11 +3,11 @@ import React from 'react';
 import { Box, Typography, Button, Paper, Stack } from '@mui/material';
 
 interface PaywallSurfaceProps {
-  scopeId: string;
+  moduleId: string;
   onUpgrade?: () => void;
 }
 
-export function PaywallSurface({ scopeId, onUpgrade }: PaywallSurfaceProps) {
+export function PaywallSurface({ moduleId, onUpgrade }: PaywallSurfaceProps) {
 
   return (
     <Box
@@ -31,12 +31,13 @@ export function PaywallSurface({ scopeId, onUpgrade }: PaywallSurfaceProps) {
       >
         <Stack spacing={2}>
           <Typography variant="h5" fontWeight={800}>
-            Unlock {scopeId}
+            Unlock {moduleId}
           </Typography>
 
           <Typography variant="body2" color="text.secondary">
-            This module is available on a paid plan.
-            Upgrade to continue.
+             <Button variant="contained" size="large" onClick={onUpgrade}>
+              Request access
+             </Button>
           </Typography>
 
           <Button

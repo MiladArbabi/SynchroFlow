@@ -46,7 +46,7 @@ export function lifecycleReducer(
           integrationExists: true,
           phase: 'FT0_PREPARING',
           hasSeenFT0: true,
-          ft0DwellCompleted: true,
+          ft0DwellCompleted: false,
         };
       }
 
@@ -131,12 +131,17 @@ export function lifecycleReducer(
       hasLatchedFT1: true,
     };
 
-    // Only promote when dwell is done
-    if (
+    const canPromoteToFT1 =
       latchedState.bootResolved &&
       latchedState.integrationExists &&
-      latchedState.ft0DwellCompleted
-    ) {
+      (
+        // Case 1: FT0 happened and dwell completed
+        (latchedState.hasSeenFT0 && latchedState.ft0DwellCompleted) ||
+        // Case 2: FT0 never occurred → dwell irrelevant
+        (!latchedState.hasSeenFT0)
+      );
+
+    if (canPromoteToFT1) {
       return {
         ...latchedState,
         phase: 'FT1_READY',

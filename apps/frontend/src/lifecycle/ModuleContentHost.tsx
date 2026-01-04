@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 //apps/frontend/src/lifecycle/ModuleContentHost.tsx
 import React from 'react';
 
@@ -21,7 +20,6 @@ import { Ft1OnboardingGate } from './Ft1OnboardingGate';
 interface ModuleContentHostProps {
   moduleId: string;
   phase: UIModulePhase;
-  hasPaidEntitlement: boolean;
   onboarding?: {
     ft1?: {
       isComplete: boolean;
@@ -35,7 +33,6 @@ const __DEV__ = import.meta.env.DEV;
 export function ModuleContentHost({
   moduleId,
   phase,
-  hasPaidEntitlement,
   onboarding,
 }: ModuleContentHostProps) {
 

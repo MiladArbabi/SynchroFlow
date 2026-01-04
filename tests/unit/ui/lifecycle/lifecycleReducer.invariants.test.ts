@@ -21,8 +21,10 @@ describe('lifecycleReducer — sealed invariants', () => {
     state = lifecycleReducer(state, { type: 'FT1_BACKEND_COMPLETE' });
 
     expect(state.hasLatchedFT1).toBe(true);
-    expect(state.ft0DwellCompleted).toBe(true);
-    expect(state.phase).toBe('FT1_READY');
+    expect(state.hasSeenFT0).toBe(true);        // fast-path FT0
+    expect(state.ft0DwellCompleted).toBe(false);
+    expect(state.phase).toBe('FT0_PREPARING');
+
   });
 
   /* -------------------------------------------------- */
@@ -40,8 +42,9 @@ describe('lifecycleReducer — sealed invariants', () => {
     state = lifecycleReducer(state, { type: 'FT1_BACKEND_COMPLETE' });
 
     expect(state.hasLatchedFT1).toBe(true);
-    expect(state.ft0DwellCompleted).toBe(true);
-    expect(state.phase).toBe('FT1_READY');
+    expect(state.hasSeenFT0).toBe(true);
+    expect(state.ft0DwellCompleted).toBe(false);
+    expect(state.phase).toBe('FT0_PREPARING');
   });
 
   /* -------------------------------------------------- */
@@ -86,7 +89,7 @@ describe('lifecycleReducer — sealed invariants', () => {
 
     expect(state.phase).toBe('FT0_PREPARING');
     expect(state.hasSeenFT0).toBe(true);
-    expect(state.ft0DwellCompleted).toBe(true);
+    expect(state.ft0DwellCompleted).toBe(false);
   });
 
   /* -------------------------------------------------- */

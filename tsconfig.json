@@ -88,11 +88,15 @@
   "include": [
     "apps/backend/src",
     "apps/frontend/src",
+    "apps/frontend/vite-plugins/**/*.ts",
     "apps/integration-service/src",
+    "apps/frontend/vite-plugins/**/*.ts",
     "modules/specter/src",
     "modules/order-nexus/src",
-    "modules/customers/src"
-, "modules/shared/src/contracts.ts", "modules/finances/src/ui/FinancesAhaPanel.tsx"  ],
+    "modules/customers/src",
+    "modules/shared/src/contracts.ts",
+    "modules/finances/src/ui/FinancesAhaPanel.tsx"
+  ],
   "exclude": [
   "apps/frontend/src/stories/**"
   ],
