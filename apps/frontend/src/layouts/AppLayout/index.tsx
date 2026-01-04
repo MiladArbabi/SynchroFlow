@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/index.tsx
 import React, { ReactNode, useRef, useEffect, useState } from "react"; 
@@ -54,10 +53,6 @@ const AppLayout = ({
   // --- STATE LIFTED FROM DASHBOARD ---
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false); 
-
-  const isDev =
-   typeof import.meta !== 'undefined' &&
-   (import.meta as any).env?.DEV === true;
 
   // --- LOGIC LIFTED FROM DASHBOARD ---
   useEffect(() => {
