@@ -87,10 +87,10 @@ export interface LaSyncroAccessTokenClaims {
   // Actor identity
   actor_type: ActorType;        // 'shop_user' | 'system_service' | 'support_admin'
 
-  // Shop context (for shop_user and some support_admin)
-  shop_id?: ShopId;             // required for shop_user; optional for support_admin
-  user_id?: UserId;             // for shop_user
-  service_id?: string;          // for system_service
+  // Canonical identity (LOCKED invariants)
+  user_id: UserId;              // REQUIRED — must exist and be numeric/UUID
+  shop_id?: ShopId;             // REQUIRED for shop_user; optional otherwise
+  service_id?: string;          // REQUIRED for system_service
   session_id?: string;          // per-login session; rotation anchor
 
   // Roles & scopes
@@ -111,6 +111,13 @@ export interface LaSyncroAccessTokenClaims {
 * `shop_id` is **mandatory** for `shop_user`.
 * `shop_roles` MUST reflect current roles at token issuance; Core is source of truth.
 * `modules` is an **optimization**; permissions are ultimately checked via Entitlements + roles.
+
+**Identity Invariants (ENFORCED):**
+
+* `user_id` MUST exist for all human-authenticated tokens.
+* `user_id` MUST be a valid identifier (numeric or UUID; no strings like `"abc"`).
+* Tokens missing `user_id` or with invalid shape MUST be rejected immediately.
+* Such rejection is **terminal** and MUST result in logout (no refresh attempt).
 
 Any additional claim must not change the semantics of these locked ones.
 
@@ -360,14 +367,32 @@ Every non-public endpoint must:
 ```ts
 export interface AuthContext {
   actorType: ActorType;
+
+  // 🔒 Canonical identity — hard invariant
+  userId: UserId;               // REQUIRED for all human actors
   shopId?: ShopId;
-  userId?: UserId;
+
+  // Service identity
   serviceId?: string;
+
   roles: ShopRole[];
   scopes: string[];
   authProvider: 'shopify' | 'password' | 'sso' | 'service';
 }
 ```
+
+**Payload Validation Rules (LOCKED):**
+
+* If JWT verifies cryptographically but:
+  * `user_id` is missing, OR
+  * `user_id` is not a valid identifier
+* The request MUST fail with:
+
+```json
+{
+  "error": "INVALID_TOKEN_PAYLOAD",
+  "action": "LOGOUT_REQUIRED"
+}
 
 ### 5.2 Standard Permission Helpers
 
@@ -449,7 +474,8 @@ The frontend implements **strict single-flight refresh semantics** for access to
 2. All concurrent API requests that receive `401 Unauthorized`:
    * wait on the same refresh operation
    * are retried only after refresh resolves
-3. If refresh **fails** (401, 403, 429, or network error):
+3. If refresh **fails** OR the refreshed token violates identity invariants
+(401, 403, 429, network error, or INVALID_TOKEN_PAYLOAD):
    * the session is **hard-stopped**
    * access token state is cleared exactly once
    * all waiting requests are rejected
@@ -472,6 +498,10 @@ These guarantees exist to:
 * avoid partial auth state
 * protect user identity integrity
 * ensure deterministic lifecycle hydration
+* Frontend must never accept or store a refreshed access token
+  that lacks a valid `user_id`.
+* A refresh response without a valid identity MUST be treated
+  identically to refresh failure.
 
 Any deviation requires `auth-contract v2`.
 

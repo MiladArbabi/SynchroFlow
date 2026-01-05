@@ -2,17 +2,22 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-// Define a type for the decoded JWT payload
-interface JwtPayload {
-  userId: number;
-  // Add other fields if you include them in the JWT (e.g., roles)
+/**
+ * Canonical Auth Context extracted from JWT.
+ * This is the ONLY trusted identity surface for downstream services.
+ */
+interface AuthContext {
+  userId: number;              // REQUIRED — hard invariant
+  shopId?: number;             // Optional (future-safe)
+  actorType?: 'shop_user' | 'system_service' | 'support_admin';
+  roles?: string[];
 }
 
 // Extend the Express Request type to include the user property
 declare global {
   namespace Express {
     interface Request {
-      user?: JwtPayload; // Add user property to Request
+      user?: AuthContext;
     }
   }
 }
@@ -48,8 +53,25 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
       });
     }
 
-    // ✅ Valid token
-    req.user = user as JwtPayload;
+    const payload = user as any;
+
+    // 🔒 Hard invariant: userId must exist and be a number
+    if (!payload || typeof payload.userId !== 'number') {
+      console.error('[auth] Invalid token payload shape', payload);
+      return res.status(401).json({
+        error: 'INVALID_TOKEN_PAYLOAD',
+        action: 'LOGOUT_REQUIRED',
+      });
+    }
+
+    // ✅ Canonical auth context
+    req.user = {
+      userId: payload.userId,
+      shopId: payload.shopId,
+      actorType: payload.actorType,
+      roles: payload.roles,
+    };
+
     return next();
   });
 };
