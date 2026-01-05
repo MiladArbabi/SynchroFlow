@@ -2,8 +2,18 @@
 import React from 'react';
 import { Grid, Paper, Stack, Typography } from '@mui/material';
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
+import { mapOrdersFt2Props } from './orders/useOrdersFt2Adapter';
 
 export const DashboardPageFT2: React.FC = () => {
+  /**
+   * FT2 Orders (Dashboard)
+   * ----------------------
+   * No backend snapshot wired yet.
+   * Pass empty snapshot to preserve null semantics
+   * and enforce FT2 contract.
+   */
+  const ordersFt2Props = mapOrdersFt2Props({});
+
   return (
     <Stack spacing={3}>
       <Typography variant="h5" fontWeight={600}>
@@ -24,7 +34,7 @@ export const DashboardPageFT2: React.FC = () => {
                 {name}
               </Typography>
               <Typography variant="body2" sx={{ mt: 1 }}>
-                <OrdersModuleFT2 />
+                <OrdersModuleFT2 {...ordersFt2Props} />
               </Typography>
             </Paper>
           </Grid>
