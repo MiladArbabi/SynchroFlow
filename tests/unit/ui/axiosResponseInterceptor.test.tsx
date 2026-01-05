@@ -36,6 +36,102 @@ describe('Axios Response Interceptor (Token Refresh)', () => {
     mock.restore();
   });
 
+  it('deduplicates concurrent 401s into a single refresh call', async () => {
+    const protectedUrl = '/api/v1/protected';
+    const newAccessToken = 'new-access-token';
+
+    currentToken = 'expired-token';
+
+    // Each initial request fails once
+    mock.onGet(protectedUrl).replyOnce(401);
+    mock.onGet(protectedUrl).replyOnce(401);
+    mock.onGet(protectedUrl).replyOnce(401);
+
+    // Refresh succeeds once
+    mock
+      .onPost('/api/v1/auth/refresh_token')
+      .replyOnce(200, { accessToken: newAccessToken });
+
+    // Retries succeed
+    mock.onGet(protectedUrl).reply(200, { ok: true });
+
+    const results = await Promise.all([
+      axiosInstance.get(protectedUrl),
+      axiosInstance.get(protectedUrl),
+      axiosInstance.get(protectedUrl),
+    ]);
+
+    expect(mock.history.post.length).toBe(1);
+
+    results.forEach(r => {
+      expect(r.data).toEqual({ ok: true });
+    });
+  });
+
+  it('queues requests arriving during an in-flight refresh', async () => {
+    const protectedUrl = '/api/v1/queued';
+    const newAccessToken = 'queued-access-token';
+
+    currentToken = 'expired-token';
+
+    // First wave: 401
+    mock.onGet(protectedUrl).replyOnce(401);
+
+    // Refresh resolves
+    mock
+      .onPost('/api/v1/auth/refresh_token')
+      .replyOnce(200, { accessToken: newAccessToken });
+
+    // Retry succeeds
+    mock.onGet(protectedUrl).reply(200, { ok: true });
+
+    const first = axiosInstance.get(protectedUrl);
+
+    // Second request while refresh is still pending
+    const second = axiosInstance.get(protectedUrl);
+
+    const results = await Promise.all([first, second]);
+
+    // Still only ONE refresh
+    expect(mock.history.post.length).toBe(1);
+
+    results.forEach(r => {
+      expect(r.data).toEqual({ ok: true });
+    });
+  });
+
+  it('hard-stops and clears token if refresh fails once under concurrency', async () => {
+    const protectedUrl = '/api/v1/fail-refresh';
+
+    currentToken = 'expired-token';
+
+    mock.onGet(protectedUrl).reply(401);
+
+    // Refresh fails
+    mock
+      .onPost('/api/v1/auth/refresh_token')
+      .replyOnce(401, { error: 'invalid refresh' });
+
+    const requests = Promise.allSettled([
+      axiosInstance.get(protectedUrl),
+      axiosInstance.get(protectedUrl),
+      axiosInstance.get(protectedUrl),
+    ]);
+
+    const results = await requests;
+
+    // Refresh attempted only once
+    expect(mock.history.post.length).toBe(1);
+
+    // Token cleared exactly once
+    expect(mockedClearToken).toHaveBeenCalledTimes(1);
+
+    // All requests rejected
+    results.forEach(r => {
+      expect(r.status).toBe('rejected');
+    });
+  });
+
   it('should refresh token and retry original request on 401', async () => {
     const protectedUrl = '/api/v1/some-protected-data';
     const newAccessToken = 'new-fresh-access-token';

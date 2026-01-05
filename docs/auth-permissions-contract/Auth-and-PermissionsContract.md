@@ -227,6 +227,10 @@ For internal LaSyncro staff:
 
 We will **NOT** allow arbitrary impersonation; actions taken in impersonation must be audit-logged.
 
+**Note:**  
+All frontend-authenticated flows (Shopify embedded app, direct SaaS) rely on the same locked frontend refresh semantics defined in §7.2.1.  
+Auth flow differences do not alter refresh behavior.
+
 ---
 
 ## 4. Permissions Model
@@ -402,7 +406,7 @@ Skipping any stage = bug.
 
 ## 6. Frontend-Specific Rules
 
-Frontends **must not** base security solely on plan or roles; they:
+Frontends **must not** base security or session continuity on plan, roles, or retry heuristics; they:
 
 1. Use JWT only for:
 
@@ -434,6 +438,42 @@ Security decisions (e.g. “can create RMA”) **must be enforced** in backend.
   * `refresh_token_id`, `userId`, `shopId`, `session_id`, `expiresAt`, `revokedAt`.
 * Not visible to backend services; only Auth service uses them.
 * Re-issue access tokens with **same `session_id`** until revoked or expired.
+
+### 7.2.1 Frontend Access Token Refresh Semantics (LOCKED)
+
+The frontend implements **strict single-flight refresh semantics** for access tokens.
+
+**Invariants (enforced by tests):**
+
+1. **Exactly one** `/auth/refresh_token` request may be in flight at any time.
+2. All concurrent API requests that receive `401 Unauthorized`:
+   * wait on the same refresh operation
+   * are retried only after refresh resolves
+3. If refresh **fails** (401, 403, 429, or network error):
+   * the session is **hard-stopped**
+   * access token state is cleared exactly once
+   * all waiting requests are rejected
+   * no retry loops occur
+4. No refresh attempts are made:
+   * for auth routes themselves
+   * for already-retried requests
+
+**Non-negotiable constraints:**
+
+* Frontend must not:
+  * perform parallel refresh calls
+  * retry refresh after failure
+  * attempt silent re-authentication
+* Refresh logic is centralized in a single interceptor choke point.
+
+These guarantees exist to:
+
+* prevent backend rate-limit storms
+* avoid partial auth state
+* protect user identity integrity
+* ensure deterministic lifecycle hydration
+
+Any deviation requires `auth-contract v2`.
 
 ### 7.3 Forced Logout / Revocation
 
@@ -477,5 +517,6 @@ If you can’t answer that, your implementation is non-compliant with this contr
 * Per-module custom JWTs with their own claim formats.
 * Hardcoding role names deep in modules (always check scopes, not string roles).
 * Frontend-only “security” (e.g. hiding a button but not enforcing in backend).
+* Implementing token refresh logic outside the single-flight interceptor (e.g. per-module retries, UI-level refresh, or parallel refresh calls).
 
 Any of these must be treated as a **security violation**.

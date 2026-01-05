@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/api/axiosConfig.ts
 import axios from 'axios';
 import { getToken, setToken, clearToken } from 'utils/authStore'; // Use alias
@@ -28,23 +27,15 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// --- Response Interceptor ---
-// This function runs *after* a response is received.
-
-// Variable to prevent multiple refresh attempts simultaneously
-let isRefreshing = false;
-let failedQueue: Array<{ resolve: (value: any) => void; reject: (reason: any) => void }> = [];
-
-const processQueue = (error: any, token: string | null = null) => {
-  failedQueue.forEach(prom => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token);
-    }
-  });
-  failedQueue = [];
-};
+  /**
+   * Single-flight refresh promise.
+   *
+   * Guarantees:
+   * - Exactly ONE refresh request in flight at any time
+   * - All concurrent 401s await the same promise
+   * - Refresh failure is terminal (hard logout)
+   */
+  let refreshPromise: Promise<string> | null = null;
 
 axiosInstance.interceptors.response.use(
   (response) => {
@@ -54,59 +45,66 @@ axiosInstance.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Check for 401 and ensure it's not a retry or a failed refresh
-    // Add exclusion for login/register routes ---
     const isAuthRoute =
       originalRequest.url === '/api/v1/auth/login' ||
       originalRequest.url === '/api/v1/auth/register' ||
       originalRequest.url === '/api/v1/auth/refresh_token';
 
-      if (
+    if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !isAuthRoute // <-- Do not attempt to refresh token on auth routes
-      ) {
-
-      if (isRefreshing) {
-        // If already refreshing, wait for the new token
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then(token => {
-          originalRequest.headers.Authorization = 'Bearer ' + token;
-          return axiosInstance(originalRequest);
-        });
-      }
-
-      originalRequest._retry = true; // Mark as retried
-      isRefreshing = true;
+      !isAuthRoute
+    ) {
+      originalRequest._retry = true;
 
       try {
-        // Call the refresh token endpoint
-        const { data } = await axios.post('/api/v1/auth/refresh_token');
-        const newAccessToken = data.accessToken;
+        if (!refreshPromise) {
+          refreshPromise = (async () => {
+            try {
+              /**
+               * IMPORTANT:
+               * Use axiosInstance (not raw axios) so that:
+               * - requests are mockable in tests
+               * - headers / base config are consistent
+               * - refresh behavior is observable & instrumentable
+               */
+              const { data } = await axiosInstance.post('/api/v1/auth/refresh_token');
+              const newAccessToken = data.accessToken;
 
-        setToken(newAccessToken); // Update in-memory store
-        axiosInstance.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`; // Update default header
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`; // Update current request
-        
-        processQueue(null, newAccessToken); // Resume queued requests
-        isRefreshing = false;
-        return axiosInstance(originalRequest); // Retry original request
+              setToken(newAccessToken);
+              axiosInstance.defaults.headers.common.Authorization =
+                `Bearer ${newAccessToken}`;
 
-      } catch (refreshError: any) {
-        processQueue(refreshError, null); // Reject queued requests
-        isRefreshing = false;
-        
-        clearToken(); // Logout: Clear token
-        // Optional: Redirect to login
-        // window.location.href = '/login';
+              return newAccessToken;
+            } catch (err) {
+              /**
+               * HARD STOP:
+               * Refresh failure is terminal.
+               * We intentionally clear auth state exactly once.
+               */
+              clearToken();
+              throw err;
+            } finally {
+              /**
+               * Reset latch so a future session can refresh again.
+               * Never cleared early.
+               */
+              refreshPromise = null;
+            }
+          })();
+        }
 
+        const token = await refreshPromise;
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return axiosInstance(originalRequest);
+
+      } catch (refreshError) {
         return Promise.reject(refreshError);
       }
     }
 
-    // For any other errors, just reject
     return Promise.reject(error);
   }
 );
+
 export { axiosInstance };
