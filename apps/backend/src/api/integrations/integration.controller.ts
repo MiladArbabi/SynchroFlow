@@ -27,25 +27,26 @@ import { issueAuthTokens } from '../auth/token.service';
 
 import { audit } from 'api-src/utils/audit';
 import { rateLimit } from 'api-src/utils/rateLimit';
+import { requireAuth } from 'api-src/middleware/requireAuth';
 
-/**
- * Helper function to get the shop_id from an authenticated user.
- *
- * CONTRACT:
- * - Authenticated user WITHOUT shop_id → return null (NOT an auth error)
- * - Caller must decide how to map null (usually NOT_FOUND)
- */
-const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
-  if (!(req as any).user) return null;
-
-  const userId = (req as any).user.userId;
+class NoShopError extends Error {}
+async function requireShopId(req: Request): Promise<number> {
+  const { userId } = requireAuth(req);
 
   const user = await db<User>('users')
     .where({ id: userId })
     .first('shop_id');
 
-  return typeof user?.shop_id === 'number' ? user.shop_id : null;
-};
+  if (!user) {
+    throw new Error('AUTH_INVARIANT_VIOLATION: user not found');
+  }
+
+  if (typeof user.shop_id !== 'number') {
+    throw new NoShopError('User has no shop');
+  }
+
+  return user.shop_id;
+}
 
 // --- Helper function for encryption ---
 const encryptToken = (token: string): string => {
@@ -78,9 +79,11 @@ export const normalizeShopDomain = (shopInput: string): string => {
 
 export const initiateOAuth = async (req: Request, res: Response) => {
   const { platform, shop } = req.query as { platform?: string; shop?: string };
-  const userId = (req as any).user?.userId;
+  let userId: number;
 
-  if (!userId) {
+  try {
+    ({ userId } = requireAuth(req));
+  } catch {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -447,16 +450,21 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
  */
 export const getSyncStatus = async (req: Request, res: Response) => {
   try {
-    const shopId = await getShopIdFromRequest(req);
+    let shopId: number;
 
-    if (!shopId) {
-      // Authenticated user but no shop yet → treat as no integration
-      return res.status(200).json({
-        status: 'NOT_FOUND',
-        progress: { current: 0, total: 0, percentage: 0 },
-        lastError: null
-      });
-    }
+      try {
+        shopId = await requireShopId(req);
+      } catch (err) {
+        if (err instanceof NoShopError) {
+          return res.status(200).json({
+            status: 'NOT_FOUND',
+            progress: { current: 0, total: 0, percentage: 0 },
+            lastError: null,
+          });
+        }
+
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
 
     // Find the primary Shopify integration for this shop
     // In the future, we might support multiple, but for MVP, we take the first.
@@ -547,9 +555,11 @@ export const preFlightCheck = async (req: Request, res: Response) => {
 export const triggerManualSync = async (req: Request, res: Response) => {
   try {
     const { integrationId } = req.params;
-    const shopId = await getShopIdFromRequest(req);
-    
-    if (!shopId) {
+    let shopId: number;
+
+    try {
+      shopId = await requireShopId(req);
+    } catch {
       return res.status(403).json({ error: 'User shop not found.' });
     }
 

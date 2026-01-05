@@ -209,17 +209,32 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     const incomingHash = hashRefreshToken(incomingRefreshToken);
  
-     const existingToken = await db('refresh_tokens')
+    const existingToken = await db('refresh_tokens')
       .where({
         token_hash: incomingHash,
-        revoked_at: null,
         session_id,
         token_version,
       })
-      .andWhere('expires_at', '>', new Date())
       .first();
 
+    // 🔒 No record → expired or invalid
     if (!existingToken) {
+      return res.status(401).json({
+        error: 'SESSION_EXPIRED',
+        action: 'LOGOUT_REQUIRED',
+      });
+    }
+
+    // 🔒 Explicit expiry check
+    if (existingToken.expires_at <= new Date()) {
+      return res.status(401).json({
+        error: 'SESSION_EXPIRED',
+        action: 'LOGOUT_REQUIRED',
+      });
+    }
+
+    // 🔒 Revoked token → replay / compromise
+    if (existingToken.revoked_at) {
       return res.status(403).json({
         error: 'SESSION_COMPROMISED',
         action: 'LOGOUT_REQUIRED',
@@ -265,17 +280,7 @@ export const refreshToken = async (req: Request, res: Response) => {
           usedFrom: currentUa,
         },
       });
-    }
-
-     if (!existingToken) {
-      console.warn('[SECURITY] Refresh token reuse detected', {
-        ip: req.socket.remoteAddress,
-      });
-       return res.status(403).json({ 
-        error: 'SESSION_COMPROMISED',
-        action: 'LOGOUT_REQUIRED',
-      });
-    }
+    };
 
     const userExists = await db('users')
       .where({ id: user_id })

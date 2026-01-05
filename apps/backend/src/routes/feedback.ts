@@ -31,10 +31,10 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 
     const { insightId, triggerType, action, feedback } = validationResult.data;
-    const userId = (req.user as any)?.id;
-    const shopId = (req.user as any)?.shop_id;
+    const userId = req.user?.userId ;
+    const shopId = req.user?.shopId;
 
-    if (!userId) {
+    if (typeof userId !== 'number') {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
@@ -74,7 +74,11 @@ router.post('/', authenticateToken, async (req, res) => {
 router.get('/insights/:insightId', authenticateToken, async (req, res) => {
   try {
     const { insightId } = req.params;
-    const userId = (req.user as any)?.id;
+    const userId = req.user?.userId;
+
+    if (typeof userId !== 'number') {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
 
     const feedback = await FeedbackService.getFeedbackForInsight(insightId, userId);
 
