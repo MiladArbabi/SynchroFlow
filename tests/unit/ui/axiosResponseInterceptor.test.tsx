@@ -192,4 +192,25 @@ describe('Axios Response Interceptor (Token Refresh)', () => {
     // 5. Assert the store was CLEARED (logout)
     expect(mockedClearToken).toHaveBeenCalled();
   });
+
+  it('does NOT attach Authorization header to auth routes', async () => {
+    currentToken = 'expired-token';
+
+    mock
+      .onPost('/api/v1/auth/login')
+      .reply(401, { error: 'Invalid credentials' });
+
+    try {
+      await axiosInstance.post('/api/v1/auth/login', {
+        email: 'test@test.com',
+        password: 'password',
+      });
+    } catch {
+      // expected
+    }
+
+    expect(mock.history.post.length).toBe(1);
+    expect(mock.history.post[0].headers?.Authorization).toBeUndefined();
+  });
+
 });

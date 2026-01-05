@@ -9,6 +9,18 @@ const axiosInstance = axios.create({
   // baseURL: 'http://localhost:3000/api/v1' 
 });
 
+// 🔒 Auth routes MUST be clean-room (no Authorization header ever)
+const AUTH_ROUTES = [
+  '/api/v1/auth/login',
+  '/api/v1/auth/register',
+  '/api/v1/auth/refresh_token',
+  '/api/v1/auth/logout',
+];
+
+function isAuthRoute(url?: string) {
+  return !!url && AUTH_ROUTES.some(r => url.startsWith(r));
+}
+
 // --- Request Interceptor ---
 // This function runs *before* every request is sent.
 axiosInstance.interceptors.request.use(
@@ -16,15 +28,16 @@ axiosInstance.interceptors.request.use(
     // Get the token from our in-memory store
     const token = getToken();
     
-    const isAuthRoute =
-      config.url?.includes('/api/v1/auth/login') ||
-      config.url?.includes('/api/v1/auth/register') ||
-      config.url?.includes('/api/v1/auth/refresh_token') ||
-      config.url?.includes('/api/v1/auth/logout');
+    // 🔒 NEVER attach Authorization to auth routes
+    if (isAuthRoute(config.url)) {
+      delete config.headers?.Authorization;
+      return config;
+    }
 
-    if (token && !isAuthRoute) {
+    if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
   (error) => {
@@ -50,16 +63,12 @@ axiosInstance.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
-
-    const isAuthRoute =
-      originalRequest.url === '/api/v1/auth/login' ||
-      originalRequest.url === '/api/v1/auth/register' ||
-      originalRequest.url === '/api/v1/auth/refresh_token';
+    const authRoute = isAuthRoute(originalRequest.url);
 
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !isAuthRoute
+      !authRoute
     ) {
       originalRequest._retry = true;
 
@@ -85,7 +94,7 @@ axiosInstance.interceptors.response.use(
             } catch (err: any) {
               const status = err?.response?.status;
 
-              // 🔁 Transient refresh failure → DO NOT LOG OUT
+              // 🔁 Transient refresh failure → HARD STOP, NO LOGOUT
               if (status === 503) {
                 throw err;
               }
