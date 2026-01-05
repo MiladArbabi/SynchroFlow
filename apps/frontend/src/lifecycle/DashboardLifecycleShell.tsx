@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/lifecycle/DashboardLifecycleShell.tsx
-
 import React from 'react';
 import { useDashboardState } from 'contexts/DashboardStateContext';
 import { useShopLifecycle } from './ShopLifecycleContext';
@@ -14,9 +13,13 @@ export function DashboardLifecycleShell({
 }: DashboardLifecycleShellProps) {
   const { phase: shopPhase } = useShopLifecycle();
 
-  if (import.meta.env.DEV && shopPhase !== 'FT1_READY') {
+  if (
+    import.meta.env.DEV &&
+    shopPhase !== 'FT1_READY' &&
+    shopPhase !== 'FT2_READY'
+  ) {
     throw new Error(
-      '[DashboardLifecycleShell] Mounted before FT1_READY. ' +
+      '[DashboardLifecycleShell] Mounted outside FT1_READY / FT2_READY. ' +
       'ShopLifecycleGate must prevent this.'
     );
   }

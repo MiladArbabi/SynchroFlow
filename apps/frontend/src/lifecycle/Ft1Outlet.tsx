@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
-import { evaluateFt2, confirmFt2, getLifecycle } from 'api/lifecycle';
+import { evaluateFt2, confirmFt2 } from 'api/lifecycle';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { Ft1ChecklistSurface } from 'ui/src/ui/ft1-checklist/Ft1ChecklistSurface';
 
@@ -36,10 +36,10 @@ export function Ft1Outlet() {
   const { phase } = useShopLifecycle();
   const isFt1 = phase === 'FT1_READY';
 
-  console.log('[FT1][OUTLET][RENDER]', {
+  /* console.log('[FT1][OUTLET][RENDER]', {
     phase,
     ts: performance.now(),
-  });
+  }); */
 
   // ─────────────────────────────────────────────
   // STATE (always mounted while FT1 subtree exists)
@@ -175,8 +175,10 @@ function Ft1OutletContent({
             try {
               await confirmFt2();
 
-              // Lifecycle shell will refetch on next render
-              await getLifecycle();
+              // 🔒 Explicit lifecycle promotion (authoritative)
+              window.dispatchEvent(
+                new CustomEvent('lifecycle:ft2-confirmed')
+              );
 
               console.info('[FT1] FT2 confirmed successfully');
             } catch (err) {

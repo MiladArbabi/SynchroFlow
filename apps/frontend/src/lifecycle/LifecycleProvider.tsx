@@ -73,6 +73,18 @@ export function LifecycleProvider({
   /* const isFT2Terminal =
     state.phase === 'FT2_READY'; */
 
+    useEffect(() => {
+    function onFt2Confirmed() {
+      dispatch({ type: 'FT2_BACKEND_COMPLETE' });
+    }
+
+    window.addEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
+    return () => {
+      window.removeEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
+    };
+  }, []);
+
+
   const isHydratedTerminal =
     state.phase === 'FT1_READY' || state.phase === 'FT2_READY';
 
@@ -136,14 +148,14 @@ export function LifecycleProvider({
   useEffect(() => {
     if (isHydratedTerminal) return;
 
-    console.log('[FT2_RESTORE_EFFECT_ENTER]', {
+    /* console.log('[FT2_RESTORE_EFFECT_ENTER]', {
       shopId,
       hasFT2Seal,
       bootResolved: integration.bootResolved,
       hasIntegration: integration.hasIntegration,
-    });
+    }); */
     
-    if (hasFT2Seal) {
+    if (hasFT2Seal && integration.hasIntegration) {
       console.log('[FT2_RESTORE_FROM_LOCALSTORAGE]');
 
       // Allow boot + integration to resolve first
@@ -155,6 +167,10 @@ export function LifecycleProvider({
 
       setFt2RestoreResolved(true);
       return;
+    }
+
+    if (hasFT2Seal && !integration.hasIntegration && shopId) {
+      localStorage.removeItem(`shop:${shopId}:ft2-seen`);
     }
 
     if (!state.bootResolved) return;
