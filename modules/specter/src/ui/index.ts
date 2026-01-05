@@ -1,5 +1,6 @@
 // modules/specter/src/ui/index.ts
 export { default as SpecterModule } from './pages/SpecterModule';
+export { default as SpecterModuleFT2 } from './pages/SpecterModuleFT2';
 
 // hooks
 export { useSpecterFt1Scenario } from './hooks/useSpecterFt1Scenario';

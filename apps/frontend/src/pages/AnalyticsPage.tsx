@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/AnalyticsPage.tsx
-import { AnalyticsModule } from '@lasyncro/analytics';
+import { AnalyticsModule, AnalyticsModuleFT2 } from '@lasyncro/analytics';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
@@ -14,6 +14,8 @@ export default function AnalyticsPage() {
   const shopId = user?.shop_id ?? null;
 
   const isFt1 = phase === 'FT1_READY';
+  const isFt2 = phase === 'FT2_READY';
+
   const enabled = isFt1 && !!shopId;
 
   const readinessQuery = useOnboardingReadiness(
@@ -22,6 +24,10 @@ export default function AnalyticsPage() {
   );
 
   // ---- Rendering gates only ----
+
+  if (isFt2) {
+    return <AnalyticsModuleFT2 />;
+  }
 
   if (!isFt1) {
     return <div>Analytics not available (phase: {phase})</div>;

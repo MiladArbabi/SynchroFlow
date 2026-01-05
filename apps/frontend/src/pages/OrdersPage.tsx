@@ -1,5 +1,5 @@
 //apps/frontend/src/pages/OrdersPage.tsx
-import { OrdersModule } from '@lasyncro/order-nexus';
+import { OrdersModule, OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
@@ -13,12 +13,19 @@ export default function OrdersPage() {
   const onIntent = useOrderNexusAhaAdapter();
 
   const isFt1 = phase === 'FT1_READY';
+  const isFt2 = phase === 'FT2_READY';
+
   const enabled = isFt1 && !!shopId;
 
   const readinessQuery = useOnboardingReadiness(
     enabled,
     shopId ?? 0
   );
+
+  // ---- FT2 routing ----
+  if (isFt2) {
+    return <OrdersModuleFT2 />;
+  }
 
   // ---- Rendering gates ONLY ----
   if (!isFt1) {

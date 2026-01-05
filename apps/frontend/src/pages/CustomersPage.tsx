@@ -1,4 +1,4 @@
-import { SpecterModule } from '@lasyncro/specter';
+import { SpecterModule, SpecterModuleFT2 } from '@lasyncro/specter';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
@@ -12,12 +12,17 @@ export default function CustomersPage() {
   const onIntent = useSpecterAhaAdapter();
 
   const isFt1 = phase === 'FT1_READY';
+  const isFt2 = phase === 'FT2_READY';
   const enabled = isFt1 && !!shopId;
 
   const readinessQuery = useOnboardingReadiness(
     enabled,
     shopId ?? 0
   );
+
+  if (isFt2) {
+    return <SpecterModuleFT2 />;
+  }
 
   if (!isFt1) {
     return <div>Customers not available (phase: {phase})</div>;

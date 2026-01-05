@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/ProductsPage.tsx
-import { ProductsModule } from '@lasyncro/products';
+import { ProductsModule, ProductsModuleFT2 } from '@lasyncro/products';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
@@ -13,12 +13,17 @@ export default function ProductsPage() {
   const onIntent = useProductsAhaAdapter();
 
   const isFt1 = phase === 'FT1_READY';
+  const isFt2 = phase === 'FT2_READY';
   const enabled = isFt1 && !!shopId;
 
   const readinessQuery = useOnboardingReadiness(
     enabled,
     shopId ?? 0
   );
+
+  if (isFt2) {
+    return <ProductsModuleFT2 />;
+  }
 
   if (!isFt1) {
     return <div>Products not available (phase: {phase})</div>;

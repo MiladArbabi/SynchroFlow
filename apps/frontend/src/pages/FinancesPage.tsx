@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/FinancesPage.tsx
-import { FinancesModule } from '@lasyncro/finances';
+import { FinancesModule, FinancesModuleFT2 } from '@lasyncro/finances';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
@@ -13,12 +13,18 @@ export default function FinancesPage() {
   const onIntent = useFinancesAhaAdapter();
 
   const isFt1 = phase === 'FT1_READY';
+  const isFt2 = phase === 'FT2_READY';
   const enabled = isFt1 && !!shopId;
 
   const readinessQuery = useOnboardingReadiness(
     enabled,
     shopId ?? 0
   );
+
+  // ---- FT2 routing ----
+  if (isFt2) {
+    return <FinancesModuleFT2 />;
+  }
 
   // ---- Rendering gates ONLY ----
   if (!isFt1) {
