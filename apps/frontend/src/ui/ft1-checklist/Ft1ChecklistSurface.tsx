@@ -16,11 +16,37 @@ export function Ft1ChecklistSurface() {
   const enabled = phase === 'FT1_READY' && !!shopId;
 
   useEffect(() => {
-    const handler = () => setOpen(true);
+  console.log('[FT1][SURFACE][MOUNT]', {
+    phase,
+    shopId,
+    enabled,
+    ts: performance.now(),
+  });
+
+  const handler = () => {
+      console.log('[FT1][EVENT][RECEIVED]', {
+        ts: performance.now(),
+      });
+      setOpen(true);
+    };
+
     window.addEventListener('ft1-checklist:open', handler);
-    return () =>
+
+    return () => {
+      console.log('[FT1][SURFACE][UNMOUNT]', {
+        ts: performance.now(),
+      });
       window.removeEventListener('ft1-checklist:open', handler);
+    };
   }, []);
+
+  console.log('[FT1][SURFACE][RENDER]', {
+    enabled,
+    phase,
+    shopId,
+    open,
+    ts: performance.now(),
+  });
 
   if (!enabled) return null;
 

@@ -2,11 +2,26 @@
 import React from 'react';
 import { evaluateFt2, confirmFt2, getLifecycle } from 'api/lifecycle';
 import { useShopLifecycle } from './ShopLifecycleContext';
+import { Ft1ChecklistSurface } from 'ui/ft1-checklist/Ft1ChecklistSurface';
 
 /**
  * Ft1Outlet
  * ---------
  * Explicit FT1 → FT2 promotion surface.
+ *
+ * CRITICAL ARCHITECTURAL INVARIANT:
+ * - All FT1-global surfaces (e.g. checklist drawers) MUST be mounted
+ *   in a STABLE position that does NOT change across FT1 render states.
+ *
+ * WHY:
+ * - Conditional returns cause subtree destruction
+ * - Subtree destruction kills effects
+ * - Killed effects unregister event listeners
+ * - Result: events silently fail
+ *
+ * This component therefore:
+ * - Mounts Ft1ChecklistSurface ONCE per FT1 session
+ * - Delegates all conditional UI to Ft1OutletContent
  *
  * HARD RULES:
  * - Eligibility ≠ promotion
@@ -21,14 +36,25 @@ export function Ft1Outlet() {
   const { phase } = useShopLifecycle();
   const isFt1 = phase === 'FT1_READY';
 
-  // Hooks — ALWAYS executed
+  console.log('[FT1][OUTLET][RENDER]', {
+    phase,
+    ts: performance.now(),
+  });
+
+  // ─────────────────────────────────────────────
+  // STATE (always mounted while FT1 subtree exists)
+  // ─────────────────────────────────────────────
   const [evaluation, setEvaluation] = React.useState<any | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [confirming, setConfirming] = React.useState(false);
 
   /**
    * Fetch FT2 eligibility (READ-ONLY)
-   * Runs ONLY while in FT1, but hook is unconditional.
+   *
+   * IMPORTANT:
+   * - Hook executes unconditionally
+   * - Side-effect gated by isFt1
+   * - No lifecycle inference
    */
   React.useEffect(() => {
     if (!isFt1) {
@@ -62,11 +88,58 @@ export function Ft1Outlet() {
     };
   }, [isFt1]);
 
-  // Render gating (safe)
+  // ─────────────────────────────────────────────
+  // RENDER GATE — FT1 ONLY
+  // ─────────────────────────────────────────────
   if (!isFt1) {
     return null;
   }
 
+  /**
+   * CRITICAL:
+   * - Ft1ChecklistSurface is mounted HERE
+   * - This position is STABLE across all FT1 states
+   * - It will NOT be unmounted when loading/evaluation changes
+   */
+  return (
+    <>
+      {/* FT1-global onboarding checklist (stable mount) */}
+      <Ft1ChecklistSurface />
+
+      {/* FT1 conditional content */}
+      <Ft1OutletContent
+        loading={loading}
+        evaluation={evaluation}
+        confirming={confirming}
+        setConfirming={setConfirming}
+      />
+    </>
+  );
+}
+
+/**
+ * Ft1OutletContent
+ * ----------------
+ * Pure FT1 UI state machine.
+ *
+ * IMPORTANT:
+ * - No global surfaces
+ * - No event listeners
+ * - Safe to remount
+ *
+ * This component is intentionally allowed to re-render and remount.
+ */
+function Ft1OutletContent({
+  loading,
+  evaluation,
+  confirming,
+  setConfirming,
+}: {
+  loading: boolean;
+  evaluation: any;
+  confirming: boolean;
+  setConfirming: (v: boolean) => void;
+}) {
   /**
    * STATE — Loading / Preparing
    */
@@ -119,7 +192,7 @@ export function Ft1Outlet() {
   }
 
   /**
-   * STATE — Insufficient data (explicit blockers)
+   * STATE — Insufficient data
    */
   if (hasDataCoverageBlockers) {
     return (
@@ -131,7 +204,7 @@ export function Ft1Outlet() {
   }
 
   /**
-   * STATE — Preparing (default)
+   * STATE — Preparing (fallback)
    */
   return (
     <Ft1Panel>

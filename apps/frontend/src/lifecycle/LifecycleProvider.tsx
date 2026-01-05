@@ -62,13 +62,13 @@ export function LifecycleProvider({
     shopId != null &&
     localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true';
 
-  console.log('[FT2_SEAL_CHECK]', {
+  /* console.log('[FT2_SEAL_CHECK]', {
     shopId,
     hasFT2Seal,
     raw: shopId
       ? localStorage.getItem(`shop:${shopId}:ft2-seen`)
       : null,
-  });
+  }); */
 
   /* const isFT2Terminal =
     state.phase === 'FT2_READY'; */
@@ -76,18 +76,18 @@ export function LifecycleProvider({
   const isHydratedTerminal =
     state.phase === 'FT1_READY' || state.phase === 'FT2_READY';
 
-  console.log('[LIFECYCLE_READINESS_INPUT]', {
+  /* console.log('[LIFECYCLE_READINESS_INPUT]', {
     bootResolved: integration.bootResolved,
     hasIntegration: integration.hasIntegration,
     shopId,
-  });
+  }); */
 
   const { data } = useOnboardingReadiness(
     integration.bootResolved && integration.hasIntegration,
     shopId ?? undefined
   );
 
-  console.log('[LIFECYCLE_READINESS_OUTPUT]', data);
+  /* console.log('[LIFECYCLE_READINESS_OUTPUT]', data); */
 
   /* ---------------- Integration → lifecycle events ---------------- */
 

@@ -62,7 +62,7 @@ export function Ft1ChecklistShell({ checklist, open }: Ft1ChecklistShellProps) {
   useEffect(() => {
     if (open && !prevOpenRef.current) {
       const nextFocus = consumeFt1ChecklistFocus();
-      focusRef.current = consumeFt1ChecklistFocus();
+      focusRef.current = nextFocus;
       setExpandedId(nextFocus?.moduleId ?? null);
     }
 

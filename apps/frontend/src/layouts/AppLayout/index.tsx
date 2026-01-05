@@ -3,7 +3,7 @@
 import React, { ReactNode, useRef, useEffect, useState } from "react"; 
 import { axiosInstance } from "api/axiosConfig";
 // --- PANEL IMPORTS ---
-import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; // Import ImperativePanelHandle
+import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; 
 
 import { Box } from "@mui/material";
 import Sidenav from "./SidenavContent";
