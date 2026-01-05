@@ -1,6 +1,7 @@
 //apps/frontend/src/pages/DashboardPageFT2.tsx
 import React from 'react';
 import { Grid, Paper, Stack, Typography } from '@mui/material';
+import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 
 export const DashboardPageFT2: React.FC = () => {
   return (
@@ -23,7 +24,7 @@ export const DashboardPageFT2: React.FC = () => {
                 {name}
               </Typography>
               <Typography variant="body2" sx={{ mt: 1 }}>
-                FT2 outlet for {name} is finally here
+                <OrdersModuleFT2 />
               </Typography>
             </Paper>
           </Grid>

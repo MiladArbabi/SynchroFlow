@@ -219,7 +219,7 @@ export default function App() {
                             path="dashboard"
                             element={
                               <DashboardLifecycleShell>
-                                <DashboardPage handleSidenavToggle={() => {}} />
+                                <DashboardPage />
                               </DashboardLifecycleShell>
                             }
                           />

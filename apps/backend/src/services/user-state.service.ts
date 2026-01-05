@@ -1,9 +1,7 @@
 //apps/backend/src/services/user-state.service.ts
 import db from '../db';
 import { User, UserMilestone } from '../types';
-import type { LifecyclePhase } from './lifecycle.contract';
 import { LifecycleService } from './lifecycle.service';
-import { LifecycleTransitionService } from './lifecycle-transition.service';
 import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
 import { OnboardingReadinessSnapshot } from '@lasyncro/shared/index';
 
