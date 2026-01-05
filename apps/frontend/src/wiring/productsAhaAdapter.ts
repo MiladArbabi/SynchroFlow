@@ -13,7 +13,7 @@ export function useProductsAhaAdapter() {
 
     // 1️⃣ Set checklist focus (module + task)
     setFt1ChecklistFocus({
-      moduleId: 'products',
+      moduleId: 'sku-os',
       taskId: intent.taskId,
     });
 
@@ -23,7 +23,7 @@ export function useProductsAhaAdapter() {
       payload: {
         action: 'start_onboarding',
         surface: 'products_ft1',
-        moduleId: 'products',
+        moduleId: 'sku-os',
         taskId: intent.taskId,
       },
     });
