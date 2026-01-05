@@ -94,6 +94,7 @@ export const registerUser = async (req: Request, res: Response) => {
     // --- [END NEW LOGIN LOGIC] ---
 
   } catch (error) {
+
     console.error('Error during registration:', error);
     res.status(500).json({ error: 'Internal server error during registration.' });
   }
@@ -102,19 +103,17 @@ export const registerUser = async (req: Request, res: Response) => {
 export const loginUser = async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  // --- Basic Validation ---
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
   try {
-    // --- Find user by email (case-insensitive) ---
     const user = await db<User>('users')
       .where({ email: email.toLowerCase() })
-      .first(); // Select password_hash too
+      .first();
 
     if (!user) {
-    return res.status(401).json({ error: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
@@ -123,7 +122,21 @@ export const loginUser = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE
+    // 🔥 HARD SESSION RESET (THE FIX)
+    await db('refresh_tokens')
+      .where({ user_id: user.id, revoked_at: null })
+      .update({ revoked_at: new Date() });
+
+    audit({
+      level: 'INFO',
+      event: 'login_session_reset',
+      userId: user.id,
+      metadata: {
+        reason: 'explicit_login',
+      },
+    });
+
+    // SINGLE AUTHORITY FOR TOKEN ISSUANCE
     const { accessToken, refreshToken } = await issueAuthTokens({
       userId: user.id,
       shopId: user.shop_id,
@@ -138,23 +151,19 @@ export const loginUser = async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 1. Omit the password hash from the user object for security
-    // (Assuming your User type from api-types doesn't have password_hash,
-    // but the 'user' variable from the DB does)
     const { password_hash, ...publicUser } = user;
 
-    // 2. Send both the token AND the user object in the response
-    res.status(200).json({
-    accessToken: accessToken,
-    user: publicUser
-  });
+    return res.status(200).json({
+      accessToken,
+      user: publicUser,
+    });
 
   } catch (error) {
     console.error('Error during login:', error);
-    res.status(500).json({ error: 'Internal server error during login.' });
+    return res.status(500).json({ error: 'Internal server error during login.' });
   }
 };
 
@@ -219,9 +228,9 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     // 🔒 No record → expired or invalid
     if (!existingToken) {
-      return res.status(401).json({
-        error: 'SESSION_EXPIRED',
-        action: 'LOGOUT_REQUIRED',
+      return res.status(503).json({
+        error: 'REFRESH_TEMPORARILY_UNAVAILABLE',
+        retryable: true,
       });
     }
 
@@ -291,23 +300,12 @@ export const refreshToken = async (req: Request, res: Response) => {
         error: 'Unauthorized: User no longer exists.'
       });
     }
+    
+    let newTokens: { refreshToken: any; accessToken: any; };
 
-    // 🔐 Atomic refresh-token rotation
-    const result = await db.transaction(async (trx) => {
-      // 1. Revoke old token FIRST
-      const revokedCount = await trx('refresh_tokens')
-        .where({
-          id: existingToken.id,
-          revoked_at: null,
-        })
-        .update({ revoked_at: new Date() });
-
-      if (revokedCount !== 1) {
-        throw new Error('AUTH_INVARIANT_VIOLATION: refresh token revocation failed');
-      }
-
-      // 2. Issue new tokens ONLY after successful revoke
-      return issueAuthTokens({
+    try {
+      // 1️⃣ Issue FIRST (no DB mutation yet)
+      newTokens = await issueAuthTokens({
         userId: user_id,
         shopId: existingToken.shop_id,
         actorType: 'shop_user',
@@ -316,34 +314,57 @@ export const refreshToken = async (req: Request, res: Response) => {
         scopes: [],
         tokenVersion: token_version ?? 1,
       });
-    });
+    } catch (err) {
 
-    // 3. Set rotated refresh token cookie
-    res.cookie('refreshToken', result.refreshToken, {
+      audit({
+        level: 'WARN',
+        event: 'refresh_token_transient_failure',
+        userId: user_id,
+        metadata: {
+          sessionId: session_id,
+          reason: err instanceof Error ? err.message : 'unknown',
+        },
+      });
+
+      // 🔁 Transient failure → SAFE RETRY
+      return res.status(503).json({
+        error: 'REFRESH_TEMPORARILY_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+
+    // 2️⃣ Now revoke OLD token (must succeed)
+    const revoked = await db('refresh_tokens')
+      .where({ id: existingToken.id, revoked_at: null })
+      .update({ revoked_at: new Date() });
+
+    if (revoked !== 1) {
+      return res.status(403).json({
+        error: 'SESSION_COMPROMISED',
+        action: 'LOGOUT_REQUIRED',
+      });
+    }
+
+    // 3️⃣ Set new refresh cookie
+    res.cookie('refreshToken', newTokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 4. Return new access token
-    res.status(200).json({ accessToken: result.accessToken });
+    // 4️⃣ Return access token
+    return res.status(200).json({ accessToken: newTokens.accessToken });
 
   } catch (err) {
-    console.error('Refresh Token Error:', err instanceof Error ? err.message : err);
+    console.error(
+      '[auth][refresh] transient failure',
+      err instanceof Error ? err.message : err
+    );
 
-    // 🔒 Hard logout: clear refresh token cookie
-    res.cookie('refreshToken', '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      expires: new Date(0),
-      maxAge: 0,
-    });
-
-    return res.status(401).json({
-      error: 'SESSION_EXPIRED',
-      action: 'LOGOUT_REQUIRED',
+    return res.status(503).json({
+      error: 'REFRESH_TEMPORARILY_UNAVAILABLE',
+      retryable: true,
     });
   }
 };
