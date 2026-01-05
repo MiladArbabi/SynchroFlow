@@ -17,7 +17,7 @@ describe('Auth invariant: refresh token rotation & replay protection', () => {
     await db('shops').del();
   });
 
-  it.skip('rejects reuse of an old refresh token after rotation', async () => {
+  it('rejects reuse of an old refresh token after rotation', async () => {
     // TODO: Add integration test for refresh-token replay once
     const agent = request.agent(app);
 
@@ -51,7 +51,10 @@ describe('Auth invariant: refresh token rotation & replay protection', () => {
       .set('Cookie', cookieA)
       .send();
 
-    expect([401, 403]).toContain(replayRes.status);
-    expect(replayRes.body?.accessToken).toBeUndefined();
+    expect(replayRes.status).toBe(403);
+    expect(replayRes.body).toMatchObject({
+      error: 'SESSION_COMPROMISED',
+    });
+    expect(replayRes.body.accessToken).toBeUndefined();
   });
 });

@@ -219,6 +219,13 @@ export const refreshToken = async (req: Request, res: Response) => {
       .andWhere('expires_at', '>', new Date())
       .first();
 
+    if (!existingToken) {
+      return res.status(403).json({
+        error: 'SESSION_COMPROMISED',
+        action: 'LOGOUT_REQUIRED',
+      });
+    }
+
     // 🔍 Anomaly detection (audit-only)
     const currentIp =
       req.headers['x-forwarded-for']?.toString() ||
