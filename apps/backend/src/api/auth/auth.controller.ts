@@ -64,6 +64,9 @@ export const registerUser = async (req: Request, res: Response) => {
       shopId: newUser.shop_id,
       actorType: 'shop_user',
       authProvider: 'password',
+      shopRoles: [],
+      scopes: [],
+      tokenVersion: 1,
     });
 
     /* audit({
@@ -126,6 +129,9 @@ export const loginUser = async (req: Request, res: Response) => {
       shopId: user.shop_id,
       actorType: 'shop_user',
       authProvider: 'password',
+      shopRoles: [],
+      scopes: [],
+      tokenVersion: 1,
     });
 
     res.cookie('refreshToken', refreshToken, {
@@ -291,7 +297,12 @@ export const refreshToken = async (req: Request, res: Response) => {
       // 2. Issue new tokens ONLY after successful revoke
       return issueAuthTokens({
         userId: user_id,
-        tokenVersion: token_version,
+        shopId: existingToken.shop_id,
+        actorType: 'shop_user',
+        authProvider: 'password',
+        shopRoles: [],
+        scopes: [],
+        tokenVersion: token_version ?? 1,
       });
     });
 

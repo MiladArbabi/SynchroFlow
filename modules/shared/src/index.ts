@@ -13,6 +13,9 @@ export * from './modules/module-presence';
 // --- UI contracts ---
 export * from './ui-contracts';
 
+// --- Runtime module descriptor (UI loader contract) ---
+export { default } from './ui/ModuleEntry';
+
 // ⚠️ IMPORTANT
 // Activation is intentionally NOT exported from root.
 // Consumers MUST import from `@lasyncro/shared/activation`.

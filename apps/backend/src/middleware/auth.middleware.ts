@@ -55,8 +55,8 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 
     const payload = user as any;
 
-    // 🔒 Hard invariant: userId must exist and be a number
-    if (!payload || typeof payload.userId !== 'number') {
+   // 🔒 Hard invariant: user_id must exist and be a number (JWT contract uses snake_case)
+    if (!payload || typeof payload.user_id !== 'number') {
       console.error('[auth] Invalid token payload shape', payload);
       return res.status(401).json({
         error: 'INVALID_TOKEN_PAYLOAD',
@@ -66,10 +66,10 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 
     // ✅ Canonical auth context
     req.user = {
-      userId: payload.userId,
-      shopId: payload.shopId,
-      actorType: payload.actorType,
-      roles: payload.roles,
+      userId: payload.user_id,
+      shopId: payload.shop_id,
+      actorType: payload.actor_type,
+      roles: payload.shop_roles,
     };
 
     return next();

@@ -1,5 +1,8 @@
 **LaSyncro Auth & Permissions Contract – v1 (Locked & Sealed)**
 
+> **Amendment:** Refresh-token semantics clarified (v1.0.1).
+> No changes to JWT claims, roles, or permission model.
+
 ---
 
 # 🔒 0. Scope & Non-Negotiables
@@ -69,7 +72,7 @@ All authenticated HTTP calls (UI or backend) to LaSyncro APIs use a JWT access t
 
 ### 2.1 Format
 
-* **Type:** JWT, signed with server-side key (RS256).
+* **Type:** JWT, signed with server-side key (HS256).
 * **Transport:** `Authorization: Bearer <token>` header.
 * **Audience:** `api.lasyncro` (for all internal APIs).
 
@@ -79,7 +82,7 @@ All authenticated HTTP calls (UI or backend) to LaSyncro APIs use a JWT access t
 export interface LaSyncroAccessTokenClaims {
   // Standard JWT fields
   iss: 'auth.lasyncro.com';     // issuer
-  sub: string;                  // subject (userId | serviceId)
+  sub?: string;          // optional subject; canonical identity is user_id/service_id
   aud: 'api.lasyncro.com';      // audience
   iat: number;                  // issued at (unix)
   exp: number;                  // expiry (unix, 15–60 min)
@@ -91,7 +94,7 @@ export interface LaSyncroAccessTokenClaims {
   user_id: UserId;              // REQUIRED — must exist and be numeric/UUID
   shop_id?: ShopId;             // REQUIRED for shop_user; optional otherwise
   service_id?: string;          // REQUIRED for system_service
-  session_id?: string;          // per-login session; rotation anchor
+  session_id?: string;          // per-login session; REQUIRED for browser-based auth
 
   // Roles & scopes
   shop_roles?: ShopRole[];      // roles for shop_id if actor_type=shop_user
@@ -118,6 +121,9 @@ export interface LaSyncroAccessTokenClaims {
 * `user_id` MUST be a valid identifier (numeric or UUID; no strings like `"abc"`).
 * Tokens missing `user_id` or with invalid shape MUST be rejected immediately.
 * Such rejection is **terminal** and MUST result in logout (no refresh attempt).
+* `session_id` MUST remain stable across access-token refreshes
+  and is used as the server-side anchor for refresh-token rotation.
+
 
 Any additional claim must not change the semantics of these locked ones.
 
@@ -505,7 +511,51 @@ These guarantees exist to:
 
 Any deviation requires `auth-contract v2`.
 
-### 7.3 Forced Logout / Revocation
+### 7.3 Refresh Token Contract (LOCKED)
+
+Refresh tokens in LaSyncro v1 follow strict server-side state semantics.
+
+#### Properties
+
+* Refresh tokens are opaque to clients.
+* Refresh tokens are never stored in raw form.
+* Only a cryptographic hash of the refresh token is persisted.
+* Each refresh token is bound to:
+  * `user_id`
+  * `session_id`
+  * `token_version`
+  * expiration timestamp
+* A refresh token may be used **at most once**.
+
+#### Rotation Semantics (ENFORCED)
+
+* On successful refresh:
+  1. The existing refresh token is revoked.
+  2. A new refresh token is issued and persisted.
+  3. The new refresh token replaces the old one client-side.
+* Rotation is atomic; partial success is not allowed.
+
+#### Reuse Detection
+
+* If a refresh token is presented that:
+  * does not exist,
+  * is revoked,
+  * is expired,
+  * or does not match the active session state, the request MUST be rejected with `SESSION_COMPROMISED`. This response is terminal and MUST NOT trigger refresh retries.
+
+* Reuse detection results in:
+  * immediate logout,
+  * no further refresh attempts,
+  * audit logging.
+
+#### Persistence Invariant
+
+* If refresh token persistence fails for any reason,
+  token issuance MUST fail hard.
+* Tokens must never be issued without a corresponding
+  persisted refresh-token record.
+
+### 7.4 Forced Logout / Revocation
 
 When:
 

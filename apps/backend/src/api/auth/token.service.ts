@@ -98,9 +98,9 @@ export async function issueAuthTokens(
     shopId,
     actorType,
     authProvider,
-    shopRoles,
-    scopes,
-    tokenVersion,
+    shopRoles = [],
+    scopes = [],
+    tokenVersion = 1,
   } = params;
 
   // ─────────────────────────────────────────────────────────────
@@ -109,6 +109,10 @@ export async function issueAuthTokens(
 
   if (!Number.isInteger(userId)) {
     throw new Error('AUTH_INVARIANT_VIOLATION: invalid userId');
+  }
+
+  if (!actorType) {
+    throw new Error('AUTH_INVARIANT_VIOLATION: missing actorType');
   }
 
   if (actorType === 'shop_user' && !Number.isInteger(shopId)) {
