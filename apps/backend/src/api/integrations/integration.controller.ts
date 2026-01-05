@@ -28,10 +28,11 @@ import { issueAuthTokens } from '../auth/token.service';
 import { audit } from 'api-src/utils/audit';
 import { rateLimit } from 'api-src/utils/rateLimit';
 import { requireAuth } from 'api-src/middleware/requireAuth';
+import { requireAuthStrict } from 'api-src/middleware/requireAuthStrict';
 
 class NoShopError extends Error {}
 async function requireShopId(req: Request): Promise<number> {
-  const { userId } = requireAuth(req);
+  const { userId } = requireAuthStrict(req);
 
   const user = await db<User>('users')
     .where({ id: userId })
@@ -82,7 +83,7 @@ export const initiateOAuth = async (req: Request, res: Response) => {
   let userId: number;
 
   try {
-    ({ userId } = requireAuth(req));
+    ({ userId } = requireAuthStrict(req));
   } catch {
     return res.status(401).json({ error: 'Unauthorized' });
   }

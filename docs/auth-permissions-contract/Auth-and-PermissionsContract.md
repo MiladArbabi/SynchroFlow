@@ -453,6 +453,21 @@ Frontends **must not** base security or session continuity on plan, roles, or re
 
 Security decisions (e.g. “can create RMA”) **must be enforced** in backend.
 
+### Auth Route Exemption (LOCKED)
+
+The following routes MUST NEVER require Authorization headers
+and MUST NEVER be subject to JWT middleware:
+
+• POST /api/v1/auth/login
+• POST /api/v1/auth/register
+• POST /api/v1/auth/refresh_token
+• POST /api/v1/auth/logout
+
+Rules:
+• Frontend MUST NOT attach Authorization headers to these routes
+• Backend MUST NOT enforce JWT auth on these routes
+• Login MUST be possible from a fully unauthenticated state
+
 ---
 
 ## 7. Session, Rotation & Revocation
@@ -480,8 +495,8 @@ The frontend implements **strict single-flight refresh semantics** for access to
 2. All concurrent API requests that receive `401 Unauthorized`:
    * wait on the same refresh operation
    * are retried only after refresh resolves
-3. If refresh **fails** OR the refreshed token violates identity invariants
-(401, 403, 429, network error, or INVALID_TOKEN_PAYLOAD):
+3. If refresh fails with a terminal error
+(401 SESSION_EXPIRED, 403 SESSION_COMPROMISED, INVALID_TOKEN_PAYLOAD, or replay detection):
    * the session is **hard-stopped**
    * access token state is cleared exactly once
    * all waiting requests are rejected
@@ -508,6 +523,13 @@ These guarantees exist to:
   that lacks a valid `user_id`.
 * A refresh response without a valid identity MUST be treated
   identically to refresh failure.
+
+**Transient failure rule (LOCKED):**
+
+• A `503 REFRESH_TEMPORARILY_UNAVAILABLE` response is **NOT terminal**
+• Frontend MUST NOT clear auth state on 503
+• Frontend MAY retry refresh on a subsequent user-initiated request
+• No automatic retry loops are permitted
 
 Any deviation requires `auth-contract v2`.
 

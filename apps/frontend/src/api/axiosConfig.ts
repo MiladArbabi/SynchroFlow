@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/api/axiosConfig.ts
 import axios from 'axios';
 import { getToken, setToken, clearToken } from 'utils/authStore'; // Use alias
@@ -15,8 +16,13 @@ axiosInstance.interceptors.request.use(
     // Get the token from our in-memory store
     const token = getToken();
     
-    // If a token exists, add it to the Authorization header
-    if (token) {
+    const isAuthRoute =
+      config.url?.includes('/api/v1/auth/login') ||
+      config.url?.includes('/api/v1/auth/register') ||
+      config.url?.includes('/api/v1/auth/refresh_token') ||
+      config.url?.includes('/api/v1/auth/logout');
+
+    if (token && !isAuthRoute) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -76,12 +82,15 @@ axiosInstance.interceptors.response.use(
                 `Bearer ${newAccessToken}`;
 
               return newAccessToken;
-            } catch (err) {
-              /**
-               * HARD STOP:
-               * Refresh failure is terminal.
-               * We intentionally clear auth state exactly once.
-               */
+            } catch (err: any) {
+              const status = err?.response?.status;
+
+              // 🔁 Transient refresh failure → DO NOT LOG OUT
+              if (status === 503) {
+                throw err;
+              }
+
+              // 🔒 Hard failures only
               clearToken();
               throw err;
             } finally {
