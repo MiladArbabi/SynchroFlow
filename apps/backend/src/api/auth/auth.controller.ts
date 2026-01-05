@@ -59,15 +59,18 @@ export const registerUser = async (req: Request, res: Response) => {
       .returning('*');
 
     // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE  
-    const authUserId = newUser.id;
-    const { accessToken, refreshToken } =
-      await issueAuthTokens(authUserId);
+    const { accessToken, refreshToken } = await issueAuthTokens({
+      userId: newUser.id,
+      shopId: newUser.shop_id,
+      actorType: 'shop_user',
+      authProvider: 'password',
+    });
 
-    audit({
+    /* audit({
       level: 'INFO',
       event: 'refresh_token_rotated',
       userId: authUserId,
-    });
+    }); */
 
     // Set cookie options
     res.cookie('refreshToken', refreshToken, {
@@ -118,9 +121,12 @@ export const loginUser = async (req: Request, res: Response) => {
     }
 
     // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE
-    const authUserId = user.id;
-    const { accessToken, refreshToken } =
-      await issueAuthTokens(authUserId);
+    const { accessToken, refreshToken } = await issueAuthTokens({
+      userId: user.id,
+      shopId: user.shop_id,
+      actorType: 'shop_user',
+      authProvider: 'password',
+    });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
@@ -183,15 +189,71 @@ export const refreshToken = async (req: Request, res: Response) => {
   }
 
   try {
-    const decoded = jwt.verify(incomingRefreshToken, jwtRefreshSecret) as JwtPayload; // Verify & get payload
-    const userId = decoded.userId;
+    const decoded = jwt.verify(incomingRefreshToken, jwtRefreshSecret) as JwtPayload;
+
+    const {
+      user_id,
+      session_id,
+      token_version,
+    } = decoded as {
+      user_id: number;
+      session_id: string;
+      token_version?: number;
+    };
 
     const incomingHash = hashRefreshToken(incomingRefreshToken);
  
      const existingToken = await db('refresh_tokens')
-       .where({ token_hash: incomingHash, revoked_at: null })
-       .first();
- 
+      .where({
+        token_hash: incomingHash,
+        revoked_at: null,
+        session_id,
+        token_version,
+      })
+      .andWhere('expires_at', '>', new Date())
+      .first();
+
+    // 🔍 Anomaly detection (audit-only)
+    const currentIp =
+      req.headers['x-forwarded-for']?.toString() ||
+      req.socket.remoteAddress ||
+      'unknown';
+
+    const currentUa = req.headers['user-agent'];
+
+    if (
+      existingToken.ip_address &&
+      existingToken.ip_address !== currentIp
+    ) {
+      audit({
+        level: 'WARN',
+        event: 'refresh_token_ip_drift',
+        userId: user_id,
+        metadata: {
+          sessionId: session_id,
+          issuedFrom: existingToken.ip_address,
+          usedFrom: currentIp,
+        },
+      });
+    }
+
+    if (
+      existingToken.user_agent &&
+      currentUa &&
+      existingToken.user_agent !== currentUa
+    ) {
+      audit({
+        level: 'WARN',
+        event: 'refresh_token_ua_drift',
+        userId: user_id,
+        metadata: {
+          sessionId: session_id,
+          issuedFrom: existingToken.user_agent,
+          usedFrom: currentUa,
+        },
+      });
+    }
+
      if (!existingToken) {
       console.warn('[SECURITY] Refresh token reuse detected', {
         ip: req.socket.remoteAddress,
@@ -202,14 +264,8 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     }
 
-    // Revoke old token
-    await db('refresh_tokens')
-      .where({ id: existingToken.id })
-      .update({ revoked_at: new Date() });
-
-    // 🔒 Invariant: user must still exist
     const userExists = await db('users')
-      .where({ id: userId })
+      .where({ id: user_id })
       .first();
 
     if (!userExists) {
@@ -218,21 +274,37 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     }
 
-    // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE
-    const authUserId = userId;
-    const { accessToken, refreshToken } =
-      await issueAuthTokens(authUserId);
+    // 🔐 Atomic refresh-token rotation
+    const result = await db.transaction(async (trx) => {
+      // 1. Revoke old token FIRST
+      const revokedCount = await trx('refresh_tokens')
+        .where({
+          id: existingToken.id,
+          revoked_at: null,
+        })
+        .update({ revoked_at: new Date() });
 
-    // 4. Set rotated refresh token cookie
-    res.cookie('refreshToken', refreshToken, {
+      if (revokedCount !== 1) {
+        throw new Error('AUTH_INVARIANT_VIOLATION: refresh token revocation failed');
+      }
+
+      // 2. Issue new tokens ONLY after successful revoke
+      return issueAuthTokens({
+        userId: user_id,
+        tokenVersion: token_version,
+      });
+    });
+
+    // 3. Set rotated refresh token cookie
+    res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 5. Return new access token
-    res.status(200).json({ accessToken });
+    // 4. Return new access token
+    res.status(200).json({ accessToken: result.accessToken });
 
   } catch (err) {
     console.error('Refresh Token Error:', err instanceof Error ? err.message : err);
