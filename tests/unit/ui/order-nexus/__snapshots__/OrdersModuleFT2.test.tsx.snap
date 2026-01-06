@@ -1,0 +1,95 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`OrdersModuleFT2 (FT2) matches snapshot (structure only) 1`] = `
+<div>
+  <section
+    data-testid="orders-ft2-root"
+  >
+    <section>
+      <div>
+        <strong>
+          Period
+        </strong>
+        : 
+        2025-01-01
+         → 
+        2025-01-31
+      </div>
+      <div>
+        <strong>
+          Orders analyzed
+        </strong>
+        :
+         
+        120
+      </div>
+    </section>
+    <section>
+      <div>
+        <strong>
+          Average margin
+        </strong>
+        :
+         
+        18.4%
+      </div>
+      <div>
+        <strong>
+          Loss rate
+        </strong>
+        :
+         
+        22.1%
+      </div>
+      <div>
+        <strong>
+          Total loss
+        </strong>
+        :
+         
+        4200 USD
+      </div>
+    </section>
+    <section>
+      <strong>
+        Dominant loss drivers
+      </strong>
+      <ul>
+        <li>
+          shipping
+           ·
+           
+          46%
+           
+          · 
+          high
+        </li>
+      </ul>
+    </section>
+    <section>
+      <strong>
+        Repeated patterns
+      </strong>
+      <ul>
+        <li>
+          Expedited international shipping
+           ·
+           
+          31% orders
+           ·
+           
+          1800 USD
+        </li>
+      </ul>
+    </section>
+    <section>
+      <strong>
+        Trend
+      </strong>
+      :
+       
+      deteriorating
+    </section>
+  </section>
+</div>
+`;

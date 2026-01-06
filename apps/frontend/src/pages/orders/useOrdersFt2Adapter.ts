@@ -93,7 +93,7 @@ export function mapOrdersFt2Props(
     },
 
     lossDrivers:
-      snapshot.lossDrivers === undefined
+      snapshot.lossDrivers == null
         ? null
         : snapshot.lossDrivers.map((d) => ({
             type: d.type,
@@ -102,8 +102,8 @@ export function mapOrdersFt2Props(
             confidence: d.confidence,
           })),
 
-    patterns: 
-        snapshot.patterns === undefined
+    patterns:
+      snapshot.patterns == null
         ? null
         : snapshot.patterns.map((p) => ({
             description: p.description,

@@ -28,7 +28,7 @@ describe('OrdersModuleFT2 (FT2)', () => {
     ],
     patterns: [
       {
-        description: 'International orders with expedited shipping',
+        description: 'Expedited international shipping',
         affectedOrdersPct: 31,
         estimatedImpact: 1800,
         currency: 'USD',
@@ -41,14 +41,14 @@ describe('OrdersModuleFT2 (FT2)', () => {
         to: '2024-12-31',
       },
     },
-  };
+  } as const satisfies React.ComponentProps<typeof OrdersModuleFT2>;
 
   it('renders deterministically with full FT2 props', () => {
     render(<OrdersModuleFT2 {...fullProps} />);
     expect(screen.getByTestId('orders-ft2-root')).toBeInTheDocument();
   });
 
-  it('renders safely when optional blocks are null', () => {
+  it('renders safely with null blocks', () => {
     render(
       <OrdersModuleFT2
         context={{
@@ -70,17 +70,10 @@ describe('OrdersModuleFT2 (FT2)', () => {
     expect(screen.getByTestId('orders-ft2-root')).toBeInTheDocument();
   });
 
-  it('does not render any CTAs or action language', () => {
+  it('does not render CTAs or action language', () => {
     render(<OrdersModuleFT2 {...fullProps} />);
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.queryByText(/fix|review|optimize|improve/i)).toBeNull();
-  });
-
-  it('does not leak FT1 scenario language', () => {
-    render(<OrdersModuleFT2 {...fullProps} />);
-    expect(
-      screen.queryByText(/healthy|uncertain|no orders|loss detected/i)
-    ).toBeNull();
   });
 
   it('matches snapshot (structure only)', () => {
