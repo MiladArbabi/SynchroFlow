@@ -4,6 +4,7 @@ import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
 import { mapFinancesFt1Props } from './finances/useFinancesFt1Adapter';
+import { mapFinancesFt2Props } from './finances/useFinancesFt2Adapter';
 import { useFinancesAhaAdapter } from 'wiring/financesAhaAdapter';
 
 export default function FinancesPage() {
@@ -23,7 +24,17 @@ export default function FinancesPage() {
 
   // ---- FT2 routing ----
   if (isFt2) {
-    return <FinancesModuleFT2 />;
+    /**
+     * FT2 Finances wiring
+     * ------------------
+     * No backend snapshot is wired yet.
+     * We intentionally pass an empty snapshot to:
+     * - preserve null semantics
+     * - exercise the FT2 adapter
+     * - avoid inventing data sources
+     */
+    const ft2Props = mapFinancesFt2Props({});
+    return <FinancesModuleFT2 {...ft2Props} />;
   }
 
   // ---- Rendering gates ONLY ----

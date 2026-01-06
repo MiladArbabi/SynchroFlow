@@ -213,4 +213,35 @@ describe('Axios Response Interceptor (Token Refresh)', () => {
     expect(mock.history.post[0].headers?.Authorization).toBeUndefined();
   });
 
+  it('does NOT mutate axios default Authorization header during refresh', async () => {
+    const protectedUrl = '/api/v1/protected';
+    const newAccessToken = 'new-access-token';
+
+    // Simulate expired token in store
+    let currentToken: string | null = 'expired-token';
+
+    (getToken as jest.Mock).mockImplementation(() => currentToken);
+    (setToken as jest.Mock).mockImplementation((t) => {
+      currentToken = t;
+    });
+
+    // First request fails
+    mock.onGet(protectedUrl).replyOnce(401);
+
+    // Refresh succeeds
+    mock
+      .onPost('/api/v1/auth/refresh_token')
+      .replyOnce(200, { accessToken: newAccessToken });
+
+    // Retried request succeeds
+    mock.onGet(protectedUrl).replyOnce(200, { ok: true });
+
+    await axiosInstance.get(protectedUrl);
+
+    // 🔒 CRITICAL ASSERTION
+    expect(
+      axiosInstance.defaults.headers.common.Authorization
+    ).toBeUndefined();
+  });
+
 });

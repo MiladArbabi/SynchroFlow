@@ -87,19 +87,21 @@ axiosInstance.interceptors.response.use(
               const newAccessToken = data.accessToken;
 
               setToken(newAccessToken);
-              axiosInstance.defaults.headers.common.Authorization =
-                `Bearer ${newAccessToken}`;
 
               return newAccessToken;
             } catch (err: any) {
-              const status = err?.response?.status;
-
-              // 🔁 Transient refresh failure → HARD STOP, NO LOGOUT
-              if (status === 503) {
-                throw err;
-              }
-
-              // 🔒 Hard failures only
+              /**
+               * 🔒 REFRESH FAILURE IS ALWAYS TERMINAL IN BROWSER CONTEXT
+               *
+               * Reason:
+               * - Prevent infinite refresh loops
+               * - Prevent rate-limit cascades
+               * - Prevent poisoned login
+               * - Prevent identity corruption
+               *
+               * Backend may call it "transient",
+               * but frontend cannot safely retry.
+               */
               clearToken();
               throw err;
             } finally {
