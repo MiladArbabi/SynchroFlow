@@ -1,9 +1,12 @@
-import { SpecterModule, SpecterModuleFT2 } from '@lasyncro/specter';
+import { SpecterModule } from '@lasyncro/specter';
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
 import { mapSpecterFt1Props } from './customers/useSpecterFt1Adapter';
 import { useSpecterAhaAdapter } from 'wiring/specterAhaAdapter';
+
+import { CustomersModuleFT2 } from '@lasyncro/customers';
+import { mapCustomersFt2Props } from './customers/useCustomersFt2Adapter';
 
 export default function CustomersPage() {
   const { phase } = useShopLifecycle();
@@ -21,7 +24,8 @@ export default function CustomersPage() {
   );
 
   if (isFt2) {
-    return <SpecterModuleFT2 />;
+    const ft2Props = mapCustomersFt2Props({});
+    return <CustomersModuleFT2 {...ft2Props} />;
   }
 
   if (!isFt1) {

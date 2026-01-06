@@ -1,0 +1,74 @@
+// tests/unit/ui/pages/customers/useCustomersFt2Adapter.test.ts
+
+import { mapCustomersFt2Props } from 'ui/src/pages/customers/useCustomersFt2Adapter';
+
+describe('FT2 Customers Adapter - mapCustomersFt2Props', () => {
+  it('maps a full backend snapshot without inference', () => {
+    const snapshot = {
+      period: { from: '2025-01-01', to: '2025-01-31' },
+      customersAnalyzed: 120,
+
+      valueSummary: {
+        activeCustomers: 80,
+        repeatRatePct: 42,
+        avgOrderValue: 75,
+        lifetimeValue: 310,
+        currency: 'USD',
+      },
+
+      qualitySignal: {
+        type: 'low_repeat',
+        confidence: 'high',
+      },
+
+      timeSignal: {
+        trend: 'stable',
+      },
+    } as const satisfies Parameters<typeof mapCustomersFt2Props>[0];
+
+    const props = mapCustomersFt2Props(snapshot);
+
+    expect(props.context.customersAnalyzed).toBe(120);
+    expect(props.valueSummary.activeCustomers).toBe(80);
+    expect(props.qualitySignal?.type).toBe('low_repeat');
+    expect(props.timeSignal?.trend).toBe('stable');
+  });
+
+  it('preserves explicit nulls without coercion', () => {
+    const snapshot = {
+      period: { from: '2025-01-01', to: '2025-01-31' },
+      customersAnalyzed: null,
+
+      valueSummary: {
+        activeCustomers: null,
+        repeatRatePct: null,
+        avgOrderValue: null,
+        lifetimeValue: null,
+        currency: null,
+      },
+
+      qualitySignal: null,
+      timeSignal: null,
+    };
+
+    const props = mapCustomersFt2Props(snapshot);
+
+    expect(props.context.customersAnalyzed).toBeNull();
+    expect(props.valueSummary.activeCustomers).toBeNull();
+    expect(props.qualitySignal).toBeNull();
+    expect(props.timeSignal).toBeNull();
+  });
+
+  it('normalizes undefined fields to null (shape-stable)', () => {
+    const snapshot = {
+      period: { from: '2025-01-01', to: '2025-01-31' },
+    };
+
+    const props = mapCustomersFt2Props(snapshot);
+
+    expect(props.context.customersAnalyzed).toBeNull();
+    expect(props.valueSummary.activeCustomers).toBeNull();
+    expect(props.qualitySignal).toBeNull();
+    expect(props.timeSignal).toBeNull();
+  });
+});
