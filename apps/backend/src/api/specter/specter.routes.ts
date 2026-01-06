@@ -6,6 +6,7 @@ import {
   getSpecterConfig,
   upsertSpecterConfig
 } from './specter.controller';
+import { httpGetSpecterFt2 } from './specter.ft2.controller';
 
 const router = Router();
 
@@ -29,5 +30,7 @@ router.get('/config', authenticateToken, getSpecterConfig);
 
 /** PUT /api/v1/specter/config — create/update config */
 router.put('/config', authenticateToken, upsertSpecterConfig);
+
+router.get('/ft2', httpGetSpecterFt2);
 
 export default router;
