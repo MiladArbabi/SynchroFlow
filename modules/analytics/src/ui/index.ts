@@ -6,6 +6,9 @@ export { default as AnalyticsModuleFT2 } from './pages/AnalyticsModuleFT2';
 
 export { useAnalyticsFt1Scenario } from './hooks/useAnalyticsFt1Scenario';
 export { AnalyticsDiagnosticCard } from './components/AnalyticsDiagnosticCard';
+
 export type { AnalyticsFt1Scenario } from './types';
 export type { AnalyticsModuleProps } from './pages/AnalyticsModule';
+export type { AnalyticsModuleFT2Props } from './pages/AnalyticsModuleFT2.types';
+
 export type { AnalyticsUiIntent } from './intents';

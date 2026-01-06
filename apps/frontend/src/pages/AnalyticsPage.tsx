@@ -4,6 +4,7 @@ import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
 import { mapAnalyticsFt1Props } from './analytics/useAnalyticsFt1Adapter';
+import { mapAnalyticsFt2Props } from './analytics/useAnalyticsFt2Adapter';
 import { useAnalyticsAhaAdapter } from 'wiring/analyticsAhaAdapter';
 
 export default function AnalyticsPage() {
@@ -26,7 +27,8 @@ export default function AnalyticsPage() {
   // ---- Rendering gates only ----
 
   if (isFt2) {
-    return <AnalyticsModuleFT2 />;
+    const ft2Props = mapAnalyticsFt2Props({});
+    return <AnalyticsModuleFT2 {...ft2Props} />;
   }
 
   if (!isFt1) {
