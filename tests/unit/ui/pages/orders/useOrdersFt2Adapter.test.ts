@@ -2,78 +2,102 @@
 
 import { mapOrdersFt2Props } from 'pages/orders/useOrdersFt2Adapter';
 
-describe('FT2 Orders Adapter - mapOrdersFt2Props', () => {
-  it('maps a full backend snapshot without inference', () => {
+describe('FT2 Orders Adapter — observability only', () => {
+  it('maps a full backend snapshot without inference or derivation', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      ordersAnalyzed: 50,
-      marginSummary: {
-        avgMarginPct: 12,
-        lossRatePct: 30,
-        totalLossAmount: 2100,
+
+      ordersObserved: 75,
+
+      totals: {
+        revenueTotal: 12500,
+        costTotal: 9800,
         currency: 'USD',
       },
-      lossDrivers: [
-        {
-          type: 'shipping',
-          contributionPct: 55,
-          confidence: 'high',
-        },
-      ],
-      patterns: [
-        {
-          description: 'International expedited shipping',
-          affectedOrdersPct: 40,
-          estimatedImpact: 1200,
-          currency: 'USD',
-        },
-      ],
-      timeSignal: {
-        trend: 'stable',
+
+      outcome: {
+        status: 'positive',
+      },
+
+      trend: {
+        direction: 'up',
+      },
+
+      dataCoverage: {
+        completenessPct: 91,
       },
     } as const satisfies Parameters<typeof mapOrdersFt2Props>[0];
 
     const props = mapOrdersFt2Props(snapshot);
 
-    expect(props.context.ordersAnalyzed).toBe(50);
-    expect(props.marginSummary.avgMarginPct).toBe(12);
-    expect(props.lossDrivers?.[0].type).toBe('shipping');
-    expect(props.lossDrivers?.[0].confidence).toBe('high');
+    expect(props.context.ordersObserved).toBe(75);
+    expect(props.totals.revenueTotal).toBe(12500);
+    expect(props.totals.costTotal).toBe(9800);
+    expect(props.totals.currency).toBe('USD');
+
+    expect(props.outcome?.status).toBe('positive');
+    expect(props.trend?.direction).toBe('up');
+    expect(props.dataCoverage.completenessPct).toBe(91);
   });
 
-  it('preserves nulls and does not coerce values', () => {
+  it('preserves nulls exactly and does not infer values', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      ordersAnalyzed: null,
-      marginSummary: {
-        avgMarginPct: null,
-        lossRatePct: null,
-        totalLossAmount: null,
+
+      ordersObserved: null,
+
+      totals: {
+        revenueTotal: null,
+        costTotal: null,
         currency: null,
       },
-      lossDrivers: null,
-      patterns: null,
-      timeSignal: null,
+
+      outcome: null,
+      trend: null,
+
+      dataCoverage: {
+        completenessPct: null,
+      },
     };
 
     const props = mapOrdersFt2Props(snapshot);
 
-    expect(props.context.ordersAnalyzed).toBeNull();
-    expect(props.marginSummary.avgMarginPct).toBeNull();
-    expect(props.lossDrivers).toBeNull();
-    expect(props.patterns).toBeNull();
-    expect(props.timeSignal).toBeNull();
+    expect(props.context.ordersObserved).toBeNull();
+    expect(props.totals.revenueTotal).toBeNull();
+    expect(props.totals.costTotal).toBeNull();
+    expect(props.outcome).toBeNull();
+    expect(props.trend).toBeNull();
+    expect(props.dataCoverage.completenessPct).toBeNull();
   });
 
-  it('normalizes undefined fields to null (shape-stable)', () => {
+  it('normalizes undefined fields to null and remains shape-stable', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
     };
 
     const props = mapOrdersFt2Props(snapshot);
 
-    expect(props.context.ordersAnalyzed).toBeNull();
-    expect(props.marginSummary.avgMarginPct).toBeNull();
-    expect(props.lossDrivers).toBeNull();
+    expect(props.context.ordersObserved).toBeNull();
+
+    expect(props.totals.revenueTotal).toBeNull();
+    expect(props.totals.costTotal).toBeNull();
+    expect(props.totals.currency).toBeNull();
+
+    expect(props.outcome).toBeNull();
+    expect(props.trend).toBeNull();
+    expect(props.dataCoverage.completenessPct).toBeNull();
+  });
+
+  it('does not expose legacy or intelligence fields', () => {
+    const snapshot = {
+      period: { from: '2025-01-01', to: '2025-01-31' },
+    };
+
+    const props = mapOrdersFt2Props(snapshot) as any;
+
+    expect(props.marginSummary).toBeUndefined();
+    expect(props.lossDrivers).toBeUndefined();
+    expect(props.patterns).toBeUndefined();
+    expect(props.timeSignal).toBeUndefined();
   });
 });

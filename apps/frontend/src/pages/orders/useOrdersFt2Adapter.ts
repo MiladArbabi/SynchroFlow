@@ -2,64 +2,74 @@
 
 import type { OrdersModuleFT2Props } from '@lasyncro/order-nexus';
 
+/**
+ * OrdersFt2Snapshot
+ * -----------------
+ * This type represents the exact shape of the backend-provided
+ * FT2 snapshot for OrderNexus.
+ *
+ * IMPORTANT:
+ * - This is NOT an intelligence object.
+ * - This is NOT guaranteed to be complete.
+ * - Fields may be undefined, null, or partially present.
+ *
+ * The adapter's job is ONLY to:
+ * - Normalize `undefined → null`
+ * - Preserve values exactly as received
+ * - Enforce a shape-stable FT2 UI contract
+ *
+ * The adapter MUST NOT:
+ * - Infer
+ * - Compute
+ * - Derive
+ * - Rename semantics
+ * - Backfill defaults
+ */
 type OrdersFt2Snapshot = {
   period?: {
     from: string;
     to: string;
   };
-  ordersAnalyzed?: number | null;
 
-  marginSummary?: {
-    avgMarginPct?: number | null;
-    lossRatePct?: number | null;
-    totalLossAmount?: number | null;
+  ordersObserved?: number | null;
+
+  totals?: {
+    revenueTotal?: number | null;
+    costTotal?: number | null;
     currency?: string | null;
   };
 
-  lossDrivers?: Array<{
-    type:
-      | 'shipping'
-      | 'product_cost'
-      | 'fees'
-      | 'discount'
-      | 'refund'
-      | 'overhead'
-      | 'unknown';
-    contributionPct?: number | null;
-    confidence: 'high' | 'medium' | 'low';
-  }> | null;
-
-  patterns?: Array<{
-    description: string;
-    affectedOrdersPct?: number | null;
-    estimatedImpact?: number | null;
-    currency?: string | null;
-  }> | null;
-
-  timeSignal?: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
-    comparedPeriod?: {
-      from: string;
-      to: string;
-    };
+  outcome?: {
+    status: 'positive' | 'negative' | 'unknown';
   } | null;
+
+  trend?: {
+    direction: 'up' | 'down' | 'flat' | 'unknown';
+  } | null;
+
+  dataCoverage?: {
+    completenessPct?: number | null;
+  };
 };
 
 /**
- * FT2 Orders Adapter
- * ------------------
- * Pure mapping from backend snapshot → OrdersModuleFT2Props
+ * mapOrdersFt2Props
+ * -----------------
+ * Canonical FT2 Orders adapter.
  *
- * Invariants:
+ * This function is a **pure adapter**.
+ *
+ * Core invariants (non-negotiable):
  * - No inference
- * - No lifecycle checks
- * - No defaulting (null is preserved)
- * - Shape-stable
+ * - No computation
+ * - No lifecycle awareness
+ * - No semantic translation
+ * - No defaults other than `undefined → null`
+ * - Deterministic output for the same input
+ *
+ * Mental model:
+ * Backend snapshot → FT2 UI window
+ * The adapter is a *pipe*, not a brain.
  */
 export function mapOrdersFt2Props(
   snapshot: OrdersFt2Snapshot
@@ -67,59 +77,45 @@ export function mapOrdersFt2Props(
   return {
     context: {
       period: snapshot.period ?? { from: '', to: '' },
-      ordersAnalyzed:
-        snapshot.ordersAnalyzed === undefined
+
+      ordersObserved:
+        snapshot.ordersObserved === undefined
           ? null
-          : snapshot.ordersAnalyzed,
+          : snapshot.ordersObserved,
     },
 
-    marginSummary: {
-      avgMarginPct:
-        snapshot.marginSummary?.avgMarginPct === undefined
+    totals: {
+      revenueTotal:
+        snapshot.totals?.revenueTotal === undefined
           ? null
-          : snapshot.marginSummary.avgMarginPct,
-      lossRatePct:
-        snapshot.marginSummary?.lossRatePct === undefined
+          : snapshot.totals.revenueTotal,
+
+      costTotal:
+        snapshot.totals?.costTotal === undefined
           ? null
-          : snapshot.marginSummary.lossRatePct,
-      totalLossAmount:
-        snapshot.marginSummary?.totalLossAmount === undefined
-          ? null
-          : snapshot.marginSummary.totalLossAmount,
+          : snapshot.totals.costTotal,
+
       currency:
-        snapshot.marginSummary?.currency === undefined
+        snapshot.totals?.currency === undefined
           ? null
-          : snapshot.marginSummary.currency,
+          : snapshot.totals.currency,
     },
 
-    lossDrivers:
-      snapshot.lossDrivers == null
+    outcome:
+      snapshot.outcome === undefined
         ? null
-        : snapshot.lossDrivers.map((d) => ({
-            type: d.type,
-            contributionPct:
-              d.contributionPct === undefined ? null : d.contributionPct,
-            confidence: d.confidence,
-          })),
+        : snapshot.outcome,
 
-    patterns:
-      snapshot.patterns == null
+    trend:
+      snapshot.trend === undefined
         ? null
-        : snapshot.patterns.map((p) => ({
-            description: p.description,
-            affectedOrdersPct:
-              p.affectedOrdersPct === undefined
-                ? null
-                : p.affectedOrdersPct,
-            estimatedImpact:
-              p.estimatedImpact === undefined
-                ? null
-                : p.estimatedImpact,
-            currency:
-              p.currency === undefined ? null : p.currency,
-          })),
+        : snapshot.trend,
 
-    timeSignal:
-      snapshot.timeSignal === undefined ? null : snapshot.timeSignal,
+    dataCoverage: {
+      completenessPct:
+        snapshot.dataCoverage?.completenessPct === undefined
+          ? null
+          : snapshot.dataCoverage.completenessPct,
+    },
   };
 }

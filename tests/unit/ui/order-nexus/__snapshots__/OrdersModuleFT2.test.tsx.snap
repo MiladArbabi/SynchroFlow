@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
-exports[`OrdersModuleFT2 (FT2) matches snapshot (structure only) 1`] = `
+exports[`OrdersModuleFT2 (FT2 — observability only) matches snapshot (structure only, no intelligence) 1`] = `
 <div>
   <section
     data-testid="orders-ft2-root"
@@ -17,7 +17,7 @@ exports[`OrdersModuleFT2 (FT2) matches snapshot (structure only) 1`] = `
       </div>
       <div>
         <strong>
-          Orders analyzed
+          Orders observed
         </strong>
         :
          
@@ -27,68 +27,50 @@ exports[`OrdersModuleFT2 (FT2) matches snapshot (structure only) 1`] = `
     <section>
       <div>
         <strong>
-          Average margin
+          Total revenue
         </strong>
         :
          
-        18.4%
+        18500 USD
       </div>
       <div>
         <strong>
-          Loss rate
+          Total cost
         </strong>
         :
          
-        22.1%
+        14300 USD
       </div>
+    </section>
+    <section>
       <div>
         <strong>
-          Total loss
+          Net outcome
         </strong>
         :
          
-        4200 USD
+        negative
       </div>
     </section>
     <section>
-      <strong>
-        Dominant loss drivers
-      </strong>
-      <ul>
-        <li>
-          shipping
-           ·
-           
-          46%
-           
-          · 
-          high
-        </li>
-      </ul>
+      <div>
+        <strong>
+          Trend
+        </strong>
+        :
+         
+        down
+      </div>
     </section>
     <section>
-      <strong>
-        Repeated patterns
-      </strong>
-      <ul>
-        <li>
-          Expedited international shipping
-           ·
-           
-          31% orders
-           ·
-           
-          1800 USD
-        </li>
-      </ul>
-    </section>
-    <section>
-      <strong>
-        Trend
-      </strong>
-      :
-       
-      deteriorating
+      <div>
+        <strong>
+          Data coverage
+        </strong>
+        :
+         
+        82%
+      </div>
     </section>
   </section>
 </div>

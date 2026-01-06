@@ -1,62 +1,66 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
 
+/**
+ * OrdersModuleFT2
+ * ----------------
+ * FT2 observability surface for OrderNexus.
+ *
+ * PURPOSE
+ * -------
+ * This component renders the *first governed truth window* into
+ * order performance.
+ *
+ * It is intentionally:
+ * - Read-only
+ * - Deterministic
+ * - Boring
+ * - Non-explanatory
+ *
+ * This UI must NEVER:
+ * - Explain why something happened
+ * - Suggest actions
+ * - Compute or derive values
+ * - Hide missing data behind fake completeness
+ *
+ * Mental model:
+ * This is a window, not a brain.
+ */
+
 export interface OrdersModuleFT2Props {
   context: {
     period: {
       from: string;
       to: string;
     };
-    ordersAnalyzed: number | null;
+    ordersObserved: number | null;
   };
 
-  marginSummary: {
-    avgMarginPct: number | null;
-    lossRatePct: number | null;
-    totalLossAmount: number | null;
+  totals: {
+    revenueTotal: number | null;
+    costTotal: number | null;
     currency: string | null;
   };
 
-  lossDrivers: Array<{
-    type:
-      | 'shipping'
-      | 'product_cost'
-      | 'fees'
-      | 'discount'
-      | 'refund'
-      | 'overhead'
-      | 'unknown';
-    contributionPct: number | null;
-    confidence: 'high' | 'medium' | 'low';
-  }> | null;
-
-  patterns: Array<{
-    description: string;
-    affectedOrdersPct: number | null;
-    estimatedImpact: number | null;
-    currency: string | null;
-  }> | null;
-
-  timeSignal: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
-    comparedPeriod?: {
-      from: string;
-      to: string;
-    };
+  outcome: {
+    status: 'positive' | 'negative' | 'unknown';
   } | null;
+
+  trend: {
+    direction: 'up' | 'down' | 'flat' | 'unknown';
+  } | null;
+
+  dataCoverage: {
+    completenessPct: number | null;
+  };
 }
 
 export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
   const {
     context,
-    marginSummary,
-    lossDrivers,
-    patterns,
-    timeSignal,
+    totals,
+    outcome,
+    trend,
+    dataCoverage,
   } = props;
 
   console.debug('[FT2][OrderNexus][OrdersModuleFT2] props', props);
@@ -68,80 +72,54 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
         <div>
           <strong>Period</strong>: {context.period.from} → {context.period.to}
         </div>
+
         <div>
-          <strong>Orders analyzed</strong>:{' '}
-          {context.ordersAnalyzed === null ? '—' : context.ordersAnalyzed}
+          <strong>Orders observed</strong>:{' '}
+          {context.ordersObserved === null ? '—' : context.ordersObserved}
         </div>
       </section>
 
-      {/* Margin Summary */}
+      {/* Totals */}
       <section>
         <div>
-          <strong>Average margin</strong>:{' '}
-          {marginSummary.avgMarginPct === null
+          <strong>Total revenue</strong>:{' '}
+          {totals.revenueTotal === null
             ? '—'
-            : `${marginSummary.avgMarginPct}%`}
+            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
         </div>
+
         <div>
-          <strong>Loss rate</strong>:{' '}
-          {marginSummary.lossRatePct === null
+          <strong>Total cost</strong>:{' '}
+          {totals.costTotal === null
             ? '—'
-            : `${marginSummary.lossRatePct}%`}
+            : `${totals.costTotal} ${totals.currency ?? ''}`}
         </div>
+      </section>
+
+      {/* Outcome */}
+      <section>
         <div>
-          <strong>Total loss</strong>:{' '}
-          {marginSummary.totalLossAmount === null
-            ? '—'
-            : `${marginSummary.totalLossAmount} ${marginSummary.currency ?? ''}`}
+          <strong>Net outcome</strong>:{' '}
+          {outcome === null ? '—' : outcome.status}
         </div>
       </section>
 
-      {/* Loss Drivers */}
+      {/* Trend */}
       <section>
-        <strong>Dominant loss drivers</strong>
-        {lossDrivers === null || lossDrivers.length === 0 ? (
-          <div>—</div>
-        ) : (
-          <ul>
-            {lossDrivers.map((driver, idx) => (
-              <li key={idx}>
-                {driver.type} ·{' '}
-                {driver.contributionPct === null
-                  ? '—'
-                  : `${driver.contributionPct}%`}{' '}
-                · {driver.confidence}
-              </li>
-            ))}
-          </ul>
-        )}
+        <div>
+          <strong>Trend</strong>:{' '}
+          {trend === null ? '—' : trend.direction}
+        </div>
       </section>
 
-      {/* Patterns */}
+      {/* Data Coverage */}
       <section>
-        <strong>Repeated patterns</strong>
-        {patterns === null || patterns.length === 0 ? (
-          <div>—</div>
-        ) : (
-          <ul>
-            {patterns.map((pattern, idx) => (
-              <li key={idx}>
-                {pattern.description} ·{' '}
-                {pattern.affectedOrdersPct === null
-                  ? '—'
-                  : `${pattern.affectedOrdersPct}% orders`} ·{' '}
-                {pattern.estimatedImpact === null
-                  ? '—'
-                  : `${pattern.estimatedImpact} ${pattern.currency ?? ''}`}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Time Signal */}
-      <section>
-        <strong>Trend</strong>:{' '}
-        {timeSignal === null ? '—' : timeSignal.trend}
+        <div>
+          <strong>Data coverage</strong>:{' '}
+          {dataCoverage.completenessPct === null
+            ? '—'
+            : `${dataCoverage.completenessPct}%`}
+        </div>
       </section>
     </section>
   );
