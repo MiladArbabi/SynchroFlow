@@ -14,3 +14,4 @@ export { ProductsDiagnosticCard } from './components/ProductsDiagnosticCard';
 // types
 export type { ProductsFt1Scenario } from './types';
 export type { ProductsModuleProps } from './pages/ProductsPage';
+export type { ProductsModuleFT2Props } from './pages/ProductsModuleFT2';
