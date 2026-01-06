@@ -1,38 +1,69 @@
-// apps/frontend/src/pages/analytics/useAnalyticsFt2Adapter.ts
+/**
+ * FT2 Analytics Adapter
+ * ====================
+ *
+ * Purpose:
+ * --------
+ * Pure mapping layer from backend snapshot → AnalyticsModuleFT2Props.
+ *
+ * This adapter is a **dumb pipe**.
+ * It MUST NOT:
+ * - Infer meaning
+ * - Reinterpret enums
+ * - Compute values
+ * - Default data
+ *
+ * FT2 Invariants (LOCKED):
+ * -----------------------
+ * - No inference
+ * - No defaults
+ * - Undefined → null
+ * - Null preserved
+ * - Shape-stable output
+ *
+ * If you feel tempted to "improve" data here,
+ * you are violating FT2 doctrine.
+ */
 
 import type { AnalyticsModuleFT2Props } from '@lasyncro/analytics';
 
+/**
+ * Backend snapshot shape for Analytics FT2.
+ *
+ * NOTE:
+ * -----
+ * This snapshot is intentionally flat and boring.
+ * Any intelligence belongs upstream (FT3+).
+ */
 type AnalyticsFt2Snapshot = {
   period?: {
     from: string;
     to: string;
   };
 
-  signalsAnalyzed?: number | null;
+  signalsObserved?: number | null;
 
-  coherenceSignal?: {
-    state: 'coherent' | 'fragmented' | 'contradictory' | 'unknown';
-    confidence: 'high' | 'medium' | 'low';
+  systemStatus?: {
+    state: 'healthy' | 'degraded' | 'unknown';
+    reliability: 'high' | 'medium' | 'low';
   } | null;
 
-  volatilitySignal?: {
-    level: 'stable' | 'volatile' | 'chaotic' | 'unknown';
-    variancePct?: number | null;
+  stabilityIndicator?: {
+    state: 'stable' | 'unstable' | 'unknown';
   } | null;
 
-  blindSpots?: Array<{
-    domain: 'orders' | 'finances' | 'products' | 'customers' | 'unknown';
-    description: string;
-    confidence: 'high' | 'medium' | 'low';
+  dataCoverage?: Array<{
+    domain:
+      | 'orders'
+      | 'finances'
+      | 'products'
+      | 'customers'
+      | 'unknown';
+    status: 'complete' | 'partial' | 'missing';
   }> | null;
 
-  timeSignal?: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
+  trendSignal?: {
+    direction: 'up' | 'down' | 'flat' | 'unknown';
     comparedPeriod?: {
       from: string;
       to: string;
@@ -41,16 +72,12 @@ type AnalyticsFt2Snapshot = {
 };
 
 /**
- * FT2 Analytics Adapter
- * --------------------
- * Pure mapping from backend snapshot → AnalyticsModuleFT2Props
+ * mapAnalyticsFt2Props
+ * -------------------
+ * Canonical FT2 adapter function.
  *
- * Invariants:
- * - No inference
- * - No lifecycle
- * - Undefined → null
- * - Null preserved
- * - Shape-stable
+ * This function is intentionally repetitive.
+ * Clarity > cleverness.
  */
 export function mapAnalyticsFt2Props(
   snapshot: AnalyticsFt2Snapshot
@@ -58,38 +85,34 @@ export function mapAnalyticsFt2Props(
   return {
     context: {
       period: snapshot.period ?? { from: '', to: '' },
-      signalsAnalyzed:
-        snapshot.signalsAnalyzed === undefined
+
+      signalsObserved:
+        snapshot.signalsObserved === undefined
           ? null
-          : snapshot.signalsAnalyzed,
+          : snapshot.signalsObserved,
     },
 
-    coherenceSignal:
-      snapshot.coherenceSignal === undefined
+    systemStatus:
+      snapshot.systemStatus === undefined
         ? null
-        : snapshot.coherenceSignal,
+        : snapshot.systemStatus,
 
-    volatilitySignal:
-      snapshot.volatilitySignal == null
+    stabilityIndicator:
+      snapshot.stabilityIndicator === undefined
         ? null
-        : {
-            level: snapshot.volatilitySignal.level,
-            variancePct:
-              snapshot.volatilitySignal.variancePct === undefined
-                ? null
-                : snapshot.volatilitySignal.variancePct,
-          },
+        : snapshot.stabilityIndicator,
 
-    blindSpots:
-      snapshot.blindSpots == null
+    dataCoverage:
+      snapshot.dataCoverage == null
         ? null
-        : snapshot.blindSpots.map((b) => ({
-            domain: b.domain,
-            description: b.description,
-            confidence: b.confidence,
+        : snapshot.dataCoverage.map((c) => ({
+            domain: c.domain,
+            status: c.status,
           })),
 
-    timeSignal:
-      snapshot.timeSignal === undefined ? null : snapshot.timeSignal,
+    trendSignal:
+      snapshot.trendSignal === undefined
+        ? null
+        : snapshot.trendSignal,
   };
 }

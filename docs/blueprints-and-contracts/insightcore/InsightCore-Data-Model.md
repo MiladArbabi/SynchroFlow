@@ -3,9 +3,11 @@
 ## **Data Architecture Principles**
 
 ### **Logical vs. Physical Schema**
+
 This document defines the **logical schema** for InsightCore's data warehouse. Physical implementations may vary (data warehouse, OLAP database, etc.), but column names, types, and relationships are locked for v1.
 
 ### **Core Design Principles:**
+
 1. **Event Sourcing:** All analytics data originates from immutable events
 2. **Read-Optimized:** Schema designed for analytical queries, not transactions
 3. **Time-Series First:** All fact tables include temporal dimensions
@@ -543,20 +545,25 @@ CREATE TABLE data_freshness_monitor (
 ## **Schema Evolution Rules**
 
 ### **Locked for v1:**
+
 1. Column names, types, and primary keys in all `fact_*` tables
 2. The existence and structure of `dim_date`, `dim_product`, `dim_channel`, `dim_customer_tier`
 3. The opaque enum treatment of returns quality fields
 
 ### **Extensible for v1:**
+
 1. Adding new columns with default values
 2. Creating new derived tables for v2/v3 features
 3. Adding reference dimensions (like `dim_return_reason_category`)
 4. Adding indexes for performance optimization
 
 ### **Migration Requirements:**
+
 Any breaking schema changes require:
+
 1. New versioned table names (e.g., `fact_orders_v2`)
 2. Migration scripts for existing data
 3. Dual-write period during transition
 4. Updated metric definitions pointing to new tables
+
 ```

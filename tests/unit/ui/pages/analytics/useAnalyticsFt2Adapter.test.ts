@@ -1,33 +1,55 @@
-// tests/unit/ui/pages/analytics/useAnalyticsFt2Adapter.test.ts
+/**
+ * FT2 Analytics Adapter — Contract Enforcement Tests
+ * ==================================================
+ *
+ * Purpose:
+ * --------
+ * These tests enforce the downgraded FT2 observability contract
+ * for Analytics / InsightCore.
+ *
+ * FT2 RULES (NON-NEGOTIABLE):
+ * - No intelligence
+ * - No explanations
+ * - No derived meaning
+ * - No inference
+ * - Undefined → null only
+ * - Shape-stable output
+ *
+ * If any of these tests fail in the future,
+ * it means FT2 intelligence has leaked back in.
+ */
 
 import { mapAnalyticsFt2Props } from 'pages/analytics/useAnalyticsFt2Adapter';
 
-describe('FT2 Analytics Adapter - mapAnalyticsFt2Props', () => {
-  it('maps a full backend snapshot without inference', () => {
+describe('FT2 Analytics Adapter — observability-only mapping', () => {
+  it('maps a full backend snapshot using observability semantics only', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      signalsAnalyzed: 42,
 
-      coherenceSignal: {
-        state: 'coherent',
-        confidence: 'high',
+      signalsObserved: 42,
+
+      systemStatus: {
+        state: 'healthy',
+        reliability: 'high',
       },
 
-      volatilitySignal: {
-        level: 'stable',
-        variancePct: 12,
+      stabilityIndicator: {
+        state: 'stable',
       },
 
-      blindSpots: [
+      dataCoverage: [
         {
           domain: 'orders',
-          description: 'Missing cancellation reasons',
-          confidence: 'medium',
+          status: 'partial',
+        },
+        {
+          domain: 'products',
+          status: 'complete',
         },
       ],
 
-      timeSignal: {
-        trend: 'stable',
+      trendSignal: {
+        direction: 'flat',
         comparedPeriod: {
           from: '2024-12-01',
           to: '2024-12-31',
@@ -37,44 +59,55 @@ describe('FT2 Analytics Adapter - mapAnalyticsFt2Props', () => {
 
     const props = mapAnalyticsFt2Props(snapshot);
 
-    expect(props.context.signalsAnalyzed).toBe(42);
-    expect(props.coherenceSignal?.state).toBe('coherent');
-    expect(props.volatilitySignal?.variancePct).toBe(12);
-    expect(props.blindSpots?.[0].domain).toBe('orders');
-    expect(props.timeSignal?.trend).toBe('stable');
+    // Context
+    expect(props.context.signalsObserved).toBe(42);
+
+    // Status
+    expect(props.systemStatus?.state).toBe('healthy');
+    expect(props.systemStatus?.reliability).toBe('high');
+
+    // Stability
+    expect(props.stabilityIndicator?.state).toBe('stable');
+
+    // Coverage
+    expect(props.dataCoverage?.[0].domain).toBe('orders');
+    expect(props.dataCoverage?.[0].status).toBe('partial');
+
+    // Trend
+    expect(props.trendSignal?.direction).toBe('flat');
   });
 
-  it('preserves explicit nulls without coercion', () => {
+  it('preserves explicit nulls without coercion or inference', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      signalsAnalyzed: null,
 
-      coherenceSignal: null,
-      volatilitySignal: null,
-      blindSpots: null,
-      timeSignal: null,
+      signalsObserved: null,
+      systemStatus: null,
+      stabilityIndicator: null,
+      dataCoverage: null,
+      trendSignal: null,
     };
 
     const props = mapAnalyticsFt2Props(snapshot);
 
-    expect(props.context.signalsAnalyzed).toBeNull();
-    expect(props.coherenceSignal).toBeNull();
-    expect(props.volatilitySignal).toBeNull();
-    expect(props.blindSpots).toBeNull();
-    expect(props.timeSignal).toBeNull();
+    expect(props.context.signalsObserved).toBeNull();
+    expect(props.systemStatus).toBeNull();
+    expect(props.stabilityIndicator).toBeNull();
+    expect(props.dataCoverage).toBeNull();
+    expect(props.trendSignal).toBeNull();
   });
 
-  it('normalizes undefined fields to null (shape-stable)', () => {
+  it('normalizes undefined fields to null (shape-stable output)', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
     };
 
     const props = mapAnalyticsFt2Props(snapshot);
 
-    expect(props.context.signalsAnalyzed).toBeNull();
-    expect(props.coherenceSignal).toBeNull();
-    expect(props.volatilitySignal).toBeNull();
-    expect(props.blindSpots).toBeNull();
-    expect(props.timeSignal).toBeNull();
+    expect(props.context.signalsObserved).toBeNull();
+    expect(props.systemStatus).toBeNull();
+    expect(props.stabilityIndicator).toBeNull();
+    expect(props.dataCoverage).toBeNull();
+    expect(props.trendSignal).toBeNull();
   });
 });

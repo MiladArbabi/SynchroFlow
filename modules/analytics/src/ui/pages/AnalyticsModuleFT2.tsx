@@ -1,18 +1,46 @@
-//modules/analytics/src/ui/pages/AnalyticsModuleFT2.tsx
+/**
+ * AnalyticsModuleFT2
+ * ==================
+ *
+ * Purpose:
+ * --------
+ * Passive, read-only observability surface for Analytics FT2.
+ *
+ * This component:
+ * - Renders facts only
+ * - Contains ZERO business logic
+ * - Performs ZERO interpretation
+ *
+ * Rendering Rules (LOCKED):
+ * ------------------------
+ * - All nulls render as "—"
+ * - No conditional hiding (except null vs value)
+ * - No explanations
+ * - No calls to action
+ *
+ * If this component ever feels "helpful",
+ * something has gone wrong.
+ */
 
 import React from 'react';
 import type { AnalyticsModuleFT2Props } from './AnalyticsModuleFT2.types';
+
+const NULL_PLACEHOLDER = '—';
 
 export default function AnalyticsModuleFT2(
   props: AnalyticsModuleFT2Props
 ) {
   const {
     context,
-    coherenceSignal,
-    volatilitySignal,
-    blindSpots,
-    timeSignal,
+    systemStatus,
+    stabilityIndicator,
+    dataCoverage,
+    trendSignal,
   } = props;
+
+  // Instrumentation for observability & debugging
+  // (Allowed in FT2: visibility ≠ interpretation)
+  console.debug('[FT2][Analytics][Render]', props);
 
   return (
     <section>
@@ -24,44 +52,46 @@ export default function AnalyticsModuleFT2(
       </div>
 
       <div>
-        <strong>Signals analyzed:</strong>{' '}
-        {context.signalsAnalyzed ?? '—'}
+        <strong>Signals observed:</strong>{' '}
+        {context.signalsObserved ?? NULL_PLACEHOLDER}
       </div>
 
       <hr />
 
       <div>
-        <strong>Coherence:</strong>{' '}
-        {coherenceSignal
-          ? `${coherenceSignal.state} (${coherenceSignal.confidence})`
-          : '—'}
+        <strong>System status:</strong>{' '}
+        {systemStatus
+          ? `${systemStatus.state} (${systemStatus.reliability})`
+          : NULL_PLACEHOLDER}
       </div>
 
       <div>
-        <strong>Volatility:</strong>{' '}
-        {volatilitySignal
-          ? `${volatilitySignal.level} (${volatilitySignal.variancePct ?? '—'}%)`
-          : '—'}
+        <strong>Stability:</strong>{' '}
+        {stabilityIndicator
+          ? stabilityIndicator.state
+          : NULL_PLACEHOLDER}
       </div>
 
       <div>
-        <strong>Blind spots:</strong>
-        {blindSpots ? (
+        <strong>Data coverage:</strong>
+        {dataCoverage ? (
           <ul>
-            {blindSpots.map((b, i) => (
+            {dataCoverage.map((c, i) => (
               <li key={i}>
-                [{b.domain}] {b.description} ({b.confidence})
+                [{c.domain}] {c.status}
               </li>
             ))}
           </ul>
         ) : (
-          ' —'
+          ` ${NULL_PLACEHOLDER}`
         )}
       </div>
 
       <div>
-        <strong>Time signal:</strong>{' '}
-        {timeSignal ? timeSignal.trend : '—'}
+        <strong>Trend:</strong>{' '}
+        {trendSignal
+          ? trendSignal.direction
+          : NULL_PLACEHOLDER}
       </div>
     </section>
   );
