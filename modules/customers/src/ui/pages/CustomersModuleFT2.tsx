@@ -1,32 +1,58 @@
 // modules/customers/src/ui/pages/CustomersModuleFT2.tsx
 
+/**
+ * CustomersModuleFT2
+ * ------------------
+ * FT2 Customers is an **observability-only UI surface**.
+ *
+ * IMPORTANT:
+ * - This module does NOT perform customer intelligence.
+ * - It does NOT infer behavior, value, churn, or intent.
+ * - All semantics originate from backend engines (Specter).
+ *
+ * Why this exists:
+ * - Provide a stable, honest UI for session-level visibility
+ * - Avoid semantic drift between "customers" and "specter"
+ * - Prevent frontend from inventing meaning ahead of backend truth
+ *
+ * Architectural rule:
+ * Customers FT2 = "What the system currently observes"
+ * NOT "What the customer means"
+ */
+
 export interface CustomersModuleFT2Props {
   context: {
     period: {
       from: string;
       to: string;
     };
-    customersAnalyzed: number | null;
+
+    /**
+     * Number of anonymous sessions observed in the period.
+     * This is a factual count, not a customer metric.
+     */
+    sessionsObserved: number | null;
   };
 
-  valueSummary: {
-    activeCustomers: number | null;
-    repeatRatePct: number | null;
-    avgOrderValue: number | null;
-    lifetimeValue: number | null;
-    currency: string | null;
-  };
-
-  qualitySignal: {
-    type:
-      | 'low_repeat'
-      | 'low_value'
-      | 'high_churn'
-      | 'concentration'
-      | 'unknown';
+  /**
+   * High-level health of the customer-observability subsystem.
+   * Derived upstream (typically Specter).
+   */
+  systemState: {
+    status: 'healthy' | 'degraded' | 'partial' | 'unknown';
     confidence: 'high' | 'medium' | 'low';
+
+    /**
+     * Optional human-readable explanation
+     * (e.g. partial ingestion, low data volume).
+     */
+    reason?: string;
   } | null;
 
+  /**
+   * Time-based trend indicator.
+   * Must be computed upstream.
+   */
   timeSignal: {
     trend:
       | 'improving'
@@ -44,15 +70,15 @@ export interface CustomersModuleFT2Props {
 export default function CustomersModuleFT2(
   props: CustomersModuleFT2Props
 ) {
-  const {
-    context,
-    valueSummary,
-    qualitySignal,
-    timeSignal,
-  } = props;
+  const { context, systemState, timeSignal } = props;
 
+  /**
+   * Debug logging intentionally kept:
+   * - Helps validate contract shape during evolution
+   * - Ensures no accidental inference sneaks in
+   */
   console.debug(
-    '[FT2][Customers][CustomersModuleFT2] props',
+    '[FT2][Customers][Observability] props',
     props
   );
 
@@ -65,54 +91,22 @@ export default function CustomersModuleFT2(
           {context.period.to}
         </div>
         <div>
-          <strong>Customers analyzed</strong>:{' '}
-          {context.customersAnalyzed === null
+          <strong>Sessions observed</strong>:{' '}
+          {context.sessionsObserved === null
             ? '—'
-            : context.customersAnalyzed}
+            : context.sessionsObserved}
         </div>
       </section>
 
-      {/* Value Summary */}
+      {/* System State */}
       <section>
-        <div>
-          <strong>Active customers</strong>:{' '}
-          {valueSummary.activeCustomers === null
-            ? '—'
-            : valueSummary.activeCustomers}
-        </div>
-        <div>
-          <strong>Repeat rate</strong>:{' '}
-          {valueSummary.repeatRatePct === null
-            ? '—'
-            : `${valueSummary.repeatRatePct}%`}
-        </div>
-        <div>
-          <strong>Average order value</strong>:{' '}
-          {valueSummary.avgOrderValue === null
-            ? '—'
-            : `${valueSummary.avgOrderValue} ${
-                valueSummary.currency ?? ''
-              }`}
-        </div>
-        <div>
-          <strong>Lifetime value</strong>:{' '}
-          {valueSummary.lifetimeValue === null
-            ? '—'
-            : `${valueSummary.lifetimeValue} ${
-                valueSummary.currency ?? ''
-              }`}
-        </div>
-      </section>
-
-      {/* Quality Signal */}
-      <section>
-        <strong>Dominant customer weakness</strong>:{' '}
-        {qualitySignal === null
+        <strong>System state</strong>:{' '}
+        {systemState === null
           ? '—'
-          : `${qualitySignal.type} · ${qualitySignal.confidence}`}
+          : `${systemState.status} · ${systemState.confidence}`}
       </section>
 
-      {/* Time Signal */}
+      {/* Trend */}
       <section>
         <strong>Trend</strong>:{' '}
         {timeSignal === null ? '—' : timeSignal.trend}

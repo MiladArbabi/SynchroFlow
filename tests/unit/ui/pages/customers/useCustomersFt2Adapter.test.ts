@@ -6,18 +6,10 @@ describe('FT2 Customers Adapter - mapCustomersFt2Props', () => {
   it('maps a full backend snapshot without inference', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      customersAnalyzed: 120,
+      sessionsObserved: 120,
 
-      valueSummary: {
-        activeCustomers: 80,
-        repeatRatePct: 42,
-        avgOrderValue: 75,
-        lifetimeValue: 310,
-        currency: 'USD',
-      },
-
-      qualitySignal: {
-        type: 'low_repeat',
+      systemState: {
+        status: 'healthy',
         confidence: 'high',
       },
 
@@ -28,34 +20,23 @@ describe('FT2 Customers Adapter - mapCustomersFt2Props', () => {
 
     const props = mapCustomersFt2Props(snapshot);
 
-    expect(props.context.customersAnalyzed).toBe(120);
-    expect(props.valueSummary.activeCustomers).toBe(80);
-    expect(props.qualitySignal?.type).toBe('low_repeat');
+    expect(props.context.sessionsObserved).toBe(120);
+    expect(props.systemState?.status).toBe('healthy');
     expect(props.timeSignal?.trend).toBe('stable');
   });
 
   it('preserves explicit nulls without coercion', () => {
     const snapshot = {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      customersAnalyzed: null,
-
-      valueSummary: {
-        activeCustomers: null,
-        repeatRatePct: null,
-        avgOrderValue: null,
-        lifetimeValue: null,
-        currency: null,
-      },
-
-      qualitySignal: null,
+      sessionsObserved: null,
+      systemState: null,
       timeSignal: null,
     };
 
     const props = mapCustomersFt2Props(snapshot);
 
-    expect(props.context.customersAnalyzed).toBeNull();
-    expect(props.valueSummary.activeCustomers).toBeNull();
-    expect(props.qualitySignal).toBeNull();
+    expect(props.context.sessionsObserved).toBeNull();
+    expect(props.systemState).toBeNull();
     expect(props.timeSignal).toBeNull();
   });
 
@@ -66,9 +47,8 @@ describe('FT2 Customers Adapter - mapCustomersFt2Props', () => {
 
     const props = mapCustomersFt2Props(snapshot);
 
-    expect(props.context.customersAnalyzed).toBeNull();
-    expect(props.valueSummary.activeCustomers).toBeNull();
-    expect(props.qualitySignal).toBeNull();
+    expect(props.context.sessionsObserved).toBeNull();
+    expect(props.systemState).toBeNull();
     expect(props.timeSignal).toBeNull();
   });
 });
