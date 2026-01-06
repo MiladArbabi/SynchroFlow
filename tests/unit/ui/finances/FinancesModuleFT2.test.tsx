@@ -1,35 +1,22 @@
-//tests/unit/ui/finances/FinancesModuleFT2.test.tsx
+// tests/unit/ui/finances/FinancesModuleFT2.test.tsx
+
 import { render, screen } from '@testing-library/react';
 import {
   FinancesModuleFT2,
   FinancesModuleFT2Props,
 } from '@lasyncro/finances';
 
-describe('FinancesModuleFT2', () => {
+describe('FinancesModuleFT2 (FT2 Observability Snapshot)', () => {
   const baseProps: FinancesModuleFT2Props = {
     context: {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      transactionsAnalyzed: 1200,
+      transactionsObserved: 1200,
     },
 
-    costSummary: {
-      totalRevenue: 50000,
-      totalCost: 42000,
-      netResult: 8000,
+    costModelState: {
+      hasActiveModel: true,
+      updatedAt: '2025-01-15T12:00:00Z',
       currency: 'USD',
-    },
-
-    costBreakdown: [
-      {
-        type: 'cogs',
-        amount: 25000,
-        pctOfRevenue: 50,
-      },
-    ],
-
-    dominantPressure: {
-      type: 'cogs',
-      confidence: 'high',
     },
 
     timeSignal: {
@@ -37,48 +24,75 @@ describe('FinancesModuleFT2', () => {
     },
   };
 
-  it('renders core financial context deterministically', () => {
+  it('renders context deterministically', () => {
     render(<FinancesModuleFT2 {...baseProps} />);
 
     expect(screen.getByText(/2025-01-01/i)).toBeInTheDocument();
+    expect(screen.getByText(/2025-01-31/i)).toBeInTheDocument();
     expect(screen.getByText(/1200/i)).toBeInTheDocument();
-    expect(screen.getByText(/50000/i)).toBeInTheDocument();
-    expect(screen.getByText(/8000/i)).toBeInTheDocument();
   });
 
-  it('renders placeholders when values are null', () => {
+  it('renders cost model status without interpretation', () => {
+    render(<FinancesModuleFT2 {...baseProps} />);
+
+    expect(screen.getByText(/cost model status/i)).toBeInTheDocument();
+    expect(screen.getByText(/yes/i)).toBeInTheDocument(); // active model
+    expect(screen.getByText(/2025-01-15/i)).toBeInTheDocument();
+    expect(screen.getByText(/USD/i)).toBeInTheDocument();
+  });
+
+  it('renders placeholders for unknown cost model state', () => {
     render(
       <FinancesModuleFT2
         {...baseProps}
-        context={{
-          ...baseProps.context,
-          transactionsAnalyzed: null,
-        }}
-        costBreakdown={null}
-        dominantPressure={null}
-        timeSignal={null}
+        costModelState={null}
       />
     );
 
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('renders cost breakdown rows when present', () => {
-    render(<FinancesModuleFT2 {...baseProps} />);
-
-    expect(screen.getAllByText(/cogs/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/50%/i)).toBeInTheDocument();
-  });
-
-  it('renders dominant pressure confidence when present', () => {
-    render(<FinancesModuleFT2 {...baseProps} />);
-
-    expect(screen.getByText(/high/i)).toBeInTheDocument();
-  });
-
   it('renders trend signal when present', () => {
     render(<FinancesModuleFT2 {...baseProps} />);
 
     expect(screen.getByText(/stable/i)).toBeInTheDocument();
+  });
+
+  it('renders placeholder when trend is unknown', () => {
+    render(
+      <FinancesModuleFT2
+        {...baseProps}
+        timeSignal={null}
+      />
+    );
+
+    const trendSection = screen.getByText(/trend/i).parentElement;
+    expect(trendSection).toBeTruthy();
+    expect(trendSection!.textContent).toContain('—');
+  });
+
+  /**
+   * Doctrine guard:
+   * These terms must NEVER appear in FT2.
+   * If this test fails, intelligence has leaked.
+   */
+  it('does not render forbidden financial intelligence', () => {
+    render(<FinancesModuleFT2 {...baseProps} />);
+
+    const forbiddenTerms = [
+      /revenue/i,
+      /margin/i,
+      /profit/i,
+      /net result/i,
+      /breakdown/i,
+      /dominant/i,
+      /pressure/i,
+      /confidence/i,
+      /%/,
+    ];
+
+    forbiddenTerms.forEach((term) => {
+      expect(screen.queryByText(term)).toBeNull();
+    });
   });
 });

@@ -6,46 +6,17 @@ export interface FinancesModuleFT2Props {
       from: string;
       to: string;
     };
-    transactionsAnalyzed: number | null;
+    transactionsObserved: number | null;
   };
 
-  costSummary: {
-    totalRevenue: number | null;
-    totalCost: number | null;
-    netResult: number | null;
+  costModelState: {
+    hasActiveModel: boolean | null;
+    updatedAt: string | null;
     currency: string | null;
-  };
-
-  costBreakdown: Array<{
-    type:
-      | 'cogs'
-      | 'fulfillment'
-      | 'fees'
-      | 'overhead'
-      | 'refunds'
-      | 'other';
-    amount: number | null;
-    pctOfRevenue: number | null;
-  }> | null;
-
-  dominantPressure: {
-    type:
-      | 'cogs'
-      | 'fulfillment'
-      | 'fees'
-      | 'overhead'
-      | 'refunds'
-      | 'unknown';
-    confidence: 'high' | 'medium' | 'low';
   } | null;
 
   timeSignal: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
+    trend: 'improving' | 'stable' | 'deteriorating' | 'unknown';
     comparedPeriod?: {
       from: string;
       to: string;
@@ -53,18 +24,23 @@ export interface FinancesModuleFT2Props {
   } | null;
 }
 
+/**
+ * FinancesModuleFT2
+ * -----------------
+ * FT2 is a read-only observability snapshot.
+ *
+ * Rules enforced here:
+ * - No inference
+ * - No business meaning
+ * - No conditional hiding (except null)
+ * - Explicit placeholders for unknown data
+ *
+ * If this UI ever feels “smart”, it is a bug.
+ */
 export default function FinancesModuleFT2(
   props: FinancesModuleFT2Props
 ) {
-  const {
-    context,
-    costSummary,
-    costBreakdown,
-    dominantPressure,
-    timeSignal,
-  } = props;
-
-  console.debug('[FT2][Finances][FinancesModuleFT2] props', props);
+  const { context, costModelState, timeSignal } = props;
 
   return (
     <section data-testid="finances-ft2-root">
@@ -75,67 +51,38 @@ export default function FinancesModuleFT2(
           {context.period.to}
         </div>
         <div>
-          <strong>Transactions analyzed</strong>:{' '}
-          {context.transactionsAnalyzed === null
+          <strong>Transactions observed</strong>:{' '}
+          {context.transactionsObserved === null
             ? '—'
-            : context.transactionsAnalyzed}
+            : context.transactionsObserved}
         </div>
       </section>
 
-      {/* Cost Summary */}
+      {/* Cost Model Status */}
       <section>
-        <div>
-          <strong>Total revenue</strong>:{' '}
-          {costSummary.totalRevenue === null
-            ? '—'
-            : `${costSummary.totalRevenue} ${
-                costSummary.currency ?? ''
-              }`}
-        </div>
-        <div>
-          <strong>Total cost</strong>:{' '}
-          {costSummary.totalCost === null
-            ? '—'
-            : `${costSummary.totalCost} ${
-                costSummary.currency ?? ''
-              }`}
-        </div>
-        <div>
-          <strong>Net result</strong>:{' '}
-          {costSummary.netResult === null
-            ? '—'
-            : `${costSummary.netResult} ${
-                costSummary.currency ?? ''
-              }`}
-        </div>
-      </section>
-
-      {/* Cost Breakdown */}
-      <section>
-        <strong>Cost breakdown</strong>
-        {costBreakdown === null || costBreakdown.length === 0 ? (
+        <strong>Cost model status</strong>
+        {costModelState === null ? (
           <div>—</div>
         ) : (
-          <ul>
-            {costBreakdown.map((row, idx) => (
-              <li key={idx}>
-                {row.type} ·{' '}
-                {row.amount === null ? '—' : row.amount} ·{' '}
-                {row.pctOfRevenue === null
-                  ? '—'
-                  : `${row.pctOfRevenue}%`}
-              </li>
-            ))}
-          </ul>
+          <>
+            <div>
+              <strong>Active model</strong>:{' '}
+              {costModelState.hasActiveModel === null
+                ? '—'
+                : costModelState.hasActiveModel
+                ? 'yes'
+                : 'no'}
+            </div>
+            <div>
+              <strong>Last updated</strong>:{' '}
+              {costModelState.updatedAt ?? '—'}
+            </div>
+            <div>
+              <strong>Currency</strong>:{' '}
+              {costModelState.currency ?? '—'}
+            </div>
+          </>
         )}
-      </section>
-
-      {/* Dominant Pressure */}
-      <section>
-        <strong>Dominant cost pressure</strong>:{' '}
-        {dominantPressure === null
-          ? '—'
-          : `${dominantPressure.type} · ${dominantPressure.confidence}`}
       </section>
 
       {/* Time Signal */}

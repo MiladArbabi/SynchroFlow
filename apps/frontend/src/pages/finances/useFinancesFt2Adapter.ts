@@ -1,44 +1,40 @@
-//apps/frontend/src/pages/finances/useFinancesFt2Adapter.ts
+// apps/frontend/src/pages/finances/useFinancesFt2Adapter.ts
+
 import type { FinancesModuleFT2Props } from '@lasyncro/finances';
 
+/**
+ * Finances FT2 Backend Snapshot (Observed Facts Only)
+ * ---------------------------------------------------
+ * This represents the raw, read-only data that MAY be emitted
+ * by backend systems (MarginCore / Analytics Core).
+ *
+ * IMPORTANT:
+ * - This is NOT a cost model
+ * - This is NOT financial intelligence
+ * - Presence does not imply correctness or quality
+ */
 type FinancesFt2Snapshot = {
   period?: {
     from: string;
     to: string;
   };
 
-  transactionsAnalyzed?: number | null;
+  transactionsObserved?: number | null;
 
-  costSummary?: {
-    totalRevenue?: number | null;
-    totalCost?: number | null;
-    netResult?: number | null;
+  /**
+   * Cost model presence & metadata ONLY.
+   * No interpretation of impact, quality, or correctness.
+   */
+  costModelState?: {
+    hasActiveModel?: boolean | null;
+    updatedAt?: string | null;
     currency?: string | null;
-  };
-
-  costBreakdown?: Array<{
-    type:
-      | 'cogs'
-      | 'fulfillment'
-      | 'fees'
-      | 'overhead'
-      | 'refunds'
-      | 'other';
-    amount?: number | null;
-    pctOfRevenue?: number | null;
-  }> | null;
-
-  dominantPressure?: {
-    type:
-      | 'cogs'
-      | 'fulfillment'
-      | 'fees'
-      | 'overhead'
-      | 'refunds'
-      | 'unknown';
-    confidence: 'high' | 'medium' | 'low';
   } | null;
 
+  /**
+   * Directional trend ONLY.
+   * No magnitude, no explanation, no reasoning.
+   */
   timeSignal?: {
     trend:
       | 'improving'
@@ -54,63 +50,73 @@ type FinancesFt2Snapshot = {
 };
 
 /**
- * FT2 Finances Adapter
- * -------------------
- * Pure mapping from backend snapshot → FinancesModuleFT2Props
+ * mapFinancesFt2Props
+ * ------------------
+ * Canonical FT2 adapter for Finances.
  *
- * Invariants:
- * - No inference
- * - No lifecycle
- * - No defaulting (undefined → null)
- * - Shape-stable
+ * Role:
+ * - Normalize backend snapshot into a deterministic UI contract
+ * - Preserve uncertainty explicitly via nulls
+ *
+ * This function is intentionally boring.
+ * If you feel tempted to "enhance" it — stop.
  */
 export function mapFinancesFt2Props(
   snapshot: FinancesFt2Snapshot
 ): FinancesModuleFT2Props {
-  return {
+  const props: FinancesModuleFT2Props = {
     context: {
       period: snapshot.period ?? { from: '', to: '' },
-      transactionsAnalyzed:
-        snapshot.transactionsAnalyzed === undefined
+      transactionsObserved:
+        snapshot.transactionsObserved === undefined
           ? null
-          : snapshot.transactionsAnalyzed,
+          : snapshot.transactionsObserved,
     },
 
-    costSummary: {
-      totalRevenue:
-        snapshot.costSummary?.totalRevenue === undefined
-          ? null
-          : snapshot.costSummary.totalRevenue,
-      totalCost:
-        snapshot.costSummary?.totalCost === undefined
-          ? null
-          : snapshot.costSummary.totalCost,
-      netResult:
-        snapshot.costSummary?.netResult === undefined
-          ? null
-          : snapshot.costSummary.netResult,
-      currency:
-        snapshot.costSummary?.currency === undefined
-          ? null
-          : snapshot.costSummary.currency,
-    },
-
-    costBreakdown:
-      snapshot.costBreakdown == null
+    costModelState:
+      snapshot.costModelState === undefined
         ? null
-        : snapshot.costBreakdown.map((c) => ({
-            type: c.type,
-            amount: c.amount === undefined ? null : c.amount,
-            pctOfRevenue:
-              c.pctOfRevenue === undefined ? null : c.pctOfRevenue,
-          })),
-
-    dominantPressure:
-      snapshot.dominantPressure === undefined
+        : snapshot.costModelState === null
         ? null
-        : snapshot.dominantPressure,
+        : {
+            hasActiveModel:
+              snapshot.costModelState.hasActiveModel === undefined
+                ? null
+                : snapshot.costModelState.hasActiveModel,
+            updatedAt:
+              snapshot.costModelState.updatedAt === undefined
+                ? null
+                : snapshot.costModelState.updatedAt,
+            currency:
+              snapshot.costModelState.currency === undefined
+                ? null
+                : snapshot.costModelState.currency,
+          },
 
     timeSignal:
-      snapshot.timeSignal === undefined ? null : snapshot.timeSignal,
+      snapshot.timeSignal === undefined
+        ? null
+        : snapshot.timeSignal === null
+        ? null
+        : {
+            trend:
+              snapshot.timeSignal.trend === 'volatile'
+                ? 'unknown'
+                : snapshot.timeSignal.trend,
+            comparedPeriod: snapshot.timeSignal.comparedPeriod,
+          },
   };
+
+  /**
+   * Instrumentation (FT2 only)
+   * -------------------------
+   * Debug logging is allowed at FT2 to:
+   * - Verify contract stability
+   * - Detect unexpected backend shape changes
+   *
+   * This MUST remain console.debug (never info/warn/error).
+   */
+  console.debug('[FT2][Finances][Adapter] mapped props', props);
+
+  return props;
 }
