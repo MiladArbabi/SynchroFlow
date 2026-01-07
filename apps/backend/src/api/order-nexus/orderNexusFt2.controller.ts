@@ -1,6 +1,7 @@
 // apps/backend/src/api/order-nexus/orderNexusFt2.controller.ts
 
 import { getOrderNexusFt2Snapshot } from 'api-src/services/order-nexus-ft2/orderNexusFt2.resolver';
+import { getFt2Period } from 'api-src/utils/ft2Period';
 
 /**
  * Order-Nexus FT2 Controller
@@ -20,16 +21,11 @@ export async function orderNexusFt2Controller(req: any, res: any) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const from = req.query?.from;
-  const to = req.query?.to;
-
-  if (typeof from !== 'string' || typeof to !== 'string') {
-    return res.status(400).json({ error: 'Invalid period' });
-  }
+  const period = getFt2Period();
 
   const snapshot = await getOrderNexusFt2Snapshot({
     shopId,
-    period: { from, to },
+    period,
   });
 
   return res.json(snapshot);

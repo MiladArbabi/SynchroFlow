@@ -59,19 +59,15 @@ describe('OrderNexus FT2 Controller', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
   });
 
-  it('returns 400 if period is invalid', async () => {
-    req.query = { from: '2025-01-01' };
-
-    await orderNexusFt2Controller(req as any, res as any);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid period' });
-  });
+  // FT2 period is backend-owned — no query validation
 
   it('returns FT2 snapshot when input is valid', async () => {
     const snapshot: OrderNexusFT2Exposure = {
       context: {
-        period: { from: '2025-01-01', to: '2025-01-31' },
+        period: { 
+          from: '2025-12-08T12:39:17.841Z', 
+          to: '2026-01-07T12:39:17.841Z' 
+        },
         ordersObserved: 5,
       },
       totals: {
@@ -88,10 +84,19 @@ describe('OrderNexus FT2 Controller', () => {
 
     await orderNexusFt2Controller(req as any, res as any);
 
-    expect(mockGetOrderNexusFt2Snapshot).toHaveBeenCalledWith({
-      shopId: 42,
-      period: { from: '2025-01-01', to: '2025-01-31' },
-    });
+    expect(mockGetOrderNexusFt2Snapshot).toHaveBeenCalledWith(
+     expect.objectContaining({
+       shopId: 42,
+       period: {
+         from: expect.any(String),
+         to: expect.any(String),
+       },
+     })
+   );
+
+    expect(mockGetOrderNexusFt2Snapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ shopId: 42 })
+    );
 
     expect(res.json).toHaveBeenCalledWith(snapshot);
   });

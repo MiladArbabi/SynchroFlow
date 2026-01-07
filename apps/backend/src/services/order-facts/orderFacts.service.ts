@@ -27,26 +27,18 @@ export async function extractOrderFacts(
   const ordersObserved =
     ordersRow?.count !== undefined ? Number(ordersRow.count) : null;
 
-  // --- Revenue + cost totals ---
-  const totalsRow = await db('canonical_orders')
-  .where('shop_id', shopId)
-  .andWhere('order_created_at', '>=', period.from)
-  .andWhere('order_created_at', '<=', period.to)
-  .select(
-    db.raw('SUM(total_revenue) as revenue'),
-    db.raw('SUM(total_cost) as cost')
-  )
-  .first<{
-    revenue: string | null;
-    cost: string | null;
-  }>();
+  const revenueRow = await db('canonical_orders')
+    .where('shop_id', shopId)
+    .andWhere('order_created_at', '>=', period.from)
+    .andWhere('order_created_at', '<=', period.to)
+    .sum<{ sum: string | null }>('total_price as sum')
+    .first();
 
-const revenueTotal =
-  totalsRow?.revenue != null ? Number(totalsRow.revenue) : null;
+  const revenueTotal =
+    revenueRow?.sum != null ? Number(revenueRow.sum) : null;
 
-const costTotal =
-  totalsRow?.cost != null ? Number(totalsRow.cost) : null;
-
+  // Cost does NOT exist at order level → factually null
+  const costTotal: number | null = null;
 
   // --- Data completeness (FACT, not meaning) ---
   const coverageRow = await db('canonical_order_line_items')

@@ -26,6 +26,9 @@ import { registerLifecycleRoutes } from 'api-src/api/lifecycle';
 // Specter routes (FT0)
 import specterRouter from '../api/specter/specter.routes';
 
+// Order routes
+import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
+
 export function createApp(): Express {
   const app = express();
   app.use(express.json());
@@ -51,6 +54,11 @@ export function createApp(): Express {
   app.use('/api/v1/shopify', shopifyRoutes);
 /*   app.use('/api/v1/shopify', shopifyDevRoutes); */
   app.use('/api/v1/onboarding', onboardingReadinessRouter);
+
+  // ─────────────────────────────────────────────
+  // FT2 Modules (read-only truth surfaces)
+  // ─────────────────────────────────────────────
+  app.use('/api/v1/modules/order-nexus', orderNexusRoutes);
   
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

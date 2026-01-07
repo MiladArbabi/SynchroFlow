@@ -6,6 +6,7 @@ import { useAuth } from 'contexts/AuthContext';
 import { mapOrdersFt1Props } from './orders/useOrdersFt1Adapter';
 import { mapOrdersFt2Props } from './orders/useOrdersFt2Adapter';
 import { useOrderNexusAhaAdapter } from 'wiring/orderNexusAhaAdapter';
+import { useOrdersFt2Snapshot } from './orders/useOrdersFt2Snapshot';
 
 export default function OrdersPage() {
   const { phase } = useShopLifecycle();
@@ -17,6 +18,20 @@ export default function OrdersPage() {
   const isFt2 = phase === 'FT2_READY';
 
   const enabled = isFt1 && !!shopId;
+  const ft2Enabled = isFt2 && !!shopId;
+
+  /**
+   * FT2 Orders Snapshot (Authoritative)
+   * ----------------------------------
+   * Hook MUST be called unconditionally (React rules).
+   * Fetching is gated strictly via `enabled`.
+   *
+   * Guarantees:
+   * - No fetch outside FT2_READY
+   * - Backend owns period
+   * - No inference or defaults here
+   */
+  const ft2Query = useOrdersFt2Snapshot(ft2Enabled);
 
   const readinessQuery = useOnboardingReadiness(
     enabled,
@@ -25,16 +40,21 @@ export default function OrdersPage() {
 
   // ---- FT2 routing ----
   if (isFt2) {
-    /**
-     * FT2 Orders wiring
-     * -----------------
-     * No backend snapshot is wired yet.
-     * We intentionally pass an empty snapshot to:
-     * - preserve null semantics
-     * - exercise the FT2 adapter
-     * - avoid inventing data sources
-     */
-    const ft2Props = mapOrdersFt2Props({});
+
+    if (!ft2Query.isSuccess) {
+      console.debug('[OrdersPage][FT2] awaiting FT2 snapshot', {
+        phase,
+        shopId,
+      });
+      return <div>Loading orders…</div>;
+    }
+
+    const ft2Props = mapOrdersFt2Props(ft2Query.data);
+
+    console.debug('[OrdersPage][FT2] rendering FT2 OrdersModule', {
+      snapshot: ft2Query.data,
+    });
+    
     return <OrdersModuleFT2 {...ft2Props} />;
   }
 

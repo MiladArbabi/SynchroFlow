@@ -26,12 +26,13 @@ import type { OrdersModuleFT2Props } from '@lasyncro/order-nexus';
  * - Backfill defaults
  */
 type OrdersFt2Snapshot = {
-  period?: {
-    from: string;
-    to: string;
+  context?: {
+    period?: {
+      from: string;
+      to: string;
+    };
+    ordersObserved?: number | null;
   };
-
-  ordersObserved?: number | null;
 
   totals?: {
     revenueTotal?: number | null;
@@ -76,12 +77,12 @@ export function mapOrdersFt2Props(
 ): OrdersModuleFT2Props {
   return {
     context: {
-      period: snapshot.period ?? { from: '', to: '' },
+      period: snapshot.context?.period ?? { from: '', to: '' },
 
       ordersObserved:
-        snapshot.ordersObserved === undefined
+        snapshot.context?.ordersObserved === undefined
           ? null
-          : snapshot.ordersObserved,
+          : snapshot.context.ordersObserved,
     },
 
     totals: {
