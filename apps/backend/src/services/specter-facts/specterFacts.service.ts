@@ -20,9 +20,9 @@ export async function getSpecterFacts(
   const { shopId, period } = input;
   const sessionStore = createSessionStore();
 
-  const sessions = sessionStore.getAllSessionsForShop(shopId);
+  const allSessions = sessionStore.getAllSessionsForShop(shopId);
 
-  if (!sessions || sessions.length === 0) {
+  if (!allSessions || allSessions.length === 0) {
     return {
       shopId,
       period,
@@ -33,25 +33,35 @@ export async function getSpecterFacts(
     };
   }
 
-  const sessionsObserved = sessions.length;
-  const exitIntentSessions = sessions.filter(s => s.exitIntent).length;
+  const fromTs = Date.parse(period.from);
+  const toTs = Date.parse(period.to);
 
-  // Funnel detection = raw boolean presence only (no explanation)
-  const pageCounts: Record<string, number> = {};
-  sessions.forEach(s => {
-    (s.pagesViewed || []).forEach(p => {
-      pageCounts[p] = (pageCounts[p] || 0) + 1;
-    });
+  const sessionsInPeriod = allSessions.filter((s: any) => {
+    if (!s.createdAt) return false;
+    const createdTs = Date.parse(s.createdAt);
+    return createdTs >= fromTs && createdTs <= toTs;
   });
 
-  const funnelsDetected = Object.values(pageCounts).some(c => c >= 2);
+  if (sessionsInPeriod.length === 0) {
+    return {
+      shopId,
+      period,
+      sessionsObserved: null,
+      exitIntentSessions: null,
+      funnelsDetected: null,
+      extractedAt: new Date().toISOString()
+    };
+  }
+
+  const sessionsObserved = sessionsInPeriod.length;
+  const exitIntentSessions = sessionsInPeriod.filter(s => s.exitIntent).length;
 
   return {
     shopId,
     period,
     sessionsObserved,
     exitIntentSessions,
-    funnelsDetected,
+    funnelsDetected: null,
     extractedAt: new Date().toISOString()
   };
 }

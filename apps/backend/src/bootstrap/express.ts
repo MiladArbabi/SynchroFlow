@@ -25,6 +25,7 @@ import { registerLifecycleRoutes } from 'api-src/api/lifecycle';
 
 // Specter routes (FT0)
 import specterRouter from '../api/specter/specter.routes';
+import customersFt2Routes from '../api/customers/customers.ft2.routes';
 
 // Order routes
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
@@ -41,6 +42,12 @@ export function createApp(): Express {
   
   app.use(cookieParser() as any);
 
+  //TEMP
+  app.use((req, _res, next) => {
+    console.log('[ROUTE HIT]', req.method, req.path);
+    next();
+  });
+
   // Register routes
   app.use('/api/v1/layouts', layoutRoutes);
   app.use('/api/v1/orders', orderRoutes);
@@ -56,9 +63,10 @@ export function createApp(): Express {
   app.use('/api/v1/onboarding', onboardingReadinessRouter);
 
   // ─────────────────────────────────────────────
-  // FT2 Modules (read-only truth surfaces)
+  // Modules (read-only truth surfaces)
   // ─────────────────────────────────────────────
   app.use('/api/v1/modules/order-nexus', orderNexusRoutes);
+  app.use('/api/v1/modules/customers', customersFt2Routes);
   
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);
