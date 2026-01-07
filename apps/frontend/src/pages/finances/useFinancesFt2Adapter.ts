@@ -3,50 +3,36 @@
 import type { FinancesModuleFT2Props } from '@lasyncro/finances';
 
 /**
- * Finances FT2 Backend Snapshot (Observed Facts Only)
- * ---------------------------------------------------
- * This represents the raw, read-only data that MAY be emitted
- * by backend systems (MarginCore / Analytics Core).
+ * Finances FT2 Backend Snapshot
+ * -----------------------------
+ * Canonical FT2 exposure emitted by backend.
  *
- * IMPORTANT:
- * - This is NOT a cost model
- * - This is NOT financial intelligence
- * - Presence does not imply correctness or quality
+ * This snapshot contains:
+ * - Observed financial surface only
+ * - No intelligence
+ * - No breakdowns
+ * - No explanations
  */
 type FinancesFt2Snapshot = {
-  period?: {
-    from: string;
-    to: string;
-  };
-
-  transactionsObserved?: number | null;
-
-  /**
-   * Cost model presence & metadata ONLY.
-   * No interpretation of impact, quality, or correctness.
-   */
-  costModelState?: {
-    hasActiveModel?: boolean | null;
-    updatedAt?: string | null;
-    currency?: string | null;
-  } | null;
-
-  /**
-   * Directional trend ONLY.
-   * No magnitude, no explanation, no reasoning.
-   */
-  timeSignal?: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
-    comparedPeriod?: {
+  context?: {
+    period?: {
       from: string;
       to: string;
     };
+    netObserved?: number | null;
+  };
+
+  outcome?: {
+    status: 'positive' | 'negative' | 'unknown';
   } | null;
+
+  trend?: {
+    direction: 'up' | 'down' | 'flat' | 'unknown';
+  } | null;
+
+  dataCoverage?: {
+    completenessPct: number | null;
+  };
 };
 
 /**
@@ -66,45 +52,23 @@ export function mapFinancesFt2Props(
 ): FinancesModuleFT2Props {
   const props: FinancesModuleFT2Props = {
     context: {
-      period: snapshot.period ?? { from: '', to: '' },
-      transactionsObserved:
-        snapshot.transactionsObserved === undefined
+      period: snapshot.context?.period ?? { from: '', to: '' },
+      netObserved:
+        snapshot.context?.netObserved === undefined
           ? null
-          : snapshot.transactionsObserved,
+          : snapshot.context.netObserved,
     },
 
-    costModelState:
-      snapshot.costModelState === undefined
-        ? null
-        : snapshot.costModelState === null
-        ? null
-        : {
-            hasActiveModel:
-              snapshot.costModelState.hasActiveModel === undefined
-                ? null
-                : snapshot.costModelState.hasActiveModel,
-            updatedAt:
-              snapshot.costModelState.updatedAt === undefined
-                ? null
-                : snapshot.costModelState.updatedAt,
-            currency:
-              snapshot.costModelState.currency === undefined
-                ? null
-                : snapshot.costModelState.currency,
-          },
+    outcome:
+      snapshot.outcome === undefined ? null : snapshot.outcome,
 
-    timeSignal:
-      snapshot.timeSignal === undefined
+    trend:
+      snapshot.trend === undefined ? null : snapshot.trend,
+
+    dataCoverage:
+      snapshot.dataCoverage === undefined
         ? null
-        : snapshot.timeSignal === null
-        ? null
-        : {
-            trend:
-              snapshot.timeSignal.trend === 'volatile'
-                ? 'unknown'
-                : snapshot.timeSignal.trend,
-            comparedPeriod: snapshot.timeSignal.comparedPeriod,
-          },
+        : snapshot.dataCoverage,
   };
 
   /**

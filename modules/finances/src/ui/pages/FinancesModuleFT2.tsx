@@ -6,22 +6,26 @@ export interface FinancesModuleFT2Props {
       from: string;
       to: string;
     };
-    transactionsObserved: number | null;
+    netObserved: number | null;
   };
 
-  costModelState: {
-    hasActiveModel: boolean | null;
-    updatedAt: string | null;
-    currency: string | null;
-  } | null;
+  outcome:
+    | {
+        status: 'positive' | 'negative' | 'unknown';
+      }
+    | null;
 
-  timeSignal: {
-    trend: 'improving' | 'stable' | 'deteriorating' | 'unknown';
-    comparedPeriod?: {
-      from: string;
-      to: string;
-    };
-  } | null;
+  trend:
+    | {
+        direction: 'up' | 'down' | 'flat' | 'unknown';
+      }
+    | null;
+
+  dataCoverage:
+    | {
+        completenessPct: number | null;
+      }
+    | null;
 }
 
 /**
@@ -40,7 +44,7 @@ export interface FinancesModuleFT2Props {
 export default function FinancesModuleFT2(
   props: FinancesModuleFT2Props
 ) {
-  const { context, costModelState, timeSignal } = props;
+  const { context, outcome, trend, dataCoverage } = props;
 
   return (
     <section data-testid="finances-ft2-root">
@@ -51,44 +55,30 @@ export default function FinancesModuleFT2(
           {context.period.to}
         </div>
         <div>
-          <strong>Transactions observed</strong>:{' '}
-          {context.transactionsObserved === null
-            ? '—'
-            : context.transactionsObserved}
+          <strong>Net observed</strong>:{' '}
+          {context.netObserved === null ? '—' : context.netObserved}
         </div>
       </section>
 
-      {/* Cost Model Status */}
+      {/* Outcome */}
       <section>
-        <strong>Cost model status</strong>
-        {costModelState === null ? (
-          <div>—</div>
-        ) : (
-          <>
-            <div>
-              <strong>Active model</strong>:{' '}
-              {costModelState.hasActiveModel === null
-                ? '—'
-                : costModelState.hasActiveModel
-                ? 'yes'
-                : 'no'}
-            </div>
-            <div>
-              <strong>Last updated</strong>:{' '}
-              {costModelState.updatedAt ?? '—'}
-            </div>
-            <div>
-              <strong>Currency</strong>:{' '}
-              {costModelState.currency ?? '—'}
-            </div>
-          </>
-        )}
+        <strong>Outcome</strong>:{' '}
+        {outcome === null ? '—' : outcome.status}
       </section>
 
-      {/* Time Signal */}
+      {/* Trend */}
       <section>
         <strong>Trend</strong>:{' '}
-        {timeSignal === null ? '—' : timeSignal.trend}
+        {trend === null ? '—' : trend.direction}
+      </section>
+
+      {/* Data Coverage */}
+      <section>
+        <strong>Data coverage</strong>:{' '}
+        {dataCoverage?.completenessPct === null ||
+        dataCoverage === null
+          ? '—'
+          : `${dataCoverage.completenessPct}%`}
       </section>
     </section>
   );

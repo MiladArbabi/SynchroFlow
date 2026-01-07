@@ -10,71 +10,86 @@ describe('FinancesModuleFT2 (FT2 Observability Snapshot)', () => {
   const baseProps: FinancesModuleFT2Props = {
     context: {
       period: { from: '2025-01-01', to: '2025-01-31' },
-      transactionsObserved: 1200,
+      netObserved: 3200,
     },
 
-    costModelState: {
-      hasActiveModel: true,
-      updatedAt: '2025-01-15T12:00:00Z',
-      currency: 'USD',
+    outcome: {
+      status: 'positive',
     },
 
-    timeSignal: {
-      trend: 'stable',
+    trend: {
+      direction: 'up',
+    },
+
+    dataCoverage: {
+      completenessPct: 95,
     },
   };
 
-  it('renders context deterministically', () => {
+  it('renders period deterministically', () => {
     render(<FinancesModuleFT2 {...baseProps} />);
 
     expect(screen.getByText(/2025-01-01/i)).toBeInTheDocument();
     expect(screen.getByText(/2025-01-31/i)).toBeInTheDocument();
-    expect(screen.getByText(/1200/i)).toBeInTheDocument();
   });
 
-  it('renders cost model status without interpretation', () => {
+  it('renders net observed value or placeholder', () => {
     render(<FinancesModuleFT2 {...baseProps} />);
 
-    expect(screen.getByText(/cost model status/i)).toBeInTheDocument();
-    expect(screen.getByText(/yes/i)).toBeInTheDocument(); // active model
-    expect(screen.getByText(/2025-01-15/i)).toBeInTheDocument();
-    expect(screen.getByText(/USD/i)).toBeInTheDocument();
+    expect(screen.getByText(/net observed/i)).toBeInTheDocument();
+    expect(screen.getByText(/3200/i)).toBeInTheDocument();
   });
 
-  it('renders placeholders for unknown cost model state', () => {
+  it('renders outcome when present', () => {
+    render(<FinancesModuleFT2 {...baseProps} />);
+
+    expect(screen.getByText(/outcome/i)).toBeInTheDocument();
+    expect(screen.getByText(/positive/i)).toBeInTheDocument();
+  });
+
+  it('renders trend direction when present', () => {
+    render(<FinancesModuleFT2 {...baseProps} />);
+
+    expect(screen.getByText(/trend/i)).toBeInTheDocument();
+    expect(screen.getByText(/up/i)).toBeInTheDocument();
+  });
+
+  it('renders data coverage percentage when present', () => {
+    render(<FinancesModuleFT2 {...baseProps} />);
+
+    expect(screen.getByText(/data coverage/i)).toBeInTheDocument();
+    expect(screen.getByText(/95%/i)).toBeInTheDocument();
+  });
+
+  it('renders placeholders for unknown values', () => {
     render(
       <FinancesModuleFT2
         {...baseProps}
-        costModelState={null}
+        outcome={null}
+        trend={null}
+        dataCoverage={{ completenessPct: null }}
       />
     );
 
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-  });
+    // Outcome placeholder
+    expect(
+      screen.getByText(/outcome/i).parentElement?.textContent
+    ).toContain('—');
 
-  it('renders trend signal when present', () => {
-    render(<FinancesModuleFT2 {...baseProps} />);
+    // Trend placeholder
+    expect(
+      screen.getByText(/trend/i).parentElement?.textContent
+    ).toContain('—');
 
-    expect(screen.getByText(/stable/i)).toBeInTheDocument();
-  });
-
-  it('renders placeholder when trend is unknown', () => {
-    render(
-      <FinancesModuleFT2
-        {...baseProps}
-        timeSignal={null}
-      />
-    );
-
-    const trendSection = screen.getByText(/trend/i).parentElement;
-    expect(trendSection).toBeTruthy();
-    expect(trendSection!.textContent).toContain('—');
+    // Data coverage placeholder
+    expect(
+      screen.getByText(/data coverage/i).parentElement?.textContent
+    ).toContain('—');
   });
 
   /**
    * Doctrine guard:
-   * These terms must NEVER appear in FT2.
-   * If this test fails, intelligence has leaked.
+   * FT2 must NEVER expose financial intelligence.
    */
   it('does not render forbidden financial intelligence', () => {
     render(<FinancesModuleFT2 {...baseProps} />);
@@ -83,12 +98,12 @@ describe('FinancesModuleFT2 (FT2 Observability Snapshot)', () => {
       /revenue/i,
       /margin/i,
       /profit/i,
-      /net result/i,
+      /transactions/i,
+      /cost model/i,
       /breakdown/i,
       /dominant/i,
-      /pressure/i,
       /confidence/i,
-      /%/,
+      /% of/i,
     ];
 
     forbiddenTerms.forEach((term) => {
