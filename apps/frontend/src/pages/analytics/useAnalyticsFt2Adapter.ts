@@ -33,7 +33,7 @@ import type { AnalyticsModuleFT2Props } from '@lasyncro/analytics';
  * NOTE:
  * -----
  * This snapshot is intentionally flat and boring.
- * Any intelligence belongs upstream (FT3+).
+ * Any intelligence belongs upstream.
  */
 type AnalyticsFt2Snapshot = {
   period?: {

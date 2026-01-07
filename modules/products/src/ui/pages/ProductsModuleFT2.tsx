@@ -20,7 +20,7 @@
 // - ❌ NOT risk, pressure, dominance, or confidence reasoning
 // - ❌ NOT recommendations or actions
 //
-// All intelligence, “why”, and prioritization belongs to **SKU-OS / FT3+**
+// All intelligence, “why”, and prioritization belongs to **SKU-OS+**
 // (see docs/blueprints-and-contracts/skuOs-contract).
 //
 //
@@ -38,7 +38,7 @@
 //
 // WHO OWNS WHAT
 // -------------
-// - Backend: decides meaning (later, in SKU-OS / FT3+)
+// - Backend: decides meaning (later, in SKU-OS)
 // - Adapter: dumb pipe (undefined → null)
 // - This module: render facts only
 //

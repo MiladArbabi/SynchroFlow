@@ -1,4 +1,4 @@
-# 🧠 Customers / Specter — FT2 Architecture
+# 🧠 Customers / Specter — 4-Layer FT2 Architecture
 
 **As-built, locked, FT2-grade implementation**
 
@@ -190,4 +190,4 @@ Customers / Specter FT2 is:
 * Lifecycle-safe
 * Canonical
 
-This document is **locked** until FT3.
+This document is **locked**.

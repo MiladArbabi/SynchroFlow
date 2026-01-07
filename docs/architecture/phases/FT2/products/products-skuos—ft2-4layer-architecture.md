@@ -1,4 +1,4 @@
-# 📦 Products / SKU-OS — FT2 Architecture Contract
+# 📦 Products / SKU-OS — 4-Layer FT2 Architecture Contract
 
 **Phase:** FT2
 **Module:** Products / SKU-OS

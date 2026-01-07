@@ -21,7 +21,7 @@
 // - Shape-stable
 //
 // Any intelligence, prioritization, or “why” is explicitly forbidden here
-// and belongs to SKU-OS / FT3+.
+// and belongs to SKU-OS.
 //
 //
 // INVARIANTS (NON-NEGOTIABLE)
