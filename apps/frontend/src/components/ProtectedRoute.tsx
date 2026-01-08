@@ -4,29 +4,25 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 
 import { useAuth } from 'contexts/AuthContext';
-import { useEntitlements } from 'contexts/EntitlementsContext';
 
 /**
  * ProtectedRoute
  * --------------
- * Guards the authenticated application shell.
+ * Guards authenticated routes ONLY.
  *
  * Responsibilities:
- * - Wait for auth + entitlements resolution
+ * - Wait for auth resolution
  * - Redirect unauthenticated users
  *
  * It MUST NOT:
- * - Inspect routes
- * - Enforce module access
- * - Encode lifecycle or activation logic
+ * - Access entitlements
+ * - Trigger lifecycle logic
+ * - Depend on app providers
  */
 const ProtectedRoute: React.FC = () => {
-  const { isLoggedIn, isLoading: authLoading } = useAuth();
-  const { hasResolved } = useEntitlements();
+  const { isLoggedIn, isLoading } = useAuth();
 
-  // 1️⃣ Wait for auth + entitlements
-  // ✅ wait only for auth
-  if (authLoading) {
+  if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', height: '100vh' }}>
         <CircularProgress />
@@ -34,18 +30,8 @@ const ProtectedRoute: React.FC = () => {
     );
   }
 
-  // ✅ unauthenticated users should NEVER wait for entitlements
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
-  }
-
-  // ✅ authenticated users may now wait for entitlements
-  if (!hasResolved) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', height: '100vh' }}>
-        <CircularProgress />
-      </Box>
-    );
   }
 
   return <Outlet />;

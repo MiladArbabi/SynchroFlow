@@ -1,10 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable react-refresh/only-export-components */
 // apps/frontend/src/
 import React from "react";
-import { axiosInstance } from "api/axiosConfig";
-import RGL from 'react-grid-layout'
-import { Routes, Route, Navigate, Outlet, useOutletContext } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { IntegrationProvider } from 'contexts/integration/IntegrationProvider';
@@ -12,7 +10,6 @@ import { DashboardStateProvider } from "contexts/DashboardStateContext";
 import { EntitlementsProvider } from 'contexts/EntitlementsContext';
 import { SpecterConfigProvider } from "contexts/SpecterConfigContext";
 
-import AppLayout from "./layouts/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ModuleBootstrap from 'runtime/ModuleBootstrap';
 import { RuntimeRoutesProvider } from "runtime/RuntimeRoutesProvider";
@@ -26,7 +23,7 @@ import ProductsPage from "pages/ProductsPage";
 import ThemeCustomization from './themes';
 import FinancesPage from "pages/FinancesPage";
 import AnalyticsPage from "pages/AnalyticsPage";
-import { ConnectStoreModal } from "components/ConnectStoreModal";
+/* import { ConnectStoreModal } from "components/ConnectStoreModal"; */
 
 import { DashboardPage } from "pages/DashboardPage";
 import { ModuleLifecycleShell } from "lifecycle/ModuleLifecycleShell";
@@ -38,69 +35,7 @@ import { ShopLifecycleGate } from "lifecycle/ShopLifecycleGate";
 import { LifecycleProvider } from "lifecycle/LifecycleProvider";
 import { useIntegration } from "contexts/integration/useIntegration";
 
-// Define the type for the context passed via Outlet
-type LayoutContextType = {
-  isEditing: boolean;
-  isLibraryOpen: boolean;
-  setIsLibraryOpen: (open: boolean) => void;
-  layoutRef: React.MutableRefObject<RGL.Layout[]>;
-  activeWidgetsRef: React.MutableRefObject<{ instanceId: string; widgetId: string }[]>;
-  handleSaveLayout: () => Promise<void>;
-};
-
-// Custom hook to easily access the layout context
-export function useLayoutContext() {
-  return useOutletContext<LayoutContextType>();
-}
-
 const queryClient = new QueryClient();
-
-// Helper Component to manage layout state and render AppLayout
-const LayoutManager = () => {
-  // State for managing layout editing mode
-  const [isEditing, setIsEditing] = React.useState(false);
-  // State for managing the Widget Library visibility
-  const [isLibraryOpen, setIsLibraryOpen] = React.useState(false);
-  // Mock user plan for WidgetLibrary gating
-  const layoutRef = React.useRef<RGL.Layout[]>([]);
-  const activeWidgetsRef = React.useRef<{ instanceId: string; widgetId: string }[]>([]);
-
-  // Handler for saving the layout (calls backend)
-  const handleSaveLayout = async () => {
-    try {
-      await axiosInstance.post("/api/v1/layouts/dashboard", {
-        layout: layoutRef.current, // Use data from refs
-        activeWidgets: activeWidgetsRef.current,
-      });
-    } catch (error) {
-      console.error("Failed to save layout:", error);
-      // Optionally, show a snackbar/toast to the user that saving failed
-    } finally {
-      setIsEditing(false); // Toggle editing state AFTER save attempt
-    }
-  };
-
-  const contextValue: LayoutContextType = {
-    isEditing,
-    isLibraryOpen,
-    setIsLibraryOpen,
-    layoutRef,
-    activeWidgetsRef,
-    handleSaveLayout,
-  };
-
-  return (
-    <AppLayout
-      isEditing={isEditing}
-      onEditToggle={isEditing ? handleSaveLayout : () => setIsEditing(true)}
-      onAddWidget={() => setIsLibraryOpen(true)}
-    >
-      {/* Pass state down via Outlet context */}
-      <Outlet context={contextValue} />
-    </AppLayout>
-  );
-};
-
 function RuntimeRoutesSubscriber() {
   // This hook ONLY forces rerender when routes change
   // We intentionally ignore the value
@@ -166,126 +101,63 @@ function LifecycleGate() {
   );
 }
 
-export default function App() {
-  const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
-
-  const handleConnectStoreIntent = React.useCallback(() => {
-    console.log('[App] ui:connect-store received');
-    setIsConnectModalOpen(true);
-  }, []);
-
-  React.useEffect(() => {
-    window.addEventListener('ui:connect-store', handleConnectStoreIntent);
-    return () => {
-      window.removeEventListener('ui:connect-store', handleConnectStoreIntent);
-    };
-  }, [handleConnectStoreIntent]);
-
+function PublicAppShell() {
   return (
-  <QueryClientProvider client={queryClient}>
-    <RuntimeRoutesProvider>
-      <RuntimeRoutesSubscriber />
+    <ThemeCustomization>
+      <Outlet />
+    </ThemeCustomization>
+  );
+}
 
-      <DashboardStateProvider>
-        <IntegrationProvider>
-          <ThemeCustomization>
-            <EntitlementsProvider>
-              <SpecterConfigProvider>
-                <ModuleBootstrap />
+function AuthenticatedAppShell() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RuntimeRoutesProvider>
+        <RuntimeRoutesSubscriber />
 
-                <ConnectStoreModal
-                  isOpen={isConnectModalOpen}
-                  onClose={() => setIsConnectModalOpen(false)}
-                />
+        <DashboardStateProvider>
+          <IntegrationProvider>
+            <ThemeCustomization>
+              <EntitlementsProvider>
+                <SpecterConfigProvider>
+                  <ModuleBootstrap />
+                  <IntlErrorBoundary>
+                    <LifecycleGate />
+                    <Outlet />
+                  </IntlErrorBoundary>
+                </SpecterConfigProvider>
+              </EntitlementsProvider>
+            </ThemeCustomization>
+          </IntegrationProvider>
+        </DashboardStateProvider>
+      </RuntimeRoutesProvider>
+    </QueryClientProvider>
+  );
+}
 
-                <IntlErrorBoundary>
-                  <Routes>
-                    {/* ================= PUBLIC ROUTES ================= */}
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/register" element={<RegisterPage />} />
+export default function App() {
+  return (
+    <Routes>
+      {/* ===== PUBLIC ===== */}
+      <Route element={<PublicAppShell />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
 
-                    {/* ================= PROTECTED APP ================= */}
-                    <Route element={<ProtectedRoute />}>
-                      <Route element={<LayoutManager />}>
+      {/* ===== AUTHENTICATED ===== */}
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AuthenticatedAppShell />}>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/orders/*" element={<OrdersPage />} />
+          <Route path="/customers/*" element={<CustomersPage />} />
+          <Route path="/products/*" element={<ProductsPage />} />
+          <Route path="/analytics/*" element={<AnalyticsPage />} />
+          <Route path="/finances/*" element={<FinancesPage />} />
+        </Route>
+      </Route>
 
-                        {/* =================================================
-                            SINGLE STRUCTURAL LIFECYCLE GATE
-                        ================================================= */}
-                        <Route
-                          element={ <LifecycleGate />}
-                        >
-                          {/* -------- Dashboard (FT1+) -------- */}
-                          <Route
-                            path="dashboard"
-                            element={
-                              <DashboardLifecycleShell>
-                                <DashboardPage />
-                              </DashboardLifecycleShell>
-                            }
-                          />
-
-                          {/* -------- Modules (FT1+) -------- */}
-                          <Route
-                            path="orders/*"
-                            element={
-                              <ModuleLifecycleShell moduleId="order-nexus">
-                                <OrdersPage />
-                              </ModuleLifecycleShell>
-                            }
-                          />
-
-                          <Route
-                            path="customers/*"
-                            element={
-                              <ModuleLifecycleShell moduleId="customers">
-                                <CustomersPage />
-                              </ModuleLifecycleShell>
-                            }
-                          />
-
-                          <Route
-                            path="products/*"
-                            element={
-                              <ModuleLifecycleShell moduleId="products">
-                                <ProductsPage />
-                              </ModuleLifecycleShell>
-                            }
-                          />
-
-                          <Route
-                            path="analytics/*"
-                            element={
-                              <ModuleLifecycleShell moduleId="analytics">
-                                <AnalyticsPage />
-                              </ModuleLifecycleShell>
-                            }
-                          />
-
-                          <Route
-                            path="finances/*"
-                            element={
-                              <ModuleLifecycleShell moduleId="finances">
-                                <FinancesPage />
-                              </ModuleLifecycleShell>
-                            }
-                          />
-                        </Route>
-                      </Route>
-                    </Route>
-
-                    {/* ================= FALLBACK ================= */}
-                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                  </Routes>
-                </IntlErrorBoundary>
-
-
-              </SpecterConfigProvider>
-            </EntitlementsProvider>
-          </ThemeCustomization>
-        </IntegrationProvider>
-      </DashboardStateProvider>
-    </RuntimeRoutesProvider>
-  </QueryClientProvider>
+      {/* ===== FALLBACK ===== */}
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 }

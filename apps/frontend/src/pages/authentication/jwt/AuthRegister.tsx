@@ -173,43 +173,15 @@ export default function JWTRegister({ posthog, ...others }: AuthRegisterProps & 
             }
             // --- [END POSTHOG] ---
  
-            // --- [START NEW SUCCESS HANDLER] ---
-            // Check for the *new* response (token + user)
-            if (response.data.accessToken && response.data.user) {
-              const user = response.data.user;
+           // --- SUCCESS: Registration completed ---
+            // Registration does NOT authenticate the user.
+            // Force clean transition to login.
+            setStatus({ success: true });
+            setSubmitting(false);
 
-              // 1. Log the user in using the AuthContext
-              auth.login(user, response.data.accessToken);
+            // Full reload ensures no app bootstrap runs without auth
+            window.location.href = '/login';
 
-              // 2. Handle PostHog Analytics
-              if (posthog) {
-                const newUserId = user.id.toString();
-
-                // Alias the old ID with the new user ID
-                posthog.alias(
-                  newUserId,
-                  posthog.get_distinct_id()
-                );
-
-                // Identify the user
-                posthog.identify(
-                  newUserId,
-                  { email: user.email }
-                );
-
-                // Capture the event
-                posthog.capture('user_signup_success');
-              }
-
-              // 3. Handle Success & Navigation
-              setStatus({ success: true });
-              setSubmitting(false);
-              navigate('/dashboard'); // <-- NAVIGATE TO DASHBOARD
-
-              } else {
-                // This case should not happen, but good to have
-                throw new Error('Invalid response from server.');
-              }
           } catch (err: any) { // <-- Add Type
             console.error("Register error:", err); // <-- Temporary log
             setStatus({ success: false });

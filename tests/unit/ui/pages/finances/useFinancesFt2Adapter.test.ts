@@ -57,7 +57,7 @@ describe('FT2 Finances Adapter — mapFinancesFt2Props (observability only)', ()
 
     const props = mapFinancesFt2Props(snapshot);
 
-    expect(props.context.period).toEqual({ from: '', to: '' });
+    expect(props.context.period).toBeNull();
     expect(props.context.netObserved).toBeNull();
     expect(props.outcome).toBeNull();
     expect(props.trend).toBeNull();

@@ -1,102 +1,82 @@
-//apps/backend/src/api/layouts/layout.controller.ts
-import { Request, Response } from "express";
-import { User } from 'api-types'; 
-import db from "../../db";
+// apps/backend/src/api/layouts/layout.controller.ts
+import { Request, Response } from 'express';
+import db from '../../db';
+import { requireShopIdForUser } from 'api-src/services/shop-resolution.service';
 
+/**
+ * Layout Controller
+ * =================
+ * Persists and retrieves dashboard layouts scoped by shop.
+ *
+ * Invariants:
+ * - Shop resolution via shop-resolution.service ONLY
+ * - No direct access to users table
+ * - shopId is non-nullable
+ */
 
-// We'll use a hardcoded user ID for now, as authentication is not yet fully integrated
-const MOCK_USER_ID = "default_user";
-
-export const getLayout = async (req: Request, res: Response): Promise<Response | void> => {
+export const getLayout = async (req: Request, res: Response) => {
   const { layoutName } = req.params;
-  const userId = req.user?.userId;
 
-    if (!userId) {
-      // Should technically be caught by middleware, but good to double-check
-      res.status(401).json({ error: 'Unauthorized: User ID not found.' });
-      return;
-    }
-    
   try {
-    // 1. Get User's Shop ID
-    const user = await db<User>('users').where({ id: userId }).first('shop_id');
-    if (!user || !user.shop_id) {
-      res.status(404).json({ error: 'Associated shop not found for user.' });
-      return;
-    }
-    const userShopId = user.shop_id;
+    const shopId = await requireShopIdForUser(req.user!.userId);
 
-    // 2. Try to find the layout
     let layout;
     try {
       layout = await db('layouts')
-        .where({ shop_id: userShopId, name: layoutName })
+        .where({ shop_id: shopId, name: layoutName })
         .first();
     } catch (err: any) {
-      // Table does not exist yet → safe fallback
+      // Layouts table not deployed yet
       if (err.code === '42P01') {
-        res.status(200).json({ layout: [], activeWidgets: [] });
-        return;
+        return res.status(200).json({ layout: [], activeWidgets: [] });
       }
       throw err;
     }
- 
-     if (layout) {
-      // Layout found - return it
-       res.status(200).json(layout);
-      } else {
-      // Layout not found - check for integrations (Logic for #379)
-      const integration = await db('integrations')
-        .where({ shop_id: userShopId })
-        .first('id'); // Just need to know if one exists
 
-      if (integration) {
-        // Integrations exist, return default layout structure
-        res.status(200).json({ layout: [], activeWidgets: [] });
-      } else {
-        // No layout AND no integrations - return 404
-        res.status(404).json({ error: `Layout '${layoutName}' not found.` });
-      }
+    if (layout) {
+      return res.status(200).json(layout);
     }
-  } catch (error) {
-    console.error(`Error fetching layout ${layoutName}:`, error);
-    res.status(500).json({ message: "Error fetching layout.", error });
+
+    // No layout → check if shop has integrations
+    const hasIntegration = await db('integrations')
+      .where({ shop_id: shopId })
+      .first('id');
+
+    if (hasIntegration) {
+      return res.status(200).json({ layout: [], activeWidgets: [] });
+    }
+
+    return res
+      .status(404)
+      .json({ error: `Layout '${layoutName}' not found.` });
+  } catch (err) {
+    console.error('[layout] getLayout failed', err);
+    res.status(500).json({ error: 'Failed to fetch layout.' });
   }
 };
 
 export const saveLayout = async (req: Request, res: Response) => {
   const { layoutName } = req.params;
-  const userId = req.user?.userId;
-  const layoutData = req.body; // Assuming layout is in request body
+  const { layout, activeWidgets } = req.body;
 
-  if (!userId) {
-     res.status(401).json({ error: 'Unauthorized: User ID not found.' });
-     return;
-  }
- 
-   try {
-    // Get User's Shop ID
-    const user = await db<User>('users').where({ id: userId }).first('shop_id');
-    if (!user || !user.shop_id) {
-      res.status(404).json({ error: 'Associated shop not found for user.' });
-      return;
-    }
-    const userShopId = user.shop_id;
+  try {
+    const shopId = await requireShopIdForUser(req.user!.userId);
 
-     // Use upsert logic: update if exists, insert if not
-     await db('layouts')
-       .insert({
-        shop_id: userShopId, // <-- Use user's shop_id
-        name: layoutName, // Assuming layoutName maps directly to 'name' column
-         layout: JSON.stringify(layoutData.layout), // Store layout as JSON string
-         activeWidgets: JSON.stringify(layoutData.activeWidgets), // Store widgets as JSON string
-       })
-       .onConflict(['shop_id', 'name']) // Assumes unique constraint on shop_id + name
-       .merge(); // Update existing record on conflict
- 
-     res.status(200).json({ message: `Layout '${layoutName}' saved successfully.` });
-  } catch (error) {
-     console.error(`Error saving layout ${layoutName}:`, error);
-     res.status(500).json({ error: 'Internal server error while saving layout.' });
+    await db('layouts')
+      .insert({
+        shop_id: shopId,
+        name: layoutName,
+        layout: JSON.stringify(layout),
+        activeWidgets: JSON.stringify(activeWidgets),
+      })
+      .onConflict(['shop_id', 'name'])
+      .merge();
+
+    res.status(200).json({
+      message: `Layout '${layoutName}' saved successfully.`,
+    });
+  } catch (err) {
+    console.error('[layout] saveLayout failed', err);
+    res.status(500).json({ error: 'Failed to save layout.' });
   }
 };

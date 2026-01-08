@@ -6,7 +6,7 @@ export async function up(knex: Knex): Promise<void> {
   return knex.schema.createTable('shops', (table) => {
     table.increments('id').primary(); // Unique ID for the shop
     table.string('name', 255).notNullable();
-    table.string('contact_email', 255).unique().notNullable(); // For communication
+    table.string('contact_email', 255).notNullable(); // informational only
     
     // Critical for authentication and multi-tenancy:
     table.string('auth_secret', 255).notNullable(); // Encrypted API key/secret for SynchroFlow access

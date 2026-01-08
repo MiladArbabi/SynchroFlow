@@ -5,7 +5,7 @@ import { User } from 'api-types';
 import path from 'path';
 
 // --- Helper: resolve shop_id for the authenticated user ---
-const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
+export const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
   const authUser = (req as any).user;
   if (!authUser || !authUser.userId) return null;
 
