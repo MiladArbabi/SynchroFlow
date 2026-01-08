@@ -28,8 +28,6 @@ export async function getProductsFacts(
 
   const rows = await db('canonical_products')
     .where('shop_id', shopId)
-    .andWhere('created_at', '>=', period.from)
-    .andWhere('created_at', '<=', period.to)
     .select(['sku', 'status']);
 
   // No rows → preserve nulls everywhere

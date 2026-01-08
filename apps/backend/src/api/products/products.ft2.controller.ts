@@ -1,45 +1,42 @@
-// apps/backend/src/api/products/products.ft2.controller.ts
 import { Request, Response } from 'express';
 import { getProductsFt2Snapshot } from 'api-src/services/products-ft2.provider';
+import { getFt2Period } from 'api-src/utils/ft2Period';
 
 /**
- * GET /api/v1/products/ft2
+ * GET /api/v1/modules/products/ft2
  *
- * FT2 read-only exposure for Products / SKU-OS.
+ * FT2 read-only exposure for Products.
  *
  * Rules:
+ * - Authenticated
+ * - Shop-scoped
  * - No lifecycle mutation
  * - No intelligence
  * - No explanations
- * - Lifecycle gating handled by provider
  */
 export async function getProductsFt2(
   req: Request,
   res: Response
 ): Promise<void> {
   try {
-    const shopId =
-      Number(req.headers['x-test-shop-id']) ||
-      Number((req as any).shopId);
+    const shopId = req.user?.shopId;
 
     if (!shopId) {
-      res.status(400).json({ error: 'Missing shopId' });
+      res.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
-    const { from, to } = req.query;
+    const period = getFt2Period();
 
     const snapshot = await getProductsFt2Snapshot({
       shopId,
-      period: {
-        from: String(from),
-        to: String(to),
-      },
+      period,
     });
 
     res.status(200).json(snapshot);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
+    const message =
+      err instanceof Error ? err.message : 'Unknown error';
     res.status(500).json({ error: message });
   }
 }

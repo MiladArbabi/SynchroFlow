@@ -197,7 +197,22 @@ export class UserStateService {
       .first();
     
     if (!user) {
-      throw new Error('User not found');
+      return {
+        user: {
+          id: userId,
+          email: null,
+          preferred_mode: null,
+          detected_mode: 'survival',
+          onboarding_tier: 'BASIC_ACCESS',
+          connected_platforms: [],
+          shopify_connected: false,
+          stripe_connected: false,
+          first_insight_delivered: false,
+          orders_per_month_segment: null,
+        },
+        milestones: [],
+        current_mode: 'survival',
+      };
     }
 
     const milestones = await db<UserMilestone>('user_milestones')

@@ -1,143 +1,68 @@
 // apps/frontend/src/pages/products/useProductsFt2Adapter.ts
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// FT2 Products Adapter
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// WHAT
-// ----
-// Pure adapter mapping a backend snapshot into the **Products FT2 observability
-// contract**.
-//
-// This adapter is a **dumb pipe**.
-// It exists ONLY to normalize shape and preserve null semantics.
-//
-//
-// WHY
-// ---
-// FT2 must remain:
-// - Read-only
-// - Non-inferential
-// - Shape-stable
-//
-// Any intelligence, prioritization, or “why” is explicitly forbidden here
-// and belongs to SKU-OS.
-//
-//
-// INVARIANTS (NON-NEGOTIABLE)
-// --------------------------
-// - No inference
-// - No defaults (except undefined → null)
-// - No computation
-// - No semantic mapping
-// - Never throws
-//
-// If you feel tempted to “help” the data → STOP.
-//
-// ─────────────────────────────────────────────────────────────────────────────
 
 import type { ProductsModuleFT2Props } from '@lasyncro/products';
 
 /**
  * ProductsFt2Snapshot
  * -------------------
- * Backend snapshot shape as consumed by FT2.
+ * Authoritative backend FT2 snapshot shape for Products.
  *
- * This is intentionally permissive and nullable.
- * The adapter enforces the UI contract, not meaning.
+ * Notes:
+ * - Fields may be missing, null, or partial
+ * - Adapter MUST NOT infer or compute
+ * - Adapter MUST normalize undefined → null
  */
 type ProductsFt2Snapshot = {
-  period?: {
-    from: string;
-    to: string;
-  };
-
-  productsObserved?: number | null;
-
-  productSummary?: {
-    totalRevenue?: number | null;
-    totalCost?: number | null;
-    netValue?: number | null;
-    currency?: string | null;
-  };
-
-  productBreakdown?: Array<{
-    sku: string;
-    revenue?: number | null;
-    cost?: number | null;
-    marginReportedPct?: number | null;
-  }> | null;
-
-  trendSignal?: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
-    comparedPeriod?: {
+  context?: {
+    period?: {
       from: string;
       to: string;
     };
+    productsObserved?: number | null;
+  };
+
+  outcome?: {
+    status: 'positive' | 'negative' | 'unknown';
+  } | null;
+
+  trend?: {
+    direction: 'up' | 'down' | 'flat' | 'unknown';
   } | null;
 };
 
 /**
  * mapProductsFt2Props
  * ------------------
- * Canonical FT2 adapter.
+ * Canonical FT2 Products adapter.
  *
- * Converts a backend snapshot into ProductsModuleFT2Props
- * without inference or interpretation.
+ * Invariants:
+ * - Pure function
+ * - No inference
+ * - No computation
+ * - No semantic translation
+ * - Deterministic output
  */
 export function mapProductsFt2Props(
   snapshot: ProductsFt2Snapshot
 ): ProductsModuleFT2Props {
   return {
     context: {
-      period: snapshot.period ?? { from: '', to: '' },
+      period: snapshot.context?.period ?? { from: '', to: '' },
+
       productsObserved:
-        snapshot.productsObserved === undefined
+        snapshot.context?.productsObserved === undefined
           ? null
-          : snapshot.productsObserved,
+          : snapshot.context.productsObserved,
     },
 
-    productSummary: {
-      totalRevenue:
-        snapshot.productSummary?.totalRevenue === undefined
-          ? null
-          : snapshot.productSummary.totalRevenue,
-      totalCost:
-        snapshot.productSummary?.totalCost === undefined
-          ? null
-          : snapshot.productSummary.totalCost,
-      netValue:
-        snapshot.productSummary?.netValue === undefined
-          ? null
-          : snapshot.productSummary.netValue,
-      currency:
-        snapshot.productSummary?.currency === undefined
-          ? null
-          : snapshot.productSummary.currency,
-    },
-
-    productBreakdown:
-      snapshot.productBreakdown == null
+    outcome:
+      snapshot.outcome === undefined
         ? null
-        : snapshot.productBreakdown.map((p) => ({
-            sku: p.sku,
-            revenue:
-              p.revenue === undefined ? null : p.revenue,
-            cost: p.cost === undefined ? null : p.cost,
-            marginReportedPct:
-              p.marginReportedPct === undefined
-                ? null
-                : p.marginReportedPct,
-          })),
+        : snapshot.outcome,
 
-    trendSignal:
-      snapshot.trendSignal === undefined
+    trend:
+      snapshot.trend === undefined
         ? null
-        : snapshot.trendSignal,
+        : snapshot.trend,
   };
 }

@@ -30,6 +30,8 @@ import customersFt2Routes from '../api/customers/customers.ft2.routes';
 // Order routes
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
 
+import productsFt2Routes from '../api/products/products.ft2.routes';
+
 export function createApp(): Express {
   const app = express();
   app.use(express.json());
@@ -67,6 +69,7 @@ export function createApp(): Express {
   // ─────────────────────────────────────────────
   app.use('/api/v1/modules/order-nexus', orderNexusRoutes);
   app.use('/api/v1/modules/customers', customersFt2Routes);
+  app.use('/api/v1/modules/products', productsFt2Routes);
   
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);
