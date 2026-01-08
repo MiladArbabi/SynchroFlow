@@ -22,7 +22,7 @@ import { SxProps } from '@mui/system';
 import FontFamily from './FontFamily';
 import BoxContainer from './BoxContainer';
 import PresetColor from './PresetColor';
-import Layout from './Layout'; // This might conflict with our AppLayout, rename if necessary
+import LayoutDirectionSelector from './Layout';
 import InputFilled from './InputFilled';
 import BorderRadius from './BorderRadius';
 import ThemeModeLayout from './ThemeMode';
@@ -31,10 +31,9 @@ import MenuOrientation from './MenuOrientation';
 
 import { DEFAULT_THEME_MODE, ThemeMode } from 'config'; // Use our config
 import MainCard from 'ui-component/cards/MainCard'; // Use converted
-import AnimateButton from 'ui-component/extended/AnimateButton'; // Use converted
+
 import SimpleBar from 'ui-component/third-party/SimpleBar'; // Use converted
 import useConfig from 'hooks/useConfig'; // Use our hook
-import { ConfigContext } from 'contexts/ConfigContext'; // Import context for dispatch
 
 // assets
 import { IconPlus, IconTextSize, IconColorSwatch } from '@tabler/icons-react';
@@ -177,7 +176,7 @@ const Customization: React.FC = () => {
                   </Grid>
                   {/* --- Temporarily comment out unused sections --- */}
                   <Grid size={{ xs: 12 }}> 
-                    <Layout />
+                    <LayoutDirectionSelector />
                     <Divider sx={{ mt: 2.5 }}/>
                   </Grid> 
                   <Grid size={{ xs: 12 }}> 

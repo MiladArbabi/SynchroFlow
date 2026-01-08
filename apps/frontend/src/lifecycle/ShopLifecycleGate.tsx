@@ -5,7 +5,7 @@
 // NO effects.
 // NO lifecycle logic.
 
-import { Outlet, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
 import { resolveActivationConfig } from 'activation/resolveActivationConfig';
@@ -49,7 +49,7 @@ export function ShopLifecycleGate() {
 
     case 'FT1_READY':
     case 'FT2_READY':
-      return <Outlet />;
+      return null;
 
     default: {
       if (import.meta.env.DEV) {

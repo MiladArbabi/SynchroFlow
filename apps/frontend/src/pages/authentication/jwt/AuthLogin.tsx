@@ -3,7 +3,8 @@
 
 import React, { useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { axiosInstance as axios } from 'api/axiosConfig';
+import { axiosInstance } from 'api/axiosConfig';
+import { clearToken } from 'utils/authStore';
 
 // -- ANALYTICS
 import { PostHog } from 'posthog-js/react';
@@ -105,7 +106,6 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [searchParams] = useSearchParams();
   const authParam = searchParams.get('auth');
-  const isLoggedIn = false; // Placeholder
 
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -128,23 +128,20 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
           .max(25, 'Password must be less than 25 characters'),
       })}
       onSubmit={async (values, { setSubmitting }) => {
-        // Clear any previous errors on a new submission
         setSubmitError(null);
-        // DEBUG: Log when submission starts.
-        // console.log('[DEBUG] onSubmit START. isSubmitting should be true.');
-
+        clearToken();
         try {
+          console.info('[AUTH][LOGIN_ATTEMPT]', {
+            email: values.email.trim(),
+          });
           // --- Call the backend API ---
-          const response = await axios.post('/api/v1/auth/login', {
+          const response = await axiosInstance.post('/api/v1/auth/login', {
             email: values.email.trim(),
             password: values.password,
           });
 
-          console.log('--- [LOGIN DEBUG 2] ---');
-
           // --- Call AuthContext to store token and user data ---
           if (response.data.accessToken && response.data.user) {
-            console.log('--- [LOGIN DEBUG 3] ---');
             auth.login(response.data.user, response.data.accessToken);
 
             // --- [START POSTHOG ANALYTICS] ---
@@ -155,6 +152,10 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
             });
             posthog.capture('user_login_success');
             // --- [END POSTHOG] ---
+
+            console.info('[AUTH][LOGIN_SUCCESS]', {
+              userId: response.data.user.id,
+            });
 
             navigate('/dashboard');
           } else {
@@ -262,7 +263,7 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
               <Typography
                 variant="subtitle1"
                 component={Link}
-                to={isLoggedIn ? '/pages/forgot-password/forgot-password3' : authParam ? `/forgot-password?auth=${authParam}` : '/forgot-password'}
+                to={authParam ? `/forgot-password?auth=${authParam}` : '/forgot-password'}
                 sx={{ textDecoration: 'none', color: 'secondary.main' }}
               >
                 Forgot Password?

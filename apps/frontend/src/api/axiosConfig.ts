@@ -95,6 +95,14 @@ axiosInstance.interceptors.request.use(
 // - NO refresh
 // - NO retry
 // ────────────────────────────────────────────────────────────────
+/**
+ * AUTH INVARIANT
+ * --------------
+ * - 401s during auth bootstrap are EXPECTED
+ * - We ONLY hard-logout if a token exists
+ * - This prevents fresh login sessions from self-destructing
+ */
+
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -103,9 +111,12 @@ axiosInstance.interceptors.response.use(
 
     console.warn('[HTTP ← ERROR]', status, url);
 
-    if (status === 401 && !isAuthRoute(url)) {
-      hardLogout('401 Unauthorized (JWT expired or invalid)');
-      return Promise.reject(error);
+    if (
+      status === 401 &&
+      !isAuthRoute(url) &&
+      getToken() // 🔑 ONLY if user was authenticated
+    ) {
+      hardLogout('401 Unauthorized (post-auth)');
     }
 
     return Promise.reject(error);

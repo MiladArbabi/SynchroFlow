@@ -25,7 +25,7 @@ import rtl from 'assets/images/customization/rtl.svg'; // Use direct import
 
 // ==============================|| CUSTOMIZATION - LAYOUT ||============================== //
 
-const Layout: React.FC = () => {
+const LayoutDirectionSelector: React.FC = () => {
     const theme = useTheme(); // Get theme for styling
     const {
         state: { themeDirection }, // Read state from our context
@@ -108,4 +108,4 @@ const Layout: React.FC = () => {
     );
 };
 
-export default Layout;
+export default LayoutDirectionSelector;

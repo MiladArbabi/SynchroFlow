@@ -4,6 +4,7 @@
 import React from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useAuth } from 'contexts/AuthContext';
 
 import { IntegrationProvider } from 'contexts/integration/IntegrationProvider';
 import { DashboardStateProvider } from "contexts/DashboardStateContext";
@@ -15,25 +16,25 @@ import ModuleBootstrap from 'runtime/ModuleBootstrap';
 import { RuntimeRoutesProvider } from "runtime/RuntimeRoutesProvider";
 import { useRuntimeRoutes } from 'runtime/useRuntimeRoutes';
 
-import OrdersPage from "pages/OrdersPage";
-import CustomersPage from "pages/CustomersPage";
-import ProductsPage from "pages/ProductsPage";
-
 // --- BERRY THEME IMPORT ---
 import ThemeCustomization from './themes';
-import FinancesPage from "pages/FinancesPage";
-import AnalyticsPage from "pages/AnalyticsPage";
 /* import { ConnectStoreModal } from "components/ConnectStoreModal"; */
-
-import { DashboardPage } from "pages/DashboardPage";
-import { ModuleLifecycleShell } from "lifecycle/ModuleLifecycleShell";
 import LoginPage from "pages/authentication/LoginPage";
 import RegisterPage from "pages/authentication/RegisterPage";
-import { DashboardLifecycleShell } from "lifecycle/DashboardLifecycleShell";
+import { AuthProvider } from 'contexts/AuthContext';
+
 import { ShopLifecycleShell } from "lifecycle/ShopLifecycleShell";
 import { ShopLifecycleGate } from "lifecycle/ShopLifecycleGate";
 import { LifecycleProvider } from "lifecycle/LifecycleProvider";
 import { useIntegration } from "contexts/integration/useIntegration";
+import AuthBootstrapGate from "runtime/AuthBootstrapGate";
+import AnalyticsPage from "pages/AnalyticsPage";
+import CustomersPage from "pages/CustomersPage";
+import { DashboardPage } from "pages/DashboardPage";
+import FinancesPage from "pages/FinancesPage";
+import OrdersPage from "pages/OrdersPage";
+import ProductsPage from "pages/ProductsPage";
+import AppLayout from "layouts/AppLayout";
 
 const queryClient = new QueryClient();
 function RuntimeRoutesSubscriber() {
@@ -110,7 +111,18 @@ function PublicAppShell() {
 }
 
 function AuthenticatedAppShell() {
+  const { isLoading, isLoggedIn } = useAuth();
+  
+  console.error('[AUTH_APP_SHELL] render', {
+    isLoading,
+    isLoggedIn,
+    ts: performance.now(),
+  });
+
+  if (isLoading || !isLoggedIn) return null;
+
   return (
+    <div style={{ outline: '3px solid blue' }}>
     <QueryClientProvider client={queryClient}>
       <RuntimeRoutesProvider>
         <RuntimeRoutesSubscriber />
@@ -122,8 +134,14 @@ function AuthenticatedAppShell() {
                 <SpecterConfigProvider>
                   <ModuleBootstrap />
                   <IntlErrorBoundary>
-                    <LifecycleGate />
-                    <Outlet />
+                    <LifecycleProvider>
+                      <ShopLifecycleShell>
+                        <AppLayout>
+                        <ShopLifecycleGate />
+                          <Outlet />
+                        </AppLayout>
+                      </ShopLifecycleShell>
+                    </LifecycleProvider>
                   </IntlErrorBoundary>
                 </SpecterConfigProvider>
               </EntitlementsProvider>
@@ -132,32 +150,36 @@ function AuthenticatedAppShell() {
         </DashboardStateProvider>
       </RuntimeRoutesProvider>
     </QueryClientProvider>
+    </div>
   );
 }
 
+
 export default function App() {
   return (
-    <Routes>
-      {/* ===== PUBLIC ===== */}
-      <Route element={<PublicAppShell />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-      </Route>
-
-      {/* ===== AUTHENTICATED ===== */}
-      <Route element={<ProtectedRoute />}>
-        <Route element={<AuthenticatedAppShell />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/orders/*" element={<OrdersPage />} />
-          <Route path="/customers/*" element={<CustomersPage />} />
-          <Route path="/products/*" element={<ProductsPage />} />
-          <Route path="/analytics/*" element={<AnalyticsPage />} />
-          <Route path="/finances/*" element={<FinancesPage />} />
+    <AuthProvider>
+      <Routes>
+        {/* ===== PUBLIC ===== */}
+        <Route element={<PublicAppShell />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
         </Route>
-      </Route>
 
-      {/* ===== FALLBACK ===== */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+        {/* ===== AUTHENTICATED ===== */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AuthenticatedAppShell />}>
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/orders/*" element={<OrdersPage />} />
+              <Route path="/customers/*" element={<CustomersPage />} />
+              <Route path="/products/*" element={<ProductsPage />} />
+              <Route path="/analytics/*" element={<AnalyticsPage />} />
+              <Route path="/finances/*" element={<FinancesPage />} />
+          </Route>
+        </Route>
+
+        {/* ===== FALLBACK ===== */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }

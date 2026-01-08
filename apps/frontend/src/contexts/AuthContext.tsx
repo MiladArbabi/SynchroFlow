@@ -3,6 +3,7 @@
 // apps/frontend/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from 'api-types';
+import { getToken, setToken, clearToken } from 'utils/authStore';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -43,7 +44,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     /* console.log("AuthContext: Initializing..."); */
     try {
       // Playwright's storageState will inject these values
-      const storedToken = localStorage.getItem('accessToken');
+      const storedToken = getToken();
       const storedUser = localStorage.getItem('user');
       
       if (storedToken && storedUser) {
@@ -68,62 +69,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
-  // -- Save to localStorage on login ---
   const login = useCallback((user: PublicUser, accessToken: string) => {
-    setAuthState({
-      isLoggedIn: true,
-      isLoading: false,
-      user,
-      accessToken,
-    });
-    // Save to localStorage so it persists across reloads/tests
-    localStorage.setItem('accessToken', accessToken);
-    localStorage.setItem('user', JSON.stringify(user));
+  setAuthState({
+    isLoggedIn: true,
+    isLoading: false,
+    user,
+    accessToken,
+  });
 
-    /* // --- [START ISSUE#442 User Identification] ---
-    if (posthog) {
-      posthog.identify(
-        user.id.toString(), // Unique ID for the user
-        {
-          email: user.email,
-          name: `${user.first_name} ${user.last_name}`,
-        }
-      );
-    } */
-    /* console.log("AuthContext: User logged in and identified."); */
-  }, []);
+  // 🔑 SINGLE TOKEN AUTHORITY
+  setToken(accessToken);
 
-  // --- Clear localStorage on logout ---
-  const logout = useCallback(() => {
-    setAuthState({
-      isLoggedIn: false,
-      isLoading: false,
-      user: null,
-      accessToken: null,
-    });
-    // Clear the persistent session
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('user');
-    
-    /* // --- [START POSTHOG RESET] ---
-      if (posthog) {
-        posthog.reset(); // Resets the user ID
-      } */
-      // --- [END POSTHOG RESET] ---
+  // User stays in localStorage (non-sensitive)
+  localStorage.setItem('user', JSON.stringify(user));
 
-      /* console.log("AuthContext: User logged out and PostHog reset."); */
-    }, []);
+  console.info('[AUTH] login(): token stored via authStore');
+}, []);
 
-  // This function is for token refresh. It should also update localStorage.
-  const setAccessToken = useCallback((token: string | null) => {
-      setAuthState(prev => ({ ...prev, accessToken: token }));
-      if (token) {
-        localStorage.setItem('accessToken', token);
-      } else {
-        localStorage.removeItem('accessToken');
-      }
-      /* console.log("AuthContext: Access token updated in state and localStorage."); */
-  }, []);
+const logout = useCallback(() => {
+  setAuthState({
+    isLoggedIn: false,
+    isLoading: false,
+    user: null,
+    accessToken: null,
+  });
+
+  clearToken(); // 🔥 single source cleanup
+  localStorage.removeItem('user');
+
+  console.info('[AUTH] logout(): token cleared via authStore');
+}, []);
+
+const setAccessToken = useCallback((token: string | null) => {
+  setAuthState(prev => ({ ...prev, accessToken: token }));
+
+  if (token) {
+    setToken(token);
+  } else {
+    clearToken();
+  }
+
+  console.info('[AUTH] setAccessToken():', Boolean(token));
+}, []);
 
   const value = {
     ...authState,

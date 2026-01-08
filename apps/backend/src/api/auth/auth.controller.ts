@@ -66,40 +66,11 @@ export const registerUser = async (req: Request, res: Response) => {
       role: 'owner',
     });
 
-    // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE  
-    const { accessToken, refreshToken } = await issueAuthTokens({
-      userId: newUser.id,
-      shopId: newShop.id,
-      actorType: 'shop_user',
-      authProvider: 'password',
-      shopRoles: ['owner'],
-      scopes: [],
-      tokenVersion: 1,
-    });
-
-    /* audit({
-      level: 'INFO',
-      event: 'refresh_token_rotated',
-      userId: authUserId,
-    }); */
-
-    // Set cookie options
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
-
-    // 1. Omit the password hash for security
     const { password_hash, ...publicUser } = newUser;
-
-    // 2. Respond with success (201) and the same payload as login
+    
     res.status(201).json({
-      accessToken: accessToken,
       user: publicUser
     });
-    // --- [END NEW LOGIN LOGIC] ---
 
   } catch (error) {
 

@@ -13,6 +13,7 @@ import Customization from "layout/Customization";
 
 // --- MODAL/BANNER IMPORTS ---
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
+import { Outlet } from 'react-router-dom';
 
 // --- CONTEXT IMPORT ---
 import useConfig from 'hooks/useConfig';
@@ -29,20 +30,18 @@ const SIDENAV_MIN_SIZE = 5;      // Percentage (for collapsed state)
 const SIDENAV_MAX_SIZE = 25;     // Percentage
 
 interface AppLayoutProps {
-  children: ReactNode;
-  isEditing: boolean;
-  onEditToggle: () => void;
-  onAddWidget: () => void;
-  // onToggleSidenav: () => void; // REMOVE this prop, toggle is now internal via context
+  children?: ReactNode; // ✅ optional
+  isEditing?: boolean;
+  onEditToggle?: () => void;
+  onAddWidget?: () => void;
 }
 
-const AppLayout = ({
-  children,
-  isEditing,
-  onEditToggle,
-  onAddWidget,
-  // onToggleSidenav // REMOVE this prop
-}: AppLayoutProps) => {
+const AppLayout = (props: AppLayoutProps) => {
+  
+  console.error('[APP_LAYOUT] MOUNTED', {
+    props,
+    ts: performance.now(),
+  });
 
   // --- GET STATE & REF ---
   const { state, dispatch } = useConfig();
@@ -178,12 +177,11 @@ const AppLayout = ({
                   {/* Topnavbar Area */}
                   <Box sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
                     {/* Pass necessary props, but NOT the toggle handler */}
-                    <TopnavbarContent
-                      // handleSidenavToggle={onToggleSidenav} // REMOVED
-                      isEditing={isEditing}
-                      onEditToggle={onEditToggle}
-                      onAddWidget={onAddWidget}
-                    />
+                    <TopnavbarContent isEditing={false} onEditToggle={function (): void {
+                  throw new Error("Function not implemented.");
+                } } onAddWidget={function (): void {
+                  throw new Error("Function not implemented.");
+                } } />
                   </Box>
 
                   {/* Resizable area for Workspace and Ops Console */}
@@ -192,7 +190,7 @@ const AppLayout = ({
                       {/* Workspace Panel (Outlet) */}
                       <Panel defaultSize={75} minSize={50} order={1}> {/* Define order */}
                         <Box sx={{ height: "100%", width: "100%", overflowY: "auto", position: "relative" }}>
-                          {children}
+                         <Outlet />
                         </Box>
                       </Panel>
 

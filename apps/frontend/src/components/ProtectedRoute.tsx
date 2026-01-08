@@ -20,7 +20,11 @@ import { useAuth } from 'contexts/AuthContext';
  * - Depend on app providers
  */
 const ProtectedRoute: React.FC = () => {
-  const { isLoggedIn, isLoading } = useAuth();
+  const { isLoggedIn, isLoading, accessToken } = useAuth();
+
+  if (import.meta.env.DEV) {
+    console.log('[ProtectedRoute]', { isLoading, isLoggedIn, hasToken: !!accessToken });
+  }
 
   if (isLoading) {
     return (
@@ -30,9 +34,11 @@ const ProtectedRoute: React.FC = () => {
     );
   }
 
-  if (!isLoggedIn) {
+  if (!isLoggedIn || !accessToken) {
     return <Navigate to="/login" replace />;
   }
+
+  console.error('[PROTECTED_ROUTE] OUTLET RENDER');
 
   return <Outlet />;
 };
