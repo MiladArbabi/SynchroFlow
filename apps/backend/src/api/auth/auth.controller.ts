@@ -36,7 +36,7 @@ export const registerUser = async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const authSecret = crypto.randomBytes(32).toString('hex'); // <-- ADD THIS LINE
     
-    // --- Create a new shop for this user ---
+    // --- Create a new shop ---
     const [newShop] = await db('shops')
       .insert({
         name: `${firstName || email}'s Shop`,
@@ -58,13 +58,20 @@ export const registerUser = async (req: Request, res: Response) => {
       })
       .returning('*');
 
+    // --- Create shop membership (OWNER) ---
+    await db('shop_memberships').insert({
+      shop_id: newShop.id,
+      user_id: newUser.id,
+      role: 'owner',
+    });
+
     // SINGLE AUTHORITY FOR TOKEN ISSUANCE — DO NOT DUPLICATE  
     const { accessToken, refreshToken } = await issueAuthTokens({
       userId: newUser.id,
-      shopId: newUser.shop_id,
+      shopId: newShop.id,
       actorType: 'shop_user',
       authProvider: 'password',
-      shopRoles: [],
+      shopRoles: ['owner'],
       scopes: [],
       tokenVersion: 1,
     });
@@ -122,6 +129,21 @@ export const loginUser = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
+    // --- Resolve active shop membership ---
+    const membership = await db('shop_memberships')
+      .where({
+        user_id: user.id,
+      })
+      .whereNull('revoked_at')
+      .first('shop_id', 'role');
+
+    if (!membership) {
+      return res.status(403).json({
+        error: 'NO_ACTIVE_SHOP_MEMBERSHIP',
+        action: 'CONTACT_SUPPORT',
+      });
+    }
+
     // 🔥 HARD SESSION RESET (THE FIX)
     await db('refresh_tokens')
       .where({ user_id: user.id, revoked_at: null })
@@ -139,10 +161,10 @@ export const loginUser = async (req: Request, res: Response) => {
     // SINGLE AUTHORITY FOR TOKEN ISSUANCE
     const { accessToken, refreshToken } = await issueAuthTokens({
       userId: user.id,
-      shopId: user.shop_id,
+      shopId: membership.shop_id,
       actorType: 'shop_user',
       authProvider: 'password',
-      shopRoles: [],
+      shopRoles: [membership.role],
       scopes: [],
       tokenVersion: 1,
     });

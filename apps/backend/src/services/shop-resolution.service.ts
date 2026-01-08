@@ -4,44 +4,48 @@
  * Shop Resolution Service
  * =======================
  *
- * SINGLE responsibility:
- *   Resolve the authoritative shop_id for a given authenticated user.
+ * Authoritative resolver for shop context.
  *
- * This service exists to:
- * - Centralize shop resolution logic
- * - Decouple controllers from schema details
- * - Enable a clean transition from:
- *     users.shop_id  ➜  shop_memberships
+ * This service is the ONLY place allowed to:
+ * - Resolve shop_id for a user
+ * - Resolve shop role for a user
+ * - Enforce membership invariants
  *
- * ⚠️ Controllers MUST NOT:
- *   - Query users.shop_id directly
- *   - Infer shop ownership or roles
+ * ❌ Controllers MUST NOT:
+ *   - Read users.shop_id
+ *   - Query shop_memberships directly
+ *   - Infer roles or ownership
  *
- * All such logic belongs here.
+ * ✅ All shop context flows through this file.
  */
 
-import db from "api-src/db";
+import db from 'api-src/db';
 
 /**
- * Resolve the active shop_id for a user.
- *
- * Current behavior (Sprint 1):
- * - Reads from users.shop_id (legacy coupling)
- *
- * Future behavior (Sprint 2+):
- * - Resolve via shop_memberships
- * - Enforce role / activation / lifecycle rules
- *
- * @param userId Authenticated user id (hard invariant)
- * @returns shop_id or null if unresolved
+ * Canonical resolved shop context.
  */
-export async function resolveShopIdForUser(
+export interface ResolvedShopContext {
+  shopId: number;
+  role: 'owner' | 'admin' | 'operator' | 'viewer';
+}
+
+/**
+ * Resolve the ACTIVE shop membership for a user.
+ *
+ * Rules:
+ * - userId must be valid
+ * - exactly ONE active membership must exist
+ * - revoked memberships are ignored
+ *
+ * @param userId authenticated user id (HARD invariant)
+ * @returns ResolvedShopContext | null
+ */
+export async function resolveShopContextForUser(
   userId: number
-): Promise<number | null> {
+): Promise<ResolvedShopContext | null> {
   // ─────────────────────────────────────────────────────────────
   // 🔒 Hard invariants
   // ─────────────────────────────────────────────────────────────
-
   if (!Number.isInteger(userId)) {
     throw new Error(
       'SHOP_RESOLUTION_INVARIANT_VIOLATION: invalid userId'
@@ -49,62 +53,90 @@ export async function resolveShopIdForUser(
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 🟡 Legacy resolution path (Sprint 1)
+  // 🔍 Resolve active membership
   // ─────────────────────────────────────────────────────────────
-  // NOTE:
-  // - This is intentionally dumb.
-  // - Do NOT add role logic here yet.
-  // - Do NOT infer ownership.
-  //
-  // This path will be removed once shop_memberships is authoritative.
+  const memberships = await db('shop_memberships')
+    .where({ user_id: userId })
+    .whereNull('revoked_at')
+    .select<ResolvedShopContext[]>('shop_id as shopId', 'role');
 
-  const row = await db('users')
-    .where({ id: userId })
-    .first<{ shop_id: number | null }>('shop_id');
-
-  if (!row || typeof row.shop_id !== 'number') {
+  if (memberships.length === 0) {
     return null;
   }
 
-  return row.shop_id;
+  if (memberships.length > 1) {
+    // 🚨 This is a SYSTEM INVARIANT BREACH
+    // The system currently does NOT support multi-shop sessions
+    throw new Error(
+      'SHOP_RESOLUTION_INVARIANT_VIOLATION: multiple active shop memberships'
+    );
+  }
+
+  return memberships[0];
 }
 
 /**
- * STRICT variant of shop resolution.
+ * Resolve shop_id ONLY.
  *
- * Use this when the endpoint MUST have a shop context.
+ * Use when:
+ * - Role is irrelevant
+ * - You only need a shop boundary
+ *
+ * @returns shopId | null
+ */
+export async function resolveShopIdForUser(
+  userId: number
+): Promise<number | null> {
+  const ctx = await resolveShopContextForUser(userId);
+  return ctx ? ctx.shopId : null;
+}
+
+/**
+ * STRICT shop resolution.
+ *
+ * Use for endpoints that MUST have shop context.
+ *
  * Example:
  * - dashboard
  * - analytics
  * - integrations
  *
- * @throws if shop_id cannot be resolved
+ * @throws if shop context cannot be resolved
+ */
+export async function requireShopContextForUser(
+  userId: number
+): Promise<ResolvedShopContext> {
+  const ctx = await resolveShopContextForUser(userId);
+
+  if (!ctx) {
+    throw new Error(
+      'SHOP_CONTEXT_REQUIRED: user has no active shop membership'
+    );
+  }
+
+  return ctx;
+}
+
+/**
+ * STRICT shop_id-only variant.
+ *
+ * Convenience wrapper for legacy call sites.
  */
 export async function requireShopIdForUser(
   userId: number
 ): Promise<number> {
-  const shopId = await resolveShopIdForUser(userId);
-
-  if (typeof shopId !== 'number') {
-    throw new Error(
-      'SHOP_CONTEXT_REQUIRED: user has no resolved shop'
-    );
-  }
-
-  return shopId;
+  const ctx = await requireShopContextForUser(userId);
+  return ctx.shopId;
 }
 
-
 /**
- * FUTURE EXTENSION POINTS (INTENTIONAL NO-OPS)
- * -------------------------------------------
+ * FUTURE EXTENSION (DOCUMENTED, NOT IMPLEMENTED)
+ * ----------------------------------------------
  *
- * These are documented now to prevent ad-hoc logic later.
+ * Planned:
+ * - resolveAllShopsForUser(userId)
+ * - enforceShopRole(userId, shopId, minimumRole)
+ * - switchActiveShop(userId, shopId)
  *
- * Planned additions:
- * - resolveActiveShopForUser(userId, options)
- * - resolveShopAndRoleForUser(userId)
- * - enforceShopRole(userId, shopId, requiredRole)
- *
- * DO NOT implement prematurely.
+ * DO NOT add ad-hoc logic elsewhere.
  */

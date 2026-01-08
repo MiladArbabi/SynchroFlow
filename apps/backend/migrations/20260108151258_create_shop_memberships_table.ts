@@ -1,4 +1,4 @@
-//apps/backend/migrations/20260108151258_create_shop_memberships_table.ts
+// apps/backend/migrations/20260108151258_create_shop_memberships_table.ts
 
 import type { Knex } from 'knex';
 
@@ -27,10 +27,7 @@ export async function up(knex: Knex): Promise<void> {
       .onDelete('CASCADE');
 
     // 🎭 Authorization
-    table
-      .string('role', 32)
-      .notNullable()
-      .comment('owner | admin | operator | viewer');
+    table.string('role', 32).notNullable();
 
     // 🧠 Lifecycle
     table
@@ -43,17 +40,27 @@ export async function up(knex: Knex): Promise<void> {
       .nullable()
       .comment('Soft removal from shop');
 
-    // 🔐 Invariants
-    table.unique(['shop_id', 'user_id'], {
-      indexName: 'uniq_shop_memberships_shop_user',
-    });
-
     table.index(['user_id'], 'idx_shop_memberships_user');
     table.index(['shop_id'], 'idx_shop_memberships_shop');
     table.index(['role'], 'idx_shop_memberships_role');
   });
+
+  // 🔐 Role constraint (Postgres CHECK)
+  await knex.raw(`
+    ALTER TABLE shop_memberships
+    ADD CONSTRAINT chk_shop_memberships_role_valid
+    CHECK (role IN ('owner', 'admin', 'operator', 'viewer'))
+  `);
+
+  // 🔐 One ACTIVE membership per shop/user
+  await knex.raw(`
+    CREATE UNIQUE INDEX uniq_shop_memberships_active
+    ON shop_memberships (shop_id, user_id)
+    WHERE revoked_at IS NULL
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.raw(`DROP INDEX IF EXISTS uniq_shop_memberships_active`);
   await knex.schema.dropTableIfExists('shop_memberships');
 }
