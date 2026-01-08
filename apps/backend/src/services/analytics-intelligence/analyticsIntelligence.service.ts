@@ -26,26 +26,27 @@ import { AnalyticsIntelligence } from './analyticsIntelligence.types';
 export function buildAnalyticsIntelligence(
   facts: AnalyticsFacts
 ): AnalyticsIntelligence {
-  const { revenueObserved } = facts;
+  const { processing, delivered, in_transit } = facts.ordersObserved;
 
-  if (revenueObserved === null) {
+  const values = [processing, delivered, in_transit];
+
+  const allNull = values.every(v => v === null);
+  if (allNull) {
     return {
-      revenueObserved: null,
       outcome: { status: 'unknown' },
       trend: { direction: 'unknown' },
     };
   }
 
-  if (revenueObserved === 0) {
+  const allZero = values.every(v => v === 0);
+  if (allZero) {
     return {
-      revenueObserved,
       outcome: { status: 'negative' },
       trend: { direction: 'unknown' },
     };
   }
 
   return {
-    revenueObserved,
     outcome: { status: 'positive' },
     trend: { direction: 'unknown' },
   };

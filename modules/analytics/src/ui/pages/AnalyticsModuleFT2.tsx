@@ -2,24 +2,41 @@
  * AnalyticsModuleFT2
  * ==================
  *
- * Purpose:
- * --------
- * Passive, read-only observability surface for Analytics FT2.
+ * FT2 observability surface for Analytics.
  *
- * This component:
- * - Renders facts only
- * - Contains ZERO business logic
- * - Performs ZERO interpretation
+ * ─────────────────────────────────────────────────────────────────────────────
+ * PURPOSE
+ * ─────────────────────────────────────────────────────────────────────────────
+ * This component renders the highest read-only truth surface for Analytics.
  *
- * Rendering Rules (LOCKED):
- * ------------------------
- * - All nulls render as "—"
- * - No conditional hiding (except null vs value)
- * - No explanations
- * - No calls to action
+ * It answers ONE question only:
+ *   → “What analytics data exists, and how is it moving?”
  *
- * If this component ever feels "helpful",
- * something has gone wrong.
+ * It is intentionally:
+ * - Read-only
+ * - Deterministic
+ * - Underpowered
+ * - Non-explanatory
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHAT THIS IS NOT
+ * ─────────────────────────────────────────────────────────────────────────────
+ * - ❌ NOT system health analysis
+ * - ❌ NOT stability interpretation
+ * - ❌ NOT data quality reasoning
+ * - ❌ NOT recommendations or actions
+ *
+ * All “why”, “so what”, and prioritization belongs to SKU-OS+ layers.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * OWNERSHIP & BOUNDARIES
+ * ─────────────────────────────────────────────────────────────────────────────
+ * - Backend: decides meaning (Facts → Intelligence → FTEP)
+ * - Adapter: dumb pipe (undefined → null only)
+ * - This component: renders values, nothing more
+ *
+ * If this component ever feels “helpful” or “smart”,
+ * the FT2 contract has been violated.
  */
 
 import React from 'react';
@@ -27,72 +44,46 @@ import type { AnalyticsModuleFT2Props } from './AnalyticsModuleFT2.types';
 
 const NULL_PLACEHOLDER = '—';
 
+/**
+ * AnalyticsModuleFT2
+ * -----------------
+ * Canonical FT2 UI for Analytics.
+ *
+ * Design rules (NON-NEGOTIABLE):
+ * - All props are mandatory at the top level
+ * - Uncertainty is expressed as `null`
+ * - All `null` values render as "—"
+ * - No inference, no computation, no explanation
+ */
 export default function AnalyticsModuleFT2(
   props: AnalyticsModuleFT2Props
 ) {
-  const {
-    context,
-    systemStatus,
-    stabilityIndicator,
-    dataCoverage,
-    trendSignal,
-  } = props;
+  const { context, outcome, trend } = props;
 
-  // Instrumentation for observability & debugging
-  // (Allowed in FT2: visibility ≠ interpretation)
-  console.debug('[FT2][Analytics][Render]', props);
+  // FT2 instrumentation only (visibility ≠ interpretation)
+  console.debug('[FT2][Analytics][AnalyticsModuleFT2] props', props);
 
   return (
-    <section>
-      <h2>Analytics (FT2)</h2>
+    <section data-testid="analytics-ft2-root">
+      {/* ───────────────── Context ───────────────── */}
+      <section>
+        <div>
+          <strong>Period</strong>: {context.period.from} →{' '}
+          {context.period.to}
+        </div>
+      </section>
 
-      <div>
-        <strong>Period:</strong>{' '}
-        {context.period.from} → {context.period.to}
-      </div>
+      {/* ───────────────── Outcome ───────────────── */}
+      <section>
+        <strong>Outcome</strong>:{' '}
+        {outcome === null ? NULL_PLACEHOLDER : outcome.status}
+      </section>
 
-      <div>
-        <strong>Signals observed:</strong>{' '}
-        {context.signalsObserved ?? NULL_PLACEHOLDER}
-      </div>
-
-      <hr />
-
-      <div>
-        <strong>System status:</strong>{' '}
-        {systemStatus
-          ? `${systemStatus.state} (${systemStatus.reliability})`
-          : NULL_PLACEHOLDER}
-      </div>
-
-      <div>
-        <strong>Stability:</strong>{' '}
-        {stabilityIndicator
-          ? stabilityIndicator.state
-          : NULL_PLACEHOLDER}
-      </div>
-
-      <div>
-        <strong>Data coverage:</strong>
-        {dataCoverage ? (
-          <ul>
-            {dataCoverage.map((c, i) => (
-              <li key={i}>
-                [{c.domain}] {c.status}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          ` ${NULL_PLACEHOLDER}`
-        )}
-      </div>
-
-      <div>
-        <strong>Trend:</strong>{' '}
-        {trendSignal
-          ? trendSignal.direction
-          : NULL_PLACEHOLDER}
-      </div>
+      {/* ───────────────── Trend ───────────────── */}
+      <section>
+        <strong>Trend</strong>:{' '}
+        {trend === null ? NULL_PLACEHOLDER : trend.direction}
+      </section>
     </section>
   );
 }

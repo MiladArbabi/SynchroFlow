@@ -16,6 +16,10 @@
 
     "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*", "../shared/src/contracts.ts"]
+  "include": [
+    "src/index.ts", 
+    "src/ui/**/*", 
+    "../shared/src/contracts.ts"
+  ]
 }
 

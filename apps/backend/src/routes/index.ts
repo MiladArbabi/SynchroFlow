@@ -15,6 +15,7 @@ import { getSpecterConfig, upsertSpecterConfig } from 'api-src/api/specter/spect
 import onboardingReadinessRouter from '../onboarding/readiness.router';
 import specterRouter from '../api/specter/specter.routes';
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
+import analyticsRoutes from 'api-src/api/analytics';
 
 const router = Router();
 
@@ -29,7 +30,9 @@ router.use('/customers', customersRoutes);
 router.use('/product-costs', productCostsRoutes);
 router.use('/user-state', userStateRoutes); 
 router.use('/onboarding', onboardingReadinessRouter);
+
 router.use('/v1/modules/order-nexus', orderNexusRoutes);
+router.use('/v1/modules/analytics', analyticsRoutes);
 
 // Mount under /api/v1/specter -> final path: GET /api/v1/specter/:shopId/state
 router.use('/v1/specter', specterRouter);

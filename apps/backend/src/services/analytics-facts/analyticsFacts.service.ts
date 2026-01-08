@@ -21,35 +21,14 @@ interface GetAnalyticsFactsInput {
  * - Raw aggregates only (SUM, COUNT)
  * - Preserves nulls (null ≠ 0)
  * - No intelligence, no percentages, no statuses
+ * - If Analytics ever needs money again,
+ *    it must consume Finances FT2 exposure, 
+ *    never compute it.
  */
 export async function getAnalyticsFacts(
   input: GetAnalyticsFactsInput
 ): Promise<AnalyticsFacts> {
   const { shopId, period } = input;
-
-  // --- Revenue (raw SUM) ---
-  const revenueResult = await db('historical_sales as hs')
-    .where('hs.shop_id', shopId)
-    .andWhere('hs.sale_date', '>=', period.from)
-    .andWhere('hs.sale_date', '<=', period.to)
-    .sum({ total: db.raw('hs.quantity_sold * hs.price') });
-
-  const revenueObserved =
-    revenueResult?.[0]?.total != null
-      ? Number(revenueResult[0].total)
-      : null;
-
-  // --- COGS (raw SUM) ---
-  const cogsResult = await db('historical_sales as hs')
-    .where('hs.shop_id', shopId)
-    .andWhere('hs.sale_date', '>=', period.from)
-    .andWhere('hs.sale_date', '<=', period.to)
-    .sum({ total: db.raw('hs.quantity_sold * hs.cost') });
-
-  const cogsObserved =
-    cogsResult?.[0]?.total != null
-      ? Number(cogsResult[0].total)
-      : null;
 
   // --- Orders by fulfillment status (raw counts) ---
   const rows = await db('order_fulfillment_status')
@@ -61,8 +40,6 @@ export async function getAnalyticsFacts(
     return {
       shopId,
       period,
-      revenueObserved,
-      cogsObserved,
       ordersObserved: {
         processing: null,
         delivered: null,
@@ -87,8 +64,6 @@ export async function getAnalyticsFacts(
   return {
     shopId,
     period,
-    revenueObserved,
-    cogsObserved,
     ordersObserved,
     extractedAt: new Date().toISOString(),
   };

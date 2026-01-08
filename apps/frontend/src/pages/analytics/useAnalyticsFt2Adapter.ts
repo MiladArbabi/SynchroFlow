@@ -27,47 +27,20 @@
 
 import type { AnalyticsModuleFT2Props } from '@lasyncro/analytics';
 
-/**
- * Backend snapshot shape for Analytics FT2.
- *
- * NOTE:
- * -----
- * This snapshot is intentionally flat and boring.
- * Any intelligence belongs upstream.
- */
 type AnalyticsFt2Snapshot = {
-  period?: {
-    from: string;
-    to: string;
-  };
-
-  signalsObserved?: number | null;
-
-  systemStatus?: {
-    state: 'healthy' | 'degraded' | 'unknown';
-    reliability: 'high' | 'medium' | 'low';
-  } | null;
-
-  stabilityIndicator?: {
-    state: 'stable' | 'unstable' | 'unknown';
-  } | null;
-
-  dataCoverage?: Array<{
-    domain:
-      | 'orders'
-      | 'finances'
-      | 'products'
-      | 'customers'
-      | 'unknown';
-    status: 'complete' | 'partial' | 'missing';
-  }> | null;
-
-  trendSignal?: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-    comparedPeriod?: {
+  context?: {
+    period?: {
       from: string;
       to: string;
     };
+  };
+
+  outcome?: {
+    status: 'positive' | 'negative';
+  } | null;
+
+  trend?: {
+    direction: 'unknown';
   } | null;
 };
 
@@ -79,40 +52,19 @@ type AnalyticsFt2Snapshot = {
  * This function is intentionally repetitive.
  * Clarity > cleverness.
  */
+
 export function mapAnalyticsFt2Props(
   snapshot: AnalyticsFt2Snapshot
 ): AnalyticsModuleFT2Props {
   return {
     context: {
-      period: snapshot.period ?? { from: '', to: '' },
-
-      signalsObserved:
-        snapshot.signalsObserved === undefined
-          ? null
-          : snapshot.signalsObserved,
+      period: snapshot.context?.period ?? { from: '', to: '' },
     },
 
-    systemStatus:
-      snapshot.systemStatus === undefined
-        ? null
-        : snapshot.systemStatus,
+    outcome:
+      snapshot.outcome === undefined ? null : snapshot.outcome,
 
-    stabilityIndicator:
-      snapshot.stabilityIndicator === undefined
-        ? null
-        : snapshot.stabilityIndicator,
-
-    dataCoverage:
-      snapshot.dataCoverage == null
-        ? null
-        : snapshot.dataCoverage.map((c) => ({
-            domain: c.domain,
-            status: c.status,
-          })),
-
-    trendSignal:
-      snapshot.trendSignal === undefined
-        ? null
-        : snapshot.trendSignal,
+    trend:
+      snapshot.trend === undefined ? null : snapshot.trend,
   };
 }

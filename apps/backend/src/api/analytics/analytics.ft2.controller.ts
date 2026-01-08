@@ -2,44 +2,31 @@
 
 import { Request, Response } from 'express';
 import { getAnalyticsFt2Snapshot } from 'api-src/services/analytics-ft2.provider';
+import { getFt2Period } from 'api-src/utils/ft2Period';
 
 /**
- * GET /api/v1/analytics/ft2
+ * Analytics FT2 Controller
  *
- * FT2-only endpoint.
+ * * Read-only FT2 exposure endpoint.
  *
- * Responsibilities:
- * - Authenticate user (handled upstream)
- * - Resolve lifecycle
- * - Hard-gate FT2
- * - Execute Facts → Intelligence → FTEP
- * - Return FT2 exposure only
- *
- * Forbidden:
- * - Business logic
- * - Aggregation
- * - Intelligence
- * - Lifecycle mutation
+ * Rules:
+ * - Authenticated
+ * - Shop-scoped
+ * - No lifecycle logic
+ * - No business logic
  */
-export async function analyticsFt2Controller(
-  req: Request,
-  res: Response
-): Promise<Response> {
+export async function analyticsFt2Controller(req: any, res: any) {
   const shopId = req.user?.shopId;
 
   if (!shopId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { from, to } = req.query;
-
-  if (typeof from !== 'string' || typeof to !== 'string') {
-    return res.status(400).json({ error: 'Invalid period' });
-  }
+  const period = getFt2Period();
 
   const snapshot = await getAnalyticsFt2Snapshot({
     shopId,
-    period: { from, to },
+    period,
   });
 
   return res.json(snapshot);

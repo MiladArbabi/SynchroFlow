@@ -29,7 +29,6 @@ export function buildAnalyticsFtep(
 
   const context = {
     period: facts.period,
-    revenueObserved: intelligence.revenueObserved,
   };
 
   if (intelligence.outcome.status === 'unknown') {

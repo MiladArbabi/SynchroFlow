@@ -1,113 +1,78 @@
 /**
- * FT2 Analytics Adapter — Contract Enforcement Tests
- * ==================================================
+ * FT2 Analytics Adapter — Canonical Contract Tests (RED)
+ * =====================================================
  *
- * Purpose:
- * --------
- * These tests enforce the downgraded FT2 observability contract
- * for Analytics / InsightCore.
+ * This test enforces strict FT2 parity with:
+ * - OrdersModuleFT2
+ * - ProductsModuleFT2
  *
- * FT2 RULES (NON-NEGOTIABLE):
- * - No intelligence
- * - No explanations
- * - No derived meaning
- * - No inference
- * - Undefined → null only
- * - Shape-stable output
+ * Analytics FT2 MUST expose:
+ * - context
+ * - outcome | null
+ * - trend | null
  *
- * If any of these tests fail in the future,
- * it means FT2 intelligence has leaked back in.
+ * NOTHING ELSE.
  */
 
 import { mapAnalyticsFt2Props } from 'pages/analytics/useAnalyticsFt2Adapter';
 
-describe('FT2 Analytics Adapter — observability-only mapping', () => {
-  it('maps a full backend snapshot using observability semantics only', () => {
-    const snapshot = {
-      period: { from: '2025-01-01', to: '2025-01-31' },
-
-      signalsObserved: 42,
-
-      systemStatus: {
-        state: 'healthy',
-        reliability: 'high',
+describe('Analytics FT2 Adapter — canonical FT2 contract', () => {
+  it('exposes ONLY canonical FT2 fields', () => {
+    const snapshot: any = {
+      context: {
+        period: { from: '2025-01-01', to: '2025-01-31' },
+        eventsObserved: 10,
       },
+      outcome: { status: 'unknown' },
+      trend: { direction: 'flat' },
 
-      stabilityIndicator: {
-        state: 'stable',
-      },
-
-      dataCoverage: [
-        {
-          domain: 'orders',
-          status: 'partial',
-        },
-        {
-          domain: 'products',
-          status: 'complete',
-        },
-      ],
-
-      trendSignal: {
-        direction: 'flat',
-        comparedPeriod: {
-          from: '2024-12-01',
-          to: '2024-12-31',
-        },
-      },
-    } as const satisfies Parameters<typeof mapAnalyticsFt2Props>[0];
-
-    const props = mapAnalyticsFt2Props(snapshot);
-
-    // Context
-    expect(props.context.signalsObserved).toBe(42);
-
-    // Status
-    expect(props.systemStatus?.state).toBe('healthy');
-    expect(props.systemStatus?.reliability).toBe('high');
-
-    // Stability
-    expect(props.stabilityIndicator?.state).toBe('stable');
-
-    // Coverage
-    expect(props.dataCoverage?.[0].domain).toBe('orders');
-    expect(props.dataCoverage?.[0].status).toBe('partial');
-
-    // Trend
-    expect(props.trendSignal?.direction).toBe('flat');
-  });
-
-  it('preserves explicit nulls without coercion or inference', () => {
-    const snapshot = {
-      period: { from: '2025-01-01', to: '2025-01-31' },
-
-      signalsObserved: null,
-      systemStatus: null,
-      stabilityIndicator: null,
-      dataCoverage: null,
-      trendSignal: null,
+      // Illegal FT2 fields (must be dropped)
+      systemStatus: { state: 'healthy' },
+      stabilityIndicator: { state: 'stable' },
+      dataCoverage: [],
+      trendSignal: { direction: 'up' },
     };
 
     const props = mapAnalyticsFt2Props(snapshot);
 
-    expect(props.context.signalsObserved).toBeNull();
-    expect(props.systemStatus).toBeNull();
-    expect(props.stabilityIndicator).toBeNull();
-    expect(props.dataCoverage).toBeNull();
-    expect(props.trendSignal).toBeNull();
+    expect(props).toEqual({
+      context: {
+        period: { from: '2025-01-01', to: '2025-01-31' },
+        eventsObserved: 10,
+      },
+      outcome: { status: 'unknown' },
+      trend: { direction: 'flat' },
+    });
+
+    expect((props as any).systemStatus).toBeUndefined();
+    expect((props as any).stabilityIndicator).toBeUndefined();
+    expect((props as any).dataCoverage).toBeUndefined();
+    expect((props as any).trendSignal).toBeUndefined();
   });
 
-  it('normalizes undefined fields to null (shape-stable output)', () => {
-    const snapshot = {
-      period: { from: '2025-01-01', to: '2025-01-31' },
+  it('normalizes undefined to null and preserves nulls', () => {
+    const snapshot: any = {
+      context: {
+        period: { from: '2025-01-01', to: '2025-01-31' },
+        revenueObserved: 10,
+      },
+      outcome: undefined,
+      trend: null,
     };
 
     const props = mapAnalyticsFt2Props(snapshot);
 
-    expect(props.context.signalsObserved).toBeNull();
-    expect(props.systemStatus).toBeNull();
-    expect(props.stabilityIndicator).toBeNull();
-    expect(props.dataCoverage).toBeNull();
-    expect(props.trendSignal).toBeNull();
+    expect(props.context.revenueObserved).toBeNull();
+    expect(props.outcome).toBeNull();
+    expect(props.trend).toBeNull();
+  });
+
+  it('does NOT default or fabricate period', () => {
+    const snapshot: any = {};
+
+    const props = mapAnalyticsFt2Props(snapshot);
+
+    expect(props.context.period.from).toBe('');
+    expect(props.context.period.to).toBe('');
   });
 });

@@ -6,7 +6,6 @@ export interface AnalyticsFT2Exposure {
       from: string;
       to: string;
     };
-    revenueObserved: number | null;
   };
 
   outcome: {
@@ -14,6 +13,6 @@ export interface AnalyticsFT2Exposure {
   } | null;
 
   trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+    direction: 'unknown';
   } | null;
 }

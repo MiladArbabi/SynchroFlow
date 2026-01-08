@@ -2,14 +2,10 @@
 
 export interface AnalyticsFacts {
   shopId: number;
-
   period: {
     from: string;
     to: string;
   };
-
-  revenueObserved: number | null;
-  cogsObserved: number | null;
 
   ordersObserved: {
     processing: number | null;
@@ -19,3 +15,4 @@ export interface AnalyticsFacts {
 
   extractedAt: string;
 }
+
