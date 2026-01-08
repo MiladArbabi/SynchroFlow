@@ -19,15 +19,19 @@ export function buildFinancesFtep(input: {
 }): FinancesFT2Exposure {
   const { facts, intelligence } = input;
 
-  const outcome: FinancesFT2Exposure['outcome'] =
-    intelligence.netResult.status === 'unknown'
-      ? null
-      : {
-          status:
-            intelligence.netResult.status === 'good'
-              ? 'positive'
-              : 'negative',
-        };
+  if (intelligence.netResult.status === 'unknown') {
+    return {
+      context: {
+        period: facts.period,
+        netObserved: facts.netResult,
+      },
+      outcome: null,
+      trend: null,
+      dataCoverage: {
+        completenessPct: facts.dataCoverage.completenessPct,
+      },
+    };
+  }
 
   return {
     context: {
@@ -35,12 +39,15 @@ export function buildFinancesFtep(input: {
       netObserved: facts.netResult,
     },
 
-    outcome,
+    outcome: {
+      status:
+        intelligence.netResult.status === 'good'
+          ? 'positive'
+          : 'negative',
+    },
 
     trend: intelligence.trend
-      ? {
-          direction: intelligence.trend.direction,
-        }
+      ? { direction: intelligence.trend.direction }
       : null,
 
     dataCoverage: {

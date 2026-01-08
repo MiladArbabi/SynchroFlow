@@ -52,7 +52,10 @@ export function mapFinancesFt2Props(
 ): FinancesModuleFT2Props {
   const props: FinancesModuleFT2Props = {
     context: {
-      period: snapshot.context?.period ?? { from: '', to: '' },
+      period:
+       snapshot.context?.period === undefined
+         ? null
+         : snapshot.context.period,
       netObserved:
         snapshot.context?.netObserved === undefined
           ? null

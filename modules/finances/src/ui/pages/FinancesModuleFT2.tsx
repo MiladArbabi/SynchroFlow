@@ -2,10 +2,12 @@
 
 export interface FinancesModuleFT2Props {
   context: {
-    period: {
-      from: string;
-      to: string;
-    };
+    period:
+     | {
+         from: string;
+         to: string;
+       }
+     | null;
     netObserved: number | null;
   };
 
@@ -51,8 +53,12 @@ export default function FinancesModuleFT2(
       {/* Context */}
       <section>
         <div>
-          <strong>Period</strong>: {context.period.from} →{' '}
-          {context.period.to}
+          <strong>Period</strong>:{' '}
+          {context.period === null ||
+            context.period.from === '' ||
+            context.period.to === ''
+             ? '—'
+             : `${context.period.from} → ${context.period.to}`}
         </div>
         <div>
           <strong>Net observed</strong>:{' '}

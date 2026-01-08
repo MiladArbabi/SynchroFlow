@@ -26,34 +26,18 @@ export async function buildFinancesFacts(
 ): Promise<FinancesFacts> {
   const { shopId, period } = input;
 
-  // Aggregate revenue
-  const revenueResult = await db('historical_sales')
-    .where('shop_id', shopId)
-    .andWhereBetween('date', [period.from, period.to])
-    .sum<{ sum: string | null }>('revenue as sum')
-    .first();
+  // historical_sales has no monetary column → revenue is unknown
+  const totalRevenue: number | null = null;
 
-  const totalRevenue =
-    revenueResult?.sum == null ? null : Number(revenueResult.sum);
-
-  // Aggregate costs
-  const costResult = await db('product_costs')
-    .where('shop_id', shopId)
-    .andWhereBetween('date', [period.from, period.to])
-    .sum<{ sum: string | null }>('cost as sum')
-    .first();
-
-  const totalCosts =
-    costResult?.sum == null ? null : Number(costResult.sum);
+  // Costs schema not guaranteed → treat as unknown for FT2
+  const totalCosts: number | null = null;
 
   const netResult =
     totalRevenue == null || totalCosts == null
       ? null
       : totalRevenue - totalCosts;
 
-  // Data coverage — factual only (no interpretation)
-  const completenessPct =
-    totalRevenue == null && totalCosts == null ? null : 100;
+  const completenessPct = null;
 
   return {
     shopId,

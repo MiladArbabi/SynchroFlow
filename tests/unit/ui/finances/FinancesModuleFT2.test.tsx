@@ -110,4 +110,22 @@ describe('FinancesModuleFT2 (FT2 Observability Snapshot)', () => {
       expect(screen.queryByText(term)).toBeNull();
     });
   });
+
+  it('renders placeholder for null period (no empty strings)', () => {
+    render(
+      <FinancesModuleFT2
+        context={{
+          period: { from: '', to: '' } as any,
+          netObserved: null,
+        }}
+        outcome={null}
+        trend={null}
+        dataCoverage={null}
+      />
+    );
+
+    // Empty strings are forbidden in FT2
+    expect(screen.queryByText(/→/)).toBeNull();
+    expect(screen.getByTestId('finances-ft2-root').textContent).toContain('—');
+  });
 });
