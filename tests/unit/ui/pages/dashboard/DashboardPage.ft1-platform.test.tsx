@@ -51,7 +51,7 @@ jest.mock('lifecycle/useOnboardingReadiness', () => ({
 describe('DashboardPage — FT1 Platform diagnostics', () => {
   it('renders platform diagnostic card from readiness snapshot', () => {
     renderWithProviders(
-      <DashboardPage handleSidenavToggle={() => {}} />
+      <DashboardPage />
     );
 
     // 🔴 Diagnostic truth, not marketing copy

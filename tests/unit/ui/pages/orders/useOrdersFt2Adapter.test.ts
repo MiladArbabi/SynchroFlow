@@ -4,10 +4,11 @@ import { mapOrdersFt2Props } from 'pages/orders/useOrdersFt2Adapter';
 
 describe('FT2 Orders Adapter — observability only', () => {
   it('maps a full backend snapshot without inference or derivation', () => {
-    const snapshot = {
+   const snapshot = {
+    context: {
       period: { from: '2025-01-01', to: '2025-01-31' },
-
       ordersObserved: 75,
+    },
 
       totals: {
         revenueTotal: 12500,

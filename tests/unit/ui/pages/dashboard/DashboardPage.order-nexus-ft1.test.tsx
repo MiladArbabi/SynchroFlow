@@ -52,7 +52,7 @@ jest.mock('lifecycle/useOnboardingReadiness', () => ({
 describe('DashboardPage — FT1 Order-Nexus surface wiring', () => {
   it('renders the Order-Nexus FT1 diagnostic surface when readiness is present', () => {
     renderWithProviders(
-      <DashboardPage handleSidenavToggle={() => {}} />
+      <DashboardPage />
     );
 
     // ✅ Semantic FT1 surface — UNCERTAIN scenario

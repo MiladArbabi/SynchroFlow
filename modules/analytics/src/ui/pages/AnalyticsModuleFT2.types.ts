@@ -28,6 +28,6 @@ export interface AnalyticsModuleFT2Props {
   } | null;
 
   trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+    direction: 'unknown'
   } | null;
 }

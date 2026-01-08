@@ -49,7 +49,7 @@ jest.mock('lifecycle/useOnboardingReadiness', () => ({
 describe('DashboardPage — FT1 Finances surface wiring', () => {
   it('renders the Finances FT1 diagnostic surface when readiness is present', () => {
     renderWithProviders(
-      <DashboardPage handleSidenavToggle={() => {}} />
+      <DashboardPage />
     );
 
     // ✅ Semantic FT1 surface — Finances missing costs

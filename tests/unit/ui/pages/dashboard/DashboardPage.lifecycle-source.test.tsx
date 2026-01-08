@@ -41,6 +41,6 @@ jest.mock('contexts/DashboardStateContext', () => {
 
 describe('DashboardPage — lifecycle source of truth', () => {
   it('does not consume legacy onboarding or derived lifecycle fields', () => {
-    renderWithProviders(<DashboardPage handleSidenavToggle={() => {}} />);
+    renderWithProviders(<DashboardPage />);
     });
 });

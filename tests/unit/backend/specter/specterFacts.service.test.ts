@@ -26,31 +26,32 @@ describe('SpecterFacts.service', () => {
   });
 
   it('counts sessions correctly', async () => {
-    const store = new InMemorySessionStore([
-      {
-        sessionId: 's1',
-        shopId,
-        exitIntent: false,
-        createdAt: new Date().toISOString()
-      },
-      {
-        sessionId: 's2',
-        shopId,
-        exitIntent: true,
-        createdAt: new Date().toISOString()
-      }
-    ]);
-
-    setSessionStoreForTests(store);
-
-    const facts = await getSpecterFacts({
+  const store = new InMemorySessionStore([
+    {
+      sessionId: 's1',
       shopId,
-      period: { from: '2024-01-01', to: '2024-01-07' }
-    });
+      exitIntent: false,
+      createdAt: '2024-01-03T10:00:00.000Z'
+    },
+    {
+      sessionId: 's2',
+      shopId,
+      exitIntent: true,
+      createdAt: '2024-01-04T12:00:00.000Z'
+    }
+  ]);
 
-    expect(facts.sessionsObserved).toBe(2);
-    expect(facts.exitIntentSessions).toBe(1);
+  setSessionStoreForTests(store);
+
+  const facts = await getSpecterFacts({
+    shopId,
+    period: { from: '2024-01-01', to: '2024-01-07' }
   });
+
+  expect(facts.sessionsObserved).toBe(2);
+  expect(facts.exitIntentSessions).toBe(1);
+});
+
 
   it('preserves nulls and does not emit derived fields', async () => {
     const facts = await getSpecterFacts({

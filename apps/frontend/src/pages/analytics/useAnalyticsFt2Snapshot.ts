@@ -17,7 +17,7 @@ export type AnalyticsFt2Snapshot = {
   } | null;
 
   trend?: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+    direction: 'unknown';
   } | null;
 };
 

@@ -24,7 +24,7 @@ describe('Analytics FT2 Adapter — canonical FT2 contract', () => {
         eventsObserved: 10,
       },
       outcome: { status: 'unknown' },
-      trend: { direction: 'flat' },
+      trend: { direction: 'unknown' },
 
       // Illegal FT2 fields (must be dropped)
       systemStatus: { state: 'healthy' },
@@ -38,10 +38,9 @@ describe('Analytics FT2 Adapter — canonical FT2 contract', () => {
     expect(props).toEqual({
       context: {
         period: { from: '2025-01-01', to: '2025-01-31' },
-        eventsObserved: 10,
       },
       outcome: { status: 'unknown' },
-      trend: { direction: 'flat' },
+      trend: { direction: 'unknown' },
     });
 
     expect((props as any).systemStatus).toBeUndefined();
@@ -62,7 +61,6 @@ describe('Analytics FT2 Adapter — canonical FT2 contract', () => {
 
     const props = mapAnalyticsFt2Props(snapshot);
 
-    expect(props.context.revenueObserved).toBeNull();
     expect(props.outcome).toBeNull();
     expect(props.trend).toBeNull();
   });

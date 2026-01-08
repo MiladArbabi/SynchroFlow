@@ -10,24 +10,25 @@ describe('Specter FT2 Provider', () => {
   };
 
   beforeEach(() => {
-    const store = new InMemorySessionStore([
-      {
-        sessionId: 's1',
-        shopId,
-        exitIntent: false,
-        pagesViewed: ['/'],
-        createdAt: new Date().toISOString()
-      },
-      {
-        sessionId: 's2',
-        shopId,
-        exitIntent: true,
-        pagesViewed: ['/checkout'],
-        createdAt: new Date().toISOString()
-      }
-    ]);
-    setSessionStoreForTests(store);
-  });
+  const store = new InMemorySessionStore([
+    {
+      sessionId: 's1',
+      shopId,
+      exitIntent: false,
+      pagesViewed: ['/'],
+      createdAt: '2024-01-03T10:00:00.000Z'
+    },
+    {
+      sessionId: 's2',
+      shopId,
+      exitIntent: true,
+      pagesViewed: ['/checkout'],
+      createdAt: '2024-01-04T15:30:00.000Z'
+    }
+  ]);
+
+  setSessionStoreForTests(store);
+});
 
   afterEach(() => {
     setSessionStoreForTests(null);
@@ -49,5 +50,22 @@ describe('Specter FT2 Provider', () => {
     expect(serialized).not.toMatch(
       /exitIntent|sessionsObservedRaw|engagement|behavior|rate|percent|risk/i
     );
+  });
+  it('returns null when sessions fall outside period', async () => {
+    const store = new InMemorySessionStore([
+      {
+        sessionId: 'old',
+        shopId,
+        exitIntent: false,
+        pagesViewed: ['/'],
+        createdAt: '2023-01-01T00:00:00.000Z'
+      }
+    ]);
+
+    setSessionStoreForTests(store);
+
+    const snapshot = await getSpecterFt2Snapshot({ shopId, period });
+
+    expect(snapshot.context.sessionsObserved).toBeNull();
   });
 });

@@ -38,7 +38,7 @@ jest.mock('lifecycle/useOnboardingReadiness', () => ({
 describe('DashboardPage — FT1 Products surface wiring', () => {
   it('renders the Products FT1 diagnostic surface when readiness is present', () => {
     renderWithProviders(
-      <DashboardPage handleSidenavToggle={() => {}} />
+      <DashboardPage />
     );
 
     expect(

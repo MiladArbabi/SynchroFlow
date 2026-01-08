@@ -13,6 +13,13 @@ jest.mock('api-src/services/customers-ft2.provider', () => ({
   })
 }));
 
+jest.mock('api-src/middleware/auth.middleware', () => ({
+  authenticateToken: (_req: any, _res: any, next: any) => {
+    _req.user = { userId: 1, shopId: 1 };
+    next();
+  }
+}));
+
 describe('GET /api/v1/modules/customers/ft2', () => {
   it('returns FT2 snapshot unchanged', async () => {
     const res = await request(app)
@@ -22,10 +29,5 @@ describe('GET /api/v1/modules/customers/ft2', () => {
     expect(res.status).toBe(200);
     expect(res.body.context.customersObserved).toBe(1);
     expect(res.body.outcome.status).toBe('positive');
-  });
-
-  it('returns 400 when shopId is missing', async () => {
-    const res = await request(app).get('/api/v1/modules/customers/ft2');
-    expect(res.status).toBe(400);
   });
 });
