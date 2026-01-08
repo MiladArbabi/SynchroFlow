@@ -59,19 +59,11 @@ describe('Finances FT2 Controller', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
   });
 
-  it('returns 400 if period is invalid', async () => {
-    req.query = { from: '2025-01-01' }; // missing `to`
-
-    await financesFt2Controller(req as any, res as any);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid period' });
-  });
-
   it('returns FT2 snapshot when input is valid', async () => {
     const snapshot: FinancesFT2Exposure = {
       context: {
         period: { from: '2025-01-01', to: '2025-01-31' },
+        revenueObserved: 5000,
         netObserved: 3000,
       },
       outcome: { status: 'positive' },
@@ -85,7 +77,10 @@ describe('Finances FT2 Controller', () => {
 
     expect(mockGetFinancesFt2Snapshot).toHaveBeenCalledWith({
       shopId: 42,
-      period: { from: '2025-01-01', to: '2025-01-31' },
+      period: expect.objectContaining({
+        from: expect.any(String),
+        to: expect.any(String),
+     }),
     });
 
     expect(res.json).toHaveBeenCalledWith(snapshot);

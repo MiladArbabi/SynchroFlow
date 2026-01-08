@@ -10,6 +10,7 @@ describe('FinancesModuleFT2 (FT2 Observability Snapshot)', () => {
   const baseProps: FinancesModuleFT2Props = {
     context: {
       period: { from: '2025-01-01', to: '2025-01-31' },
+      revenueObserved: 5000,
       netObserved: 3200,
     },
 
@@ -95,7 +96,6 @@ describe('FinancesModuleFT2 (FT2 Observability Snapshot)', () => {
     render(<FinancesModuleFT2 {...baseProps} />);
 
     const forbiddenTerms = [
-      /revenue/i,
       /margin/i,
       /profit/i,
       /transactions/i,
@@ -114,10 +114,8 @@ describe('FinancesModuleFT2 (FT2 Observability Snapshot)', () => {
   it('renders placeholder for null period (no empty strings)', () => {
     render(
       <FinancesModuleFT2
-        context={{
-          period: { from: '', to: '' } as any,
-          netObserved: null,
-        }}
+        {...baseProps}
+        context={{ ...baseProps.context, period: null }}
         outcome={null}
         trend={null}
         dataCoverage={null}

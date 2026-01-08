@@ -327,7 +327,6 @@ It sells:
 
 ## 19. Final Lock (Specter & Customers)
 
-* No FT3
 * No inference
 * No advice
 * No emotional language

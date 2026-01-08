@@ -19,6 +19,7 @@ type FinancesFt2Snapshot = {
       from: string;
       to: string;
     };
+    revenueObserved?: number | null;
     netObserved?: number | null;
   };
 
@@ -56,6 +57,10 @@ export function mapFinancesFt2Props(
        snapshot.context?.period === undefined
          ? null
          : snapshot.context.period,
+      revenueObserved:
+       snapshot.context?.revenueObserved === undefined
+         ? null
+         : snapshot.context.revenueObserved,
       netObserved:
         snapshot.context?.netObserved === undefined
           ? null

@@ -4,6 +4,7 @@ export interface FinancesFT2Exposure {
       from: string;
       to: string;
     };
+    revenueObserved: number | null;
     netObserved: number | null;
   };
 

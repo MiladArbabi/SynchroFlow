@@ -17,7 +17,6 @@ Any shortcut here:
 
 Therefore the system is built as **four hard layers** with **one-way flow only**.
 
-There is **no FT3**.
 FT2 is the highest possible resolution of truth.
 
 ---

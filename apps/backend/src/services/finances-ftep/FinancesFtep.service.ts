@@ -19,12 +19,15 @@ export function buildFinancesFtep(input: {
 }): FinancesFT2Exposure {
   const { facts, intelligence } = input;
 
+  const context = {
+    period: facts.period,
+    revenueObserved: facts.totalRevenue,
+    netObserved: facts.netResult,
+  };
+
   if (intelligence.netResult.status === 'unknown') {
     return {
-      context: {
-        period: facts.period,
-        netObserved: facts.netResult,
-      },
+      context,
       outcome: null,
       trend: null,
       dataCoverage: {
@@ -34,11 +37,7 @@ export function buildFinancesFtep(input: {
   }
 
   return {
-    context: {
-      period: facts.period,
-      netObserved: facts.netResult,
-    },
-
+    context,
     outcome: {
       status:
         intelligence.netResult.status === 'good'

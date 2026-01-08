@@ -362,7 +362,7 @@ If a future engineer tries to:
 * A **truth observability surface**
 * A **signal that something exists**
 * A **directionless snapshot**
-* A **safe primitive for future FT3 / AI layers**
+* A **safe primitive for future / AI layers**
 
 ### It Is NOT
 
@@ -402,6 +402,6 @@ This module can now safely:
 
 * Feed dashboards
 * Power readiness signals
-* Act as substrate for FT3 intelligence later
+* intelligence later
 
 Nothing more is allowed.

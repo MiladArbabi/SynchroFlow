@@ -8,6 +8,7 @@ export interface FinancesModuleFT2Props {
          to: string;
        }
      | null;
+    revenueObserved: number | null;
     netObserved: number | null;
   };
 
@@ -54,12 +55,16 @@ export default function FinancesModuleFT2(
       <section>
         <div>
           <strong>Period</strong>:{' '}
-          {context.period === null ||
-            context.period.from === '' ||
-            context.period.to === ''
-             ? '—'
-             : `${context.period.from} → ${context.period.to}`}
+          {context.period === null
+            ? '—'
+            : `${context.period.from} → ${context.period.to}`}
         </div>
+
+        <div>
+          <strong>Revenue observed</strong>:{' '}
+          {context.revenueObserved === null ? '—' : context.revenueObserved}
+        </div>
+
         <div>
           <strong>Net observed</strong>:{' '}
           {context.netObserved === null ? '—' : context.netObserved}

@@ -19,7 +19,7 @@ It does **not**:
 * Compensate for missing modules
 
 FT2 is the **highest vertical**.
-There is **no FT3**. Paid FT2 deepens truth; it does not add magic.
+. Paid FT2 deepens truth; it does not add magic.
 
 ---
 
