@@ -3,7 +3,7 @@
 // apps/frontend/src/pages/authentication/jwt/AuthRegister.tsx
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { axiosInstance as axios } from 'api/axiosConfig';
+import { axiosInstance } from 'api/axiosConfig';
 import { usePostHog } from '@posthog/react';
 
 // -- ANALYTICS 
@@ -143,7 +143,7 @@ export default function JWTRegister({ posthog, ...others }: AuthRegisterProps & 
             const trimmedEmail = values.email.trim();
             // await register?.(trimmedEmail, values.password, trimmedFirstName, trimmedLastName);
 
-            const response = await axios.post('/api/v1/auth/register', {
+            const response = await axiosInstance.post('/api/v1/auth/register', {
               firstName: trimmedFirstName,
               lastName: trimmedLastName,
               email: trimmedEmail,

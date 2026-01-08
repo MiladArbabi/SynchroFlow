@@ -9,6 +9,7 @@ import { issueAuthTokens } from './token.service';
 
 import { audit } from 'api-src/utils/audit';
 import { rateLimit } from 'api-src/utils/rateLimit';
+import { requireShopContextForUser, ResolvedShopContext } from 'api-src/services/shop-resolution.service';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -129,18 +130,20 @@ export const loginUser = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // --- Resolve active shop membership ---
-    const membership = await db('shop_memberships')
-      .where({
-        user_id: user.id,
-      })
-      .whereNull('revoked_at')
-      .first('shop_id', 'role');
+    let shopContext: ResolvedShopContext;
+    try {
+      shopContext = await requireShopContextForUser(user.id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'SHOP_RESOLUTION_FAILED';
 
-    if (!membership) {
-      return res.status(403).json({
-        error: 'NO_ACTIVE_SHOP_MEMBERSHIP',
-        action: 'CONTACT_SUPPORT',
+      if (msg.includes('SHOP_CONTEXT_REQUIRED')) {
+        return res.status(403).json({
+          error: 'NO_ACTIVE_SHOP_MEMBERSHIP',
+        });
+      }
+
+      return res.status(500).json({
+        error: msg,
       });
     }
 
@@ -161,10 +164,10 @@ export const loginUser = async (req: Request, res: Response) => {
     // SINGLE AUTHORITY FOR TOKEN ISSUANCE
     const { accessToken, refreshToken } = await issueAuthTokens({
       userId: user.id,
-      shopId: membership.shop_id,
+      shopId: shopContext.shopId,
       actorType: 'shop_user',
       authProvider: 'password',
-      shopRoles: [membership.role],
+      shopRoles: [shopContext.role],
       scopes: [],
       tokenVersion: 1,
     });
@@ -326,16 +329,24 @@ export const refreshToken = async (req: Request, res: Response) => {
     let newTokens: { refreshToken: any; accessToken: any; };
 
     try {
-      // 1️⃣ Issue FIRST (no DB mutation yet)
-      newTokens = await issueAuthTokens({
-        userId: user_id,
-        shopId: existingToken.shop_id,
-        actorType: 'shop_user',
-        authProvider: 'password',
-        shopRoles: [],
-        scopes: [],
-        tokenVersion: token_version ?? 1,
-      });
+      let shopContext: ResolvedShopContext;
+        try {
+          shopContext = await requireShopContextForUser(user_id);
+        } catch {
+          return res.status(403).json({
+            error: 'SHOP_CONTEXT_REQUIRED',
+          });
+        }
+
+        newTokens = await issueAuthTokens({
+          userId: user_id,
+          shopId: shopContext.shopId,
+          actorType: 'shop_user',
+          authProvider: 'password',
+          shopRoles: [],
+          scopes: [],
+          tokenVersion: token_version ?? 1,
+        });
     } catch (err) {
 
       audit({
