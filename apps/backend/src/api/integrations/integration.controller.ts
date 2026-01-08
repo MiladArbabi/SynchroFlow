@@ -29,25 +29,9 @@ import { audit } from 'api-src/utils/audit';
 import { rateLimit } from 'api-src/utils/rateLimit';
 import { requireAuth } from 'api-src/middleware/requireAuth';
 import { requireAuthStrict } from 'api-src/middleware/requireAuthStrict';
-
-class NoShopError extends Error {}
-async function requireShopId(req: Request): Promise<number> {
-  const { userId } = requireAuthStrict(req);
-
-  const user = await db<User>('users')
-    .where({ id: userId })
-    .first('shop_id');
-
-  if (!user) {
-    throw new Error('AUTH_INVARIANT_VIOLATION: user not found');
-  }
-
-  if (typeof user.shop_id !== 'number') {
-    throw new NoShopError('User has no shop');
-  }
-
-  return user.shop_id;
-}
+import {
+  requireShopContextForUser,
+} from 'api-src/services/shop-resolution.service';
 
 // --- Helper function for encryption ---
 const encryptToken = (token: string): string => {
@@ -323,19 +307,13 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   // --- Step 2.2.2.b: Persist integration atomically ---
   try {
     const result = await db.transaction(async trx => {
-      const user = await trx<User>('users')
-        .where({ id: oauthContext.userId })
-        .first();
-
-      if (!user || !user.shop_id) {
-        throw new Error('USER_SHOP_NOT_FOUND');
-      }
+      const { shopId } = await requireShopContextForUser(oauthContext.userId);
 
       const encryptedToken = encryptToken(shopifyAccessToken);
 
       const [integration] = await trx('integrations')
         .insert({
-          shop_id: user.shop_id,
+          shop_id: shopId,
           platform,
           platform_shop_name: oauthContext.shopDomain,
           access_token_encrypted: encryptedToken,
@@ -350,13 +328,13 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
         // 🔐 SINGLE SOURCE OF TRUTH FOR SHOPIFY TOKEN
        await trx('shopify_app_installations')
-         .insert({
-           shop_id: user.shop_id,
-           shop_domain: oauthContext.shopDomain,
-           access_token: encryptedToken,
-           scopes: 'read_products,read_orders,read_customers,read_inventory,read_fulfillments,write_script_tags',
-           installed_at: new Date(),
-         })
+        .insert({
+          shop_id: shopId,
+          shop_domain: oauthContext.shopDomain,
+          access_token: encryptedToken,
+          scopes: 'read_products,read_orders,read_customers,read_inventory,read_fulfillments,write_script_tags',
+          installed_at: new Date(),
+        })
          .onConflict(['shop_domain'])
          .merge({
            access_token: encryptedToken,
@@ -365,7 +343,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
       return {
         integration,
-        shopId: user.shop_id,
+        shopId,
       };
     });
 
@@ -451,21 +429,18 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
  */
 export const getSyncStatus = async (req: Request, res: Response) => {
   try {
+    const { userId } = requireAuthStrict(req);
+
     let shopId: number;
-
-      try {
-        shopId = await requireShopId(req);
-      } catch (err) {
-        if (err instanceof NoShopError) {
-          return res.status(200).json({
-            status: 'NOT_FOUND',
-            progress: { current: 0, total: 0, percentage: 0 },
-            lastError: null,
-          });
-        }
-
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+    try {
+      ({ shopId } = await requireShopContextForUser(userId));
+    } catch {
+      return res.status(200).json({
+        status: 'NOT_FOUND',
+        progress: { current: 0, total: 0, percentage: 0 },
+        lastError: null,
+      });
+    }
 
     // Find the primary Shopify integration for this shop
     // In the future, we might support multiple, but for MVP, we take the first.
@@ -556,10 +531,11 @@ export const preFlightCheck = async (req: Request, res: Response) => {
 export const triggerManualSync = async (req: Request, res: Response) => {
   try {
     const { integrationId } = req.params;
-    let shopId: number;
+    const { userId } = requireAuthStrict(req);
 
+    let shopId: number;
     try {
-      shopId = await requireShopId(req);
+      ({ shopId } = await requireShopContextForUser(userId));
     } catch {
       return res.status(403).json({ error: 'User shop not found.' });
     }

@@ -26,6 +26,7 @@ import {
 } from '@lasyncro/shared/activation';
 
 import { EntitlementsService } from 'api-src/services/entitlements.service';
+import { resolveShopIdForUser } from 'api-src/services/shop-resolution.service';
 import { buildActivationAuditEvent } from './buildActivationAuditEvent';
 
 import { FT0CompletionService } from 'api-src/services/ft0-completion.service';
@@ -35,27 +36,27 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;
 
   // --- Identity ---
-  let shopId: number | null = null;
   let entryChannel: 'SHOPIFY_APP' | 'WEB' | null = null;
+  let shopId: number | null = null;
 
   if (userId) {
+    // Resolve shop context (authoritative)
+    shopId = await resolveShopIdForUser(userId);
+
+    // entry_channel is USER-level, not shop-level
     const user = await db('users')
       .where({ id: userId })
-      .first('shop_id', 'entry_channel');
+      .first('entry_channel');
 
-    shopId = typeof user?.shop_id === 'number' ? user.shop_id : null;
     entryChannel = user?.entry_channel ?? null;
   }
 
+  // NOTE: role intentionally excluded from IdentitySnapshot (Activation v1)
+  // Role-based activation will be introduced in v2
   const identity: IdentitySnapshot = { userId, shopId, entryChannel };
 
   // --- Integrations ---
   let integrations: IntegrationSnapshot[] = [];
-
-    // --- Fact write: FT0 completion (idempotent) ---
-  if (shopId) {
-    await FT0CompletionService.evaluateAndComplete(shopId);
-  }
 
   if (shopId) {
     const rows = await db('integrations')

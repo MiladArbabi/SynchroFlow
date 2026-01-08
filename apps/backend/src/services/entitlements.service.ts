@@ -9,6 +9,7 @@
  */
 
 import db from '../db';
+import { requireShopIdForUser } from './shop-resolution.service';
 
 export interface EntitlementsSnapshot {
   shopId: number;
@@ -24,16 +25,13 @@ export class EntitlementsService {
    *  - Return a normalized snapshot (unique modules + flags)
    */
   static async getForUser(userId: number): Promise<EntitlementsSnapshot | null> {
-    // 1) Find the user and their shop
-    const user = await db('users')
-      .where({ id: userId })
-      .first();
-
-    if (!user || !user.shop_id) {
+    // 1) Authoritative shop resolution
+    let shopId: number;
+    try {
+      shopId = await requireShopIdForUser(userId);
+    } catch {
       return null;
     }
-
-    const shopId = user.shop_id as number;
 
     // 2) Load all entitlements for this shop
     const rows = await db('shop_module_entitlements')

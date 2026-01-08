@@ -6,6 +6,7 @@ import { resolveLifecyclePhase } from './lifecycle.resolver';
 import type { LifecyclePhase } from './lifecycle.contract';
 import { FT2CompletionService } from './ft2-completion.service';
 import { FT2LatchService } from './ft2-latch.service';
+import { resolveShopContextForUser } from './shop-resolution.service';
 
 export type UserLifecyclePhase =
   | 'FT_MINUS_ONE'
@@ -15,15 +16,15 @@ export type UserLifecyclePhase =
 
 export class LifecycleService {
   static async resolveForUser(userId: number): Promise<LifecyclePhase>{
-    // 1. Resolve user + shop
-    const user = await db('users').where({ id: userId }).first();
+    // 1. Resolve shop context (authoritative)
+    const shopContext = await resolveShopContextForUser(userId);
 
-    const hasShop = !!user?.shop_id;
-    if (!hasShop) {
+    if (!shopContext) {
       return 'FT_MINUS_ONE';
     }
 
-    const shopId = user.shop_id as number;
+    const { shopId } = shopContext;
+    const hasShop = true;
 
     // 2. Integrations
     const integrations = await db('integrations')
