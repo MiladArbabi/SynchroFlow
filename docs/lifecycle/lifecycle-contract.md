@@ -29,7 +29,13 @@ FT_MINUS_ONE → FT0 → FT1 → FT2
 * `LifecycleService.resolveForUser()` — canonical resolver
 * `user_lifecycle_snapshot` — persisted projection (not source of truth)
 
-Backend lifecycle is **capability-oriented** and **commercially aware** (FT2 = paid).
+Backend lifecycle is capability-oriented.
+
+FT2 is a backend capability latch that is:
+
+* Explicitly confirmed
+* Never auto-entered
+* Never inferred from eligibility, payment, or readiness alone
 
 ---
 
@@ -204,6 +210,26 @@ Explicitly excluded from FT0:
 * Customer success metrics
 
 Blocking FT0 on higher-order signals is explicitly forbidden.
+
+### 3.4 FT2 Promotion Constraint (Observed As-Is)
+
+FT2 is not entered automatically by the backend lifecycle resolver.
+
+Verified constraints (scan + tests):
+FT2 eligibility may be evaluated (FT2EvaluatorService)
+Eligibility alone does not change lifecycle phase
+Paid entitlements alone do not change lifecycle phase
+Backend lifecycle remains at FT1 until:
+An explicit FT2 confirmation action occurs
+A backend FT2 latch is written (ft2_state)
+This behavior is enforced by:
+LifecycleService.resolveForUser
+FT2CompletionService
+
+Unit tests:
+ft2.confirm.required.test.ts
+ft2.confirm.blocked.test.ts
+FT2 is therefore a confirmed capability, not a derived one.
 
 ---
 
@@ -614,6 +640,12 @@ FT1 is the **first and only gate** into the application.
 
 ## 11. Explicit Non-Claims
 
+This document explicitly excludes FT2 graduation mechanics.
+
+While FT2 exists as a backend lifecycle phase, its confirmation flow,
+eligibility evaluation, and routing behavior are intentionally treated
+as out-of-scope for this As-Is contract.
+
 This document does **not** define:
 
 * FT2 semantics
@@ -633,6 +665,7 @@ Any FT2 design **must** respect:
 * FT1 builds on FT0, not parallel to it
 * FT2 must **not** reuse frontend FT0 substates
 * FT2 must introduce a **new backend latch**, not inference
+* FT2 must introduce a new backend latch and require explicit confirmation
 
 Violating this breaks lifecycle monotonicity.
 

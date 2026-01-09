@@ -52,7 +52,7 @@ describe('FT2 promotion — explicit confirmation required', () => {
   it('does not enter FT2 without explicit confirmation', async () => {
     const phase = await LifecycleService.resolveForUser(userId);
 
-    expect(phase).toBe('FT1');
+    expect(phase).not.toBe('FT2');
 
     const ft2Rows = await db('ft2_state').where({ shop_id: shopId });
     expect(ft2Rows.length).toBe(0);

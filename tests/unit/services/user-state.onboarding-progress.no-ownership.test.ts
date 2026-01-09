@@ -27,9 +27,7 @@ describe('UserStateService.getOnboardingProgress — no ownership', () => {
     const detectTierSpy = jest.spyOn(UserStateService, 'detectOnboardingTier');
     const platformsSpy = jest.spyOn(UserStateService, 'getConnectedPlatforms');
 
-    // @ts-expect-error — intentional boundary enforcement
     const recommendationsSpy = jest.spyOn(UserStateService as any, 'getRecommendedNextSteps');
-    // @ts-expect-error — intentional boundary enforcement
     const featuresSpy = jest.spyOn(UserStateService as any, 'getUnlockedFeatures');
 
     // Act

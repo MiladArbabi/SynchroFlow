@@ -4,6 +4,7 @@ import { LifecycleService } from '../../services/lifecycle.service';
 import { LifecycleTransitionService } from 'api-src/services/lifecycle-transition.service';
 import { FT2EvaluatorService } from 'api-src/services/ft2-evaluator.service';
 import db from 'api-src/db';
+import { requireShopContextForUser } from 'api-src/services/shop-resolution.service';
 
 export async function getLifecycle(req: Request, res: Response) {
   try {
@@ -15,13 +16,19 @@ export async function getLifecycle(req: Request, res: Response) {
 
     const phase = await LifecycleService.resolveForUser(userId);
 
-    const shopId = (req.user as any).shop_id;
+    try {
+      const { shopId } = await requireShopContextForUser(userId);
 
-    if (shopId) {
       await LifecycleTransitionService.auditIfTransitioned({
         userId,
         shopId,
         currentPhase: phase,
+      });
+    } catch (err) {
+      console.info('[lifecycle][audit-skip]', {
+        userId,
+        reason: 'NO_SHOP_CONTEXT',
+        phase,
       });
     }
 
@@ -45,12 +52,7 @@ export async function getLifecycle(req: Request, res: Response) {
   
     const userId = req.user.userId;
 
-    const user = await db('users')
-      .where({ id: userId })
-      .select('shop_id')
-      .first();
-
-    const shopId = user?.shop_id;
+    const { shopId } = await requireShopContextForUser(userId);
 
     if (!shopId) {
       return res.status(400).json({
@@ -77,12 +79,7 @@ export async function confirmFt2(req: Request, res: Response) {
 
     const userId = req.user.userId;
 
-    const user = await db('users')
-      .where({ id: userId })
-      .select('shop_id')
-      .first();
-
-    const shopId = user?.shop_id;
+    const { shopId } = await requireShopContextForUser(userId);
 
     if (!shopId) {
       return res.status(400).json({ error: 'No shop associated with user' });
@@ -98,6 +95,10 @@ export async function confirmFt2(req: Request, res: Response) {
       });
     }
 
+    // intentionally omitted — audit service resolves prior phase
+    // 2. Capture previous lifecycle phase BEFORE FT2
+    /* const previousPhase = await LifecycleService.resolveForUser(userId); */
+
     // 2. Write FT2 latch (idempotent)
     await db('ft2_state')
       .insert({
@@ -109,16 +110,15 @@ export async function confirmFt2(req: Request, res: Response) {
       .onConflict('shop_id')
       .ignore();
 
-    // 3. Resolve lifecycle  audit transition
-    const phase = await LifecycleService.resolveForUser(userId);
-
+    // 3. Audit FT1 → FT2 explicitly
     await LifecycleTransitionService.auditIfTransitioned({
       userId,
       shopId,
-      currentPhase: phase,
+      currentPhase: 'FT2',
     });
 
-    return res.status(200).json({ phase });
+    // 4. Deterministic command response
+    return res.status(200).json({ phase: 'FT2' });
   } catch (err) {
     console.error('[lifecycle][ft2-confirm] failed', err);
     return res.status(500).json({ error: 'Failed to confirm FT2' });

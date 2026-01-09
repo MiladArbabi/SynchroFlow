@@ -24,6 +24,10 @@ jest.mock('api-src/services/lifecycle.service', () => ({
   },
 }));
 
+jest.mock('api-src/services/shop-resolution.service', () => ({
+  requireShopContextForUser: jest.fn().mockResolvedValue({ shopId: 10 }),
+}));
+
 describe('GET /api/v1/lifecycle (unit)', () => {
   const app = createLifecycleTestApp();
 

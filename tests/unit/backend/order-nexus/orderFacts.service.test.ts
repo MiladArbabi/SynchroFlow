@@ -19,6 +19,7 @@ jest.mock('api-db', () => {
 
   const chain = {
     where: () => chain,
+    whereNull: () => chain,
     andWhere: () => chain,
     select: () => chain,
     count: () => chain,

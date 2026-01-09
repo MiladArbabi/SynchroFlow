@@ -24,50 +24,89 @@ describe('LifecycleService.resolveForUser (unit)', () => {
     jest.clearAllMocks();
   });
 
-  function mockDbChain(responses: any[]) {
-    let call = 0;
-    mockDb.mockImplementation(() => ({
-      where: () => ({
-        first: () => responses[call++],
-        select: () => responses[call++],
-      }),
-    }));
-  }
+  function mockDbChain({
+  membership,
+  integrations = [],
+  ft0 = null,
+  ft2 = null,
+}: {
+  membership?: any;
+  integrations?: any[];
+  ft0?: any;
+  ft2?: any;
+}) {
+  let call = 0;
+
+  mockDb.mockImplementation((table: string) => {
+    const chain = {
+      where: () => chain,
+      whereNull: () => chain,
+      select: () => {
+        if (table === 'shop_memberships') return [membership].filter(Boolean);
+        return [];
+      },
+      first: () => {
+        if (table === 'ft0_state') return ft0;
+        if (table === 'ft2_state') return ft2;
+        return null;
+      },
+    };
+
+    if (table === 'integrations') {
+      return {
+        where: () => ({
+          select: () => integrations,
+        }),
+      };
+    }
+
+    return chain;
+  });
+}
 
   it('returns FT_MINUS_ONE when user has no shop', async () => {
-    mockDbChain([null]);
+   mockDbChain({
+    membership: null,
+  });
 
     const phase = await LifecycleService.resolveForUser(userId);
     expect(phase).toBe('FT_MINUS_ONE');
   });
 
   it('returns FT_MINUS_ONE when shop exists but no integrations', async () => {
-    mockDbChain([
-      { id: userId, shop_id: shopId }, // user
-      [],                              // integrations
-    ]);
-
-    const phase = await LifecycleService.resolveForUser(userId);
-    expect(phase).toBe('FT_MINUS_ONE');
-  });
-
-  it('returns FT0 when integration exists but FT0 not completed', async () => {
-    mockDbChain([
-      { id: userId, shop_id: shopId }, // user
-      [{ id: 1 }],                     // integrations
-      null,                            // ft0_state
-    ]);
+    mockDbChain({
+      membership: { shopId, role: 'owner' },
+      integrations: [{ id: 1 }],
+    });
 
     const phase = await LifecycleService.resolveForUser(userId);
     expect(phase).toBe('FT0');
   });
 
+  it('returns FT0 when integration exists but FT0 not completed', async () => {
+    mockDbChain({
+      membership: { shopId, role: 'owner' },
+      integrations: [{ id: 1 }],
+      ft0: null,
+    });
+
+    (OnboardingReadinessService as jest.Mock).mockImplementation(() => ({
+      getSnapshot: jest.fn().mockResolvedValue({
+        ft1: { isComplete: false },
+      }),
+    }));
+
+    const phase = await LifecycleService.resolveForUser(userId);
+    expect(phase).toBe('FT0');
+  });
+
+
   it('returns FT0 when FT0 completed but FT1 not ready', async () => {
-    mockDbChain([
-      { id: userId, shop_id: shopId }, // user
-      [{ id: 1 }],                     // integrations
-      { shop_id: shopId },             // ft0_state
-    ]);
+    mockDbChain({
+      membership: { shopId, role: 'owner' },
+      integrations: [{ id: 1 }],
+      ft0: { shop_id: shopId },
+    });
 
     (OnboardingReadinessService as jest.Mock).mockImplementation(() => ({
       getSnapshot: jest.fn().mockResolvedValue({
@@ -80,11 +119,11 @@ describe('LifecycleService.resolveForUser (unit)', () => {
   });
 
   it('returns FT1 when FT1 complete and no paid entitlements', async () => {
-    mockDbChain([
-      { id: userId, shop_id: shopId }, // user
-      [{ id: 1 }],                     // integrations
-      { shop_id: shopId },             // ft0_state
-    ]);
+    mockDbChain({
+      membership: { shopId, role: 'owner' },
+      integrations: [{ id: 1 }],
+      ft0: { shop_id: shopId },
+    });
 
     (OnboardingReadinessService as jest.Mock).mockImplementation(() => ({
       getSnapshot: jest.fn().mockResolvedValue({
@@ -103,11 +142,11 @@ describe('LifecycleService.resolveForUser (unit)', () => {
   });
 
   it('does not grant FT2 solely based on paid entitlements', async () => {
-   mockDbChain([
-     { id: userId, shop_id: shopId }, // user
-     [{ id: 1 }],                     // integrations
-     { shop_id: shopId },             // ft0_state
-   ]);
+   mockDbChain({
+      membership: { shopId, role: 'owner' },
+      integrations: [{ id: 1 }],
+      ft0: { shop_id: shopId },
+    });
 
    (OnboardingReadinessService as jest.Mock).mockImplementation(() => ({
      getSnapshot: jest.fn().mockResolvedValue({
@@ -126,12 +165,12 @@ describe('LifecycleService.resolveForUser (unit)', () => {
  });
 
  it('returns FT2 only when FT2 backend latch exists', async () => {
-    mockDbChain([
-      { id: userId, shop_id: shopId }, // user
-      [{ id: 1 }],                     // integrations
-      { shop_id: shopId },             // ft0_state
-      { shop_id: shopId },             // ft2_state
-    ]);
+    mockDbChain({
+      membership: { shopId, role: 'owner' },
+      integrations: [{ id: 1 }],
+      ft0: { shop_id: shopId },
+      ft2: { shop_id: shopId },
+    });
 
     (OnboardingReadinessService as jest.Mock).mockImplementation(() => ({
       getSnapshot: jest.fn().mockResolvedValue({

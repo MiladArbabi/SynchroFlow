@@ -25,7 +25,13 @@
 
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import db from '../../db';
+import db from 'api-src/db';
+
+console.log('[AUTH][ENV_CHECK]', {
+  JWT_SECRET: !!process.env.JWT_SECRET,
+  JWT_REFRESH_SECRET: !!process.env.JWT_REFRESH_SECRET,
+  NODE_ENV: process.env.NODE_ENV,
+});
 
 /**
  * Hash refresh tokens before persistence.
