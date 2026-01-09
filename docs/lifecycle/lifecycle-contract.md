@@ -233,6 +233,62 @@ FT2 is therefore a confirmed capability, not a derived one.
 
 ---
 
+### 3.5 Lifecycle Audit Emission (Observed As-Is)
+
+Backend lifecycle audits are emitted by:
+
+LifecycleTransitionService.auditIfTransitioned()
+
+This service records **observed lifecycle transitions** into:
+
+lifecycle_audit_events
+
+#### Verified audit behavior (scan + unit tests)
+
+* Audits are written **only for forward transitions**
+* Audits are **idempotent**
+* Audits are **never inferred**
+* Audits are **never backfilled**
+
+#### Explicit rules (as implemented)
+
+* FT_MINUS_ONE → FT0  
+  ❌ **Not audited**
+
+* FT0 → FT1  
+  ✅ **Audited exactly once**
+
+* FT1 → FT2  
+  ✅ **Audited exactly once**
+
+* Unchanged phase  
+  ❌ **Not audited**
+
+#### First-transition inference rule (critical)
+
+If no prior audit history exists and the resolved phase is **FT1**:
+
+* The system **infers `from_phase = FT0`**
+* An audit entry `FT0 → FT1` is written
+
+This inference exists because:
+
+* FT0 is a backend capability latch
+* FT0 itself is intentionally non-audited
+* FT1 is the **first observable lifecycle boundary**
+
+This behavior is:
+
+* Explicitly implemented
+* Unit-tested
+* Required to avoid a “first audit dead zone”
+
+Unit test coverage:
+
+* lifecycle.transition.service.test.ts
+
+---
+
 ## 4. Frontend FT0 — Transitional Runtime States
 
 FT0 is split **only in frontend runtime** into two substates.
@@ -568,18 +624,59 @@ This guarantees:
 
 ---
 
-## 8. FT0 Audit & Observability
+## 8. Lifecycle Audit & Observability (As-Is)
 
-FT0 completion emits:
+FT0 completion does **not** emit a standalone audit event.
 
-* A single `FT0_COMPLETED` audit event
+FT0 is intentionally **non-audited**.
+
+The **first auditable lifecycle event** is:
+
+* `FT0 → FT1`
+
+This transition is emitted:
+
 * Exactly once per shop
+* At the moment FT1 is first observed
+* Even if no prior audit history exists
+
+This preserves:
+
+* Audit monotonicity
+* Capability truth
+* Observability without speculative events
 
 This event:
 
 * Is idempotent
 * Is not replayed
 * Marks the first irreversible system readiness milestone
+
+## 8.1 FT1 → FT2 Audit (Scan-Verified)
+
+FT1 → FT2 emits an audit event **only** when:
+
+• FT2 eligibility is confirmed
+• An explicit FT2 confirmation action occurs
+• A backend FT2 latch is written (ft2_state)
+
+Verified properties:
+
+• Exactly one audit per user
+• Idempotent across repeated confirmations
+• Never emitted by:
+  – FT2 eligibility evaluation
+  – Paid entitlements
+  – Lifecycle resolution
+  – Frontend actions
+
+This behavior is enforced by:
+• LifecycleTransitionService
+• Database uniqueness constraints
+• Unit tests:
+  – ft2.confirm.audit.test.ts
+
+FT2 audit therefore represents **explicit graduation**, not inferred readiness.
 
 ---
 
@@ -591,6 +688,7 @@ This event:
 | Phase granularity | FT_MINUS_ONE / FT0 / FT1 / FT2 | FT_MINUS_ONE / FT0_SYNCING / FT0_PREPARING / FT1_READY |
 | Regression        | Possible by recomputation      | Impossible unless integration is deleted               |
 | FT2 meaning       | Paid capability                | Paywall overlay (not lifecycle)                        |
+| Audit emission   | Authoritative, backend-only   | None (never emits audits)                             |
 
 Frontend **never infers** backend lifecycle.
 It reacts only to backend-derived readiness signals.
@@ -1000,4 +1098,3 @@ It reflects reducer-level behavior that is:
 * Required for lifecycle monotonicity guarantees
 
 All future lifecycle work must respect this clarification.
-

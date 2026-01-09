@@ -15,6 +15,7 @@ import { financesOnboardingSignalProvider } from './providers/finances.provider'
 
 import { UserStateService } from '../services/user-state.service';
 import { deriveKnownCount } from './utils/deriveKnownCount';
+import { devReadinessOverrideProvider } from './providers/dev-readiness.provider';
 
 // canonical module IDs the provider will try to resolve (exported so tests can mock them)
  export const SPECTER_STORE_CANDIDATES = [
@@ -284,6 +285,8 @@ export const problemCenterOnboardingSignalProvider: OnboardingSignalProvider = {
 // Register providers
 // Register providers
 export const onboardingSignalProviders: OnboardingSignalProvider[] = [
+  devReadinessOverrideProvider, // Dev signal provider
+  
   platformOnboardingSignalProvider,
   orderNexusOnboardingSignalProvider,
   // existing sku-os provider if you already added it earlier:

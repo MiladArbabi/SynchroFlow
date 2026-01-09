@@ -28,7 +28,10 @@ export class LifecycleTransitionService {
     let previousPhase: UserLifecyclePhase =
       last?.to_phase ?? 'FT_MINUS_ONE';
 
-    let effectivePreviousPhase = previousPhase;
+    let effectivePreviousPhase =
+      !last && currentPhase === 'FT1'
+        ? 'FT0'
+        : previousPhase;
 
     // Backfill FT1 if jumping directly to FT2
     if (currentPhase === 'FT2' && previousPhase !== 'FT1') {

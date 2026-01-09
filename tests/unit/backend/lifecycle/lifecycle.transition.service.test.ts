@@ -113,4 +113,15 @@ describe('LifecycleTransitionService (unit)', () => {
 
     expect(insertSpy).toHaveBeenCalledTimes(1);
   });
+  it('writes audit when first transition is FT0 → FT1 with no prior audit history', async () => {
+    mockDbOnce({ lastPhase: null, existingTransition: false });
+
+    await LifecycleTransitionService.auditIfTransitioned({
+      userId,
+      shopId,
+      currentPhase: 'FT1',
+    });
+
+    expect(insertSpy).toHaveBeenCalledTimes(1);
+  });
 });
