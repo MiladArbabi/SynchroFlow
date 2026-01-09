@@ -8,6 +8,7 @@
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
 import { resolveActivationConfig } from 'activation/resolveActivationConfig';
+import { Outlet } from 'react-router-dom';
 
 import { useShopLifecycle } from './ShopLifecycleContext';
 
@@ -38,7 +39,11 @@ export function ShopLifecycleGate() {
       return <EmptyDashboardState />;
 
     case 'FT1_READY':
+      return <Outlet />;
+
     case 'FT2_READY':
+      // ❌ Do NOT render generic routes
+      // FT2 routes must be mounted explicitly elsewhere
       return null;
 
     default: {
