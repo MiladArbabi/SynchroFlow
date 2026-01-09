@@ -38,10 +38,10 @@ interface AppLayoutProps {
 
 const AppLayout = (props: AppLayoutProps) => {
   
-  console.error('[APP_LAYOUT] MOUNTED', {
+  /* console.error('[APP_LAYOUT] MOUNTED', {
     props,
     ts: performance.now(),
-  });
+  }); */
 
   // --- GET STATE & REF ---
   const { state, dispatch } = useConfig();

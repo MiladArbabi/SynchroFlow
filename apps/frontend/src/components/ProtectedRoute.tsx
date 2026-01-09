@@ -22,9 +22,9 @@ import { useAuth } from 'contexts/AuthContext';
 const ProtectedRoute: React.FC = () => {
   const { isLoggedIn, isLoading, accessToken } = useAuth();
 
-  if (import.meta.env.DEV) {
+  /* if (import.meta.env.DEV) {
     console.log('[ProtectedRoute]', { isLoading, isLoggedIn, hasToken: !!accessToken });
-  }
+  } */
 
   if (isLoading) {
     return (
@@ -38,8 +38,8 @@ const ProtectedRoute: React.FC = () => {
     return <Navigate to="/login" replace />;
   }
 
-  console.error('[PROTECTED_ROUTE] OUTLET RENDER');
-
+/*   console.error('[PROTECTED_ROUTE] OUTLET RENDER');
+ */
   return <Outlet />;
 };
 

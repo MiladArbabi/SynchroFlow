@@ -27,17 +27,23 @@ if (environment === 'production' && !process.env.DATABASE_URL) {
 // 4. Initialize Knex with the *correct* config
 const db = knex(dbConfig);
 
-// 5. Run the connection test (with better logging)
-// Skip this in test to avoid async logs after Jest teardown.
+// 5. Run the connection test + identity probe
 if (environment !== 'test') {
-  db.raw('SELECT 1+1 AS result')
-    .then(() => {
+  db.raw(`
+    select
+      current_database() as database,
+      inet_server_addr() as host,
+      inet_server_port() as port
+  `)
+    .then((r) => {
       console.log(`Database connected successfully in ${environment} mode.`);
+      console.log('[DB_IDENTITY]', r.rows[0]);
     })
     .catch((err) => {
       console.error('!!!!!!!!!!!! DATABASE CONNECTION FAILED !!!!!!!!!!!!');
       console.error(err);
     });
 }
+
 
 export default db;

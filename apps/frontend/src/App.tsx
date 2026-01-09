@@ -113,11 +113,11 @@ function PublicAppShell() {
 function AuthenticatedAppShell() {
   const { isLoading, isLoggedIn } = useAuth();
   
-  console.error('[AUTH_APP_SHELL] render', {
+  /* console.error('[AUTH_APP_SHELL] render', {
     isLoading,
     isLoggedIn,
     ts: performance.now(),
-  });
+  }); */
 
   if (isLoading || !isLoggedIn) return null;
 
