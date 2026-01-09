@@ -1,69 +1,132 @@
 // apps/backend/seeds/dev_seed.ts
-import type { Knex } from "knex";
+import type { Knex } from 'knex';
 import bcrypt from 'bcrypt';
 
+/**
+ * DEV SEED — IDENTITY-AWARE
+ * ------------------------
+ *
+ * This seed is intentionally strict.
+ *
+ * Auth in SynchroFlow REQUIRES:
+ *   user
+ * + shop
+ * + active shop_membership
+ *
+ * Creating users without memberships is a VALID state
+ * but those users MUST NOT be able to log in.
+ *
+ * Use DEV_SEED_MODE=full_identity
+ * if you explicitly want a loginable dev user.
+ */
+
+const DEV_USER_EMAIL = 'test@example.com';
+const DEV_USER_PASSWORD = 'password123';
+
 export async function seed(knex: Knex): Promise<void> {
-    // --- Deletes ALL existing entries ---
-    // Use raw SQL for TRUNCATE with CASCADE if needed, or delete in reverse order
-    console.log("Seeding: Deleting existing data...");
-    await knex('order_line_items').del();
-    await knex('order_fulfillment_status').del(); // Delete child tables first
-    await knex('users').del(); 
-    await knex('shops').del(); // Delete shops after other tables
+  console.log('────────────────────────────────────────');
+  console.log('[DEV_SEED] Starting development seed');
+  console.log('[DEV_SEED] Mode:', process.env.DEV_SEED_MODE ?? 'safe');
+  console.log('────────────────────────────────────────');
 
-    // --- Seed Shops ---
-    console.log("Seeding: Inserting shops...");
-    const [shop] = await knex('shops').insert([
-        {
-            // You might want more shops, or more realistic data
-            name: 'Default Dev Shop',
-            contact_email: 'dev@shop.com',
-            auth_secret: 'dev_secret',
-            primary_erp_type: 'ERP_TYPE', // Adjust as needed
-            primary_ecomm_type: 'Shopify', // Adjust as needed
-            platform: 'Shopify' // Adjust as needed
-        }
-    ]).returning('*'); // Get the created shop object, including its ID
+  /**
+   * 1️⃣ CLEAN DATABASE (ORDER MATTERS)
+   * --------------------------------
+   * We delete from leaf tables upward to avoid FK issues.
+   */
+  console.log('[DEV_SEED] Clearing existing data…');
 
-    if (!shop) {
-        console.error("Seeding: Failed to insert shop!");
-        return;
-    }
-    console.log(`Seeding: Created shop with ID ${shop.id}`);
+  await knex('order_line_items').del();
+  await knex('order_fulfillment_status').del();
+  await knex('shop_memberships').del();
+  await knex('users').del();
+  await knex('shops').del();
 
-    // --- Seed Order Fulfillment Statuses ---
-    console.log("Seeding: Inserting order fulfillment statuses...");
-    await knex('order_fulfillment_status').insert([
-        { shop_id: shop.id, order_id: '1001', status: 'processing' },
-        { shop_id: shop.id, order_id: '1002', status: 'in_transit' },
-        { shop_id: shop.id, order_id: '1003', status: 'delivered' }, // Add more examples
-        { shop_id: shop.id, order_id: '1004', status: 'cancelled' },
-    ]);
+  /**
+   * 2️⃣ CREATE SHOP
+   * --------------
+   * A shop is required for ANY meaningful activity.
+   */
+  console.log('[DEV_SEED] Creating dev shop…');
 
-    // --- ADD TEST USER ---
-    console.log('Seeding: Adding test user...');
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash('password123', saltRounds);
+  const [shop] = await knex('shops')
+    .insert({
+      name: 'Default Dev Shop',
+      contact_email: 'dev@shop.com',
+      auth_secret: 'dev_secret',
+      primary_erp_type: 'none',
+      primary_ecomm_type: 'none',
+      platform: 'Shopify',
+    })
+    .returning('*');
 
-    await knex('users').insert({
-        shop_id: shop.id,
-        email: 'test@example.com',
-        password_hash: passwordHash,
-        first_name: 'Test',
-        last_name: 'User',
-    }).onConflict('email').ignore(); // Ignore if user already exists
-    // --- END ADD TEST USER ---
+  if (!shop) {
+    throw new Error('[DEV_SEED] Failed to create shop');
+  }
 
-    // --- Seed Other Tables (Optional) ---
-    // Add inserts for inventory_truth, historical_sales, etc. if needed
-    // Example:
-    /*
-    console.log("Seeding: Inserting inventory...");
-    await knex('inventory_truth').insert([
-        { sku: 'SF-TS-BLK-M', shop_id: shop.id, quantity_available: 150, price: 25.00, warehouse_location: 'WH-A' },
-        // ... more inventory items
-    ]);
-    */
+  console.log(`[DEV_SEED] Shop created (id=${shop.id})`);
 
-    console.log("Seeding: Completed successfully.");
-};
+  /**
+   * 3️⃣ CREATE USER (NO MAGIC)
+   * ------------------------
+   * Users alone are NOT a valid identity.
+   */
+  console.log('[DEV_SEED] Creating dev user…');
+
+  const passwordHash = await bcrypt.hash(DEV_USER_PASSWORD, 10);
+
+  const [user] = await knex('users')
+    .insert({
+      email: DEV_USER_EMAIL,
+      password_hash: passwordHash,
+      first_name: 'Test',
+      last_name: 'User',
+    })
+    .returning('*');
+
+  if (!user) {
+    throw new Error('[DEV_SEED] Failed to create user');
+  }
+
+  console.log(`[DEV_SEED] User created (id=${user.id}, email=${user.email})`);
+
+  /**
+   * 4️⃣ OPTIONALLY CREATE MEMBERSHIP
+   * -------------------------------
+   * This is the ENTIRE difference between:
+   *  - "login works"
+   *  - "403 NO_ACTIVE_SHOP_MEMBERSHIP"
+   */
+  if (process.env.DEV_SEED_MODE === 'full_identity') {
+    console.log('[DEV_SEED] Creating ACTIVE shop membership (OWNER)…');
+
+    await knex('shop_memberships').insert({
+      shop_id: shop.id,
+      user_id: user.id,
+      role: 'owner',
+    });
+
+    console.log('[DEV_SEED] ✅ Full identity seeded');
+    console.log('[DEV_SEED] → This user CAN log in');
+  } else {
+    console.log('[DEV_SEED] ⚠️ No shop membership created');
+    console.log('[DEV_SEED] → This user CANNOT log in');
+  }
+
+  /**
+   * 5️⃣ OPTIONAL DOMAIN DATA
+   * -----------------------
+   * These do NOT affect auth. They are safe.
+   */
+  console.log('[DEV_SEED] Seeding example order data…');
+
+  await knex('order_fulfillment_status').insert([
+    { shop_id: shop.id, order_id: '1001', status: 'processing' },
+    { shop_id: shop.id, order_id: '1002', status: 'in_transit' },
+    { shop_id: shop.id, order_id: '1003', status: 'delivered' },
+  ]);
+
+  console.log('────────────────────────────────────────');
+  console.log('[DEV_SEED] Completed successfully');
+  console.log('────────────────────────────────────────');
+}
