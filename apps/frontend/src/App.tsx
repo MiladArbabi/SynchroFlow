@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/
 import React from "react";
@@ -26,8 +25,7 @@ import { AuthProvider } from 'contexts/AuthContext';
 import { ShopLifecycleShell } from "lifecycle/ShopLifecycleShell";
 import { ShopLifecycleGate } from "lifecycle/ShopLifecycleGate";
 import { LifecycleProvider } from "lifecycle/LifecycleProvider";
-import { useIntegration } from "contexts/integration/useIntegration";
-import AuthBootstrapGate from "runtime/AuthBootstrapGate";
+
 import AnalyticsPage from "pages/AnalyticsPage";
 import CustomersPage from "pages/CustomersPage";
 import { DashboardPage } from "pages/DashboardPage";
@@ -76,31 +74,6 @@ class IntlErrorBoundary extends React.Component<
     return this.props.children;
   }
 };
-
-function LifecycleGate() {
-  const integration = useIntegration();
-
-  if (import.meta.env.DEV) {
-    console.debug('[APP_LIFECYCLE_GATE]', {
-      isResolved: integration.isResolved,
-      existence: integration.existence,
-      ts: performance.now(),
-    });
-  }
-
-  // 🔒 Hard gate: lifecycle must not mount until integration is authoritative
-  if (!integration.isResolved) {
-    return null;
-  }
-
-  return (
-    <LifecycleProvider>
-      <ShopLifecycleShell>
-        <ShopLifecycleGate />
-      </ShopLifecycleShell>
-    </LifecycleProvider>
-  );
-}
 
 function PublicAppShell() {
   return (

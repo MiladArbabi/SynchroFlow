@@ -1,17 +1,11 @@
-import React from 'react';
-import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
+// apps/frontend/src/pages/DashboardPage.tsx
+//
+// Lifecycle-agnostic Dashboard entry.
+// Lifecycle routing is handled exclusively by ShopLifecycleGate.
 
+import React from 'react';
 import { DashboardPageFT1 } from './DashboardPageFT1';
-import { DashboardPageFT2 } from './DashboardPageFT2';
 
 export const DashboardPage: React.FC = () => {
-  const { phase } = useShopLifecycle();
-
-  if (phase === 'FT2_READY') {
-    return <DashboardPageFT2 />;
-  }
-
-  return (
-     <DashboardPageFT1 />
-  );
+  return <DashboardPageFT1 />;
 };

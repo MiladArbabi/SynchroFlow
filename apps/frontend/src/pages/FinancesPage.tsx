@@ -1,65 +1,121 @@
 // apps/frontend/src/pages/FinancesPage.tsx
+//
+// FinancesPage
+// ------------
+// Lifecycle-agnostic Finances surface.
+//
+// HARD CONTRACT:
+// - This page MUST NOT read lifecycle state
+// - This page MUST NOT decide whether it should exist
+// - Lifecycle gating is handled exclusively by ShopLifecycleGate
+//
+// RESPONSIBILITIES:
+// - Gate data fetching via explicit booleans
+// - Render FT1 or FT2 Finances modules based on available data
+// - Remain silent about lifecycle state in user-facing UI
+
 import { FinancesModule, FinancesModuleFT2 } from '@lasyncro/finances';
-import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
-import { mapFinancesFt1Props } from './finances/useFinancesFt1Adapter';
-import { mapFinancesFt2Props } from './finances/useFinancesFt2Adapter';
-import { useFinancesAhaAdapter } from 'wiring/financesAhaAdapter';
+
+import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useFinancesFt2Snapshot } from './finances/useFinancesFt2Snapshot';
 
+import { mapFinancesFt1Props } from './finances/useFinancesFt1Adapter';
+import { mapFinancesFt2Props } from './finances/useFinancesFt2Adapter';
+
+import { useFinancesAhaAdapter } from 'wiring/financesAhaAdapter';
+
+const __DEV__ = import.meta.env.DEV;
+
 export default function FinancesPage() {
-  const { phase } = useShopLifecycle();
+  /**
+   * Auth context
+   * ------------
+   * shopId is the ONLY external precondition for this page.
+   */
   const { user } = useAuth();
   const shopId = user?.shop_id ?? null;
+
+  /**
+   * Intents
+   */
   const onIntent = useFinancesAhaAdapter();
 
-  const isFt1 = phase === 'FT1_READY';
-  const isFt2 = phase === 'FT2_READY';
+  /**
+   * Data gating
+   */
+  const ft1Enabled = !!shopId;
+  const ft2Enabled = !!shopId;
 
-  const ft1Enabled = isFt1 && !!shopId;
-  const ft2Enabled = isFt2 && !!shopId;
+  /**
+   * FT2 snapshot (authoritative)
+   */
+  const ft2Query = useFinancesFt2Snapshot(ft2Enabled);
 
+  /**
+   * FT1 onboarding readiness
+   */
   const readinessQuery = useOnboardingReadiness(
     ft1Enabled,
     shopId ?? 0
   );
 
-  const ft2Query = useFinancesFt2Snapshot(ft2Enabled);
-
-  // ---- FT2 routing ----
-  if (isFt2) {
-    if (!ft2Query.isSuccess) {
-      console.debug('[FinancesPage][FT2] awaiting FT2 snapshot', {
-        phase,
-        shopId,
+  /**
+   * FT2 rendering path (authoritative)
+   */
+  if (ft2Query.isSuccess) {
+    if (__DEV__) {
+      console.debug('[FinancesPage][FT2] rendering FinancesModuleFT2', {
+        snapshot: ft2Query.data,
       });
-      return <div>Loading finances…</div>;
     }
 
     const ft2Props = mapFinancesFt2Props(ft2Query.data);
-
-    console.debug('[FinancesPage][FT2] rendering FinancesModuleFT2', {
-      snapshot: ft2Query.data,
-    });
-
     return <FinancesModuleFT2 {...ft2Props} />;
   }
 
-  // ---- Rendering gates ONLY ----
-  if (!isFt1) {
-    return <div>Finances not available (phase: {phase})</div>;
-  }
-
-  if (!shopId) {
-    return <div>Finances not available (no shopId)</div>;
-  }
-
-  if (!readinessQuery.isSuccess) {
+  /**
+   * FT2 loading (neutral)
+   */
+  if (ft2Query.isLoading) {
+    if (__DEV__) {
+      console.debug('[FinancesPage][FT2] awaiting snapshot');
+    }
     return <div>Loading finances…</div>;
   }
 
+  /**
+   * Missing shopId (neutral fallback)
+   */
+  if (!shopId) {
+    return <div>Finances unavailable</div>;
+  }
+
+  /**
+   * FT1 readiness loading
+   */
+  if (!readinessQuery.isSuccess) {
+    if (__DEV__) {
+      console.debug('[FinancesPage][FT1] awaiting onboarding readiness');
+    }
+    return <div>Loading finances…</div>;
+  }
+
+  /**
+   * FT1 rendering path
+   */
   const financesProps = mapFinancesFt1Props(readinessQuery.data);
 
-  return <FinancesModule {...financesProps} onIntent={onIntent} />;
+  if (__DEV__) {
+    console.debug('[FinancesPage][FT1] rendering FinancesModule', {
+      readiness: readinessQuery.data,
+    });
+  }
+
+  return (
+    <FinancesModule
+      {...financesProps}
+      onIntent={onIntent}
+    />
+  );
 }

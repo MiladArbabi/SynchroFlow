@@ -1,69 +1,121 @@
 // apps/frontend/src/pages/ProductsPage.tsx
+//
+// ProductsPage
+// ------------
+// Lifecycle-agnostic Products surface.
+//
+// HARD CONTRACT:
+// - This page MUST NOT read lifecycle state
+// - This page MUST NOT decide whether it should exist
+// - Lifecycle gating is handled exclusively by ShopLifecycleGate
+//
+// RESPONSIBILITIES:
+// - Gate data fetching via explicit booleans
+// - Render FT1 or FT2 Products modules based on available data
+// - Remain silent about lifecycle state in user-facing UI
+
 import { ProductsModule, ProductsModuleFT2 } from '@lasyncro/products';
-import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useAuth } from 'contexts/AuthContext';
-import { mapProductsFt1Props } from './products/useProductsFt1Adapter';
-import { mapProductsFt2Props } from './products/useProductsFt2Adapter';
-import { useProductsAhaAdapter } from 'wiring/productsAhaAdapter';
+
+import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useProductsFt2Snapshot } from './products/useProductsFt2Snapshot';
 
+import { mapProductsFt1Props } from './products/useProductsFt1Adapter';
+import { mapProductsFt2Props } from './products/useProductsFt2Adapter';
+
+import { useProductsAhaAdapter } from 'wiring/productsAhaAdapter';
+
+const __DEV__ = import.meta.env.DEV;
+
 export default function ProductsPage() {
-  const { phase } = useShopLifecycle();
+  /**
+   * Auth context
+   * ------------
+   * shopId is the ONLY external precondition for this page.
+   */
   const { user } = useAuth();
   const shopId = user?.shop_id ?? null;
-  const onIntent = useProductsAhaAdapter();
-
-  const isFt1 = phase === 'FT1_READY';
-  const isFt2 = phase === 'FT2_READY';
-
-  const enabled = isFt1 && !!shopId;
-  const ft2Enabled = isFt2 && !!shopId;
 
   /**
-   * FT2 Products Snapshot (Authoritative)
-   * ------------------------------------
-   * Hook must be called unconditionally.
-   * Fetching is gated via `enabled`.
+   * Intents
+   */
+  const onIntent = useProductsAhaAdapter();
+
+  /**
+   * Data gating
+   */
+  const ft1Enabled = !!shopId;
+  const ft2Enabled = !!shopId;
+
+  /**
+   * FT2 snapshot (authoritative)
    */
   const ft2Query = useProductsFt2Snapshot(ft2Enabled);
 
+  /**
+   * FT1 onboarding readiness
+   */
   const readinessQuery = useOnboardingReadiness(
-    enabled,
+    ft1Enabled,
     shopId ?? 0
   );
 
-  if (isFt2) {
-    if (!ft2Query.isSuccess) {
-      console.debug('[ProductsPage][FT2] awaiting FT2 snapshot', {
-        phase,
-        shopId,
+  /**
+   * FT2 rendering path (authoritative)
+   */
+  if (ft2Query.isSuccess) {
+    if (__DEV__) {
+      console.debug('[ProductsPage][FT2] rendering ProductsModuleFT2', {
+        snapshot: ft2Query.data,
       });
-      return <div>Loading products…</div>;
     }
 
-   const ft2Props = mapProductsFt2Props(ft2Query.data);
-
-    console.debug('[ProductsPage][FT2] rendering FT2 ProductsModule', {
-      snapshot: ft2Query.data,
-   });
-
+    const ft2Props = mapProductsFt2Props(ft2Query.data);
     return <ProductsModuleFT2 {...ft2Props} />;
   }
 
-  if (!isFt1) {
-    return <div>Products not available (phase: {phase})</div>;
-  }
-
-  if (!shopId) {
-    return <div>Products not available (no shopId)</div>;
-  }
-
-  if (!readinessQuery.isSuccess) {
+  /**
+   * FT2 loading (neutral)
+   */
+  if (ft2Query.isLoading) {
+    if (__DEV__) {
+      console.debug('[ProductsPage][FT2] awaiting snapshot');
+    }
     return <div>Loading products…</div>;
   }
 
+  /**
+   * Missing shopId (neutral fallback)
+   */
+  if (!shopId) {
+    return <div>Products unavailable</div>;
+  }
+
+  /**
+   * FT1 readiness loading
+   */
+  if (!readinessQuery.isSuccess) {
+    if (__DEV__) {
+      console.debug('[ProductsPage][FT1] awaiting onboarding readiness');
+    }
+    return <div>Loading products…</div>;
+  }
+
+  /**
+   * FT1 rendering path
+   */
   const props = mapProductsFt1Props(readinessQuery.data);
 
-  return <ProductsModule {...props} onIntent={onIntent} />;
+  if (__DEV__) {
+    console.debug('[ProductsPage][FT1] rendering ProductsModule', {
+      readiness: readinessQuery.data,
+    });
+  }
+
+  return (
+    <ProductsModule
+      {...props}
+      onIntent={onIntent}
+    />
+  );
 }

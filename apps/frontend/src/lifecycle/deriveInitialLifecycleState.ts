@@ -1,5 +1,3 @@
-//apps/frontend/src/lifecycle/deriveInitialLifecycleState.ts
-
 import { LifecycleState, initialLifecycleState } from './lifecycleTypes';
 
 type Input = {
@@ -13,13 +11,13 @@ export function deriveInitialLifecycleState(
 ): LifecycleState {
   if (!shopId) return initialLifecycleState;
 
-  /* const ft2Sealed =
-    localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true'; */
-    
+  const ft2Sealed =
+    localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true';
+
   const ft1Sealed =
     localStorage.getItem(`shop:${shopId}:ft1-seen`) === 'true';
 
-/*   // FT2 dominates everything
+  // 🔒 FT2 DOMINATES EVERYTHING
   if (ft2Sealed && input.bootResolved && input.integrationExists) {
     return {
       ...initialLifecycleState,
@@ -31,9 +29,9 @@ export function deriveInitialLifecycleState(
       hasSeenFT0: true,
       ft0DwellCompleted: true,
     };
-  } */
+  }
 
-  // FT1 sealed
+  // FT1 (only if FT2 not sealed)
   if (ft1Sealed && input.bootResolved && input.integrationExists) {
     return {
       ...initialLifecycleState,

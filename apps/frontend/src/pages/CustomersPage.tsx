@@ -1,76 +1,122 @@
-import { SpecterModule } from '@lasyncro/specter';
-import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
-import { useAuth } from 'contexts/AuthContext';
-import { mapSpecterFt1Props } from './customers/useSpecterFt1Adapter';
-import { useSpecterAhaAdapter } from 'wiring/specterAhaAdapter';
+// apps/frontend/src/pages/CustomersPage.tsx
+//
+// CustomersPage
+// -------------
+// Lifecycle-agnostic Customers surface.
+//
+// HARD CONTRACT:
+// - This page MUST NOT read lifecycle state
+// - This page MUST NOT decide whether it should exist
+// - Lifecycle gating is handled exclusively by ShopLifecycleGate
+//
+// RESPONSIBILITIES:
+// - Gate data fetching via explicit booleans
+// - Render FT1 or FT2 Customers modules based on available data
+// - Remain silent about lifecycle state in user-facing UI
 
+import { SpecterModule } from '@lasyncro/specter';
 import { CustomersModuleFT2 } from '@lasyncro/customers';
-import { mapCustomersFt2Props } from './customers/useCustomersFt2Adapter';
+import { useAuth } from 'contexts/AuthContext';
+
+import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
 import { useCustomersFt2Snapshot } from './customers/useCustomersFt2Snapshot';
 
+import { mapSpecterFt1Props } from './customers/useSpecterFt1Adapter';
+import { mapCustomersFt2Props } from './customers/useCustomersFt2Adapter';
+
+import { useSpecterAhaAdapter } from 'wiring/specterAhaAdapter';
+
+const __DEV__ = import.meta.env.DEV;
+
 export default function CustomersPage() {
-  const { phase } = useShopLifecycle();
+  /**
+   * Auth context
+   * ------------
+   * shopId is the ONLY external precondition for this page.
+   */
   const { user } = useAuth();
   const shopId = user?.shop_id ?? null;
+
+  /**
+   * Intents
+   */
   const onIntent = useSpecterAhaAdapter();
 
-  const isFt1 = phase === 'FT1_READY';
-  const isFt2 = phase === 'FT2_READY';
-  
-  const enabled = isFt1 && !!shopId;
-  const ft2Enabled = isFt2 && !!shopId;
+  /**
+   * Data gating
+   */
+  const ft1Enabled = !!shopId;
+  const ft2Enabled = !!shopId;
 
+  /**
+   * FT2 snapshot (authoritative)
+   */
+  const ft2Query = useCustomersFt2Snapshot(ft2Enabled);
+
+  /**
+   * FT1 onboarding readiness
+   */
   const readinessQuery = useOnboardingReadiness(
-    enabled,
+    ft1Enabled,
     shopId ?? 0
   );
 
   /**
-   * FT2 Customers Snapshot (Authoritative)
-   * ------------------------------------
-   * Hook MUST be called unconditionally (React rules).
-   * Fetching is gated strictly via `ft2Enabled`.
-   *
-   * Guarantees:
-   * - No fetch outside FT2_READY
-   * - Backend owns period
-   * - No inference or defaults here
+   * FT2 rendering path (authoritative)
    */
-  const ft2Query = useCustomersFt2Snapshot(ft2Enabled);
-
-  if (isFt2) {
-    console.debug('[CustomersPage][FT2] awaiting FT2 snapshot', {
-        phase,
-        shopId,
+  if (ft2Query.isSuccess) {
+    if (__DEV__) {
+      console.debug('[CustomersPage][FT2] rendering CustomersModuleFT2', {
+        snapshot: ft2Query.data,
       });
-
-    if (!ft2Query.isSuccess) {
-      return <div>Loading customer observability…</div>;
     }
 
     const ft2Props = mapCustomersFt2Props(ft2Query.data);
-
-    console.debug('[CustomersPage][FT2] rendering CustomersModuleFT2', {
-      snapshot: ft2Query.data,
-    });
-
     return <CustomersModuleFT2 {...ft2Props} />;
   }
 
-  if (!isFt1) {
-    return <div>Customers not available (phase: {phase})</div>;
+  /**
+   * FT2 loading (neutral)
+   */
+  if (ft2Query.isLoading) {
+    if (__DEV__) {
+      console.debug('[CustomersPage][FT2] awaiting snapshot');
+    }
+    return <div>Loading customers…</div>;
   }
 
+  /**
+   * Missing shopId (neutral fallback)
+   */
   if (!shopId) {
-    return <div>Customers not available (no shopId)</div>;
+    return <div>Customers unavailable</div>;
   }
 
+  /**
+   * FT1 readiness loading
+   */
   if (!readinessQuery.isSuccess) {
-    return <div>Loading customer signals…</div>;
+    if (__DEV__) {
+      console.debug('[CustomersPage][FT1] awaiting onboarding readiness');
+    }
+    return <div>Loading customers…</div>;
   }
 
+  /**
+   * FT1 rendering path
+   */
   const specterProps = mapSpecterFt1Props(readinessQuery.data);
 
-  return <SpecterModule {...specterProps} onIntent={onIntent} />;
+  if (__DEV__) {
+    console.debug('[CustomersPage][FT1] rendering SpecterModule', {
+      readiness: readinessQuery.data,
+    });
+  }
+
+  return (
+    <SpecterModule
+      {...specterProps}
+      onIntent={onIntent}
+    />
+  );
 }
