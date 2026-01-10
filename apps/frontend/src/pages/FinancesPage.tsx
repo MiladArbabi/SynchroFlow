@@ -7,11 +7,9 @@
 // HARD CONTRACT:
 // - This page MUST NOT read lifecycle state
 // - This page MUST NOT decide whether it should exist
-// - This page MUST NOT render FT2 modules
 // - Lifecycle gating is handled exclusively by ShopLifecycleGate
 //
 // RESPONSIBILITIES:
-// - Render FT1 Finances module only
 // - Gate data fetching via explicit booleans
 // - Remain silent about lifecycle state in user-facing UI
 

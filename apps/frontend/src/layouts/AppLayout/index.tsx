@@ -19,6 +19,7 @@ import { Outlet } from 'react-router-dom';
 import useConfig from 'hooks/useConfig';
 
 import { ToastProvider } from 'contexts/ToastContext';
+import { Ft1Outlet } from "lifecycle/Ft1Outlet";
 
 // Define simple styles for the handles
 const handleStyle = { width: "4px", background: "#e0e0e0" };
@@ -177,9 +178,15 @@ const AppLayout = (props: AppLayoutProps) => {
                   <Box sx={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
                     <PanelGroup direction="vertical">
                       {/* Workspace Panel (Outlet) */}
-                      <Panel defaultSize={75} minSize={50} order={1}> {/* Define order */}
+                      <Panel defaultSize={75} minSize={50} order={1}>
                         <Box sx={{ height: "100%", width: "100%", overflowY: "auto", position: "relative" }}>
-                         {props.children}
+
+                          {/* Module content */}
+                          {props.children}
+
+                          {/* FT1 global promotion + checklist (stable position) */}
+                          <Ft1Outlet />
+
                         </Box>
                       </Panel>
 

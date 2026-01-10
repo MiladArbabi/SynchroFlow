@@ -1,7 +1,32 @@
+// apps/frontend/src/lifecycle/LifecycleRouteHost.tsx
+//
+// LifecycleRouteHost
+// ------------------
+// Authoritative router for ALL lifecycle phases.
+//
+// CORE PRINCIPLE:
+// - Lifecycle phase decides WHICH PAGES exist
+// - Pages themselves are lifecycle-agnostic
+// - FT1 and FT2 MUST NOT share the same page
+//
+// WHY THIS EXISTS:
+// - Prevent mixed FT1 + FT2 UI states
+// - Avoid additive rendering bugs
+// - Ensure clean mount / unmount boundaries
+//
+// HARD CONTRACTS:
+// - FT1_READY → FT1 pages ONLY
+// - FT2_READY → FT2 pages ONLY
+// - Pages MUST NOT inspect lifecycle
+// - Routing is the single source of truth
+//
+// If this file becomes complex, the architecture is broken.
+
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
+// FT1 pages (diagnostic / onboarding surfaces)
 import { DashboardPage } from 'pages/DashboardPage';
 import OrdersPage from 'pages/OrdersPage';
 import ProductsPage from 'pages/ProductsPage';
@@ -9,15 +34,35 @@ import CustomersPage from 'pages/CustomersPage';
 import AnalyticsPage from 'pages/AnalyticsPage';
 import FinancesPage from 'pages/FinancesPage';
 
+// FT2 pages (observability / governed truth surfaces)
+import OrdersFT2Page from 'pages/OrdersFT2Page';
+// NOTE:
+// - Other FT2 pages will be added explicitly when ready
+// - Never reuse FT1 pages for FT2
+
 export function LifecycleRouteHost() {
   const { phase } = useShopLifecycle();
 
-  // 🔒 FT_MINUS_ONE + FT0 → NO ROUTES EXIST
-  if (phase === 'FT_MINUS_ONE' || phase === 'FT0_PREPARING' || phase === 'FT0_SYNCING') {
+  // ─────────────────────────────────────────────
+  // PRE-FT1 — NO ROUTES MAY EXIST
+  // ─────────────────────────────────────────────
+  // Activation, syncing, and preparation phases
+  // must not mount any application routes.
+  if (
+    phase === 'FT_MINUS_ONE' ||
+    phase === 'FT0_PREPARING' ||
+    phase === 'FT0_SYNCING'
+  ) {
     return null;
   }
 
-  // 🔵 FT1 routes
+  // ─────────────────────────────────────────────
+  // FT1 — DIAGNOSTIC / ONBOARDING PHASE
+  // ─────────────────────────────────────────────
+  // These pages:
+  // - Render FT1 modules only
+  // - May show onboarding CTAs
+  // - Must never render FT2 observability
   if (phase === 'FT1_READY') {
     return (
       <Routes>
@@ -31,14 +76,36 @@ export function LifecycleRouteHost() {
     );
   }
 
-  // 🟣 FT2 routes (explicit later)
+  // ─────────────────────────────────────────────
+  // FT2 — OBSERVABILITY / GOVERNED TRUTH PHASE
+  // ─────────────────────────────────────────────
+  // Rules:
+  // - FT2 pages are DIFFERENT pages
+  // - FT1 pages MUST be unmounted
+  // - Each module opts-in explicitly
+  //
+  // This prevents:
+  // - Ghost FT1 CTAs
+  // - Placeholder FT2 data
+  // - Mixed mental models
   if (phase === 'FT2_READY') {
     return (
       <Routes>
-        <Route
-          path="/customers/*"
-          element={<CustomersPage />}
-        />
+        {/* Orders FT2 is live */}
+        <Route path="/orders/*" element={<OrdersFT2Page />} />
+
+        {/* 
+          Future FT2 pages go here, explicitly:
+
+          <Route path="/products/*" element={<ProductsFT2Page />} />
+          <Route path="/customers/*" element={<CustomersFT2Page />} />
+          <Route path="/analytics/*" element={<AnalyticsFT2Page />} />
+          <Route path="/finances/*" element={<FinancesFT2Page />} />
+
+          IMPORTANT:
+          - Do NOT reuse FT1 pages
+          - Each FT2 page must fetch its own snapshot
+        */}
       </Routes>
     );
   }

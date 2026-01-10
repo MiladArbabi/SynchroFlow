@@ -7,10 +7,9 @@
 // HARD CONTRACT:
 // - This page MUST NOT read lifecycle state
 // - This page MUST NOT render FT2 modules
-// - Lifecycle + FT routing is handled exclusively by ShopLifecycleGate
+// - FT2 routing is handled exclusively at the router level
 //
 // RESPONSIBILITIES:
-// - Render FT1 Orders module only
 // - Gate data fetching via explicit booleans
 // - Remain silent about lifecycle state in user-facing UI
 
