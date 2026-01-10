@@ -40,6 +40,7 @@ import CustomersFT2Page from 'pages/CustomersFT2Page';
 import ProductsFT2Page from 'pages/ProductsFT2Page';
 import AnalyticsFT2Page from 'pages/AnalyticsFT2Page';
 import FinancesFT2Page from 'pages/FinancesFT2Page';
+import DashboardFT2Page from 'pages/DashboardFT2Page';
 
 // NOTE:
 // - Never reuse FT1 pages for FT2
@@ -93,49 +94,29 @@ export function LifecycleRouteHost() {
   // - Placeholder FT2 data
   // - Mixed mental models
   if (phase === 'FT2_READY') {
-      return (
-        <Routes>
-          {/* ORDERS */}
-          {phase === 'FT2_READY' ? (
-            <Route path="/orders/*" element={<OrdersFT2Page />} />
-          ) : (
-            <Route path="/orders/*" element={<OrdersPage />} />
-          )}
+  return (
+    <Routes>
+      {/* DASHBOARD — FT2 */}
+      <Route path="/dashboard" element={<DashboardFT2Page />} />
 
-          {/* PRODUCTS */}
-          {phase === 'FT2_READY' ? (
-            <Route path="/products/*" element={<ProductsFT2Page />} />
-          ) : (
-            <Route path="/products/*" element={<ProductsPage />} />
-          )}
+      {/* ORDERS */}
+      <Route path="/orders/*" element={<OrdersFT2Page />} />
 
-          {/* CUSTOMERS/SPECTER */}
-          {phase === 'FT2_READY' ? (
-            <Route path="/customers/*" element={<CustomersFT2Page />} />
-          ) : (
-            <Route path="/customers/*" element={<CustomersPage />} />
-          )}
-          
-          {/* ANALYTICS */}
-          {phase === 'FT2_READY' ? (
-            <Route path="/analytics/*" element={<AnalyticsFT2Page />} />
-          ) : (
-            <Route path="/analytics/*" element={<AnalyticsPage />} />
-          )}
-          
-          {/* FINANCES */}
-          {phase === 'FT2_READY' ? (
-            <Route path="/finances/*" element={<FinancesFT2Page />} />
-          ) : (
-            <Route path="/finances/*" element={<FinancesPage />} />
-          )}
+      {/* PRODUCTS */}
+      <Route path="/products/*" element={<ProductsFT2Page />} />
 
-          {/* IMPORTANT:
-          - Do NOT reuse FT1 pages
-          - Each FT2 page must fetch its own snapshot */}
-        </Routes>
-    );
-  }
+      {/* CUSTOMERS */}
+      <Route path="/customers/*" element={<CustomersFT2Page />} />
+
+      {/* ANALYTICS */}
+      <Route path="/analytics/*" element={<AnalyticsFT2Page />} />
+
+      {/* FINANCES */}
+      <Route path="/finances/*" element={<FinancesFT2Page />} />
+    </Routes>
+  );
+}
+
 
   return null;
 }
