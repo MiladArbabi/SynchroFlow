@@ -1,26 +1,27 @@
 // ShopLifecycleGate.tsx
 //
-// PURE structural switch.
-// NO timers.
-// NO effects.
-// NO lifecycle logic.
+// PURE structural gate.
+// Owns whether children are allowed to exist.
 
+import React from 'react';
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
 import { resolveActivationConfig } from 'activation/resolveActivationConfig';
-import { Outlet } from 'react-router-dom';
-
 import { useShopLifecycle } from './ShopLifecycleContext';
 
-export function ShopLifecycleGate() {
+type Props = {
+  children: React.ReactNode;
+};
+
+export function ShopLifecycleGate({ children }: Props) {
   const { phase } = useShopLifecycle();
 
+  // NOTE: moduleId will be routed properly later
   const moduleId = 'dashboard';
 
   switch (phase) {
     case 'FT_MINUS_ONE': {
-      const activationConfig =
-        resolveActivationConfig(moduleId);
+      const activationConfig = resolveActivationConfig(moduleId);
 
       return (
         <ActivationSurfaceAdapter
@@ -39,11 +40,10 @@ export function ShopLifecycleGate() {
       return <EmptyDashboardState />;
 
     case 'FT1_READY':
-      return <Outlet />;
+      return <>{children}</>;
 
     case 'FT2_READY':
-      // ❌ Do NOT render generic routes
-      // FT2 routes must be mounted explicitly elsewhere
+      // FT2 routes will be mounted explicitly later
       return null;
 
     default: {

@@ -4,7 +4,7 @@
 import React from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useAuth, AuthProvider } from 'contexts/AuthContext';
+import { AuthProvider, useAuth } from 'contexts/AuthContext';
 
 import { IntegrationProvider } from 'contexts/integration/IntegrationProvider';
 import { DashboardStateProvider } from 'contexts/DashboardStateContext';
@@ -12,7 +12,6 @@ import { EntitlementsProvider } from 'contexts/EntitlementsContext';
 import { SpecterConfigProvider } from 'contexts/SpecterConfigContext';
 
 import ProtectedRoute from './components/ProtectedRoute';
-import ModuleBootstrap from 'runtime/ModuleBootstrap';
 import { RuntimeRoutesProvider } from 'runtime/RuntimeRoutesProvider';
 import { useRuntimeRoutes } from 'runtime/useRuntimeRoutes';
 
@@ -23,13 +22,8 @@ import RegisterPage from 'pages/authentication/RegisterPage';
 import { ShopLifecycleShell } from 'lifecycle/ShopLifecycleShell';
 import { ShopLifecycleGate } from 'lifecycle/ShopLifecycleGate';
 import { LifecycleProvider } from 'lifecycle/LifecycleProvider';
+import { LifecycleRouteHost } from 'lifecycle/LifecycleRouteHost';
 
-import AnalyticsPage from 'pages/AnalyticsPage';
-import CustomersPage from 'pages/CustomersPage';
-import { DashboardPage } from 'pages/DashboardPage';
-import FinancesPage from 'pages/FinancesPage';
-import OrdersPage from 'pages/OrdersPage';
-import ProductsPage from 'pages/ProductsPage';
 import AppLayout from 'layouts/AppLayout';
 
 const queryClient = new QueryClient();
@@ -39,6 +33,9 @@ function RuntimeRoutesSubscriber() {
   return null;
 }
 
+/* ─────────────────────────────
+   Error Boundary
+───────────────────────────── */
 class IntlErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; error?: any }
@@ -70,6 +67,9 @@ class IntlErrorBoundary extends React.Component<
   }
 }
 
+/* ─────────────────────────────
+   PUBLIC (NO APP LAYOUT)
+───────────────────────────── */
 function PublicAppShell() {
   return (
     <ThemeCustomization>
@@ -78,9 +78,12 @@ function PublicAppShell() {
   );
 }
 
+/* ─────────────────────────────
+   AUTHENTICATED APP SHELL
+   (ALWAYS mounts AppLayout)
+───────────────────────────── */
 function AuthenticatedAppShell() {
   const { isLoading, isLoggedIn } = useAuth();
-
   if (isLoading || !isLoggedIn) return null;
 
   return (
@@ -93,16 +96,14 @@ function AuthenticatedAppShell() {
             <ThemeCustomization>
               <EntitlementsProvider>
                 <SpecterConfigProvider>
-                  <ModuleBootstrap />
                   <IntlErrorBoundary>
                     <LifecycleProvider>
                       <ShopLifecycleShell>
                         <AppLayout>
-                          {/* 🔒 SINGLE lifecycle authority */}
-                          <ShopLifecycleGate />
-
-                          {/* Pages mount ONLY if lifecycle allows */}
-                          <Outlet />
+                          <ShopLifecycleGate>
+                            {/* 🔒 THE ONLY PLACE ROUTES MAY EXIST */}
+                            <LifecycleRouteHost />
+                          </ShopLifecycleGate>
                         </AppLayout>
                       </ShopLifecycleShell>
                     </LifecycleProvider>
@@ -112,35 +113,39 @@ function AuthenticatedAppShell() {
             </ThemeCustomization>
           </IntegrationProvider>
         </DashboardStateProvider>
+
       </RuntimeRoutesProvider>
     </QueryClientProvider>
   );
 }
 
+/* ─────────────────────────────
+   ROOT ROUTER
+───────────────────────────── */
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
+
         {/* ===== PUBLIC ===== */}
         <Route element={<PublicAppShell />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
         </Route>
 
-        {/* ===== AUTHENTICATED ===== */}
-        <Route element={<ProtectedRoute />}>
-          <Route element={<AuthenticatedAppShell />}>
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/orders/*" element={<OrdersPage />} />
-            <Route path="/customers/*" element={<CustomersPage />} />
-            <Route path="/products/*" element={<ProductsPage />} />
-            <Route path="/analytics/*" element={<AnalyticsPage />} />
-            <Route path="/finances/*" element={<FinancesPage />} />
-          </Route>
-        </Route>
+        {/* ===== APP (AUTH REQUIRED) ===== */}
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <AuthenticatedAppShell />
+            </ProtectedRoute>
+          }
+        />
 
         {/* ===== FALLBACK ===== */}
         <Route path="*" element={<Navigate to="/login" replace />} />
+
       </Routes>
     </AuthProvider>
   );

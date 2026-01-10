@@ -49,6 +49,8 @@ export default function FinancesModuleFT2(
 ) {
   const { context, outcome, trend, dataCoverage } = props;
 
+  console.warn('[MOUNT] FinancesModuleFT2');
+
   return (
     <section data-testid="finances-ft2-root">
       {/* Context */}

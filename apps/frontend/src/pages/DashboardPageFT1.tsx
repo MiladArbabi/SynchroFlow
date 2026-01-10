@@ -32,6 +32,8 @@ import { useProductsAhaAdapter } from 'wiring/productsAhaAdapter';
 import { useAnalyticsAhaAdapter } from 'wiring/analyticsAhaAdapter';
 
 export const DashboardPageFT1: React.FC = () => {
+  console.warn('[MOUNT] DashboardPageFT1');
+
   const navigate = useNavigate();
   const { user } = useAuth();
   const shopId = user?.shop_id;
