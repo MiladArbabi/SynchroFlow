@@ -45,12 +45,16 @@ Frontend does **not** compute backend lifecycle.
 
 Frontend resolves a **runtime shop lifecycle** for routing and surfaces:
 
-FT_MINUS_ONE
-FT0_SYNCING
-FT0_PREPARING
-FT1_READY
+FT_MINUS_ONE  
+FT0_SYNCING  
+FT0_PREPARING  
+FT1_READY  
+FT2_READY
 
 These are **visual / structural phases**, not capability phases.
+
+FT2_READY is a **frontend reflection** of a backend-confirmed FT2 capability latch
+and is used **only for routing and surface selection**, never for capability inference.
 
 ⚠️ **Amendment v1–v2:**
 
@@ -110,6 +114,32 @@ No other mechanism may gate, delay, or speculate lifecycle state, including:
 Once `bootResolved === true`, the frontend must never render `FT_MINUS_ONE`, even transiently.
 
 This invariant is enforced by reducer-level logic and locked by unit tests.
+
+### 1.5 Frontend FT2 Runtime Representation (As-Is)
+
+Frontend represents FT2 using a **distinct visual phase**:
+
+FT2_READY
+
+This phase is entered **only** when:
+
+• Backend lifecycle resolver reports FT2  
+• FT2 has been explicitly confirmed and latched backend-side  
+
+Frontend FT2 behavior:
+
+• No inference
+• No eligibility-based entry
+• No auto-promotion
+• No timing heuristics
+
+FT2_READY exists exclusively to:
+
+• Select FT2-specific routes
+• Mount FT2-only pages
+• Suppress FT1 diagnostic surfaces
+
+Frontend FT2 is therefore **reactive**, not authoritative.
 
 ---
 
@@ -568,7 +598,8 @@ This guarantees:
 **Routing:**
 
 * Dashboard allowed
-* All modules allowed
+* All FT1 module routes allowed
+* FT2 routes are **not** allowed while in FT1_READY
 
 **UI Surfaces:**
 
@@ -621,6 +652,30 @@ This guarantees:
 * Checklist correctness
 * No frontend drift
 * Backend remains the single source of truth for FT1 readiness
+
+### 7.5 FT2 Runtime Routing (Frontend As-Is)
+
+When frontend lifecycle resolves FT2_READY:
+
+• FT1 pages are no longer routed
+• FT2 pages are routed explicitly
+• FT1 diagnostic modules are not mounted
+• FT2 observability pages are mounted instead
+
+This routing decision is made **exclusively** in:
+
+LifecycleRouteHost
+
+FT2 routing is:
+
+• Page-level
+• Explicit
+• Non-additive
+• Non-overlay-based
+
+FT1 and FT2 pages are **mutually exclusive** at runtime.
+
+• FT2 frontend behavior must be page-level routed, not module-overlay based
 
 ---
 
@@ -687,7 +742,7 @@ FT2 audit therefore represents **explicit graduation**, not inferred readiness.
 | Authority         | Capability truth               | Runtime / routing truth                                |
 | Phase granularity | FT_MINUS_ONE / FT0 / FT1 / FT2 | FT_MINUS_ONE / FT0_SYNCING / FT0_PREPARING / FT1_READY |
 | Regression        | Possible by recomputation      | Impossible unless integration is deleted               |
-| FT2 meaning       | Paid capability                | Paywall overlay (not lifecycle)                        |
+| FT2 meaning       | Paid, confirmed capability     | Route-level FT2 surface selection           |
 | Audit emission   | Authoritative, backend-only   | None (never emits audits)                             |
 
 Frontend **never infers** backend lifecycle.
@@ -709,6 +764,17 @@ The frontend lifecycle is mid-migration.
 * Reducer-driven lifecycle computation
 * Explicit lifecycle events
 * Side-effects isolated from lifecycle truth
+
+Modules must never:
+
+• Read lifecycle phase
+• Branch on FT state
+• Render FT2 conditionally
+• Perform lifecycle gating
+• Assume upgrade eligibility
+
+Modules are lifecycle-agnostic by contract.
+Only pages and routing layers may vary by lifecycle.
 
 Until migration completes, frontend lifecycle behavior must be validated
 against reducer-level invariants, not component behavior.
@@ -738,7 +804,10 @@ FT1 is the **first and only gate** into the application.
 
 ## 11. Explicit Non-Claims
 
-This document explicitly excludes FT2 graduation mechanics.
+This document explicitly excludes **FT2 graduation mechanics** and **FT2 eligibility logic**.
+
+However, **FT2 runtime routing behavior is now included**, as it is
+scan-verified and implemented in the frontend lifecycle system.
 
 While FT2 exists as a backend lifecycle phase, its confirmation flow,
 eligibility evaluation, and routing behavior are intentionally treated
@@ -764,6 +833,11 @@ Any FT2 design **must** respect:
 * FT2 must **not** reuse frontend FT0 substates
 * FT2 must introduce a **new backend latch**, not inference
 * FT2 must introduce a new backend latch and require explicit confirmation
+* FT2 frontend behavior must be page-level routed, not module-overlay based
+• FT2 must be expressed as page-level surfaces
+• FT2 must not be implemented as module extensions
+• FT2 must not reuse FT1 pages
+• FT2 pages must be lifecycle-exclusive
 
 Violating this breaks lifecycle monotonicity.
 
@@ -1013,8 +1087,6 @@ All future lifecycle work must respect this clarification.
 
 ---
 
----
-
 # 📜 Amendment v3 — Frontend Reset Semantics Post-FT1
 
 > **Status:** Scan-verified, test-enforced  
@@ -1098,3 +1170,173 @@ It reflects reducer-level behavior that is:
 * Required for lifecycle monotonicity guarantees
 
 All future lifecycle work must respect this clarification.
+
+---
+
+Below is **Amendment v4**, written in the **same legal / contractual tone**, with **explicit placement instructions** and **no speculative language**.
+
+---
+
+# 📜 Amendment v4 — Page-Level Lifecycle Authority
+
+> **Status:** Scan-verified, production-enforced
+> **Applies to:** Frontend routing & rendering architecture
+> **Effective:** Immediately
+> **Nature:** Normative (hard constraint)
+> **Backward compatibility:** Full
+>
+> This amendment formalizes the **page-level lifecycle authority model** that is now implemented and verified in production.
+>
+> It resolves ambiguity between pages, modules, and lifecycle responsibility.
+
+---
+
+## A. Lifecycle Authority Boundary (New Canonical Rule)
+
+### A.1 Authority Declaration
+
+**Lifecycle authority in the frontend exists exclusively at the page-routing layer.**
+
+This means:
+
+* Lifecycle phase **selects pages**
+* Pages select **exactly one lifecycle surface**
+* Modules are **never lifecycle-aware**
+
+This rule is **hard** and must not be violated.
+
+---
+
+### A.2 Explicit Authority Table
+
+| Layer     | Lifecycle Authority | Allowed Responsibilities                    |
+| --------- | ------------------- | ------------------------------------------- |
+| Reducer   | ✅ Yes               | Phase computation, monotonicity, invariants |
+| Router    | ✅ Yes               | Page selection by lifecycle phase           |
+| Page      | ✅ Yes               | FT-specific data fetching & composition     |
+| Module    | ❌ No                | Pure rendering of provided props            |
+| Component | ❌ No                | Stateless UI only                           |
+
+Any lifecycle branching outside the **router → page boundary** is invalid.
+
+---
+
+## B. Page-Level Lifecycle Exclusivity (Hard Invariant)
+
+### B.1 Rule
+
+At runtime, **exactly one page variant** may exist per route.
+
+Rules (as enforced):
+
+* `FT1_READY` → FT1 pages only
+* `FT2_READY` → FT2 pages only
+* No page may render both FT1 and FT2 modules
+* No additive FT2 overlays are permitted
+
+This invariant is enforced in:
+
+* `LifecycleRouteHost`
+* Page-level routing decisions
+
+---
+
+### B.2 Forbidden Patterns (Explicit)
+
+The following patterns are **explicitly forbidden**:
+
+* Rendering FT2 modules inside FT1 pages
+* Conditional FT branching inside pages
+* Placeholder FT2 props during FT1
+* Module-level lifecycle checks
+* “Advanced mode” toggles inside modules
+
+These patterns break lifecycle monotonicity and are invalid by contract.
+
+---
+
+## C. FT2 Pages — Observability Surfaces, Not Extensions
+
+### C.1 Clarification
+
+FT2 pages are:
+
+* Standalone observability surfaces
+* Lifecycle-exclusive
+* Backend-snapshot-driven
+* Read-only
+
+FT2 pages are **not**:
+
+* Extensions of FT1 pages
+* Conditional enhancements
+* Feature flags
+* Progressive reveals
+
+This distinction is mandatory.
+
+---
+
+### C.2 Consequence
+
+Because FT2 is page-level:
+
+* FT1 pages remain simple and diagnostic
+* FT2 pages assume capability is already granted
+* No FT2 page may ever reference FT1 readiness
+* No FT1 page may ever reference FT2 data
+
+---
+
+## D. LifecycleRouteHost as the Single Switch
+
+### D.1 Authority Lock
+
+`LifecycleRouteHost` is now the **single switchpoint** for lifecycle-based UI selection.
+
+No other layer may:
+
+* Override routing
+* Reinterpret lifecycle
+* Re-route conditionally
+* Patch around lifecycle mismatches
+
+Any deviation is a contract violation.
+
+---
+
+## E. Non-Goals (Explicit)
+
+This amendment does **not**:
+
+* Define FT2 eligibility rules
+* Define FT2 graduation UX
+* Alter backend lifecycle semantics
+* Change FT0 or FT1 meaning
+
+It strictly formalizes **where lifecycle authority lives** in the frontend.
+
+---
+
+## Amendment v4 Seal
+
+This amendment is **normative and binding**.
+
+It reflects architecture that is:
+
+* Implemented
+* Scan-verified
+* Runtime-proven
+* Regression-resistant
+
+All future FT2 and lifecycle-related work **must** conform to this model.
+
+---
+
+## 📍 Placement Instructions (Exact)
+
+1. **Insert Amendment v4** immediately after **Amendment v3**
+2. **Do not modify** earlier sections
+3. Treat this amendment as **foundational** for all FT2 work
+
+---
