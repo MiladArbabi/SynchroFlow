@@ -11,19 +11,12 @@
 //
 // RESPONSIBILITIES:
 // - Gate data fetching via explicit booleans
-// - Render FT1 or FT2 Customers modules based on available data
 // - Remain silent about lifecycle state in user-facing UI
 
 import { SpecterModule } from '@lasyncro/specter';
-import { CustomersModuleFT2 } from '@lasyncro/customers';
 import { useAuth } from 'contexts/AuthContext';
-
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import { useCustomersFt2Snapshot } from './customers/useCustomersFt2Snapshot';
-
 import { mapSpecterFt1Props } from './customers/useSpecterFt1Adapter';
-import { mapCustomersFt2Props } from './customers/useCustomersFt2Adapter';
-
 import { useSpecterAhaAdapter } from 'wiring/specterAhaAdapter';
 
 const __DEV__ = import.meta.env.DEV;
@@ -46,12 +39,6 @@ export default function CustomersPage() {
    * Data gating
    */
   const ft1Enabled = !!shopId;
-  const ft2Enabled = !!shopId;
-
-  /**
-   * FT2 snapshot (authoritative)
-   */
-  const ft2Query = useCustomersFt2Snapshot(ft2Enabled);
 
   /**
    * FT1 onboarding readiness
@@ -60,30 +47,6 @@ export default function CustomersPage() {
     ft1Enabled,
     shopId ?? 0
   );
-
-  /**
-   * FT2 rendering path (authoritative)
-   */
-  if (ft2Query.isSuccess) {
-    if (__DEV__) {
-      console.debug('[CustomersPage][FT2] rendering CustomersModuleFT2', {
-        snapshot: ft2Query.data,
-      });
-    }
-
-    const ft2Props = mapCustomersFt2Props(ft2Query.data);
-    return <CustomersModuleFT2 {...ft2Props} />;
-  }
-
-  /**
-   * FT2 loading (neutral)
-   */
-  if (ft2Query.isLoading) {
-    if (__DEV__) {
-      console.debug('[CustomersPage][FT2] awaiting snapshot');
-    }
-    return <div>Loading customers…</div>;
-  }
 
   /**
    * Missing shopId (neutral fallback)

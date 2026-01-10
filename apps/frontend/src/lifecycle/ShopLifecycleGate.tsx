@@ -43,8 +43,8 @@ const moduleId =
       return <>{children}</>;
 
     case 'FT2_READY':
-      // FT2 routes will be mounted explicitly later
-      return null;
+      return <>{children}</>;
+
 
     default: {
       if (import.meta.env.DEV) {

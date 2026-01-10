@@ -7,22 +7,19 @@
 // HARD CONTRACT:
 // - This page MUST NOT read lifecycle state
 // - This page MUST NOT decide whether it should exist
+// - This page MUST NOT render FT2 modules
 // - Lifecycle gating is handled exclusively by ShopLifecycleGate
 //
 // RESPONSIBILITIES:
+// - Render FT1 Products module only
 // - Gate data fetching via explicit booleans
-// - Render FT1 or FT2 Products modules based on available data
 // - Remain silent about lifecycle state in user-facing UI
 
-import { ProductsModule, ProductsModuleFT2 } from '@lasyncro/products';
+import { ProductsModule } from '@lasyncro/products';
 import { useAuth } from 'contexts/AuthContext';
 
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import { useProductsFt2Snapshot } from './products/useProductsFt2Snapshot';
-
 import { mapProductsFt1Props } from './products/useProductsFt1Adapter';
-import { mapProductsFt2Props } from './products/useProductsFt2Adapter';
-
 import { useProductsAhaAdapter } from 'wiring/productsAhaAdapter';
 
 const __DEV__ = import.meta.env.DEV;
@@ -38,71 +35,47 @@ export default function ProductsPage() {
 
   /**
    * Intents
+   * -------
+   * Always instantiated; no lifecycle branching allowed.
    */
   const onIntent = useProductsAhaAdapter();
 
   /**
-   * Data gating
+   * FT1 data gating
+   * ---------------
+   * Lifecycle validity is assumed if this page is mounted.
    */
   const ft1Enabled = !!shopId;
-  const ft2Enabled = !!shopId;
 
-  /**
-   * FT2 snapshot (authoritative)
-   */
-  const ft2Query = useProductsFt2Snapshot(ft2Enabled);
-
-  /**
-   * FT1 onboarding readiness
-   */
   const readinessQuery = useOnboardingReadiness(
     ft1Enabled,
     shopId ?? 0
   );
 
   /**
-   * FT2 rendering path (authoritative)
-   */
-  if (ft2Query.isSuccess) {
-    if (__DEV__) {
-      console.debug('[ProductsPage][FT2] rendering ProductsModuleFT2', {
-        snapshot: ft2Query.data,
-      });
-    }
-
-    const ft2Props = mapProductsFt2Props(ft2Query.data);
-    return <ProductsModuleFT2 {...ft2Props} />;
-  }
-
-  /**
-   * FT2 loading (neutral)
-   */
-  if (ft2Query.isLoading) {
-    if (__DEV__) {
-      console.debug('[ProductsPage][FT2] awaiting snapshot');
-    }
-    return <div>Loading products…</div>;
-  }
-
-  /**
-   * Missing shopId (neutral fallback)
+   * Missing shopId
+   * --------------
+   * Not a lifecycle error.
    */
   if (!shopId) {
     return <div>Products unavailable</div>;
   }
 
   /**
-   * FT1 readiness loading
+   * FT1 loading
+   * -----------
    */
   if (!readinessQuery.isSuccess) {
     if (__DEV__) {
       console.debug('[ProductsPage][FT1] awaiting onboarding readiness');
     }
+
     return <div>Loading products…</div>;
   }
 
   /**
    * FT1 rendering path
+   * ------------------
    */
   const props = mapProductsFt1Props(readinessQuery.data);
 

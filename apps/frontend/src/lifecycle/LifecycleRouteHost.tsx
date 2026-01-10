@@ -33,7 +33,14 @@ export function LifecycleRouteHost() {
 
   // 🟣 FT2 routes (explicit later)
   if (phase === 'FT2_READY') {
-    return null; // intentionally empty for now
+    return (
+      <Routes>
+        <Route
+          path="/customers/*"
+          element={<CustomersPage />}
+        />
+      </Routes>
+    );
   }
 
   return null;
