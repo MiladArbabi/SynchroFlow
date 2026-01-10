@@ -8,16 +8,20 @@ import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState'
 import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
 import { resolveActivationConfig } from 'activation/resolveActivationConfig';
 import { useShopLifecycle } from './ShopLifecycleContext';
+import { useLocation } from 'react-router-dom';
 
 type Props = {
   children: React.ReactNode;
+  onActivation: (actionId: string) => void;
 };
 
-export function ShopLifecycleGate({ children }: Props) {
+export function ShopLifecycleGate({ children, onActivation }: Props) {
   const { phase } = useShopLifecycle();
 
-  // NOTE: moduleId will be routed properly later
-  const moduleId = 'dashboard';
+  const location = useLocation();
+
+const moduleId =
+  location.pathname.split('/')[1] || 'dashboard';
 
   switch (phase) {
     case 'FT_MINUS_ONE': {
@@ -26,11 +30,7 @@ export function ShopLifecycleGate({ children }: Props) {
       return (
         <ActivationSurfaceAdapter
           surface={activationConfig}
-          onAction={() =>
-            window.dispatchEvent(
-              new Event('ui:connect-store')
-            )
-          }
+          onAction={onActivation}
         />
       );
     }

@@ -31,9 +31,9 @@ const SIDENAV_MAX_SIZE = 25;     // Percentage
 
 interface AppLayoutProps {
   children?: ReactNode; // ✅ optional
-  isEditing?: boolean;
-  onEditToggle?: () => void;
-  onAddWidget?: () => void;
+
+  isConnectModalOpen: boolean;
+  onCloseConnectModal: () => void;
 }
 
 const AppLayout = (props: AppLayoutProps) => {
@@ -48,9 +48,6 @@ const AppLayout = (props: AppLayoutProps) => {
   const sidenavPanelRef = useRef<ImperativePanelHandle>(null); // Ref for the Sidenav panel
   const opsPanelRef = useRef<ImperativePanelHandle>(null);
   const [isSidenavOpen, setSidenavOpen] = useState(true);
-
-  // --- STATE LIFTED FROM DASHBOARD ---
-  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false); 
 
   // --- LOGIC LIFTED FROM DASHBOARD ---
@@ -66,13 +63,6 @@ const AppLayout = (props: AppLayoutProps) => {
 
     fetchLayout();
   }, []);
-
-  // --- MODAL HANDLERS LIFTED FROM DASHBOARD ---
-  const handleModalClose = () => {
-    setIsConnectModalOpen(false);
-    // Simple reload to refresh all data.
-    window.location.reload();
-  };
 
   // --- EFFECT TO CONTROL PANEL ---
   useEffect(() => {
@@ -165,7 +155,6 @@ const AppLayout = (props: AppLayoutProps) => {
                     routes={routes}
                     isSidenavOpen={isSidenavOpen} // This is for the old menu
                     isConnected={isConnected} // <-- Pass connection status
-                    onOpenModal={() => setIsConnectModalOpen(true)}
                   />
                 </Box>
               </Panel>
@@ -227,8 +216,8 @@ const AppLayout = (props: AppLayoutProps) => {
 
             {/* --- RENDER MODALS AT LAYOUT LEVEL --- */}
             <ConnectStoreModal
-              isOpen={isConnectModalOpen}
-              onClose={handleModalClose}
+              isOpen={props.isConnectModalOpen}
+              onClose={props.onCloseConnectModal}
             />
         </Box>
       </ToastProvider>

@@ -4,7 +4,7 @@ export const analyticsActivationConfig: ActivationSurfaceProps = {
   moduleId: 'analytics',
 
   identity: {
-    title: 'InsightCore',
+    title: 'Analytics',
     subtitle: 'Why performance changed',
   },
 

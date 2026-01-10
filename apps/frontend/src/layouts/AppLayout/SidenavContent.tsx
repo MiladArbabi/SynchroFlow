@@ -36,7 +36,6 @@ const SidenavContent: React.FC<{
   routes: any; // Consider typing this array
   isSidenavOpen: boolean;
   isConnected: boolean; // <-- 2. Accept new props
-  onOpenModal: () => void; // <-- 2. Accept new props
 }> = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();

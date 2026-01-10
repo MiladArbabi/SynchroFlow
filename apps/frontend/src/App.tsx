@@ -84,7 +84,15 @@ function PublicAppShell() {
 ───────────────────────────── */
 function AuthenticatedAppShell() {
   const { isLoading, isLoggedIn } = useAuth();
+  const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
+
   if (isLoading || !isLoggedIn) return null;
+
+  const handleActivation = (actionId: string) => {
+    if (actionId === 'connect-store') {
+      setIsConnectModalOpen(true);
+    }
+  };
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -99,9 +107,11 @@ function AuthenticatedAppShell() {
                   <IntlErrorBoundary>
                     <LifecycleProvider>
                       <ShopLifecycleShell>
-                        <AppLayout>
-                          <ShopLifecycleGate>
-                            {/* 🔒 THE ONLY PLACE ROUTES MAY EXIST */}
+                        <AppLayout
+                          isConnectModalOpen={isConnectModalOpen}
+                          onCloseConnectModal={() => setIsConnectModalOpen(false)}
+                        >
+                          <ShopLifecycleGate onActivation={handleActivation}>
                             <LifecycleRouteHost />
                           </ShopLifecycleGate>
                         </AppLayout>
