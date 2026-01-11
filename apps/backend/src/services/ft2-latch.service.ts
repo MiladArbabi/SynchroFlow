@@ -2,6 +2,7 @@
 
 import db from 'api-src/db';
 import { FT2EvaluatorService } from './ft2-evaluator.service';
+import { EntitlementsService } from './entitlements.service';
 
 /**
  * FT2 Latch Service
@@ -70,6 +71,10 @@ export class FT2LatchService {
       })
       .onConflict('shop_id')
       .ignore();
+
+    // FT2-Free baseline entitlements (additive, idempotent)
+    await EntitlementsService.grantFt2FreeBaselineForShop(shopId);
+
 
     console.debug('[FT2_LATCH_WRITTEN]', {
       shopId,

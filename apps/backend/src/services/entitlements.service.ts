@@ -137,4 +137,37 @@ export class EntitlementsService {
       .onConflict(['shop_id', 'module_key', 'flag_key'])
       .ignore();
   }
+
+    /**
+   * Grant the FT2-Free baseline entitlements for a given shop.
+   *
+   * FT2-Free rules:
+   * - Observability-only access
+   * - No paid / premium flags
+   * - Idempotent and additive
+   *
+   * IMPORTANT:
+   * - Must NOT revoke existing entitlements
+   * - Must NOT infer lifecycle
+   * - Must NOT grant pricing flags
+   */
+  static async grantFt2FreeBaselineForShop(shopId: number): Promise<void> {
+    const rows: Array<{
+      shop_id: number;
+      module_key: string;
+      flag_key: string | null;
+      source: string;
+    }> = [
+      { shop_id: shopId, module_key: 'order-nexus', flag_key: null, source: 'ft2_free_baseline' },
+      { shop_id: shopId, module_key: 'products', flag_key: null, source: 'ft2_free_baseline' },
+      { shop_id: shopId, module_key: 'customers', flag_key: null, source: 'ft2_free_baseline' },
+      { shop_id: shopId, module_key: 'analytics', flag_key: null, source: 'ft2_free_baseline' },
+      { shop_id: shopId, module_key: 'finances', flag_key: null, source: 'ft2_free_baseline' },
+    ];
+
+    await db('shop_module_entitlements')
+      .insert(rows)
+      .onConflict(['shop_id', 'module_key', 'flag_key'])
+      .ignore();
+  }
 }
