@@ -7,6 +7,10 @@ try { require('@testing-library/jest-dom'); } catch (e) { /* optional dev dep */
 // Ensure test environment is set
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
+// Stripe webhook verification (test-only secret)
+process.env.STRIPE_WEBHOOK_SECRET =
+  process.env.STRIPE_WEBHOOK_SECRET || 'test_stripe_secret';
+
 // Ensure queue code is disabled in tests to avoid background connections / logs / open handles
 process.env.DISABLE_QUEUE = '1';
 

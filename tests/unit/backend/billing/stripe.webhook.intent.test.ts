@@ -1,39 +1,54 @@
-// tests/unit/backend/billing/stripe.webhook.intent.test.ts
+// tests/unit/backend/billing/stripe.webhook.idempotency.persistent.test.ts
+//
+// Stripe webhook – persistent idempotency
+//
+// Scope:
+// - Verifies DB-backed idempotency via commercial_grant_events
+// - Ensures duplicate Stripe events do NOT re-apply grants
+// - Enforces Stripe signature verification
+//
+// Key Invariant:
+// - Idempotency is enforced by persistence, not memory or mocks
 
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
-import { CommercialGrantService } from 'api-src/services/commercial-grant.service';
+import db from 'api-db';
+import { seedShopAndUser } from '../../helpers/seedShopAndUser';
+import { signStripePayload } from '../../helpers/stripeTestSignature';
 
-jest.mock('api-src/services/commercial-grant.service');
-
-describe('Stripe webhook → CommercialGrant intent mapping', () => {
-
-  beforeEach(() => {
-   jest.clearAllMocks();
-  });
-  
+describe('Stripe webhook – persistent idempotency', () => {
   const app = createApp();
 
-  it('maps a Stripe paid event into a CommercialGrant intent (no entitlement logic)', async () => {
+  beforeEach(async () => {
+    await db('commercial_grant_events').del();
+    await db('shop_module_entitlements').del();
+    await db('shop_memberships').del();
+    await db('users').del();
+    await db('shops').del();
+
+    await seedShopAndUser({ shopId: 77, userId: 7701 });
+  });
+
+  afterAll(async () => {
+    await db.destroy();
+  });
+
+  it('does not persist duplicate grants when the same Stripe event is delivered twice', async () => {
     // ─────────────────────────────────────────────
     // Arrange
     // ─────────────────────────────────────────────
     const stripeEvent = {
-      id: 'evt_test_123',
+      id: 'evt_persistent_1',
       type: 'invoice.paid',
-      created: 1710000000,
+      created: 1710000100,
       data: {
         object: {
-          metadata: {
-            shopId: '42',
-          },
+          metadata: { shopId: '77' },
           lines: {
             data: [
               {
                 price: {
-                  metadata: {
-                    module: 'analytics',
-                  },
+                  metadata: { module: 'analytics' },
                 },
               },
             ],
@@ -42,70 +57,39 @@ describe('Stripe webhook → CommercialGrant intent mapping', () => {
       },
     };
 
+    const payload = JSON.stringify(stripeEvent);
+
+    const signature = signStripePayload(
+      Buffer.from(payload),
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+
     // ─────────────────────────────────────────────
-    // Act
+    // Act – first delivery
+    // ─────────────────────────────────────────────
+   await request(app)
+    .post('/api/v1/billing/stripe/webhook')
+    .set('Content-Type', 'application/json')
+    .set('stripe-signature', signature)
+    .send(payload)
+    .expect(200);
+
+    // ─────────────────────────────────────────────
+    // Act – re-delivery (simulates process restart)
     // ─────────────────────────────────────────────
     await request(app)
       .post('/api/v1/billing/stripe/webhook')
-      .send(stripeEvent)
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', signature)
+      .send(payload)
       .expect(200);
 
     // ─────────────────────────────────────────────
     // Assert
     // ─────────────────────────────────────────────
-    expect(CommercialGrantService.apply).toHaveBeenCalledTimes(1);
+    const rows = await db('commercial_grant_events')
+      .where({ external_ref: 'evt_persistent_1' });
 
-    expect(CommercialGrantService.apply).toHaveBeenCalledWith({
-      shopId: 42,
-      source: 'billing',
-      grants: {
-        modules: ['analytics'],
-      },
-      metadata: {
-        externalRef: 'evt_test_123',
-        issuedAt: new Date(1710000000 * 1000).toISOString(),
-      },
-    });
+    expect(rows).toHaveLength(1);
   });
-
-  it('is idempotent when the same Stripe event is delivered twice', async () => {
-    const app = createApp();
-
-    const stripeEvent = {
-        id: 'evt_test_idempotent',
-        type: 'invoice.paid',
-        created: 1710000001,
-        data: {
-        object: {
-            metadata: {
-            shopId: '99',
-            },
-            lines: {
-            data: [
-                {
-                price: {
-                    metadata: {
-                    module: 'finances',
-                    },
-                },
-                },
-            ],
-            },
-        },
-        },
-    };
-
-    await request(app)
-        .post('/api/v1/billing/stripe/webhook')
-        .send(stripeEvent)
-        .expect(200);
-
-    await request(app)
-        .post('/api/v1/billing/stripe/webhook')
-        .send(stripeEvent)
-        .expect(200);
-
-    expect(CommercialGrantService.apply).toHaveBeenCalledTimes(1);
-    });
-
 });

@@ -79,15 +79,24 @@ export class CommercialGrantService {
     if (rows.length === 0) return;
 
     await db.transaction(async (trx) => {
-      await trx('commercial_grant_events').insert({
-        shop_id: shopId,
-        source,
-        grant_payload: grants,
-        external_ref: metadata?.externalRef ?? null,
-        metadata: metadata ?? null,
-      });
+      try {
+        await trx('commercial_grant_events').insert({
+          shop_id: shopId,
+          source,
+          grant_payload: grants,
+          external_ref: metadata?.externalRef ?? null,
+          metadata: metadata ?? null,
+        });
+      } catch (err: any) {
+        // Idempotency guarantee:
+        // If this event was already processed, we exit cleanly.
+        if (err.code === '23505') {
+          return;
+        }
+        throw err;
+      }
 
-      await EntitlementsService.applyEntitlementRows(trx, rows);
+      await EntitlementsService.applyFromCommercialGrant(trx, rows);
     });
   }
 

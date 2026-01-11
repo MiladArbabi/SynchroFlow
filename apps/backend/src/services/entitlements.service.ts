@@ -240,6 +240,31 @@ export class EntitlementsService {
       .ignore();
   };
 
+  /**
+   * Apply entitlement rows from a trusted system service.
+   *
+   * WRITE SURFACE (SEALED):
+   * - Intended ONLY for CommercialGrantService
+   * - No validation
+   * - No business logic
+   * - No lifecycle inference
+   *
+   * Do not call from anywhere else.
+   */
+  static async applyFromCommercialGrant(
+    trx: any,
+    rows: Array<{
+      shop_id: number;
+      module_key: string;
+      flag_key: string | null;
+      source: string;
+      valid_from?: Date;
+      valid_until?: Date | null;
+    }>
+  ): Promise<void> {
+    return EntitlementsService.applyEntitlementRows(trx, rows);
+}
+
     /**
      * Apply entitlement rows (LOW-LEVEL).
      *

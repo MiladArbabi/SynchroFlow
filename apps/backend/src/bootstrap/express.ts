@@ -34,10 +34,17 @@ import financesRoutes from '../api/finances/finances.routes';
 //entitlments and payment services
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook';
+import { verifyStripeSignature } from 'api-src/api/billing/stripe.verify.middleware';
 
 export function createApp(): Express {
   const app = express();
-  app.use(express.json());
+  app.use(
+    express.json({
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    })
+  );
 
   // defensive: db.client may be a test mock that doesn't expose client.config.connection.
   // Prefer to pass undefined (connect-pg-simple will fallback) rather than throw when testing.
@@ -91,6 +98,7 @@ export function createApp(): Express {
   );
   app.post(
     '/api/v1/billing/stripe/webhook',
+    verifyStripeSignature,
     stripeWebhookHandler
   );
 
