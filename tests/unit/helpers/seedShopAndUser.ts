@@ -1,5 +1,3 @@
-// tests/unit/helpers/seedShopAndUser.ts
-
 import db from 'api-db';
 
 type SeedArgs = {
@@ -21,9 +19,17 @@ export async function seedShopAndUser({ shopId, userId }: SeedArgs) {
   // --- User ---
   await db('users').insert({
     id: userId,
-    shop_id: shopId,
     email: `user-${userId}@example.com`,
     password_hash: 'test-hash',
     first_insight_delivered: false,
+  });
+
+  // --- REQUIRED: Active shop membership ---
+  await db('shop_memberships').insert({
+    user_id: userId,
+    shop_id: shopId,
+    role: 'owner',
+    revoked_at: null,
+    created_at: new Date(),
   });
 }

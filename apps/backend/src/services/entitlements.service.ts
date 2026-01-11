@@ -17,6 +17,26 @@ export interface EntitlementsSnapshot {
   flags: string[];
 }
 
+// ─────────────────────────────────────────────
+// Commercial Grant Contract (SEALED v1.0)
+// ─────────────────────────────────────────────
+
+export interface CommercialGrantEvent {
+  shopId: number;
+
+  source: 'billing' | 'admin' | 'migration';
+
+  grants: {
+    modules?: string[];
+    flags?: string[];
+  };
+
+  metadata?: {
+    externalRef?: string;
+    issuedAt?: string;
+  };
+}
+
 export class EntitlementsService {
   /**
    * Resolve entitlements for a given user ID.
@@ -36,6 +56,10 @@ export class EntitlementsService {
     // 2) Load all entitlements for this shop
     const rows = await db('shop_module_entitlements')
       .where({ shop_id: shopId })
+      .andWhere('valid_from', '<=', db.fn.now())
+      .andWhere((qb) =>
+        qb.whereNull('valid_until').orWhere('valid_until', '>', db.fn.now())
+      )
       .select('module_key', 'flag_key');
 
     if (!rows || rows.length === 0) {
@@ -169,5 +193,42 @@ export class EntitlementsService {
       .insert(rows)
       .onConflict(['shop_id', 'module_key', 'flag_key'])
       .ignore();
-  }
-}
+  };
+
+    /**
+     * Apply entitlement rows (LOW-LEVEL).
+     *
+     * HARD RULES:
+     * - No validation
+     * - No business logic
+     * - No lifecycle awareness
+     * - No audit
+     *
+     * This is a mechanical persistence helper only.
+     */
+    static async applyEntitlementRows(
+      trx: any,
+      rows: Array<{
+        shop_id: number;
+        module_key: string;
+        flag_key: string | null;
+        source: string;
+        valid_from?: Date;
+        valid_until?: Date | null;
+      }>
+    ): Promise<void> {
+
+        if (!rows || rows.length === 0) return;
+
+        await trx('shop_module_entitlements')
+          .insert(
+            rows.map((r) => ({
+              ...r,
+              valid_from: r.valid_from ?? trx.fn.now(),
+              valid_until: r.valid_until ?? null,
+            }))
+          )
+          .onConflict(['shop_id', 'module_key', 'flag_key'])
+          .ignore();
+      }
+    }
