@@ -10,6 +10,13 @@ export function verifyStripeSignature(
 ) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
+  console.log('[STRIPE_VERIFY][DEBUG]', {
+    header: req.headers['stripe-signature'],
+    secret_present: !!process.env.STRIPE_WEBHOOK_SECRET,
+    raw_body_type: typeof (req as any).rawBody,
+    raw_body_length: (req as any).rawBody?.length,
+  });
+
   // Explicit fail-closed
   if (!secret) {
     return res.status(500).json({ error: 'Stripe webhook secret not configured' });

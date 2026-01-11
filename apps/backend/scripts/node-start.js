@@ -173,6 +173,8 @@ if (!app || typeof app.listen !== 'function') {
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 
+console.log('[ENV] STRIPE_WEBHOOK_SECRET present:', !!process.env.STRIPE_WEBHOOK_SECRET);
+
 // Start HTTP server (mirrors running node dist/server.js directly)
 const server = app.listen(port, HOST, async () => {
   console.log(`Server is listening on http://${HOST}:${port}`);
