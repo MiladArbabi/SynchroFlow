@@ -9,6 +9,7 @@ import {
     getTopProducts, 
     getSalesByTrafficSource,
 } from './dashboard.controller';
+import { getDashboardFt2Snapshot } from './dashboard.ft2.controller';
 
 const router = Router();
 
@@ -31,5 +32,7 @@ router.get('/top-products', authenticateToken, getTopProducts);
 
 // Endpoint for "Sales by Traffic Source" widget
 router.get('/sales-by-traffic-source', authenticateToken, getSalesByTrafficSource);
+
+router.get('/ft2', authenticateToken, getDashboardFt2Snapshot);
 
 export default router;
