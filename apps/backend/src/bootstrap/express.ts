@@ -1,7 +1,7 @@
 // apps/backend/src/bootstrap/express.ts
 import express, { Express } from 'express';
 import cookieParser from 'cookie-parser';
-import db from '../db';
+import db from 'api-src/db';
 
 // routes
 import layoutRoutes from '../api/layouts/layout.routes';
@@ -14,13 +14,9 @@ import authRoutes from '../api/auth/auth.routes';
 import dashboardRoutes from '../api/dashboard/dashboard.routes';
 import userStateRoutes from '../api/user-state/user-state.routes';
 import shopifyRoutes from '../api/shopify/shopify.routes';
-/* import shopifyDevRoutes from '../api/shopify/dev.routes'; */
 import onboardingReadinessRouter from '../onboarding/readiness.router';
-import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
-
 import { registerActivationRoutes } from '../api/activation/activation.routes';
-
 import { registerLifecycleRoutes } from 'api-src/api/lifecycle';
 
 // Specter routes (FT0)
@@ -34,6 +30,10 @@ import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
 import productsFt2Routes from '../api/products/products.ft2.routes';
 import analyticsRoutes from '../api/analytics/analytics.routes';
 import financesRoutes from '../api/finances/finances.routes';
+
+//entitlments and payment services
+import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
+import { stripeWebhookHandler } from '../api/billing/stripe.webhook';
 
 export function createApp(): Express {
   const app = express();
@@ -89,6 +89,11 @@ export function createApp(): Express {
     authenticateToken,
     getMyEntitlements
   );
+  app.post(
+    '/api/v1/billing/stripe/webhook',
+    stripeWebhookHandler
+  );
+
 
   // basic endpoints preserved
   app.get('/', (_req, res) => res.send('SynchroFlow API is running!'));
