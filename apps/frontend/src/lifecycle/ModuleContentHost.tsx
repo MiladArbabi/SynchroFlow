@@ -1,3 +1,7 @@
+// 🚫 CONTRACT VIOLATION (v1.0)
+// Lifecycle and entitlements MUST NOT be composed together.
+// This file is scheduled for removal after entitlement enforcement layer is introduced.
+
 //apps/frontend/src/lifecycle/ModuleContentHost.tsx
 import React from 'react';
 

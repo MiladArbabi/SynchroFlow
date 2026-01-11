@@ -1,3 +1,7 @@
+// 🚫 CONTRACT VIOLATION (v1.0)
+// Lifecycle must not read entitlements (paid/premium).
+// This logic will be removed when FT2 confirmation is fully isolated.
+
 // apps/backend/src/services/lifecycle.service.ts
 import db from 'api-src/db';
 import { OnboardingReadinessService } from '../onboarding/readiness.service';

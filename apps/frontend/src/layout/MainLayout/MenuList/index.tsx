@@ -1,3 +1,7 @@
+// ⚠️ LEGACY — DO NOT USE
+// This file contains pre-v1.0 entitlement logic.
+// Replaced by static nav rebuild + sealed entitlement contract.
+
 // apps/frontend/src/layout/MainLayout/MenuList/index.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

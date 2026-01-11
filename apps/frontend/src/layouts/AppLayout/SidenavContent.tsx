@@ -1,133 +1,106 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/SidenavContent.tsx
+
 import React, { useMemo } from 'react';
-import { Box, useMediaQuery, Chip, Stack } from '@mui/material'; // Import necessary MUI components
-import { useTheme } from '@mui/material/styles';
+import {
+  Box,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Typography
+} from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { RouteConfig, EntitlementSnapshot } from 'routes';
-import { useEntitlements } from 'contexts/EntitlementsContext';
+import {
+  IconLayoutDashboard,
+  IconShoppingCart,
+  IconBox,
+  IconUsers,
+  IconChartBar,
+  IconCash,
+  IconSettings
+} from '@tabler/icons-react';
+import SimpleBar from 'ui-component/third-party/SimpleBar';
+import LogoSection from 'layout/MainLayout/LogoSection';
 
-// --- MUI List Imports for Settings ---
-import List from '@mui/material/List';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
-import { IconSettings } from '@tabler/icons-react';
-import { Typography } from '@mui/material';
-
-// --- BERRY COMPONENT IMPORTS ---
-import LogoSection from 'layout/MainLayout/LogoSection'; 
-import MenuList from 'layout/MainLayout/MenuList';     
-import SimpleBar from 'ui-component/third-party/SimpleBar'; 
-
-// --- STATE MANAGEMENT & CONFIG ---
-import { useGetMenuMaster } from 'api/menu'; // Uses our refactored hook (reads from ConfigContext)
-import useConfig from 'hooks/useConfig';
-// import MenuCard from './MenuCard'; // We'll add this later if needed
-
-// --- CONSTANTS ---
-// import { drawerWidth } from 'store/constant'; // We might not need this exact width logic initially
-
-// ==============================|| NEW SIDENAV CONTENT ||============================== //
-
-const SidenavContent: React.FC<{ 
-  brandName: string;
-  routes: any; // Consider typing this array
-  isSidenavOpen: boolean;
-  isConnected: boolean; // <-- 2. Accept new props
-}> = () => {
+const SidenavContent: React.FC = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const [drawerOpen, setDrawerOpen] = React.useState(true);
 
-  const { menuMaster } = useGetMenuMaster(); // Reads drawerOpen state from our ConfigContext via the hook
-  const drawerOpen = menuMaster.isDashboardDrawerOpened;
-
-  // Memoize the Logo section
   const logo = useMemo(
     () => (
       <Box sx={{ display: 'flex', p: 2, justifyContent: drawerOpen ? 'flex-start' : 'center' }}>
-         <LogoSection isCollapsed={!drawerOpen} />
+        <LogoSection isCollapsed={!drawerOpen} />
       </Box>
     ),
     [drawerOpen]
   );
 
-  // Memoize the main menu drawer content
-  const drawerContent = useMemo(() => {
-    // Determine if the vertical menu is considered "open" based on orientation and state
-    // For our layout, we primarily care about drawerOpen state.
-    const isVerticalOpen = drawerOpen; // Simplified for our fixed vertical layout
-
-    // Placeholder for potential extra content (like Berry's MenuCard or version chip)
-    const extraContent = (
-      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, pt: 0 }}>
-        <Stack direction="row" sx={{ justifyContent: 'center', my: 2 }}>
-          {/* Use VITE_APP_VERSION from env if available, otherwise a placeholder */}
-          <Chip label={import.meta.env.VITE_APP_VERSION || 'v1.0.0'} size="small" color="default" />
-        </Stack>
-      </Box>
-    );
-
-    // Define base SX for the scrollable area
-    // Adjust padding based on drawerOpen state
-    const simpleBarSX = {
-      // Set height to fill the available space minus the logo height (adjust as needed)
-      height: 'calc(100% - 70px)', // Example height calculation
-      '& .simplebar-content': {
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column'
-      },
-      // Adjust padding inside the scrollbar based on drawer state
-      px: drawerOpen ? 2 : 0, // More padding when open
-      mt: drawerOpen ? 0 : '20px' // Add margin top when closed (mini)
-    };
-
-    return (
-      // Use SimpleBar for consistent scrolling
-      // We don't need the downMD conditional rendering here as SimpleBar handles mobile well enough
-      // The Box inside SimpleBar provides the padding
-      <SimpleBar sx={simpleBarSX}>
-         <Box sx={{ flexGrow: 1 }}> {/* Box to allow MenuList to take available space */}
-            <MenuList />
-         </Box>
-
-         {/* --- ACCOUNT SETTINGS LINK (PINNED TO BOTTOM) --- */}
-         <List sx={{ p: drawerOpen ? 1 : 0.5 }}>
-           <ListItemButton
-             sx={{ borderRadius: '8px' }} // Use theme.shape.borderRadius
-             onClick={() => navigate('/account/settings')}
-             selected={pathname === '/account/settings'}
-           >
-             <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
-               <IconSettings stroke={1.5} size="5px" />
-             </ListItemIcon>
-             {/* Only show text if drawer is open */}
-             {drawerOpen && (
-               <ListItemText 
-                 primary={
-                   <Typography variant="body2" color="inherit">Account Settings</Typography>
-                 } 
-               />
-             )}
-           </ListItemButton>
-         </List>
-         {/* --- END ACCOUNT SETTINGS LINK --- */}
-
-        {/* Render extra content only when the drawer is fully open */}
-        {isVerticalOpen && extraContent}
-      </SimpleBar>
-    );
-  }, [drawerOpen, navigate, pathname]);
+  const navItems = [
+    { label: 'Dashboard', path: '/dashboard', icon: <IconLayoutDashboard size={18} /> },
+    { label: 'Orders', path: '/orders', icon: <IconShoppingCart size={18} /> },
+    { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
+    { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
+    { label: 'Analytics', path: '/analytics', icon: <IconChartBar size={18} /> },
+    { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> }
+  ];
 
   return (
-    // Use a Box that fills the height and acts as the main container
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Render the logo */}
-        {logo}
-      {/* Render the drawer content (MenuList + Extras inside SimpleBar) */}
-      {drawerContent}
+      {logo}
+
+      <SimpleBar
+        sx={{
+          height: 'calc(100% - 70px)',
+          '& .simplebar-content': {
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+          },
+          px: drawerOpen ? 2 : 0
+        }}
+      >
+        <Box sx={{ flexGrow: 1 }}>
+          <List sx={{ px: drawerOpen ? 1 : 0.5 }}>
+            {navItems.map((item) => (
+              <ListItemButton
+                key={item.path}
+                sx={{ borderRadius: '8px' }}
+                selected={pathname === item.path}
+                onClick={() => navigate(item.path)}
+              >
+                <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
+                  {item.icon}
+                </ListItemIcon>
+                {drawerOpen && (
+                  <ListItemText
+                    primary={<Typography variant="body2">{item.label}</Typography>}
+                  />
+                )}
+              </ListItemButton>
+            ))}
+          </List>
+        </Box>
+
+        {/* Account Settings — pinned bottom */}
+        <List sx={{ px: drawerOpen ? 1 : 0.5, pb: 1 }}>
+          <ListItemButton
+            sx={{ borderRadius: '8px' }}
+            selected={pathname === '/account/settings'}
+            onClick={() => navigate('/account/settings')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
+              <IconSettings size={18} />
+            </ListItemIcon>
+            {drawerOpen && (
+              <ListItemText
+                primary={<Typography variant="body2">Settings</Typography>}
+              />
+            )}
+          </ListItemButton>
+        </List>
+      </SimpleBar>
     </Box>
   );
 };

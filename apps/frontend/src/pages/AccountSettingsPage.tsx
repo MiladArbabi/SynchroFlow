@@ -81,10 +81,10 @@ const AccountSettingsPage: React.FC = () => {
   };
 
   return (
-    <MainCard title="Account Settings" content={false}>
+    <MainCard title="Settings" content={false}>
       <Box sx={{ width: '100%' }}>
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs value={value} onChange={handleChange} aria-label="Account settings tabs">
+          <Tabs value={value} onChange={handleChange} aria-label="settings tabs">
             <Tab
               label="Localization"
               icon={<IconComponent name="Languages" size="small" />}
