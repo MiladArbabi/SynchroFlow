@@ -87,7 +87,7 @@ export class ShopifyAppService {
       const webhookData = {
         webhook: {
           topic: 'app/uninstalled',
-          address: `${baseUrl}/api/v1/shopify/webhooks/app-uninstalled`,
+          address: `${baseUrl}/api/v1/shopify/webhooks`,
           format: 'json'
         }
       };

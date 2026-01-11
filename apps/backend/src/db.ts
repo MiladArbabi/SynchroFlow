@@ -28,12 +28,15 @@ if (environment === 'production' && !process.env.DATABASE_URL) {
 const db = knex(dbConfig);
 
 // 5. Run the connection test + identity probe
-if (environment !== 'test') {
+const isJest =
+  process.env.JEST_WORKER_ID !== undefined ||
+  process.env.NODE_ENV === 'test';
+
+if (!isJest) {
   db.raw(`
-    select
-      current_database() as database,
-      inet_server_addr() as host,
-      inet_server_port() as port
+    SELECT current_database() as database,
+           inet_server_addr() as host,
+           inet_server_port() as port
   `)
     .then((r) => {
       console.log(`Database connected successfully in ${environment} mode.`);

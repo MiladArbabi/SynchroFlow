@@ -12,7 +12,7 @@
 
 import { Request, Response } from 'express';
 import { WebhookLedgerService } from 'api-src/services/webhook-ledger.service';
-import { ShopifyAppService } from 'api-src/services/shopify-app.service';
+import { handleAppUninstalled } from './handlers';
 
 type WebhookOutcome =
   | 'processed'
@@ -87,7 +87,7 @@ export async function shopifyAppUninstalledWebhook(
   // 3. Domain mutation
   // ─────────────────────────────────────────────
   try {
-    await ShopifyAppService.markAppUninstalled(shopDomain);
+    await handleAppUninstalled({ shopDomain });
 
     await WebhookLedgerService.markProcessed(eventId);
 

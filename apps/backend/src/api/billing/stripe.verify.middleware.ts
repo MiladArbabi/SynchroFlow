@@ -1,46 +1,22 @@
-import { Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
+// Stripe Webhook Verification
+// ---------------------------
+//
+// Stripe signs payloads using HMAC-SHA256 over the raw request body,
+// but includes metadata in the signature header.
+//
+// Stripe's format allows multiple signatures (v1, v0, etc), so
+// verification checks whether the computed digest is INCLUDED
+// rather than strictly equal.
+//
+// Reference:
+// https://stripe.com/docs/webhooks/signatures
 
-const STRIPE_SIGNATURE_HEADER = 'stripe-signature';
 
-export function verifyStripeSignature(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+import { createWebhookVerifier } from 'api-src/api/webhooks/verifyWebhook';
 
-  console.log('[STRIPE_VERIFY][DEBUG]', {
-    header: req.headers['stripe-signature'],
-    secret_present: !!process.env.STRIPE_WEBHOOK_SECRET,
-    raw_body_type: typeof (req as any).rawBody,
-    raw_body_length: (req as any).rawBody?.length,
-  });
-
-  // Explicit fail-closed
-  if (!secret) {
-    return res.status(500).json({ error: 'Stripe webhook secret not configured' });
-  }
-
-  const signature = req.headers[STRIPE_SIGNATURE_HEADER] as string | undefined;
-  if (!signature) {
-    return res.status(400).json({ error: 'Missing Stripe signature' });
-  }
-
-  // Stripe signs the *raw* request body
-  const rawBody = (req as any).rawBody;
-  if (!rawBody) {
-    return res.status(400).json({ error: 'Missing raw request body' });
-  }
-
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
-
-  if (!signature.includes(expected)) {
-    return res.status(400).json({ error: 'Invalid Stripe signature' });
-  }
-
-  return next();
-}
+export const verifyStripeSignature = createWebhookVerifier({
+  header: 'stripe-signature',
+  secretEnv: 'STRIPE_WEBHOOK_SECRET',
+  digest: 'hex',
+  compare: (signature, expected) => signature.includes(expected),
+});

@@ -36,6 +36,17 @@ import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook';
 import { verifyStripeSignature } from 'api-src/api/billing/stripe.verify.middleware';
 
+
+// Raw body capture for webhook verification
+// -----------------------------------------
+// Certain webhook providers (Stripe, Shopify) require HMAC verification
+// over the *raw request body bytes*.
+//
+// This hook ensures req.rawBody is populated BEFORE JSON parsing,
+// while preserving normal express.json() behavior for all routes.
+//
+// DO NOT remove or modify without updating webhook verification logic.
+
 export function createApp(): Express {
   const app = express();
   app.use(

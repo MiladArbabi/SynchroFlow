@@ -1,24 +1,28 @@
-// Replace with that
 // apps/backend/src/api/shopify/shopify.routes.ts
+//
+// Shopify API routes
+//
+// HARD RULES:
+// - Single webhook endpoint
+// - Verification happens before routing
+// - No topic-specific paths
+
 import express, { Router } from 'express';
-import { shopifyAppUninstalledWebhook } from './shopify.webhook';
 import { verifyShopifySignature } from './shopify.verify.middleware';
+import webhookRouter from './shopify.webhook.router';
 
 const router = Router();
 
 /**
- * Shopify "app/uninstalled" webhook.
+ * Shopify webhooks (single entrypoint)
  *
- * Transport-first:
- * - Raw body REQUIRED for HMAC verification
- * - Ledger written before domain mutation
- * - Idempotent via integration_webhook_events
+ * Shopify sends topic via X-Shopify-Topic header.
  */
-
 router.post(
-  '/webhooks/app-uninstalled',
+  '/webhooks',
+  express.raw({ type: 'application/json' }),
   verifyShopifySignature,
-  shopifyAppUninstalledWebhook
+  webhookRouter
 );
 
 export default router;
