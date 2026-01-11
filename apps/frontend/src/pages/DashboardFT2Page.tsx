@@ -15,6 +15,8 @@
 // FT2 dashboard composition will be added later.
 
 import React from 'react';
+import { useDashboardFt2Snapshot } from 'pages/dashboard-ft2/useDashboardFt2Snapshot';
+import { mapDashboardFt2Snapshot } from 'pages/dashboard-ft2/useDashboardFt2Adapter';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -23,10 +25,52 @@ const DashboardFT2Page: React.FC = () => {
     console.debug('[MOUNT] DashboardFT2Page');
   }
 
-  return (
+  const { data, isLoading } = useDashboardFt2Snapshot();
+
+  if (isLoading) {
+    return <div>Loading</div>;
+  }
+
+  // 🔒 HARD RULE: snapshot must always pass through adapter
+  const mapped = mapDashboardFt2Snapshot(data);
+
+    return (
     <div>
-      {/* FT2 Dashboard placeholder */}
-      <p>Dashboard insights will appear here.</p>
+      <h2>System Overview</h2>
+
+      <div>
+        <strong>Observation window</strong>
+        <div>{mapped.observationWindow?.from ?? '—'}</div>
+        <div>{mapped.observationWindow?.to ?? '—'}</div>
+      </div>
+
+      <div>
+        <strong>Ingestion</strong>
+        <div>{mapped.systemHealth?.ingestion ?? '—'}</div>
+      </div>
+
+      <div>
+        <strong>Confidence</strong>
+        <div>{mapped.systemHealth?.confidence ?? '—'}</div>
+      </div>
+
+      {/* ───────────────────────────────────────────── */}
+      <h2>Coverage</h2>
+
+      <div>
+        <strong>Orders observed</strong>
+        <div>{mapped.coverage?.ordersObserved ?? '—'}</div>
+      </div>
+
+      <div>
+        <strong>Products observed</strong>
+        <div>{mapped.coverage?.productsObserved ?? '—'}</div>
+      </div>
+
+      <div>
+        <strong>Sessions observed</strong>
+        <div>{mapped.coverage?.sessionsObserved ?? '—'}</div>
+      </div>
     </div>
   );
 };

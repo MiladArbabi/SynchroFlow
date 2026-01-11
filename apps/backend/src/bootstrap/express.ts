@@ -27,7 +27,9 @@ import { registerLifecycleRoutes } from 'api-src/api/lifecycle';
 import specterRouter from '../api/specter/specter.routes';
 import customersFt2Routes from '../api/customers/customers.ft2.routes';
 
-// Module routes
+// Module/Dashboard routes
+import dashboardFt2Routes from '../api/dashboard/dashboard.ft2.routes';
+
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
 import productsFt2Routes from '../api/products/products.ft2.routes';
 import analyticsRoutes from '../api/analytics/analytics.routes';
@@ -66,8 +68,10 @@ export function createApp(): Express {
   app.use('/api/v1/onboarding', onboardingReadinessRouter);
 
   // ─────────────────────────────────────────────
-  // Modules (read-only truth surfaces)
+  // Modules/Dashboard (read-only truth surfaces)
   // ─────────────────────────────────────────────
+  app.use('/api/v1/dashboard', dashboardFt2Routes);
+
   app.use('/api/v1/modules/order-nexus', orderNexusRoutes);
   app.use('/api/v1/modules/customers', customersFt2Routes);
   app.use('/api/v1/modules/products', productsFt2Routes);
