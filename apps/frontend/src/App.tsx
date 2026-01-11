@@ -25,6 +25,7 @@ import { LifecycleProvider } from 'lifecycle/LifecycleProvider';
 import { LifecycleRouteHost } from 'lifecycle/LifecycleRouteHost';
 
 import AppLayout from 'layouts/AppLayout';
+import { EntitlementBoundary } from 'runtime/EntitlementBoundary';
 
 const queryClient = new QueryClient();
 
@@ -112,7 +113,9 @@ function AuthenticatedAppShell() {
                           onCloseConnectModal={() => setIsConnectModalOpen(false)}
                         >
                           <ShopLifecycleGate onActivation={handleActivation}>
-                            <LifecycleRouteHost />
+                            <EntitlementBoundary>
+                              <LifecycleRouteHost />
+                            </EntitlementBoundary>
                           </ShopLifecycleGate>
                         </AppLayout>
                       </ShopLifecycleShell>
