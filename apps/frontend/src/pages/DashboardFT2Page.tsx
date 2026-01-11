@@ -44,14 +44,17 @@ const DashboardFT2Page: React.FC = () => {
         <div>{mapped.observationWindow?.to ?? '—'}</div>
       </div>
 
+     {/* ───────────────────────────────────────────── */}
+      <h2>System Health</h2>
+
       <div>
-        <strong>Ingestion</strong>
-        <div>{mapped.systemHealth?.ingestion ?? '—'}</div>
+        <strong>Orders outcome</strong>
+        <div>{mapped.systemHealth?.ordersOutcome ?? '—'}</div>
       </div>
 
       <div>
-        <strong>Confidence</strong>
-        <div>{mapped.systemHealth?.confidence ?? '—'}</div>
+        <strong>Products outcome</strong>
+        <div>{mapped.systemHealth?.productsOutcome ?? '—'}</div>
       </div>
 
       {/* ───────────────────────────────────────────── */}

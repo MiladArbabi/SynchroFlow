@@ -7,6 +7,7 @@ import { getOrderNexusFt2Snapshot } from 'api-src/services/order-nexus-ft2/order
 import { getProductsFt2Snapshot } from 'api-src/services/products-ft2.provider';
 
 import { buildDashboardFt2Coverage } from './dashboardFt2Coverage';
+import { buildDashboardFt2SystemHealth } from './dashboardFt2SystemHealth';
 
 /**
  * GET /api/v1/dashboard/ft2
@@ -45,8 +46,11 @@ export async function getDashboardFt2Snapshot(
   });
 
   res.status(200).json({
-    observationWindow: null, // explicitly undeclared (for now)
+    observationWindow: period,
     coverage,
-    systemHealth: null,      // explicitly undeclared (for now)
+    systemHealth: buildDashboardFt2SystemHealth({
+      orders: ordersFt2,
+      products: productsFt2,
+    }),
   });
 }
