@@ -57,4 +57,94 @@ describe('EntitlementRevocationService – explicit revocation', () => {
     expect(after).not.toBeNull();
     expect(after!.modules).not.toContain('analytics');
   });
+
+  it('is idempotent when revoking an already-revoked entitlement', async () => {
+    // ─────────────────────────────────────────────
+    // Arrange
+    // ─────────────────────────────────────────────
+    const shopId = 9101;
+    const userId = 9102;
+
+    await seedShopAndUser({ shopId, userId });
+
+    await db('shop_module_entitlements').insert({
+      shop_id: shopId,
+      module_key: 'analytics',
+      flag_key: null,
+      source: 'test',
+      valid_from: new Date(Date.now() - 1000),
+      valid_until: null,
+    });
+
+    // First revocation
+    const revokedAt = new Date();
+    await EntitlementRevocationService.revokeEntitlements({
+      shopId,
+      scope: { modules: ['analytics'] },
+      revokedAt,
+      reason: 'admin',
+    });
+
+    // ─────────────────────────────────────────────
+    // Act (second revocation — should be no-op)
+    // ─────────────────────────────────────────────
+    await EntitlementRevocationService.revokeEntitlements({
+      shopId,
+      scope: { modules: ['analytics'] },
+      revokedAt: new Date(Date.now() + 1000),
+      reason: 'admin',
+    });
+
+    // ─────────────────────────────────────────────
+    // Assert
+    // ─────────────────────────────────────────────
+    const rows = await db('shop_module_entitlements')
+      .where({ shop_id: shopId, module_key: 'analytics' });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].valid_until).toEqual(revokedAt);
+  });
+  
+  it('does not delete entitlement rows when revoking (non-destructive)', async () => {
+    // ─────────────────────────────────────────────
+    // Arrange
+    // ─────────────────────────────────────────────
+    const shopId = 9201;
+    const userId = 9202;
+
+    await seedShopAndUser({ shopId, userId });
+
+    await db('shop_module_entitlements').insert({
+      shop_id: shopId,
+      module_key: 'finances',
+      flag_key: null,
+      source: 'test',
+      valid_from: new Date(Date.now() - 1000),
+      valid_until: null,
+    });
+
+    const beforeRows = await db('shop_module_entitlements')
+      .where({ shop_id: shopId, module_key: 'finances' });
+
+    expect(beforeRows).toHaveLength(1);
+    expect(beforeRows[0].valid_until).toBeNull();
+
+    // ─────────────────────────────────────────────
+    // Act
+    // ─────────────────────────────────────────────
+    await EntitlementRevocationService.revokeEntitlements({
+      shopId,
+      scope: { modules: ['finances'] },
+      reason: 'admin',
+    });
+
+    // ─────────────────────────────────────────────
+    // Assert
+    // ─────────────────────────────────────────────
+    const afterRows = await db('shop_module_entitlements')
+      .where({ shop_id: shopId, module_key: 'finances' });
+
+    expect(afterRows).toHaveLength(1);
+    expect(afterRows[0].valid_until).not.toBeNull();
+  });
 });

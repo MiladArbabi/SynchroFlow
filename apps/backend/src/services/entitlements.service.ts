@@ -8,6 +8,51 @@
  * NOTE: This is intentionally simple; real "plans" / SKUs can layer on top later.
  */
 
+/**
+ * WRITE SURFACE SEAL
+ * ------------------
+ * The only legal writers to `shop_module_entitlements` are:
+ *
+ * 1. grantDefaultFreeTierForShop
+ * 2. grantFt2FreeBaselineForShop
+ * 3. CommercialGrantService (via private applyEntitlementRows)
+ *
+ * Any new write path is a violation of entitlements invariants:
+ * - no lifecycle inference
+ * - no billing coupling
+ * - no destructive mutation
+ *
+ * If you think you need a new writer, stop.
+ * Add a test first, then justify it explicitly.
+ */
+
+/**
+ * ─────────────────────────────────────────────────────────────
+ * ENTITLEMENTS SYSTEM — PRODUCTION SEALED
+ * ─────────────────────────────────────────────────────────────
+ *
+ * Status: PRODUCTION-READY (FROZEN)
+ * Date: 2026-01
+ *
+ * This system has been explicitly validated for:
+ * - Temporal correctness
+ * - Additive-only grants
+ * - Explicit, non-destructive revocation
+ * - Billing-blind and lifecycle-blind operation
+ * - Write-surface containment
+ * - Regression test coverage for all critical invariants
+ *
+ * ⚠️ CHANGE POLICY ⚠️
+ * -------------------
+ * Any modification requires:
+ * 1. A failing test proving a broken invariant
+ * 2. Explicit justification of which invariant still holds
+ * 3. No new write paths
+ *
+ * If you are adding plans, lifecycle inference, billing shortcuts,
+ * or deletes — you are breaking the system. Stop.
+ */
+
 import db from '../db';
 import { requireShopIdForUser } from './shop-resolution.service';
 
@@ -206,7 +251,7 @@ export class EntitlementsService {
      *
      * This is a mechanical persistence helper only.
      */
-    static async applyEntitlementRows(
+    private static async applyEntitlementRows(
       trx: any,
       rows: Array<{
         shop_id: number;

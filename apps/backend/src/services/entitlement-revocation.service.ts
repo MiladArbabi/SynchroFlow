@@ -11,6 +11,10 @@
 // - No billing logic
 // - UPDATE-only via valid_until
 
+// STATUS: Production-sealed.
+// Covered by temporal, idempotency, and non-destructive tests.
+// Do not extend without adding failing tests first.
+
 // apps/backend/src/services/entitlement-revocation.service.ts
 
 import db from "api-src/db";
