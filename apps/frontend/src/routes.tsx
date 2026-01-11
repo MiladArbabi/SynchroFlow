@@ -1,4 +1,5 @@
 // apps/frontend/src/routes.tsx
+import type { EntitlementSnapshot } from 'runtime/EntitlementSnapshot';
 
 // ✅ Route shape with entitlement metadata
 export interface RouteConfig {
@@ -7,11 +8,6 @@ export interface RouteConfig {
 
   requiredModuleId?: string;
   requiredFlagId?: string;
-}
-
-export interface EntitlementSnapshot {
-  modules: string[]; // e.g. ['core-dashboard', 'orders-core']
-  flags: string[];   // e.g. ['beta-analytics']
 }
 
 const routes: RouteConfig[] = [
@@ -56,11 +52,11 @@ export function isRouteEnabled(
 
   const { modules, flags } = entitlements;
 
-  if (route.requiredModuleId && !modules.includes(route.requiredModuleId)) {
+  if (route.requiredModuleId && !modules.has(route.requiredModuleId)) {
     return false;
   }
 
-  if (route.requiredFlagId && !flags.includes(route.requiredFlagId)) {
+  if (route.requiredFlagId && !flags.has(route.requiredFlagId)) {
     return false;
   }
 

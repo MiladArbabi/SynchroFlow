@@ -1,3 +1,23 @@
+// EntitlementsContext (LEGACY + CANONICAL SNAPSHOT)
+// -----------------------------------------------
+//
+// Canonical Source of Truth:
+// - `snapshot` (EntitlementSnapshot)
+//
+// Legacy (DO NOT USE IN NEW CODE):
+// - `modules: string[]`
+// - `flags: string[]`
+// - `hasModule()`
+// - `hasFlag()`
+//
+// Rationale:
+// - Legacy UI/widgets still depend on array helpers
+// - New runtime code MUST consume `snapshot` only
+//
+// Enforcement:
+// - Runtime layer (runtime/*) is forbidden from using legacy helpers
+// - Snapshot semantics are sealed and immutable
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-refresh/only-export-components */
 // apps/frontend/src/contexts/EntitlementsContext.tsx
@@ -12,10 +32,13 @@ import React, {
 } from 'react';
 import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from './AuthContext';
+import { EntitlementSnapshot } from 'runtime/EntitlementSnapshot';
 
 // --- Backend payload shape ---
 interface EntitlementsResponse {
   shopId: number | null;
+
+  // ⚠️ LEGACY — array form retained for backward compatibility
   modules: string[];
   flags: string[];
 }
@@ -25,6 +48,9 @@ interface EntitlementsContextValue {
   shopId: number | null;
   modules: string[];
   flags: string[];
+
+  snapshot: EntitlementSnapshot; // ✅ ADD THIS
+
   isLoading: boolean;
   hasResolved: boolean;
   error: string | null;
@@ -59,6 +85,12 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     modules: string[];
     flags: string[];
   } | null>(null);
+
+  const snapshot = React.useMemo(() => ({
+    shopId,
+    modules: new Set(modules),
+    flags: new Set(flags)
+  }), [shopId, modules, flags]);
 
   // simple invalidation token to force re-fetch
   const [refreshToken, setRefreshToken] = useState(0);
@@ -200,11 +232,13 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     };
   }, [isLoggedIn, accessToken, refreshToken]);
 
+  // ⚠️ LEGACY — DO NOT USE IN NEW CODE
   const hasModule = useCallback(
     (moduleId: string) => modules.includes(moduleId),
     [modules]
   );
 
+  // ⚠️ LEGACY — DO NOT USE IN NEW CODE
   const hasFlag = useCallback(
     (flagId: string) => flags.includes(flagId),
     [flags]
@@ -214,6 +248,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     shopId,
     modules,
     flags,
+    snapshot,
     isLoading,
     hasResolved,
     error,
