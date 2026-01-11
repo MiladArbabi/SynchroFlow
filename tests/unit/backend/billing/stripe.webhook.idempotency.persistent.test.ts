@@ -11,14 +11,17 @@ import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
 import { CommercialGrantService } from 'api-src/services/commercial-grant.service';
 import { signStripePayload } from '../../helpers/stripeTestSignature';
+import db from 'api-db';
 
 jest.mock('api-src/services/commercial-grant.service');
 
 describe('Stripe webhook → CommercialGrant intent mapping', () => {
   const app = createApp();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await db('integration_webhook_events').del();
+    await db('commercial_grant_events').del();
   });
 
   it('maps a Stripe invoice.paid event into a CommercialGrant intent', async () => {
@@ -111,6 +114,48 @@ describe('Stripe webhook → CommercialGrant intent mapping', () => {
       .set('Content-Type', 'application/json')
       .set('stripe-signature', signature)
       .send(payload)
+      .expect(200);
+
+    expect(CommercialGrantService.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('replay does not create additional commercial grant events', async () => {
+    const payload = {
+      id: 'evt_replay_test_001',
+      type: 'invoice.paid',
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          metadata: { shopId: '1' },
+          lines: {
+            data: [
+              {
+                price: { metadata: { module: 'analytics' } },
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const body = JSON.stringify(payload);
+    const signature = signStripePayload(
+      Buffer.from(body),
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+
+    await request(app)
+      .post('/api/v1/billing/stripe/webhook')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', signature)
+      .send(body)
+      .expect(200);
+
+    await request(app)
+      .post('/api/v1/billing/stripe/webhook')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', signature)
+      .send(body)
       .expect(200);
 
     expect(CommercialGrantService.apply).toHaveBeenCalledTimes(1);
