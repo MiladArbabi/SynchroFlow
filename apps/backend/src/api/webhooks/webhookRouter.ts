@@ -59,6 +59,20 @@ export class WebhookRouter {
    * - Handler failures are captured and marked failed
    */
   static async dispatch(envelope: WebhookEnvelope): Promise<void> {
+    // 🚨 MUST BE FIRST — NO CONDITIONS ABOVE THIS
+    const ledgerResult = await WebhookLedgerService.recordReceived({
+      integration: envelope.integration,
+      externalEventId: envelope.eventId,
+      eventType: envelope.eventType,
+      payload: envelope.rawPayload,
+      idempotencyKey: `${envelope.integration}:${envelope.eventId}`,
+    });
+
+    if (ledgerResult.isDuplicate) {
+      await WebhookLedgerService.markDuplicate(envelope.eventId);
+      return;
+    }
+
     const key = WebhookRouter.key(
       envelope.integration,
       envelope.eventType
@@ -66,28 +80,21 @@ export class WebhookRouter {
 
     const handler = WebhookRouter.routes.get(key);
 
-    // ─────────────────────────────────────────────
-    // Unsupported event
-    // ─────────────────────────────────────────────
     if (!handler) {
       await WebhookLedgerService.markIgnored(
         envelope.eventId,
-        'unsupported_event',
-        envelope.shopId
+        'unsupported_event'
       );
       return;
     }
 
-    // ─────────────────────────────────────────────
-    // Handler execution (fail-closed)
-    // ─────────────────────────────────────────────
     try {
       await handler(envelope);
+      await WebhookLedgerService.markProcessed(envelope.eventId);
     } catch (err: any) {
       await WebhookLedgerService.markFailed(
         envelope.eventId,
-        err?.message ?? 'handler_error',
-        envelope.shopId
+        err?.message ?? 'handler_error'
       );
     }
   }

@@ -34,6 +34,10 @@ describe('WebhookRouter – dispatch contract', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+
+    mockLedger.recordReceived.mockResolvedValue({
+      isDuplicate: false,
+    });
   });
 
   it('dispatches to the correct handler based on integration + eventType', async () => {
@@ -65,8 +69,7 @@ describe('WebhookRouter – dispatch contract', () => {
 
     expect(mockLedger.markIgnored).toHaveBeenCalledWith(
       unsupportedEnvelope.eventId,
-      'unsupported_event',
-      undefined
+      'unsupported_event'
     );
   });
 
@@ -89,8 +92,7 @@ describe('WebhookRouter – dispatch contract', () => {
 
     expect(mockLedger.markFailed).toHaveBeenCalledWith(
       baseEnvelope.eventId,
-      'boom',
-      undefined
+      'boom'
     );
   });
 
