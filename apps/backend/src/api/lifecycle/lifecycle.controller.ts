@@ -115,6 +115,12 @@ export async function confirmFt1(req: Request, res: Response) {
       return res.status(200).json({ phase: existing.phase });
     }
 
+    await LifecycleTransitionService.auditIfTransitioned({
+      userId,
+      shopId,
+      currentPhase: 'FT0',
+    });
+
     // Write FT1 snapshot explicitly
     await LifecycleTransitionService.auditIfTransitioned({
       userId,
@@ -167,10 +173,16 @@ export async function confirmFt2(req: Request, res: Response) {
       userId,
     });
 
+    // Idempotency: already FT2
+    if (snapshot?.phase === 'FT2') {
+      console.info('[LIFECYCLE][CONFIRM][FT2][IDEMPOTENT]', { userId });
+      return res.status(200).json({ phase: 'FT2' });
+    }
+
+    // Strict precondition: must be FT1
     if (!snapshot || snapshot.phase !== 'FT1') {
       console.info('[LIFECYCLE][CONFIRM][FT2][REJECTED]', {
         userId,
-        reason: 'ft1_not_confirmed',
         phase: snapshot?.phase ?? 'NONE',
       });
 

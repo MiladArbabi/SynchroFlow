@@ -1,19 +1,20 @@
 import { test, expect } from '@playwright/test';
+import { createAuthenticatedApiContext } from './utils/api-auth';
 
 /**
  * Lifecycle E2E — Backend Authority Lock
  *
- * This test asserts that lifecycle transitions are:
- * - Snapshot-driven
- * - Explicit
- * - Idempotent
- * - Backend-authoritative
+ * This test enforces:
+ * - Snapshot-driven lifecycle
+ * - Explicit promotions
+ * - Idempotency
+ * - FT1 and FT2 write authority
  *
- * UI state is intentionally ignored.
+ * UI is intentionally ignored.
  */
-
 test.describe('Lifecycle — backend authority', () => {
-  test('FT_MINUS_ONE → FT1 → FT2 (happy path)', async ({ request }) => {
+  test('FT_MINUS_ONE → FT1 → FT2', async () => {
+  const request = await createAuthenticatedApiContext();
 
     // ─────────────────────────────────────────────
     // 1. Initial lifecycle
@@ -39,7 +40,7 @@ test.describe('Lifecycle — backend authority', () => {
     expect(afterFt1Body.phase).toBe('FT1');
 
     // ─────────────────────────────────────────────
-    // 3. Evaluate FT2 eligibility
+    // 3. Evaluate FT2 eligibility (read-only)
     // ─────────────────────────────────────────────
     const evalFt2 = await request.get('/api/v1/lifecycle/ft2/evaluate');
     expect(evalFt2.ok()).toBeTruthy();
