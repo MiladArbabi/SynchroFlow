@@ -23,3 +23,22 @@ export interface WebhookEnvelope {
   shopId?: number;
   shopDomain?: string;
 }
+
+export interface WebhookDispatchJob {
+  version: 1;
+
+  // Identity (ledger-first)
+  integration: string;
+  eventId: string;
+  eventType: string;
+
+  // Payload
+  rawPayload: unknown;
+
+  // Routing metadata (optional, provider-specific)
+  shopId?: number;
+  shopDomain?: string;
+
+  // Traceability
+  enqueuedAt: string; // ISO string, not Date
+}

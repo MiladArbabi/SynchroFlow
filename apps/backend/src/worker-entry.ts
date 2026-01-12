@@ -7,6 +7,7 @@ import { initQueue } from './queue';
 import { startSyncWorker } from './sync.worker';
 import { startWorker as startEventWorker } from './worker';
 import { startProductIngestionWorker } from './workers/product-ingestion.worker';
+import { startWebhookWorker } from './workers/webhook-dispatch.worker';
 
 async function start() {
   console.log('[worker-entry] Booting worker runtime…');
@@ -17,6 +18,7 @@ async function start() {
   startSyncWorker();
   startEventWorker();
   startProductIngestionWorker();
+  startWebhookWorker();
 
   console.log('[worker-entry] All workers started');
 }
