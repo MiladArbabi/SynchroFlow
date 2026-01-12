@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
-import { evaluateFt2, confirmFt2 } from 'api/lifecycle';
+import { evaluateFt2, confirmFt2, confirmFt1 } from 'api/lifecycle';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { Ft1ChecklistSurface } from 'ui/src/ui/ft1-checklist/Ft1ChecklistSurface';
 
@@ -140,6 +140,9 @@ function Ft1OutletContent({
   confirming: boolean;
   setConfirming: (v: boolean) => void;
 }) {
+
+  const [confirmingFt1, setConfirmingFt1] = React.useState(false);
+
   /**
    * STATE — Loading / Preparing
    */
@@ -163,26 +166,49 @@ function Ft1OutletContent({
   if (evaluation.eligible === true) {
     return (
       <Ft1Panel>
-        <p>We now have enough data to unlock your insights.</p>
+        <p>Your onboarding is complete.</p>
 
+        {/* FT1 CONFIRM — explicit lifecycle transition */}
+        <button
+          disabled={confirmingFt1}
+          onClick={async () => {
+            setConfirmingFt1(true);
+
+            console.info('[FT1][CONFIRM][CLICKED]');
+
+            try {
+              await confirmFt1();
+              console.info('[FT1][CONFIRM][SUCCESS]');
+            } catch (err) {
+              console.error('[FT1][CONFIRM][FAILED]', err);
+              setConfirmingFt1(false);
+              return;
+            }
+          }}
+        >
+          Continue
+        </button>
+
+        <hr style={{ margin: '16px 0' }} />
+
+        {/* FT2 CONFIRM — now valid ONLY after FT1 snapshot updates */}
         <button
           disabled={confirming}
           onClick={async () => {
             setConfirming(true);
 
-            console.info('[FT1] user confirmed FT2 promotion');
+            console.info('[FT2][CONFIRM][CLICKED]');
 
             try {
               await confirmFt2();
 
-              // 🔒 Explicit lifecycle promotion (authoritative)
               window.dispatchEvent(
                 new CustomEvent('lifecycle:ft2-confirmed')
               );
 
-              console.info('[FT1] FT2 confirmed successfully');
+              console.info('[FT2][CONFIRM][SUCCESS]');
             } catch (err) {
-              console.error('[FT1] FT2 confirm failed', err);
+              console.error('[FT2][CONFIRM][FAILED]', err);
               setConfirming(false);
             }
           }}

@@ -42,18 +42,8 @@ export function lifecycleReducer(
     /* -------------------------------------------------- */
 
     case 'INTEGRATION_CREATED': {
-    // If boot is already resolved and we are still at FT-1,
-    // promote directly to FT0_PREPARING (real-world synced case)
-      if (state.bootResolved && state.phase === 'FT_MINUS_ONE') {
-        return {
-          ...state,
-          integrationExists: true,
-          phase: 'FT0_PREPARING',
-          hasSeenFT0: true,
-          ft0DwellCompleted: false,
-        };
-      }
-
+      // Integration existence is NOT lifecycle authority
+      // Lifecycle phase must come from backend only
       return {
         ...state,
         integrationExists: true,
@@ -103,21 +93,7 @@ export function lifecycleReducer(
     /* -------------------------------------------------- */
 
     case 'FT0_DWELL_ELAPSED': {
-    if (state.ft0DwellCompleted) return state;
-
-    // If backend FT1 already arrived, promote immediately
-    if (
-      state.bootResolved &&
-      state.integrationExists &&
-      state.hasLatchedFT1
-    ) {
-      return {
-        ...state,
-        ft0DwellCompleted: true,
-        phase: 'FT1_READY',
-      };
-    }
-
+      // Dwell is UX-only, never lifecycle authority
     return {
       ...state,
       ft0DwellCompleted: true,
@@ -127,32 +103,13 @@ export function lifecycleReducer(
     /* -------------------------------------------------- */
     /* FT1 promotion                                      */
     /* -------------------------------------------------- */
-
-   case 'FT1_BACKEND_COMPLETE': {
-    // Always latch backend truth
-    const latchedState = {
+    case 'FT1_BACKEND_COMPLETE': {
+    // Backend-confirmed lifecycle only
+    return {
       ...state,
+      phase: 'FT1_READY',
       hasLatchedFT1: true,
     };
-
-    const canPromoteToFT1 =
-      latchedState.bootResolved &&
-      latchedState.integrationExists &&
-      (
-        // Case 1: FT0 happened and dwell completed
-        (latchedState.hasSeenFT0 && latchedState.ft0DwellCompleted) ||
-        // Case 2: FT0 never occurred → dwell irrelevant
-        (!latchedState.hasSeenFT0)
-      );
-
-    if (canPromoteToFT1) {
-      return {
-        ...latchedState,
-        phase: 'FT1_READY',
-      };
-    }
-
-    return latchedState;
   }
 
   /* -------------------------------------------------- */

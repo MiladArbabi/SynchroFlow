@@ -1,7 +1,6 @@
 import request from 'supertest';
 import { createLifecycleTestApp } from 'api-src/api/lifecycle/__tests__/createLifecycleTestApp';
 import { LifecycleService } from 'api-src/services/lifecycle.service';
-import { LifecycleTransitionService } from 'api-src/services/lifecycle-transition.service';
 
 jest.mock('api-src/services/lifecycle-transition.service');
 
@@ -35,22 +34,13 @@ describe('GET /api/v1/lifecycle (unit)', () => {
     jest.clearAllMocks();
   });
 
-  it('returns FT1 and audits lifecycle transition', async () => {
+  it('returns FT1 when lifecycle service resolves FT1', async () => {
     (LifecycleService.resolveForUser as jest.Mock).mockResolvedValue('FT1');
 
     const res = await request(app).get('/api/v1/lifecycle');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ phase: 'FT1' });
-
-    expect(LifecycleTransitionService.auditIfTransitioned)
-      .toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 1,
-          shopId: 10,
-          currentPhase: 'FT1',
-        })
-      );
   });
 
   it('returns FT0 when lifecycle service resolves FT0', async () => {

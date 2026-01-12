@@ -77,9 +77,9 @@ export default defineConfig({
 
   /* Web Server config remains the same */
   webServer: {
-    command: 'npm run dev:full -- --mode e2e',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    command: 'npm run dev',
+    url: 'http://localhost:5173',
     timeout: 120 * 1000,
+    reuseExistingServer: !process.env.CI,
   },
 });

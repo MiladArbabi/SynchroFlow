@@ -1,3 +1,19 @@
+/**
+ * FT2 Confirm — WRITE AUTHORITY
+ * ----------------------------
+ * The ONLY endpoint allowed to promote a user from FT1 → FT2.
+ *
+ * Guarantees:
+ * - Lifecycle is snapshot-driven (read authority)
+ * - Promotion is explicit and user-triggered
+ * - FT2 eligibility is re-evaluated at time of confirm
+ *
+ * Forbidden:
+ * - Implicit promotion
+ * - Entitlement-derived lifecycle
+ * - Inference from data readiness
+ */
+
 //apps/backend/src/api/lifecycle/lifecycle.controller.ts
 import { Request, Response } from 'express';
 import { LifecycleService } from '../../services/lifecycle.service';
@@ -13,24 +29,7 @@ export async function getLifecycle(req: Request, res: Response) {
     }
 
     const userId = req.user.userId;
-
     const phase = await LifecycleService.resolveForUser(userId);
-
-    try {
-      const { shopId } = await requireShopContextForUser(userId);
-
-      await LifecycleTransitionService.auditIfTransitioned({
-        userId,
-        shopId,
-        currentPhase: phase,
-      });
-    } catch (err) {
-      console.info('[lifecycle][audit-skip]', {
-        userId,
-        reason: 'NO_SHOP_CONTEXT',
-        phase,
-      });
-    }
 
     return res.status(200).json({ phase });
   } catch (err) {
@@ -56,7 +55,7 @@ export async function getLifecycle(req: Request, res: Response) {
 
     if (!shopId) {
       return res.status(400).json({
-        error: 'No shop associated with user',
+        error: 'integration_missing',
       });
     }
 
@@ -66,11 +65,91 @@ export async function getLifecycle(req: Request, res: Response) {
 }
 
 /**
- * FT2 Confirm Promotion
- * ---------------------
- * Explicit user-triggered promotion from FT1 → FT2.
- * This is the ONLY place allowed to write ft2_state.
+ * FT1 Confirm — WRITE AUTHORITY
+ * ----------------------------
+ * Explicitly promotes:
+ *   FT_MINUS_ONE → FT1
+ *
+ * Preconditions:
+ * - Authenticated user
+ * - Integration exists (shop context resolvable)
+ *
+ * Guarantees:
+ * - Snapshot-driven lifecycle
+ * - Idempotent
+ * - Audited
+ *
+ * Forbidden:
+ * - Inference
+ * - Auto-promotion
+ * - Entitlement checks
  */
+
+export async function confirmFt1(req: Request, res: Response) {
+  try {
+    if (!req.user || req.user.userId == null) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user.userId;
+
+    // Resolve shop context (authoritative)
+    const { shopId } = await requireShopContextForUser(userId);
+    if (!shopId) {
+      return res.status(409).json({
+        error: 'integration_missing',
+      });
+    }
+
+    // Idempotency: snapshot may already exist
+    const existing = await db('user_lifecycle_snapshot')
+      .where({ user_id: userId })
+      .first<{ phase: string }>();
+
+    if (existing?.phase === 'FT1' || existing?.phase === 'FT2') {
+      console.info('[LIFECYCLE][FT1_CONFIRM][IDEMPOTENT]', {
+        userId,
+        shopId,
+        phase: existing.phase,
+      });
+      return res.status(200).json({ phase: existing.phase });
+    }
+
+    // Write FT1 snapshot explicitly
+    await LifecycleTransitionService.auditIfTransitioned({
+      userId,
+      shopId,
+      currentPhase: 'FT1',
+    });
+
+    console.info('[LIFECYCLE][FT1_CONFIRM][PROMOTED]', {
+      userId,
+      shopId,
+    });
+
+    return res.status(200).json({ phase: 'FT1' });
+  } catch (err) {
+    console.error('[lifecycle][ft1-confirm] failed', err);
+    return res.status(500).json({ error: 'Failed to confirm FT1' });
+  }
+}
+
+/**
+ * FT2 Confirm — WRITE AUTHORITY
+ * ----------------------------
+ * The ONLY endpoint allowed to promote a user from FT1 → FT2.
+ *
+ * Guarantees:
+ * - Lifecycle is snapshot-driven (read authority)
+ * - Promotion is explicit and user-triggered
+ * - FT2 eligibility is re-evaluated at time of confirm
+ *
+ * Forbidden:
+ * - Implicit promotion
+ * - Entitlement-derived lifecycle
+ * - Inference from data readiness
+ */
+
 export async function confirmFt2(req: Request, res: Response) {
   try {
     if (!req.user || req.user.userId == null) {
@@ -79,11 +158,29 @@ export async function confirmFt2(req: Request, res: Response) {
 
     const userId = req.user.userId;
 
-    const { shopId } = await requireShopContextForUser(userId);
+    // 1. Snapshot read — lifecycle authority
+    const snapshot = await db('user_lifecycle_snapshot')
+      .where({ user_id: userId })
+      .first<{ phase: string; shop_id: number }>();
 
-    if (!shopId) {
-      return res.status(400).json({ error: 'No shop associated with user' });
+    console.info('[LIFECYCLE][CONFIRM][FT2][ATTEMPT]', {
+      userId,
+    });
+
+    if (!snapshot || snapshot.phase !== 'FT1') {
+      console.info('[LIFECYCLE][CONFIRM][FT2][REJECTED]', {
+        userId,
+        reason: 'ft1_not_confirmed',
+        phase: snapshot?.phase ?? 'NONE',
+      });
+
+      return res.status(409).json({
+        error: 'ft1_not_confirmed',
+        phase: snapshot?.phase ?? null,
+      });
     }
+
+    const shopId = snapshot.shop_id;
 
     // 1. Re-evaluate FT2 eligibility
     const evaluation = await FT2EvaluatorService.evaluate(shopId);
@@ -110,11 +207,21 @@ export async function confirmFt2(req: Request, res: Response) {
       .onConflict('shop_id')
       .ignore();
 
+    console.info('[LIFECYCLE][FT2_CONFIRM][LATCH_WRITTEN]', {
+      userId,
+      shopId,
+    });
+
     // 3. Audit FT1 → FT2 explicitly
     await LifecycleTransitionService.auditIfTransitioned({
       userId,
       shopId,
       currentPhase: 'FT2',
+    });
+
+    console.info('[LIFECYCLE][FT2_CONFIRM][PROMOTED]', {
+      userId,
+      shopId,
     });
 
     // 4. Deterministic command response

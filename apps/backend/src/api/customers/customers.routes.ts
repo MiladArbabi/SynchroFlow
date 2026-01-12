@@ -3,11 +3,12 @@ import { Router } from 'express';
 import { getCustomerDetails, getCustomerList } from './customers.controller'; 
 import { httpGetCustomersFt2 } from './customers.ft2.controller';
 import { authenticateToken } from 'api-src/middleware/auth.middleware';
+import { requireFt2 } from 'api-src/middleware/require-ft2.middleware';
 
 const router = Router();
 
 // FT2 — read-only snapshot (MUST come before :id)
-router.get('/ft2', authenticateToken, httpGetCustomersFt2);
+router.get('/ft2', authenticateToken, requireFt2, httpGetCustomersFt2);
 
 /**
 * @route   GET /api/v1/customers

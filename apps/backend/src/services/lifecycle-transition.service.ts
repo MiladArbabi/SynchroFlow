@@ -11,9 +11,25 @@ type AuditInput = {
 };
 
 const AUDITABLE_TRANSITIONS = new Set([
+  'FT_MINUS_ONE->FT0', // lifecycle entry
   'FT0->FT1',
   'FT1->FT2',
 ]);
+
+/**
+ * LifecycleTransitionService — WRITE PROJECTION
+ * ---------------------------------------------
+ * Records explicit lifecycle transitions and projects them
+ * into user_lifecycle_snapshot.
+ *
+ * RULES:
+ * - No lifecycle inference or repair
+ * - No backfilling missing phases
+ * - Snapshot reflects only explicit transitions
+ *
+ * Lifecycle authority is NOT decided here.
+ * This service is passive and deterministic.
+ */
 
 export class LifecycleTransitionService {
   static async auditIfTransitioned(input: AuditInput): Promise<void> {
@@ -25,23 +41,10 @@ export class LifecycleTransitionService {
       .orderBy('occurred_at', 'desc')
       .first<{ to_phase: UserLifecyclePhase }>();
 
-    let previousPhase: UserLifecyclePhase =
+    const previousPhase: UserLifecyclePhase =
       last?.to_phase ?? 'FT_MINUS_ONE';
 
-    let effectivePreviousPhase =
-      !last && currentPhase === 'FT1'
-        ? 'FT0'
-        : previousPhase;
-
-    // Backfill FT1 if jumping directly to FT2
-    if (currentPhase === 'FT2' && previousPhase !== 'FT1') {
-      effectivePreviousPhase = 'FT1';
-    }
-
-    // No-op only if semantically unchanged
-    if (effectivePreviousPhase === currentPhase) return;
-
-    const transitionKey = `${effectivePreviousPhase}->${currentPhase}`;
+    const transitionKey = `${previousPhase}->${currentPhase}`;
 
     if (!AUDITABLE_TRANSITIONS.has(transitionKey)) {
       return;
@@ -49,14 +52,21 @@ export class LifecycleTransitionService {
 
     // 4. Idempotency guard — same transition already recorded
     const existing = await db('lifecycle_audit_events')
-    .where({
+      .where({
         user_id: userId,
-        from_phase: effectivePreviousPhase,
+        from_phase: previousPhase,
         to_phase: currentPhase,
-    })
-    .first();
+      })
+      .first();
 
     if (existing) return;
+
+    console.info('[LIFECYCLE][AUDIT][RECORDED]', {
+      userId,
+      shopId,
+      from: previousPhase,
+      to: currentPhase,
+    });
 
     // 5. Write audit event
     try {
@@ -68,7 +78,7 @@ export class LifecycleTransitionService {
           event_id: eventId,
           user_id: userId,
           shop_id: shopId,
-          from_phase: effectivePreviousPhase,
+          from_phase: previousPhase,
           to_phase: currentPhase,
           occurred_at: occurredAt,
         })

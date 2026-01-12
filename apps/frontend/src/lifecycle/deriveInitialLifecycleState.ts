@@ -1,37 +1,21 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/**
+ * deriveInitialLifecycleState
+ * ---------------------------
+ * STEP 2: Lifecycle authority correction
+ *
+ * Frontend must NOT infer lifecycle from:
+ * - localStorage
+ * - prior sessions
+ * - readiness
+ *
+ * Initial lifecycle is always unknown until
+ * backend /api/v1/lifecycle resolves.
+ */
 import { LifecycleState, initialLifecycleState } from './lifecycleTypes';
 
 export function deriveInitialLifecycleState(
-  shopId: number | null
+  _shopId: number | null
 ): LifecycleState {
-  if (!shopId) return initialLifecycleState;
-
-  const ft2Sealed =
-    localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true';
-
-  const ft1Sealed =
-    localStorage.getItem(`shop:${shopId}:ft1-seen`) === 'true';
-
-  // 🔒 FT2 dominates everything at hydration
-  if (ft2Sealed) {
-    return {
-      ...initialLifecycleState,
-      phase: 'FT2_READY',
-      hasLatchedFT2: true,
-      hasLatchedFT1: true,
-      hasSeenFT0: true,
-      ft0DwellCompleted: true,
-    };
-  }
-
-  if (ft1Sealed) {
-    return {
-      ...initialLifecycleState,
-      phase: 'FT1_READY',
-      hasLatchedFT1: true,
-      hasSeenFT0: true,
-      ft0DwellCompleted: true,
-    };
-  }
-
   return initialLifecycleState;
 }

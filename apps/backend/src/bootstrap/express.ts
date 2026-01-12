@@ -11,7 +11,6 @@ import integrationRoutes from '../api/integrations/integration.routes';
 import productsRoutes from '../api/products/products.routes';
 import productCostsRoutes from '../api/product-costs/product-costs.routes';
 import authRoutes from '../api/auth/auth.routes';
-import dashboardRoutes from '../api/dashboard/dashboard.routes';
 import userStateRoutes from '../api/user-state/user-state.routes';
 import shopifyRoutes from '../api/shopify/shopify.routes';
 import onboardingReadinessRouter from '../onboarding/readiness.router';
@@ -79,7 +78,6 @@ export function createApp(): Express {
   app.use('/api/v1/products', productsRoutes);
   app.use('/api/v1/product-costs', productCostsRoutes);
   app.use('/api/v1/auth', authRoutes);
-  app.use('/api/v1/dashboard', dashboardRoutes);
   app.use('/api/v1/user-state', userStateRoutes);
   app.use('/api/v1/shopify', shopifyRoutes);
 /*   app.use('/api/v1/shopify', shopifyDevRoutes); */

@@ -50,6 +50,7 @@ export function LifecycleProvider({
   );
 
   const [state, dispatch] = useReducer(lifecycleReducer, initialState);
+  const [isResolved, setIsResolved] = React.useState(false);
 
   const integration = useIntegration();
   const [ft2RestoreResolved, setFt2RestoreResolved] = React.useState(false);
@@ -58,20 +59,55 @@ export function LifecycleProvider({
     shopId != null &&
     localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true';
 
-  /* console.log('[FT2_SEAL_CHECK]', {
+  console.log('[FT2_SEAL_CHECK]', {
     shopId,
     hasFT2Seal,
     raw: shopId
       ? localStorage.getItem(`shop:${shopId}:ft2-seen`)
       : null,
-  }); */
+  });
 
-  /* const isFT2Terminal =
-    state.phase === 'FT2_READY'; */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchLifecycle() {
+      const startedAt = performance.now();
+
+      console.info('[LIFECYCLE][SYNC][START]', {
+        source: 'backend',
+      });
+
+      try {
+        const res = await axiosInstance.get('/api/v1/lifecycle');
+
+        console.info('[LIFECYCLE][SYNC][SUCCESS]', {
+          source: 'backend',
+          phase: res?.data?.phase,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+      } catch (err) {
+        console.error('[LIFECYCLE][SYNC][FAILED]', {
+          source: 'backend',
+          durationMs: Math.round(performance.now() - startedAt),
+          error: err,
+        });
+      } finally {
+        if (!cancelled) {
+          setIsResolved(true);
+        }
+      }
+    }
+
+    fetchLifecycle();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
     useEffect(() => {
     function onFt2Confirmed() {
-      dispatch({ type: 'FT2_BACKEND_COMPLETE' });
+     // localStorage must not restore lifecycle
     }
 
     window.addEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
@@ -84,19 +120,19 @@ export function LifecycleProvider({
   const isHydratedTerminal =
     state.phase === 'FT1_READY' || state.phase === 'FT2_READY';
 
-  /* console.log('[LIFECYCLE_READINESS_INPUT]', {
+  console.log('[LIFECYCLE_READINESS_INPUT]', {
     bootResolved: integration.bootResolved,
     hasIntegration: integration.hasIntegration,
     shopId,
-  }); */
+  });
 
   const { data } = useOnboardingReadiness(
     integration.bootResolved && integration.hasIntegration,
     shopId ?? undefined
   );
 
-/*   console.log('[LIFECYCLE_READINESS_OUTPUT]', data);
- */
+   console.log('[LIFECYCLE_READINESS_OUTPUT]', data); 
+
   /* ---------------- Integration → lifecycle events ---------------- */
 
   useEffect(() => {
@@ -144,12 +180,12 @@ export function LifecycleProvider({
   useEffect(() => {
     if (isHydratedTerminal) return;
 
-    /* console.log('[FT2_RESTORE_EFFECT_ENTER]', {
+    console.log('[FT2_RESTORE_EFFECT_ENTER]', {
       shopId,
       hasFT2Seal,
       bootResolved: integration.bootResolved,
       hasIntegration: integration.hasIntegration,
-    }); */
+    });
     
     if (hasFT2Seal && integration.hasIntegration) {
       console.log('[FT2_RESTORE_FROM_LOCALSTORAGE]');
@@ -179,13 +215,8 @@ export function LifecycleProvider({
       try {
         console.log('[FT2_RESTORE_FROM_API]');
 
-        const { data } = await axiosInstance.get(
-          '/api/v1/lifecycle/ft2/evaluate'
-        );
-
-        if (!cancelled && data?.eligible === true) {
-          dispatch({ type: 'FT2_BACKEND_COMPLETE' });
-        }
+        // FT2 evaluation is advisory only
+        // Lifecycle phase must be set by backend confirm
       } finally {
         if (!cancelled) {
           setFt2RestoreResolved(true);
@@ -214,6 +245,14 @@ export function LifecycleProvider({
   });
 
   if (!state.phase) return null;
+
+  if (!isResolved) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h3>Initializing workspace…</h3>
+      </div>
+    );
+  }
 
   return (
     <ShopLifecycleContext.Provider value={{ phase: state.phase }}>

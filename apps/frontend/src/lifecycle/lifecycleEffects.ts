@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 //apps/frontend/src/lifecycle/lifecycleEffects.ts
 import { useEffect, useRef } from 'react';
 import { LifecycleEvent, LifecycleState } from './lifecycleTypes';
@@ -72,6 +71,10 @@ export function useLifecycleEffects({
     const key = `shop:${String(shopId)}:ft1-seen`;
 
     if (state.phase === 'FT1_READY' && state.hasLatchedFT1) {
+      console.info('[LIFECYCLE][SEAL_WRITE]', {
+        phase: state.phase,
+        shopId,
+      });
       localStorage.setItem(key, 'true');
       return;
     }
@@ -91,6 +94,10 @@ export function useLifecycleEffects({
     const key = `shop:${String(shopId)}:ft2-seen`;
 
     if (state.phase === 'FT2_READY' && state.hasLatchedFT2) {
+      console.info('[LIFECYCLE][SEAL_WRITE]', {
+        phase: state.phase,
+        shopId,
+      });
       localStorage.setItem(key, 'true');
       return;
     }
@@ -113,11 +120,10 @@ export function useLifecycleEffects({
     if (!shopId) return;
     if (!state.integrationExists) return;
 
-    const key = `shop:${shopId}:ft1-seen`;
-    const sealed = localStorage.getItem(key) === 'true';
+    /* const key = `shop:${shopId}:ft1-seen`;
+    const sealed = localStorage.getItem(key) === 'true'; */
 
-    if (sealed && !state.hasLatchedFT1) {
-      dispatch({ type: 'FT1_BACKEND_COMPLETE' });
-    }
+    // Seals are observational only
+    // No lifecycle mutation allowed
   }, [shopId, state.integrationExists]); // intentionally minimal
 }

@@ -18,12 +18,12 @@ import React from 'react';
 import { useDashboardFt2Snapshot } from 'pages/dashboard-ft2/useDashboardFt2Snapshot';
 import { mapDashboardFt2Snapshot } from 'pages/dashboard-ft2/useDashboardFt2Adapter';
 
-const __DEV__ = import.meta.env.DEV;
+/* const __DEV__ = import.meta.env.DEV; */
 
 const DashboardFT2Page: React.FC = () => {
-  if (__DEV__) {
+  /* if (__DEV__) {
     console.debug('[MOUNT] DashboardFT2Page');
-  }
+  } */
 
   const { data, isLoading } = useDashboardFt2Snapshot();
 

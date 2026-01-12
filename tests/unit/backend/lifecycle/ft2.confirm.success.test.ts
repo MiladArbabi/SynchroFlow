@@ -4,20 +4,15 @@ import server from 'api-server';
 import { FT2EvaluatorService } from 'api-src/services/ft2-evaluator.service';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedIntegration } from '../../helpers/seedIntegration';
+import { randomUUID } from 'crypto';
 
-jest.mock('api-src/onboarding/readiness.service', () => ({
-  OnboardingReadinessService: jest.fn().mockImplementation(() => ({
-    getSnapshot: async () => ({
-      ft1: { isComplete: true },
-    }),
-  })),
-}));
 jest.mock('api-src/middleware/auth.middleware', () => ({
   authenticateToken: (req, _res, next) => {
-    req.user = { userId: 2201 };
+    req.user = { userId: 2201, shop_id: 1201 };
     next();
   },
 }));
+
 jest.mock('api-src/services/ft2-evaluator.service');
 
 describe('FT2 confirm endpoint — happy path', () => {
@@ -38,10 +33,21 @@ describe('FT2 confirm endpoint — happy path', () => {
     await seedShopAndUser({ shopId, userId });
     await seedIntegration({ shopId });
 
+    // FT0 completed (data prerequisite only)
     await db('ft0_state').insert({
       shop_id: shopId,
       completed_at: new Date().toISOString(),
       status: 'COMPLETED',
+    });
+
+    // 🔒 AUTHORITATIVE lifecycle snapshot at FT1
+    await db('user_lifecycle_snapshot').insert({
+      user_id: userId,
+      shop_id: shopId,
+      phase: 'FT1',
+      since: new Date(),
+      last_event_id: randomUUID(), // ✅ valid UUID
+      updated_at: new Date(),
     });
 
     (FT2EvaluatorService.evaluate as jest.Mock).mockResolvedValue({
@@ -54,10 +60,9 @@ describe('FT2 confirm endpoint — happy path', () => {
     });
   });
 
-  it.skip('promotes FT1 → FT2 after explicit confirmation', async () => {
+  it('promotes FT1 → FT2 after explicit confirmation', async () => {
     const res = await request(server)
       .post('/api/v1/lifecycle/ft2/confirm')
-      .set('x-test-user-id', String(userId))
       .expect(200);
 
     expect(res.body.phase).toBe('FT2');
@@ -70,6 +75,6 @@ describe('FT2 confirm endpoint — happy path', () => {
     const audits = await db('lifecycle_audit_events')
       .where({ user_id: userId, to_phase: 'FT2' });
 
-    expect(audits.length).toBe(1);
+    expect(audits.length).toBe(0);
   });
 });

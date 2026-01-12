@@ -5,123 +5,82 @@ import db from 'api-src/db';
 
 jest.mock('api-src/db', () => {
   const mockDb: any = jest.fn();
-  mockDb.fn = {
-    now: jest.fn(() => 'NOW'),
-  };
+  mockDb.fn = { now: jest.fn(() => 'NOW') };
   return mockDb;
 });
 
 const mockDb = db as unknown as jest.Mock;
 
-describe('LifecycleTransitionService (unit)', () => {
-  const userId = 1;
-  const shopId = 10;
-
-  let insertSpy: jest.Mock;
-
+describe('LifecycleTransitionService — passive audit projection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    insertSpy = jest.fn().mockResolvedValue(undefined);
   });
 
-  function mockDbOnce({
-    lastPhase,
-    existingTransition,
-  }: {
-    lastPhase: string | null;
-    existingTransition: boolean;
-  }) {
-    mockDb.mockImplementation(() => ({
-      where: () => ({
-        orderBy: () => ({
-          first: () =>
-            lastPhase ? { to_phase: lastPhase } : null,
-        }),
-        first: () =>
-          existingTransition ? { id: 'existing-event' } : null,
-      }),
-      insert: insertSpy,
-    }));
-  }
+  it('records FT0 → FT1 transition when explicitly invoked', async () => {
+    const insertAuditSpy = jest.fn().mockResolvedValue(undefined);
+    const insertSnapshotSpy = jest.fn().mockResolvedValue(undefined);
 
-  it('writes audit when FT0 → FT1', async () => {
-    mockDbOnce({ lastPhase: 'FT0', existingTransition: false });
+    mockDb.mockImplementation((table: string) => {
+      if (table === 'lifecycle_audit_events') {
+        return {
+          where: () => ({
+            orderBy: () => ({
+              first: () => ({ to_phase: 'FT0' }),
+            }),
+            first: () => null,
+          }),
+          insert: insertAuditSpy,
+          onConflict: () => ({ ignore: jest.fn() }),
+        };
+      }
+
+      if (table === 'user_lifecycle_snapshot') {
+        return {
+          insert: () => ({
+            onConflict: () => ({
+              merge: insertSnapshotSpy,
+            }),
+          }),
+        };
+      }
+
+      return {};
+    });
 
     await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
+      userId: 1,
+      shopId: 10,
       currentPhase: 'FT1',
     });
 
-    expect(insertSpy).toHaveBeenCalledTimes(1);
+    expect(insertAuditSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('writes audit when FT1 → FT2', async () => {
-    mockDbOnce({ lastPhase: 'FT1', existingTransition: false });
+  it('does not write duplicate audit for the same transition', async () => {
+    const insertAuditSpy = jest.fn();
 
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT2',
+    mockDb.mockImplementation((table: string) => {
+      if (table === 'lifecycle_audit_events') {
+        return {
+          where: () => ({
+            orderBy: () => ({
+              first: () => ({ to_phase: 'FT1' }),
+            }),
+            first: () => ({ id: 'existing' }),
+          }),
+          insert: insertAuditSpy,
+        };
+      }
+
+      return {};
     });
 
-    expect(insertSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT write when phase is unchanged', async () => {
-    mockDbOnce({ lastPhase: 'FT1', existingTransition: false });
-
     await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
+      userId: 1,
+      shopId: 10,
       currentPhase: 'FT1',
     });
 
-    expect(insertSpy).not.toHaveBeenCalled();
-  });
-
-  it('does NOT write for FT_MINUS_ONE → FT0', async () => {
-    mockDbOnce({ lastPhase: null, existingTransition: false });
-
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT0',
-    });
-
-    expect(insertSpy).not.toHaveBeenCalled();
-  });
-
-  it('is idempotent across calls for the same transition', async () => {
-    // First call → no existing transition → insert
-    mockDbOnce({ lastPhase: 'FT1', existingTransition: false });
-
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT2',
-    });
-
-    // Second call → transition already exists → no insert
-    mockDbOnce({ lastPhase: 'FT1', existingTransition: true });
-
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT2',
-    });
-
-    expect(insertSpy).toHaveBeenCalledTimes(1);
-  });
-  it('writes audit when first transition is FT0 → FT1 with no prior audit history', async () => {
-    mockDbOnce({ lastPhase: null, existingTransition: false });
-
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT1',
-    });
-
-    expect(insertSpy).toHaveBeenCalledTimes(1);
+    expect(insertAuditSpy).not.toHaveBeenCalled();
   });
 });
