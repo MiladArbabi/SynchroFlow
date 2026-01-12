@@ -160,11 +160,7 @@ export function lifecycleReducer(
     /* -------------------------------------------------- */
 
     case 'FT2_BACKEND_COMPLETE': {
-      // Backend FT2 is authoritative and terminal
-      if (!state.bootResolved || !state.integrationExists) {
-        return state;
-      }
-
+      // FT2 is authoritative and terminal — no guards
       return {
         ...state,
         phase: 'FT2_READY',

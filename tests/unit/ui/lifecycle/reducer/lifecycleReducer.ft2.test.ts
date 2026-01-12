@@ -39,39 +39,25 @@ describe('lifecycleReducer — FT2 behavior (terminal)', () => {
     expect(next.hasLatchedFT2).toBe(true);
   });
 
-  it('does not promote to FT2 if boot is not resolved', () => {
-    const prev: LifecycleState = {
-      ...initialLifecycleState,
+    it('promotes to FT2 regardless of boot or integration state', () => {
+    const state : LifecycleState = {
       phase: 'FT1_READY',
       bootResolved: false,
-      integrationExists: true,
-      hasLatchedFT1: true,
-    };
-
-    const next = lifecycleReducer(prev, {
-      type: 'FT2_BACKEND_COMPLETE',
-    });
-
-    expect(next.phase).toBe('FT1_READY');
-    expect(next.hasLatchedFT2).toBe(false);
-  });
-
-  it('does not promote to FT2 if integration does not exist', () => {
-    const prev: LifecycleState = {
-      ...initialLifecycleState,
-      phase: 'FT1_READY',
-      bootResolved: true,
       integrationExists: false,
+      hasSeenFT0: false,
       hasLatchedFT1: true,
+      hasLatchedFT2: false,
+      ft0DwellCompleted: false,
     };
 
-    const next = lifecycleReducer(prev, {
+    const next = lifecycleReducer(state, {
       type: 'FT2_BACKEND_COMPLETE',
     });
 
-    expect(next.phase).toBe('FT1_READY');
-    expect(next.hasLatchedFT2).toBe(false);
+    expect(next.phase).toBe('FT2_READY');
+    expect(next.hasLatchedFT2).toBe(true);
   });
+
 
   it('treats FT2 as terminal and ignores subsequent events', () => {
     const prev: LifecycleState = {
@@ -141,5 +127,42 @@ describe('lifecycleReducer — FT2 behavior (terminal)', () => {
     });
 
     expect(next).toBe(prev);
+  });
+
+  it('latches FT2 regardless of boot or integration state', () => {
+    const initial: LifecycleState = {
+      phase: 'FT_MINUS_ONE',
+      bootResolved: false,
+      integrationExists: false,
+      hasSeenFT0: false,
+      hasLatchedFT1: false,
+      hasLatchedFT2: false,
+      ft0DwellCompleted: false,
+    };
+
+    const next = lifecycleReducer(initial, {
+      type: 'FT2_BACKEND_COMPLETE',
+    });
+
+    expect(next.phase).toBe('FT2_READY');
+    expect(next.hasLatchedFT2).toBe(true);
+  });
+
+  it('does not regress once FT2 is latched', () => {
+    const ft2State: LifecycleState = {
+      phase: 'FT2_READY',
+      bootResolved: true,
+      integrationExists: true,
+      hasSeenFT0: true,
+      hasLatchedFT1: true,
+      hasLatchedFT2: true,
+      ft0DwellCompleted: true,
+    };
+
+    const next = lifecycleReducer(ft2State, {
+      type: 'BOOT_UNRESOLVED',
+    });
+
+    expect(next).toEqual(ft2State);
   });
 });

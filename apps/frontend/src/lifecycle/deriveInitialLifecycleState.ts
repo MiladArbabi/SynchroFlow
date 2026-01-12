@@ -23,7 +23,6 @@ export function deriveInitialLifecycleState(
     };
   }
 
-  // 🔒 FT1 hydrates directly when sealed
   if (ft1Sealed) {
     return {
       ...initialLifecycleState,
