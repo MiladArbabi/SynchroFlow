@@ -6,7 +6,7 @@ import { axiosInstance } from "api/axiosConfig";
 import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; 
 
 import { Box } from "@mui/material";
-import Sidenav from "./SidenavContent";
+import SidenavContent from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
 import Customization from "layout/Customization";
@@ -151,12 +151,12 @@ const AppLayout = (props: AppLayoutProps) => {
               >
                 {/* Use overflow: hidden and flex column for content */}
                 <Box sx={{ height: "100%", borderRight: "1px solid #e0e0e0", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Sidenav
-                    brandName="SynchroFlow"
-                    routes={routes}
-                    isSidenavOpen={isSidenavOpen} // This is for the old menu
-                    isConnected={isConnected} // <-- Pass connection status
-                  />
+                <SidenavContent
+                  brandName="LaSyncro"
+                  routes={routes}
+                  isSidenavOpen={isSidenavOpen}
+                  isConnected={isConnected}
+                />
                 </Box>
               </Panel>
               <PanelResizeHandle style={handleStyle} />

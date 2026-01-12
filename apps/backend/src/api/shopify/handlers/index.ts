@@ -10,4 +10,4 @@
 // - Contain routing logic
 // - Contain side effects
 
-export { handleAppUninstalled } from './appUninstalled.handler';
+export { onShopifyAppUninstalled } from './appUninstalled.handler';

@@ -12,7 +12,7 @@
 // - No domain logic
 
 import { Router, Request, Response } from 'express';
-import { shopifyAppUninstalledWebhook } from './shopify.webhook';
+import { shopifyWebhookHandler } from './shopify.webhook';
 
 const router = Router();
 
@@ -30,7 +30,7 @@ router.post('/webhooks', async (req: Request, res: Response) => {
 
   switch (topic) {
     case 'app/uninstalled':
-      return shopifyAppUninstalledWebhook(req, res);
+      return shopifyWebhookHandler(req, res);
 
     default:
       return res.status(200).json({ status: 'ignored' });

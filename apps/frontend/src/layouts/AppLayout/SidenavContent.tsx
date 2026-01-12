@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/SidenavContent.tsx
 
@@ -23,7 +24,19 @@ import {
 import SimpleBar from 'ui-component/third-party/SimpleBar';
 import LogoSection from 'layout/MainLayout/LogoSection';
 
-const SidenavContent: React.FC = () => {
+interface SidenavProps {
+  brandName: string;
+  routes: any[];
+  isSidenavOpen: boolean;
+  isConnected: boolean;
+}
+
+const SidenavContent: React.FC<SidenavProps> = ({
+  brandName,
+  routes,
+  isSidenavOpen,
+  isConnected,
+}) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [drawerOpen, setDrawerOpen] = React.useState(true);
