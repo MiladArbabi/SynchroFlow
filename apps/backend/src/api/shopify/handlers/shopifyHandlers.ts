@@ -1,15 +1,4 @@
-// apps/backend/src/api/shopify/handlers/appUninstalled.handler.ts
-//
-// Handler: app/uninstalled
-//
-// RESPONSIBILITIES:
-// - Execute domain mutation for Shopify app uninstall
-//
-// CONTRACT:
-// - Called only AFTER ledger write + idempotency check
-// - Throws on failure
-// - Does NOT perform transport concerns
-
+// shopifyHandlers.ts
 import { WebhookEnvelope } from 'api-src/api/webhooks/types';
 import { handleAppUninstalled } from './handleAppUninstalled';
 

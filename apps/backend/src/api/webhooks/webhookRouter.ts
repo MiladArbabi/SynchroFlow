@@ -17,6 +17,8 @@
 
 import { WebhookEnvelope } from './types';
 import { WebhookLedgerService } from 'api-src/services/webhook-ledger.service';
+import { getWebhookDispatchMode } from './dispatchMode';
+import { enqueueWebhookEnvelope } from './dispatchQueue';
 
 type WebhookHandler = (envelope: WebhookEnvelope) => Promise<void>;
 
@@ -59,7 +61,13 @@ export class WebhookRouter {
    * - Handler failures are captured and marked failed
    */
   static async dispatch(envelope: WebhookEnvelope): Promise<void> {
-    // 🚨 MUST BE FIRST — NO CONDITIONS ABOVE THIS
+
+    // ─────────────────────────────────────────────
+    // Dispatch mode resolution (fail fast)
+    // ─────────────────────────────────────────────
+    const dispatchMode = getWebhookDispatchMode();
+
+    // 🚨 MUST BE FIRST LEDGER WRITE — NO CONDITIONS ABOVE THIS
     const ledgerResult = await WebhookLedgerService.recordReceived({
       integration: envelope.integration,
       externalEventId: envelope.eventId,
@@ -73,6 +81,15 @@ export class WebhookRouter {
       return;
     }
 
+    if (dispatchMode === 'queued') {
+      await enqueueWebhookEnvelope(envelope);
+      return;
+    }
+
+    if (dispatchMode !== 'sync') {
+      throw new Error(`Unsupported webhook dispatch mode: ${dispatchMode}`);
+    }
+    
     const key = WebhookRouter.key(
       envelope.integration,
       envelope.eventType

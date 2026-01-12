@@ -1,12 +1,12 @@
 import { WebhookRouter } from './webhookRouter';
-import { handleAppUninstalled } from 'api-src/api/shopify/handlers';
-import { handleInvoicePaid } from 'api-src/api/billing/handlers';
+import { onShopifyAppUninstalled } from 'api-src/api/shopify/handlers/appUninstalled.handler';
+import { handleInvoicePaid } from '../billing/handlers';
 
 export function registerWebhookHandlers() {
   WebhookRouter.register({
     integration: 'shopify',
     eventType: 'app/uninstalled',
-    handle: handleAppUninstalled,
+    handle: onShopifyAppUninstalled, // ✅ correct
   });
 
   WebhookRouter.register({
