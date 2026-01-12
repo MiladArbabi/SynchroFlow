@@ -45,11 +45,7 @@ export function LifecycleProvider({
   const shopId = user?.shop_id ?? null;
 
   const initialState = React.useMemo(
-    () =>
-      deriveInitialLifecycleState(shopId, {
-        bootResolved: false,
-        integrationExists: false,
-      }),
+      () => deriveInitialLifecycleState(shopId),
     []
   );
 

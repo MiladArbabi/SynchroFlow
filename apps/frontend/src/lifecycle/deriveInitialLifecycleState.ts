@@ -1,13 +1,7 @@
 import { LifecycleState, initialLifecycleState } from './lifecycleTypes';
 
-type Input = {
-  bootResolved: boolean;
-  integrationExists: boolean;
-};
-
 export function deriveInitialLifecycleState(
-  shopId: number | null,
-  input: Input
+  shopId: number | null
 ): LifecycleState {
   if (!shopId) return initialLifecycleState;
 
@@ -17,13 +11,11 @@ export function deriveInitialLifecycleState(
   const ft1Sealed =
     localStorage.getItem(`shop:${shopId}:ft1-seen`) === 'true';
 
-  // 🔒 FT2 DOMINATES EVERYTHING
-  if (ft2Sealed && input.bootResolved && input.integrationExists) {
+  // 🔒 FT2 dominates everything at hydration
+  if (ft2Sealed) {
     return {
       ...initialLifecycleState,
       phase: 'FT2_READY',
-      bootResolved: true,
-      integrationExists: true,
       hasLatchedFT2: true,
       hasLatchedFT1: true,
       hasSeenFT0: true,
@@ -31,13 +23,11 @@ export function deriveInitialLifecycleState(
     };
   }
 
-  // FT1 (only if FT2 not sealed)
-  if (ft1Sealed && input.bootResolved && input.integrationExists) {
+  // 🔒 FT1 hydrates directly when sealed
+  if (ft1Sealed) {
     return {
       ...initialLifecycleState,
       phase: 'FT1_READY',
-      bootResolved: true,
-      integrationExists: true,
       hasLatchedFT1: true,
       hasSeenFT0: true,
       ft0DwellCompleted: true,
