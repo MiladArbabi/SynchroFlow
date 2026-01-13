@@ -67,7 +67,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
 
   return (
     <section data-testid="orders-ft2-root">
-      {/* Context */}
+      {/* ───────── Snapshot ───────── */}
       <section>
         <div>
           <strong>Period</strong>: {context.period.from} → {context.period.to}
@@ -77,10 +77,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
           <strong>Orders observed</strong>:{' '}
           {context.ordersObserved === null ? '—' : context.ordersObserved}
         </div>
-      </section>
 
-      {/* Totals */}
-      <section>
         <div>
           <strong>Total revenue</strong>:{' '}
           {totals.revenueTotal === null
@@ -94,32 +91,37 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
             ? '—'
             : `${totals.costTotal} ${totals.currency ?? ''}`}
         </div>
-      </section>
 
-      {/* Outcome */}
-      <section>
         <div>
-          <strong>Net outcome</strong>:{' '}
-          {outcome === null ? '—' : outcome.status}
+          <strong>Net outcome</strong>: {outcome ? outcome.status : '—'}
         </div>
-      </section>
 
-      {/* Trend */}
-      <section>
         <div>
-          <strong>Trend</strong>:{' '}
-          {trend === null ? '—' : trend.direction}
+          <strong>Trend</strong>: {trend ? trend.direction : '—'}
         </div>
-      </section>
 
-      {/* Data Coverage */}
-      <section>
         <div>
           <strong>Data coverage</strong>:{' '}
           {dataCoverage.completenessPct === null
             ? '—'
             : `${dataCoverage.completenessPct}%`}
         </div>
+      </section>
+
+      <hr />
+
+      {/* ───────── Timeseries ───────── */}
+      <section>
+        <h4>Order activity over time</h4>
+        {/* OrdersTimeseriesWidget already wired here */}
+      </section>
+
+      <hr />
+
+      {/* ───────── Distribution ───────── */}
+      <section>
+        <h4>Order value distribution</h4>
+        {/* OrdersDistributionWidget already wired here */}
       </section>
     </section>
   );

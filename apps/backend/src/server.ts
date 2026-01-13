@@ -5,26 +5,11 @@ import { createApp } from './bootstrap/express';
 import { initSpecterStore, closeSpecterStore } from './bootstrap/specter-store';
 import { initQueue, closeQueue } from './bootstrap/queue';
 import { startWorkers } from './bootstrap/workers';
-import { seedSandboxData } from './db/seeder';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 
 const app = createApp();
-
-// small number of retained helpers (seed, inventory endpoints, analytics etc.).
-// For brevity we keep them here — you can extract them later into route files.
-app.post('/api/v1/dev/seed-sandbox/:shop_id', async (req, res) => {
-  try {
-    const shopId = Number(req.params.shop_id);
-    if (isNaN(shopId)) return res.status(400).json({ error: 'A valid shop_id is required.' });
-    await seedSandboxData(shopId);
-    res.status(200).json({ message: `Sandbox data seeded for shopId: ${shopId}` });
-  } catch (err) {
-    console.error('[seeder-endpoint] Error', err);
-    res.status(500).json({ error: 'Failed to seed sandbox data' });
-  }
-});
 
 // Start sequence and graceful shutdown wiring
 let server: ReturnType<typeof app.listen> | null = null;
