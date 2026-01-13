@@ -60,10 +60,24 @@ __pycache__/
 # UI Template/Asset directory
 material-dashboard-react-main/
 
-# Playwright auth state
-playwright/.auth/
+# ----------------------------------------------------------------------
+# Test Coverage (ABSOLUTELY DO NOT COMMIT)
+# ----------------------------------------------------------------------
+coverage/
+**/coverage/
+coverage/**
+
+# Jest / NYC / Istanbul
+lcov.info
+coverage-final.json
+clover.xml
+.nyc_output/
+
+# Playwright / test artefacts
 playwright-report/
 test-results/
+playwright/.auth/
+playwright-report/
 
 # Build artifacts
 /apps/*/dist/
