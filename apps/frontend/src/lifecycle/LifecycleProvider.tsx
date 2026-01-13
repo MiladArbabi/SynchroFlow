@@ -70,7 +70,7 @@ export function LifecycleProvider({
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchLifecycle() {
+      async function fetchLifecycle() {
       const startedAt = performance.now();
 
       console.info('[LIFECYCLE][SYNC][START]', {
@@ -79,12 +79,21 @@ export function LifecycleProvider({
 
       try {
         const res = await axiosInstance.get('/api/v1/lifecycle');
+        const backendPhase = res?.data?.phase;
 
         console.info('[LIFECYCLE][SYNC][SUCCESS]', {
           source: 'backend',
-          phase: res?.data?.phase,
+          phase: backendPhase,
           durationMs: Math.round(performance.now() - startedAt),
         });
+
+        // 🔒 BACKEND → REDUCER AUTHORITY BRIDGE (THE MISSING LINK)
+        if (backendPhase === 'FT2') {
+          dispatch({ type: 'FT2_BACKEND_COMPLETE' });
+        } else if (backendPhase === 'FT1') {
+          dispatch({ type: 'FT1_BACKEND_COMPLETE' });
+        }
+
       } catch (err) {
         console.error('[LIFECYCLE][SYNC][FAILED]', {
           source: 'backend',
@@ -107,7 +116,8 @@ export function LifecycleProvider({
 
     useEffect(() => {
     function onFt2Confirmed() {
-     // localStorage must not restore lifecycle
+      console.info('[LIFECYCLE][FT2][EVENT_RECEIVED]');
+      dispatch({ type: 'FT2_BACKEND_COMPLETE' });
     }
 
     window.addEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
@@ -248,6 +258,7 @@ export function LifecycleProvider({
 
   if (!isResolved) {
     return (
+      //TODO: Replace by a loader/spinner
       <div style={{ padding: 24 }}>
         <h3>Initializing workspace…</h3>
       </div>

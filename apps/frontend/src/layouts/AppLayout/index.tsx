@@ -181,11 +181,11 @@ const AppLayout = (props: AppLayoutProps) => {
                       <Panel defaultSize={75} minSize={50} order={1}>
                         <Box sx={{ height: "100%", width: "100%", overflowY: "auto", position: "relative" }}>
 
-                          {/* Module content */}
-                          {props.children}
-
                           {/* FT1 global promotion + checklist (stable position) */}
                           <Ft1Outlet />
+
+                          {/* Module content */}
+                          {props.children}
 
                         </Box>
                       </Panel>

@@ -141,8 +141,6 @@ function Ft1OutletContent({
   setConfirming: (v: boolean) => void;
 }) {
 
-  const [confirmingFt1, setConfirmingFt1] = React.useState(false);
-
   /**
    * STATE — Loading / Preparing
    */
@@ -168,29 +166,6 @@ function Ft1OutletContent({
       <Ft1Panel>
         <p>Your onboarding is complete.</p>
 
-        {/* FT1 CONFIRM — explicit lifecycle transition */}
-        <button
-          disabled={confirmingFt1}
-          onClick={async () => {
-            setConfirmingFt1(true);
-
-            console.info('[FT1][CONFIRM][CLICKED]');
-
-            try {
-              await confirmFt1();
-              console.info('[FT1][CONFIRM][SUCCESS]');
-            } catch (err) {
-              console.error('[FT1][CONFIRM][FAILED]', err);
-              setConfirmingFt1(false);
-              return;
-            }
-          }}
-        >
-          Continue
-        </button>
-
-        <hr style={{ margin: '16px 0' }} />
-
         {/* FT2 CONFIRM — now valid ONLY after FT1 snapshot updates */}
         <button
           disabled={confirming}
@@ -200,8 +175,13 @@ function Ft1OutletContent({
             console.info('[FT2][CONFIRM][CLICKED]');
 
             try {
+              // 1️⃣ Ensure FT1 is confirmed (idempotent)
+              await confirmFt1();
+
+              // 2️⃣ Confirm FT2
               await confirmFt2();
 
+              // 3️⃣ Notify lifecycle provider AFTER backend success
               window.dispatchEvent(
                 new CustomEvent('lifecycle:ft2-confirmed')
               );

@@ -83,6 +83,10 @@ export async function getLifecycle(req: Request, res: Response) {
  * - Inference
  * - Auto-promotion
  * - Entitlement checks
+ * - Never allow UI code to infer lifecycle again.
+ * 
+ * MUST:
+ * - Confirm endpoints MUST be idempotent on the target phase.
  */
 
 export async function confirmFt1(req: Request, res: Response) {
@@ -154,6 +158,10 @@ export async function confirmFt1(req: Request, res: Response) {
  * - Implicit promotion
  * - Entitlement-derived lifecycle
  * - Inference from data readiness
+ * - Never allow UI code to infer lifecycle again.
+ * 
+ * MUST:
+ * - Confirm endpoints MUST be idempotent on the target phase.
  */
 
 export async function confirmFt2(req: Request, res: Response) {
