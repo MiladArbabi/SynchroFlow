@@ -3,13 +3,7 @@ import {
   Paper,
   IconButton,
 } from '@mui/material';
-
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
-import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
-import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-
 import { FT2_TOKENS } from './tokens';
 
 export type FT2SurfaceVariant = 'standard' | 'kpi';
@@ -40,9 +34,15 @@ export function FT2Surface({
       sx={{
         width: width || '100%',
         mx: width ? 'auto' : undefined,
+
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+
+        overflow: 'hidden',     // ⬅️ HARD CLIP
       }}
     >
-      {/* Control Zone */}
+      {/* ───── Control Zone (fixed) ───── */}
       <Box
         sx={{
           height: FT2_TOKENS.controlZoneHeight,
@@ -50,35 +50,27 @@ export function FT2Surface({
           alignItems: 'center',
           justifyContent: 'space-between',
           px: padding / 8,
+          flexShrink: 0,              // ⬅️ never collapse
         }}
       >
         <Box data-ft2-surface-title>{title}</Box>
 
         <Box>
           <IconButton size="small">
-            <InfoOutlinedIcon fontSize="inherit" />
-          </IconButton>
-          <IconButton size="small">
-            <SettingsOutlinedIcon fontSize="inherit" />
-          </IconButton>
-          <IconButton size="small">
-            <OpenInFullOutlinedIcon fontSize="inherit" />
-          </IconButton>
-          <IconButton size="small">
-            <DownloadOutlinedIcon fontSize="inherit" />
-          </IconButton>
-          <IconButton size="small">
             <MoreVertOutlinedIcon fontSize="inherit" />
           </IconButton>
         </Box>
       </Box>
 
-      {/* Content */}
+      {/* ───── Content Zone (flex-fill) ───── */}
       <Box
         data-ft2-surface-content
         sx={{
           px: padding / 8,
           pb: padding / 8,
+
+          flex: 1,                    // ⬅️ fills remaining height
+          minHeight: 0,               // ⬅️ allows charts to shrink
         }}
       >
         {children}

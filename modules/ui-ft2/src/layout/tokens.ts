@@ -22,4 +22,25 @@ export const FT2_TOKENS = {
     tablet: '92%',
     mobile: '100%',
   },
+
+  /**
+   * FT2 Row Grammar
+   * ---------------
+   * Semantic layout intents mapped to
+   * deterministic geometry.
+   */
+  row: {
+    kpi: {
+      columns: 6,
+      height: 120,
+    },
+    analysis: {
+      columns: 2,
+      height: 280,
+    },
+    support: {
+      columns: 3,
+      height: 160,
+    },
+  },
 } as const;

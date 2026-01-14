@@ -74,7 +74,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
   return (
     <FT2Layout>
       {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
-      <FT2Row columns={3}>
+      <FT2Row intent="kpi">
         <FT2Surface variant="kpi" title="Period">
           {context.period.from} → {context.period.to}
         </FT2Surface>
@@ -88,13 +88,42 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
             ? '—'
             : `${dataCoverage.completenessPct}%`}
         </FT2Surface>
-      </FT2Row>
-
-      <FT2Row columns={3}>
-        <FT2Surface variant="kpi" title="Revenue">
+         <FT2Surface variant="kpi" title="Revenue">
           {totals.revenueTotal === null
             ? '—'
             : `${totals.revenueTotal} ${totals.currency ?? ''}`}
+        </FT2Surface>
+
+         <FT2Surface variant="kpi" title="TODO">
+          {totals.revenueTotal === null
+            ? '—'
+            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
+        </FT2Surface>
+        <FT2Surface variant="kpi" title="TODO">
+          {totals.revenueTotal === null
+            ? '—'
+            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
+        </FT2Surface>
+      </FT2Row>
+
+      {/* ───────── Layer 2 — Analytical ───────── */}
+      <FT2Row intent="analysis">
+        <FT2Surface
+          title="Order activity over time"
+        >
+          {timeseries}
+        </FT2Surface>
+
+        <FT2Surface title="Order value distribution">
+          {distribution}
+        </FT2Surface>
+      </FT2Row>
+
+      {/* ───────── Layer 3 — Support ───────── */}
+      <FT2Row intent="support">
+
+        <FT2Surface title="Trend">
+          {trend?.direction ?? '—'}
         </FT2Surface>
 
         <FT2Surface variant="kpi" title="Cost">
@@ -105,29 +134,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
 
         <FT2Surface variant="kpi" title="Outcome">
           {outcome?.status ?? '—'}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ───────── Layer 2 — Analytical ───────── */}
-      <FT2Surface
-        title="Order activity over time"
-        width={{
-          xs: '100%',
-          sm: FT2_TOKENS.analyticalWidth.tablet,
-          md: FT2_TOKENS.analyticalWidth.desktop,
-        }}
-      >
-        {timeseries}
-      </FT2Surface>
-
-      {/* ───────── Layer 3 — Support ───────── */}
-      <FT2Row columns={2}>
-        <FT2Surface title="Order value distribution">
-          {distribution}
-        </FT2Surface>
-
-        <FT2Surface title="Trend">
-          {trend?.direction ?? '—'}
         </FT2Surface>
       </FT2Row>
     </FT2Layout>

@@ -27,16 +27,24 @@ export default function OrdersTimeseriesWidget({
   }
 
   return (
-    <Chart
-      type="line"
-      height={80}
-      options={ORDERS_FT2_TIMESERIES}
-      series={[
-        {
-          name: 'Orders',
-          data: series.map((p) => p.ordersObserved ?? 0)
-        }
-      ]}
-    />
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+      }}
+    >
+      <Chart
+        type="line"
+        height="100%"
+        options={ORDERS_FT2_TIMESERIES}
+        series={[
+          {
+            name: 'Orders',
+            data: series.map((p) => p.ordersObserved ?? 0),
+          },
+        ]}
+      />
+    </div>
   );
 }

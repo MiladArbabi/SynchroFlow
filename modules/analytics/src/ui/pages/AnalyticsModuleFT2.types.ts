@@ -1,21 +1,16 @@
 /**
- * AnalyticsModuleFT2Props
- * ======================
+ * AnalyticsModuleFT2DataProps
+ * ==========================
  *
- * Canonical FT2 UI contract for Analytics.
+ * DATA-ONLY FT2 contract for Analytics.
  *
- * Design rules (LOCKED):
+ * Rules:
  * - Shape-stable
  * - Read-only
  * - No intelligence
  * - Uncertainty expressed ONLY via `null`
- *
- * This contract MUST match:
- * - Backend AnalyticsFT2Exposure
- * - FT2 adapter output
  */
-
-export interface AnalyticsModuleFT2Props {
+export interface AnalyticsModuleFT2DataProps {
   context: {
     period: {
       from: string;
@@ -28,6 +23,21 @@ export interface AnalyticsModuleFT2Props {
   } | null;
 
   trend: {
-    direction: 'unknown'
+    direction: 'unknown';
   } | null;
+}
+
+/**
+ * AnalyticsModuleFT2Props
+ * ======================
+ *
+ * FULL render contract.
+ *
+ * - Extends data props
+ * - Visuals injected
+ */
+export interface AnalyticsModuleFT2Props
+  extends AnalyticsModuleFT2DataProps {
+  timeline: React.ReactNode;
+  distribution: React.ReactNode;
 }

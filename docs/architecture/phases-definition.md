@@ -5,6 +5,7 @@ A staged model representing system capabilities and user experience constraints 
 ---
 
 ## **FT-1: Pre-integration / Pre-truth**
+
 *Identity exists, but the system has no prior engagement.*
 
 - **State:** No stored data, no historical signals, no user-specific knowledge.
@@ -14,6 +15,7 @@ A staged model representing system capabilities and user experience constraints 
 ---
 
 ## **FT0: Momentary Integration Handshake**
+
 *Purely technical transition with no user-facing substance.*
 
 - **State:** A transient, operational handoff. Epistemically empty.
@@ -23,6 +25,7 @@ A staged model representing system capabilities and user experience constraints 
 ---
 
 ## **FT1: Readiness / Onboarding / Configuration**
+
 *The user gates progress through active effort.*
 
 - **State:** System is gathering data but remains **epistemically blind**—it cannot yet form validated truths.
@@ -32,6 +35,7 @@ A staged model representing system capabilities and user experience constraints 
 ---
 
 ## **FT2: Unlocked Free Tier / Truth Surface**
+
 *The system earns the right to speak, but only what it can defend.*
 
 - **State:** System can now surface insights and statements based on validated, defendable data.

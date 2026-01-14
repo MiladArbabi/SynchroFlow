@@ -3,7 +3,7 @@
   "compilerOptions": {
     /* REQUIRED OVERRIDES */
     "noEmit": false,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowImportingTsExtensions": false,
     "isolatedModules": false,
 

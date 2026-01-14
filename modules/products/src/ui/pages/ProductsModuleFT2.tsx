@@ -1,69 +1,22 @@
 // modules/products/src/ui/pages/ProductsModuleFT2.tsx
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// ProductsModuleFT2
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// WHAT (Offering)
-// ---------------
-// Products FT2 is a **pre-intelligence observability surface**.
-// It renders *raw, non-interpretive product facts* for a given period.
-//
-// It answers ONE question only:
-//   → “What product data exists, and is it changing over time?”
-//
-//
-// WHAT IT IS NOT
-// --------------
-// - ❌ NOT product health
-// - ❌ NOT SKU prioritization
-// - ❌ NOT risk, pressure, dominance, or confidence reasoning
-// - ❌ NOT recommendations or actions
-//
-// All intelligence, “why”, and prioritization belongs to **SKU-OS+**
-// (see docs/blueprints-and-contracts/skuOs-contract).
-//
-//
-// WHY THIS EXISTS (Doctrine)
-// --------------------------
-// FT2 must remain:
-// - Read-only
-// - Shape-stable
-// - Boring
-// - Deterministic
-//
-// This module is intentionally underpowered to prevent intelligence leakage
-// and long-term semantic drift.
-//
-//
-// WHO OWNS WHAT
-// -------------
-// - Backend: decides meaning (later, in SKU-OS)
-// - Adapter: dumb pipe (undefined → null)
-// - This module: render facts only
-//
-//
-// WHEN THIS CHANGES
-// -----------------
-// Any addition that explains *why*, *risk*, or *what to do*:
-// → ❌ Illegal in FT2
-// → Must be deferred to SKU-OS or a higher phase
-//
-// ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
+import React, { ReactNode } from 'react';
+import {
+  FT2Layout,
+  FT2Row,
+  FT2Surface,
+} from '@lasyncro/ui-ft2';
 
 /**
- * ProductsModuleFT2Props
- * ---------------------
- * Canonical FT2 contract for Products.
+ * ProductsModuleFT2DataProps
+ * --------------------------
+ * DATA-ONLY FT2 contract.
  *
- * Design rules:
- * - All top-level props are mandatory
- * - Uncertainty is expressed as `null`
- * - No field may imply intelligence or prioritization
+ * - Raw product observability facts only
+ * - No inference
+ * - No prioritization
  */
-export interface ProductsModuleFT2Props {
+export interface ProductsModuleFT2DataProps {
   context: {
     period: {
       from: string;
@@ -81,42 +34,80 @@ export interface ProductsModuleFT2Props {
   } | null;
 }
 
+/**
+ * ProductsModuleFT2Props
+ * ----------------------
+ * FULL render contract.
+ *
+ * - Extends data props
+ * - Visuals injected
+ */
+export interface ProductsModuleFT2Props
+  extends ProductsModuleFT2DataProps {
+  timeline: ReactNode;
+  distribution: ReactNode;
+}
+
 export default function ProductsModuleFT2(
   props: ProductsModuleFT2Props
 ) {
-  const { context, outcome, trend } = props;
-
-  // Instrumentation: FT2 observability only
-  console.debug(
-    '[FT2][Products][ProductsModuleFT2] props',
-    props
-  );
+  const {
+    context,
+    outcome,
+    trend,
+    timeline,
+    distribution,
+  } = props;
 
   return (
-    <section data-testid="products-ft2-root">
-      {/* ───────────────── Context ───────────────── */}
-      <section>
-        <div>
-          <strong>Period</strong>: {context.period.from} →{' '}
-          {context.period.to}
-        </div>
-        <div>
-          <strong>Products observed</strong>:{' '}
-          {context.productsObserved === null
-            ? '—'
-            : context.productsObserved}
-        </div>
-      </section>
+    <FT2Layout>
+      {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
+      <FT2Row intent="kpi">
+        <FT2Surface variant="kpi" title="Period">
+          {context.period.from} → {context.period.to}
+        </FT2Surface>
 
-      <section>
-        <strong>Outcome</strong>:{' '}
-        {outcome === null ? '—' : outcome.status}
-      </section>
+        <FT2Surface variant="kpi" title="Products observed">
+          {context.productsObserved ?? '—'}
+        </FT2Surface>
 
-      <section>
-        <strong>Trend</strong>:{' '}
-        {trend === null ? '—' : trend.direction}
-      </section>
-    </section>
+        <FT2Surface variant="kpi" title="Outcome">
+          {outcome?.status ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Trend">
+          {trend?.direction ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="TODO" />
+        <FT2Surface variant="kpi" title="TODO" />
+      </FT2Row>
+
+      {/* ───────── Layer 2 — Analytical ───────── */}
+      <FT2Row intent="analysis">
+        <FT2Surface title="Product activity over time">
+          {timeline}
+        </FT2Surface>
+
+        <FT2Surface title="Product distribution">
+          {distribution}
+        </FT2Surface>
+      </FT2Row>
+
+      {/* ───────── Layer 3 — Support ───────── */}
+      <FT2Row intent="support">
+        <FT2Surface title="Trend summary">
+          {trend?.direction ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Outcome">
+          {outcome?.status ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Data status">
+          —
+        </FT2Surface>
+      </FT2Row>
+    </FT2Layout>
   );
 }

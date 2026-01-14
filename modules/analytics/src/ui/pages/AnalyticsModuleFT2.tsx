@@ -1,89 +1,71 @@
-/**
- * AnalyticsModuleFT2
- * ==================
- *
- * FT2 observability surface for Analytics.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * PURPOSE
- * ─────────────────────────────────────────────────────────────────────────────
- * This component renders the highest read-only truth surface for Analytics.
- *
- * It answers ONE question only:
- *   → “What analytics data exists, and how is it moving?”
- *
- * It is intentionally:
- * - Read-only
- * - Deterministic
- * - Underpowered
- * - Non-explanatory
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * WHAT THIS IS NOT
- * ─────────────────────────────────────────────────────────────────────────────
- * - ❌ NOT system health analysis
- * - ❌ NOT stability interpretation
- * - ❌ NOT data quality reasoning
- * - ❌ NOT recommendations or actions
- *
- * All “why”, “so what”, and prioritization belongs to SKU-OS+ layers.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * OWNERSHIP & BOUNDARIES
- * ─────────────────────────────────────────────────────────────────────────────
- * - Backend: decides meaning (Facts → Intelligence → FTEP)
- * - Adapter: dumb pipe (undefined → null only)
- * - This component: renders values, nothing more
- *
- * If this component ever feels “helpful” or “smart”,
- * the FT2 contract has been violated.
- */
-
 import React from 'react';
-import type { AnalyticsModuleFT2Props } from './AnalyticsModuleFT2.types';
+import {
+  FT2Layout,
+  FT2Row,
+  FT2Surface,
+} from '@lasyncro/ui-ft2';
 
-const NULL_PLACEHOLDER = '—';
+import type {
+  AnalyticsModuleFT2Props,
+} from './AnalyticsModuleFT2.types';
 
-/**
- * AnalyticsModuleFT2
- * -----------------
- * Canonical FT2 UI for Analytics.
- *
- * Design rules (NON-NEGOTIABLE):
- * - All props are mandatory at the top level
- * - Uncertainty is expressed as `null`
- * - All `null` values render as "—"
- * - No inference, no computation, no explanation
- */
 export default function AnalyticsModuleFT2(
   props: AnalyticsModuleFT2Props
 ) {
-  const { context, outcome, trend } = props;
-
-  // FT2 instrumentation only (visibility ≠ interpretation)
-  console.debug('[FT2][Analytics][AnalyticsModuleFT2] props', props);
+  const {
+    context,
+    outcome,
+    trend,
+    timeline,
+    distribution,
+  } = props;
 
   return (
-    <section data-testid="analytics-ft2-root">
-      {/* ───────────────── Context ───────────────── */}
-      <section>
-        <div>
-          <strong>Period</strong>: {context.period.from} →{' '}
-          {context.period.to}
-        </div>
-      </section>
+    <FT2Layout>
+      {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
+      <FT2Row intent="kpi">
+        <FT2Surface variant="kpi" title="Period">
+          {context.period.from} → {context.period.to}
+        </FT2Surface>
 
-      {/* ───────────────── Outcome ───────────────── */}
-      <section>
-        <strong>Outcome</strong>:{' '}
-        {outcome === null ? NULL_PLACEHOLDER : outcome.status}
-      </section>
+        <FT2Surface variant="kpi" title="Outcome">
+          {outcome?.status ?? '—'}
+        </FT2Surface>
 
-      {/* ───────────────── Trend ───────────────── */}
-      <section>
-        <strong>Trend</strong>:{' '}
-        {trend === null ? NULL_PLACEHOLDER : trend.direction}
-      </section>
-    </section>
+        <FT2Surface variant="kpi" title="Trend">
+          {trend?.direction ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="TODO" />
+        <FT2Surface variant="kpi" title="TODO" />
+        <FT2Surface variant="kpi" title="TODO" />
+      </FT2Row>
+
+      {/* ───────── Layer 2 — Analytical ───────── */}
+      <FT2Row intent="analysis">
+        <FT2Surface title="Analytics activity over time">
+          {timeline}
+        </FT2Surface>
+
+        <FT2Surface title="Analytics distribution">
+          {distribution}
+        </FT2Surface>
+      </FT2Row>
+
+      {/* ───────── Layer 3 — Support ───────── */}
+      <FT2Row intent="support">
+        <FT2Surface title="Trend summary">
+          {trend?.direction ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Outcome">
+          {outcome?.status ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Data status">
+          —
+        </FT2Surface>
+      </FT2Row>
+    </FT2Layout>
   );
 }
