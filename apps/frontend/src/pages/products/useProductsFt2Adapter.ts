@@ -28,6 +28,12 @@ type ProductsFt2Snapshot = {
   trend?: {
     direction: 'up' | 'down' | 'flat' | 'unknown';
   } | null;
+
+  signals?: {
+    catalog: 'ok' | 'attention' | 'unknown';
+    skuCoverage: 'ok' | 'gaps' | 'unknown';
+    variantComplexity: 'simple' | 'complex' | 'unknown';
+  } | null;
 };
 
 /**
@@ -64,5 +70,10 @@ export function mapProductsFt2Props(
       snapshot.trend === undefined
         ? null
         : snapshot.trend,
+
+    signals:
+      snapshot.signals === undefined
+        ? null
+        : snapshot.signals,
   };
 }

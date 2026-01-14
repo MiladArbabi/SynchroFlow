@@ -32,6 +32,12 @@ export interface ProductsModuleFT2DataProps {
   trend: {
     direction: 'up' | 'down' | 'flat' | 'unknown';
   } | null;
+
+  signals: {
+    catalog: 'ok' | 'attention' | 'unknown';
+    skuCoverage: 'ok' | 'gaps' | 'unknown';
+    variantComplexity: 'simple' | 'complex' | 'unknown';
+  } | null;
 }
 
 /**
@@ -55,8 +61,7 @@ export default function ProductsModuleFT2(
     context,
     outcome,
     trend,
-    timeline,
-    distribution,
+    signals,
   } = props;
 
   return (
@@ -79,18 +84,23 @@ export default function ProductsModuleFT2(
           {trend?.direction ?? '—'}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="TODO" />
-        <FT2Surface variant="kpi" title="TODO" />
+        <FT2Surface variant="kpi" title="Catalog">
+          {signals?.catalog ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="SKU coverage">
+          {signals?.skuCoverage ?? '—'}
+        </FT2Surface>
       </FT2Row>
 
       {/* ───────── Layer 2 — Analytical ───────── */}
       <FT2Row intent="analysis">
         <FT2Surface title="Product activity over time">
-          {timeline}
+          {/* TODO CHART/GRAPH*/}
         </FT2Surface>
 
         <FT2Surface title="Product distribution">
-          {distribution}
+          {/* TODO CHART/GRAPH */}
         </FT2Surface>
       </FT2Row>
 
@@ -103,7 +113,7 @@ export default function ProductsModuleFT2(
         <FT2Surface variant="kpi" title="Outcome">
           {outcome?.status ?? '—'}
         </FT2Surface>
-
+    
         <FT2Surface variant="kpi" title="Data status">
           —
         </FT2Surface>
