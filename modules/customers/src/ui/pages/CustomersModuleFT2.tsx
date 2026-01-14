@@ -53,11 +53,8 @@ export interface CustomersModuleFT2DataProps {
  * - Extends data props
  * - Visuals are injected
  */
-export interface CustomersModuleFT2Props
-  extends CustomersModuleFT2DataProps {
-  timeline: ReactNode;
-  distribution: ReactNode;
-}
+export type CustomersModuleFT2Props =
+  CustomersModuleFT2DataProps;
 
 export default function CustomersModuleFT2(
   props: CustomersModuleFT2Props
@@ -66,8 +63,6 @@ export default function CustomersModuleFT2(
     context,
     systemState,
     timeSignal,
-    timeline,
-    distribution,
   } = props;
 
   return (
@@ -104,11 +99,11 @@ export default function CustomersModuleFT2(
       {/* ───────── Layer 2 — Analytical ───────── */}
       <FT2Row intent="analysis">
         <FT2Surface title="Session activity over time">
-          {timeline}
+          {/* TODO CHART */}
         </FT2Surface>
 
         <FT2Surface title="Session distribution">
-          {distribution}
+          {/* TODO CHART */}
         </FT2Surface>
       </FT2Row>
 

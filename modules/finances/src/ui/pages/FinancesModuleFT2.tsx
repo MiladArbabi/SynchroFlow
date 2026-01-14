@@ -55,11 +55,8 @@ export interface FinancesModuleFT2DataProps {
  * - Extends data props
  * - Visuals injected
  */
-export interface FinancesModuleFT2Props
-  extends FinancesModuleFT2DataProps {
-  timeline: ReactNode;
-  distribution: ReactNode;
-}
+export type FinancesModuleFT2Props =
+  FinancesModuleFT2DataProps;
 
 export default function FinancesModuleFT2(
   props: FinancesModuleFT2Props
@@ -69,8 +66,6 @@ export default function FinancesModuleFT2(
     outcome,
     trend,
     dataCoverage,
-    timeline,
-    distribution,
   } = props;
 
   return (
@@ -110,11 +105,11 @@ export default function FinancesModuleFT2(
       {/* ───────── Layer 2 — Analytical ───────── */}
       <FT2Row intent="analysis">
         <FT2Surface title="Financial activity over time">
-          {timeline}
+          {/* TODO CHART */}
         </FT2Surface>
 
         <FT2Surface title="Financial distribution">
-          {distribution}
+         {/* TODO CHART */}
         </FT2Surface>
       </FT2Row>
 

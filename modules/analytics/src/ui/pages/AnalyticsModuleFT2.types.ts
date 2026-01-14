@@ -36,8 +36,5 @@ export interface AnalyticsModuleFT2DataProps {
  * - Extends data props
  * - Visuals injected
  */
-export interface AnalyticsModuleFT2Props
-  extends AnalyticsModuleFT2DataProps {
-  timeline: React.ReactNode;
-  distribution: React.ReactNode;
-}
+export type AnalyticsModuleFT2Props =
+  AnalyticsModuleFT2DataProps;

@@ -48,11 +48,7 @@ export interface ProductsModuleFT2DataProps {
  * - Extends data props
  * - Visuals injected
  */
-export interface ProductsModuleFT2Props
-  extends ProductsModuleFT2DataProps {
-  timeline: ReactNode;
-  distribution: ReactNode;
-}
+export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
 
 export default function ProductsModuleFT2(
   props: ProductsModuleFT2Props

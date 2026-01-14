@@ -16,8 +16,6 @@ export default function AnalyticsModuleFT2(
     context,
     outcome,
     trend,
-    timeline,
-    distribution,
   } = props;
 
   return (
@@ -44,11 +42,11 @@ export default function AnalyticsModuleFT2(
       {/* ───────── Layer 2 — Analytical ───────── */}
       <FT2Row intent="analysis">
         <FT2Surface title="Analytics activity over time">
-          {timeline}
+          {/* TODO CHART */}
         </FT2Surface>
 
         <FT2Surface title="Analytics distribution">
-          {distribution}
+          {/* TODO CHART */}
         </FT2Surface>
       </FT2Row>
 
