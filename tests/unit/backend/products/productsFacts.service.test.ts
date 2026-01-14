@@ -163,4 +163,107 @@ describe('ProductsFacts.service (Layer 1)', () => {
     expect(facts.statusCounts.inactive).toBe(0);
     expect(facts.statusCounts.archived).toBe(0);
   });
+
+  test('computes SKU presence facts (with / without SKU)', async () => {
+    await db('canonical_products').insert([
+      {
+        shop_id: SHOP_ID,
+        platform: 'shopify',
+        platform_product_id: 'p1',
+        sku: 'SKU-1',
+        title: 'A',
+        status: 'active',
+      },
+      {
+        shop_id: SHOP_ID,
+        platform: 'shopify',
+        platform_product_id: 'p2',
+        sku: null,
+        title: 'B',
+        status: 'active',
+      },
+    ]);
+
+    const facts = await getProductsFacts({
+      shopId: SHOP_ID,
+      period: { from: '2020-01-01', to: '2030-01-01' },
+    });
+
+    expect(facts.productsObserved).toBe(2);
+    expect(facts.distinctSkusObserved).toBe(1);
+    expect(facts.productsWithSkuCount).toBe(1);
+    expect(facts.productsWithoutSkuCount).toBe(1);
+  });
+
+  test('computes variant structure facts correctly', async () => {
+    await db('canonical_products').insert([
+      {
+        shop_id: SHOP_ID,
+        platform: 'shopify',
+        platform_product_id: 'p1',
+        platform_variant_id: 'v1',
+        sku: 'SKU-1',
+        title: 'A',
+        status: 'active',
+      },
+      {
+        shop_id: SHOP_ID,
+        platform: 'shopify',
+        platform_product_id: 'p1',
+        platform_variant_id: 'v2',
+        sku: 'SKU-1',
+        title: 'A',
+        status: 'active',
+      },
+      {
+        shop_id: SHOP_ID,
+        platform: 'shopify',
+        platform_product_id: 'p2',
+        platform_variant_id: 'v3',
+        sku: 'SKU-2',
+        title: 'B',
+        status: 'active',
+      },
+    ]);
+
+    const facts = await getProductsFacts({
+      shopId: SHOP_ID,
+      period: { from: '2020-01-01', to: '2030-01-01' },
+    });
+
+    expect(facts.variantsObserved).toBe(3);
+    expect(facts.productsWithVariantsCount).toBe(2);
+    expect(facts.singleVariantProductsCount).toBe(1);
+  });
+
+  test('returns zero counts (not null) when rows exist but no variants', async () => {
+    await seedCanonicalProduct({
+      shopId: SHOP_ID,
+      platformProductId: 'p-no-variants',
+    });
+
+    const facts = await getProductsFacts({
+      shopId: SHOP_ID,
+      period: { from: '2020-01-01', to: '2030-01-01' },
+    });
+
+    expect(facts.variantsObserved).toBe(0);
+    expect(facts.productsWithVariantsCount).toBe(0);
+    expect(facts.singleVariantProductsCount).toBe(0);
+  });
+
+  test('preserves nulls for all v2 facts when no products exist', async () => {
+    const facts = await getProductsFacts({
+      shopId: SHOP_ID,
+      period: { from: '2020-01-01', to: '2030-01-01' },
+    });
+
+    expect(facts.productsObserved).toBeNull();
+    expect(facts.distinctSkusObserved).toBeNull();
+    expect(facts.productsWithSkuCount).toBeNull();
+    expect(facts.productsWithoutSkuCount).toBeNull();
+    expect(facts.variantsObserved).toBeNull();
+    expect(facts.productsWithVariantsCount).toBeNull();
+    expect(facts.singleVariantProductsCount).toBeNull();
+  });
 });

@@ -21,42 +21,70 @@ import { ProductsIntelligence } from './ProductsIntelligence.types';
 export function buildProductsIntelligence(
   facts: ProductsFacts
 ): ProductsIntelligence {
-  const { productsObserved, statusCounts } = facts;
+  const {
+    productsObserved,
+    productsWithSkuCount,
+    productsWithoutSkuCount,
+    variantsObserved,
+    productsWithVariantsCount,
+    statusCounts,
+  } = facts as any;
 
-  // Missing facts → unknown
-  if (
+  const missing =
     productsObserved === null ||
-    statusCounts.active === null ||
-    statusCounts.inactive === null ||
-    statusCounts.archived === null
-  ) {
+    statusCounts?.active === null ||
+    productsWithSkuCount === null ||
+    variantsObserved === null;
+
+  if (missing) {
     return {
       productsObserved,
       outcome: { status: 'unknown' },
       trend: { direction: 'unknown' },
+      catalogHealth: 'unknown',
+      skuCoverage: 'unknown',
+      variantComplexity: 'unknown',
     };
   }
 
-  // Classification only
-  if (statusCounts.active > 0) {
-    return {
-      productsObserved,
-      outcome: { status: 'positive' },
-      trend: { direction: 'unknown' },
-    };
+  // ── outcome (v1 preserved)
+  const outcomeStatus =
+    statusCounts.active > 0
+      ? 'positive'
+      : statusCounts.inactive > 0 || statusCounts.archived > 0
+      ? 'negative'
+      : 'unknown';
+
+  // ── catalogHealth
+  const catalogHealth =
+    productsObserved === 0
+      ? 'unknown'
+      : statusCounts.active > 0
+      ? 'healthy'
+      : 'degraded';
+
+  // ── variantComplexity
+  let variantComplexity: ProductsIntelligence['variantComplexity'] = 'simple';
+
+  if (variantsObserved > 0 && productsWithVariantsCount > 0) {
+    const avg = variantsObserved / productsWithVariantsCount;
+    variantComplexity = avg > 2 ? 'complex' : 'simple';
   }
 
-  if (statusCounts.inactive > 0 || statusCounts.archived > 0) {
-    return {
-      productsObserved,
-      outcome: { status: 'negative' },
-      trend: { direction: 'unknown' },
-    };
-  }
+  // ── skuCoverage
+  const skuCoverage =
+    productsWithSkuCount === productsObserved
+      ? 'complete'
+      : productsWithSkuCount > 0
+      ? 'partial'
+      : 'missing';
 
   return {
     productsObserved,
-    outcome: { status: 'unknown' },
+    outcome: { status: outcomeStatus },
     trend: { direction: 'unknown' },
+    catalogHealth,
+    skuCoverage,
+    variantComplexity,
   };
 }

@@ -1,9 +1,10 @@
-//apps/backend/src/services/products-intelligence/ProductsIntelligence.types.ts
+// apps/backend/src/services/products-ftep/ProductsFtep.types.ts
+
 /**
- * Layer 2 — ProductsIntelligence
+ * Layer 2 — ProductsIntelligence (v2)
  *
  * Internal classification only.
- * Never persisted. Never exposed directly.
+ * NEVER exposed directly.
  */
 
 export interface ProductsIntelligence {
@@ -16,4 +17,22 @@ export interface ProductsIntelligence {
   trend: {
     direction: 'up' | 'down' | 'flat' | 'unknown';
   };
+
+  // v2 internal signals (NOT exposed directly)
+  catalogHealth: 'healthy' | 'degraded' | 'unknown';
+  skuCoverage: 'complete' | 'partial' | 'missing' | 'unknown';
+  variantComplexity: 'simple' | 'complex' | 'unknown';
 }
+
+/**
+ * Layer 3 — ProductsFTEP (Truth Exposure Policy) — v2
+ *
+ * FT2-safe exposure only.
+ *
+ * HARD RULES:
+ * - No raw facts
+ * - No intelligence internals
+ * - No explanations
+ * - No recommendations
+ * - Signals must be lossy and non-semantic
+ */
