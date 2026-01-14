@@ -1,6 +1,6 @@
 // apps/frontend/src/pages/orders/useOrdersFt2Adapter.ts
 
-import type { OrdersModuleFT2Props } from '@lasyncro/order-nexus';
+import type { OrdersModuleFT2DataProps } from '@lasyncro/order-nexus';
 
 /**
  * OrdersFt2Snapshot
@@ -74,7 +74,7 @@ type OrdersFt2Snapshot = {
  */
 export function mapOrdersFt2Props(
   snapshot: OrdersFt2Snapshot
-): OrdersModuleFT2Props {
+): OrdersModuleFT2DataProps {
   return {
     context: {
       period: snapshot.context?.period ?? { from: '', to: '' },

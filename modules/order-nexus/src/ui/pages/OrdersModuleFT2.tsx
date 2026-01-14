@@ -1,32 +1,24 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
 
+import React, { ReactNode } from 'react';
+import {
+  FT2Layout,
+  FT2Row,
+  FT2Surface,
+  FT2_TOKENS,
+} from '@lasyncro/ui-ft2';
+
 /**
- * OrdersModuleFT2
- * ----------------
- * FT2 observability surface for OrderNexus.
+ * OrdersModuleFT2DataProps
+ * -----------------------
+ * DATA-ONLY FT2 contract.
  *
- * PURPOSE
- * -------
- * This component renders the *first governed truth window* into
- * order performance.
- *
- * It is intentionally:
- * - Read-only
- * - Deterministic
- * - Boring
- * - Non-explanatory
- *
- * This UI must NEVER:
- * - Explain why something happened
- * - Suggest actions
- * - Compute or derive values
- * - Hide missing data behind fake completeness
- *
- * Mental model:
- * This is a window, not a brain.
+ * - Used by frontend adapters
+ * - No React nodes
+ * - No UI composition
  */
 
-export interface OrdersModuleFT2Props {
+export interface OrdersModuleFT2DataProps {
   context: {
     period: {
       from: string;
@@ -54,6 +46,20 @@ export interface OrdersModuleFT2Props {
   };
 }
 
+/**
+ * OrdersModuleFT2Props
+ * -------------------
+ * FULL render contract.
+ *
+ * - Used ONLY by OrdersModuleFT2 component
+ * - Extends data props
+ * - Adds visual slots
+ */
+export interface OrdersModuleFT2Props extends OrdersModuleFT2DataProps {
+  timeseries: ReactNode;
+  distribution: ReactNode;
+}
+
 export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
   const {
     context,
@@ -61,68 +67,69 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
     outcome,
     trend,
     dataCoverage,
+    timeseries,
+    distribution,
   } = props;
 
-  console.debug('[FT2][OrderNexus][OrdersModuleFT2] props', props);
-
   return (
-    <section data-testid="orders-ft2-root">
-      {/* ───────── Snapshot ───────── */}
-      <section>
-        <div>
-          <strong>Period</strong>: {context.period.from} → {context.period.to}
-        </div>
+    <FT2Layout>
+      {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
+      <FT2Row columns={3}>
+        <FT2Surface variant="kpi" title="Period">
+          {context.period.from} → {context.period.to}
+        </FT2Surface>
 
-        <div>
-          <strong>Orders observed</strong>:{' '}
-          {context.ordersObserved === null ? '—' : context.ordersObserved}
-        </div>
+        <FT2Surface variant="kpi" title="Orders observed">
+          {context.ordersObserved ?? '—'}
+        </FT2Surface>
 
-        <div>
-          <strong>Total revenue</strong>:{' '}
-          {totals.revenueTotal === null
-            ? '—'
-            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
-        </div>
-
-        <div>
-          <strong>Total cost</strong>:{' '}
-          {totals.costTotal === null
-            ? '—'
-            : `${totals.costTotal} ${totals.currency ?? ''}`}
-        </div>
-
-        <div>
-          <strong>Net outcome</strong>: {outcome ? outcome.status : '—'}
-        </div>
-
-        <div>
-          <strong>Trend</strong>: {trend ? trend.direction : '—'}
-        </div>
-
-        <div>
-          <strong>Data coverage</strong>:{' '}
+        <FT2Surface variant="kpi" title="Data coverage">
           {dataCoverage.completenessPct === null
             ? '—'
             : `${dataCoverage.completenessPct}%`}
-        </div>
-      </section>
+        </FT2Surface>
+      </FT2Row>
 
-      <hr />
+      <FT2Row columns={3}>
+        <FT2Surface variant="kpi" title="Revenue">
+          {totals.revenueTotal === null
+            ? '—'
+            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
+        </FT2Surface>
 
-      {/* ───────── Timeseries ───────── */}
-      <section>
-        <h4>Order activity over time</h4>
-        {/* OrdersTimeseriesWidget already wired here */}
-      </section>
+        <FT2Surface variant="kpi" title="Cost">
+          {totals.costTotal === null
+            ? '—'
+            : `${totals.costTotal} ${totals.currency ?? ''}`}
+        </FT2Surface>
 
-      <hr />
+        <FT2Surface variant="kpi" title="Outcome">
+          {outcome?.status ?? '—'}
+        </FT2Surface>
+      </FT2Row>
 
-      {/* ───────── Distribution ───────── */}
-      <section>
-        <h4>Order value distribution</h4>
-        {/* OrdersDistributionWidget already wired here */}
-      </section>
-    </section>
+      {/* ───────── Layer 2 — Analytical ───────── */}
+      <FT2Surface
+        title="Order activity over time"
+        width={{
+          xs: '100%',
+          sm: FT2_TOKENS.analyticalWidth.tablet,
+          md: FT2_TOKENS.analyticalWidth.desktop,
+        }}
+      >
+        {timeseries}
+      </FT2Surface>
+
+      {/* ───────── Layer 3 — Support ───────── */}
+      <FT2Row columns={2}>
+        <FT2Surface title="Order value distribution">
+          {distribution}
+        </FT2Surface>
+
+        <FT2Surface title="Trend">
+          {trend?.direction ?? '—'}
+        </FT2Surface>
+      </FT2Row>
+    </FT2Layout>
   );
 }

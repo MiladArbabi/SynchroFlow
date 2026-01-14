@@ -13,8 +13,6 @@
 // apps/frontend/src/pages/OrdersFT2Page.tsx
 
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
-import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
-import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
 
 import { useOrdersFt2Snapshot } from './orders/useOrdersFt2Snapshot';
 import { useOrdersFt2Timeseries } from './orders/useOrdersFt2Timeseries';
@@ -23,6 +21,8 @@ import { useOrdersFt2Distribution } from './orders/useOrdersFt2Distribution';
 import { mapOrdersFt2Props } from './orders/useOrdersFt2Adapter';
 import { mapOrdersFt2TimeseriesProps } from './orders/useOrdersFt2TimeseriesAdapter';
 import { mapOrdersFt2DistributionProps } from './orders/useOrdersFt2DistributionAdapter';
+import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
+import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -49,10 +49,14 @@ export default function OrdersFT2Page() {
   }
 
   return (
-    <>
-      <OrdersModuleFT2 {...headerProps} />
-      <OrdersTimeseriesWidget {...timeseriesProps} />
-      <OrdersDistributionWidget {...distributionProps} />
-    </>
+    <OrdersModuleFT2
+      {...headerProps}
+      timeseries={
+        <OrdersTimeseriesWidget {...timeseriesProps} />
+      }
+      distribution={
+        <OrdersDistributionWidget {...distributionProps} />
+      }
+    />
   );
 }

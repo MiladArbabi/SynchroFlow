@@ -24,11 +24,12 @@ export default function lasyncroModulesPlugin(): Plugin {
 
     const modulePkgs = fs
       .readdirSync(modulesDir)
-      .filter((name) => name !== 'specter') // 🚫 NOT a UI module
+      .filter((name) => name !== 'specter')
+      .filter((name) => name !== 'my-test-module')
       .filter((name) => {
-        if (name === 'my-test-module') return false;
-        const pkgPath = path.join(modulesDir, name, 'package.json');
-        return fs.existsSync(pkgPath);
+        const entryTsx = path.join(modulesDir, name, 'src/ui/ModuleEntry.tsx');
+        const entryTs  = path.join(modulesDir, name, 'src/ui/ModuleEntry.ts');
+        return fs.existsSync(entryTsx) || fs.existsSync(entryTs);
       })
       .map((name) => {
         const pkgPath = path.join(modulesDir, name, 'package.json');
@@ -38,7 +39,7 @@ export default function lasyncroModulesPlugin(): Plugin {
           id: pkg.name.replace(/^@lasyncro\//, ''),
         };
       })
-      .sort((a, b) => a.id.localeCompare(b.id)); // deterministic
+      .sort((a, b) => a.id.localeCompare(b.id));
 
     const entries = modulePkgs
       .map(
