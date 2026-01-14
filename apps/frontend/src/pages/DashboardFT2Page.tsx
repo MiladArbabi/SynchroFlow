@@ -1,30 +1,16 @@
 // apps/frontend/src/pages/DashboardFT2Page.tsx
-//
-// DashboardFT2Page
-// ----------------
-// FT2-only dashboard surface.
-//
-// HARD CONTRACT:
-// - MUST render FT2 observability surfaces only
-// - MUST NOT render FT1 modules or onboarding CTAs
-// - MUST NOT read lifecycle state
-// - MUST assume FT2 routing is authoritative
-//
-// NOTE:
-// This is intentionally a skeleton.
-// FT2 dashboard composition will be added later.
 
 import React from 'react';
+import {
+  FT2Layout,
+  FT2Row,
+  FT2Surface,
+} from '@lasyncro/ui-ft2';
+
 import { useDashboardFt2Snapshot } from 'pages/dashboard-ft2/useDashboardFt2Snapshot';
 import { mapDashboardFt2Snapshot } from 'pages/dashboard-ft2/useDashboardFt2Adapter';
 
-/* const __DEV__ = import.meta.env.DEV; */
-
 const DashboardFT2Page: React.FC = () => {
-  /* if (__DEV__) {
-    console.debug('[MOUNT] DashboardFT2Page');
-  } */
-
   const { data, isLoading } = useDashboardFt2Snapshot();
 
   if (isLoading) {
@@ -34,47 +20,56 @@ const DashboardFT2Page: React.FC = () => {
   // 🔒 HARD RULE: snapshot must always pass through adapter
   const mapped = mapDashboardFt2Snapshot(data);
 
-    return (
-    <div>
-      <h2>System Overview</h2>
+  return (
+    <FT2Layout>
+      {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
+      <FT2Row intent="kpi">
+        <FT2Surface variant="kpi" title="Observation from">
+          {mapped.observationWindow?.from ?? '—'}
+        </FT2Surface>
 
-      <div>
-        <strong>Observation window</strong>
-        <div>{mapped.observationWindow?.from ?? '—'}</div>
-        <div>{mapped.observationWindow?.to ?? '—'}</div>
-      </div>
+        <FT2Surface variant="kpi" title="Observation to">
+          {mapped.observationWindow?.to ?? '—'}
+        </FT2Surface>
 
-     {/* ───────────────────────────────────────────── */}
-      <h2>System Health</h2>
+        <FT2Surface variant="kpi" title="Orders outcome">
+          {mapped.systemHealth?.ordersOutcome ?? '—'}
+        </FT2Surface>
 
-      <div>
-        <strong>Orders outcome</strong>
-        <div>{mapped.systemHealth?.ordersOutcome ?? '—'}</div>
-      </div>
+        <FT2Surface variant="kpi" title="Products outcome">
+          {mapped.systemHealth?.productsOutcome ?? '—'}
+        </FT2Surface>
 
-      <div>
-        <strong>Products outcome</strong>
-        <div>{mapped.systemHealth?.productsOutcome ?? '—'}</div>
-      </div>
+        <FT2Surface variant="kpi" title="TODO" />
+        <FT2Surface variant="kpi" title="TODO" />
+      </FT2Row>
 
-      {/* ───────────────────────────────────────────── */}
-      <h2>Coverage</h2>
+      {/* ───────── Layer 2 — Analytical (reserved) ───────── */}
+      <FT2Row intent="analysis">
+        <FT2Surface title="System activity over time">
+          —
+        </FT2Surface>
 
-      <div>
-        <strong>Orders observed</strong>
-        <div>{mapped.coverage?.ordersObserved ?? '—'}</div>
-      </div>
+        <FT2Surface title="System distribution">
+          —
+        </FT2Surface>
+      </FT2Row>
 
-      <div>
-        <strong>Products observed</strong>
-        <div>{mapped.coverage?.productsObserved ?? '—'}</div>
-      </div>
+      {/* ───────── Layer 3 — Support ───────── */}
+      <FT2Row intent="support">
+        <FT2Surface title="Orders observed">
+          {mapped.coverage?.ordersObserved ?? '—'}
+        </FT2Surface>
 
-      <div>
-        <strong>Sessions observed</strong>
-        <div>{mapped.coverage?.sessionsObserved ?? '—'}</div>
-      </div>
-    </div>
+        <FT2Surface variant="kpi" title="Products observed">
+          {mapped.coverage?.productsObserved ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Sessions observed">
+          {mapped.coverage?.sessionsObserved ?? '—'}
+        </FT2Surface>
+      </FT2Row>
+    </FT2Layout>
   );
 };
 
