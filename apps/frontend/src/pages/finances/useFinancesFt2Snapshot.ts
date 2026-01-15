@@ -1,5 +1,4 @@
-// apps/frontend/src/pages/finances/useFinancesFt2Snapshot.ts
-
+import { FT2DateRange } from '@lasyncro/ui-ft2';
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
@@ -9,6 +8,7 @@ export type FinancesFt2Snapshot = {
       from: string;
       to: string;
     };
+    revenueObserved?: number | null;
     netObserved?: number | null;
   };
 
@@ -32,17 +32,22 @@ export type FinancesFt2Snapshot = {
  *
  * Rules:
  * - Backend-owned period
- * - No params
+ * - Date-range scoped
  * - Read-only
  * - No transformation
  */
-export function useFinancesFt2Snapshot(enabled: boolean) {
+export function useFinancesFt2Snapshot(range: FT2DateRange) {
   return useQuery<FinancesFt2Snapshot>({
-    queryKey: ['finances', 'ft2'],
-    enabled,
+    queryKey: ['finances', 'ft2', range.from, range.to],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/finances/ft2'
+        '/api/v1/modules/finances/ft2',
+        {
+          params: {
+            from: range.from,
+            to: range.to,
+          },
+        }
       );
       return data;
     },

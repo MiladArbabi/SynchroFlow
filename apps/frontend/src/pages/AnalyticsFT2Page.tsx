@@ -3,6 +3,9 @@
 // AnalyticsFT2Page
 // ----------------
 // FT2-only Analytics observability surface.
+import { useState } from 'react';
+import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
+import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
 import { AnalyticsModuleFT2 } from '@lasyncro/analytics';
 import { useAnalyticsFt2Snapshot } from './analytics/useAnalyticsFt2Snapshot';
@@ -11,7 +14,13 @@ import { mapAnalyticsFt2Props } from './analytics/useAnalyticsFt2Adapter';
 const __DEV__ = import.meta.env.DEV;
 
 export default function AnalyticsFT2Page() {
-  const snapshotQuery = useAnalyticsFt2Snapshot(true);
+  const [range, setRange] = useState<FT2DateRange>({
+    preset: 'past_7_days',
+    from: new Date().toISOString(),
+    to: new Date().toISOString(),
+  });
+
+  const snapshotQuery = useAnalyticsFt2Snapshot(range);
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) {
@@ -26,5 +35,14 @@ export default function AnalyticsFT2Page() {
     console.debug('[AnalyticsFT2Page] rendering AnalyticsModuleFT2', props);
   }
 
-  return <AnalyticsModuleFT2 {...props} />;
+  return (
+    <>
+      <FT2DateRangeBar
+        value={range}
+        onChange={setRange}
+      />
+
+      <AnalyticsModuleFT2 {...props} />
+    </>
+  );
 }

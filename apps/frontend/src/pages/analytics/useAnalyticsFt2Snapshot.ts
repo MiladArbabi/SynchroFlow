@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/analytics/useAnalyticsFt2Snapshot.ts
-
+import { FT2DateRange } from '@lasyncro/ui-ft2';
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
@@ -32,14 +32,17 @@ export type AnalyticsFt2Snapshot = {
  * - Read-only
  * - No transformation
  */
-export function useAnalyticsFt2Snapshot(enabled: boolean) {
+export function useAnalyticsFt2Snapshot(range: FT2DateRange) {
   return useQuery<AnalyticsFt2Snapshot>({
-    queryKey: ['analytics', 'ft2'],
-    enabled,
+    queryKey: ['analytics', 'ft2', range.from, range.to],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/analytics/ft2'
-      );
+        '/api/v1/modules/analytics/ft2', {
+        params: {
+          from: range.from,
+          to: range.to,
+        },
+      });
       return data;
     },
   });

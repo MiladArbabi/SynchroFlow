@@ -24,7 +24,6 @@ jest.mock('contexts/AuthContext', () => ({
   }),
 }));
 
-
 jest.mock('pages/orders/useOrdersFt2Snapshot', () => ({
   useOrdersFt2Snapshot: (range: any) => {
     (globalThis as any).__snapshotSpy(range);

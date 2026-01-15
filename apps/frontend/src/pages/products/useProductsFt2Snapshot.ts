@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
 export type ProductsFt2Snapshot = {
   context?: {
@@ -19,6 +20,12 @@ export type ProductsFt2Snapshot = {
   trend?: {
     direction: 'up' | 'down' | 'flat' | 'unknown';
   } | null;
+
+  signals?: {
+    catalog: 'ok' | 'attention' | 'unknown';
+    skuCoverage: 'ok' | 'gaps' | 'unknown';
+    variantComplexity: 'simple' | 'complex' | 'unknown';
+  } | null;
 };
 
 /**
@@ -27,17 +34,24 @@ export type ProductsFt2Snapshot = {
  * Fetches authoritative FT2 Products snapshot.
  *
  * Rules:
- * - Backend-owned period
- * - No params
+ * - Page-owned period
  * - Read-only
- * - No transformation
+ * - No inference
+ * - Deterministic refetch
  */
-export function useProductsFt2Snapshot(enabled: boolean) {
+export function useProductsFt2Snapshot(range: FT2DateRange) {
   return useQuery<ProductsFt2Snapshot>({
-    queryKey: ['products', 'ft2'],
-    enabled,
+    queryKey: ['products', 'ft2', range.from, range.to],
     queryFn: async () => {
-      const { data } = await axiosInstance.get('/api/v1/modules/products/ft2');
+      const { data } = await axiosInstance.get(
+        '/api/v1/modules/products/ft2',
+        {
+          params: {
+            from: range.from,
+            to: range.to,
+          },
+        }
+      );
       return data;
     },
   });

@@ -14,10 +14,19 @@ import { CustomersModuleFT2 } from '@lasyncro/customers';
 import { useCustomersFt2Snapshot } from './customers/useCustomersFt2Snapshot';
 import { mapCustomersFt2Props } from './customers/useCustomersFt2Adapter';
 
+import { useState } from 'react';
+import { FT2DateRange, FT2DateRangeBar } from '@lasyncro/ui-ft2';
+
 const __DEV__ = import.meta.env.DEV;
 
 export default function CustomersFT2Page() {
-  const snapshotQuery = useCustomersFt2Snapshot(true);
+  const [range, setRange] = useState<FT2DateRange>({
+    preset: 'past_7_days',
+    from: new Date().toISOString(),
+    to: new Date().toISOString(),
+  });
+
+  const snapshotQuery = useCustomersFt2Snapshot(range);
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) {
@@ -32,5 +41,14 @@ export default function CustomersFT2Page() {
     console.debug('[CustomersFT2Page] rendering CustomersModuleFT2', props);
   }
 
-  return <CustomersModuleFT2 {...props} />;
+  return (
+    <>
+      <FT2DateRangeBar
+        value={range}
+        onChange={setRange}
+      />
+
+      <CustomersModuleFT2 {...props} />
+    </>
+  );
 }
