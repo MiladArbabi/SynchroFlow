@@ -110,9 +110,16 @@ export default function ProductsModuleFT2(
           {outcome?.status ?? '—'}
         </FT2Surface>
     
-        <FT2Surface variant="kpi" title="Data status">
-          —
-        </FT2Surface>
+        {/* ─── Insights / Ops / Attention ─── */}
+          <FT2Surface
+            title="Insights"
+            span={2}
+          >
+            {/* TODO placeholder – will evolve */}
+            <div>• Orders are rising faster than stock visibility </div>
+            <div>• Some orders have no cost information </div>
+            <div>• Sales activity is uneven across products</div>
+          </FT2Surface>
       </FT2Row>
     </FT2Layout>
   );

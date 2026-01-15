@@ -12,14 +12,18 @@ export type FT2SurfaceProps = {
   children?: React.ReactNode;
   title?: string;
   variant?: FT2SurfaceVariant;
-  width?: any;
+
+  /**
+   * Semantic width multiplier inside FT2Row.
+   * Interpreted ONLY by FT2Row.
+   */
+   span?: 1 | 2;
 };
 
 export function FT2Surface({
   children,
   title,
   variant = 'standard',
-  width,
 }: FT2SurfaceProps) {
   const padding =
     variant === 'kpi'
@@ -32,17 +36,14 @@ export function FT2Surface({
       data-ft2-surface
       data-ft2-variant={variant}
       sx={{
-        width: width || '100%',
-        mx: width ? 'auto' : undefined,
-
+        width: '100%',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-
-        overflow: 'hidden',     // ⬅️ HARD CLIP
+        overflow: 'hidden',
       }}
     >
-      {/* ───── Control Zone (fixed) ───── */}
+      {/* ───── Control Zone ───── */}
       <Box
         sx={{
           height: FT2_TOKENS.controlZoneHeight,
@@ -50,27 +51,34 @@ export function FT2Surface({
           alignItems: 'center',
           justifyContent: 'space-between',
           px: padding / 8,
-          flexShrink: 0,              // ⬅️ never collapse
+          flexShrink: 0,
         }}
       >
-        <Box data-ft2-surface-title>{title}</Box>
-
-        <Box>
-          <IconButton size="small">
-            <MoreVertOutlinedIcon fontSize="inherit" />
-          </IconButton>
+        <Box
+          data-ft2-surface-title
+          sx={{
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {title}
         </Box>
+
+        <IconButton size="small">
+          <MoreVertOutlinedIcon fontSize="inherit" />
+        </IconButton>
       </Box>
 
-      {/* ───── Content Zone (flex-fill) ───── */}
+      {/* ───── Content Zone ───── */}
       <Box
         data-ft2-surface-content
         sx={{
           px: padding / 8,
           pb: padding / 8,
-
-          flex: 1,                    // ⬅️ fills remaining height
-          minHeight: 0,               // ⬅️ allows charts to shrink
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
         }}
       >
         {children}

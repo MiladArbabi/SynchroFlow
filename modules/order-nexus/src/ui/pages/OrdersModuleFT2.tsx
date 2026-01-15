@@ -94,16 +94,16 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
             : `${totals.revenueTotal} ${totals.currency ?? ''}`}
         </FT2Surface>
 
-         <FT2Surface variant="kpi" title="TODO">
-          {totals.revenueTotal === null
-            ? '—'
-            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
-        </FT2Surface>
-        <FT2Surface variant="kpi" title="TODO">
-          {totals.revenueTotal === null
-            ? '—'
-            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
-        </FT2Surface>
+         {/* ─── Insights / Ops / Attention ─── */}
+          <FT2Surface
+            title="Insights"
+            span={2}
+          >
+            {/* TODO placeholder – will evolve */}
+            <div>• Revenue volatility detected</div>
+            <div>• Data coverage below 90%</div>
+            <div>• Cost signal delayed</div>
+          </FT2Surface>
       </FT2Row>
 
       {/* ───────── Layer 2 — Analytical ───────── */}

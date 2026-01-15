@@ -35,8 +35,17 @@ export default function AnalyticsModuleFT2(
         </FT2Surface>
 
         <FT2Surface variant="kpi" title="TODO" />
-        <FT2Surface variant="kpi" title="TODO" />
-        <FT2Surface variant="kpi" title="TODO" />
+        
+        {/* ─── Insights / Ops / Attention ─── */}
+          <FT2Surface
+            title="Insights"
+            span={2}
+          >
+            {/* TODO placeholder – will evolve */}
+            <div>• Revenue volatility detected</div>
+            <div>• Data coverage below 90%</div>
+            <div>• Cost signal delayed</div>
+          </FT2Surface>
       </FT2Row>
 
       {/* ───────── Layer 2 — Analytical ───────── */}
