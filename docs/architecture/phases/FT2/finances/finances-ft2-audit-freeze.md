@@ -1,343 +1,282 @@
-# 📊 FT2 Audit Report — Finances Module (marginCore)
+Below is the **LOCKED & SEALED FT2 Contract Audit** for **Finances / marginCore**.
+This is a **contract-level document**, not an implementation review.
+Everything listed here is **authoritative, as-is, and binding** until explicitly versioned otherwise.
 
-**Audit Type:** Truth Audit (Read-Only)
-**Scope:** Finances module + backend engine (marginCore)
-**Methodology:** Scan-driven code inspection only
-**Guarantee:** Zero assumptions, zero inferred intent
-
----
-
-## 1. Executive Summary
-
-The Finances module is **architecturally correct, conservative, and intentionally incomplete**.
-
-It implements the full **FT2 four-layer architecture** end-to-end:
-
-```
-Canonical DB → Facts → Intelligence → FTEP → FT2 UI
-```
-
-Key characteristics:
-
-* Truth is **preserved, not enhanced**
-* Absence of data is **explicitly represented as null**
-* Intelligence is **contained and partially dormant**
-* Exposure is **deliberately suppressive**
-* UI is **purely observational**
-* Finances is **not consumed cross-surface** (no dashboard or eligibility coupling)
-
-No architectural violations were detected.
+No speculation.
+No future intent mixed in.
+This is the **truth boundary**.
 
 ---
 
-## 2. Layer 1 — Facts (Canonical Truth)
+# 🔒 Finances / marginCore — FT2 Contract Audit (LOCKED)
 
-### 2.1 Location & Responsibility
-
-**Service**
-
-```
-apps/backend/src/services/finances-facts/FinancesFacts.service.ts
-```
-
-**Declared responsibility**
-
-* Canonical DB access only
-* No intelligence
-* No thresholds
-* Null preservation guaranteed
-
-This contract is **fully honored**.
+**Contract Type:** FT2 Snapshot Exposure
+**Authority:** `finances-ft2.provider.ts`
+**Pipeline:** Facts → Intelligence → FTEP → FT2 UI
+**Mutation:** ❌ None allowed
+**Interpretation:** ❌ None allowed
+**Status:** **Sealed**
 
 ---
 
-### 2.2 Canonical Data Sources
+## 1. Contract Ownership & Scope
 
-**Tables accessed**
+### Authoritative Owner
 
-* `canonical_orders` (only)
+* **Backend:** `marginCore`
+* **Exposure Gate:** Finances FTEP
+* **Consumer:** Finances FT2 UI only
 
-No joins.
-No derived tables.
-No cross-domain access.
+### Explicit Non-Consumers
 
----
+* FT2 Evaluator
+* FT2 Latch
+* Dashboard FT2
+* Any other domain module
 
-### 2.3 Extracted Facts
-
-| Fact                           | Source                              | Type   | Null Condition           |
-| ------------------------------ | ----------------------------------- | ------ | ------------------------ |
-| `totalRevenue`                 | `SUM(canonical_orders.total_price)` | number | DB sum is null           |
-| `totalCosts`                   | —                                   | number | **Always null (forced)** |
-| `netResult`                    | `totalRevenue - totalCosts`         | number | Either operand null      |
-| `dataCoverage.completenessPct` | `COUNT(canonical_orders.id)`        | number | Count = 0                |
-| `extractedAt`                  | runtime                             | string | never                    |
-
-**Key property:**
-Counts, sums, and presence are **cleanly separated**.
+Finances is **isolated by design**.
 
 ---
 
-### 2.4 Null Semantics (Facts)
+## 2. Canonical Input Domain (Facts Boundary)
 
-* Null ≠ zero
-* Null = *absence of evidence*
-* Coverage answers one question only:
+### Source Tables (Canonical DB)
 
-  > “Did we observe any canonical orders?”
+* `canonical_orders`
 
-This is **textbook FT2-compliant fact modeling**.
+No other tables are permitted in this contract.
 
 ---
 
-## 3. Layer 2 — Intelligence (Classification Only)
+## 3. FT2 Snapshot — Top-Level Shape (LOCKED)
 
-### 3.1 Location
-
-```
-apps/backend/src/services/finances-intelligence/FinancesIntelligence.service.ts
+```ts
+FinancesFT2Exposure {
+  context: Context;
+  outcome: Outcome | null;
+  trend: Trend | null;
+  dataCoverage: DataCoverage;
+}
 ```
 
----
-
-### 3.2 Intelligence Outputs
-
-| Field              | Purpose        | Behavior             |
-| ------------------ | -------------- | -------------------- |
-| `netResult.value`  | pass-through   | mirrors fact         |
-| `netResult.status` | classification | good / bad / unknown |
-| `trend.direction`  | trend          | **always unknown**   |
-| `dataCoveragePct`  | pass-through   | mirrors fact         |
-| `marginPct`        | internal only  | suppressed later     |
-| `lossReason`       | internal only  | suppressed later     |
+No additional fields may appear.
+No optional expansion allowed without version bump.
 
 ---
 
-### 3.3 Classification Rules (Exact)
+## 4. Context Object (Observational Facts)
 
-**Status**
+### Contract
 
-* `unknown` → default
-* `good` → `netResult >= 0`
-* `bad` → `netResult < 0`
-
-**Trend**
-
-* Always `unknown`
-* No historical comparison exists
-
-**Margin**
-
-* Computed only when mathematically safe
-* Never exposed
-
----
-
-### 3.4 Intelligence Posture
-
-* Conservative by default
-* Deterministic
-* Stateless
-* Some fields are **structurally dormant today**
-
-  * `trend.direction`
-
-No intelligence leaks detected.
-
----
-
-## 4. Layer 3 — FTEP (Truth Exposure Policy)
-
-### 4.1 Location
-
-```
-apps/backend/src/services/finances-ftep/FinancesFtep.service.ts
+```ts
+context: {
+  period: {
+    from: string;
+    to: string;
+  };
+  revenueObserved: number | null;
+  netObserved: number | null;
+}
 ```
 
----
+### Field Semantics (Locked)
 
-### 4.2 Exposure Contract (FT2-Safe)
+| Field             | Meaning                  | Null Means               |
+| ----------------- | ------------------------ | ------------------------ |
+| `period.from`     | Observation window start | never null               |
+| `period.to`       | Observation window end   | never null               |
+| `revenueObserved` | Sum of canonical revenue | no authoritative revenue |
+| `netObserved`     | Net result (rev − cost)  | computation impossible   |
 
-**Always exposed**
+**Rules**
 
-* `context.period`
-* `context.revenueObserved`
-* `context.netObserved`
-* `dataCoverage.completenessPct`
-
-**Conditionally exposed**
-
-* `outcome`
-* `trend`
-
----
-
-### 4.3 Suppression Rules (Explicit)
-
-| Condition                        | Result                           |
-| -------------------------------- | -------------------------------- |
-| `netResult.status === 'unknown'` | `outcome = null`, `trend = null` |
-| Internal intelligence            | **always suppressed**            |
-
-**Suppressed permanently**
-
-* `marginPct`
-* `lossReason`
+* These are **facts**, not conclusions
+* No formatting
+* No currency assumptions
+* No rounding guarantees
 
 ---
 
-### 4.4 Exposure Integrity
+## 5. Outcome Object (Downgraded Intelligence)
 
-* No thresholds added
-* No defaults injected
-* No meaning introduced
-* Downgrade only, never upgrade
+### Contract
 
-FTEP behaves exactly as a **truth firewall**.
-
----
-
-## 5. Layer 4 — FT2 UI (Observational Surface)
-
-### 5.1 Entry Point
-
-```
-apps/frontend/src/pages/FinancesFT2Page.tsx
+```ts
+outcome:
+  | {
+      status: 'positive' | 'negative' | 'unknown';
+    }
+  | null;
 ```
 
+### Exposure Rules (Locked)
+
+| Condition                        | outcome                  |
+| -------------------------------- | ------------------------ |
+| `netResult.status === 'unknown'` | `null`                   |
+| `netResult.status === 'good'`    | `{ status: 'positive' }` |
+| `netResult.status === 'bad'`     | `{ status: 'negative' }` |
+
+### Critical Constraints
+
+* Outcome is **binary directional only**
+* Magnitude is intentionally hidden
+* Confidence is intentionally hidden
+* Null is a **valid, expected state**
+
 ---
 
-### 5.2 Snapshot Acquisition
+## 6. Trend Object (Dormant, Locked)
 
-**Hook**
+### Contract
 
+```ts
+trend:
+  | {
+      direction: 'up' | 'down' | 'flat' | 'unknown';
+    }
+  | null;
 ```
-useFinancesFt2Snapshot
+
+### Current Truth
+
+* When exposed, `direction === 'unknown'`
+* When outcome is null → trend is null
+
+Trend is **structurally present but functionally dormant**.
+
+---
+
+## 7. Data Coverage Object (Evidence Signal)
+
+### Contract
+
+```ts
+dataCoverage: {
+  completenessPct: number | null;
+}
 ```
 
-* Backend-owned period
-* Read-only
-* No transformation
-* No client-side params
+### Semantics (Locked)
+
+| Value  | Meaning                      |
+| ------ | ---------------------------- |
+| `100`  | ≥1 canonical orders observed |
+| `null` | zero canonical orders        |
+
+**Rules**
+
+* Coverage is **binary in practice**
+* Coverage does **not** imply correctness
+* Coverage does **not** imply completeness of costs
 
 ---
 
-### 5.3 Adapter
+## 8. Intelligence Signals (NON-CONTRACTUAL)
 
-```
-apps/frontend/src/pages/finances/useFinancesFt2Adapter.ts
-```
+The following **exist internally** but are **explicitly sealed off**:
 
-**Verified properties**
+| Signal                      | Status        |
+| --------------------------- | ------------- |
+| `marginPct`                 | ❌ suppressed  |
+| `lossReason`                | ❌ suppressed  |
+| raw intelligence confidence | ❌ nonexistent |
 
-* Pure function
-* `undefined → null` normalization only
-* No math
-* No inference
-* No formatting logic
-* Explicit warnings against enhancement
+Any appearance of these in FT2 is a **contract violation**.
 
 ---
 
-### 5.4 Rendering Semantics
+## 9. Null Semantics (Global, Locked)
 
-* UI renders exactly what it receives
-* `null` → rendered as `—`
-* No compensation
-* No derived values
-* No “helpful” assumptions
+### Global Rule
 
-UI is **passive by design**.
+> **Null always means “truth cannot be asserted.”**
 
----
+Null does **not** mean:
 
-## 6. System-Level Integration
+* zero
+* false
+* negative
+* pending
+* error
 
-### 6.1 Backend Aggregation
-
-* Finances FT2 exposure is **not consumed** by:
-
-  * FT2 Evaluator
-  * FT2 Latch
-  * Any other domain service
-
-FT2 eligibility is based solely on:
-
-* Orders
-* Products
-* Customers
+Null is **honest silence**.
 
 ---
 
-### 6.2 Frontend Cross-Surface Usage
+## 10. UI Contract Guarantees
 
-**Dashboard FT2**
+### UI Responsibilities
 
-* Does **not** consume Finances
-* No financial KPIs displayed
-* No hidden coupling
+* Render `null` as `—`
+* Never infer
+* Never compute
+* Never compensate
 
-Finances is a **standalone FT2 surface**.
+### UI Prohibitions
 
----
+* ❌ No math
+* ❌ No defaults
+* ❌ No explanations
+* ❌ No derived labels
 
-## 7. Cross-Surface Alignment Matrix (Final)
-
-| Module   | Fact Exists | Intelligence Active | FTEP Exposes              | Dashboard Consumes | UI Shows |
-| -------- | ----------- | ------------------- | ------------------------- | ------------------ | -------- |
-| Finances | Yes         | Conditional         | Outcome null when unknown | No                 | —        |
-
----
-
-## 8. Gap Classification
-
-### 8.1 Intentional Gaps (Architectural)
-
-* Costs unavailable → forced `null`
-* Trend unavailable → forced `unknown`
-* Outcome suppressed when indeterminate
-* No dashboard presence
-* No eligibility coupling
-
-All are **explicitly documented in code**.
+UI is a **read-only lens**.
 
 ---
 
-### 8.2 Accidental Gaps
+## 11. Cross-Module Guarantees (Sealed)
 
-* **None detected**
-* No missing wiring
-* No dead paths
-* No half-exposed intelligence
+* Finances does **not** affect FT2 eligibility
+* Finances does **not** contribute to system health
+* Finances does **not** leak into analytics
+* Finances does **not** block anything
 
----
-
-## 9. Safe Future Unlock Points (Evidence-Based)
-
-These are **structurally safe** because they do not reinterpret existing truth:
-
-1. Populate `totalCosts` in Facts
-2. Enable historical comparison → activate `trend`
-3. Allow FTEP to expose outcome more frequently
-4. Introduce dashboard consumption as a new surface
-
-None require refactoring existing layers.
+This module **observes only itself**.
 
 ---
 
-## 10. Final Verdict
+## 12. Contract Invariants (Non-Negotiable)
 
-The Finances module:
+The following invariants **must never be broken** without a new FT2 version:
 
-* Obeys FT2 doctrine precisely
-* Preserves uncertainty honestly
-* Suppresses intelligence responsibly
-* Avoids UI-level distortion
-* Is future-ready without being premature
+1. Facts must remain canonical-only
+2. Intelligence must remain suppressible
+3. Outcome may be null
+4. Trend may be null
+5. Costs may be null
+6. UI must remain observational
+7. No cross-domain coupling
 
-**This is a correct, disciplined, and conservative FT2 implementation.**
+---
 
-Audit complete.
-No violations.
-No leaks.
-No silent assumptions.
+## 13. Violation Checklist (For Future Audits)
+
+Any of the following is a **hard violation**:
+
+* UI computing net or margin
+* Outcome shown when intelligence is unknown
+* Costs defaulted to `0`
+* Trend inferred from a single snapshot
+* Dashboard consuming Finances implicitly
+* Evaluator referencing Finances
+
+---
+
+## 14. Final Seal
+
+**Status:** ✅ **LOCKED & SEALED**
+**Interpretation Allowed:** ❌ None
+**Mutation Allowed:** ❌ None
+**Expansion Allowed:** ❌ Only via explicit FT2 versioning
+
+This contract is **authoritative truth**, not a suggestion.
+
+If something feels missing:
+
+> It is missing **on purpose**.
+
+If something feels conservative:
+
+> That is **correct**.
+
+**End of Finances / marginCore FT2 Contract Audit.**
