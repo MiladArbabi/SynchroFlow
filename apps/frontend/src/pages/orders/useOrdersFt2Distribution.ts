@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/orders/useOrdersFt2Distribution.ts
-
+import { FT2DateRange } from '@lasyncro/ui-ft2';
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
@@ -26,13 +26,18 @@ export type OrdersFt2DistributionSnapshot = {
  * - No transformation
  * - Fact-only (no intelligence)
  */
-export function useOrdersFt2Distribution(enabled: boolean) {
+export function useOrdersFt2Distribution(range: FT2DateRange) {
   return useQuery<OrdersFt2DistributionSnapshot>({
-    queryKey: ['order-nexus', 'ft2', 'distribution'],
-    enabled,
+    queryKey: ['order-nexus', 'ft2', 'distribution', range.from, range.to],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/order-nexus/ft2/facts/distribution'
+        '/api/v1/modules/order-nexus/ft2/facts/distribution',
+        {
+          params: {
+            from: range.from,
+            to: range.to,
+          },
+        }
       );
       return data;
     },

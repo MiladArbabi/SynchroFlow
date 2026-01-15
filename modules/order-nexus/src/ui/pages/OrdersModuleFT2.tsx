@@ -75,8 +75,8 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
     <FT2Layout>
       {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Period">
-          {context.period.from} → {context.period.to}
+        <FT2Surface variant="kpi" title="Orders observed">
+          {context.ordersObserved ?? '—'}
         </FT2Surface>
 
         <FT2Surface variant="kpi" title="Orders observed">

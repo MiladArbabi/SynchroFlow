@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
 export type OrdersFt2Snapshot = {
   period?: {
@@ -41,13 +42,18 @@ export type OrdersFt2Snapshot = {
  * - Read-only
  * - No transformation
  */
-export function useOrdersFt2Snapshot(enabled: boolean) {
+export function useOrdersFt2Snapshot(range: FT2DateRange) {
   return useQuery<OrdersFt2Snapshot>({
-    queryKey: ['order-nexus', 'ft2'],
-    enabled,
+    queryKey: ['order-nexus', 'ft2', range.from, range.to],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/order-nexus/ft2'
+        '/api/v1/modules/order-nexus/ft2',
+        {
+          params: {
+            from: range.from,
+            to: range.to,
+          },
+        }
       );
       return data;
     },

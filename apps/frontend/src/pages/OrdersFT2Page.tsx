@@ -24,12 +24,22 @@ import { mapOrdersFt2DistributionProps } from './orders/useOrdersFt2Distribution
 import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
 import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
 
+import { useState } from 'react';
+import type { FT2DateRange } from '@lasyncro/ui-ft2';
+import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
+
 const __DEV__ = import.meta.env.DEV;
 
 export default function OrdersFT2Page() {
-  const snapshotQuery = useOrdersFt2Snapshot(true);
-  const timeseriesQuery = useOrdersFt2Timeseries(snapshotQuery.isSuccess);
-  const distributionQuery = useOrdersFt2Distribution(snapshotQuery.isSuccess);
+  const [range, setRange] = useState<FT2DateRange>({
+    preset: 'past_7_days',
+    from: new Date().toISOString(),
+    to: new Date().toISOString(),
+  });
+
+  const snapshotQuery = useOrdersFt2Snapshot(range);
+  const timeseriesQuery = useOrdersFt2Timeseries(range);
+  const distributionQuery = useOrdersFt2Distribution(range);
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) {
@@ -49,14 +59,17 @@ export default function OrdersFT2Page() {
   }
 
   return (
-    <OrdersModuleFT2
-      {...headerProps}
-      timeseries={
-        <OrdersTimeseriesWidget {...timeseriesProps} />
-      }
-      distribution={
-        <OrdersDistributionWidget {...distributionProps} />
-      }
-    />
+    <>
+      <FT2DateRangeBar
+        value={range}
+        onChange={setRange}
+      />
+
+      <OrdersModuleFT2
+        {...headerProps}
+        timeseries={<OrdersTimeseriesWidget {...timeseriesProps} />}
+        distribution={<OrdersDistributionWidget {...distributionProps} />}
+      />
+    </>
   );
 }

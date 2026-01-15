@@ -1,5 +1,6 @@
 // apps/frontend/src/pages/orders/useOrdersFt2Timeseries.ts
 
+import { FT2DateRange } from '@lasyncro/ui-ft2';
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
@@ -28,13 +29,18 @@ export type OrdersFt2TimeseriesSnapshot = {
  * - No transformation
  * - Fact-only (no intelligence)
  */
-export function useOrdersFt2Timeseries(enabled: boolean) {
+export function useOrdersFt2Timeseries(range: FT2DateRange) {
   return useQuery<OrdersFt2TimeseriesSnapshot>({
-    queryKey: ['order-nexus', 'ft2', 'timeseries'],
-    enabled,
+    queryKey: ['order-nexus', 'ft2', 'timeseries', range.from, range.to],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/order-nexus/ft2/facts/timeseries'
+        '/api/v1/modules/order-nexus/ft2/facts/timeseries',
+        {
+          params: {
+            from: range.from,
+            to: range.to,
+          },
+        }
       );
       return data;
     },
