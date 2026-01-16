@@ -31,7 +31,7 @@ jest.mock('pages/orders/useOrdersFt2Snapshot', () => ({
       isSuccess: true,
       data: {
         context: {
-          period: { from: range.from, to: range.to },
+          period: { preset: range.preset },
           ordersObserved: 10,
         },
         totals: {

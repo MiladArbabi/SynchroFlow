@@ -44,14 +44,13 @@ export type CustomersFt2Snapshot = {
  */
 export function useCustomersFt2Snapshot(range: FT2DateRange) {
   return useQuery<CustomersFt2Snapshot>({
-    queryKey: ['customers', 'ft2', range.from, range.to],
+    queryKey: ['customers', 'ft2', range.preset],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/customers/ft2',
         {
           params: {
-            from: range.from,
-            to: range.to,
+            preset: range.preset
           },
         }
       );

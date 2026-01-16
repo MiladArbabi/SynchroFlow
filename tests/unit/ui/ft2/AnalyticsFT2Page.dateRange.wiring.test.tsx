@@ -39,8 +39,7 @@ jest.mock('pages/analytics/useAnalyticsFt2Snapshot', () => ({
       data: {
         context: {
           period: {
-            from: range.from,
-            to: range.to,
+            preset: range.preset
           },
         },
         outcome: { status: 'positive' },

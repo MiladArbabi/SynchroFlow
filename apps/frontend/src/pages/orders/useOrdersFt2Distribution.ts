@@ -28,14 +28,13 @@ export type OrdersFt2DistributionSnapshot = {
  */
 export function useOrdersFt2Distribution(range: FT2DateRange) {
   return useQuery<OrdersFt2DistributionSnapshot>({
-    queryKey: ['order-nexus', 'ft2', 'distribution', range.from, range.to],
+    queryKey: ['order-nexus', 'ft2', 'distribution', range.preset],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/order-nexus/ft2/facts/distribution',
         {
           params: {
-            from: range.from,
-            to: range.to,
+            preset: range.preset
           },
         }
       );

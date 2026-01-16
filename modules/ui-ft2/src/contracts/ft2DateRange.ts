@@ -10,6 +10,6 @@ export type FT2DateRangePreset =
 
 export interface FT2DateRange {
   preset: FT2DateRangePreset;
-  from: string; // ISO-8601 UTC
-  to: string;   // ISO-8601 UTC
+  from: string | null;
+  to: string | null;
 }

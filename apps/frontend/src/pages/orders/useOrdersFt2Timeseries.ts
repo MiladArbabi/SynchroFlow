@@ -31,14 +31,13 @@ export type OrdersFt2TimeseriesSnapshot = {
  */
 export function useOrdersFt2Timeseries(range: FT2DateRange) {
   return useQuery<OrdersFt2TimeseriesSnapshot>({
-    queryKey: ['order-nexus', 'ft2', 'timeseries', range.from, range.to],
+    queryKey: ['order-nexus', 'ft2', 'timeseries', range.preset],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/order-nexus/ft2/facts/timeseries',
         {
           params: {
-            from: range.from,
-            to: range.to,
+            preset: range.preset
           },
         }
       );

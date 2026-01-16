@@ -1,7 +1,7 @@
 // apps/backend/src/api/layouts/layout.routes.ts
 import { Router } from "express";
 import * as LayoutController from "./layout.controller";
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { authenticateToken } from "api-src/middleware/auth.middleware";
 
 const router = Router();
 

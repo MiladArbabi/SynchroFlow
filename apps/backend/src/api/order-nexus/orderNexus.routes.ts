@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { authenticateToken } from 'api-src/middleware/auth.middleware';
 import { requireFt2 } from 'api-src/middleware/require-ft2.middleware';
 
-import { orderNexusFt2Controller } from './orderNexusFt2.controller';
+import orderNexusFt2Controller from './orderNexusFt2.controller';
 import {
   orderNexusFt2TimeseriesController,
   orderNexusFt2DistributionController,

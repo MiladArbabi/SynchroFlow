@@ -1,15 +1,14 @@
-// tests/unit/ui/ft2/CustomersFT2Page.dateRange.wiring.test.tsx
+// tests/unit/ui/ft2/OrdersFT2Page.dateRange.presetAuthority.test.tsx
 
 import React from 'react';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { renderWithProviders } from 'test-utils';
-
-import CustomersFT2Page from 'pages/CustomersFT2Page';
+import OrdersFT2Page from 'pages/OrdersFT2Page';
 
 // ─────────────────────────────────────────────
-// Global spies (Jest-safe, no closure leaks)
+// Global spies (jest-safe, no closure leaks)
 // ─────────────────────────────────────────────
 
 beforeEach(() => {
@@ -21,7 +20,7 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────
-// Hook mock (frontend adapter boundary)
+// Snapshot hook mock
 // ─────────────────────────────────────────────
 jest.mock('contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -31,74 +30,90 @@ jest.mock('contexts/AuthContext', () => ({
   }),
 }));
 
-jest.mock('pages/customers/useCustomersFt2Snapshot', () => ({
-  useCustomersFt2Snapshot: (range: any) => {
+jest.mock('pages/orders/useOrdersFt2Snapshot', () => ({
+  useOrdersFt2Snapshot: (range: any) => {
     (globalThis as any).__snapshotSpy(range);
+
     return {
       isSuccess: true,
       data: {
         context: {
-          period: {
-            preset: range.preset
-          },
-          sessionsObserved: 42,
+          period: { from: '', to: '' },
+          ordersObserved: 10,
         },
-        systemState: {
-          status: 'healthy',
-          confidence: 'high',
+        totals: {
+          revenueTotal: 100,
+          costTotal: 50,
+          currency: 'USD',
         },
-        timeSignal: {
-          trend: 'stable',
-        },
+        outcome: { status: 'positive' },
+        trend: { direction: 'up' },
+        dataCoverage: { completenessPct: 95 },
       },
     };
   },
 }));
 
+// Silence non-relevant hooks
+jest.mock('pages/orders/useOrdersFt2Timeseries', () => ({
+  useOrdersFt2Timeseries: () => ({ data: null }),
+}));
+
+jest.mock('pages/orders/useOrdersFt2Distribution', () => ({
+  useOrdersFt2Distribution: () => ({ data: null }),
+}));
+
+jest.mock('widgets/orders/OrdersTimeseriesWidget', () => ({
+  __esModule: true,
+  default: () => <div />,
+}));
+
+jest.mock('widgets/orders/OrdersDistributionWidget', () => ({
+  __esModule: true,
+  default: () => <div />,
+}));
+
 // ─────────────────────────────────────────────
-// Test
+// TEST
 // ─────────────────────────────────────────────
 
-describe('CustomersFT2Page — FT2DateRange wiring (RED)', () => {
-  it('wires FT2DateRangeBar to snapshot hook and refetches on change', async () => {
+describe('OrdersFT2Page — preset authority (RED)', () => {
+  it('emits semantic preset only (from/to must be null)', async () => {
     const user = userEvent.setup();
 
-    renderWithProviders(<CustomersFT2Page />);
+    renderWithProviders(<OrdersFT2Page />);
 
-    // ── 1. Date range bar must exist ──
-    expect(
-      screen.getByText('Past 7 days')
-    ).toBeInTheDocument();
-
-    // ── 2. Initial render wires range into snapshot hook ──
+    // Initial render
     expect((globalThis as any).__snapshotSpy).toHaveBeenCalledTimes(1);
 
     const initialRange =
       (globalThis as any).__snapshotSpy.mock.calls[0][0];
 
-    expect(initialRange).toMatchObject({
-      preset: 'past_7_days',
-      from: expect.any(String),
-      to: expect.any(String),
-    });
+    // 🔴 CRITICAL INVARIANT
+    expect(initialRange).toEqual(
+      expect.objectContaining({
+        preset: 'past_7_days',
+        from: null,
+        to: null,
+      })
+    );
 
-    // ── 3. Change the date range ──
+    // Change preset
     await user.click(screen.getByText('Past 7 days'));
     await user.click(screen.getByText('Today'));
 
-    // ── 4. Snapshot hook must re-run with new range ──
     expect((globalThis as any).__snapshotSpy).toHaveBeenCalledTimes(2);
 
     const nextRange =
       (globalThis as any).__snapshotSpy.mock.calls[1][0];
 
-    expect(nextRange).toMatchObject({
-      preset: 'today',
-      from: expect.any(String),
-      to: expect.any(String),
-    });
-
-    // ── 5. Guardrail: range must actually change ──
-    expect(nextRange.preset).not.toEqual(initialRange.preset);
+    // 🔴 MUST remain semantic
+    expect(nextRange).toEqual(
+      expect.objectContaining({
+        preset: 'today',
+        from: null,
+        to: null,
+      })
+    );
   });
 });

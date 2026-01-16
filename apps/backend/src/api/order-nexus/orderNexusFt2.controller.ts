@@ -1,7 +1,7 @@
 // apps/backend/src/api/order-nexus/orderNexusFt2.controller.ts
 
 import { getOrderNexusFt2Snapshot } from 'api-src/services/order-nexus-ft2/orderNexusFt2.resolver';
-import { getFt2Period } from 'api-src/utils/ft2Period';
+import { FT2DateRangePreset, getFt2Period, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
 
 /**
  * Order-Nexus FT2 Controller
@@ -14,14 +14,18 @@ import { getFt2Period } from 'api-src/utils/ft2Period';
  * - No lifecycle logic
  * - No business logic
  */
-export async function orderNexusFt2Controller(req: any, res: any) {
+export default async function orderNexusFt2Controller(req: any, res: any) {
   const shopId = req.user?.shopId;
 
   if (!shopId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const period = getFt2Period();
+  const preset = req.query.preset as FT2DateRangePreset | undefined;
+
+  const period = preset
+    ? resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
 
   const snapshot = await getOrderNexusFt2Snapshot({
     shopId,

@@ -42,8 +42,8 @@ export function FT2DateRangeBar({ value, onChange }: FT2DateRangeBarProps) {
 
     onChange({
       preset,
-      from: new Date().toISOString(),
-      to: new Date().toISOString(),
+      from: null,
+      to: null,
     });
   };
 

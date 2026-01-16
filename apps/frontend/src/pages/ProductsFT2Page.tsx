@@ -43,7 +43,6 @@ export default function ProductsFT2Page() {
         value={range}
         onChange={setRange}
       />
-
       <ProductsModuleFT2 {...props} />
     </>
   );
