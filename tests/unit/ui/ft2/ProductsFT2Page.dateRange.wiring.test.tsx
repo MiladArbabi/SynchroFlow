@@ -55,6 +55,7 @@ jest.mock('pages/products/useProductsFt2Snapshot', () => ({
   },
 }));
 
+
 // ─────────────────────────────────────────────
 // Test
 // ─────────────────────────────────────────────
@@ -80,8 +81,8 @@ describe('ProductsFT2Page — FT2DateRange wiring (RED)', () => {
 
     expect(initialRange).toMatchObject({
       preset: 'past_7_days',
-      from: expect.any(String),
-      to: expect.any(String),
+      from: null,
+      to: null,
     });
 
     // ── 3. Change the date range ──
@@ -98,8 +99,8 @@ describe('ProductsFT2Page — FT2DateRange wiring (RED)', () => {
 
     expect(nextRange).toMatchObject({
       preset: 'today',
-      from: expect.any(String),
-      to: expect.any(String),
+      from: null,
+      to: null,
     });
 
     // ── 5. Guardrail: range must actually change ──

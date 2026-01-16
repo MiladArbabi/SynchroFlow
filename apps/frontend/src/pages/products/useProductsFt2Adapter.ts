@@ -53,7 +53,7 @@ export function mapProductsFt2Props(
 ): ProductsModuleFT2Props {
   return {
     context: {
-      period: snapshot.context?.period ?? { from: '', to: '' },
+      period: snapshot.context?.period ?? { from: null, to: null },
 
       productsObserved:
         snapshot.context?.productsObserved === undefined

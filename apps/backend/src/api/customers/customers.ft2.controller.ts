@@ -1,6 +1,11 @@
 // apps/backend/src/api/customers/customers.ft2.controller.ts
 import { Request, Response } from 'express';
 import { getCustomersFt2Snapshot } from 'api-src/services/customers-ft2.provider';
+import {
+  FT2DateRangePreset,
+  getFt2Period,
+  resolveFt2PeriodFromPreset,
+} from 'api-src/utils/ft2Period';
 
 /**
  * GET /api/v1/modules/customers/ft2
@@ -25,17 +30,17 @@ export async function httpGetCustomersFt2(
       return;
     }
 
-    const now = new Date();
-    const from = new Date(now);
-    from.setDate(now.getDate() - 7);
+    const preset =
+    req.query.preset as FT2DateRangePreset | undefined;
 
-    const snapshot = await getCustomersFt2Snapshot({
-      shopId,
-      period: {
-        from: from.toISOString(),
-        to: now.toISOString()
-      }
-    });
+  const period = preset
+    ? resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
+
+  const snapshot = await getCustomersFt2Snapshot({
+    shopId,
+    period,
+  });
 
     res.status(200).json(snapshot);
   } catch (err) {

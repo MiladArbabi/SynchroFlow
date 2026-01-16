@@ -1,25 +1,25 @@
-// tests/unit/ui/ft2/CustomersFT2Page.dateRange.wiring.test.tsx
+// tests/unit/ui/ft2/ProductsFT2Page.dateRange.presetAuthority.test.tsx
 
 import React from 'react';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { renderWithProviders } from 'test-utils';
-import CustomersFT2Page from 'pages/CustomersFT2Page';
+import ProductsFT2Page from 'pages/ProductsFT2Page';
 
 // ─────────────────────────────────────────────
-// Global spy
+// Global spy (explicit, no jest hoisting traps)
 // ─────────────────────────────────────────────
 beforeEach(() => {
-  (globalThis as any).__snapshotSpy = jest.fn();
+  (globalThis as any).__productsSnapshotSpy = jest.fn();
 });
 
 afterEach(() => {
-  delete (globalThis as any).__snapshotSpy;
+  delete (globalThis as any).__productsSnapshotSpy;
 });
 
 // ─────────────────────────────────────────────
-// Auth mock
+// Auth mock (FT2 requires auth boundary)
 // ─────────────────────────────────────────────
 jest.mock('contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -30,25 +30,28 @@ jest.mock('contexts/AuthContext', () => ({
 }));
 
 // ─────────────────────────────────────────────
-// Snapshot hook mock
+// Snapshot hook mock — authority inspection point
 // ─────────────────────────────────────────────
-jest.mock('pages/customers/useCustomersFt2Snapshot', () => ({
-  useCustomersFt2Snapshot: (range: any) => {
-    (globalThis as any).__snapshotSpy(range);
+jest.mock('pages/products/useProductsFt2Snapshot', () => ({
+  useProductsFt2Snapshot: (range: any) => {
+    (globalThis as any).__productsSnapshotSpy(range);
+
     return {
       isSuccess: true,
       data: {
-        period: {
-          from: 'BACKEND_FROM',
-          to: 'BACKEND_TO',
+        context: {
+          period: {
+            from: 'BACKEND_FROM',
+            to: 'BACKEND_TO',
+          },
+          productsObserved: 10,
         },
-        sessionsObserved: 42,
-        systemState: {
-          status: 'healthy',
-          confidence: 'high',
-        },
-        timeSignal: {
-          trend: 'stable',
+        outcome: { status: 'positive' },
+        trend: { direction: 'up' },
+        signals: {
+          catalog: 'ok',
+          skuCoverage: 'ok',
+          variantComplexity: 'simple',
         },
       },
     };
@@ -58,46 +61,44 @@ jest.mock('pages/customers/useCustomersFt2Snapshot', () => ({
 // ─────────────────────────────────────────────
 // Test
 // ─────────────────────────────────────────────
-describe('CustomersFT2Page — FT2DateRange wiring (RED)', () => {
-  it('refetches snapshot when preset changes (preset-only wiring)', async () => {
+
+describe('ProductsFT2Page — FT2DateRange preset authority (RED)', () => {
+  it('never leaks concrete dates into snapshot hook (preset-only authority)', async () => {
     const user = userEvent.setup();
 
-    renderWithProviders(<CustomersFT2Page />);
+    renderWithProviders(<ProductsFT2Page />);
 
-    // 1. Date range bar exists
+    // ── 1. Initial render ──
     expect(
-      screen.getByText('Past 7 days')
-    ).toBeInTheDocument();
-
-    // 2. Initial snapshot call
-    expect((globalThis as any).__snapshotSpy).toHaveBeenCalledTimes(1);
+      (globalThis as any).__productsSnapshotSpy
+    ).toHaveBeenCalledTimes(1);
 
     const initialRange =
-      (globalThis as any).__snapshotSpy.mock.calls[0][0];
+      (globalThis as any).__productsSnapshotSpy.mock.calls[0][0];
 
+    // ❌ This MUST FAIL until frontend is fixed
     expect(initialRange).toMatchObject({
       preset: 'past_7_days',
       from: null,
       to: null,
     });
 
-    // 3. Change preset
+    // ── 2. Change preset ──
     await user.click(screen.getByText('Past 7 days'));
     await user.click(screen.getByText('Today'));
 
-    // 4. Refetch occurs
-    expect((globalThis as any).__snapshotSpy).toHaveBeenCalledTimes(2);
+    expect(
+      (globalThis as any).__productsSnapshotSpy
+    ).toHaveBeenCalledTimes(2);
 
     const nextRange =
-      (globalThis as any).__snapshotSpy.mock.calls[1][0];
+      (globalThis as any).__productsSnapshotSpy.mock.calls[1][0];
 
+    // ❌ Still must be preset-only
     expect(nextRange).toMatchObject({
       preset: 'today',
       from: null,
       to: null,
     });
-
-    // 5. Guardrail
-    expect(nextRange.preset).not.toEqual(initialRange.preset);
   });
 });

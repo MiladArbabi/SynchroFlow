@@ -1,6 +1,10 @@
 import { Request, Response } from 'express';
 import { getProductsFt2Snapshot } from 'api-src/services/products-ft2.provider';
-import { getFt2Period } from 'api-src/utils/ft2Period';
+import {
+  FT2DateRangePreset,
+  getFt2Period,
+  resolveFt2PeriodFromPreset,
+} from 'api-src/utils/ft2Period';
 
 /**
  * GET /api/v1/modules/products/ft2
@@ -26,7 +30,11 @@ export async function getProductsFt2(
       return;
     }
 
-    const period = getFt2Period();
+    const preset = req.query.preset as FT2DateRangePreset | undefined;
+
+    const period = preset
+      ? resolveFt2PeriodFromPreset({ preset })
+      : getFt2Period();
 
     const snapshot = await getProductsFt2Snapshot({
       shopId,

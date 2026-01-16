@@ -65,7 +65,7 @@ export function mapCustomersFt2Props(
 ): CustomersModuleFT2Props {
   return {
     context: {
-      period: snapshot.period ?? { from: '', to: '' },
+      period: snapshot.period ?? { from: null, to: null },
 
       sessionsObserved:
         snapshot.sessionsObserved === undefined
