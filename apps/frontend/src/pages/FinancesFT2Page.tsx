@@ -17,8 +17,8 @@ const __DEV__ = import.meta.env.DEV;
 export default function FinancesFT2Page() {
   const [range, setRange] = useState<FT2DateRange>({
     preset: 'past_7_days',
-    from: new Date().toISOString(),
-    to: new Date().toISOString(),
+    from: null,
+    to: null,
   });
 
   const snapshotQuery = useFinancesFt2Snapshot(range);

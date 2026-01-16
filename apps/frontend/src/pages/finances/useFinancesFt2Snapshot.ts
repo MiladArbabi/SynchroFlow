@@ -38,16 +38,26 @@ export type FinancesFt2Snapshot = {
  */
 export function useFinancesFt2Snapshot(range: FT2DateRange) {
   return useQuery<FinancesFt2Snapshot>({
-    queryKey: ['finances', 'ft2', range.preset],
+    queryKey: [
+      'finances', 'ft2',
+      range.preset,
+      range.from,
+      range.to,
+    ],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/finances/ft2',
-        {
-          params: {
-            preset: range.preset
-          },
-        }
-      );
+        '/api/v1/modules/finances/ft2', {
+        params:
+          range.preset === 'custom'
+            ? {
+                preset: 'custom',
+                from: range.from,
+                to: range.to,
+              }
+            : {
+                preset: range.preset,
+            },
+        });
       return data;
     },
   });

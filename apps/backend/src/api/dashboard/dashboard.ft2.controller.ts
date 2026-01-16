@@ -1,7 +1,7 @@
 // apps/backend/src/api/dashboard/dashboard.ft2.controller.ts
 
 import { Request, Response } from 'express';
-import { getFt2Period } from 'api-src/utils/ft2Period';
+import { FT2DateRangePreset, getFt2Period, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
 
 import { getOrderNexusFt2Snapshot } from 'api-src/services/order-nexus-ft2/orderNexusFt2.resolver';
 import { getProductsFt2Snapshot } from 'api-src/services/products-ft2.provider';
@@ -33,7 +33,17 @@ export async function getDashboardFt2Snapshot(
     return;
   }
 
-  const period = getFt2Period();
+  const preset = req.query.preset as FT2DateRangePreset | undefined;
+
+  const period = preset
+    ? preset === 'custom'
+      ? resolveFt2PeriodFromPreset({
+          preset: 'custom',
+          from: String(req.query.from),
+          to: String(req.query.to),
+        })
+      : resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
 
   const [ordersFt2, productsFt2] = await Promise.all([
     getOrderNexusFt2Snapshot({ shopId, period }),

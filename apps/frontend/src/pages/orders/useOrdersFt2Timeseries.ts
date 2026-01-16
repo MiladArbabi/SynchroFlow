@@ -34,13 +34,18 @@ export function useOrdersFt2Timeseries(range: FT2DateRange) {
     queryKey: ['order-nexus', 'ft2', 'timeseries', range.preset],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/order-nexus/ft2/facts/timeseries',
-        {
-          params: {
-            preset: range.preset
-          },
-        }
-      );
+        '/api/v1/modules/order-nexus/ft2/facts/timeseries',{
+        params:
+          range.preset === 'custom'
+            ? {
+                preset: 'custom',
+                from: range.from,
+                to: range.to,
+              }
+            : {
+                preset: range.preset,
+            },
+        });
       return data;
     },
   });

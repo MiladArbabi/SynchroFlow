@@ -44,16 +44,28 @@ export type OrdersFt2Snapshot = {
  */
 export function useOrdersFt2Snapshot(range: FT2DateRange) {
   return useQuery<OrdersFt2Snapshot>({
-    queryKey: ['order-nexus', 'ft2', range.preset],
+    queryKey: [
+      'order-nexus',
+      'ft2',
+      range.preset,
+      range.from,
+      range.to,
+    ],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/order-nexus/ft2',
         {
-          params: {
-            preset: range.preset,
-          }
-        }
-      );
+        params:
+          range.preset === 'custom'
+            ? {
+                preset: 'custom',
+                from: range.from,
+                to: range.to,
+              }
+            : {
+                preset: range.preset,
+            },
+        });
       return data;
     },
   });

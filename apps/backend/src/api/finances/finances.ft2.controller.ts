@@ -1,5 +1,9 @@
 import { getFinancesFt2Snapshot } from 'api-src/services/finances-ft2.provider';
-import { getFt2Period } from 'api-src/utils/ft2Period';
+import {
+  FT2DateRangePreset,
+  getFt2Period,
+  resolveFt2PeriodFromPreset,
+} from 'api-src/utils/ft2Period';
 
 export async function financesFt2Controller(req: any, res: any) {
   const shopId = req.user?.shopId;
@@ -8,7 +12,18 @@ export async function financesFt2Controller(req: any, res: any) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const period = getFt2Period();
+  const preset =
+  req.query.preset as FT2DateRangePreset | undefined;
+
+  const period = preset
+    ? preset === 'custom'
+      ? resolveFt2PeriodFromPreset({
+          preset: 'custom',
+          from: String(req.query.from),
+          to: String(req.query.to),
+        })
+      : resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
 
   const snapshot = await getFinancesFt2Snapshot({
     shopId,

@@ -34,7 +34,13 @@ export async function httpGetCustomersFt2(
     req.query.preset as FT2DateRangePreset | undefined;
 
   const period = preset
-    ? resolveFt2PeriodFromPreset({ preset })
+    ? preset === 'custom'
+      ? resolveFt2PeriodFromPreset({
+          preset: 'custom',
+          from: String(req.query.from),
+          to: String(req.query.to),
+        })
+      : resolveFt2PeriodFromPreset({ preset })
     : getFt2Period();
 
   const snapshot = await getCustomersFt2Snapshot({

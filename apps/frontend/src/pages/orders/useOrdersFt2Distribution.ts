@@ -31,13 +31,18 @@ export function useOrdersFt2Distribution(range: FT2DateRange) {
     queryKey: ['order-nexus', 'ft2', 'distribution', range.preset],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/order-nexus/ft2/facts/distribution',
-        {
-          params: {
-            preset: range.preset
-          },
-        }
-      );
+        '/api/v1/modules/order-nexus/ft2/facts/distribution',{
+        params:
+          range.preset === 'custom'
+            ? {
+                preset: 'custom',
+                from: range.from,
+                to: range.to,
+              }
+            : {
+                preset: range.preset,
+            },
+        });
       return data;
     },
   });

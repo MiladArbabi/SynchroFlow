@@ -34,14 +34,26 @@ export type AnalyticsFt2Snapshot = {
  */
 export function useAnalyticsFt2Snapshot(range: FT2DateRange) {
   return useQuery<AnalyticsFt2Snapshot>({
-    queryKey: ['analytics', 'ft2', range.preset],
+    queryKey: [
+      'analytics', 'ft2',
+      range.preset,
+      range.from,
+      range.to,
+    ],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/analytics/ft2', {
-        params: {
-          preset: range.preset
-        },
-      });
+        params:
+          range.preset === 'custom'
+            ? {
+                preset: 'custom',
+                from: range.from,
+                to: range.to,
+              }
+            : {
+                preset: range.preset,
+            },
+        });
       return data;
     },
   });

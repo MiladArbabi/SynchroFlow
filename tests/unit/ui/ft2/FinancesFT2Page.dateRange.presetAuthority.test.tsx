@@ -1,4 +1,4 @@
-// tests/unit/ui/ft2/FinancesFT2Page.dateRange.wiring.test.tsx
+// tests/unit/ui/ft2/FinancesFT2Page.dateRange.presetAuthority.test.tsx
 
 import React from 'react';
 import { screen } from '@testing-library/react';
@@ -8,9 +8,8 @@ import { renderWithProviders } from 'test-utils';
 import FinancesFT2Page from 'pages/FinancesFT2Page';
 
 // ─────────────────────────────────────────────
-// Global spies (Jest-safe)
+// Global spy (authority inspection point)
 // ─────────────────────────────────────────────
-
 beforeEach(() => {
   (globalThis as any).__financesSnapshotSpy = jest.fn();
 });
@@ -20,7 +19,7 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────
-// Hook mock
+// Auth mock
 // ─────────────────────────────────────────────
 jest.mock('contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -30,6 +29,9 @@ jest.mock('contexts/AuthContext', () => ({
   }),
 }));
 
+// ─────────────────────────────────────────────
+// Snapshot hook mock
+// ─────────────────────────────────────────────
 jest.mock('pages/finances/useFinancesFt2Snapshot', () => ({
   useFinancesFt2Snapshot: (range: any) => {
     (globalThis as any).__financesSnapshotSpy(range);
@@ -39,8 +41,8 @@ jest.mock('pages/finances/useFinancesFt2Snapshot', () => ({
       data: {
         context: {
           period: {
-            from: range?.from,
-            to: range?.to,
+            from: 'BACKEND_FROM',
+            to: 'BACKEND_TO',
           },
           revenueObserved: 1200,
           netObserved: 800,
@@ -56,50 +58,51 @@ jest.mock('pages/finances/useFinancesFt2Snapshot', () => ({
 // ─────────────────────────────────────────────
 // Test
 // ─────────────────────────────────────────────
+describe(
+  'FinancesFT2Page — FT2DateRange preset authority (RED)',
+  () => {
+    it(
+      'never leaks concrete dates into snapshot hook (preset-only authority)',
+      async () => {
+        const user = userEvent.setup();
 
-describe('FinancesFT2Page — FT2DateRange wiring (RED)', () => {
-  it('wires FT2DateRangeBar to snapshot hook and refetches on change', async () => {
-    const user = userEvent.setup();
+        renderWithProviders(<FinancesFT2Page />);
 
-    renderWithProviders(<FinancesFT2Page />);
+        // ── 1. Initial render ──
+        expect(
+          (globalThis as any).__financesSnapshotSpy
+        ).toHaveBeenCalledTimes(1);
 
-    // ── 1. Date range bar must exist ──
-    expect(
-      screen.getByText('Past 7 days')
-    ).toBeInTheDocument();
+        const initialRange =
+          (globalThis as any).__financesSnapshotSpy
+            .mock.calls[0][0];
 
-    // ── 2. Initial render wires range into snapshot hook ──
-    expect((globalThis as any).__financesSnapshotSpy)
-      .toHaveBeenCalledTimes(1);
+        // ❌ MUST FAIL until frontend is fixed
+        expect(initialRange).toMatchObject({
+          preset: 'past_7_days',
+          from: null,
+          to: null,
+        });
 
-    const initialRange =
-      (globalThis as any).__financesSnapshotSpy.mock.calls[0][0];
+        // ── 2. Change preset ──
+        await user.click(screen.getByText('Past 7 days'));
+        await user.click(screen.getByText('Today'));
 
-    expect(initialRange).toMatchObject({
-      preset: 'past_7_days',
-      from: null,
-      to: null,
-    });
+        expect(
+          (globalThis as any).__financesSnapshotSpy
+        ).toHaveBeenCalledTimes(2);
 
-    // ── 3. Change date range ──
-    await user.click(screen.getByText('Past 7 days'));
-    await user.click(screen.getByText('Today'));
+        const nextRange =
+          (globalThis as any).__financesSnapshotSpy
+            .mock.calls[1][0];
 
-    // ── 4. Snapshot hook must refetch with new range ──
-    expect((globalThis as any).__financesSnapshotSpy)
-      .toHaveBeenCalledTimes(2);
-
-    const nextRange =
-      (globalThis as any).__financesSnapshotSpy.mock.calls[1][0];
-
-    expect(nextRange).toMatchObject({
-      preset: 'today',
-      from: null,
-      to: null,
-    });
-
-    // ── 5. Guardrail: range must actually change ──
-    expect(nextRange.preset)
-      .not.toEqual(initialRange.preset);
-  });
-});
+        // ❌ Still must be preset-only
+        expect(nextRange).toMatchObject({
+          preset: 'today',
+          from: null,
+          to: null,
+        });
+      }
+    );
+  }
+);

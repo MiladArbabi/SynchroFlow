@@ -33,8 +33,14 @@ export async function getProductsFt2(
     const preset = req.query.preset as FT2DateRangePreset | undefined;
 
     const period = preset
-      ? resolveFt2PeriodFromPreset({ preset })
-      : getFt2Period();
+    ? preset === 'custom'
+      ? resolveFt2PeriodFromPreset({
+          preset: 'custom',
+          from: String(req.query.from),
+          to: String(req.query.to),
+        })
+      : resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
 
     const snapshot = await getProductsFt2Snapshot({
       shopId,

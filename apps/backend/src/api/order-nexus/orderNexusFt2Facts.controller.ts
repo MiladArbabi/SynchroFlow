@@ -1,4 +1,4 @@
-import { getFt2Period } from 'api-src/utils/ft2Period';
+import { FT2DateRangePreset, getFt2Period, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
 
 import {
   getOrderNexusFt2Timeseries,
@@ -28,7 +28,17 @@ export async function orderNexusFt2TimeseriesController(
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const period = getFt2Period();
+  const preset = req.query.preset as FT2DateRangePreset | undefined;
+
+  const period = preset
+    ? preset === 'custom'
+      ? resolveFt2PeriodFromPreset({
+          preset: 'custom',
+          from: String(req.query.from),
+          to: String(req.query.to),
+        })
+      : resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
 
   const result = await getOrderNexusFt2Timeseries({
     shopId,
@@ -48,7 +58,17 @@ export async function orderNexusFt2DistributionController(
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const period = getFt2Period();
+  const preset = req.query.preset as FT2DateRangePreset | undefined;
+
+  const period = preset
+    ? preset === 'custom'
+      ? resolveFt2PeriodFromPreset({
+          preset: 'custom',
+          from: String(req.query.from),
+          to: String(req.query.to),
+        })
+      : resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
 
   const result = await getOrderNexusFt2Distribution({
     shopId,
@@ -68,7 +88,17 @@ export async function orderNexusFt2CoverageController(
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const period = getFt2Period();
+  const preset = req.query.preset as FT2DateRangePreset | undefined;
+
+  const period = preset
+    ? preset === 'custom'
+      ? resolveFt2PeriodFromPreset({
+          preset: 'custom',
+          from: String(req.query.from),
+          to: String(req.query.to),
+        })
+      : resolveFt2PeriodFromPreset({ preset })
+    : getFt2Period();
 
   const result = await getOrderNexusFt2Coverage({
     shopId,

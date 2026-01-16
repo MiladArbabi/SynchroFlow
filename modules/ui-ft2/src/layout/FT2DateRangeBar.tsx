@@ -1,93 +1,191 @@
-import { useState } from 'react';
-import { Box, Stack } from '@mui/material';
-import { FT2_TOKENS } from './tokens';
-import type { FT2DateRange, FT2DateRangePreset } from '../contracts/ft2DateRange';
+import { useReducer, useState, useMemo } from 'react';
+import {
+  Stack,
+  Button,
+  Typography,
+  TextField,
+} from '@mui/material';
 
-export type FT2DateRangeBarProps = {
+import {
+  DatePicker,
+  LocalizationProvider,
+} from '@mui/x-date-pickers';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+
+import { Dayjs } from 'dayjs';
+
+import type { FT2DateRange } from '../contracts/ft2DateRange';
+import { FT2PresetSelector } from './FT2PresetSelector';
+import {
+  ft2PresetReducer,
+  FT2PresetSelectorState,
+} from './FT2PresetSelector.state';
+
+// ─────────────────────────────────────────────
+// Initial reducer state
+// ─────────────────────────────────────────────
+const INITIAL_STATE: FT2PresetSelectorState = {
+  kind: 'semantic',
+  preset: 'past_7_days',
+};
+
+export interface FT2DateRangeBarProps {
   value: FT2DateRange;
   onChange: (range: FT2DateRange) => void;
-};
+}
 
-const PRESET_LABELS: Record<FT2DateRangePreset, string> = {
-  today: 'Today',
-  this_week: 'This week',
-  last_week: 'Last week',
-  past_7_days: 'Past 7 days',
-  this_month: 'This month',
-  last_month: 'Last month',
-  past_30_days: 'Past 30 days',
-  custom: 'Custom range',
-};
+export function FT2DateRangeBar({
+  value,
+  onChange,
+}: FT2DateRangeBarProps) {
+  const [state, dispatch] = useReducer(
+    ft2PresetReducer,
+    INITIAL_STATE
+  );
 
-const PRESETS: FT2DateRangePreset[] = [
-  'today',
-  'this_week',
-  'last_week',
-  'past_7_days',
-  'this_month',
-  'last_month',
-  'past_30_days',
-  'custom',
-];
+  // Draft state (UI-only, never inferred)
+  const [draftFrom, setDraftFrom] = useState<Dayjs | null>(null);
+  const [draftTo, setDraftTo] = useState<Dayjs | null>(null);
 
-export function FT2DateRangeBar({ value, onChange }: FT2DateRangeBarProps) {
-  const [open, setOpen] = useState(false);
+  // Tracks currently visible calendar month
+  const [activeMonth, setActiveMonth] = useState<Dayjs | null>(null);
 
-  const handleSelect = (preset: FT2DateRangePreset) => {
-    setOpen(false);
+  // ─────────────────────────────────────────────
+  // Validation (UI-only)
+  // ─────────────────────────────────────────────
+  const validationError = useMemo(() => {
+    if (!draftFrom || !draftTo) return null;
+
+    if (!draftFrom.isValid() || !draftTo.isValid()) {
+      return 'Invalid date';
+    }
+
+    if (!draftFrom.isBefore(draftTo)) {
+      return '"From" must be earlier than "To"';
+    }
+
+    return null;
+  }, [draftFrom, draftTo]);
+
+  const canApply =
+    !!draftFrom &&
+    !!draftTo &&
+    validationError === null;
+
+  // ─────────────────────────────────────────────
+  // Restrict selection to visible month only
+  // ─────────────────────────────────────────────
+  function restrictToVisibleMonth(date: Dayjs) {
+    if (!activeMonth) return false;
+
+    return (
+      date.month() !== activeMonth.month() ||
+      date.year() !== activeMonth.year()
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // Handlers
+  // ─────────────────────────────────────────────
+  function handlePresetSelect(
+    preset: FT2DateRange['preset']
+  ) {
+    dispatch({ type: 'SELECT_PRESET', preset });
 
     if (preset === 'custom') {
       return;
     }
+
+    // Semantic presets only
+    setDraftFrom(null);
+    setDraftTo(null);
+    setActiveMonth(null);
 
     onChange({
       preset,
       from: null,
       to: null,
     });
-  };
+  }
 
+  function confirmCustom() {
+    if (!canApply || !draftFrom || !draftTo) return;
+
+    onChange({
+      preset: 'custom',
+      from: draftFrom.toISOString(),
+      to: draftTo.toISOString(),
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   return (
-    <Box
-      data-ft2-date-range-bar
-      sx={{
-        height: FT2_TOKENS.controlZoneHeight,
-        display: 'flex',
-        alignItems: 'center',
-        px: FT2_TOKENS.padding.desktop / 8,
-      }}
-    >
-      {!open && (
-        <Box
-          role="button"
-          aria-hidden={open}
-          onClick={() => setOpen(true)}
-          sx={{ cursor: 'pointer' }}
-        >
-          {PRESET_LABELS[value.preset]}
-        </Box>
-      )}
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <Stack spacing={1} pt={1}>
+        <FT2PresetSelector
+          preset={value.preset}
+          onSelect={handlePresetSelect}
+        />
 
-      {open && (
-        <Stack
-          sx={{
-            position: 'absolute',
-            mt: FT2_TOKENS.controlZoneHeight / 8,
-            backgroundColor: 'background.paper',
-            zIndex: 1,
-          }}
-        >
-          {PRESETS.map((preset) => (
-            <Box
-              key={preset}
-              onClick={() => handleSelect(preset)}
-              sx={{ cursor: 'pointer' }}
-            >
-              {PRESET_LABELS[preset]}
-            </Box>
-          ))}
-        </Stack>
-      )}
-    </Box>
+        {state.kind === 'custom' && (
+          <Stack spacing={1} px={4}>
+            <Stack direction="row" spacing={2} alignItems="flex-end">
+              <DatePicker
+                label="From"
+                value={draftFrom}
+                onChange={(v) => setDraftFrom(v)}
+                onMonthChange={(month) =>
+                  setActiveMonth(month.startOf('month'))
+                }
+                shouldDisableDate={restrictToVisibleMonth}
+                slotProps={{
+                  textField: {
+                    size: 'small',
+                    error: !!validationError,
+                    placeholder: '',
+                  },
+                }}
+              />
+
+              <DatePicker
+                label="To"
+                value={draftTo}
+                onChange={(v) => setDraftTo(v)}
+                onMonthChange={(month) =>
+                  setActiveMonth(month.startOf('month'))
+                }
+                shouldDisableDate={restrictToVisibleMonth}
+                slotProps={{
+                  textField: {
+                    size: 'small',
+                    error: !!validationError,
+                    placeholder: '',
+                  },
+                }}
+              />
+
+              <Button
+                variant="contained"
+                disabled={!canApply}
+                onClick={confirmCustom}
+              >
+                Apply
+              </Button>
+            </Stack>
+
+            {validationError && (
+              <Typography
+                variant="caption"
+                color="error"
+              >
+                {validationError}
+              </Typography>
+            )}
+          </Stack>
+        )}
+      </Stack>
+    </LocalizationProvider>
   );
 }
