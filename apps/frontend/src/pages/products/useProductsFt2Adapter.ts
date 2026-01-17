@@ -15,8 +15,8 @@ import type { ProductsModuleFT2Props } from '@lasyncro/products';
 type ProductsFt2Snapshot = {
   context?: {
     period?: {
-      from: string;
-      to: string;
+      from?: string;
+      to?: string;
     };
     productsObserved?: number | null;
   };
@@ -29,10 +29,45 @@ type ProductsFt2Snapshot = {
     direction: 'up' | 'down' | 'flat' | 'unknown';
   } | null;
 
-  signals?: {
-    catalog: 'ok' | 'attention' | 'unknown';
-    skuCoverage: 'ok' | 'gaps' | 'unknown';
-    variantComplexity: 'simple' | 'complex' | 'unknown';
+  dataGaps?: {
+    productsWithConflictingDataCount?: number | null;
+    totalProductsChecked?: number | null;
+
+    productsWithMultipleSkusCount?: number | null;
+    maxSkusPerProduct?: number | null;
+
+    variantGrowth?: Array<{
+      date: string;
+      totalProducts: number;
+      totalVariants: number;
+    }> | null;
+  } | null;
+
+  operationalRisk?: {
+    productsWithConfirmedStockCount?: number | null;
+    totalProducts?: number | null;
+
+    productsWhereSalesExceedStockCount?: number | null;
+
+    averageSystemsTouchedPerProduct?: number | null;
+    productsTouchingMultipleSystemsCount?: number | null;
+  } | null;
+
+  economicBlindSpots?: {
+    productsWithCostCount?: number | null;
+    productsWithoutCostCount?: number | null;
+
+    priceVsCostTrend?: Array<{
+      date: string;
+      averagePrice: number | null;
+      averageCost: number | null;
+    }> | null;
+
+    revenueVsProfit?: Array<{
+      productId: string;
+      revenue: number;
+      profit: number | null;
+    }> | null;
   } | null;
 };
 
@@ -53,7 +88,12 @@ export function mapProductsFt2Props(
 ): ProductsModuleFT2Props {
   return {
     context: {
-      period: snapshot.context?.period ?? { from: null, to: null },
+      period: snapshot.context?.period
+        ? {
+            from: snapshot.context.period.from ?? '',
+            to: snapshot.context.period.to ?? '',
+          }
+        : { from: '', to: '' },
 
       productsObserved:
         snapshot.context?.productsObserved === undefined
@@ -71,9 +111,56 @@ export function mapProductsFt2Props(
         ? null
         : snapshot.trend,
 
-    signals:
-      snapshot.signals === undefined
+    dataGaps:
+      snapshot.dataGaps === undefined
         ? null
-        : snapshot.signals,
+        : {
+            productsWithConflictingDataCount:
+              snapshot.dataGaps.productsWithConflictingDataCount ?? null,
+            totalProductsChecked:
+              snapshot.dataGaps.totalProductsChecked ?? null,
+
+            productsWithMultipleSkusCount:
+              snapshot.dataGaps.productsWithMultipleSkusCount ?? null,
+            maxSkusPerProduct:
+              snapshot.dataGaps.maxSkusPerProduct ?? null,
+
+            variantGrowth:
+              snapshot.dataGaps.variantGrowth ?? null,
+          },
+
+    operationalRisk:
+      snapshot.operationalRisk === undefined
+        ? null
+        : {
+            productsWithConfirmedStockCount:
+              snapshot.operationalRisk.productsWithConfirmedStockCount ?? null,
+            totalProducts:
+              snapshot.operationalRisk.totalProducts ?? null,
+
+            productsWhereSalesExceedStockCount:
+              snapshot.operationalRisk.productsWhereSalesExceedStockCount ?? null,
+
+            averageSystemsTouchedPerProduct:
+              snapshot.operationalRisk.averageSystemsTouchedPerProduct ?? null,
+            productsTouchingMultipleSystemsCount:
+              snapshot.operationalRisk.productsTouchingMultipleSystemsCount ?? null,
+          },
+
+    economicBlindSpots:
+      snapshot.economicBlindSpots === undefined
+        ? null
+        : {
+            productsWithCostCount:
+              snapshot.economicBlindSpots.productsWithCostCount ?? null,
+            productsWithoutCostCount:
+              snapshot.economicBlindSpots.productsWithoutCostCount ?? null,
+
+            priceVsCostTrend:
+              snapshot.economicBlindSpots.priceVsCostTrend ?? null,
+
+            revenueVsProfit:
+              snapshot.economicBlindSpots.revenueVsProfit ?? null,
+          },
   };
 }

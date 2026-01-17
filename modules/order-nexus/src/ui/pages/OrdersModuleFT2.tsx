@@ -75,20 +75,16 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
     <FT2Layout>
       {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Orders observed">
+        <FT2Surface variant="kpi" title="Orders received">
           {context.ordersObserved ?? '—'}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Orders observed">
-          {context.ordersObserved ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Data coverage">
+        <FT2Surface variant="kpi" title="Cost visibility">
           {dataCoverage.completenessPct === null
             ? '—'
             : `${dataCoverage.completenessPct}%`}
         </FT2Surface>
-         <FT2Surface variant="kpi" title="Revenue">
+         <FT2Surface variant="kpi" title="Sales value">
           {totals.revenueTotal === null
             ? '—'
             : `${totals.revenueTotal} ${totals.currency ?? ''}`}
@@ -108,13 +104,11 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
 
       {/* ───────── Layer 2 — Analytical ───────── */}
       <FT2Row intent="analysis">
-        <FT2Surface
-          title="Order activity over time"
-        >
+        <FT2Surface title="Orders over time">
           {timeseries}
         </FT2Surface>
 
-        <FT2Surface title="Order value distribution">
+        <FT2Surface title="Typical order sizes">
           {distribution}
         </FT2Surface>
       </FT2Row>
@@ -122,17 +116,17 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
       {/* ───────── Layer 3 — Support ───────── */}
       <FT2Row intent="support">
 
-        <FT2Surface title="Trend">
+        <FT2Surface title="Direction">
           {trend?.direction ?? '—'}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Cost">
+        <FT2Surface variant="kpi" title="Order costs">
           {totals.costTotal === null
             ? '—'
             : `${totals.costTotal} ${totals.currency ?? ''}`}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Outcome">
+        <FT2Surface variant="kpi" title="Overall result">
           {outcome?.status ?? '—'}
         </FT2Surface>
       </FT2Row>
