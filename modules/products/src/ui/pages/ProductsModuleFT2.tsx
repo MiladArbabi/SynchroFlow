@@ -1,10 +1,12 @@
 // modules/products/src/ui/pages/ProductsModuleFT2.tsx
-
-import React, { ReactNode } from 'react';
 import {
   FT2Layout,
   FT2Row,
   FT2Surface,
+  FT2Stat,
+  FT2Ratio,
+  FT2DualTimeSeries,
+  FT2Distribution,
 } from '@lasyncro/ui-ft2';
 
 /**
@@ -131,36 +133,32 @@ export default function ProductsModuleFT2(
 
   return (
     <FT2Layout>
-      {/* ───────── Layer 0 — Context & Trust / KPIs ───────── */}
+      {/* ───────── Layer 0 — OPS CENTER ───────── */}
+      <FT2Surface title="What stands out" span={2}>
+        <ul>
+          <li>Product data may differ across systems</li>
+          <li>Some sales may occur without cost visibility</li>
+          <li>Demand and stock visibility are not always aligned</li>
+        </ul>
+      </FT2Surface>
+      {/* ───────── Layer 1 — Context & Trust / KPIs ───────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Period">
-          {context.period.from} → {context.period.to}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Products observed">
-          {context.productsObserved ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Overall status">
-          {outcome?.status ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Trend">
-          {trend?.direction ?? '—'}
+        <FT2Surface variant="kpi" title="Products detected">
+          <FT2Stat value={context.productsObserved} />
         </FT2Surface>
       </FT2Row>
 
-      {/* ───────── Layer 1 — DATA GAPS (Truth & Consistency) ───────── */}
+      {/* ───────── Layer 2 — DATA GAPS (Truth & Consistency) ───────── */}
       <FT2Row intent="analysis">
-        <FT2Surface title="Product data consistency">
-          <div>
-            Products with conflicts:{' '}
-            {dataGaps?.productsWithConflictingDataCount ?? '—'}
-          </div>
-          <div>
-            Products checked:{' '}
-            {dataGaps?.totalProductsChecked ?? '—'}
-          </div>
+        <FT2Surface title="Consistent product data">
+          {dataGaps?.totalProductsChecked === 0 ? (
+            'No products synced'
+          ) : (
+            <FT2Ratio
+              numerator={dataGaps?.productsWithConflictingDataCount ?? null}
+              denominator={dataGaps?.totalProductsChecked ?? null}
+            />
+          )}
         </FT2Surface>
 
         <FT2Surface title="Duplicate products">
@@ -185,82 +183,102 @@ export default function ProductsModuleFT2(
         </FT2Surface>
       </FT2Row>
 
-      {/* ───────── Layer 2 — OPERATIONAL RISK (Flow & Control) ───────── */}
+      {/* ───────── Layer 3 — OPERATIONAL RISK (Flow & Control) ───────── */}
       <FT2Row intent="analysis">
         <FT2Surface title="Stock visibility">
-          <div>
-            Products with confirmed stock:{' '}
-            {operationalRisk?.productsWithConfirmedStockCount ?? '—'}
-          </div>
-          <div>
-            Total products:{' '}
-            {operationalRisk?.totalProducts ?? '—'}
-          </div>
+          {operationalRisk?.totalProducts === 0 ? (
+            'No products synced'
+          ) : (
+            <FT2Ratio
+              numerator={
+                operationalRisk?.productsWithConfirmedStockCount ?? null
+              }
+              denominator={operationalRisk?.totalProducts ?? null}
+            />
+          )}
         </FT2Surface>
 
-        <FT2Surface title="Demand vs stock">
-          <div>
-            Products where sales exceed stock:{' '}
-            {operationalRisk?.productsWhereSalesExceedStockCount ?? '—'}
-          </div>
+        <FT2Surface title="Sales exceed stock">
+          {operationalRisk?.productsWhereSalesExceedStockCount === 0 ? (
+            'No oversold products'
+          ) : (
+            <FT2Stat
+              value={operationalRisk?.productsWhereSalesExceedStockCount ?? null}
+            />
+          )}
         </FT2Surface>
 
         <FT2Surface title="Change impact">
-          <div>
-            Avg systems per product:{' '}
-            {operationalRisk?.averageSystemsTouchedPerProduct ?? '—'}
-          </div>
-          <div>
-            Products touching multiple systems:{' '}
-            {operationalRisk?.productsTouchingMultipleSystemsCount ?? '—'}
-          </div>
+          <FT2Stat
+            value={
+              operationalRisk?.averageSystemsTouchedPerProduct ?? null
+            }
+          />
+          <FT2Stat
+            value={
+              operationalRisk?.productsTouchingMultipleSystemsCount ?? null
+            }
+          />
         </FT2Surface>
       </FT2Row>
 
-      {/* ───────── Layer 3 — ECONOMIC BLIND SPOTS (Money) ───────── */}
+      {/* ───────── Layer 4 — ECONOMIC BLIND SPOTS (Money) ───────── */}
       <FT2Row intent="analysis">
         <FT2Surface title="Cost coverage">
-          <div>
-            Products with cost:{' '}
-            {economicBlindSpots?.productsWithCostCount ?? '—'}
-          </div>
-          <div>
-            Products without cost:{' '}
-            {economicBlindSpots?.productsWithoutCostCount ?? '—'}
-          </div>
+          {economicBlindSpots &&
+          (economicBlindSpots.productsWithCostCount ?? 0) +
+            (economicBlindSpots.productsWithoutCostCount ?? 0) === 0 ? (
+            'No cost data available'
+          ) : (
+            <FT2Ratio
+              numerator={economicBlindSpots?.productsWithCostCount ?? null}
+              denominator={
+                economicBlindSpots
+                  ? (economicBlindSpots.productsWithCostCount ?? 0) +
+                    (economicBlindSpots.productsWithoutCostCount ?? 0)
+                  : null
+              }
+            />
+          )}
         </FT2Surface>
 
         <FT2Surface title="Price vs cost">
-          {economicBlindSpots?.priceVsCostTrend ? (
-            <div>
-              Data points:{' '}
-              {economicBlindSpots.priceVsCostTrend.length}
-            </div>
-          ) : (
-            '—'
-          )}
+          <FT2DualTimeSeries
+            left={
+              economicBlindSpots?.priceVsCostTrend
+                ? economicBlindSpots.priceVsCostTrend.map(p => ({
+                    date: p.date,
+                    value: p.averagePrice,
+                  }))
+                : null
+            }
+            right={
+              economicBlindSpots?.priceVsCostTrend
+                ? economicBlindSpots.priceVsCostTrend.map(p => ({
+                    date: p.date,
+                    value: p.averageCost,
+                  }))
+                : null
+            }
+          />
         </FT2Surface>
 
         <FT2Surface title="Revenue vs profit">
-          {economicBlindSpots?.revenueVsProfit ? (
-            <div>
-              Products with revenue data:{' '}
-              {economicBlindSpots.revenueVsProfit.length}
-            </div>
+          {economicBlindSpots?.revenueVsProfit &&
+          economicBlindSpots.revenueVsProfit.length === 0 ? (
+            'No revenue data available'
           ) : (
-            '—'
+            <FT2Distribution
+              buckets={
+                economicBlindSpots?.revenueVsProfit
+                  ? economicBlindSpots.revenueVsProfit.map(p => ({
+                      key: p.productId,
+                      value: p.profit,
+                    }))
+                  : null
+              }
+            />
           )}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ───────── Layer 4 — CNS Summary ───────── */}
-      <FT2Row intent="support">
-        <FT2Surface title="What stands out" span={2}>
-          <ul>
-            <li>Product data may differ across systems</li>
-            <li>Some sales may occur without cost visibility</li>
-            <li>Demand and stock visibility are not always aligned</li>
-          </ul>
         </FT2Surface>
       </FT2Row>
     </FT2Layout>
