@@ -1,15 +1,21 @@
-// tests/unit/ui/customers/CustomersModuleFT2.test.tsx
-
 import { render, screen } from '@testing-library/react';
 import {
   CustomersModuleFT2,
   CustomersModuleFT2Props,
 } from '@lasyncro/customers';
 
-describe('CustomersModuleFT2', () => {
-  const baseProps: CustomersModuleFT2Props = {
+describe('CustomersModuleFT2 — CTR-aware exposure', () => {
+  const ctr1Props: CustomersModuleFT2Props = {
     context: {
-      period: { from: '2025-01-01', to: '2025-01-31' },
+      sessionsObserved: null, // CTR-0 / CTR-1 boundary
+    },
+
+    systemState: null,
+    timeSignal: null,
+  };
+
+  const ctr2Props: CustomersModuleFT2Props = {
+    context: {
       sessionsObserved: 240,
     },
 
@@ -23,37 +29,48 @@ describe('CustomersModuleFT2', () => {
     },
   };
 
-  it('renders core customer context deterministically', () => {
-    render(<CustomersModuleFT2 {...baseProps} />);
+  it('CTR-1: renders readiness signal only', () => {
+    render(<CustomersModuleFT2 {...ctr1Props} />);
 
-    expect(screen.getByText(/2025-01-01/i)).toBeInTheDocument();
-    expect(screen.getByText(/240/i)).toBeInTheDocument(); // sessions observed
-    expect(screen.getByText(/healthy/i)).toBeInTheDocument();
+    // CTR itself is allowed (meta-truth)
+    expect(
+      screen.getByText(/customer truth readiness/i)
+    ).toBeInTheDocument();
+
+    expect(screen.getByText(/CTR-/i)).toBeInTheDocument();
   });
 
-  it('renders placeholders when values are null', () => {
-    render(
-      <CustomersModuleFT2
-        {...baseProps}
-        context={{
-          ...baseProps.context,
-          sessionsObserved: null,
-        }}
-        systemState={null}
-        timeSignal={null}
-      />
-    );
+  it('CTR-1: does NOT render customer truth', () => {
+    render(<CustomersModuleFT2 {...ctr1Props} />);
+
+    // No customer counts
+    expect(screen.queryByText(/240/i)).toBeNull();
+
+    // No system confidence
+    expect(screen.queryByText(/high/i)).toBeNull();
+    expect(screen.queryByText(/medium/i)).toBeNull();
+    expect(screen.queryByText(/low/i)).toBeNull();
+
+    // No trend
+    expect(screen.queryByText(/stable/i)).toBeNull();
+    expect(screen.queryByText(/improving/i)).toBeNull();
+  });
+
+  it('CTR-1: does NOT degrade suppressed truth with placeholders', () => {
+    render(<CustomersModuleFT2 {...ctr1Props} />);
 
     expect(
-    screen.getAllByText((_, node) => 
-      node?.textContent?.includes('—') ?? false)
-        .length
-    ).toBeGreaterThan(0);
+      screen.queryByText((_, node) =>
+        node?.textContent?.includes('—') ?? false
+      )
+    ).toBeNull();
   });
 
-  it('renders trend signal when present', () => {
-    render(<CustomersModuleFT2 {...baseProps} />);
+  it('CTR-2+: renders customer truth deterministically', () => {
+    render(<CustomersModuleFT2 {...ctr2Props} />);
 
+    expect(screen.getByText(/240/i)).toBeInTheDocument();
+    expect(screen.getByText(/high/i)).toBeInTheDocument();
     expect(screen.getByText(/stable/i)).toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 import { CustomersFacts } from 'api-src/services/customers-facts';
 import { CustomersIntelligence } from 'api-src/services/customers-intelligence';
 import { CustomersFT2Exposure } from './customersFtep.types';
+import { CustomerTruthReadiness } from '../ft2/ctr.types';
 
 /**
  * Customers FTEP (FT2)
@@ -10,8 +11,7 @@ import { CustomersFT2Exposure } from './customersFtep.types';
  * Rules:
  * - Downgrade only
  * - No enrichment
- * - No timestamps
- * - No intelligence internals
+ * - CTR governs exposure
  */
 export function applyCustomersFtep(input: {
   facts: CustomersFacts;
@@ -19,16 +19,47 @@ export function applyCustomersFtep(input: {
 }): CustomersFT2Exposure {
   const { facts, intelligence } = input;
 
-  const isUnknown = intelligence.outcome.status === 'unknown';
+  const ctr = deriveCustomersCTR({ facts, intelligence });
 
   return {
     context: {
       period: facts.period,
-      customersObserved: facts.customersObserved
+      customersObserved:
+        ctr >= CustomerTruthReadiness.CTR_2
+          ? facts.customersObserved
+          : null,
     },
 
-    outcome: isUnknown ? null : { status: intelligence.outcome.status },
+    outcome:
+      ctr >= CustomerTruthReadiness.CTR_2
+        ? { status: intelligence.outcome.status }
+        : null,
 
-    trend: isUnknown ? null : { direction: intelligence.trend.direction }
+    trend:
+      ctr >= CustomerTruthReadiness.CTR_2
+        ? { direction: intelligence.trend.direction }
+        : null,
   };
+}
+
+/**
+ * CTR derivation — Customers
+ * -------------------------
+ * Based strictly on existing facts + intelligence.
+ */
+function deriveCustomersCTR(input: {
+  facts: CustomersFacts;
+  intelligence: CustomersIntelligence;
+}): CustomerTruthReadiness {
+  const { facts, intelligence } = input;
+
+  if (facts.customersObserved === null) {
+    return CustomerTruthReadiness.CTR_1;
+  }
+
+  if (intelligence.outcome.status === 'unknown') {
+    return CustomerTruthReadiness.CTR_1;
+  }
+
+  return CustomerTruthReadiness.CTR_2;
 }
