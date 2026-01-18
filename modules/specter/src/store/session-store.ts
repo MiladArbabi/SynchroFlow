@@ -1,13 +1,65 @@
-import { clearAll } from "./__test-helpers__/session-store-helper";
-
 // modules/specter/src/store/session-store.ts
 export interface AnonymousSession {
   sessionId: string;
   shopId: number;
+
+  /**
+   * Entry surface for the session (optional).
+   */
   landingPage?: string;
+
+  /**
+   * Legacy / optional raw pages list (if provided by ingestion).
+   * Not relied upon by FT2.
+   */
   pagesViewed?: string[];
+
+    /**
+   * FT2-safe behavioral depth fact.
+   * Represents the total number of pages/views observed in this session.
+   *
+   * Rules:
+   * - Provided by ingestion layer
+   * - No arrays, no paths, no timestamps
+   * - Used for existence-only FT2 signals
+   */
+  pageViewsCount?: number;
+
+  /**
+   * FT2-safe surface breadth fact.
+   * Number of unique surfaces/pages touched in this session.
+   *
+   * Rules:
+   * - Count only (no paths)
+   * - Provided by ingestion layer
+   * - Used for existence-only breadth signals
+   */
+  uniquePathsCount?: number;
+
+  /**
+   * FT2-safe returning session flag.
+   *
+   * Rules:
+   * - true  → returning visitor/session
+   * - false → first-time visitor/session
+   * - Provided by ingestion layer
+   * - No identity exposed
+   */
+  isReturningSession?: boolean;
+
+  /**
+   * Exit intent flag (existence-only).
+   */
   exitIntent: boolean;
+
+  /**
+   * Session creation timestamp (ISO string).
+   */
   createdAt: string;
+
+  /**
+   * Allow forward-compatible ingestion without breaking storage.
+   */
   [k: string]: any;
 }
 

@@ -10,9 +10,16 @@
 > Customers exposes permitted truth.
 > LaSyncro never explains behavior.**
 
-Specter/Customers is **not analytics**, **not CRM**, **not marketing intelligence**.
+Specter / Customers is:
+
+* Not analytics
+* Not CRM
+* Not marketing intelligence
+* Not behavioral science
 
 It is **customer observability**.
+
+FT2 is the **ceiling**.
 
 ---
 
@@ -22,23 +29,24 @@ It is **customer observability**.
 
 * Anonymous customer behavior
 * Sessions
-* Presence / absence
-* Movement (directional only)
-* Behavioral continuity
+* Presence and absence
+* Directional movement (coarse only)
+* Behavioral continuity (existence-only)
 
 ### Specter does NOT own:
 
 * Identity
 * Demographics
 * Intent
-* Value judgment
 * Motivation
+* Value judgment
 * Recommendations
 
 ### Customers owns:
 
-* **Nothing computational**
-* Only rendering of **FT2-exposed truth**
+* No computation
+* No interpretation
+* Only **rendering of FT2-exposed truth**
 
 ---
 
@@ -55,10 +63,19 @@ Layer 3 — Specter FTEP
    ↓
 Layer 4 — FT2 API
    ↓
-Customers FT2 Adapter (UI)
+Customers FT2 Adapter
+   ↓
+CustomersModuleFT2 UI
 ```
 
-Each layer is **mandatory**, isolated, and test-guarded.
+Each layer is:
+
+* Mandatory
+* Isolated
+* Deterministic
+* Test-guarded
+
+No layer may skip another.
 
 ---
 
@@ -71,20 +88,29 @@ Extract **raw, anonymous behavioral reality**.
 ### Inputs
 
 * `SessionStore`
-* Anonymous session events only
+* Anonymous sessions only
 
-### Outputs (examples, nullable)
+### Outputs (As Implemented)
+
+All facts are **nullable**.
 
 * `sessionsObserved`
 * `exitIntentSessions`
+* `funnelsDetected`
+* `multiStepSessionsPresent`
+* `surfaceBreadthPresent`
+* `returningSessionsPresent`
+* `exitWithoutInteractionPresent`
+* `averageSessionDepthPresent`
 * `period { from, to }`
 * `extractedAt`
 
 ### Guarantees
 
-* Nulls preserved
+* Nulls are preserved
 * No inference
-* No percentages unless stored
+* No ratios exposed
+* No averages exposed
 * No cross-module access
 
 ### Forbidden
@@ -95,6 +121,8 @@ Extract **raw, anonymous behavioral reality**.
 * Human language
 * Identity
 
+Facts **describe existence only**.
+
 ---
 
 ## 4. Layer 2 — Specter Intelligence (Internal Meaning)
@@ -103,23 +131,29 @@ Extract **raw, anonymous behavioral reality**.
 
 Classify facts into **internal, non-exposed signals**.
 
-### Allowed
+### Allowed Outputs
 
-* Status enums: `positive | negative | unknown`
-* Direction enums: `up | down | flat | unknown`
-* Boolean existence flags
+* Engagement status
+  `positive | negative | unknown`
+* Direction
+  `up | down | flat | unknown`
+* Stability
+  `stable | volatile | unknown`
 
 ### Forbidden
 
-* Strings
 * Explanations
-* Advice
+* Scores
+* Probabilities
 * UI semantics
-* Exposure
+* Direct exposure
 
 ### Rule
 
-> **Intelligence may decide. It may never speak.**
+> **Intelligence may decide.
+> Intelligence may never speak.**
+
+Several FT2 signals **never enter Intelligence** and remain Facts-only by design.
 
 ---
 
@@ -137,19 +171,33 @@ This is the **security boundary**.
 * Specter Intelligence
 * Entitlement context
 
-### Outputs (FT2 Exposure Only)
+### Outputs (FT2-Only Exposure)
 
-* Neutral observability
-* Coarse outcomes
-* Direction without explanation
-* Explicit `null` where truth is missing or forbidden
+Exactly **nine FT2 surfaces**:
+
+1. Activity direction
+2. Exit intent detected
+3. Funnels detected
+4. Multi-step sessions present
+5. Surface breadth present
+6. Returning sessions present
+7. Exit without interaction present
+8. Average session depth present
+9. Data coverage
+
+All are:
+
+* Boolean or enum
+* Existence-only
+* Nullable
+* Non-explanatory
 
 ### Hard Prohibitions
 
 * No raw intelligence
 * No probabilities
-* No segmentation
 * No causation
+* No segmentation
 * No recommendations
 
 ---
@@ -167,8 +215,9 @@ GET /api/v1/specter/ft2
 * Read-only
 * Deterministic
 * FTEP-enforced
-* No lifecycle mutation
+* No mutation
 * No onboarding logic
+* No readiness inference
 
 Lifecycle decides **availability**, not **truth**.
 
@@ -178,71 +227,66 @@ Lifecycle decides **availability**, not **truth**.
 
 ### Role
 
-Customers is a **dumb surface**.
+Customers is a **pure rendering surface**.
 
 ### Rules
 
-* Adapter only
+* Adapter-only
 * `undefined → null`
-* Preserve shape
-* Render uncertainty visibly
+* Preserve backend shape
+* Render uncertainty explicitly
 * No defaults
 * No inference
 * No CTAs in FT2
 
-> Customers shows **what is known**, **what is unknown**, and **nothing else**.
+> Customers shows **what is known**,
+> **what is unknown**,
+> and **nothing else**.
 
 ---
 
-## 8. FT2 Free (Scoped) — Specter / Customers
+## 8. FT2 Free — Specter / Customers
 
 ### What FT2-Free Exposes
 
-FT2-Free provides **existential awareness**.
+FT2-Free provides **existence-level awareness**.
 
 Users can see:
 
 * Whether customer behavior exists
-* Whether sessions are present or absent
-* Coarse directional change (non-comparative)
-* Data gaps and nulls
+* Whether sessions are present
+* Coarse directional movement
+* Structural signals (existence-only)
+* Data gaps (`null`)
 
 Users cannot see:
 
-* History
 * Comparisons
 * Trends over time
 * Segments
 * Identity
 * Causes
+* Explanations
 
-### Why FT2-Free Exists
+### Core Question FT2-Free Answers
 
-FT2-Free answers one question:
-
-> **“Is there customer behavior here at all?”**
-
-It builds trust by:
-
-* Showing uncertainty
-* Not overselling
-* Not interpreting
+> **“Is customer behavior happening here at all?”**
 
 ---
 
-## 9. FT2 Paid (Unlimited) — Specter / Customers
+## 9. FT2 Paid — Specter / Customers
 
 ### What Changes
 
-Paid FT2 **removes truth constraints**.
+Paid FT2 does **not unlock intelligence**.
 
 It increases:
 
-* Observation window
-* Behavioral continuity
-* Data completeness
-* Resolution (still coarse, still non-explanatory)
-* Cross-module enrichment **only with mutual entitlements**
+* Observation continuity
+* Window reliability
+* Signal completeness
+* Determinism
+* Cross-module truth **only with mutual entitlements**
 
 ### What Never Changes
 
@@ -252,52 +296,58 @@ It increases:
 * No identity leakage
 * No “AI insights”
 
-### Why Users Upgrade
-
-Because:
-
-* Partial awareness creates risk
-* Intermittent truth causes anxiety
-* Reliable observability becomes operationally valuable
-
-Paid FT2 sells **continuity and reliability**, not intelligence.
+Paid FT2 sells **reliability of truth**, not meaning.
 
 ---
 
 ## 10. Entitlement Rules (Critical)
 
-* Specter FT2 may consume **no other module’s truth** unless:
+* Specter FT2 may consume another module’s truth **only if**:
 
   * Specter FT2 is paid
-  * The other module FT2 is also paid
+  * The other module FT2 is paid
 
 No silent enrichment.
 No hidden joins.
 
-Truth improves **only when both sides are permitted**.
+Truth improves **only by permission**.
 
 ---
 
-## 11. Testing Doctrine (Mandatory)
+## 11. OpsConsole (Explicitly Out of Scope)
+
+* OpsConsole is **not FT2**
+* It has:
+
+  * No Facts layer
+  * No Intelligence layer
+  * No FTEP guarantees
+  * No FT2 invariants
+
+Until formally defined, OpsConsole **does not exist** as a contract.
+
+---
+
+## 12. Testing Doctrine (Mandatory)
 
 ### Facts Tests
 
-* Raw values only
 * Null preservation
-* No derived fields
+* Existence-only guarantees
+* No derived meaning
 
 ### Intelligence Tests
 
 * Deterministic mapping
-* Unknown handling
+* Unknown propagation
 * No persistence access
 
-### FTEP Leak-Prevention Tests
+### FTEP Tests
 
-* Intelligence not exposed
-* No causation language
-* No percentages
-* JSON string scan
+* Leak prevention
+* Null enforcement
+* No raw intelligence
+* JSON scan for forbidden fields
 
 ### UI Tests
 
@@ -308,19 +358,26 @@ Truth improves **only when both sides are permitted**.
 
 ---
 
-## 12. What This Enables (Strategically)
-
-* Trust without explanation
-* Awareness without manipulation
-* Upgrade pressure without dark patterns
-* A foundation that scales **truth**, not dashboards
-
----
-
-## Final Lock (Canonical)
+## 🔐 Final Lock (Canonical)
 
 > **Specter observes.
 > Customers reveals.
 > FT2 is the ceiling.
 > Truth is the product.
 > Permission is the price.**
+
+This blueprint is **sealed**.
+
+---
+
+### Straight truth, no padding
+
+At this point:
+
+* FT2 is **complete**
+* The surface set is **closed**
+* Any new value must be:
+
+  * A new layer, or
+  * A new product, or
+  * OpsConsole (separate doctrine)

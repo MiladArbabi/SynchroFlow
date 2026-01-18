@@ -1,4 +1,22 @@
 // modules/customers/src/ui/pages/CustomersModuleFT2.tsx
+//
+// Customers FT2 — Canonical UI Renderer
+// ------------------------------------
+// ROLE:
+// - Pure FT2 presentation layer
+// - Renders only FTEP-exposed truth
+// - No inference, no readiness logic, no lifecycle thinking
+//
+// RULES (ENFORCED BY DESIGN):
+// - One surface = one truth
+// - Null means absence (surface hidden unless specified)
+// - Unknown is rendered explicitly only when allowed
+// - Free vs Paid is visibility-only (no placeholders, no degradation)
+//
+// NOTE:
+// - This component assumes all gating and downgrading
+//   already happened in Specter FTEP.
+// - This file must remain boring. That is the feature.
 
 import React from 'react';
 import {
@@ -7,198 +25,197 @@ import {
   FT2Surface,
 } from '@lasyncro/ui-ft2';
 
+/* =========================
+   Public Props (FT2 Shape)
+   ========================= */
+
 export interface CustomersModuleFT2Props {
-  context: {
-    sessionsObserved: number | null;
-  };
+  // --- Existence & Context (Free)
+  sessionsObserved: number | null;
+  period: { from: string; to: string } | null;
 
-  systemState: {
-    status: 'healthy' | 'degraded' | 'partial' | 'unknown';
-    confidence: 'high' | 'medium' | 'low';
-    reason?: string;
-  } | null;
+  // --- Directional Movement (Free)
+  activityDirection: 'up' | 'down' | 'flat' | 'unknown' | null;
 
-  /**
-   * CNS Signals (future-backed, nullable by design)
-   */
-  dataCoverage?: 'complete' | 'partial' | 'insufficient' | null;
-  identityConfidence?: 'low' | 'medium' | 'high' | null;
-  truthStability?: 'stable' | 'volatile' | 'regressing' | null;
+    // --- Behavioral Structure
+    exitIntentDetected: boolean | null;
+    structuredJourneysDetected: boolean | null;
 
-  timeSignal: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
-    comparedPeriod?: {
-      from: string;
-      to: string;
-    };
-  } | null;
+    /**
+     * Behavioral depth (Free).
+     */
+    multiStepSessionsPresent: boolean | null;
+
+    /**
+     * Surface breadth (Free).
+     */
+    surfaceBreadthPresent: boolean | null;
+
+    /**
+     * Returning behavior (Free).
+     */
+    returningSessionsPresent: boolean | null;
+
+    /**
+     * Average session depth (Free).
+     * Existence-only.
+     */
+    averageSessionDepthPresent: boolean | null;
+
+    /**
+     * Early exit without interaction (Free).
+     */
+    exitWithoutInteractionPresent: boolean | null;
+
+  // --- Trust Calibration (Free)
+  dataCoverage: 'complete' | 'partial' | 'insufficient' | null;
+
+  // --- Entitlement (UI-only visibility switch)
+  isPaid: boolean;
 }
 
-type CTRLevel = 'CTR-0' | 'CTR-1' | 'CTR-2' | 'CTR-3' | 'CTR-4';
+/* =========================
+   Small Render Helpers
+   ========================= */
 
-/**
- * Infer CTR strictly from observable truth.
- * No assumptions. No enrichment.
- */
-function deriveCTR(props: CustomersModuleFT2Props): CTRLevel {
-  const { sessionsObserved } = props.context;
-  const system = props.systemState;
-  const time = props.timeSignal;
-
-  if (sessionsObserved === null) {
-    return 'CTR-0';
-  }
-
-  if (sessionsObserved > 0 && !system && !time) {
-    return 'CTR-1';
-  }
-
-  if (sessionsObserved > 0 && system && system.confidence === 'low') {
-    return 'CTR-2';
-  }
-
-  if (system && system.confidence === 'medium') {
-    return 'CTR-3';
-  }
-
-  if (system && system.confidence === 'high') {
-    return 'CTR-4';
-  }
-
-  return 'CTR-1';
+// Boolean existence → human-safe, non-explanatory labels
+function renderDetected(value: boolean | null): string {
+  if (value === true) return 'Detected';
+  if (value === false) return 'Not detected';
+  return 'Unknown';
 }
+
+// Direction → arrow-only, no magnitude, no explanation
+function renderDirection(
+  value: 'up' | 'down' | 'flat' | 'unknown' | null
+): string {
+  switch (value) {
+    case 'up':
+      return '↑';
+    case 'down':
+      return '↓';
+    case 'flat':
+      return '→';
+    case 'unknown':
+    default:
+      return '—';
+  }
+}
+
+// Coverage → calibrated trust labels
+function renderCoverage(
+  value: 'complete' | 'partial' | 'insufficient' | null
+): string {
+  if (value === 'complete') return 'Complete';
+  if (value === 'partial') return 'Partial';
+  if (value === 'insufficient') return 'Insufficient';
+  return 'Unknown';
+}
+
+/* =========================
+   Component
+   ========================= */
 
 export default function CustomersModuleFT2(
   props: CustomersModuleFT2Props
 ) {
-  const ctr = deriveCTR(props);
+  const {
+    sessionsObserved,
+    period,
+    activityDirection,
+    exitIntentDetected,
+    structuredJourneysDetected,
+    multiStepSessionsPresent,
+    surfaceBreadthPresent,
+    returningSessionsPresent,
+    averageSessionDepthPresent,
+    exitWithoutInteractionPresent,
+    dataCoverage,
+    isPaid,
+  } = props;
 
   return (
     <FT2Layout>
 
-      {/* ───────── Primary Truth Surface ───────── */}
+      {/* =========================
+          Row 1 — System Overview (KPI)
+          OpsConsole + Core Signals
+        ========================= */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Customer truth readiness">
-          {ctr}
+        {/* Ops Console (span = 2) */}
+        <FT2Surface
+          variant="standard"
+          title="Insights"
+          span={2}
+        >
+          {/* Placeholder — dynamic OpsConsole will replace this */}
+          <div>• Signal ingestion active</div>
+          <div>• Data coverage nominal</div>
+          <div>• No blocking anomalies</div>
         </FT2Surface>
 
-       {ctr !== 'CTR-0' && ctr !== 'CTR-1' && (
-        <FT2Surface variant="kpi" title="Session activity">
-          Observed
+        {/* Core KPI 1 — Activity Direction */}
+        <FT2Surface variant="kpi" title="Customer activity movement">
+          {renderDirection(activityDirection)}
         </FT2Surface>
-      )}
-      
-         <FT2Surface variant="kpi" title="Data coverage">
-          {ctr === 'CTR-0' || ctr === 'CTR-1'
-            ? '—'
-            : props.dataCoverage ?? '—'}
+
+        {/* Core KPI 2 — Multi-step Sessions */}
+        <FT2Surface variant="kpi" title="Multi-step sessions">
+          {renderDetected(multiStepSessionsPresent)}
         </FT2Surface>
-      
-        <FT2Surface variant="kpi" title="Identity confidence">
-          {ctr === 'CTR-3' || ctr === 'CTR-4'
-            ? props.identityConfidence ?? '—'
-            : '—'}
+
+        {/* Core KPI 3 — Early Exit */}
+        <FT2Surface variant="kpi" title="Exited without interaction">
+          {renderDetected(exitWithoutInteractionPresent)}
         </FT2Surface>
-      
-        <FT2Surface variant="kpi" title="Truth stability">
-          {ctr === 'CTR-4'
-            ? props.truthStability ?? '—'
-            : '—'}
+
+        {/* Core KPI 4 — Returning Visitors */}
+        <FT2Surface variant="kpi" title="Returning visitors">
+          {renderDetected(returningSessionsPresent)}
         </FT2Surface>
       </FT2Row>
 
-      {/* ───────── CTR-Aware Explanation Surface ───────── */}
+      {/* =========================
+          Row 2 — Analysis / Shape
+          (Charts & Visuals)
+        ========================= */}
       <FT2Row intent="analysis">
-        {ctr === 'CTR-0' && (
-          <FT2Surface title="Current state">
-            We’re connected, but no customer or session activity has been
-            observed yet. This view will activate automatically once real
-            traffic is detected.
-          </FT2Surface>
-        )}
-
-        {ctr === 'CTR-1' && (
-          <FT2Surface title="Current state">
-            Visitor activity is detected, but customer identity cannot be
-            confirmed yet. Traffic exists, but customer truth is not
-            established.
-          </FT2Surface>
-        )}
-
-        {ctr === 'CTR-2' && (
-          <FT2Surface title="Current state">
-            Customers have been observed, but identity resolution is still
-            basic. This data is safe to observe, not yet safe to act on.
-          </FT2Surface>
-        )}
-
-        {(ctr === 'CTR-2' || ctr === 'CTR-3' || ctr === 'CTR-4') && (
-          <FT2Surface title="Data coverage">
-            {props.dataCoverage === 'complete' &&
-              'All expected systems reported customer data.'}
-            {props.dataCoverage === 'partial' &&
-              'Some systems did not report customer data.'}
-            {props.dataCoverage === 'insufficient' &&
-              'Too little data is available to assess customer truth.'}
-            {!props.dataCoverage && 'Coverage assessment is not yet available.'}
-          </FT2Surface>
-        )}
-      
-        {(ctr === 'CTR-3' || ctr === 'CTR-4') && (
-          <FT2Surface title="Identity confidence">
-            {props.identityConfidence === 'low' &&
-              'Customer identities are unstable. Duplication risk exists.'}
-            {props.identityConfidence === 'medium' &&
-              'Most customer identities are consistent.'}
-            {props.identityConfidence === 'high' &&
-              'Customer identities are stable across systems.'}
-            {!props.identityConfidence &&
-              'Identity confidence has not been established yet.'}
-          </FT2Surface>
-        )}
-
-        {ctr === 'CTR-3' && (
-          <FT2Surface title="Current state">
-            Customer identity is stable across systems. Customer data shown
-            here is reliable for operational decisions.
-          </FT2Surface>
-        )}
-
-        {ctr === 'CTR-4' && (
-          <FT2Surface title="Truth stability">
-            {props.truthStability === 'stable' &&
-              'Customer truth has remained consistent over time.'}
-            {props.truthStability === 'volatile' &&
-              'Customer truth varies across periods.'}
-            {props.truthStability === 'regressing' &&
-              'Customer truth quality is declining.'}
-            {!props.truthStability &&
-              'Truth stability has not been evaluated yet.'}
-          </FT2Surface>
-        )}
-
-        {ctr === 'CTR-4' && (
-          <FT2Surface title="Current state">
-            Customer behavior and identity are coherent over time. Signals
-            are suitable for forecasting and optimization.
-          </FT2Surface>
-        )}
-      </FT2Row>
-
-      {/* ───────── Support / Guardrails ───────── */}
-      <FT2Row intent="support">
-        <FT2Surface title="Why some data may be missing">
-          Missing values are intentional. LaSyncro only shows customer data
-          when there is enough evidence to trust it.
+        <FT2Surface title="Session distribution">
+          {/* Placeholder for FT2Distribution / FT2Scatter */}
         </FT2Surface>
 
-        <FT2Surface title="System note">
-          {props.systemState?.reason ?? 'No system warnings detected.'}
+        <FT2Surface title="Activity over time">
+          {/* Placeholder for FT2TimeSeries */}
+        </FT2Surface>
+      </FT2Row>
+
+      {/* =========================
+          Row 3 — Supporting Signals
+          (Complementary KPIs)
+        ========================= */}
+      <FT2Row intent="support">
+        <FT2Surface variant="kpi" title="Average session depth">
+          {renderDetected(averageSessionDepthPresent)}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Exit intent detected">
+          {renderDetected(exitIntentDetected)}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Structured journeys">
+          {renderDetected(structuredJourneysDetected)}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Data coverage">
+          {renderCoverage(dataCoverage)}
+        </FT2Surface>
+
+        <FT2Surface
+          variant="standard"
+          title="Insights"
+          span={2}
+        >
+          {renderDetected(surfaceBreadthPresent)}
         </FT2Surface>
       </FT2Row>
 

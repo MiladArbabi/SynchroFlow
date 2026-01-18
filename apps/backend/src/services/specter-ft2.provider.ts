@@ -20,10 +20,19 @@ import { SpecterFT2Exposure } from './specter-ftep/specterFtep.types';
 export async function getSpecterFt2Snapshot(input: {
   shopId: number;
   period: { from: string; to: string };
-}): Promise<SpecterFT2Exposure> {
-  const facts = await getSpecterFacts(input);
-  const intelligence = deriveSpecterIntelligence(facts);
-  const exposure = applySpecterFtep({ facts, intelligence });
+  }): Promise<SpecterFT2Exposure> {
+    /**
+     * FT2 orchestration pipeline:
+     * Facts → Intelligence → FTEP
+     *
+     * Note:
+     * - multiStepSessionsPresent is derived in Facts
+     * - Passed through FTEP as an FT2-safe structural signal
+     * - No provider-level logic or filtering applied
+     */
+    const facts = await getSpecterFacts(input);
+    const intelligence = deriveSpecterIntelligence(facts);
+    const exposure = applySpecterFtep({ facts, intelligence });
 
-  return exposure;
-}
+    return exposure;
+  }

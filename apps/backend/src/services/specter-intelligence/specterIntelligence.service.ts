@@ -1,4 +1,5 @@
-//apps/backend/src/services/specter-intelligence/specterIntelligence.service.ts
+// apps/backend/src/services/specter-intelligence/specterIntelligence.service.ts
+
 import { SpecterFacts } from 'api-src/services/specter-facts/specterFacts.types';
 
 export interface SpecterIntelligence {
@@ -6,6 +7,15 @@ export interface SpecterIntelligence {
     status: 'positive' | 'negative' | 'unknown';
   };
   behavior: {
+    /**
+     * Internal-only behavioral direction.
+     * Never exposed directly to UI.
+     */
+    direction: 'up' | 'down' | 'flat' | 'unknown';
+
+    /**
+     * Internal stability signal (existing).
+     */
     trend: 'stable' | 'volatile' | 'unknown';
   };
 }
@@ -24,25 +34,51 @@ export interface SpecterIntelligence {
 export function deriveSpecterIntelligence(
   facts: SpecterFacts
 ): SpecterIntelligence {
+  /**
+   * Missing or insufficient facts → unknown intelligence
+   */
   if (
     facts.sessionsObserved === null ||
     facts.exitIntentSessions === null
   ) {
     return {
       engagement: { status: 'unknown' },
-      behavior: { trend: 'unknown' }
+      behavior: {
+        direction: 'unknown',
+        trend: 'unknown',
+      },
     };
   }
 
-  // Internal-only heuristic (not exposed):
-  // negative if exit intent >= 50%
+  /**
+   * Engagement (existing logic)
+   * ---------------------------
+   * Internal-only heuristic.
+   */
   const engagementStatus =
     facts.exitIntentSessions / facts.sessionsObserved >= 0.5
       ? 'negative'
       : 'positive';
 
-  // Minimal, deterministic behavior signal
-  const behaviorTrend =
+  /**
+   * Direction (NEW)
+   * ---------------
+   * Minimal, deterministic, continuity-based.
+   *
+   * Rules:
+   * - No comparison window available → flat
+   * - No magnitude, no thresholds
+   * - No explanation
+   */
+  const direction: 'up' | 'down' | 'flat' | 'unknown' =
+    facts.sessionsObserved > 0
+      ? 'flat'
+      : 'unknown';
+
+  /**
+   * Trend (existing logic)
+   */
+  const trend: 'stable' | 'volatile' | 'unknown' =
     facts.funnelsDetected === null
       ? 'unknown'
       : facts.funnelsDetected
@@ -51,6 +87,9 @@ export function deriveSpecterIntelligence(
 
   return {
     engagement: { status: engagementStatus },
-    behavior: { trend: behaviorTrend }
+    behavior: {
+      direction,
+      trend,
+    },
   };
 }

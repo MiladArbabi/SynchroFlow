@@ -2,25 +2,28 @@
 
 **As-built, locked, FT2-grade implementation**
 
-This document describes the **current, production reality** of FT2 for
+This document describes the **current production reality** of FT2 for
 Customers and Specter.
 
-No future intent. No roadmap. No speculation.
+No roadmap.
+No intent.
+No speculation.
 
 ---
 
 ## 🎯 Purpose
 
-Enable **FT2 observability of customer behavior** while guaranteeing:
+Enable **FT2-grade observability of customer behavior** while guaranteeing:
 
 * No PII leakage
 * No behavioral explanations
 * No recommendations
-* No UI inference
+* No inference
 * No lifecycle coupling
+* No escalation beyond FT2
 
-Specter **knows**.  
-Customers **shows**.
+Specter **knows**.
+Customers **renders**.
 
 ---
 
@@ -28,72 +31,95 @@ Customers **shows**.
 
 ### Specter (Backend Engine)
 
-Specter is the **source of truth** for customer behavior.
+Specter is the **exclusive source of behavioral truth**.
 
 It is responsible for:
 
-* Session ingestion (anonymous)
+* Anonymous session ingestion
 * Behavioral fact extraction
-* Internal intelligence classification
-* Leak-proof FT2 exposure
+* Internal classification (intelligence)
+* FT2-safe truth exposure (FTEP)
 
-Specter is **never** a UI module.
+Specter:
+
+* Never renders UI
+* Never explains behavior
+* Never exposes raw metrics beyond FT2
 
 ---
 
 ### Customers (Frontend Surface)
 
-Customers is a **pure presentation layer**.
+Customers is a **pure FT2 presentation surface**.
 
 It is responsible for:
 
-* Rendering FT2 observability
-* Preserving backend semantics
-* Avoiding inference or logic
+* Rendering FTEP-sanitized truth
+* Preserving backend null semantics
+* Enforcing visibility (free vs paid)
 
-Customers **never computes**.
+Customers:
+
+* Never computes
+* Never infers
+* Never upgrades truth
+* Never compensates for missing data
 
 ---
 
 ## 🧱 Specter FT2 Pipeline (Canonical)
 
+```
 Session Store
-↓
+   ↓
 Specter Facts
-↓
+   ↓
 Specter Intelligence
-↓
+   ↓
 Specter FTEP
-↓
-FT2 HTTP Endpoint
-↓
+   ↓
+FT2 Provider (HTTP)
+   ↓
 Customers FT2 Adapter
+   ↓
+CustomersModuleFT2 UI
+```
 
-yaml
-Copy code
+This pipeline is **strictly one-way**.
 
 ---
 
 ## 1️⃣ Specter Facts (Layer 1)
 
-**Raw behavioral truth**
+**Raw, interpretation-free behavioral truth**
 
 ### Inputs
 
 * Anonymous sessions from `SessionStore`
 
-### Outputs
+### Outputs (As Implemented)
 
-* Session counts
-* Exit-intent presence
-* Observation period
-* Extraction timestamp
+| Fact Field                      | Type           | Semantics      |
+| ------------------------------- | -------------- | -------------- |
+| `sessionsObserved`              | number | null  | Null if none   |
+| `exitIntentSessions`            | number | null  | Count only     |
+| `funnelsDetected`               | boolean | null | Existence      |
+| `multiStepSessionsPresent`      | boolean | null | Existence      |
+| `surfaceBreadthPresent`         | boolean | null | Existence      |
+| `returningSessionsPresent`      | boolean | null | Existence      |
+| `exitWithoutInteractionPresent` | boolean | null | Existence      |
+| `averageSessionDepthPresent`    | boolean | null | Existence      |
+| `period.from / to`              | string         | Always present |
+| `extractedAt`                   | ISO string     | Always present |
 
 ### Guarantees
 
-* Preserves nulls
-* No derived meaning
-* No percentages beyond stored facts
+* Nulls are preserved
+* Counts are never inferred
+* Averages are **never exposed**
+* All non-count signals are **existence-only**
+
+Facts **do not explain**.
 
 ---
 
@@ -103,35 +129,65 @@ Copy code
 
 ### Responsibilities
 
-* Classify presence vs absence
-* Determine basic directional signals
+* Classify engagement state
+* Determine directional movement
 * Handle missing data deterministically
 
-### Prohibitions
+### Outputs
+
+| Field                | Values                        |
+| -------------------- | ----------------------------- |
+| `engagement.status`  | positive | negative | unknown |
+| `behavior.direction` | up | down | flat | unknown    |
+| `behavior.trend`     | stable | volatile | unknown   |
+
+### Constraints
 
 * No persistence access
-* No explanations
 * No frontend exposure
+* No use of:
+
+  * `averageSessionDepthPresent`
+  * `exitWithoutInteractionPresent`
+
+These remain **Facts-only signals**.
 
 ---
 
 ## 3️⃣ Specter FTEP (Layer 3)
 
-**Truth Exposure Policy**
+**Truth Exposure Policy — the security boundary**
 
 ### Purpose
 
-Downgrade Specter intelligence into **FT2-safe observability**.
+Downgrade Facts + Intelligence into **FT2-safe observability**.
 
 ### Exposure Rules
 
 * Intelligence is reduced to:
-  * `positive | negative | unknown`
-  * `up | down | flat | unknown`
-* Raw scores, risks, probabilities are **never exposed**
-* Missing intelligence returns `null`
 
-This is the **security boundary**.
+  * Outcome status
+  * Directional arrow
+* All signals are:
+
+  * Boolean
+  * Existence-only
+* Missing intelligence → `null`
+* No magnitude, no ratios, no confidence
+
+### Exposed Signal Set (FT2)
+
+1. Activity direction
+2. Exit intent detected
+3. Funnels detected
+4. Multi-step sessions present
+5. Surface breadth present
+6. Returning sessions present
+7. Exit without interaction present
+8. Average session depth present
+9. Data coverage
+
+This list is **closed**.
 
 ---
 
@@ -139,20 +195,20 @@ This is the **security boundary**.
 
 ### Endpoint
 
+```
 GET /api/v1/specter/ft2
-
-yaml
-Copy code
+```
 
 ### Characteristics
 
 * Read-only
 * Deterministic
 * FTEP-enforced
-* No lifecycle mutation
-* No onboarding or readiness coupling
+* No mutation
+* No lifecycle awareness
+* No readiness logic
 
-Lifecycle gating occurs **outside** this endpoint.
+Lifecycle and entitlement live **outside** FT2.
 
 ---
 
@@ -160,13 +216,47 @@ Lifecycle gating occurs **outside** this endpoint.
 
 ### Rules
 
-* Normalize `undefined → null`
+* `undefined → null`
 * Preserve backend shape
 * No derived fields
 * No defaults
-* No logic
+* No interpretation
 
 The adapter is a **pipe**, not a processor.
+
+---
+
+## 6️⃣ CustomersModuleFT2 UI
+
+### Role
+
+* Render exactly what FT2 exposes
+* Hide nothing except `null`
+* Show “Unknown” only when explicitly allowed
+
+### Guarantees
+
+* No inference
+* No fallback logic
+* No cross-surface synthesis
+
+Each surface = **one truth**.
+
+---
+
+## 🧱 OpsConsole — Explicitly Out of Scope
+
+* OpsConsole is **not FT2**
+* OpsConsole has:
+
+  * No Facts layer
+  * No Intelligence layer
+  * No FTEP rules
+  * No FT2 guarantees
+
+Any OpsConsole is a **separate contract**.
+
+Until defined, it **does not exist**.
 
 ---
 
@@ -174,9 +264,10 @@ The adapter is a **pipe**, not a processor.
 
 1. Specter never explains behavior
 2. Customers never infers meaning
-3. FTEP is the security boundary
+3. FTEP is the only exposure boundary
 4. Lifecycle controls availability, not truth
 5. FT2 is observability, not insight
+6. FT2 has no higher tier
 
 ---
 
@@ -185,9 +276,21 @@ The adapter is a **pipe**, not a processor.
 Customers / Specter FT2 is:
 
 * Implemented
-* Tested
+* Evidence-backed
 * Leak-proof
-* Lifecycle-safe
-* Canonical
+* Deterministic
+* Contract-sealed
 
 This document is **locked**.
+
+---
+
+### Final call-out (important)
+
+You now have **exactly nine FT2 surfaces**, plus a **non-FT2 OpsConsole placeholder**.
+
+That means:
+
+* FT2 is complete
+* No more signals should be added without breaking the contract
+* Any future expansion **must** be a new layer, not FT2

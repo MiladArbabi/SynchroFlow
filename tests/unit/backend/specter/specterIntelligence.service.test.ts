@@ -64,4 +64,51 @@ describe('SpecterIntelligence.service', () => {
 
     expect(serialized).not.toMatch(/sessions|exit|percent|rate/i);
   });
+
+  it('sets direction to unknown when sessions are missing', () => {
+    const facts: SpecterFacts = {
+      shopId: 1,
+      period: { from: '2024-01-01', to: '2024-01-07' },
+      sessionsObserved: null,
+      exitIntentSessions: null,
+      funnelsDetected: null,
+      extractedAt: new Date().toISOString()
+    };
+
+    const intel = deriveSpecterIntelligence(facts);
+
+    expect(intel.behavior.direction).toBe('unknown');
+  });
+
+  it('sets direction to flat when sessions exist', () => {
+    const facts: SpecterFacts = {
+      shopId: 1,
+      period: { from: '2024-01-01', to: '2024-01-07' },
+      sessionsObserved: 12,
+      exitIntentSessions: 3,
+      funnelsDetected: false,
+      extractedAt: new Date().toISOString()
+    };
+
+    const intel = deriveSpecterIntelligence(facts);
+
+    expect(intel.behavior.direction).toBe('flat');
+  });
+
+  it('does not expose direction semantics in serialized intelligence', () => {
+    const facts: SpecterFacts = {
+      shopId: 1,
+      period: { from: '2024-01-01', to: '2024-01-07' },
+      sessionsObserved: 5,
+      exitIntentSessions: 1,
+      funnelsDetected: true,
+      extractedAt: new Date().toISOString()
+    };
+
+    const intel = deriveSpecterIntelligence(facts);
+    const serialized = JSON.stringify(intel);
+
+    expect(serialized).not.toMatch(/increase|decrease|growth|drop|change/i);
+  });
+
 });
