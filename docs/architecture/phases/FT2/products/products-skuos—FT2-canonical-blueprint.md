@@ -1,38 +1,62 @@
 # 🔍 LaSyncro FT2 Canonical Blueprint
 
-## Specter & Customers Modules
+**Specter & Customers Modules**
 
 **Scope:** FT2 Scoped → FT2 Paid
-**Audience:** Architecture, Product, Trust, Monetization
-**Status:** Canonical
+**Audience:** Architecture · Product · Trust · Monetization
+**Status:** **Canonical · Locked**
+
+---
+
+# Core FT2 Law (Applies to All Modules)
+
+FT2 is **not insight**.
+FT2 is **not optimization**.
+FT2 is **not advice**.
+
+FT2 is:
+
+> **Permissioned exposure to observable reality — downgraded by policy.**
+
+Every FT2 module follows:
+
+```
+Facts → Intelligence → FTEP → FT2 UI
+```
+
+If a module violates this, it is **not FT2**.
 
 ---
 
 # PART I — SPECTER FT2
 
-## 1. What Specter Owns (Truth Domain)
+## 1. Specter Truth Domain (Locked)
 
-| Module  | Owns Truth About                        |
-| ------- | --------------------------------------- |
-| Specter | **User behavior & interaction reality** |
+| Module  | Owns Truth About                           |
+| ------- | ------------------------------------------ |
+| Specter | **User interaction & behavioral presence** |
 
-Specter is **not analytics**.
-It does **not** explain *why* users behave.
-It only records **what interactions occurred** and **what was observable**.
+Specter:
+
+* Is **not analytics**
+* Is **not attribution**
+* Is **not funnel analysis**
+* Is **not optimization**
+
+Specter records **only what was observably captured**.
 
 ---
 
-## 2. Specter FT2 — User-Visible Value
+## 2. Specter FT2 — The Only Question It Answers
 
-### FT2 Answers One Question Only
+> *“Is user interaction observably occurring in this system?”*
 
-> *“What user behavior is observably happening in my system?”*
+It does **not** answer:
 
-Not:
-
-* why it happened
-* what to do about it
-* what it means for revenue
+* why users act
+* what actions to take
+* what behavior means for revenue
+* whether performance is good or bad
 
 ---
 
@@ -52,105 +76,114 @@ Specter FT2 Provider
 Specter FT2 API / UI
 ```
 
+Each layer:
+
+* Has one responsibility
+* Is independently testable
+* May not leak into the next
+
 ---
 
 ## 4. Layer 1 — SpecterFacts
 
-### Owns
+### Owns Raw Truth Only
 
-* Session existence
-* Event counts
-* Interaction timestamps
-* Behavioral presence
+Examples of facts:
 
-### Examples of Raw Facts
+* `sessionsObserved`
+* `eventsObserved`
+* `lastInteractionAt`
+* `signalCoverage`
 
-* sessionsObserved
-* eventsObserved
-* lastInteractionAt
-* signalCoverage
+Rules:
 
-All nullable.
-All timestamped.
-No semantics.
+* All values may be `null`
+* No interpretation
+* No scoring
+* No classification
+
+> `null` means **no observable truth**, not zero.
 
 ---
 
-## 5. Layer 2 — SpecterIntelligence
+## 5. Layer 2 — SpecterIntelligence (Internal Only)
 
-### Internal Classification Only
+May classify internally:
 
-Specter Intelligence may derive:
-
-* presence status (present / absent / unknown)
-* engagement direction (up / flat / unknown)
+* presence status (`present | absent | unknown`)
+* engagement direction (`up | flat | unknown`)
 * signal sufficiency flags
 
-This **never escapes** the module.
+Rules:
+
+* Intelligence **never escapes**
+* Missing facts collapse intelligence to `unknown`
+* No persistence access
 
 ---
 
 ## 6. Layer 3 — SpecterFTEP (Truth Exposure Policy)
 
-### What Specter FT2 Exposes
+### What Specter FT2 Is Allowed to Expose
 
-Users can see:
+Users may see:
 
-* Whether user behavior is present
-* Whether engagement signals exist
-* Whether data is sufficient or missing
+* Whether interaction presence exists
+* Whether behavioral signals are observable
+* Whether data is missing or suppressed
 
 ### What Is Explicitly Hidden
 
-* No engagement scores
-* No reasons
-* No funnels
-* No optimization hints
-* No “drop-off” language
+❌ Engagement scores
+❌ Funnels
+❌ Drop-off language
+❌ Optimization hints
+❌ Explanations
 
-Uncertainty is visible as `null`.
+Uncertainty is rendered as `null`.
 
 ---
 
-## 7. Specter FT2 — Free vs Paid
+## 7. Specter FT2 — Free vs Paid (Canonical)
 
 ### FT2 Scoped (Free)
 
 * Recent snapshot only
 * Presence visibility
-* Missing data explicitly shown
-* Trust-building
+* Explicit data gaps
+* Trust-building surface
 
 ### FT2 Paid
 
 * Longer observation window
-* More complete signal coverage
-* Cross-module exposure allowed (with Orders / Customers paid)
+* Broader signal coverage
+* Cross-module correlation (paid only)
 * Still **no recommendations**
 
 ---
 
 ## 8. Why Users Pay for Specter FT2
 
-Users pay because:
+Users upgrade because:
 
-> **They are already losing money by not knowing if users are actually interacting.**
+> **They are already losing money by not knowing whether users are actually interacting.**
 
 Paid Specter FT2:
 
 * Removes behavioral blindness
-* Exposes broken tracking
+* Exposes broken instrumentation
 * Reveals silent churn
 * Prevents false confidence in analytics tools
 
-It doesn’t optimize.
+It does **not** optimize.
+
 It **prevents self-deception**.
 
 ---
 
 # PART II — CUSTOMERS FT2
 
-## 9. What Customers Owns (Truth Domain)
+## 9. Customers Truth Domain (Locked)
 
 | Module    | Owns Truth About                           |
 | --------- | ------------------------------------------ |
@@ -167,17 +200,16 @@ It owns **who exists and in what relationship state**.
 
 ---
 
-## 10. Customers FT2 — User-Visible Value
+## 10. Customers FT2 — The Only Question It Answers
 
-### FT2 Answers One Question Only
+> *“What customers exist, and what relationship state are they in?”*
 
-> *“What customers exist, and what is their relationship state?”*
-
-Not:
+It does **not** answer:
 
 * who is valuable
 * who will churn
-* who to target
+* who should be targeted
+* who to market to
 
 ---
 
@@ -197,58 +229,64 @@ Customers FT2 Provider
 Customers FT2 API / UI
 ```
 
+Architecture mirrors Specter exactly.
+
 ---
 
 ## 12. Layer 1 — CustomersFacts
 
-### Owns Raw Truth
+### Owns Raw Identity Truth
 
 Examples:
 
-* customersObserved
-* knownCustomers
-* anonymousCustomers
-* firstSeenAt
-* lastSeenAt
+* `customersObserved`
+* `knownCustomers`
+* `anonymousCustomers`
+* `firstSeenAt`
+* `lastSeenAt`
 
-No scoring.
-No segmentation.
-No value judgments.
+Rules:
+
+* No scoring
+* No segmentation
+* No value judgment
+* Nulls preserved
 
 ---
 
-## 13. Layer 2 — CustomersIntelligence
+## 13. Layer 2 — CustomersIntelligence (Internal Only)
 
-### Internal Signals
+May internally classify:
 
-May classify:
+* relationship presence
+* growth direction
+* identity completeness
 
-* relationship presence (exists / absent / unknown)
-* growth direction (up / flat / unknown)
-* identity completeness flags
+Rules:
 
-Still internal.
-Never exposed directly.
+* Intelligence never exposed
+* Missing facts collapse to `unknown`
+* Deterministic only
 
 ---
 
 ## 14. Layer 3 — CustomersFTEP
 
-### What Customers FT2 Exposes
+### What Customers FT2 Is Allowed to Expose
 
-Users can see:
+Users may see:
 
 * How many customers exist
 * Whether identities are mostly known or anonymous
-* Whether customer presence is growing or stagnant
+* Whether customer presence is growing or flat
 
 ### What Is Never Exposed
 
-* LTV
-* Cohorts
-* Churn risk
-* Recommendations
-* Marketing advice
+❌ LTV
+❌ Cohorts
+❌ Churn risk
+❌ Marketing advice
+❌ Predictive claims
 
 ---
 
@@ -258,20 +296,20 @@ Users can see:
 
 * Snapshot of customer existence
 * Identity completeness visibility
-* Nulls visible
+* Explicit nulls
 
 ### FT2 Paid
 
 * Full customer surface
 * Historical depth
-* Cross-module truth with Orders & Specter (if paid)
-* Still **no predictive claims**
+* Cross-module correlation (with Orders / Specter if paid)
+* Still **no prediction**
 
 ---
 
 ## 16. Why Users Pay for Customers FT2
 
-Users pay because:
+Users upgrade because:
 
 > **They cannot manage a relationship they cannot see clearly.**
 
@@ -279,26 +317,22 @@ Paid Customers FT2:
 
 * Reveals how many customers are actually known
 * Exposes reliance on anonymous traffic
-* Prevents overconfidence in CRM tools
-* Grounds growth decisions in reality
+* Prevents CRM overconfidence
+* Grounds decisions in reality
 
-This saves money by:
-
-* preventing bad marketing spend
-* reducing mis-targeted campaigns
-* stopping fake growth narratives
+It saves money by **preventing bad assumptions**, not by promising growth.
 
 ---
 
 # PART III — Cross-Module FT2 (Paid Only)
 
-## 17. Specter × Customers (Paid)
+## 17. Specter × Customers (Correlation, Not Causation)
 
-When both entitlements exist:
+When both paid entitlements exist:
 
-* Customer presence can be observed alongside behavior presence
-* Still no causation
+* Behavior presence may be observed alongside identity presence
 * Still no scoring
+* Still no explanation
 * Still no advice
 
 > **Correlation is allowed. Explanation is not.**
@@ -309,35 +343,52 @@ When both entitlements exist:
 
 Users upgrade because:
 
-* FT2 Scoped shows **there is truth**
+* FT2 Scoped shows **that reality exists**
 * FT2 Paid removes **blind zones**
 * Downgrading feels like choosing ignorance
 
-LaSyncro never sells:
+LaSyncro does **not** sell:
 
-* insights
-* hacks
-* “growth”
+❌ Insights
+❌ Hacks
+❌ Growth tricks
 
-It sells:
+LaSyncro sells:
 
 > **Permissioned access to reality.**
 
 ---
 
-## 19. Final Lock (Specter & Customers)
+## 19. Final Lock (Specter & Customers FT2)
 
 * No inference
 * No advice
 * No emotional language
 * No hidden intelligence
+* No semantic drift
 
 ---
 
-## Final Statement
+## 🔒 FINAL STATEMENT
 
 > **Specter FT2 shows whether users exist and act.
 > Customers FT2 shows who exists and in what state.
 > Paid FT2 removes blindness — not responsibility.**
 
 This blueprint is **canonical**.
+Any deviation requires **new scans and architectural review**.
+
+---
+
+### Where this leaves us (important)
+
+You now have:
+
+1. **Products / SKU-OS FT2** — sealed
+2. **FT2 4-layer doctrine** — enforced
+3. **Specter & Customers FT2 blueprint** — aligned
+4. A clean foundation to:
+
+   * design FT2 visual primitives
+   * scale across modules
+   * monetize without trust debt

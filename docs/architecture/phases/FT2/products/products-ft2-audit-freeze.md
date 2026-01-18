@@ -310,7 +310,181 @@ Signals are:
 
 ---
 
-## 🔒 AUDIT STATUS: **LOCKED & SEALED**
+## 8. FT2 Visual Layer — Current State (Observed, Not Designed)
 
-This audit is complete.
-No further interpretation is permitted without new scans or code changes.
+### 8.1 Observed Reality (Source Scan)
+
+A full repository scan confirms:
+
+* FT2 provides **layout primitives only**
+* There are **no chart, graph, or visualization primitives** in:
+
+  * `modules/ui-ft2`
+  * `modules/shared`
+  * `modules/products`
+* All analytical FT2 surfaces currently render:
+
+  * text
+  * placeholders
+  * static lists
+  * numeric values
+
+There is **no hidden visualization system** and **no implicit chart dependency**.
+
+This is a **verified fact**, not a design gap.
+
+---
+
+### 8.2 Implication (Critical)
+
+FT2 today is:
+
+> **Structurally correct but visually underpowered**
+
+This is intentional and safe, but it means:
+
+* FT2 **cannot yet function as a Central Nervous System**
+* Modules are forced into:
+
+  * textual explanations
+  * conceptual placeholders
+  * repeated UI metaphors
+
+This does **not violate correctness**, but it **limits conversion power**.
+
+---
+
+## 9. FT2 Visual Primitives — Explicit Non-Existence Contract
+
+### 9.1 Locked Negative Assertion
+
+As of this audit:
+
+* There is **no such thing** as:
+
+  * Product charts
+  * Inventory gauges
+  * Trend graphs
+  * Distribution plots
+  * Correlation visuals
+
+Any appearance of these in FT2 would currently require:
+
+* bespoke implementation
+* boundary violation
+* or frontend leakage
+
+All three are forbidden.
+
+---
+
+### 9.2 Why This Matters for Products / SKU-OS
+
+Products FT2 now exposes **rich, structured, observational data**:
+
+* counts
+* coverage
+* distributions
+* time series
+* correlations
+
+But without visual primitives:
+
+* users must **mentally compute**
+* cognitive load shifts to the user
+* “aha” moments are delayed
+* FT2 feels descriptive, not diagnostic
+
+This is a **conversion bottleneck**, not a data problem.
+
+---
+
+## 10. Forward Compatibility Guarantee (Important)
+
+This audit intentionally **does not** define visuals.
+
+However, it **guarantees compatibility** with a future FT2 Visual Primitive Catalog because:
+
+* All exposed fields are:
+
+  * raw
+  * observational
+  * non-semantic
+* Arrays already encode:
+
+  * time series
+  * distributions
+  * correlations
+* Null semantics are preserved end-to-end
+
+This means:
+
+> **Every Products FT2 surface is already visually renderable
+> without changing the contract.**
+
+This is a **rare and correct outcome**.
+
+---
+
+## 11. Explicit Separation of Concerns (Reinforced)
+
+| Layer                 | Owns                       |
+| --------------------- | -------------------------- |
+| SKU-OS                | computation & intelligence |
+| FTEP                  | suppression & downgrade    |
+| Products FT2 contract | exposed truth              |
+| FT2 Visual Primitives | rendering metaphors        |
+| Products FT2 page     | composition only           |
+
+At no point should:
+
+* Products define charts
+* SKU-OS reference visuals
+* Frontend invent render logic
+
+---
+
+## 12. Audit Addendum — What This Audit Does NOT Do
+
+This document does **not**:
+
+* design charts
+* name visual components
+* select libraries
+* define colors or thresholds
+* introduce interpretation
+* propose UI behaviors
+
+Those belong to a **separate, system-level design effort**:
+
+> **FT2 Visual Primitive Catalog (CNS Layer)**
+
+That effort must follow:
+**SCAN → PLAN → DESIGN**, exactly as enforced.
+
+---
+
+## 13. Updated Final Verdict (Extended)
+
+* Products / SKU-OS FT2 is **architecturally correct**
+* Data exposure is **truthful and policy-safe**
+* Visual capability is **intentionally absent**
+* The contract is **future-proof**
+* No refactor is required to enable visuals
+* Only **new primitives**, not new data, are needed
+
+---
+
+## 🔒 AUDIT STATUS: **LOCKED, SEALED, & EXTENDED**
+
+This document now reflects:
+
+* what exists
+* what does not exist
+* why that is acceptable
+* and why the next step must be **systemic, not local**
+
+No further changes are permitted without:
+
+* a new repository scan
+* or an approved FT2 Visual Primitive Catalog proposal.

@@ -1,23 +1,29 @@
-# Order-Nexus FT2 — 4-Layer Architecture Blueprint
+# 🔒 Order-Nexus FT2 — 4-Layer Architecture Blueprint
 
-**(Canonical · Enforced · Leak-Safe)**
+**Status:** Canonical · Enforced · Leak-Safe
+**Applies To:** All FT2 modules
+**Reference Implementation:** Order-Nexus
 
 ---
 
 ## 0. Why This Architecture Exists
 
-Order-Nexus handles **the most dangerous data in LaSyncro**:
-money, fulfillment, and operational truth.
+Order-Nexus handles the **highest-risk truth** in LaSyncro:
 
-Any shortcut here:
+* revenue
+* cost signals
+* fulfillment exposure
+* operational correctness
+
+Any shortcut in this module:
 
 * corrupts trust,
-* pollutes other modules,
-* and breaks Echo Hub / WMS-Lite downstream.
+* contaminates downstream modules,
+* breaks Echo Hub and WMS-Lite assumptions.
 
-Therefore the system is built as **four hard layers** with **one-way flow only**.
+Therefore, Order-Nexus is implemented using **four hard, one-way layers**.
 
-FT2 is the highest possible resolution of truth.
+FT2 represents the **maximum resolution of truth allowed to leave the backend**.
 
 ---
 
@@ -30,17 +36,19 @@ Layer 1 — Order Facts        (What is true)
         ↓
 Layer 2 — Order Intelligence (What it means, internally)
         ↓
-Layer 3 — FTEP               (What is allowed to be exposed)
+Layer 3 — FTEP               (What may be exposed)
         ↓
 Layer 4 — FT2 UI             (What the user sees)
 ```
 
 ### Inviolable Rules
 
-* Data flows **down only**
+* Data flows **downward only**
 * Each layer **destroys information**
 * No layer may compensate for missing truth
-* UI must survive **null everywhere**
+* UI must render correctly with **null everywhere**
+
+Violation of any rule = **architecture breach**
 
 ---
 
@@ -48,9 +56,15 @@ Layer 4 — FT2 UI             (What the user sees)
 
 **Canonical Truth Layer**
 
+---
+
 ### Purpose
 
 Extract **raw, interpretation-free facts** directly from persistence.
+
+This is the **only layer allowed to read the database**.
+
+---
 
 ### What This Layer Is
 
@@ -59,12 +73,14 @@ Extract **raw, interpretation-free facts** directly from persistence.
 * Recomputable
 * Stateless (except DB reads)
 
+---
+
 ### What This Layer Is NOT
 
-* Not intelligent
-* Not explanatory
-* Not user-facing
-* Not opinionated
+* ❌ Intelligent
+* ❌ Explanatory
+* ❌ User-facing
+* ❌ Opinionated
 
 ---
 
@@ -102,22 +118,28 @@ export interface OrderFacts {
 }
 ```
 
-### Design Constraints
+---
 
-* ❌ No percentages derived from math
-* ❌ No statuses (healthy / unhealthy)
+### 2.3 Design Constraints (Hard)
+
+* ❌ No derived percentages
+* ❌ No statuses
 * ❌ No booleans like “loss”
-* ❌ No guesses
-* ✅ `null` preserved exactly
+* ❌ No heuristics
+* ❌ No defaults other than `null`
+* ✅ Preserve absence explicitly
+
+`null` represents **unknown**, not failure.
 
 ---
 
-### 2.3 Service Responsibilities
+### 2.4 Responsibilities
 
 * Query canonical tables
-* Aggregate counts and sums only
+* Perform **only** counts and sums
+* Apply time windows
 * Never infer missing data
-* Never join across domains unless explicitly allowed
+* Never join domains unless explicitly allowed
 
 ---
 
@@ -125,11 +147,13 @@ export interface OrderFacts {
 
 **Internal Meaning Layer**
 
+---
+
 ### Purpose
 
-Convert **facts → classified signals**, strictly for internal use.
+Convert **facts → classified signals**, strictly for **internal use**.
 
-This is where *meaning* exists — but it must **never leak directly**.
+This layer is allowed to *think* — but must **never speak directly**.
 
 ---
 
@@ -171,20 +195,20 @@ export interface OrderNexusIntelligence {
 
 * Classification (threshold-based)
 * Direction detection
-* Null-safe derivation
 * Deterministic mapping
+* Null-safe derivation
 
 ---
 
 ### 3.4 Forbidden Operations
 
 * ❌ Explanations
-* ❌ Drivers
+* ❌ Drivers or causes
 * ❌ Recommendations
 * ❌ Forecasting
 * ❌ Cross-module enrichment
 
-If this layer starts *talking* — it is broken.
+If intelligence becomes **descriptive**, the layer is broken.
 
 ---
 
@@ -192,9 +216,11 @@ If this layer starts *talking* — it is broken.
 
 **Security Boundary**
 
-This is the **most important layer**.
+---
 
-It enforces **what truth is allowed to leave the backend**.
+This is the **most critical layer**.
+
+FTEP defines **what truth is allowed to leave the backend**.
 
 ---
 
@@ -213,7 +239,7 @@ apps/backend/src/services/order-ftep/
 
 > **Intelligence must always be downgraded.**
 
-If intelligence is exposed raw → **architecture violation**.
+If raw intelligence is exposed → **hard violation**.
 
 ---
 
@@ -259,34 +285,38 @@ export interface OrderNexusFT2Exposure {
 
 ---
 
-### 4.5 Downgrade Rules (Hard)
+### 4.5 Downgrade Rules (Non-Negotiable)
 
-| Intelligence | FT2 Exposure          |
-| ------------ | --------------------- |
-| Margin %     | ❌ removed             |
-| Loss exists  | → positive / negative |
-| Trend delta  | → direction only      |
-| Confidence   | ❌ removed             |
-| Explanations | ❌ forbidden           |
+| Intelligence Signal | FT2 Exposure Result      |
+| ------------------- | ------------------------ |
+| Margin percentage   | ❌ removed                |
+| Loss existence      | positive / negative only |
+| Trend delta         | direction only           |
+| Confidence          | ❌ removed                |
+| Explanations        | ❌ forbidden              |
+
+Unknown intelligence is downgraded to **`null`**, not `'unknown'`.
 
 ---
 
-### 4.6 Leak-Prevention Tests
+### 4.6 Leak-Prevention Tests (Mandatory)
 
-Mandatory tests assert:
+Tests must assert:
 
-* No intelligence fields exist
+* No intelligence fields exist in output
 * No percentages leak
-* No causation language
+* No causation language appears
 * Serialized output is clean
 
-**If these tests fail, the build must fail.**
+**If any test fails, the build must fail.**
 
 ---
 
 ## 5. Layer 4 — FT2 UI
 
-**Read-Only Observability**
+**Read-Only Observability Layer**
+
+---
 
 ### Purpose
 
@@ -305,60 +335,60 @@ apps/frontend/src/pages/orders/useOrdersFt2Adapter.ts
 
 ### 5.2 UI Invariants
 
-* ❌ No CTA
+* ❌ No CTAs
 * ❌ No recommendations
 * ❌ No intelligence language
 * ❌ No assumptions
-* ✅ Null-safe rendering
-* ✅ Deterministic output
+* ✅ Deterministic rendering
+* ✅ Null-safe everywhere
 
 ---
 
-### 5.3 Adapter Role (Critical)
+### 5.3 Adapter Role (Critical Gate)
 
-The adapter:
+Adapters must:
 
-* Normalizes `undefined → null`
-* Preserves semantics
-* Does **zero computation**
+* Normalize `undefined → null`
+* Preserve backend semantics
+* Perform **zero computation**
 
-If logic appears here → **leak detected**.
+If logic appears here → **truth leak detected**.
 
 ---
 
-## 6. Lifecycle Integration (Current State)
+## 6. Lifecycle Integration
 
-* FT2 eligibility handled by `FT2EvaluatorService`
+* FT2 eligibility resolved by `FT2EvaluatorService`
 * FT2 latch written only on explicit confirmation
-* Order-Nexus FT2 exposure will be delivered **through lifecycle resolver**
+* Order-Nexus FT2 delivered **only through lifecycle resolution**
 
-No module bypasses lifecycle.
-
----
-
-## 7. Extension Rules (For All Future Modules)
-
-To replicate this architecture:
-
-1. Create **Facts** (Layer 1)
-2. Create **Intelligence** (Layer 2)
-3. Create **FTEP** (Layer 3)
-4. Create **Read-Only FT2 UI** (Layer 4)
-5. Add **leak-prevention tests**
-6. Wire via **lifecycle only**
-
-If step 3 is skipped → module is rejected.
+No module may bypass lifecycle.
 
 ---
 
-## 8. Why This Architecture Is Non-Negotiable
+## 7. Replication Rules (All Future FT2 Modules)
+
+To claim FT2 compliance, a module must:
+
+1. Implement **Facts** (Layer 1)
+2. Implement **Intelligence** (Layer 2)
+3. Implement **FTEP** (Layer 3)
+4. Implement **Read-Only FT2 UI** (Layer 4)
+5. Include **leak-prevention tests**
+6. Be gated by **lifecycle**
+
+If Layer 3 is missing → **module is rejected**.
+
+---
+
+## 8. Why This Is Non-Negotiable
 
 Because:
 
-* Echo Hub depends on truth
-* WMS-Lite depends on truth
-* Cross-module intelligence depends on clean ownership
-* Trust is the product
+* Echo Hub depends on clean truth
+* WMS-Lite depends on clean truth
+* Cross-module intelligence requires strict ownership
+* **Trust is the product**
 
 Order-Nexus is the **keystone**.
 
@@ -368,8 +398,8 @@ If it leaks, everything downstream lies.
 
 ## 9. Status
 
-* ✅ Order-Nexus is the reference module
-* ✅ Architecture is locked
-* 🔒 Pattern is mandatory for all FT2 modules
+* ✅ Order-Nexus is the reference FT2 module
+* 🔒 Architecture is locked
+* 🔁 Pattern is mandatory for all FT2 modules
 
 ---
