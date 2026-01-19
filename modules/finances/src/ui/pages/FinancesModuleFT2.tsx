@@ -58,6 +58,30 @@ export interface FinancesModuleFT2DataProps {
         status: 'ready' | 'not_ready';
       }
     | null;
+
+  refundReality:
+    | {
+        status: 'known' | 'unknown';
+      }
+    | null;
+
+  costReality:
+    | {
+        status: 'known' | 'partial' | 'unknown';
+      }
+    | null;
+
+  refundImpact:
+    | {
+        status: 'material' | 'immaterial' | 'unknown';
+      }
+    | null;
+
+  financialConsistency:
+    | {
+        status: 'stable' | 'volatile' | 'unknown';
+      }
+    | null;
 }
 
 /**
@@ -81,6 +105,10 @@ export default function FinancesModuleFT2(
     blindSpots,
     decisionSafety,
     profitPreconditions,
+    refundReality,
+    costReality,
+    refundImpact,
+    financialConsistency,
   } = props;
 
   return (
@@ -104,6 +132,10 @@ export default function FinancesModuleFT2(
               : 'Partial'}
         </FT2Surface>
 
+        <FT2Surface variant="kpi" title="Cost knowledge">
+          {costReality?.status ?? '—'}
+        </FT2Surface>
+
         <FT2Surface variant="kpi" title="Decision safety">
           {decisionSafety?.status ?? '—'}
         </FT2Surface>
@@ -121,6 +153,15 @@ export default function FinancesModuleFT2(
             ? '—'
             : 'Data available'}
         </FT2Surface>
+
+        <FT2Surface title="Refund impact">
+          {refundImpact?.status ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface title="Financial stability">
+          {financialConsistency?.status ?? '—'}
+        </FT2Surface>
+
       </FT2Row>
 
       {/* ───────── Blind Spots ───────── */}
@@ -135,6 +176,10 @@ export default function FinancesModuleFT2(
               ]
                 .filter(Boolean)
                 .join(', ') || 'None'}
+        </FT2Surface>
+
+        <FT2Surface title="Refund visibility">
+          {refundReality?.status ?? '—'}
         </FT2Surface>
       </FT2Row>
 

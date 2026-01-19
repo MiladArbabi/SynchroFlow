@@ -64,4 +64,25 @@ export interface FinancesFacts {
    * Extraction timestamp for observability/debugging only.
    */
   extractedAt: string;
+
+  /**
+   * Refunds observed (aggregate)
+   * ----------------------------
+   * Absolute sum of observed refunds in the period.
+   *
+   * - null → no refund evidence exists
+   * - 0    → refunds observed but net to zero
+   *
+   * No assumptions about materiality.
+   */
+  refundsObserved: number | null;
+
+  /**
+   * Orders observed (aggregate)
+   * ---------------------------
+   * Total number of canonical orders in the period.
+   *
+   * - null → no evidence
+   */
+  ordersCount: number | null;
 }

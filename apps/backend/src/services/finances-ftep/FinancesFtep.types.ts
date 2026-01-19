@@ -116,4 +116,41 @@ export interface FinancesFT2Exposure {
       }
     | null;
 
+  /**
+   * Refund reality (FT2-safe)
+   * ------------------------
+   * States only whether refunds are observable.
+   */
+  refundReality:
+    | {
+        status: 'known' | 'unknown';
+      }
+    | null;
+
+  /**
+   * Cost reality (FT2-safe)
+   */
+  costReality:
+    | {
+        status: 'known' | 'partial' | 'unknown';
+      }
+    | null;
+
+  /**
+   * Refund impact (FT2-safe)
+   */
+  refundImpact:
+    | {
+        status: 'material' | 'immaterial' | 'unknown';
+      }
+    | null;
+
+  /**
+   * Financial consistency (FT2-safe)
+   */
+  financialConsistency:
+    | {
+        status: 'stable' | 'volatile' | 'unknown';
+      }
+    | null;
 }

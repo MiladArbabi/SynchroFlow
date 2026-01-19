@@ -1,32 +1,34 @@
-# 🔐 Finances Module — Canonical 4-Layer Architecture Blueprint
+# 🔐 Finances Module — Canonical 4-Layer Architecture Blueprint (FT2)
 
-> **Purpose:**
-> To expose **financial observability** safely, honestly, and evolvably—without leaking intelligence, freezing assumptions, or misleading users.
+> **Purpose**
+> To expose **financial observability** safely, honestly, and evolvably—
+> without leaking intelligence, freezing assumptions, or manufacturing certainty.
 
-FT2 is the **top tier**.
-That does **not** mean “dump all intelligence.”
-It means “expose only what is epistemically safe.”
+FT2 is the **highest exposure tier**.
+That does **not** mean “maximum information.”
+It means **maximum epistemic safety**.
 
 ---
 
 ## 0. First Principles (Non-Negotiable)
 
-The Finances module exists to answer **one question only**:
+The Finances module exists to answer **exactly one meta-question**:
 
-> *“What do we know about the financial state of this business, and how confident are we in that knowledge?”*
+> **“What do we know about the financial state of this business, and what are the limits of that knowledge?”**
 
 It does **not** exist to:
 
-* estimate profit without costs
+* estimate profit without prerequisites
 * infer causality
-* explain *why* something is happening
-* expose model internals
+* explain *why* outcomes occur
+* guide decisions
+* expose internal reasoning
 
-Those belong **inside** the system, not in the contract.
+Those belong **inside the system**, not in the FT2 contract.
 
 ---
 
-## 1. High-Level Data Flow
+## 1. High-Level Data Flow (One-Way, Sealed)
 
 ```
 Shopify / Integrations
@@ -48,8 +50,11 @@ Frontend FT2 Adapter (dumb pipe)
 FinancesModuleFT2 UI (observability only)
 ```
 
-Each arrow is **one-directional**.
-Each layer has **exclusive authority**.
+**Invariants**
+
+* Flow is strictly one-directional
+* No layer may reach backward
+* Each layer has **exclusive authority**
 
 ---
 
@@ -65,7 +70,7 @@ apps/backend/src/services/finances-facts/
 
 Extract **raw, interpretation-free financial facts** from persistence.
 
-This is the **only layer** allowed to touch the database.
+This is the **only layer** allowed to access the database.
 
 ---
 
@@ -73,25 +78,26 @@ This is the **only layer** allowed to touch the database.
 
 * SQL / Knex
 * Sums and counts
-* Time windows
-* Joins
-* `null` for missing data
-* Coverage metrics
+* Time bucketing
+* Date windows
+* Deterministic grouping
+* Explicit `null` for missing data
+* Coverage signals
 
 ### ❌ Forbidden
 
 * Profitability conclusions
-* Margins
-* Percentages
+* Margins or ratios
 * Thresholds
 * “Good / bad”
 * Trends
-* Explanations
+* Confidence
 * Defaults
+* Explanations
 
 ---
 
-### Canonical Facts Shape (Today)
+### Canonical Facts Shape (Current)
 
 ```ts
 export interface FinancesFacts {
@@ -102,35 +108,47 @@ export interface FinancesFacts {
     to: string;
   };
 
-  totalRevenue: number | null;      // may exist from orders
-  totalCosts: number | null;        // null until cost ingestion exists
-  netResult: number | null;         // null if costs are missing
+  totalRevenue: number | null;
+  totalCosts: number | null;
+  netResult: number | null;
 
   dataCoverage: {
     completenessPct: number | null;
+  };
+
+  timeSeries: {
+    bucket: 'day';
+    points: Array<{
+      from: string;
+      to: string;
+      revenueObserved: number | null;
+      ordersCount: number | null;
+      coveragePct: number | null;
+    }>;
   };
 
   extractedAt: string;
 }
 ```
 
-> **Invariant:**
-> `null` means *unknown*, not zero.
+### Core Invariant
 
-If costs are missing, `netResult` **must be null**—even if revenue exists.
+> **`null` means “unknown”, never zero.**
+
+If costs are missing, `netResult` **must be null**, even if revenue exists.
 
 ---
 
-### What Facts Represent at Different Lifecycle Stages
+### Lifecycle Truthfulness
 
-| Stage         | Facts Look Like                 |
-| ------------- | ------------------------------- |
-| Post-Shopify  | revenue present, costs null     |
-| Partial costs | some costs present, net null    |
-| Full costs    | net populated                   |
-| Degraded data | coverage < 100%, net maybe null |
+| Business State  | What Facts Look Like        |
+| --------------- | --------------------------- |
+| Shopify only    | revenue present, costs null |
+| Partial history | timeSeries sparse           |
+| Full ingestion  | netResult populated         |
+| Data gaps       | coveragePct null or partial |
 
-Facts never lie.
+Facts **never lie**.
 They only say **what exists**.
 
 ---
@@ -154,23 +172,24 @@ This layer **decides**, but **never speaks**.
 ### ✅ Allowed
 
 * Status classification
-* Directional reasoning
-* Threshold checks
-* Boolean reasoning
-* Internal helper fields
+* Temporal sufficiency checks
+* Boolean gating
+* Risk classification
+* Preconditions logic
+* Internal confidence logic
 
 ### ❌ Forbidden
 
 * DB access
 * API exposure
+* Serialization
 * Copywriting
 * UI semantics
-* Serialization
-* Trust claims
+* Trust guarantees
 
 ---
 
-### Canonical Intelligence Shape
+### Canonical Intelligence Shape (Internal)
 
 ```ts
 export interface FinancesIntelligence {
@@ -181,22 +200,53 @@ export interface FinancesIntelligence {
 
   trend: {
     direction: 'up' | 'down' | 'flat' | 'unknown';
-  } | null;
+  };
 
   dataCoveragePct: number | null;
 
+  temporal: {
+    bucketsObserved: number;
+    continuity: 'complete' | 'partial' | 'sparse';
+    sufficientForTrend: boolean;
+  };
+
+  confidence: {
+    level: 'high' | 'medium' | 'low' | 'unknown';
+  };
+
+  blindSpots: {
+    costsMissing: boolean;
+    refundsMissing: boolean;
+    historyInsufficient: boolean;
+  };
+
+  decisionSafety: {
+    status: 'safe' | 'unsafe' | 'unknown';
+  };
+
+  profitPreconditions: {
+    costsReady: boolean;
+    refundsReady: boolean;
+    historyReady: boolean;
+    decisionSafe: boolean;
+  };
+
+  refundReality: {
+    status: 'known' | 'unknown';
+  };
+
   // INTERNAL ONLY — NEVER EXPOSED
-  marginPct?: number;
-  lossReason?: string | null;
+  marginPct: number | null;
+  lossReason: string | null;
 }
 ```
 
 > Intelligence may be **wrong**.
-> That’s why it’s never exposed directly.
+> That is why it is **never exposed directly**.
 
 ---
 
-## 4. Layer 3 — FTEP (Financial Truth Exposure Policy)
+## 4. Layer 3 — FinancesFTEP (Truth Exposure Policy)
 
 ### 📍 Location
 
@@ -208,7 +258,7 @@ apps/backend/src/services/finances-ftep/
 
 Downgrade intelligence into **FT2-safe observability**.
 
-This is the **most critical layer**.
+This is the **critical trust boundary**.
 
 ---
 
@@ -218,63 +268,86 @@ This is the **most critical layer**.
 
 ---
 
-### Allowed
+### ✅ Allowed
 
-* Mapping intelligence → observability
+* Mapping intelligence → coarse signals
 * Dropping sensitive fields
 * Returning `null`
-* Coarsening signals
+* Binary or categorical exposure
+* Structural silence
 
-### Forbidden
+### ❌ Forbidden
 
 * Re-interpretation
 * Explanations
 * Percentages
 * Reasons
-* Thresholds
-* “Because…”
+* Threshold disclosure
+* Advice
 
 ---
 
-### Canonical FT2 Exposure
+### Canonical FT2 Exposure (Current, Locked)
 
 ```ts
 export interface FinancesFT2Exposure {
   context: {
-    period: {
-      from: string;
-      to: string;
-    };
+    revenueObserved: number | null;
     netObserved: number | null;
   };
 
-  outcome:
-    | { status: 'positive' | 'negative' | 'unknown' }
+  timeAwareness:
+    | { history: 'sufficient' | 'insufficient' }
     | null;
 
-  trend:
-    | { direction: 'up' | 'down' | 'flat' | 'unknown' }
+  timeline:
+    | {
+        bucket: 'day';
+        points: {
+          from: string;
+          to: string;
+          revenueObserved: number | null;
+        }[];
+      }
     | null;
 
-  dataCoverage:
-    | { completenessPct: number | null }
+  blindSpots:
+    | {
+        costs: 'unknown' | 'known';
+        refunds: 'unknown' | 'known';
+        history: 'insufficient' | 'sufficient';
+      }
+    | null;
+
+  decisionSafety:
+    | { status: 'safe' | 'unsafe' | 'unknown' }
+    | null;
+
+  profitPreconditions:
+    | { status: 'ready' | 'not_ready' }
+    | null;
+
+  refundReality:
+    | { status: 'known' | 'unknown' }
     | null;
 }
 ```
 
 ---
 
-### Mapping Rules (Locked)
+### Mapping Doctrine (Sealed)
 
-| Internal Intelligence | FT2 Exposure          |
-| --------------------- | --------------------- |
-| `good / bad`          | `positive / negative` |
-| margin %              | ❌ never               |
-| loss reason           | ❌ never               |
-| trend delta           | `direction only`      |
-| unknown               | `null`                |
+| Internal Intelligence | FT2 Exposure      |
+| --------------------- | ----------------- |
+| marginPct             | ❌ never           |
+| lossReason            | ❌ never           |
+| bucket counts         | ❌ never           |
+| confidence math       | ❌ never           |
+| sufficientForTrend    | history only      |
+| decision safety       | coarse status     |
+| profit validity       | ready / not_ready |
 
-If something is not **safe**, it becomes **null**.
+If a signal is **not epistemically safe**, it becomes **null**.
 
 ---
 
@@ -288,7 +361,7 @@ apps/backend/src/api/finances/finances.ft2.controller.ts
 
 ### 🎯 Responsibility
 
-Expose **FT2 snapshot only**, under lifecycle control.
+Expose **FT2 snapshot only**, under lifecycle and permission control.
 
 ---
 
@@ -297,30 +370,21 @@ Expose **FT2 snapshot only**, under lifecycle control.
 1. Authenticate user
 2. Resolve shopId
 3. Validate period
-4. Call:
+4. Execute:
 
-   ```
-   Facts → Intelligence → FTEP
-   ```
+```
+Facts → Intelligence → FTEP
+```
+
 5. Return JSON
 
-### Forbidden
+### ❌ Forbidden
 
 * Business logic
 * Aggregation
-* Intelligence
 * Defaults
+* Intelligence exposure
 * Mutation
-
----
-
-### Route
-
-```
-GET /api/v1/finances/ft2
-```
-
-If FT2 is not enabled → `403`.
 
 ---
 
@@ -334,7 +398,7 @@ apps/frontend/src/pages/finances/useFinancesFt2Adapter.ts
 
 ### 🎯 Responsibility
 
-Normalize backend FT2 snapshot into **UI props**.
+Normalize backend FT2 snapshot into **UI props only**.
 
 ---
 
@@ -344,19 +408,9 @@ Normalize backend FT2 snapshot into **UI props**.
 * Preserve semantics
 * No inference
 * No defaults
-* No logic
+* No transformation
 
----
-
-### Adapter Output = UI Contract
-
-Matches **exactly**:
-
-```ts
-FinancesModuleFT2Props
-```
-
-No additional fields allowed.
+Adapter output **must exactly match** `FinancesModuleFT2Props`.
 
 ---
 
@@ -370,65 +424,36 @@ modules/finances/src/ui/pages/FinancesModuleFT2.tsx
 
 ### 🎯 Responsibility
 
-Render **what is known**, and **explicitly show what is unknown**.
+Render **what is known** and **explicitly show what is unknown**.
 
 ---
 
 ### UI Rules
 
-* Show placeholders (`—`) for nulls
+* Render `null` as `—`
 * Never hide uncertainty
+* Never compute values
 * Never infer meaning
 * Never explain causality
-* Never compute values
 
-If this UI ever feels “smart”, it is a bug.
-
----
-
-## 8. What the User Sees at Each Stage
-
-### Immediately After Shopify Connection
-
-| Field         | Value   |
-| ------------- | ------- |
-| Period        | ✅       |
-| Net observed  | `—`     |
-| Outcome       | `—`     |
-| Trend         | `—`     |
-| Data coverage | partial |
-
-This is **correct**.
+If this UI ever feels “smart”, it is **a defect**.
 
 ---
 
-### After Cost Ingestion Exists
+## 8. Why This Architecture Matters
 
-| Field        | Value               |
-| ------------ | ------------------- |
-| Net observed | populated           |
-| Outcome      | positive / negative |
-| Trend        | directional         |
-| Coverage     | higher              |
+This architecture guarantees:
 
-Same contract.
-More truth flows in.
+* No fake certainty
+* No premature profit claims
+* No frozen assumptions
+* Safe evolution of cost and refund models
+* Stable UI contracts
+* Compounding trust instead of erosion
 
----
+Most financial dashboards **pretend** to know.
 
-## 9. Why This Architecture Matters
-
-This architecture ensures:
-
-* You never lie when data is incomplete
-* You never freeze intelligence prematurely
-* You can evolve cost models freely
-* UI stays stable
-* Trust compounds instead of erodes
-
-Most financial dashboards fake certainty.
-
-This one **earns it**.
+This one **knows when it doesn’t**.
 
 ---
 
@@ -436,13 +461,10 @@ This one **earns it**.
 
 * Finances FT2 is **canonical**
 * Contract is **sealed**
-* Tests enforce doctrine
+* Exposure is **epistemically safe**
 * Backend and frontend are aligned
-* Evolution is safe
+* Architecture is **replicable across domains**
 
-This blueprint can now be **replicated verbatim** for:
+This blueprint is now the **reference pattern** for all future FT2 surfaces.
 
-* Products
-* Customers
-* Orders
-* Any future financial surface
+**End of Canonical Finances FT2 Architecture Blueprint.**

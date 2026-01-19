@@ -128,6 +128,51 @@ export function buildFinancesFtep(input: {
       ? { status: 'ready' as const }
       : { status: 'not_ready' as const };
 
+  /**
+   * Cost reality (FT2-safe)
+   * ----------------------
+   * Coarse visibility only.
+   * No coverage %, no explanations.
+   */
+  const costReality =
+    intelligence.costReality.status === 'unknown'
+      ? null
+      : {
+          status: intelligence.costReality.status,
+        };
+
+  /**
+   * Refund reality (downgraded)
+   */
+  const refundReality =
+    intelligence.refundReality.status === 'unknown'
+      ? { status: 'unknown' as const }
+      : { status: 'known' as const };
+
+  /**
+   * Refund impact (FT2-safe)
+   * -----------------------
+   * Directional only.
+   * No magnitude exposed.
+   */
+  const refundImpact =
+    intelligence.refundImpact.status === 'unknown'
+      ? null
+      : {
+          status: intelligence.refundImpact.status,
+        };
+
+  /**
+   * Financial consistency (FT2-safe)
+   * --------------------------------
+   * Stability signal without trend or growth.
+   */
+  const financialConsistency =
+    intelligence.financialConsistency.status === 'unknown'
+      ? null
+      : {
+          status: intelligence.financialConsistency.status,
+        };
 
   /**
    * If net status is unknown, suppress outcome and trend.
@@ -146,6 +191,10 @@ export function buildFinancesFtep(input: {
       blindSpots,
       decisionSafety,
       profitPreconditions,
+      refundReality,
+      costReality,
+      refundImpact,
+      financialConsistency,
     };
   }
 
@@ -173,5 +222,9 @@ export function buildFinancesFtep(input: {
     blindSpots,
     decisionSafety,
     profitPreconditions,
+    costReality,
+    refundReality,
+    refundImpact,
+    financialConsistency,
   };
 }

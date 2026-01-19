@@ -54,6 +54,26 @@ export function mapFinancesFt2Props(
       snapshot.profitPreconditions === undefined
         ? null
         : snapshot.profitPreconditions,
+
+    refundReality:
+      snapshot.refundReality === undefined
+        ? null
+        : snapshot.refundReality,
+    
+    costReality:
+      snapshot.costReality === undefined
+        ? null
+        : snapshot.costReality,
+
+    refundImpact:
+      snapshot.refundImpact === undefined
+        ? null
+        : snapshot.refundImpact,
+
+    financialConsistency:
+      snapshot.financialConsistency === undefined
+        ? null
+        : snapshot.financialConsistency,
   };
 
   /**

@@ -1,11 +1,11 @@
-# 🔒 Finances / marginCore — FT2 Contract Audit (LOCKED)
+# 🔒 Finances / marginCore — FT2 Contract Audit (LOCKED v2)
 
 **Contract Type:** FT2 Snapshot Exposure
 **Authority:** `finances-ft2.provider.ts`
 **Pipeline:** Facts → Intelligence → FTEP → FT2 UI
 **Mutation:** ❌ None allowed
 **Interpretation:** ❌ None allowed
-**Status:** **Sealed**
+**Status:** **SEALED**
 
 ---
 
@@ -13,9 +13,9 @@
 
 ### Authoritative Owner
 
-* **Backend:** `marginCore`
-* **Exposure Gate:** Finances FTEP
-* **Consumer:** Finances FT2 UI only
+* **Backend Domain:** `marginCore`
+* **Exposure Gate:** `finances-ftep`
+* **Consumer:** Finances FT2 UI **only**
 
 ### Explicit Non-Consumers
 
@@ -24,7 +24,7 @@
 * Dashboard FT2
 * Any other domain module
 
-Finances is **isolated by design**.
+Finances FT2 is **isolated by design** and **non-authoritative** for system decisions.
 
 ---
 
@@ -34,7 +34,9 @@ Finances is **isolated by design**.
 
 * `canonical_orders`
 
-No other tables are permitted in this contract.
+No joins.
+No enrichment.
+No inferred data sources.
 
 ---
 
@@ -43,14 +45,21 @@ No other tables are permitted in this contract.
 ```ts
 FinancesFT2Exposure {
   context: Context;
-  outcome: Outcome | null;
-  trend: Trend | null;
-  dataCoverage: DataCoverage;
+  timeAwareness: TimeAwareness | null;
+  timeline: Timeline | null;
+  blindSpots: BlindSpots | null;
+  decisionSafety: DecisionSafety | null;
+  profitPreconditions: ProfitPreconditions | null;
+  refundReality: RefundReality | null;
 }
 ```
 
-No additional fields may appear.
-No optional expansion allowed without version bump.
+❌ No intelligence objects
+❌ No numeric derivations
+❌ No confidence math
+❌ No explanations
+
+Any expansion requires **explicit FT2 versioning**.
 
 ---
 
@@ -60,127 +69,198 @@ No optional expansion allowed without version bump.
 
 ```ts
 context: {
-  period: {
-    from: string;
-    to: string;
-  };
   revenueObserved: number | null;
   netObserved: number | null;
 }
 ```
 
-### Field Semantics (Locked)
+### Semantics (Locked)
 
-| Field             | Meaning                  | Null Means               |
-| ----------------- | ------------------------ | ------------------------ |
-| `period.from`     | Observation window start | never null               |
-| `period.to`       | Observation window end   | never null               |
-| `revenueObserved` | Sum of canonical revenue | no authoritative revenue |
-| `netObserved`     | Net result (rev − cost)  | computation impossible   |
+| Field             | Meaning                         | Null Means               |
+| ----------------- | ------------------------------- | ------------------------ |
+| `revenueObserved` | Sum of canonical revenue        | No authoritative revenue |
+| `netObserved`     | Revenue − costs (if computable) | Net cannot be asserted   |
 
 **Rules**
 
-* These are **facts**, not conclusions
+* Context contains **facts only**
 * No formatting
 * No currency assumptions
 * No rounding guarantees
 
 ---
 
-## 5. Outcome Object (Downgraded Intelligence)
+## 5. Time Awareness (Downgraded Temporal Signal)
 
 ### Contract
 
 ```ts
-outcome:
+timeAwareness:
   | {
-      status: 'positive' | 'negative' | 'unknown';
+      history: 'sufficient' | 'insufficient';
     }
   | null;
 ```
 
-### Exposure Rules (Locked)
+### Semantics
 
-| Condition                        | outcome                  |
-| -------------------------------- | ------------------------ |
-| `netResult.status === 'unknown'` | `null`                   |
-| `netResult.status === 'good'`    | `{ status: 'positive' }` |
-| `netResult.status === 'bad'`     | `{ status: 'negative' }` |
+Answers **one question only**:
 
-### Critical Constraints
+> “Is there enough history to talk about time at all?”
 
-* Outcome is **binary directional only**
-* Magnitude is intentionally hidden
-* Confidence is intentionally hidden
-* Null is a **valid, expected state**
+* No bucket counts exposed
+* No continuity labels
+* No thresholds revealed
+* Null means: *system refuses to speak*
 
 ---
 
-## 6. Trend Object (Dormant, Locked)
+## 6. Timeline (Observational Only)
 
 ### Contract
 
 ```ts
-trend:
+timeline:
   | {
-      direction: 'up' | 'down' | 'flat' | 'unknown';
+      bucket: 'day';
+      points: {
+        from: string;
+        to: string;
+        revenueObserved: number | null;
+      }[];
     }
   | null;
 ```
 
-### Current Truth
+### Rules
 
-* When exposed, `direction === 'unknown'`
-* When outcome is null → trend is null
+* Revenue only
+* No net
+* No trends
+* No gap filling
+* No inference
 
-Trend is **structurally present but functionally dormant**.
+Timeline is **evidence**, not analysis.
 
 ---
 
-## 7. Data Coverage Object (Evidence Signal)
+## 7. Blind Spots (Explicit Unknowns)
 
 ### Contract
 
 ```ts
-dataCoverage: {
-  completenessPct: number | null;
-}
+blindSpots:
+  | {
+      costs: 'unknown' | 'known';
+      refunds: 'unknown' | 'known';
+      history: 'insufficient' | 'sufficient';
+    }
+  | null;
 ```
 
-### Semantics (Locked)
+### Semantics
 
-| Value  | Meaning                      |
-| ------ | ---------------------------- |
-| `100`  | ≥1 canonical orders observed |
-| `null` | zero canonical orders        |
+Blind spots state **what the system does not know**, not why.
 
-**Rules**
+* No causes
+* No remediation
+* No severity
 
-* Coverage is **binary in practice**
-* Coverage does **not** imply correctness
-* Coverage does **not** imply completeness of costs
+This is **truthful absence**, not guidance.
 
 ---
 
-## 8. Intelligence Signals (NON-CONTRACTUAL)
+## 8. Decision Safety (Downgraded Risk Signal)
 
-The following **exist internally** but are **explicitly sealed off**:
+### Contract
 
-| Signal                      | Status        |
-| --------------------------- | ------------- |
-| `marginPct`                 | ❌ suppressed  |
-| `lossReason`                | ❌ suppressed  |
-| raw intelligence confidence | ❌ nonexistent |
+```ts
+decisionSafety:
+  | {
+      status: 'safe' | 'unsafe' | 'unknown';
+    }
+  | null;
+```
 
-Any appearance of these in FT2 is a **contract violation**.
+### Rules
+
+* Conservative by design
+* Null means *risk cannot be assessed*
+* Does **not** imply correctness
+* Does **not** grant permission
+
+Decision safety is **observational caution**, not advice.
 
 ---
 
-## 9. Null Semantics (Global, Locked)
+## 9. Profit Preconditions (Validity Gate)
 
-### Global Rule
+### Contract
 
-> **Null always means “truth cannot be asserted.”**
+```ts
+profitPreconditions:
+  | {
+      status: 'ready' | 'not_ready';
+    }
+  | null;
+```
+
+### Semantics
+
+Answers only:
+
+> “Is profit even a valid concept yet?”
+
+* No magnitude
+* No margin
+* No promises
+
+If `not_ready`, profit signals are **structurally meaningless**.
+
+---
+
+## 10. Refund Reality (Observability Check)
+
+### Contract
+
+```ts
+refundReality:
+  | {
+      status: 'known' | 'unknown';
+    }
+  | null;
+```
+
+### Semantics
+
+* Known = refund facts exist
+* Unknown = no refund evidence
+
+No materiality.
+No impact analysis.
+No assumptions.
+
+---
+
+## 11. Explicitly Suppressed Intelligence (NON-CONTRACTUAL)
+
+The following **exist internally** and **must never leak**:
+
+| Signal          | Status   |
+| --------------- | -------- |
+| `marginPct`     | ❌ sealed |
+| `lossReason`    | ❌ sealed |
+| bucket counts   | ❌ sealed |
+| continuity math | ❌ sealed |
+| confidence math | ❌ sealed |
+
+Any exposure is a **hard FT2 violation**.
+
+---
+
+## 12. Null Semantics (Global, Locked)
+
+> **Null means: “Truth cannot be asserted.”**
 
 Null does **not** mean:
 
@@ -194,14 +274,14 @@ Null is **honest silence**.
 
 ---
 
-## 10. UI Contract Guarantees
+## 13. UI Contract Guarantees
 
 ### UI Responsibilities
 
 * Render `null` as `—`
+* Display only
 * Never infer
 * Never compute
-* Never compensate
 
 ### UI Prohibitions
 
@@ -210,56 +290,54 @@ Null is **honest silence**.
 * ❌ No explanations
 * ❌ No derived labels
 
-UI is a **read-only lens**.
+UI is a **read-only lens**, not a narrator.
 
 ---
 
-## 11. Cross-Module Guarantees (Sealed)
+## 14. Cross-Module Guarantees (Sealed)
 
 * Finances does **not** affect FT2 eligibility
-* Finances does **not** contribute to system health
+* Finances does **not** block actions
+* Finances does **not** feed evaluators
 * Finances does **not** leak into analytics
-* Finances does **not** block anything
 
-This module **observes only itself**.
-
----
-
-## 12. Contract Invariants (Non-Negotiable)
-
-The following invariants **must never be broken** without a new FT2 version:
-
-1. Facts must remain canonical-only
-2. Intelligence must remain suppressible
-3. Outcome may be null
-4. Trend may be null
-5. Costs may be null
-6. UI must remain observational
-7. No cross-domain coupling
+This module **observes itself only**.
 
 ---
 
-## 13. Violation Checklist (For Future Audits)
+## 15. Contract Invariants (Non-Negotiable)
+
+These invariants **must never be broken** without a new FT2 version:
+
+1. Facts remain canonical-only
+2. Intelligence remains suppressible
+3. All signals may be null
+4. No numeric reasoning in FT2
+5. UI remains observational
+6. No cross-domain coupling
+
+---
+
+## 16. Violation Checklist (Future Audits)
 
 Any of the following is a **hard violation**:
 
-* UI computing net or margin
-* Outcome shown when intelligence is unknown
-* Costs defaulted to `0`
-* Trend inferred from a single snapshot
-* Dashboard consuming Finances implicitly
-* Evaluator referencing Finances
+* UI computing profit or margin
+* Profit shown when preconditions are not ready
+* Refund impact inferred without facts
+* Decision safety used as permission
+* Costs defaulted to zero
+* Timeline used to imply trend
+* Any module depending on Finances FT2
 
 ---
 
-## 14. Final Seal
+## 17. Final Seal
 
-**Status:** ✅ **LOCKED & SEALED**
+**Status:** ✅ **LOCKED & SEALED (v2)**
 **Interpretation Allowed:** ❌ None
 **Mutation Allowed:** ❌ None
 **Expansion Allowed:** ❌ Only via explicit FT2 versioning
-
-This contract is **authoritative truth**, not a suggestion.
 
 If something feels missing:
 
@@ -269,4 +347,6 @@ If something feels conservative:
 
 > That is **correct**.
 
-**End of Finances / marginCore FT2 Contract Audit.**
+**End of Finances / marginCore FT2 Contract Audit (v2).**
+
+---

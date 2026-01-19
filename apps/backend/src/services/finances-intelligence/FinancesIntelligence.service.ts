@@ -83,6 +83,42 @@ export interface FinancesIntelligence {
     historyReady: boolean;
     decisionSafe: boolean;
   };
+
+  /**
+   * Refund reality (internal only)
+   * -----------------------------
+   * Answers: "Do we have refund facts at all?"
+   */
+  refundReality: {
+    status: 'known' | 'unknown';
+  };
+
+  /**
+   * Cost reality (internal only)
+   * ---------------------------
+   * Answers: "Do we actually know costs well enough?"
+   */
+  costReality: {
+    status: 'known' | 'partial' | 'unknown';
+  };
+
+  /**
+   * Refund impact (internal only)
+   * ----------------------------
+   * Answers: "Do refunds materially affect interpretation?"
+   */
+  refundImpact: {
+    status: 'material' | 'immaterial' | 'unknown';
+  };
+
+  /**
+   * Financial consistency (internal only)
+   * ------------------------------------
+   * Answers: "Is activity stable enough to reason about?"
+   */
+  financialConsistency: {
+    status: 'stable' | 'volatile' | 'unknown';
+  };
 }
 
 
@@ -204,6 +240,57 @@ export function buildFinancesIntelligence(
   };
 
   /**
+   * Refund reality
+   * --------------
+   * Refund ingestion is not implemented yet,
+   * therefore refunds are currently unknown.
+   */
+  const refundReality: FinancesIntelligence['refundReality'] = {
+    status: blindSpots.refundsMissing ? 'unknown' : 'known',
+  };
+
+  /**
+   * Cost reality
+   * ------------
+   * No assumptions. Pure availability check.
+   */
+  const costReality: FinancesIntelligence['costReality'] = {
+    status:
+      facts.totalCosts == null
+        ? 'unknown'
+        : 'known',
+  };
+
+  /**
+   * Refund impact
+   * -------------
+   * No percentages. No thresholds exposed.
+   */
+  const refundImpact: FinancesIntelligence['refundImpact'] = {
+    status:
+      facts.refundsObserved == null
+        ? 'unknown'
+        : facts.refundsObserved > 0
+          ? 'material'
+          : 'immaterial',
+        };
+
+  /**
+   * Financial consistency
+   * ---------------------
+   * Stability without direction.
+   */
+  const financialConsistency: FinancesIntelligence['financialConsistency'] =
+    bucketsObserved < 5
+      ? { status: 'unknown' }
+      : {
+          status:
+            points.some(p => p.revenueObserved == null)
+              ? 'volatile'
+              : 'stable',
+          };
+
+  /**
    * Trend direction
    * ----------------
    * Explicitly unknown unless later unlocked.
@@ -254,6 +341,11 @@ export function buildFinancesIntelligence(
       status: decisionSafety,
     },
     profitPreconditions,
+    refundReality,
+
+    costReality,
+    refundImpact,
+    financialConsistency,
   };
 }
 

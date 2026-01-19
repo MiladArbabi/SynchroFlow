@@ -42,6 +42,27 @@ export async function buildFinancesFacts(
   const totalRevenue =
     revenueRow?.sum != null ? Number(revenueRow.sum) : null;
 
+/**
+ * Refunds — canonical truth (if available)
+ * ---------------------------------------
+ * Source: canonical_orders.total_price (negative orders or future refund table)
+ *
+ * Rules:
+ * - Null means no refund evidence exists
+ * - Zero is a valid observed value
+ * - No assumptions about materiality
+ */
+const refundRow = await db('canonical_orders')
+  .where('shop_id', shopId)
+  .andWhere('order_created_at', '>=', period.from)
+  .andWhere('order_created_at', '<=', period.to)
+  .andWhere('total_price', '<', 0)
+  .sum<{ sum: string | null }>('total_price as sum')
+  .first();
+
+const refundsObserved =
+  refundRow?.sum != null ? Math.abs(Number(refundRow.sum)) : null;
+
   /**
    * Costs — factually unavailable
    * -----------------------------
@@ -71,6 +92,11 @@ export async function buildFinancesFacts(
     .andWhere('order_created_at', '<=', period.to)
     .count<{ count: string }>('id as count')
     .first();
+
+  const ordersCount =
+  ordersCountRow?.count != null
+    ? Number(ordersCountRow.count)
+    : null;
 
   const completenessPct =
     ordersCountRow?.count != null && Number(ordersCountRow.count) > 0
@@ -144,6 +170,8 @@ export async function buildFinancesFacts(
     totalRevenue,
     totalCosts,
     netResult,
+    refundsObserved,
+    ordersCount,
 
     dataCoverage: {
       completenessPct,
