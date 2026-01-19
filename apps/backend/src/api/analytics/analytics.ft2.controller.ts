@@ -1,11 +1,7 @@
 // apps/backend/src/api/analytics/analytics.ft2.controller.ts
 import { Request, Response } from 'express';
 import { getAnalyticsFt2Snapshot } from 'api-src/services/analytics-ft2.provider';
-import {
-  getFt2Period,
-  resolveFt2PeriodFromPreset,
-  FT2DateRangePreset,
-} from 'api-src/utils/ft2Period';
+import { FT2DateRangePreset, FT2RangeInput } from 'api-src/utils/ft2Period';
 
 export async function analyticsFt2Controller(req: Request, res: Response) {
   const shopId = (req as any).user?.shopId;
@@ -27,15 +23,15 @@ export async function analyticsFt2Controller(req: Request, res: Response) {
    * but does not own or expose time semantics.
    */
 
-  const period = preset
-    ? preset === 'custom'
-      ? resolveFt2PeriodFromPreset({
-          preset: 'custom',
-          from: String(req.query.from),
-          to: String(req.query.to),
-        })
-      : resolveFt2PeriodFromPreset({ preset })
-    : getFt2Period();
+  const range: FT2RangeInput = preset
+  ? preset === 'custom'
+    ? {
+        preset: 'custom',
+        from: String(req.query.from),
+        to: String(req.query.to),
+      }
+    : preset
+  : 'past_7_days';
 
   /**
    * Analytics FT2 snapshot
@@ -47,7 +43,7 @@ export async function analyticsFt2Controller(req: Request, res: Response) {
    */
   const snapshot = await getAnalyticsFt2Snapshot({
     shopId,
-    period,
+    range,
   });
 
   return res.json(snapshot);

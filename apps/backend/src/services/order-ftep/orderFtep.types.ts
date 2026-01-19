@@ -1,6 +1,5 @@
 //apps/backend/src/services/order-ftep/orderFtep.types.ts
 // apps/backend/src/services/order-ftep/orderFtep.types.ts
-
 import type { OrderNexusIntelligence } from '../order-intelligence/orderIntelligence.service';
 import type { OrderFacts } from '../order-facts/orderFacts.types';
 
@@ -11,10 +10,6 @@ import type { OrderFacts } from '../order-facts/orderFacts.types';
  */
 export interface OrderNexusFT2Exposure {
   context: {
-    period: {
-      from: string;
-      to: string;
-    };
     ordersObserved: number | null;
   };
 

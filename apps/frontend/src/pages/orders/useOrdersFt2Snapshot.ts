@@ -29,6 +29,10 @@ export type OrdersFt2Snapshot = {
   dataCoverage?: {
     completenessPct?: number | null;
   };
+
+  visibility?: {
+    status: 'sufficient' | 'insufficient';
+  } | null;
 };
 
 /**

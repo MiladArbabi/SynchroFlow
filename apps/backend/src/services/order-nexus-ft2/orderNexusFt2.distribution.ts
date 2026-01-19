@@ -1,5 +1,5 @@
 import db from 'api-db';
-import type { OrderFactsPeriod } from 'api-src/services/order-facts/orderFacts.types';
+import { FT2RangeInput, resolveFt2Range } from 'api-src/utils/ft2Period';
 
 export type OrdersFt2Distribution = {
   totalOrders: number;
@@ -13,16 +13,21 @@ export type OrdersFt2Distribution = {
   }[];
 };
 
-export async function getOrderNexusFt2Distribution(input: {
-  shopId: number;
-  period: OrderFactsPeriod;
-}): Promise<OrdersFt2Distribution> {
-  const { shopId, period } = input;
+export async function getOrderNexusFt2Distribution(
+  {
+    shopId,
+    range,
+  }: {
+    shopId: number;
+    range: FT2RangeInput;
+  }
+): Promise<OrdersFt2Distribution> {
+  const { from, to } = resolveFt2Range(range);
 
   const values = (await db('canonical_orders')
     .where('shop_id', shopId)
-    .andWhere('order_created_at', '>=', period.from)
-    .andWhere('order_created_at', '<=', period.to)
+    .andWhere('order_created_at', '>=', from)
+    .andWhere('order_created_at', '<=', to)
     .pluck('total_price'))
     .map((v) => Number(v))
     .filter((v) => Number.isFinite(v));
@@ -50,8 +55,11 @@ export async function getOrderNexusFt2Distribution(input: {
 
   // simple deterministic histogram: 5 equal-width buckets
   const bucketCount = 5;
-  const range = maxOrderValue - minOrderValue || 1;
-  const bucketSize = range / bucketCount;
+
+  // NOTE:
+  // Use a distinct name to avoid collision with FT2 date range.
+  const valueRange = maxOrderValue - minOrderValue || 1;
+  const bucketSize = valueRange / bucketCount;
 
   const histogram = Array.from({ length: bucketCount }, (_, i) => {
     const start = minOrderValue + i * bucketSize;

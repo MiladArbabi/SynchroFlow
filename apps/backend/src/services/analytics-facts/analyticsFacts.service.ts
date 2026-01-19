@@ -1,11 +1,11 @@
 // apps/backend/src/services/analytics-facts/analyticsFacts.service.ts
 import { AnalyticsFacts } from './analyticsFacts.types';
-import { OrderFactsPeriod } from '../order-facts/orderFacts.types';
-
 import { getOrderNexusFt2Snapshot } from '../order-nexus-ft2/orderNexusFt2.resolver';
 import { getProductsFt2Snapshot } from '../products-ft2.provider';
 import { getCustomersFt2Snapshot } from '../customers-ft2.provider';
 import { getFinancesFt2Snapshot } from '../finances-ft2.provider';
+import { FT2RangeInput } from 'api-src/utils/ft2Period';
+import { resolveFt2Range } from 'api-src/utils/ft2Period';
 
 /**
  * GetAnalyticsFactsInput
@@ -23,7 +23,7 @@ interface GetAnalyticsFactsInput {
   // Analytics does NOT own time.
   // Period is resolved upstream (lifecycle / controller layer)
   // and must be forwarded unchanged.
-  period: OrderFactsPeriod;
+  range: FT2RangeInput;
 }
 
 function generateSnapshotId(shopId: number) {
@@ -47,17 +47,19 @@ function generateSnapshotId(shopId: number) {
 export async function getAnalyticsFacts(
   input: GetAnalyticsFactsInput
 ): Promise<AnalyticsFacts> {
-  const { shopId, period } = input;
+  const { shopId, range } = input;
 
   const snapshotId = generateSnapshotId(shopId);
   const extractedAt = new Date().toISOString();
+  // Resolve FT2 range once for downstream period-based providers
+  const period = resolveFt2Range(range);
 
   // ─────────────────────────────────────────────
   // Orders — sourced from Orders FT2
   // ─────────────────────────────────────────────
   const ordersFt2 = await getOrderNexusFt2Snapshot({
     shopId,
-    period,
+    range,
   });
 
   const ordersObserved =

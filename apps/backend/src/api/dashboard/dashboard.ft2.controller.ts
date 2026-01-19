@@ -1,13 +1,14 @@
 // apps/backend/src/api/dashboard/dashboard.ft2.controller.ts
 
 import { Request, Response } from 'express';
-import { FT2DateRangePreset, getFt2Period, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
+import { FT2DateRangePreset, getFt2Period, resolveFt2PeriodFromPreset, resolveFt2Range } from 'api-src/utils/ft2Period';
 
 import { getOrderNexusFt2Snapshot } from 'api-src/services/order-nexus-ft2/orderNexusFt2.resolver';
 import { getProductsFt2Snapshot } from 'api-src/services/products-ft2.provider';
 
 import { buildDashboardFt2Coverage } from './dashboardFt2Coverage';
 import { buildDashboardFt2SystemHealth } from './dashboardFt2SystemHealth';
+import { resolveFt2RangeFromRequest } from 'api-src/utils/resolveFt2RangeFromRequest';
 
 /**
  * GET /api/v1/dashboard/ft2
@@ -35,19 +36,14 @@ export async function getDashboardFt2Snapshot(
 
   const preset = req.query.preset as FT2DateRangePreset | undefined;
 
-  const period = preset
-    ? preset === 'custom'
-      ? resolveFt2PeriodFromPreset({
-          preset: 'custom',
-          from: String(req.query.from),
-          to: String(req.query.to),
-        })
-      : resolveFt2PeriodFromPreset({ preset })
-    : getFt2Period();
+  const range = resolveFt2RangeFromRequest(req);
 
   const [ordersFt2, productsFt2] = await Promise.all([
-    getOrderNexusFt2Snapshot({ shopId, period }),
-    getProductsFt2Snapshot({ shopId, period }),
+    getOrderNexusFt2Snapshot({ shopId, range }),
+    getProductsFt2Snapshot({
+      shopId,
+      period: resolveFt2Range(range),
+    }),
   ]);
 
   const coverage = buildDashboardFt2Coverage({
@@ -56,7 +52,7 @@ export async function getDashboardFt2Snapshot(
   });
 
   res.status(200).json({
-    observationWindow: period,
+    observationWindow: range,
     coverage,
     systemHealth: buildDashboardFt2SystemHealth({
       orders: ordersFt2,

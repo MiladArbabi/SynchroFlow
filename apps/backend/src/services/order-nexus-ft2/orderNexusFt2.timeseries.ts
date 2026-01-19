@@ -1,5 +1,6 @@
 import db from 'api-db';
 import type { OrderFactsPeriod } from 'api-src/services/order-facts/orderFacts.types';
+import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
 
 export type OrdersFt2TimeseriesPoint = {
   date: string;
@@ -25,17 +26,38 @@ function enumerateDays(from: string, to: string): string[] {
 
 export async function getOrderNexusFt2Timeseries(input: {
   shopId: number;
-  period: OrderFactsPeriod;
+  range: FT2DateRangePreset | { preset: 'custom'; from: string; to: string };
 }): Promise<{
-  period: OrderFactsPeriod;
   series: OrdersFt2TimeseriesPoint[];
 }> {
-  const { shopId, period } = input;
+  const { shopId, range } = input;
+
+  type NonCustomPreset = Exclude<FT2DateRangePreset, 'custom'>;
+
+/**
+ * NOTE ON FT2 RANGE NARROWING
+ * --------------------------
+ * `FT2DateRangePreset` includes 'custom', but
+ * `resolveFt2PeriodFromPreset` requires that
+ * 'custom' always carries explicit from/to values.
+ *
+ * TypeScript cannot infer this constraint through
+ * control flow alone, so we perform an explicit
+ * narrowing cast here to preserve type safety.
+ */
+const { from, to } =
+  typeof range === 'string'
+    ? resolveFt2PeriodFromPreset({ preset: range as NonCustomPreset })
+    : range.preset === 'custom'
+      ? resolveFt2PeriodFromPreset(range)
+      : resolveFt2PeriodFromPreset({
+          preset: range.preset as NonCustomPreset,
+        });
 
   const rows = await db('canonical_orders')
     .where('shop_id', shopId)
-    .andWhere('order_created_at', '>=', period.from)
-    .andWhere('order_created_at', '<=', period.to)
+    .andWhere('order_created_at', '>=', from)
+    .andWhere('order_created_at', '<=', to)
     .select(
       db.raw(`DATE(order_created_at) as date`),
       db.raw(`COUNT(canonical_order_id) as ordersObserved`),
@@ -45,7 +67,7 @@ export async function getOrderNexusFt2Timeseries(input: {
     .orderBy('date', 'asc');
 
   if (rows.length === 0) {
-    return { period, series: [] };
+    return { series: [] };
   }
 
   const byDate = new Map<string, { ordersObserved: number; revenueTotal: number }>();
@@ -57,7 +79,7 @@ export async function getOrderNexusFt2Timeseries(input: {
     });
   });
 
-  const days = enumerateDays(period.from, period.to);
+  const days = enumerateDays(from, to);
 
   const series = days.map((date) => {
     const row = byDate.get(date);
@@ -69,5 +91,5 @@ export async function getOrderNexusFt2Timeseries(input: {
     };
   });
 
-  return { period, series };
+  return { series };
 }

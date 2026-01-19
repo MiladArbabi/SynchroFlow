@@ -17,6 +17,27 @@ type ResolveFt2PeriodInput =
       from: string;
       to: string;
     };
+export type FT2RangeInput =
+  | FT2DateRangePreset
+  | { preset: 'custom'; from: string; to: string };
+
+export function resolveFt2Range(range: FT2RangeInput) {
+  type NonCustomPreset = Exclude<FT2DateRangePreset, 'custom'>;
+
+  if (typeof range === 'string') {
+    return resolveFt2PeriodFromPreset({
+      preset: range as NonCustomPreset,
+    });
+  }
+
+  if (range.preset === 'custom') {
+    return resolveFt2PeriodFromPreset(range);
+  }
+
+  return resolveFt2PeriodFromPreset({
+    preset: range.preset as NonCustomPreset,
+  });
+}
 
 function assertNever(x: never): never {
   throw new Error(`Unexpected value: ${JSON.stringify(x)}`);

@@ -20,10 +20,6 @@ import {
 
 export interface OrdersModuleFT2DataProps {
   context: {
-    period: {
-      from: string;
-      to: string;
-    };
     ordersObserved: number | null;
   };
 
@@ -44,6 +40,10 @@ export interface OrdersModuleFT2DataProps {
   dataCoverage: {
     completenessPct: number | null;
   };
+
+  visibility: {
+    status: 'sufficient' | 'insufficient';
+  } | null;
 }
 
 /**
@@ -69,6 +69,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
     dataCoverage,
     timeseries,
     distribution,
+    visibility
   } = props;
 
   return (
@@ -88,6 +89,10 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
           {totals.revenueTotal === null
             ? '—'
             : `${totals.revenueTotal} ${totals.currency ?? ''}`}
+        </FT2Surface>
+
+        <FT2Surface title="Economic visibility">
+          {visibility?.status ?? '—'}
         </FT2Surface>
 
          {/* ─── Insights / Ops / Attention ─── */}

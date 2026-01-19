@@ -23,8 +23,6 @@ export interface OrderFactsPeriod {
  */
 export interface OrderFacts {
   shopId: number;
-  period: OrderFactsPeriod;
-
   ordersObserved: number | null;
 
   totals: {

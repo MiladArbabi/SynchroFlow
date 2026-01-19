@@ -5,6 +5,7 @@ import {
   getOrderNexusFt2Distribution,
   getOrderNexusFt2Coverage,
 } from 'api-src/services/order-nexus-ft2';
+import { resolveFt2RangeFromRequest } from 'api-src/utils/resolveFt2RangeFromRequest';
 
 /**
  * Order-Nexus FT2 Facts Controller
@@ -30,19 +31,11 @@ export async function orderNexusFt2TimeseriesController(
 
   const preset = req.query.preset as FT2DateRangePreset | undefined;
 
-  const period = preset
-    ? preset === 'custom'
-      ? resolveFt2PeriodFromPreset({
-          preset: 'custom',
-          from: String(req.query.from),
-          to: String(req.query.to),
-        })
-      : resolveFt2PeriodFromPreset({ preset })
-    : getFt2Period();
+  const range = resolveFt2RangeFromRequest(req);
 
   const result = await getOrderNexusFt2Timeseries({
     shopId,
-    period,
+    range,
   });
 
   return res.json(result);
@@ -60,19 +53,11 @@ export async function orderNexusFt2DistributionController(
 
   const preset = req.query.preset as FT2DateRangePreset | undefined;
 
-  const period = preset
-    ? preset === 'custom'
-      ? resolveFt2PeriodFromPreset({
-          preset: 'custom',
-          from: String(req.query.from),
-          to: String(req.query.to),
-        })
-      : resolveFt2PeriodFromPreset({ preset })
-    : getFt2Period();
+  const range = resolveFt2RangeFromRequest(req);
 
   const result = await getOrderNexusFt2Distribution({
     shopId,
-    period,
+    range,
   });
 
   return res.json(result);
@@ -90,19 +75,11 @@ export async function orderNexusFt2CoverageController(
 
   const preset = req.query.preset as FT2DateRangePreset | undefined;
 
-  const period = preset
-    ? preset === 'custom'
-      ? resolveFt2PeriodFromPreset({
-          preset: 'custom',
-          from: String(req.query.from),
-          to: String(req.query.to),
-        })
-      : resolveFt2PeriodFromPreset({ preset })
-    : getFt2Period();
+  const range = resolveFt2RangeFromRequest(req);
 
-  const result = await getOrderNexusFt2Coverage({
+  const result = await getOrderNexusFt2Distribution({
     shopId,
-    period,
+    range,
   });
 
   return res.json(result);

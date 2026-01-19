@@ -25,36 +25,36 @@ export function exposeOrderNexusFT2(
   console.debug('[OrderFTEP] input', input);
 
   const exposure: OrderNexusFT2Exposure = {
-    context: {
-      period: facts.period,
-      ordersObserved: intelligence.ordersObserved,
-    },
+  context: {
+    ordersObserved: intelligence.ordersObserved,
+  },
 
-    totals: {
-        revenueTotal: facts.totals.revenueTotal,
-        costTotal: facts.totals.costTotal,
-        currency: facts.totals.currency,
-    },
+  totals: {
+    revenueTotal: facts.totals.revenueTotal,
+    costTotal: facts.totals.costTotal,
+    currency: facts.totals.currency,
+  },
 
-    outcome:
-      intelligence.margin.status === 'unknown'
-        ? null
-        : {
-            status:
-              intelligence.margin.status === 'loss'
-                ? 'negative'
-                : 'positive',
-          },
+  outcome:
+    intelligence.margin.status === 'unknown'
+      ? null
+      : {
+          status:
+            intelligence.margin.status === 'loss'
+              ? 'negative'
+              : 'positive',
+        },
 
-    trend:
-        intelligence.trend.direction === 'unknown'
-            ? null
-            : { direction: intelligence.trend.direction },
+  trend:
+    intelligence.trend.direction === 'unknown'
+      ? null
+      : { direction: intelligence.trend.direction },
 
-    dataCoverage: {
-      completenessPct: intelligence.dataCoveragePct ?? null,
-    },
-  };
+  dataCoverage: {
+    completenessPct: intelligence.dataCoveragePct ?? null,
+  },
+};
+
 
   console.debug('[OrderFTEP] FT2 exposure', exposure);
 

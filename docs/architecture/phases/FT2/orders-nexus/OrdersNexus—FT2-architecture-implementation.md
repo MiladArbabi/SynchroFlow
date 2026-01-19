@@ -1,4 +1,4 @@
-# 🔒 Order-Nexus FT2 Contract Audit (AS-IS)
+# 🔒 Order-Nexus FT2 Contract Audit (CURRENT · ACTIVE)
 
 **Status:** ✅ COMPLETE / SEALED
 **Scope:** Order-Nexus FT2 — Backend + Frontend
@@ -9,9 +9,9 @@
 
 ## 0. Contract Definition — What “Orders FT2” Is (Precisely)
 
-**Orders FT2** is a **read-only observability surface** composed of:
+**Orders FT2** is a **read-only economic orientation surface** composed of:
 
-1. **FT2 Snapshot (Authoritative Truth Window)**
+1. **FT2 Snapshot (Authoritative, Downgraded Truth)**
 2. **FT2-Adjacent Analytical Surfaces**
 
    * Time series
@@ -32,9 +32,10 @@ Orders FT2 contains **no**:
 * recommendations
 * explanations
 * causation
-* inference
+* forecasting
 
-FT2 answers **“what is visible”**, never **“what to do”**.
+FT2 answers **“what is visible and directionally true”**,
+never **“what to do.”**
 
 ---
 
@@ -45,7 +46,7 @@ Canonical Database
    ↓
 Layer 1 — Order Facts
    ↓
-Layer 2 — Order Intelligence
+Layer 2 — Order Intelligence (ACTIVE, INTERNAL)
    ↓
 Layer 3 — FTEP (Truth Exposure Policy)
    ↓
@@ -59,7 +60,7 @@ OrdersModuleFT2 (Observational UI)
 > **Important:**
 > FT2-adjacent analytical surfaces intentionally **bypass** the snapshot pipeline and are not governed by FTEP.
 
-This bifurcation is **by design**, not an inconsistency.
+This bifurcation is **intentional and enforced**.
 
 ---
 
@@ -88,40 +89,121 @@ This bifurcation is **by design**, not an inconsistency.
 
 * DB-only reads
 * No derived defaults
-* No intelligence
 * No interpretation
-* Counts, sums, and coverage are **not conflated**
+* No intelligence
+* Coverage and revenue are **never conflated**
 
-`null` is treated as **epistemic absence**, not failure.
+`null` represents **epistemic absence**, not failure.
 
 ---
 
-## 3. Layer 2 — Order Intelligence (Structurally Present, Behaviorally Inert)
+## 3. Layer 2 — Order Intelligence (ACTIVE, INTERNAL)
 
-### Declared Intelligence Fields
+### Purpose
 
-| Field               | Type                                            | As-Is Behavior     |
-| ------------------- | ----------------------------------------------- | ------------------ |
-| `ordersObserved`    | `number \| null`                                | Passthrough        |
-| `margin.averagePct` | `number \| null`                                | Always `null`      |
-| `margin.status`     | `'healthy' \| 'at_risk' \| 'loss' \| 'unknown'` | Always `'unknown'` |
-| `loss.exists`       | `boolean \| null`                               | Always `null`      |
-| `trend.direction`   | `'up' \| 'down' \| 'flat' \| 'unknown'`         | Always `'unknown'` |
-| `dataCoveragePct`   | `number \| null`                                | Passthrough        |
+Convert **facts → deterministic orientation signals**,
+**strictly for internal use**.
 
-### Properties
+This layer **may think**,
+but **may never speak directly**.
 
-* No DB access
-* No thresholds
-* No branching
-* No state transitions
-* Intelligence exists **only as a structural placeholder**
+---
 
-This layer is **explicitly dormant** and produces no actionable signal.
+### Declared Intelligence Fields (CURRENT)
+
+| Field               | Type                                          | Behavior                     |
+| ------------------- | --------------------------------------------- | ---------------------------- |
+| `ordersObserved`    | `number \| null`                              | passthrough                  |
+| `margin.averagePct` | `null`                                        | intentionally inactive       |
+| `margin.status`     | `'healthy' \| 'loss' \| 'unknown'`            | **ACTIVE**                   |
+| `loss.exists`       | `boolean \| null`                             | **ACTIVE (downgraded form)** |
+| `trend.direction`   | `'up' \| 'down' \| 'flat' \| 'unknown'`       | **ACTIVE**                   |
+| `dataCoveragePct`   | `number \| null`                              | passthrough                  |
+| `visibility.status` | `'sufficient' \| 'insufficient' \| 'unknown'` | **ACTIVE**                   |
+
+---
+
+### Intelligence Activation Gate (Hard Boundary)
+
+All intelligence **requires epistemically usable data**.
+
+**Data usability rule:**
+
+* `null` coverage → unusable
+* `< 80%` coverage → unusable
+* `≥ 80%` coverage → usable
+
+No signal is allowed to activate without passing this gate.
+
+---
+
+### Active Intelligence Semantics
+
+#### Margin Status (Directional, Not Accounting)
+
+| Condition      | Result    |
+| -------------- | --------- |
+| Data unusable  | `unknown` |
+| Revenue `null` | `unknown` |
+| Revenue `<= 0` | `loss`    |
+| Revenue `> 0`  | `healthy` |
+
+This is **economic orientation**, not margin calculation.
+
+---
+
+#### Trend Direction
+
+Computed from **two fixed 7-day windows**.
+
+| Condition            | Direction |
+| -------------------- | --------- |
+| Data unusable        | `unknown` |
+| Insufficient history | `unknown` |
+| Increase > 5%        | `up`      |
+| Decrease > 5%        | `down`    |
+| Otherwise            | `flat`    |
+
+* Deterministic
+* Non-predictive
+* Non-explanatory
+
+---
+
+#### Economic Visibility (Internal Constraint)
+
+| Data Usable | Visibility     |
+| ----------- | -------------- |
+| `null`      | `unknown`      |
+| `false`     | `insufficient` |
+| `true`      | `sufficient`   |
+
+This expresses **whether the business is allowed to orient**,
+not whether it is doing well.
+
+---
+
+### Forbidden (Still Enforced)
+
+* ❌ Explanations
+* ❌ Causes or drivers
+* ❌ Recommendations
+* ❌ Forecasting
+* ❌ Cross-domain inference
+
+If intelligence becomes **narrative**, the layer is broken.
 
 ---
 
 ## 4. Layer 3 — FTEP (Truth Exposure Policy)
+
+### Purpose
+
+Define **what truth may leave the backend**.
+
+This is the **security boundary**.
+
+---
 
 ### Exposure Object
 
@@ -133,7 +215,6 @@ This layer is **explicitly dormant** and produces no actionable signal.
 
 | Field            | Source       |
 | ---------------- | ------------ |
-| `period`         | Facts        |
 | `ordersObserved` | Intelligence |
 
 ---
@@ -156,206 +237,146 @@ Rules:
 * Else:
 
   * `'loss'` → `{ status: 'negative' }`
-  * otherwise → `{ status: 'positive' }`
+  * `'healthy'` → `{ status: 'positive' }`
 
-> **Critical Rule:**
-> Although the type allows `'unknown'`, FTEP **never emits it**.
+> **Critical:**
+> `'unknown'` is **never emitted**.
 > Unknown intelligence is downgraded to **absence (`null`)**.
 
 ---
 
 ### Trend (Downgraded Intelligence)
 
-* If `trend.direction === 'unknown'` → `null`
-* Else → `{ direction }`
+* `'unknown'` → `null`
+* otherwise → `{ direction }`
 
 ---
 
-### Data Coverage
+### Visibility (Downgraded Constraint)
 
-| Field             | Source       |
-| ----------------- | ------------ |
-| `completenessPct` | Intelligence |
+* `'unknown'` → `null`
+* otherwise → `{ status: 'sufficient' | 'insufficient' }`
+
+Visibility communicates **whether orientation is trustworthy**,
+not advice.
 
 ---
 
 ### Guarantees
 
 * No intelligence leaks
-* Deterministic downgrade
-* `null` is the **hard epistemic boundary**
-* No interpretive enrichment
+* Deterministic downgrade only
+* `null` is a **hard epistemic boundary**
+* No enrichment, no explanation
 
 ---
 
 ## 5. Orders FT2 Snapshot (Backend Output)
 
-The FT2 snapshot contains **exactly**:
+The snapshot contains **exactly**:
 
 * `context`
 * `totals`
 * `outcome | null`
 * `trend | null`
 * `dataCoverage`
+* `visibility | null`
 
-No derived fields.
+Nothing else.
+
 No hidden metadata.
-No conditional enrichment.
+No internal flags.
+No partial upgrades.
 
 ---
 
-## 6. FT2-Adjacent Analytical Surfaces (Explicitly Out-of-Contract)
+## 6. FT2-Adjacent Analytical Surfaces (Out-of-Contract by Design)
 
-These surfaces are rendered inside FT2 **but are not part of the snapshot contract**.
+These surfaces **bypass** Facts → Intelligence → FTEP.
 
-They intentionally bypass Facts → Intelligence → FTEP.
-
----
-
-### 6.1 Time Series Surface
-
-**Signals**
-
-* `date`
-* `ordersObserved`
-* `revenueTotal`
-
-**Behavior**
-
-* Direct DB reads (`canonical_orders`)
-* Grouped by date
-* Missing days are **explicitly zero-filled**
-
-| Case               | Representation |
-| ------------------ | -------------- |
-| No orders on a day | `0`            |
-| No rows at all     | `series: []`   |
-
-> This is **explicit fabrication**, not null-preserving truth.
-> It is allowed only because this surface is **analytical**, not canonical.
+They are **analytical**, not canonical.
 
 ---
 
-### 6.2 Distribution Surface
+### 6.1 Time Series
 
-**Signals**
+* Zero-filled missing days
+* Empty series when no rows
+* Explicit fabrication allowed
 
-* `totalOrders`
-* `minOrderValue`
-* `medianOrderValue`
-* `maxOrderValue`
-* `histogram[]` (5 deterministic buckets)
+---
 
-**Behavior**
+### 6.2 Distribution
 
 * Derived analytics
-* No reuse of Facts or Intelligence
-* If no orders:
-
-  * totals → `0`
-  * min / median / max → `null`
-  * histogram → `[]`
+* Deterministic buckets
+* No reuse of intelligence
 
 ---
 
-### 6.3 Coverage Surface
-
-**Signals**
-
-* `totalLineItems`
-* `presentCost`
-* `missingCost`
-* `completenessPct`
-
-**Behavior**
+### 6.3 Coverage
 
 * DB-only
-* Duplicates completeness logic from Facts
-* Numeric defaults (`0`) except `completenessPct`
+* Numeric defaults
+* Completeness preserved
 
 ---
 
 ## 7. Frontend Snapshot Consumption
 
-### Snapshot Hook
-
-* Fetches `/api/v1/modules/order-nexus/ft2`
-* No parameters
+* Backend-owned range
+* Snapshot hook is read-only
 * No transformation
-* Period is backend-owned and authoritative
+* No inference
 
 ---
 
-## 8. Frontend Adapters — Critical Truth Gate
-
-### Snapshot Adapter (`mapOrdersFt2Props`)
+## 8. Frontend Adapters — Truth Gate
 
 **Rules**
 
 * `undefined → null`
 * Shape stabilization only
-* No computation
-* No inference
-* No backfilling
+* Zero computation
 
-> Adapters are **pipes**, not brains.
-
-### Analytical Surface Adapters
-
-* Time series: pass-through
-* Distribution: pass-through
-* Coverage: pass-through
-
-All enforce `undefined → null` only.
+Adapters are **pipes**, not brains.
 
 ---
 
 ## 9. OrdersModuleFT2 (UI)
 
-### Behavior
-
-* Observational only
-* No hooks
-* No fetching
-* No state
-* No interpretation
-
-### Null Rendering Rules
-
-* All nulls rendered as `'—'`
-* Percent formatting only when value exists
-* Outcome and trend shown **only if exposed**
-
 ### Guarantees
 
-* UI never compensates
-* UI never upgrades truth
-* UI never infers
-* UI never explains
+* Observational only
+* Null-safe everywhere
+* No compensation
+* No interpretation
+* No explanation
+
+UI **cannot upgrade truth**.
 
 ---
 
-## 10. Alignment Matrix (Final)
+## 10. Alignment Matrix (FINAL)
 
 | Surface      | Facts | Intelligence | FTEP | Adapter | UI            |
 | ------------ | ----- | ------------ | ---- | ------- | ------------- |
-| Snapshot     | Yes   | Inert        | Yes  | Pure    | Observational |
+| Snapshot     | Yes   | **Active**   | Yes  | Pure    | Observational |
 | Time Series  | DB    | None         | None | Pure    | Observational |
 | Distribution | DB    | None         | None | Pure    | Observational |
 | Coverage     | DB    | None         | None | Pure    | Observational |
 
 ---
 
-## 11. Intentional Gaps (Confirmed)
+## 11. Intentional Gaps (CONFIRMED)
 
-* Margin intelligence inactive
-* Loss detection inactive
-* Trend derivation inactive
-* Cost unavailable at order level
-* Currency unavailable at order level
-* Unknown intelligence downgraded to `null`
+* No cost-based margin
+* No profit calculation
+* No currency inference
+* No forecasting
+* No causation
 
-These are **deliberate**, not missing work.
+These are **architectural constraints**, not missing work.
 
 ---
 
@@ -363,22 +384,21 @@ These are **deliberate**, not missing work.
 
 **None detected.**
 
-Every `null`, `0`, suppression, and downgrade is:
+Every downgrade, threshold, and `null` is:
 
-* Explicit in code
+* Explicit
 * Deterministic
-* Consistent across layers
+* Scan-verified
 
 ---
 
 ## 13. Final Seal
 
-* All Orders FT2 fields enumerated
-* All execution paths scan-verified
-* No hidden logic
-* No leaky abstractions
-* No unscanned surfaces
+* Orientation achieved without advice
+* Intelligence active but contained
+* Visibility elevated to first-class signal
+* Stage-3 tension possible without narration
 
-🔐 **Order-Nexus FT2 Contract is fully audited, locked, and sealed — AS-IS.**
+🔐 **Order-Nexus FT2 Contract is fully audited, aligned, and sealed — CURRENT STATE.**
 
 ---

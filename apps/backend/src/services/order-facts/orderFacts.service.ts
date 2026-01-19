@@ -1,5 +1,6 @@
 import db from 'api-db';
-import { OrderFactsSnapshot, OrderFactsPeriod } from './orderFacts.types';
+import { OrderFactsSnapshot } from './orderFacts.types';
+import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
 
 /**
  * OrderFactsService (Layer 1)
@@ -14,13 +15,24 @@ import { OrderFactsSnapshot, OrderFactsPeriod } from './orderFacts.types';
  */
 export async function extractOrderFacts(
   shopId: number,
-  period: OrderFactsPeriod
+  range: FT2DateRangePreset | { preset: 'custom'; from: string; to: string }
 ): Promise<OrderFactsSnapshot> {
   // --- Orders observed ---
+  type NonCustomPreset = Exclude<FT2DateRangePreset, 'custom'>;
+
+  const { from, to } =
+  typeof range === 'string'
+    ? resolveFt2PeriodFromPreset({ preset: range as NonCustomPreset })
+    : range.preset === 'custom'
+      ? resolveFt2PeriodFromPreset(range)
+      : resolveFt2PeriodFromPreset({
+          preset: range.preset as NonCustomPreset,
+        });
+
   const ordersRow = await db('canonical_orders')
     .where('shop_id', shopId)
-    .andWhere('order_created_at', '>=', period.from)
-    .andWhere('order_created_at', '<=', period.to)
+    .andWhere('order_created_at', '>=', from)
+    .andWhere('order_created_at', '<=', to)
     .count<{ count: string }>('canonical_order_id as count')
     .first();
 
@@ -29,8 +41,8 @@ export async function extractOrderFacts(
 
   const revenueRow = await db('canonical_orders')
     .where('shop_id', shopId)
-    .andWhere('order_created_at', '>=', period.from)
-    .andWhere('order_created_at', '<=', period.to)
+    .andWhere('order_created_at', '>=', from)
+    .andWhere('order_created_at', '<=', to)
     .sum<{ sum: string | null }>('total_price as sum')
     .first();
 
@@ -64,7 +76,6 @@ export async function extractOrderFacts(
 
   const snapshot: OrderFactsSnapshot = {
     shopId,
-    period,
     ordersObserved,
     totals: {
       revenueTotal,

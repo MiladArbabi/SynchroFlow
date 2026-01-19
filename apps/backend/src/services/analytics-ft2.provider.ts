@@ -3,7 +3,7 @@ import { getAnalyticsFacts } from './analytics-facts';
 import { buildAnalyticsIntelligence } from './analytics-intelligence';
 import { buildAnalyticsFtep } from './analytics-ftep';
 import { AnalyticsFT2Exposure } from './analytics-ftep/analyticsFtep.types';
-import { OrderFactsPeriod } from './order-facts';
+import { FT2RangeInput } from 'api-src/utils/ft2Period';
 
 /**
  * getAnalyticsFt2Snapshot
@@ -18,9 +18,10 @@ import { OrderFactsPeriod } from './order-facts';
  * - Branch-free
  * - Meaning-free
  */
+
 export async function getAnalyticsFt2Snapshot(input: {
   shopId: number;
-  period: OrderFactsPeriod;
+  range: FT2RangeInput;
 }): Promise<AnalyticsFT2Exposure> {
   const facts = await getAnalyticsFacts(input);
   const intelligence = buildAnalyticsIntelligence(facts);

@@ -1,5 +1,5 @@
 import db from 'api-db';
-import type { OrderFactsPeriod } from 'api-src/services/order-facts/orderFacts.types';
+import { FT2RangeInput, resolveFt2Range } from 'api-src/utils/ft2Period';
 
 export type OrdersFt2Coverage = {
   totalLineItems: number;
@@ -8,16 +8,21 @@ export type OrdersFt2Coverage = {
   completenessPct: number | null;
 };
 
-export async function getOrderNexusFt2Coverage(input: {
-  shopId: number;
-  period: OrderFactsPeriod;
-}): Promise<OrdersFt2Coverage> {
-  const { shopId, period } = input;
+export async function getOrderNexusFt2Coverage(
+  {
+    shopId,
+    range,
+  }: {
+    shopId: number;
+    range: FT2RangeInput;
+  }
+): Promise<OrdersFt2Coverage> {
+  const { from, to } = resolveFt2Range(range);
 
   const row = await db('canonical_order_line_items')
     .where('shop_id', shopId)
-    .andWhere('created_at', '>=', period.from)
-    .andWhere('created_at', '<=', period.to)
+    .andWhere('created_at', '>=', from)
+    .andWhere('created_at', '<=', to)
     .select(
       db.raw('COUNT(id) as total'),
       db.raw(

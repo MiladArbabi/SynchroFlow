@@ -1,6 +1,6 @@
-# 🔒 Order-Nexus FT2 — 4-Layer Architecture Blueprint
+# 🔒 Order-Nexus FT2 — 4-Layer Architecture Blueprint (CURRENT)
 
-**Status:** Canonical · Enforced · Leak-Safe
+**Status:** ✅ Canonical · Enforced · Leak-Safe
 **Applies To:** All FT2 modules
 **Reference Implementation:** Order-Nexus
 
@@ -8,22 +8,23 @@
 
 ## 0. Why This Architecture Exists
 
-Order-Nexus handles the **highest-risk truth** in LaSyncro:
+Order-Nexus handles the **highest-risk economic truth** in LaSyncro:
 
-* revenue
-* cost signals
-* fulfillment exposure
-* operational correctness
+* revenue signals
+* cost visibility (or lack thereof)
+* order volume direction
+* economic usability of data
 
 Any shortcut in this module:
 
 * corrupts trust,
 * contaminates downstream modules,
-* breaks Echo Hub and WMS-Lite assumptions.
+* breaks Echo Hub, Analytics, and WMS-Lite assumptions.
 
 Therefore, Order-Nexus is implemented using **four hard, one-way layers**.
 
-FT2 represents the **maximum resolution of truth allowed to leave the backend**.
+FT2 represents the **maximum resolution of truth allowed to leave the backend** —
+*orientation without advice*.
 
 ---
 
@@ -34,7 +35,7 @@ Persistence / Canonical Orders
         ↓
 Layer 1 — Order Facts        (What is true)
         ↓
-Layer 2 — Order Intelligence (What it means, internally)
+Layer 2 — Order Intelligence (What it means — internally)
         ↓
 Layer 3 — FTEP               (What may be exposed)
         ↓
@@ -106,8 +107,8 @@ export interface OrderFacts {
 
   totals: {
     revenueTotal: number | null;
-    costTotal: number | null;
-    currency: string | null;
+    costTotal: number | null;   // always null
+    currency: string | null;    // always null
   };
 
   dataCoverage: {
@@ -129,7 +130,7 @@ export interface OrderFacts {
 * ❌ No defaults other than `null`
 * ✅ Preserve absence explicitly
 
-`null` represents **unknown**, not failure.
+`null` represents **epistemic absence**, not failure.
 
 ---
 
@@ -137,9 +138,9 @@ export interface OrderFacts {
 
 * Query canonical tables
 * Perform **only** counts and sums
-* Apply time windows
+* Apply resolved FT2 range
 * Never infer missing data
-* Never join domains unless explicitly allowed
+* Never interpret
 
 ---
 
@@ -151,9 +152,10 @@ export interface OrderFacts {
 
 ### Purpose
 
-Convert **facts → classified signals**, strictly for **internal use**.
+Convert **facts → classified orientation signals**, strictly for **internal use**.
 
-This layer is allowed to *think* — but must **never speak directly**.
+This layer may *think* —
+but must **never speak directly**.
 
 ---
 
@@ -173,8 +175,8 @@ export interface OrderNexusIntelligence {
   ordersObserved: number | null;
 
   margin: {
-    averagePct: number | null;
-    status: 'healthy' | 'at_risk' | 'loss' | 'unknown';
+    averagePct: number | null; // intentionally inactive
+    status: 'healthy' | 'loss' | 'unknown';
   };
 
   loss: {
@@ -186,21 +188,75 @@ export interface OrderNexusIntelligence {
   };
 
   dataCoveragePct: number | null;
+
+  visibility: {
+    status: 'sufficient' | 'insufficient' | 'unknown';
+  };
 }
 ```
 
 ---
 
-### 3.3 Allowed Operations
+### 3.3 Intelligence Gates (Non-Negotiable)
 
-* Classification (threshold-based)
-* Direction detection
-* Deterministic mapping
-* Null-safe derivation
+Intelligence **may only activate** if data is epistemically usable.
+
+**Data usability rule:**
+
+* `null` coverage → unusable
+* `< 80%` coverage → unusable
+* `≥ 80%` coverage → usable
+
+No gate bypass is allowed.
 
 ---
 
-### 3.4 Forbidden Operations
+### 3.4 Active Intelligence (CURRENT)
+
+#### Margin Status (Directional, Not Accounting)
+
+| Condition      | Status    |
+| -------------- | --------- |
+| Data unusable  | `unknown` |
+| Revenue `null` | `unknown` |
+| Revenue `<= 0` | `loss`    |
+| Revenue `> 0`  | `healthy` |
+
+This is **economic orientation**, not margin computation.
+
+---
+
+#### Trend Direction
+
+Derived from **two consecutive fixed windows** (7 days each).
+
+| Condition            | Direction |
+| -------------------- | --------- |
+| Data unusable        | `unknown` |
+| Insufficient history | `unknown` |
+| Increase > 5%        | `up`      |
+| Decrease > 5%        | `down`    |
+| Otherwise            | `flat`    |
+
+* Deterministic
+* Non-predictive
+* Non-explanatory
+
+---
+
+#### Economic Visibility (Internal Constraint)
+
+| Data Usable | Visibility     |
+| ----------- | -------------- |
+| `null`      | `unknown`      |
+| `false`     | `insufficient` |
+| `true`      | `sufficient`   |
+
+This expresses **whether orientation is epistemically allowed**, not quality.
+
+---
+
+### 3.5 Forbidden Operations
 
 * ❌ Explanations
 * ❌ Drivers or causes
@@ -237,7 +293,7 @@ apps/backend/src/services/order-ftep/
 
 ### 4.2 Core Principle
 
-> **Intelligence must always be downgraded.**
+> **All intelligence must be downgraded.**
 
 If raw intelligence is exposed → **hard violation**.
 
@@ -259,7 +315,6 @@ export interface OrderFtepInput {
 ```ts
 export interface OrderNexusFT2Exposure {
   context: {
-    period: { from: string; to: string };
     ordersObserved: number | null;
   };
 
@@ -270,16 +325,20 @@ export interface OrderNexusFT2Exposure {
   };
 
   outcome: {
-    status: 'positive' | 'negative' | 'unknown';
+    status: 'positive' | 'negative';
   } | null;
 
   trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+    direction: 'up' | 'down' | 'flat';
   } | null;
 
   dataCoverage: {
     completenessPct: number | null;
   };
+
+  visibility: {
+    status: 'sufficient' | 'insufficient';
+  } | null;
 }
 ```
 
@@ -287,28 +346,31 @@ export interface OrderNexusFT2Exposure {
 
 ### 4.5 Downgrade Rules (Non-Negotiable)
 
-| Intelligence Signal | FT2 Exposure Result      |
-| ------------------- | ------------------------ |
-| Margin percentage   | ❌ removed                |
-| Loss existence      | positive / negative only |
-| Trend delta         | direction only           |
-| Confidence          | ❌ removed                |
-| Explanations        | ❌ forbidden              |
+| Intelligence Signal | FT2 Exposure Result        |
+| ------------------- | -------------------------- |
+| Margin percentage   | ❌ removed                  |
+| Margin status       | positive / negative / null |
+| Loss existence      | encoded via outcome only   |
+| Trend delta         | direction only             |
+| Visibility unknown  | ❌ removed (→ null)         |
+| Explanations        | ❌ forbidden                |
 
-Unknown intelligence is downgraded to **`null`**, not `'unknown'`.
+> **Critical Rule:**
+> `'unknown'` is never emitted.
+> Unknown intelligence is downgraded to **absence (`null`)**.
 
 ---
 
-### 4.6 Leak-Prevention Tests (Mandatory)
+### 4.6 Leak-Prevention Requirements
 
-Tests must assert:
+The following must always hold:
 
-* No intelligence fields exist in output
-* No percentages leak
-* No causation language appears
-* Serialized output is clean
+* No intelligence-only fields in exposure
+* No percentages other than coverage
+* No causation language
+* No internal flags or debug metadata
 
-**If any test fails, the build must fail.**
+Violation = **build must fail**.
 
 ---
 
@@ -356,13 +418,13 @@ If logic appears here → **truth leak detected**.
 
 ---
 
-## 6. Lifecycle Integration
+## 6. Lifecycle & Time Ownership
 
-* FT2 eligibility resolved by `FT2EvaluatorService`
-* FT2 latch written only on explicit confirmation
-* Order-Nexus FT2 delivered **only through lifecycle resolution**
+* Time is resolved at the **controller / lifecycle layer**
+* FT2 modules accept **range**, not period ownership
+* Analytics and downstream observers **do not own time**
 
-No module may bypass lifecycle.
+This prevents cross-domain temporal drift.
 
 ---
 
@@ -374,7 +436,7 @@ To claim FT2 compliance, a module must:
 2. Implement **Intelligence** (Layer 2)
 3. Implement **FTEP** (Layer 3)
 4. Implement **Read-Only FT2 UI** (Layer 4)
-5. Include **leak-prevention tests**
+5. Enforce **downgrade semantics**
 6. Be gated by **lifecycle**
 
 If Layer 3 is missing → **module is rejected**.
@@ -385,10 +447,12 @@ If Layer 3 is missing → **module is rejected**.
 
 Because:
 
+* Analytics depends on clean truth
 * Echo Hub depends on clean truth
 * WMS-Lite depends on clean truth
-* Cross-module intelligence requires strict ownership
-* **Trust is the product**
+* Cross-module reasoning requires strict ownership
+
+**Trust is the product.**
 
 Order-Nexus is the **keystone**.
 

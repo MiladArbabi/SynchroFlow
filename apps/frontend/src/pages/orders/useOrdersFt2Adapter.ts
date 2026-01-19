@@ -1,57 +1,7 @@
 // apps/frontend/src/pages/orders/useOrdersFt2Adapter.ts
 
 import type { OrdersModuleFT2DataProps } from '@lasyncro/order-nexus';
-
-/**
- * OrdersFt2Snapshot
- * -----------------
- * This type represents the exact shape of the backend-provided
- * FT2 snapshot for OrderNexus.
- *
- * IMPORTANT:
- * - This is NOT an intelligence object.
- * - This is NOT guaranteed to be complete.
- * - Fields may be undefined, null, or partially present.
- *
- * The adapter's job is ONLY to:
- * - Normalize `undefined → null`
- * - Preserve values exactly as received
- * - Enforce a shape-stable FT2 UI contract
- *
- * The adapter MUST NOT:
- * - Infer
- * - Compute
- * - Derive
- * - Rename semantics
- * - Backfill defaults
- */
-type OrdersFt2Snapshot = {
-  context?: {
-    period?: {
-      from: string;
-      to: string;
-    };
-    ordersObserved?: number | null;
-  };
-
-  totals?: {
-    revenueTotal?: number | null;
-    costTotal?: number | null;
-    currency?: string | null;
-  };
-
-  outcome?: {
-    status: 'positive' | 'negative' | 'unknown';
-  } | null;
-
-  trend?: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-  } | null;
-
-  dataCoverage?: {
-    completenessPct?: number | null;
-  };
-};
+import { OrdersFt2Snapshot } from './useOrdersFt2Snapshot';
 
 /**
  * mapOrdersFt2Props
@@ -77,12 +27,10 @@ export function mapOrdersFt2Props(
 ): OrdersModuleFT2DataProps {
   return {
     context: {
-      period: snapshot.context?.period ?? { from: '', to: '' },
-
       ordersObserved:
-        snapshot.context?.ordersObserved === undefined
+        snapshot.ordersObserved === undefined
           ? null
-          : snapshot.context.ordersObserved,
+          : snapshot.ordersObserved,
     },
 
     totals: {
@@ -118,5 +66,11 @@ export function mapOrdersFt2Props(
           ? null
           : snapshot.dataCoverage.completenessPct,
     },
+
+    visibility:
+      snapshot.visibility === undefined
+        ? null
+        : snapshot.visibility,
+
   };
 }
