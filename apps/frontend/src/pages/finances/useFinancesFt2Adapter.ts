@@ -1,40 +1,7 @@
 // apps/frontend/src/pages/finances/useFinancesFt2Adapter.ts
 
 import type { FinancesModuleFT2Props } from '@lasyncro/finances';
-
-/**
- * Finances FT2 Backend Snapshot
- * -----------------------------
- * Canonical FT2 exposure emitted by backend.
- *
- * This snapshot contains:
- * - Observed financial surface only
- * - No intelligence
- * - No breakdowns
- * - No explanations
- */
-type FinancesFt2Snapshot = {
-  context?: {
-    period?: {
-      from: string;
-      to: string;
-    };
-    revenueObserved?: number | null;
-    netObserved?: number | null;
-  };
-
-  outcome?: {
-    status: 'positive' | 'negative' | 'unknown';
-  } | null;
-
-  trend?: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-  } | null;
-
-  dataCoverage?: {
-    completenessPct: number | null;
-  };
-};
+import { FinancesFt2Snapshot } from './useFinancesFt2Snapshot';
 
 /**
  * mapFinancesFt2Props
@@ -53,10 +20,6 @@ export function mapFinancesFt2Props(
 ): FinancesModuleFT2Props {
   const props: FinancesModuleFT2Props = {
     context: {
-      period:
-       snapshot.context?.period === undefined
-         ? null
-         : snapshot.context.period,
       revenueObserved:
        snapshot.context?.revenueObserved === undefined
          ? null
@@ -67,16 +30,30 @@ export function mapFinancesFt2Props(
           : snapshot.context.netObserved,
     },
 
-    outcome:
-      snapshot.outcome === undefined ? null : snapshot.outcome,
-
-    trend:
-      snapshot.trend === undefined ? null : snapshot.trend,
-
-    dataCoverage:
-      snapshot.dataCoverage === undefined
+    timeAwareness:
+      snapshot.timeAwareness === undefined
         ? null
-        : snapshot.dataCoverage,
+        : snapshot.timeAwareness,
+
+    timeline:
+      snapshot.timeline === undefined
+        ? null
+        : snapshot.timeline,
+
+    blindSpots:
+      snapshot.blindSpots === undefined
+        ? null
+        : snapshot.blindSpots,
+
+    decisionSafety:
+      snapshot.decisionSafety === undefined
+        ? null
+        : snapshot.decisionSafety,
+
+    profitPreconditions:
+      snapshot.profitPreconditions === undefined
+        ? null
+        : snapshot.profitPreconditions,
   };
 
   /**

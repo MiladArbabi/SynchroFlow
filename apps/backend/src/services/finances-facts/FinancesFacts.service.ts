@@ -76,14 +76,65 @@ export async function buildFinancesFacts(
     ordersCountRow?.count != null && Number(ordersCountRow.count) > 0
       ? 100
       : null;
+  
+  /**
+   * Time-series (daily buckets)
+   * ---------------------------
+   * Provides raw financial observations within the period.
+   *
+   * Rules:
+   * - UTC day buckets
+   * - No gap filling
+   * - No trend inference
+   * - Null means "no evidence", NOT zero
+   */
+  
+  const dailyRows = await db('canonical_orders')
+    .select(
+      db.raw(
+        `
+        date_trunc('day', order_created_at AT TIME ZONE 'UTC') as bucket_day,
+        SUM(total_price) as revenue,
+        COUNT(id) as count
+        `
+      )
+    )
+    .where('shop_id', shopId)
+    .andWhere('order_created_at', '>=', period.from)
+    .andWhere('order_created_at', '<=', period.to)
+    .groupBy('bucket_day')
+    .orderBy('bucket_day', 'asc') as Array<{
+      bucket_day: string;
+      revenue: string | null;
+      count: string;
+    }>;
 
-  console.debug('[FinancesFacts] extracted canonical snapshot', {
-    shopId,
-    period,
-    totalRevenue,
-    totalCosts,
-    netResult,
-    completenessPct,
+  const timeSeriesPoints = dailyRows.map((row) => {
+    const from = new Date(row.bucket_day).toISOString();
+    const to = new Date(
+      new Date(row.bucket_day).getTime() + 24 * 60 * 60 * 1000 - 1
+    ).toISOString();
+
+    const ordersCount =
+      row.count != null ? Number(row.count) : null;
+
+    return {
+      from,
+      to,
+
+      revenueObserved:
+        row.revenue != null ? Number(row.revenue) : null,
+
+      ordersCount,
+
+      coveragePct:
+        ordersCount != null && ordersCount > 0 ? 100 : null,
+    };
+  });
+
+   console.debug('[FinancesFacts] extracted time series', {
+    bucket: 'day',
+    points: timeSeriesPoints.length,
   });
 
   return {
@@ -96,6 +147,11 @@ export async function buildFinancesFacts(
 
     dataCoverage: {
       completenessPct,
+    },
+
+    timeSeries: {
+      bucket: 'day',
+      points: timeSeriesPoints,
     },
 
     extractedAt: new Date().toISOString(),

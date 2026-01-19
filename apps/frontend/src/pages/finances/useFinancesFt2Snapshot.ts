@@ -23,6 +23,43 @@ export type FinancesFt2Snapshot = {
   dataCoverage?: {
     completenessPct: number | null;
   };
+
+  timeAwareness?: {
+    history: 'sufficient' | 'insufficient';
+    confidence: 'high' | 'medium' | 'low' | 'unknown';
+  } | null;
+
+  timeline?: {
+    bucket: 'day';
+    points: Array<{
+      from: string;
+      to: string;
+      revenueObserved: number | null;
+    }>;
+  } | null;
+
+  coverageTimeline?: {
+    bucket: 'day';
+    points: Array<{
+      from: string;
+      to: string;
+      coveragePct: number | null;
+    }>;
+  } | null;
+
+  blindSpots?: {
+    costs: 'unknown' | 'known';
+    refunds: 'unknown' | 'known';
+    history: 'insufficient' | 'sufficient';
+  } | null;
+
+  decisionSafety?: {
+    status: 'safe' | 'unsafe' | 'unknown';
+  } | null;
+
+  profitPreconditions?: {
+    status: 'ready' | 'not_ready';
+  } | null;
 };
 
 /**

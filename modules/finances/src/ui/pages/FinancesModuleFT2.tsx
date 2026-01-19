@@ -18,31 +18,44 @@ import {
  */
 export interface FinancesModuleFT2DataProps {
   context: {
-    period:
-      | {
-          from: string;
-          to: string;
-        }
-      | null;
     revenueObserved: number | null;
     netObserved: number | null;
   };
 
-  outcome:
+  timeAwareness:
     | {
-        status: 'positive' | 'negative' | 'unknown';
+        history: 'sufficient' | 'insufficient';
       }
     | null;
 
-  trend:
+  timeline:
     | {
-        direction: 'up' | 'down' | 'flat' | 'unknown';
+        bucket: 'day';
+        points: Array<{
+          from: string;
+          to: string;
+          revenueObserved: number | null;
+        }>;
       }
     | null;
 
-  dataCoverage:
+  blindSpots:
     | {
-        completenessPct: number | null;
+        costs: 'unknown' | 'known';
+        refunds: 'unknown' | 'known';
+        history: 'insufficient' | 'sufficient';
+      }
+    | null;
+
+  decisionSafety:
+    | {
+        status: 'safe' | 'unsafe' | 'unknown';
+      }
+    | null;
+
+  profitPreconditions:
+    | {
+        status: 'ready' | 'not_ready';
       }
     | null;
 }
@@ -63,21 +76,18 @@ export default function FinancesModuleFT2(
 ) {
   const {
     context,
-    outcome,
-    trend,
-    dataCoverage,
+    timeAwareness,
+    timeline,
+    blindSpots,
+    decisionSafety,
+    profitPreconditions,
   } = props;
 
   return (
     <FT2Layout>
-      {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
-      <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Period">
-          {context.period === null
-            ? '—'
-            : `${context.period.from} → ${context.period.to}`}
-        </FT2Surface>
 
+      {/* ───────── Core Financial Reality ───────── */}
+      <FT2Row intent="kpi">
         <FT2Surface variant="kpi" title="Revenue observed">
           {context.revenueObserved ?? '—'}
         </FT2Surface>
@@ -86,50 +96,48 @@ export default function FinancesModuleFT2(
           {context.netObserved ?? '—'}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Outcome">
-          {outcome?.status ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Trend">
-          {trend?.direction ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Data coverage">
-          {dataCoverage?.completenessPct === null ||
-          dataCoverage === null
+        <FT2Surface variant="kpi" title="Financial readiness">
+          {timeAwareness === null
             ? '—'
-            : `${dataCoverage.completenessPct}%`}
+            : timeAwareness.history === 'sufficient'
+              ? 'Ready'
+              : 'Partial'}
         </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Decision safety">
+          {decisionSafety?.status ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Profit validity">
+          {profitPreconditions?.status ?? '—'}
+        </FT2Surface>
+
       </FT2Row>
 
-      {/* ───────── Layer 2 — Analytical ───────── */}
+      {/* ───────── Activity Over Time ───────── */}
       <FT2Row intent="analysis">
-        <FT2Surface title="Financial activity over time">
-          {/* TODO CHART */}
-        </FT2Surface>
-
-        <FT2Surface title="Financial distribution">
-         {/* TODO CHART */}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ───────── Layer 3 — Support ───────── */}
-      <FT2Row intent="support">
-        <FT2Surface title="Trend summary">
-          {trend?.direction ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Outcome">
-          {outcome?.status ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Coverage status">
-          {dataCoverage?.completenessPct === null ||
-          dataCoverage === null
+        <FT2Surface title="Revenue activity (observed)">
+          {timeline === null || timeline.points.length === 0
             ? '—'
-            : `${dataCoverage.completenessPct}%`}
+            : 'Data available'}
         </FT2Surface>
       </FT2Row>
+
+      {/* ───────── Blind Spots ───────── */}
+      <FT2Row intent="support">
+        <FT2Surface title="Blind spots">
+          {blindSpots === null
+            ? '—'
+            : [
+                blindSpots.costs === 'unknown' && 'Costs',
+                blindSpots.refunds === 'unknown' && 'Refunds',
+                blindSpots.history === 'insufficient' && 'History',
+              ]
+                .filter(Boolean)
+                .join(', ') || 'None'}
+        </FT2Surface>
+      </FT2Row>
+
     </FT2Layout>
   );
 }
