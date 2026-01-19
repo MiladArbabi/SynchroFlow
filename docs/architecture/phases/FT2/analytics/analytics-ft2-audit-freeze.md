@@ -1,20 +1,22 @@
 # 🔒 FT2 CONTRACT AUDIT
 
-## Analytics / insightCore
+## Analytics / InsightCore
 
-**Status:** LOCKED • SEALED • EVIDENCE-COMPLETE
+**Status:** 🔒 LOCKED • SEALED • EVIDENCE-COMPLETE
 **Audit Type:** Contract Truth Audit
-**Scope:** FT2 Analytics exposure surface only
-**Doctrine:** FT2 Truth Exposure Policy (non-inferential)
+**Scope:** **Analytics FT2 Observability Exposure**
+**Doctrine:** FT2 Truth Exposure Policy (Non-inferential, Non-explanatory)
 
 ---
 
 ## 0. Contract Definition
 
-This document defines the **authoritative FT2 Analytics contract** as it exists **today**.
+This document defines the **authoritative Analytics FT2 contract as it exists today**.
 
 A field, signal, or behavior **exists only if proven by scan**.
-If a signal is not exposed, it is **not part of the contract**, regardless of intent or commentary.
+Intent, roadmap, or conceptual desire **do not constitute contract**.
+
+If a signal is not exposed by `AnalyticsFT2Exposure`, it **does not exist**.
 
 ---
 
@@ -26,22 +28,22 @@ If a signal is not exposed, it is **not part of the contract**, regardless of in
 getAnalyticsFt2Snapshot()
 ```
 
-Pipeline (immutable):
+**Immutable pipeline:**
 
 ```
 Analytics Facts
  → Analytics Intelligence
    → Analytics FTEP
-     → FT2 Exposure
+     → Analytics FT2 Exposure
 ```
 
 ### Frontend Authority
 
-```ts
+```http
 GET /api/v1/modules/analytics/ft2
 ```
 
-No other path, adapter, or module participates in FT2 Analytics truth.
+No other endpoint, provider, adapter, or module participates in Analytics FT2 truth.
 
 ---
 
@@ -51,130 +53,194 @@ No other path, adapter, or module participates in FT2 Analytics truth.
 
 ```ts
 {
-  context: {
-    period: {
-      from: string;
-      to: string;
-    };
+  snapshot: {
+    id: string;
+    extractedAt: string;
   };
 
-  outcome: {
-    status: 'positive' | 'negative';
-  } | null;
-
-  trend: {
-    direction: 'unknown';
-  } | null;
+  domains: {
+    orders: AnalyticsDomainExposure | null;
+    products: AnalyticsDomainExposure | null;
+    customers: AnalyticsDomainExposure | null;
+    finances: AnalyticsDomainExposure | null;
+  };
 }
 ```
 
 This shape is **final, minimal, and authoritative**.
 
+There is:
+
+* ❌ no outcome
+* ❌ no trend
+* ❌ no money
+* ❌ no intelligence leakage
+
+---
+
+### 🔐 **AnalyticsDomainExposure (SEALED)**
+
+```ts
+{
+  presence: boolean | null;
+  observationCount: number | null;
+  nullSurface: number | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+}
+```
+
+This is **pure observability**, nothing else.
+
 ---
 
 ## 3. Field-Level Contract Audit (Exhaustive)
 
-### 3.1 `context`
+---
 
-#### `context.period.from`
+### 3.1 `snapshot`
+
+#### `snapshot.id`
 
 * **Type:** `string`
-* **Source:** Backend Facts input
+* **Source:** Analytics Facts
 * **Exposure:** Always exposed
-* **Nullability:** Never null at exposure
-* **Semantics:** Observational time window
+* **Nullability:** Never null
+* **Semantics:** Snapshot identity only
 * **UI Behavior:** Rendered verbatim
 
-#### `context.period.to`
+#### `snapshot.extractedAt`
 
-* **Type:** `string`
-* **Source:** Backend Facts input
+* **Type:** `string` (ISO timestamp)
+* **Source:** Analytics Facts
 * **Exposure:** Always exposed
-* **Nullability:** Never null at exposure
-* **Semantics:** Observational time window
+* **Nullability:** Never null
+* **Semantics:** Extraction moment, not business time
 * **UI Behavior:** Rendered verbatim
 
 🔒 **Contract Rule:**
-`context.period` is **always present**, regardless of intelligence state.
+Snapshot metadata is **always visible**, regardless of domain observability.
 
 ---
 
-### 3.2 `outcome`
+### 3.2 `domains`
 
-#### `outcome.status`
-
-* **Type:** `'positive' | 'negative'`
-* **Source:** Analytics Intelligence
-* **Exposure Rule:**
-
-  * Exposed **only if** intelligence outcome ≠ `unknown`
-  * Otherwise → `outcome = null`
-* **Null Semantics:**
-
-  * `null` means **intentionally suppressed**
-* **UI Rendering:**
-
-  * `'—'` when `null`
-  * No fallback, no default
-
-🔒 **Contract Rule:**
-If `outcome` is `null`, **no outcome truth exists**.
+Each domain is **independently observable and independently suppressible**.
 
 ---
 
-### 3.3 `trend`
+### 3.2.1 `domains.<domain>` (Orders / Products / Customers / Finances)
 
-#### `trend.direction`
+* **Type:** `AnalyticsDomainExposure | null`
+* **Suppression Rule:**
 
-* **Type:** `'unknown'`
-* **Source:** Analytics Intelligence
-* **Exposure Rule:**
-
-  * Exposed **only if** outcome ≠ `unknown`
-  * Otherwise → `trend = null`
-* **Mutability:** None (inert)
-* **UI Rendering:**
-
-  * `'—'` when `null`
-  * `'unknown'` when exposed
+  * `null` → observability itself is unknown
+  * object → observability is known (even if absent)
 
 🔒 **Contract Rule:**
-Trend is a **structural placeholder**, not an analytical signal.
+`null` means **withheld by policy**, not “empty”.
+
+---
+
+### 3.3 Domain Exposure Fields
+
+#### `presence`
+
+* **Type:** `boolean | null`
+* **Source:** Analytics Intelligence
+* **Semantics:**
+
+  * `true` → at least one observable fact exists
+  * `false` → explicitly zero observable facts
+  * `null` → observability unknown
+* **UI Rendering:**
+
+  * `true` → “Yes”
+  * `false` → “No”
+  * `null` → “—”
+
+---
+
+#### `observationCount`
+
+* **Type:** `number | null`
+* **Source:** Analytics Facts (or FT2 upstream module)
+* **Semantics:** Raw count of observed entities
+* **Null Semantics:** Unknown, not zero
+* **UI Rendering:** Rendered verbatim or `—`
+
+---
+
+#### `nullSurface`
+
+* **Type:** `number | null`
+* **Source:** Analytics Facts
+* **Semantics:** Degree of observational blindness
+* **Interpretation:** ❌ Forbidden
+* **UI Rendering:** Rendered verbatim or `—`
+
+---
+
+#### `firstSeenAt`
+
+* **Type:** `string | null`
+* **Source:** Analytics Facts
+* **Semantics:** First lawful observation timestamp
+* **Null Semantics:** No temporal anchor
+* **UI Rendering:** `—` when null
+
+---
+
+#### `lastSeenAt`
+
+* **Type:** `string | null`
+* **Source:** Analytics Facts
+* **Semantics:** Last lawful observation timestamp
+* **Null Semantics:** No temporal anchor
+* **UI Rendering:** `—` when null
 
 ---
 
 ## 4. Signal Provenance Matrix
 
-| Signal          | Origin Layer | Derived From  | Exposure Allowed | UI Visible |
-| --------------- | ------------ | ------------- | ---------------- | ---------- |
-| period          | Facts        | Input         | Always           | Yes        |
-| outcome.status  | Intelligence | Orders counts | Conditional      | Yes        |
-| trend.direction | Intelligence | None          | Conditional      | Yes        |
-| raw counts      | Facts        | DB            | ❌                | ❌          |
-| money           | —            | —             | ❌                | ❌          |
-| percentages     | —            | —             | ❌                | ❌          |
-| explanations    | —            | —             | ❌                | ❌          |
+| Signal               | Origin Layer | Derived From        | Exposure Allowed | UI Visible |
+| -------------------- | ------------ | ------------------- | ---------------- | ---------- |
+| snapshot.id          | Facts        | Generator           | Yes              | Yes        |
+| snapshot.extractedAt | Facts        | System time         | Yes              | Yes        |
+| domain.presence      | Intelligence | Observability facts | Yes              | Yes        |
+| observationCount     | Facts / FT2  | Raw counts          | Yes              | Yes        |
+| nullSurface          | Facts        | Blindness metric    | Yes              | Yes        |
+| firstSeenAt          | Facts        | Lawful timestamps   | Yes              | Yes        |
+| lastSeenAt           | Facts        | Lawful timestamps   | Yes              | Yes        |
+| money                | —            | —                   | ❌                | ❌          |
+| outcomes             | —            | —                   | ❌                | ❌          |
+| trends               | —            | —                   | ❌                | ❌          |
+| explanations         | —            | —                   | ❌                | ❌          |
 
 ---
 
 ## 5. Intelligence Contract (Locked)
 
-### Intelligence Inputs (Exact)
+### Intelligence Purpose
 
-* `ordersObserved.processing`
-* `ordersObserved.delivered`
-* `ordersObserved.in_transit`
+Analytics Intelligence **does not judge quality, performance, or success**.
 
-### Intelligence States
+It only classifies **observability state**.
 
-| Condition         | outcome.status | trend.direction |
-| ----------------- | -------------- | --------------- |
-| All values `null` | `unknown`      | `unknown`       |
-| All values `0`    | `negative`     | `unknown`       |
-| Any value > 0     | `positive`     | `unknown`       |
+---
+
+### Intelligence States (Per Domain)
+
+| Input Condition                   | presence | observationLevel | continuity   |
+| --------------------------------- | -------- | ---------------- | ------------ |
+| presence = null                   | unknown  | unknown          | unknown      |
+| presence = false                  | absent   | none             | missing      |
+| presence = true + partial data    | present  | low / partial    | intermittent |
+| presence = true + full timestamps | present  | full             | continuous   |
 
 🔒 **Contract Rule:**
-No other intelligence state exists.
+Intelligence never emits `null`.
+Ambiguity is encoded as `'unknown'`.
 
 ---
 
@@ -182,42 +248,41 @@ No other intelligence state exists.
 
 | Layer        | Meaning of `null`              |
 | ------------ | ------------------------------ |
-| Facts        | Data absent in DB              |
-| Intelligence | Insufficient certainty         |
+| Facts        | Data absent at source          |
+| Intelligence | ❌ never uses null              |
 | FTEP         | Truth intentionally suppressed |
-| UI           | Honest absence (`—`)           |
+| FT2 Exposure | Honest absence                 |
+| UI           | Rendered as `—`                |
 
-There is **no reinterpretation of null** at any layer.
-
----
-
-## 7. Inert / Non-Contractual Signals (Observed)
-
-The following **exist in code but are NOT part of the FT2 contract**:
-
-| Signal                          | Location      | Status                    |
-| ------------------------------- | ------------- | ------------------------- |
-| `revenueObserved`               | Snapshot type | Inert                     |
-| `trend.direction !== 'unknown'` | Intelligence  | Impossible                |
-| FT2 charts                      | UI            | Non-semantic placeholders |
-
-These signals **carry zero contractual meaning**.
+Null is **never reinterpreted** downstream.
 
 ---
 
-## 8. Explicit Non-Contractual Guarantees
+## 7. Explicit Non-Contractual Signals
 
-The Analytics FT2 contract **does NOT guarantee**:
+The following **do not exist in the Analytics FT2 contract**, regardless of code elsewhere:
+
+| Signal          | Status |
+| --------------- | ------ |
+| outcome         | ❌      |
+| trend           | ❌      |
+| revenue         | ❌      |
+| percentages     | ❌      |
+| KPIs            | ❌      |
+| recommendations | ❌      |
+
+---
+
+## 8. Explicit Non-Guarantees
+
+Analytics FT2 **does not guarantee**:
 
 * Completeness
-* Accuracy beyond DB truth
-* Trend validity
-* Business explanation
+* Accuracy beyond upstream truth
+* Business relevance
+* Explanations
 * Actionability
-* Recommendations
-* Financial insight
-
-Any such expectation is **outside FT2 doctrine**.
+* Consistency across domains
 
 ---
 
@@ -225,20 +290,25 @@ Any such expectation is **outside FT2 doctrine**.
 
 **Verified by scan:**
 
-* No layer injects meaning
-* No layer compensates for absence
-* No layer infers suppressed truth
-* No UI reconstructs intelligence
-* No backend leaks raw data
+* Analytics consumes FT2 where required
+* No domain intelligence leaks
+* No facts are inferred
+* No UI reconstruction occurs
+* No silent defaults exist
 
 ---
 
 ## 10. FINAL SEALED VERDICT
 
-> **The Analytics / insightCore FT2 contract is minimal, conservative, null-honest, and internally consistent.**
+> **The Analytics / InsightCore FT2 contract is a pure observability surface.**
 >
-> Every exposed field is intentional.
-> Every suppressed signal is deliberate.
+> It exposes *what is visible*, *what is absent*, and *what is unknowable* —
+> without explanation, judgment, or advice.
+>
+> Every exposed field is deliberate.
+> Every suppressed domain is intentional.
 > Every `—` is truthful.
 >
-> This contract is **LOCKED, SEALED, and EVIDENCE-FINAL**.
+> **This contract is LOCKED, SEALED, and EVIDENCE-FINAL.**
+
+---

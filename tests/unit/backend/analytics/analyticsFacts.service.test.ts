@@ -1,9 +1,16 @@
-// tests/unit/backend/analytics/analyticsFacts.service.test.ts
-
 import db from 'api-db';
 import { getAnalyticsFacts } from 'api-src/services/analytics-facts/analyticsFacts.service';
 
-jest.mock('api-db');
+jest.mock('api-db', () => {
+  const fn: any = jest.fn(() => ({
+    where: jest.fn().mockReturnThis(),
+    groupBy: jest.fn().mockReturnThis(),
+    select: jest.fn(),
+  }));
+
+  fn.raw = jest.fn((sql: string) => sql);
+  return fn;
+});
 
 describe('Analytics Facts — raw truth extraction only', () => {
   const mockDb = db as unknown as jest.Mock;
@@ -12,19 +19,7 @@ describe('Analytics Facts — raw truth extraction only', () => {
     jest.resetAllMocks();
   });
 
-  test('returns nulls when no sales data exists', async () => {
-    mockDb.mockReturnValueOnce({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      sum: jest.fn().mockResolvedValueOnce([{ total: null }]),
-    });
-
-    mockDb.mockReturnValueOnce({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      sum: jest.fn().mockResolvedValueOnce([{ total: null }]),
-    });
-
+  test('returns nulls when no order data exists', async () => {
     mockDb.mockReturnValueOnce({
       where: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
@@ -33,71 +28,46 @@ describe('Analytics Facts — raw truth extraction only', () => {
 
     const result = await getAnalyticsFacts({
       shopId: 1,
-      period: { from: '2025-01-01', to: '2025-01-31' },
     });
 
-    expect(result.revenueObserved).toBeNull();
-    expect(result.cogsObserved).toBeNull();
-    expect(result.ordersObserved).toEqual({
-      processing: null,
-      delivered: null,
-      in_transit: null,
-    });
+    expect(result.domains.orders.observationCount).toBeNull();
   });
 
-  test('returns raw sums and counts without interpretation', async () => {
-    mockDb.mockReturnValueOnce({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      sum: jest.fn().mockResolvedValueOnce([{ total: '1000' }]),
-    });
-
-    mockDb.mockReturnValueOnce({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      sum: jest.fn().mockResolvedValueOnce([{ total: '400' }]),
-    });
-
+  test('returns raw order counts without interpretation', async () => {
     mockDb.mockReturnValueOnce({
       where: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
       select: jest.fn().mockResolvedValueOnce([
-        { status: 'processing', count: 2 },
-        { status: 'delivered', count: 5 },
-        { status: 'in_transit', count: 1 },
+        {
+          count: 8,
+          first_seen_at: '2025-01-01T00:00:00Z',
+          last_seen_at: '2025-01-31T23:59:59Z',
+        },
       ]),
     });
 
     const result = await getAnalyticsFacts({
       shopId: 1,
-      period: { from: '2025-01-01', to: '2025-01-31' },
     });
 
-    expect(result.revenueObserved).toBe(1000);
-    expect(result.cogsObserved).toBe(400);
-    expect(result.ordersObserved).toEqual({
-      processing: 2,
-      delivered: 5,
-      in_transit: 1,
-    });
+    expect(result.domains.orders.observationCount).toBe(8);
   });
 
-  test('does not compute percentages, margins, or statuses', async () => {
-    mockDb.mockReturnValue({
+  test('does not expose financials, periods, or intelligence', async () => {
+    mockDb.mockReturnValueOnce({
       where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      sum: jest.fn().mockResolvedValue([{ total: '1000' }]),
       groupBy: jest.fn().mockReturnThis(),
-      select: jest.fn().mockResolvedValue([]),
+      select: jest.fn().mockResolvedValueOnce([]),
     });
 
     const result = await getAnalyticsFacts({
       shopId: 1,
-      period: { from: '2025-01-01', to: '2025-01-31' },
     });
 
-    expect((result as any).margin).toBeUndefined();
-    expect((result as any).percentage).toBeUndefined();
-    expect((result as any).status).toBeUndefined();
+    expect((result as any).revenueObserved).toBeUndefined();
+    expect((result as any).cogsObserved).toBeUndefined();
+    expect((result as any).period).toBeUndefined();
+    expect((result as any).outcome).toBeUndefined();
+    expect((result as any).trend).toBeUndefined();
   });
 });

@@ -13,66 +13,114 @@ export default function AnalyticsModuleFT2(
   props: AnalyticsModuleFT2Props
 ) {
   const {
-    context,
-    outcome,
-    trend,
-  } = props;
+  snapshot,
+  domains,
+} = props;
 
   return (
     <FT2Layout>
-      {/* ───────── Layer 1 — Snapshot / KPIs ───────── */}
+      <FT2Layout>
+      {/* ───────── Snapshot Metadata ─────────
+          Purpose:
+          - Anchor the user in time WITHOUT interpreting it
+          - No business meaning
+      */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Period">
-          {context.period.from} → {context.period.to}
+        <FT2Surface variant="kpi" title="Snapshot ID">
+          {snapshot.id || '—'}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Outcome">
-          {outcome?.status ?? '—'}
+        <FT2Surface variant="kpi" title="Extracted At">
+          {snapshot.extractedAt || '—'}
         </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Trend">
-          {trend?.direction ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="TODO" />
-        
-        {/* ─── Insights / Ops / Attention ─── */}
-          <FT2Surface
-            title="Insights"
-            span={2}
-          >
-            {/* TODO placeholder – will evolve */}
-            <div>• Revenue volatility detected</div>
-            <div>• Data coverage below 90%</div>
-            <div>• Cost signal delayed</div>
-          </FT2Surface>
       </FT2Row>
 
-      {/* ───────── Layer 2 — Analytical ───────── */}
+      {/* ───────── Domain Observability ─────────
+          Purpose:
+          - Show WHAT is observable
+          - Never explain WHY
+          - Never judge GOOD/BAD
+      */}
       <FT2Row intent="analysis">
-        <FT2Surface title="Analytics activity over time">
-          {/* TODO CHART */}
+        <FT2Surface title="Orders — Observability">
+          <DomainObservability domain={domains.orders} />
         </FT2Surface>
 
-        <FT2Surface title="Analytics distribution">
-          {/* TODO CHART */}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ───────── Layer 3 — Support ───────── */}
-      <FT2Row intent="support">
-        <FT2Surface title="Trend summary">
-          {trend?.direction ?? '—'}
+        <FT2Surface title="Products — Observability">
+          <DomainObservability domain={domains.products} />
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Outcome">
-          {outcome?.status ?? '—'}
+        <FT2Surface title="Customers — Observability">
+          <DomainObservability domain={domains.customers} />
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Data status">
-          —
+        <FT2Surface title="Finances — Observability">
+          <DomainObservability domain={domains.finances} />
         </FT2Surface>
       </FT2Row>
     </FT2Layout>
+    </FT2Layout>
+  );
+}
+
+/**
+ * DomainObservability
+ *
+ * Dumb renderer for FT2 observability signals.
+ *
+ * Rules:
+ * - null === intentional absence
+ * - NO interpretation
+ * - NO advice
+ * - NO performance framing
+ */
+function DomainObservability({
+  domain,
+}: {
+  domain:
+    | {
+        presence: boolean | null;
+        observationCount: number | null;
+        nullSurface: number | null;
+        firstSeenAt: string | null;
+        lastSeenAt: string | null;
+      }
+    | null;
+}) {
+  if (domain === null) {
+    return <div>—</div>;
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      <div>
+        <strong>Presence:</strong>{' '}
+        {domain.presence === null
+          ? '—'
+          : domain.presence
+          ? 'Yes'
+          : 'No'}
+      </div>
+
+      <div>
+        <strong>Observation Count:</strong>{' '}
+        {domain.observationCount === null ? '—' : domain.observationCount}
+      </div>
+
+      <div>
+        <strong>Null Surface:</strong>{' '}
+        {domain.nullSurface ?? '—'}
+      </div>
+
+      <div>
+        <strong>First Seen:</strong>{' '}
+        {domain.firstSeenAt ?? '—'}
+      </div>
+
+      <div>
+        <strong>Last Seen:</strong>{' '}
+        {domain.lastSeenAt ?? '—'}
+      </div>
+    </div>
   );
 }

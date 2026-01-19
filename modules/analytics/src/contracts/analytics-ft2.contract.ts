@@ -1,10 +1,14 @@
-// Backend-local mirror of Analytics FT2 contract.
-// NOTE:
-// - Backend is CommonJS
-// - Cannot resolve ESM package subpath exports
-// - This file MUST stay structurally identical to the module contract
-// - Drift is prevented by tests, not imports
-
+/**
+ * AnalyticsFT2Exposure
+ *
+ * Public FT2 contract for Analytics.
+ *
+ * Rules:
+ * - Data-only
+ * - Null = intentional absence
+ * - No intelligence
+ * - No lifecycle semantics
+ */
 export interface AnalyticsFT2Exposure {
   snapshot: {
     id: string;

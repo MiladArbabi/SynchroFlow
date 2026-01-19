@@ -20,7 +20,12 @@ export default function AnalyticsFT2Page() {
     to: null,
   });
 
+  // NOTE:
+  // Date range is resolved by lifecycle/controller.
+  // Analytics observes already-scoped truth.
+  // This hook does NOT imply Analytics owns time.
   const snapshotQuery = useAnalyticsFt2Snapshot(range);
+
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) {

@@ -1,13 +1,3 @@
-Below is the **LOCKED & SEALED FT2 Contract Audit** for **Finances / marginCore**.
-This is a **contract-level document**, not an implementation review.
-Everything listed here is **authoritative, as-is, and binding** until explicitly versioned otherwise.
-
-No speculation.
-No future intent mixed in.
-This is the **truth boundary**.
-
----
-
 # 🔒 Finances / marginCore — FT2 Contract Audit (LOCKED)
 
 **Contract Type:** FT2 Snapshot Exposure

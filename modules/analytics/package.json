@@ -11,6 +11,10 @@
     "./ui": {
       "types": "./dist/ui/index.d.ts",
       "default": "./dist/ui/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/analytics-ft2.contract.d.ts",
+      "default": "./dist/contracts/analytics-ft2.contract.js"
     }
   },
   "files": [

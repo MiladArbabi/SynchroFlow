@@ -4,3 +4,4 @@
 
 export * from './ui';
 export { default } from './ui';
+export * from './contracts/analytics-ft2.contract';

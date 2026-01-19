@@ -4,27 +4,43 @@
  *
  * DATA-ONLY FT2 contract for Analytics.
  *
+ * Purpose:
+ * - Expose observability substrate ONLY
+ * - No intelligence
+ * - No interpretation
+ * - No business meaning
+ *
  * Rules:
  * - Shape-stable
  * - Read-only
- * - No intelligence
- * - Uncertainty expressed ONLY via `null`
+ * - Null = intentional absence
  */
 export interface AnalyticsModuleFT2DataProps {
-  context: {
-    period: {
-      from: string;
-      to: string;
-    };
+  snapshot: {
+    id: string;
+    extractedAt: string;
   };
 
-  outcome: {
-    status: 'positive' | 'negative';
-  } | null;
+  domains: {
+    orders: AnalyticsDomainProps | null;
+    products: AnalyticsDomainProps | null;
+    customers: AnalyticsDomainProps | null;
+    finances: AnalyticsDomainProps | null;
+  };
+}
 
-  trend: {
-    direction: 'unknown';
-  } | null;
+/**
+ * AnalyticsDomainProps
+ *
+ * FT2-safe observability surface for a single domain.
+ * This type must NEVER include derived meaning.
+ */
+export interface AnalyticsDomainProps {
+  presence: boolean | null;
+  observationCount: number | null;
+  nullSurface: number | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
 }
 
 /**
@@ -33,8 +49,9 @@ export interface AnalyticsModuleFT2DataProps {
  *
  * FULL render contract.
  *
- * - Extends data props
- * - Visuals injected
+ * NOTE:
+ * - Currently identical to data props
+ * - Separated intentionally for future visual-only extensions
  */
 export type AnalyticsModuleFT2Props =
   AnalyticsModuleFT2DataProps;

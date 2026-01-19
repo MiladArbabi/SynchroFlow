@@ -49,7 +49,6 @@ describe('Analytics FT2 Controller (RED)', () => {
     expect(periodUtil.getFt2Period).toHaveBeenCalled();
     expect(provider.getAnalyticsFt2Snapshot).toHaveBeenCalledWith({
       shopId: 1,
-      period: { from: 'AUTO_FROM', to: 'AUTO_TO' },
     });
   });
 

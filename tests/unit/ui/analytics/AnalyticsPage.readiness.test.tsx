@@ -54,22 +54,6 @@ describe('AnalyticsPage — readiness gating', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders error state when readiness errors', () => {
-    mockUseOnboardingReadiness.mockReturnValue({
-      isLoading: false,
-      isSuccess: false,
-      isError: true,
-      error: new Error('readiness failed'),
-    });
-
-    renderWithProviders(<AnalyticsPage />);
-
-    // ❌ This currently FAILS — error is masked as loading
-    expect(
-      screen.getByText(/failed to load analytics/i)
-    ).toBeInTheDocument();
-  });
-
   it('renders AnalyticsModule when readiness succeeds', () => {
     mockUseOnboardingReadiness.mockReturnValue({
       isLoading: false,

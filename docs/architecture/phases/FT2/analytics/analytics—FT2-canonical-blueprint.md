@@ -1,347 +1,333 @@
 # 🔐 Analytics Module — FT2 Features & Offerings Blueprint
 
-**(Free-Tier vs Paid, FT2 as the Apex)**
+**(Observability-First, Cross-Module, Time-Agnostic by Default)**
+
+**Status:** 🔒 CANONICAL • EVIDENCE-SYNCED • CONTRACT-SAFE
+**Scope:** Analytics FT2 only
+**Doctrine:** Truth Exposure Policy over Observability (not performance)
 
 ---
 
-## 0. Analytics Prime Directive (Module-Specific)
+## 0. Analytics Prime Directive (Corrected)
 
-> **Analytics owns time, continuity, and comparison semantics — nothing else.**
+> **Analytics owns observability aggregation and suppression — not time, not outcomes, not comparison.**
 
-Analytics does **not** own:
+Analytics **does NOT own**:
 
-* Profitability
-* Efficiency
-* Performance quality
-* Optimization
-* Decision-making
+* Time semantics
+* Continuity
+* Trends
+* Comparisons
+* Outcomes
+* Performance framing
+* Business meaning
 
-It owns **how truth behaves across time** — and how much of that behavior is permitted to be seen.
+Analytics **only owns**:
 
----
+* Aggregating *observability* across modules
+* Classifying *visibility vs blindness*
+* Suppressing truth conservatively under FT2 rules
 
-## 1. Analytics Truth Domain (What It Owns)
-
-From the global Truth Ownership Model:
-
-| Module    | Owns Truth About                               |
-| --------- | ---------------------------------------------- |
-| Analytics | **Time, continuity, and comparison semantics** |
-
-This means Analytics is allowed to:
-
-* Observe snapshots
-* Observe sequences of snapshots
-* Observe directional change
-* Enforce temporal exposure rules
-
-Analytics is **not allowed** to:
-
-* Judge
-* Explain
-* Optimize
-* Recommend
+If time, continuity, or trends appear anywhere, they are:
+*Owned upstream* or *future-gated*, **not Analytics-owned today**.
 
 ---
 
-## 2. Analytics Facts (What Exists, Period)
+## 1. Analytics Truth Domain (As Actually Implemented)
 
-Analytics Facts are **strictly raw temporal observations**, sourced only from modules that already own the underlying truth.
+From **verified code scans**, Analytics owns:
 
-### Canonical Facts Surface (As Built)
+| Capability             | Ownership |
+| ---------------------- | --------- |
+| Data existence         | ✅         |
+| Data absence           | ✅         |
+| Observability volume   | ✅         |
+| Blindness detection    | ✅         |
+| Cross-module alignment | ✅         |
+| Time semantics         | ❌         |
+| Direction / trend      | ❌         |
+| Outcome / success      | ❌         |
+| Comparison             | ❌         |
+
+Analytics is a **map of what can be seen** — nothing more.
+
+---
+
+## 2. Analytics Facts — What Exists (Verified)
+
+Analytics Facts are **observability substrates**, not economic facts.
+
+### Canonical Facts Surface (LOCKED)
 
 ```ts
 AnalyticsFacts {
-  revenueObserved: number | null
-  cogsObserved: number | null
-  ordersObserved: {
-    processing: number | null
-    delivered: number | null
-    in_transit: number | null
+  shopId: number
+  snapshotId: string
+  extractedAt: string
+
+  domains: {
+    orders: {
+      presence: boolean | null
+      observationCount: number | null
+      nullSurface: number | null
+      firstSeenAt: string | null
+      lastSeenAt: string | null
+    }
+
+    products: AnalyticsDomainFacts
+    customers: AnalyticsDomainFacts
+    finances: AnalyticsDomainFacts
   }
-  period: { from, to }
-  extractedAt
 }
 ```
 
-No ratios.
-No rollups beyond aggregation.
-No “health”.
-No derived efficiency.
+### Provenance Rules (Non-Negotiable)
 
-This is the **entire universe** Analytics operates on.
+* Orders → sourced from **Orders FT2 exposure**
+* Products → canonical products truth
+* Customers → canonical customers truth
+* Finances → canonical financial transactions truth
 
----
-
-## 3. Analytics Intelligence (Internal Only)
-
-Analytics Intelligence exists **only to support safe downgrading**.
-
-### What Intelligence May Do
-
-* Classify existence (`positive | negative | unknown`)
-* Classify direction (`up | down | flat | unknown`)
-* Degrade gracefully when data is missing
-
-### What It May Never Do
-
-* Compute percentages
-* Attribute cause
-* Compare against ideals
-* Store or expose reasoning
-
-Intelligence exists **solely** so FTEP can decide **what not to show**.
+Analytics **never** queries another module’s operational tables when an FT2 provider exists.
 
 ---
 
-## 4. Analytics FTEP — The Commercial Boundary
+### What Facts Explicitly Are NOT
 
-**All monetization happens here.**
-Not by adding intelligence — by **widening exposure permissions**.
+❌ Revenue
+❌ Costs
+❌ Margins
+❌ Statuses
+❌ Health
+❌ KPIs
+❌ Performance metrics
 
----
-
-# 5. FT2-Free Analytics Offering
-
-**“Existence Without Comfort”**
-
-FT2-Free answers one question:
-
-> *Does reality exist — and can I trust what I’m seeing?*
-
-### 5.1 Allowed Exposure (FT2-Free)
-
-#### Revenue Presence
-
-* `revenueObserved`
-* `outcome.status` → positive / negative / unknown
-
-No scale.
-No comparison.
-No success framing.
-
-#### Order Flow Snapshot
-
-* Raw counts by state
-* No ratios
-* No SLAs
-* No bottleneck inference
-
-#### Single Time Window
-
-* Exactly one `{ from, to }`
-* No historical context
-* No trend computation
-
-Nulls are **visible and respected**.
+Facts only say: *something exists* or *nothing can be seen*.
 
 ---
 
-### 5.2 Explicitly Withheld (FT2-Free)
+## 3. Analytics Intelligence (Internal, Non-Commercial)
 
-* Trends
-* Comparisons
-* Continuity
-* Historical depth
-* Cross-module aggregation
+Analytics Intelligence exists **only to protect the surface**.
 
-Not because they are “advanced” —
-but because they **create false certainty too early**.
+### What Intelligence Does
+
+* Encodes ambiguity (`unknown`)
+* Normalizes presence vs absence
+* Classifies observation *volume* (not value)
+* Enables safe suppression in FTEP
+
+### What Intelligence Never Does
+
+❌ Judge
+❌ Predict
+❌ Explain
+❌ Compare
+❌ Optimize
+❌ Recommend
+
+Intelligence is **structural glue**, not value.
 
 ---
 
-### 5.3 FT2-Free User Experience Intent
+## 4. Analytics FTEP — The Real Product Boundary
 
-FT2-Free Analytics should feel:
+> **Analytics monetization does not add meaning — it removes suppression.**
 
-* Calm
+FTEP decides:
+
+* Which domains are visible
+* Which domains are intentionally withheld
+* How much blindness the user must confront
+
+Analytics never exposes:
+
+* Intelligence
+* Classifications
+* Reasoning
+
+Only **raw observability survives**.
+
+---
+
+## 5. FT2-Free Analytics Offering
+
+### *“Visibility Without Interpretation”*
+
+FT2-Free answers exactly one question:
+
+> **What data surfaces are observable right now?**
+
+### 5.1 What FT2-Free Exposes
+
+Per domain:
+
+* `presence`
+* `observationCount`
+* `nullSurface`
+* `firstSeenAt` / `lastSeenAt` (if lawful)
+
+No summaries.
+No judgments.
+No comfort.
+
+Nulls are **fully visible**.
+
+---
+
+### 5.2 What FT2-Free Explicitly Withholds
+
+❌ Outcomes
+❌ Trends
+❌ Comparisons
+❌ Time narratives
+❌ Cross-snapshot meaning
+❌ Success framing
+
+If the user feels *guided*, FT2-Free has failed.
+
+---
+
+### 5.3 FT2-Free UX Intent
+
+FT2-Free should feel:
+
 * Sparse
-* Slightly uncomfortable
-* Honest about uncertainty
-
-If a free user feels “in control”, **you’ve overexposed**.
-
----
-
-# 6. FT2-Paid Analytics Offering
-
-**“Continuity Without Interpretation”**
-
-Paid Analytics does **not** make Analytics smarter.
-
-It makes **reality harder to ignore**.
-
----
-
-## 6.1 What Paid Unlocks (Exactly)
-
-### A. Temporal Continuity (Core Value)
-
-Paid unlocks **multiple FT2 snapshots across time**.
-
-This enables:
-
-* Directional trend exposure
-* Sequence awareness
-* Pattern visibility
-
-Still:
-
-* No deltas
-* No percentages
-* No rates
-* No thresholds
-
-Trend is exposed only as:
-
-```
-up | down | flat | unknown
-```
-
-Nothing else.
-
----
-
-### B. Multi-Window Comparison (Self Only)
-
-Paid allows:
-
-* This period vs previous period
-* This month vs last month
-
-Paid **never allows**:
-
-* Industry benchmarks
-* Peer comparisons
-* “Ideal” states
-
-Why:
-Benchmarks fabricate authority Analytics does not own.
-
----
-
-### C. Broader Metric Surface (Still Raw)
-
-Paid may expose:
-
-* More raw metrics
-* Across more time windows
-* With the same downgrade rules
-
-Depth increases.
-Semantics do not.
-
----
-
-### D. Extended Memory
-
-Paid increases:
-
-* Retention window
-* Historical reach
-* Time horizon
-
-This reinforces the core paid value:
-
-> *You cannot escape your own history.*
-
----
-
-## 6.2 What Paid Still Does NOT Get
-
-Even at FT2-Paid:
-
-❌ Margin %
-❌ Profit
-❌ Cost efficiency
-❌ Perfect order %
-❌ Inventory health
-❌ “Why” explanations
-❌ Recommendations
-❌ Prescriptive language
-
-If a paid user asks:
-
-> “So what should I do?”
-
-The correct answer remains:
-
-> *Analytics does not tell you that.*
-
----
-
-## 7. Cross-Module Analytics Rules (Strict)
-
-Analytics may **only** expose combined truth when:
-
-* Analytics FT2 entitlement exists
-* AND the other module’s FT2 entitlement exists
-
-Examples:
-
-| Scenario                    | Result                      |
-| --------------------------- | --------------------------- |
-| Analytics paid, Orders free | No trend                    |
-| Analytics + Orders paid     | Trends allowed              |
-| Analytics + Finances paid   | Economic continuity allowed |
-| Analytics paid alone        | Snapshot only               |
-
-Truth requires **mutual ownership**.
-
----
-
-## 8. UI & Language Constraints (Critical)
-
-Analytics UI — Free or Paid — must:
-
-* Avoid “success” language
-* Avoid “performance” framing
-* Avoid celebration
-* Avoid CTAs that imply decisions
-
-Correct tone:
-
-* Observational
 * Neutral
 * Slightly unsettling
 * Responsibility-preserving
 
-Analytics **shows**.
-It never **assures**.
+The correct emotional response is:
+
+> *“I can see what exists — but I am on my own.”*
 
 ---
 
-## 9. Monetization Truth (Uncomfortable but Real)
+## 6. FT2-Paid Analytics Offering
+
+### *“Persistence Without Explanation”*
+
+Paid Analytics **does not change what Analytics knows**.
+
+It changes **how much of reality the user is allowed to face**.
+
+---
+
+### 6.1 What Paid Unlocks (Future-Gated, Not Yet Active)
+
+Paid **may unlock** — when implemented:
+
+* Multiple snapshots (temporal depth)
+* Continuity visibility
+* Suppression relaxation
+* Longer retention windows
+
+Still:
+
+❌ No deltas
+❌ No percentages
+❌ No benchmarks
+❌ No targets
+
+Time increases pressure.
+Meaning remains forbidden.
+
+---
+
+### 6.2 What Paid Still Never Gets
+
+Even at maximum entitlement:
+
+❌ Profitability
+❌ Efficiency
+❌ Health
+❌ Optimization
+❌ Recommendations
+❌ “Why”
+
+If a paid user asks:
+
+> “What should I do?”
+
+Analytics must remain silent.
+
+---
+
+## 7. Cross-Module Analytics Rules (Enforced)
+
+Analytics **may only expose observability** for a domain when:
+
+* Analytics FT2 is unlocked
+* AND the domain’s FT2 provider exists
+* AND the domain’s FTEP permits exposure
+
+| Scenario                    | Result                 |
+| --------------------------- | ---------------------- |
+| Analytics FT2, Orders FT2   | Orders observability   |
+| Analytics FT2, Products FT2 | Products observability |
+| Analytics FT2 only          | No domain visibility   |
+| One side unpaid             | Suppressed             |
+
+Truth requires **mutual permission**.
+
+---
+
+## 8. UI & Language Constraints (Hard Rules)
+
+Analytics UI must:
+
+* Avoid success language
+* Avoid performance framing
+* Avoid encouragement
+* Avoid CTA-driven phrasing
+
+Correct tone:
+
+* Observational
+* Factual
+* Cold
+* Slightly uncomfortable
+
+Analytics **reveals**.
+It never **reassures**.
+
+---
+
+## 9. Monetization Truth (Reality Check)
 
 You do **not** sell Analytics by:
 
 * Making it smarter
-* Making it friendlier
-* Making it more confident
+* Making it optimistic
+* Making it explanatory
 
 You sell Analytics by:
 
-* Removing the ability to lie to oneself over time
+* Making self-deception impossible over time
 
 FT2-Free:
 
-* *Reality exists.*
+> *You can see what exists.*
 
 FT2-Paid:
 
-* *Reality persists.*
+> *You cannot escape what persists.*
 
 That is the upgrade.
 
 ---
 
-## 10. Final Lock — Analytics FT2 Doctrine
+## 10. FINAL LOCK — Analytics FT2 Doctrine
 
-> Analytics does not help users win.
-> It prevents them from pretending.
+> Analytics does not help users succeed.
+> It removes their ability to lie to themselves.
 
-> FT2 is the product.
-> Time is the leverage.
-> Permission is the price.
+> FT2 is not a feature.
+> It is a boundary.
 
-This blueprint is now **canonical for Analytics**.
+> Observability is the product.
+> Suppression is the pricing lever.
+
+This blueprint is now **CANONICAL, EVIDENCE-SYNCED, AND LOCKED**.
+
+---

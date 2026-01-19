@@ -1,51 +1,59 @@
 # 🔐 Analytics Module — Canonical 4-Layer FT2 Architecture Blueprint
 
-**Status:** FT2-compliant, test-sealed, lifecycle-safe
-**Purpose:** Expose *observations* about business performance without leaking intelligence, causation, or strategy.
+**Status:** 🔒 FT2-compliant • Test-sealed • Cross-module-safe
+**Purpose:** Expose **observability of business data surfaces** without leaking intelligence, causation, or strategy.
 
 ---
 
 ## 0. Architectural Intent (Why This Exists)
 
-Analytics is **not** a reporting module.
+Analytics is **not** a business evaluator.
+Analytics is **not** a financial interpreter.
+Analytics is **not** a reporting engine.
 
-It is a **truth observability surface** that:
+Analytics is a **cross-module observability aggregator** that answers only:
 
-* Extracts **raw economic signals**
-* Classifies them **internally**
-* Downgrades them into **safe, non-strategic observables**
-* Exposes them **only** when FT2 is already unlocked upstream
+> *What is visible? What is absent? What is unknowable?*
+
+It exists to:
+
+* Aggregate **observability facts** across modules
+* Normalize **presence / absence / blindness**
+* Preserve ambiguity
+* Expose **nothing that implies performance, quality, or causation**
 
 The architecture enforces:
 
-* ❌ No intelligence in UI
-* ❌ No percentages, margins, or strategy
-* ❌ No lifecycle inference in controllers
-* ❌ No silent assumptions
+* ❌ No business intelligence in UI
+* ❌ No financial meaning
+* ❌ No outcomes or trends
+* ❌ No inferred readiness
+* ❌ No lifecycle logic in controllers
+* ❌ No silent defaults
 
 ---
 
-## 1. High-Level Flow (Locked)
+## 1. High-Level Flow (LOCKED)
 
 ```
-Database
+Persistence / FT2 Modules
   ↓
-[Layer 1] Analytics Facts
+[Layer 1] Analytics Facts (Observability Substrate)
   ↓
-[Layer 2] Analytics Intelligence
+[Layer 2] Analytics Intelligence (Observability Classification)
   ↓
-[Layer 3] Analytics FTEP
+[Layer 3] Analytics FTEP (Truth Exposure Policy)
   ↓
 [Layer 4] Analytics FT2 HTTP Controller
   ↓
-Frontend FT2 Adapter (dumb pipe)
+Frontend FT2 Adapter (Identity Pipe)
 ```
 
-Each layer is **structurally incapable** of doing the wrong thing.
+Each layer is **structurally incapable** of violating FT2 doctrine.
 
 ---
 
-## 2. Layer 1 — Analytics Facts (Canonical Truth)
+## 2. Layer 1 — Analytics Facts (Observability Substrate)
 
 ### 📍 Location
 
@@ -57,60 +65,75 @@ apps/backend/src/services/analytics-facts/
 
 * `analyticsFacts.service.ts`
 * `analyticsFacts.types.ts`
-* `index.ts`
 
 ### Responsibility
 
-Extract **raw, interpretation-free truth** from persistence.
+Extract **raw observability facts** from:
 
-This is the **only layer** allowed to:
+* Canonical persistence **or**
+* Upstream **FT2-safe module exposures**
 
-* Import `api-db`
-* Run SQL
-* Perform aggregates
+This layer answers only:
 
-### Data Extracted (Exact)
+* Do rows exist?
+* How many?
+* Is time observable?
+
+### Canonical Shape (SEALED)
 
 ```ts
-interface AnalyticsFacts {
+export interface AnalyticsFacts {
   shopId: number;
 
-  period: { from: string; to: string };
-
-  revenueObserved: number | null;
-  cogsObserved: number | null;
-
-  ordersObserved: {
-    processing: number | null;
-    delivered: number | null;
-    in_transit: number | null;
-  };
-
+  snapshotId: string;
   extractedAt: string;
+
+  domains: {
+    orders: AnalyticsDomainFacts;
+    products: AnalyticsDomainFacts;
+    customers: AnalyticsDomainFacts;
+    finances: AnalyticsDomainFacts;
+  };
+}
+
+export interface AnalyticsDomainFacts {
+  presence: boolean | null;
+  observationCount: number | null;
+  nullSurface: number | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
 }
 ```
+
+### Domain Sourcing Rules (CRITICAL)
+
+| Domain    | Source of Truth                                 |
+| --------- | ----------------------------------------------- |
+| Orders    | **Orders FT2 exposure** (provider-level)        |
+| Products  | Canonical products tables / Products FT2        |
+| Customers | Canonical customers tables / Customers FT2      |
+| Finances  | Canonical financial transactions / Finances FT2 |
+
+🔒 **Hard Rule:**
+Analytics **never** queries operational tables owned by another module when an FT2 provider exists.
+
+---
 
 ### Invariants (Enforced)
 
 * `null ≠ 0`
-* No derived values
-* No statuses
-* No percentages
-* No margins
-* No health labels
-* No defaults
+* Presence is **not readiness**
+* Count is **not performance**
+* Time is **observation span**, not business period
+* No joins across domains
+* No derived metrics
+* No interpretation
 
-### Example Guarantees
-
-* If **no sales exist** → `revenueObserved = null`
-* If **some statuses missing** → only those keys are `null`
-* If DB returns strings → parsed to numbers, nothing else
-
-Facts **never help the consumer**.
+Facts **do not help the consumer**.
 
 ---
 
-## 3. Layer 2 — Analytics Intelligence (Internal Classification)
+## 3. Layer 2 — Analytics Intelligence (Observability Classification)
 
 ### 📍 Location
 
@@ -122,16 +145,17 @@ apps/backend/src/services/analytics-intelligence/
 
 * `analyticsIntelligence.service.ts`
 * `analyticsIntelligence.types.ts`
-* `index.ts`
 
 ### Responsibility
 
-Convert **facts → internal meaning**.
+Convert **observability facts → observability states**.
 
 This layer:
 
-* **Decides**
-* But **does not speak**
+* Classifies
+* Preserves ambiguity
+* Never explains
+* Never judges quality or success
 
 ### Input
 
@@ -139,45 +163,57 @@ This layer:
 AnalyticsFacts
 ```
 
-### Output (Internal Only)
+### Output (Internal Only, Never Exposed Directly)
 
 ```ts
-interface AnalyticsIntelligence {
-  revenueObserved: number | null;
-
-  outcome: {
-    status: 'positive' | 'negative' | 'unknown';
+export interface AnalyticsIntelligence {
+  snapshot: {
+    id: string;
+    extractedAt: string;
   };
 
-  trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+  domains: {
+    orders: AnalyticsDomainIntelligence;
+    products: AnalyticsDomainIntelligence;
+    customers: AnalyticsDomainIntelligence;
+    finances: AnalyticsDomainIntelligence;
   };
 }
 ```
 
-### Classification Rules (Locked by Tests)
+```ts
+export interface AnalyticsDomainIntelligence {
+  presence: 'present' | 'absent' | 'unknown';
+  observationLevel: 'none' | 'low' | 'partial' | 'full' | 'unknown';
+  continuity: 'continuous' | 'intermittent' | 'missing' | 'unknown';
 
-* `revenueObserved === null` → `unknown`
-* `revenueObserved === 0` → `negative`
-* `revenueObserved > 0` → `positive`
-* `trend.direction` → always `'unknown'` (no historical inference)
+  timestamps: {
+    firstSeenAt: string | null;
+    lastSeenAt: string | null;
+  };
 
-### Forbidden (Structurally)
+  raw: {
+    observationCount: number | null;
+    nullSurface: number | null;
+  };
+}
+```
 
-* ❌ DB access
-* ❌ Percentages
-* ❌ Margins
-* ❌ Profit / loss
-* ❌ Explanations
-* ❌ Recommendations
+### Classification Rules (Locked)
 
-This layer **cannot leak**, because it is never exposed.
+* `presence === null` → `'unknown'`
+* `presence === false` → `'absent'`
+* `presence === true` → `'present'`
+* Volume → observationLevel only
+* Missing timestamps → `'intermittent'`
+
+🔒 **Contract Rule:**
+Intelligence **never emits null**.
+Ambiguity is encoded explicitly as `'unknown'`.
 
 ---
 
-## 4. Layer 3 — Analytics FTEP
-
-*(Facts → Truth Exposure Policy)*
+## 4. Layer 3 — Analytics FTEP (Truth Exposure Policy)
 
 ### 📍 Location
 
@@ -189,69 +225,60 @@ apps/backend/src/services/analytics-ftep/
 
 * `analyticsFtep.service.ts`
 * `analyticsFtep.types.ts`
-* `index.ts`
 
 ### Responsibility
 
-**Downgrade intelligence into FT2-safe observability.**
+Downgrade **observability intelligence → FT2-safe exposure**.
 
-This is the **most critical safety layer**.
+This is the **only layer allowed to suppress truth**.
 
 ### Input
 
 ```ts
 {
-  facts: AnalyticsFacts;
   intelligence: AnalyticsIntelligence;
 }
 ```
 
-### Output (FT2 Exposure)
+### Output (FT2 Exposure — SEALED)
 
 ```ts
-interface AnalyticsFT2Exposure {
-  context: {
-    period: { from: string; to: string };
-    revenueObserved: number | null;
+export interface AnalyticsFT2Exposure {
+  snapshot: {
+    id: string;
+    extractedAt: string;
   };
 
-  outcome: {
-    status: 'positive' | 'negative';
-  } | null;
-
-  trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-  } | null;
+  domains: {
+    orders: AnalyticsDomainExposure | null;
+    products: AnalyticsDomainExposure | null;
+    customers: AnalyticsDomainExposure | null;
+    finances: AnalyticsDomainExposure | null;
+  };
 }
 ```
 
-### Downgrade Rules (Non-Negotiable)
+### Suppression Rules (Non-Negotiable)
 
-* Intelligence `unknown` → `outcome = null`, `trend = null`
-* Only **one metric** exposed: `revenueObserved`
-* No derived fields added
-* No raw facts leaked
-* No intelligence internals leaked
+* `presence === 'unknown'` → domain = `null`
+* Otherwise:
+
+  * expose **raw observability only**
+  * strip **all intelligence classifications**
 
 ### Explicitly Impossible to Expose
 
-* ❌ Margin %
-* ❌ Profit / loss
-* ❌ Perfect order %
-* ❌ Inventory health
-* ❌ Reasons
-* ❌ Thresholds
-* ❌ Benchmarks
-
-### Leak-Prevention Tests Enforce
-
-* Serialization scan (`percent|margin|profit|loss|because`)
-* Field absence assertions
-* Null-safety guarantees
+* ❌ Outcomes
+* ❌ Trends
+* ❌ Money
+* ❌ Percentages
+* ❌ Health
+* ❌ Readiness
+* ❌ Explanations
 
 ---
 
-## 5. Layer 4 — Analytics FT2 HTTP Controller (Transport)
+## 5. Layer 4 — Analytics FT2 HTTP Controller (Transport Only)
 
 ### 📍 Location
 
@@ -262,41 +289,31 @@ apps/backend/src/api/analytics/
 ### Files
 
 * `analytics.ft2.controller.ts`
-* `analytics.routes.ts`
-* `index.ts`
 
 ### Route
 
 ```
-GET /api/v1/analytics/ft2?from=YYYY-MM-DD&to=YYYY-MM-DD
+GET /api/v1/modules/analytics/ft2
 ```
 
 ### Responsibility
 
-**Pure transport pipe. Nothing else.**
+Pure transport.
 
 ### What It Does
 
-1. Authenticates shop (via middleware)
-2. Validates query period
-3. Calls FT2 provider:
-
-   ```
-   Facts → Intelligence → FTEP
-   ```
+1. Authenticates shop
+2. Resolves FT2 period (lifecycle-owned)
+3. Calls provider
 4. Returns JSON
 
-### What It Explicitly Does NOT Do
+### What It NEVER Does
 
-* ❌ Lifecycle resolution
-* ❌ FT2 entitlement decisions
-* ❌ Business logic
-* ❌ Aggregation
-* ❌ Intelligence
-* ❌ Mutation
-
-**Lifecycle gating is enforced upstream**, not here
-(canonically aligned with Specter).
+* ❌ Query DB
+* ❌ Classify
+* ❌ Infer
+* ❌ Mutate
+* ❌ Reconstruct intelligence
 
 ---
 
@@ -310,48 +327,33 @@ apps/backend/src/services/analytics-ft2.provider.ts
 
 ### Responsibility
 
-Deterministically wire the pipeline.
+Deterministic wiring only:
 
-```ts
+```
 Facts → Intelligence → FTEP
 ```
 
-No logic. No branching. No persistence.
-
-This file exists so:
-
-* Controllers stay thin
-* Pipeline is reusable
-* Testing is isolated
+No logic.
+No branching.
+No defaults.
 
 ---
 
-## 7. Test Coverage (What Makes This Unbreakable)
+## 7. Frontend Adapter (Identity Only)
 
-### Unit Tests Added
+### 📍 Location
 
 ```
-tests/unit/backend/analytics/
-├── analyticsFacts.service.test.ts
-├── analyticsIntelligence.service.test.ts
-└── analyticsFtep.service.test.ts
+apps/frontend/src/pages/analytics/useAnalyticsFt2Adapter.ts
 ```
 
-### What They Guarantee
+### Rule
 
-* Facts return raw truth only
-* Intelligence classifies without math or DB
-* FTEP strips intelligence aggressively
-* No forbidden semantics can serialize
-* Nulls propagate safely
+```ts
+mapAnalyticsFt2Props(snapshot) === snapshot
+```
 
-If a future engineer tries to:
-
-* add a percentage
-* leak margin
-* expose reasoning
-
-→ tests **will fail immediately**
+Any transformation here is a **contract violation**.
 
 ---
 
@@ -359,49 +361,46 @@ If a future engineer tries to:
 
 ### It IS
 
-* A **truth observability surface**
-* A **signal that something exists**
-* A **directionless snapshot**
-* A **safe primitive for future / AI layers**
+* A **cross-module observability map**
+* A **blindness detector**
+* A **truth-preserving aggregator**
+* A **safe substrate for future intelligence layers**
 
 ### It Is NOT
 
-* A dashboard
-* A report
-* A recommendation engine
-* A strategy module
-* A financial analysis tool
+* A performance dashboard
+* A KPI surface
+* A business evaluator
+* A financial analyzer
+* A recommendation system
 
 ---
 
-## 9. Replication Contract (For Future Modules)
+## 9. Replication Doctrine (Mandatory for New Modules)
 
-To replicate Analytics FT2 for another module:
+To add a new Analytics-like module:
 
-* Clone **directory structure**
-* Copy **test philosophy**
-* Enforce **Facts → Intelligence → FTEP**
-* Never skip FTEP
-* Never let controllers think
+1. Facts must own observability
+2. Intelligence must encode ambiguity
+3. FTEP must suppress aggressively
+4. Controllers must stay stupid
+5. UI must never infer
 
-If any layer is merged or bypassed → **architecture is invalid**.
+If any layer is skipped → **architecture breach**.
 
 ---
 
-## 🔒 Final Status
+## 🔒 FINAL STATUS
 
 **Analytics FT2 is now:**
 
-* Deterministic
-* Leak-proof
-* Lifecycle-safe
+* Observability-only
+* Cross-module-safe
+* Intelligence-suppressed
+* Null-honest
 * Test-sealed
-* Canonical
-
-This module can now safely:
-
-* Feed dashboards
-* Power readiness signals
-* intelligence later
+* Contractually minimal
 
 Nothing more is allowed.
+
+---
