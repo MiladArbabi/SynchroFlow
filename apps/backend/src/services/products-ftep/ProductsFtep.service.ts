@@ -42,6 +42,7 @@ export function buildProductsFtep(
       outcome: null,
       trend: null,
       signals: null,
+      productDataIntegrity: null,
     };
   }
 
@@ -87,5 +88,6 @@ export function buildProductsFtep(
     },
 
     signals,
+    productDataIntegrity: null,
   };
 }

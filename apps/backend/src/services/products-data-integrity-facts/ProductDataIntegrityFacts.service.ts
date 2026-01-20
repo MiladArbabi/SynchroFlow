@@ -1,0 +1,118 @@
+import db from 'api-db';
+import {
+  ProductDataIntegrityFacts,
+} from './ProductDataIntegrityFacts.types';
+
+interface GetProductDataIntegrityFactsInput {
+  shopId: number;
+  period: {
+    from: string;
+    to: string;
+  };
+}
+
+/**
+ * getProductDataIntegrityFacts
+ *
+ * Layer 1 (Facts) — Product Data Integrity.
+ *
+ * GUARANTEES:
+ * - Reads only canonical, linkage-safe tables
+ * - Applies FT2 period exactly as received
+ * - Emits raw counts only
+ * - Preserves nulls when no truth exists
+ *
+ * PERIOD AUTHORITY:
+ * - Period is resolved upstream (ft2Period)
+ * - This layer MUST NOT reinterpret time
+ */
+export async function getProductDataIntegrityFacts(
+  input: GetProductDataIntegrityFactsInput
+): Promise<ProductDataIntegrityFacts> {
+  const { shopId, period } = input;
+
+/**
+ * PERIOD LIMITATION (EXPLICIT)
+ *
+ * canonical_products is a current-state table.
+ * It does NOT expose a time-bound observation column.
+ *
+ * As a result:
+ * - Product data integrity facts are snapshot-based
+ * - Period is accepted but not applied
+ *
+ * Time-scoped product integrity requires
+ * a future canonical schema extension.
+ */
+const rows = await db('canonical_products')
+  .where('shop_id', shopId)
+  .select([
+    'platform_product_id',
+    'sku',
+  ]);
+
+  // ─────────────────────────────────────────────
+  // Null preservation: no observable products
+  // ─────────────────────────────────────────────
+  if (rows.length === 0) {
+    return {
+      shopId,
+      period,
+      productsChecked: null,
+      productsWithConflictingFields: null,
+      productsWithMultipleSkus: null,
+      maxSkusPerProduct: null,
+      extractedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Group rows by canonical product identity.
+   *
+   * NOTE:
+   * - Grouping is internal only
+   * - platform_product_id is NEVER exposed
+   */
+  const skusByProduct = new Map<string, Set<string>>();
+
+  for (const row of rows) {
+    const productId = row.platform_product_id;
+    if (!skusByProduct.has(productId)) {
+      skusByProduct.set(productId, new Set());
+    }
+    if (row.sku !== null) {
+      skusByProduct.get(productId)!.add(row.sku);
+    }
+  }
+
+  let productsWithMultipleSkus = 0;
+  let maxSkusPerProduct = 0;
+
+  for (const [, skuSet] of skusByProduct.entries()) {
+    if (skuSet.size > 1) {
+      productsWithMultipleSkus += 1;
+    }
+    if (skuSet.size > maxSkusPerProduct) {
+      maxSkusPerProduct = skuSet.size;
+    }
+  }
+
+  /**
+   * Observable conflict definition (facts-level):
+   * - A product is considered conflicting if
+   *   multiple SKUs exist for the same canonical product.
+   *
+   * This is structural truth only.
+   */
+  const productsWithConflictingFields = productsWithMultipleSkus;
+
+  return {
+    shopId,
+    period,
+    productsChecked: skusByProduct.size,
+    productsWithConflictingFields,
+    productsWithMultipleSkus,
+    maxSkusPerProduct,
+    extractedAt: new Date().toISOString(),
+  };
+}

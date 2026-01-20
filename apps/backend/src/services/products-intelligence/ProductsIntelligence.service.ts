@@ -24,17 +24,37 @@ export function buildProductsIntelligence(
   const {
     productsObserved,
     productsWithSkuCount,
-    productsWithoutSkuCount,
     variantsObserved,
     productsWithVariantsCount,
     statusCounts,
-  } = facts as any;
+  } = facts;
 
+  /**
+   * Missing-Facts Gate (FT2 Law)
+   *
+   * If ANY required fact is null, ALL intelligence MUST collapse to 'unknown'.
+   *
+   * Required facts are those that:
+   * - participate in classification
+   * - participate in ratios or comparisons
+   *
+   * This prevents hallucinated certainty.
+   */
+  const { active, inactive, archived } = statusCounts;
+
+  /**
+   * Missing-Facts Gate (FT2 Law)
+   *
+   * If ANY required fact is null, ALL intelligence MUST collapse to 'unknown'.
+   */
   const missing =
     productsObserved === null ||
-    statusCounts?.active === null ||
     productsWithSkuCount === null ||
-    variantsObserved === null;
+    variantsObserved === null ||
+    productsWithVariantsCount === null ||
+    active === null ||
+    inactive === null ||
+    archived === null;
 
   if (missing) {
     return {
@@ -47,23 +67,33 @@ export function buildProductsIntelligence(
     };
   }
 
-  // ── outcome (v1 preserved)
+  // ─────────────────────────────────────────
+  // outcome (v1 preserved)
+  // ─────────────────────────────────────────
   const outcomeStatus =
-    statusCounts.active > 0
+    active > 0
       ? 'positive'
-      : statusCounts.inactive > 0 || statusCounts.archived > 0
+      : inactive > 0 || archived > 0
       ? 'negative'
       : 'unknown';
 
-  // ── catalogHealth
+  // ─────────────────────────────────────────
+  // catalogHealth
+  // ─────────────────────────────────────────
   const catalogHealth =
     productsObserved === 0
       ? 'unknown'
-      : statusCounts.active > 0
+      : active > 0
       ? 'healthy'
       : 'degraded';
 
-  // ── variantComplexity
+  // ─────────────────────────────────────────
+  // variantComplexity
+  //
+  // NOTE:
+  // - productsWithVariantsCount is guaranteed non-null here
+  // - Zero is a valid observable value
+  // ─────────────────────────────────────────
   let variantComplexity: ProductsIntelligence['variantComplexity'] = 'simple';
 
   if (variantsObserved > 0 && productsWithVariantsCount > 0) {
@@ -71,7 +101,9 @@ export function buildProductsIntelligence(
     variantComplexity = avg > 2 ? 'complex' : 'simple';
   }
 
-  // ── skuCoverage
+  // ─────────────────────────────────────────
+  // skuCoverage
+  // ─────────────────────────────────────────
   const skuCoverage =
     productsWithSkuCount === productsObserved
       ? 'complete'

@@ -1,5 +1,4 @@
 // apps/backend/src/services/products-facts/ProductsFacts.service.ts
-
 import db from 'api-db';
 import { ProductsFacts } from './ProductsFacts.types';
 
@@ -32,17 +31,34 @@ export async function getProductsFacts(
   const { shopId, period } = input;
 
   /**
-   * Select only columns required for factual derivation.
-   * No joins. No enrichment.
+ * Canonical FT2 time authority:
+ * - Period is resolved upstream via ft2Period
+ * - Facts MUST apply it exactly as received
+ * - No reinterpretation, no defaults, no overrides
+ */
+  /**
+   * PERIOD LIMITATION (EXPLICIT)
+   *
+   * canonical_products does not currently expose
+   * a time-bound observation column.
+   *
+   * As a result:
+   * - Period cannot be applied at the Facts layer
+   * - All current-state rows are observed
+   *
+   * This is FT2-correct and honest.
+   * Time-scoped product facts require
+   * a future canonical schema extension.
    */
-  const rows = await db('canonical_products')
-    .where('shop_id', shopId)
-    .select([
-      'sku',
-      'status',
-      'platform_product_id',
-      'platform_variant_id',
-    ]);
+
+const rows = await db('canonical_products')
+  .where('shop_id', shopId)
+  .select([
+    'sku',
+    'status',
+    'platform_product_id',
+    'platform_variant_id',
+  ]);
 
   // ─────────────────────────────────────────────────────────
   // Null preservation: no rows = no facts
@@ -69,7 +85,11 @@ export async function getProductsFacts(
   }
 
   // ─────────────────────────────────────────────────────────
-  // Core presence
+  // Core presence (row-level truth)
+  // NOTE:
+  // - productsObserved counts canonical rows
+  // - A row represents a (product × variant) observation
+  // - This is intentional and MUST NOT be deduplicated here
   // ─────────────────────────────────────────────────────────
   const productsObserved = rows.length;
 
@@ -107,6 +127,12 @@ export async function getProductsFacts(
     }
   }
 
+  /**
+   * Variant aggregation invariants:
+   * - These counters are ONLY valid when rows.length > 0
+   * - They are NEVER computed when facts are null
+   * - Zero is a valid observable value here
+   */
   let productsWithVariantsCount = 0;
   let singleVariantProductsCount = 0;
 

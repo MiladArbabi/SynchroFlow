@@ -1,4 +1,7 @@
 // apps/backend/src/services/products-ftep/ProductsFtep.types.ts
+import {
+  ProductDataIntegrityFT2Exposure,
+} from '../products-data-integrity-ftep/ProductDataIntegrityFtep.types';
 
 /**
  * Layer 3 — ProductsFTEP (Truth Exposure Policy) — v2
@@ -43,4 +46,16 @@ export interface ProductsFT2Exposure {
     skuCoverage: 'ok' | 'gaps' | 'unknown';
     variantComplexity: 'simple' | 'complex' | 'unknown';
   } | null;
+
+  /**
+   * ─────────────────────────────────────────
+   * FT2-Paid Surface — Product Data Integrity
+   * ─────────────────────────────────────────
+   *
+   * Null when:
+   * - not entitled
+   * - truth is unknown
+   * - downgraded by policy
+   */
+  productDataIntegrity: ProductDataIntegrityFT2Exposure | null;
 }

@@ -12,7 +12,7 @@ import type { ProductsModuleFT2Props } from '@lasyncro/products';
  * - Adapter MUST NOT infer or compute
  * - Adapter MUST normalize undefined → null
  */
-type ProductsFt2Snapshot = {
+export type ProductsFt2Snapshot = {
   context?: {
     period?: {
       from?: string;
@@ -68,6 +68,18 @@ type ProductsFt2Snapshot = {
       revenue: number;
       profit: number | null;
     }> | null;
+  } | null;
+
+  /**
+   * FT2 — Product Data Integrity
+   *
+   * Notes:
+   * - Downgraded, lossy exposure
+   * - Null = unknown or withheld by policy
+   */
+  productDataIntegrity?: {
+    integrity: 'ok' | 'attention' | 'unknown';
+    duplication: 'present' | 'absent' | 'unknown';
   } | null;
 };
 
@@ -162,5 +174,10 @@ export function mapProductsFt2Props(
             revenueVsProfit:
               snapshot.economicBlindSpots.revenueVsProfit ?? null,
           },
+    
+    productDataIntegrity:
+      snapshot.productDataIntegrity === undefined
+        ? null
+        : snapshot.productDataIntegrity,
   };
 }

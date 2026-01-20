@@ -43,6 +43,13 @@ export interface ProductsFacts {
     archived: number | null;
   };
 
-  /** Extraction timestamp (facts-only, stripped later by FTEP) */
+  /**
+   * Extraction timestamp
+   *
+   * Semantics:
+   * - Indicates when facts were computed
+   * - NOT a business event time
+   * - MUST NOT be exposed beyond FTEP
+   */
   extractedAt: string;
 }

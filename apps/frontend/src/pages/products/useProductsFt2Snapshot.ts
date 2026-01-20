@@ -3,30 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
-
-export type ProductsFt2Snapshot = {
-  context?: {
-    period?: {
-      from: string;
-      to: string;
-    };
-    productsObserved?: number | null;
-  };
-
-  outcome?: {
-    status: 'positive' | 'negative' | 'unknown';
-  } | null;
-
-  trend?: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-  } | null;
-
-  signals?: {
-    catalog: 'ok' | 'attention' | 'unknown';
-    skuCoverage: 'ok' | 'gaps' | 'unknown';
-    variantComplexity: 'simple' | 'complex' | 'unknown';
-  } | null;
-};
+import type { ProductsFt2Snapshot } from './useProductsFt2Adapter';
 
 /**
  * useProductsFt2Snapshot
