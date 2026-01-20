@@ -3,11 +3,11 @@
 **Phase:** FT2
 **Module:** Products / SKU-OS
 **Status:** **Canonical · Locked · Enforced**
-**Deviation:** ❌ Not permitted without re-scan
+**Deviation:** ❌ Not permitted without re-scan & amendment
 
 ---
 
-## 1. Purpose & Scope (Clarified)
+## 1. Purpose & Scope (Expanded · Corrected)
 
 This document defines the **only approved FT2 architecture** for the **Products / SKU-OS module**.
 
@@ -18,82 +18,114 @@ Products FT2 provides:
 * **Zero intelligence leakage**
 * **Zero lifecycle control**
 * **Deterministic, testable behavior**
+* **Multi-domain product reality (structural, operational, economic)**
 
-FT2 answers **one question only**:
+FT2 answers **only these classes of questions**:
 
-> *“What is observably true about the product catalog, right now?”*
+> *“What is observably true about products — structurally, operationally, and economically — within the permitted window?”*
 
 It explicitly does **not** answer:
 
 * Why something happened
 * What action to take
-* What the business impact is
-* How to fix anything
+* What should be optimized
+* What the business outcome will be
 
-Those belong to **FT1, playbooks, or other modules**.
+Those belong to **FT1, playbooks, execution modules, or humans**.
 
 ---
 
-## 2. Canonical Data Source (Confirmed)
+## 2. Canonical Data Sources (Amended · Explicit)
 
-### Authoritative Table
-
-Products FT2 is derived **exclusively** from:
+### 2.1 Primary Canonical Source — Structural Truth
 
 ```
 canonical_products
 ```
 
-**Why this table only:**
+Used **only** for:
 
-* Platform-agnostic
-* Deduplicated
-* Lifecycle-safe
-* Already canonicalized upstream
-* Stable across time windows
+* Product existence
+* SKU presence
+* Variant structure
+* Catalog status distribution
 
----
+This table remains:
 
-### Explicit Exclusions (Re-affirmed)
-
-The following **MUST NOT** be used in Products FT2:
-
-* `shopify_products`
-* `inventory_truth`
-* `canonical_orders`
-* Cost, margin, or stock tables
-* Any platform-specific tables
-
-> Inventory, economics, demand, and health **are separate FT2 surfaces or separate modules**.
+* platform-agnostic
+* deduplicated
+* lifecycle-safe
 
 ---
 
-## 3. Four-Layer Architecture (Non-Negotiable)
+### 2.2 Secondary Canonical Sources — Scoped Operational & Economic Truth
+
+The following tables **ARE NOW PERMITTED**, but **ONLY** in their respective Facts layers:
+
+| Domain      | Tables (Examples)                      | Purpose                      |
+| ----------- | -------------------------------------- | ---------------------------- |
+| Inventory   | `inventory_truth`                      | Stock observability          |
+| Orders      | `canonical_orders`, `order_line_items` | Demand pressure              |
+| Fulfillment | `order_fulfillment_status`             | Execution visibility         |
+| Economics   | `product_costs`, `historical_sales`    | Cost & revenue observability |
+
+⚠️ **Important Constraint**
+
+These tables:
+
+* ❌ MUST NOT influence `ProductsFacts`
+* ✅ MAY be read by **domain-specific Facts layers**
+* ❌ MUST NOT be joined directly into UI or Intelligence
+
+---
+
+### 2.3 Explicit Prohibitions (Still Enforced)
+
+Even with expanded scope, the following remain forbidden:
+
+* Recommendations
+* Forecasts
+* Health scores
+* Optimization signals
+* Lifecycle inference
+* Cross-domain inference without explicit correlation layers
+
+---
+
+## 3. Multi-Fact, Single-Doctrine Architecture (Updated)
+
+Products FT2 now formally supports **multiple Facts pipelines**, all governed by the same doctrine.
 
 ```
 DATABASE
    ↓
-[Layer 1] ProductsFacts
+[Layer 1a] ProductsFacts (Structural)
+[Layer 1b] ProductOperationalFacts
+[Layer 1c] ProductEconomicFacts
    ↓
 [Layer 2] ProductsIntelligence
+[Layer 2b] OperationalIntelligence
+[Layer 2c] EconomicIntelligence
    ↓
-[Layer 3] ProductsFTEP (Truth Exposure Policy)
+[Layer 3] ProductsFTEP
+[Layer 3b] OperationalFTEP
+[Layer 3c] EconomicFTEP
    ↓
 [Provider] Products FT2 Provider
    ↓
 [Transport] HTTP Controller
 ```
 
-Each layer:
+Each pipeline:
 
-* Has **exactly one responsibility**
-* Has **hard prohibitions**
-* Is **independently testable**
-* May **not collapse into adjacent layers**
+* Is **independent**
+* Has **its own null gates**
+* Has **its own downgrade logic**
+* Never cross-contaminates another
 
 ---
 
-## 4. Layer 1 — ProductsFacts (Canonical Truth)
+## 4. Layer 1 — ProductsFacts (Structural Truth)
 
 ### Location
 
@@ -103,7 +135,7 @@ apps/backend/src/services/products-facts/
 
 ### Responsibility
 
-Extract **raw, interpretation-free facts** from `canonical_products`.
+Extract **raw, interpretation-free structural facts** from `canonical_products`.
 
 ---
 
@@ -111,24 +143,23 @@ Extract **raw, interpretation-free facts** from `canonical_products`.
 
 ✅ Direct DB access (Knex)
 ✅ Counts & distinct counts
+✅ Grouping (internal only)
 ✅ Time-window filtering
-✅ Status grouping
 ✅ Null preservation
 
 ---
 
 ### Forbidden
 
-❌ Classification
 ❌ Ratios or percentages
-❌ Thresholds
 ❌ “Healthy / unhealthy” language
 ❌ Trends
-❌ Business meaning
+❌ Operational joins
+❌ Economic joins
 
 ---
 
-### Facts Output Contract (As-Is)
+### Structural Facts Contract (Unchanged)
 
 ```ts
 export interface ProductsFacts {
@@ -162,200 +193,136 @@ export interface ProductsFacts {
 
 ---
 
-### Invariants
+## 5. Layer 1b — ProductOperationalFacts (New · Canonical)
 
-* `null ≠ 0`
-* Missing data stays missing
-* Facts **never** imply meaning
-* Facts **never** guide decisions
+### Location
+
+```
+apps/backend/src/services/products-operational-facts/
+```
+
+### Responsibility
+
+Extract **raw operational observability facts**, such as:
+
+* Inventory visibility
+* Overselling presence
+* Fulfillment signal existence
+* System-touch surface
 
 ---
 
-### Required Tests
+### Allowed
 
-* Raw counts correctness
-* Null preservation when no rows
-* No derived or semantic fields
-* No access to non-canonical tables
+✅ Joins across operational tables
+✅ Aggregates & averages
+✅ Null preservation
 
 ---
 
-## 5. Layer 2 — ProductsIntelligence (Internal Only)
+### Forbidden
+
+❌ “Risk” classification
+❌ Labels like stable / unstable
+❌ Business interpretation
+
+Facts are **still just facts**.
+
+---
+
+## 6. Layer 2 — Intelligence (Expanded, Still Internal)
 
 ### Location
 
 ```
 apps/backend/src/services/products-intelligence/
+apps/backend/src/services/products-operational-intelligence/
 ```
 
 ### Responsibility
 
-Convert **facts → internal classification**.
+Translate **complete facts → internal classifications**.
 
-This layer **decides**, but **never speaks**.
+Examples:
 
----
-
-### Allowed
-
-✅ Deterministic classification
-✅ Boolean logic
-✅ Guarded inference
+* structural consistency
+* duplication presence
+* inventory visibility class
+* operational stability class
 
 ---
 
-### Forbidden
+### Global Rules (Unchanged)
 
-❌ Database access
-❌ UI formatting
-❌ Explanations
-❌ Recommendations
-❌ Lifecycle logic
-
----
-
-### Intelligence Output Contract (Actual)
-
-```ts
-export interface ProductsIntelligence {
-  productsObserved: number | null;
-
-  outcome: {
-    status: 'positive' | 'negative' | 'unknown';
-  };
-
-  trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-  };
-
-  catalogHealth: 'healthy' | 'degraded' | 'unknown';
-  skuCoverage: 'complete' | 'partial' | 'missing' | 'unknown';
-  variantComplexity: 'simple' | 'complex' | 'unknown';
-}
-```
+* Intelligence **never escapes**
+* Missing facts collapse intelligence to `unknown`
+* No DB access
+* Deterministic only
 
 ---
 
-### Missing-Facts Gate (Critical)
-
-If **any required fact is `null`**, then:
-
-```ts
-outcome.status = 'unknown'
-trend.direction = 'unknown'
-catalogHealth = 'unknown'
-skuCoverage = 'unknown'
-variantComplexity = 'unknown'
-```
-
-This prevents **hallucinated certainty**.
-
----
-
-### Required Tests
-
-* Positive / negative / unknown classification
-* Deterministic output
-* No side effects
-* No persistence access
-
----
-
-## 6. Layer 3 — ProductsFTEP (Truth Exposure Policy)
+## 7. Layer 3 — FTEP (Expanded · Still the Hard Boundary)
 
 ### Location
 
 ```
 apps/backend/src/services/products-ftep/
+apps/backend/src/services/products-operational-ftep/
 ```
 
 ### Responsibility
 
-Act as the **hard downgrade & suppression boundary** between intelligence and UI.
+* Downgrade intelligence
+* Suppress unsafe truth
+* Enforce FT2 exposure rules
 
 ---
 
-### Allowed
+### Expanded FT2 Exposure Contract (Authoritative)
 
-✅ Field dropping
-✅ Downgrading meaning
-✅ Returning `null` intentionally
-
----
-
-### Forbidden
-
-❌ Adding information
-❌ Re-interpreting facts
-❌ Exposing intelligence internals
-❌ Semantic explanations
-
----
-
-### FT2 Exposure Contract (Locked)
+Products FT2 may expose **multiple independent surfaces**, each lossy:
 
 ```ts
-export interface ProductsFT2Exposure {
+ProductsFT2Exposure {
   context: {
-    period: {
-      from: string;
-      to: string;
-    };
+    period: { from: string; to: string };
     productsObserved: number | null;
   };
 
-  outcome: {
-    status: 'positive' | 'negative' | 'unknown';
+  outcome: { status: 'positive' | 'negative' | 'unknown' } | null;
+
+  trend: { direction: 'up' | 'down' | 'flat' | 'unknown' } | null;
+
+  productDataIntegrity: {
+    integrity: 'ok' | 'attention' | 'unknown';
+    duplication: 'present' | 'absent' | 'unknown';
   } | null;
 
-  trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+  operational: {
+    inventory: 'ok' | 'gaps' | 'unknown';
+    fulfillment: 'visible' | 'missing' | 'unknown';
+    stability: 'stable' | 'fragile' | 'unknown';
   } | null;
 
-  signals: {
-    catalog: 'ok' | 'attention' | 'unknown';
-    skuCoverage: 'ok' | 'gaps' | 'unknown';
-    variantComplexity: 'simple' | 'complex' | 'unknown';
+  economicBlindSpots: {
+    costCoverage: 'complete' | 'partial' | 'missing' | 'unknown';
   } | null;
 }
 ```
 
 ---
 
-### Mandatory Downgrade Rules
+### Mandatory Downgrade Rules (Still Absolute)
 
-If intelligence is **unknown**:
+If **any intelligence dimension is unknown**:
 
-```ts
-outcome = null
-trend = null
-signals = null
-```
-
-Additionally:
-
-* Raw counts are **never exposed**
-* Status distributions are **never exposed**
-* Timestamps are **never exposed**
+* That dimension → `null`
+* No compensation
+* No partial exposure
 
 ---
 
-### Mandatory Leak-Prevention Tests
-
-Each FTEP implementation **must assert**:
-
-❌ No intelligence objects
-❌ No raw counts
-❌ No timestamps
-❌ No causal language
-❌ No recommendations
-❌ No platform terms
-
-Serialization scans are **required**.
-
----
-
-## 7. Products FT2 Provider (Orchestration Only)
+## 8. Products FT2 Provider (Expanded Orchestration)
 
 ### Location
 
@@ -365,125 +332,85 @@ apps/backend/src/services/products-ft2.provider.ts
 
 ### Responsibility
 
+Orchestrate **multiple pipelines**, nothing more:
+
 ```
-Facts → Intelligence → FTEP → return
+Facts → Intelligence → FTEP → merge → return
 ```
 
 ---
 
-### Explicit Non-Responsibilities
+### Explicit Non-Responsibilities (Reconfirmed)
 
 ❌ Lifecycle gating
-❌ Lifecycle mutation
-❌ Business logic
+❌ Entitlement resolution
 ❌ Persistence
+❌ UI semantics
 
 ---
 
-### Provider Contract
+## 9. Transport — HTTP Controller (Unchanged)
 
-```ts
-export async function getProductsFt2Snapshot(input: {
-  shopId: number;
-  period: { from: string; to: string };
-}): Promise<ProductsFT2Exposure>;
-```
+Transport remains a **pure pipe**.
+
+No intelligence, no logic, no policy.
 
 ---
 
-### Required Tests
+## 10. Frontend Contract (Still Read-Only)
 
-* Correct orchestration order
-* Deterministic output
-* No leakage of facts or intelligence
+Frontend:
 
-(Mock modules, not spies.)
+* Renders what it receives
+* Converts `undefined → null`
+* Does not infer
+* Does not explain
+* Does not optimize
 
----
-
-## 8. Transport — HTTP Controller
-
-### Location
-
-```
-apps/backend/src/api/products/products.ft2.controller.ts
-```
-
-### Route
-
-```
-GET /api/v1/products/ft2
-```
+`'—'` remains a **truthful state**, not a fallback.
 
 ---
 
-### Responsibilities
+## 11. Updated Replication Checklist (Expanded)
 
-* Resolve `shopId`
-* Parse period
-* Delegate to provider
-* Return JSON
+Before extending Products FT2:
 
----
+* [ ] Structural facts isolated
+* [ ] Operational facts isolated
+* [ ] Economic facts isolated
+* [ ] Intelligence gated per domain
+* [ ] FTEP suppresses independently
+* [ ] Provider only orchestrates
+* [ ] UI remains observational
 
-### Forbidden
-
-❌ Lifecycle logic
-❌ Business logic
-❌ Persistence
-❌ Intelligence handling
-
-Transport is a **pipe**, not a brain.
+If **any box fails** → architecture violation.
 
 ---
 
-## 9. Frontend Contract (Read-Only)
-
-Frontend adapters must:
-
-* Preserve shape
-* Convert `undefined → null`
-* Never infer
-* Never compute
-* Never explain
-
-Frontend **trusts FTEP completely**.
-
----
-
-## 10. Replication Checklist (Mandatory)
-
-Before copying this architecture:
-
-* [ ] Facts read **only** canonical tables
-* [ ] Intelligence has **no DB access**
-* [ ] FTEP strips **all** intelligence internals
-* [ ] Provider is orchestration-only
-* [ ] Transport is lifecycle-agnostic
-* [ ] Leak-prevention tests exist
-
-If **any** fail → stop.
-
----
-
-## 11. Final Laws (Products FT2)
+## 12. Final Laws (Reaffirmed & Extended)
 
 1. Facts ≠ Intelligence
 2. Intelligence ≠ Exposure
 3. Exposure ≠ Insight
-4. Lifecycle is external
+4. Domains must not bleed
 5. FTEP is the security boundary
-6. If non-leakage can’t be proven, the layer is invalid
+6. Blindness is allowed; hallucination is not
 
 ---
 
 ## 🔒 STATUS: **CANONICAL · LOCKED · ENFORCED**
 
-This document now fully matches:
+This document now correctly reflects:
 
-* the sealed FT2 audit
-* the real codebase
-* the FT2 doctrine
-* the CNS direction
+* the **actual codebase**
+* the **expanded Products FT2 scope**
+* the **multi-domain FT2 doctrine**
+* the **conversion-safe CNS trajectory**
 
-Any deviation requires **new scans, not opinion**.
+No further changes are permitted without:
+
+* new scans
+* explicit diffs
+* architectural review
+
+**This contract is now authoritative.**
