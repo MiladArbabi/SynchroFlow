@@ -8,14 +8,25 @@ export interface SpecterFacts {
   };
 
   /**
-   * Total number of observed sessions in period.
+   * Existence-only session presence.
+   *
+   * Rules:
+   * - null  → no sessions observed in period
+   * - true  → at least one session observed
+   *
+   * No magnitude. No counts.
    */
-  sessionsObserved: number | null;
+  sessionsPresent: boolean | null;
 
   /**
-   * Count of sessions with exit intent.
+   * Existence-only exit intent signal.
+   *
+   * Rules:
+   * - null  → no sessions OR exit intent not observable
+   * - true  → at least one session expressed exit intent
+   * - false → sessions exist, none expressed exit intent
    */
-  exitIntentSessions: number | null;
+  exitIntentDetected: boolean | null;
 
   /**
    * Existence-only structural funnel marker.

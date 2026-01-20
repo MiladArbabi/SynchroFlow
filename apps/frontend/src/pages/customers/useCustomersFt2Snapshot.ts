@@ -1,34 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
-
-export type CustomersFt2Snapshot = {
-  period?: {
-    from: string;
-    to: string;
-  };
-
-  sessionsObserved?: number | null;
-
-  systemState?: {
-    status: 'healthy' | 'degraded' | 'partial' | 'unknown';
-    confidence: 'high' | 'medium' | 'low';
-    reason?: string;
-  } | null;
-
-  timeSignal?: {
-    trend:
-      | 'improving'
-      | 'deteriorating'
-      | 'stable'
-      | 'volatile'
-      | 'unknown';
-    comparedPeriod?: {
-      from: string;
-      to: string;
-    };
-  } | null;
-};
+import type { CustomersFT2Contract } from '@lasyncro/customers';
 
 /**
  * useCustomersFt2Snapshot
@@ -43,7 +16,7 @@ export type CustomersFt2Snapshot = {
  * - No transformation
  */
 export function useCustomersFt2Snapshot(range: FT2DateRange) {
-  return useQuery<CustomersFt2Snapshot>({
+  return useQuery<CustomersFT2Contract>({
     queryKey: [
       'customers',
        'ft2',

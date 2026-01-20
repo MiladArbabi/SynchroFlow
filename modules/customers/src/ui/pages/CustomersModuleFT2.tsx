@@ -30,48 +30,24 @@ import {
    ========================= */
 
 export interface CustomersModuleFT2Props {
-  // --- Existence & Context (Free)
-  sessionsObserved: number | null;
+  // Context
   period: { from: string; to: string } | null;
+  sessionsPresent: boolean | null;
 
-  // --- Directional Movement (Free)
+  // Direction
   activityDirection: 'up' | 'down' | 'flat' | 'unknown' | null;
 
-    // --- Behavioral Structure
-    exitIntentDetected: boolean | null;
-    structuredJourneysDetected: boolean | null;
+  // Structural signals
+  exitIntentDetected: boolean | null;
+  funnelsDetected: boolean | null;
+  multiStepSessionsPresent: boolean | null;
+  surfaceBreadthPresent: boolean | null;
+  returningSessionsPresent: boolean | null;
+  exitWithoutInteractionPresent: boolean | null;
+  averageSessionDepthPresent: boolean | null;
 
-    /**
-     * Behavioral depth (Free).
-     */
-    multiStepSessionsPresent: boolean | null;
-
-    /**
-     * Surface breadth (Free).
-     */
-    surfaceBreadthPresent: boolean | null;
-
-    /**
-     * Returning behavior (Free).
-     */
-    returningSessionsPresent: boolean | null;
-
-    /**
-     * Average session depth (Free).
-     * Existence-only.
-     */
-    averageSessionDepthPresent: boolean | null;
-
-    /**
-     * Early exit without interaction (Free).
-     */
-    exitWithoutInteractionPresent: boolean | null;
-
-  // --- Trust Calibration (Free)
-  dataCoverage: 'complete' | 'partial' | 'insufficient' | null;
-
-  // --- Entitlement (UI-only visibility switch)
-  isPaid: boolean;
+  // Coverage
+  dataCoverage: 'complete' | 'insufficient' | null;
 }
 
 /* =========================
@@ -81,7 +57,7 @@ export interface CustomersModuleFT2Props {
 // Boolean existence → human-safe, non-explanatory labels
 function renderDetected(value: boolean | null): string {
   if (value === true) return 'Detected';
-  if (value === false) return 'Not detected';
+  if (value === false) return '—';
   return 'Unknown';
 }
 
@@ -120,18 +96,15 @@ export default function CustomersModuleFT2(
   props: CustomersModuleFT2Props
 ) {
   const {
-    sessionsObserved,
     period,
     activityDirection,
     exitIntentDetected,
-    structuredJourneysDetected,
     multiStepSessionsPresent,
     surfaceBreadthPresent,
     returningSessionsPresent,
     averageSessionDepthPresent,
     exitWithoutInteractionPresent,
     dataCoverage,
-    isPaid,
   } = props;
 
   return (
@@ -200,10 +173,6 @@ export default function CustomersModuleFT2(
 
         <FT2Surface variant="kpi" title="Exit intent detected">
           {renderDetected(exitIntentDetected)}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Structured journeys">
-          {renderDetected(structuredJourneysDetected)}
         </FT2Surface>
 
         <FT2Surface variant="kpi" title="Data coverage">

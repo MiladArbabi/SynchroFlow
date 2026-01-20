@@ -22,25 +22,15 @@ export function applySpecterFtep(input: {
 
   const ctr = deriveSpecterCTR({ facts });
 
-  const sessionsPresent =
-    facts.sessionsObserved === null
-      ? null
-      : facts.sessionsObserved > 0;
+  const sessionsPresent = facts.sessionsPresent;
 
   /**
    * activityDirection
    * -----------------
-   * FT2-safe downgrade of internal behavioral direction.
-   *
-   * Rules:
-   * - Exposed only when minimum CTR is met
-   * - 'unknown' is allowed and meaningful
-   * - Never null if CTR allows exposure
+   * FT2 allows directional movement only when real continuity exists.
+   * Specter FT2 does not yet have continuity.
    */
-  const activityDirection =
-    ctr >= CustomerTruthReadiness.CTR_1
-      ? intelligence.behavior.direction
-      : null;
+    const activityDirection = null;
 
   /**
    * exitIntentDetected
@@ -55,9 +45,9 @@ export function applySpecterFtep(input: {
    * Count is never exposed.
    */
   const exitIntentDetected =
-    facts.exitIntentSessions === null
+    facts.exitIntentDetected === null
       ? null
-      : facts.exitIntentSessions > 0;
+      : facts.exitIntentDetected;
 
   /**
    * multiStepSessionsPresent
@@ -122,19 +112,13 @@ export function applySpecterFtep(input: {
       : facts.averageSessionDepthPresent;
 
   return {
-    context: {
+   context: {
       period: facts.period,
-      sessionsObserved:
+      sessionsPresent:
         ctr >= CustomerTruthReadiness.CTR_1
-          ? facts.sessionsObserved
+          ? facts.sessionsPresent
           : null,
     },
-
-    outcome:
-      ctr >= CustomerTruthReadiness.CTR_1 &&
-      intelligence.engagement.status !== 'unknown'
-        ? { status: intelligence.engagement.status }
-        : null,
 
    /**
      * Directional movement (FT2-safe).
@@ -205,16 +189,20 @@ export function applySpecterFtep(input: {
 }
 
 /**
- * CTR derivation — Specter
- * -----------------------
- * Based strictly on session observability.
+ * CTR derivation — Specter (FT2)
+ * -----------------------------
+ * Truth readiness is based solely on observability existence.
+ *
+ * Rules:
+ * - No sessions observed → CTR_0
+ * - Sessions observed → CTR_1
+ *
+ * No magnitude. No intelligence. No inference.
  */
 function deriveSpecterCTR(input: {
   facts: SpecterFacts;
 }): CustomerTruthReadiness {
-  if (input.facts.sessionsObserved === null) {
-    return CustomerTruthReadiness.CTR_0;
-  }
-
-  return CustomerTruthReadiness.CTR_1;
+  return input.facts.sessionsPresent === true
+    ? CustomerTruthReadiness.CTR_1
+    : CustomerTruthReadiness.CTR_0;
 }

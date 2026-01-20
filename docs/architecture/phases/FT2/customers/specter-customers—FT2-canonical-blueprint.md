@@ -2,6 +2,9 @@
 
 **Truth-First Customer Observability (FT2 as the Apex)**
 
+**Specter = backend observability engine**
+**Customers = UI shell consuming Specter FT2**
+
 ---
 
 ## 0. Prime Positioning (Locked)

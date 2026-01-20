@@ -28,8 +28,8 @@ export async function getSpecterFacts(
     return {
       shopId,
       period,
-      sessionsObserved: null,
-      exitIntentSessions: null,
+      sessionsPresent: null,
+      exitIntentDetected: null,
       funnelsDetected: null,
       multiStepSessionsPresent: null,
       surfaceBreadthPresent: null,
@@ -53,8 +53,8 @@ export async function getSpecterFacts(
     return {
       shopId,
       period,
-      sessionsObserved: null,
-      exitIntentSessions: null,
+      sessionsPresent: null,
+      exitIntentDetected: null,
       funnelsDetected: null,
       multiStepSessionsPresent: null,
       surfaceBreadthPresent: null,
@@ -65,9 +65,11 @@ export async function getSpecterFacts(
     };
   }
 
-  const sessionsObserved = sessionsInPeriod.length;
-  const exitIntentSessions =
-    sessionsInPeriod.filter(s => s.exitIntent).length;
+  const sessionsPresent = sessionsInPeriod.length > 0;
+
+  const exitIntentDetected = sessionsInPeriod.some(
+    s => s.exitIntent === true
+  );
 
   /**
    * funnelsDetected
@@ -169,8 +171,8 @@ export async function getSpecterFacts(
   return {
     shopId,
     period,
-    sessionsObserved,
-    exitIntentSessions,
+    sessionsPresent,
+    exitIntentDetected,
     funnelsDetected,
     multiStepSessionsPresent,
     surfaceBreadthPresent,

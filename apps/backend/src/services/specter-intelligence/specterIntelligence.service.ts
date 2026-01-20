@@ -31,16 +31,23 @@ export interface SpecterIntelligence {
  * - No explanations
  * - No UI semantics
  */
+/**
+ * Specter Intelligence (FT2-compliant)
+ * -----------------------------------
+ * Classification-only. No math. No ratios.
+ *
+ * Rules:
+ * - Existence-only inputs
+ * - Unknown propagated aggressively
+ * - Direction & trend require continuity (not available in FT2)
+ */
 export function deriveSpecterIntelligence(
   facts: SpecterFacts
 ): SpecterIntelligence {
   /**
-   * Missing or insufficient facts → unknown intelligence
+   * No session presence → no intelligence
    */
-  if (
-    facts.sessionsObserved === null ||
-    facts.exitIntentSessions === null
-  ) {
+  if (facts.sessionsPresent === null) {
     return {
       engagement: { status: 'unknown' },
       behavior: {
@@ -51,45 +58,38 @@ export function deriveSpecterIntelligence(
   }
 
   /**
-   * Engagement (existing logic)
-   * ---------------------------
-   * Internal-only heuristic.
-   */
-  const engagementStatus =
-    facts.exitIntentSessions / facts.sessionsObserved >= 0.5
-      ? 'negative'
-      : 'positive';
-
-  /**
-   * Direction (NEW)
-   * ---------------
-   * Minimal, deterministic, continuity-based.
+   * Engagement classification (existence-only)
    *
-   * Rules:
-   * - No comparison window available → flat
-   * - No magnitude, no thresholds
-   * - No explanation
+   * Logic:
+   * - Exit intent present → negative
+   * - Meaningful engagement signals present → positive
+   * - Otherwise → unknown
+   *
+   * No magnitude. No ratios. No thresholds.
    */
-  const direction: 'up' | 'down' | 'flat' | 'unknown' =
-    facts.sessionsObserved > 0
-      ? 'flat'
-      : 'unknown';
+  let engagement: 'positive' | 'negative' | 'unknown' = 'unknown';
+
+  if (facts.exitIntentDetected === true) {
+    engagement = 'negative';
+  } else if (
+    facts.multiStepSessionsPresent === true ||
+    facts.surfaceBreadthPresent === true ||
+    facts.returningSessionsPresent === true
+  ) {
+    engagement = 'positive';
+  }
 
   /**
-   * Trend (existing logic)
+   * Direction & trend
+   * -----------------
+   * FT2 does not provide continuity or temporal comparison.
+   * Therefore these signals must remain unknown.
    */
-  const trend: 'stable' | 'volatile' | 'unknown' =
-    facts.funnelsDetected === null
-      ? 'unknown'
-      : facts.funnelsDetected
-        ? 'stable'
-        : 'volatile';
-
   return {
-    engagement: { status: engagementStatus },
+    engagement: { status: engagement },
     behavior: {
-      direction,
-      trend,
+      direction: 'unknown',
+      trend: 'unknown',
     },
   };
 }

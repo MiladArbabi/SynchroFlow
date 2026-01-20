@@ -5,3 +5,7 @@ export { default as CustomersModule } from './pages/CustomersModule';
 export { default as CustomersModuleFT2 } from './pages/CustomersModuleFT2';
 
 export type { CustomersModuleFT2Props } from './pages/CustomersModuleFT2';
+
+export {
+  CustomersFT2Contract,
+} from './contracts/CustomersFT2.contract';

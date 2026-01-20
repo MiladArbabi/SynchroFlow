@@ -6,16 +6,17 @@ export interface SpecterFT2Exposure {
       from: string;
       to: string;
     };
-    sessionsObserved: number | null;
+    /**
+     * Existence-only session observability.
+     *
+     * Rules:
+     * - null  → no sessions observed / not observable
+     * - true  → at least one session observed
+     *
+     * No magnitude. No counts.
+     */
+    sessionsPresent: boolean | null;
   };
-
-  /**
-   * Coarse engagement outcome.
-   * Downgraded from internal intelligence.
-   */
-  outcome: {
-    status: 'positive' | 'negative' | 'unknown';
-  } | null;
 
   /**
    * Directional movement signal (FT2-safe).

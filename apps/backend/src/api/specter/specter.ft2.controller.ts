@@ -27,7 +27,18 @@ export async function httpGetSpecterFt2(
       return;
     }
 
-    // Canonical FT2 period: last 7 days (matches readiness + specter usage)
+    /**
+     * Transport policy:
+     * -----------------
+     * FT2 requires an explicit observation window.
+     * This controller currently applies a fixed 7-day window.
+     *
+     * IMPORTANT:
+     * - This is NOT truth logic.
+     * - This does NOT affect FT2 semantics.
+     * - Changing this window does not change facts, only observation scope.
+     */
+
     const now = new Date();
     const from = new Date(now);
     from.setDate(now.getDate() - 7);

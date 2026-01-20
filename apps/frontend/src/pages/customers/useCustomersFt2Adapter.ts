@@ -1,70 +1,7 @@
 // apps/frontend/src/pages/customers/useCustomersFt2Adapter.ts
 
 import type { CustomersModuleFT2Props } from '@lasyncro/customers';
-
-/**
- * Customers FT2 Snapshot (canonical, post-FTEP)
- * ---------------------------------------------
- * Raw FT2 payload coming from backend transport.
- *
- * Rules:
- * - Already FTEP-sanitized
- * - All fields optional
- * - Adapter must only normalize + gate by entitlement
- */
-type CustomersFt2Snapshot = {
-  sessionsObserved?: number | null;
-
-  period?: {
-    from: string;
-    to: string;
-  } | null;
-
-  activityDirection?:
-    | 'up'
-    | 'down'
-    | 'flat'
-    | 'unknown'
-    | null;
-
-  exitIntentDetected?: boolean | null;
-
-   structuredJourneysDetected?: boolean | null;
-
-  /**
-   * Existence-only behavioral depth signal.
-   */
-  multiStepSessionsPresent?: boolean | null;
-
-  /**
-   * Existence-only surface breadth signal.
-   */
-  surfaceBreadthPresent?: boolean | null;
-
-  /**
-   * Existence-only returning behavior signal.
-   */
-  returningSessionsPresent?: boolean | null;
-
-  dataCoverage?: 'complete' | 'partial' | 'insufficient' | null;
-
-  /**
-   * Existence-only early exit signal.
-   */
-  exitWithoutInteractionPresent?: boolean | null;
-
-  /**
-   * Existence-only average session depth proxy.
-   */
-  averageSessionDepthPresent?: boolean | null;
-
-
-  /**
-   * Entitlement context (injected upstream).
-   * Adapter does not infer this.
-   */
-  isPaid?: boolean;
-};
+import type { CustomersFT2Contract } from '@lasyncro/customers';
 
 /**
  * mapCustomersFt2Props
@@ -74,75 +11,32 @@ type CustomersFt2Snapshot = {
  * Invariants:
  * - Pipe-only (no inference, no defaults)
  * - undefined → null normalization
- * - Paid-only structural truth gated here
  * - Output shape matches CustomersModuleFT2Props exactly
  */
 export function mapCustomersFt2Props(
-  snapshot: CustomersFt2Snapshot
+  snapshot: CustomersFT2Contract
 ): CustomersModuleFT2Props {
-  const isPaid = snapshot.isPaid === true;
 
   return {
-    // ───────── Existence / Context ─────────
-    sessionsObserved:
-      snapshot.sessionsObserved ?? null,
+    // ── Context ──────────────────────────
+    period: snapshot.context.period ?? null,
+    sessionsPresent: snapshot.context.sessionsPresent ?? null,
 
-    period:
-      snapshot.period ?? null,
+    // ── Direction ────────────────────────
+    activityDirection: snapshot.activityDirection ?? null,
 
-    // ───────── Directional Signal ─────────
-    activityDirection:
-      snapshot.activityDirection ?? null,
-
-    // ───────── Paid-only Structural Signals ─────────
-    exitIntentDetected: isPaid
-      ? snapshot.exitIntentDetected ?? null
-      : null,
-
-    structuredJourneysDetected: isPaid
-      ? snapshot.structuredJourneysDetected ?? null
-      : null,
-
-        /**
-     * Behavioral depth (FT2-safe).
-     * Free-tier visible (existence-only).
-     */
-    multiStepSessionsPresent:
-      snapshot.multiStepSessionsPresent ?? null,
-
-    /**
-     * Surface breadth (FT2-safe).
-     * Free-tier visible (existence-only).
-     */
-    surfaceBreadthPresent:
-      snapshot.surfaceBreadthPresent ?? null,
-
-    /**
-     * Returning behavior (FT2-safe).
-     * Free-tier visible (existence-only).
-     */
-    returningSessionsPresent:
-      snapshot.returningSessionsPresent ?? null,
-
-    // ───────── Trust Calibration ─────────
-    dataCoverage:
-      snapshot.dataCoverage ?? null,
-
-    /**
-     * Early exit without interaction (FT2-safe).
-     * Free-tier visible (existence-only).
-     */
+    // ── Structural Signals ───────────────
+    exitIntentDetected: snapshot.signals.exitIntentDetected ?? null,
+    funnelsDetected: snapshot.signals.funnelsDetected ?? null,
+    multiStepSessionsPresent: snapshot.signals.multiStepSessionsPresent ?? null,
+    surfaceBreadthPresent: snapshot.signals.surfaceBreadthPresent ?? null,
+    returningSessionsPresent: snapshot.signals.returningSessionsPresent ?? null,
     exitWithoutInteractionPresent:
-      snapshot.exitWithoutInteractionPresent ?? null,
-
-        /**
-     * Average session depth (FT2-safe).
-     * Free-tier visible (existence-only).
-     */
+      snapshot.signals.exitWithoutInteractionPresent ?? null,
     averageSessionDepthPresent:
-      snapshot.averageSessionDepthPresent ?? null,
+      snapshot.signals.averageSessionDepthPresent ?? null,
 
-    // ───────── Entitlement Echo ─────────
-    isPaid,
+    // ── Coverage ─────────────────────────
+    dataCoverage: snapshot.dataCoverage ?? null,
   };
 }
