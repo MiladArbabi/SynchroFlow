@@ -22,8 +22,6 @@ export function exposeOrderNexusFT2(
 ): OrderNexusFT2Exposure {
   const { intelligence, facts } = input;
 
-  console.debug('[OrderFTEP] input', input);
-
   const exposure: OrderNexusFT2Exposure = {
   context: {
     ordersObserved: intelligence.ordersObserved,
@@ -53,10 +51,12 @@ export function exposeOrderNexusFT2(
   dataCoverage: {
     completenessPct: intelligence.dataCoveragePct ?? null,
   },
+
+  visibility:
+    intelligence.visibility.status === 'unknown'
+      ? null
+      : { status: intelligence.visibility.status },
 };
-
-
-  console.debug('[OrderFTEP] FT2 exposure', exposure);
 
   return exposure;
 }

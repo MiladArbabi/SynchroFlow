@@ -23,6 +23,7 @@
  */
 
 import type { OrderFacts } from '../order-facts/orderFacts.types';
+import { OrderTrendFacts } from '../order-facts/orderTrendFacts.service';
 
 /**
  * Intelligence Thresholds (INTERNAL)
@@ -54,11 +55,7 @@ const TREND_DELTA_THRESHOLD = 0.05; // 5% change
  * Intelligence Types (INTERNAL ONLY)
  * ------------------------------------- */
 
-export type OrderHealthStatus =
-  | 'healthy'
-  | 'at_risk'
-  | 'loss'
-  | 'unknown';
+export type OrderHealthStatus = 'healthy' | 'loss' | 'unknown';
 
 export type TrendDirection =
   | 'up'
@@ -169,33 +166,18 @@ function deriveMarginStatus(
  * - Non-explanatory
  */
 function deriveTrendDirection(
-  series: Array<{ ordersObserved: number }>,
+  prev: number | null,
+  curr: number | null,
   dataUsable: boolean | null
-): 'up' | 'down' | 'flat' | 'unknown' {
+): TrendDirection {
   if (dataUsable !== true) return 'unknown';
+  if (prev === null || curr === null) return 'unknown';
+  if (prev === 0) return 'unknown';
 
-  // Require two full windows
-  if (series.length < TREND_WINDOW_DAYS * 2) return 'unknown';
-
-  const lastWindow = series.slice(-TREND_WINDOW_DAYS);
-  const prevWindow = series.slice(
-    -TREND_WINDOW_DAYS * 2,
-    -TREND_WINDOW_DAYS
-  );
-
-  const sum = (arr: Array<{ ordersObserved: number }>) =>
-    arr.reduce((acc, p) => acc + p.ordersObserved, 0);
-
-  const lastSum = sum(lastWindow);
-  const prevSum = sum(prevWindow);
-
-  if (prevSum === 0) return 'unknown';
-
-  const delta = (lastSum - prevSum) / prevSum;
+  const delta = (curr - prev) / prev;
 
   if (delta > TREND_DELTA_THRESHOLD) return 'up';
   if (delta < -TREND_DELTA_THRESHOLD) return 'down';
-
   return 'flat';
 }
 
@@ -228,9 +210,8 @@ function deriveEconomicVisibility(
  */
 export function deriveOrderIntelligence(
   facts: OrderFacts,
-  timeseries: Array<{ ordersObserved: number }>
+  trendFacts: OrderTrendFacts
 ): OrderNexusIntelligence {
-  console.debug('[OrderIntelligence] input facts', facts);
 
   const dataUsable = deriveDataUsable(
     facts.dataCoverage.completenessPct ?? null
@@ -242,7 +223,8 @@ export function deriveOrderIntelligence(
 );
 
 const trendDirection = deriveTrendDirection(
-  timeseries,
+  trendFacts.previousWindowOrders,
+  trendFacts.currentWindowOrders,
   dataUsable
 );
 
@@ -274,8 +256,6 @@ const intelligence: OrderNexusIntelligence = {
     status: deriveEconomicVisibility(dataUsable),
   },
 };
-
-  console.log('[OrderIntelligence] derived intelligence', intelligence);
 
   return intelligence;
 }

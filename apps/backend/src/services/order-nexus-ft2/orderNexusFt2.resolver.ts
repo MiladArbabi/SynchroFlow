@@ -2,26 +2,28 @@
 import { extractOrderFacts } from 'api-src/services/order-facts/orderFacts.service';
 import { deriveOrderIntelligence } from 'api-src/services/order-intelligence/orderIntelligence.service';
 import { exposeOrderNexusFT2 } from 'api-src/services/order-ftep/orderFtep.service';
+import { resolveAlignmentPlanes } from 'api-src/services/alignment-planes/alignmentPlanes.resolver';
 
 /**
- * NOTE ON TIME-SERIES WIRING
- * -------------------------
- * Trend direction is an INTERNAL intelligence signal.
+ * NOTE ON TREND WIRING
+ * -------------------
+ * Trend inputs are canonical facts (Layer 1½),
+ * not analytical time-series.
  *
- * To preserve layer boundaries:
- * - Time-series data is fetched here (resolver level)
- * - Layer 2 receives it as an explicit input
- * - Layer 2 does NOT read from the database
+ * The resolver orchestrates:
+ * - Facts
+ * - Trend Facts
+ * - Intelligence
+ * - FTEP
  *
- * This keeps:
- * - Facts pure
- * - Intelligence deterministic
- * - FTEP leak-safe
+ * No analytical surfaces feed intelligence.
  */
-import { getOrderNexusFt2Timeseries } from './orderNexusFt2.timeseries';
 
 import type { OrderNexusFT2Exposure } from 'api-src/services/order-ftep/orderFtep.types';
 import { FT2DateRangePreset } from 'api-src/utils/ft2Period';
+import { extractOrderTrendFacts } from 'api-src/services/order-facts/orderTrendFacts.service';
+import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFacts.service';
+import { deriveOrderFulfillmentIntelligence } from '../order-intelligence/orderFulfillmentIntelligence.service';
 
 /**
  * OrderNexus FT2 Resolver
@@ -43,17 +45,82 @@ export async function getOrderNexusFt2Snapshot(input: {
 // Step 1: Extract canonical order facts (Layer 1)
 const facts = await extractOrderFacts(shopId, range);
 
-// Step 2: Fetch FT2 time-series (analytical surface, DB-direct)
-const { series } = await getOrderNexusFt2Timeseries({
-  shopId,
-  range,
-});
-
-// Step 3: Derive internal intelligence using facts + time-series
-const intelligence = deriveOrderIntelligence(facts, series);
+const trendFacts = await extractOrderTrendFacts(shopId, range);
+const intelligence = deriveOrderIntelligence(facts, trendFacts);
 
 // Step 4: Downgrade intelligence via FTEP
 const exposure = exposeOrderNexusFT2({ facts, intelligence });
 
-  return exposure;
+const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId, range);
+const fulfillmentIntelligence = deriveOrderFulfillmentIntelligence(
+  fulfillmentFacts
+);
+
+// ─────────────────────────────────────────────
+// Alignment Planes (META + Plane Inputs)
+// ─────────────────────────────────────────────
+const alignment = resolveAlignmentPlanes({
+  meta: {
+    visibilities: [
+      intelligence.visibility.status === 'unknown'
+        ? null
+        : intelligence.visibility.status,
+
+      fulfillmentIntelligence.visibility === 'unknown'
+        ? null
+        : fulfillmentIntelligence.visibility,
+    ],
+  },
+
+  planes: [
+    // Plane #1 — Demand Reality
+    {
+      planeId: 'demand-reality',
+      input: {
+        customers: {
+          engagementTrend: null, // wired later from Specter
+          visibility: null,
+        },
+        orders: {
+          trend: intelligence.trend.direction,
+          outcome: exposure.outcome?.status ?? null,
+          visibility:
+            intelligence.visibility.status === 'unknown'
+              ? null
+              : intelligence.visibility.status,
+        },
+      },
+    },
+
+    // Plane #3 — Operational ↔ Economic
+    {
+      planeId: 'operational-economic',
+      input: {
+        orders: {
+          outcome: exposure.outcome?.status ?? null,
+          visibility:
+            intelligence.visibility.status === 'unknown'
+              ? null
+              : intelligence.visibility.status,
+        },
+        fulfillment: {
+          operationalReality:
+            fulfillmentIntelligence.operationalReality,
+          visibility:
+            fulfillmentIntelligence.visibility === 'unknown'
+              ? null
+              : fulfillmentIntelligence.visibility,
+        },
+      },
+    },
+  ],
+});
+
+  return {
+    ...exposure,
+    alignment: {
+      demandReality: alignment['demand-reality'],
+      operationalEconomic: alignment['operational-economic'],
+    },
+  };
 }

@@ -52,9 +52,22 @@ export async function extractOrderFacts(
   // Cost does NOT exist at order level → factually null
   const costTotal: number | null = null;
 
-  // --- Data completeness (FACT, not meaning) ---
-  const coverageRow = await db('canonical_order_line_items')
+  /**
+ * Data Coverage (Canonical, Time-Scoped)
+ * -------------------------------------
+ * Coverage is computed strictly over line items
+ * whose order_created_at falls within the same
+ * FT2 temporal window as canonical orders.
+ *
+ * This prevents:
+ * - late-arriving line items
+ * - orphan temporal drift
+ * - visibility inflation
+ */
+const coverageRow = await db('canonical_order_line_items')
   .where('shop_id', shopId)
+  .andWhere('order_created_at', '>=', from)
+  .andWhere('order_created_at', '<=', to)
   .select(
     db.raw('COUNT(id) as total'),
     db.raw(
@@ -87,8 +100,6 @@ export async function extractOrderFacts(
     },
     extractedAt: new Date().toISOString(),
   };
-
-  console.debug('[OrderFactsService] extracted snapshot', snapshot);
 
   return snapshot;
 }

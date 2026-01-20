@@ -1,0 +1,82 @@
+// apps/backend/src/services/order-facts/orderTrendFacts.service.ts
+
+import db from 'api-db';
+import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
+
+/**
+ * OrderTrendFacts (Layer 1½ — Canonical Trend Facts)
+ * --------------------------------------------------
+ * Purpose:
+ * - Provide minimal, non-fabricated inputs required for
+ *   trend intelligence derivation in Layer 2.
+ *
+ * Guarantees:
+ * - DB-only reads
+ * - No analytics, no zero-filling
+ * - No interpretation or thresholds
+ * - Nulls represent epistemic absence
+ *
+ * This service does NOT:
+ * - Classify direction
+ * - Infer meaning
+ * - Perform comparisons
+ */
+
+export interface OrderTrendFacts {
+  previousWindowOrders: number | null;
+  currentWindowOrders: number | null;
+}
+
+const TREND_WINDOW_DAYS = 7;
+
+export async function extractOrderTrendFacts(
+  shopId: number,
+  range: FT2DateRangePreset | { preset: 'custom'; from: string; to: string }
+): Promise<OrderTrendFacts> {
+  type NonCustomPreset = Exclude<FT2DateRangePreset, 'custom'>;
+
+  const { from, to } =
+    typeof range === 'string'
+      ? resolveFt2PeriodFromPreset({ preset: range as NonCustomPreset })
+      : range.preset === 'custom'
+        ? resolveFt2PeriodFromPreset(range)
+        : resolveFt2PeriodFromPreset({
+            preset: range.preset as NonCustomPreset,
+          });
+
+  /**
+   * Window definition:
+   * - currentWindow: last 7 days ending at `to`
+   * - previousWindow: 7 days immediately before currentWindow
+   *
+   * If either window cannot be fully evaluated → null.
+   */
+
+  const currentWindowFrom = new Date(to);
+  currentWindowFrom.setDate(currentWindowFrom.getDate() - (TREND_WINDOW_DAYS - 1));
+
+  const previousWindowTo = new Date(currentWindowFrom);
+  previousWindowTo.setDate(previousWindowTo.getDate() - 1);
+
+  const previousWindowFrom = new Date(previousWindowTo);
+  previousWindowFrom.setDate(previousWindowFrom.getDate() - (TREND_WINDOW_DAYS - 1));
+
+  async function countOrders(fromDate: Date, toDate: Date): Promise<number | null> {
+    const row = await db('canonical_orders')
+      .where('shop_id', shopId)
+      .andWhere('order_created_at', '>=', fromDate.toISOString())
+      .andWhere('order_created_at', '<=', toDate.toISOString())
+      .count<{ count: string }>('canonical_order_id as count')
+      .first();
+
+    return row?.count !== undefined ? Number(row.count) : null;
+  }
+
+  const currentWindowOrders = await countOrders(currentWindowFrom, new Date(to));
+  const previousWindowOrders = await countOrders(previousWindowFrom, previousWindowTo);
+
+  return {
+    previousWindowOrders,
+    currentWindowOrders,
+  };
+}

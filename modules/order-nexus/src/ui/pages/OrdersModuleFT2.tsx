@@ -29,13 +29,8 @@ export interface OrdersModuleFT2DataProps {
     currency: string | null;
   };
 
-  outcome: {
-    status: 'positive' | 'negative' | 'unknown';
-  } | null;
-
-  trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
-  } | null;
+  outcome: { status: 'positive' | 'negative' } | null;
+  trend: { direction: 'up' | 'down' | 'flat' } | null;
 
   dataCoverage: {
     completenessPct: number | null;

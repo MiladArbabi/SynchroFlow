@@ -20,16 +20,31 @@ export interface OrderNexusFT2Exposure {
   };
 
   outcome: {
-    status: 'positive' | 'negative' | 'unknown';
+    status: 'positive' | 'negative';
   } | null;
 
   trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+    direction: 'up' | 'down' | 'flat';
   } | null;
 
   dataCoverage: {
     completenessPct: number | null;
   };
+
+  visibility: {
+    status: 'sufficient' | 'insufficient';
+  } | null;
+
+  alignment?: {
+    demandReality?: 'aligned' | 'divergent' | 'unknown';
+    /**
+     * Operational ↔ Economic alignment
+     * -------------------------------
+     * Indicates whether economic order outcomes
+     * are grounded in operational fulfillment reality.
+     */
+      operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
+    };
 }
 
 /**
