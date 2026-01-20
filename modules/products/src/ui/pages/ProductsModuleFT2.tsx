@@ -130,6 +130,16 @@ export interface ProductsModuleFT2DataProps {
     fulfillment: 'visible' | 'missing' | 'unknown';
     stability: 'stable' | 'fragile' | 'unknown';
   } | null;
+
+  /**
+   * ─────────────────────────────────────────
+   * Supply & Replenishment Observability (FT2)
+   * ─────────────────────────────────────────
+   */
+  supply: {
+    replenishment: 'observable' | 'missing' | 'unknown';
+    coverage: 'complete' | 'partial' | 'missing' | 'unknown';
+  } | null;
 }
 
 /**
@@ -154,6 +164,7 @@ export default function ProductsModuleFT2(
     operationalRisk,
     economicBlindSpots,
     productDataIntegrity,
+    supply,
   } = props;
 
   return (
@@ -191,6 +202,19 @@ export default function ProductsModuleFT2(
 
         <FT2Surface variant="kpi" title="Operational stability">
           <FT2Stat value={operational?.stability ?? null} />
+        </FT2Surface>
+      </FT2Row>
+
+      {/* ─────────────────────────────────────────
+      * Layer A.5 — Supply & Replenishment Observability
+      * ───────────────────────────────────────── */}
+      <FT2Row intent="kpi">
+        <FT2Surface variant="kpi" title="Replenishment signals">
+          <FT2Stat value={supply?.replenishment ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Supply signal coverage">
+          <FT2Stat value={supply?.coverage ?? null} />
         </FT2Surface>
       </FT2Row>
 

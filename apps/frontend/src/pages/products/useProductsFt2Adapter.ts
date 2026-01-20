@@ -87,6 +87,11 @@ export type ProductsFt2Snapshot = {
     fulfillment: 'visible' | 'missing' | 'unknown';
     stability: 'stable' | 'fragile' | 'unknown';
   } | null;
+
+  supply: {
+    replenishment: 'observable' | 'missing' | 'unknown';
+    coverage: 'complete' | 'partial' | 'missing' | 'unknown';
+  } | null;
 };
 
 /**
@@ -190,5 +195,11 @@ export function mapProductsFt2Props(
       snapshot.operational === undefined
         ? null
         : snapshot.operational,
+
+    supply:
+      snapshot.supply === undefined
+        ? null
+        : snapshot.supply,
+
   };
 }

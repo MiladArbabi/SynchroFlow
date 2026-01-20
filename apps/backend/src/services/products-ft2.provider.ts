@@ -10,6 +10,10 @@ import { getProductOperationalFacts } from './products-operational-facts';
 import { buildProductOperationalIntelligence } from './products-operational-intelligence';
 import { buildProductOperationalFtep } from './products-operational-ftep';
 
+import { getProductSupplyFacts } from './products-supply-facts';
+import { buildProductSupplyIntelligence } from './products-supply-intelligence';
+import { buildProductSupplyFtep } from './products-supply-ftep';
+
 interface GetProductsFt2SnapshotInput {
   shopId: number;
   period: { from: string; to: string };
@@ -38,16 +42,29 @@ interface GetProductsFt2SnapshotInput {
  * - No intelligence leakage
  * - Deterministic for identical inputs
  */
-export async function getProductsFt2Snapshot(input: {
-  shopId: number;
-  period: { from: string; to: string };
-}): Promise<ProductsFT2Exposure & {
-  operational: {
-    inventory: 'ok' | 'gaps' | 'unknown';
-    fulfillment: 'visible' | 'missing' | 'unknown';
-    stability: 'stable' | 'fragile' | 'unknown';
-  } | null;
-}> {
+export async function getProductsFt2Snapshot(
+  input: {
+    shopId: number;
+    period: { from: string; to: string };
+  }
+): Promise<
+  ProductsFT2Exposure & {
+    operational: {
+      inventory: 'ok' | 'gaps' | 'unknown';
+      fulfillment: 'visible' | 'missing' | 'unknown';
+      stability: 'stable' | 'fragile' | 'unknown';
+    } | null;
+
+    /**
+     * Supply & Replenishment (FT2)
+     * Suppressed by default unless FTEP allows exposure
+     */
+    supply: {
+      replenishment: 'observable' | 'missing' | 'unknown';
+      coverage: 'complete' | 'partial' | 'missing' | 'unknown';
+    } | null;
+  }
+> {
   const { shopId, period } = input;
 
   // ─────────────────────────────────────────
@@ -82,9 +99,26 @@ export async function getProductsFt2Snapshot(input: {
       intelligence: operationalIntelligence,
     });
 
+    // ─────────────────────────────────────────
+  // Supply & Replenishment Reality (FT2-safe)
+  // ─────────────────────────────────────────
+  const supplyFacts = await getProductSupplyFacts({
+    shopId,
+    period,
+  });
+
+  const supplyIntelligence =
+    buildProductSupplyIntelligence(supplyFacts);
+
+  const supplyExposure =
+    buildProductSupplyFtep({
+      intelligence: supplyIntelligence,
+    });
+
   return {
     ...exposure,
     ...operationalExposure,
     productDataIntegrity,
+    supply: supplyExposure.supply,
   };
 }

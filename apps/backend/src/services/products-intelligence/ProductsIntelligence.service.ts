@@ -96,10 +96,23 @@ export function buildProductsIntelligence(
   // ─────────────────────────────────────────
   let variantComplexity: ProductsIntelligence['variantComplexity'] = 'simple';
 
-  if (variantsObserved > 0 && productsWithVariantsCount > 0) {
-    const avg = variantsObserved / productsWithVariantsCount;
-    variantComplexity = avg > 2 ? 'complex' : 'simple';
-  }
+  /**
+   * Variant complexity — structural density classifier
+   *
+   * EXPLICIT FT2 EXCEPTION:
+   * - Uses average variants per product
+   * - Classification only (never exposed)
+   * - Non-ordinal, lossy label
+   *
+   * If contributing facts are missing, intelligence must already be 'unknown'.
+   */
+  const variantsPerProduct =
+    variantsObserved / productsWithVariantsCount;
+
+  variantComplexity =
+    variantsPerProduct > 2
+      ? 'complex'
+      : 'simple';
 
   // ─────────────────────────────────────────
   // skuCoverage
