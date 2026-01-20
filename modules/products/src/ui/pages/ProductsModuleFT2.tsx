@@ -162,6 +162,17 @@ export interface ProductsModuleFT2DataProps {
   alignment: {
     alignment: 'aligned' | 'misaligned' | 'unknown';
   } | null;
+
+/**
+ * ─────────────────────────────────────────
+ * Dependency Surface (FT2)
+ * ─────────────────────────────────────────
+ */
+  dependency: {
+    surface: 'isolated' | 'coupled' | 'unknown';
+    blastRadius: 'contained' | 'wide' | 'unknown';
+  } | null;
+
 }
 
 /**
@@ -189,6 +200,7 @@ export default function ProductsModuleFT2(
     supply,
     dataFreshness,
     alignment,
+    dependency,
   } = props;
 
   return (
@@ -230,6 +242,14 @@ export default function ProductsModuleFT2(
 
         <FT2Surface variant="kpi" title="Cross-domain alignment">
           <FT2Stat value={alignment?.alignment ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Dependency surface">
+          <FT2Stat value={dependency?.surface ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Dependency blast radius">
+          <FT2Stat value={dependency?.blastRadius ?? null} />
         </FT2Surface>
       </FT2Row>
 

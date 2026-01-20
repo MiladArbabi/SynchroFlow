@@ -2,20 +2,21 @@
 
 ## Audit Status
 
-* **Module:** Products (SKU-OS)
+* **Module:** Products / SKU-OS
 * **Surface:** FT2
 * **Audit Type:** Truth, Exposure & Conversion Spine Integrity
-* **State:** **Frozen / Sealed**
+* **State:** **FROZEN / SEALED**
 * **Evidence Basis:** Repository scans + implemented FT2 surfaces only
+* **Last Action:** Dependency blast radius exposed (single-KPI, FT2-safe)
 
 ---
 
 ## 1. Canonical Architecture Confirmation
 
-Products / SKU-OS strictly implements the **FT2 4-layer architecture** with **explicit sub-dimensions** introduced in this audit cycle.
+Products / SKU-OS strictly implements the **FT2 4-Layer Architecture** with **independent reality domains**.
 
 ```
-Persistence (canonical_products, inventory, orders, costs)
+Persistence (canonical tables)
 → Layer 1: Facts
 → Layer 2: Intelligence
 → Layer 3: FTEP (Truth Exposure Policy)
@@ -24,174 +25,100 @@ Persistence (canonical_products, inventory, orders, costs)
 
 There are:
 
-* ❌ no shortcuts
-* ❌ no lifecycle logic
+* ❌ no lifecycle control
+* ❌ no optimization logic
 * ❌ no entitlement inference
-* ❌ no cross-layer leaks
+* ❌ no cross-layer leakage
 
-All extensions introduced preserve this structure.
-
----
-
-## 2. Layer 1 — Facts Contract (Canonical Truth)
-
-### 2.1 Sources of Truth (Expanded)
-
-| Domain      | Tables (Read-Only)                |
-| ----------- | --------------------------------- |
-| Products    | `canonical_products`              |
-| Inventory   | `inventory_truth`                 |
-| Sales       | `historical_sales`, orders tables |
-| Costs       | `product_costs`                   |
-| Fulfillment | `order_fulfillment_status`        |
-
-**Joins are permitted only inside Facts**, never beyond.
+All domains adhere to the same pipeline.
 
 ---
 
-### 2.2 ProductsFacts Interface (Unchanged, Canonical)
+## 2. Implemented Product Reality Domains (FINAL)
 
-```ts
-ProductsFacts {
-  shopId: number
+| Domain                     | Question Answered                 | Status            |
+| -------------------------- | --------------------------------- | ----------------- |
+| **Structural**             | Does the product exist correctly? | ✅ Implemented     |
+| **Operational**            | Can it flow without breaking?     | ✅ Implemented     |
+| **Economic**               | Is money observable?              | ✅ Implemented     |
+| **Supply**                 | Can it be replenished?            | ✅ Implemented     |
+| **Freshness**              | Can this data be trusted *now*?   | ✅ Implemented     |
+| **Dependency**             | What breaks if it changes?        | ✅ Implemented     |
+| **Cross-Domain Alignment** | Do realities agree?               | ✅ Implemented     |
+| Compliance                 | Is it allowed to exist?           | ⛔ Not implemented |
+| Lifecycle Presence         | Is it actually alive?             | ⛔ Not implemented |
 
-  period: {
-    from: string
-    to: string
-  }
-
-  productsObserved: number | null
-
-  skusObserved: number | null
-  distinctSkusObserved: number | null
-  productsWithSkuCount: number | null
-  productsWithoutSkuCount: number | null
-
-  variantsObserved: number | null
-  productsWithVariantsCount: number | null
-  singleVariantProductsCount: number | null
-
-  statusCounts: {
-    active: number | null
-    inactive: number | null
-    archived: number | null
-  }
-
-  extractedAt: string
-}
-```
+Only implemented domains are exposed.
+No placeholders exist.
 
 ---
 
-### 2.3 OperationalFacts (NEW — Canonical)
+## 3. Layer 1 — Facts (Canonical Truth)
 
-```ts
-ProductOperationalFacts {
-  shopId: number
-  period: { from: string; to: string }
+### 3.1 Sources of Truth (Read-Only)
 
-  productsWithInventoryCount: number | null
-  totalProductsChecked: number | null
+| Domain      | Tables                     |
+| ----------- | -------------------------- |
+| Structural  | `canonical_products`       |
+| Inventory   | `inventory_truth`          |
+| Sales       | `historical_sales`         |
+| Fulfillment | `order_fulfillment_status` |
+| Cost        | `product_costs`            |
 
-  productsWithFulfillmentSignalsCount: number | null
-
-  productsWhereSalesExceedStockCount: number | null
-
-  systemsTouchedPerProductAvg: number | null
-  productsTouchingMultipleSystemsCount: number | null
-
-  extractedAt: string
-}
-```
+* Joins allowed **only inside Facts**
+* No inferred relationships
+* No synthetic rows
 
 ---
 
-### 2.4 Null Semantics (Reconfirmed)
+### 3.2 Null Semantics (Global, Locked)
 
-* If **no rows** exist → **ALL facts = null**
-* `null` explicitly means **no observable truth**
-* `null ≠ 0` is enforced across all fact domains
-* Facts are **complete-or-null**, never partial
-
-✅ **Layer 1 remains conservative and canonical**
+* **No rows → ALL facts = null**
+* `null` means **no observable truth**
+* `null ≠ 0` enforced everywhere
+* Facts are **complete-or-null**
 
 ---
 
-## 3. Layer 2 — Intelligence Contract (Internal Classification)
+## 4. Layer 2 — Intelligence (Internal Only)
 
-### 3.1 Purpose (Expanded)
+### 4.1 Role
 
-Translate raw facts into **internal-only classifications** across **three independent dimensions**:
-
-1. Product Structure
-2. Operational Visibility
-3. Economic Observability
-
-No dimension may infer from another.
+* Deterministic classification
+* Per-domain isolation
+* Never exposed
+* Used **only** to decide downgrade/suppression
 
 ---
 
-### 3.2 Products Intelligence (Updated)
+### 4.2 Missing-Facts Collapse Rule (GLOBAL)
 
-```ts
-ProductsIntelligence {
-  outcome: {
-    status: 'positive' | 'negative' | 'unknown'
-  }
+If **any required fact** for a domain is `null`:
 
-  trend: {
-    direction: 'up' | 'down' | 'flat' | 'unknown'
-  }
+→ That **entire domain intelligence = `unknown`**
 
-  // Structural (Data Integrity)
-  structuralIntegrity: 'ok' | 'attention' | 'unknown'
-  duplicationPresence: 'present' | 'absent' | 'unknown'
-
-  // Operational (NEW)
-  inventoryVisibility: 'ok' | 'gaps' | 'unknown'
-  fulfillmentVisibility: 'visible' | 'missing' | 'unknown'
-  operationalStability: 'stable' | 'fragile' | 'unknown'
-}
-```
+No partial states.
+No borrowing across domains.
 
 ---
 
-### 3.3 Missing-Facts Collapse Rule (Global)
+## 5. Layer 3 — FTEP (Truth Exposure Policy)
 
-If **any required fact for a dimension is null**:
+### 5.1 Role
 
-➡ That **entire dimension collapses to `unknown`**
+FTEP is the **sole downgrade boundary**.
 
-There is:
+It decides:
 
-* no partial intelligence
-* no fallback logic
-* no cross-dimension borrowing
+* what survives
+* what is suppressed
+* what is downgraded
 
----
-
-### 3.4 Exposure Status
-
-* Intelligence is **never exposed**
-* Exists solely to support FTEP downgrade decisions
-
-✅ **Layer 2 remains invisible, gated, and deterministic**
+Nothing else may.
 
 ---
 
-## 4. Layer 3 — FTEP (Truth Exposure Policy)
-
-### 4.1 Role (Expanded)
-
-FTEP is the **only authority** allowed to decide:
-
-* what truth survives
-* what truth is suppressed
-* what truth is downgraded
-
----
-
-### 4.2 Products FT2 Exposure (UPDATED)
+### 5.2 Products FT2 Exposure (FINAL)
 
 ```ts
 ProductsFT2Exposure {
@@ -200,205 +127,143 @@ ProductsFT2Exposure {
     productsObserved: number | null
   }
 
-  outcome: { status: 'positive' | 'negative' | 'unknown' } | null
-  trend: { direction: 'up' | 'down' | 'flat' | 'unknown' } | null
+  outcome | null
+  trend | null
 
-  // Layer 1 — Data Gaps
-  dataGaps: {
-    productsWithConflictingDataCount: number | null
-    totalProductsChecked: number | null
-    productsWithMultipleSkusCount: number | null
-    maxSkusPerProduct: number | null
-    variantGrowth: TimeSeries | null
+  // Structural integrity
+  productDataIntegrity | null
+
+  // Operational visibility
+  operational | null
+
+  // Supply & replenishment
+  supply | null
+
+  // Data freshness
+  dataFreshness | null
+
+  // Dependency reality
+  dependency: {
+    surface: 'isolated' | 'coupled' | 'unknown'
+    blastRadius: 'contained' | 'wide' | 'unknown'
   } | null
 
-  // FT2 — Product Data Integrity (NEW)
-  productDataIntegrity: {
-    integrity: 'ok' | 'attention' | 'unknown'
-    duplication: 'present' | 'absent' | 'unknown'
-  } | null
-
-  // FT2 — Operational Exposure (NEW)
-  operational: {
-    inventory: 'ok' | 'gaps' | 'unknown'
-    fulfillment: 'visible' | 'missing' | 'unknown'
-    stability: 'stable' | 'fragile' | 'unknown'
-  } | null
-
-  // Layer 3 — Economic Blind Spots
-  economicBlindSpots: {
-    productsWithCostCount: number | null
-    productsWithoutCostCount: number | null
-    priceVsCostTrend: TimeSeries | null
-    revenueVsProfit: Distribution | null
+  // Cross-domain agreement
+  alignment: {
+    alignment: 'aligned' | 'misaligned' | 'unknown'
   } | null
 }
 ```
 
 ---
 
-### 4.3 Downgrade Rules (Strict)
+### 5.3 Downgrade Rules (Strict)
 
-* If intelligence dimension = `unknown` → exposure = `null`
+* Intelligence = `unknown` → exposure = `null`
 * Exposure is **lossy by design**
-* No raw facts cross this boundary
+* Raw facts and ratios never cross this boundary
 
 ---
 
-### 4.4 Meaning of `null` at FTEP
+### 5.4 Meaning of `null` (Reconfirmed)
 
 `null` means:
 
-> *Truth exists but is intentionally withheld due to insufficient certainty or policy.*
+> Truth exists but is **intentionally withheld** due to insufficient certainty or policy.
 
 This is **not missing data**.
 
 ---
 
-## 5. Layer 4 — FT2 UI Contract (Updated)
+## 6. Layer 4 — FT2 UI (FINAL)
 
-### 5.1 Snapshot Acquisition
+### 6.1 Rendering Rules
 
-* Endpoint: `/api/v1/modules/products/ft2`
-* Period resolved via **FT2DateRange authority**
-* Backend owns time semantics
-* Read-only, deterministic
-
----
-
-### 5.2 Adapter Rules (Unchanged)
-
-* Pure mapping
-* `undefined → null` only
-* No inference
-* No computed values
-
----
-
-### 5.3 Rendering Semantics (Expanded)
-
-* All surfaces render as **KPIs**
+* KPI-only surfaces
 * `null → '—'`
-* `'—'` explicitly means:
-
-> *Truth withheld or unknown by policy*
-
----
-
-### 5.4 Composition Guarantees
-
-* No nested rows
-* No narrative surfaces
-* No semantic grouping in UI
-* All surfaces visible in a **single scan**
-
-This is intentional and conversion-aligned.
+* No narrative
+* No explanation
+* No severity coloring
+* No ranking
 
 ---
 
-## 6. Conversion Spine (NEW — Formalized)
+### 6.2 Conversion Spine (LOCKED)
 
-Products FT2 now reveals, in order:
+Order of exposure is intentional:
 
-1. **Existence** – products detected
-2. **Structural Trust** – data integrity
-3. **Operational Visibility** – inventory & fulfillment exposure
-4. **Economic Observability** – cost & profit blindness
+1. Products detected
+2. Structural integrity
+3. Operational visibility
+4. Supply observability
+5. Data freshness
+6. Dependency surface & blast radius
+7. Cross-domain alignment
+8. Economic observability
 
 Nothing is explained.
-Nothing is optimized.
-Nothing is sold.
-
-The user connects the dots.
+Users infer cost of blindness themselves.
 
 ---
 
-## 7. Final Cross-Layer Alignment
+## 7. Visual Semantics Audit (PASSED)
 
-| Layer        | Status                             |
-| ------------ | ---------------------------------- |
-| Facts        | Canonical, complete-or-null        |
-| Intelligence | Gated, internal, multi-dimensional |
-| FTEP         | Lossy, suppressive, deterministic  |
-| FT2 UI       | Observational, non-narrative       |
+Confirmed absence of:
 
----
+* ❌ recommendations
+* ❌ risk language
+* ❌ advice
+* ❌ optimization framing
+* ❌ lifecycle triggers
 
-## 8. Visual Primitives Status (Reconfirmed)
-
-### 8.1 Verified Absence
-
-There are **no** FT2 visual primitives for:
-
-* charts
-* gauges
-* graphs
-* distributions
-* trends
-
-This is confirmed via repository scan.
+UI remains **observational only**.
 
 ---
 
-### 8.2 Implication
+## 8. Forward-Compatibility Guarantee
 
-FT2 is **data-complete but visually minimal**.
+This FT2 contract supports future expansion via:
 
-This is:
+* constraint lifting
+* deeper time windows
+* higher resolution facts
 
-* safe
-* correct
-* and conversion-limiting (by design, for now)
-
----
-
-## 9. Forward Compatibility Guarantee (Revalidated)
-
-All exposed Products FT2 fields are:
-
-* raw
-* observational
-* non-semantic
-* visually renderable
-
-A future **FT2 Visual Primitive Catalog** can be added **without modifying this contract**.
+**No refactor required.**
 
 ---
 
-## 10. Explicit Non-Goals (Restated)
+## 9. Explicit Non-Goals (LOCKED)
 
-This contract does **not**:
+Products FT2 does **not**:
 
 * define visuals
-* introduce entitlements
-* split free vs paid
-* recommend actions
-* compute scores
-* infer outcomes
+* define entitlements
+* define pricing
+* suggest actions
+* optimize outcomes
+* infer causes
 
-Those are **separate system concerns**.
-
----
-
-## 🔒 FINAL AUDIT VERDICT (UPDATED & SEALED)
-
-* Products / SKU-OS FT2 is **architecturally correct**
-* Data Integrity and Operational Exposure are **first-class**
-* Conversion spine is **structural, not narrative**
-* No refactor is required for monetization
-* Only **constraint lifting** is needed for FT2-Paid
+Those are separate systems.
 
 ---
 
-## 🔐 STATUS: **LOCKED, SEALED, & AUTHORITATIVE**
+## 🔒 FINAL VERDICT
 
-Any further changes require:
+* Products / SKU-OS FT2 is **complete**
+* All implemented domains are **orthogonal & sealed**
+* Conversion spine is **structural, not persuasive**
+* Dependency (surface + blast radius) is FT2-safe
+* Silent drift is now forbidden
 
-1. fresh repository scan
+---
+
+## 🔐 STATUS: **LOCKED · SEALED · AUTHORITATIVE**
+
+Any future change requires:
+
+1. new repository scan
 2. explicit diff
-3. scope declaration
+3. declared scope
 4. non-retroactive amendment
 
-Silent drift is forbidden.
-
----
+No exceptions.

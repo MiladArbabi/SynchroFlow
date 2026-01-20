@@ -43,6 +43,13 @@ export function buildProductsFtep(
       trend: null,
       signals: null,
       productDataIntegrity: null,
+
+      // REQUIRED FT2 domains — default null
+      dependency: null,
+      operational: null,
+      supply: null,
+      dataFreshness: null,
+      alignment: null,
     };
   }
 
@@ -89,5 +96,11 @@ export function buildProductsFtep(
 
     signals,
     productDataIntegrity: null,
+
+    dependency: null,
+    operational: null,
+    supply: null,
+    dataFreshness: null,
+    alignment: null,
   };
 }

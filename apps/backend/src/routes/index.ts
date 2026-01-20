@@ -9,7 +9,6 @@ import feedbackRoutes from './feedback';
 import ordersRoutes from '../api/orders/orders.routes'
 import productsRoutes from '../api/products/products.routes'
 import customersRoutes from '../api/customers/customers.routes'
-import productCostsRoutes from '../api/product-costs/product-costs.routes'
 import userStateRoutes from '../api/user-state/user-state.routes'
 import { getSpecterConfig, upsertSpecterConfig } from 'api-src/api/specter/specter.controller';
 import onboardingReadinessRouter from '../onboarding/readiness.router';
@@ -28,7 +27,6 @@ router.use('/feedback', feedbackRoutes);
 router.use('/orders', ordersRoutes);
 router.use('/products', productsRoutes);
 router.use('/customers', customersRoutes);
-router.use('/product-costs', productCostsRoutes);
 router.use('/user-state', userStateRoutes); 
 router.use('/onboarding', onboardingReadinessRouter);
 

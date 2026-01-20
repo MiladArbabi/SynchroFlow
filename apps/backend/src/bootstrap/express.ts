@@ -9,7 +9,6 @@ import orderRoutes from '../api/orders/orders.routes';
 import customerRoutes from '../api/customers/customers.routes';
 import integrationRoutes from '../api/integrations/integration.routes';
 import productsRoutes from '../api/products/products.routes';
-import productCostsRoutes from '../api/product-costs/product-costs.routes';
 import authRoutes from '../api/auth/auth.routes';
 import userStateRoutes from '../api/user-state/user-state.routes';
 import shopifyRoutes from '../api/shopify/shopify.routes';
@@ -76,7 +75,6 @@ export function createApp(): Express {
   app.use('/api/v1/customers', customerRoutes);
   app.use('/api/v1/integrations', integrationRoutes);
   app.use('/api/v1/products', productsRoutes);
-  app.use('/api/v1/product-costs', productCostsRoutes);
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/user-state', userStateRoutes);
   app.use('/api/v1/shopify', shopifyRoutes);
@@ -110,7 +108,6 @@ export function createApp(): Express {
     verifyStripeSignature,
     stripeWebhookHandler
   );
-
 
   // basic endpoints preserved
   app.get('/', (_req, res) => res.send('SynchroFlow API is running!'));

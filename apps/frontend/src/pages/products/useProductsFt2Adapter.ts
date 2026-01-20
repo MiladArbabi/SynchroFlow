@@ -104,6 +104,11 @@ export type ProductsFt2Snapshot = {
   alignment?: {
     alignment: 'aligned' | 'misaligned' | 'unknown';
   } | null;
+
+  dependency?: {
+    surface: 'isolated' | 'coupled' | 'unknown';
+    blastRadius: 'contained' | 'wide' | 'unknown';
+  } | null;
 };
 
 /**
@@ -222,5 +227,10 @@ export function mapProductsFt2Props(
       snapshot.alignment === undefined
         ? null
         : snapshot.alignment,
+    
+    dependency:
+      snapshot.dependency === undefined
+        ? null
+        : snapshot.dependency,
   };
 }

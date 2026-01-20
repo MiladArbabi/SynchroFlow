@@ -58,4 +58,37 @@ export interface ProductsFT2Exposure {
    * - downgraded by policy
    */
   productDataIntegrity: ProductDataIntegrityFT2Exposure | null;
+
+  /**
+   * ─────────────────────────────────────────
+   * Dependency & Blast Radius (FT2)
+   * ─────────────────────────────────────────
+   */
+  dependency: {
+    surface: 'isolated' | 'coupled' | 'unknown';
+    blastRadius: 'contained' | 'wide' | 'unknown';
+  } | null;
+
+  operational: {
+    inventory: 'ok' | 'gaps' | 'unknown';
+    fulfillment: 'visible' | 'missing' | 'unknown';
+    stability: 'stable' | 'fragile' | 'unknown';
+  } | null;
+
+  supply: {
+    replenishment: 'observable' | 'missing' | 'unknown';
+    coverage: 'complete' | 'partial' | 'missing' | 'unknown';
+  } | null;
+
+  dataFreshness: {
+    structural: 'fresh' | 'stale' | 'unknown' | null;
+    inventory: 'fresh' | 'stale' | 'unknown' | null;
+    sales: 'fresh' | 'stale' | 'unknown' | null;
+    fulfillment: 'fresh' | 'stale' | 'unknown' | null;
+    cost: 'fresh' | 'stale' | 'unknown' | null;
+  } | null;
+
+  alignment: {
+    alignment: 'aligned' | 'misaligned' | 'unknown';
+  } | null;
 }
