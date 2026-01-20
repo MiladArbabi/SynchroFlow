@@ -24,13 +24,13 @@ export function applySpecterFtep(input: {
 
   const sessionsPresent = facts.sessionsPresent;
 
-  /**
-   * activityDirection
-   * -----------------
-   * FT2 allows directional movement only when real continuity exists.
-   * Specter FT2 does not yet have continuity.
-   */
-    const activityDirection = null;
+/**
+ * Domain 2 — Activity Presence Reality
+ *
+ * Direction requires temporal comparison.
+ * Specter FT2 has no continuity → always null.
+ */
+ const activityDirection = null;
 
   /**
    * exitIntentDetected
@@ -110,15 +110,35 @@ export function applySpecterFtep(input: {
     facts.averageSessionDepthPresent === null
       ? null
       : facts.averageSessionDepthPresent;
+      
 
   return {
-   context: {
+    context: {
       period: facts.period,
+
+      /**
+       * Domain 1 — Identity Presence Reality
+       *
+       * Specter has no customer entity store.
+       * This is an intentional, permanent downgrade.
+       */
+      customersPresent: null,
+      identityCoverage: 'unknown',
+
+      /**
+       * Domain 2 — Activity Presence Reality
+       */
       sessionsPresent:
         ctr >= CustomerTruthReadiness.CTR_1
           ? facts.sessionsPresent
           : null,
     },
+
+  // ── Domain 3 — Engagement Structure Reality ──
+    engagement:
+      ctr >= CustomerTruthReadiness.CTR_1
+        ? { status: intelligence.engagement.status }
+        : { status: null },
 
    /**
      * Directional movement (FT2-safe).
@@ -165,6 +185,16 @@ export function applySpecterFtep(input: {
           ctr >= CustomerTruthReadiness.CTR_1
             ? averageSessionDepthPresent
             : null,
+
+        dataFreshness:
+          ctr >= CustomerTruthReadiness.CTR_1
+            ? facts.dataFreshness
+            : null,
+
+        consistencyIssues:
+          ctr >= CustomerTruthReadiness.CTR_1
+            ? facts.consistencyIssues
+            : null,
       },
 
      /**
@@ -185,6 +215,12 @@ export function applySpecterFtep(input: {
         : sessionsPresent === false
           ? 'insufficient'
           : null,
+
+    instrumentationGaps:
+      ctr >= CustomerTruthReadiness.CTR_1
+        ? facts.instrumentationGaps
+        : null,
+        
   };
 }
 

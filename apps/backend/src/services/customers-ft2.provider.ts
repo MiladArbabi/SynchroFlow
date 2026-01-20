@@ -1,6 +1,5 @@
 // apps/backend/src/services/customers-ft2.provider.ts
 import { getCustomersFacts } from './customers-facts';
-import { deriveCustomersIntelligence } from './customers-intelligence';
 import { applyCustomersFtep } from './customers-ftep';
 import { CustomersFT2Exposure } from './customers-ftep/customersFtep.types';
 
@@ -21,8 +20,11 @@ export async function getCustomersFt2Snapshot(input: {
   period: { from: string; to: string };
 }): Promise<CustomersFT2Exposure> {
   const facts = await getCustomersFacts(input);
-  const intelligence = deriveCustomersIntelligence(facts);
-  const exposure = applyCustomersFtep({ facts, intelligence });
+  /**
+ * FT2 Customers does not expose intelligence.
+ * Intelligence is computed later when alignment planes exist.
+ */
+  const exposure = applyCustomersFtep({ facts });
 
   return exposure;
 }

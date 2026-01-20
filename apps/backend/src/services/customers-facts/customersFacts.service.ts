@@ -8,13 +8,13 @@ import {
 /**
  * Customers Facts (FT2)
  * --------------------
- * Raw, interpretation-free extraction of customer existence.
+ * Deterministic extraction of customer existence facts.
  *
- * Rules:
+ * HARD RULES:
  * - Read-only
  * - Period enforced server-side
- * - Null is first-class
- * - No semantics, no metrics
+ * - Null represents epistemic absence
+ * - No semantics, no metrics, no inference
  */
 export async function getCustomersFacts(
   input: GetCustomersFactsInput
@@ -32,10 +32,29 @@ export async function getCustomersFacts(
 
   const count = Number(rows?.[0]?.count ?? 0);
 
+/**
+ * Domain 1 — Identity Presence Reality
+ * Domain 2 — Activity Presence Reality
+ *
+ * FT2 constraint:
+ * Customer creation is the sole activity proxy.
+ *
+ * This is an explicit modeling decision,
+ * not a behavioral claim.
+ */
   return {
-    shopId,
+    shopId, 
     period,
-    customersObserved: count > 0 ? count : null,
+
+    customersObserved:
+      Number.isFinite(count) ? count : null,
+
+    activityObserved:
+      Number.isFinite(count)
+        ? count > 0
+        : null,
+
     extractedAt: new Date().toISOString()
   };
+
 }

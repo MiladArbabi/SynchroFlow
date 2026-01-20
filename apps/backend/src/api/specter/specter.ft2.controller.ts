@@ -1,6 +1,7 @@
 //apps/backend/src/api/specter/specter.ft2.controller.ts
 import { Request, Response } from 'express';
 import { getSpecterFt2Snapshot } from 'api-src/services/specter-ft2.provider';
+import { resolveFt2Range } from 'api-src/utils/ft2Period';
 
 /**
  * GET /api/v1/specter/ft2
@@ -39,16 +40,13 @@ export async function httpGetSpecterFt2(
      * - Changing this window does not change facts, only observation scope.
      */
 
-    const now = new Date();
-    const from = new Date(now);
-    from.setDate(now.getDate() - 7);
+    const period = resolveFt2Range(
+      (req.query.preset as any) ?? 'past_7_days'
+    );
 
     const snapshot = await getSpecterFt2Snapshot({
       shopId,
-      period: {
-        from: from.toISOString(),
-        to: now.toISOString()
-      }
+      period,
     });
 
     res.status(200).json(snapshot);

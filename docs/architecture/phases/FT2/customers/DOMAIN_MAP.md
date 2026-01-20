@@ -4,6 +4,7 @@
 
 **Status:** 🔒 LOCKED
 **Applies to:** Backend · Modules · Frontend · Product · Monetization
+**FT Level:** **FT2 is terminal**
 **Last Updated:** Now
 **Change Policy:** Explicit RFC only
 
@@ -11,7 +12,7 @@
 
 ## 0. Executive Intent (Read First)
 
-Customers / Specter FT2 is not an analytics module.
+Customers / Specter FT2 is **not** an analytics module.
 
 It is the **Customer Nervous System (CNS)** for SMBs.
 
@@ -23,17 +24,14 @@ Its job is not to:
 * recommend
 * persuade
 
-Its job is to:
+Its only job is to:
 
-> **Make customer reality observable, comparable, and undeniable across silos.**
+> **Make customer reality observable, bounded, and undeniable — including what is *not* observable.**
 
-All future vertical intelligence depends on this layer being:
+FT2 is the epistemic floor of the product.
+Everything above it either respects this truth or becomes manipulation.
 
-* semantically pure
-* horizontally extensible
-* immune to monetization pressure
-
-This document locks that foundation.
+This document locks that floor.
 
 ---
 
@@ -43,192 +41,284 @@ There is:
 
 * ❌ no FT3
 * ❌ no FT2+
-* ❌ no hidden “advanced tier” semantics
+* ❌ no hidden “advanced” semantics
 
 There is only:
 
-| Tier           | Meaning                                 |
-| -------------- | --------------------------------------- |
-| **FT2 (Free)** | Limited exposure of truth               |
-| **FT2 (Paid)** | Less lossy exposure of the *same* truth |
+| Tier           | Meaning                         |
+| -------------- | ------------------------------- |
+| **FT2 (Free)** | More downgrades, more blindness |
+| **FT2 (Paid)** | Fewer downgrades, same truth    |
 
-### Implication
+### Absolute Rule
 
-* **All domains are designed first**
-* **FTEP decides visibility, not existence**
-* Monetization NEVER introduces new truth
-* Monetization only *removes downgrades*
+> **Monetization may remove blindness.
+> Monetization may never add truth.**
 
-If a signal cannot exist in FT2-free in *some* form, it must not exist at all.
+If a signal cannot exist in **FT2-Free in downgraded form**, it must not exist at all.
 
 ---
 
-## 2. Customers FT2 Canonical Domains (Locked)
+## 2. Customers & Specter FT2 — Canonical Domains (LOCKED)
 
-These **9 domains are final** for Customers FT2.
+FT2 consists of **12 canonical domains**.
+
+They are final.
+They are atomic.
+They are non-overlapping.
 
 No additions.
-No mergers.
+No merges.
 No silent expansion.
 
 ---
 
-### 1. Identity Presence Reality (FOUNDATIONAL)
+### **Domain 1 — Identity Presence Reality**
 
 **Question:**
-
-> Do customers exist as identifiable entities?
+Do customers exist as identifiable entities?
 
 **Truth owned:**
 
-* customer record existence
+* entity existence
 * identity observability
 
-**FT2 Exposure:**
+**FT2 Signals:**
 
 * `customersPresent: boolean | null`
 * `identityCoverage: complete | partial | unknown`
 
+**Notes:**
+
+* In Specter FT2, this domain is **permanently downgraded**
+* In Customers FT2, it exists but is currently **not rendered**
+
 ---
 
-### 2. Activity Presence Reality
+### **Domain 2 — Activity Presence Reality**
 
 **Question:**
-
-> Are customers doing anything at all?
+Is there *any* observable customer activity?
 
 **Truth owned:**
 
-* activity existence
-* directional movement (lossy)
+* existence of activity
+* silence as a signal
 
-**Exposure:**
+**FT2 Signals:**
 
+* `sessionsPresent: boolean | null`
 * `activityObserved: boolean | null`
-* `activityDirection: up | down | flat | unknown`
+
+**Hard rule:**
+`false` ≠ `null`
+Silence is meaningful **only if observable**.
 
 ---
 
-### 3. Engagement Structure Reality
+### **Domain 3 — Engagement Structure Reality**
 
 **Question:**
-
-> Is customer behavior structurally meaningful?
+Is customer behavior structurally meaningful?
 
 **Truth owned:**
 
-* depth existence
+* depth existence only
 
-**Exposure:**
+**FT2 Signals:**
 
 * `multiStepSessionsPresent: boolean | null`
 * `averageSessionDepthPresent: boolean | null`
 
+No averages.
+No scores.
+No engagement “quality”.
+
 ---
 
-### 4. Surface Breadth Reality
+### **Domain 4 — Surface Breadth Reality**
 
 **Question:**
-
-> Do customers explore more than one surface?
+Do customers explore more than one surface?
 
 **Truth owned:**
 
 * cross-surface existence
 
-**Exposure:**
+**FT2 Signal:**
 
 * `surfaceBreadthPresent: boolean | null`
 
 ---
 
-### 5. Returning Behavior Reality
+### **Domain 5 — Returning Behavior Reality**
 
 **Question:**
-
-> Do customers come back?
+Do customers come back?
 
 **Truth owned:**
 
-* returning presence
+* returning existence
 
-**Exposure:**
+**FT2 Signal:**
 
 * `returningSessionsPresent: boolean | null`
 
+No cohorts.
+No retention math.
+No attribution.
+
 ---
 
-### 6. Exit & Abandonment Reality
+### **Domain 6 — Exit & Abandonment Reality**
 
 **Question:**
-
-> Do customers leave without engaging?
+Do customers leave without engaging?
 
 **Truth owned:**
 
-* early exit existence
+* early disengagement existence
 
-**Exposure:**
+**FT2 Signals:**
 
 * `exitIntentDetected: boolean | null`
 * `exitWithoutInteractionPresent: boolean | null`
 
+No severity.
+No cause.
+No blame.
+
 ---
 
-### 7. Journey Structure Reality
+### **Domain 7 — Journey Structure Reality**
 
 **Question:**
-
-> Do customer journeys have any structure?
+Do customer journeys exhibit *any* structure?
 
 **Truth owned:**
 
 * funnel marker existence
 
-**Exposure:**
+**FT2 Signal:**
 
 * `funnelsDetected: boolean | null`
 
+This is **not** funnel performance.
+It is structural observability only.
+
 ---
 
-### 8. Observability Coverage Reality (TRUST DOMAIN)
+### **Domain 8 — Observability Coverage Reality (TRUST)**
 
 **Question:**
-
-> Is customer data observable or guessed?
+Is activity absence meaningful or unknowable?
 
 **Truth owned:**
 
-* data coverage certainty
+* observability certainty
 
-**Exposure:**
+**FT2 Signal:**
 
 * `dataCoverage: complete | insufficient | unknown`
 
+This is **not data quality**.
+It is epistemic confidence.
+
 ---
 
-### 9. Cross-Signal Coherence Reality (META)
+### **Domain 9 — Directional Movement Reality (LOSSY)**
 
 **Question:**
-
-> Do customer signals agree with each other?
+Is activity directionally changing?
 
 **Truth owned:**
 
-* agreement vs contradiction
+* directional movement without magnitude
 
-**Exposure:**
+**FT2 Signal:**
 
-* `signalCoherence: aligned | divergent | unknown`
+* `activityDirection: up | down | flat | unknown | null`
 
-> May be free, paid, or internal-only
-> But MUST be computed once domains exist
+**Current state:**
+
+* Always `null` in FT2 due to no continuity
+* Structurally present, informationally empty
 
 ---
 
-## 3. Architectural Laws (Reinforced)
+### **Domain 10 — Instrumentation Gaps Reality (META-OBSERVABILITY)**
 
-These apply to **every Customers domain**.
+**Question:**
+What *could not* be observed due to missing instrumentation?
+
+**Truth owned:**
+
+* observability blind spots
+
+**FT2 Signal:**
+
+* `instrumentationGaps: InstrumentationGap[] | null`
+
+**Examples:**
+
+* `page_depth`
+* `surface_breadth`
+* `returning_flag`
+* `exit_intent`
+* `funnels`
+
+> Signals describe customers.
+> Gaps describe **our eyesight**.
+
+---
+
+### **Domain 11 — Data Freshness Reality**
+
+**Question:**
+Is the extracted data temporally valid for this window?
+
+**Truth owned:**
+
+* freshness vs staleness
+
+**FT2 Signal:**
+
+* `dataFreshness: boolean | null`
+
+No SLAs.
+No urgency.
+No alarms.
+
+---
+
+### **Domain 12 — Cross-Domain Consistency Reality**
+
+**Question:**
+Do observed signals logically contradict each other?
+
+**Truth owned:**
+
+* internal coherence
+
+**FT2 Signal:**
+
+* `consistencyIssues: ConsistencyIssue[] | null`
+
+**Examples:**
+
+* depth without sessions
+* funnels without activity
+* returning without sessions
+
+No diagnosis.
+No resolution.
+Just contradiction.
+
+---
+
+## 3. Architectural Laws (Absolute)
+
+These apply to **every FT2 domain**:
 
 1. One domain → one question
 2. Facts are raw and dumb
@@ -247,155 +337,129 @@ Violation = rollback.
 
 ## 4. Free vs Paid (Policy, Not Architecture)
 
-### Principle
+**Principle**
 
-> **Paid removes blindfolds.
-> Free never lies.**
+> Paid removes blindfolds.
+> Free never lies.
 
-### Examples (Illustrative, not final)
+### Examples (Illustrative)
 
-| Signal              | Free    | Paid      |
-| ------------------- | ------- | --------- |
-| `activityDirection` | unknown | up / down |
-| `signalCoherence`   | hidden  | exposed   |
-| `identityCoverage`  | partial | complete  |
-| `funnelsDetected`   | yes     | yes       |
-| Raw counts          | ❌       | ❌ (never) |
+| Signal                | Free    | Paid      |
+| --------------------- | ------- | --------- |
+| `activityDirection`   | unknown | up / down |
+| `instrumentationGaps` | hidden  | exposed   |
+| `consistencyIssues`   | hidden  | exposed   |
+| Counts                | ❌       | ❌ (never) |
 
-Counts, ratios, and explanations are **never exposed**, even paid.
+Paid **never** adds:
 
----
-
-## 5. Alignment Planes (Post-Domain Phase)
-
-Once **all 9 Customers domains exist**, the system graduates from *vertical truth* to **horizontal coherence**.
-
-Alignment Planes are **meta-truth layers**.
-
-They do not add signals.
-They compare existing ones.
+* counts
+* ratios
+* explanations
+* recommendations
 
 ---
 
-## Alignment Plane Definition
+## 5. Alignment Planes (Post-FT2 Phase)
 
-> An Alignment Plane exposes whether two vertical realities **agree, diverge, or cannot be compared**.
+Alignment Planes activate **only after FT2 is complete and stable**.
+
+They:
+
+* add **no new signals**
+* compare existing truths across modules
+
+---
+
+### Alignment Plane Definition
+
+> An Alignment Plane exposes whether two realities **agree, diverge, or cannot be compared**.
 
 No causes.
 No blame.
-No resolution.
+No fixes.
 
 ---
 
-## Alignment Plane #1 — Demand Reality
+### Alignment Plane #1 — Demand Reality
 
 **Customers ↔ Orders**
 
-**Question:**
-
-> Do customer signals align with actual orders?
-
-**Examples:**
-
-* Customers active, orders absent
-* Orders present, customers dormant
-
-**Exposure:**
-
-* `demandAlignment: aligned | divergent | unknown`
+* `demandAlignment`
 
 ---
 
-## Alignment Plane #2 — Engagement ↔ Revenue
+### Alignment Plane #2 — Engagement ↔ Revenue
 
 **Customers ↔ Finance**
-
-**Question:**
-
-> Does engagement correspond to money movement?
-
-**Exposure:**
 
 * `engagementRevenueAlignment`
 
 ---
 
-## Alignment Plane #3 — Customer ↔ Product Reality
-
-**Question:**
-
-> Are customers interacting with products that operationally exist?
-
-**Exposure:**
+### Alignment Plane #3 — Customer ↔ Product Reality
 
 * `customerProductAlignment`
 
 ---
 
-## Alignment Plane #4 — Trust Alignment Plane (META)
+### Alignment Plane #4 — Cross-Domain Trust Plane
 
-**Question:**
-
-> Are these realities even based on comparable data coverage?
-
-**Exposure:**
-
-* `crossDomainTrust: aligned | divergent | unknown`
+* `crossDomainTrust`
 
 ---
 
-## 6. Why This Creates a Must-Have SaaS
+## 6. Why This Becomes a Must-Have SaaS
 
-Most SMB tools answer:
+Most tools answer:
 
 > “What happened?”
 
-This system answers:
+FT2 answers:
 
-> **“What do you *not* actually know?”**
+> **“What do you *not actually know*?”**
 
-That is the moment users stop trusting spreadsheets, dashboards, and gut feeling.
+That moment collapses false confidence.
 
-Once alignment planes light up contradictions, churn risk collapses.
+Once contradictions, gaps, and blindness are visible, users cannot unsee them.
 
-They cannot unsee it.
+That is the lock-in.
 
 ---
 
-## 7. Build Order (Mandatory)
+## 7. Mandatory Build Order
 
-1. Lock Customers FT2 domains (this doc)
-2. Implement all 9 Facts layers
-3. Implement Intelligence (classification-only)
-4. Implement FTEP (downgrade-only)
-5. Stabilize UI rendering (boring by design)
-6. THEN introduce Alignment Planes
-7. THEN decide Free vs Paid exposure
+1. Lock FT2 domains (this document)
+2. Implement all Facts layers
+3. Implement Intelligence (classification only)
+4. Implement FTEP (downgrade only)
+5. Stabilize boring UI rendering
+6. Introduce Alignment Planes
+7. Decide Free vs Paid exposure
 
 Skipping steps creates semantic debt.
 
 ---
 
-## 8. Enforcement Checklist (Required)
+## 8. Enforcement Checklist
 
-* [ ] No new Customers signal without domain
-* [ ] No paid-only signal without free downgraded form
+* [ ] No new signal without domain
+* [ ] No paid-only truth
 * [ ] No frontend inference
-* [ ] No backend explanation strings
-* [ ] No counts exposed
-* [ ] No ratios exposed
+* [ ] No backend explanations
+* [ ] No counts
+* [ ] No ratios
 * [ ] No optimization language
-* [ ] No “recommendation” UI
+* [ ] No recommendations
 
 ---
 
-## 9. Final Lock Statement
+## 🔐 Final Lock Statement
 
-> Customers FT2 is the **epistemic foundation** of the SaaS.
+FT2 is the **epistemic foundation** of the platform.
 
-If this layer lies, everything above it becomes manipulation.
-
-If this layer is clean, the platform becomes unavoidable.
+If this layer lies, everything above it manipulates.
+If this layer is clean, the product becomes unavoidable.
 
 This canon is **locked**.
 

@@ -18,12 +18,22 @@ export function deriveCustomersIntelligence(
 ): CustomersIntelligence {
   let status: CustomersIntelligence['outcome']['status'] = 'unknown';
 
+ /**
+ * FT2 existence-only classification.
+ *
+ * IMPORTANT:
+ * - Customers FT2 cannot assert explicit absence yet
+ * - Zero rows collapse to null at Facts layer
+ *
+ * Therefore:
+ * - null → unknown
+ * - > 0  → positive
+ * - negative is NOT reachable in FT2 Customers (by design)
+ */
   if (facts.customersObserved === null) {
     status = 'unknown';
-  } else if (facts.customersObserved > 0) {
-    status = 'positive';
   } else {
-    status = 'negative';
+    status = 'positive';
   }
 
   return {

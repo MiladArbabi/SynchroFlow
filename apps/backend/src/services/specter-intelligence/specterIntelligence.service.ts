@@ -3,19 +3,36 @@
 import { SpecterFacts } from 'api-src/services/specter-facts/specterFacts.types';
 
 export interface SpecterIntelligence {
+  /**
+   * Domain 1 — Identity Presence Reality (classified)
+   */
+  identity: {
+    present: boolean | null;
+    coverage: 'complete' | 'partial' | 'unknown';
+  };
+
+  /**
+   * Domain 2 — Activity Presence Reality (classified)
+   */
+  activity: {
+    observed: boolean | null;
+    direction: 'unknown'; // continuity not available in FT2
+  };
+
+  /**
+   * Domain 3 - Engagement classification (internal).
+   * Derived strictly from structural existence.
+   */
   engagement: {
     status: 'positive' | 'negative' | 'unknown';
   };
-  behavior: {
-    /**
-     * Internal-only behavioral direction.
-     * Never exposed directly to UI.
-     */
-    direction: 'up' | 'down' | 'flat' | 'unknown';
 
-    /**
-     * Internal stability signal (existing).
-     */
+  /**
+   * Internal-only behavioral metadata.
+   * Not exposed in FT2.
+   */
+  behavior: {
+    direction: 'up' | 'down' | 'flat' | 'unknown';
     trend: 'stable' | 'volatile' | 'unknown';
   };
 }
@@ -44,49 +61,61 @@ export interface SpecterIntelligence {
 export function deriveSpecterIntelligence(
   facts: SpecterFacts
 ): SpecterIntelligence {
-  /**
-   * No session presence → no intelligence
-   */
-  if (facts.sessionsPresent === null) {
-    return {
-      engagement: { status: 'unknown' },
-      behavior: {
-        direction: 'unknown',
-        trend: 'unknown',
-      },
-    };
-  }
 
   /**
-   * Engagement classification (existence-only)
+   * Domain 3 — Engagement Structure Reality
    *
-   * Logic:
-   * - Exit intent present → negative
-   * - Meaningful engagement signals present → positive
-   * - Otherwise → unknown
-   *
-   * No magnitude. No ratios. No thresholds.
+   * Rules:
+   * - null depth signals → unknown
+   * - any meaningful structure → positive
+   * - observable but no structure → negative
    */
   let engagement: 'positive' | 'negative' | 'unknown' = 'unknown';
 
-  if (facts.exitIntentDetected === true) {
-    engagement = 'negative';
-  } else if (
-    facts.multiStepSessionsPresent === true ||
-    facts.surfaceBreadthPresent === true ||
-    facts.returningSessionsPresent === true
-  ) {
-    engagement = 'positive';
+  const hasAnyStructuralSignal =
+    facts.multiStepSessionsPresent !== null ||
+    facts.averageSessionDepthPresent !== null ||
+    facts.surfaceBreadthPresent !== null;
+
+  if (!hasAnyStructuralSignal) {
+    engagement = 'unknown';
+    } else if (
+      facts.multiStepSessionsPresent === true ||
+      facts.averageSessionDepthPresent === true ||
+      facts.surfaceBreadthPresent === true
+    ) {
+      engagement = 'positive';
+    } else {
+      engagement = 'negative';
   }
 
-  /**
-   * Direction & trend
-   * -----------------
-   * FT2 does not provide continuity or temporal comparison.
-   * Therefore these signals must remain unknown.
-   */
   return {
-    engagement: { status: engagement },
+    /**
+     * Domain 1 — Identity Presence Reality
+     */
+    identity: {
+      present: facts.customersPresent,
+      coverage: facts.identityCoverage,
+    },
+
+    /**
+     * Domain 2 — Activity Presence Reality
+     */
+    activity: {
+      observed: facts.sessionsPresent,
+      direction: 'unknown',
+    },
+
+    /**
+     * Domain 3 — Engagement Structure Reality
+     */
+    engagement: {
+      status: engagement,
+    },
+
+    /**
+     * Internal-only metadata (FT2 locked)
+     */
     behavior: {
       direction: 'unknown',
       trend: 'unknown',

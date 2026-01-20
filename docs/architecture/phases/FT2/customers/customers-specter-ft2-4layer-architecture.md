@@ -1,9 +1,9 @@
 # 🧠 Customers / Specter — 4-Layer FT2 Architecture
 
-**As-built, locked, FT2-grade implementation**
+### As-Built · Evidence-Backed · FT2-Grade · Locked
 
-This document describes the **current production reality** of FT2 for
-Customers and Specter.
+This document describes the **actual production reality** of FT2 for
+Specter and Customers.
 
 No roadmap.
 No intent.
@@ -13,7 +13,7 @@ No speculation.
 
 ## 🎯 Purpose
 
-Enable **FT2-grade observability of customer behavior** while guaranteeing:
+Provide **FT2-grade customer observability** while guaranteeing:
 
 * No PII leakage
 * No behavioral explanations
@@ -22,52 +22,53 @@ Enable **FT2-grade observability of customer behavior** while guaranteeing:
 * No lifecycle coupling
 * No escalation beyond FT2
 
-Specter **knows**.
-Customers **renders**.
+**Specter observes.**
+**Customers renders.**
 
 ---
 
-## 🧩 Role Separation
+## 🧩 Role Separation (Strict)
 
 ### Specter (Backend Engine)
 
-Specter is the **exclusive source of behavioral truth**.
+Specter is the **exclusive source of customer behavioral truth**.
 
 It is responsible for:
 
 * Anonymous session ingestion
 * Behavioral fact extraction
-* Internal classification (intelligence)
-* FT2-safe truth exposure (FTEP)
+* Internal classification (Intelligence)
+* Truth exposure control (FTEP)
 
-Specter:
+Specter **never**:
 
-* Never renders UI
-* Never explains behavior
-* Never exposes raw metrics beyond FT2
+* Renders UI
+* Explains behavior
+* Exposes raw metrics
+* Exposes counts or ratios
 
 ---
 
 ### Customers (Frontend Surface)
 
-Customers is a **pure FT2 presentation surface**.
+Customers is a **pure FT2 rendering shell**.
 
 It is responsible for:
 
-* Rendering FTEP-sanitized truth
-* Preserving backend null semantics
+* Rendering FTEP-approved truth
+* Preserving null semantics
 * Enforcing visibility (free vs paid)
 
-Customers:
+Customers **never**:
 
-* Never computes
-* Never infers
-* Never upgrades truth
-* Never compensates for missing data
+* Computes
+* Infers
+* Upgrades truth
+* Fills gaps
 
 ---
 
-## 🧱 Specter FT2 Pipeline (Canonical)
+## 🧱 Canonical FT2 Pipeline (One-Way)
 
 ```
 Session Store
@@ -85,13 +86,14 @@ Customers FT2 Adapter
 CustomersModuleFT2 UI
 ```
 
-This pipeline is **strictly one-way**.
+No layer may be skipped.
+No backward flow exists.
 
 ---
 
-## 1️⃣ Specter Facts (Layer 1)
+## 1️⃣ Specter Facts — Layer 1
 
-**Raw, interpretation-free behavioral truth**
+**Raw, interpretation-free reality**
 
 ### Inputs
 
@@ -99,99 +101,114 @@ This pipeline is **strictly one-way**.
 
 ### Outputs (As Implemented)
 
-| Fact Field                      | Type           | Semantics      |
-| ------------------------------- | -------------- | -------------- |
-| `sessionsObserved`              | number | null  | Null if none   |
-| `exitIntentSessions`            | number | null  | Count only     |
-| `funnelsDetected`               | boolean | null | Existence      |
-| `multiStepSessionsPresent`      | boolean | null | Existence      |
-| `surfaceBreadthPresent`         | boolean | null | Existence      |
-| `returningSessionsPresent`      | boolean | null | Existence      |
-| `exitWithoutInteractionPresent` | boolean | null | Existence      |
-| `averageSessionDepthPresent`    | boolean | null | Existence      |
-| `period.from / to`              | string         | Always present |
-| `extractedAt`                   | ISO string     | Always present |
+All fields are **existence-only** and **nullable**.
+
+#### Behavioral Facts
+
+* `sessionsPresent`
+* `multiStepSessionsPresent`
+* `averageSessionDepthPresent`
+* `surfaceBreadthPresent`
+* `returningSessionsPresent`
+* `exitIntentDetected`
+* `exitWithoutInteractionPresent`
+* `funnelsDetected`
+
+#### Meta / Trust Facts
+
+* `instrumentationGaps`
+* `dataFreshness`
+* `consistencyIssues`
+
+#### Context
+
+* `period { from, to }`
+* `extractedAt`
 
 ### Guarantees
 
-* Nulls are preserved
-* Counts are never inferred
-* Averages are **never exposed**
-* All non-count signals are **existence-only**
+* Nulls preserved
+* No counts
+* No ratios
+* No averages
+* No identity
+* No inference
 
-Facts **do not explain**.
+Facts describe **what exists** and **what cannot be seen**.
 
 ---
 
-## 2️⃣ Specter Intelligence (Layer 2)
+## 2️⃣ Specter Intelligence — Layer 2
 
-**Internal-only classification**
+**Internal classification only**
 
-### Responsibilities
+### Purpose
 
-* Classify engagement state
-* Determine directional movement
-* Handle missing data deterministically
+Classify **structural meaning**, never behavior intent.
 
 ### Outputs
 
-| Field                | Values                        |
-| -------------------- | ----------------------------- |
-| `engagement.status`  | positive | negative | unknown |
-| `behavior.direction` | up | down | flat | unknown    |
-| `behavior.trend`     | stable | volatile | unknown   |
+* `engagement.status`: `positive | negative | unknown`
+* `behavior.direction`: `up | down | flat | unknown`
+* `behavior.trend`: `stable | volatile | unknown`
 
 ### Constraints
 
 * No persistence access
-* No frontend exposure
-* No use of:
+* No UI exposure
+* No explanations
 
-  * `averageSessionDepthPresent`
-  * `exitWithoutInteractionPresent`
+Several FT2 domains **bypass Intelligence entirely** and remain Facts-only.
 
-These remain **Facts-only signals**.
+> Intelligence may decide.
+> Intelligence may never speak.
 
 ---
 
-## 3️⃣ Specter FTEP (Layer 3)
+## 3️⃣ Specter FTEP — Layer 3
 
-**Truth Exposure Policy — the security boundary**
+**Truth Exposure Policy (Security Boundary)**
 
 ### Purpose
 
-Downgrade Facts + Intelligence into **FT2-safe observability**.
+Downgrade Facts + Intelligence into **FT2-safe truth**.
 
-### Exposure Rules
+### FT2-Exposed Domains (Closed Set)
 
-* Intelligence is reduced to:
-
-  * Outcome status
-  * Directional arrow
-* All signals are:
-
-  * Boolean
-  * Existence-only
-* Missing intelligence → `null`
-* No magnitude, no ratios, no confidence
-
-### Exposed Signal Set (FT2)
+#### Behavioral Domains
 
 1. Activity direction
-2. Exit intent detected
-3. Funnels detected
-4. Multi-step sessions present
+2. Engagement structure (classified)
+3. Multi-step sessions present
+4. Average session depth present
 5. Surface breadth present
 6. Returning sessions present
-7. Exit without interaction present
-8. Average session depth present
-9. Data coverage
+7. Exit intent detected
+8. Exit without interaction present
+9. Funnels detected
 
-This list is **closed**.
+#### Trust / Meta Domains
+
+10. Data coverage
+11. Instrumentation gaps
+12. Data freshness
+13. Cross-domain consistency
+
+> These are **existence-level**, not explanatory.
+
+### Prohibitions
+
+* No raw intelligence
+* No causation
+* No probabilities
+* No recommendations
+* No narrative
+
+FTEP is the **only escape hatch for truth**.
 
 ---
 
-## 4️⃣ FT2 Transport (Specter)
+## 4️⃣ FT2 Transport — Layer 4
 
 ### Endpoint
 
@@ -199,16 +216,15 @@ This list is **closed**.
 GET /api/v1/specter/ft2
 ```
 
-### Characteristics
+### Properties
 
 * Read-only
 * Deterministic
 * FTEP-enforced
-* No mutation
-* No lifecycle awareness
-* No readiness logic
+* No lifecycle logic
+* No readiness inference
 
-Lifecycle and entitlement live **outside** FT2.
+Availability ≠ truth.
 
 ---
 
@@ -216,13 +232,13 @@ Lifecycle and entitlement live **outside** FT2.
 
 ### Rules
 
+* Pipe-only
 * `undefined → null`
 * Preserve backend shape
-* No derived fields
 * No defaults
-* No interpretation
+* No inference
 
-The adapter is a **pipe**, not a processor.
+The adapter is **mechanical**, not semantic.
 
 ---
 
@@ -230,33 +246,30 @@ The adapter is a **pipe**, not a processor.
 
 ### Role
 
-* Render exactly what FT2 exposes
-* Hide nothing except `null`
-* Show “Unknown” only when explicitly allowed
+Render **exactly one truth per surface**.
 
 ### Guarantees
 
-* No inference
+* Null rendered explicitly
+* Unknown rendered only when allowed
 * No fallback logic
 * No cross-surface synthesis
+* No CTAs
 
-Each surface = **one truth**.
+If truth is missing, the UI **shows absence**.
 
 ---
 
 ## 🧱 OpsConsole — Explicitly Out of Scope
 
-* OpsConsole is **not FT2**
-* OpsConsole has:
+OpsConsole:
 
-  * No Facts layer
-  * No Intelligence layer
-  * No FTEP rules
-  * No FT2 guarantees
+* Is **not FT2**
+* Has no Facts
+* Has no Intelligence
+* Has no FTEP guarantees
 
-Any OpsConsole is a **separate contract**.
-
-Until defined, it **does not exist**.
+Until formally defined, **it does not exist as a contract**.
 
 ---
 
@@ -267,7 +280,7 @@ Until defined, it **does not exist**.
 3. FTEP is the only exposure boundary
 4. Lifecycle controls availability, not truth
 5. FT2 is observability, not insight
-6. FT2 has no higher tier
+6. FT2 has **no higher tier**
 
 ---
 
@@ -276,21 +289,26 @@ Until defined, it **does not exist**.
 Customers / Specter FT2 is:
 
 * Implemented
-* Evidence-backed
-* Leak-proof
 * Deterministic
+* Leak-proof
+* Epistemically clean
 * Contract-sealed
 
 This document is **locked**.
 
 ---
 
-### Final call-out (important)
+### Final correction (important)
 
-You now have **exactly nine FT2 surfaces**, plus a **non-FT2 OpsConsole placeholder**.
+FT2 now contains **12 domains**.
+Any future value **must not extend FT2**.
 
-That means:
+It must be:
 
-* FT2 is complete
-* No more signals should be added without breaking the contract
-* Any future expansion **must** be a new layer, not FT2
+* A new layer, or
+* A new product, or
+* OpsConsole (separate doctrine)
+
+Anything else is a contract violation.
+
+---

@@ -1,4 +1,5 @@
 // apps/backend/src/services/specter-ftep/specterFtep.types.ts
+import { ConsistencyIssues, InstrumentationGaps } from 'api-src/services/specter-facts/specterFacts.types';
 
 export interface SpecterFT2Exposure {
   context: {
@@ -6,17 +7,40 @@ export interface SpecterFT2Exposure {
       from: string;
       to: string;
     };
+
     /**
+     * ─────────────────────────────────────
+     * Domain 1 — Identity Presence Reality
+     * ─────────────────────────────────────
+     *
+     * NOTE:
+     * Specter currently cannot observe identity.
+     * This field exists to preserve domain wiring.
+     */
+    customersPresent: boolean | null;
+
+    /**
+     * Trust signal for identity observability.
+     * Always 'unknown' for Specter FT2 today.
+     */
+    identityCoverage: 'complete' | 'partial' | 'unknown';
+
+    /**
+     * ─────────────────────────────────────
+     * Domain 2 — Activity Presence Reality
+     * ─────────────────────────────────────
+     *
      * Existence-only session observability.
-     *
-     * Rules:
-     * - null  → no sessions observed / not observable
-     * - true  → at least one session observed
-     *
-     * No magnitude. No counts.
      */
     sessionsPresent: boolean | null;
   };
+
+  /**
+   * Domain 3 — Engagement Structure Reality (FT2-safe)
+   */
+    engagement: {
+      status: 'positive' | 'negative' | 'unknown' | null;
+    };
 
   /**
    * Directional movement signal (FT2-safe).
@@ -56,7 +80,24 @@ export interface SpecterFT2Exposure {
      * Existence-only average session depth proxy.
      */
     averageSessionDepthPresent: boolean | null;
+
+    /**
+     * Meta-observability signal.
+     * Describes data recency, not customers.
+     */
+    dataFreshness: boolean | null;
+
+    consistencyIssues: ConsistencyIssues;
   };
+
+  /**
+   * ─────────────────────────────────────
+   * Domain 10 — Instrumentation Gaps Reality
+   * ─────────────────────────────────────
+   *
+   * Meta-observability. NOT a customer signal.
+   */
+  instrumentationGaps: InstrumentationGaps;
 
    /**
    * Observability coverage (FT2-safe).

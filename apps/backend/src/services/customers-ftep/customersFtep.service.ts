@@ -15,51 +15,69 @@ import { CustomerTruthReadiness } from '../ft2/ctr.types';
  */
 export function applyCustomersFtep(input: {
   facts: CustomersFacts;
-  intelligence: CustomersIntelligence;
 }): CustomersFT2Exposure {
-  const { facts, intelligence } = input;
+  const { facts } = input;
 
-  const ctr = deriveCustomersCTR({ facts, intelligence });
+  const ctr = deriveCustomersCTR({ facts });
 
   return {
     context: {
       period: facts.period,
-      customersObserved:
-        ctr >= CustomerTruthReadiness.CTR_2
-          ? facts.customersObserved
+
+      /**
+       * Domain 1 — Identity Presence Reality
+       */
+      customersPresent:
+        ctr >= CustomerTruthReadiness.CTR_1
+          ? facts.customersObserved !== null
+            ? facts.customersObserved > 0
+            : null
+          : null,
+
+      identityCoverage: 'unknown',
+
+      /**
+       * Domain 2 — Activity Presence Reality
+       *
+       * Customers activity is inferred only as existence.
+       * No counts exposed.
+       */
+      activityObserved:
+        ctr >= CustomerTruthReadiness.CTR_1
+          ? facts.customersObserved !== null
+            ? facts.customersObserved > 0
+            : null
           : null,
     },
 
-    outcome:
-      ctr >= CustomerTruthReadiness.CTR_2
-        ? { status: intelligence.outcome.status }
-        : null,
-
-    trend:
-      ctr >= CustomerTruthReadiness.CTR_2
-        ? { direction: intelligence.trend.direction }
-        : null,
+    /**
+     * FT2 Customers does NOT expose outcome or trend yet.
+     *
+     * Reasons:
+     * - No continuity
+     * - No alignment planes
+     * - No downgrade-safe exposure
+     *
+     * These remain intentionally hidden.
+     */
+    outcome: null,
+    trend: null,
   };
 }
 
 /**
- * CTR derivation — Customers
- * -------------------------
- * Based strictly on existing facts + intelligence.
+ * CTR derivation — Customers FT2
+ *
+ * Rules:
+ * - No observability → CTR_0
+ * - Existence observable → CTR_1
+ *
+ * CTR_2 is NOT reachable in FT2 Customers.
  */
 function deriveCustomersCTR(input: {
   facts: CustomersFacts;
-  intelligence: CustomersIntelligence;
 }): CustomerTruthReadiness {
-  const { facts, intelligence } = input;
-
-  if (facts.customersObserved === null) {
-    return CustomerTruthReadiness.CTR_1;
-  }
-
-  if (intelligence.outcome.status === 'unknown') {
-    return CustomerTruthReadiness.CTR_1;
-  }
-
-  return CustomerTruthReadiness.CTR_2;
+  return input.facts.customersObserved === null
+    ? CustomerTruthReadiness.CTR_0
+    : CustomerTruthReadiness.CTR_1;
 }

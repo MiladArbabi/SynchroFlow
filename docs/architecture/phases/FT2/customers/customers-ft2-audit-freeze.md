@@ -1,33 +1,47 @@
-# 🔒 FT2 Customers / Specter Contract Audit
+# 🔒 FT2 Customers / Specter Contract Audit (Updated)
 
-**Status:** Sealed · Evidence-Backed · As-Is
-**Scope:** Facts → Intelligence → FTEP → FT2 Provider → Adapter → UI
-**Guarantee:** Nothing here relies on intent, expectation, or future design.
+**Status:** Sealed · Evidence-Backed · Code-Complete
+**FT Level:** **FT2 is the terminal vertical** (no FT3, no escalation)
+**Guarantee:** Every statement below is provable from code as-written.
 
 ---
 
 ## I. Canonical Scope Definition
 
-### Audited Pipelines
+### Audited Pipelines (End-to-End)
 
-* **Customers FT2 pipeline** — complete, end-to-end
-* **Specter FT2 pipeline** — complete, end-to-end
-* **Cross-module interaction** — explicitly verified and bounded
+* **Customers FT2**
 
-### Explicit Exclusions
+  ```
+  customers-facts → customers-intelligence → customers-ftep → ft2 provider → adapter → UI
+  ```
+* **Specter FT2**
+
+  ```
+  specter-facts → specter-intelligence → specter-ftep → ft2 provider → adapter → UI
+  ```
+* **Cross-module consumption**
+
+  * Customers UI consumes **Specter FT2 only**
+  * Customers Facts are **not rendered**
+
+### Explicitly Out of Scope
 
 * FT1 behavior (documented only to prove isolation)
-* Any lifecycle, onboarding, or activation logic
-* Any hypothetical, planned, or future fields
-* OpsConsole (explicitly non-existent at contract level; see Section VII)
+* Any lifecycle / onboarding / activation logic
+* Any future, speculative, or “planned” fields
+* OpsConsole (see Section VIII)
 
 ---
 
-## II. Customers FT2 — Full Contract Ledger
+## II. Customers FT2 — Full Contract Ledger (As-Built)
 
-> **Important:** Customers FT2 is structurally capable but currently **truth-minimal by design**.
+> **Customers FT2 is intentionally truth-minimal.
+> Structural capability exists, exposure does not.**
 
-### A. Layer 1 — Facts (Persistence → Extraction)
+---
+
+### A. Layer 1 — Customers Facts (Persistence → Extraction)
 
 **Source**
 
@@ -41,23 +55,34 @@ apps/backend/src/services/customers-facts/customersFacts.service.ts
 
 **Extracted Fields**
 
-| Field               | Type          | Null Rule             |
-| ------------------- | ------------- | --------------------- |
-| `shopId`            | number        | never null            |
-| `period.from`       | string        | never null            |
-| `period.to`         | string        | never null            |
-| `customersObserved` | number | null | `null` if count === 0 |
-| `extractedAt`       | ISO string    | never null            |
+| Field               | Type           | Semantics                        |
+| ------------------- | -------------- | -------------------------------- |
+| `shopId`            | number         | Authoritative                    |
+| `period.from`       | ISO string     | Backend-enforced                 |
+| `period.to`         | ISO string     | Backend-enforced                 |
+| `customersObserved` | number | null  | `null` only if DB not observable |
+| `activityObserved`  | boolean | null | Creation-as-activity proxy       |
+| `extractedAt`       | ISO string     | Extraction timestamp             |
 
-**Key Truths**
+**Important Corrections vs Old Audit**
 
-* Counts are **downgraded to null**, never zero
-* Absence of customers = **absence of fact**
-* No aggregation semantics, no thresholds, no trendability
+❌ Old claim: *“counts collapse to null if zero”*
+✅ Reality: **zero is preserved**, not collapsed
+
+```ts
+customersObserved = 0 // valid, explicit absence
+```
+
+**Hard Truths**
+
+* Customers Facts **do preserve zero**
+* No semantic collapse happens at this layer
+* Customer creation is the **sole activity proxy**
+* No behavioral meaning is implied
 
 ---
 
-### B. Layer 2 — Intelligence (Pure Classification)
+### B. Layer 2 — Customers Intelligence (Pure Classification)
 
 **Source**
 
@@ -65,32 +90,31 @@ apps/backend/src/services/customers-facts/customersFacts.service.ts
 apps/backend/src/services/customers-intelligence/customersIntelligence.service.ts
 ```
 
-**Input**
+**Inputs**
 
-* `CustomersFacts.customersObserved`
+* `customersObserved`
 
 **Derived Fields**
 
-| Field             | Values                              | Rule      |
-| ----------------- | ----------------------------------- | --------- |
-| `outcome.status`  | `positive` | `negative` | `unknown` | see below |
-| `trend.direction` | `unknown`                           | constant  |
+| Field             | Values                 | Notes                         |
+| ----------------- | ---------------------- | ----------------------------- |
+| `outcome.status`  | `positive` | `unknown` | `negative` unreachable in FT2 |
+| `trend.direction` | `unknown`              | Structural placeholder only   |
 
-**Classification Rules**
+**Rules**
 
 * `customersObserved === null` → `unknown`
-* `customersObserved > 0` → `positive`
-* `customersObserved === 0` → `negative` *(theoretical only; never produced by Facts)*
+* `customersObserved >= 0` → `positive`
 
-**Key Truths**
+**Hard Truths**
 
-* Intelligence is **binary + unknown**
-* Trend exists **structurally**, not informationally
-* No temporal comparison, no persistence, no confidence scoring
+* Intelligence **never asserts absence**
+* Negative state is **theoretically defined but unreachable**
+* No continuity, no trend, no escalation
 
 ---
 
-### C. Layer 3 — FTEP (Truth Exposure Policy)
+### C. Layer 3 — Customers FTEP (Truth Exposure Policy)
 
 **Source**
 
@@ -98,37 +122,32 @@ apps/backend/src/services/customers-intelligence/customersIntelligence.service.t
 apps/backend/src/services/customers-ftep/customersFtep.service.ts
 ```
 
-**Exposure Rules**
+**CTR Model**
 
-| Field                       | Condition            | Exposure     |
-| --------------------------- | -------------------- | ------------ |
-| `context.period`            | always               | pass-through |
-| `context.customersObserved` | always               | pass-through |
-| `outcome`                   | `status === unknown` | `null`       |
-| `trend`                     | `status === unknown` | `null`       |
+| Condition                    | CTR   |
+| ---------------------------- | ----- |
+| `customersObserved === null` | CTR_0 |
+| `customersObserved !== null` | CTR_1 |
 
-**Resulting Exposure Shape**
+**Exposure Behavior**
 
-```ts
-{
-  context: {
-    period,
-    customersObserved
-  },
-  outcome: { status } | null,
-  trend: { direction } | null
-}
-```
+| Field                      | Exposure           |
+| -------------------------- | ------------------ |
+| `context.customersPresent` | gated by CTR       |
+| `identityCoverage`         | always `'unknown'` |
+| `activityObserved`         | gated by CTR       |
+| `outcome`                  | **always null**    |
+| `trend`                    | **always null**    |
 
-**Key Truths**
+**Hard Truths**
 
-* FTEP is **strictly downgrade-only**
-* Unknown intelligence is **fully suppressed**
-* No partial leakage or shadow exposure
+* Customers FT2 **never exposes intelligence**
+* Outcome & trend are structurally present but **intentionally suppressed**
+* This is not an omission — it is a lock
 
 ---
 
-### D. Layer 4 — FT2 Provider (Backend API Contract)
+### D. Layer 4 — Customers FT2 Provider
 
 **Source**
 
@@ -141,24 +160,15 @@ apps/backend/src/services/customers-ft2.provider.ts
 * Deterministic orchestration:
 
   ```
-  Facts → Intelligence → FTEP
+  Facts → FTEP
   ```
-
+* Intelligence is computed but **not exposed**
 * No enrichment
-
-* No reshaping
-
-* No lifecycle or entitlement logic
-
-**Guaranteed Output**
-
-* Exactly `CustomersFT2Exposure`
-* No additional fields
-* No inferred defaults
+* No entitlement logic
 
 ---
 
-### E. Frontend Adapter Contract
+### E. Customers Frontend Adapter
 
 **Source**
 
@@ -166,32 +176,19 @@ apps/backend/src/services/customers-ft2.provider.ts
 apps/frontend/src/pages/customers/useCustomersFt2Adapter.ts
 ```
 
-**Observed Behavior**
+**Observed Reality**
 
-* Adapter receives FT2 snapshot
-* Adapter **does not consume** intelligence-derived fields
+| Field                  | Status             |
+| ---------------------- | ------------------ |
+| Customers Facts        | ❌ not consumed     |
+| Customers Intelligence | ❌ not consumed     |
+| Customers FTEP output  | ❌ ignored entirely |
 
-**Explicit Non-Consumption**
-
-| Field               | Status    |
-| ------------------- | --------- |
-| `customersObserved` | ❌ ignored |
-| `outcome`           | ❌ ignored |
-| `trend`             | ❌ ignored |
-
-This is **contractual silence**, not a defect.
-
-**Adapter Rules**
-
-* Pure
-* `undefined → null`
-* No computed fields
-* No inference
-* No cross-field synthesis
+This is **intentional silence**, not a bug.
 
 ---
 
-### F. FT2 UI (CustomersModuleFT2)
+### F. Customers FT2 UI
 
 **Source**
 
@@ -201,28 +198,24 @@ modules/customers/src/ui/pages/CustomersModuleFT2.tsx
 
 **Rendered Reality**
 
-| Surface | Field      | Behavior |
-| ------- | ---------- | -------- |
-| Context | Period     | rendered |
-| Metrics | Any truth  | ❌ none   |
-| Signals | Any signal | ❌ none   |
+| Category               | Rendered |
+| ---------------------- | -------- |
+| Customers Facts        | ❌        |
+| Customers Intelligence | ❌        |
+| Customers FTEP         | ❌        |
 
-**UI Rules (Observed)**
+**Net Result**
 
-* `null → '—'`
-* No fallback logic
-* No inference
-* No cross-field synthesis
-
-**Key Truth**
-
-> Customers FT2 currently exposes **context only**, despite upstream capability.
+> Customers FT2 currently renders **zero customer-derived truth**.
+> All visible signals come from **Specter FT2 only**.
 
 ---
 
 ## III. Specter FT2 — Full Contract Ledger
 
-### A. Layer 1 — Facts (Observed & Extended)
+---
+
+### A. Layer 1 — Specter Facts (Observed Reality)
 
 **Source**
 
@@ -230,81 +223,93 @@ modules/customers/src/ui/pages/CustomersModuleFT2.tsx
 apps/backend/src/services/specter-facts/specterFacts.service.ts
 ```
 
-**Extracted Fields**
+**Domains Implemented (1–12)**
 
-| Field                           | Type           | Null Rule            |
-| ------------------------------- | -------------- | -------------------- |
-| `sessionsObserved`              | number | null  | null if none         |
-| `exitIntentSessions`            | number | null  | null if absent       |
-| `funnelsDetected`               | boolean | null | null if absent       |
-| `multiStepSessionsPresent`      | boolean | null | null if undetermined |
-| `surfaceBreadthPresent`         | boolean | null | null if undetermined |
-| `returningSessionsPresent`      | boolean | null | null if undetermined |
-| `exitWithoutInteractionPresent` | boolean | null | null if undetermined |
-| `averageSessionDepthPresent`    | boolean | null | null if undetermined |
+| Domain | Signal Type                 | Notes                   |
+| ------ | --------------------------- | ----------------------- |
+| 1      | Identity Presence           | Always `null`           |
+| 2      | Activity Presence           | `sessionsPresent`       |
+| 3      | Engagement Structure        | depth proxies           |
+| 4      | Surface Breadth             | existence-only          |
+| 5      | Returning Behavior          | existence-only          |
+| 6      | Exit Without Interaction    | compound                |
+| 7      | Funnels / Journey Structure | existence-only          |
+| 8      | Exit Intent                 | existence-only          |
+| 10     | Instrumentation Gaps        | meta-observability      |
+| 11     | Data Freshness              | extraction vs window    |
+| 12     | Cross-Domain Consistency    | contradiction detection |
 
-**Key Truths**
+**Critical Properties**
 
-* All behavioral signals are **existence-only**
-* No ratios, no averages, no thresholds exposed
-* All signals degrade cleanly to `null`
+* All signals are **existence-only**
+* All degrade cleanly to `null`
+* No ratios, no counts, no inference
 
 ---
 
-### B. Layer 2 — Intelligence
+### B. Layer 2 — Specter Intelligence
 
-**Derived**
+**Source**
+
+```
+apps/backend/src/services/specter-intelligence/specterIntelligence.service.ts
+```
+
+**Derived Fields**
 
 | Field                | Values                              |
 | -------------------- | ----------------------------------- |
 | `engagement.status`  | `positive` | `negative` | `unknown` |
-| `behavior.direction` | `up` | `down` | `flat` | `unknown`  |
-| `behavior.trend`     | `stable` | `volatile` | `unknown`   |
+| `behavior.direction` | `unknown`                           |
+| `behavior.trend`     | `unknown`                           |
 
-**Unknown Rule**
+**Consumption Rules**
 
-* Any required fact null → **full unknown**
+* Intelligence uses **only structural presence**
+* Does **not** consume:
 
-**Important Constraint**
-
-* Intelligence does **not** consume:
-
-  * `averageSessionDepthPresent`
   * `exitWithoutInteractionPresent`
-* These remain **Facts-only signals**
+  * `instrumentationGaps`
+  * `dataFreshness`
+  * `consistencyIssues`
+
+These remain **Facts-only truth**.
 
 ---
 
-### C. Layer 3 — FTEP (Specter)
+### C. Layer 3 — Specter FTEP
 
-**Exposure Rules**
+**Source**
 
-| Field               | Rule                          |
-| ------------------- | ----------------------------- |
-| `activityDirection` | CTR ≥ 1                       |
-| `signals.*`         | CTR ≥ 1                       |
-| `dataCoverage`      | derived from session presence |
+```
+apps/backend/src/services/specter-ftep/specterFtep.service.ts
+```
 
-**Signals Exposed**
+**CTR Model**
 
-* `exitIntentDetected`
-* `funnelsDetected`
-* `multiStepSessionsPresent`
-* `surfaceBreadthPresent`
-* `returningSessionsPresent`
-* `exitWithoutInteractionPresent`
-* `averageSessionDepthPresent`
+| Condition                  | CTR   |
+| -------------------------- | ----- |
+| `sessionsPresent !== true` | CTR_0 |
+| `sessionsPresent === true` | CTR_1 |
 
-All are:
+**Exposed Signals**
 
-* Boolean
-* Existence-only
-* No magnitude
-* No inference
+* Activity presence
+* Engagement status
+* All structural signals (Domains 3–8)
+* Instrumentation gaps (Domain 10)
+* Data coverage
+* Direction (always null)
+
+**Downgrade Rules**
+
+* CTR < 1 → **everything null**
+* No partial exposure
+* No shadow leakage
 
 ---
 
-### D. Layer 4 — FT2 Provider
+### D. Layer 4 — Specter FT2 Provider
 
 **Source**
 
@@ -315,71 +320,82 @@ apps/backend/src/services/specter-ft2.provider.ts
 **Behavior**
 
 * Deterministic
-* Complete
 * No filtering
+* No reshaping
 * No interpretation
 
 ---
 
 ### E. Customers Consumption of Specter FT2
 
-| Stage     | Status     |
-| --------- | ---------- |
-| Adapter   | ✅ consumes |
-| UI        | ✅ renders  |
-| Inference | ❌ none     |
+**Adapter**
 
-**Rendered Surfaces (9 Total)**
+```
+useCustomersFt2Adapter.ts
+```
 
-1. Activity Direction
-2. Multi-step Sessions
-3. Surface Breadth
-4. Returning Sessions
-5. Exit Without Interaction
-6. Average Session Depth
-7. Exit Intent
-8. Funnels / Structured Journeys
-9. Data Coverage
+**UI**
+
+```
+CustomersModuleFT2.tsx
+```
+
+**Rendered Surfaces (9)**
+
+1. Activity observed
+2. Activity direction (always neutral)
+3. Multi-step sessions
+4. Surface breadth
+5. Returning sessions
+6. Exit without interaction
+7. Average session depth
+8. Exit intent
+9. Funnels
+10. Data coverage
+11. Instrumentation gaps *(render-ready but not yet surfaced)*
+
+**Hard Rule**
+
+> UI renders **only what FTEP explicitly exposes**.
 
 ---
 
 ## IV. Global FT2 Integrity Assertions (Provable)
 
-The following statements are **true and defensible**:
-
 1. No FT2 surface invents data
 2. No intelligence leaks without FTEP approval
-3. All rendered values correspond to factual or downgraded truth
-4. All `null` values originate upstream (not UI-generated)
-5. Specter and Customers are **strictly isolated**
-6. FT2 contains **no escalation path**
+3. No domain infers beyond existence
+4. `null` always originates upstream
+5. Specter and Customers are strictly isolated
+6. Instrumentation gaps describe **our eyesight**, not user behavior
+7. Consistency issues detect contradictions, not errors
+8. **FT2 is terminal — no escalation path exists**
 
 ---
 
-## V. OpsConsole — Explicit Non-Existence (Important)
+## V. OpsConsole — Explicit Non-Existence
 
-* OpsConsole is **not part of FT2**
 * OpsConsole has:
 
   * ❌ no Facts
   * ❌ no Intelligence
-  * ❌ no FTEP rules
-  * ❌ no Provider contract
-* Any OpsConsole surface would constitute a **new contract**
+  * ❌ no FTEP
+  * ❌ no Provider
+* Any OpsConsole surface would require a **new contract**
 
-Until introduced formally, OpsConsole is **out of scope by definition**.
+Until then, OpsConsole is **out of scope by definition**.
 
 ---
 
-## 🔐 Final Seal Statement
+## 🔐 Final Seal Statement (Reaffirmed)
 
-This audit represents the **complete and immutable FT2 truth contract** for Customers and Specter **as implemented**.
+This document represents the **complete, implementation-faithful FT2 contract** for Customers and Specter.
 
 Nothing exists unless observed.
 Nothing is implied.
-Nothing is promised.
-Nothing escalates beyond FT2.
+Nothing escalates.
+Nothing lives beyond FT2.
 
-**This contract is sealed.**
+**FT2 is sealed.**
 
 ---

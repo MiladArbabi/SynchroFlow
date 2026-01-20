@@ -3,8 +3,7 @@ import { Request, Response } from 'express';
 import { getCustomersFt2Snapshot } from 'api-src/services/customers-ft2.provider';
 import {
   FT2DateRangePreset,
-  getFt2Period,
-  resolveFt2PeriodFromPreset,
+  resolveFt2Range,
 } from 'api-src/utils/ft2Period';
 
 /**
@@ -33,15 +32,22 @@ export async function httpGetCustomersFt2(
     const preset =
     req.query.preset as FT2DateRangePreset | undefined;
 
-  const period = preset
-    ? preset === 'custom'
-      ? resolveFt2PeriodFromPreset({
-          preset: 'custom',
-          from: String(req.query.from),
-          to: String(req.query.to),
-        })
-      : resolveFt2PeriodFromPreset({ preset })
-    : getFt2Period();
+    /**
+     * FT2 period resolution
+     * --------------------
+     * Backend is authoritative.
+     * All semantics live in ft2Period util.
+     */
+    const period = resolveFt2Range(
+      req.query.preset === 'custom'
+        ? {
+            preset: 'custom',
+            from: String(req.query.from),
+            to: String(req.query.to),
+          }
+        : (req.query.preset as FT2DateRangePreset | undefined) ??
+            'past_7_days'
+    );
 
   const snapshot = await getCustomersFt2Snapshot({
     shopId,

@@ -30,24 +30,33 @@ import {
    ========================= */
 
 export interface CustomersModuleFT2Props {
-  // Context
-  period: { from: string; to: string } | null;
+  // ── Domain 1 & 2 Context ──────────
   sessionsPresent: boolean | null;
 
-  // Direction
-  activityDirection: 'up' | 'down' | 'flat' | 'unknown' | null;
-
-  // Structural signals
-  exitIntentDetected: boolean | null;
-  funnelsDetected: boolean | null;
+  // ── Domain 3 Context ───────────────
   multiStepSessionsPresent: boolean | null;
+  averageSessionDepthPresent: boolean | null;
+
+  // ── Domain 4, 5 & 6 Context ──────────
   surfaceBreadthPresent: boolean | null;
   returningSessionsPresent: boolean | null;
   exitWithoutInteractionPresent: boolean | null;
-  averageSessionDepthPresent: boolean | null;
 
-  // Coverage
-  dataCoverage: 'complete' | 'insufficient' | null;
+  // ── Domain 7 Context ───────────────
+  funnelsDetected: boolean | null;
+
+  /**
+   * Direction is NOT available in Customers FT2.
+   * Always null by contract.
+   */
+  activityDirection: null;
+
+  // Structural signals
+  exitIntentDetected: boolean | null;
+
+
+  // ── Coverage (not yet exposed) ─────────
+  dataCoverage: 'complete' | 'partial' | 'insufficient' | null;
 }
 
 /* =========================
@@ -96,7 +105,7 @@ export default function CustomersModuleFT2(
   props: CustomersModuleFT2Props
 ) {
   const {
-    period,
+    sessionsPresent,
     activityDirection,
     exitIntentDetected,
     multiStepSessionsPresent,
@@ -125,6 +134,10 @@ export default function CustomersModuleFT2(
           <div>• Signal ingestion active</div>
           <div>• Data coverage nominal</div>
           <div>• No blocking anomalies</div>
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Customer activity observed">
+          {renderDetected(sessionsPresent)}
         </FT2Surface>
 
         {/* Core KPI 1 — Activity Direction */}

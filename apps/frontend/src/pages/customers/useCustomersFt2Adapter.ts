@@ -1,5 +1,4 @@
 // apps/frontend/src/pages/customers/useCustomersFt2Adapter.ts
-
 import type { CustomersModuleFT2Props } from '@lasyncro/customers';
 import type { CustomersFT2Contract } from '@lasyncro/customers';
 
@@ -16,16 +15,19 @@ import type { CustomersFT2Contract } from '@lasyncro/customers';
 export function mapCustomersFt2Props(
   snapshot: CustomersFT2Contract
 ): CustomersModuleFT2Props {
-
   return {
-    // ── Context ──────────────────────────
-    period: snapshot.context.period ?? null,
+    /**
+     * Domain 2 — Activity Presence Reality
+     *
+     * Customers FT2 consumes Specter activity directly.
+     * Sessions are the existence proxy.
+     */
     sessionsPresent: snapshot.context.sessionsPresent ?? null,
 
     // ── Direction ────────────────────────
-    activityDirection: snapshot.activityDirection ?? null,
+    activityDirection: null,
 
-    // ── Structural Signals ───────────────
+    // ── Structural Signals (Specter FT2 passthrough) ─────────
     exitIntentDetected: snapshot.signals.exitIntentDetected ?? null,
     funnelsDetected: snapshot.signals.funnelsDetected ?? null,
     multiStepSessionsPresent: snapshot.signals.multiStepSessionsPresent ?? null,
@@ -37,6 +39,6 @@ export function mapCustomersFt2Props(
       snapshot.signals.averageSessionDepthPresent ?? null,
 
     // ── Coverage ─────────────────────────
-    dataCoverage: snapshot.dataCoverage ?? null,
+    dataCoverage: snapshot.dataCoverage ?? null
   };
 }
