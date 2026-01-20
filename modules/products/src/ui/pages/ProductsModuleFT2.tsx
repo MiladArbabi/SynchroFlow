@@ -65,7 +65,7 @@ export interface ProductsModuleFT2DataProps {
 
   /**
    * ─────────────────────────────────────────
-   * Layer 2 — OPERATIONAL RISK (Flow & Control)
+   * Layer 2 — OPERATIONAL OBSERVABILITY (Flow & Control)
    * ─────────────────────────────────────────
    */
 
@@ -140,6 +140,28 @@ export interface ProductsModuleFT2DataProps {
     replenishment: 'observable' | 'missing' | 'unknown';
     coverage: 'complete' | 'partial' | 'missing' | 'unknown';
   } | null;
+
+  /**
+   * ─────────────────────────────────────────
+   * Data Freshness & Trust Latency (FT2)
+   * ─────────────────────────────────────────
+   */
+  dataFreshness: {
+    structural: 'fresh' | 'stale' | 'unknown';
+    inventory: 'fresh' | 'stale' | 'unknown';
+    sales: 'fresh' | 'stale' | 'unknown';
+    fulfillment: 'fresh' | 'stale' | 'unknown';
+    cost: 'fresh' | 'stale' | 'unknown';
+  } | null;
+
+  /**
+   * ─────────────────────────────────────────
+   * Cross-Domain Alignment (FT2)
+   * ─────────────────────────────────────────
+   */
+  alignment: {
+    alignment: 'aligned' | 'misaligned' | 'unknown';
+  } | null;
 }
 
 /**
@@ -165,12 +187,14 @@ export default function ProductsModuleFT2(
     economicBlindSpots,
     productDataIntegrity,
     supply,
+    dataFreshness,
+    alignment,
   } = props;
 
   return (
     <FT2Layout>
       {/* ─────────────────────────────────────────
-      * Layer A — Existence & Trust (Conversion Spine)
+      * Layer A.1 — Existence & Trust (Conversion Spine)
       * ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
         <FT2Surface variant="kpi" title="Products detected">
@@ -203,10 +227,14 @@ export default function ProductsModuleFT2(
         <FT2Surface variant="kpi" title="Operational stability">
           <FT2Stat value={operational?.stability ?? null} />
         </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Cross-domain alignment">
+          <FT2Stat value={alignment?.alignment ?? null} />
+        </FT2Surface>
       </FT2Row>
 
       {/* ─────────────────────────────────────────
-      * Layer A.5 — Supply & Replenishment Observability
+      * Layer A.2 — Supply & Replenishment Observability
       * ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
         <FT2Surface variant="kpi" title="Replenishment signals">
@@ -218,11 +246,36 @@ export default function ProductsModuleFT2(
         </FT2Surface>
       </FT2Row>
 
+            {/* ─────────────────────────────────────────
+      * Layer A.3 — Data Freshness & Trust Latency
+      * ───────────────────────────────────────── */}
+      <FT2Row intent="kpi">
+        <FT2Surface variant="kpi" title="Structural data freshness">
+          <FT2Stat value={dataFreshness?.structural ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Inventory data freshness">
+          <FT2Stat value={dataFreshness?.inventory ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Sales data freshness">
+          <FT2Stat value={dataFreshness?.sales ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Fulfillment data freshness">
+          <FT2Stat value={dataFreshness?.fulfillment ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Cost data freshness">
+          <FT2Stat value={dataFreshness?.cost ?? null} />
+        </FT2Surface>
+      </FT2Row>
+
       {/* ─────────────────────────────────────────
       * Layer B — Data Consistency & Gaps
       * ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Consistent product data">
+        <FT2Surface variant="kpi" title="Products with conflicting data (observed)">
           {dataGaps?.totalProductsChecked === 0 ? (
             '—'
           ) : (
@@ -255,7 +308,7 @@ export default function ProductsModuleFT2(
       * Layer C — Operational Observability (Counts only)
       * ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Stock confirmation coverage">
+        <FT2Surface variant="kpi" title="Products with inventory signals">
           {operationalRisk?.totalProducts === 0 ? (
             '—'
           ) : (
@@ -276,7 +329,7 @@ export default function ProductsModuleFT2(
           />
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Systems touched (avg)">
+        <FT2Surface variant="kpi" title="Systems touched per product">
           <FT2Stat
             value={
               operationalRisk?.averageSystemsTouchedPerProduct ?? null
@@ -297,7 +350,7 @@ export default function ProductsModuleFT2(
       * Layer D — Economic Observability (No optimization)
       * ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Cost coverage">
+        <FT2Surface variant="kpi" title="Products with cost data">
           {economicBlindSpots &&
           (economicBlindSpots.productsWithCostCount ?? 0) +
             (economicBlindSpots.productsWithoutCostCount ?? 0) === 0 ? (

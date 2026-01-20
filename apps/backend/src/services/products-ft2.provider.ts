@@ -14,6 +14,15 @@ import { getProductSupplyFacts } from './products-supply-facts';
 import { buildProductSupplyIntelligence } from './products-supply-intelligence';
 import { buildProductSupplyFtep } from './products-supply-ftep';
 
+import { getProductDataFreshnessFacts } from './products-data-freshness-facts';
+import { buildProductDataFreshnessIntelligence } from './products-data-freshness-intelligence';
+import { buildProductDataFreshnessFtep } from './products-data-freshness-ftep';
+
+import {
+  buildProductCrossDomainAlignmentIntelligence,
+  buildProductCrossDomainAlignmentFtep,
+} from './products-cross-domain-alignment';
+
 interface GetProductsFt2SnapshotInput {
   shopId: number;
   period: { from: string; to: string };
@@ -99,7 +108,7 @@ export async function getProductsFt2Snapshot(
       intelligence: operationalIntelligence,
     });
 
-    // ─────────────────────────────────────────
+  // ─────────────────────────────────────────
   // Supply & Replenishment Reality (FT2-safe)
   // ─────────────────────────────────────────
   const supplyFacts = await getProductSupplyFacts({
@@ -115,9 +124,51 @@ export async function getProductsFt2Snapshot(
       intelligence: supplyIntelligence,
     });
 
+  // ─────────────────────────────────────────
+  // Data Freshness & Trust Latency (FT2-safe)
+  // ─────────────────────────────────────────
+  const freshnessFacts = await getProductDataFreshnessFacts({
+    shopId,
+    period,
+  });
+
+  const freshnessIntelligence =
+    buildProductDataFreshnessIntelligence(freshnessFacts);
+
+  const freshnessExposure =
+    buildProductDataFreshnessFtep({
+      intelligence: freshnessIntelligence,
+    });
+
+  // ─────────────────────────────────────────
+  // Cross-Domain Alignment (FT2-safe)
+  // ─────────────────────────────────────────
+  const alignmentIntelligence =
+    buildProductCrossDomainAlignmentIntelligence({
+      supply: supplyExposure?.supply ?? null,
+      operational: operationalExposure?.operational ?? null,
+      freshness:
+        freshnessExposure?.freshness &&
+        Object.values(freshnessExposure.freshness).every(v => v !== null)
+          ? {
+              structural: freshnessExposure.freshness.structural!,
+              inventory: freshnessExposure.freshness.inventory!,
+              sales: freshnessExposure.freshness.sales!,
+              fulfillment: freshnessExposure.freshness.fulfillment!,
+              cost: freshnessExposure.freshness.cost!,
+            }
+          : null,
+      });
+
+  const alignmentExposure =
+    buildProductCrossDomainAlignmentFtep(alignmentIntelligence);
+
   return {
     ...exposure,
     ...operationalExposure,
+    ...freshnessExposure,
+    ...alignmentExposure,
+
     productDataIntegrity,
     supply: supplyExposure.supply,
   };

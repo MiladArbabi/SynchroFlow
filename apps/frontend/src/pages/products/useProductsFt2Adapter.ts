@@ -92,6 +92,18 @@ export type ProductsFt2Snapshot = {
     replenishment: 'observable' | 'missing' | 'unknown';
     coverage: 'complete' | 'partial' | 'missing' | 'unknown';
   } | null;
+
+   dataFreshness?: {
+    structural: 'fresh' | 'stale' | 'unknown';
+    inventory: 'fresh' | 'stale' | 'unknown';
+    sales: 'fresh' | 'stale' | 'unknown';
+    fulfillment: 'fresh' | 'stale' | 'unknown';
+    cost: 'fresh' | 'stale' | 'unknown';
+  } | null;
+
+  alignment?: {
+    alignment: 'aligned' | 'misaligned' | 'unknown';
+  } | null;
 };
 
 /**
@@ -201,5 +213,14 @@ export function mapProductsFt2Props(
         ? null
         : snapshot.supply,
 
+    dataFreshness:
+      snapshot.dataFreshness === undefined
+        ? null
+        : snapshot.dataFreshness,
+
+    alignment:
+      snapshot.alignment === undefined
+        ? null
+        : snapshot.alignment,
   };
 }
