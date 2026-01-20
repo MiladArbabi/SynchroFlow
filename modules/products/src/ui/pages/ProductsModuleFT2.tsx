@@ -119,6 +119,17 @@ export interface ProductsModuleFT2DataProps {
     integrity: 'ok' | 'attention' | 'unknown';
     duplication: 'present' | 'absent' | 'unknown';
   } | null;
+
+/**
+ * ─────────────────────────────────────────
+ * Operational Exposure (FT2)
+ * ─────────────────────────────────────────
+ */
+  operational: {
+    inventory: 'ok' | 'gaps' | 'unknown';
+    fulfillment: 'visible' | 'missing' | 'unknown';
+    stability: 'stable' | 'fragile' | 'unknown';
+  } | null;
 }
 
 /**
@@ -139,6 +150,7 @@ export default function ProductsModuleFT2(
     outcome,
     trend,
     dataGaps,
+    operational,
     operationalRisk,
     economicBlindSpots,
     productDataIntegrity,
@@ -146,30 +158,49 @@ export default function ProductsModuleFT2(
 
   return (
     <FT2Layout>
-      {/* ───────── Layer 1 — Context & Trust / KPIs ───────── */}
+      {/* ─────────────────────────────────────────
+      * Layer A — Existence & Trust (Conversion Spine)
+      * ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
         <FT2Surface variant="kpi" title="Products detected">
           <FT2Stat value={context.productsObserved} />
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Product data integrity">
+        <FT2Surface variant="kpi" title="Structural integrity">
           <div>
-            Structural consistency:{' '}
+            Integrity:{' '}
             {productDataIntegrity
               ? productDataIntegrity.integrity
               : '—'}
           </div>
           <div>
-            Duplicate representations:{' '}
+            Duplication:{' '}
             {productDataIntegrity
               ? productDataIntegrity.duplication
               : '—'}
           </div>
         </FT2Surface>
 
+        <FT2Surface variant="kpi" title="Inventory visibility">
+          <FT2Stat value={operational?.inventory ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Fulfillment visibility">
+          <FT2Stat value={operational?.fulfillment ?? null} />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Operational stability">
+          <FT2Stat value={operational?.stability ?? null} />
+        </FT2Surface>
+      </FT2Row>
+
+      {/* ─────────────────────────────────────────
+      * Layer B — Data Consistency & Gaps
+      * ───────────────────────────────────────── */}
+      <FT2Row intent="kpi">
         <FT2Surface variant="kpi" title="Consistent product data">
           {dataGaps?.totalProductsChecked === 0 ? (
-            'No products synced'
+            '—'
           ) : (
             <FT2Ratio
               numerator={dataGaps?.productsWithConflictingDataCount ?? null}
@@ -178,28 +209,80 @@ export default function ProductsModuleFT2(
           )}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Duplicate products">
+        <FT2Surface variant="kpi" title="Duplicate SKU representations">
           <div>
-            Products with multiple SKUs:{' '}
+            Products:{' '}
             {dataGaps?.productsWithMultipleSkusCount ?? '—'}
           </div>
           <div>
-            Max SKUs per product:{' '}
+            Max SKUs:{' '}
             {dataGaps?.maxSkusPerProduct ?? '—'}
           </div>
         </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Variant growth">
+          {dataGaps?.variantGrowth
+            ? `Points: ${dataGaps.variantGrowth.length}`
+            : '—'}
+        </FT2Surface>
       </FT2Row>
 
-      {/* ───────── Layer 2 — ECONOMIC BLIND SPOTS (Money) ───────── */}
-      <FT2Row intent="analysis">
-        <FT2Surface title="Cost coverage">
+      {/* ─────────────────────────────────────────
+      * Layer C — Operational Observability (Counts only)
+      * ───────────────────────────────────────── */}
+      <FT2Row intent="kpi">
+        <FT2Surface variant="kpi" title="Stock confirmation coverage">
+          {operationalRisk?.totalProducts === 0 ? (
+            '—'
+          ) : (
+            <FT2Ratio
+              numerator={
+                operationalRisk?.productsWithConfirmedStockCount ?? null
+              }
+              denominator={operationalRisk?.totalProducts ?? null}
+            />
+          )}
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Oversold products detected">
+          <FT2Stat
+            value={
+              operationalRisk?.productsWhereSalesExceedStockCount ?? null
+            }
+          />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Systems touched (avg)">
+          <FT2Stat
+            value={
+              operationalRisk?.averageSystemsTouchedPerProduct ?? null
+            }
+          />
+        </FT2Surface>
+
+        <FT2Surface variant="kpi" title="Multi-system products">
+          <FT2Stat
+            value={
+              operationalRisk?.productsTouchingMultipleSystemsCount ?? null
+            }
+          />
+        </FT2Surface>
+      </FT2Row>
+
+      {/* ─────────────────────────────────────────
+      * Layer D — Economic Observability (No optimization)
+      * ───────────────────────────────────────── */}
+      <FT2Row intent="kpi">
+        <FT2Surface variant="kpi" title="Cost coverage">
           {economicBlindSpots &&
           (economicBlindSpots.productsWithCostCount ?? 0) +
             (economicBlindSpots.productsWithoutCostCount ?? 0) === 0 ? (
-            'No cost data available'
+            '—'
           ) : (
             <FT2Ratio
-              numerator={economicBlindSpots?.productsWithCostCount ?? null}
+              numerator={
+                economicBlindSpots?.productsWithCostCount ?? null
+              }
               denominator={
                 economicBlindSpots
                   ? (economicBlindSpots.productsWithCostCount ?? 0) +
@@ -210,7 +293,7 @@ export default function ProductsModuleFT2(
           )}
         </FT2Surface>
 
-        <FT2Surface title="Price vs cost">
+        <FT2Surface variant="kpi" title="Price vs cost signals">
           <FT2DualTimeSeries
             left={
               economicBlindSpots?.priceVsCostTrend
@@ -231,69 +314,15 @@ export default function ProductsModuleFT2(
           />
         </FT2Surface>
 
-        <FT2Surface title="Revenue vs profit">
-          {economicBlindSpots?.revenueVsProfit &&
-          economicBlindSpots.revenueVsProfit.length === 0 ? (
-            'No revenue data available'
-          ) : (
-            <FT2Distribution
-              buckets={
-                economicBlindSpots?.revenueVsProfit
-                  ? economicBlindSpots.revenueVsProfit.map(p => ({
-                      key: p.productId,
-                      value: p.profit,
-                    }))
-                  : null
-              }
-            />
-          )}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ───────── Layer 3 — DATA GAPS (Truth & Consistency) ───────── */}
-      <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Variant growth">
-          {dataGaps?.variantGrowth ? (
-            <div>
-              Data points: {dataGaps.variantGrowth.length}
-            </div>
-          ) : (
-            '—'
-          )}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Stock visibility">
-          {operationalRisk?.totalProducts === 0 ? (
-            'No products synced'
-          ) : (
-            <FT2Ratio
-              numerator={
-                operationalRisk?.productsWithConfirmedStockCount ?? null
-              }
-              denominator={operationalRisk?.totalProducts ?? null}
-            />
-          )}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Sales exceed stock">
-          {operationalRisk?.productsWhereSalesExceedStockCount === 0 ? (
-            'No oversold products'
-          ) : (
-            <FT2Stat
-              value={operationalRisk?.productsWhereSalesExceedStockCount ?? null}
-            />
-          )}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Change impact">
-          <FT2Stat
-            value={
-              operationalRisk?.averageSystemsTouchedPerProduct ?? null
-            }
-          />
-          <FT2Stat
-            value={
-              operationalRisk?.productsTouchingMultipleSystemsCount ?? null
+        <FT2Surface variant="kpi" title="Revenue vs profit spread">
+          <FT2Distribution
+            buckets={
+              economicBlindSpots?.revenueVsProfit
+                ? economicBlindSpots.revenueVsProfit.map(p => ({
+                    key: p.productId,
+                    value: p.profit,
+                  }))
+                : null
             }
           />
         </FT2Surface>

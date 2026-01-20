@@ -81,6 +81,12 @@ export type ProductsFt2Snapshot = {
     integrity: 'ok' | 'attention' | 'unknown';
     duplication: 'present' | 'absent' | 'unknown';
   } | null;
+
+  operational?: {
+    inventory: 'ok' | 'gaps' | 'unknown';
+    fulfillment: 'visible' | 'missing' | 'unknown';
+    stability: 'stable' | 'fragile' | 'unknown';
+  } | null;
 };
 
 /**
@@ -179,5 +185,10 @@ export function mapProductsFt2Props(
       snapshot.productDataIntegrity === undefined
         ? null
         : snapshot.productDataIntegrity,
+
+    operational:
+      snapshot.operational === undefined
+        ? null
+        : snapshot.operational,
   };
 }

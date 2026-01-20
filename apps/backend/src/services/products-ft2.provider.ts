@@ -3,9 +3,12 @@ import { getProductsFacts } from './products-facts';
 import { buildProductsIntelligence } from './products-intelligence';
 import { buildProductsFtep } from './products-ftep';
 import { ProductsFT2Exposure } from './products-ftep/ProductsFtep.types';
-import {
-  getProductDataIntegritySnapshot,
-} from './products-data-integrity.provider';
+
+import { getProductDataIntegritySnapshot } from './products-data-integrity.provider';
+
+import { getProductOperationalFacts } from './products-operational-facts';
+import { buildProductOperationalIntelligence } from './products-operational-intelligence';
+import { buildProductOperationalFtep } from './products-operational-ftep';
 
 interface GetProductsFt2SnapshotInput {
   shopId: number;
@@ -38,9 +41,18 @@ interface GetProductsFt2SnapshotInput {
 export async function getProductsFt2Snapshot(input: {
   shopId: number;
   period: { from: string; to: string };
-}): Promise<ProductsFT2Exposure> {
+}): Promise<ProductsFT2Exposure & {
+  operational: {
+    inventory: 'ok' | 'gaps' | 'unknown';
+    fulfillment: 'visible' | 'missing' | 'unknown';
+    stability: 'stable' | 'fragile' | 'unknown';
+  } | null;
+}> {
   const { shopId, period } = input;
 
+  // ─────────────────────────────────────────
+  // Core Products FT2
+  // ─────────────────────────────────────────
   const facts = await getProductsFacts(input);
   const intelligence = buildProductsIntelligence(facts);
   const exposure = buildProductsFtep({ facts, intelligence });
@@ -54,8 +66,25 @@ export async function getProductsFt2Snapshot(input: {
     period,
   });
 
+  // ─────────────────────────────────────────
+  // Operational Exposure (FT2-safe)
+  // ─────────────────────────────────────────
+  const operationalFacts = await getProductOperationalFacts({
+    shopId,
+    period,
+  });
+
+  const operationalIntelligence =
+    buildProductOperationalIntelligence(operationalFacts);
+
+  const operationalExposure =
+    buildProductOperationalFtep({
+      intelligence: operationalIntelligence,
+    });
+
   return {
     ...exposure,
+    ...operationalExposure,
     productDataIntegrity,
   };
 }
