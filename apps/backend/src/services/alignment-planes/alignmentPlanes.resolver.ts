@@ -23,7 +23,7 @@ export function resolveAlignmentPlanes(input: {
 }): Record<string, 'aligned' | 'divergent' | 'unknown'> {
   const planesToExecute = input.planes
     .map(({ planeId, input }) => {
-      const plane = alignmentPlaneRegistry.find(p => p.id === planeId);
+      const plane = alignmentPlaneRegistry.find(p => p.planeId === planeId);
       if (!plane) return null;
       return { plane, input };
     })

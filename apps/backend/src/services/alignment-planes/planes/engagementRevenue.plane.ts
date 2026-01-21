@@ -12,7 +12,7 @@ type EngagementRevenueInput = {
 };
 
 export const engagementRevenuePlane: AlignmentPlane<EngagementRevenueInput> = {
-  id: 'engagement-revenue',
+  planeId: 'engagement-revenue',
 
   compute({ customers, orders }) {
     if (

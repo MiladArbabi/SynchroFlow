@@ -53,6 +53,7 @@ export function exposeOrderNexusFT2(
   },
 
   visibility:
+    !intelligence.visibility ||
     intelligence.visibility.status === 'unknown'
       ? null
       : { status: intelligence.visibility.status },

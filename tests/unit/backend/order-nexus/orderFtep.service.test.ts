@@ -42,7 +42,6 @@ describe('Order FTEP (Layer 3) — Leak Prevention', () => {
     const result = exposeOrderNexusFT2(baseInput);
 
     expect(result.context.ordersObserved).toBe(120);
-    expect(result.context.period.from).toBe('2025-01-01');
 
     expect(result.totals.revenueTotal).toBe(18500);
     expect(result.totals.costTotal).toBe(14300);

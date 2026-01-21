@@ -5,11 +5,6 @@ import { axiosInstance } from 'api/axiosConfig';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
 export type OrdersFt2Snapshot = {
-  period?: {
-    from: string;
-    to: string;
-  };
-
   ordersObserved?: number | null;
 
   totals?: {
@@ -19,11 +14,11 @@ export type OrdersFt2Snapshot = {
   };
 
   outcome?: {
-    status: 'positive' | 'negative' | 'unknown';
+    status: 'positive' | 'negative';
   } | null;
 
   trend?: {
-    direction: 'up' | 'down' | 'flat' | 'unknown';
+    direction: 'up' | 'down' | 'flat';
   } | null;
 
   dataCoverage?: {
@@ -33,6 +28,12 @@ export type OrdersFt2Snapshot = {
   visibility?: {
     status: 'sufficient' | 'insufficient';
   } | null;
+
+  alignment?: {
+    demandReality?: 'aligned' | 'divergent' | 'unknown';
+    engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
+    operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
+};
 };
 
 /**

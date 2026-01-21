@@ -4,7 +4,11 @@ describe('Orders FT2 — Coverage Facts', () => {
   it('computes completenessPct correctly', async () => {
     const result = await getOrderNexusFt2Coverage({
       shopId: 1,
-      period: { from: '2026-01-01', to: '2026-01-31' }
+      range: {
+        preset: 'custom',
+        from: '2026-01-01',
+        to: '2026-01-31',
+      },
     });
 
     const expected =
@@ -23,7 +27,11 @@ describe('Orders FT2 — Coverage Facts', () => {
   it('does not expose severity or interpretation', async () => {
     const result = await getOrderNexusFt2Coverage({
       shopId: 1,
-      period: { from: '2026-01-01', to: '2026-01-31' }
+      range: {
+        preset: 'custom',
+        from: '2026-01-01',
+        to: '2026-01-31',
+      },
     });
 
     expect(result).not.toHaveProperty('severity');

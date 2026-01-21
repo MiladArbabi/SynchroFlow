@@ -1,5 +1,5 @@
 // apps/backend/src/services/canonical-commerce-ingestion.service.ts
-import db from 'api-src/db';
+import db from '../db';
 import type {
   CanonicalOrder,
   CanonicalOrderLineItem,

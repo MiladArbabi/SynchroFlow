@@ -94,13 +94,13 @@ export async function getAnalyticsFacts(
     period,
   });
 
-  const customersObserved =
-    customersFt2.context?.customersObserved ?? null;
+  const customersPresent =
+  customersFt2.context?.customersPresent ?? null;
 
   const customersPresence =
-    customersObserved === null
+    customersPresent === null
       ? null
-      : customersObserved > 0;
+      : customersPresent === true;
 
   // ─────────────────────────────────────────────
   // Finances — sourced from Finances FT2
@@ -143,7 +143,7 @@ export async function getAnalyticsFacts(
 
       customers: {
         presence: customersPresence,
-        observationCount: customersObserved,
+        observationCount: null, // Customers FT2 does NOT expose counts
         nullSurface: customersPresence === null ? 1 : 0,
         firstSeenAt: null,
         lastSeenAt: null,

@@ -43,25 +43,74 @@ FT2 answers **“what is economically visible”**, never **“what to do”**.
 
 ---
 
+---
+
+## 0.1 Domains & Alignment Planes (FT2 Scope)
+
+Orders FT2 is no longer a single economic surface.
+It is a **multi-domain reality surface** with explicit **cross-domain alignment planes**.
+
+### Domains (Observable Truths)
+
+Each domain answers **one and only one question** about order reality.
+
+| Domain | Layer | Question Answered |
+|------|------|------------------|
+| Order Presence Reality | L1 | Do orders exist in this period? |
+| Revenue Presence Reality | L1 | Does revenue exist? |
+| Economic Outcome Reality | L2 | Are orders economically positive or negative? |
+| Order Volume Direction Reality | L1½ | Is order volume up / down / flat? |
+| Data Coverage Reality | L1 | Is order data complete enough to interpret? |
+| Economic Visibility Reality | L2 | Is economic interpretation epistemically allowed? |
+| Fulfillment Presence Reality | L1 | Do fulfillment signals exist? |
+| Fulfillment Reality | L2 | Are orders operationally real or unreal? |
+
+Domains are **non-computable**, **non-explanatory**, and **fail-closed**.
+
+---
+
+### Alignment Planes (Cross-Domain Consistency)
+
+Alignment planes do not create truth.  
+They **classify consistency between domains**.
+
+| Plane | Participating Domains | Status |
+|----|----------------------|--------|
+| Cross-Domain Trust (META) | All domains | ✅ Implemented |
+| Demand Reality | Customers ↔ Orders | ✅ Implemented |
+| Engagement ↔ Revenue | Customers ↔ Orders ↔ Finance | ✅ Implemented |
+| Operational ↔ Economic | Orders ↔ Fulfillment | ✅ Implemented |
+
+Alignment planes:
+
+* Execute **after FTEP**
+* Are **read-only**
+* Fail closed (`unknown`)
+* Never explain or recommend
+
+---
+
 ## 1. Proven Architectural Flow
 
 ```
 Canonical Database
    ↓
-Layer 1 — Order Facts (Truth)
+Layer 1 — Order & Fulfillment Facts (Truth)
    ↓
-Layer 2 — Order Intelligence (Classification & Direction)
+Layer 1½ — Temporal Facts (Directional Inputs)
+   ↓
+Layer 2 — Order & Fulfillment Intelligence (Classification)
    ↓
 Layer 3 — FTEP (Truth Exposure Policy)
    ↓
-Order-Nexus FT2 Snapshot (Backend)
+Layer 4 — Alignment Planes (Cross-Domain Consistency)
    ↓
-Frontend Adapters (undefined → null only)
-   ↓
-OrdersModuleFT2 (Observational UI)
+Order-Nexus FT2 Snapshot (Authoritative)
 ```
 
 > **Important:**
+> Alignment planes do NOT feed intelligence.
+> They operate on **exposed truth only** and may never mutate it.
 > FT2-adjacent analytical surfaces intentionally **bypass** the snapshot pipeline
 > and are **not governed by FTEP**.
 
@@ -197,6 +246,23 @@ Computed using **two consecutive fixed windows**.
 
 This is **not advice** — it is a **constraint made visible**.
 
+### Fulfillment Intelligence (Layer 2)
+
+Fulfillment intelligence classifies whether economic order signals
+are **operationally grounded**.
+
+| Field | Type | Semantics |
+|----|----|----------|
+| `operationalReality` | `'real' \| 'unreal' \| 'unknown'` | Grounded in fulfillment signals |
+| `visibility` | `'sufficient' \| 'unknown'` | Epistemic usability |
+
+Rules:
+
+* Presence-only
+* No performance meaning
+* No SLA semantics
+* Unknown propagates aggressively
+
 ---
 
 ## 4. Layer 3 — FTEP (Truth Exposure Policy)
@@ -281,16 +347,43 @@ Rules:
 
 The FT2 snapshot contains **exactly**:
 
-* `context`
-* `totals`
-* `outcome | null`
-* `trend | null`
-* `dataCoverage`
-* `visibility | null`
+* context
+* totals
+* outcome | null
+* trend | null
+* dataCoverage
+* visibility | null
+* alignment (optional, read-only)
 
+Alignment is observational only.
+It does not affect snapshot values.
 No derived fields.
 No enrichment.
 No side channels.
+
+---
+
+## 5.1 Alignment Planes (FT2)
+
+Alignment planes classify **cross-domain coherence**.
+
+They:
+
+* Run after FTEP
+* Never alter facts or intelligence
+* Fail closed (`unknown`)
+* Are deterministic
+
+### Current Planes
+
+| Plane | Meaning |
+|----|--------|
+| Demand Reality | Customer demand ↔ observed orders |
+| Engagement ↔ Revenue | Engagement trend ↔ economic outcome |
+| Operational ↔ Economic | Order outcome ↔ fulfillment reality |
+| Cross-Domain Trust | Epistemic comparability gate |
+
+Alignment output is **directional only**, never explanatory.
 
 ---
 
@@ -411,12 +504,12 @@ The UI **never compensates for missing truth**.
 
 ## 10. Alignment Matrix (FINAL)
 
-| Surface      | Facts | Intelligence | FTEP | Adapter | UI            |
-| ------------ | ----- | ------------ | ---- | ------- | ------------- |
-| Snapshot     | Yes   | Active       | Yes  | Pure    | Observational |
-| Time Series  | DB    | None         | None | Pure    | Observational |
-| Distribution | DB    | None         | None | Pure    | Observational |
-| Coverage     | DB    | None         | None | Pure    | Observational |
+| Surface | Facts | Intelligence | FTEP | Alignment | Adapter | UI |
+|-------|------|-------------|------|----------|--------|----|
+| Snapshot | Yes | Active | Yes | Yes | Pure | Observational |
+| Time Series | DB | None | None | None | Pure | Observational |
+| Distribution | DB | None | None | None | Pure | Observational |
+| Coverage | DB | None | None | None | Pure | Observational |
 
 ---
 
@@ -449,6 +542,8 @@ All behavior is:
 
 Orders FT2 now:
 
+* Grounds multi-domain order reality
+* Exposes cross-domain alignment
 * Grounds economic reality
 * Creates Stage-3 tension
 * Preserves epistemic integrity

@@ -18,19 +18,35 @@ export interface CrossDomainTrustInput {
 }
 
 export const crossDomainTrustPlane: AlignmentPlane<CrossDomainTrustInput> = {
-  id: 'cross-domain-trust',
+  planeId: 'cross-domain-trust',
 
   compute(input): AlignmentResult {
     const { visibilities } = input;
 
+    // No signals → cannot assess trust
+    if (visibilities.length === 0) {
+      return 'unknown';
+    }
+
+    // Any null → epistemically unknown
     if (visibilities.some(v => v === null)) {
       return 'unknown';
     }
 
-    if (visibilities.some(v => v === 'insufficient')) {
+    const hasSufficient = visibilities.some(v => v === 'sufficient');
+    const hasInsufficient = visibilities.some(v => v === 'insufficient');
+
+    // Mixed epistemic states → divergent
+    if (hasSufficient && hasInsufficient) {
       return 'divergent';
     }
 
-    return 'aligned';
-  },
+    // All sufficient → trusted
+    if (hasSufficient) {
+      return 'aligned';
+    }
+
+    // All insufficient → unusable, not contradictory
+    return 'unknown';
+  }
 };

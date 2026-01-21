@@ -23,7 +23,7 @@ export interface DemandRealityInput {
 }
 
 export const demandRealityPlane: AlignmentPlane<DemandRealityInput> = {
-  id: 'demand-reality',
+  planeId: 'demand-reality',
 
   compute(input): AlignmentResult {
     const { customers, orders } = input;

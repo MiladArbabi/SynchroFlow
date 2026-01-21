@@ -19,10 +19,10 @@ export const operationalEconomicPlane: AlignmentPlane<{
   };
   fulfillment: {
     operationalReality: 'real' | 'unreal' | 'unknown';
-    visibility: 'sufficient' | 'insufficient' | 'unknown';
+    visibility: 'sufficient' | 'insufficient' | null;
   };
 }> = {
-  id: 'operational-economic',
+  planeId: 'operational-economic',
 
   compute({ orders, fulfillment }) {
     // Epistemic guard

@@ -16,12 +16,12 @@ export function executeAlignmentPlanes(
 
   // META plane executes first
   const trustResult = crossDomainTrustPlane.compute(metaInput);
-  results[crossDomainTrustPlane.id] = trustResult;
+  results[crossDomainTrustPlane.planeId] = trustResult;
 
   if (trustResult !== 'aligned') {
     // Short-circuit: all other planes unknown
     for (const { plane } of planes) {
-      results[plane.id] = 'unknown';
+      results[plane.planeId] = 'unknown';
     }
     return results;
   }
@@ -29,14 +29,14 @@ export function executeAlignmentPlanes(
     // Visibility gate — hard epistemic boundary
   if (!visibilityGate(metaInput.visibilities)) {
     for (const { plane } of planes) {
-      results[plane.id] = 'unknown';
+      results[plane.planeId] = 'unknown';
     }
     return results;
   }
 
   // Execute remaining planes (visibility-safe)
   for (const { plane, input } of planes) {
-    results[plane.id] = plane.compute(input);
+    results[plane.planeId] = plane.compute(input);
   }
 
   return results;

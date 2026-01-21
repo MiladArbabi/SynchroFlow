@@ -72,5 +72,9 @@ export function mapOrdersFt2Props(
         ? null
         : snapshot.visibility,
 
+    alignment:
+      snapshot.alignment === undefined
+        ? null
+        : snapshot.alignment,
   };
 }

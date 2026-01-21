@@ -39,6 +39,12 @@ export interface OrdersModuleFT2DataProps {
   visibility: {
     status: 'sufficient' | 'insufficient';
   } | null;
+
+  alignment: {
+    demandReality?: 'aligned' | 'divergent' | 'unknown';
+    engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
+    operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
+  } | null;
 }
 
 /**
@@ -64,7 +70,8 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
     dataCoverage,
     timeseries,
     distribution,
-    visibility
+    visibility,
+    alignment,
   } = props;
 
   return (
@@ -128,6 +135,12 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
 
         <FT2Surface variant="kpi" title="Overall result">
           {outcome?.status ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface title="Cross-domain alignment">
+          <div>Demand ↔ Orders: {alignment?.demandReality ?? '—'}</div>
+          <div>Engagement ↔ Revenue: {alignment?.engagementRevenue ?? '—'}</div>
+          <div>Operations ↔ Economics: {alignment?.operationalEconomic ?? '—'}</div>
         </FT2Surface>
       </FT2Row>
     </FT2Layout>

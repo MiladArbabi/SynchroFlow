@@ -39,23 +39,69 @@ never **“what to do.”**
 
 ---
 
+## 0.1 Domains & Alignment Planes (ACTIVE FT2 SCOPE)
+
+Orders FT2 is a **multi-domain reality surface**.
+Each domain answers exactly **one observable question**.
+
+### Active Domains
+
+| Domain | Layer | Question Answered |
+|------|------|------------------|
+| Order Presence Reality | L1 | Do orders exist in this period? |
+| Revenue Presence Reality | L1 | Does revenue exist? |
+| Economic Outcome Reality | L2 | Are orders economically positive or negative? |
+| Order Volume Direction Reality | L1½ | Is order volume up / down / flat? |
+| Data Coverage Reality | L1 | Is data complete enough to interpret? |
+| Economic Visibility Reality | L2 | Is economic orientation epistemically allowed? |
+| Fulfillment Presence Reality | L1 | Do fulfillment signals exist? |
+| Fulfillment Reality | L2 | Are orders operationally real or unreal? |
+
+Domains:
+
+* Do not compute
+* Do not infer
+* Do not explain
+* Fail closed (`null` / `unknown`)
+
+---
+
+### Alignment Planes (Cross-Domain Classification)
+
+Alignment planes **classify consistency** between domains.
+They never create truth.
+
+| Plane | Participating Domains | Status |
+|----|----------------------|--------|
+| Cross-Domain Trust (META) | All domains | ✅ Implemented |
+| Demand Reality | Customers ↔ Orders | ✅ Implemented |
+| Engagement ↔ Revenue | Customers ↔ Orders ↔ Finance | ✅ Implemented |
+| Operational ↔ Economic | Orders ↔ Fulfillment | ✅ Implemented |
+
+Alignment planes:
+
+* Execute after FTEP
+* Are read-only
+* Fail closed
+* Never explain or advise
+
+---
+
 ## 1. Proven Architectural Flow
 
 ```
 Canonical Database
    ↓
-Layer 1 — Order Facts
-   ↓
-Layer 2 — Order Intelligence (ACTIVE, INTERNAL)
-   ↓
+Layer 1 — Order & Fulfillment Facts
+Layer 1½ — Temporal Facts (Directional Inputs)
+Layer 2 — Order & Fulfillment Intelligence (ACTIVE, INTERNAL)
 Layer 3 — FTEP (Truth Exposure Policy)
-   ↓
+Layer 4 — Alignment Planes (Read-only)
 Order-Nexus FT2 Snapshot (Backend)
-   ↓
-Frontend Adapters (undefined → null only)
-   ↓
-OrdersModuleFT2 (Observational UI)
 ```
+
+* Alignment planes do not feed intelligence.
+* They operate strictly on exposed truth.
 
 > **Important:**
 > FT2-adjacent analytical surfaces intentionally **bypass** the snapshot pipeline and are not governed by FTEP.
@@ -183,6 +229,24 @@ not whether it is doing well.
 
 ---
 
+### Fulfillment Intelligence (ACTIVE, INTERNAL)
+
+Classifies whether economic order outcomes
+are grounded in operational reality.
+
+| Field | Type | Meaning |
+|----|----|--------|
+| `operationalReality` | `'real' \| 'unreal' \| 'unknown'` | Grounded in fulfillment signals |
+| `visibility` | `'sufficient' \| 'unknown'` | Epistemic usability |
+
+Rules:
+
+* Presence-only
+* No SLA or performance semantics
+* Unknown propagates aggressively
+
+---
+
 ### Forbidden (Still Enforced)
 
 * ❌ Explanations
@@ -281,12 +345,38 @@ The snapshot contains **exactly**:
 * `trend | null`
 * `dataCoverage`
 * `visibility | null`
+* `alignment (optional, read-only)`
 
 Nothing else.
 
+Alignment never alters snapshot values.
+It is observational only.
 No hidden metadata.
 No internal flags.
 No partial upgrades.
+
+---
+
+## 5.1 Alignment Planes (FT2)
+
+Alignment planes classify **cross-domain coherence**.
+
+They:
+- Run after FTEP
+- Never mutate facts or intelligence
+- Fail closed (`unknown`)
+- Are deterministic
+
+### Active Planes
+
+| Plane | Meaning |
+|----|--------|
+| Demand Reality | Customer demand ↔ observed orders |
+| Engagement ↔ Revenue | Engagement trend ↔ economic outcome |
+| Operational ↔ Economic | Order outcome ↔ fulfillment reality |
+| Cross-Domain Trust | Epistemic comparability gate |
+
+Alignment is **directional**, not explanatory.
 
 ---
 
@@ -359,12 +449,12 @@ UI **cannot upgrade truth**.
 
 ## 10. Alignment Matrix (FINAL)
 
-| Surface      | Facts | Intelligence | FTEP | Adapter | UI            |
-| ------------ | ----- | ------------ | ---- | ------- | ------------- |
-| Snapshot     | Yes   | **Active**   | Yes  | Pure    | Observational |
-| Time Series  | DB    | None         | None | Pure    | Observational |
-| Distribution | DB    | None         | None | Pure    | Observational |
-| Coverage     | DB    | None         | None | Pure    | Observational |
+| Surface | Facts | Intelligence | FTEP | Alignment | Adapter | UI |
+|-------|------|-------------|------|----------|--------|----|
+| Snapshot | Yes | Active | Yes | Yes | Pure | Observational |
+| Time Series | DB | None | None | None | Pure | Observational |
+| Distribution | DB | None | None | None | Pure | Observational |
+| Coverage | DB | None | None | None | Pure | Observational |
 
 ---
 
@@ -394,7 +484,7 @@ Every downgrade, threshold, and `null` is:
 
 ## 13. Final Seal
 
-* Orientation achieved without advice
+* Multi-domain orientation achieved without advice
 * Intelligence active but contained
 * Visibility elevated to first-class signal
 * Stage-3 tension possible without narration

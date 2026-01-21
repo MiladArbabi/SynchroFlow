@@ -12,7 +12,7 @@ export interface AlignmentPlane<Input> {
    * Stable, explicit identifier.
    * Used for registry + exposure.
    */
-  readonly id: string;
+  readonly planeId: string;
 
   /**
    * Compute alignment classification.
