@@ -2,6 +2,16 @@
 import type { CustomersModuleFT2Props } from '@lasyncro/customers';
 import type { CustomersFT2Contract } from '@lasyncro/customers';
 
+const NULL_SIGNALS: CustomersFT2Contract['signals'] = {
+  exitIntentDetected: null,
+  funnelsDetected: null,
+  multiStepSessionsPresent: null,
+  surfaceBreadthPresent: null,
+  returningSessionsPresent: null,
+  exitWithoutInteractionPresent: null,
+  averageSessionDepthPresent: null,
+};
+
 /**
  * mapCustomersFt2Props
  * -------------------
@@ -15,30 +25,29 @@ import type { CustomersFT2Contract } from '@lasyncro/customers';
 export function mapCustomersFt2Props(
   snapshot: CustomersFT2Contract
 ): CustomersModuleFT2Props {
+
+  const signals =
+    snapshot.signals ?? NULL_SIGNALS;
+
   return {
-    /**
-     * Domain 2 — Activity Presence Reality
-     *
-     * Customers FT2 consumes Specter activity directly.
-     * Sessions are the existence proxy.
-     */
+    // ── Domain 2 — Activity Presence ─────────
     sessionsPresent: snapshot.context.sessionsPresent ?? null,
 
-    // ── Direction ────────────────────────
+    // ── Direction (always null in Customers FT2) ──
     activityDirection: null,
 
-    // ── Structural Signals (Specter FT2 passthrough) ─────────
-    exitIntentDetected: snapshot.signals.exitIntentDetected ?? null,
-    funnelsDetected: snapshot.signals.funnelsDetected ?? null,
-    multiStepSessionsPresent: snapshot.signals.multiStepSessionsPresent ?? null,
-    surfaceBreadthPresent: snapshot.signals.surfaceBreadthPresent ?? null,
-    returningSessionsPresent: snapshot.signals.returningSessionsPresent ?? null,
+    // ── Structural Signals (FT2-safe passthrough) ──
+    exitIntentDetected: signals.exitIntentDetected,
+    funnelsDetected: signals.funnelsDetected,
+    multiStepSessionsPresent: signals.multiStepSessionsPresent,
+    surfaceBreadthPresent: signals.surfaceBreadthPresent,
+    returningSessionsPresent: signals.returningSessionsPresent,
     exitWithoutInteractionPresent:
-      snapshot.signals.exitWithoutInteractionPresent ?? null,
+      signals.exitWithoutInteractionPresent,
     averageSessionDepthPresent:
-      snapshot.signals.averageSessionDepthPresent ?? null,
+      signals.averageSessionDepthPresent,
 
-    // ── Coverage ─────────────────────────
-    dataCoverage: snapshot.dataCoverage ?? null
+    // ── Coverage ─────────────────────────────
+    dataCoverage: snapshot.dataCoverage ?? null,
   };
 }

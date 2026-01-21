@@ -82,6 +82,8 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
         fulfillmentIntelligence.visibility === 'unknown'
           ? null
           : fulfillmentIntelligence.visibility,
+
+        customerPromiseFacts.visibility,
       ],
     },
 
@@ -297,6 +299,11 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
         signal: shippingDelayFacts.delaySignal,
         visibility: shippingDelayFacts.visibility,
       },
+      // Customer Promise Reality
+      customerPromise: {
+        signal: customerPromiseFacts.promiseSignal,
+        visibility: customerPromiseFacts.visibility,
+      },
     },
 
     alignment: {
@@ -321,12 +328,6 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
       
       shippingDelayCustomerPromise:
         alignment['shipping-delay-customer-promise'],
-    },
-
-    // Customer Promise Reality
-    customerPromise: {
-      signal: customerPromiseFacts.promiseSignal,
-      visibility: customerPromiseFacts.visibility,
     },
   };
 }

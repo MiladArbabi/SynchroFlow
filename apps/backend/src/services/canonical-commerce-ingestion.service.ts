@@ -58,6 +58,8 @@ export class CanonicalCommerceIngestionService {
       unit_price: li.unitPrice,
       total_price: li.totalPrice,
       estimated_unit_cost: li.estimatedUnitCost ?? null,
+
+      order_created_at: canonicalOrder.createdAt,
     }));
 
     try {

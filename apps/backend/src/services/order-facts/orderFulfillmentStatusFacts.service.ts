@@ -16,12 +16,15 @@ export async function extractOrderFulfillmentStatusFacts(
   shopId: number,
   range: Parameters<typeof resolveFt2Range>[0]
 ) {
-  const { from, to } = resolveFt2Range(range);
 
+  /**
+   * NOTE:
+   * order_fulfillment_status is STATE-based.
+   * status_updated_at is NOT an order timestamp.
+   * Do NOT apply FT2 date-range filtering here.
+   */
   const rows = await db('order_fulfillment_status')
     .where({ shop_id: shopId })
-    .andWhere('created_at', '>=', from)
-    .andWhere('created_at', '<=', to)
     .select('status');
 
   if (rows.length === 0) {

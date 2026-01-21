@@ -72,20 +72,21 @@ export interface OrderNexusFT2Exposure {
       signal: 'present' | 'absent';
       visibility: 'sufficient' | 'insufficient';
     };
+
+    /**
+     * Customer Promise Reality (FT2)
+     * ------------------------------
+     * Downgraded exposure of L1 customer delivery promise presence.
+     *
+     * Presence-only.
+     * No SLA, no timing, no fulfillment comparison.
+     */
+    customerPromise?: {
+      signal: 'present' | 'absent';
+      visibility: 'sufficient' | 'insufficient';
+    };
   };
 
-  /**
-   * Customer Promise Reality (FT2)
-   * ------------------------------
-   * Downgraded exposure of L1 customer delivery promise presence.
-   *
-   * Presence-only.
-   * No SLA, no timing, no fulfillment comparison.
-   */
-  customerPromise?: {
-    signal: 'present' | 'absent';
-    visibility: 'sufficient' | 'insufficient';
-  };
 
   alignment?: {
     /**

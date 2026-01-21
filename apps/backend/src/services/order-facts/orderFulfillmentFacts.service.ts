@@ -15,12 +15,13 @@ export async function extractOrderFulfillmentFacts(
   shopId: number,
   range: Parameters<typeof resolveFt2Range>[0]
 ) {
-  const { from, to } = resolveFt2Range(range);
-
+  /**
+   * order_fulfillment_status is STATE-based.
+   * Exactly one row per order.
+   * DO NOT apply FT2 time ranges here.
+   */
   const row = await db('order_fulfillment_status')
     .where({ shop_id: shopId })
-    .andWhere('created_at', '>=', from)
-    .andWhere('created_at', '<=', to)
     .count<{ total: string }>('id as total')
     .first();
 

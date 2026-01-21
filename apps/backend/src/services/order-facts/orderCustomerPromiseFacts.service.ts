@@ -1,46 +1,27 @@
-import db from 'api-src/db';
-import { resolveFt2Range } from 'api-src/utils/ft2Period';
+// apps/backend/src/services/order-facts/orderCustomerPromiseFacts.service.ts
 
 /**
  * Customer Promise Facts (Layer 1)
  * --------------------------------
- * Observes whether customer-facing delivery promises exist.
+ * Customer delivery promises are NOT currently represented
+ * in the canonical orders schema.
  *
- * Question:
- * - Do orders contain an explicit delivery promise in this period?
+ * There is no factual column (e.g. delivery_date, promised_at, SLA)
+ * that can be used to assert promise presence.
  *
- * Guarantees:
- * - Presence-only
- * - No SLA or timing semantics
- * - No fulfillment dependency
- * - Deterministic
+ * Therefore:
+ * - Promise presence cannot be asserted
+ * - No database queries are executed
+ * - The system fails closed by design
  *
- * Fail-closed:
- * - Missing or uncertain data → promiseSignal = 'absent'
+ * This is correct for FT2.
  */
 export async function extractOrderCustomerPromiseFacts(
-  shopId: number,
-  range: Parameters<typeof resolveFt2Range>[0]
+  _shopId: number,
+  _range: unknown
 ) {
-  const { from, to } = resolveFt2Range(range);
-
-  const row = await db('orders')
-    .where({ shop_id: shopId })
-    .andWhere('created_at', '>=', from)
-    .andWhere('created_at', '<=', to)
-    .whereNotNull('delivery_date') // ⬅️ adjust ONLY if factual column differs
-    .count<{ total: string }>('id as total')
-    .first();
-
-  if (!row || Number(row.total) === 0) {
-    return {
-      promiseSignal: 'absent' as const,
-      visibility: 'insufficient' as const,
-    };
-  }
-
   return {
-    promiseSignal: 'present' as const,
-    visibility: 'sufficient' as const,
+    promiseSignal: 'absent' as const,
+    visibility: 'insufficient' as const,
   };
 }

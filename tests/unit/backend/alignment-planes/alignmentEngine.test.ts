@@ -5,10 +5,10 @@ import type { AlignmentPlane, AlignmentResult } from
 
 describe('Alignment Plane Engine — executeAlignmentPlanes', () => {
   const makePlane = (
-    id: string,
+    planeId: string,
     result: AlignmentResult
   ): AlignmentPlane<any> & { compute: jest.Mock } => ({
-    id,
+    planeId,
     compute: jest.fn(() => result),
   });
 
@@ -90,6 +90,7 @@ describe('Alignment Plane Engine — executeAlignmentPlanes', () => {
     );
 
     expect(Object.keys(output)).toContain('plane-a');
-    expect(planeA.id).toBe('plane-a');
+    expect(output['plane-a']).toBe('aligned');
+    expect(planeA.planeId).toBe('plane-a');
   });
 });
