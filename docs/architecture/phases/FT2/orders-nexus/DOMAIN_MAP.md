@@ -1,178 +1,205 @@
-# FT2 Orders-Nexus — DOMAIN_MAP
+# 🔒 FT2 Orders-Nexus — DOMAIN_MAP (CURRENT · ACTIVE)
+
+**Status:** ✅ UPDATED / SEALED
+**Applies to:** Orders-Nexus FT2 only
+**Scope:** Observable domains + alignment planes
+**Apex Rule:** **FT2 is final. No FT3.**
+
+---
 
 ## Purpose
 
 This document defines **all observable domains and alignment planes** participating in the **Orders-Nexus FT2 system**.
 
-Each domain answers **exactly one question** about reality.
-Each alignment plane classifies **cross-domain consistency**.
+Each **domain** answers **exactly one factual question**.
+Each **alignment plane** classifies **cross-domain structural coherence**.
 
-Rules enforced across the map:
+### Global Rules (Non-Negotiable)
 
 * No analytics
 * No causality
 * No recommendations
-* Fail-closed semantics
+* No prioritization
 * Deterministic outputs
+* Fail-closed semantics (`null` / `unknown`)
+* Visibility gates everything
 
 ---
 
 ## LAYERING MODEL (CANONICAL)
 
-| Layer    | Meaning                               |
-| -------- | ------------------------------------- |
-| **L1**   | Presence & factual observation        |
-| **L1½**  | Time-scoped comparisons (counts only) |
-| **L2**   | Classification / intelligence         |
-| **FT2**  | Exposure only (downgraded truth)      |
-| **META** | Epistemic gating across domains       |
+| Layer    | Meaning                                 |
+| -------- | --------------------------------------- |
+| **L1**   | Presence & factual observation          |
+| **L1½**  | Time-scoped comparison (direction only) |
+| **L2**   | Classification / intelligence           |
+| **FT2**  | Downgraded exposure only                |
+| **META** | Epistemic gating across domains         |
 
 ---
 
-## DOMAIN MAP — ORDERS-NEXUS
+## DOMAIN MAP — ORDERS-NEXUS (SEALED REALITY)
 
 ### 🧱 CORE ORDER REALITY (FOUNDATION)
 
-| Domain                             | Layer | Question Answered                                 | Status        |
-| ---------------------------------- | ----- | ------------------------------------------------- | ------------- |
-| **Order Presence Reality**         | L1    | Do orders exist in this period?                   | ✅ Implemented |
-| **Revenue Presence Reality**       | L1    | Does revenue exist?                               | ✅ Implemented |
-| **Economic Outcome Reality**       | L2    | Are orders economically positive or negative?     | ✅ Implemented |
-| **Order Volume Direction Reality** | L1½   | Is order volume up/down/flat?                     | ✅ Implemented |
-| **Data Coverage Reality**          | L1    | Is order data complete enough to interpret?       | ✅ Implemented |
-| **Economic Visibility Reality**    | L2    | Is economic interpretation epistemically allowed? | ✅ Implemented |
-| **Temporal Scope Reality**         | META  | What time window applies?                         | ✅ Implemented |
+| Domain                             | Layer | Question Answered                              | Status        |
+| ---------------------------------- | ----- | ---------------------------------------------- | ------------- |
+| **Order Presence Reality**         | L1    | Do orders exist in this period?                | ✅ Implemented |
+| **Revenue Presence Reality**       | L1    | Does revenue exist?                            | ✅ Implemented |
+| **Economic Outcome Reality**       | L2    | Are orders economically positive or negative?  | ✅ Implemented |
+| **Order Volume Direction Reality** | L1½   | Is order volume up / down / flat?              | ✅ Implemented |
+| **Data Coverage Reality**          | L1    | Is order data complete enough to interpret?    | ✅ Implemented |
+| **Economic Visibility Reality**    | L2    | Is economic orientation epistemically allowed? | ✅ Implemented |
+| **Temporal Scope Reality**         | META  | What time window applies?                      | ✅ Implemented |
+
+**Notes**
+
+* Outcome is downgraded from intelligence
+* Visibility is epistemic, not qualitative
+* Direction is non-predictive
 
 ---
 
-### 🚚 FULFILLMENT & LOGISTICS REALITY
+### 🚚 FULFILLMENT & LOGISTICS REALITY (ACTIVE)
 
-| Domain                           | Layer | Question Answered                             | Status        |
-| -------------------------------- | ----- | --------------------------------------------- | ------------- |
-| **Fulfillment Presence Reality** | L1    | Do fulfillment signals exist?                 | ✅ Implemented |
-| **Fulfillment Status Reality**   | L1    | Are orders fulfilled / partial / unfulfilled? | ⏳ Planned     |
-| **Order Velocity Reality**       | L1½   | Are orders created faster than fulfilled?     | ⏳ Planned     |
-| **Shipping Reality**             | L1    | Are orders delayed / in transit / delivered?  | ⏳ Planned     |
-| **Backorder Reality**            | L1    | Are ordered items unavailable?                | ⏳ Planned     |
-| **Return Reality**               | L1    | Are orders being returned?                    | ⏳ Planned     |
+| Domain                              | Layer | Question Answered                        | Status        |
+| ----------------------------------- | ----- | ---------------------------------------- | ------------- |
+| **Fulfillment Presence Reality**    | L1    | Do fulfillment signals exist?            | ✅ Implemented |
+| **Fulfillment Status Reality**      | L1    | Fulfilled / partial / unfulfilled?       | ✅ Implemented |
+| **Fulfillment Operational Reality** | L2    | Are orders operationally real or unreal? | ✅ Implemented |
+| **Shipping Presence Reality**       | L1    | Do shipping records exist?               | ✅ Implemented |
+| **Shipping Delay Reality**          | L1    | Is any shipping delay signal present?    | ✅ Implemented |
+| **Customer Promise Reality**        | L1    | Does a delivery promise exist?           | ✅ Implemented |
 
----
+**Explicit exclusions**
 
-### 💰 ECONOMIC & CASH REALITY (SMB-CRITICAL)
-
-| Domain                       | Layer | Question Answered                   | Status    |
-| ---------------------------- | ----- | ----------------------------------- | --------- |
-| **Payment Status Reality**   | L1    | Are orders paid / unpaid / partial? | ⏳ Planned |
-| **Cash Flow Impact Reality** | L1    | Which orders affect immediate cash? | ⏳ Planned |
-| **Shipping Cost Reality**    | L1    | What did shipping actually cost?    | ⏳ Planned |
-| **Platform Fee Reality**     | L1    | What fees applied per channel?      | ⏳ Planned |
-| **Profit Leakage Reality**   | L1    | Where is money being lost?          | ⏳ Planned |
+* No SLA
+* No timing
+* No blame
+* No delivery state semantics
 
 ---
 
-### 🧩 SYSTEM & OPERATIONS REALITY (SILO BREAKERS)
+### 💰 ECONOMIC & CASH REALITY (OUT-OF-SCOPE FOR FT2)
 
-| Domain                           | Layer | Question Answered                         | Status    |
-| -------------------------------- | ----- | ----------------------------------------- | --------- |
-| **Multi-Channel Order Presence** | L1    | Are orders coming from all channels?      | ⏳ Planned |
-| **Order Completeness Reality**   | L1    | Are required order fields present?        | ⏳ Planned |
-| **Order Accuracy Reality**       | L1    | Do totals match line items & tax?         | ⏳ Planned |
-| **Inventory Sync Reality**       | L1    | Do orders match actual stock?             | ⏳ Planned |
-| **Manual Entry Reality**         | L1    | Which orders required human intervention? | ⏳ Planned |
-| **Silo-Bridging Reality**        | L1    | Is the same order present in all systems? | ⏳ Planned |
-| **Tax Compliance Reality**       | L1    | Are orders tax-documented correctly?      | ⏳ Planned |
+| Domain                   | Layer | Question Answered         | Status       |
+| ------------------------ | ----- | ------------------------- | ------------ |
+| Payment Status Reality   | L1    | Are orders paid / unpaid? | ⛔ Not in FT2 |
+| Cash Flow Impact Reality | L1    | Immediate cash impact?    | ⛔ Not in FT2 |
+| Shipping Cost Reality    | L1    | Actual shipping cost?     | ⛔ Not in FT2 |
+| Platform Fee Reality     | L1    | Fees per channel?         | ⛔ Not in FT2 |
+| Profit Leakage Reality   | L1    | Where is money lost?      | ⛔ Not in FT2 |
 
----
-
-### 👥 CUSTOMER REALITY
-
-| Domain                              | Layer | Question Answered                      | Status    |
-| ----------------------------------- | ----- | -------------------------------------- | --------- |
-| **Customer Repeat Reality**         | L1½   | Are customers ordering again?          | ⏳ Planned |
-| **Customer Service Burden Reality** | L1    | Which orders generate support tickets? | ⏳ Planned |
+> These are **valid domains**, but **intentionally excluded** from FT2.
 
 ---
 
-## ALIGNMENT PLANES — ORDERS-NEXUS
+### 🧩 SYSTEM & OPERATIONS REALITY (NOT IN FT2)
+
+| Domain                       | Layer | Question Answered            | Status       |
+| ---------------------------- | ----- | ---------------------------- | ------------ |
+| Multi-Channel Order Presence | L1    | Orders across channels?      | ⛔ Not in FT2 |
+| Order Completeness Reality   | L1    | Required fields present?     | ⛔ Not in FT2 |
+| Inventory Sync Reality       | L1    | Stock matches orders?        | ⛔ Not in FT2 |
+| Manual Entry Reality         | L1    | Human intervention required? | ⛔ Not in FT2 |
+| Silo-Bridging Reality        | L1    | Order exists in all systems? | ⛔ Not in FT2 |
+
+---
+
+### 👥 CUSTOMER REALITY (PARTIAL)
+
+| Domain                          | Layer | Question Answered              | Status        |
+| ------------------------------- | ----- | ------------------------------ | ------------- |
+| **Customer Promise Reality**    | L1    | Does a delivery promise exist? | ✅ Implemented |
+| Customer Repeat Reality         | L1½   | Are customers returning?       | ⛔ Not in FT2  |
+| Customer Service Burden Reality | L1    | Support load per order?        | ⛔ Not in FT2  |
+
+---
+
+## ALIGNMENT PLANES — ORDERS-NEXUS (ACTIVE FT2)
+
+Alignment planes **classify coherence only**.
+They do not infer causes or recommend actions.
+
+---
 
 ### 🔒 META PLANE
 
-| Plane                  | Domains                   | Status        |
-| ---------------------- | ------------------------- | ------------- |
-| **Cross-Domain Trust** | All participating domains | ✅ Implemented |
+| Plane                  | Domains            | Status        |
+| ---------------------- | ------------------ | ------------- |
+| **Cross-Domain Trust** | All active domains | ✅ Implemented |
 
 Purpose:
 
-* Determine if domains are epistemically comparable
-* Short-circuit all other planes
+* Epistemic comparability gate
+* Short-circuits all planes on failure
 
 ---
 
-### 🧭 COMMERCIAL INTEGRITY PLANES
+### 🧭 COMMERCIAL & ECONOMIC PLANES
 
-| Plane                                 | Domains                      | Status        |
-| ------------------------------------- | ---------------------------- | ------------- |
-| **Demand Reality**                    | Customers ↔ Orders           | ✅ Implemented |
-| **Engagement ↔ Revenue**              | Customers ↔ Orders ↔ Finance | ✅ Implemented |
-| **Pricing ↔ Margin Alignment**        | Orders ↔ Costs               | ⏳ Planned     |
-| **Platform ↔ Direct Sales Alignment** | Marketplace ↔ Website        | ⏳ Planned     |
-
----
-
-### 🚚 EXECUTION INTEGRITY PLANES
-
-| Plane                                    | Domains                       | Status        |
-| ---------------------------------------- | ----------------------------- | ------------- |
-| **Operational ↔ Economic Reality**       | Orders ↔ Fulfillment          | ✅ Implemented |
-| **Sales ↔ Operations Alignment**         | Orders ↔ Fulfillment Capacity | ⏳ Planned     |
-| **Orders ↔ Shipping Carrier Alignment**  | System ↔ Carrier              | ⏳ Planned     |
-| **Customer Promise ↔ Reality Alignment** | SLA ↔ Delivery                | ⏳ Planned     |
+| Plane                      | Domains                       | Status        |
+| -------------------------- | ----------------------------- | ------------- |
+| **Demand Reality**         | Customers ↔ Orders            | ✅ Implemented |
+| **Engagement ↔ Revenue**   | Engagement ↔ Orders ↔ Outcome | ✅ Implemented |
+| **Operational ↔ Economic** | Orders ↔ Fulfillment          | ✅ Implemented |
 
 ---
 
-### 🔌 SYSTEM INTEGRITY PLANES (SMB FOCUS)
+### 🚚 EXECUTION & LOGISTICS PLANES (SEALED)
 
-| Plane                             | Domains          | Status    |
-| --------------------------------- | ---------------- | --------- |
-| **Channel ↔ Inventory Alignment** | Sales ↔ Stock    | ⏳ Planned |
-| **Orders ↔ Accounting Alignment** | Commerce ↔ Books | ⏳ Planned |
-| **Online ↔ Offline Alignment**    | POS ↔ Ecommerce  | ⏳ Planned |
-| **Silo Coherence Plane**          | CRM ↔ ERP ↔ WMS  | ⏳ Planned |
+| Plane                                 | Domains                        | Status        |
+| ------------------------------------- | ------------------------------ | ------------- |
+| **Order Velocity ↔ Fulfillment**      | Velocity ↔ Operational Reality | ✅ Implemented |
+| **Shipping ↔ Fulfillment Coherence**  | Shipping ↔ Fulfillment         | ✅ Implemented |
+| **Sales ↔ Operations Alignment**      | Velocity ↔ Fulfillment Status  | ✅ Implemented |
+| **Orders ↔ Shipping Carrier**         | Orders ↔ Shipping Presence     | ✅ Implemented |
+| **Shipping Delay ↔ Fulfillment**      | Delay ↔ Operational Reality    | ✅ Implemented |
+| **Shipping Delay ↔ Customer Promise** | Delay ↔ Promise                | ✅ Implemented |
+
+**Key invariant**
+
+> Alignment ≠ performance
+> Alignment ≠ explanation
+> Alignment = structural consistency only
 
 ---
 
-### 💰 ECONOMIC INTEGRITY PLANES
-
-| Plane                        | Domains               | Status    |
-| ---------------------------- | --------------------- | --------- |
-| **Cash ↔ Revenue Alignment** | Payment ↔ Booking     | ⏳ Planned |
-| **Cost ↔ Pricing Alignment** | Shipping/Fees ↔ Price | ⏳ Planned |
-
----
-
-## DESIGN CONSTRAINTS (NON-NEGOTIABLE)
+## DESIGN CONSTRAINTS (LOCKED)
 
 * Every **domain** answers one question
 * Every **plane** classifies consistency only
-* No plane may infer causality
-* No domain may depend on UI or lifecycle
 * Unknown propagates aggressively
-* Visibility gates everything
+* Visibility gates all interpretation
+* No UI or lifecycle dependencies
+* No cross-plane inference
 
 ---
 
 ## WHAT THIS ENABLES (WITHOUT ANALYTICS)
 
-* “Why are we busy but broke?”
-* “Are orders real or just system noise?”
-* “Which silo is lying right now?”
-* “What is actually happening today?”
+* “Are orders economically real?”
+* “Is fulfillment grounding revenue?”
+* “Is shipping coherent with operations?”
+* “Is delay structurally explainable by reality?”
+* “Is the system epistemically trustworthy right now?”
 
-All without:
+All **without**:
 
 * dashboards
 * scores
 * AI
+* alerts
 * or human interpretation
 
 ---
+
+## FINAL SEAL
+
+* Domain map reflects **actual implementation**
+* No planned items mislabeled as active
+* FT2 scope cleanly bounded
+* Alignment planes complete and invariant-tested
+* UI now free to focus on **clarity, not meaning**
+
+🔐 **Orders-Nexus FT2 DOMAIN_MAP is current, accurate, and sealed.**

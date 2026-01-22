@@ -163,68 +163,26 @@ No silent expansion.
 **FT2 Signal:** `cartAbandonmentPresent: boolean | null`  
 **Rule:** Not conversion rate. Not "how many". Just "does abandonment exist?"
 
-### **NEW: Domain 14 — Multi-Channel Identity Reality**
-
-**Question:** Is the same customer visible across multiple platforms?  
-**Truth owned:** Cross-platform customer coherence  
-**FT2 Signal:** `crossChannelIdentityPresent: boolean | null`  
-**Rule:** Critical for Amazon → Shopify → Instagram customers.
-
-### **NEW: Domain 15 — Loyalty Signal Reality**
-
-**Question:** Are there any repeat purchase patterns?  
-**Truth owned:** Loyalty behavior existence (not program)  
-**FT2 Signal:** `repeatPurchasePatternPresent: boolean | null`  
-**Rule:** Not CLV, not "value," just pattern existence.
-
-### **NEW: Domain 16 — Support Load Reality**
+### **NEW: Domain 14 — Support Load Reality**
 
 **Question:** Does customer activity generate support burden?  
 **Truth owned:** Support-causing customer activity  
 **FT2 Signal:** `supportGeneratingActivityPresent: boolean | null`  
 **Rule:** Not ticket count. Not CSAT. Just "does this activity create work?"
 
-### **NEW: Domain 17 — Seasonal Pattern Reality**
-
-**Question:** Does customer behavior show temporal patterns?  
-**Truth owned:** Patterned behavior over time  
-**FT2 Signal:** `seasonalPatternsDetected: boolean | null`  
-**Rule:** Not "what's the pattern?" Just "is there any pattern?"
-
-### **NEW: Domain 18 — Payment Failure Reality**
+### **NEW: Domain 15 — Payment Failure Reality**
 
 **Question:** Do customers experience payment failures?  
 **Truth owned:** Transaction failure at point of sale  
 **FT2 Signal:** `paymentFailuresPresent: boolean | null`  
 **Rule:** Critical SMB cash flow signal.
 
-### **NEW: Domain 19 — Shipping Address Reality**
+### **NEW: Domain 16 — Shipping Address Reality**
 
 **Question:** Are customer locations consistent and deliverable?  
 **Truth owned:** Address validity and consistency  
 **FT2 Signal:** `addressIssuesPresent: boolean | null`  
 **Rule:** Not "which addresses." Just "are there issues?"
-
-### **NEW: Domain 20 — Discount Dependency Reality**
-
-**Question:** Do customers only engage during promotions?  
-**Truth owned:** Promotion-dependent engagement  
-**FT2 Signal:** `promotionDependentActivityPresent: boolean | null`  
-**Rule:** Critical for margin health.
-
-### **NEW: Domain 21 — Mobile vs Desktop Reality**
-
-**Question:** Do customer behaviors differ by device?  
-**Truth owned:** Device-based behavioral divergence  
-**FT2 Signal:** `deviceBehaviorDivergencePresent: boolean | null`  
-**Rule:** Not "what's the difference." Just "is there difference?"
-
-### **NEW: Domain 22 — Returning vs New Customer Divergence**
-
-**Question:** Do new and returning customers behave differently?  
-**Truth owned:** Cohort behavioral divergence  
-**FT2 Signal:** `newVsReturningDivergencePresent: boolean | null`  
-**Rule:** Critical for SMBs balancing acquisition vs retention.
 
 ---
 
