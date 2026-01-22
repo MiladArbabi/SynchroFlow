@@ -106,6 +106,10 @@ export default function ActivationSurfacePage({
   } = config;
 
   if (import.meta.env.DEV) {
+    if (!config) {
+      return <div>Activation config missing</div>;
+    }
+    
     if (!config?.blindness) {
       console.warn('[ActivationSurface] Missing blindness block', {
         moduleId: config?.moduleId,

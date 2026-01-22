@@ -22,13 +22,23 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
 
   const rawSegment = location.pathname.split('/')[1];
 
-  const moduleId =
-    rawSegment === 'trust'
-      ? 'trust-data-health'
-      : rawSegment;
+  /**
+   * Module identity is derived directly from the first route segment.
+   * No synthetic remapping is allowed.
+   *
+   * Routing decides WHICH surface mounts.
+   * Activation config decides WHAT renders.
+   */
+  const moduleId = rawSegment;
 
+  
   switch (phase) {
     case 'FT_MINUS_ONE': {
+      console.log(
+        '[FT_MINUS_ONE][MODULE_ID]',
+        location.pathname,
+        moduleId
+      );
     const activationConfig = resolveActivationConfig(moduleId);
 
     if (!activationConfig) {

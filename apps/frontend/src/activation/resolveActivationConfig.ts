@@ -19,10 +19,7 @@ const ACTIVATION_BY_MODULE: Record<string, ActivationSurfaceProps> = {
   customers: customersActivationConfig,
   finances: financesActivationConfig,
 
-  /**
-   * FT_MINUS_ONE synthetic surface.
-   * Frontend-only by lifecycle contract.
-   */
+  // FT_MINUS_ONE synthetic surface
   trust: trustDataHealthActivationConfig,
 };
 

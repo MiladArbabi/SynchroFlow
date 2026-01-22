@@ -2,45 +2,66 @@
 
 import { ActivationSurfaceProps } from '@lasyncro/shared/ui/activation';
 
+/**
+ * Trust Data Health — FT_MINUS_ONE activation surface
+ *
+ * Purpose:
+ * - Establish epistemic baseline
+ * - Make uncertainty explicit
+ * - Block all activation actions
+ *
+ * This surface MUST:
+ * - Render in FT_MINUS_ONE only
+ * - Never unlock modules
+ * - Never guide user action
+ */
 export const trustDataHealthActivationConfig: ActivationSurfaceProps = {
-  moduleId: 'trust-data-health',
+  moduleId: 'trust',
 
   identity: {
     title: 'Data trust is not yet established',
     subtitle:
-      'The system has not observed enough real behavior to defend claims about your data.',
+      'Before any insights can be trusted, the system must observe what actually exists.',
   },
 
   blindness: {
-    subject: 'Data reality',
-    dimension: 'Observability',
+    subject: 'System observability',
+    dimension: 'Data reliability',
     status: 'insufficient-data',
   },
 
   absenceProof: {
     riskStatement:
-      'Incomplete ingestion can look identical to real-world absence.',
+      'What appears missing may be unobserved. What appears present may be incomplete.',
   },
 
   valueAfterActivation: {
     outcome:
-      'Once ingestion stabilizes, gaps and silence become distinguishable.',
+      'Trust becomes defensible only after real ingestion behavior is observed.',
   },
 
-  // 🚫 No CTA in FT_MINUS_ONE
-  primaryCTA: undefined,
+  /**
+   * FT_MINUS_ONE CTA
+   * ----------------
+   * - User-initiated lifecycle promotion
+   * - Triggers FT0 sync → FT1
+   * - No guarantees, only consent to observe
+   */
+  primaryCTA: {
+    label: 'Begin trust assessment',
+    actionId: 'connect-store',
+},
 
-  // ✅ REQUIRED
   trust: {
     bullets: [
-      'No data is hidden.',
+      'No data is altered at this stage.',
       'No assumptions are made.',
-      'Silence is treated as unknown, not zero.',
+      'Observation precedes interpretation.',
     ],
   },
 
   postActivation: {
     reflection:
-      'Trust emerges only after behavior is observed over time.',
+      'Trust is not granted. It is observed.',
   },
 };
