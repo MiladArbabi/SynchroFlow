@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/pages/authentication/LoginPage.tsx
 import { Link, useSearchParams } from 'react-router-dom';
 import React, { useEffect, useState } from 'react'; // <-- Import React

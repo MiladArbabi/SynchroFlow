@@ -83,29 +83,6 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
     resetPeriod: 'monthly'
   },
 
-  // InsightCore – 2 insights/day (~60/month)
-  'insight-core': {
-    enabled: true,
-    maxUnits: 60,
-    metric: 'insights',
-    softWarningThreshold: 0.8,
-    upgradeRoute: '/upgrade/insight-core',
-    lockedMessage:
-      'You have reached the Free tier limit for InsightCore. Upgrade to unlock continuous insight generation.',
-    resetPeriod: 'monthly'
-  },
-
-  // Analytics – diagnostic only in FT1, no free-tier gating
-  analytics: {
-    enabled: false,
-    maxUnits: null,
-    metric: 'insights',
-    upgradeRoute: '/upgrade/analytics',
-    lockedMessage:
-      'Analytics insights are always available at the diagnostic level on the Free tier.',
-    resetPeriod: 'monthly'
-  },
-
   // Finances – diagnostic only in FT1, no free-tier gating
   finances: {
     enabled: false,

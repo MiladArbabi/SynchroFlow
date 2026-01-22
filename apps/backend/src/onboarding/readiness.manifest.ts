@@ -121,45 +121,6 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
       }
     ]
   },
-  
-  {
-  moduleId: 'insight-core',
-    displayName: 'Core CNS Intelligence',
-    requiredSignals: [],
-    tasks: [
-      {
-        id: 'insight-core-base-signals',
-        label: 'Collect enough data for insights',
-        required: false,
-        completionRules: [
-          { signal: 'insightCore.baseSignalsReady', expectedValue: true }
-        ]
-      }
-    ]
-  },
-
-  {
-    moduleId: 'analytics',
-    displayName: 'Analytics',
-    requiredSignals: [
-      'analytics.orderCount',
-      'analytics.productCount',
-      'analytics.baseSignalsReady'
-    ],
-    tasks: [
-      {
-        id: 'analytics-base-data',
-        label: 'Prepare analytics data',
-        required: true,
-        completionRules: [
-          {
-            signal: 'analytics.baseSignalsReady',
-            expectedValue: true
-          }
-        ]
-      }
-    ]
-  },
 
   {
     moduleId: 'finances',

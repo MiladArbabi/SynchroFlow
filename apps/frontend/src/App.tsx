@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from 'contexts/AuthContext';
 
 import { IntegrationProvider } from 'contexts/integration/IntegrationProvider';
-import { DashboardStateProvider } from 'contexts/DashboardStateContext';
 import { EntitlementsProvider } from 'contexts/EntitlementsContext';
 import { SpecterConfigProvider } from 'contexts/SpecterConfigContext';
 
@@ -100,7 +99,6 @@ function AuthenticatedAppShell() {
       <RuntimeRoutesProvider>
         <RuntimeRoutesSubscriber />
 
-        <DashboardStateProvider>
           <IntegrationProvider>
             <ThemeCustomization>
               <EntitlementsProvider>
@@ -125,7 +123,6 @@ function AuthenticatedAppShell() {
               </EntitlementsProvider>
             </ThemeCustomization>
           </IntegrationProvider>
-        </DashboardStateProvider>
 
       </RuntimeRoutesProvider>
     </QueryClientProvider>

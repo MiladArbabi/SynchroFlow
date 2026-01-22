@@ -32,8 +32,6 @@ import {
 
 import { ActivationSurfaceProps } from '../../../../modules/shared/src/ui/activation/types';
 
-import { BlindnessVisual } from '../../../../modules/shared/dist/ui/activation/visuals';
-
 /* -------------------------------------------------------------------------- */
 /* Status → Visual Encoding                                                    */
 /* -------------------------------------------------------------------------- */
@@ -100,7 +98,6 @@ export default function ActivationSurfacePage({
 
   const {
     identity,
-    blindness,
     absenceProof,
     valueAfterActivation,
     postActivation,
@@ -108,17 +105,28 @@ export default function ActivationSurfacePage({
     trust,
   } = config;
 
+  if (import.meta.env.DEV) {
+    if (!config?.blindness) {
+      console.warn('[ActivationSurface] Missing blindness block', {
+        moduleId: config?.moduleId,
+        config,
+      });
+    }
+  }
+
   /* ------------------------------------------------------------------------ */
   /* Derived visual state                                                      */
   /* ------------------------------------------------------------------------ */
 
+  const blindness = config?.blindness;
   /**
    * Resolve visual meaning for blindness status.
    * Fallback ensures resilience against future enum expansion.
    */
   const statusVisual =
-    STATUS_VISUAL_MAP[blindness.status] ??
-    STATUS_VISUAL_MAP.unknown;
+    blindness
+      ? STATUS_VISUAL_MAP[blindness.status] ?? STATUS_VISUAL_MAP.unknown
+      : STATUS_VISUAL_MAP.unknown;
 
   // Instrumentation: visibility for debugging without polluting UI
   if (import.meta.env.DEV) {
@@ -228,7 +236,7 @@ export default function ActivationSurfacePage({
               {/* LEFT: Blindness text (unchanged semantics) */}
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 <Typography variant="body1" fontWeight={700}>
-                  {blindness.subject}
+                 STATUS BLINDNESS
                 </Typography>
 
                 <Typography
@@ -238,7 +246,7 @@ export default function ActivationSurfacePage({
                     fontWeight: statusVisual.emphasis ? 600 : 400,
                   }}
                 >
-                  {blindness.dimension}: {statusVisual.label}
+                  BLINDNESS DIMENTIONS : {statusVisual.label}
                 </Typography>
               </Box>
 
@@ -254,7 +262,7 @@ export default function ActivationSurfacePage({
                 }}
                 data-testid="activation-blindness-visual"
               >
-                <BlindnessVisual status={blindness.status} />
+                {/* <BlindnessVisual status={} /> */}
               </Box>
             </Box>
           </Paper>
@@ -345,19 +353,21 @@ export default function ActivationSurfacePage({
             }}
             data-testid="activation-cta-zone"
           >
-            <Button
-              variant="contained"
-              color="secondary"
-              fullWidth
-              onClick={onActivate}
-              sx={{ fontWeight: 800, mb: 1, borderRadius: 2 }}
-              data-testid="activation-primary-cta"
-            >
-              {primaryCTA.label}
-            </Button>
+            {primaryCTA?.label && (
+              <Button
+                variant="contained"
+                color="secondary"
+                fullWidth
+                onClick={onActivate}
+                sx={{ fontWeight: 800, mb: 1, borderRadius: 2 }}
+                data-testid="activation-primary-cta"
+              >
+                {primaryCTA.label}
+              </Button>
+            )}
 
             {/* Trust signals — anxiety reduction only */}
-            {trust.bullets.map((line: string, idx: number) => (
+            {trust?.bullets?.map((line, idx) => (
               <Typography
                 key={idx}
                 variant="caption"

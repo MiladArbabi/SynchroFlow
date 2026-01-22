@@ -37,11 +37,6 @@
  *   canonical degradation mapping is a contract violation.
 */
 
-/**
- * High-level, normalized reason categories for analytics and quality logic.
- * Individual channels / shops can have finer-grained customer-facing reasons,
- * but MUST map them into this enum when emitting quality/return analytics.
- */
 export type ReturnReasonCategory =
   | 'PRODUCT_DEFECT'
   | 'PACKAGING_DEFECT'
@@ -63,7 +58,7 @@ export type InspectionResult =
   | 'REJECTED_REFUND';
 
 /**
- * Normalized root-cause categories for quality analytics.
+ * Normalized root-cause categories for quality insights.
  * These are used by InsightCore, SKU OS, and reporting – not for policy.
  */
 export type IssueRootCause =
@@ -78,10 +73,10 @@ export type IssueRootCause =
 /**
  * Canonical per-line inspection signal: one row per (returnId, productId) line.
  * This is the minimal shape that downstream modules can use for
- * root-cause inference and basic analytics.
+ * root-cause inference and basic inputs.
  *
  * NOTE:
- * - productId is the internal numeric product identifier used in analytics
+ * - productId is the internal numeric product identifier used in inputs
  *   (e.g. FK to products table / fact tables).
  * - refundAmount / currency are optional here because inspection may be done
  *   before the final refund is decided.
@@ -104,7 +99,7 @@ export interface ReturnInspectionSignal {
 }
 
 /**
- * Canonical, *final* analytics event for a single return line.
+ * Canonical, *final* inputs event for a single return line.
  *
  * This is what ReturnNexus emits to InsightCore once:
  *  - inspection (if required) is completed, AND
@@ -113,7 +108,7 @@ export interface ReturnInspectionSignal {
  * It extends the semantics of ReturnInspectionSignal by requiring
  * monetary fields and adding restockability + root-cause.
  */
-export interface ReturnAnalyticsEvent {
+export interface ReturninputsEvent {
   shopId: number;
   orderId: string;
   returnId: string;
@@ -148,7 +143,7 @@ export interface IssueRootCauseInference {
  * can:
  *  1) map its own inspection + reason into ReturnInspectionSignal,
  *  2) call inferIssueRootCause(signal),
- *  3) embed the result into ReturnAnalyticsEvent.issueRootCause.
+ *  3) embed the result into ReturninputsEvent.issueRootCause.
  */
 export function inferIssueRootCause(
   signal: ReturnInspectionSignal

@@ -14,9 +14,9 @@ export function buildActivationSurfaceProps(
     );
   }
 
-  if (!('primaryAction' in state)) {
+  if (!config.primaryCTA) {
     throw new Error(
-      `[buildActivationSurfaceProps] State ${state.state} has no primaryAction`
+      `[buildActivationSurfaceProps] primaryCTA is required for state ${state.state}`
     );
   }
 

@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/api/menu.ts
 import { useMemo } from 'react';
 import useConfig from 'hooks/useConfig';
-import { ConfigProps } from 'config'; // We need the type
 
 // This is our new "getter" that replaces useGetMenuMaster
 // It hooks into our *existing* ConfigContext.

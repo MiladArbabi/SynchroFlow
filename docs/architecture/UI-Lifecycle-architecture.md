@@ -8,7 +8,7 @@
 
 ## Purpose
 
-This document defines the **single source of truth** for UI lifecycle handling across **Dashboard and Modules** in SynchroFlow.
+This document defines the **single source of truth** for UI lifecycle handling across ** Modules** in SynchroFlow.
 
 It specifies:
 
@@ -49,9 +49,8 @@ No layer may absorb responsibility from another.
 
 ---
 
-### 1.3 Dashboard and Modules Are Equal
+### 1.3 Modules Are Equal
 
-* Dashboard is **not special**
 * Modules are **not special**
 * Neither computes lifecycle
 * Both **inherit shop lifecycle**
@@ -98,7 +97,7 @@ apps/frontend/src/lifecycle/ShopLifecycleShell.tsx
 ❌ Render UI
 ❌ Route
 ❌ Show modals
-❌ Decide dashboard/module behavior
+❌ Decide module behavior
 
 > This component is a **pure state machine**.
 
@@ -220,7 +219,7 @@ GenericLifecycleShell must **never**:
 ❌ Decide shop lifecycle
 ❌ Handle FT-1 / FT0
 ❌ Inspect routes
-❌ Special-case dashboard or modules
+or modules
 
 > GenericLifecycleShell is a **post-FT1 renderer only**.
 
@@ -232,12 +231,6 @@ Adapters translate **facts → props**.
 They contain **zero lifecycle logic**.
 
 ---
-
-### 8.1 DashboardLifecycleShell
-
-```
-apps/frontend/src/lifecycle/DashboardLifecycleShell.tsx
-```
 
 Provides:
 
@@ -251,7 +244,7 @@ Provides:
 * Promote lifecycle
 * Gate routes
 
----
+--
 
 ### 8.2 ModuleLifecycleShell
 
@@ -309,7 +302,6 @@ No page or module may inspect entitlements directly for UI.
 ❌ No lifecycle conditionals outside shells
 ❌ No routing logic outside `ShopLifecycleGate`
 ❌ No lifecycle inference in pages
-❌ No dashboard special-cases
 ❌ No module autonomy
 
 ✅ All behavior added via:

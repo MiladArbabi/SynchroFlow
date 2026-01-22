@@ -27,20 +27,16 @@ import { Routes, Route } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
 // FT1 pages (diagnostic / onboarding surfaces)
-import { DashboardPage } from 'pages/DashboardPage';
 import OrdersPage from 'pages/OrdersPage';
 import ProductsPage from 'pages/ProductsPage';
 import CustomersPage from 'pages/CustomersPage';
-import AnalyticsPage from 'pages/AnalyticsPage';
 import FinancesPage from 'pages/FinancesPage';
 
 // FT2 pages (observability / governed truth surfaces)
 import OrdersFT2Page from 'pages/OrdersFT2Page';
 import CustomersFT2Page from 'pages/CustomersFT2Page';
 import ProductsFT2Page from 'pages/ProductsFT2Page';
-import AnalyticsFT2Page from 'pages/AnalyticsFT2Page';
 import FinancesFT2Page from 'pages/FinancesFT2Page';
-import DashboardFT2Page from 'pages/DashboardFT2Page';
 
 // NOTE:
 // - Never reuse FT1 pages for FT2
@@ -71,11 +67,9 @@ export function LifecycleRouteHost() {
   if (phase === 'FT1_READY') {
     return (
       <Routes>
-        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/orders/*" element={<OrdersPage />} />
         <Route path="/products/*" element={<ProductsPage />} />
         <Route path="/customers/*" element={<CustomersPage />} />
-        <Route path="/analytics/*" element={<AnalyticsPage />} />
         <Route path="/finances/*" element={<FinancesPage />} />
       </Routes>
     );
@@ -96,8 +90,8 @@ export function LifecycleRouteHost() {
   if (phase === 'FT2_READY') {
   return (
     <Routes>
-      {/* DASHBOARD — FT2 */}
-      <Route path="/dashboard" element={<DashboardFT2Page />} />
+      {/* TODO DEFAULT RO-REALITY OVERVIEW PAGE — FT2 */}
+      <Route path="/" />
 
       {/* ORDERS */}
       <Route path="/orders/*" element={<OrdersFT2Page />} />
@@ -107,9 +101,6 @@ export function LifecycleRouteHost() {
 
       {/* CUSTOMERS */}
       <Route path="/customers/*" element={<CustomersFT2Page />} />
-
-      {/* ANALYTICS */}
-      <Route path="/analytics/*" element={<AnalyticsFT2Page />} />
 
       {/* FINANCES */}
       <Route path="/finances/*" element={<FinancesFT2Page />} />

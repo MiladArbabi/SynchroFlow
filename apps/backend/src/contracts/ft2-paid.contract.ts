@@ -16,8 +16,6 @@ export const FT2_PAID_MODULES = [
 ] as const;
 
 export const FT2_PAID_FLAGS = [
-  'analytics.historical_range',
-  'analytics.export',
   'orders.advanced_filters',
   'customers.segmentation',
   'specter.full_capture',

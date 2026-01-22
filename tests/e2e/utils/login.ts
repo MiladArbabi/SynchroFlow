@@ -25,7 +25,7 @@ export async function loginAs(page: Page, userKey: TestUserKey = 'default-user')
   // 5. Wait for dashboard redirect with better error handling
   console.log('⏳ Waiting for dashboard redirect...');
   try {
-    await page.waitForURL('**/dashboard');
+    await page.waitForURL('**/');
     console.log('✅ Login successful - redirected to dashboard');
   } catch (error) {
     // Check if login failed with error message

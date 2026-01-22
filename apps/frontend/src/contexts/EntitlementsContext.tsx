@@ -144,7 +144,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
          * Why:
          * - Orders UI is implemented as a dynamic module
          * - Backend `/entitlements/me` does not yet return `order-nexus`
-         * - Without this, ProtectedRoute will redirect `/orders` → `/dashboard`
+         * - Without this, ProtectedRoute will redirect `/orders` → `/default`
          *
          * Removal condition:
          * - Backend returns `order-nexus` in `modules[]`

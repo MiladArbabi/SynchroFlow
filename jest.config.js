@@ -28,8 +28,7 @@ module.exports = {
         '^api-server$': '<rootDir>/apps/backend/src/server.ts',
 
         '^activation/(.*)$': '<rootDir>/apps/frontend/src/activation/$1',
-        '^analytics/(.*)$': '<rootDir>/apps/frontend/src/analytics/$1',
-        
+    
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
 
         // FRONTEND ALIASES (so backend tests can import frontend files safely)
@@ -58,7 +57,6 @@ module.exports = {
         '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
         '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
-        '^@lasyncro/analytics$': '<rootDir>/modules/analytics/src/ui',
         '^@lasyncro/finances$': '<rootDir>/modules/finances/src/ui',
 
         '^shared-src$': '<rootDir>/modules/shared/src',
@@ -96,7 +94,6 @@ module.exports = {
       ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
       moduleNameMapper: {
-        '^analytics/(.*)$': '<rootDir>/apps/frontend/src/analytics/$1',
         '^ui/src/(.*)$': '<rootDir>/apps/frontend/src/$1',
         '^components/(.*)$': '<rootDir>/apps/frontend/src/components/$1',
         '^contexts/(.*)$': '<rootDir>/apps/frontend/src/contexts/$1',
@@ -114,7 +111,6 @@ module.exports = {
         '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
         '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
-        '^@lasyncro/analytics$': '<rootDir>/modules/analytics/src/ui',
         '^@lasyncro/finances$': '<rootDir>/modules/finances/src/ui',
 
         '^virtual:lasyncro-modules$': '<rootDir>/tests/__mocks__/virtual-lasyncro-modules.ts',
@@ -143,7 +139,6 @@ module.exports = {
       ],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
       moduleNameMapper: {
-        '^analytics/(.*)$': '<rootDir>/apps/frontend/src/analytics/$1',
         '^wiring/(.*)$': '<rootDir>/apps/frontend/src/wiring/$1',
         
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
@@ -167,7 +162,6 @@ module.exports = {
         '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
         '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
-        '^@lasyncro/analytics$': '<rootDir>/modules/analytics/src/ui',
         '^@lasyncro/finances$': '<rootDir>/modules/finances/src/ui',
 
         '^(components|contexts|layouts|pages|utils|hooks|assets|ui-component|widgets|themes)/(.*)$'

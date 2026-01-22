@@ -71,7 +71,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         </IconButton>
         <MuiBreadcrumbs aria-label="breadcrumb">
           {/* --- HOME LINK --- */}
-          <Link component={RouterLink} underline="hover" color="inherit" to="/dashboard" sx={{display: 'flex', alignItems: 'center'}}>
+          <Link component={RouterLink} underline="hover" color="inherit" to="/" sx={{display: 'flex', alignItems: 'center'}}>
             {/* <IconComponent name="Breadcrumbs" size="small" color="inherit" /> */}
           </Link>
           {pathnames.map((value, index) => {

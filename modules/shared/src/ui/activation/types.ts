@@ -43,13 +43,13 @@ export interface ActivationSurfaceProps {
 
   identity?: IdentityCopy;
 
-  blindness: BlindnessCopy;
+  blindness?: BlindnessCopy;
 
   absenceProof?: AbsenceProofCopy;
 
   valueAfterActivation?: ValueAfterActivationCopy;
 
-  primaryCTA: PrimaryCTACopy;
+  primaryCTA?: PrimaryCTACopy;
 
   trust: TrustCopy;
 

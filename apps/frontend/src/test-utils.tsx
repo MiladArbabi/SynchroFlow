@@ -7,7 +7,6 @@ import { IntlProvider } from 'react-intl';
 /* import { PostHogProvider } from 'posthog-js/react';
  */import { EnhancedWidgetShellProps } from './components/widgets/types';
 import ThemeCustomization from './themes';
-import { DashboardStateProvider } from 'contexts/DashboardStateContext';
 
 // PostHog configuration for tests
 /* const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string;
@@ -94,11 +93,9 @@ const renderWithProviders = (
         <QueryClientProvider client={queryClient}>
           <IntlProvider locale="en" defaultLocale="en" messages={{}}>
             <MemoryRouter {...routerProps}>
-              <DashboardStateProvider>
                 <ThemeCustomization>
                   {children}
                 </ThemeCustomization>
-              </DashboardStateProvider>
             </MemoryRouter>
           </IntlProvider>
         </QueryClientProvider>

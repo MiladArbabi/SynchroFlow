@@ -3,7 +3,7 @@
 import { deriveActivationSurface } from '@lasyncro/shared/activation/deriveActivationSurface';
 import type { LifecycleContext } from '@lasyncro/shared/activation/deriveActivationSurface';
 
-const MODULES = ['order-nexus', 'customers', 'analytics'];
+const MODULES = ['order-nexus', 'customers'];
 
 function baseCtx(
   overrides: Partial<LifecycleContext> = {}

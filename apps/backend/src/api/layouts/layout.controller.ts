@@ -6,7 +6,7 @@ import { requireShopIdForUser } from 'api-src/services/shop-resolution.service';
 /**
  * Layout Controller
  * =================
- * Persists and retrieves dashboard layouts scoped by shop.
+ * Persists and retrieves layouts scoped by shop.
  *
  * Invariants:
  * - Shop resolution via shop-resolution.service ONLY

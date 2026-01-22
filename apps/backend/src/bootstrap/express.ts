@@ -21,19 +21,14 @@ import { registerLifecycleRoutes } from 'api-src/api/lifecycle';
 import specterRouter from '../api/specter/specter.routes';
 import customersFt2Routes from '../api/customers/customers.ft2.routes';
 
-// Module/Dashboard routes
-import dashboardFt2Routes from '../api/dashboard/dashboard.ft2.routes';
-
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
 import productsFt2Routes from '../api/products/products.ft2.routes';
-import analyticsRoutes from '../api/analytics/analytics.routes';
 import financesRoutes from '../api/finances/finances.routes';
 
 //entitlments and payment services
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook';
 import { verifyStripeSignature } from 'api-src/api/billing/stripe.verify.middleware';
-
 
 // Raw body capture for webhook verification
 // -----------------------------------------
@@ -80,16 +75,9 @@ export function createApp(): Express {
   app.use('/api/v1/shopify', shopifyRoutes);
 /*   app.use('/api/v1/shopify', shopifyDevRoutes); */
   app.use('/api/v1/onboarding', onboardingReadinessRouter);
-
-  // ─────────────────────────────────────────────
-  // Modules/Dashboard (read-only truth surfaces)
-  // ─────────────────────────────────────────────
-  app.use('/api/v1/dashboard', dashboardFt2Routes);
-
   app.use('/api/v1/modules/order-nexus', orderNexusRoutes);
   app.use('/api/v1/modules/customers', customersFt2Routes);
   app.use('/api/v1/modules/products', productsFt2Routes);
-  app.use('/api/v1/modules/analytics', analyticsRoutes);
   app.use('/api/v1/modules/finances', financesRoutes);
   
   registerActivationRoutes(app);

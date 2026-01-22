@@ -150,26 +150,6 @@ export class EntitlementsService {
       flag_key: string | null;
       source: string;
     }> = [
-      // Core dashboard
-      {
-        shop_id: shopId,
-        module_key: 'core_dashboard',
-        flag_key: null,
-        source: 'free_tier_default',
-      },
-      {
-        shop_id: shopId,
-        module_key: 'core_dashboard',
-        flag_key: 'view_basic_sales',
-        source: 'free_tier_default',
-      },
-      {
-        shop_id: shopId,
-        module_key: 'core_dashboard',
-        flag_key: 'view_recent_orders_widget',
-        source: 'free_tier_default',
-      },
-
       // Shopify integration (sync only, no advanced analytics)
       {
         shop_id: shopId,
@@ -230,7 +210,6 @@ export class EntitlementsService {
       { shop_id: shopId, module_key: 'order-nexus', flag_key: null, source: 'ft2_free_baseline' },
       { shop_id: shopId, module_key: 'products', flag_key: null, source: 'ft2_free_baseline' },
       { shop_id: shopId, module_key: 'customers', flag_key: null, source: 'ft2_free_baseline' },
-      { shop_id: shopId, module_key: 'analytics', flag_key: null, source: 'ft2_free_baseline' },
       { shop_id: shopId, module_key: 'finances', flag_key: null, source: 'ft2_free_baseline' },
     ];
 

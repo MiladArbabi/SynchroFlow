@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/authentication/RegisterPage.tsx
 import { Link, useSearchParams } from 'react-router-dom';

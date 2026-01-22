@@ -1,24 +1,3 @@
-/* # 🔒 LaSyncro Pricing Contract – Internal Limits Table (v1)
-
-This table is designed to be directly stored as:
-
-```
-/config/pricing/v1/module_pricing.json
-```
-
-Each module includes:
-
-* `planId`
-* `priceMonthlyUSD`
-* `limits` (strict JSON; locked semantics)
-* `featureFlags` (booleans only)
-* `recommendedARR` (min/max)
-
-Any deviation requires **Pricing Contract v2**. */
-
----
-
-/* 1. ReturnNexus — Returns & Exchanges*/
 {
   "moduleKey": "returnNexus",
   "plans": [
@@ -120,8 +99,6 @@ Any deviation requires **Pricing Contract v2**. */
   ]
 }
 
-
-/* 2. SKU OS — Inventory Health & Risk */
 {
   "moduleKey": "sku-os",
   "plans": [

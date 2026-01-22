@@ -197,7 +197,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   if (error) {
     console.log('❌ OAuth error detected:', error);
     const userFriendlyError = getHumanReadableError(error, error_description || '');
-    const redirectUrl = new URL(`${process.env.FRONTEND_URL}/dashboard`);
+    const redirectUrl = new URL(`${process.env.FRONTEND_URL}/`);
     redirectUrl.searchParams.append('connect', 'error');
     redirectUrl.searchParams.append('message', userFriendlyError);
     return res.redirect(redirectUrl.toString());
@@ -415,7 +415,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     });
 
     return res.redirect(
-       `${process.env.FRONTEND_URL}/dashboard?connect=success&token=${userJwt}`
+       `${process.env.FRONTEND_URL}/?connect=success&token=${userJwt}`
     );
   } catch (err) {
     console.error('[OAuth] Integration persistence failed', err);

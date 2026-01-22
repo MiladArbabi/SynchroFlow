@@ -21,7 +21,7 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
   const location = useLocation();
 
 const moduleId =
-  location.pathname.split('/')[1] || 'dashboard';
+  location.pathname.split('/')[1];
 
   switch (phase) {
     case 'FT_MINUS_ONE': {

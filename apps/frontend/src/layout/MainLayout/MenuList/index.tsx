@@ -28,7 +28,6 @@ const CORE_MODULES = new Set<string>([
   'order-nexus',
   'customers',
   'products',
-  'analytics',
   'finances'
 ]);
 
@@ -107,12 +106,6 @@ function MenuList({ allowedRoutes }: { allowedRoutes?: string[] }) {
       .map((group) => {
         const children = group.children?.filter((child: NavItemType) => {
           if (!child.url) return true;
-
-          // Cross-sell always visible
-          if (child.url === '/analytics' || child.url === '/finances') {
-            return true;
-          }
-
           return routeSet.has(child.url);
         });
 

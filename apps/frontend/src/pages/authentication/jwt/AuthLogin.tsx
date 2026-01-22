@@ -157,7 +157,7 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
               userId: response.data.user.id,
             });
 
-            navigate('/dashboard');
+            navigate('/orders');
           } else {
             console.error('--- [LOGIN DEBUG 4] ---');
             throw new Error('Invalid login response from server.');

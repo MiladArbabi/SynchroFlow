@@ -13,11 +13,9 @@ import {
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  IconLayoutDashboard,
   IconShoppingCart,
   IconBox,
   IconUsers,
-  IconChartBar,
   IconCash,
   IconSettings
 } from '@tabler/icons-react';
@@ -51,11 +49,9 @@ const SidenavContent: React.FC<SidenavProps> = ({
   );
 
   const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: <IconLayoutDashboard size={18} /> },
     { label: 'Orders', path: '/orders', icon: <IconShoppingCart size={18} /> },
     { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
     { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
-    { label: 'Analytics', path: '/analytics', icon: <IconChartBar size={18} /> },
     { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> }
   ];
 

@@ -11,19 +11,9 @@
 
 import { MenuItems } from './types';
 
-// Import Items
-import dashboard from './dashboard';
-
 // CORRECTED STRUCTURE: Must conform to MenuItems interface
 const menuItems: MenuItems = {
   items: [
-    {
-      id: 'dashboard-group',
-      type: 'group',
-      children: [
-        dashboard
-      ]
-    },
     {
       id: 'entities-group',
       title: 'Entities', // Optional group title

@@ -10,7 +10,6 @@ import {
 } from '@lasyncro/shared';
 
 import { specterOnboardingSignalProvider } from './providers/specter.provider';
-import { analyticsOnboardingSignalProvider } from './providers/analytics.provider';
 import { financesOnboardingSignalProvider } from './providers/finances.provider';
 
 import { UserStateService } from '../services/user-state.service';
@@ -206,45 +205,6 @@ export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
   },
 };
 
-// --- InsightCore provider: base CNS intelligence readiness ---
-export const insightCoreOnboardingSignalProvider: OnboardingSignalProvider = {
-  moduleId: 'insight-core',
-
-  async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // Read counts from canonical tables (DB-safe).
-    // If tables are missing or queries fail, fall back to 0 counts and baseSignalsReady=false.
-    try {
-      const ordersRow = await db('canonical_orders')
-        .where({ shop_id: shopId })
-        .count<{ count: string }>('id as count')
-        .first();
-
-      const productsRow = await db('canonical_products')
-        .where({ shop_id: shopId })
-        .count<{ count: string }>('id as count')
-        .first();
-
-      const orderCount = Number(ordersRow?.count ?? 0);
-      const productCount = Number(productsRow?.count ?? 0);
-
-      const baseSignalsReady = orderCount > 0 && productCount > 0;
-
-      return [
-        { name: 'insightCore.orderCount', value: orderCount },
-        { name: 'insightCore.productCount', value: productCount },
-        { name: 'insightCore.baseSignalsReady', value: baseSignalsReady }
-      ];
-    } catch (err) {
-      // Safe fallback for environments where the schema isn't present yet.
-      return [
-        { name: 'insightCore.orderCount', value: 0 },
-        { name: 'insightCore.productCount', value: 0 },
-        { name: 'insightCore.baseSignalsReady', value: false }
-      ];
-    }
-  }
-};
-
 // --- ReturnNexus provider: returns & refund intelligence ---
 export const returnNexusOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'return-nexus',
@@ -293,8 +253,6 @@ export const onboardingSignalProviders: OnboardingSignalProvider[] = [
   skuOsOnboardingSignalProvider,
   // new CNS spine providers:
   specterOnboardingSignalProvider,
-  insightCoreOnboardingSignalProvider,
-  analyticsOnboardingSignalProvider,
   financesOnboardingSignalProvider,
   returnNexusOnboardingSignalProvider,
   wmsLiteOnboardingSignalProvider,

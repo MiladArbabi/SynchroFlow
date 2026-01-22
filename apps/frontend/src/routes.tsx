@@ -12,10 +12,6 @@ export interface RouteConfig {
 
 const routes: RouteConfig[] = [
   {
-    key: "dashboard",
-    route: "/dashboard",
-  },
-  {
     key: "account-settings",
     route: "/account/settings",
   },

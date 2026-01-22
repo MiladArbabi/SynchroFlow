@@ -1,12 +1,3 @@
-Below is a **sealed, operational release + cash-projection SLA blueprint**.
-This is not aspirational. It is a **governance instrument** to be *followed, monitored, and enforced*.
-
-No slides.
-No storytelling.
-This is how LaSyncro survives.
-
----
-
 # 🔒 LaSyncro — Release & Cash-Flow SLA Blueprint
 
 **Canonical · Conservative · Enforceable**

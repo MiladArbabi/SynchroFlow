@@ -13,9 +13,6 @@ export const devReadinessOverrideProvider: OnboardingSignalProvider = {
       // --- PLATFORM (FT1 gate) ---
       { name: 'integration.connected', value: true },
       { name: 'integration.syncCompleted', value: true },
-
-      // --- ANALYTICS (FT1 gate) ---
-      { name: 'analytics.baseSignalsReady', value: true },
     ];
   },
 };

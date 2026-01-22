@@ -10,8 +10,6 @@ export type ModuleId =
   | 'platform'          // Store connection, FT0 integration-level tasks
   | 'order-nexus'
   | 'return-nexus'
-  | 'insight-core'
-  | 'analytics'
   | 'finances'
   | 'specter'
   | 'sku-os'
