@@ -5,6 +5,7 @@ import { orderNexusActivationConfig } from './configs/orders';
 import { productsActivationConfig } from './configs/products';
 import { customersActivationConfig } from './configs/customers';
 import { financesActivationConfig } from './configs/finances';
+import { trustDataHealthActivationConfig } from './configs/trustDataHealth';
 
 /**
  * Canonical activation config registry.
@@ -17,6 +18,12 @@ const ACTIVATION_BY_MODULE: Record<string, ActivationSurfaceProps> = {
   products: productsActivationConfig,
   customers: customersActivationConfig,
   finances: financesActivationConfig,
+
+  /**
+   * FT_MINUS_ONE synthetic surface.
+   * Frontend-only by lifecycle contract.
+   */
+  trust: trustDataHealthActivationConfig,
 };
 
 /**

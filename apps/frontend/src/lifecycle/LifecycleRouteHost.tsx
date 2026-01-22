@@ -49,12 +49,23 @@ export function LifecycleRouteHost() {
   // ─────────────────────────────────────────────
   // Activation, syncing, and preparation phases
   // must not mount any application routes.
-  if (
+   if (
     phase === 'FT_MINUS_ONE' ||
     phase === 'FT0_PREPARING' ||
     phase === 'FT0_SYNCING'
   ) {
-    return null;
+    /**
+     * FT_MINUS_ONE / FT0:
+     * - Routes MUST exist so ShopLifecycleGate can resolve moduleId
+     * - Pages MUST NOT render
+     * - ActivationSurface owns rendering
+     */
+    return (
+      <Routes>
+        <Route path="/trust/*" element={null} />
+        <Route path="*" element={null} />
+      </Routes>
+    );
   }
 
   // ─────────────────────────────────────────────
@@ -71,6 +82,8 @@ export function LifecycleRouteHost() {
         <Route path="/products/*" element={<ProductsPage />} />
         <Route path="/customers/*" element={<CustomersPage />} />
         <Route path="/finances/*" element={<FinancesPage />} />
+
+         <Route path="/trust" element={null} />
       </Routes>
     );
   }
@@ -104,6 +117,8 @@ export function LifecycleRouteHost() {
 
       {/* FINANCES */}
       <Route path="/finances/*" element={<FinancesFT2Page />} />
+
+      <Route path="/trust" element={null} />
     </Routes>
   );
 }

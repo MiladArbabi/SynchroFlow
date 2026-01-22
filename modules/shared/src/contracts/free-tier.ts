@@ -139,7 +139,7 @@ export type ModuleEntitlementAccess = 'allowed' | 'free-tier' | 'locked';
 
 export interface ModuleAccessComputationInput {
   moduleId: ModuleId;
-  usageCount: number;
+  usageCount: number | null;
   entitlementAccess: ModuleEntitlementAccess;
 }
 
@@ -184,7 +184,15 @@ export function computeModuleAccessState(
   }
 
   // 4. Free-tier enforcement
-  const safeUsage = Math.max(0, usageCount); // clamp negative usage to 0
+  // If usage is unknown, do not enforce free-tier limits
+  if (usageCount == null) {
+    return {
+      state: 'visible',
+      remaining: null
+    };
+  }
+
+  const safeUsage = Math.max(0, usageCount);
   const maxUnits = policy.maxUnits;
 
   if (safeUsage >= maxUnits) {

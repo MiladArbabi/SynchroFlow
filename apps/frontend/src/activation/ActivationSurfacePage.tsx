@@ -30,7 +30,7 @@ import {
   Stack,
 } from '@mui/material';
 
-import { ActivationSurfaceProps } from '../../../../modules/shared/src/ui/activation/types';
+import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 /* -------------------------------------------------------------------------- */
 /* Status → Visual Encoding                                                    */

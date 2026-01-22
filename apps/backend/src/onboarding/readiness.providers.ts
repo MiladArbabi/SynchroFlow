@@ -91,7 +91,8 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
       .count<{ count: string }>('id as count')
       .first();
 
-    const ordersIngested = Number(ordersRow?.count ?? 0);
+    const ordersIngested =
+      ordersRow?.count != null ? Number(ordersRow.count) : null;
 
     // 2) How many line items are still missing a cost?
     const missingCostRow = await db('canonical_order_line_items')
@@ -111,20 +112,7 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
       entitlementAccess,
     });
 
-    // 4) FT0 stubs for "profitability" detail; we'll wire real signals later
-    const profitabilityActive = ordersIngested > 0;
-    const hasNegativeMarginOrder = false; // FT0 stub
-    const modeDetermined = false;         // FT0 stub
-
     return [
-      {
-        name: 'orderNexus.ordersKnown',
-        value: true, // query executed → count is known
-      },
-      {
-        name: 'orderNexus.profitabilityActive',
-        value: profitabilityActive,
-      },
       {
         name: 'orderNexus.ordersIngested',
         value: ordersIngested,
@@ -132,14 +120,6 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
       {
         name: 'orderNexus.missingCostCount',
         value: missingCostCount,
-      },
-      {
-        name: 'orderNexus.hasNegativeMarginOrder',
-        value: hasNegativeMarginOrder,
-      },
-      {
-        name: 'orderNexus.modeDetermined',
-        value: modeDetermined,
       },
       {
         name: 'order-nexus.freeTierState',

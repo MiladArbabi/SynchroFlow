@@ -14,7 +14,10 @@ export function ActivationSurfaceAdapter({ surface, onAction }: Props) {
         ...surface,
         onAction,
       }}
-      onActivate={() => onAction(surface.primaryCTA.actionId)}
+      onActivate={() => {
+        if (!surface.primaryCTA) return;
+        onAction(surface.primaryCTA.actionId);
+      }}
     />
   );
 }

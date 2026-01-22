@@ -17,7 +17,8 @@ import {
   IconBox,
   IconUsers,
   IconCash,
-  IconSettings
+  IconSettings,
+  IconShieldCheck
 } from '@tabler/icons-react';
 import SimpleBar from 'ui-component/third-party/SimpleBar';
 import LogoSection from 'layout/MainLayout/LogoSection';
@@ -49,11 +50,23 @@ const SidenavContent: React.FC<SidenavProps> = ({
   );
 
   const navItems = [
-    { label: 'Orders', path: '/orders', icon: <IconShoppingCart size={18} /> },
-    { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
-    { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
-    { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> }
-  ];
+  { label: 'Orders', path: '/orders', icon: <IconShoppingCart size={18} /> },
+  { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
+  { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
+  { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> },
+
+  /**
+   * Trust Data Health
+   * -----------------
+   * Always visible.
+   * Positioned AFTER operational modules.
+   *
+   * - FT_MINUS_ONE anchor
+   * - Not an operational workflow
+   * - Lifecycle gate controls rendering, not visibility
+   */
+  { label: 'Trust', path: '/trust', icon: <IconShieldCheck size={18} /> },
+];
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -73,12 +86,12 @@ const SidenavContent: React.FC<SidenavProps> = ({
         <Box sx={{ flexGrow: 1 }}>
           <List sx={{ px: drawerOpen ? 1 : 0.5 }}>
             {navItems.map((item) => (
-              <ListItemButton
-                key={item.path}
-                sx={{ borderRadius: '8px' }}
-                selected={pathname === item.path}
-                onClick={() => navigate(item.path)}
-              >
+                <ListItemButton
+                  key={item.path}
+                  sx={{ borderRadius: '8px' }}
+                  selected={pathname === item.path}
+                  onClick={() => navigate(item.path)}
+                >
                 <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
                   {item.icon}
                 </ListItemIcon>

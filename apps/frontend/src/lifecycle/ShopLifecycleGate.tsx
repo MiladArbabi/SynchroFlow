@@ -20,20 +20,32 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
 
   const location = useLocation();
 
-const moduleId =
-  location.pathname.split('/')[1];
+  const rawSegment = location.pathname.split('/')[1];
+
+  const moduleId =
+    rawSegment === 'trust'
+      ? 'trust-data-health'
+      : rawSegment;
 
   switch (phase) {
     case 'FT_MINUS_ONE': {
-      const activationConfig = resolveActivationConfig(moduleId);
+    const activationConfig = resolveActivationConfig(moduleId);
 
-      return (
-        <ActivationSurfaceAdapter
-          surface={activationConfig}
-          onAction={onActivation}
-        />
-      );
+    if (!activationConfig) {
+      /**
+       * Defensive fallback:
+       * FT_MINUS_ONE must never infer or redirect.
+       */
+      return null;
     }
+
+    return (
+      <ActivationSurfaceAdapter
+        surface={activationConfig}
+        onAction={onActivation}
+      />
+    );
+  }
 
     case 'FT0_SYNCING':
     case 'FT0_PREPARING':

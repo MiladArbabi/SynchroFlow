@@ -28,7 +28,8 @@ export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
       .count<{ count: string }>('id as count')
       .first();
 
-    const transactionCount = Number(ordersRow?.count ?? 0);
+    const transactionCount =
+      ordersRow?.count != null ? Number(ordersRow.count) : null;
 
     /**
      * 2. Detect missing cost data
@@ -40,30 +41,19 @@ export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
       .count<{ count: string }>('id as count')
       .first();
 
-    const missingCostCount = Number(missingCostRow?.count ?? 0);
-    const costDataReady = missingCostCount === 0;
-
-    /**
-     * 3. Base signals readiness (FT1 definition)
-     *    - At least one transaction
-     *    - All costs present
-     */
-    const baseSignalsReady =
-      transactionCount > 0 && costDataReady === true;
+    const missingCostCount =
+      missingCostRow?.count != null ? Number(missingCostRow.count) : null;
 
     // Debug instrumentation — safe, low-volume
     console.debug('[finances][ft1]', {
       shopId,
       transactionCount,
       missingCostCount,
-      costDataReady,
-      baseSignalsReady,
     });
 
     return [
       { name: 'finances.transactionCount', value: transactionCount },
-      { name: 'finances.costDataReady', value: costDataReady },
-      { name: 'finances.baseSignalsReady', value: baseSignalsReady },
+      { name: 'finances.missingCostCount', value: missingCostCount },
     ];
   },
 };

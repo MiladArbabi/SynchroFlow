@@ -2,6 +2,12 @@
 import type { EntitlementSnapshot } from 'runtime/EntitlementSnapshot';
 
 // ✅ Route shape with entitlement metadata
+/**
+ * NOTE:
+ * /trust is a lifecycle-only entry point.
+ * It MUST NOT be registered as a runtime route.
+ * Navigation is controlled exclusively by lifecycle gating.
+ */
 export interface RouteConfig {
   key: string;
   route: string;
