@@ -21,7 +21,7 @@ const __DEV__ = import.meta.env.DEV;
 
 export default function CustomersFT2Page() {
   const [range, setRange] = useState<FT2DateRange>({
-    preset: 'past_7_days',
+    preset: 'past_30_days',
     from: null,
     to: null,
   });

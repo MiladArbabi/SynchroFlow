@@ -46,7 +46,7 @@ export async function httpGetCustomersFt2(
             to: String(req.query.to),
           }
         : (req.query.preset as FT2DateRangePreset | undefined) ??
-            'past_7_days'
+            'past_30_days'
     );
 
   const snapshot = await getCustomersFt2Snapshot({

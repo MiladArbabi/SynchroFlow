@@ -115,7 +115,7 @@ afterEach(() => {
         (globalThis as any).__snapshotSpy.mock.calls[0][0];
 
     expect(initialRange).toMatchObject({
-      preset: 'past_7_days',
+      preset: 'past_30_days',
       from: expect.any(String),
       to: expect.any(String),
     });

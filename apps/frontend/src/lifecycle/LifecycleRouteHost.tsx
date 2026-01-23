@@ -23,7 +23,7 @@
 // If this file becomes complex, the architecture is broken.
 
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
 // FT1 pages (diagnostic / onboarding surfaces)
@@ -37,6 +37,7 @@ import OrdersFT2Page from 'pages/OrdersFT2Page';
 import CustomersFT2Page from 'pages/CustomersFT2Page';
 import ProductsFT2Page from 'pages/ProductsFT2Page';
 import FinancesFT2Page from 'pages/FinancesFT2Page';
+import OverviewFT2Page from 'pages/OverviewFT2Page';
 
 // NOTE:
 // - Never reuse FT1 pages for FT2
@@ -74,19 +75,40 @@ export function LifecycleRouteHost() {
   // These pages:
   // - Render FT1 modules only
   // - May show onboarding CTAs
-  // - Must never render FT2 observability
+  // - Must never render FT2 observability 
+  // 
+  // NOTE:
+  // We reuse OverviewFT2Page here intentionally:
+  // It is read-only
+  // It does not depend on FT2-only data
+  // Trust/orders will naturally render as — in FT1
+  // This avoids duplicating an “OverviewFT1Page”
   if (phase === 'FT1_READY') {
-    return (
-      <Routes>
-        <Route path="/orders/*" element={<OrdersPage />} />
-        <Route path="/products/*" element={<ProductsPage />} />
-        <Route path="/customers/*" element={<CustomersPage />} />
-        <Route path="/finances/*" element={<FinancesPage />} />
+  return (
+    <Routes>
+      {/* Root → canonical Overview */}
+      <Route path="/" element={<Navigate to="/overview" replace />} />
 
-         <Route path="/trust" element={null} />
-      </Routes>
-    );
-  }
+      {/* RO — Reality Overview (FT1 surface) */}
+      <Route path="/overview/*" element={<OverviewFT2Page />} />
+
+      {/* ORDERS */}
+      <Route path="/orders/*" element={<OrdersPage />} />
+
+      {/* PRODUCTS */}
+      <Route path="/products/*" element={<ProductsPage />} />
+
+      {/* CUSTOMERS */}
+      <Route path="/customers/*" element={<CustomersPage />} />
+
+      {/* FINANCES */}
+      <Route path="/finances/*" element={<FinancesPage />} />
+
+      {/* Catch-all → Overview */}
+      <Route path="*" element={<Navigate to="/overview" replace />} />
+    </Routes>
+  );
+}
 
   // ─────────────────────────────────────────────
   // FT2 — OBSERVABILITY / GOVERNED TRUTH PHASE
@@ -103,8 +125,11 @@ export function LifecycleRouteHost() {
   if (phase === 'FT2_READY') {
   return (
     <Routes>
-      {/* TODO DEFAULT RO-REALITY OVERVIEW PAGE — FT2 */}
-      <Route path="/" />
+      {/* Root → canonical Overview */}
+      <Route path="/" element={<Navigate to="/overview" replace />} />
+
+      {/* RO — Reality Overview */}
+      <Route path="/overview/*" element={<OverviewFT2Page />} />
 
       {/* ORDERS */}
       <Route path="/orders/*" element={<OrdersFT2Page />} />
@@ -118,11 +143,11 @@ export function LifecycleRouteHost() {
       {/* FINANCES */}
       <Route path="/finances/*" element={<FinancesFT2Page />} />
 
-      <Route path="/trust" element={null} />
+      {/* Catch-all → Overview */}
+      <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
   );
 }
-
 
   return null;
 }

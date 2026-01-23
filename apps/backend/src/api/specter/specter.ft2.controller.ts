@@ -41,7 +41,7 @@ export async function httpGetSpecterFt2(
      */
 
     const period = resolveFt2Range(
-      (req.query.preset as any) ?? 'past_7_days'
+      (req.query.preset as any) ?? 'past_30_days'
     );
 
     const snapshot = await getSpecterFt2Snapshot({

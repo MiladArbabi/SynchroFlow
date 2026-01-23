@@ -23,6 +23,8 @@ import {
 import SimpleBar from 'ui-component/third-party/SimpleBar';
 import LogoSection from 'layout/MainLayout/LogoSection';
 
+import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
+
 interface SidenavProps {
   brandName: string;
   routes: any[];
@@ -39,6 +41,7 @@ const SidenavContent: React.FC<SidenavProps> = ({
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [drawerOpen, setDrawerOpen] = React.useState(true);
+  const { phase } = useShopLifecycle();
 
   const logo = useMemo(
     () => (
@@ -50,11 +53,22 @@ const SidenavContent: React.FC<SidenavProps> = ({
   );
 
   const navItems = [
-  { label: 'Orders', path: '/orders', icon: <IconShoppingCart size={18} /> },
-  { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
-  { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
-  { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> },
-];
+    ...(phase === 'FT1_READY' || phase === 'FT2_READY'
+      ? [
+          {
+            label: 'Overview',
+            path: '/overview',
+            icon: <IconShieldCheck size={18} />,
+          },
+        ]
+      : []),
+
+    { label: 'Orders', path: '/orders', icon: <IconShoppingCart size={18} /> },
+    { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
+    { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
+    { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> },
+  ];
+
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>

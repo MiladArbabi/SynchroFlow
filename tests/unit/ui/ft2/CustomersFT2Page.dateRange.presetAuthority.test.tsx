@@ -73,7 +73,7 @@ describe(
 
       // ❌ MUST FAIL until frontend is fixed
       expect(initialRange).toMatchObject({
-        preset: 'past_7_days',
+        preset: 'past_30_days',
         from: null,
         to: null,
       });

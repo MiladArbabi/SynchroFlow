@@ -34,7 +34,7 @@ export function ft2PresetReducer(
     case 'CANCEL_CUSTOM': {
       return {
         kind: 'semantic',
-        preset: 'past_7_days',
+        preset: 'past_30_days',
       };
     }
 

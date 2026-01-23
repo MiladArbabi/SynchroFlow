@@ -6,7 +6,7 @@ export function resolveFt2RangeFromRequest(req: any): FT2RangeInput {
   const preset = req.query.preset as FT2DateRangePreset | undefined;
 
   if (!preset) {
-    return 'past_7_days';
+    return 'past_30_days';
   }
 
   if (preset === 'custom') {

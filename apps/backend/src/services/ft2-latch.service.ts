@@ -1,8 +1,8 @@
 // apps/backend/src/services/ft2-latch.service.ts
-
 import db from 'api-src/db';
 import { FT2EvaluatorService } from './ft2-evaluator.service';
 import { EntitlementsService } from './entitlements.service';
+import { writeROOverviewSnapshot } from './ro-overview/roOverviewSnapshotWriter.service';
 
 /**
  * FT2 Latch Service
@@ -75,6 +75,7 @@ export class FT2LatchService {
     // FT2-Free baseline entitlements (additive, idempotent)
     await EntitlementsService.grantFt2FreeBaselineForShop(shopId);
 
+    await writeROOverviewSnapshot(shopId);
 
     console.debug('[FT2_LATCH_WRITTEN]', {
       shopId,

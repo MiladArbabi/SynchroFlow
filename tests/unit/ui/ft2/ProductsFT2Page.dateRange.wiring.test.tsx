@@ -80,7 +80,7 @@ describe('ProductsFT2Page — FT2DateRange wiring (RED)', () => {
       (globalThis as any).__productsSnapshotSpy.mock.calls[0][0];
 
     expect(initialRange).toMatchObject({
-      preset: 'past_7_days',
+      preset: 'past_30_days',
       from: null,
       to: null,
     });

@@ -88,7 +88,7 @@ describe(
 
         await request(app)
           .get(
-            '/api/v1/modules/finances/ft2?preset=past_7_days'
+            '/api/v1/modules/finances/ft2?preset=past_30_days'
           )
           .expect(200);
 
@@ -102,7 +102,7 @@ describe(
         expect(
           (globalThis as any).__resolvePresetSpy
         ).toHaveBeenCalledWith({
-          preset: 'past_7_days',
+          preset: 'past_30_days',
         });
 
         // ❌ MUST NOT fall back

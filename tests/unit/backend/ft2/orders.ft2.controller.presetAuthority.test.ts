@@ -18,7 +18,7 @@ describe('Orders FT2 controller — preset authority', () => {
   it('resolves period from preset (not from/to)', async () => {
     const res = await request(app)
       .get('/api/v1/modules/order-nexus/ft2')
-      .query({ preset: 'past_7_days' })
+      .query({ preset: 'past_30_days' })
       .set('Authorization', 'Bearer test-token');
 
     expect(res.status).toBe(200);

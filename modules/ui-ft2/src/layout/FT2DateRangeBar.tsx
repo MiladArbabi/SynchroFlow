@@ -26,7 +26,7 @@ import {
 // ─────────────────────────────────────────────
 const INITIAL_STATE: FT2PresetSelectorState = {
   kind: 'semantic',
-  preset: 'past_7_days',
+  preset: 'past_30_days',
 };
 
 export interface FT2DateRangeBarProps {

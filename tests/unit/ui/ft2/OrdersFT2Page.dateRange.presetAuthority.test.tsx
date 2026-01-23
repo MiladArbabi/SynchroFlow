@@ -92,7 +92,7 @@ describe('OrdersFT2Page — preset authority (RED)', () => {
     // 🔴 CRITICAL INVARIANT
     expect(initialRange).toEqual(
       expect.objectContaining({
-        preset: 'past_7_days',
+        preset: 'past_30_days',
         from: null,
         to: null,
       })

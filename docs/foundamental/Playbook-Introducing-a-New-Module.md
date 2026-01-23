@@ -57,17 +57,32 @@ finances
 <Route path="/trust/*" element={<TrustPage />} />
 ```
 
-### FT2 example (later)
+### FT2 example (only if the module has an FT2 surface)
+<Route path="/orders/*" element={<OrdersFT2Page />} />
 
-```tsx
-<Route path="/trust/*" element={<TrustFT2Page />} />
-```
+⚠️ Not all modules reach FT2.
+Lifecycle-only modules MUST NOT.
 
 📌 Notes:
 
 * Pages are **thin adapters only**
 * No lifecycle logic inside pages
 * Pages may be empty initially (FT-MINUS-ONE)
+
+## 2.1 Lifecycle-Only Routes (Important Distinction)
+
+Some routes exist **only as lifecycle anchors**, not pages.
+
+Example:
+```tsx
+<Route path="/trust/*" element={null} />
+
+These routes:
+Exist so the lifecycle gate can mount
+Must render null
+Must never render a page component
+Must never be linked in navigation
+They are structural, not navigational.
 
 ---
 
@@ -214,32 +229,39 @@ const handleActivation = (actionId: string) => {
 
 ---
 
-## 7️⃣ Add the Module to the Sidenav (Always Visible)
+## 7️⃣ Navigation Policy (NOT all modules are navigable)
 
-### File
+Navigation is **orthogonal** to lifecycle and routing.
 
-`apps/frontend/src/layouts/AppLayout/SidenavContent.tsx`
+### Rule A — Navigable Modules
 
-Add **after main modules**:
+A module appears in the sidenav **only if**:
 
-```ts
-const navItems = [
-  { label: 'Orders', path: '/orders', icon: <IconShoppingCart /> },
-  { label: 'Products', path: '/products', icon: <IconBox /> },
-  { label: 'Customers', path: '/customers', icon: <IconUsers /> },
-  { label: 'Finances', path: '/finances', icon: <IconCash /> },
+* It has an FT2 surface, OR
+* It is a user-operable domain (Orders, Products, etc.)
 
-  // Trust is cross-cutting and always visible
-  { label: 'Trust', path: '/trust', icon: <IconShield /> },
-];
-```
+### Rule B — Lifecycle-Only Modules
 
-📌 Rules:
+Some modules exist **only to gate lifecycle** and MUST NOT:
 
-* Trust appears in **all lifecycles**
-* Never hidden
-* Never entitlement-gated
-* Never lifecycle-gated
+* Appear in sidenav
+* Be user-navigable
+* Have FT1 or FT2 pages
+
+Example:
+
+* `trust`
+
+These modules:
+
+* Mount only via `ShopLifecycleGate`
+* Exist only in FT_MINUS_ONE
+* Disappear entirely after promotion
+
+🚫 Forbidden:
+
+* Showing lifecycle-only modules in sidenav
+* Letting users “visit” them
 
 ---
 
@@ -294,3 +316,18 @@ When you’re ready, the next step is:
 and we will do that with the same discipline.
 
 No shortcuts.
+
+### Addendum — Trust as a Reference Case
+
+Trust is the canonical example of a:
+
+* Lifecycle-only module
+* FT_MINUS_ONE-only surface
+* Non-navigable domain
+* Alignment-backed signal source
+
+If your new module looks like Trust:
+
+* Do NOT add sidenav
+* Do NOT add FT1 checklist
+* Do NOT add FT2 page
