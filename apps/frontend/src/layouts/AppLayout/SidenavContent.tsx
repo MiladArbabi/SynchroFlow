@@ -54,18 +54,6 @@ const SidenavContent: React.FC<SidenavProps> = ({
   { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
   { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
   { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> },
-
-  /**
-   * Trust Data Health
-   * -----------------
-   * Always visible.
-   * Positioned AFTER operational modules.
-   *
-   * - FT_MINUS_ONE anchor
-   * - Not an operational workflow
-   * - Lifecycle gate controls rendering, not visibility
-   */
-  { label: 'Trust', path: '/trust', icon: <IconShieldCheck size={18} /> },
 ];
 
   return (
