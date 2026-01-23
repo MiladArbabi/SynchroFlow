@@ -28,9 +28,9 @@ export function mapOrdersFt2Props(
   return {
     context: {
       ordersObserved:
-        snapshot.ordersObserved === undefined
+        snapshot.context?.ordersObserved === undefined
           ? null
-          : snapshot.ordersObserved,
+          : snapshot.context.ordersObserved,
     },
 
     totals: {

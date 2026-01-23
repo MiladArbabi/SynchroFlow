@@ -5,7 +5,9 @@ import { axiosInstance } from 'api/axiosConfig';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
 export type OrdersFt2Snapshot = {
-  ordersObserved?: number | null;
+  context?: {
+    ordersObserved?: number | null;
+  };
 
   totals?: {
     revenueTotal?: number | null;
@@ -33,8 +35,9 @@ export type OrdersFt2Snapshot = {
     demandReality?: 'aligned' | 'divergent' | 'unknown';
     engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
     operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
+  };
 };
-};
+
 
 /**
  * useOrdersFt2Snapshot
