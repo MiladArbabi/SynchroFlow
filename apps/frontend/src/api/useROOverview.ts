@@ -1,8 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react';
+// apps/frontend/src/api/useROOverview.ts
 
-export function useROOverview(shopId: number) {
-  const [data, setData] = useState<{ trust: any; domains: Record<string, any> } | null>(null);
+import { useEffect, useState } from 'react';
+import { useEntitlements } from 'contexts/EntitlementsContext';
+
+export function useROOverview() {
+  const { shopId } = useEntitlements();
+  const [data, setData] = useState<{ trust: unknown; domains: Record<string, unknown> } | null>(null);
 
   useEffect(() => {
     if (!shopId) return;

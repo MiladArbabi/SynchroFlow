@@ -1,23 +1,48 @@
 import { Request, Response } from 'express';
-/**
- * TEMPORARY: RO snapshot read is not yet implemented.
- * This controller intentionally returns a null mirror
- * until the RO snapshot writer is wired under FT2 latch.
- */
-/* import { getLatestROOverviewSnapshot } from 'api-src/services/ro-overview/roOverviewSnapshot.service';
- */
+import { getOverviewFt2Snapshot } from 'api-src/services/overview-ft2/overviewFt2.resolver';
 
 /**
- * RO Overview Controller
- * ----------------------
- * Read-only FT2 mirror surface.
- * - Snapshot-backed
- * - Trust-gated upstream
- * - No recomputation
+ * GET /api/v1/modules/overview/ft2
+ *
+ * RO-Overview FT2 Controller
+ * -------------------------
+ * Read-only orientation surface.
+ *
+ * HARD RULES (NON-NEGOTIABLE):
+ * - Authenticated
+ * - Shop-scoped
+ * - NO time ranges
+ * - NO lifecycle mutation
+ * - NO intelligence
+ * - NO FTEP
+ * - NO partial truth
+ *
+ * If the Overview FT2 snapshot cannot be safely composed,
+ * this endpoint MUST fail loudly.
+ *
+ * Silence is enforced at the resolver level — not here.
  */
-export async function getROOverview(req: Request, res: Response) {
-  return res.json({
-    trust: null,
-    domains: {},
-  });
+export async function getOverviewFt2(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const snapshot = await getOverviewFt2Snapshot({
+      shopId,
+    });
+
+    res.status(200).json(snapshot);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Overview FT2 unavailable';
+
+    res.status(500).json({ error: message });
+  }
 }

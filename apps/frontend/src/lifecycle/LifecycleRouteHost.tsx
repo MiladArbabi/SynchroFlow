@@ -20,9 +20,6 @@
 // - Pages MUST NOT inspect lifecycle
 // - Routing is the single source of truth
 //
-// If this file becomes complex, the architecture is broken.
-
-import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 

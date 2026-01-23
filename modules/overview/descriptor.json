@@ -1,0 +1,23 @@
+{
+  "id": "overview",
+  "name": "",
+  "version": "0.1.0",
+  "routes": [
+    {
+      "id": "overview-home",
+      "key": "overview-home",
+      "name": " Home",
+      "path": "/overview",
+      "requiredModuleId": "overview",
+      "order": 100
+    }
+  ],
+  "navItems": [
+    {
+      "id": "overview-home",
+      "title": "",
+      "path": "/overview",
+      "order": 50
+    }
+  ]
+}

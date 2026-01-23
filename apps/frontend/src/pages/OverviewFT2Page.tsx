@@ -1,27 +1,51 @@
-import { useROOverview } from '../api/useROOverview';
+// apps/frontend/src/pages/OverviewFT2Page.tsx
+//
+// OverviewFT2Page
+// ----------------
+// FT2-only Reality Overview surface.
+//
+// HARD CONTRACT:
+// - MUST render ROOverviewModuleFT2 only
+// - MUST NOT infer lifecycle
+// - MUST NOT adapt data inline
+// - MUST block render until snapshot is available
 
-/**
- * RO Overview — FT2
- * Observational surface only.
- */
+import { OverviewModuleFT2 } from '@lasyncro/overview'
+import { mapOverviewFt2Props } from './overview/useOverviewAdapter';
+import { useOverviewSnapshot } from './overview/useOverviewSnapshot';
+
+const __DEV__ = import.meta.env.DEV;
+
 export default function OverviewFT2Page() {
-  const data = useROOverview(0);
+  const snapshotQuery = useOverviewSnapshot();
 
-  if (!data) return null;
+  if (snapshotQuery.isLoading) {
+   if (__DEV__) {
+     console.debug('[OverviewFT2Page] loading Overview FT2 snapshot');
+   }
+   return <div>Loading reality overview…</div>;
+ }
 
-  const { trust, domains } = data;
+ if (snapshotQuery.isError) {
+   if (__DEV__) {
+     console.debug(
+       '[OverviewFT2Page] Overview FT2 blocked',
+       snapshotQuery.error
+     );
+   }
 
-  return (
-    <div style={{ display: 'flex', gap: 24 }}>
-      <div style={{ flex: 1 }}>
-        <pre>{trust ?? '—'}</pre>
-      </div>
+   return (
+     <div>
+       Reality overview is currently unavailable.
+     </div>
+   );
+ }
 
-      {Object.entries(domains).map(([moduleId, surface]) => (
-        <div key={moduleId} style={{ flex: 1 }}>
-          <pre>{surface ?? '—'}</pre>
-        </div>
-      ))}
-    </div>
-  );
+  const props = mapOverviewFt2Props(snapshotQuery.data);
+
+  if (__DEV__) {
+    console.debug('[OverviewFT2Page] rendering OverviewModuleFT2', props);
+  }
+
+  return <OverviewModuleFT2 {...props} />;
 }

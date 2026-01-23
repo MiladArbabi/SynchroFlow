@@ -23,6 +23,8 @@ import customersFt2Routes from '../api/customers/customers.ft2.routes';
 
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
 import productsFt2Routes from '../api/products/products.ft2.routes';
+import overviewFt2Routes from '../api/overview';
+import trustFt2Routes from '../api/trust';
 import financesRoutes from '../api/finances/finances.routes';
 
 //entitlments and payment services
@@ -79,6 +81,8 @@ export function createApp(): Express {
   app.use('/api/v1/modules/customers', customersFt2Routes);
   app.use('/api/v1/modules/products', productsFt2Routes);
   app.use('/api/v1/modules/finances', financesRoutes);
+  app.use('/api/v1/modules/overview', overviewFt2Routes);
+  app.use('/api/v1/modules/trust', trustFt2Routes);
   
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

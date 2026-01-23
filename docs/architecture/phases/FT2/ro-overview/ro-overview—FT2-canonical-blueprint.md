@@ -1,9 +1,9 @@
-# 🔒 RO-Overview FT2 — Canonical Blueprint (Read-Only Overview)
+# 🔒 RO-Overview FT2 — Canonical Blueprint (Read-Only Orientation Surface)
 
 **Module:** RO-Overview (Read-Only Overview)
 **Phase:** FT2 (Terminal)
-**Status:** Canonical · Locked · Consortium-Sealed
-**Applies to:** All FT2 Modules
+**Status:** Canonical · Locked · Non-Derivable
+**Applies to:** All FT2 Modules & Future Extensions
 
 ---
 
@@ -11,30 +11,38 @@
 
 RO-Overview FT2 exists to provide a **single, read-only orientation surface** over LaSyncro.
 
-It is not a dashboard.
-It is not an analytics layer.
-It is not a control center.
+It is:
 
-RO-Overview FT2 answers only:
+* not a dashboard
+* not an analytics layer
+* not an intelligence surface
+* not a control plane
 
-> **“What realities are currently observable, coherent, and epistemically allowed to be seen?”**
+RO-Overview answers **one question only**:
 
-If trust fails, RO-Overview must remain silent.
+> **“Which FT2-exposed realities are currently observable and epistemically allowed to be seen?”**
+
+Nothing more.
+
+If this question cannot be answered safely, **RO-Overview must remain silent**.
 
 ---
 
-## 1. Truth Ownership (Locked)
+## 1. Truth Ownership (Hard Lock)
 
-RO-Overview owns **no truth**.
+RO-Overview owns **zero truth**.
 
 It:
 
 * does not compute
 * does not infer
 * does not aggregate
+* does not enrich
 * does not explain
 
-RO-Overview **only renders FT2-exposed truth** from other modules.
+RO-Overview is **incapable by design** of producing new meaning.
+
+All meaning originates upstream.
 
 ---
 
@@ -42,75 +50,115 @@ RO-Overview **only renders FT2-exposed truth** from other modules.
 
 RO-Overview is:
 
-* A composition layer
-* A visual alignment surface
-* A trust-respecting orientation window
+* a **composition surface**
+* an **orientation window**
+* a **trust-respecting read plane**
 
 RO-Overview is **never**:
 
-* A decision engine
-* A prioritization tool
-* A summary scorer
+* a decision engine
+* a prioritization tool
+* a health scorer
+* a summary generator
+
+If a user could act differently after seeing RO-Overview, that action must have already been justified upstream.
 
 ---
 
-## 3. Canonical 4-Layer Relationship
+## 3. Relationship to the FT2 4-Layer Architecture
 
-RO-Overview does **not** introduce new layers.
-
-It consumes:
+Across LaSyncro, **all FT2 domains** follow this pipeline:
 
 ```
-[Module FT2 APIs]
-   ↓
-Pure Adapters
-   ↓
+Layer 1 — Facts
+Layer 2 — Intelligence
+Layer 3 — FTEP (Downgrade / Exposure)
+Layer 4 — FT2 Snapshot (Public Contract)
+```
+
+### RO-Overview’s Position
+
+RO-Overview **does not participate in this pipeline**.
+
+It operates strictly **after Layer 4**.
+
+```
+[Module FT2 Snapshots]
+        ↓
+Pure Mechanical Adapters
+        ↓
 RO-Overview FT2 UI
 ```
 
-There is:
+There are:
 
-* No Facts layer
-* No Intelligence layer
-* No FTEP layer
+* ❌ no internal Facts
+* ❌ no Intelligence
+* ❌ no FTEP
+* ❌ no lifecycle logic
 
-RO-Overview inherits **all gating** from source modules.
-
----
-
-## 4. Trust Gating (Absolute)
-
-RO-Overview may render **only if**:
-
-* Trust / Data Health FT2 reports `trustEligible = true`
-
-If `trustEligible = null`:
-
-* RO-Overview renders nothing
-* No fallback
-* No partial view
-
-Silence is mandatory.
+RO-Overview only consumes **already-final FT2 snapshots**.
 
 ---
 
-## 5. Composition Rules (Locked)
+## 4. Adapter Contract (Strict)
 
-RO-Overview composition obeys:
+Adapters used by RO-Overview must:
 
-1. **Equal semantic weight** across modules
+* be pure functions
+* perform no inference
+* perform no aggregation
+* preserve semantics verbatim
+* convert `undefined → null` only
+* be deterministic
+
+> Adapters are **pipes, not processors**.
+
+If an adapter requires explanation, it violates this contract.
+
+---
+
+## 5. Trust Gating (Inherited, Absolute)
+
+RO-Overview **does not evaluate trust**.
+
+It **inherits trust eligibility** exclusively from **Trust / Data Health FT2**.
+
+### Mandatory Render Rules
+
+| `trustEligible` | RO-Overview Behavior |
+| --------------- | -------------------- |
+| `true`          | Render               |
+| `false`         | Render nothing       |
+| `null`          | Render nothing       |
+
+No degraded states.
+No partial composition.
+No placeholders.
+
+**Epistemic silence is mandatory.**
+
+---
+
+## 6. Composition Rules (Locked)
+
+RO-Overview composition obeys the following invariants:
+
+1. **Equal semantic weight** across all domains
 2. **No hierarchy** of importance
-3. **No alerts or emphasis**
+3. **No emphasis or alerting**
 4. **No prioritization**
 5. **No roll-ups or scores**
 
-Each module surface stands independently.
+Each FT2 domain surface stands **independently**.
+
+RO-Overview does not decide what matters.
 
 ---
 
-## 6. Allowed FT2 Inputs (Explicit)
+## 7. Allowed FT2 Inputs (Explicit Whitelist)
 
-RO-Overview may consume FT2 output from:
+RO-Overview may consume FT2 snapshots from:
 
 * Orders-Nexus FT2
 * Products / SKU-OS FT2
@@ -121,65 +169,77 @@ RO-Overview may consume FT2 output from:
 * SKU Integrity FT2
 * Trust / Data Health FT2
 
-No other sources allowed.
+No other inputs are allowed.
+
+If a surface is not FT2-exposed, it does not exist to RO-Overview.
 
 ---
 
-## 7. Explicit Prohibitions
+## 8. Explicit Prohibitions (Hard Violations)
 
-RO-Overview must never:
+RO-Overview must **never**:
 
-* Calculate summaries
-* Derive insights
-* Combine signals semantically
-* Rank modules
-* Suggest actions
-* Display CTAs
+* calculate summaries
+* derive insights
+* combine signals semantically
+* rank modules
+* suggest actions
+* display CTAs
 
-If a feature requires explanation, it does not belong here.
-
----
-
-## 8. UI Contract (RO-Overview)
-
-* Observational only
-* Null-safe everywhere
-* Literal rendering of states
-
-Render rules:
-
-* `null` → `—`
-* `unknown` → `—`
-* `insufficient` → literal string
-
-No colors.
-No icons.
-No emotional cues.
+If a feature requires explanation, **it belongs upstream** — not here.
 
 ---
 
-## 9. Free vs Paid (Policy)
+## 9. UI Contract (Observational Only)
+
+RO-Overview UI must be:
+
+* purely observational
+* null-safe everywhere
+* semantically neutral
+
+### Render Rules
+
+| Value          | Render As |
+| -------------- | --------- |
+| `null`         | `—`       |
+| `unknown`      | `—`       |
+| `insufficient` | literal   |
+
+### Explicitly Forbidden
+
+* colors
+* icons
+* alerts
+* emotional cues
+* urgency signaling
+
+RO-Overview **orients**. It does not persuade.
+
+---
+
+## 10. Free vs Paid (Policy)
 
 RO-Overview does not differentiate tiers.
 
-Tiering is inherited from source FT2 modules.
+All access control and tiering is inherited from source FT2 modules.
 
-RO-Overview never adds or removes truth.
+RO-Overview **never adds or removes truth**.
 
 ---
 
 ## 🔐 Final Seal
 
-RO-Overview FT2 is the **orientation window of the CNS**.
+RO-Overview FT2 is the **orientation window of the LaSyncro CNS**.
 
 It shows:
 
 * what is visible
 * what is coherent
-* what is allowed to be known
+* what is epistemically allowed
 
 It never tells users what to do.
 
 If this surface lies, the platform manipulates.
 
-This blueprint is **canonical and locked**.
+This blueprint is **canonical, sealed, and non-derivable**.
