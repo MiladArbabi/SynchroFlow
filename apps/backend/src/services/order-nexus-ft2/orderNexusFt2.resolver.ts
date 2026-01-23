@@ -23,7 +23,7 @@ import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFac
  * No analytical surfaces feed intelligence.
  */
 
-import type { OrderNexusFT2Exposure } from 'api-src/services/order-ftep/orderFtep.types';
+import type { OrderNexusFT2Snapshot } from './orderNexusFt2.types';
 import { FT2DateRangePreset } from 'api-src/utils/ft2Period';
 import { deriveOrderIntelligence } from 'api-src/services/order-intelligence/orderIntelligence.service';
 import { deriveOrderFulfillmentIntelligence } from '../order-intelligence/orderFulfillmentIntelligence.service';
@@ -44,19 +44,35 @@ import { extractOrderCustomerPromiseFacts } from '../order-facts/orderCustomerPr
 export async function getOrderNexusFt2Snapshot(input: {
   shopId: number;
   range: FT2DateRangePreset | { preset: 'custom'; from: string; to: string },
-}): Promise<OrderNexusFT2Exposure> {
+}): Promise<OrderNexusFT2Snapshot | null> {
   const { shopId, range } = input;
 
 // Step 1: Extract canonical order facts (Layer 1)
 const facts = await extractOrderFacts(shopId, range);
-
 const trendFacts = await extractOrderTrendFacts(shopId, range);
-const orderVelocity = deriveOrderVelocityReality(trendFacts);
-
 const intelligence = deriveOrderIntelligence(facts, trendFacts);
 
-// Step 4: Downgrade intelligence via FTEP
+/**
+  * IMPORTANT:
+  * -----------
+  * This resolver assumes:
+  * - Trust FT2 is enforced by the caller (e.g. Overview FT2)
+  * - FT2 Completion is checked upstream
+  *
+  * This resolver MUST remain deterministic and throw-free.
+  */
+
+// Step 2: Downgrade intelligence via FTEP
 const exposure = exposeOrderNexusFT2({ facts, intelligence });
+
+const orderVelocity = deriveOrderVelocityReality(
+  trendFacts,
+  exposure.visibility?.status === 'sufficient'
+);
+
+if (!exposure) {
+  return null;
+}
 
 const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId, range);
 const fulfillmentStatusFacts =
@@ -97,12 +113,10 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
             visibility: null,
           },
           orders: {
-            trend: intelligence.trend.direction,
+            trend: exposure.trend?.direction ?? null,
             outcome: exposure.outcome?.status ?? null,
             visibility:
-              intelligence.visibility.status === 'unknown'
-                ? null
-                : intelligence.visibility.status,
+              exposure.visibility?.status ?? null
           },
         },
       },
@@ -118,9 +132,7 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
           orders: {
             outcome: exposure.outcome?.status ?? null,
             visibility:
-              intelligence.visibility.status === 'unknown'
-                ? null
-                : intelligence.visibility.status,
+              exposure.visibility?.status ?? null
           },
         },
       },
@@ -132,9 +144,7 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
           orders: {
             outcome: exposure.outcome?.status ?? null,
             visibility:
-              intelligence.visibility.status === 'unknown'
-                ? null
-                : intelligence.visibility.status,
+              exposure.visibility?.status ?? null
           },
           fulfillment: {
             operationalReality: fulfillmentIntelligence.operationalReality,
@@ -151,11 +161,9 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
         planeId: 'order-velocity-fulfillment',
         input: {
           orders: {
-            velocity: orderVelocity,
+            velocity: exposure.trend?.direction ?? null,
             visibility:
-              intelligence.visibility.status === 'unknown'
-                ? null
-                : intelligence.visibility.status,
+              exposure.visibility?.status ?? null
           },
           fulfillment: {
             operationalReality: fulfillmentIntelligence.operationalReality,
@@ -198,9 +206,7 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
           orders: {
             velocity: orderVelocity,
             visibility:
-              intelligence.visibility.status === 'unknown'
-                ? null
-                : intelligence.visibility.status,
+              exposure.visibility?.status ?? null
           },
           fulfillment: {
             status:
@@ -266,13 +272,31 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
     ],
   });
 
-    return {
+  // ─────────────────────────────────────────────
+  // STEP 4 — FT2 Snapshot Composition (Read-Only)
+  // ---------------------------------------------
+  // This step MAY:
+  // - Attach FT2-adjacent realities (shipping, promise)
+  // - Attach alignment classifications
+  //
+  // This step MUST NOT:
+  // - Read intelligence
+  // - Infer semantics
+  // - Upgrade truth
+  return {
     ...exposure,
 
-    orderVelocity:
-    orderVelocity === 'unknown'
-      ? null
-      : { direction: orderVelocity },
+    /**
+     * FT2-ADJACENT REALITIES
+     * ---------------------
+     * These signals bypass FTEP by design.
+     * They are presence-only and non-inferential.
+     *
+     * They MUST NOT influence:
+     * - outcome
+     * - trend
+     * - visibility
+     */
 
     /**
      * Shipping Reality (L1 → FT2)

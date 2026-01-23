@@ -1,5 +1,4 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
-
 import React, { ReactNode } from 'react';
 import {
   FT2Layout,

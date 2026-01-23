@@ -1,18 +1,3 @@
-/**
- * getOverviewFt2Snapshot
- * ---------------------
- * Authoritative Overview FT2 snapshot resolver.
- *
- * INPUT:
- * - shopId (required)
- *
- * OUTPUT:
- * - OverviewFt2Snapshot
- *
- * NOTES:
- * - Time range is intentionally NOT accepted
- * - All inputs MUST already be FT2-downgraded
- */
 export interface OverviewFt2Snapshot {
   trust: {
     dataFreshness: 'fresh' | 'stale' | 'unknown' | null;
@@ -21,28 +6,36 @@ export interface OverviewFt2Snapshot {
     trustEligible: boolean | null;
   } | null;
 
+  /**
+   * Context is presence-only and non-derivative.
+   * Overview MUST NOT fabricate or reinterpret counts.
+   */
   context: {
     ordersObserved: number | null;
     productsObserved: number | null;
     customersObserved: number | null;
   };
 
+  /**
+   * Snapshot holds opaque FT2 module outputs.
+   * Overview does NOT inspect or reshape these.
+   */
   snapshot: {
-    orders: {
-      revenueTotal: number | null;
-      currency: string | null;
-    } | null;
-
-    products: null;
-    customers: null;
+    orders: unknown | null;
+    products: unknown | null;
+    customers: unknown | null;
   };
 
+  /**
+   * Cross-domain alignment (optional, read-only).
+   */
   alignment: {
     demandReality?: 'aligned' | 'divergent' | 'unknown';
     operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
     engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
   } | null;
 }
+
 
 /**
  * IMPORTANT:
@@ -134,32 +127,15 @@ export async function getOverviewFt2Snapshot(input: {
     },
 
     context: {
-      ordersObserved:
-        ordersFt2?.context.ordersObserved ?? null,
-
-      productsObserved:
-        productsFt2?.context.productsObserved ?? null,
-
-      customersObserved:
-        customersFt2?.context.customersPresent === true
-          ? 1
-          : customersFt2?.context.customersPresent === false
-            ? 0
-            : null,
+      ordersObserved: ordersFt2?.context.ordersObserved ?? null,
+      productsObserved: productsFt2?.context.productsObserved ?? null,
+      customersObserved: null,
     },
 
     snapshot: {
-      orders: ordersFt2?.totals
-        ? {
-            revenueTotal:
-              ordersFt2.totals.revenueTotal ?? null,
-            currency:
-              ordersFt2.totals.currency ?? null,
-          }
-        : null,
-
-      products: null,
-      customers: null,
+      orders: ordersFt2 ?? null,
+      products: productsFt2 ?? null,
+      customers: customersFt2 ?? null,
     },
 
     alignment: null,

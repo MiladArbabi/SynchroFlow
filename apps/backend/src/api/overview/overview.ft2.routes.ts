@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { authenticateToken } from 'api-src/middleware/auth.middleware';
 import { requireFt2 } from 'api-src/middleware/require-ft2.middleware';
-import { getOverviewFt2 } from 'api-src/controllers/ro-overview.controller';
+import { getOverviewFt2 } from 'api-src/api/overview/overview.ft2.controller';
 
 const router = Router();
 

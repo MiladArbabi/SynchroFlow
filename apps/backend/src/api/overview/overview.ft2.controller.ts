@@ -11,9 +11,9 @@ export async function getOverviewFt2(
   const snapshot = await getOverviewFt2Snapshot({ shopId });
 
   if (snapshot === null) {
-    // Epistemic silence
-    return res.status(204).send();
+    res.status(204).send();
+    return;
   }
 
-  return res.status(200).json(snapshot);
+  res.status(200).json(snapshot);
 }

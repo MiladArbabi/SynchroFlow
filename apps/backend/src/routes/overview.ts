@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getOverviewFt2 } from '../controllers/ro-overview.controller';
+import { getOverviewFt2 } from 'api-src/api/overview/overview.ft2.controller';
 
 const router = Router();
 

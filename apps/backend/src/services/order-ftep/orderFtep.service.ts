@@ -23,9 +23,9 @@ export function exposeOrderNexusFT2(
   const { intelligence, facts } = input;
 
   const exposure: OrderNexusFT2Exposure = {
-  context: {
-    ordersObserved: intelligence.ordersObserved,
-  },
+    context: {
+      ordersObserved: facts.ordersObserved,
+    },
 
   totals: {
     revenueTotal: facts.totals.revenueTotal,
@@ -53,7 +53,6 @@ export function exposeOrderNexusFT2(
   },
 
   visibility:
-    !intelligence.visibility ||
     intelligence.visibility.status === 'unknown'
       ? null
       : { status: intelligence.visibility.status },

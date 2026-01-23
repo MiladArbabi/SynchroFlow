@@ -7,8 +7,10 @@ import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft
  * OrderTrendFacts (Layer 1½ — Canonical Trend Facts)
  * --------------------------------------------------
  * Purpose:
- * - Provide minimal, non-fabricated inputs required for
- *   trend intelligence derivation in Layer 2.
+  * Provide minimal, fixed-window, non-fabricated inputs
+ * required for trend intelligence derivation in Layer 2.
+ *
+ * Window size is canonical and non-configurable.
  *
  * Guarantees:
  * - DB-only reads
@@ -61,6 +63,9 @@ export async function extractOrderTrendFacts(
   const previousWindowFrom = new Date(previousWindowTo);
   previousWindowFrom.setDate(previousWindowFrom.getDate() - (TREND_WINDOW_DAYS - 1));
 
+  // NOTE:
+  // If the database cannot fully evaluate the window,
+  // the result MUST be treated as epistemically absent (null).
   async function countOrders(fromDate: Date, toDate: Date): Promise<number | null> {
     const row = await db('canonical_orders')
       .where('shop_id', shopId)

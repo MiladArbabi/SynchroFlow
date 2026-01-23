@@ -48,7 +48,6 @@ const COVERAGE_MIN_USABLE_PCT = 80;
  * - Express direction only (no strength, no forecast)
  * - Used solely for orientation
  */
-const TREND_WINDOW_DAYS = 7;
 const TREND_DELTA_THRESHOLD = 0.05; // 5% change
 
 /* ----------------------------------------
@@ -68,17 +67,11 @@ export type EconomicVisibilityStatus =
   | 'insufficient'
   | 'unknown';
 
-export interface OrderNexusIntelligence {
-  ordersObserved: number | null;
-
-  margin: {
-    averagePct: number | null;
-    status: OrderHealthStatus;
-  };
-
-  loss: {
-    exists: boolean | null;
-  };
+ export interface OrderNexusIntelligence {
+   margin: {
+     averagePct: number | null;
+     status: OrderHealthStatus;
+   };
 
   trend: {
     direction: TrendDirection;
@@ -152,7 +145,10 @@ function deriveMarginStatus(
  * deriveTrendDirection
  * --------------------
  * Classifies order volume direction by comparing two
- * consecutive fixed windows.
+ * consecutive fixed windows, ONLY when economic data
+ * is epistemically usable.
+ *
+ * Coverage gating dominates time availability.
  *
  * Semantics:
  * - 'unknown' → insufficient data or unusable coverage
@@ -229,21 +225,9 @@ const trendDirection = deriveTrendDirection(
 );
 
 const intelligence: OrderNexusIntelligence = {
-  ordersObserved: facts.ordersObserved ?? null,
-
   margin: {
     averagePct: null, // intentionally inactive
     status: marginStatus,
-  },
-
-  // Loss existence is a downgraded boolean form
-  // of margin status. It remains null if outcome
-  // cannot be determined.
-  loss: {
-    exists:
-      marginStatus === 'unknown'
-        ? null
-        : marginStatus === 'loss',
   },
 
   trend: {
