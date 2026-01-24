@@ -31,7 +31,6 @@ import { SxProps } from '@mui/system';
 import { FormattedMessage } from 'react-intl';
 
 // project imports
-import UpgradePlanCard from './UpgradePlanCard'; // Use converted component
 import MainCard from 'ui-component/cards/MainCard';
 import Transitions from 'ui-component/extended/Transitions';
 import { useAuth } from 'contexts/AuthContext'; 
@@ -236,7 +235,6 @@ const ProfileSection: React.FC = () => {
                         '&::-webkit-scrollbar': { width: 5 } // Basic scrollbar styling
                       }}
                     >
-                      <UpgradePlanCard />
                       <Divider />
                       {/* Inner Card - Use theme mode check */}
                       <Card sx={{

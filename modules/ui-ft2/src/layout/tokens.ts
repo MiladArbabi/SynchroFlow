@@ -48,6 +48,51 @@ export const FT2_TOKENS = {
     divider: 'var(--ft2-surface-divider)',
   },
 
+    /**
+   * FT2 Typography Grammar
+   * ---------------------
+   * KPI-first. Dense. Non-decorative.
+   * These tokens define semantic weight, not aesthetics.
+   */
+  typography: {
+    surfaceTitle: {
+      fontSize: '12px',
+      fontWeight: 600,
+      lineHeight: 1.2,
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+      color: 'var(--mui-palette-text-secondary)',
+    },
+
+    body: {
+      fontSize: '13px',
+      fontWeight: 400,
+      lineHeight: 1.4,
+      color: 'var(--mui-palette-text-primary)',
+    },
+
+    kpiValue: {
+      fontSize: '20px',
+      fontWeight: 600,
+      lineHeight: 1.1,
+      letterSpacing: '-0.01em',
+      color: 'var(--mui-palette-text-primary)',
+    },
+
+    kpiUnit: {
+      fontSize: '11px',
+      fontWeight: 500,
+      lineHeight: 1.1,
+      color: 'var(--mui-palette-text-secondary)',
+    },
+
+    hint: {
+      fontSize: '11px',
+      fontWeight: 400,
+      lineHeight: 1.3,
+      color: 'var(--mui-palette-text-secondary)',
+    },
+  },
 
   surfaceShadow: {
     /**

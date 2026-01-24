@@ -5,6 +5,24 @@ import {
 } from '@mui/material';
 import { FT2_TOKENS } from './tokens';
 
+const __DEV__ =
+  typeof import.meta !== 'undefined' &&
+  (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
+
+function hasRawTextChild(children: unknown): boolean {
+  if (typeof children === 'string' || typeof children === 'number') {
+    return true;
+  }
+
+  if (Array.isArray(children)) {
+    return children.some(
+      (child) => typeof child === 'string' || typeof child === 'number'
+    );
+  }
+
+  return false;
+}
+
 export type FT2SurfaceVariant = 'standard' | 'kpi';
 
 export type FT2SurfaceProps = {
@@ -36,6 +54,18 @@ export function FT2Surface({
     variant === 'kpi'
       ? FT2_TOKENS.surfacePadding.kpi
       : FT2_TOKENS.surfacePadding.standard;
+  const isKpi = variant === 'kpi';
+
+  if (__DEV__ && hasRawTextChild(children)) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[FT2Surface] Raw text children detected${
+        title ? ` in surface "${title}"` : ''
+      }.\n` +
+        `Use <FT2Stat>, <FT2Ratio>, or <FT2Text> instead.\n` +
+        `Raw strings bypass FT2 typography invariants.`
+    );
+  }
 
   return (
     <Paper
@@ -88,6 +118,11 @@ export function FT2Surface({
         <Box
           data-ft2-surface-title
           sx={{
+            ...FT2_TOKENS.typography.surfaceTitle,
+
+            flex: 1,
+            textAlign: 'center',
+
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -101,7 +136,6 @@ export function FT2Surface({
         </IconButton> */}
       </Box>
 
-      {/* ───── Content Zone ───── */}
       <Box
         data-ft2-surface-content
         sx={{
@@ -109,6 +143,34 @@ export function FT2Surface({
           pb: padding / 8,
           flex: 1,
           minHeight: 0,
+
+          /**
+           * FT2 Content Normalization
+           * ------------------------
+           * KPI surfaces enforce scalar readability.
+           * Analytical surfaces remain neutral.
+           */
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: isKpi ? 'center' : 'flex-start',
+          alignItems: isKpi ? 'center' : 'stretch',
+          textAlign: isKpi ? 'center' : 'left',
+
+          /**
+           * Typography baseline
+           */
+          ...(isKpi
+            ? FT2_TOKENS.typography.kpiValue
+            : FT2_TOKENS.typography.body),
+
+          /**
+           * Vertical rhythm
+           */
+          gap: isKpi ? 0.5 : 1,
+
+          /**
+           * Safety
+           */
           overflow: 'hidden',
         }}
       >

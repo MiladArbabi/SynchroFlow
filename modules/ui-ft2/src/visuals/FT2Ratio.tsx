@@ -1,4 +1,6 @@
+import { Box } from '@mui/material';
 import { FT2EmptyState } from './FT2EmptyState';
+import { FT2_TOKENS } from '../layout/tokens';
 
 export type FT2RatioProps = {
   numerator: number | null;
@@ -16,26 +18,61 @@ export function FT2Ratio({
   }
 
   return (
-    <div data-ft2-ratio>
-      {label && (
-        <div data-ft2-ratio-label>
-          {label}
-        </div>
-      )}
-
-      <div data-ft2-ratio-values>
+    <Box
+      data-ft2-ratio
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        minWidth: 0,
+      }}
+    >
+      {/* Ratio values */}
+      <Box
+        data-ft2-ratio-values
+        sx={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 0.75,
+        }}
+      >
         {numerator !== null && (
-          <div data-ft2-ratio-numerator>
+          <Box
+            data-ft2-ratio-numerator
+            sx={{
+              ...FT2_TOKENS.typography.kpiValue,
+              whiteSpace: 'nowrap',
+            }}
+          >
             {numerator}
-          </div>
+          </Box>
         )}
 
         {denominator !== null && (
-          <div data-ft2-ratio-denominator>
-            {denominator}
-          </div>
+          <Box
+            data-ft2-ratio-denominator
+            sx={{
+              ...FT2_TOKENS.typography.kpiUnit,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            / {denominator}
+          </Box>
         )}
-      </div>
-    </div>
+      </Box>
+
+      {/* Optional label */}
+      {label && (
+        <Box
+          data-ft2-ratio-label
+          sx={{
+            ...FT2_TOKENS.typography.hint,
+            mt: 0.5,
+          }}
+        >
+          {label}
+        </Box>
+      )}
+    </Box>
   );
 }
