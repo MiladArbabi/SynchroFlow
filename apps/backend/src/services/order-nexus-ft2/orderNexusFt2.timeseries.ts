@@ -1,5 +1,4 @@
 import db from 'api-db';
-import type { OrderFactsPeriod } from 'api-src/services/order-facts/orderFacts.types';
 import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
 
 export type OrdersFt2TimeseriesPoint = {

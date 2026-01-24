@@ -17,7 +17,7 @@ import { OrdersModule } from '@lasyncro/order-nexus';
 import { useAuth } from 'contexts/AuthContext';
 
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import { mapOrdersFt1Props } from './orders/useOrdersFt1Adapter';
+import { mapOrdersFt1Props } from '../orders/useOrdersFt1Adapter';
 import { useOrderNexusAhaAdapter } from 'wiring/orderNexusAhaAdapter';
 
 const __DEV__ = import.meta.env.DEV;

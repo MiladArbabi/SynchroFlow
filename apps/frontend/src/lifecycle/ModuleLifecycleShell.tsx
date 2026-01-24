@@ -5,7 +5,7 @@ import { ModuleContentHost } from './ModuleContentHost';
 import { useModuleLifecycle } from './useModuleLifecycle';
 
 // FT2 pages (explicit, additive)
-import OrdersFT2Page from 'pages/OrdersFT2Page';
+import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
 
 interface ModuleLifecycleShellProps {
   moduleId: string;

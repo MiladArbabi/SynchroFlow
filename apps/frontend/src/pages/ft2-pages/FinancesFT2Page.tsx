@@ -9,8 +9,8 @@ import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
 
 import { FinancesModuleFT2 } from '@lasyncro/finances';
-import { useFinancesFt2Snapshot } from './finances/useFinancesFt2Snapshot';
-import { mapFinancesFt2Props } from './finances/useFinancesFt2Adapter';
+import { useFinancesFt2Snapshot } from '../finances/useFinancesFt2Snapshot';
+import { mapFinancesFt2Props } from '../finances/useFinancesFt2Adapter';
 
 const __DEV__ = import.meta.env.DEV;
 

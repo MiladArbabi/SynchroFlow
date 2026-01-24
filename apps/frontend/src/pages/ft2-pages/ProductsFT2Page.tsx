@@ -5,8 +5,8 @@
 // FT2-only Products observability surface.
 
 import { ProductsModuleFT2 } from '@lasyncro/products';
-import { useProductsFt2Snapshot } from './products/useProductsFt2Snapshot';
-import { mapProductsFt2Props } from './products/useProductsFt2Adapter';
+import { useProductsFt2Snapshot } from '../products/useProductsFt2Snapshot';
+import { mapProductsFt2Props } from '../products/useProductsFt2Adapter';
 import { useState } from 'react';
 import {
   FT2DateRangeBar,

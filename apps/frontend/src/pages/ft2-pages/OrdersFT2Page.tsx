@@ -14,13 +14,13 @@
 
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 
-import { useOrdersFt2Snapshot } from './orders/useOrdersFt2Snapshot';
-import { useOrdersFt2Timeseries } from './orders/useOrdersFt2Timeseries';
-import { useOrdersFt2Distribution } from './orders/useOrdersFt2Distribution';
+import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
+import { useOrdersFt2Timeseries } from '../orders/useOrdersFt2Timeseries';
+import { useOrdersFt2Distribution } from '../orders/useOrdersFt2Distribution';
 
-import { mapOrdersFt2Props } from './orders/useOrdersFt2Adapter';
-import { mapOrdersFt2TimeseriesProps } from './orders/useOrdersFt2TimeseriesAdapter';
-import { mapOrdersFt2DistributionProps } from './orders/useOrdersFt2DistributionAdapter';
+import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
+import { mapOrdersFt2TimeseriesProps } from '../orders/useOrdersFt2TimeseriesAdapter';
+import { mapOrdersFt2DistributionProps } from '../orders/useOrdersFt2DistributionAdapter';
 import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
 import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
 

@@ -5,6 +5,15 @@ import {
   FT2Row,
   FT2Surface,
 } from '@lasyncro/ui-ft2';
+/**
+ * UI INVARIANTS (FT2)
+ * ------------------
+ * - All values render with equal visual weight
+ * - No colors, icons, or emphasis convey meaning
+ * - `—` represents epistemic absence everywhere
+ * - Rows do not collapse when data is missing
+ * - This module reveals truth; it does not guide
+ */
 
 /**
  * OrdersModuleFT2DataProps
@@ -74,20 +83,20 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
          Presence & magnitude only
       ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Orders observed">
+        <FT2Surface variant="kpi" title="Orders">
           {context.ordersObserved ?? '—'}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Revenue total">
+        <FT2Surface variant="kpi" title="Revenue">
           {totals.revenueTotal === null
             ? '—'
-            : `${totals.revenueTotal} ${totals.currency ?? ''}`}
+            : `${totals.revenueTotal.toLocaleString()}${totals.currency ? ` ${totals.currency}` : ''}`}
         </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Cost total">
+        <FT2Surface variant="kpi" title="Costs">
           {totals.costTotal === null
             ? '—'
-            : `${totals.costTotal} ${totals.currency ?? ''}`}
+            : `${totals.costTotal.toLocaleString()} ${totals.currency ?? ''}`}
         </FT2Surface>
 
         <FT2Surface variant="kpi" title="Data coverage">
@@ -96,8 +105,12 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
             : `${dataCoverage.completenessPct}%`}
         </FT2Surface>
 
-        <FT2Surface title="Economic visibility">
+        <FT2Surface variant="kpi" title="Data visibility">
           {visibility?.status ?? '—'}
+        </FT2Surface>
+
+        <FT2Surface title="Order trend">
+          {trend?.direction ?? '—'}
         </FT2Surface>
       </FT2Row>
 
@@ -110,22 +123,8 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
           {timeseries}
         </FT2Surface>
 
-        <FT2Surface title="Order size distribution">
+        <FT2Surface title="Order sizes">
           {distribution}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ─────────────────────────────────────────
-         Layer 3 — Directional Reality (Support)
-         Still factual, no semantics
-      ───────────────────────────────────────── */}
-      <FT2Row intent="support">
-        <FT2Surface title="Trend direction">
-          {trend?.direction ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface title="Outcome">
-          {outcome?.status ?? '—'}
         </FT2Surface>
       </FT2Row>
 
@@ -134,26 +133,16 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
          Structural agreement only
       ───────────────────────────────────────── */}
       <FT2Row intent="support">
-        <FT2Surface title="Demand ↔ Orders">
+        <FT2Surface title="Demand vs orders">
           {alignment?.demandReality ?? '—'}
         </FT2Surface>
 
-        <FT2Surface title="Engagement ↔ Revenue">
+        <FT2Surface title="Engagement vs revenue">
           {alignment?.engagementRevenue ?? '—'}
         </FT2Surface>
 
-        <FT2Surface title="Operations ↔ Economics">
+        <FT2Surface title="Operations vs revenue">
           {alignment?.operationalEconomic ?? '—'}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ─────────────────────────────────────────
-         Layer 5 — Ops / Insights Placeholder
-         Reserved. Non-authoritative.
-      ───────────────────────────────────────── */}
-      <FT2Row intent="support">
-        <FT2Surface title="Operational notices">
-          —
         </FT2Surface>
       </FT2Row>
 

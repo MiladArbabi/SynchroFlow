@@ -88,11 +88,13 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps;
 export default function OverviewModuleFT2(props: OverviewModuleFT2Props) {
   
   const {
-    trust,
-    context,
-  } = props;
-
-  if (trust === null) return null;
+  trust,
+  context = {
+    ordersObserved: null,
+    productsObserved: null,
+    customersObserved: null,
+  },
+} = props;
 
   return (
     <FT2Layout>

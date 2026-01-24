@@ -1,73 +1,48 @@
 import type { OverviewModuleFT2DataProps } from '@lasyncro/overview';
-import { OverviewFt2Snapshot } from './useOverviewSnapshot';
+import type { OverviewModulesFt2Snapshot } from './useOverviewModulesFt2Snapshot';
 
-/**
- * mapOverviewFt2Props
- * ------------------
- * Canonical FT2 Overview adapter.
- *
- * This function is a **pure adapter**.
- *
- * HARD INVARIANTS (NON-NEGOTIABLE):
- * - No inference
- * - No computation
- * - No aggregation
- * - No lifecycle awareness
- * - No semantic translation
- * - No defaults other than `undefined → null`
- * - Deterministic output for the same input
- *
- * Mental model:
- * Backend FT2 snapshot → Read-only orientation surface
- *
- * The adapter is a pipe, not a brain.
- */
 export function mapOverviewFt2Props(
-  snapshot: OverviewFt2Snapshot
+  snapshot: OverviewModulesFt2Snapshot
 ): OverviewModuleFT2DataProps {
   return {
-    trust:
-      snapshot.trust === undefined
-        ? null
-        : snapshot.trust,
+    trust: null,
 
     context: {
       ordersObserved:
-        snapshot.context?.ordersObserved === undefined
+        snapshot.orders?.context?.ordersObserved === undefined
           ? null
-          : snapshot.context.ordersObserved,
+          : snapshot.orders.context.ordersObserved,
 
       productsObserved:
-        snapshot.context?.productsObserved === undefined
+        snapshot.products?.context?.productsObserved === undefined
           ? null
-          : snapshot.context.productsObserved,
+          : snapshot.products.context.productsObserved,
 
       customersObserved:
-        snapshot.context?.customersObserved === undefined
+        snapshot.customers?.context?.customersPresent === undefined
           ? null
-          : snapshot.context.customersObserved,
+          : snapshot.customers.context.customersPresent === true
+            ? 1
+            : snapshot.customers.context.customersPresent === false
+              ? 0
+              : null,
     },
 
     snapshot: {
       orders:
-        snapshot.snapshot?.orders === undefined
+        snapshot.orders?.totals === undefined
           ? null
-          : snapshot.snapshot.orders,
+          : {
+              revenueTotal:
+                snapshot.orders.totals.revenueTotal ?? null,
+              currency:
+                snapshot.orders.totals.currency ?? null,
+            },
 
-      products:
-        snapshot.snapshot?.products === undefined
-          ? null
-          : snapshot.snapshot.products,
-
-      customers:
-        snapshot.snapshot?.customers === undefined
-          ? null
-          : snapshot.snapshot.customers,
+      products: null,
+      customers: null,
     },
 
-    alignment:
-      snapshot.alignment === undefined
-        ? null
-        : snapshot.alignment,
+    alignment: null,
   };
 }

@@ -1,28 +1,30 @@
-// apps/frontend/src/pages/FinancesPage.tsx
+// apps/frontend/src/pages/ProductsPage.tsx
 //
-// FinancesPage
+// ProductsPage
 // ------------
-// Lifecycle-agnostic Finances surface.
+// Lifecycle-agnostic Products surface.
 //
 // HARD CONTRACT:
 // - This page MUST NOT read lifecycle state
 // - This page MUST NOT decide whether it should exist
+// - This page MUST NOT render FT2 modules
 // - Lifecycle gating is handled exclusively by ShopLifecycleGate
 //
 // RESPONSIBILITIES:
+// - Render FT1 Products module only
 // - Gate data fetching via explicit booleans
 // - Remain silent about lifecycle state in user-facing UI
 
-import { FinancesModule } from '@lasyncro/finances';
+import { ProductsModule } from '@lasyncro/products';
 import { useAuth } from 'contexts/AuthContext';
 
 import { useOnboardingReadiness } from 'lifecycle/useOnboardingReadiness';
-import { mapFinancesFt1Props } from './finances/useFinancesFt1Adapter';
-import { useFinancesAhaAdapter } from 'wiring/financesAhaAdapter';
+import { mapProductsFt1Props } from '../products/useProductsFt1Adapter';
+import { useProductsAhaAdapter } from 'wiring/productsAhaAdapter';
 
 const __DEV__ = import.meta.env.DEV;
 
-export default function FinancesPage() {
+export default function ProductsPage() {
   /**
    * Auth context
    * ------------
@@ -36,7 +38,7 @@ export default function FinancesPage() {
    * -------
    * Always instantiated; no lifecycle branching allowed.
    */
-  const onIntent = useFinancesAhaAdapter();
+  const onIntent = useProductsAhaAdapter();
 
   /**
    * FT1 data gating
@@ -56,7 +58,7 @@ export default function FinancesPage() {
    * Not a lifecycle error.
    */
   if (!shopId) {
-    return <div>Finances unavailable</div>;
+    return <div>Products unavailable</div>;
   }
 
   /**
@@ -65,26 +67,26 @@ export default function FinancesPage() {
    */
   if (!readinessQuery.isSuccess) {
     if (__DEV__) {
-      console.debug('[FinancesPage][FT1] awaiting onboarding readiness');
+      console.debug('[ProductsPage][FT1] awaiting onboarding readiness');
     }
 
-    return <div>Loading finances…</div>;
+    return <div>Loading products…</div>;
   }
 
   /**
    * FT1 rendering path
    * ------------------
    */
-  const props = mapFinancesFt1Props(readinessQuery.data);
+  const props = mapProductsFt1Props(readinessQuery.data);
 
   if (__DEV__) {
-    console.debug('[FinancesPage][FT1] rendering FinancesModule', {
+    console.debug('[ProductsPage][FT1] rendering ProductsModule', {
       readiness: readinessQuery.data,
     });
   }
 
   return (
-    <FinancesModule
+    <ProductsModule
       {...props}
       onIntent={onIntent}
     />

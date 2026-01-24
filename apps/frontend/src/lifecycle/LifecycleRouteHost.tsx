@@ -24,17 +24,17 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
 // FT1 pages (diagnostic / onboarding surfaces)
-import OrdersPage from 'pages/OrdersPage';
-import ProductsPage from 'pages/ProductsPage';
-import CustomersPage from 'pages/CustomersPage';
-import FinancesPage from 'pages/FinancesPage';
+import OrdersPage from 'pages/ft1-pages/OrdersPage';
+import ProductsPage from 'pages/ft1-pages/ProductsPage';
+import CustomersPage from 'pages/ft1-pages/CustomersPage';
+import FinancesPage from 'pages/ft1-pages/FinancesPage';
 
 // FT2 pages (observability / governed truth surfaces)
-import OrdersFT2Page from 'pages/OrdersFT2Page';
-import CustomersFT2Page from 'pages/CustomersFT2Page';
-import ProductsFT2Page from 'pages/ProductsFT2Page';
-import FinancesFT2Page from 'pages/FinancesFT2Page';
-import OverviewFT2Page from 'pages/OverviewFT2Page';
+import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
+import CustomersFT2Page from 'pages/ft2-pages/CustomersFT2Page';
+import ProductsFT2Page from 'pages/ft2-pages/ProductsFT2Page';
+import FinancesFT2Page from 'pages/ft2-pages/FinancesFT2Page';
+import OverviewFT2Page from 'pages/ft2-pages/OverviewFT2Page';
 
 // NOTE:
 // - Never reuse FT1 pages for FT2

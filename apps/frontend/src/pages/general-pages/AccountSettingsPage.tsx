@@ -6,7 +6,7 @@ import { Box, Tabs, Tab, Typography } from '@mui/material';
 import MainCard from 'ui-component/cards/MainCard';
 
 // project imports
-import LocalizationSettings from './account-settings/LocalizationSettings';
+import LocalizationSettings from '../account-settings/LocalizationSettings';
 
 import IconComponent from 'components/Icon';
 import { SpecterConfigPanel } from 'components/specter/SpecterConfigPanel';

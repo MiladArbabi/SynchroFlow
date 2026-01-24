@@ -33,7 +33,7 @@ export default function OrdersDistributionWidget({
       options={ORDERS_FT2_DISTRIBUTION}
       series={[
         {
-          name: 'Orders',
+          name: 'Orders per range',
           data: histogram.map((b) => b.count)
         }
       ]}

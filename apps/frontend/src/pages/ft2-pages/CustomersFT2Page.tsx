@@ -11,8 +11,8 @@
 // - MUST assume FT2 routing is authoritative
 
 import { CustomersModuleFT2 } from '@lasyncro/customers';
-import { useCustomersFt2Snapshot } from './customers/useCustomersFt2Snapshot';
-import { mapCustomersFt2Props } from './customers/useCustomersFt2Adapter';
+import { useCustomersFt2Snapshot } from '../customers/useCustomersFt2Snapshot';
+import { mapCustomersFt2Props } from '../customers/useCustomersFt2Adapter';
 
 import { useState } from 'react';
 import { FT2DateRange, FT2DateRangeBar } from '@lasyncro/ui-ft2';

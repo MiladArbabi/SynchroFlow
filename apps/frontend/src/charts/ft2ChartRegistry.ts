@@ -46,10 +46,8 @@ export const ORDERS_FT2_TIMESERIES: ApexOptions = {
   },
   tooltip: {
     enabled: true,
-    x: { show: false },
-    y: {
-      formatter: (v: number) => String(v) // ✅ string
-    }
+    x: { formatter: () => 'Time' },
+    y: { formatter: (v: number) => `Orders: ${v}` }
   },
   xaxis: {
     labels: { show: false }
