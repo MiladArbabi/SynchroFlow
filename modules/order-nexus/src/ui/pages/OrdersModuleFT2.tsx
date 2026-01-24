@@ -109,7 +109,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
           {visibility?.status ?? '—'}
         </FT2Surface>
 
-        <FT2Surface title="Order trend">
+        <FT2Surface variant="kpi" title="Order trend">
           {trend?.direction ?? '—'}
         </FT2Surface>
       </FT2Row>

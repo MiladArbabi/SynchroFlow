@@ -31,6 +31,7 @@ export function FT2Surface({
   title,
   variant = 'standard',
   trustTone,
+  span = 1,
 }: FT2SurfaceProps) {
   const padding =
     variant === 'kpi'
@@ -46,6 +47,9 @@ export function FT2Surface({
       sx={{
         width: '100%',
         height: '100%',
+        minWidth:
+          (variant === 'kpi' ? 160 : 240) *
+          (span ?? 1),
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -69,6 +73,7 @@ export function FT2Surface({
       <Box
         sx={{
           height: FT2_TOKENS.controlZoneHeight,
+          maxWidth: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -91,9 +96,9 @@ export function FT2Surface({
           {title}
         </Box>
 
-        <IconButton size="small">
+        {/* <IconButton size="small">
           <MoreVertOutlinedIcon fontSize="inherit" />
-        </IconButton>
+        </IconButton> */}
       </Box>
 
       {/* ───── Content Zone ───── */}

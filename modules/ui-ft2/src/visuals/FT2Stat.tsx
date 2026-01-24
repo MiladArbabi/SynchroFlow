@@ -11,15 +11,15 @@ export function FT2Stat({ value, label }: FT2StatProps) {
   }
 
   return (
-    <div data-ft2-stat>
-      {label && (
-        <div data-ft2-stat-label>
-          {label}
-        </div>
-      )}
-      <div data-ft2-stat-value>
-        {value}
-      </div>
+    <div
+      data-ft2-stat-value
+      style={{
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {value}
     </div>
   );
 }

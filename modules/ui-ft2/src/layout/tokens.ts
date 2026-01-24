@@ -20,7 +20,7 @@ export const FT2_TOKENS = {
   },
 
   rowGap: 32,
-  colGap: 24,
+  surfaceGap: 64,
 
   surfacePadding: {
     kpi: 16,
@@ -59,7 +59,6 @@ export const FT2_TOKENS = {
    */
   row: {
     kpi: {
-      columns: 6,
       height: 120,
     },
     analysis: {

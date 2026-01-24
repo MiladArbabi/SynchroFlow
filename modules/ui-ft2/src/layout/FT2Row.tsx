@@ -35,32 +35,32 @@ export function FT2Row({ children, intent }: FT2RowProps) {
   return (
     <Grid
       container
-      columns={12}
-      spacing={FT2_TOKENS.colGap / 8}
       data-ft2-row
       data-ft2-intent={intent}
       sx={{
-        height: {
-          xs: 'auto',
-          md: rowConfig.height,
-        },
+        display: 'flex',
+        flexDirection: 'row',
+        flexWrap: 'nowrap',
+
+        // 🔒 FT2 rule: never compress surfaces
+        overflowX: 'auto',
+        overflowY: 'hidden',
+
+        gap: `${FT2_TOKENS.surfaceGap / 8}px`,
+        height: rowConfig.height,
         alignItems: 'stretch',
       }}
     >
       {items.map((child, index) => (
         <Grid
           key={index}
-          size={{
-            xs: 12,
-            md: Math.round(unitSize * spans[index]),
-          }}
           sx={{
-            height: {
-              xs: 'auto',
-              md: '100%',
-            },
             display: 'flex',
-            minWidth: 0,
+            height: '100%',
+
+            // 🔒 Hard boundary: surface defines width
+            flexShrink: 0,
+            minWidth: 'auto',
           }}
         >
           {child}
