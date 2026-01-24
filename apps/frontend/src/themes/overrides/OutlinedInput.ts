@@ -36,7 +36,7 @@ export default function OutlinedInput(theme: Theme, borderRadius: number, outlin
                 },
                 // Style when disabled
                 [`&.${outlinedInputClasses.disabled}`]: {
-                     background: isDark ? theme.palette.grey[800] : theme.palette.grey[100], // Example disabled background
+                     background: isDark ? theme.palette.divider : theme.palette.grey[100], // Example disabled background
                      [`& .${outlinedInputClasses.notchedOutline}`]: {
                         borderColor: theme.palette.action.disabledBackground
                      }

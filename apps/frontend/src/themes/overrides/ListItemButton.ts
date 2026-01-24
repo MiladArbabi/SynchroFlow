@@ -21,11 +21,11 @@ export default function ListItemButton(theme: Theme): ListItemButtonComponentCon
                 '&.Mui-selected': {
                     color: isDark ? theme.palette.secondary.main : theme.palette.secondary.dark,
                     backgroundColor: isDark
-                        ? withAlpha(theme.palette.secondary.main, 0.15)
+                        ? theme.palette.action.selected
                         : theme.palette.secondary.light,
                     '&:hover': {
                         backgroundColor: isDark
-                            ? withAlpha(theme.palette.secondary.main, 0.15) // Keep same on hover when selected
+                            ? theme.palette.action.selected
                             : theme.palette.secondary.light,
                     },
                     // Target nested ListItemIcon within selected button

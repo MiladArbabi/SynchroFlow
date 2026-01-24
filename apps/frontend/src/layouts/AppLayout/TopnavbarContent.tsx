@@ -13,6 +13,7 @@ import {
   Tooltip, 
   useTheme,
 } from "@mui/material";
+import { useColorScheme } from '@mui/material/styles';
 import IconComponent from "../../components/Icon";
 
 import useConfig from 'hooks/useConfig';
@@ -39,6 +40,8 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
 }) => {
   const location = useLocation();
   const theme = useTheme();
+  const { mode, setMode } = useColorScheme();
+
   const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   const { state, dispatch } = useConfig();
@@ -90,22 +93,31 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
       <Box sx={{ flexGrow: 1 }} />
 
       <Box display="flex" alignItems="center" gap={{ xs: 0.5, sm: 1, md: 1.5 }}> {/* Adjust gap */}
-        {/*<Box sx={{ display: { xs: 'none', md: 'block' } }}><MegaMenuSection /></Box> */}          
-        {/* <OnboardingTaskListTracker /> */}
-        {/* <Box sx={{ display: { xs: 'none', lg: 'block' } }}><FullScreenSection /></Box> */}
+       <Box display="flex" alignItems="center" gap={0.5}>
+        <Tooltip title="Light mode">
+          <IconButton
+            size="small"
+            onClick={() => setMode('light')}
+            sx={{
+              color: mode === 'light' ? 'primary.main' : 'text.secondary'
+            }}
+          >
+            <IconComponent name="Sun" size="medium" />
+          </IconButton>
+        </Tooltip>
 
-        {isDev && (
-         <Tooltip title="FT1 Checklist (dev)">
-           <IconButton
-             size="small"
-             onClick={() => {
-               openFt1Checklist();
-             }}
-           >
-             <IconComponent name="ListChecks" size="medium" />
-           </IconButton>
-         </Tooltip>
-       )}
+        <Tooltip title="Dark mode">
+          <IconButton
+            size="small"
+            onClick={() => setMode('dark')}
+            sx={{
+              color: mode === 'dark' ? 'primary.main' : 'text.secondary'
+            }}
+          >
+            <IconComponent name="Moon" size="medium" />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
         <ProfileSection />
          {/* --- End Berry Sections --- */}

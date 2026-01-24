@@ -70,16 +70,16 @@ const PopperStyled = styled(Popper)(({ theme }) => ({
     // Use theme variables for colors
     borderTopColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper, // Adjust color based on theme
-    borderLeftColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper, // Adjust color based on theme
+    borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.divider : theme.palette.background.paper, // Adjust color based on theme
+    borderLeftColor: theme.palette.mode === 'dark' ? theme.palette.divider : theme.palette.background.paper, // Adjust color based on theme
     // Adjust arrow position for RTL
     ...(theme.direction === 'rtl' && {
         left: 'auto',
         right: -5,
          borderTopColor: 'transparent',
          borderLeftColor: 'transparent',
-         borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper,
-         borderRightColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.background.paper,
+         borderBottomColor: theme.palette.mode === 'dark' ? theme.palette.divider : theme.palette.background.paper,
+         borderRightColor: theme.palette.mode === 'dark' ? theme.palette.divider : theme.palette.background.paper,
     }),
   },
     // Placement adjustments might be needed based on testing
@@ -303,10 +303,10 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
             }),
              ...(theme.palette.mode === 'dark' && {
                  color: isSelected || openMini ? 'secondary.main' : 'text.primary', // Adjust dark mode selected color if needed
-                 '&:hover': { bgcolor: withAlpha(theme.palette.secondary.main, 0.25) },
+                 '&:hover': { bgcolor: theme.palette.action.hover },
                  ...((isSelected || openMini) && {
-                     bgcolor: withAlpha(theme.palette.secondary.main, 0.25),
-                     '&:hover': { bgcolor: withAlpha(theme.palette.secondary.main, 0.3) }
+                     bgcolor: theme.palette.action.hover,
+                     '&:hover': { bgcolor: theme.palette.action.selected }
                  })
              })
         })
@@ -427,7 +427,7 @@ const NavCollapse: React.FC<NavCollapseProps> = ({ menu, level, parentId }) => {
                       width: '1px',
                       opacity: 1,
                       // Use theme variables for the line color
-                      bgcolor: theme.palette.mode === 'dark' ? withAlpha(theme.palette.grey[800], 0.2) : theme.palette.primary.light,
+                      bgcolor: theme.palette.action.selected ? withAlpha(theme.palette.divider, 0.2) : theme.palette.primary.light,
                     }
                   }}
                 >

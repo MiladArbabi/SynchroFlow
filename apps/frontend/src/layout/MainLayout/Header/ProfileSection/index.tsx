@@ -133,8 +133,8 @@ const ProfileSection: React.FC = () => {
             alignItems: 'center',
             borderRadius: '27px',
             transition: 'all .2s ease-in-out',
-            bgcolor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.primary.light,
-            backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.primary.light,
+            bgcolor: theme.palette.action.selected ? theme.palette.divider : theme.palette.primary.light,
+            backgroundColor: theme.palette.mode === 'dark' ? theme.palette.divider : theme.palette.primary.light,
             '&[aria-controls="menu-list-grow"], &:hover': {
                 borderColor: theme.palette.primary.main,
                 background: `${theme.palette.primary.main}!important`,
@@ -240,7 +240,7 @@ const ProfileSection: React.FC = () => {
                       <Divider />
                       {/* Inner Card - Use theme mode check */}
                       <Card sx={{
-                          bgcolor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.primary.light,
+                          bgcolor: theme.palette.action.selected ? theme.palette.divider : theme.palette.primary.light,
                           my: 2
                        }}>
                         <CardContent>

@@ -88,7 +88,7 @@ const Avatar = forwardRef<HTMLDivElement, AvatarProps>(
               // Use theme's default Avatar background/text or define explicitly
               colorSx = {
                  color: theme.palette.mode === 'dark' ? theme.palette.dark?.main : theme.palette.primary.dark,
-                 bgcolor: theme.palette.mode === 'dark' ? theme.palette.text.primary : theme.palette.primary[200],
+                 bgcolor: theme.palette.action.selected ? theme.palette.text.primary : theme.palette.primary[200],
               }
          }
     }

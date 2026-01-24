@@ -99,7 +99,7 @@ export default function ActivationSurfacePage({
   const {
     identity,
     absenceProof,
-    valueAfterActivation,
+    /* valueAfterActivation, */
     postActivation,
     primaryCTA,
     trust,
@@ -298,7 +298,7 @@ export default function ActivationSurfacePage({
         {/* IRREVERSIBLE TRUTH — neutral constraint                              */}
         {/* ------------------------------------------------------------------ */}
 
-        <Box sx={{ gridColumn: 'span 1', gridRow: 'span 1' }}>
+    {/*     <Box sx={{ gridColumn: 'span 1', gridRow: 'span 1' }}>
           <Paper
             elevation={0}
             sx={{
@@ -318,13 +318,13 @@ export default function ActivationSurfacePage({
               Activation determines if they’re informed.
             </Typography>
           </Paper>
-        </Box>
+        </Box> */}
 
         {/* ------------------------------------------------------------------ */}
         {/* VALUE AFTER ACTIVATION — resolution                                 */}
         {/* ------------------------------------------------------------------ */}
 
-        {valueAfterActivation && (
+        {/* {valueAfterActivation && (
           <Box sx={{ gridColumn: 'span 1', gridRow: 'span 1' }}>
             <Paper
               elevation={0}
@@ -339,13 +339,13 @@ export default function ActivationSurfacePage({
               </Typography>
             </Paper>
           </Box>
-        )}
+        )} */}
 
         {/* ------------------------------------------------------------------ */}
         {/* CTA ZONE — commitment point                                         */}
         {/* ------------------------------------------------------------------ */}
 
-        <Box sx={{ gridColumn: 'span 2', gridRow: 'span 1' }}>
+        <Box sx={{ gridColumn: 'span 2', gridRow: 'span 2' }}>
           <Paper
             elevation={0}
             sx={{

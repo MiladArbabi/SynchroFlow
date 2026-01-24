@@ -27,20 +27,35 @@ export const FT2_TOKENS = {
     standard: 24,
   },
 
-  surfaceTitle: {
-    background: 'rgba(0, 0, 0, 0.02)',
-    divider: 'rgba(0, 0, 0, 0.06)',
+  surface: {
+    /**
+     * Surface background
+     * ------------------
+     * Slight lift from app background.
+     * Actual color resolved by host theme.
+     */
+    background: 'var(--ft2-surface-bg)',
   },
+
+  surfaceTitle: {
+    /**
+     * Control zone background
+     * -----------------------
+     * Slight lift above surface.
+     * Must remain neutral and non-semantic.
+     */
+    background: 'var(--ft2-surface-inset-bg)',
+    divider: 'var(--ft2-surface-divider)',
+  },
+
 
   surfaceShadow: {
     /**
-     * FT2 Surface Shadow
-     * ------------------
-     * Structural depth only.
-     * No semantic meaning.
+     * Structural shadow only.
+     * Resolved by host theme (mode-aware).
      */
-    default: '0px 2px 6px rgba(0, 0, 0, 0.08)',
-    hover: '0px 4px 10px rgba(0, 0, 0, 0.12)', // optional, future-safe
+    default: 'var(--ft2-surface-shadow)',
+    hover: 'var(--ft2-surface-shadow-hover)',
   },
 
   controlZoneHeight: 32,

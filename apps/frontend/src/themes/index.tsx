@@ -2,16 +2,21 @@
 import React, { useMemo } from 'react';
 
 // material-ui
-import { createTheme, ThemeProvider, StyledEngineProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import {
+  createTheme,
+  ThemeProvider,
+  StyledEngineProvider,
+} from '@mui/material/styles';
 
 // project imports
 import { CSS_VAR_PREFIX, DEFAULT_THEME_MODE, ThemeMode } from 'config';
-import CustomShadows from './custom-shadows';
 import useConfig from 'hooks/useConfig';
 import { buildPalette } from './palette';
 import Typography from './typography';
-import componentsOverrides from './overrides/index';
+import CustomShadows from './custom-shadows';
+import componentsOverrides from './overrides';
+import { withAlpha } from 'utils/colorUtils';
 
 // ==============================|| DEFAULT THEME - MAIN ||============================== //
 
@@ -21,17 +26,18 @@ type ThemeCustomizationProps = {
 
 export default function ThemeCustomization({ children }: ThemeCustomizationProps) {
   const {
-    state: { borderRadius, fontFamily, outlinedFilled, presetColor, themeDirection }
+    state: { borderRadius, fontFamily, outlinedFilled, themeDirection },
   } = useConfig();
-  
-  const palette = useMemo(() => {
-     const built = buildPalette(presetColor);
-     return built;
-    }, [presetColor]);
-  const themeTypography = useMemo(() => Typography(fontFamily), [fontFamily]);
-  const themeCustomShadows = useMemo(() => CustomShadows(palette.light, ThemeMode.LIGHT), [palette.light]);
-  const themeCustomShadowsDark = useMemo(() => CustomShadows(palette.dark, ThemeMode.DARK), [palette.dark]);
 
+  const themeTypography = useMemo(
+    () => Typography(fontFamily),
+    [fontFamily]
+  );
+
+  /**
+   * Theme options with two explicit color schemes only.
+   * No presets. No system mode.
+   */
   const themeOptions = useMemo(
     () => ({
       direction: themeDirection,
@@ -40,35 +46,86 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           minHeight: '48px',
           padding: '16px',
           '@media (min-width: 600px)': {
-            minHeight: '48px'
-          }
-        }
+            minHeight: '48px',
+          },
+        },
       },
       typography: themeTypography,
       colorSchemes: {
         light: {
-          palette: palette.light,
-          customShadows: themeCustomShadows
+          palette: buildPalette(ThemeMode.LIGHT),
+          customShadows: CustomShadows(
+            buildPalette(ThemeMode.LIGHT),
+            ThemeMode.LIGHT
+          ),
         },
         dark: {
-          palette: palette.dark,
-          customShadows: themeCustomShadowsDark
-        }
+          palette: buildPalette(ThemeMode.DARK),
+          customShadows: CustomShadows(
+            buildPalette(ThemeMode.DARK),
+            ThemeMode.DARK
+          ),
+        },
       },
       cssVariables: {
         cssVarPrefix: CSS_VAR_PREFIX,
-        colorSchemeSelector: 'data-color-scheme'
-      }
+        colorSchemeSelector: 'data-color-scheme',
+      },
     }),
-    [themeDirection, themeTypography, palette, themeCustomShadows, themeCustomShadowsDark]
+    [themeDirection, themeTypography]
   );
 
-  const themes = createTheme(themeOptions);
-  themes.components = useMemo(() => componentsOverrides(themes, borderRadius, outlinedFilled), [themes, borderRadius, outlinedFilled]); 
+  const theme = createTheme(themeOptions);
+
+  /**
+   * Component overrides + FT2 surface bindings.
+   * FT2 variables MUST be scheme-scoped (not :root).
+   */
+  theme.components = useMemo(() => {
+    const base = componentsOverrides(theme, borderRadius, outlinedFilled);
+
+    const lightPalette = buildPalette(ThemeMode.LIGHT);
+    const darkPalette = buildPalette(ThemeMode.DARK);
+
+    return {
+      ...base,
+
+    MuiCssBaseline: {
+      styleOverrides: {
+        '[data-color-scheme="light"]': {
+          '--ft2-surface-bg': lightPalette.background.paper,
+          '--ft2-surface-inset-bg': lightPalette.action.hover,
+          '--ft2-surface-divider': lightPalette.divider,
+
+          '--ft2-surface-shadow': `0 1px 2px ${withAlpha('#000000', 0.12)}, 
+                         0 2px 4px ${withAlpha('#000000', 0.08)}`,
+
+          '--ft2-surface-shadow-hover': `0 2px 4px ${withAlpha('#000000', 0.16)}`,
+        },
+
+        '[data-color-scheme="dark"]': {
+          '--ft2-surface-bg': darkPalette.background.paper,
+          '--ft2-surface-inset-bg': darkPalette.action.hover,
+          '--ft2-surface-divider': darkPalette.divider,
+
+          '--ft2-surface-shadow': `0 1px 2px ${withAlpha('#FFFFFF', 0.10)}, 
+                         0 2px 4px ${withAlpha('#FFFFFF', 0.06)}`,
+
+          '--ft2-surface-shadow-hover': `0 2px 4px ${withAlpha('#FFFFFF', 0.14)}`,
+        },
+      },
+    },
+    };
+  }, [theme, borderRadius, outlinedFilled]);
 
   return (
     <StyledEngineProvider injectFirst>
-      <ThemeProvider disableTransitionOnChange theme={themes} modeStorageKey="theme-mode" defaultMode={DEFAULT_THEME_MODE}>
+      <ThemeProvider
+        theme={theme}
+        disableTransitionOnChange
+        modeStorageKey="theme-mode"
+        defaultMode={DEFAULT_THEME_MODE}
+      >
         <CssBaseline enableColorScheme />
         {children}
       </ThemeProvider>

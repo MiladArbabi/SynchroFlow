@@ -3,7 +3,6 @@ import {
   Paper,
   IconButton,
 } from '@mui/material';
-import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import { FT2_TOKENS } from './tokens';
 
 export type FT2SurfaceVariant = 'standard' | 'kpi';
@@ -54,6 +53,7 @@ export function FT2Surface({
         flexDirection: 'column',
         overflow: 'hidden',
 
+        backgroundColor: FT2_TOKENS.surface.background,
         // Structural depth
         boxShadow: FT2_TOKENS.surfaceShadow.default,
 

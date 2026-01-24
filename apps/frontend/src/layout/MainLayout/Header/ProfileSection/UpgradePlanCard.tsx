@@ -32,7 +32,7 @@ const UpgradePlanCard: React.FC = () => {
   return (
     <Card
       sx={{
-        bgcolor: theme.palette.mode === 'dark' ? theme.palette.grey?.['800'] || '#1a223f' : theme.palette.warning.light, // Conditional background
+        bgcolor: theme.palette.action.selected ? theme.palette.grey?.['800'] || '#1a223f' : theme.palette.warning.light, // Conditional background
         my: 2,
         overflow: 'hidden',
         position: 'relative',

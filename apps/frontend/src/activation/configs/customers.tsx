@@ -41,6 +41,6 @@ export const customersActivationConfig: ActivationSurfaceProps = {
 
   postActivation: {
     reflection:
-      'Behavioral signals emerge as activity occurs and risk becomes measurable.',
+      'Behavioral signals emerge live. LaSyncro quantifies risk instantly.'
   },
 };

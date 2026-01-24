@@ -42,7 +42,7 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
 
   postActivation: {
     reflection:
-      'Orders are approved every day. Activation determines whether those decisions are informed.',
+      'Orders approved daily. LaSyncro verifies decision quality.'
   },
 };
 

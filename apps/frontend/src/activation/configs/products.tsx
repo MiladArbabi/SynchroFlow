@@ -41,6 +41,6 @@ export const productsActivationConfig: ActivationSurfaceProps = {
 
   postActivation: {
     reflection:
-      'Product data already exists. Activation determines whether it informs decisions.',
+      'Product data exists. LaSyncro confirms decision impact.'
   },
 };

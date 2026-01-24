@@ -9,7 +9,6 @@ import { Box } from "@mui/material";
 import SidenavContent from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
-import Customization from "layout/Customization";
 
 // --- MODAL/BANNER IMPORTS ---
 import { ConnectStoreModal } from 'components/ConnectStoreModal';
@@ -219,7 +218,6 @@ const AppLayout = (props: AppLayoutProps) => {
                   </Box>
                 </Panel>
               </PanelGroup>
-              <Customization />
 
             {/* --- RENDER MODALS AT LAYOUT LEVEL --- */}
             <ConnectStoreModal

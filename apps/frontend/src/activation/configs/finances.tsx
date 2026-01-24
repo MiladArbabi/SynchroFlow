@@ -41,6 +41,6 @@ export const financesActivationConfig: ActivationSurfaceProps = {
 
   postActivation: {
     reflection:
-      'Financial decisions are already being made. Activation determines whether they are verifiable.',
+     'Financial decisions ongoing. LaSyncro ensures verifiability.'
   },
 };
