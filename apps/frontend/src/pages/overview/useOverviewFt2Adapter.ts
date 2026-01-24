@@ -1,11 +1,34 @@
 import type { OverviewModuleFT2DataProps } from '@lasyncro/overview';
 import type { OverviewModulesFt2Snapshot } from './useOverviewModulesFt2Snapshot';
+import type { TrustFt2Snapshot } from '../trust/useTrustFt2Snapshot';
 
 export function mapOverviewFt2Props(
-  snapshot: OverviewModulesFt2Snapshot
+  snapshot: OverviewModulesFt2Snapshot,
+  trust: TrustFt2Snapshot | null
 ): OverviewModuleFT2DataProps {
+
   return {
-    trust: null,
+    /**
+     * Trust FT2 passthrough
+     * --------------------
+     * Adapter must not derive UI signals.
+     * Pass raw Trust FT2 data unchanged.
+     */
+    trust: trust
+      ? {
+          /**
+           * Trust FT2 normalization for Overview UI contract
+           * -----------------------------------------------
+           * Structural completion only.
+           * No inference. No scoring. No explanation.
+           */
+          trustEligible: trust.trustEligible ?? null,
+
+          dataFreshness: 'unknown',
+          syncCoverage: 'unknown',
+          crossSourceConsistency: 'unknown',
+        }
+      : null,
 
     context: {
       ordersObserved:

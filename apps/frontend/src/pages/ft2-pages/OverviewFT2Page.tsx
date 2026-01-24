@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useOverviewModulesFt2Snapshot } from '../overview/useOverviewModulesFt2Snapshot';
+import { useTrustFt2Snapshot } from '../trust/useTrustFt2Snapshot';
 import { OverviewModuleFT2 } from '@lasyncro/overview';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
@@ -13,10 +14,14 @@ export default function OverviewPageFT2() {
   });
 
   const overviewModules = useOverviewModulesFt2Snapshot(range);
+  const trust = useTrustFt2Snapshot();
 
   if (!overviewModules.isSuccess) return null;
 
-  const overviewProps = mapOverviewFt2Props(overviewModules.data);
+  const overviewProps = mapOverviewFt2Props(
+    overviewModules.data,
+    trust.data ?? null
+  );
 
   return (
     <>

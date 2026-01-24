@@ -96,18 +96,33 @@ export default function OverviewModuleFT2(props: OverviewModuleFT2Props) {
   },
 } = props;
 
+/**
+ * UI-only trust affordance
+ * -----------------------
+ * Derived locally from Trust FT2.
+ * No mutation of data contracts.
+ */
+const trustTone =
+  trust == null
+    ? undefined
+    : trust.trustEligible === true
+      ? 'trusted'
+      : trust.trustEligible === false
+        ? 'blocked'
+        : 'constrained';
+
   return (
     <FT2Layout>
       <FT2Row intent="kpi">
-        <FT2Surface title="Orders observed">
+        <FT2Surface title="Orders observed" trustTone={trustTone}>
           <FT2Stat value={context.ordersObserved} />
         </FT2Surface>
 
-        <FT2Surface title="Products observed">
+        <FT2Surface title="Products observed" trustTone={trustTone}>
           <FT2Stat value={context.productsObserved} />
         </FT2Surface>
 
-        <FT2Surface title="Customers observed">
+        <FT2Surface title="Customers observed" trustTone={trustTone}>
           <FT2Stat value={context.customersObserved} />
         </FT2Surface>
       </FT2Row>
