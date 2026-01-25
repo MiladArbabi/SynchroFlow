@@ -10,6 +10,19 @@ import type { OrderNexusFT2Exposure } from 'api-src/services/order-ftep/orderFte
 
 export type OrderNexusFT2Snapshot =
   OrderNexusFT2Exposure & {
+
+  ingestion: {
+    status: 'present' | 'absent';
+  } | null;
+
+  freshness: {
+    status: 'recent' | 'stale' | 'unknown';
+  } | null;
+
+  revenueContinuity:
+    | { status: 'isolated' | 'continuous' }
+    | null;
+    
   shipping: {
     signal: 'present' | 'absent';
     visibility: 'sufficient' | 'insufficient';

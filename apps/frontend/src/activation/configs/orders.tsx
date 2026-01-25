@@ -22,7 +22,13 @@ export const orderNexusActivationConfig: ActivationSurfaceProps = {
 
   valueAfterActivation: {
     outcome:
-      'Orders with negative margins are identified automatically.',
+      /**
+       * FT2 UI CONTRACT:
+       * ----------------
+       * Orders FT2 does not explain outcomes or imply detection.
+       * Language must remain observational and non-semantic.
+       */
+      'Orders with economically negative outcomes may be visible.',
   },
 
   primaryCTA: {

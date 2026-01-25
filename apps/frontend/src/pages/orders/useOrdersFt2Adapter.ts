@@ -1,5 +1,4 @@
 // apps/frontend/src/pages/orders/useOrdersFt2Adapter.ts
-
 import type { OrdersModuleFT2DataProps } from '@lasyncro/order-nexus';
 import { OrdersFt2Snapshot } from './useOrdersFt2Snapshot';
 
@@ -23,58 +22,107 @@ import { OrdersFt2Snapshot } from './useOrdersFt2Snapshot';
  * The adapter is a *pipe*, not a brain.
  */
 export function mapOrdersFt2Props(
-  snapshot: OrdersFt2Snapshot
-): OrdersModuleFT2DataProps {
+  snapshot: OrdersFt2Snapshot,
+  trust: { trustEligible: boolean | null } | null
+): OrdersModuleFT2DataProps & {
+  trust: { trustEligible: boolean | null } | null;
+} {
+
   return {
-    context: {
-      ordersObserved:
-        snapshot.context?.ordersObserved === undefined
-          ? null
-          : snapshot.context.ordersObserved,
-    },
+  /**
+   * ─────────────────────────────────────────
+   * 🧭 SYSTEM GROUNDING (FOUNDATIONAL)
+   * ─────────────────────────────────────────
+   */
 
-    totals: {
-      revenueTotal:
-        snapshot.totals?.revenueTotal === undefined
-          ? null
-          : snapshot.totals.revenueTotal,
-
-      costTotal:
-        snapshot.totals?.costTotal === undefined
-          ? null
-          : snapshot.totals.costTotal,
-
-      currency:
-        snapshot.totals?.currency === undefined
-          ? null
-          : snapshot.totals.currency,
-    },
-
-    outcome:
-      snapshot.outcome === undefined
+  context: {
+    ordersObserved:
+      snapshot.context?.ordersObserved === undefined
         ? null
-        : snapshot.outcome,
+        : snapshot.context.ordersObserved,
+  },
 
-    trend:
-      snapshot.trend === undefined
+  totals: {
+    revenueTotal:
+      snapshot.totals?.revenueTotal === undefined
         ? null
-        : snapshot.trend,
+        : snapshot.totals.revenueTotal,
 
-    dataCoverage: {
-      completenessPct:
-        snapshot.dataCoverage?.completenessPct === undefined
-          ? null
-          : snapshot.dataCoverage.completenessPct,
-    },
-
-    visibility:
-      snapshot.visibility === undefined
+    costTotal:
+      snapshot.totals?.costTotal === undefined
         ? null
-        : snapshot.visibility,
+        : snapshot.totals.costTotal,
+  },
 
-    alignment:
-      snapshot.alignment === undefined
+  dataCoverage: {
+    completenessPct:
+      snapshot.dataCoverage?.completenessPct === undefined
         ? null
-        : snapshot.alignment,
+        : snapshot.dataCoverage.completenessPct,
+  },
+
+  visibility:
+    snapshot.visibility === undefined
+      ? null
+      : snapshot.visibility,
+
+  /**
+   * Canonical ingestion presence (L1)
+   * Presence-only. No inference.
+   */
+  ingestion:
+    snapshot.ingestion === undefined
+      ? null
+      : snapshot.ingestion,
+
+  /**
+   * Temporal freshness (L1)
+   * Classification only.
+   */
+  freshness:
+    snapshot.freshness === undefined
+      ? null
+      : snapshot.freshness,
+
+  /**
+   * ─────────────────────────────────────────
+   * POST-GROUNDING CONTEXT
+   * ─────────────────────────────────────────
+   */
+
+  outcome:
+    snapshot.outcome === undefined
+      ? null
+      : snapshot.outcome,
+
+  trend:
+    snapshot.trend === undefined
+      ? null
+      : snapshot.trend,
+
+  /**
+   * Revenue signal continuity (L1½)
+   * Bypasses intelligence. Pass-through only.
+   */
+  revenueContinuity:
+    snapshot.revenueContinuity === undefined
+      ? null
+      : snapshot.revenueContinuity,
+
+  /**
+   * ─────────────────────────────────────────
+   * STRUCTURAL COHERENCE (ALIGNMENT)
+   * ─────────────────────────────────────────
+   */
+
+  alignment:
+    snapshot.alignment === undefined
+      ? null
+      : snapshot.alignment,
+
+  trust:
+    trust === undefined
+      ? null
+      : trust,
   };
 }

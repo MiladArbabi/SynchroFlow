@@ -10,7 +10,12 @@ export type OverviewModulesFt2Snapshot = {
     };
     totals?: {
       revenueTotal?: number | null;
-      currency?: string | null;
+      /**
+       * Orders FT2 does not expose currency.
+       * Overview must not reintroduce it.
+       */
+      // currency removed per FT2 contract
+      /* currency?: string | null; */
     };
   } | null;
 

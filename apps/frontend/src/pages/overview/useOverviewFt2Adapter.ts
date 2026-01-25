@@ -58,8 +58,11 @@ export function mapOverviewFt2Props(
           : {
               revenueTotal:
                 snapshot.orders.totals.revenueTotal ?? null,
-              currency:
-                snapshot.orders.totals.currency ?? null,
+              /**
+               * FT2 totals are magnitude-only.
+               * Currency is intentionally unavailable.
+               */
+              currency: null,
             },
 
       products: null,

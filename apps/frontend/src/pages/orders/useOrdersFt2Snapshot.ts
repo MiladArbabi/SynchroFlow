@@ -12,10 +12,22 @@ export type OrdersFt2Snapshot = {
   totals?: {
     revenueTotal?: number | null;
     costTotal?: number | null;
-    currency?: string | null;
+    /**
+     * FT2 Snapshot
+     * ------------
+     * Currency is intentionally absent.
+     */
+    // currency removed per FT2 contract
+    /* currency?: string | null; */
   };
 
   outcome?: {
+    /**
+     * FT2 Outcome
+     * -----------
+     * Directional classification only.
+     * No causation, no explanation, no recommendation.
+     */
     status: 'positive' | 'negative';
   } | null;
 
@@ -27,17 +39,44 @@ export type OrdersFt2Snapshot = {
     completenessPct?: number | null;
   };
 
-  visibility?: {
+    visibility?: {
     status: 'sufficient' | 'insufficient';
   } | null;
 
+  /**
+   * ─────────────────────────────────────────
+   * 🧭 SYSTEM GROUNDING (FT2)
+   * Presence & classification only.
+   * ─────────────────────────────────────────
+   */
+
+  ingestion?: {
+    status: 'present' | 'absent';
+  } | null;
+
+  freshness?: {
+    status: 'recent' | 'stale' | 'unknown';
+  } | null;
+
+  /**
+   * Revenue signal continuity (L1½).
+   * Classification only. Not a trend.
+   */
+  revenueContinuity?: {
+    status: 'isolated' | 'continuous';
+  } | null;
+
+  /**
+   * ─────────────────────────────────────────
+   * STRUCTURAL COHERENCE
+   * ─────────────────────────────────────────
+   */
   alignment?: {
     demandReality?: 'aligned' | 'divergent' | 'unknown';
     engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
     operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
   };
 };
-
 
 /**
  * useOrdersFt2Snapshot

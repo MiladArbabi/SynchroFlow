@@ -25,6 +25,8 @@ export interface OrderFacts {
   shopId: number;
   ordersObserved: number | null;
 
+  ingestion: IngestionPresenceFact;
+
   totals: {
     revenueTotal: number | null;
     costTotal: number | null;
@@ -35,7 +37,15 @@ export interface OrderFacts {
     completenessPct: number | null;
   };
 
+  freshness: {
+    status: 'recent' | 'stale' | 'unknown';
+  };
+
   extractedAt: string;
+};
+
+export interface IngestionPresenceFact {
+  status: 'present' | 'absent';
 }
 
 /**

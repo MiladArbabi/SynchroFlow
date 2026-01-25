@@ -27,6 +27,11 @@ import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft
 export interface OrderTrendFacts {
   previousWindowOrders: number | null;
   currentWindowOrders: number | null;
+
+  revenueContinuity:
+    | 'isolated'
+    | 'continuous'
+    | null;
 }
 
 const TREND_WINDOW_DAYS = 7;
@@ -63,6 +68,26 @@ export async function extractOrderTrendFacts(
   const previousWindowFrom = new Date(previousWindowTo);
   previousWindowFrom.setDate(previousWindowFrom.getDate() - (TREND_WINDOW_DAYS - 1));
 
+  /**
+   * Revenue Signal Continuity (L1½)
+   * ------------------------------
+   * Classifies whether revenue-bearing orders
+   * occur on more than one distinct day.
+   * No magnitude. No trend.
+   */
+  const revenueDaysRow = await db('canonical_orders')
+    .where('shop_id', shopId)
+    .andWhere('order_created_at', '>=', from)
+    .andWhere('order_created_at', '<=', to)
+    .distinct(db.raw('DATE(order_created_at) as day'));
+
+  const revenueContinuity =
+    revenueDaysRow.length > 1
+      ? 'continuous'
+      : revenueDaysRow.length === 1
+        ? 'isolated'
+        : null;
+
   // NOTE:
   // If the database cannot fully evaluate the window,
   // the result MUST be treated as epistemically absent (null).
@@ -83,5 +108,6 @@ export async function extractOrderTrendFacts(
   return {
     previousWindowOrders,
     currentWindowOrders,
+    revenueContinuity,
   };
 }

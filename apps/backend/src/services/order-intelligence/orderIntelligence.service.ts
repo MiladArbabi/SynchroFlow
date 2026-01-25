@@ -77,6 +77,15 @@ export type EconomicVisibilityStatus =
     direction: TrendDirection;
   };
 
+
+  /**
+   * WARNING:
+   * --------
+   * dataCoveragePct is INTELLIGENCE-ONLY.
+   * It must NEVER be exposed via FT2.
+   *
+   * FT2 consumes downgraded factual coverage only.
+   */
   dataCoveragePct: number | null;
 
   /**

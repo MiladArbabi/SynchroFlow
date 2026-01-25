@@ -27,10 +27,19 @@ export function exposeOrderNexusFT2(
       ordersObserved: facts.ordersObserved,
     },
 
+  /**
+   * FT2 Totals (Downgraded)
+   * ----------------------
+   * - Currency is NOT inferable in FT2 → must not be exposed.
+   * - Totals are magnitude-only, observational.
+   */
   totals: {
     revenueTotal: facts.totals.revenueTotal,
-    costTotal: facts.totals.costTotal,
-    currency: facts.totals.currency,
+    /**
+     * costTotal is a non-existent fact in Orders FT2.
+     * Enforced null to prevent accidental upstream leakage.
+     */
+    costTotal: null,
   },
 
   outcome:
@@ -48,8 +57,18 @@ export function exposeOrderNexusFT2(
       ? null
       : { direction: intelligence.trend.direction },
 
+  /**
+   * Data Coverage (FT2)
+   * ------------------
+   * Coverage is L1-gated.
+   * Intelligence may compute usability, but FT2 exposes
+   * downgraded factual coverage only.
+   *
+   * unknown → null (fail-closed)
+   */
   dataCoverage: {
-    completenessPct: intelligence.dataCoveragePct ?? null,
+    completenessPct:
+      facts.dataCoverage?.completenessPct ?? null,
   },
 
   visibility:

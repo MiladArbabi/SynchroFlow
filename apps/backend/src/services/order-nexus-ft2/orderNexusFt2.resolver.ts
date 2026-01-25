@@ -74,6 +74,21 @@ if (!exposure) {
   return null;
 }
 
+/**
+ * FT2 Grounding Realities (L1 / L1½)
+ * --------------------------------
+ * Presence & classification only.
+ * Bypass FTEP by design.
+ */
+const grounding = {
+  ingestion: facts.ingestion,
+  freshness: facts.freshness,
+  revenueContinuity:
+    trendFacts.revenueContinuity === null
+      ? null
+      : { status: trendFacts.revenueContinuity },
+};
+
 const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId, range);
 const fulfillmentStatusFacts =
   await extractOrderFulfillmentStatusFacts(shopId, range);
@@ -286,6 +301,10 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
   return {
     ...exposure,
 
+    ingestion: grounding.ingestion,
+    freshness: grounding.freshness,
+    revenueContinuity: grounding.revenueContinuity,
+
     /**
      * FT2-ADJACENT REALITIES
      * ---------------------
@@ -296,6 +315,19 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
      * - outcome
      * - trend
      * - visibility
+     */
+
+    /**
+     * FT2-ADJACENT VISIBILITY PASSTHROUGH
+     * ----------------------------------
+     * Shipping + Customer Promise are L1 presence realities.
+     *
+     * Rules:
+     * - They bypass FTEP by design.
+     * - Visibility is presence-based, not epistemic intelligence.
+     * - They MUST NOT influence outcome, trend, or visibility.
+     *
+     * This passthrough is intentional and contract-approved.
      */
 
     /**

@@ -13,10 +13,15 @@ export interface OrderNexusFT2Exposure {
     ordersObserved: number | null;
   };
 
+  /**
+   * FT2 Totals (Downgraded)
+   * ----------------------
+   * - Magnitude-only
+   * - Currency is NOT inferable in FT2 and must never appear here
+   */
   totals: {
     revenueTotal: number | null;
     costTotal: number | null;
-    currency: string | null;
   };
 
   outcome: {
@@ -27,6 +32,13 @@ export interface OrderNexusFT2Exposure {
     direction: 'up' | 'down' | 'flat';
   } | null;
 
+  /**
+   * Data Coverage (FT2)
+   * ------------------
+   * - Sourced from L1 facts only
+   * - Intelligence usability must never surface here
+   * - unknown → null (fail-closed)
+   */
   dataCoverage: {
     completenessPct: number | null;
   };
