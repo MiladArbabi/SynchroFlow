@@ -1,8 +1,9 @@
-# 🔒 Order-Nexus FT2 — 4-Layer Architecture Blueprint (CURRENT)
+# 🔒 Order-Nexus FT2 — 4-Layer Architecture Blueprint (CURRENT · SEALED)
 
 **Status:** ✅ Canonical · Enforced · Leak-Safe
 **Applies To:** All FT2 modules
 **Reference Implementation:** Order-Nexus
+**Apex Rule:** **FT2 is final. There is no FT3.**
 
 ---
 
@@ -10,36 +11,38 @@
 
 Order-Nexus handles the **highest-risk economic truth** in LaSyncro:
 
-* revenue signals
-* cost visibility (or lack thereof)
-* order volume direction
-* economic usability of data
+* order presence
+* revenue presence
+* economic direction
+* epistemic usability of data
+* system grounding (is data even flowing?)
 
 Any shortcut in this module:
 
 * corrupts trust,
 * contaminates downstream modules,
-* breaks Echo Hub, Analytics, and WMS-Lite assumptions.
+* breaks Analytics, Echo Hub, and Ops reasoning.
 
 Therefore, Order-Nexus is implemented using **four hard, one-way layers**.
 
-FT2 represents the **maximum resolution of truth allowed to leave the backend** —
-*orientation without advice*.
+> **FT2 is the maximum resolution of truth allowed to leave the backend**
+> → *orientation without advice*.
 
 ---
 
-## 1. Architectural Overview
+## 1. Architectural Overview (LOCKED)
 
 ```
 Persistence / Canonical Orders
         ↓
-Layer 1 — Order Facts        (What is true)
+Layer 1   — Canonical Facts          (What exists)
+Layer 1½  — Temporal Facts           (How it moves)
         ↓
-Layer 2 — Order Intelligence (What it means — internally)
+Layer 2   — Intelligence             (What it means — internal only)
         ↓
-Layer 3 — FTEP               (What may be exposed)
+Layer 3   — FTEP                     (What may be exposed)
         ↓
-Layer 4 — FT2 UI             (What the user sees)
+Layer 4   — FT2 UI                   (What the user sees)
 ```
 
 ### Inviolable Rules
@@ -49,13 +52,13 @@ Layer 4 — FT2 UI             (What the user sees)
 * No layer may compensate for missing truth
 * UI must render correctly with **null everywhere**
 
-Violation of any rule = **architecture breach**
+Violation of any rule = **architecture breach**.
 
 ---
 
-## 2. Layer 1 — Order Facts
+## 2. Layer 1 — Canonical Facts (Truth)
 
-**Canonical Truth Layer**
+**Canonical Observation Layer**
 
 ---
 
@@ -90,25 +93,25 @@ This is the **only layer allowed to read the database**.
 ```
 apps/backend/src/services/order-facts/
 ├── orderFacts.service.ts
+├── orderTrendFacts.service.ts
 ├── orderFacts.types.ts
 └── index.ts
 ```
 
 ---
 
-### 2.2 Canonical Types
+### 2.2 Canonical Types (CURRENT)
 
 ```ts
 export interface OrderFacts {
   shopId: number;
-  period: { from: string; to: string };
 
   ordersObserved: number | null;
 
   totals: {
     revenueTotal: number | null;
-    costTotal: number | null;   // always null
-    currency: string | null;    // always null
+    costTotal: number | null;   // always null (non-existent fact)
+    currency: string | null;    // always null (not inferable)
   };
 
   dataCoverage: {
@@ -119,13 +122,20 @@ export interface OrderFacts {
 }
 ```
 
+```ts
+export interface OrderTrendFacts {
+  previousWindowOrders: number | null;
+  currentWindowOrders: number | null;
+}
+```
+
 ---
 
-### 2.3 Design Constraints (Hard)
+### 2.3 Design Constraints (HARD)
 
 * ❌ No derived percentages
 * ❌ No statuses
-* ❌ No booleans like “loss”
+* ❌ No booleans like “healthy”
 * ❌ No heuristics
 * ❌ No defaults other than `null`
 * ✅ Preserve absence explicitly
@@ -136,17 +146,17 @@ export interface OrderFacts {
 
 ### 2.4 Responsibilities
 
-* Query canonical tables
-* Perform **only** counts and sums
-* Apply resolved FT2 range
+* Query canonical tables only
+* Perform **counts and sums only**
+* Apply resolved FT2 temporal window
 * Never infer missing data
-* Never interpret
+* Never interpret meaning
 
 ---
 
-## 3. Layer 2 — Order Intelligence
+## 3. Layer 2 — Intelligence (INTERNAL ONLY)
 
-**Internal Meaning Layer**
+**Meaning Without Voice**
 
 ---
 
@@ -168,91 +178,68 @@ apps/backend/src/services/order-intelligence/
 
 ---
 
-### 3.2 Intelligence Types (Internal Only)
+### 3.2 Intelligence Outputs (Internal)
 
 ```ts
 export interface OrderNexusIntelligence {
-  ordersObserved: number | null;
-
-  margin: {
-    averagePct: number | null; // intentionally inactive
-    status: 'healthy' | 'loss' | 'unknown';
-  };
-
-  loss: {
-    exists: boolean | null;
+  outcome: {
+    status: 'positive' | 'negative' | 'unknown';
   };
 
   trend: {
     direction: 'up' | 'down' | 'flat' | 'unknown';
   };
 
-  dataCoveragePct: number | null;
-
   visibility: {
     status: 'sufficient' | 'insufficient' | 'unknown';
+  };
+
+  revenueContinuity: {
+    status: 'isolated' | 'continuous' | 'unknown';
   };
 }
 ```
 
 ---
 
-### 3.3 Intelligence Gates (Non-Negotiable)
+### 3.3 Intelligence Gates (NON-NEGOTIABLE)
 
-Intelligence **may only activate** if data is epistemically usable.
+Intelligence **activates only if data is usable**.
 
-**Data usability rule:**
+| Condition       | Result   |
+| --------------- | -------- |
+| Coverage `null` | unusable |
+| Coverage < 80%  | unusable |
+| Coverage ≥ 80%  | usable   |
 
-* `null` coverage → unusable
-* `< 80%` coverage → unusable
-* `≥ 80%` coverage → usable
+Unusable → `unknown`.
 
 No gate bypass is allowed.
 
 ---
 
-### 3.4 Active Intelligence (CURRENT)
+### 3.4 Key Intelligence Semantics
 
-#### Margin Status (Directional, Not Accounting)
+#### Economic Outcome (Orientation Only)
 
-| Condition      | Status    |
-| -------------- | --------- |
-| Data unusable  | `unknown` |
-| Revenue `null` | `unknown` |
-| Revenue `<= 0` | `loss`    |
-| Revenue `> 0`  | `healthy` |
-
-This is **economic orientation**, not margin computation.
-
----
+* Revenue > 0 → `positive`
+* Revenue ≤ 0 → `negative`
+* Data unusable → `unknown`
 
 #### Trend Direction
 
-Derived from **two consecutive fixed windows** (7 days each).
-
-| Condition            | Direction |
-| -------------------- | --------- |
-| Data unusable        | `unknown` |
-| Insufficient history | `unknown` |
-| Increase > 5%        | `up`      |
-| Decrease > 5%        | `down`    |
-| Otherwise            | `flat`    |
-
-* Deterministic
+* Two fixed 7-day windows
+* Direction only
 * Non-predictive
 * Non-explanatory
 
----
+#### Revenue Continuity (L1½)
 
-#### Economic Visibility (Internal Constraint)
-
-| Data Usable | Visibility     |
-| ----------- | -------------- |
-| `null`      | `unknown`      |
-| `false`     | `insufficient` |
-| `true`      | `sufficient`   |
-
-This expresses **whether orientation is epistemically allowed**, not quality.
+* Continuous → signal persists across windows
+* Isolated → single-window presence
+* No magnitude
+* No slope
+* No explanation
 
 ---
 
@@ -264,7 +251,7 @@ This expresses **whether orientation is epistemically allowed**, not quality.
 * ❌ Forecasting
 * ❌ Cross-module enrichment
 
-If intelligence becomes **descriptive**, the layer is broken.
+If intelligence becomes descriptive, **the layer is broken**.
 
 ---
 
@@ -295,7 +282,7 @@ apps/backend/src/services/order-ftep/
 
 > **All intelligence must be downgraded.**
 
-If raw intelligence is exposed → **hard violation**.
+Raw intelligence must never cross this boundary.
 
 ---
 
@@ -310,7 +297,7 @@ export interface OrderFtepInput {
 
 ---
 
-### 4.4 Output Contract (FT2 Exposure)
+### 4.4 Output Contract (FT2 Snapshot)
 
 ```ts
 export interface OrderNexusFT2Exposure {
@@ -321,16 +308,13 @@ export interface OrderNexusFT2Exposure {
   totals: {
     revenueTotal: number | null;
     costTotal: number | null;
-    currency: string | null;
   };
 
-  outcome: {
-    status: 'positive' | 'negative';
-  } | null;
+  outcome: { status: 'positive' | 'negative' } | null;
 
-  trend: {
-    direction: 'up' | 'down' | 'flat';
-  } | null;
+  trend: { direction: 'up' | 'down' | 'flat' } | null;
+
+  revenueContinuity: { status: 'isolated' | 'continuous' } | null;
 
   dataCoverage: {
     completenessPct: number | null;
@@ -344,37 +328,23 @@ export interface OrderNexusFT2Exposure {
 
 ---
 
-### 4.5 Downgrade Rules (Non-Negotiable)
+### 4.5 Downgrade Rules (LOCKED)
 
-| Intelligence Signal | FT2 Exposure Result        |
-| ------------------- | -------------------------- |
-| Margin percentage   | ❌ removed                  |
-| Margin status       | positive / negative / null |
-| Loss existence      | encoded via outcome only   |
-| Trend delta         | direction only             |
-| Visibility unknown  | ❌ removed (→ null)         |
-| Explanations        | ❌ forbidden                |
+| Internal Signal | FT2 Exposure |
+| --------------- | ------------ |
+| `unknown`       | `null`       |
+| Percentages     | ❌ removed    |
+| Margin details  | ❌ removed    |
+| Trend deltas    | ❌ removed    |
+| Explanations    | ❌ forbidden  |
 
-> **Critical Rule:**
-> `'unknown'` is never emitted.
-> Unknown intelligence is downgraded to **absence (`null`)**.
-
----
-
-### 4.6 Leak-Prevention Requirements
-
-The following must always hold:
-
-* No intelligence-only fields in exposure
-* No percentages other than coverage
-* No causation language
-* No internal flags or debug metadata
-
-Violation = **build must fail**.
+**Critical invariant:**
+`unknown` is never emitted.
+Unknown → **absence (`null`)**.
 
 ---
 
-## 5. Layer 4 — FT2 UI
+## 5. Layer 4 — FT2 UI (APEX)
 
 **Read-Only Observability Layer**
 
@@ -406,7 +376,7 @@ apps/frontend/src/pages/orders/useOrdersFt2Adapter.ts
 
 ---
 
-### 5.3 Adapter Role (Critical Gate)
+### 5.3 Adapter Role (CRITICAL GATE)
 
 Adapters must:
 
@@ -414,30 +384,57 @@ Adapters must:
 * Preserve backend semantics
 * Perform **zero computation**
 
-If logic appears here → **truth leak detected**.
+Adapters are **pipes**, not brains.
+
+---
+
+### 5.4 System Grounding (NEW · MANDATORY)
+
+FT2 UI must expose **grounding reality** explicitly:
+
+* Ingestion presence
+* Temporal freshness
+* Revenue continuity
+* Data coverage
+* Visibility gate
+
+If grounding fails, **everything downstream remains silent**.
+
+---
+
+### 5.5 Trust FT2 (META)
+
+Trust is **not a domain**.
+
+* Fetched via Trust FT2 snapshot
+* Passed through adapter unchanged
+* Interpreted **only in module UI**
+* Rendered as **FT2Surface boundary only**
+
+No text. No icons. No explanations.
 
 ---
 
 ## 6. Lifecycle & Time Ownership
 
-* Time is resolved at the **controller / lifecycle layer**
-* FT2 modules accept **range**, not period ownership
-* Analytics and downstream observers **do not own time**
+* Time is resolved **outside FT2**
+* FT2 receives range, not authority
+* Analytics and intelligence do **not** own time
 
-This prevents cross-domain temporal drift.
+This prevents temporal drift and retroactive truth mutation.
 
 ---
 
-## 7. Replication Rules (All Future FT2 Modules)
+## 7. Replication Rules (ALL FT2 MODULES)
 
-To claim FT2 compliance, a module must:
+To be FT2-compliant, a module must:
 
-1. Implement **Facts** (Layer 1)
-2. Implement **Intelligence** (Layer 2)
-3. Implement **FTEP** (Layer 3)
-4. Implement **Read-Only FT2 UI** (Layer 4)
-5. Enforce **downgrade semantics**
-6. Be gated by **lifecycle**
+1. Implement **Layer 1 Facts**
+2. Implement **Layer 1½ Temporal Facts** (if applicable)
+3. Implement **Layer 2 Intelligence**
+4. Enforce **Layer 3 FTEP**
+5. Render **Layer 4 Read-Only UI**
+6. Integrate **Trust FT2** as META boundary
 
 If Layer 3 is missing → **module is rejected**.
 
@@ -449,21 +446,25 @@ Because:
 
 * Analytics depends on clean truth
 * Echo Hub depends on clean truth
-* WMS-Lite depends on clean truth
-* Cross-module reasoning requires strict ownership
+* Ops tooling depends on clean truth
+* Cross-module reasoning collapses without strict ownership
 
 **Trust is the product.**
 
 Order-Nexus is the **keystone**.
 
-If it leaks, everything downstream lies.
+If it leaks, everything lies.
 
 ---
 
-## 9. Status
+## 9. Final Seal
 
-* ✅ Order-Nexus is the reference FT2 module
-* 🔒 Architecture is locked
-* 🔁 Pattern is mandatory for all FT2 modules
+* System grounding formalized
+* Revenue continuity correctly placed at L1½
+* Trust elevated to META boundary
+* UI aligned to two-core-surface model
+* FT2 confirmed as apex
+
+🔐 **Order-Nexus FT2 4-Layer Architecture is current, enforced, and sealed.**
 
 ---
