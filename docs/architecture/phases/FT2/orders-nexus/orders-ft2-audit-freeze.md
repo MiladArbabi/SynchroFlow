@@ -1,4 +1,4 @@
-# 🔒 Order-Nexus FT2 Contract Audit (CURRENT · ACTIVE)
+# 🔒 Order-Nexus FT2 Contract Audit (CURRENT · ACTIVE · SEALED)
 
 **Status:** ✅ COMPLETE / SEALED
 **Scope:** Order-Nexus FT2 — Backend + Frontend
@@ -10,21 +10,30 @@
 
 ## 0. Contract Definition — What “Orders FT2” Is (Precisely)
 
-**Orders FT2** is a **read-only economic & operational orientation surface** for SMBs, designed to answer:
+**Orders FT2** is a **read-only economic & operational orientation system for SMBs**, designed to answer exactly one class of questions:
 
-> **“Is my system real, flowing, coherent, and directionally stable right now?”**
+> **“Is my order system real, flowing, coherent, and directionally stable right now?”**
 
-It is composed of:
+Orders FT2 **never** answers:
+
+> *Why*, *what to do*, *what will happen*, *what matters most*, or *how to fix*.
+
+---
+
+### 0.0 What Orders FT2 Is Composed Of (UPDATED · CANONICAL)
+
+Orders FT2 is composed of:
 
 1. **Authoritative FT2 Snapshot (downgraded truth only)**
-2. **Two Core Orientation Surfaces**
+2. **Narrative InfoBlocks (FT2 primitives)**
 
-   * System Grounding & Economic Reality
-   * Direction & System Coherence
+   * Orders Overview
+   * System Coherence
+   * (Future: Revenue, Returns)
 3. **FT2-Adjacent Exploratory Surfaces**
 
-   * Time series
-   * Distribution
+   * Orders over time
+   * Order size distribution
 4. **Cross-Domain Alignment Planes**
 5. **Strict Frontend Consumption Path**
 
@@ -32,9 +41,8 @@ It is composed of:
    * Pure adapters
    * Observational UI primitives only
 
-FT2 **never** answers:
-
-> “Why”, “what to do”, “what will happen”, or “what matters most”.
+> **InfoBlock is the primary FT2 narrative primitive.**
+> **FT2Surface is structural scaffolding only.**
 
 ---
 
@@ -51,20 +59,41 @@ Orders FT2 contains **no**:
 * prioritization
 * user instruction
 * escalation logic
+* **semantic interpretation inside FT2 primitives**
 
 If any of the above appear, the contract is broken.
 
 ---
 
-## 0.1 Active Domains (UPDATED · CURRENT)
+## 0.1 FT2 Narrative Composition Rule (NEW · SEALED)
 
-Orders FT2 now exposes **three classes of domains**, explicitly grouped and surfaced.
+FT2 facts are **never rendered raw**.
+
+All user-facing FT2 data in Orders-Nexus is presented through:
+
+> **InfoBlock — the FT2 narrative primitive**
+
+InfoBlock:
+
+* groups related domains
+* preserves downgraded truth
+* enforces stable scan order
+* reduces cognitive load **without adding meaning**
+
+**FT2Surface is no longer a semantic unit.**
+It exists only to provide layout scaffolding.
+
+---
+
+## 0.2 Active Domains (UPDATED · CURRENT)
+
+Orders FT2 exposes **three classes of domains**, grouped and surfaced intentionally.
 
 ---
 
 ### 🧭 A. System Grounding Domains (FOUNDATIONAL · L1)
 
-These answer a single prerequisite question:
+These answer the prerequisite question:
 
 > **“Is this system anchored in reality?”**
 
@@ -83,10 +112,10 @@ These answer a single prerequisite question:
 * Presence-only unless stated
 * No inference
 * No explanation
-* Fail closed (`null` / `unknown`)
+* Fail-closed (`null` / `unknown`)
 * Absence ≠ zero ≠ false
 
-These domains are surfaced together as **Core Surface A**.
+**These domains surface together inside the *Orders Overview InfoBlock*.**
 
 ---
 
@@ -101,13 +130,13 @@ These only become meaningful **after grounding is satisfied**.
 | Market Coherence Reality | L-X   | Are demand & revenue structurally aligned?    |
 | Execution Coherence      | L-X   | Are operations & economics aligned?           |
 
-These domains are surfaced together as **Core Surface B**.
+**These domains surface together inside the *System Coherence InfoBlock*.**
 
 ---
 
 ### 🧭 C. Fulfillment & Logistics Domains (L1 / L2)
 
-These domains **exist in the snapshot and alignment planes**, but are **not rendered directly** in OrdersModuleFT2 UI:
+These domains exist in the snapshot and alignment planes but are **not rendered as rows**:
 
 * Fulfillment Presence
 * Fulfillment Status
@@ -116,14 +145,13 @@ These domains **exist in the snapshot and alignment planes**, but are **not rend
 * Shipping Delay Presence
 * Customer Promise Presence
 
-They participate **only through alignment planes**.
+They participate **only via alignment planes or Interpretation Rail copy**.
 
 ---
 
-## 0.2 Alignment Planes (ACTIVE · UNCHANGED)
+## 0.3 Alignment Planes (ACTIVE · UNCHANGED)
 
 Alignment planes classify **structural coherence only**.
-They never create truth.
 
 | Plane                                  | Participating Domains         | Status |
 | -------------------------------------- | ----------------------------- | ------ |
@@ -140,10 +168,10 @@ They never create truth.
 
 **Alignment invariants:**
 
-* Execute **after FTEP**
+* Execute after FTEP
 * Deterministic
 * Read-only
-* Fail closed (`unknown`)
+* Fail-closed (`unknown`)
 * No causality
 * No remediation
 * No narrative
@@ -159,13 +187,13 @@ Layer 1 — Canonical Facts
    ↓
 Layer 1½ — Temporal Facts (Velocity, Continuity)
    ↓
-Layer 2 — Intelligence (ACTIVE, INTERNAL ONLY)
+Layer 2 — Intelligence (INTERNAL ONLY)
    ↓
 Layer 3 — FTEP (Truth Exposure Policy)
    ↓
 Layer 4 — Alignment Planes (Read-only)
    ↓
-Order-Nexus FT2 Snapshot (Backend Output)
+Order-Nexus FT2 Snapshot
 ```
 
 **Critical invariants:**
@@ -180,43 +208,28 @@ Order-Nexus FT2 Snapshot (Backend Output)
 
 ### Order Facts
 
-**Tables**
-
-* `canonical_orders`
-* `canonical_order_line_items`
-
-| Field             | Type          | Semantics             |
-| ----------------- | ------------- | --------------------- |
-| `ordersObserved`  | number | null | null if no rows       |
-| `revenueTotal`    | number | null | DB sum                |
-| `costTotal`       | null          | Non-existent fact     |
-| `currency`        | null          | Not inferable in FT2  |
-| `dataCoveragePct` | number | null | Null if no line items |
-| `extractedAt`     | ISO string    | Snapshot timestamp    |
+| Field           | Type          | Semantics             |
+| --------------- | ------------- | --------------------- |
+| ordersObserved  | number | null | null if no rows       |
+| revenueTotal    | number | null | DB sum                |
+| costTotal       | null          | Non-existent fact     |
+| currency        | null          | Not inferable in FT2  |
+| dataCoveragePct | number | null | Null if no line items |
+| extractedAt     | ISO string    | Snapshot timestamp    |
 
 ---
 
-### Ingestion Presence Reality (NEW · FORMALIZED)
+### Ingestion Presence Reality (FORMALIZED)
 
-**Derived from:**
-
-* `ordersObserved`
-* existence of canonical rows in period
-
-| Value   | Meaning                     |
-| ------- | --------------------------- |
-| present | ≥1 canonical fact observed  |
-| absent  | no canonical facts observed |
-| null    | not evaluable               |
+| Value   | Meaning                    |
+| ------- | -------------------------- |
+| present | ≥1 canonical fact observed |
+| absent  | no canonical facts         |
+| null    | not evaluable              |
 
 ---
 
-### Temporal Freshness Reality (NEW · FORMALIZED)
-
-**Derived from:**
-
-* FT2 date range
-* most recent `order_created_at`
+### Temporal Freshness Reality (FORMALIZED)
 
 | Value   | Meaning                  |
 | ------- | ------------------------ |
@@ -224,23 +237,17 @@ Order-Nexus FT2 Snapshot (Backend Output)
 | stale   | outside freshness window |
 | unknown | not evaluable            |
 
-No SLA.
-No duration.
-No blame.
+No SLA. No duration. No blame.
 
 ---
 
-### Revenue Continuity Reality (NEW · FORMALIZED · L1½)
+### Revenue Continuity Reality (L1½)
 
-**Derived from:**
-
-* OrderTrendFacts windowed counts
-
-| Value      | Meaning                     |
-| ---------- | --------------------------- |
-| continuous | revenue present in sequence |
-| isolated   | one-off / discontinuous     |
-| null       | insufficient data           |
+| Value      | Meaning                      |
+| ---------- | ---------------------------- |
+| continuous | revenue present sequentially |
+| isolated   | one-off / discontinuous      |
+| null       | insufficient data            |
 
 This is **not** a trend.
 
@@ -248,23 +255,24 @@ This is **not** a trend.
 
 ## 3. Layer 2 — Intelligence (INTERNAL ONLY)
 
-Intelligence **may think**, but **may not speak directly**.
+| Output            | Type                                |
+| ----------------- | ----------------------------------- |
+| margin.status     | healthy / loss / unknown            |
+| trend.direction   | up / down / flat / unknown          |
+| visibility.status | sufficient / insufficient / unknown |
 
-| Output              | Type                                |
-| ------------------- | ----------------------------------- |
-| `margin.status`     | healthy / loss / unknown            |
-| `trend.direction`   | up / down / flat / unknown          |
-| `visibility.status` | sufficient / insufficient / unknown |
+Intelligence may think.
+It may **never speak directly**.
 
 ---
 
 ## 4. Layer 3 — FTEP (Truth Exposure Policy)
 
-**Mandatory downgrade rules:**
+**Downgrade rules (MANDATORY):**
 
 | Internal Signal | FT2 Exposure |
 | --------------- | ------------ |
-| `unknown`       | `null`       |
+| unknown         | null         |
 | active          | downgraded   |
 
 No intelligence leaks. Ever.
@@ -275,14 +283,14 @@ No intelligence leaks. Ever.
 
 Snapshot contains **only**:
 
-* `context`
-* `totals`
-* `outcome | null`
-* `trend | null`
-* `dataCoverage`
-* `visibility | null`
-* `shipping` (presence-only)
-* `alignment` (read-only)
+* context
+* totals
+* outcome | null
+* trend | null
+* dataCoverage
+* visibility | null
+* shipping (presence-only)
+* alignment (read-only)
 
 No currency.
 No costs.
@@ -292,15 +300,13 @@ No upgrades.
 
 ## 6. Trust FT2 (ACTIVE · INTEGRATED)
 
-Trust is a **boundary, not a message**.
-
 **Source:** `/api/v1/modules/trust/ft2`
 
 ```ts
 { trustEligible: boolean | null }
 ```
 
-### UI Interpretation (LOCKED)
+**UI Interpretation (LOCKED):**
 
 | trustEligible | trustTone   |
 | ------------- | ----------- |
@@ -309,31 +315,51 @@ Trust is a **boundary, not a message**.
 | null          | constrained |
 | trust null    | no bar      |
 
-Applied uniformly to **all surfaces** in OrdersModuleFT2.
+Applied uniformly to **all FT2 scaffolding surfaces**.
 
 ---
 
-## 7. OrdersModuleFT2 — UI Composition (UPDATED)
+## 7. OrdersModuleFT2 — UI Composition (UPDATED · CANONICAL)
 
-### Core Surface A — System Grounding & Economic Reality
+### Primary Narrative Layer — InfoBlocks
 
-* Orders
-* Revenue + Continuity
-* Data Health (coverage + visibility)
-* System Flow (ingestion + freshness)
+#### InfoBlock: Orders Overview
 
-### Core Surface B — Direction & System Coherence
+Rows (LOCKED):
 
-* Outcome & Direction
-* Market Coherence
-* Execution Coherence
+* Orders total
+* Fulfilled orders
+* Unfulfilled orders
+* Incoming orders
 
-### Optional Surface C — Activity Shape (Exploratory)
+Interpretation Rail (copy-only):
+
+* **ORDER FLOW IS VISIBLE**
+* **FULFILLMENT COUNTS UNAVAILABLE**
+
+---
+
+#### InfoBlock: System Coherence
+
+Rows (LOCKED):
+
+* Outcome
+* Order direction
+* Operational alignment
+
+No additional rows permitted.
+
+---
+
+### Secondary Exploratory Layer (FT2-Adjacent)
+
+Rendered via FT2Surface (structure only):
 
 * Orders over time
 * Order size distribution
 
-**No other surfaces exist.**
+These surfaces are observational and optional.
+They carry **no narrative responsibility**.
 
 ---
 
@@ -352,11 +378,11 @@ Applied uniformly to **all surfaces** in OrdersModuleFT2.
 * No inference
 * No lifecycle logic
 
-Adapters are **pipes**, not brains.
+Adapters are **pipes, not brains**.
 
 ---
 
-## 9. FT2 UI Invariants (UNCHANGED)
+## 9. FT2 UI Invariants (UPDATED)
 
 * Observational only
 * Null-safe everywhere
@@ -364,8 +390,10 @@ Adapters are **pipes**, not brains.
 * No prioritization
 * No explanations
 * No recommendations
+* **InfoBlock is the only narrative grouping primitive**
+* **FT2Surface may not encode meaning**
 
-UI **cannot upgrade truth**.
+UI cannot upgrade truth.
 
 ---
 
@@ -387,8 +415,9 @@ These are **design constraints**, not missing features.
 * System grounding formalized
 * Revenue continuity introduced correctly
 * Trust integrated per playbook
-* Geometry simplified without semantic loss
+* Narrative structure introduced without semantic leakage
 * Cognitive load reduced without lying
+* InfoBlock locked as FT2 primitive
 * FT2 confirmed as apex
 
 🔐 **Order-Nexus FT2 is fully audited, synchronized, and sealed — CURRENT STATE.**

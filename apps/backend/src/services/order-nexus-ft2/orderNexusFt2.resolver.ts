@@ -7,6 +7,7 @@ import { extractOrderFulfillmentStatusFacts } from '../order-facts/orderFulfillm
 import { extractOrderShippingDelayFacts } from '../order-facts/orderShippingDelayFacts.service';
 import { extractOrderTrendFacts } from 'api-src/services/order-facts/orderTrendFacts.service';
 import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFacts.service';
+import { extractFulfilledOrdersCount } from '../order-facts/orderFulfilledCountFacts.service';
 
 /**
  * NOTE ON TREND WIRING
@@ -52,6 +53,8 @@ const facts = await extractOrderFacts(shopId, range);
 const trendFacts = await extractOrderTrendFacts(shopId, range);
 const intelligence = deriveOrderIntelligence(facts, trendFacts);
 
+const fulfilledOrders = await extractFulfilledOrdersCount(shopId);
+
 /**
   * IMPORTANT:
   * -----------
@@ -73,6 +76,13 @@ const orderVelocity = deriveOrderVelocityReality(
 if (!exposure) {
   return null;
 }
+
+const unfulfilledOrders =
+  facts.ordersObserved == null || fulfilledOrders == null
+    ? null
+    : Math.max(facts.ordersObserved - fulfilledOrders, 0);
+
+const incomingOrders = trendFacts.currentWindowOrders ?? null;
 
 /**
  * FT2 Grounding Realities (L1 / L1½)
@@ -304,6 +314,13 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
     ingestion: grounding.ingestion,
     freshness: grounding.freshness,
     revenueContinuity: grounding.revenueContinuity,
+
+    orders: {
+      total: facts.ordersObserved,
+      fulfilled: fulfilledOrders,
+      unfulfilled: unfulfilledOrders,
+      incoming: incomingOrders,
+    },
 
     /**
      * FT2-ADJACENT REALITIES

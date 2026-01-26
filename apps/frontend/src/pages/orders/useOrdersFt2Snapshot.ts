@@ -5,6 +5,14 @@ import { axiosInstance } from 'api/axiosConfig';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
 export type OrdersFt2Snapshot = {
+
+  orders?: {
+    total?: number | null;
+    fulfilled?: number | null;
+    unfulfilled?: number | null;
+    incoming?: number | null;
+  };
+
   context?: {
     ordersObserved?: number | null;
   };

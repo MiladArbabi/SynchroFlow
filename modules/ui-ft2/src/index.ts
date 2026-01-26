@@ -11,3 +11,7 @@ export * from './layout';
 export * from './contracts';
 
 export * from './visuals';
+
+export { InfoBlock } from './primitives/InfoBlock';
+export { InfoBlockRow } from './primitives/InfoBlockRow';
+export { InfoBlockFooter } from './primitives/InfoBlockFooter';

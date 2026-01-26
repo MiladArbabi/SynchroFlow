@@ -42,13 +42,11 @@ export function FT2Row({ children, intent }: FT2RowProps) {
         flexDirection: 'row',
         flexWrap: 'nowrap',
 
-        // 🔒 FT2 rule: never compress surfaces
         overflowX: 'auto',
-        overflowY: 'hidden',
+        overflowY: 'visible',
 
         gap: `${FT2_TOKENS.surfaceGap / 8}px`,
-        height: rowConfig.height,
-        alignItems: 'stretch',
+        alignItems: 'flex-start',
       }}
     >
       {items.map((child, index) => (
@@ -56,9 +54,6 @@ export function FT2Row({ children, intent }: FT2RowProps) {
           key={index}
           sx={{
             display: 'flex',
-            height: '100%',
-
-            // 🔒 Hard boundary: surface defines width
             flexShrink: 0,
             minWidth: 'auto',
           }}

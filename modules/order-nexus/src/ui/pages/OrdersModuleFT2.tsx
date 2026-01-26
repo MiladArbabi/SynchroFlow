@@ -4,9 +4,14 @@ import {
   FT2Layout,
   FT2Row,
   FT2Surface,
-  FT2Stat,
-  FT2Text,
 } from '@lasyncro/ui-ft2';
+
+import {
+  InfoBlock,
+  InfoBlockRow,
+  InfoBlockFooter,
+} from '@lasyncro/ui-ft2';
+
 /**
  * UI INVARIANTS (FT2)
  * ------------------
@@ -31,6 +36,13 @@ export interface OrdersModuleFT2DataProps {
    * Answers: "Is the system anchored in reality?"
    * ─────────────────────────────────────────
    */
+
+  orders: {
+    total: number | null;
+    fulfilled: number | null;
+    unfulfilled: number | null;
+    incoming: number | null;
+  };
 
   context: {
     ordersObserved: number | null;
@@ -152,6 +164,8 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
     distribution,
 
     trust,
+    
+    orders,
   } = props;
 
   /**
@@ -173,157 +187,35 @@ const trustTone =
 
   return (
     <FT2Layout>
-
-      {/* ─────────────────────────────────────────
-        CORE SURFACE A
-        System Grounding & Economic Reality
-        ----------------------------------
-        Answers:
-        - Is this system real?
-        - Is data flowing?
-        - Is revenue present and continuous?
-        This surface is existence-only.
-      ───────────────────────────────────────── */}
-
       <FT2Row intent="kpi">
-        {/* Orders Presence */}
-        <FT2Surface
-          variant="kpi"
-          title="Orders"
-          trustTone={trustTone}
-          span={1}
-        >
-          <FT2Stat value={context.ordersObserved} />
-        </FT2Surface>
-
-        {/* Revenue Presence */}
-        <FT2Surface
-          variant="kpi"
-          title="Revenue"
-          trustTone={trustTone}
-          span={1}
-        >
-          <FT2Stat
-            value={
-              totals.revenueTotal === null
-                ? null
-                : totals.revenueTotal.toLocaleString()
-            }
+        <InfoBlock title="Orders overview">
+          <InfoBlockRow
+            label="Orders total"
+            value={orders.total}
           />
-          <FT2Text>
-            {revenueContinuity?.status ?? '—'}
-          </FT2Text>
-        </FT2Surface>
 
-        {/* Data Health */}
-        <FT2Surface
-          variant="kpi"
-          title="Data health"
-          trustTone={trustTone}
-          span={1}
-        >
-          <FT2Stat
-            value={
-              dataCoverage.completenessPct === null
-                ? null
-                : `${dataCoverage.completenessPct}%`
-            }
+          <InfoBlockRow
+            label="Fulfilled orders"
+            value={orders.fulfilled}
           />
-          <FT2Text>
-            {visibility?.status ?? '—'}
-          </FT2Text>
-        </FT2Surface>
 
-        {/* System Flow */}
-        <FT2Surface
-          variant="kpi"
-          title="System flow"
-          trustTone={trustTone}
-          span={1}
-        >
-          <FT2Text>
-            {ingestion?.status ?? '—'}
-          </FT2Text>
-          <FT2Text>
-            {freshness?.status ?? '—'}
-          </FT2Text>
-        </FT2Surface>
+          <InfoBlockRow
+            label="Unfulfilled orders"
+            value={orders.unfulfilled}
+          />
+
+          <InfoBlockRow
+            label="Incoming orders"
+            value={orders.incoming}
+          />
+
+          <InfoBlockFooter
+            line1="ORDER OBLIGATIONS ARE VISIBLE"
+            line2="EXECUTION STATES SHOWN ELSEWHERE"
+          />
+        </InfoBlock>
       </FT2Row>
 
-      {/* ─────────────────────────────────────────
-        CORE SURFACE B
-        Direction & System Coherence
-        ----------------------------
-        Requires grounding above to be meaningful.
-        Classification only. No causation.
-      ───────────────────────────────────────── */}
-
-      <FT2Row intent="support">
-        {/* Outcome & Direction */}
-        <FT2Surface
-          title="Outcome & direction"
-          trustTone={trustTone}
-          span={1}
-        >
-          <FT2Text>
-            {outcome?.status ?? '—'}
-          </FT2Text>
-          <FT2Text>
-            {trend?.direction ?? '—'}
-          </FT2Text>
-        </FT2Surface>
-
-        {/* Market Coherence */}
-        <FT2Surface
-          title="Market coherence"
-          trustTone={trustTone}
-          span={1}
-        >
-          <FT2Text>
-            {alignment?.demandReality ?? '—'}
-          </FT2Text>
-          <FT2Text>
-            {alignment?.engagementRevenue ?? '—'}
-          </FT2Text>
-        </FT2Surface>
-
-        {/* Execution Coherence */}
-        <FT2Surface
-          title="Execution coherence"
-          trustTone={trustTone}
-          span={1}
-        >
-          <FT2Text>
-            {alignment?.operationalEconomic ?? '—'}
-          </FT2Text>
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ─────────────────────────────────────────
-        OPTIONAL SURFACE C
-        Activity Shape (Exploratory)
-        ---------------------------
-        Observational only.
-        Must never dominate the module.
-      ───────────────────────────────────────── */}
-
-      <FT2Row intent="analysis">
-        <FT2Surface
-          title="Orders over time"
-          trustTone={trustTone}
-          span={2}
-        >
-          {timeseries}
-        </FT2Surface>
-
-        <FT2Surface
-          title="Order sizes"
-          trustTone={trustTone}
-          span={2}
-        >
-          {distribution}
-        </FT2Surface>
-      </FT2Row>
     </FT2Layout>
   );
 }

@@ -35,6 +35,28 @@ export function mapOrdersFt2Props(
    * ─────────────────────────────────────────
    */
 
+  orders: {
+    total:
+      snapshot.orders?.total === undefined
+        ? null
+        : snapshot.orders.total,
+
+    fulfilled:
+      snapshot.orders?.fulfilled === undefined
+        ? null
+        : snapshot.orders.fulfilled,
+
+    unfulfilled:
+      snapshot.orders?.unfulfilled === undefined
+        ? null
+        : snapshot.orders.unfulfilled,
+
+    incoming:
+      snapshot.orders?.incoming === undefined
+        ? null
+        : snapshot.orders.incoming,
+  },
+  
   context: {
     ordersObserved:
       snapshot.context?.ordersObserved === undefined

@@ -11,6 +11,13 @@ import type { OrderNexusFT2Exposure } from 'api-src/services/order-ftep/orderFte
 export type OrderNexusFT2Snapshot =
   OrderNexusFT2Exposure & {
 
+  orders: {
+    total: number | null;
+    fulfilled: number | null;
+    unfulfilled: number | null;
+    incoming: number | null;
+  };
+
   ingestion: {
     status: 'present' | 'absent';
   } | null;

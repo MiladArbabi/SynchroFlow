@@ -101,7 +101,22 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
                          0 2px 4px ${withAlpha('#000000', 0.08)}`,
 
           '--ft2-surface-shadow-hover': `0 2px 4px ${withAlpha('#000000', 0.16)}`,
-        },
+
+          '--ft2-infoblock-bg': '#FAFAFA',
+          '--ft2-infoblock-border': '#EAE7E7',
+
+          '--ft2-infoblock-header-bg': '#F4F2F2',
+          '--ft2-infoblock-header-text': '#000000',
+
+          '--ft2-infoblock-row-text': '#353535',
+
+          '--ft2-infoblock-footer-bg': '#D9D9D9',
+          '--ft2-infoblock-footer-text': '#000000',
+
+          '--ft2-infoblock-diff-neutral': '#6B6B6B',
+          '--ft2-infoblock-diff-up': '#2E7D32',    // green
+          '--ft2-infoblock-diff-down': '#C62828',  // red
+          },
 
         '[data-color-scheme="dark"]': {
           '--ft2-surface-bg': darkPalette.background.paper,
@@ -112,6 +127,21 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
                          0 2px 4px ${withAlpha('#FFFFFF', 0.06)}`,
 
           '--ft2-surface-shadow-hover': `0 2px 4px ${withAlpha('#FFFFFF', 0.14)}`,
+
+          '--ft2-infoblock-bg': '#1E1E1E',
+          '--ft2-infoblock-border': '#2A2A2A',
+
+          '--ft2-infoblock-header-bg': '#242424',
+          '--ft2-infoblock-header-text': '#E6E6E6',
+
+          '--ft2-infoblock-row-text': '#D0D0D0',
+
+          '--ft2-infoblock-footer-bg': '#181818',
+          '--ft2-infoblock-footer-text': '#CFCFCF',
+
+          '--ft2-infoblock-diff-neutral': '#9A9A9A',
+          '--ft2-infoblock-diff-up': '#6FCF97',    // softer green
+          '--ft2-infoblock-diff-down': '#EF5350',  // softer red
         },
       },
     },
