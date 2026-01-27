@@ -3,6 +3,16 @@
 import type { FT0CanonicalOrder } 
   from '@lasyncro/shared/contracts/ft0-canonical-order';
 
+/**
+ * Shopify → Canonical Order Mapper (FT0 / FT2 compliant)
+ * -----------------------------------------------------
+ * Invariants:
+ * - No fabricated values
+ * - All monetary fields must come from Shopify sets
+ * - Temporal fields must reflect actual Shopify timestamps
+ * - Missing fields remain null (never defaulted)
+ */
+
 export function mapShopifyOrderNodeToCanonical(
   node: any,
   shopId: number
@@ -13,18 +23,31 @@ export function mapShopifyOrderNodeToCanonical(
     id: orderId,
     shopId,
 
-    createdAt: node.createdAt,
-    updatedAt: node.createdAt,
-    processedAt: node.createdAt,
+    // ── Temporal anchors ─────────────────────────────
+    createdAt: node.createdAt ?? null,
+    updatedAt: node.updatedAt ?? null,
+    processedAt: node.processedAt ?? null,
 
-    currency: node.currencyCode,
+    // ── Currency ────────────────────────────────────
+    currency: node.currencyCode ?? null,
 
-    totalPrice: Number(node.totalPriceSet?.shopMoney?.amount ?? 0),
-    subtotalPrice: Number(node.totalPriceSet?.shopMoney?.amount ?? 0),
-    totalTax: 0,
+    // ── Monetary completeness (NO inference) ─────────
+    totalPrice:
+      node.totalPriceSet?.shopMoney?.amount != null
+        ? Number(node.totalPriceSet.shopMoney.amount)
+        : null,
 
-    shippingLines: [],
+    subtotalPrice:
+      node.subtotalPriceSet?.shopMoney?.amount != null
+        ? Number(node.subtotalPriceSet.shopMoney.amount)
+        : null,
 
+    totalTax:
+      node.totalTaxSet?.shopMoney?.amount != null
+        ? Number(node.totalTaxSet.shopMoney.amount)
+        : null,
+
+    // ── Line items (structural only) ─────────────────
     lineItems: (node.lineItems?.edges ?? []).map((edge: any) => ({
       lineItemId: edge.node.id,
       orderId,
@@ -35,20 +58,23 @@ export function mapShopifyOrderNodeToCanonical(
       sku: null,
 
       quantity: edge.node.quantity,
-      unitPrice: 0,
-      totalPrice: 0,
+      unitPrice: null,
+      totalPrice: null,
       estimatedUnitCost: null,
 
       platform: 'shopify',
       platformLineItemId: edge.node.id,
     })),
 
+    // ── Optional / absent signals ───────────────────
+    shippingLines: [],
     customer: undefined,
-
     source: node.sourceName ?? null,
     referrerMedium: null,
 
+    // ── Platform identity ───────────────────────────
     platform: 'shopify',
-    platformOrderId: orderId,
+    platformOrderId: orderId, // normalized later in ingestion
   };
 }
+

@@ -9,6 +9,7 @@ import { mapShopifyOrderNodeToCanonical }
   from './mappers/shopify-to-canonical-order';
 import { enqueueProductForIngestion } 
   from './product-ingestion.service';
+import { recordIncompleteOrder } from './incomplete-order.service';
 
 
 // Add required scopes for Protected Customer Data
@@ -73,19 +74,34 @@ export const performInitialSync = async (
           node {
             id
             name
-            totalPriceSet { 
-              shopMoney { 
-                amount 
-                currencyCode
-              } 
-            }
-            currencyCode
+
+            # Temporal anchors (required for FT2 observability)
             createdAt
+            updatedAt
+            processedAt
+
+            # Monetary breakdown (canonical completeness)
+            subtotalPriceSet {
+              shopMoney { amount }
+            }
+            totalTaxSet {
+              shopMoney { amount }
+            }
+            totalPriceSet {
+              shopMoney {
+                amount
+                currencyCode
+              }
+            }
+
+            currencyCode
             sourceName
+
+            # State-only signals (no inference)
             displayFulfillmentStatus
             displayFinancialStatus
-            # Remove customer field entirely - all fields are protected
-            # Remove shippingAddress entirely - all fields are protected
+
+            # Line items (unchanged)
             lineItems(first: 20) {
               edges {
                 node {
@@ -168,12 +184,40 @@ export const performInitialSync = async (
         console.log(`[ShopifyService] Syncing ${data.orders.edges.length} orders...`);
         await syncOrders(trx, shopId, data.orders.edges);
 
+        /**
+         * FT2 Canonical Order Contract
+         * ----------------------------
+         * FT2 requires order-level monetary completeness only.
+         * Line-item economics are optional and may be enriched later.
+         *
+         * DO NOT add line-item pricing requirements here.
+         */
         const canonicalIngestion = new CanonicalCommerceIngestionService();
 
         for (const { node } of data.orders.edges) {
           const canonicalOrder =
             mapShopifyOrderNodeToCanonical(node, shopId);
 
+          /**
+           * Canonical Order Eligibility (FT2)
+           * --------------------------------
+           * FT2 requires order-level monetary completeness only.
+           * Line-item economics are optional at this stage.
+           */
+          if (
+            !canonicalOrder.createdAt ||
+            !canonicalOrder.currency ||
+            canonicalOrder.totalPrice == null ||
+            canonicalOrder.subtotalPrice == null ||
+            canonicalOrder.totalTax == null
+          ) {
+            console.warn('[CANONICAL_SKIP_ORDER]', {
+              shopId,
+              platformOrderId: canonicalOrder.platformOrderId,
+              reason: 'INCOMPLETE_ORDER_TOTALS'
+            });
+            continue;
+          }
           await canonicalIngestion.insertCanonicalOrder(canonicalOrder);
         }
 

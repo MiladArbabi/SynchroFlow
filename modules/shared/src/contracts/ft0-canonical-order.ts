@@ -5,15 +5,33 @@ export interface FT0CanonicalOrder {
   id: string;
   shopId: number;
 
-  createdAt: string;
-  updatedAt: string;
-  processedAt?: string;
+  /**
+   * Temporal anchors
+   * ----------------
+   * These reflect platform-observed timestamps.
+   * They may be null if the platform does not expose them.
+   */
+  createdAt: string | null;
+  updatedAt: string | null;
+  processedAt?: string | null;
 
-  currency: string;
+  /**
+   * Currency
+   * --------
+   * Null only if platform does not expose a currency code
+   * (rare but possible in edge ingestion states).
+   */
+  currency: string | null;
 
-  totalPrice: number;
-  subtotalPrice: number;
-  totalTax: number;
+  /**
+   * Monetary observables
+   * --------------------
+   * Monetary fields MUST NOT be inferred.
+   * Null means "not observed", never zero.
+   */
+  totalPrice: number | null;
+  subtotalPrice: number | null;
+  totalTax: number | null;
 
   shippingLines: any[];
 
@@ -25,8 +43,8 @@ export interface FT0CanonicalOrder {
     title: string;
     sku: string | null;
     quantity: number;
-    unitPrice: number;
-    totalPrice: number;
+    unitPrice: number | null;
+    totalPrice: number | null;
     estimatedUnitCost: number | null;
     platform: CanonicalPlatform;
     platformLineItemId?: string;

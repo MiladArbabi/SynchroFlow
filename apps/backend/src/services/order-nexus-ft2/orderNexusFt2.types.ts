@@ -30,17 +30,29 @@ export type OrderNexusFT2Snapshot =
   /**
    * Revenue Overview (FT2)
    * ---------------------
-   * Positive-value allocation by execution state.
+   * OBSERVED-ONLY revenue.
    *
-   * NOTE:
-   * - Returns / reversals are intentionally excluded.
-   * - Netting is forbidden.
+   * Contract:
+   * - Availability-based revenue derived from canonical orders
+   * - Execution state only used for L2 allocation, never surfaced
+   * - No fulfillment, payment, or settlement semantics
+   *
+   * - Execution-aware revenue MUST NOT appear here
+   * - Allocation by fulfillment state is Phase 6 only
    */
   revenue: {
-    total: number | null;
-    fulfilled: number | null;
-    unfulfilled: number | null;
-  };
+    totalSales: number | null;
+
+    // Execution-derived, coverage-gated
+    earned: number | null;
+    pending: number | null;
+
+    // No factual primitive yet
+    blocked: number | null;
+
+    // Explicit epistemic gate
+    executionCoverage: 'sufficient' | 'insufficient';
+  }
 
   ingestion: {
     status: 'present' | 'absent';

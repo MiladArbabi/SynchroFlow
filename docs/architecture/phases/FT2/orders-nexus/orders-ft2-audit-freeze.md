@@ -1,4 +1,6 @@
-# 🔒 Order-Nexus FT2 Contract Audit (CURRENT · ACTIVE · SEALED)
+# 🔒 Order-Nexus FT2 Contract Audit
+
+**CURRENT · ACTIVE · SEALED (REV C — InfoBlock-Aligned / SMB-Legible)**
 
 **Status:** ✅ COMPLETE / SEALED
 **Scope:** Order-Nexus FT2 — Backend + Frontend
@@ -8,45 +10,61 @@
 
 ---
 
-## 0. Contract Definition — What “Orders FT2” Is (Precisely)
+## 0. Contract Definition — What “Orders FT2” Is (RE-AFFIRMED)
 
-**Orders FT2** is a **read-only economic & operational orientation system for SMBs**, designed to answer exactly one class of questions:
+**Orders FT2** is a **read-only economic & operational orientation system**, answering exactly one class of questions:
 
-> **“Is my order system real, flowing, coherent, and directionally stable right now?”**
+> **“What obligations, value, and risk exist in my order system right now — and where do they sit?”**
 
 Orders FT2 **never** answers:
 
-> *Why*, *what to do*, *what will happen*, *what matters most*, or *how to fix*.
+* why something happened
+* what to do
+* what matters most
+* what will happen
+* how to fix anything
+
+This definition is **unchanged**.
 
 ---
 
-### 0.0 What Orders FT2 Is Composed Of (UPDATED · CANONICAL)
+## 0.0 Composition of Orders FT2 (UPDATED · INFOBLOCK-COMPLETE)
 
 Orders FT2 is composed of:
 
-1. **Authoritative FT2 Snapshot (downgraded truth only)**
+1. **Authoritative FT2 Snapshot**
+   *(downgraded, scan-verified truth only)*
+
 2. **Narrative InfoBlocks (FT2 primitives)**
 
-   * Orders Overview
-   * System Coherence
-   * (Future: Revenue, Returns)
+   **LOCKED SET (v1):**
+
+   1. Orders Overview
+   2. Revenue Overview
+   3. Returns Overview *(gated)*
+   4. Revenue Risk *(gated)*
+   5. Operational Flow (CPT Lens) *(gated)*
+   6. Execution Health *(gated)*
+
 3. **FT2-Adjacent Exploratory Surfaces**
 
    * Orders over time
    * Order size distribution
+
 4. **Cross-Domain Alignment Planes**
+
 5. **Strict Frontend Consumption Path**
 
-   * Snapshot hooks
+   * Snapshot hooks only
    * Pure adapters
-   * Observational UI primitives only
+   * Observational UI primitives
 
-> **InfoBlock is the primary FT2 narrative primitive.**
-> **FT2Surface is structural scaffolding only.**
+> 🔒 **InfoBlock remains the only FT2 narrative primitive.**
+> FT2Surface is **structural scaffolding only**.
 
 ---
 
-### Explicit Non-Capabilities (Hard-Locked)
+## 0.1 Explicit Non-Capabilities (RE-SEALED)
 
 Orders FT2 contains **no**:
 
@@ -57,273 +75,192 @@ Orders FT2 contains **no**:
 * causation
 * forecasting
 * prioritization
-* user instruction
-* escalation logic
-* **semantic interpretation inside FT2 primitives**
+* semantic interpretation inside InfoBlocks
+* **accounting semantics (paid, settled, net, margin)**
+* **execution inference unless explicitly downgraded**
 
 If any of the above appear, the contract is broken.
 
 ---
 
-## 0.1 FT2 Narrative Composition Rule (NEW · SEALED)
+## 0.2 Domain Taxonomy (UPDATED · INFOBLOCK-OWNED)
 
-FT2 facts are **never rendered raw**.
-
-All user-facing FT2 data in Orders-Nexus is presented through:
-
-> **InfoBlock — the FT2 narrative primitive**
-
-InfoBlock:
-
-* groups related domains
-* preserves downgraded truth
-* enforces stable scan order
-* reduces cognitive load **without adding meaning**
-
-**FT2Surface is no longer a semantic unit.**
-It exists only to provide layout scaffolding.
-
----
-
-## 0.2 Active Domains (UPDATED · CURRENT)
-
-Orders FT2 exposes **three classes of domains**, grouped and surfaced intentionally.
+Orders FT2 exposes **four domain classes**, each owned by a single InfoBlock.
 
 ---
 
 ### 🧭 A. System Grounding Domains (FOUNDATIONAL · L1)
 
-These answer the prerequisite question:
+Answer:
 
-> **“Is this system anchored in reality?”**
+> **“Is this system anchored in observable reality?”**
 
-| Domain                     | Layer | Question Answered                            |
-| -------------------------- | ----- | -------------------------------------------- |
-| Order Presence Reality     | L1    | Do any orders exist in this period?          |
-| Revenue Presence Reality   | L1    | Does revenue exist at all?                   |
-| Ingestion Presence Reality | L1    | Did LaSyncro observe data flowing?           |
-| Temporal Freshness Reality | L1    | Is the observed data recent or stale?        |
-| Revenue Continuity Reality | L1½   | Is revenue isolated or continuous over time? |
-| Data Coverage Reality      | L1    | Is source data structurally complete?        |
-| Economic Visibility Gate   | L2    | Is interpretation epistemically allowed?     |
+| Domain                     | Layer | Question Answered                        |
+| -------------------------- | ----- | ---------------------------------------- |
+| Order Presence Reality     | L1    | Do any orders exist in this period?      |
+| Revenue Presence Reality   | L1    | Does any sales value exist at all?       |
+| Ingestion Presence Reality | L1    | Did data flow into the system?           |
+| Temporal Freshness Reality | L1    | Is the data recent or stale?             |
+| Revenue Continuity Reality | L1½   | Is sales activity isolated or ongoing?   |
+| Data Coverage Reality      | L1    | Is source data structurally complete?    |
+| Economic Visibility Gate   | L2    | Is interpretation epistemically allowed? |
 
-**Rules (non-negotiable):**
-
-* Presence-only unless stated
-* No inference
-* No explanation
-* Fail-closed (`null` / `unknown`)
-* Absence ≠ zero ≠ false
-
-**These domains surface together inside the *Orders Overview InfoBlock*.**
+📌 These domains surface **only** inside **Orders Overview**
+📌 They never re-appear elsewhere.
 
 ---
 
-### 🧭 B. Direction & Coherence Domains (POST-GROUNDING · L1½ / L2)
+### 💰 B. Revenue Availability Domains (PRIMARY · L1)
 
-These only become meaningful **after grounding is satisfied**.
+**Owned exclusively by: Revenue Overview**
 
-| Domain                   | Layer | Question Answered                             |
-| ------------------------ | ----- | --------------------------------------------- |
-| Economic Outcome Reality | L2    | Are orders economically positive or negative? |
-| Order Velocity Reality   | L1½   | Is order volume up / down / flat?             |
-| Market Coherence Reality | L-X   | Are demand & revenue structurally aligned?    |
-| Execution Coherence      | L-X   | Are operations & economics aligned?           |
+Answer:
 
-**These domains surface together inside the *System Coherence InfoBlock*.**
+> **“Where does the money exist right now?”**
 
----
+| Domain                  | Layer | Question Answered                            |
+| ----------------------- | ----- | -------------------------------------------- |
+| Total Sales Reality     | L1    | How much sales value exists in total?        |
+| Earned Revenue Reality  | L1    | How much value is tied to fulfilled orders?  |
+| Pending Revenue Reality | L1    | How much value is tied to open work?         |
+| Blocked Revenue Reality | L1    | How much value is operationally unreachable? |
 
-### 🧭 C. Fulfillment & Logistics Domains (L1 / L2)
+**Hard Rules (LOCKED):**
 
-These domains exist in the snapshot and alignment planes but are **not rendered as rows**:
-
-* Fulfillment Presence
-* Fulfillment Status
-* Fulfillment Operational Reality
-* Shipping Presence
-* Shipping Delay Presence
-* Customer Promise Presence
-
-They participate **only via alignment planes or Interpretation Rail copy**.
+* Revenue here is **availability-based**, not accounting-based
+* No payment, settlement, or margin semantics
+* No recommendations or prioritization
+* No execution diagnosis
 
 ---
 
-## 0.3 Alignment Planes (ACTIVE · UNCHANGED)
+### 🔁 C. Reversal & Leakage Domains (PRIMARY · L1)
 
-Alignment planes classify **structural coherence only**.
+**Owned exclusively by: Returns Overview**
 
-| Plane                                  | Participating Domains         | Status |
-| -------------------------------------- | ----------------------------- | ------ |
-| Cross-Domain Trust (META)              | All domains                   | ✅      |
-| Demand Reality                         | Customers ↔ Orders            | ✅      |
-| Engagement ↔ Revenue                   | Engagement ↔ Orders ↔ Finance | ✅      |
-| Operational ↔ Economic                 | Orders ↔ Fulfillment          | ✅      |
-| Order Velocity ↔ Fulfillment           | Orders ↔ Fulfillment          | ✅      |
-| Shipping ↔ Fulfillment Coherence       | Shipping ↔ Fulfillment        | ✅      |
-| Sales ↔ Operations                     | Velocity ↔ Fulfillment Status | ✅      |
-| Orders ↔ Shipping Carrier              | Orders ↔ Shipping Presence    | ✅      |
-| Shipping Delay ↔ Fulfillment Coherence | Shipping Delay ↔ Fulfillment  | ✅      |
-| Shipping Delay ↔ Customer Promise      | Shipping Delay ↔ Promise      | ✅      |
+Answer:
 
-**Alignment invariants:**
+> **“Is value flowing back or leaking?”**
 
-* Execute after FTEP
-* Deterministic
-* Read-only
-* Fail-closed (`unknown`)
-* No causality
-* No remediation
-* No narrative
+| Domain                   | Layer | Question Answered                |
+| ------------------------ | ----- | -------------------------------- |
+| Returns Presence Reality | L1    | Do returns exist?                |
+| Returned Orders Reality  | L1    | How many orders reversed?        |
+| Returned Value Reality   | L1    | How much value has exited?       |
+| Return Exposure Reality  | L1    | How much value is still at risk? |
 
 ---
 
-## 1. Proven Architectural Flow (SEALED)
+### ⚠️ D. Revenue Risk Domains (PRIMARY · L1)
+
+**Owned exclusively by: Revenue Risk**
+
+Answer:
+
+> **“How fragile is my revenue shape?”**
+
+| Domain                        | Layer | Question Answered                            |
+| ----------------------------- | ----- | -------------------------------------------- |
+| Revenue Concentration Reality | L1    | Is revenue tied to few orders/customers?     |
+| Top-Order Exposure Reality    | L1    | What is the largest single-order dependency? |
+| Customer Dependency Reality   | L1    | Is revenue customer-concentrated?            |
+| Temporal Clustering Reality   | L1½   | Is revenue time-clustered?                   |
+
+---
+
+### 🚚 E. Operational Flow Domains (PRIMARY · L1)
+
+**Owned exclusively by: Operational Flow (CPT Lens)**
+
+Answer:
+
+> **“Where is value sitting in the workflow?”**
+
+| Domain                   | Layer | Question Answered               |
+| ------------------------ | ----- | ------------------------------- |
+| Receiving Reality        | L1    | What value has entered ops?     |
+| Stored Value Reality     | L1    | What value is idle?             |
+| Picking Reality          | L1    | What value is in motion?        |
+| Packing Reality          | L1    | What value is near completion?  |
+| Shipping Handoff Reality | L1    | What value should convert next? |
+
+---
+
+### 🧠 F. Execution Health Domains (PRIMARY · L1 / L1½)
+
+**Owned exclusively by: Execution Health**
+
+Answer:
+
+> **“Is the system keeping up?”**
+
+| Domain                     | Layer | Question Answered               |
+| -------------------------- | ----- | ------------------------------- |
+| CPT Breach Reality         | L1    | Are orders past cutoff?         |
+| Blocked Orders Reality     | L1    | How many orders are obstructed? |
+| Aging Orders Reality       | L1½   | Are orders stagnating?          |
+| Execution Velocity Reality | L1½   | Is throughput changing?         |
+
+---
+
+## 0.3 Alignment Planes (CONFIRMED · UNCHANGED)
+
+Alignment planes remain:
+
+* deterministic
+* read-only
+* fail-closed
+* post-FTEP
+* **non-narrative**
+
+Revenue execution **never bypasses** FTEP.
+
+---
+
+## 1. Proven Architectural Flow (RE-SEALED)
 
 ```
 Canonical Database
    ↓
 Layer 1 — Canonical Facts
    ↓
-Layer 1½ — Temporal Facts (Velocity, Continuity)
+Layer 1½ — Temporal Facts
    ↓
 Layer 2 — Intelligence (INTERNAL ONLY)
    ↓
 Layer 3 — FTEP (Truth Exposure Policy)
    ↓
-Layer 4 — Alignment Planes (Read-only)
+Layer 4 — Alignment Planes
    ↓
 Order-Nexus FT2 Snapshot
 ```
 
-**Critical invariants:**
-
-* Intelligence NEVER bypasses FTEP
-* Alignment NEVER feeds intelligence
-* FT2 is terminal
+🚨 Execution-aware revenue enters **only at Layer 2** and is always downgraded.
 
 ---
 
-## 2. Layer 1 — Canonical Facts (Truth)
+## 2. Revenue Semantics in FT2 (RE-CLARIFIED)
 
-### Order Facts
+### Revenue in FT2 **is**:
 
-| Field           | Type          | Semantics             |
-| --------------- | ------------- | --------------------- |
-| ordersObserved  | number | null | null if no rows       |
-| revenueTotal    | number | null | DB sum                |
-| costTotal       | null          | Non-existent fact     |
-| currency        | null          | Not inferable in FT2  |
-| dataCoveragePct | number | null | Null if no line items |
-| extractedAt     | ISO string    | Snapshot timestamp    |
+* observable
+* availability-based
+* execution-agnostic
 
----
+### Revenue in FT2 **is not**:
 
-### Ingestion Presence Reality (FORMALIZED)
-
-| Value   | Meaning                    |
-| ------- | -------------------------- |
-| present | ≥1 canonical fact observed |
-| absent  | no canonical facts         |
-| null    | not evaluable              |
+* paid
+* settled
+* net
+* profit
+* margin
+* collectible
 
 ---
 
-### Temporal Freshness Reality (FORMALIZED)
+## 3. Frontend Narrative Contract (UPDATED · SMB-LEGIBLE)
 
-| Value   | Meaning                  |
-| ------- | ------------------------ |
-| recent  | within freshness window  |
-| stale   | outside freshness window |
-| unknown | not evaluable            |
-
-No SLA. No duration. No blame.
-
----
-
-### Revenue Continuity Reality (L1½)
-
-| Value      | Meaning                      |
-| ---------- | ---------------------------- |
-| continuous | revenue present sequentially |
-| isolated   | one-off / discontinuous      |
-| null       | insufficient data            |
-
-This is **not** a trend.
-
----
-
-## 3. Layer 2 — Intelligence (INTERNAL ONLY)
-
-| Output            | Type                                |
-| ----------------- | ----------------------------------- |
-| margin.status     | healthy / loss / unknown            |
-| trend.direction   | up / down / flat / unknown          |
-| visibility.status | sufficient / insufficient / unknown |
-
-Intelligence may think.
-It may **never speak directly**.
-
----
-
-## 4. Layer 3 — FTEP (Truth Exposure Policy)
-
-**Downgrade rules (MANDATORY):**
-
-| Internal Signal | FT2 Exposure |
-| --------------- | ------------ |
-| unknown         | null         |
-| active          | downgraded   |
-
-No intelligence leaks. Ever.
-
----
-
-## 5. FT2 Snapshot (Backend Output)
-
-Snapshot contains **only**:
-
-* context
-* totals
-* outcome | null
-* trend | null
-* dataCoverage
-* visibility | null
-* shipping (presence-only)
-* alignment (read-only)
-
-No currency.
-No costs.
-No upgrades.
-
----
-
-## 6. Trust FT2 (ACTIVE · INTEGRATED)
-
-**Source:** `/api/v1/modules/trust/ft2`
-
-```ts
-{ trustEligible: boolean | null }
-```
-
-**UI Interpretation (LOCKED):**
-
-| trustEligible | trustTone   |
-| ------------- | ----------- |
-| true          | trusted     |
-| false         | blocked     |
-| null          | constrained |
-| trust null    | no bar      |
-
-Applied uniformly to **all FT2 scaffolding surfaces**.
-
----
-
-## 7. OrdersModuleFT2 — UI Composition (UPDATED · CANONICAL)
-
-### Primary Narrative Layer — InfoBlocks
-
-#### InfoBlock: Orders Overview
+### InfoBlock: Orders Overview
 
 Rows (LOCKED):
 
@@ -332,94 +269,53 @@ Rows (LOCKED):
 * Unfulfilled orders
 * Incoming orders
 
-Interpretation Rail (copy-only):
+Footer Rail (LOCKED):
 
-* **ORDER FLOW IS VISIBLE**
-* **FULFILLMENT COUNTS UNAVAILABLE**
+> **ORDER OBLIGATIONS SHOWN — VALUE AND EXECUTION DETAILED ELSEWHERE**
 
 ---
 
-#### InfoBlock: System Coherence
+### InfoBlock: Revenue Overview
 
 Rows (LOCKED):
 
-* Outcome
-* Order direction
-* Operational alignment
+* Total sales
+* Earned
+* Pending
+* Blocked *(if applicable)*
 
-No additional rows permitted.
+Footer Rail (LOCKED):
 
----
-
-### Secondary Exploratory Layer (FT2-Adjacent)
-
-Rendered via FT2Surface (structure only):
-
-* Orders over time
-* Order size distribution
-
-These surfaces are observational and optional.
-They carry **no narrative responsibility**.
+> **SALES VALUE SHOWN — PAYMENT AND PROFIT NOT EVALUATED**
 
 ---
 
-## 8. Frontend Consumption Contract (SEALED)
+## 4. Intentional Gaps (RE-CONFIRMED)
 
-### Snapshot Hook
+Orders FT2 intentionally excludes:
 
-* Read-only
-* Backend-authoritative
-* Range-controlled
+* profit
+* margin math
+* payment status
+* accounting timelines
+* recommendations
+* causality
+* prioritization
+* FT3
 
-### Adapters
-
-* Pure functions
-* `undefined → null`
-* No inference
-* No lifecycle logic
-
-Adapters are **pipes, not brains**.
+These are **constraints**, not backlog items.
 
 ---
 
-## 9. FT2 UI Invariants (UPDATED)
+## 🔐 FINAL SEAL — REV C
 
-* Observational only
-* Null-safe everywhere
-* No semantics
-* No prioritization
-* No explanations
-* No recommendations
-* **InfoBlock is the only narrative grouping primitive**
-* **FT2Surface may not encode meaning**
+✔ InfoBlocks fully enumerated and owned
+✔ Revenue framed as *availability*, not jargon
+✔ SMB cognitive load respected
+✔ Phase 6 cleanly isolated
+✔ No semantic leakage
+✔ FT2 remains terminal
 
-UI cannot upgrade truth.
-
----
-
-## 10. Intentional Gaps (CONFIRMED)
-
-* No SLA math
-* No delay duration
-* No profit
-* No recommendations
-* No causality
-* No FT3
-
-These are **design constraints**, not missing features.
-
----
-
-## 11. Final Seal (UPDATED)
-
-* System grounding formalized
-* Revenue continuity introduced correctly
-* Trust integrated per playbook
-* Narrative structure introduced without semantic leakage
-* Cognitive load reduced without lying
-* InfoBlock locked as FT2 primitive
-* FT2 confirmed as apex
-
-🔐 **Order-Nexus FT2 is fully audited, synchronized, and sealed — CURRENT STATE.**
+🔒 **Order-Nexus FT2 Contract Audit — REV C is current, aligned, and sealed.**
 
 ---

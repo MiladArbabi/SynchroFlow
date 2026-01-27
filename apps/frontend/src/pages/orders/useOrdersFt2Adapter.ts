@@ -50,17 +50,11 @@ export function mapOrdersFt2Props(
 } {
 
   return {
-  /**
-   * ─────────────────────────────────────────
-   * 🧭 SYSTEM GROUNDING (FOUNDATIONAL)
-   * ─────────────────────────────────────────
-   */
-
-  orders: {
-    total:
-      snapshot.orders?.total === undefined
-        ? null
-        : snapshot.orders.total,
+    orders: {
+      total:
+        snapshot.orders?.total === undefined
+          ? null
+          : snapshot.orders.total,
 
     fulfilled:
       snapshot.orders?.fulfilled === undefined
@@ -79,117 +73,64 @@ export function mapOrdersFt2Props(
   },
 
   comparison: {
-  orders: {
-    total:
-      formatPctDiff(
-        snapshot.comparison?.orders?.totalPctChange
-      ),
+    orders: {
+      total:
+        formatPctDiff(
+          snapshot.comparison?.orders?.totalPctChange
+        ),
 
-    fulfilled:
-      formatPctDiff(
-        snapshot.comparison?.orders?.fulfilledPctChange
-      ),
+      fulfilled:
+        formatPctDiff(
+          snapshot.comparison?.orders?.fulfilledPctChange
+        ),
 
-    unfulfilled:
-      formatPctDiff(
-        snapshot.comparison?.orders?.unfulfilledPctChange
-      ),
+      unfulfilled:
+        formatPctDiff(
+          snapshot.comparison?.orders?.unfulfilledPctChange
+        ),
 
-    incoming:
-      formatPctDiff(
-        snapshot.comparison?.orders?.incomingPctChange
-      ),
-  },
-},
-
-  context: {
-    ordersObserved:
-      snapshot.context?.ordersObserved === undefined
-        ? null
-        : snapshot.context.ordersObserved,
-  },
-
-  totals: {
-    revenueTotal:
-      snapshot.totals?.revenueTotal === undefined
-        ? null
-        : snapshot.totals.revenueTotal,
-
-    costTotal:
-      snapshot.totals?.costTotal === undefined
-        ? null
-        : snapshot.totals.costTotal,
+      incoming:
+        formatPctDiff(
+          snapshot.comparison?.orders?.incomingPctChange
+        ),
+    },
   },
 
   /**
    * ─────────────────────────────────────────
-   * REVENUE OVERVIEW (FT2)
+   * REVENUE OVERVIEW (FT2 — OBSERVED ONLY)
    * ─────────────────────────────────────────
-   * Pure pass-through.
-   * No computation. No inference.
+   * Contract:
+   * - Pure passthrough
+   * - Availability-based only
+   * - No execution semantics
    */
   revenue: {
-    total:
-      snapshot.revenue?.total === undefined
+    totalSales:
+      snapshot.revenue?.totalSales === undefined
         ? null
-        : snapshot.revenue.total,
+        : snapshot.revenue.totalSales,
 
-    fulfilled:
-      snapshot.revenue?.fulfilled === undefined
+    earned:
+      snapshot.revenue?.earned === undefined
         ? null
-        : snapshot.revenue.fulfilled,
+        : snapshot.revenue.earned,
 
-    unfulfilled:
-      snapshot.revenue?.unfulfilled === undefined
+    pending:
+      snapshot.revenue?.pending === undefined
         ? null
-        : snapshot.revenue.unfulfilled,
-    },
+        : snapshot.revenue.pending,
 
-  dataCoverage: {
-    completenessPct:
-      snapshot.dataCoverage?.completenessPct === undefined
+    blocked:
+      snapshot.revenue?.blocked === undefined
         ? null
-        : snapshot.dataCoverage.completenessPct,
+        : snapshot.revenue.blocked,
+
+    executionCoverage:
+      snapshot.revenue?.executionCoverage === undefined
+        ? 'insufficient'
+        : snapshot.revenue.executionCoverage
   },
-
-  visibility:
-    snapshot.visibility === undefined
-      ? null
-      : snapshot.visibility,
-
-  /**
-   * Canonical ingestion presence (L1)
-   * Presence-only. No inference.
-   */
-  ingestion:
-    snapshot.ingestion === undefined
-      ? null
-      : snapshot.ingestion,
-
-  /**
-   * Temporal freshness (L1)
-   * Classification only.
-   */
-  freshness:
-    snapshot.freshness === undefined
-      ? null
-      : snapshot.freshness,
-
-  /**
-   * ─────────────────────────────────────────
-   * POST-GROUNDING CONTEXT
-   * ─────────────────────────────────────────
-   */
-
-  outcome:
-    snapshot.outcome === undefined
-      ? null
-      : snapshot.outcome,
-
-  trend:
-    snapshot.trend === undefined
-      ? null
-      : snapshot.trend,
 
   /**
    * Revenue signal continuity (L1½)
@@ -199,17 +140,6 @@ export function mapOrdersFt2Props(
     snapshot.revenueContinuity === undefined
       ? null
       : snapshot.revenueContinuity,
-
-  /**
-   * ─────────────────────────────────────────
-   * STRUCTURAL COHERENCE (ALIGNMENT)
-   * ─────────────────────────────────────────
-   */
-
-  alignment:
-    snapshot.alignment === undefined
-      ? null
-      : snapshot.alignment,
 
   trust:
     trust === undefined

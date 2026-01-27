@@ -9,6 +9,9 @@ import {
   orderNexusFt2CoverageController,
 } from './orderNexusFt2Facts.controller';
 
+import orderNexusRevenueController
+  from './orderNexusRevenue.controller';
+
 const router = Router();
 
 /**
@@ -45,6 +48,18 @@ router.get(
   authenticateToken,
   requireFt2,
   orderNexusFt2CoverageController
+);
+
+/**
+ * Phase 6 — Execution-Aware Revenue
+ * --------------------------------
+ * Explicit, mode-gated, non-FT2 surface.
+ */
+router.get(
+  '/revenue',
+  authenticateToken,
+  requireFt2, // still requires FT2 eligibility
+  orderNexusRevenueController
 );
 
 export default router;

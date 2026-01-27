@@ -13,6 +13,26 @@ export type OrdersFt2Snapshot = {
     incoming?: number | null;
   };
 
+
+  /**
+   * ─────────────────────────────────────────
+   * REVENUE OVERVIEW (FT2)
+   * Availability-based only.
+   * ─────────────────────────────────────────
+   *
+   * Contract:
+   * - Mirrors backend FT2 snapshot exactly
+   * - No execution or payment semantics
+   * - No inference
+   */
+  revenue?: {
+    totalSales?: number | null;
+    earned?: number | null;
+    pending?: number | null;
+    blocked?: number | null;
+    executionCoverage?: 'sufficient' | 'insufficient';
+  };
+
   comparison?: {
     orders?: {
       totalPctChange?: number | null;
@@ -36,22 +56,6 @@ export type OrdersFt2Snapshot = {
      */
     // currency removed per FT2 contract
     /* currency?: string | null; */
-  };
-
-  /**
-   * ─────────────────────────────────────────
-   * REVENUE OVERVIEW (FT2)
-   * Positive-value containment only.
-   * ─────────────────────────────────────────
-   *
-   * NOTE:
-   * - Returned / reversed revenue is intentionally excluded.
-   * - Netting is forbidden.
-   */
-  revenue?: {
-    total?: number | null;
-    fulfilled?: number | null;
-    unfulfilled?: number | null;
   };
 
   outcome?: {

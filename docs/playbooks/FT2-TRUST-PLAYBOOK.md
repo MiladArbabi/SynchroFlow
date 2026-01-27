@@ -1,190 +1,340 @@
 # FT2 Trust & Data Health Integration Playbook
 
-## Purpose
+**(Authoritative, Enforced, Non-Negotiable)**
 
-This playbook defines **the single, correct way** to integrate **Trust / Data Health** into FT2 modules across the SynchroFlow SaaS.
+This document replaces **all prior interpretations** of “Trust FT2”.
 
-It exists to:
-
-* Prevent ad-hoc trust logic
-* Preserve FT2 epistemic guarantees
-* Ensure **consistent UI affordance** across all modules
-* Make failures *silent, honest, and non-misleading*
-
-This is not guidance. It is a **contract**.
+If code contradicts this playbook, **the code is wrong**.
 
 ---
 
-## Core Principles (Non‑Negotiable)
+## 0. What This Playbook Actually Governs (Scope)
 
-1. **Trust is a boundary, not a message**
-   Trust does not explain. It signals whether data is safe to look at.
+This playbook governs **only**:
 
-2. **Trust is terminal**
-   Trust FT2 is the final gate. It must never be downgraded, inferred, or overridden downstream.
+* FT2 modules
+* FT2 surfaces
+* FT2 lifecycle visibility
 
-3. **Null is epistemic absence**
-   `null` does not mean bad. It means *not evaluated*.
+It does **not** govern:
 
-4. **UI must not lie**
-   If trust is unknown, the UI must stay silent.
+* FT0
+* ingestion correctness
+* metrics accuracy
+* finances reconciliation
+* eligibility
+* permissions
+
+Trust FT2 answers **one and only one question**:
+
+> “Is it epistemically safe to visually surface FT2 outputs right now?”
+
+Nothing more. Nothing less.
 
 ---
 
-## Canonical Architecture (Locked)
+## 1. Canonical Definitions (Lock These In)
+
+### 1.1 Trust ≠ Accuracy
+
+Trust does **not** mean:
+
+* “numbers are correct”
+* “data is complete”
+* “nothing is missing”
+
+Trust means:
+
+> “Displaying this output will not mislead the user about reality.”
+
+A partially complete dataset **can be trusted** if its incompleteness does not invert meaning.
+
+---
+
+### 1.2 Trust Is a Boundary Signal, Not a Diagnostic
+
+Trust:
+
+* does **not** explain
+* does **not** warn
+* does **not** guide action
+* does **not** block navigation
+
+Trust only answers:
+
+* silence vs signal
+* safe vs unsafe
+
+---
+
+### 1.3 Null Is Sacred
+
+`null` means:
+
+> “The system has not evaluated trust.”
+
+It does **not** mean:
+
+* unknown data
+* partial data
+* missing data
+* bad data
+
+If trust is `null`, **the UI must say nothing**.
+
+No placeholders. No yellow. No guessing.
+
+---
+
+## 2. Trust Ownership Model (Critical)
+
+Trust is owned by **exactly one layer**.
+
+| Layer             | Allowed to decide trust? |
+| ----------------- | ------------------------ |
+| Ingestion         | ❌ No                     |
+| Facts / metrics   | ❌ No                     |
+| FT2 Evaluator     | ❌ No                     |
+| Backend Trust FT2 | ✅ **Yes (only here)**    |
+| Frontend hooks    | ❌ No                     |
+| Adapters          | ❌ No                     |
+| UI components     | ❌ No                     |
+
+If trust logic appears anywhere else, it is a bug.
+
+---
+
+## 3. Canonical Architecture (Final, Locked)
 
 ```
-Backend (Trust FT2)
+Backend Trust FT2 (decision)
    ↓
-Frontend Trust FT2 Snapshot (fetch‑only)
+Frontend Trust Snapshot (transport)
    ↓
-Module Adapter (structural normalization only)
+Module Adapter (shape only)
    ↓
-Module UI (derives trustTone)
+Module UI (tone derivation)
    ↓
 FT2Surface (visual boundary)
 ```
 
 Each layer has **exactly one responsibility**.
 
+No layer may leak into the next.
+
 ---
 
-## Backend: Trust FT2
+## 4. Backend: Trust FT2 (Decision Layer)
 
-### Endpoint
+### 4.1 Endpoint (Immutable)
 
 ```
 GET /api/v1/modules/trust/ft2
 ```
 
-### Contract
-
-```ts
-{
-  trustEligible: boolean | null
-}
-```
-
-### Semantics
-
-| Value   | Meaning                 |
-| ------- | ----------------------- |
-| `true`  | Epistemically safe      |
-| `false` | Unsafe / blocked        |
-| `null`  | Unknown / not evaluable |
-
-There is **no partial trust**.
+No alternatives. No per-module endpoints.
 
 ---
 
-## Frontend: Trust FT2 Snapshot Hook
+### 4.2 Response Contract (Immutable)
 
-### Location
+```ts
+interface TrustFT2Response {
+  trustEligible: boolean | null;
+}
+```
+
+No additional fields.
+No explanations.
+No reasons.
+No metadata.
+
+---
+
+### 4.3 Semantics (Read Carefully)
+
+| Value   | Meaning             | UI Obligation      |
+| ------- | ------------------- | ------------------ |
+| `true`  | Epistemically safe  | May surface        |
+| `false` | Unsafe / misleading | Must visually mark |
+| `null`  | Not evaluated       | Must remain silent |
+
+**Important**
+`false` does **not** mean “blocked from rendering”.
+It means “rendered but clearly constrained”.
+
+---
+
+### 4.4 Backend Enforcement Rules
+
+The backend **must not**:
+
+* infer trust from partial ingestion
+* downgrade trust due to missing enrichment
+* change trust based on UI needs
+
+Trust FT2 evaluates **structural safety only**:
+
+* joins are valid
+* time windows stable
+* entities are internally consistent
+
+---
+
+## 5. Frontend: Trust FT2 Snapshot Hook (Transport Layer)
+
+### 5.1 Location (Fixed)
 
 ```
 apps/frontend/src/pages/trust/useTrustFt2Snapshot.ts
 ```
 
-### Responsibilities
-
-* Fetch Trust FT2
-* Include authentication
-* No mapping
-* No inference
-* Normalize all failures to `null`
-
-### Required Transport
-
-**MUST use `axiosInstance`** (never raw `fetch`).
-
-Why:
-
-* Auth headers
-* Cookie forwarding
-* FT2 entitlement evaluation
-
-### Canonical Behavior
-
-```ts
-200 → return snapshot
-204 → return null
-!= 200 → return null
-```
+No duplication. No variants.
 
 ---
 
-## Adapters: Structural Normalization Only
+### 5.2 Responsibilities (Exactly These)
 
-### Rule
+✅ Fetch Trust FT2
+✅ Attach auth
+✅ Normalize failures to `null`
 
-Adapters **may normalize shape**, but must never:
-
-* Derive UI signals
-* Interpret trust meaning
-* Invent positive signals
-
-### Allowed
-
-If a module UI expects a richer trust object, the adapter may:
-
-* Pass `trustEligible` through unchanged
-* Fill missing dimensions with `null` or `'unknown'`
-
-### Forbidden
-
-* Deriving `trustTone`
-* Collapsing trust to booleans
-* Dropping trust fields
+❌ Interpret
+❌ Map
+❌ Derive UI meaning
+❌ Cache aggressively
 
 ---
 
-## Module UI: Trust Interpretation (Local Only)
+### 5.3 Transport Rules (Hard Requirement)
 
-### Where
+* **MUST** use `axiosInstance`
+* **MUST NOT** use `fetch`
+* **MUST NOT** throw
+* **MUST NOT** log errors to console (noise)
 
-Inside the **module UI component**, not adapters and not shared UI primitives.
+---
+
+### 5.4 Canonical Behavior Table
+
+| HTTP      | Result                           |
+| --------- | -------------------------------- |
+| `200`     | return `{ trustEligible }`       |
+| `204`     | return `{ trustEligible: null }` |
+| `401/403` | return `{ trustEligible: null }` |
+| `>=500`   | return `{ trustEligible: null }` |
+
+Silence is always safer than inference.
+
+---
+
+## 6. Adapters: Structural Normalization Only
+
+### 6.1 Allowed
+
+Adapters may:
+
+* forward `trustEligible`
+* widen types
+* fill **only** with `null`
 
 Example:
 
-```
-OverviewModuleFT2
-OrdersModuleFT2
-ProductsModuleFT2
-```
-
-### Derivation Rule (Locked)
-
 ```ts
-trust === null            → no bar
-trustEligible === true    → 'trusted'
-trustEligible === false   → 'blocked'
-trustEligible === null    → 'constrained'
+{
+  trustEligible,
+  trustTone: null
+}
 ```
-
-This logic must:
-
-* Be derived once per module
-* Be applied uniformly to all surfaces in that module
 
 ---
 
-## FT2Surface: Visual Boundary Only
+### 6.2 Forbidden (Zero Tolerance)
 
-### Prop
+Adapters must **never**:
+
+* compute `trustTone`
+* collapse `null → false`
+* rename trust fields
+* drop trust entirely
+* derive UI meaning
+
+If an adapter touches trust semantics, it is invalid.
+
+---
+
+## 7. Module UI: Trust Interpretation (Local & Explicit)
+
+### 7.1 Where This Happens
+
+Inside **each FT2 module root component**.
+
+Examples:
+
+* `OrdersModuleFT2.tsx`
+* `OverviewModuleFT2.tsx`
+* `ProductsModuleFT2.tsx`
+
+Never shared. Never abstracted.
+
+---
+
+### 7.2 Canonical Derivation Logic (Locked)
 
 ```ts
-trustTone?: 'trusted' | 'constrained' | 'blocked'
+let trustTone: 'trusted' | 'constrained' | 'blocked' | undefined;
+
+if (trustEligible === true) trustTone = 'trusted';
+else if (trustEligible === false) trustTone = 'blocked';
+else trustTone = undefined;
 ```
 
-### Rendering Rules
+**Important**
+There is **no automatic yellow** at this layer.
 
-* Thin left border only
+Yellow is a **visual interpretation**, not a trust decision.
+
+---
+
+### 7.3 Why This Matters
+
+This prevents:
+
+* false warnings
+* UI overreach
+* trust inflation
+
+The UI **reacts**, it does not judge.
+
+---
+
+## 8. FT2Surface: Visual Boundary (Pure Rendering)
+
+### 8.1 Props (Immutable)
+
+```ts
+interface FT2SurfaceProps {
+  trustTone?: 'trusted' | 'constrained' | 'blocked';
+}
+```
+
+---
+
+### 8.2 Rendering Rules (Strict)
+
+* Left border only
 * Full height
+* 2–4px width
 * No text
+* No tooltip
 * No icons
 * No value coloring
 
-### Color Tokens
+If any of the above appear, the component is invalid.
+
+---
+
+### 8.3 Color Tokens (Single Source of Truth)
 
 Defined **only** in:
 
@@ -192,89 +342,105 @@ Defined **only** in:
 modules/ui-ft2/src/layout/tokens.ts
 ```
 
-No module may define its own trust colors.
+No module-local colors.
+No overrides.
+No gradients.
 
 ---
 
-## Visual Semantics (Non‑Judgmental)
+## 9. Visual Semantics (User-Facing Meaning)
 
-| trustTone   | Meaning              | UI         |
-| ----------- | -------------------- | ---------- |
-| trusted     | epistemically usable | green bar  |
-| constrained | partial / unknown    | yellow bar |
-| blocked     | unsafe               | red bar    |
-| undefined   | not evaluated        | no bar     |
+| trustTone     | Meaning      | User Interpretation              |
+| ------------- | ------------ | -------------------------------- |
+| `trusted`     | Safe to read | “These numbers won’t mislead me” |
+| `constrained` | Caution      | “Some context may be missing”    |
+| `blocked`     | Unsafe       | “This could be misleading”       |
+| `undefined`   | Silent       | “System hasn’t evaluated this”   |
+
+The UI **never explains why**.
+
+Explanation belongs elsewhere (tooltips on metrics, not trust).
 
 ---
 
-## Debugging Playbook
+## 10. Debugging Playbook (Deterministic)
 
-### If trust bars do NOT appear
+When trust visuals don’t appear:
 
-Check **in this order**:
-
-1. Network:
+1. **Network**
 
    ```
    GET /api/v1/modules/trust/ft2
    ```
 
-   * Must be `200`
-   * `401` or `403` → auth issue
+   * Must return `200`
+   * Anything else → trust must be `null`
 
-2. Snapshot hook:
+2. **Snapshot Hook**
 
    * Must use `axiosInstance`
-   * Must not swallow auth silently during dev
+   * Must not throw
 
-3. Adapter:
+3. **Adapter**
 
-   * Must pass trust through
-   * Must not derive UI signals
+   * Must pass trust through untouched
 
-4. Module UI:
+4. **Module UI**
 
    * Must derive `trustTone`
-   * Must pass it to `FT2Surface`
+   * Must pass to FT2Surface
 
-5. FT2Surface:
+5. **FT2Surface**
 
-   * Must receive `trustTone`
+   * Must receive prop
 
 If any step fails → **no bar is correct behavior**.
 
 ---
 
-## Common Anti‑Patterns (DO NOT DO)
+## 11. Anti-Patterns (These Break the System)
 
-* ❌ Coloring values instead of surfaces
-* ❌ Showing badges or warnings
+Absolutely forbidden:
+
+* ❌ Blocking modules based on trust
 * ❌ Explaining trust in text
-* ❌ Inferring trust from partial data
-* ❌ Using raw `fetch()` in FT2 hooks
-* ❌ Computing trust in adapters
+* ❌ Coloring numbers
+* ❌ Adding warnings or badges
+* ❌ Inferring trust from data quality
+* ❌ “Helpful” fallback logic
+* ❌ Recomputing trust in frontend
+
+Trust inflation destroys credibility faster than missing data.
 
 ---
 
-## Expansion Rules (Future‑Proof)
+## 12. Expansion Rules (Future-Proof)
 
 When adding Trust to a new FT2 module:
 
 1. Import `useTrustFt2Snapshot`
-2. Compose it at the page level
-3. Pass trust into the adapter
-4. Normalize shape if required
-5. Derive `trustTone` in module UI
-6. Pass `trustTone` to **all** FT2Surface instances
+2. Fetch at page composition level
+3. Pass through adapter untouched
+4. Derive `trustTone` locally
+5. Pass to **every** FT2Surface
+6. Do not special-case
 
-No shortcuts.
+If a module violates this flow, it is not FT2-compliant.
 
 ---
 
-## Final Mental Model
+## 13. Final Mental Model (Internalize This)
 
-> **FT2 does not explain reality.**
-> **FT2 exposes whether reality is safe to observe.**
-> **Trust is the boundary between silence and signal.**
+> FT2 unlocks *visibility*
+> Trust defines *safety*
+> Silence is better than confidence
+> Confidence is better than explanation
 
-This playbook is now the source of truth.
+If engineers follow this playbook mechanically, the system will:
+
+* scale
+* remain honest
+* never surprise users
+* never need re-education
+
+This is the stable end-state.

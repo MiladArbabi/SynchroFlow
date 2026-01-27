@@ -1,9 +1,9 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
-import React, { ReactNode } from 'react';
+
+import React, { ReactNode, useState } from 'react';
 import {
   FT2Layout,
   FT2Row,
-  FT2Surface,
 } from '@lasyncro/ui-ft2';
 
 import {
@@ -13,30 +13,31 @@ import {
 } from '@lasyncro/ui-ft2';
 
 /**
- * UI INVARIANTS (FT2)
- * ------------------
- * - All values render with equal visual weight
- * - No colors, icons, or emphasis convey meaning
- * - `—` represents epistemic absence everywhere
- * - Rows do not collapse when data is missing
- * - This module reveals truth; it does not guide
+ * ─────────────────────────────────────────────────────────────
+ * ORDERS MODULE — FT2
+ * ─────────────────────────────────────────────────────────────
+ *
+ * Purpose:
+ * - Render the canonical, read-only FT2 truth surface for Orders.
+ *
+ * Core invariants:
+ * - No inference
+ * - No recommendations
+ * - No execution assumptions
+ * - Equal visual weight for all values
+ * - `null` ALWAYS renders as epistemic absence (`—`)
  */
 
 /**
  * OrdersModuleFT2DataProps
  * -----------------------
- * DATA-ONLY FT2 contract.
- * No semantics. No inference.
+ * STRICT data contract.
+ * This component performs NO data derivation.
  */
-
 export interface OrdersModuleFT2DataProps {
   /**
-   * ─────────────────────────────────────────
-   * 🧭 SYSTEM GROUNDING (FOUNDATIONAL)
-   * Answers: "Is the system anchored in reality?"
-   * ─────────────────────────────────────────
+   * System grounding — order obligations (L1)
    */
-
   orders: {
     total: number | null;
     fulfilled: number | null;
@@ -45,12 +46,21 @@ export interface OrdersModuleFT2DataProps {
   };
 
   /**
-   * FT2-adjacent comparative context.
-   * --------------------------------
-   * - UI-ready
-   * - Preformatted
-   * - No semantics
-   * - `null` → render as `—`
+   * Revenue — FT2 observed-only
+   * --------------------------
+   * Availability-based only.
+   * No execution or payment semantics.
+   */
+  revenue: {
+    totalSales: number | null;
+    earned: number | null;
+    pending: number | null;
+    blocked: number | null;
+    executionCoverage: 'sufficient' | 'insufficient';
+  };
+
+  /**
+   * FT2-adjacent comparison context (preformatted)
    */
   comparison: {
     orders: {
@@ -62,163 +72,62 @@ export interface OrdersModuleFT2DataProps {
   };
 
   /**
-   * Revenue Overview (FT2)
-   * ---------------------
-   * Exposes where positive revenue is structurally sitting.
+   * Revenue — execution-aware 
+   * -----------------------------------
+   * Optional.
+   * Rendered ONLY when explicitly selected by the user.
+   * Visibility gates whether values may be shown.
    */
-  revenue: {
-    total: number | null;
-    fulfilled: number | null;
-    unfulfilled: number | null;
-  };
-
-  context: {
-    ordersObserved: number | null;
-  };
-
-  totals: {
-    revenueTotal: number | null;
-
-    /**
-     * Orders FT2 has no cost reality.
-     * Non-existent fact → must always render as absence.
-     */
-    costTotal: number | null;
+  executionRevenue?: {
+    fulfilled: number;
+    unfulfilled: number;
+    unknown: number;
+    visibility: {
+      status: 'sufficient' | 'insufficient';
+    };
   };
 
   /**
-   * Canonical data completeness (L1).
-   * Factual coverage only. No usability implied.
-   */
-  dataCoverage: {
-    completenessPct: number | null;
-  };
-
-  /**
-   * Epistemic permission gate (downgraded L2).
-   * Answers: "Is interpretation allowed?"
-   */
-  visibility: {
-    status: 'sufficient' | 'insufficient';
-  } | null;
-
-  /**
-   * Canonical ingestion presence (L1).
-   * Answers: "Did LaSyncro observe any facts in this period?"
-   */
-  ingestion: {
-    status: 'present' | 'absent';
-  } | null;
-
-  /**
-   * Temporal freshness (L1).
-   * Answers: "Is the observed data recent?"
-   */
-  freshness: {
-    status: 'recent' | 'stale' | 'unknown';
-  } | null;
-
-  /**
-   * ─────────────────────────────────────────
-   * POST-GROUNDING CONTEXT (L1½ / L2)
-   * Requires grounding to be meaningful
-   * ─────────────────────────────────────────
-   */
-
-  outcome: { status: 'positive' | 'negative' } | null;
-
-  trend: { direction: 'up' | 'down' | 'flat' } | null;
-
-  /**
-   * Revenue signal continuity (L1½).
-   * Classification only. Not a trend.
+   * Revenue continuity (L1½)
    */
   revenueContinuity:
     | { status: 'isolated' | 'continuous' }
     | null;
 
   /**
-   * ─────────────────────────────────────────
-   * STRUCTURAL COHERENCE (ALIGNMENT)
-   * ─────────────────────────────────────────
-   */
-  alignment: {
-    demandReality?: 'aligned' | 'divergent' | 'unknown';
-    engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
-    operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
-  } | null;
-
-  /**
    * Trust FT2 (module-level)
-   * -----------------------
-   * Passed through from Trust FT2 snapshot.
-   * Interpreted locally in UI.
    */
   trust: {
     trustEligible: boolean | null;
   } | null;
-};
-
+}
 
 /**
- * OrdersModuleFT2Props
- * -------------------
- * Rendering contract.
- * Slots only. No logic.
+ * Rendering-only props
  */
-export interface OrdersModuleFT2Props extends OrdersModuleFT2DataProps {
+export interface OrdersModuleFT2Props
+  extends OrdersModuleFT2DataProps {
   timeseries: ReactNode;
   distribution: ReactNode;
 }
 
-export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
+export default function OrdersModuleFT2(
+  props: OrdersModuleFT2Props
+) {
   const {
-    context,
-    totals,
-    dataCoverage,
-    visibility,
-
-    // 🧭 System Grounding
-    ingestion,
-    freshness,
-
-    // Post-grounding context
-    outcome,
-    trend,
-    revenueContinuity,
-
-    alignment,
-    timeseries,
-    distribution,
-
-    trust,
-
-    comparison,
-    
     orders,
+    comparison,
     revenue,
+    revenueContinuity,
   } = props;
-
-  /**
- * Trust interpretation (FT2 locked rules)
- * --------------------------------------
- * - null            → no bar
- * - true            → trusted
- * - false           → blocked
- * - null eligible   → constrained
- */
-const trustTone =
-  trust === null
-    ? undefined
-    : trust.trustEligible === true
-      ? 'trusted'
-      : trust.trustEligible === false
-        ? 'blocked'
-        : 'constrained';
 
   return (
     <FT2Layout>
       <FT2Row intent="kpi">
+
+        {/* ─────────────────────────────────────────
+        * ORDERS OVERVIEW
+        * ───────────────────────────────────────── */}
         <InfoBlock title="Orders overview">
           <InfoBlockRow
             label="Orders total"
@@ -245,40 +154,50 @@ const trustTone =
           />
 
           <InfoBlockFooter
-            line1="> ORDER OBLIGATIONS ARE VISIBLE"
-            line2="> EXECUTION STATES SHOWN ELSEWHERE"
+            line1="> ORDER OBLIGATIONS SHOWN"
+            line2="> VALUE AND EXECUTION DETAILED ELSEWHERE"
           />
         </InfoBlock>
 
-        <InfoBlock title="REVENUE OVERVIEW">
+        {/* ─────────────────────────────────────────
+        * REVENUE OVERVIEW (FT2 — TERMINAL)
+        * ───────────────────────────────────────── */}
+        <InfoBlock title="Revenue overview">
           <InfoBlockRow
-            label="from all orders"
-            value={revenue.total}
+            label="Total sales"
+            value={revenue.totalSales}
           />
 
           <InfoBlockRow
-            label="from fulfilled orders"
-            value={revenue.fulfilled}
+            label="Earned revenue"
+            value={
+              revenue.executionCoverage === 'sufficient'
+                ? revenue.earned
+                : null
+            }
           />
 
           <InfoBlockRow
-            label="from unfulfilled orders"
-            value={revenue.unfulfilled}
+            label="Pending revenue"
+            value={
+              revenue.executionCoverage === 'sufficient'
+                ? revenue.pending
+                : null
+            }
           />
 
           <InfoBlockRow
-            label="continuity"
-            value={revenueContinuity?.status ?? null}
+            label="Blocked revenue"
+            value={revenue.blocked}
           />
 
           <InfoBlockFooter
-            line1="> REVENUE IS DISTRIBUTED BY EXECUTION STATE"
-            line2="> CASH MAY BE CONTINGENT ON FULFILLMENT"
+            line1="> SALES VALUE SHOWN"
+            line2="> PAYMENT AND PROFIT NOT EVALUATED"
           />
         </InfoBlock>
+
       </FT2Row>
-
-
     </FT2Layout>
   );
 }

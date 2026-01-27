@@ -8,7 +8,8 @@ import { extractOrderShippingDelayFacts } from '../order-facts/orderShippingDela
 import { extractOrderTrendFacts } from 'api-src/services/order-facts/orderTrendFacts.service';
 import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFacts.service';
 import { extractFulfilledOrdersCount } from '../order-facts/orderFulfilledCountFacts.service';
-import { extractOrderRevenueAllocationFacts } from '../order-facts/orderRevenueAllocationFacts.service';
+import { extractOrderRevenueAllocationFacts } from
+  'api-src/services/order-facts/orderRevenueAllocationFacts.service';
 
 /**
  * NOTE ON TREND WIRING
@@ -57,7 +58,8 @@ const trendFacts = await extractOrderTrendFacts(shopId, range);
 const intelligence = deriveOrderIntelligence(facts, trendFacts);
 
 const fulfilledOrders = await extractFulfilledOrdersCount(shopId);
-const revenueAllocation = await extractOrderRevenueAllocationFacts(shopId, range);
+const revenueAllocationFacts =
+  await extractOrderRevenueAllocationFacts(shopId, range);
 
 /**
   * IMPORTANT:
@@ -347,21 +349,35 @@ const comparison = {
       incoming: incomingOrders,
     },
 
-    comparison,
-
-    /**
+   /**
      * Revenue Overview (FT2)
      * ---------------------
-     * Positive-value containment only.
-     *
-     * This exposes where revenue is structurally sitting,
-     * without implying settlement, timing, or success.
+     * - totalSales: execution-agnostic availability
+     * - earned/pending: execution-derived, coverage-gated
+     * - blocked: no primitive → null
      */
     revenue: {
-      total: exposure.totals.revenueTotal,
-      fulfilled: revenueAllocation.fulfilledRevenueTotal,
-      unfulfilled: revenueAllocation.unfulfilledRevenueTotal,
+      totalSales: exposure.totals.revenueTotal,
+
+      earned:
+        fulfillmentStatusFacts.visibility === 'sufficient'
+          ? revenueAllocationFacts.fulfilledRevenueTotal
+          : null,
+
+      pending:
+        fulfillmentStatusFacts.visibility === 'sufficient'
+          ? revenueAllocationFacts.unfulfilledRevenueTotal
+          : null,
+
+      blocked: null,
+
+      executionCoverage:
+        fulfillmentStatusFacts.visibility === 'sufficient'
+          ? 'sufficient'
+          : 'insufficient',
     },
+
+    comparison,
 
     /**
      * FT2-ADJACENT REALITIES

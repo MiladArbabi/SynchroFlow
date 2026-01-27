@@ -23,6 +23,7 @@ import { mapOrdersFt2TimeseriesProps } from '../orders/useOrdersFt2TimeseriesAda
 import { mapOrdersFt2DistributionProps } from '../orders/useOrdersFt2DistributionAdapter';
 import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
 import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
+import { useOrderNexusExecutionRevenue } from '../orders/useOrderNexusExecutionRevenue';
 
 import { useTrustFt2Snapshot } from 'pages/trust/useTrustFt2Snapshot';
 
@@ -42,6 +43,7 @@ export default function OrdersFT2Page() {
   const snapshotQuery = useOrdersFt2Snapshot(range);
   const timeseriesQuery = useOrdersFt2Timeseries(range);
   const distributionQuery = useOrdersFt2Distribution(range);
+  const executionRevenueQuery = useOrderNexusExecutionRevenue(range);
 
   const trustSnapshot = useTrustFt2Snapshot();
 
@@ -54,8 +56,17 @@ export default function OrdersFT2Page() {
 
   const headerProps = mapOrdersFt2Props(
     snapshotQuery.data,
-    trustSnapshot.data ?? null
+    trustSnapshot.data ?? null,
+    executionRevenueQuery.data
+      ? {
+          fulfilled: executionRevenueQuery.data.revenue.fulfilled,
+          unfulfilled: executionRevenueQuery.data.revenue.unfulfilled,
+          unknown: executionRevenueQuery.data.revenue.unknown,
+          visibility: executionRevenueQuery.data.visibility,
+        }
+      : undefined
   );
+
   const timeseriesProps = mapOrdersFt2TimeseriesProps(timeseriesQuery.data);
   const distributionProps = mapOrdersFt2DistributionProps(distributionQuery.data);
 
