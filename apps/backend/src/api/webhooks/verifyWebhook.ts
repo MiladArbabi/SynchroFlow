@@ -65,17 +65,30 @@ export function createWebhookVerifier(config: VerifyConfig) {
       });
     }
 
-    const rawBody = (req as any).rawBody;
+        const rawBody = (req as any).rawBody;
     if (!rawBody || !Buffer.isBuffer(rawBody)) {
       return res.status(400).json({
         error: 'Missing raw request body',
       });
     }
 
+    // ─────────────────────────────────────────────
+    // DEBUG (TEMPORARY): Raw body inspection
+    // Purpose: Verify exact byte sequence used for HMAC
+    // REMOVE after verification succeeds
+    // ─────────────────────────────────────────────
+    console.log('[WEBHOOK VERIFY] rawBody utf8:', rawBody.toString('utf8'));
+    console.log('[WEBHOOK VERIFY] rawBody hex :', rawBody.toString('hex'));
+    console.log('[WEBHOOK VERIFY] signature  :', signature);
+    // ─────────────────────────────────────────────
+
     const expected = crypto
       .createHmac('sha256', secret)
       .update(rawBody)
       .digest(config.digest);
+
+    // Optional but useful while debugging
+    console.log('[WEBHOOK VERIFY] expected   :', expected);
 
     if (!config.compare(signature, expected)) {
       return res.status(400).json({

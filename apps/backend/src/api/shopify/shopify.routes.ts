@@ -20,7 +20,6 @@ const router = Router();
  */
 router.post(
   '/webhooks',
-  express.raw({ type: 'application/json' }),
   verifyShopifySignature,
   webhookRouter
 );

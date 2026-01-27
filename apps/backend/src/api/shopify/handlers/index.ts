@@ -11,3 +11,6 @@
 // - Contain side effects
 
 export { onShopifyAppUninstalled } from './appUninstalled.handler';
+
+export * from './handleAppUninstalled';
+export * from './handleOrderFulfillment';

@@ -1,75 +1,105 @@
-# 🔒 InfoBlock — FT2 Narrative Primitive
+# 🔒 InfoBlock — FT2 Narrative Primitive (CANONICAL PLAYBOOK v2.0)
 
 **Status:** ✅ SEALED / CANONICAL
-**Applies to:** All FT2 modules (Orders, Revenue, Returns, Future)
-**Apex Rule:** **FT2 remains the truth layer. InfoBlock wraps FT2, never alters it.**
+**Applies to:** All FT2 modules (Orders, Revenue, Returns, Operations, Future)
+**Apex Rule:** **FT2 is the terminal truth layer. InfoBlock wraps FT2; it never alters it.**
+
+This document supersedes all previous InfoBlock guidance.
 
 ---
 
-## 0. Why InfoBlock Exists (Non-Negotiable Rationale)
+## 0. Executive Definition (Read This First)
 
-FT2 surfaces (`FT2Surface`) are **structural primitives**.
-They are **too low-level** for SMB cognition when exposed directly.
+> **An InfoBlock is a narrative wrapper around downgraded truth that allows SMBs to orient themselves in under 5 seconds without being told what to think or what to do.**
+
+If an InfoBlock:
+
+* explains,
+* persuades,
+* prioritizes,
+* diagnoses,
+* recommends,
+
+…it is **invalid**.
+
+---
+
+## 1. Why InfoBlock Exists (Revalidated)
+
+FT2 surfaces (`FT2Surface`) are **structural primitives**, not cognitive ones.
+They expose truth correctly but **at the wrong resolution for human scanning**.
 
 **InfoBlock exists to solve exactly one problem:**
 
 > **Reduce cognitive load without increasing semantic load.**
 
+### What this means in practice
+
 InfoBlock:
 
-* groups related FT2 facts,
-* preserves observational truth,
-* introduces *controlled narrative order*,
-* **without** introducing interpretation, advice, or intelligence.
+* reduces *mental parsing cost*
+* preserves *epistemic humility*
+* exposes *business nouns*, not system mechanics
+* hides complexity **without lying**
 
 ---
 
-## 1. What InfoBlock IS (Precisely)
+## 2. What InfoBlock IS / IS NOT (Clarified)
 
-**InfoBlock is:**
+### ✅ InfoBlock IS
 
-* A **semantic grouping primitive**
+* A **narrative grouping primitive**
 * A **read-only FT2 wrapper**
-* A **scan-optimized narrative container**
+* A **scan-optimized orientation surface**
 * A **UI-only construct**
+* A **business-noun carrier** (orders, revenue, returns, etc.)
 
-**InfoBlock is NOT:**
+### ❌ InfoBlock IS NOT
 
-* ❌ a data source
-* ❌ a logic container
-* ❌ a calculator
-* ❌ an analytics surface
-* ❌ an intelligence layer
-* ❌ a recommendation system
+* a data source
+* a logic container
+* a calculator
+* an analytics surface
+* an intelligence layer
+* a recommendation system
+* a workflow launcher
+* a diagnostics panel
 
 > **InfoBlock may arrange truth.
 > It may never transform truth.**
 
 ---
 
-## 2. InfoBlock Position in the Architecture (Locked)
+## 3. Architectural Position (Hard-Locked)
 
 ```
-Facts → Intelligence → FTEP → FT2 Snapshot
-                                   ↓
-                          FT2 Surfaces (structural)
-                                   ↓
-                         InfoBlock (narrative wrapper)
-                                   ↓
-                           Human perception
+Canonical Facts
+   ↓
+Intelligence (internal only)
+   ↓
+FTEP (Truth Downgrade Policy)
+   ↓
+FT2 Snapshot (terminal truth)
+   ↓
+Adapters (pure pipes)
+   ↓
+InfoBlock (narrative wrapper)
+   ↓
+Human perception
 ```
 
-**Critical invariant:**
+### Non-negotiable invariants
 
-> InfoBlock sits **after FT2**.
-> It never bypasses FT2.
-> It never feeds anything upstream.
+* InfoBlock **never bypasses FT2**
+* InfoBlock **never feeds upstream**
+* InfoBlock **never sees intelligence**
+* InfoBlock **never performs logic**
 
 ---
 
-## 3. InfoBlock Contract (API)
+## 4. InfoBlock Contract (API — Final)
 
-### 3.1 `InfoBlock`
+### 4.1 `InfoBlock`
 
 ```ts
 export interface InfoBlockProps {
@@ -80,44 +110,49 @@ export interface InfoBlockProps {
 
 **Rules**
 
-* `title` is **copy-only**
+* `title` is copy-only
 * No icons
-* No status indicators
+* No badges
 * No dynamic formatting
 * No truncation logic
+* No interactivity
 
 ---
 
-### 3.2 `InfoBlockRow`
+### 4.2 `InfoBlockRow`
 
 ```ts
 export interface InfoBlockRowProps {
-  label: string;                   // Domain name
+  label: string;                   // Domain name (business noun)
   value: string | number | null;   // FT2-exposed fact
-  diff?: string | null;            // Optional comparative text
+  diff?: string | null;            // Optional secondary column
 }
 ```
 
-**Rules**
+**Rendering Rules**
 
 * `value === null` → render `—`
 * `diff === undefined` → column hidden
 * `diff === null` → render `—`
-* No colors convey meaning
-* No arrows, icons, emojis
-* No derived values
-* No percentage math
-* No conditionals
 
-**Row semantics**
+**Prohibited**
+
+* colors conveying meaning
+* arrows, icons, emojis
+* derived values
+* percentages unless canonical
+* conditionals
+* thresholds
+
+**Semantic Rules**
 
 * One row = **one domain**
-* A row answers **one factual question**
-* Rows must be stable across renders
+* One row answers **one factual question**
+* Rows are **stable across all states**
 
 ---
 
-### 3.3 `InfoBlockFooter` (Interpretation Rail — FT2-Adjacent)
+### 4.3 `InfoBlockFooter` (Interpretation Rail)
 
 ```ts
 export interface InfoBlockFooterProps {
@@ -126,134 +161,217 @@ export interface InfoBlockFooterProps {
 }
 ```
 
-**Rules**
+**Hard Limits**
 
-* Copy-only
-* Max **2 lines**
-* Each line **≤ 5–10 words**
-* Declarative tone only
-* No verbs implying action
-* No causality
-* No advice
-* No recommendations
-* No emotional language
+* Max 2 lines
+* Each line ≤ 5–10 words
+* Declarative only
+* Uppercase only
 
-> The footer **explains nothing**.
-> It **orients attention**.
+**The footer:**
 
----
+* does **not explain**
+* does **not justify**
+* does **not guide**
 
-## 4. Interpretation Rail (IR) — Hard Boundary
-
-The footer is an **FT2-adjacent layer**, not FT2 itself.
-
-### Allowed
-
-* Clarifying epistemic state
-  (“Fulfillment counts unavailable”)
-* Restating visibility constraints
-  (“Order flow is visible”)
-* Declaring scope
-  (“Revenue pending fulfillment”)
-
-### Forbidden
-
-* ❌ “You should…”
-* ❌ “This means…”
-* ❌ “Likely because…”
-* ❌ “Improve by…”
-* ❌ “Risky / Good / Bad”
-* ❌ Any causal framing
-
-If IR copy **changes decisions**, it is invalid.
+> It orients attention, nothing more.
 
 ---
 
-## 5. Typography & Visual Contract (Locked)
+## 5. Interpretation Rail (IR) — Hard Boundary
 
-### 5.1 Typeface
+The footer is **FT2-adjacent**, not FT2.
+
+### ✅ Allowed
+
+* Epistemic scope
+  (“ORDER OBLIGATIONS ARE VISIBLE”)
+
+* Visibility constraints
+  (“EXECUTION STATES SHOWN ELSEWHERE”)
+
+* Availability disclaimers
+  (“RETURN DATA PARTIALLY AVAILABLE”)
+
+### ❌ Forbidden
+
+* “You should…”
+* “This means…”
+* “Likely because…”
+* “Improve by…”
+* “Risky / Good / Bad”
+* Any causal language
+* Any urgency framing
+
+**Rule of thumb:**
+
+> If removing the footer would change a decision, the footer is invalid.
+
+---
+
+## 6. Typography & Visual Contract (Enforced)
+
+### 6.1 Typeface
 
 **IBM Plex Mono — mandatory**
 
-Reason:
+**Why**
 
 * Equal glyph width
+* No implied hierarchy
 * Neutral tone
-* Prevents visual hierarchy hacks
-* Encourages scanning, not persuasion
-
-No other fonts allowed inside InfoBlock.
+* Optimized for scanning, not persuasion
 
 ---
 
-### 5.2 Capitalization
+### 6.2 Capitalization
 
 * **ALL TEXT UPPERCASE**
-* Enforced at container level (`text-transform`)
+* Enforced at container level
 * Never manually capitalized in copy
 
-Reason:
+**Why**
 
-* Eliminates emphasis games
+* Removes emphasis hacks
 * Equalizes labels, values, and absence
+* Makes `—` visually honest
 
 ---
 
-### 5.3 Layout Invariants
+### 6.3 Layout Invariants
 
 * Fixed width: **350px**
-* Height: **content-driven**
-* Rows: **single-line only**
+* Height: content-driven
+* Rows: single-line only
 * Columns: `LABEL | VALUE | DIFF`
 * Numbers right-aligned
-* Text never wraps inside rows
-* Footer always visible (no clipping)
+* No wrapping
+* Footer always visible
 
 ---
 
-## 6. Density Rules
+## 7. Density Rules
 
 **Default density:** `compact`
 
-Why:
+**Why**
 
-* SMB scanning behavior
-* Prevents dashboard sprawl
-* Forces discipline in row selection
+* SMB scan patterns
+* Prevents dashboard bloat
+* Forces domain discipline
 
-Future densities may exist, but:
-
-* **compact is the default**
-* No per-module overrides allowed
+No per-module overrides allowed.
 
 ---
 
-## 7. Row Selection Rules (Critical)
+## 8. Domain & Row Selection Rules (Critical)
 
-### Every InfoBlock must obey:
+Every InfoBlock must satisfy **all** of the following.
 
-1. **Finite rows**
+### 8.1 Finite Rows
 
-   * Typically 3–5
-   * Never scroll internally
-
-2. **No redundancy**
-
-   * If two rows answer the same question → one is removed
-
-3. **Presence over precision**
-
-   * Presence beats magnitude
-   * Magnitude beats comparison
-
-4. **Stability**
-
-   * Rows must not appear/disappear across states
-   * Missing data renders as `—`, not removed
+* Typically **3–5 rows**
+* Never scroll internally
+* If more rows are needed → wrong InfoBlock
 
 ---
 
-## 8. Orders InfoBlock v1.1 (Sealed Example)
+### 8.2 No Redundancy
+
+* If two rows answer the same question → one must go
+* Redundancy is a cognitive tax
+
+---
+
+### 8.3 Presence Over Precision
+
+Priority order:
+
+1. Presence
+2. Magnitude
+3. Comparison
+
+Never skip presence to show precision.
+
+---
+
+### 8.4 Stability
+
+* Rows **never appear/disappear**
+* Missing data renders as `—`
+* Structural stability > informational completeness
+
+---
+
+## 9. Business-Noun Rule (New, Mandatory)
+
+All InfoBlock rows must be phrased as **business nouns**, not system states.
+
+### ✅ Good
+
+* Orders total
+* Fulfilled orders
+* Returned items
+* Revenue pending settlement
+
+### ❌ Forbidden
+
+* Ingestion status
+* Sync health
+* Pipeline latency
+* Data freshness (as a row)
+
+System realities may exist:
+
+* in FT2
+* in gating
+* in trust logic
+* in IR copy
+
+They must **not** dominate the InfoBlock.
+
+---
+
+## 10. Obligation vs Execution Rule (New, Critical)
+
+Every InfoBlock must be classified as **one of the following**:
+
+### A. Obligation InfoBlock
+
+Answers:
+
+> “What obligations exist?”
+
+Examples:
+
+* Orders Overview
+* Returns Overview
+* Revenue Overview
+
+These **must not** include execution stages.
+
+---
+
+### B. Execution State InfoBlock (FT2-Paid / Actions-Adjacent)
+
+Answers:
+
+> “Where are obligations right now?”
+
+Examples:
+
+* Picking / Packing / Shipping states
+* Warehouse stages
+
+These:
+
+* must be separate InfoBlocks
+* must be explicitly capability-gated
+* must never leak into obligation blocks
+
+---
+
+## 11. Orders Overview — Reference Implementation (Sealed)
 
 **Title:** `ORDERS OVERVIEW`
 
@@ -264,52 +382,77 @@ Future densities may exist, but:
 3. Unfulfilled orders
 4. Incoming orders
 
-**Footer (locked IR):**
+**Semantic guarantees**
 
-* Line 1: `ORDER FLOW IS VISIBLE`
-* Line 2: `FULFILLMENT COUNTS UNAVAILABLE`
+* Presence-based
+* Time-agnostic (except incoming)
+* No urgency
+* No SLA
+* No diagnosis
 
-This is now **reference behavior**.
+**Footer (locked):**
 
----
+* `ORDER OBLIGATIONS ARE VISIBLE`
+* `EXECUTION STATES SHOWN ELSEWHERE`
 
-## 9. What Engineers May NOT Do
-
-* ❌ Add logic to InfoBlock
-* ❌ Compute values inside rows
-* ❌ Add conditional styling
-* ❌ Add icons or colors for meaning
-* ❌ Reorder rows dynamically
-* ❌ Add tooltips
-* ❌ Add click handlers
-* ❌ Turn InfoBlock into a card widget
-
-Violations are **architecture breaches**, not style issues.
+This block is the **reference standard**.
 
 ---
 
-## 10. Replication Rule (Project-Wide)
+## 12. Adapter & Wiring Rules (Reinforced)
 
-Any future FT2 module that wants to:
+* Adapters are **pipes, not brains**
+* Allowed operation: `undefined → null`
+* No computation
+* No defaults
+* No guards in UI
 
-* summarize facts,
-* reduce cognitive load,
-* present multi-domain truth,
+If something crashes:
+
+* fix the wiring
+* do not soften the UI
+
+---
+
+## 13. What Engineers May NOT Do (Expanded)
+
+* Add logic to InfoBlock
+* Compute values inside rows
+* Fix data issues in UI
+* Add conditional styling
+* Add icons or colors
+* Reorder rows dynamically
+* Add tooltips
+* Add click handlers
+* Turn InfoBlock into a “card”
+* Hide bad data
+
+Violations are **architecture breaches**, not styling bugs.
+
+---
+
+## 14. Replication Rule (Project-Wide)
+
+Any FT2 module that wants to:
+
+* summarize truth
+* reduce cognitive load
+* present multiple domains
 
 **must use InfoBlock**.
 
-Custom summary components are **not allowed**.
+No custom summary components. Ever.
 
 ---
 
-## 11. Final Seal
+## 15. Final Seal (v2.0)
 
-* InfoBlock is now the **primary FT2 narrative primitive**
-* FT2Surface remains **structural scaffolding**
-* Interpretation Rail is **contained and controlled**
-* Truth remains downgraded, observable, and neutral
+* InfoBlock is the **primary FT2 narrative primitive**
+* Business nouns carry truth, not system mechanics
+* Obligation and execution are structurally separated
+* Trust is enforced by wiring, not UX tricks
 * SMB cognition is respected **without manipulation**
 
-🔐 **InfoBlock contract is sealed, canonical, and mandatory.**
+🔐 **This playbook is sealed, canonical, and mandatory.**
 
 ---

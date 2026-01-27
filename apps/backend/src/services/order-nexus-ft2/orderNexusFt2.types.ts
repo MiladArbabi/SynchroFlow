@@ -18,6 +18,30 @@ export type OrderNexusFT2Snapshot =
     incoming: number | null;
   };
 
+  comparison: {
+    orders: {
+      totalPctChange: number | null;
+      fulfilledPctChange: number | null;
+      unfulfilledPctChange: number | null;
+      incomingPctChange: number | null;
+    };
+  };
+
+  /**
+   * Revenue Overview (FT2)
+   * ---------------------
+   * Positive-value allocation by execution state.
+   *
+   * NOTE:
+   * - Returns / reversals are intentionally excluded.
+   * - Netting is forbidden.
+   */
+  revenue: {
+    total: number | null;
+    fulfilled: number | null;
+    unfulfilled: number | null;
+  };
+
   ingestion: {
     status: 'present' | 'absent';
   } | null;

@@ -1,70 +1,75 @@
-# 🔒 Order-Nexus FT2 — 4-Layer Architecture Blueprint (CURRENT · SEALED)
+# 🔒 Order-Nexus FT2 — Layered Architecture Blueprint
+
+**CURRENT · ACTIVE · SEALED (v2)**
 
 **Status:** ✅ Canonical · Enforced · Leak-Safe
-**Applies To:** All FT2 modules
+**Applies To:** Orders-Nexus FT2 (Orders · Fulfillment · Revenue · Returns)
 **Reference Implementation:** Order-Nexus
-**Apex Rule:** **FT2 is final. There is no FT3.**
+**Apex Rule:** **FT2 is terminal. There is no FT3.**
 
 ---
 
-## 0. Why This Architecture Exists
+## 0. Why This Architecture Exists (Re-stated)
 
 Order-Nexus handles the **highest-risk economic truth** in LaSyncro:
 
 * order presence
 * revenue presence
-* economic direction
+* fulfillment execution reality
+* return & reversal presence
 * epistemic usability of data
 * system grounding (is data even flowing?)
 
-Any shortcut in this module:
+A single semantic leak here:
 
-* corrupts trust,
-* contaminates downstream modules,
-* breaks Analytics, Echo Hub, and Ops reasoning.
+* corrupts Trust FT2,
+* contaminates Analytics,
+* poisons Echo Hub reasoning,
+* breaks cross-module coherence.
 
-Therefore, Order-Nexus is implemented using **four hard, one-way layers**.
+Therefore, Order-Nexus is implemented using **strict, one-way epistemic layers**.
 
-> **FT2 is the maximum resolution of truth allowed to leave the backend**
-> → *orientation without advice*.
+> **FT2 is the maximum resolution of truth allowed to leave the backend.**
+> Orientation without advice. Reality without interpretation.
 
 ---
 
-## 1. Architectural Overview (LOCKED)
+## 1. Architectural Overview (LOCKED · UPDATED)
 
 ```
-Persistence / Canonical Orders
+Canonical Persistence
         ↓
-Layer 1   — Canonical Facts          (What exists)
-Layer 1½  — Temporal Facts           (How it moves)
+Layer 1   — Canonical Facts              (What exists)
+Layer 1½  — Temporal Facts               (How presence behaves over time)
         ↓
-Layer 2   — Intelligence             (What it means — internal only)
+Layer 2   — Intelligence (INTERNAL)      (What it means, silently)
         ↓
-Layer 3   — FTEP                     (What may be exposed)
+Layer 3   — FTEP (Truth Exposure Policy) (What may be shown)
         ↓
-Layer 4   — FT2 UI                   (What the user sees)
+Layer 4   — FT2 UI                       (What the user can observe)
 ```
 
 ### Inviolable Rules
 
 * Data flows **downward only**
 * Each layer **destroys information**
-* No layer may compensate for missing truth
-* UI must render correctly with **null everywhere**
+* No layer compensates for missing truth
+* No layer upgrades epistemic certainty
+* UI must render correctly with **`null` everywhere**
 
-Violation of any rule = **architecture breach**.
+Violation = **architecture breach**.
 
 ---
 
-## 2. Layer 1 — Canonical Facts (Truth)
+## 2. Layer 1 — Canonical Facts (L1)
 
-**Canonical Observation Layer**
+**Truth Without Interpretation**
 
 ---
 
 ### Purpose
 
-Extract **raw, interpretation-free facts** directly from persistence.
+Extract **raw, presence-only facts** directly from canonical persistence.
 
 This is the **only layer allowed to read the database**.
 
@@ -88,19 +93,21 @@ This is the **only layer allowed to read the database**.
 
 ---
 
-### 2.1 Location
+### 2.1 Location (UPDATED)
 
 ```
 apps/backend/src/services/order-facts/
 ├── orderFacts.service.ts
 ├── orderTrendFacts.service.ts
-├── orderFacts.types.ts
-└── index.ts
+├── orderFulfillmentFacts.service.ts
+├── orderShippingFacts.service.ts
+├── orderCustomerPromiseFacts.service.ts
+└── *.types.ts
 ```
 
 ---
 
-### 2.2 Canonical Types (CURRENT)
+### 2.2 Canonical Fact Types (CURRENT)
 
 ```ts
 export interface OrderFacts {
@@ -110,51 +117,60 @@ export interface OrderFacts {
 
   totals: {
     revenueTotal: number | null;
-    costTotal: number | null;   // always null (non-existent fact)
-    currency: string | null;    // always null (not inferable)
+    costTotal: number | null;     // always null (non-existent fact)
   };
 
   dataCoverage: {
     completenessPct: number | null;
   };
 
+  ingestion: {
+    status: 'present' | 'absent';
+  } | null;
+
+  freshness: {
+    status: 'recent' | 'stale' | 'unknown';
+  } | null;
+
   extractedAt: string;
 }
 ```
+
+---
+
+### 2.3 Temporal Facts (L1½)
 
 ```ts
 export interface OrderTrendFacts {
   previousWindowOrders: number | null;
   currentWindowOrders: number | null;
+
+  revenueContinuity:
+    | 'isolated'
+    | 'continuous'
+    | null;
 }
 ```
 
----
-
-### 2.3 Design Constraints (HARD)
-
-* ❌ No derived percentages
-* ❌ No statuses
-* ❌ No booleans like “healthy”
-* ❌ No heuristics
-* ❌ No defaults other than `null`
-* ✅ Preserve absence explicitly
-
-`null` represents **epistemic absence**, not failure.
+**Key correction:**
+Revenue continuity is **L1½**, not L2 intelligence.
 
 ---
 
-### 2.4 Responsibilities
+### 2.4 Hard Constraints (LOCKED)
 
-* Query canonical tables only
-* Perform **counts and sums only**
-* Apply resolved FT2 temporal window
-* Never infer missing data
-* Never interpret meaning
+* ❌ No percentages
+* ❌ No statuses like “healthy”
+* ❌ No booleans
+* ❌ No thresholds
+* ❌ No defaults except `null`
+* ✅ Absence must remain explicit
+
+`null` = **epistemic absence**, not failure.
 
 ---
 
-## 3. Layer 2 — Intelligence (INTERNAL ONLY)
+## 3. Layer 2 — Intelligence (L2 · INTERNAL ONLY)
 
 **Meaning Without Voice**
 
@@ -162,10 +178,10 @@ export interface OrderTrendFacts {
 
 ### Purpose
 
-Convert **facts → classified orientation signals**, strictly for **internal use**.
+Convert **facts → classified orientation signals** for internal use only.
 
-This layer may *think* —
-but must **never speak directly**.
+This layer may **think**.
+It must **never speak directly**.
 
 ---
 
@@ -173,17 +189,19 @@ but must **never speak directly**.
 
 ```
 apps/backend/src/services/order-intelligence/
-└── orderIntelligence.service.ts
+├── orderIntelligence.service.ts
+├── orderFulfillmentIntelligence.service.ts
+├── orderVelocityIntelligence.service.ts
 ```
 
 ---
 
-### 3.2 Intelligence Outputs (Internal)
+### 3.2 Intelligence Outputs (Internal Only)
 
 ```ts
 export interface OrderNexusIntelligence {
-  outcome: {
-    status: 'positive' | 'negative' | 'unknown';
+  margin: {
+    status: 'healthy' | 'loss' | 'unknown';
   };
 
   trend: {
@@ -194,17 +212,17 @@ export interface OrderNexusIntelligence {
     status: 'sufficient' | 'insufficient' | 'unknown';
   };
 
-  revenueContinuity: {
-    status: 'isolated' | 'continuous' | 'unknown';
-  };
+  dataCoveragePct: number | null;
 }
 ```
+
+**Important correction:**
+Revenue continuity is **not** intelligence.
+It is downgraded from L1½ facts.
 
 ---
 
 ### 3.3 Intelligence Gates (NON-NEGOTIABLE)
-
-Intelligence **activates only if data is usable**.
 
 | Condition       | Result   |
 | --------------- | -------- |
@@ -214,54 +232,30 @@ Intelligence **activates only if data is usable**.
 
 Unusable → `unknown`.
 
-No gate bypass is allowed.
+No bypass allowed.
 
 ---
 
-### 3.4 Key Intelligence Semantics
-
-#### Economic Outcome (Orientation Only)
-
-* Revenue > 0 → `positive`
-* Revenue ≤ 0 → `negative`
-* Data unusable → `unknown`
-
-#### Trend Direction
-
-* Two fixed 7-day windows
-* Direction only
-* Non-predictive
-* Non-explanatory
-
-#### Revenue Continuity (L1½)
-
-* Continuous → signal persists across windows
-* Isolated → single-window presence
-* No magnitude
-* No slope
-* No explanation
-
----
-
-### 3.5 Forbidden Operations
+### 3.4 Forbidden Operations
 
 * ❌ Explanations
-* ❌ Drivers or causes
+* ❌ Causes
 * ❌ Recommendations
 * ❌ Forecasting
+* ❌ UI shaping
 * ❌ Cross-module enrichment
 
-If intelligence becomes descriptive, **the layer is broken**.
+If intelligence becomes narrative, **the layer is broken**.
 
 ---
 
 ## 4. Layer 3 — FTEP (Truth Exposure Policy)
 
-**Security Boundary**
+**Epistemic Security Boundary**
 
 ---
 
-This is the **most critical layer**.
+This is the **hardest and most critical layer**.
 
 FTEP defines **what truth is allowed to leave the backend**.
 
@@ -271,18 +265,17 @@ FTEP defines **what truth is allowed to leave the backend**.
 
 ```
 apps/backend/src/services/order-ftep/
-├── orderFtep.types.ts
 ├── orderFtep.service.ts
-└── index.ts
+├── orderFtep.types.ts
 ```
 
 ---
 
-### 4.2 Core Principle
+### 4.2 Core Principle (LOCKED)
 
 > **All intelligence must be downgraded.**
 
-Raw intelligence must never cross this boundary.
+No raw intelligence may cross this boundary.
 
 ---
 
@@ -297,7 +290,7 @@ export interface OrderFtepInput {
 
 ---
 
-### 4.4 Output Contract (FT2 Snapshot)
+### 4.4 FT2 Snapshot Exposure (CURRENT)
 
 ```ts
 export interface OrderNexusFT2Exposure {
@@ -314,8 +307,6 @@ export interface OrderNexusFT2Exposure {
 
   trend: { direction: 'up' | 'down' | 'flat' } | null;
 
-  revenueContinuity: { status: 'isolated' | 'continuous' } | null;
-
   dataCoverage: {
     completenessPct: number | null;
   };
@@ -328,17 +319,17 @@ export interface OrderNexusFT2Exposure {
 
 ---
 
-### 4.5 Downgrade Rules (LOCKED)
+### 4.5 Downgrade Rules (SEALED)
 
-| Internal Signal | FT2 Exposure |
-| --------------- | ------------ |
-| `unknown`       | `null`       |
-| Percentages     | ❌ removed    |
-| Margin details  | ❌ removed    |
-| Trend deltas    | ❌ removed    |
-| Explanations    | ❌ forbidden  |
+| Internal    | FT2         |
+| ----------- | ----------- |
+| `unknown`   | `null`      |
+| Percentages | ❌ stripped  |
+| Thresholds  | ❌ stripped  |
+| Causes      | ❌ forbidden |
+| Advice      | ❌ forbidden |
 
-**Critical invariant:**
+**Invariant:**
 `unknown` is never emitted.
 Unknown → **absence (`null`)**.
 
@@ -352,76 +343,79 @@ Unknown → **absence (`null`)**.
 
 ### Purpose
 
-Render **exactly what FTEP allows** — nothing more.
+Render **only what FTEP allows**, through **InfoBlocks**.
+
+The UI **reveals truth**.
+It does **not guide behavior**.
 
 ---
 
-### 5.1 Location
+### 5.1 Locations
 
 ```
-modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
-apps/frontend/src/pages/orders/useOrdersFt2Adapter.ts
+modules/order-nexus/src/ui/
+apps/frontend/src/pages/orders/
 ```
 
 ---
 
-### 5.2 UI Invariants
+### 5.2 Narrative Primitive (LOCKED)
 
-* ❌ No CTAs
-* ❌ No recommendations
-* ❌ No intelligence language
-* ❌ No assumptions
-* ✅ Deterministic rendering
-* ✅ Null-safe everywhere
+> **InfoBlock is the only FT2 narrative unit.**
+
+* Groups related domains
+* Preserves downgraded truth
+* Enforces scan order
+* Reduces cognitive load **without adding meaning**
+
+`FT2Surface` is **structural only**.
 
 ---
 
-### 5.3 Adapter Role (CRITICAL GATE)
+### 5.3 Adapter Contract (CRITICAL)
 
 Adapters must:
 
 * Normalize `undefined → null`
 * Preserve backend semantics
 * Perform **zero computation**
+* Never infer or enrich
 
-Adapters are **pipes**, not brains.
+Adapters are **pipes, not brains**.
 
 ---
 
-### 5.4 System Grounding (NEW · MANDATORY)
+### 5.4 FT2-Adjacent Context (NEW · FORMALIZED)
 
-FT2 UI must expose **grounding reality** explicitly:
+Comparative values (percent deltas):
 
-* Ingestion presence
-* Temporal freshness
-* Revenue continuity
-* Data coverage
-* Visibility gate
+* are computed **backend-side**
+* are **FT2-adjacent**, not intelligence
+* default to `null` aggressively
+* **do not align to presets yet** (by design)
 
-If grounding fails, **everything downstream remains silent**.
+They **never affect outcome, trend, or visibility**.
 
 ---
 
 ### 5.5 Trust FT2 (META)
 
-Trust is **not a domain**.
+* Not a domain
+* Not intelligence
+* Not persisted
+* Not interpreted server-side
 
-* Fetched via Trust FT2 snapshot
-* Passed through adapter unchanged
-* Interpreted **only in module UI**
-* Rendered as **FT2Surface boundary only**
-
-No text. No icons. No explanations.
+Used **only** as a UI boundary signal.
 
 ---
 
-## 6. Lifecycle & Time Ownership
+## 6. Time Ownership (LOCKED)
 
 * Time is resolved **outside FT2**
-* FT2 receives range, not authority
-* Analytics and intelligence do **not** own time
+* FT2 receives a range, never authority
+* Intelligence never owns time
 
-This prevents temporal drift and retroactive truth mutation.
+This prevents retroactive truth mutation.
 
 ---
 
@@ -429,14 +423,14 @@ This prevents temporal drift and retroactive truth mutation.
 
 To be FT2-compliant, a module must:
 
-1. Implement **Layer 1 Facts**
-2. Implement **Layer 1½ Temporal Facts** (if applicable)
-3. Implement **Layer 2 Intelligence**
-4. Enforce **Layer 3 FTEP**
-5. Render **Layer 4 Read-Only UI**
-6. Integrate **Trust FT2** as META boundary
+1. Implement L1 facts
+2. Implement L1½ temporal facts (if applicable)
+3. Implement L2 intelligence
+4. Enforce L3 FTEP
+5. Render read-only FT2 UI
+6. Integrate Trust FT2 as META
 
-If Layer 3 is missing → **module is rejected**.
+If **Layer 3 is missing → module is rejected**.
 
 ---
 
@@ -444,12 +438,10 @@ If Layer 3 is missing → **module is rejected**.
 
 Because:
 
+* Trust is the product
 * Analytics depends on clean truth
 * Echo Hub depends on clean truth
-* Ops tooling depends on clean truth
-* Cross-module reasoning collapses without strict ownership
-
-**Trust is the product.**
+* Cross-module reasoning collapses without discipline
 
 Order-Nexus is the **keystone**.
 
@@ -457,14 +449,15 @@ If it leaks, everything lies.
 
 ---
 
-## 9. Final Seal
+## 🔐 Final Seal (v2)
 
-* System grounding formalized
-* Revenue continuity correctly placed at L1½
-* Trust elevated to META boundary
-* UI aligned to two-core-surface model
-* FT2 confirmed as apex
+* Layering corrected and clarified
+* Revenue continuity placed correctly at L1½
+* FT2-adjacent comparisons formalized
+* InfoBlock elevated as narrative primitive
+* Fulfillment / Revenue / Returns accommodated
+* FT2 confirmed as terminal layer
 
-🔐 **Order-Nexus FT2 4-Layer Architecture is current, enforced, and sealed.**
+🔒 **Order-Nexus FT2 Architecture v2 is current, enforced, and sealed.**
 
 ---

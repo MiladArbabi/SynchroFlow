@@ -11,8 +11,55 @@
 // - Ledger schema is NOT extended
 
 import { Request, Response } from 'express';
+// apps/backend/src/api/shopify/shopify.webhook.ts
+
 import { WebhookRouter } from 'api-src/api/webhooks/webhookRouter';
 import { ShopifyWebhookAdapter } from 'api-src/api/webhooks/adapters/shopify.adapter';
+
+import {
+  onShopifyAppUninstalled,
+  handleOrderFulfillment,
+} from './handlers';
+
+/**
+ * Shopify Webhook Route Registration
+ * ---------------------------------
+ * This file is the ONLY place where Shopify webhook
+ * eventTypes are bound to handlers.
+ *
+ * Rules:
+ * - No wildcards
+ * - No branching
+ * - One event → one handler
+ * - Unsupported events are ignored by design
+ */
+
+// App lifecycle
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'app/uninstalled',
+  handle: onShopifyAppUninstalled,
+});
+
+// Fulfillment lifecycle (execution truth)
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'fulfillments/create',
+  handle: handleOrderFulfillment,
+});
+
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'fulfillments/update',
+  handle: handleOrderFulfillment,
+});
+
+// Legacy / fallback (defensive, not semantic)
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'orders/fulfilled',
+  handle: handleOrderFulfillment,
+});
 
 export async function shopifyWebhookHandler(
   req: Request,

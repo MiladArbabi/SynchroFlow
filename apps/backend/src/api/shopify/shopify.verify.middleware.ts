@@ -14,6 +14,7 @@
 import { createWebhookVerifier } from 'api-src/api/webhooks/verifyWebhook';
 
 export const verifyShopifySignature = createWebhookVerifier({
+  
   header: 'x-shopify-hmac-sha256',
   secretEnv: 'SHOPIFY_WEBHOOK_SECRET',
   digest: 'base64',

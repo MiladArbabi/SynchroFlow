@@ -3,6 +3,27 @@ import type { OrdersModuleFT2DataProps } from '@lasyncro/order-nexus';
 import { OrdersFt2Snapshot } from './useOrdersFt2Snapshot';
 
 /**
+ * formatPctDiff (UI-only)
+ * ----------------------
+ * Converts numeric percentage change into
+ * a stable, presentation-safe string.
+ *
+ * Rules:
+ * - null / undefined → null
+ * - 0 → "0%"
+ * - positive → "+X%"
+ * - negative → "-X%"
+ * - No symbols beyond + / -
+ */
+function formatPctDiff(value?: number | null): string | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isFinite(value)) return null;
+
+  if (value === 0) return '0%';
+  return value > 0 ? `+${value}%` : `${value}%`;
+}
+
+/**
  * mapOrdersFt2Props
  * -----------------
  * Canonical FT2 Orders adapter.
@@ -56,7 +77,31 @@ export function mapOrdersFt2Props(
         ? null
         : snapshot.orders.incoming,
   },
-  
+
+  comparison: {
+  orders: {
+    total:
+      formatPctDiff(
+        snapshot.comparison?.orders?.totalPctChange
+      ),
+
+    fulfilled:
+      formatPctDiff(
+        snapshot.comparison?.orders?.fulfilledPctChange
+      ),
+
+    unfulfilled:
+      formatPctDiff(
+        snapshot.comparison?.orders?.unfulfilledPctChange
+      ),
+
+    incoming:
+      formatPctDiff(
+        snapshot.comparison?.orders?.incomingPctChange
+      ),
+  },
+},
+
   context: {
     ordersObserved:
       snapshot.context?.ordersObserved === undefined
@@ -75,6 +120,30 @@ export function mapOrdersFt2Props(
         ? null
         : snapshot.totals.costTotal,
   },
+
+  /**
+   * ─────────────────────────────────────────
+   * REVENUE OVERVIEW (FT2)
+   * ─────────────────────────────────────────
+   * Pure pass-through.
+   * No computation. No inference.
+   */
+  revenue: {
+    total:
+      snapshot.revenue?.total === undefined
+        ? null
+        : snapshot.revenue.total,
+
+    fulfilled:
+      snapshot.revenue?.fulfilled === undefined
+        ? null
+        : snapshot.revenue.fulfilled,
+
+    unfulfilled:
+      snapshot.revenue?.unfulfilled === undefined
+        ? null
+        : snapshot.revenue.unfulfilled,
+    },
 
   dataCoverage: {
     completenessPct:

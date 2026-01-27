@@ -21,7 +21,6 @@ import axios from 'axios';
 import { ShopifyAppService } from 'api-src/services/shopify-app.service';
 import { EntitlementsService } from 'api-src/services/entitlements.service';
 import CryptoJS from 'crypto-js';
-import { User } from 'api-types';
 import { getQueueChannel, connection } from '../../queue';
 import { issueAuthTokens } from '../auth/token.service';
 

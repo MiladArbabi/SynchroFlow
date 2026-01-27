@@ -8,6 +8,7 @@ import {
   triggerManualSync
 } from './integration.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
+import { triggerManualInitialSync } from './manualSync.controller';
 
 const router = Router();
 
@@ -22,6 +23,12 @@ router.get('/sync-status', authenticateToken, getSyncStatus);
 
 // Wires GET /api/v1/integrations/pre-flight
 router.get('/pre-flight', authenticateToken, preFlightCheck);
+
+router.post(
+  '/manual-initial-sync',
+  authenticateToken,
+  triggerManualInitialSync
+);
 
 // This new endpoint must be authenticated
 /* router.get('/discovery-status', authenticateToken, getDiscoveryStatus);

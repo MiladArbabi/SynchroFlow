@@ -1,5 +1,4 @@
 // apps/backend/src/services/shopify.service.ts
-// apps/backend/src/services/shopify.service.ts
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import db from '../db';

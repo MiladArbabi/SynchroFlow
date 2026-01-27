@@ -44,6 +44,34 @@ export interface OrdersModuleFT2DataProps {
     incoming: number | null;
   };
 
+  /**
+   * FT2-adjacent comparative context.
+   * --------------------------------
+   * - UI-ready
+   * - Preformatted
+   * - No semantics
+   * - `null` → render as `—`
+   */
+  comparison: {
+    orders: {
+      total: string | null;
+      fulfilled: string | null;
+      unfulfilled: string | null;
+      incoming: string | null;
+    };
+  };
+
+  /**
+   * Revenue Overview (FT2)
+   * ---------------------
+   * Exposes where positive revenue is structurally sitting.
+   */
+  revenue: {
+    total: number | null;
+    fulfilled: number | null;
+    unfulfilled: number | null;
+  };
+
   context: {
     ordersObserved: number | null;
   };
@@ -164,8 +192,11 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2Props) {
     distribution,
 
     trust,
+
+    comparison,
     
     orders,
+    revenue,
   } = props;
 
   /**
@@ -192,29 +223,61 @@ const trustTone =
           <InfoBlockRow
             label="Orders total"
             value={orders.total}
+            diff={comparison.orders.total}
           />
 
           <InfoBlockRow
             label="Fulfilled orders"
             value={orders.fulfilled}
+            diff={comparison.orders.fulfilled}
           />
 
           <InfoBlockRow
             label="Unfulfilled orders"
             value={orders.unfulfilled}
+            diff={comparison.orders.unfulfilled}
           />
 
           <InfoBlockRow
             label="Incoming orders"
             value={orders.incoming}
+            diff={comparison.orders.incoming}
           />
 
           <InfoBlockFooter
-            line1="ORDER OBLIGATIONS ARE VISIBLE"
-            line2="EXECUTION STATES SHOWN ELSEWHERE"
+            line1="> ORDER OBLIGATIONS ARE VISIBLE"
+            line2="> EXECUTION STATES SHOWN ELSEWHERE"
+          />
+        </InfoBlock>
+
+        <InfoBlock title="REVENUE OVERVIEW">
+          <InfoBlockRow
+            label="from all orders"
+            value={revenue.total}
+          />
+
+          <InfoBlockRow
+            label="from fulfilled orders"
+            value={revenue.fulfilled}
+          />
+
+          <InfoBlockRow
+            label="from unfulfilled orders"
+            value={revenue.unfulfilled}
+          />
+
+          <InfoBlockRow
+            label="continuity"
+            value={revenueContinuity?.status ?? null}
+          />
+
+          <InfoBlockFooter
+            line1="> REVENUE IS DISTRIBUTED BY EXECUTION STATE"
+            line2="> CASH MAY BE CONTINGENT ON FULFILLMENT"
           />
         </InfoBlock>
       </FT2Row>
+
 
     </FT2Layout>
   );

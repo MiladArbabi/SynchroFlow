@@ -13,6 +13,15 @@ export type OrdersFt2Snapshot = {
     incoming?: number | null;
   };
 
+  comparison?: {
+    orders?: {
+      totalPctChange?: number | null;
+      fulfilledPctChange?: number | null;
+      unfulfilledPctChange?: number | null;
+      incomingPctChange?: number | null;
+    };
+  };
+
   context?: {
     ordersObserved?: number | null;
   };
@@ -27,6 +36,22 @@ export type OrdersFt2Snapshot = {
      */
     // currency removed per FT2 contract
     /* currency?: string | null; */
+  };
+
+  /**
+   * ─────────────────────────────────────────
+   * REVENUE OVERVIEW (FT2)
+   * Positive-value containment only.
+   * ─────────────────────────────────────────
+   *
+   * NOTE:
+   * - Returned / reversed revenue is intentionally excluded.
+   * - Netting is forbidden.
+   */
+  revenue?: {
+    total?: number | null;
+    fulfilled?: number | null;
+    unfulfilled?: number | null;
   };
 
   outcome?: {

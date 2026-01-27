@@ -24,23 +24,40 @@ export class CanonicalCommerceIngestionService {
       throw new Error('Invalid canonical order: missing id or shopId');
     }
 
-    // Map canonical order -> DB row shape
-    const orderRow = {
-      shop_id: canonicalOrder.shopId,
-      canonical_order_id: canonicalOrder.id,
-      platform: canonicalOrder.platform,
-      platform_order_id: canonicalOrder.platformOrderId,
-      currency: canonicalOrder.currency,
-      total_price: canonicalOrder.totalPrice,
-      subtotal_price: canonicalOrder.subtotalPrice,
-      total_tax: canonicalOrder.totalTax,
-      source: canonicalOrder.source,
-      referrer_medium: canonicalOrder.referrerMedium,
-      customer_hashed_id: canonicalOrder.customer?.hashedId ?? null,
-      order_created_at: canonicalOrder.createdAt,
-      order_updated_at: canonicalOrder.updatedAt,
-      order_processed_at: canonicalOrder.processedAt,
-    };
+  /**
+   * Shopify platform_order_id normalization
+   * --------------------------------------
+   * Canonical rule:
+   * - Always persist numeric Shopify order ID
+   * - This is the join key for fulfillment webhooks
+   *
+   * Example:
+   *   gid://shopify/Order/16567328080242 → 16567328080242
+   */
+  const normalizedPlatformOrderId =
+    canonicalOrder.platform === 'shopify'
+      ? String(canonicalOrder.platformOrderId).replace(
+          /^gid:\/\/shopify\/Order\//,
+          ''
+        )
+      : canonicalOrder.platformOrderId;
+
+  const orderRow = {
+    shop_id: canonicalOrder.shopId,
+    canonical_order_id: canonicalOrder.id,
+    platform: canonicalOrder.platform,
+    platform_order_id: normalizedPlatformOrderId,
+    currency: canonicalOrder.currency,
+    total_price: canonicalOrder.totalPrice,
+    subtotal_price: canonicalOrder.subtotalPrice,
+    total_tax: canonicalOrder.totalTax,
+    source: canonicalOrder.source,
+    referrer_medium: canonicalOrder.referrerMedium,
+    customer_hashed_id: canonicalOrder.customer?.hashedId ?? null,
+    order_created_at: canonicalOrder.createdAt,
+    order_updated_at: canonicalOrder.updatedAt,
+    order_processed_at: canonicalOrder.processedAt,
+  };
 
     // Prepare line items rows
     const lineItems = (canonicalOrder.lineItems || []).map((li) => ({

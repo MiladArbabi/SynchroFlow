@@ -8,6 +8,7 @@ import { extractOrderShippingDelayFacts } from '../order-facts/orderShippingDela
 import { extractOrderTrendFacts } from 'api-src/services/order-facts/orderTrendFacts.service';
 import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFacts.service';
 import { extractFulfilledOrdersCount } from '../order-facts/orderFulfilledCountFacts.service';
+import { extractOrderRevenueAllocationFacts } from '../order-facts/orderRevenueAllocationFacts.service';
 
 /**
  * NOTE ON TREND WIRING
@@ -30,6 +31,8 @@ import { deriveOrderIntelligence } from 'api-src/services/order-intelligence/ord
 import { deriveOrderFulfillmentIntelligence } from '../order-intelligence/orderFulfillmentIntelligence.service';
 import { deriveOrderVelocityReality } from '../order-intelligence/orderVelocityIntelligence.service';
 import { extractOrderCustomerPromiseFacts } from '../order-facts/orderCustomerPromiseFacts.service';
+
+import { pctChange } from 'api-src/utils/pctChange';
 
 /**
  * OrderNexus FT2 Resolver
@@ -54,6 +57,7 @@ const trendFacts = await extractOrderTrendFacts(shopId, range);
 const intelligence = deriveOrderIntelligence(facts, trendFacts);
 
 const fulfilledOrders = await extractFulfilledOrdersCount(shopId);
+const revenueAllocation = await extractOrderRevenueAllocationFacts(shopId, range);
 
 /**
   * IMPORTANT:
@@ -76,13 +80,6 @@ const orderVelocity = deriveOrderVelocityReality(
 if (!exposure) {
   return null;
 }
-
-const unfulfilledOrders =
-  facts.ordersObserved == null || fulfilledOrders == null
-    ? null
-    : Math.max(facts.ordersObserved - fulfilledOrders, 0);
-
-const incomingOrders = trendFacts.currentWindowOrders ?? null;
 
 /**
  * FT2 Grounding Realities (L1 / L1½)
@@ -108,8 +105,36 @@ const fulfillmentIntelligence = deriveOrderFulfillmentIntelligence(
   fulfillmentFacts
 );
 
+const unfulfilledOrders =
+  fulfillmentFacts.visibility !== 'sufficient'
+    ? null
+    : facts.ordersObserved == null || fulfilledOrders == null
+      ? null
+      : Math.max(facts.ordersObserved - fulfilledOrders, 0);
+
 const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, range);
 
+const previousTotal = trendFacts.previousWindowOrders ?? null;
+const currentTotal = trendFacts.currentWindowOrders ?? null;
+
+const previousIncoming = trendFacts.previousWindowOrders ?? null;
+const currentIncoming = trendFacts.currentWindowOrders ?? null;
+
+const incomingOrders = trendFacts.currentWindowOrders ?? null;
+
+const comparison = {
+  orders: {
+    totalPctChange: pctChange(previousTotal, currentTotal),
+
+    // BLOCKED:
+    // No historical fulfillment state snapshots exist.
+    // Any comparison here would fabricate change.
+    fulfilledPctChange: null,
+    unfulfilledPctChange: null,
+
+    incomingPctChange: pctChange(previousIncoming, currentIncoming),
+  },
+};
   // ─────────────────────────────────────────────
   // Alignment Planes (META + Plane Inputs)
   // ─────────────────────────────────────────────
@@ -320,6 +345,22 @@ const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, rang
       fulfilled: fulfilledOrders,
       unfulfilled: unfulfilledOrders,
       incoming: incomingOrders,
+    },
+
+    comparison,
+
+    /**
+     * Revenue Overview (FT2)
+     * ---------------------
+     * Positive-value containment only.
+     *
+     * This exposes where revenue is structurally sitting,
+     * without implying settlement, timing, or success.
+     */
+    revenue: {
+      total: exposure.totals.revenueTotal,
+      fulfilled: revenueAllocation.fulfilledRevenueTotal,
+      unfulfilled: revenueAllocation.unfulfilledRevenueTotal,
     },
 
     /**
