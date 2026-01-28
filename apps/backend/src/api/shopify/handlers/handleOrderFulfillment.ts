@@ -20,6 +20,8 @@ import OrderFulfillmentIngestionService
  */
 type ShopifyFulfillmentPayload = {
   id: string | number;
+  order_id: string | number;
+  status?: string | null;
   fulfillment_status?: string | null;
 };
 
@@ -35,7 +37,8 @@ function isShopifyFulfillmentPayload(
   return (
     typeof payload === 'object' &&
     payload !== null &&
-    'id' in payload
+    'id' in payload &&
+    'order_id' in payload
   );
 }
 
@@ -53,6 +56,8 @@ function isShopifyFulfillmentPayload(
 export async function handleOrderFulfillment(
   envelope: WebhookEnvelope
 ): Promise<void> {
+  console.log('[FULFILLMENT HANDLER] ENTERED');
+
   const rawPayload = envelope.rawPayload;
 
   // Fail-closed: unexpected payload shape
@@ -60,37 +65,50 @@ export async function handleOrderFulfillment(
     return;
   }
 
-  const shopDomain = envelope.shopDomain;
-  if (!shopDomain) return;
+  let shopDomain = envelope.shopDomain;
+  if (!shopDomain) return; // keep strict for real Shopify
 
   /**
    * Resolve shopId
    * --------------
    * Mirrors uninstall logic assumptions.
    */
-  const shop = await db('shops')
-    .where({ domain: shopDomain })
-    .select('id')
+  const installation = await db('shopify_app_installations')
+    .where({ shop_domain: shopDomain })
+    .select('shop_id')
     .first();
 
-  if (!shop) return;
+  if (!installation) return;
+
+  const shopId = installation.shop_id;
 
   /**
-   * Shopify semantics
-   * -----------------
-   * id is platform-native order identifier.
+   * Platform execution order id (external identity)
+   * -----------------------------------------------
+   * Stored verbatim to preserve linkage with
+   * upstream systems and webhooks.
    */
-  const platformOrderId = String(rawPayload.id);
+  const platformOrderId = String(rawPayload.order_id).startsWith('gid://')
+    ? String(rawPayload.order_id)
+    : `gid://shopify/Order/${rawPayload.order_id}`;
+
 
   /**
-   * Resolve canonical order (best-effort)
-   * -------------------------------------
-   * No guessing. No fallback.
+   * Canonical platform order id
+   * ---------------------------
+   * Canonical orders store Shopify order IDs WITHOUT GID prefix.
+   * Fulfillment payloads may arrive as number or gid.
+   *
+   * This normalization is REQUIRED for deterministic joins.
    */
+  const canonicalPlatformOrderId = String(rawPayload.order_id).startsWith('gid://')
+    ? String(rawPayload.order_id).replace('gid://shopify/Order/', '')
+    : String(rawPayload.order_id);
+
   const canonical = await db('canonical_orders')
     .where({
-      shop_id: shop.id,
-      platform_order_id: platformOrderId,
+      shop_id: shopId,
+      platform_order_id: canonicalPlatformOrderId,
     })
     .select('canonical_order_id')
     .first();
@@ -101,16 +119,21 @@ export async function handleOrderFulfillment(
    * Normalize Shopify states into FT0-safe states.
    */
   const fulfillmentStatus =
-    rawPayload.fulfillment_status === 'fulfilled'
-      ? 'delivered'
-      : rawPayload.fulfillment_status === 'partial'
-        ? 'processing'
-        : rawPayload.fulfillment_status === 'cancelled'
-          ? 'cancelled'
-          : 'processing';
+    rawPayload.status === 'cancelled'
+      ? 'cancelled'
+      : rawPayload.fulfillment_status === 'fulfilled'
+        ? 'delivered'
+        : 'processing';
+
+  console.log('[FULFILLMENT HANDLER] INGESTING', {
+    shopId,
+    platformOrderId,
+    canonicalOrderId: canonical?.canonical_order_id ?? null,
+    status: fulfillmentStatus,
+  });
 
   await OrderFulfillmentIngestionService.ingestStatus({
-    shopId: shop.id,
+    shopId,
     platformOrderId,
     canonicalOrderId: canonical?.canonical_order_id ?? null,
     status: fulfillmentStatus,

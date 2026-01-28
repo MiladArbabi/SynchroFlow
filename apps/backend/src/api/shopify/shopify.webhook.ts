@@ -34,6 +34,8 @@ import {
  * - Unsupported events are ignored by design
  */
 
+console.log('[SHOPIFY WEBHOOK REGISTRATION FILE LOADED]');
+
 // App lifecycle
 WebhookRouter.register({
   integration: 'shopify',

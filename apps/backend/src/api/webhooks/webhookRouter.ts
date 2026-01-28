@@ -95,6 +95,12 @@ export class WebhookRouter {
       envelope.eventType
     );
 
+    console.log('[WEBHOOK DISPATCH]', {
+      integration: envelope.integration,
+      eventType: JSON.stringify(envelope.eventType),
+      registeredKeys: Array.from(WebhookRouter.routes.keys()),
+    });
+
     const handler = WebhookRouter.routes.get(key);
 
     if (!handler) {

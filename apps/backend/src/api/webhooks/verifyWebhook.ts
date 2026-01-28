@@ -58,7 +58,12 @@ export function createWebhookVerifier(config: VerifyConfig) {
       });
     }
 
-    const signature = req.headers[config.header] as string | undefined;
+    const rawSignature = req.headers[config.header];
+    const signature =
+      Array.isArray(rawSignature)
+        ? rawSignature[0]
+        : rawSignature;
+
     if (!signature) {
       return res.status(400).json({
         error: `Missing webhook signature header: ${config.header}`,
@@ -90,7 +95,13 @@ export function createWebhookVerifier(config: VerifyConfig) {
     // Optional but useful while debugging
     console.log('[WEBHOOK VERIFY] expected   :', expected);
 
-    if (!config.compare(signature, expected)) {
+    const sig = Buffer.from(signature.trim(), 'utf8');
+    const exp = Buffer.from(expected, 'utf8');
+
+    if (
+      sig.length !== exp.length ||
+      !crypto.timingSafeEqual(sig, exp)
+    ) {
       return res.status(400).json({
         error: 'Invalid webhook signature',
       });

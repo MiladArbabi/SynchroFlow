@@ -7,6 +7,8 @@
 // - Verification happens before routing
 // - No topic-specific paths
 
+import './shopify.webhook'; 
+
 import express, { Router } from 'express';
 import { verifyShopifySignature } from './shopify.verify.middleware';
 import webhookRouter from './shopify.webhook.router';
@@ -18,7 +20,7 @@ const router = Router();
  *
  * Shopify sends topic via X-Shopify-Topic header.
  */
-router.post(
+router.use(
   '/webhooks',
   verifyShopifySignature,
   webhookRouter

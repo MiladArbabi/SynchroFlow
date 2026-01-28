@@ -21,7 +21,7 @@ const router = Router();
  *
  * Shopify sends the topic in the `X-Shopify-Topic` header.
  */
-router.post('/webhooks', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const topic = req.headers['x-shopify-topic'] as string | undefined;
 
   if (!topic) {
@@ -30,6 +30,9 @@ router.post('/webhooks', async (req: Request, res: Response) => {
 
   switch (topic) {
     case 'app/uninstalled':
+    case 'fulfillments/create':
+    case 'fulfillments/update':
+    case 'orders/fulfilled': // defensive
       return shopifyWebhookHandler(req, res);
 
     default:
