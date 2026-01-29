@@ -1,13 +1,21 @@
 # 📘 Canonical Data Ingestion & Eligibility Playbook
 
-**(FT0 → FT2-Safe, Execution-Aware, Phase-Aligned)**
+**(FT0 → FT2-Safe, Execution-Aware, Transport-Correct, Phase-Aligned)**
 
 ---
 
 ## 0. Core Principle (Non-Negotiable)
 
 > **Never design ingestion from what you *wish* the data looked like.
-> Design it from what you can *prove* exists.**
+> Never debug ingestion from what you *assume* executed.
+> Design and debug only from what you can *prove* happened.**
+
+This applies equally to:
+
+* Source payloads
+* Canonical storage
+* **Transport execution paths**
+* Identity resolution paths
 
 Everything else in this document enforces that rule.
 
@@ -98,7 +106,57 @@ Eligibility Contract:
 
 ---
 
-## 2. Define the PHASE CONTRACT (Before Writing Code)
+## 2. 🚨 Transport & Execution Scan (NEW – HARD-LEARNED)
+
+> **Before assuming “ingestion is broken,” prove the handler is executed.**
+
+This thread exposed a critical rule:
+
+> A verified webhook that returns `200 OK` **does not mean** domain logic ran.
+
+### 2.1 Prove the Runtime Path
+
+Required evidence:
+
+[ROUTE HIT]
+[WEBHOOK VERIFY]
+[WEBHOOK DISPATCH]
+[DOMAIN HANDLER ENTERED]
+
+✱ Strengthened rule:
+
+A webhook that verifies and returns 200 OK
+may still have failed to execute domain logic.
+
+If any checkpoint is missing:
+
+Stop immediately
+
+* Do not inspect DB
+* Do not change mappers
+* Do not reason about eligibility
+* You are debugging fiction, not execution.
+
+---
+
+### 2.2 Eliminate Build Artifacts as a Variable
+
+If you are running compiled JS:
+
+* Confirm **which file is executed**
+* Confirm edits land in **runtime artifacts**
+* Assume nothing about `dist/`
+
+Rules:
+
+* If a log doesn’t show → that code didn’t run
+* If a handler “should” run → prove it did
+
+> **No execution proof = no debugging rights**
+
+---
+
+## 3. Define the PHASE CONTRACT (Before Writing Code)
 
 Every domain **must** be phase-scoped.
 
@@ -117,9 +175,9 @@ Every domain **must** be phase-scoped.
 
 ---
 
-## 3. Canonical Model Rules (This Saved You)
+## 4. Canonical Model Rules (Still Saved You)
 
-### 3.1 Canonical ≠ Complete
+### 4.1 Canonical ≠ Complete
 
 Canonical means:
 
@@ -131,7 +189,7 @@ Canonical means:
 
 * Default missing money to `0`
 * Invent currency
-* Backfill prices without source proof
+* Backfill prices without proof
 
 ✅ Always:
 
@@ -141,7 +199,7 @@ Canonical means:
 
 ---
 
-### 3.2 Split Header Truth vs Detail Truth
+### 4.2 Split Header Truth vs Detail Truth
 
 **Pattern that worked (reuse everywhere):**
 
@@ -165,9 +223,42 @@ Eligibility must **only** depend on Tier 1.
 
 ---
 
-## 4. Mapper Design Rules (Hard-Won Lessons)
+### 4.3 🆕 Canonical Identity Is the Spine (NEW – NON-NEGOTIABLE)
 
-### 4.1 Mapper Is a Translator, Not a Fixer
+Execution data without canonical identity is not execution truth.
+It is noise.
+
+Every execution-level record must satisfy:
+
+Field	Rule
+canonical_order_id	Required
+shop_id	Required
+platform_order_id	Normalized
+status	Valid enum
+
+❌ Forbidden:
+
+Writing execution rows with canonical_order_id = NULL
+
+Writing execution rows keyed only by platform IDs
+
+“Backfilling later” without an explicit retry contract
+
+✅ Required:
+
+Canonical resolution before final execution write
+
+Deferred / retried execution if canonical linkage is unavailable
+
+If you cannot resolve canonical identity, you may not write execution truth.
+
+This rule alone would have prevented the entire incident.
+
+---
+
+## 5. Mapper Design Rules (Expanded)
+
+### 5.1 Mapper Is a Translator, Not a Fixer
 
 Mapper rules:
 
@@ -187,33 +278,28 @@ If the mapper “fixes” data, **you will never know it was broken**.
 
 ---
 
-### 4.2 Explicit Integrity Checks (Fail Loudly)
+### 5.2 Mapper Must Not Mask Execution Failures (NEW)
 
-Inside ingestion:
+If a mapper isn’t running because the handler never executed:
 
-```ts
-if (
-  !order.createdAt ||
-  order.totalPrice == null ||
-  !order.currency
-) {
-  throw new Error('[CANONICAL_ORDER_INVALID]');
-}
-```
+* That is **not** a mapper bug
+* That is a **transport failure**
 
-This is not harsh — this is **self-defense**.
+Therefore:
+
+* Mapper correctness is only evaluated **after execution is proven**
 
 ---
 
-## 5. Ingestion Service Rules (Why You Unblocked)
+## 6. Ingestion Service Rules (Clarified)
 
-### 5.1 Never Insert Partial Rows Blindly
+### 6.1 Never Insert Partial Rows Blindly
 
 * Insert **only** when phase requirements are met
 * Skip (or defer) otherwise
 * Log exactly why
 
-This avoids:
+Avoids:
 
 * Corrupt canonical truth
 * Silent FT2 blockers
@@ -221,9 +307,9 @@ This avoids:
 
 ---
 
-### 5.2 Line Items Must Be Optional by Default
+### 6.2 Line Items Must Be Optional by Default
 
-Your bug proved this:
+Your work reinforced this:
 
 > Line items are enrichment, not eligibility.
 
@@ -237,9 +323,40 @@ Therefore:
 
 ---
 
-## 6. Eligibility Evaluator Rules (FT2 Stability)
+6.3 🆕 Execution Ingestion Must Be Canonical-First
 
-### 6.1 Eligibility Must Be Binary and Explainable
+Execution ingestion is a two-step contract, not a single write.
+
+Step 1 — Resolve Canonical Identity
+platform payload
+→ normalize IDs
+→ lookup canonical entity
+
+Step 2 — Write Execution Truth
+
+Only after canonical resolution:
+
+canonical_order_id present
+→ execution row allowed
+
+If Step 1 fails:
+
+Defer
+Retry
+Log
+Alert
+
+❌ Never:
+
+Write execution rows “optimistically”
+Assume later joins will fix it
+Allow NULL canonical references
+
+---
+
+## 7. Eligibility Evaluator Rules (FT2 Stability)
+
+### 7.1 Eligibility Must Be Binary and Explainable
 
 FT2 logic must answer:
 
@@ -257,7 +374,7 @@ Those are **advisory**.
 
 ---
 
-### 6.2 Evidence > Boolean
+### 7.2 Evidence > Boolean
 
 Every evaluator must emit:
 
@@ -273,9 +390,9 @@ This is why debugging worked.
 
 ---
 
-## 7. UI / Product Semantics (Avoid Lying to Users)
+## 8. UI / Product Semantics (No Lying)
 
-### 7.1 Counts Must Match Phase Truth
+### 8.1 Counts Must Match Phase Truth
 
 If:
 
@@ -284,14 +401,14 @@ If:
 
 Then:
 
-* Show **8** in analytics
-* Explain why 2 are excluded (advisory)
+* Show **8**
+* Explain exclusion of 2
 
-Never inflate numbers.
+Never inflate.
 
 ---
 
-### 7.2 Advisory ≠ Error
+### 8.2 Advisory ≠ Error
 
 Use:
 
@@ -307,10 +424,14 @@ Do not:
 
 ---
 
-## 8. Operational Safety Checklist (MANDATORY)
+## 9. Operational Safety Checklist (Expanded)
 
 Before declaring a domain “wired”:
 
+* [ ] Route hit confirmed
+* [ ] Verification passed
+* [ ] Dispatch entered
+* [ ] Handler entered
 * [ ] Canonical table populated
 * [ ] Eligibility flips correctly
 * [ ] DB constraints match mapper reality
@@ -318,12 +439,23 @@ Before declaring a domain “wired”:
 * [ ] Restart-safe (cold boot works)
 * [ ] Partial data does not crash pipeline
 * [ ] Advisory gaps surfaced, not hidden
+* [ ] Canonical identity present on all execution rows
+* [ ] No execution rows with NULL foreign keys
+* [ ] Execution joins verified by direct SQL
 
-If any box is unchecked → **do not move on**.
+If **any box is unchecked** → **stop**.
+
+```typescript
+SELECT COUNT(*)
+FROM order_fulfillment_status
+WHERE canonical_order_id IS NULL;
+```
+
+If count > 0 → stop.
 
 ---
 
-## 9. How to Apply This to Any New Domain
+## 10. How to Apply This to Any New Domain
 
 Repeat **exact same steps** for:
 
@@ -332,7 +464,7 @@ Repeat **exact same steps** for:
 * Payouts
 * Costs
 * Attribution
-* Fulfillment
+* **Fulfillment**
 * Inventory movements
 
 Change **only**:
@@ -341,18 +473,27 @@ Change **only**:
 * Canonical schema
 * Phase contract
 
-Everything else stays the same.
+Transport + execution rules stay fixed.
+
+* For domains with execution semantics (fulfillment, refunds, payouts, inventory):
+
+Canonical-first identity resolution is mandatory.
+No exceptions.
 
 ---
 
-## 10. The Meta Rule (Most Important)
+### 11. The Meta Rule (Final, Now Complete)
 
-> **Eligibility gates are not about perfection.
-> They are about *safe progress*.**
+Eligibility gates are not about perfection.
+They are about provable execution, stable identity, and safe progress.
 
-You didn’t lower standards.
-You **put them in the right phase**.
-
-That’s real system architecture.
+What failed was not math, UI, or FT2 logic.
+What failed was identity discipline at the ingestion boundary.
+You fixed it by:
+refusing assumptions
+demanding proof
+and enforcing canonical truth
+That’s not debugging.
+That’s systems architecture under load.
 
 ---

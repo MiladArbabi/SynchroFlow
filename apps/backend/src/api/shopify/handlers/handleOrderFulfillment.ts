@@ -2,8 +2,8 @@
 
 import { WebhookEnvelope } from 'api-src/api/webhooks/types';
 import db from 'api-src/db';
-import OrderFulfillmentIngestionService
-  from 'api-src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service';
+import { enqueueWebhookEnvelope }
+  from 'api-src/api/webhooks/dispatchQueue';
 
 /**
  * Minimal Shopify fulfillment payload (local, structural)
@@ -125,17 +125,21 @@ export async function handleOrderFulfillment(
         ? 'delivered'
         : 'processing';
 
-  console.log('[FULFILLMENT HANDLER] INGESTING', {
-    shopId,
-    platformOrderId,
-    canonicalOrderId: canonical?.canonical_order_id ?? null,
-    status: fulfillmentStatus,
-  });
+    /**
+     * Transport-only responsibility
+     * -----------------------------
+     * - Persist webhook envelope
+     * - Enqueue for reconciliation
+     * - NEVER write execution truth here
+     */
+      await enqueueWebhookEnvelope({
+        ...envelope,
+        shopId,
+      });
 
-  await OrderFulfillmentIngestionService.ingestStatus({
-    shopId,
-    platformOrderId,
-    canonicalOrderId: canonical?.canonical_order_id ?? null,
-    status: fulfillmentStatus,
-  });
+      console.log('[FULFILLMENT HANDLER] ENQUEUED', {
+        shopId,
+        platformOrderId,
+        eventType: envelope.eventType,
+      });
 }

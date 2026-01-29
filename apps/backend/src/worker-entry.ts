@@ -8,6 +8,7 @@ import { startSyncWorker } from './sync.worker';
 import { startWorker as startEventWorker } from './worker';
 import { startProductIngestionWorker } from './workers/product-ingestion.worker';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker';
+import { startReconciliationConsumer } from './workers/reconciliation';
 
 async function start() {
   console.log('[worker-entry] Booting worker runtime…');
@@ -19,6 +20,8 @@ async function start() {
   startEventWorker();
   startProductIngestionWorker();
   startWebhookWorker();
+ console.log('[worker-entry] Starting reconciliation consumer...');
+startReconciliationConsumer();
 
   console.log('[worker-entry] All workers started');
 }

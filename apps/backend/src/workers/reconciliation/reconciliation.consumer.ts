@@ -1,0 +1,32 @@
+// apps/backend/src/workers/reconciliation/reconciliation.consumer.ts
+
+import { getQueueChannel } from 'api-src/queue';
+import { reconcileOrderFulfillment } from './reconciliation.handlers';
+
+const QUEUE = 'fulfillment.reconciliation';
+
+export function startReconciliationConsumer() {
+  const ch = getQueueChannel(QUEUE);
+
+  ch.addSetup((channel) => {
+    return Promise.all([
+        channel.assertQueue(QUEUE, { durable: true }),
+        channel.prefetch(5), // prevent DB overload
+    ]);
+  });
+
+  ch.consume(QUEUE, async (msg) => {
+    if (!msg) return;
+
+    try {
+      const { canonicalOrderId } = JSON.parse(msg.content.toString());
+
+      await reconcileOrderFulfillment(canonicalOrderId);
+
+      ch.ack(msg);
+    } catch (err) {
+      console.error('[reconciliation] failed', err);
+      ch.nack(msg, false, false); // DLQ later
+    }
+  });
+}

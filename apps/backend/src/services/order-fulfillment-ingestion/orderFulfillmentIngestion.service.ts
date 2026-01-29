@@ -12,9 +12,12 @@ import db from 'api-src/db';
  * - Deterministic
  * - Fail-closed
  *
- * Canonical Rule:
- * - Persist canonical_order_id when available
- * - If unavailable, persist NULL
+ * Canonical Rule (HARD):
+ * - canonical_order_id MUST be present
+ * - Execution truth without canonical identity is forbidden
+ *
+ * This service assumes canonical resolution has already succeeded.
+ * If canonical_order_id is missing, this is a caller bug.
  *
  * This service exists to enable:
  * - revenue allocation by execution state
@@ -25,15 +28,17 @@ export class OrderFulfillmentIngestionService {
   async ingestStatus(input: {
     shopId: number;
     platformOrderId: string;
-    canonicalOrderId: string | null;
+    canonicalOrderId: string;
     status: 'processing' | 'in_transit' | 'delivered' | 'cancelled';
   }): Promise<void> {
-    const {
-      shopId,
-      platformOrderId,
-      canonicalOrderId,
-      status,
-    } = input;
+    const { shopId, platformOrderId, canonicalOrderId, status } = input;
+
+    if (!canonicalOrderId) {
+      throw new Error(
+        '[OrderFulfillmentIngestionService] canonical_order_id is required. ' +
+        'Execution truth must not be written without canonical identity.'
+      );
+    }
 
     await db('order_fulfillment_status')
       .insert({
@@ -46,7 +51,7 @@ export class OrderFulfillmentIngestionService {
          * Enables deterministic joins.
          * Nullable by design (fail-closed).
          */
-        canonical_order_id: canonicalOrderId ?? null,
+        canonical_order_id: canonicalOrderId,
 
         status,
         status_updated_at: db.fn.now(),
@@ -54,7 +59,7 @@ export class OrderFulfillmentIngestionService {
       .onConflict(['shop_id', 'order_id'])
       .merge({
         status,
-        canonical_order_id: canonicalOrderId ?? null,
+        canonical_order_id: canonicalOrderId,
         status_updated_at: db.fn.now(),
       });
   }

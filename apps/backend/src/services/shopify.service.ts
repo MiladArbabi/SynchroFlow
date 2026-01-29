@@ -11,6 +11,17 @@ import { enqueueProductForIngestion }
   from './product-ingestion.service';
 import { recordIncompleteOrder } from './incomplete-order.service';
 
+/**
+ * IMPORTANT — EXECUTION SEMANTICS
+ * ------------------------------
+ * This service MUST NOT write to order_fulfillment_status.
+ *
+ * Fulfillment execution truth is produced exclusively via:
+ *   Shopify Webhooks → integration_webhook_events → Queue →
+ *   Fulfillment Reconciliation Worker.
+ *
+ * Any execution writes here will corrupt canonical identity.
+ */
 
 // Add required scopes for Protected Customer Data
 const REQUIRED_SCOPES = [
@@ -388,6 +399,7 @@ async function syncOrdersAndFulfillments(trx: Knex.Transaction, shopId: number, 
       .insert(ordersToInsert)
       .onConflict('platform_order_id')
       .merge();
+      
     console.log(`[ShopifyService] Synced ${ordersToInsert.length} orders.`);
   }
 

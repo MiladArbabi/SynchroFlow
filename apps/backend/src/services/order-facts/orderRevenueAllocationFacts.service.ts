@@ -62,8 +62,18 @@ export async function extractOrderRevenueAllocationFacts(
       'f.canonical_order_id'
     )
     .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '>=', from)
-    .andWhere('o.order_created_at', '<=', to)
+    .andWhere(function () {
+        this.where(function () {
+          // Fulfilled revenue is anchored to fulfillment timestamp
+          this.whereIn('f.status', ['fulfilled', 'delivered'])
+            .andWhere('f.status_updated_at', '>=', from)
+            .andWhere('f.status_updated_at', '<=', to);
+        }).orWhere(function () {
+          // Unfulfilled revenue is anchored to order creation
+          this.whereNotIn('f.status', ['fulfilled', 'delivered'])
+            .andWhere('o.order_created_at', '<=', to);
+        });
+      })
     .select(
       'o.total_price as revenue',
       'f.status as fulfillmentStatus'

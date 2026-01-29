@@ -80,6 +80,19 @@ export class CanonicalCommerceIngestionService {
     }));
 
     try {
+      /**
+       * IMPORTANT:
+       * ----------
+       * This service MUST NOT write to order_fulfillment_status.
+       *
+       * Fulfillment execution state is derived asynchronously
+       * by the Fulfillment Reconciliation Worker after:
+       * - canonical identity resolution
+       * - webhook / fulfillment source convergence
+       *
+       * Any execution bootstrap here is a data corruption risk.
+       */
+
       // If db.transaction exists (real DB), use it. Otherwise fall back to a test-friendly path.
       if (typeof (db as any).transaction === 'function') {
         await (db as any).transaction(async (trx: any) => {

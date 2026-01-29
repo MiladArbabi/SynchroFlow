@@ -68,8 +68,12 @@ This is the **financial backbone** of the order module.
 | ------------------------- | ---------------------------------------------- | ----------------------------------- |
 | **Total Sales**           | Sum of canonical order value                   | “How much money exists?”            |
 | **Earned Revenue**        | Revenue tied to fulfilled orders               | “What have we actually earned?”     |
-| **Revenue Ready to Ship** | Revenue tied to executable, unfulfilled orders | “What money unlocks if we ship?”    |
+| **Pending Revenue** | Revenue tied to unfulfilled orders (availability-based, execution-agnostic) | “What money unlocks if we ship?”    |
 | **Blocked Revenue**       | Revenue tied to orders blocked by issues       | “Why do I have orders but no cash?” |
+
+* Pending revenue may include **synthetic execution**
+* Synthetic execution exists to preserve availability truth
+* Execution confidence is **never exposed in FT2**
 
 ---
 

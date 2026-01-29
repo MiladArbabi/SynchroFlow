@@ -116,6 +116,17 @@ export function mapOrdersFt2Props(
         ? null
         : snapshot.revenue.earned,
 
+    /**
+     * Pending revenue (FT2)
+     * --------------------
+     * Availability-based only.
+     *
+     * NOTE:
+     * This value may include revenue without execution certainty
+     * depending on backend execution coverage.
+     *
+     * This adapter MUST NOT reinterpret or normalize this value.
+     */
     pending:
       snapshot.revenue?.pending === undefined
         ? null
@@ -128,7 +139,7 @@ export function mapOrdersFt2Props(
 
     executionCoverage:
       snapshot.revenue?.executionCoverage === undefined
-        ? 'insufficient'
+        ? null
         : snapshot.revenue.executionCoverage
   },
 
@@ -141,9 +152,6 @@ export function mapOrdersFt2Props(
       ? null
       : snapshot.revenueContinuity,
 
-  trust:
-    trust === undefined
-      ? null
-      : trust,
+  trust: trust ?? null,
   };
 }

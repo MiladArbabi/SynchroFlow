@@ -120,11 +120,9 @@ export async function seed(knex: Knex): Promise<void> {
    */
   console.log('[DEV_SEED] Seeding example order data…');
 
-  await knex('order_fulfillment_status').insert([
-    { shop_id: shop.id, order_id: '1001', status: 'processing' },
-    { shop_id: shop.id, order_id: '1002', status: 'in_transit' },
-    { shop_id: shop.id, order_id: '1003', status: 'delivered' },
-  ]);
+  // ❌ REMOVED
+  // Fulfillment execution truth is NOT seeded.
+  // It is derived asynchronously via fulfillment reconciliation worker.
 
   console.log('────────────────────────────────────────');
   console.log('[DEV_SEED] Completed successfully');

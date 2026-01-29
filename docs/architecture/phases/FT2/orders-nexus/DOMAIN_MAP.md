@@ -135,6 +135,9 @@ not by storage, services, or ownership.
 * No paid / settled / margin semantics
 * No execution diagnostics
 * No financial advice
+* Pending and earned revenue may include **synthetic execution**
+* Synthetic execution exists solely to preserve availability truth
+* Execution confidence is **never exposed** in FT2 domains
 
 ---
 

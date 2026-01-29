@@ -66,6 +66,20 @@ interface OrderQueueMessage {
   order: NormalizedOrder;
 }
 
+/**
+ * IMPORTANT:
+ * ----------
+ * This service MUST NOT write to order_fulfillment_status.
+ *
+ * Fulfillment execution state is authoritative upstream data
+ * produced by:
+ * - fulfillment webhooks
+ * - fulfillment reconciliation worker
+ *
+ * Order Nexus ingestion is a downstream consumer only.
+ */
+
+
 export class OrderNexusCanonicalIngestionService {
   private readonly channel: any;
   private readonly queueName = 'order_nexus_ingestion';

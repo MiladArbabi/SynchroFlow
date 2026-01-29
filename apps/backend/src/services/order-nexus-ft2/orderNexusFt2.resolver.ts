@@ -107,6 +107,11 @@ const fulfillmentIntelligence = deriveOrderFulfillmentIntelligence(
   fulfillmentFacts
 );
 
+const executionCoverage =
+  fulfillmentStatusFacts.visibility === 'sufficient'
+    ? 'sufficient'
+    : 'insufficient';
+
 const unfulfilledOrders =
   fulfillmentFacts.visibility !== 'sufficient'
     ? null
@@ -360,21 +365,18 @@ const comparison = {
       totalSales: exposure.totals.revenueTotal,
 
       earned:
-        fulfillmentStatusFacts.visibility === 'sufficient'
+        executionCoverage === 'sufficient'
           ? revenueAllocationFacts.fulfilledRevenueTotal
           : null,
 
       pending:
-        fulfillmentStatusFacts.visibility === 'sufficient'
+        executionCoverage === 'sufficient'
           ? revenueAllocationFacts.unfulfilledRevenueTotal
           : null,
 
       blocked: null,
 
-      executionCoverage:
-        fulfillmentStatusFacts.visibility === 'sufficient'
-          ? 'sufficient'
-          : 'insufficient',
+      executionCoverage,
     },
 
     comparison,
