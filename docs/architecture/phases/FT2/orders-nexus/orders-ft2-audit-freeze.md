@@ -1,6 +1,6 @@
 # 🔒 Order-Nexus FT2 Contract Audit
 
-**CURRENT · ACTIVE · SEALED (REV C — InfoBlock-Aligned / SMB-Legible)**
+**CURRENT · ACTIVE · SEALED (REV C.1 — Blocked Revenue Clarified / L2-Downgrade Explicit)**
 
 **Status:** ✅ COMPLETE / SEALED
 **Scope:** Order-Nexus FT2 — Backend + Frontend
@@ -77,7 +77,7 @@ Orders FT2 contains **no**:
 * prioritization
 * semantic interpretation inside InfoBlocks
 * **accounting semantics (paid, settled, net, margin)**
-* **execution inference unless explicitly downgraded**
+* **execution inference unless explicitly downgraded via L2 classification**
 
 If any of the above appear, the contract is broken.
 
@@ -123,7 +123,7 @@ Answer:
 | Total Sales Reality     | L1    | How much sales value exists in total?        |
 | Earned Revenue Reality  | L1    | How much value is tied to fulfilled orders?  |
 | Pending Revenue Reality | L1    | How much value is tied to open work?         |
-| Blocked Revenue Reality | L1    | How much value is operationally unreachable? |
+| Blocked Revenue Reality | L1    | How much value is unavailable due to unresolved execution blockers? |
 
 **Hard Rules (LOCKED):**
 
@@ -131,6 +131,24 @@ Answer:
 * No payment, settlement, or margin semantics
 * No recommendations or prioritization
 * No execution diagnosis
+
+#### Blocked Revenue Clarification (RE-SEALED)
+
+Blocked Revenue represents **availability loss**, not failure.
+
+Definition:
+> Revenue tied to canonical orders that cannot progress toward fulfillment
+> due to unresolved execution blockers, as determined by downgraded L2 classification.
+
+Rules:
+
+* Derived exclusively from L2 Blocker Classification
+* Downgraded to L1 as **aggregate totals only**
+* Never exposes blocker categories, causes, or actions
+* May equal Pending Revenue in early or incomplete systems
+* Decreases only when execution truth improves (not via UI logic)
+
+Blocked Revenue is a **mirror of system readiness**, not a judgment.
 
 ---
 
@@ -235,7 +253,8 @@ Layer 4 — Alignment Planes
 Order-Nexus FT2 Snapshot
 ```
 
-🚨 Execution-aware revenue enters **only at Layer 2** and is always downgraded.
+🚨 Execution-aware revenue enters **only at Layer 2** and may surface at L1
+**only after explicit downgrade (e.g. Blocked Revenue totals).**
 
 ---
 
@@ -286,7 +305,8 @@ Rows (LOCKED):
 
 Footer Rail (LOCKED):
 
-> **SALES VALUE SHOWN — PAYMENT AND PROFIT NOT EVALUATED**
+> **SALES VALUE SHOWN — EXECUTION AVAILABILITY ONLY**
+> **PAYMENT AND PROFIT NOT EVALUATED**
 
 ---
 
@@ -316,6 +336,6 @@ These are **constraints**, not backlog items.
 ✔ No semantic leakage
 ✔ FT2 remains terminal
 
-🔒 **Order-Nexus FT2 Contract Audit — REV C is current, aligned, and sealed.**
+🔒 **Order-Nexus FT2 Contract Audit — REV C.1 is current, aligned, and sealed.**
 
 ---

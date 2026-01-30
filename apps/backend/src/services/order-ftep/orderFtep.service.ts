@@ -42,21 +42,6 @@ export function exposeOrderNexusFT2(
     costTotal: null,
   },
 
-  outcome:
-    intelligence.margin.status === 'unknown'
-      ? null
-      : {
-          status:
-            intelligence.margin.status === 'loss'
-              ? 'negative'
-              : 'positive',
-        },
-
-  trend:
-    intelligence.trend.direction === 'unknown'
-      ? null
-      : { direction: intelligence.trend.direction },
-
   /**
    * Data Coverage (FT2)
    * ------------------

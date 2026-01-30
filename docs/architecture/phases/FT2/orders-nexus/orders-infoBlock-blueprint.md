@@ -24,7 +24,7 @@ This block answers:
 
 > “How many promises exist, and where do they stand broadly?”
 
-### This block is **count-based**, not monetary.
+### This block is **count-based**, not monetary
 
 ---
 
@@ -195,51 +195,67 @@ Each row can show:
 
 ---
 
-## 6️⃣ InfoBlock #6 — **Execution Health**
+## 6️⃣ InfoBlock #6 — **Obligation Overview**
 
 ### Purpose
 
-> Detect *system strain* before it becomes failure.
+> Purpose
+Surface how much value is currently constrained by unresolved obligations, grouped by constraint class.
 
-This block answers:
+> Non-Purpose
+Explain causes, suggest actions, imply urgency, or recommend prioritization.
 
-> “Is my operation keeping up, or degrading?”
+Core Question (Locked)
 
-This is your **early-warning system**.
+“How much value is currently constrained — and how is that constraint distributed?”
+
+Nothing about what to do.
 
 ---
 
 ### Rows (Health Signals)
 
-| Row                          | System Truth                  | SMB Question Answered                 |
-| ---------------------------- | ----------------------------- | ------------------------------------- |
-| **Orders Past CPT**          | Orders exceeding cutoff time  | “Where are we late?”                  |
-| **Blocked Orders Count**     | Orders blocked by issues      | “How widespread are problems?”        |
-| **Aging Unfulfilled Orders** | Orders stuck beyond threshold | “What’s rotting?”                     |
-| **Execution Velocity**       | Avg time from order → ship    | “Are we speeding up or slowing down?” |
+| Row                                 | Constraint Class | System Meaning                                                            |
+| ----------------------------------- | ---------------- | ------------------------------------------------------------------------- |
+| **Inventory-constrained value**     | Inventory        | Value tied to orders that cannot progress due to inventory unavailability |
+| **Customer-constrained value**      | Customer         | Value tied to orders awaiting required customer-side completion           |
+| **Operationally-constrained value** | Operational      | Value constrained within internal execution flow                          |
+| **Other-constrained value**         | Other            | Value constrained by uncategorized or residual blockers                   |
+
+> VALUE SHOWN IS CURRENTLY CONSTRAINED
+> NO ACTIONS OR OUTCOMES ARE IMPLIED
 
 ---
+
+## Relationship to Revenue Overview
+
+| Revenue Overview       | Obligation Overview            |
+| ---------------------- | ------------------------------ |
+| Availability state     | Constraint distribution        |
+| “How much is blocked?” | “How blocked value is grouped” |
+| Single aggregate       | Structured aggregates          |
+| Always visible         | Coverage-gated                 |
 
 ### Why this block matters
 
 This prevents SMBs from:
 
 * Working harder instead of smarter
-* Adding marketing when ops are broken
+* Focusing on wrong things and mis-prioritizing tasks
 * Scaling chaos
 
 ---
 
 ## Final Structural Summary
 
-| InfoBlock              | Core Question                |
-| ---------------------- | ---------------------------- |
-| Orders Overview        | “What promises exist?”       |
-| Revenue Overview       | “Where is my money?”         |
-| Returns Overview       | “What money is at risk?”     |
-| Revenue Risk           | “How fragile is my revenue?” |
-| Operational Flow (CPT) | “Where is value stuck?”      |
-| Execution Health       | “Are we falling behind?”     |
+| InfoBlock                | Core Question                |
+| ----------------------   | ---------------------------- |
+| Orders Overview          | “What promises exist?”       |
+| Revenue Overview         | “Where is my money?”         |
+| Returns Overview         | “What money is at risk?”     |
+| Revenue Risk             | “How fragile is my revenue?” |
+| Operational Flow (CPT)   | “Where is value stuck?”      |
+| Obligation Overview      | “?”                          |
 
 ---
 

@@ -24,14 +24,6 @@ export interface OrderNexusFT2Exposure {
     costTotal: number | null;
   };
 
-  outcome: {
-    status: 'positive' | 'negative';
-  } | null;
-
-  trend: {
-    direction: 'up' | 'down' | 'flat';
-  } | null;
-
   /**
    * Data Coverage (FT2)
    * ------------------

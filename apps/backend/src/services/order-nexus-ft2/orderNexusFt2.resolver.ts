@@ -30,10 +30,10 @@ import type { OrderNexusFT2Snapshot } from './orderNexusFt2.types';
 import { FT2DateRangePreset } from 'api-src/utils/ft2Period';
 import { deriveOrderIntelligence } from 'api-src/services/order-intelligence/orderIntelligence.service';
 import { deriveOrderFulfillmentIntelligence } from '../order-intelligence/orderFulfillmentIntelligence.service';
-import { deriveOrderVelocityReality } from '../order-intelligence/orderVelocityIntelligence.service';
 import { extractOrderCustomerPromiseFacts } from '../order-facts/orderCustomerPromiseFacts.service';
 
 import { pctChange } from 'api-src/utils/pctChange';
+import { aggregateBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
 
 /**
  * OrderNexus FT2 Resolver
@@ -74,11 +74,6 @@ const revenueAllocationFacts =
 // Step 2: Downgrade intelligence via FTEP
 const exposure = exposeOrderNexusFT2({ facts, intelligence });
 
-const orderVelocity = deriveOrderVelocityReality(
-  trendFacts,
-  exposure.visibility?.status === 'sufficient'
-);
-
 if (!exposure) {
   return null;
 }
@@ -112,6 +107,11 @@ const executionCoverage =
     ? 'sufficient'
     : 'insufficient';
 
+ const blockedRevenueAgg =
+   executionCoverage === 'sufficient'
+     ? await aggregateBlockedRevenue(shopId)
+     : null;
+
 const unfulfilledOrders =
   fulfillmentFacts.visibility !== 'sufficient'
     ? null
@@ -142,6 +142,7 @@ const comparison = {
     incomingPctChange: pctChange(previousIncoming, currentIncoming),
   },
 };
+
   // ─────────────────────────────────────────────
   // Alignment Planes (META + Plane Inputs)
   // ─────────────────────────────────────────────
@@ -161,78 +162,7 @@ const comparison = {
     },
 
     planes: [
-      // Plane #1 — Demand Reality (Customers ↔ Orders)
-      {
-        planeId: 'demand-reality',
-        input: {
-          customers: {
-            engagementTrend: null, // wired later from Specter
-            visibility: null,
-          },
-          orders: {
-            trend: exposure.trend?.direction ?? null,
-            outcome: exposure.outcome?.status ?? null,
-            visibility:
-              exposure.visibility?.status ?? null
-          },
-        },
-      },
-
-      // Plane #2 — Engagement ↔ Revenue (Customers ↔ Orders)
-      {
-        planeId: 'engagement-revenue',
-        input: {
-          customers: {
-            engagementTrend: null, // wired later from Specter
-            visibility: null,
-          },
-          orders: {
-            outcome: exposure.outcome?.status ?? null,
-            visibility:
-              exposure.visibility?.status ?? null
-          },
-        },
-      },
-
-      // Plane #3 — Operational ↔ Economic (Orders ↔ Fulfillment)
-      {
-        planeId: 'operational-economic',
-        input: {
-          orders: {
-            outcome: exposure.outcome?.status ?? null,
-            visibility:
-              exposure.visibility?.status ?? null
-          },
-          fulfillment: {
-            operationalReality: fulfillmentIntelligence.operationalReality,
-            visibility:
-              fulfillmentIntelligence.visibility === 'unknown'
-                ? null
-                : fulfillmentIntelligence.visibility,
-          },
-        },
-      },
-      
-      // Plane #4 — Order Velocity ↔ Fulfillment
-      {
-        planeId: 'order-velocity-fulfillment',
-        input: {
-          orders: {
-            velocity: exposure.trend?.direction ?? null,
-            visibility:
-              exposure.visibility?.status ?? null
-          },
-          fulfillment: {
-            operationalReality: fulfillmentIntelligence.operationalReality,
-            visibility:
-              fulfillmentIntelligence.visibility === 'unknown'
-                ? null
-                : fulfillmentIntelligence.visibility,
-          },
-        },
-      },
-
-      // Plane #5 — Shipping ↔ Fulfillment Coherence
+      // Plane #1 — Shipping ↔ Fulfillment Coherence
       {
         planeId: 'shipping-fulfillment-coherence',
         input: {
@@ -250,33 +180,7 @@ const comparison = {
         },
       },
 
-      /**
-       * Fulfillment Status Reality (L1)
-       * ------------------------------
-       * 'absent' indicates no fulfillment records,
-       * not an execution state → mapped to null.
-       */
-      // Plane #6 — Sales ↔ Operations
-      {
-        planeId: 'sales-operations',
-        input: {
-          orders: {
-            velocity: orderVelocity,
-            visibility:
-              exposure.visibility?.status ?? null
-          },
-          fulfillment: {
-            status:
-              fulfillmentStatusFacts.fulfillmentStatus === 'absent'
-                ? null
-                : fulfillmentStatusFacts.fulfillmentStatus,
-
-            visibility: fulfillmentStatusFacts.visibility,
-          },
-        },
-      },
-
-      // Plane #7 — Orders ↔ Shipping Carrier
+      // Plane #2 — Orders ↔ Shipping Carrier
       {
         planeId: 'orders-shipping-carrier',
         input: {
@@ -294,7 +198,7 @@ const comparison = {
         },
       },
 
-      // Plane #8 — Shipping Delay ↔ Fulfillment Coherence
+      // Plane #3 — Shipping Delay ↔ Fulfillment Coherence
       {
         planeId: 'shipping-delay-fulfillment-coherence',
         input: {
@@ -312,7 +216,7 @@ const comparison = {
         },
       },
 
-      // Plane #9 — Shipping Delay ↔ Customer Promise
+      // Plane #4 — Shipping Delay ↔ Customer Promise
       {
         planeId: 'shipping-delay-customer-promise',
         input: {
@@ -371,10 +275,14 @@ const comparison = {
 
       pending:
         executionCoverage === 'sufficient'
-          ? revenueAllocationFacts.unfulfilledRevenueTotal
+          ? Math.max(
+              (revenueAllocationFacts.unfulfilledRevenueTotal ?? 0)
+              - (blockedRevenueAgg?.totalBlocked ?? 0),
+              0
+            )
           : null,
 
-      blocked: null,
+      blocked: blockedRevenueAgg?.totalBlocked ?? null,
 
       executionCoverage,
     },
