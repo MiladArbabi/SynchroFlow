@@ -79,14 +79,27 @@ export function exposeOrderNexusFT2(
  */
 export function downgradeObligations(
   input: BlockedRevenueClassification | null,
-  revenueBlockedTotal: number | null
+  revenueBlockedTotal: number | null,
 ): FT2ObligationsExposure {
-  if (
-    !input ||
-    input.coverage.classifiedPct !== 1 ||
-    input.coverage.unknownValue !== 0 ||
-    revenueBlockedTotal == null ||
-    revenueBlockedTotal !== input.totalBlockedValue
+
+  console.debug('[FT2 DEBUG][FTEP] downgradeObligations input', {
+    input,
+    revenueBlockedTotal,
+  });
+
+    if (
+      !input ||
+      revenueBlockedTotal == null ||
+      revenueBlockedTotal !== input.totalBlockedValue ||
+      (
+        // Phase 3 rule:
+        // Allow inventory-only downgrade even when classification is incomplete
+        input.coverage.classifiedPct !== 1 &&
+        !(
+          input.coverage.inventoryCoveragePct === 1 &&
+          input.buckets?.inventory === input.totalBlockedValue
+      )
+    )
   ) {
     return {
       totalBlockedValue: null,
@@ -95,12 +108,14 @@ export function downgradeObligations(
     };
   }
 
-  const {
-    inventory = 0,
-    customer = 0,
-    operational = 0,
-    other = 0,
-  } = input.buckets;
+ const buckets = input.buckets ?? {};
+
+const {
+  inventory = 0,
+  customer = 0,
+  operational = 0,
+  other = 0,
+} = buckets;
 
   const sum =
     inventory + customer + operational + other;

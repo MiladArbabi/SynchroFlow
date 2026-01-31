@@ -14,7 +14,7 @@ export async function getLifecycleHistory(req: Request, res: Response) {
 
     return res.status(200).json(history);
   } catch (err) {
-    console.error('[lifecycle-history] failed', err);
-    return res.status(500).json({ error: 'Failed to load lifecycle history' });
+/*     console.error('[lifecycle-history] failed', err);
+ */    return res.status(500).json({ error: 'Failed to load lifecycle history' });
   }
 }

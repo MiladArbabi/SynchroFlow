@@ -111,11 +111,11 @@ export async function confirmFt1(req: Request, res: Response) {
       .first<{ phase: string }>();
 
     if (existing?.phase === 'FT1' || existing?.phase === 'FT2') {
-      console.info('[LIFECYCLE][FT1_CONFIRM][IDEMPOTENT]', {
+      /* console.info('[LIFECYCLE][FT1_CONFIRM][IDEMPOTENT]', {
         userId,
         shopId,
         phase: existing.phase,
-      });
+      }); */
       return res.status(200).json({ phase: existing.phase });
     }
 
@@ -132,10 +132,10 @@ export async function confirmFt1(req: Request, res: Response) {
       currentPhase: 'FT1',
     });
 
-    console.info('[LIFECYCLE][FT1_CONFIRM][PROMOTED]', {
+    /* console.info('[LIFECYCLE][FT1_CONFIRM][PROMOTED]', {
       userId,
       shopId,
-    });
+    }); */
 
     return res.status(200).json({ phase: 'FT1' });
   } catch (err) {

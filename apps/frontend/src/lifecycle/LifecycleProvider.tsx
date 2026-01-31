@@ -59,13 +59,13 @@ export function LifecycleProvider({
     shopId != null &&
     localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true';
 
-  console.log('[FT2_SEAL_CHECK]', {
+  /* console.log('[FT2_SEAL_CHECK]', {
     shopId,
     hasFT2Seal,
     raw: shopId
       ? localStorage.getItem(`shop:${shopId}:ft2-seen`)
       : null,
-  });
+  }); */
 
   useEffect(() => {
     let cancelled = false;
@@ -73,19 +73,19 @@ export function LifecycleProvider({
       async function fetchLifecycle() {
       const startedAt = performance.now();
 
-      console.info('[LIFECYCLE][SYNC][START]', {
+      /* console.info('[LIFECYCLE][SYNC][START]', {
         source: 'backend',
-      });
+      }); */
 
       try {
         const res = await axiosInstance.get('/api/v1/lifecycle');
         const backendPhase = res?.data?.phase;
 
-        console.info('[LIFECYCLE][SYNC][SUCCESS]', {
+        /* console.info('[LIFECYCLE][SYNC][SUCCESS]', {
           source: 'backend',
           phase: backendPhase,
           durationMs: Math.round(performance.now() - startedAt),
-        });
+        }); */
 
         // 🔒 BACKEND → REDUCER AUTHORITY BRIDGE (THE MISSING LINK)
         if (backendPhase === 'FT2') {
@@ -130,19 +130,19 @@ export function LifecycleProvider({
   const isHydratedTerminal =
     state.phase === 'FT1_READY' || state.phase === 'FT2_READY';
 
-  console.log('[LIFECYCLE_READINESS_INPUT]', {
+/*   console.log('[LIFECYCLE_READINESS_INPUT]', {
     bootResolved: integration.bootResolved,
     hasIntegration: integration.hasIntegration,
     shopId,
-  });
+  }); */
 
   const { data } = useOnboardingReadiness(
     integration.bootResolved && integration.hasIntegration,
     shopId ?? undefined
   );
 
-   console.log('[LIFECYCLE_READINESS_OUTPUT]', data); 
-
+/*    console.log('[LIFECYCLE_READINESS_OUTPUT]', data); 
+ */
   /* ---------------- Integration → lifecycle events ---------------- */
 
   useEffect(() => {
@@ -190,12 +190,12 @@ export function LifecycleProvider({
   useEffect(() => {
     if (isHydratedTerminal) return;
 
-    console.log('[FT2_RESTORE_EFFECT_ENTER]', {
+    /* console.log('[FT2_RESTORE_EFFECT_ENTER]', {
       shopId,
       hasFT2Seal,
       bootResolved: integration.bootResolved,
       hasIntegration: integration.hasIntegration,
-    });
+    }); */
     
     if (hasFT2Seal && integration.hasIntegration) {
       console.log('[FT2_RESTORE_FROM_LOCALSTORAGE]');

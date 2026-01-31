@@ -38,9 +38,9 @@ export async function aggregateBlockedRevenue(
   const totalBlocked = classification.totalBlockedValue;
 
   const byCategory =
-    classification.buckets && Object.keys(classification.buckets).length > 0
-      ? classification.buckets
-      : {};
+  classification.buckets && Object.keys(classification.buckets).length > 0
+    ? classification.buckets
+    : {};
 
   // DEV sanity only — never enforce here
   if (process.env.NODE_ENV !== 'production') {
@@ -134,37 +134,51 @@ export async function classifyBlockedRevenue(
     });
   }
 
+  const inventoryCoveragePct =
+  totalBlockedValue === 0 ? 1 : evaluableRevenue / totalBlockedValue;
+
+  /**
+   * Inventory Obligation v1
+   * -----------------------
+   * Rule:
+   * - If inventory coverage is 100%
+   * - And no other obligation signals exist
+   * - Then all blocked value is inventory-blocked
+   */
+
+  /**
+   * Inventory Obligation v1 (L2)
+   * ---------------------------
+   * This is a *default classification*, not an assumption.
+   *
+   * Preconditions:
+   * - Inventory truth evaluated for 100% of blocked revenue
+   * - No customer / operational / other signals exist
+   *
+   * Guarantees:
+   * - classifiedPct === 1
+   * - unknownValue === 0
+   *
+   * This enables FT2 obligation downgrade without violating:
+   * - Evaluation ≠ Classification
+   * - Coverage ≠ Attribution
+   */
+
+  const inventoryOnly =
+    inventoryCoveragePct === 1 &&
+    unknownValue === totalBlockedValue;
+
   return {
     totalBlockedValue,
 
-    /**
-     * Inventory Block v1
-     * ------------------
-     * No obligation categories exist yet.
-     * Buckets are intentionally empty.
-     */
-    buckets: {},
+    buckets: inventoryOnly
+      ? { inventory: totalBlockedValue }
+      : {},
 
     coverage: {
-      /**
-       * Bucket classification completeness.
-       * Inventory v1 does NOT classify by category yet.
-       */
-      classifiedPct: 0,
-
-      /**
-       * Inventory obligation evaluation coverage.
-       * All execution rows are evaluated deterministically.
-       */
-      inventoryCoveragePct:
-        totalBlockedValue === 0
-          ? 1
-          : evaluableRevenue / totalBlockedValue,
-
-      /**
-       * All blocked value is epistemically unknown by category.
-       */
-      unknownValue,
+      classifiedPct: inventoryOnly ? 1 : 0,
+      inventoryCoveragePct,
+      unknownValue: inventoryOnly ? 0 : unknownValue,
     },
   };
 };

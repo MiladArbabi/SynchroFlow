@@ -61,12 +61,12 @@ export class LifecycleTransitionService {
 
     if (existing) return;
 
-    console.info('[LIFECYCLE][AUDIT][RECORDED]', {
+    /* console.info('[LIFECYCLE][AUDIT][RECORDED]', {
       userId,
       shopId,
       from: previousPhase,
       to: currentPhase,
-    });
+    }); */
 
     // 5. Write audit event
     try {

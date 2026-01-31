@@ -71,10 +71,10 @@ export function useLifecycleEffects({
     const key = `shop:${String(shopId)}:ft1-seen`;
 
     if (state.phase === 'FT1_READY' && state.hasLatchedFT1) {
-      console.info('[LIFECYCLE][SEAL_WRITE]', {
+      /* console.info('[LIFECYCLE][SEAL_WRITE]', {
         phase: state.phase,
         shopId,
-      });
+      }); */
       localStorage.setItem(key, 'true');
       return;
     }
@@ -94,10 +94,10 @@ export function useLifecycleEffects({
     const key = `shop:${String(shopId)}:ft2-seen`;
 
     if (state.phase === 'FT2_READY' && state.hasLatchedFT2) {
-      console.info('[LIFECYCLE][SEAL_WRITE]', {
+      /* console.info('[LIFECYCLE][SEAL_WRITE]', {
         phase: state.phase,
         shopId,
-      });
+      }); */
       localStorage.setItem(key, 'true');
       return;
     }

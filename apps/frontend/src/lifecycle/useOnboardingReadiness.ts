@@ -19,7 +19,7 @@ export function useOnboardingReadiness(
         `/api/v1/onboarding/readiness?shopId=${shopId}`
       );
 
-      console.log('[ONBOARDING_READINESS_PAYLOAD]', data);
+      /* console.log('[ONBOARDING_READINESS_PAYLOAD]', data); */
 
       return data;
     },

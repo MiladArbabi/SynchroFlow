@@ -48,17 +48,17 @@ export class LifecycleService {
       .first<{ phase: LifecyclePhase }>();
 
     if (snapshot) {
-      console.debug('[LIFECYCLE][RESOLVE][SNAPSHOT]', {
+    /*   console.debug('[LIFECYCLE][RESOLVE][SNAPSHOT]', {
         userId,
         phase: snapshot.phase,
-      });
+      }); */
       return snapshot.phase;
     }
 
-    console.debug('[LIFECYCLE][RESOLVE][DEFAULT]', {
+    /* console.debug('[LIFECYCLE][RESOLVE][DEFAULT]', {
       userId,
       phase: 'FT_MINUS_ONE',
-    });
+    }); */
     return 'FT_MINUS_ONE';
   }
 }

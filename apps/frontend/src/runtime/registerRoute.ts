@@ -42,14 +42,14 @@ export function registerRoute(route: InternalRoute) {
 
   if (dynamicRoutes[route.id]) {
     if (import.meta.env.DEV) {
-      console.warn(
+      /* console.warn(
         '[registerRoute] duplicate route id detected:',
         route.id
       );
       console.debug(
         '[registerRoute] duplicate registration stack:',
         new Error().stack
-      );
+      ); */
     }
     return; // ⛔️ prevent double registration
   }

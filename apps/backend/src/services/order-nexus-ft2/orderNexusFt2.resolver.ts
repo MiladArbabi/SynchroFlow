@@ -117,11 +117,18 @@ const obligationClassification =
     ? await classifyBlockedRevenue(shopId)
     : null;
 
+console.debug('[FT2 DEBUG][resolver] obligation inputs', {
+  hasClassification: Boolean(obligationClassification),
+  classification: obligationClassification,
+  blockedTotal: blockedRevenueAgg?.totalBlocked,
+  byCategory: blockedRevenueAgg?.byCategory,
+});
+
 const obligations = downgradeObligations(
   obligationClassification,
   blockedRevenueAgg
     ? blockedRevenueAgg.totalBlocked
-    : null
+    : null,
 );
 
 const unfulfilledOrders =
@@ -273,7 +280,7 @@ const comparison = {
       total: facts.ordersObserved,
       fulfilled: fulfilledOrders,
       unfulfilled: unfulfilledOrders,
-      incoming: incomingOrders,
+      incoming: -999999,
     },
 
    /**
@@ -300,7 +307,10 @@ const comparison = {
             )
           : null,
 
-      blocked: blockedRevenueAgg?.totalBlocked ?? null,
+      blocked:
+        typeof blockedRevenueAgg?.totalBlocked === 'number'
+          ? Math.round(blockedRevenueAgg.totalBlocked * 100) / 100
+          : null,
 
       executionCoverage,
     },
