@@ -150,6 +150,30 @@ Rules:
 
 Blocked Revenue is a **mirror of system readiness**, not a judgment.
 
+Blocked Revenue in FT2 is a **downgraded signal**:
+
+* Source: L2 obligation evaluation
+* Exposure: L1 aggregate totals only
+* Obligation categories are intentionally suppressed
+
+FT2 never exposes *why* revenue is blocked — only *that* it is.
+
+##### Obligation Coverage vs Attribution (NEW · L2-AWARE)
+
+Blocked Revenue is derived from **execution rows that are obligation-evaluable**.
+
+Important distinction:
+
+* **Coverage** answers: “Was this order evaluated for this obligation?”
+* **Classification** answers: “Do we know which obligation caused the block?”
+
+It is valid and expected for FT2 to surface:
+
+* 100% obligation coverage
+* 0% obligation attribution
+
+This reflects epistemic honesty, not system failure.
+
 ---
 
 ### 🔁 C. Reversal & Leakage Domains (PRIMARY · L1)
@@ -215,7 +239,7 @@ Answer:
 | Domain                     | Layer | Question Answered               |
 | -------------------------- | ----- | ------------------------------- |
 | CPT Breach Reality         | L1    | Are orders past cutoff?         |
-| Blocked Orders Reality     | L1    | How many orders are obstructed? |
+| Blocked Orders Reality     | L1    | How many orders are execution-obstructed (cause-agnostic)? |
 | Aging Orders Reality       | L1½   | Are orders stagnating?          |
 | Execution Velocity Reality | L1½   | Is throughput changing?         |
 
@@ -306,6 +330,7 @@ Rows (LOCKED):
 Footer Rail (LOCKED):
 
 > **SALES VALUE SHOWN — EXECUTION AVAILABILITY ONLY**
+> **BLOCK CAUSES MAY BE UNATTRIBUTED**
 > **PAYMENT AND PROFIT NOT EVALUATED**
 
 ---

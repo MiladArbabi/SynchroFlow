@@ -37,10 +37,6 @@ export function ObligationOverviewInfoBlock({
   return (
     <InfoBlock title="Obligation overview">
       <InfoBlockRow
-        label="Total blocked value"
-        value={obligations.totalBlockedValue}
-      />
-      <InfoBlockRow
         label="Blocked — inventory"
         value={obligations.blockedBy?.inventory ?? null}
       />

@@ -33,6 +33,27 @@ export type OrdersFt2Snapshot = {
     executionCoverage?: 'sufficient' | 'insufficient';
   };
 
+  /**
+   * ─────────────────────────────────────────
+   * Obligation Overview (FT2)
+   * Downgraded, read-only.
+   * ─────────────────────────────────────────
+   */
+  obligations?: {
+    totalBlockedValue: number | null;
+
+    blockedBy: {
+      inventory: number | null;
+      customer: number | null;
+      operational: number | null;
+      other: number | null;
+    } | null;
+
+    coverage: {
+      status: 'sufficient' | 'insufficient';
+    };
+  };
+
   comparison?: {
     orders?: {
       totalPctChange?: number | null;

@@ -2,6 +2,12 @@
 
 import db from 'api-src/db';
 
+type SyntheticExecutionInput = {
+  shopId: number;
+  canonicalOrderId: string;
+  platformOrderId: string;
+};
+
 /**
  * Canonical Fulfillment Ingestion Service
  * --------------------------------------
@@ -44,25 +50,61 @@ export class OrderFulfillmentIngestionService {
       .insert({
         shop_id: shopId,
         order_id: platformOrderId,
-
-        /**
-         * Canonical linkage
-         * -----------------
-         * Enables deterministic joins.
-         * Nullable by design (fail-closed).
-         */
         canonical_order_id: canonicalOrderId,
 
         status,
         status_updated_at: db.fn.now(),
+
+        /**
+         * Execution provenance
+         * --------------------
+         * This service only writes OBSERVED execution.
+         * Synthetic execution is written by reconciliation workers.
+         */
+        execution_source: 'observed',
+        execution_confidence: 'certain',
       })
       .onConflict(['shop_id', 'order_id'])
       .merge({
         status,
         canonical_order_id: canonicalOrderId,
         status_updated_at: db.fn.now(),
+
+        // Observed execution always overrides synthetic
+        execution_source: 'observed',
+        execution_confidence: 'certain',
       });
   }
-}
+
+  /**
+   * Synthesize execution for canonical orders
+   * -----------------------------------------
+   * Used by reconciliation workers ONLY.
+   *
+   * Rules:
+   * - Never overwrite observed execution
+   * - Synthetic execution uses valid platform states
+   * - Presence beats absence
+   */
+  async synthesizeExecution(input: SyntheticExecutionInput): Promise<void> {
+    const { shopId, canonicalOrderId, platformOrderId } = input;
+
+    await db('order_fulfillment_status')
+      .insert({
+        shop_id: shopId,
+        order_id: platformOrderId,
+        canonical_order_id: canonicalOrderId,
+
+        // Valid platform state (never invent)
+        status: 'processing',
+        status_updated_at: db.fn.now(),
+
+        execution_source: 'synthetic',
+        execution_confidence: 'assumed',
+      })
+      .onConflict(['shop_id', 'order_id'])
+      .ignore(); // observed execution always wins
+  }
+};
 
 export default new OrderFulfillmentIngestionService();

@@ -183,6 +183,14 @@ Convert **facts → classified orientation signals** for internal use only.
 This layer may **think**.
 It must **never speak directly**.
 
+Important distinction (LOCKED):
+
+* **Evaluation** = determining whether a fact can be assessed
+* **Attribution** = determining which cause applies
+
+Layer 2 may evaluate without attributing.
+Coverage may be complete while classification remains unknown.
+
 ---
 
 ### 3.1 Location
@@ -212,7 +220,10 @@ export interface OrderNexusIntelligence {
     status: 'sufficient' | 'insufficient' | 'unknown';
   };
 
-  dataCoveragePct: number | null;
+  coverage: {
+    evaluatedPct: number | null;     // epistemic coverage
+    classifiedPct: number | null;    // attribution completeness
+  };
 }
 ```
 
@@ -333,6 +344,14 @@ export interface OrderNexusFT2Exposure {
 `unknown` is never emitted.
 Unknown → **absence (`null`)**.
 
+**Coverage semantics:**
+
+* Evaluation coverage → ❌ stripped
+* Classification coverage → ❌ stripped
+
+FT2 may reflect *effects* of coverage,
+but never exposes coverage metrics directly.
+
 ---
 
 ## 5. Layer 4 — FT2 UI (APEX)
@@ -369,6 +388,12 @@ apps/frontend/src/pages/orders/
 * Reduces cognitive load **without adding meaning**
 
 `FT2Surface` is **structural only**.
+
+Blocked Revenue rendering rule:
+
+* FT2 may show blocked totals
+* FT2 must not imply cause visibility
+* Absence of attribution must remain visually neutral
 
 ---
 

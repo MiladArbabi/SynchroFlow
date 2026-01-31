@@ -18,7 +18,7 @@ If two rows answer the same SMB question → one of them is wrong.
 
 ### Purpose
 
-> Establish *order obligations* and execution exposure at a glance.
+> Establish order obligations and execution presence at a glance.
 
 This block answers:
 
@@ -69,7 +69,7 @@ This is the **financial backbone** of the order module.
 | **Total Sales**           | Sum of canonical order value                   | “How much money exists?”            |
 | **Earned Revenue**        | Revenue tied to fulfilled orders               | “What have we actually earned?”     |
 | **Pending Revenue** | Revenue tied to unfulfilled orders (availability-based, execution-agnostic) | “What money unlocks if we ship?”    |
-| **Blocked Revenue**       | Revenue tied to orders blocked by issues       | “Why do I have orders but no cash?” |
+| **Blocked Revenue** | Revenue unavailable due to unresolved execution constraints (downgraded from L2) | “Why is some revenue unavailable?” |
 
 * Pending revenue may include **synthetic execution**
 * Synthetic execution exists to preserve availability truth
@@ -196,6 +196,14 @@ Each row can show:
 ---
 
 ## 6️⃣ InfoBlock #6 — **Obligation Overview**
+Visibility Gate (NON-NEGOTIABLE):
+
+This block renders only when:
+• Obligation evaluation coverage ≥ threshold (defined in FTEP)
+
+If coverage is insufficient:
+• Block is hidden entirely
+• No partial rows are shown
 
 ### Purpose
 
@@ -225,6 +233,12 @@ Nothing about what to do.
 > VALUE SHOWN IS CURRENTLY CONSTRAINED
 > NO ACTIONS OR OUTCOMES ARE IMPLIED
 
+Phase note (v1):
+
+• Inventory constraints are evaluated first
+• Other constraint classes may be present but unclassified
+• Uncategorized value remains intentionally opaque
+
 ---
 
 ## Relationship to Revenue Overview
@@ -244,7 +258,15 @@ This prevents SMBs from:
 * Focusing on wrong things and mis-prioritizing tasks
 * Scaling chaos
 
+Blocked Revenue notes (LOCKED):
+
+* Derived from internal L2 obligation classification
+* Downgraded to aggregate value only
+* No blocker categories exposed here
+* Absence of Blocked Revenue ≠ absence of constraints
+
 ---
+
 
 ## Final Structural Summary
 
@@ -255,7 +277,7 @@ This prevents SMBs from:
 | Returns Overview         | “What money is at risk?”     |
 | Revenue Risk             | “How fragile is my revenue?” |
 | Operational Flow (CPT)   | “Where is value stuck?”      |
-| Obligation Overview      | “?”                          |
+| Obligation Overview | “What is constraining value right now?” |
 
 ---
 

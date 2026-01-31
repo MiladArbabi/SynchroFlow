@@ -176,6 +176,26 @@ Stored on `order_fulfillment_status`:
 
 This preserves honesty **without breaking UX**.
 
+### Obligation Flags (L2)
+
+Stored on `order_fulfillment_status`:
+
+| Column | Meaning |
+|------|--------|
+| `has_inventory_block` | Inventory prevents fulfillment |
+| `has_customer_block` | Customer action required |
+| `has_operational_block` | Internal ops required |
+| `has_other_block` | Reserved / future |
+
+Semantics:
+
+* TRUE  → obligation exists
+* FALSE → obligation evaluated and cleared
+* NULL  → not yet evaluated (epistemic unknown)
+
+⚠️ Obligation flags do NOT affect execution state.
+They annotate execution with unblockable causes.
+
 ---
 
 ### 6.3 Execution States (DB-Enforced)
@@ -286,6 +306,21 @@ This unlocks:
 * Cash-at-risk
 * Pipeline value
 * Monetizable dashboards
+
+### Obligation Coverage vs Classification
+
+Coverage answers:
+> “Did we evaluate this obligation?”
+
+Classification answers:
+> “Do we know which obligation it is?”
+
+It is valid (and expected) to have:
+
+* 100% coverage
+* 0% classification
+
+This is epistemic honesty, not system failure.
 
 ---
 

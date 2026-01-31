@@ -61,10 +61,10 @@ export interface OrdersModuleFT2DataProps {
   };
 
   /**
-     * Obligation Overview (FT2)
-     * -------------------------
-     * Downgraded, read-only visibility into constrained value.
-     */
+    * Obligation Overview (FT2)
+    * -------------------------
+    * Downgraded, read-only visibility into constrained value.
+    */
     obligations?: {
       totalBlockedValue: number | null;
 
@@ -219,11 +219,22 @@ export default function OrdersModuleFT2(
           />
         </InfoBlock>
 
-        {obligations && (
-          <ObligationOverviewInfoBlock
-            obligations={obligations}
-          />
-        )}
+        <ObligationOverviewInfoBlock
+          obligations={
+            obligations ?? {
+              totalBlockedValue: null,
+              blockedBy: {
+                inventory: null,
+                customer: null,
+                operational: null,
+                other: null,
+              },
+              coverage: {
+                status: 'insufficient',
+              },
+            }
+          }
+        />
 
       </FT2Row>
     </FT2Layout>

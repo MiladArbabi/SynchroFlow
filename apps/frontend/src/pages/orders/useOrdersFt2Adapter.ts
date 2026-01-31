@@ -143,6 +143,11 @@ export function mapOrdersFt2Props(
         : snapshot.revenue.executionCoverage
   },
 
+  obligations:
+    snapshot.obligations === undefined
+      ? null
+      : snapshot.obligations,
+
   /**
    * Revenue signal continuity (L1½)
    * Bypasses intelligence. Pass-through only.

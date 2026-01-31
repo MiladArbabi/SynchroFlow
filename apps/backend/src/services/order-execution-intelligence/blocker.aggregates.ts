@@ -82,6 +82,13 @@ export async function classifyBlockedRevenue(
   .join(
     'canonical_orders as o',
     function () {
+      /**
+       * NOTE (Inventory v1):
+       * --------------------
+       * Join is intentionally platform-based.
+       * Canonical linkage will be enforced in v2,
+       * once obligation attribution is canonical-only.
+       */
       this.on('o.platform_order_id', '=', 'ofs.order_id')
         .andOn('o.shop_id', '=', 'ofs.shop_id');
     }
@@ -94,21 +101,68 @@ export async function classifyBlockedRevenue(
     'o.total_price as revenue'
   );
 
+  let evaluableRevenue = 0;
   let totalBlockedValue = 0;
   let unknownValue = 0;
 
+  /**
+   * Inventory Block v1 invariant:
+   * - Every execution row is evaluated
+   * - No rows are categorised yet
+   * - Coverage may be 100% while classification is 0%
+   */
   for (const row of rows) {
     totalBlockedValue += row.revenue;
 
-    // No obligation signal exists yet → epistemically unknown
+    // Inventory v1: every row is inventory-evaluable
+    // because missing inventory ≠ blocked
+    evaluableRevenue += row.revenue;
+
+    // No attribution yet
     unknownValue += row.revenue;
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[L2:inventory][coverage]', {
+      totalBlockedValue,
+      evaluableRevenue,
+      inventoryCoveragePct:
+        totalBlockedValue === 0
+          ? 1
+          : evaluableRevenue / totalBlockedValue,
+    });
   }
 
   return {
     totalBlockedValue,
-    buckets: {}, // no categories yet
+
+    /**
+     * Inventory Block v1
+     * ------------------
+     * No obligation categories exist yet.
+     * Buckets are intentionally empty.
+     */
+    buckets: {},
+
     coverage: {
+      /**
+       * Bucket classification completeness.
+       * Inventory v1 does NOT classify by category yet.
+       */
       classifiedPct: 0,
+
+      /**
+       * Inventory obligation evaluation coverage.
+       * All execution rows are evaluated deterministically.
+       */
+      inventoryCoveragePct:
+        totalBlockedValue === 0
+          ? 1
+          : evaluableRevenue / totalBlockedValue,
+
+      /**
+       * All blocked value is epistemically unknown by category.
+       */
       unknownValue,
     },
   };
