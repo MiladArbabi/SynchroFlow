@@ -12,7 +12,9 @@
  * - Deterministic downgrade only
  */
 
+import { BlockedRevenueClassification } from '../order-execution-intelligence/blockedRevenue.classification';
 import type {
+  FT2ObligationsExposure,
   OrderFtepInput,
   OrderNexusFT2Exposure,
 } from './orderFtep.types';
@@ -63,4 +65,62 @@ export function exposeOrderNexusFT2(
 };
 
   return exposure;
+}
+
+/**
+ * FTEP — Obligation Downgrade
+ * --------------------------
+ * Downgrades L2 obligation intelligence into FT2-safe exposure.
+ *
+ * Hard rules:
+ * - Full classification required
+ * - Sums must match total blocked revenue
+ * - Otherwise: fail closed
+ */
+export function downgradeObligations(
+  input: BlockedRevenueClassification | null,
+  revenueBlockedTotal: number | null
+): FT2ObligationsExposure {
+  if (
+    !input ||
+    input.coverage.classifiedPct !== 1 ||
+    input.coverage.unknownValue !== 0 ||
+    revenueBlockedTotal == null ||
+    revenueBlockedTotal !== input.totalBlockedValue
+  ) {
+    return {
+      totalBlockedValue: null,
+      blockedBy: null,
+      coverage: { status: 'insufficient' },
+    };
+  }
+
+  const {
+    inventory = 0,
+    customer = 0,
+    operational = 0,
+    other = 0,
+  } = input.buckets;
+
+  const sum =
+    inventory + customer + operational + other;
+
+  if (sum !== input.totalBlockedValue) {
+    return {
+      totalBlockedValue: null,
+      blockedBy: null,
+      coverage: { status: 'insufficient' },
+    };
+  }
+
+  return {
+    totalBlockedValue: input.totalBlockedValue,
+    blockedBy: {
+      inventory,
+      customer,
+      operational,
+      other,
+    },
+    coverage: { status: 'sufficient' },
+  };
 }

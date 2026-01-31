@@ -47,3 +47,18 @@ export interface OrderFtepInput {
   facts: OrderFacts;
   intelligence: OrderNexusIntelligence;
 }
+
+export type FT2ObligationsExposure = {
+  totalBlockedValue: number | null;
+
+  blockedBy: {
+    inventory: number | null;
+    customer: number | null;
+    operational: number | null;
+    other: number | null;
+  } | null;
+
+  coverage: {
+    status: 'sufficient' | 'insufficient';
+  };
+};

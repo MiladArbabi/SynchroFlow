@@ -1,6 +1,6 @@
 // apps/backend/src/services/order-nexus-ft2/orderNexusFt2.resolver.ts
 import { extractOrderFacts } from 'api-src/services/order-facts/orderFacts.service';
-import { exposeOrderNexusFT2 } from 'api-src/services/order-ftep/orderFtep.service';
+import { downgradeObligations, exposeOrderNexusFT2 } from 'api-src/services/order-ftep/orderFtep.service';
 import { resolveAlignmentPlanes } from 'api-src/services/alignment-planes/alignmentPlanes.resolver';
 import { extractOrderShippingFacts } from '../order-facts/orderShippingFacts.service';
 import { extractOrderFulfillmentStatusFacts } from '../order-facts/orderFulfillmentStatusFacts.service';
@@ -33,7 +33,7 @@ import { deriveOrderFulfillmentIntelligence } from '../order-intelligence/orderF
 import { extractOrderCustomerPromiseFacts } from '../order-facts/orderCustomerPromiseFacts.service';
 
 import { pctChange } from 'api-src/utils/pctChange';
-import { aggregateBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
+import { aggregateBlockedRevenue, classifyBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
 
 /**
  * OrderNexus FT2 Resolver
@@ -111,6 +111,18 @@ const executionCoverage =
    executionCoverage === 'sufficient'
      ? await aggregateBlockedRevenue(shopId)
      : null;
+     
+const obligationClassification =
+  executionCoverage === 'sufficient'
+    ? await classifyBlockedRevenue(shopId)
+    : null;
+
+const obligations = downgradeObligations(
+  obligationClassification,
+  blockedRevenueAgg
+    ? blockedRevenueAgg.totalBlocked
+    : null
+);
 
 const unfulfilledOrders =
   fulfillmentFacts.visibility !== 'sufficient'
@@ -286,6 +298,8 @@ const comparison = {
 
       executionCoverage,
     },
+
+    obligations,
 
     comparison,
 

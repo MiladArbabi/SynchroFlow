@@ -90,4 +90,19 @@ export type OrderNexusFT2Snapshot =
     shippingDelayFulfillmentCoherence?: 'aligned' | 'divergent' | 'unknown';
     shippingDelayCustomerPromise?: 'aligned' | 'divergent' | 'unknown';
   };
+
+  obligations?: {
+    totalBlockedValue: number | null;
+
+    blockedBy: {
+      inventory: number | null;
+      customer: number | null;
+      operational: number | null;
+      other: number | null;
+    } | null;
+
+    coverage: {
+      status: 'sufficient' | 'insufficient';
+    };
+  };
 }

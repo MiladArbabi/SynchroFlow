@@ -1,11 +1,24 @@
-import { classifyRevenueBlockers } from './blocker.classifier';
+import { BlockedRevenueClassification } from './blockedRevenue.classification';
+import db from 'api-src/db';
+
+type ExecutionRow = {
+  order_id: string;        // platform order id
+  status: 'processing' | 'in_transit' | 'delivered' | 'cancelled';
+  revenue: number;
+};
 
 /**
- * aggregateBlockedRevenue (L2)
- * ----------------------------
- * Produces totals ONLY.
- * No per-order leakage.
- * Safe for future FT2 downgrade.
+ * aggregateBlockedRevenue (L2 → L1 downgrade helper)
+ * -------------------------------------------------
+ * Produces magnitude-only blocked revenue totals.
+ *
+ * Source of truth:
+ * - classifyBlockedRevenue (execution-aware, expressive)
+ *
+ * Guarantees:
+ * - No reclassification
+ * - No execution inference
+ * - No semantic drift
  */
 export async function aggregateBlockedRevenue(
   shopId: number
@@ -13,50 +26,90 @@ export async function aggregateBlockedRevenue(
   totalBlocked: number;
   byCategory: Record<string, number>;
 }> {
+  const classification = await classifyBlockedRevenue(shopId);
 
-  const blockers = await classifyRevenueBlockers(shopId);
+  /**
+   * IMPORTANT:
+   * ----------
+   * This function is allowed to return partial truth.
+   * FT2 gating happens later via FTEP.
+   */
 
-  const byCategory: Record<string, number> = {};
-  let totalBlocked = 0;
+  const totalBlocked = classification.totalBlockedValue;
 
-  for (const b of blockers) {
-    // ─────────────────────────────────────────────
-    // Invariant: revenue must be non-negative
-    // ─────────────────────────────────────────────
-    if (b.revenue < 0) {
-      console.warn('[L2:blocker][aggregate] Negative revenue detected', b);
-    }
+  const byCategory =
+    classification.buckets && Object.keys(classification.buckets).length > 0
+      ? classification.buckets
+      : {};
 
-    totalBlocked += b.revenue;
-
-    byCategory[b.category] =
-      (byCategory[b.category] ?? 0) + b.revenue;
-  }
-
-  // ─────────────────────────────────────────────
-  // Sanity: category sum must equal total
-  // ─────────────────────────────────────────────
-  const categorySum = Object.values(byCategory)
-    .reduce((a, b) => a + b, 0);
-
-  if (Math.abs(categorySum - totalBlocked) > 0.01) {
-    console.error('[L2:blocker][aggregate] Category sum mismatch', {
-      totalBlocked,
-      categorySum,
-      byCategory,
-    });
-  }
-
-  // ─────────────────────────────────────────────
-  // Debug visibility (DEV ONLY)
-  // ─────────────────────────────────────────────
+  // DEV sanity only — never enforce here
   if (process.env.NODE_ENV !== 'production') {
-    console.debug('[L2:blocker][aggregate]', {
-      totalBlocked,
-      byCategory,
-      categories: Object.keys(byCategory),
-    });
+    const sum = Object.values(byCategory).reduce(
+      (a, b) => a + b,
+      0
+    );
+
+    if (sum > totalBlocked) {
+      console.warn(
+        '[L2:blocker][aggregate] Bucket sum exceeds totalBlocked',
+        { totalBlocked, sum, byCategory }
+      );
+    }
   }
 
   return { totalBlocked, byCategory };
 }
+
+/**
+ * Aggregate blocked revenue by obligation category.
+ *
+ * Rules:
+ * - Must account for 100% of blocked value or fail
+ * - No best-effort math
+ */
+export async function classifyBlockedRevenue(
+  shopId: number
+): Promise<BlockedRevenueClassification> {
+  /**
+   * IMPORTANT:
+   * ----------
+   * This classifier reads ONLY from order_fulfillment_status.
+   * Missing execution rows are impossible by contract.
+   * Synthetic execution is first-class truth.
+   */
+
+  const rows: ExecutionRow[] = await db('order_fulfillment_status as ofs')
+  .join(
+    'canonical_orders as o',
+    function () {
+      this.on('o.platform_order_id', '=', 'ofs.order_id')
+        .andOn('o.shop_id', '=', 'ofs.shop_id');
+    }
+  )
+  .where('o.shop_id', shopId)
+  .whereNotIn('ofs.status', ['delivered'])
+  .select(
+    'ofs.order_id',
+    'ofs.status',
+    'o.total_price as revenue'
+  );
+
+  let totalBlockedValue = 0;
+  let unknownValue = 0;
+
+  for (const row of rows) {
+    totalBlockedValue += row.revenue;
+
+    // No obligation signal exists yet → epistemically unknown
+    unknownValue += row.revenue;
+  }
+
+  return {
+    totalBlockedValue,
+    buckets: {}, // no categories yet
+    coverage: {
+      classifiedPct: 0,
+      unknownValue,
+    },
+  };
+};

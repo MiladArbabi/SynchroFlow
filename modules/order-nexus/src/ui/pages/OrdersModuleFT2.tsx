@@ -11,6 +11,7 @@ import {
   InfoBlockRow,
   InfoBlockFooter,
 } from '@lasyncro/ui-ft2';
+import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock';
 
 /**
  * ─────────────────────────────────────────────────────────────
@@ -58,6 +59,26 @@ export interface OrdersModuleFT2DataProps {
     blocked: number | null;
     executionCoverage: 'sufficient' | 'insufficient';
   };
+
+  /**
+     * Obligation Overview (FT2)
+     * -------------------------
+     * Downgraded, read-only visibility into constrained value.
+     */
+    obligations?: {
+      totalBlockedValue: number | null;
+
+      blockedBy: {
+        inventory: number | null;
+        customer: number | null;
+        operational: number | null;
+        other: number | null;
+      } | null;
+
+      coverage: {
+        status: 'sufficient' | 'insufficient';
+      };
+    };
 
   /**
    * FT2-adjacent comparison context (preformatted)
@@ -119,6 +140,7 @@ export default function OrdersModuleFT2(
     comparison,
     revenue,
     revenueContinuity,
+    obligations,
   } = props;
 
   return (
@@ -196,6 +218,12 @@ export default function OrdersModuleFT2(
             line2="> PAYMENT AND PROFIT NOT EVALUATED"
           />
         </InfoBlock>
+
+        {obligations && (
+          <ObligationOverviewInfoBlock
+            obligations={obligations}
+          />
+        )}
 
       </FT2Row>
     </FT2Layout>
