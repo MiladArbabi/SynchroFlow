@@ -112,14 +112,15 @@ export async function classifyBlockedRevenue(
    * - Coverage may be 100% while classification is 0%
    */
   for (const row of rows) {
-    totalBlockedValue += row.revenue;
+    const revenue = Number(row.revenue);
 
-    // Inventory v1: every row is inventory-evaluable
-    // because missing inventory ≠ blocked
-    evaluableRevenue += row.revenue;
+    if (!Number.isFinite(revenue)) {
+      continue; // epistemic absence, do not corrupt totals
+    }
 
-    // No attribution yet
-    unknownValue += row.revenue;
+    totalBlockedValue += revenue;
+    evaluableRevenue += revenue;
+    unknownValue += revenue;
   }
 
   if (process.env.NODE_ENV !== 'production') {

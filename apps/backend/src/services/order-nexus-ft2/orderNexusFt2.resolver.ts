@@ -245,6 +245,12 @@ const comparison = {
     ],
   });
 
+  console.log(
+    '[FT2 DEBUG] revenue.blocked =',
+    typeof blockedRevenueAgg?.totalBlocked,
+    blockedRevenueAgg?.totalBlocked
+  );
+
   // ─────────────────────────────────────────────
   // STEP 4 — FT2 Snapshot Composition (Read-Only)
   // ---------------------------------------------
