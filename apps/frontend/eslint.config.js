@@ -10,24 +10,41 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 
 export default defineConfig([
   globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
+{
+  files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
       reactHooks.configs['recommended-latest'],
       reactRefresh.configs.vite,
-      // optional: storybook flat config if you want it active here
-      // ...storybook.configs['flat/recommended'],
     ],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
       parserOptions: {
         project: ['./tsconfig.eslint.json'],
-        tsconfigRootDir: new URL('.', import.meta.url).pathname, // ✅ now a string
+        tsconfigRootDir: new URL('.', import.meta.url).pathname,
         sourceType: 'module',
       },
+    },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/order-execution-intelligence/**',
+                '**/order-intelligence/**',
+                '**/order-facts/**',
+                '**/order-revenue/**',
+              ],
+              message:
+                'FT2 frontend must not import backend intelligence, facts, or revenue services.',
+            },
+          ],
+        },
+      ],
     },
   },
 ]);

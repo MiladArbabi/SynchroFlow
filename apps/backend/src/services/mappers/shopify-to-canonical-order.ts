@@ -48,23 +48,47 @@ export function mapShopifyOrderNodeToCanonical(
         : null,
 
     // ── Line items (structural only) ─────────────────
-    lineItems: (node.lineItems?.edges ?? []).map((edge: any) => ({
-      lineItemId: edge.node.id,
-      orderId,
-      productId: edge.node.product?.id ?? null,
-      variantId: null,
+    lineItems: (node.lineItems?.edges ?? []).map((edge: any) => {
+      const li = edge.node;
 
-      title: '',
-      sku: null,
+      const unitPrice =
+        li.discountedUnitPriceSet?.shopMoney?.amount != null
+          ? Number(li.discountedUnitPriceSet.shopMoney.amount)
+          : li.originalUnitPriceSet?.shopMoney?.amount != null
+            ? Number(li.originalUnitPriceSet.shopMoney.amount)
+            : null;
 
-      quantity: edge.node.quantity,
-      unitPrice: null,
-      totalPrice: null,
-      estimatedUnitCost: null,
+      const totalPrice =
+        li.originalTotalSet?.shopMoney?.amount != null
+          ? Number(li.originalTotalSet.shopMoney.amount)
+          : li.discountedTotalSet?.shopMoney?.amount != null
+            ? Number(li.discountedTotalSet.shopMoney.amount)
+            : null;
 
-      platform: 'shopify',
-      platformLineItemId: edge.node.id,
-    })),
+      return {
+        lineItemId: li.id,
+        orderId,
+        productId: li.product?.id ?? null,
+
+        // 🔑 Identity (explicit, no synthesis)
+        variantId: li.variant?.id ?? null,
+
+        title: li.title ?? '',
+        sku: li.sku ?? li.variant?.sku ?? null,
+
+        quantity: li.quantity,
+
+        // 💰 Pricing primitives (platform-reported only)
+        unitPrice,
+        totalPrice,
+
+        estimatedUnitCost: null,
+
+        platform: 'shopify',
+        platformLineItemId: li.id,
+      };
+    }),
+
 
     // ── Optional / absent signals ───────────────────
     shippingLines: [],
@@ -77,4 +101,3 @@ export function mapShopifyOrderNodeToCanonical(
     platformOrderId: orderId, // normalized later in ingestion
   };
 }
-

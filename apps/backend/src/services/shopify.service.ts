@@ -64,80 +64,82 @@ export const performInitialSync = async (
 
   // MINIMAL, STABLE GraphQL query - only basic fields that exist in all API versions
   const query = `
-    query {
-      # Fetch Products - basic fields only
-      products(first: 50) {
-        edges {
-          node {
-            id
-            title
-            vendor
-            productType
-            status
-            totalInventory
-          }
+  query {
+    products(first: 50) {
+      edges {
+        node {
+          id
+          title
+          vendor
+          productType
+          status
+          totalInventory
         }
       }
-      
-      # Fetch Orders - Minimal PCD compliant (only absolutely safe fields)
-      orders(first: 50) {
-        edges {
-          node {
-            id
-            name
+    }
 
-            # Temporal anchors (required for FT2 observability)
-            createdAt
-            updatedAt
-            processedAt
+    orders(first: 50) {
+      edges {
+        node {
+          id
+          name
+          createdAt
+          updatedAt
+          processedAt
 
-            # Monetary breakdown (canonical completeness)
-            subtotalPriceSet {
-              shopMoney { amount }
+          subtotalPriceSet {
+            shopMoney { amount }
+          }
+          totalTaxSet {
+            shopMoney { amount }
+          }
+          totalPriceSet {
+            shopMoney {
+              amount
+              currencyCode
             }
-            totalTaxSet {
-              shopMoney { amount }
-            }
-            totalPriceSet {
-              shopMoney {
-                amount
-                currencyCode
-              }
-            }
+          }
 
-            currencyCode
-            sourceName
+          currencyCode
+          sourceName
+          displayFulfillmentStatus
+          displayFinancialStatus
 
-            # State-only signals (no inference)
-            displayFulfillmentStatus
-            displayFinancialStatus
-
-            # Line items (unchanged)
-            lineItems(first: 20) {
-              edges {
-                node {
+          lineItems(first: 20) {
+            edges {
+              node {
+                id
+                quantity
+                sku
+                variant {
                   id
-                  quantity
-                  product {
-                    id
-                  }
+                  sku
+                }
+                originalUnitPriceSet {
+                  shopMoney { amount }
+                }
+                discountedUnitPriceSet {
+                  shopMoney { amount }
+                }
+                originalTotalSet {
+                  shopMoney { amount }
                 }
               }
             }
           }
         }
       }
-      
-      # Fetch basic shop info
-      shop {
-        id
-        name
-        email
-        currencyCode
-        timezoneOffset
-      }
     }
-  `;
+
+    shop {
+      id
+      name
+      email
+      currencyCode
+      timezoneOffset
+    }
+  }
+`;
 
   try {
     console.log(`[ShopifyService] Making GraphQL request to Shopify...`);

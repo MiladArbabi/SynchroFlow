@@ -60,20 +60,56 @@ export class CanonicalCommerceIngestionService {
   };
 
     // Prepare line items rows
+    //
+    // IMPORTANT (Pricing Primitives v1):
+    // --------------------------------
+    // - unit_price / line_total are written ONLY at ingestion time
+    // - This service NEVER backfills existing rows
+    // - Historical data MUST be re-ingested or explicitly backfilled
+    //
+
+    if (canonicalOrder.lineItems?.length) {
+      console.log('[INGEST][LINE_ITEM_SAMPLE]', {
+        sample: canonicalOrder.lineItems[0],
+        keys: Object.keys(canonicalOrder.lineItems[0]),
+      });
+    }
+
     const lineItems = (canonicalOrder.lineItems || []).map((li) => ({
       shop_id: canonicalOrder.shopId,
       canonical_line_item_id: li.lineItemId,
       canonical_order_id: canonicalOrder.id,
       canonical_product_id: li.productId,
       canonical_variant_id: li.variantId,
+
+      canonical_variant_code: li.variantId
+        ? `CVC-${canonicalOrder.shopId}-${li.variantId}`
+        : null,
       platform: li.platform,
       platform_order_id: canonicalOrder.platformOrderId,
       platform_line_item_id: li.platformLineItemId,
       title: li.title,
       sku: li.sku,
       quantity: li.quantity,
-      unit_price: li.unitPrice,
-      total_price: li.totalPrice,
+
+      /**
+       * Pricing primitives (Customer Obligation v3)
+       * ------------------------------------------
+       * Rules:
+       * - unit_price MUST be platform-derived
+       * - No inference, no estimation
+       * - NULL if platform does not provide sufficient truth
+       */
+      unit_price:
+        li.unitPrice ??
+        (li.totalPrice && li.quantity
+          ? Number(li.totalPrice) / Number(li.quantity)
+          : null),
+
+      line_total: li.totalPrice ?? null,
+
+      price_source: 'platform_reported',
+
       estimated_unit_cost: li.estimatedUnitCost ?? null,
 
       order_created_at: canonicalOrder.createdAt,

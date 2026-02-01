@@ -15,19 +15,23 @@ export function enqueueProductForIngestion(
 ): void {
   const channel = getQueueChannel(QUEUE_NAME);
 
-  console.log('[product-ingestion] enqueue called', {
-    shopId: msg.shopId,
-    productId: msg.rawProduct?.id,
-    queueEnabled: !!channel,
-  });
-
   if (!channel) {
     console.warn('[product-ingestion] queue unavailable — dropping message');
     return;
   }
 
+  /**
+   * IMPORTANT: Producer-side queue assertion
+   * ----------------------------------------
+   * RabbitMQ drops messages sent to non-existent queues.
+   * The worker may not have started yet, so the producer
+   * MUST assert the queue before publishing.
+   */
+  channel.assertQueue(QUEUE_NAME, { durable: true });
+
   channel.sendToQueue(
     QUEUE_NAME,
-    Buffer.from(JSON.stringify(msg))
+    Buffer.from(JSON.stringify(msg)),
+    { persistent: true }
   );
 }

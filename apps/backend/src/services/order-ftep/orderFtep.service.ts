@@ -1,3 +1,16 @@
+/**
+ * ⚠️ FTEP COMPILER BOUNDARY
+ * ------------------------
+ * This function COMPiles L2 intelligence into FT2-safe exposure.
+ *
+ * Rules:
+ * - Output MUST match FT2 types exactly
+ * - No pass-through of intelligence structures
+ * - No attribution, buckets, or causality
+ *
+ * Violations here silently corrupt FT2.
+ */
+
 // apps/backend/src/services/order-ftep/orderFtep.service.ts
 
 /**
@@ -12,7 +25,6 @@
  * - Deterministic downgrade only
  */
 
-import { BlockedRevenueClassification } from '../order-execution-intelligence/blockedRevenue.classification';
 import type {
   FT2ObligationsExposure,
   OrderFtepInput,
@@ -78,64 +90,21 @@ export function exposeOrderNexusFT2(
  * - Otherwise: fail closed
  */
 export function downgradeObligations(
-  input: BlockedRevenueClassification | null,
   revenueBlockedTotal: number | null,
+  coverageStatus: 'sufficient' | 'insufficient',
 ): FT2ObligationsExposure {
-
-  console.debug('[FT2 DEBUG][FTEP] downgradeObligations input', {
-    input,
-    revenueBlockedTotal,
-  });
-
-    if (
-      !input ||
-      revenueBlockedTotal == null ||
-      revenueBlockedTotal !== input.totalBlockedValue ||
-      (
-        // Phase 3 rule:
-        // Allow inventory-only downgrade even when classification is incomplete
-        input.coverage.classifiedPct !== 1 &&
-        !(
-          input.coverage.inventoryCoveragePct === 1 &&
-          input.buckets?.inventory === input.totalBlockedValue
-      )
-    )
-  ) {
+  if (revenueBlockedTotal == null) {
     return {
       totalBlockedValue: null,
-      blockedBy: null,
       coverage: { status: 'insufficient' },
     };
   }
 
- const buckets = input.buckets ?? {};
-
-const {
-  inventory = 0,
-  customer = 0,
-  operational = 0,
-  other = 0,
-} = buckets;
-
-  const sum =
-    inventory + customer + operational + other;
-
-  if (sum !== input.totalBlockedValue) {
-    return {
-      totalBlockedValue: null,
-      blockedBy: null,
-      coverage: { status: 'insufficient' },
-    };
-  }
+  const round = (n: number) =>
+    Math.round(n * 100) / 100;
 
   return {
-    totalBlockedValue: input.totalBlockedValue,
-    blockedBy: {
-      inventory,
-      customer,
-      operational,
-      other,
-    },
-    coverage: { status: 'sufficient' },
+    totalBlockedValue: round(revenueBlockedTotal),
+    coverage: { status: coverageStatus },
   };
 }

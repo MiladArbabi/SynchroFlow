@@ -33,7 +33,10 @@ import { deriveOrderFulfillmentIntelligence } from '../order-intelligence/orderF
 import { extractOrderCustomerPromiseFacts } from '../order-facts/orderCustomerPromiseFacts.service';
 
 import { pctChange } from 'api-src/utils/pctChange';
-import { aggregateBlockedRevenue, classifyBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
+// ⚠️ FT2 RESOLVER BOUNDARY
+// Allowed: aggregate-only downgrade helpers
+// Forbidden: classifiers, intelligence, attribution
+import { aggregateBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
 
 /**
  * OrderNexus FT2 Resolver
@@ -111,25 +114,11 @@ const executionCoverage =
    executionCoverage === 'sufficient'
      ? await aggregateBlockedRevenue(shopId)
      : null;
-     
-const obligationClassification =
-  executionCoverage === 'sufficient'
-    ? await classifyBlockedRevenue(shopId)
-    : null;
 
-console.debug('[FT2 DEBUG][resolver] obligation inputs', {
-  hasClassification: Boolean(obligationClassification),
-  classification: obligationClassification,
-  blockedTotal: blockedRevenueAgg?.totalBlocked,
-  byCategory: blockedRevenueAgg?.byCategory,
-});
-
-const obligations = downgradeObligations(
-  obligationClassification,
-  blockedRevenueAgg
-    ? blockedRevenueAgg.totalBlocked
-    : null,
-);
+  const obligations = downgradeObligations(
+    blockedRevenueAgg ? blockedRevenueAgg.totalBlocked : null,
+    executionCoverage === 'sufficient' ? 'sufficient' : 'insufficient',
+  );
 
 const unfulfilledOrders =
   fulfillmentFacts.visibility !== 'sufficient'
@@ -251,12 +240,6 @@ const comparison = {
       },
     ],
   });
-
-  console.log(
-    '[FT2 DEBUG] revenue.blocked =',
-    typeof blockedRevenueAgg?.totalBlocked,
-    blockedRevenueAgg?.totalBlocked
-  );
 
   // ─────────────────────────────────────────────
   // STEP 4 — FT2 Snapshot Composition (Read-Only)

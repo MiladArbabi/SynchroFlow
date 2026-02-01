@@ -1,3 +1,15 @@
+/**
+ * ⚠️ FT2 UI COMPONENT
+ * ------------------
+ * Read-only.
+ * Aggregate-only.
+ *
+ * This component MUST NOT:
+ * - render attribution
+ * - imply causes
+ * - suggest actions
+ */
+
 import {
   InfoBlock,
   InfoBlockRow,
@@ -6,14 +18,10 @@ import {
 
 type ObligationOverviewInfoBlockProps = {
   obligations: {
+    /**
+     * FT2 Obligations (Aggregate Only)
+     */
     totalBlockedValue: number | null;
-
-    blockedBy: {
-      inventory: number | null;
-      customer: number | null;
-      operational: number | null;
-      other: number | null;
-    } | null;
 
     coverage: {
       status: 'sufficient' | 'insufficient';
@@ -37,24 +45,12 @@ export function ObligationOverviewInfoBlock({
   return (
     <InfoBlock title="Obligation overview">
       <InfoBlockRow
-        label="Blocked — inventory"
-        value={obligations.blockedBy?.inventory ?? null}
-      />
-      <InfoBlockRow
-        label="Blocked — customer"
-        value={obligations.blockedBy?.customer ?? null}
-      />
-      <InfoBlockRow
-        label="Blocked — operational"
-        value={obligations.blockedBy?.operational ?? null}
-      />
-      <InfoBlockRow
-        label="Blocked — other"
-        value={obligations.blockedBy?.other ?? null}
+        label="Blocked value"
+        value={obligations.totalBlockedValue ?? null}
       />
       <InfoBlockFooter
-        line1="> VALUE SHOWN IS CURRENTLY CONSTRAINED"
-        line2="> NO ACTIONS OR OUTCOMES ARE IMPLIED"
+        line1="> BLOCKED VALUE SHOWN — AGGREGATE ONLY"
+        line2="> CAUSES AND ATTRIBUTION ARE SUPPRESSED BY DESIGN"
       />
     </InfoBlock>
   );

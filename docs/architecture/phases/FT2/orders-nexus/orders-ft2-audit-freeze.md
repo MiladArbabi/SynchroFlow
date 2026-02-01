@@ -2,10 +2,10 @@
 
 **CURRENT · ACTIVE · SEALED (REV C.1 — Blocked Revenue Clarified / L2-Downgrade Explicit)**
 
-**Status:** ✅ COMPLETE / SEALED
-**Scope:** Order-Nexus FT2 — Backend + Frontend
-**Standard:** Truth-only · Scan-verified · Read-only
-**Audit Type:** Structural + Semantic Contract Audit
+**Status:** ✅ COMPLETE / SEALED  
+**Scope:** Order-Nexus FT2 — Backend + Frontend  
+**Standard:** Truth-only · Scan-verified · Read-only  
+**Audit Type:** Structural + Semantic Contract Audit  
 **Apex Rule:** **FT2 is the final product layer. There is no FT3.**
 
 ---
@@ -32,13 +32,11 @@ This definition is **unchanged**.
 
 Orders FT2 is composed of:
 
-1. **Authoritative FT2 Snapshot**
+1. **Authoritative FT2 Snapshot**  
    *(downgraded, scan-verified truth only)*
 
-2. **Narrative InfoBlocks (FT2 primitives)**
-
+2. **Narrative InfoBlocks (FT2 primitives)**  
    **LOCKED SET (v1):**
-
    1. Orders Overview
    2. Revenue Overview
    3. Returns Overview *(gated)*
@@ -47,19 +45,17 @@ Orders FT2 is composed of:
    6. Execution Health *(gated)*
 
 3. **FT2-Adjacent Exploratory Surfaces**
-
    * Orders over time
    * Order size distribution
 
 4. **Cross-Domain Alignment Planes**
 
 5. **Strict Frontend Consumption Path**
-
    * Snapshot hooks only
    * Pure adapters
    * Observational UI primitives
 
-> 🔒 **InfoBlock remains the only FT2 narrative primitive.**
+> 🔒 **InfoBlock remains the only FT2 narrative primitive.**  
 > FT2Surface is **structural scaffolding only**.
 
 ---
@@ -78,6 +74,7 @@ Orders FT2 contains **no**:
 * semantic interpretation inside InfoBlocks
 * **accounting semantics (paid, settled, net, margin)**
 * **execution inference unless explicitly downgraded via L2 classification**
+* **SKU inference, backfilling, or reconstruction**
 
 If any of the above appear, the contract is broken.
 
@@ -87,16 +84,13 @@ If any of the above appear, the contract is broken.
 
 Orders FT2 exposes **four domain classes**, each owned by a single InfoBlock.
 
----
-
 ### 🧭 A. System Grounding Domains (FOUNDATIONAL · L1)
 
 Answer:
-
 > **“Is this system anchored in observable reality?”**
 
 | Domain                     | Layer | Question Answered                        |
-| -------------------------- | ----- | ---------------------------------------- |
+|----------------------------|-------|------------------------------------------|
 | Order Presence Reality     | L1    | Do any orders exist in this period?      |
 | Revenue Presence Reality   | L1    | Does any sales value exist at all?       |
 | Ingestion Presence Reality | L1    | Did data flow into the system?           |
@@ -105,8 +99,44 @@ Answer:
 | Data Coverage Reality      | L1    | Is source data structurally complete?    |
 | Economic Visibility Gate   | L2    | Is interpretation epistemically allowed? |
 
-📌 These domains surface **only** inside **Orders Overview**
+📌 These domains surface **only** inside **Orders Overview**  
 📌 They never re-appear elsewhere.
+
+---
+
+## Canonical Identifiers (Truth Ownership Clarification)
+
+Orders FT2 operates on LaSyncro-owned canonical identifiers, not platform identifiers.
+
+**Definitions:**
+
+* **Canonical Order ID** — LaSyncro-stable order identity (already established)
+* **Canonical Variant Code (CVC)** — LaSyncro-owned SKU-level identifier
+
+**Rules:**
+
+* Platform SKUs are advisory only
+* Platform variant IDs are inputs, not identifiers
+* All SKU-level truth in FT2 is anchored to Canonical Variant Code (CVC)
+
+**Canonical Variant Code (CVC):**
+
+* Stable
+* Deterministic
+* Shop-scoped
+* Printable / scannable
+* Safe for MDEs, barcode systems, and warehouse workflows
+
+**Format (v1):**
+
+```
+cvc:v1:{shop_id}:{platform_variant_id}
+```
+
+FT2 never reasons over raw platform SKUs.
+
+If CVC is absent, SKU-level revenue and obligations are not addressable.  
+This is intentional.
 
 ---
 
@@ -115,11 +145,10 @@ Answer:
 **Owned exclusively by: Revenue Overview**
 
 Answer:
-
 > **“Where does the money exist right now?”**
 
 | Domain                  | Layer | Question Answered                            |
-| ----------------------- | ----- | -------------------------------------------- |
+|-------------------------|-------|----------------------------------------------|
 | Total Sales Reality     | L1    | How much sales value exists in total?        |
 | Earned Revenue Reality  | L1    | How much value is tied to fulfilled orders?  |
 | Pending Revenue Reality | L1    | How much value is tied to open work?         |
@@ -136,13 +165,17 @@ Answer:
 
 Blocked Revenue represents **availability loss**, not failure.
 
-Definition:
-> Revenue tied to canonical orders that cannot progress toward fulfillment
-> due to unresolved execution blockers, as determined by downgraded L2 classification.
+**Definition:**
+> Revenue tied to canonical orders that cannot progress toward fulfillment due to unresolved execution blockers, as determined by downgraded L2 classification.
 
-Rules:
+**Rules:**
 
-* Derived exclusively from L2 Blocker Classification
+* Derived exclusively from evaluated SKU-level revenue units after L2 obligation classification and explicit downgrade.
+* Blocked Revenue cannot exist without:
+  1. Revenue units
+  2. Obligation evaluation
+  3. Explicit downgrade to L1 aggregate
+* If any layer is missing, Blocked Revenue must be zero or absent.
 * Downgraded to L1 as **aggregate totals only**
 * Never exposes blocker categories, causes, or actions
 * May equal Pending Revenue in early or incomplete systems
@@ -158,11 +191,11 @@ Blocked Revenue in FT2 is a **downgraded signal**:
 
 FT2 never exposes *why* revenue is blocked — only *that* it is.
 
-##### Obligation Coverage vs Attribution (NEW · L2-AWARE)
+##### Obligation Coverage vs Attribution (NEW · HARD GATE)
 
 Blocked Revenue is derived from **execution rows that are obligation-evaluable**.
 
-Important distinction:
+**Important distinction:**
 
 * **Coverage** answers: “Was this order evaluated for this obligation?”
 * **Classification** answers: “Do we know which obligation caused the block?”
@@ -172,7 +205,12 @@ It is valid and expected for FT2 to surface:
 * 100% obligation coverage
 * 0% obligation attribution
 
-This reflects epistemic honesty, not system failure.
+This reflects epistemic honesty.
+
+FT2 must prefer absence over fabrication.
+
+Coverage without attribution is valid.  
+Attribution without coverage is forbidden.
 
 ---
 
@@ -181,11 +219,10 @@ This reflects epistemic honesty, not system failure.
 **Owned exclusively by: Returns Overview**
 
 Answer:
-
 > **“Is value flowing back or leaking?”**
 
 | Domain                   | Layer | Question Answered                |
-| ------------------------ | ----- | -------------------------------- |
+|--------------------------|-------|----------------------------------|
 | Returns Presence Reality | L1    | Do returns exist?                |
 | Returned Orders Reality  | L1    | How many orders reversed?        |
 | Returned Value Reality   | L1    | How much value has exited?       |
@@ -198,11 +235,10 @@ Answer:
 **Owned exclusively by: Revenue Risk**
 
 Answer:
-
 > **“How fragile is my revenue shape?”**
 
 | Domain                        | Layer | Question Answered                            |
-| ----------------------------- | ----- | -------------------------------------------- |
+|-------------------------------|-------|----------------------------------------------|
 | Revenue Concentration Reality | L1    | Is revenue tied to few orders/customers?     |
 | Top-Order Exposure Reality    | L1    | What is the largest single-order dependency? |
 | Customer Dependency Reality   | L1    | Is revenue customer-concentrated?            |
@@ -215,11 +251,10 @@ Answer:
 **Owned exclusively by: Operational Flow (CPT Lens)**
 
 Answer:
-
 > **“Where is value sitting in the workflow?”**
 
 | Domain                   | Layer | Question Answered               |
-| ------------------------ | ----- | ------------------------------- |
+|--------------------------|-------|---------------------------------|
 | Receiving Reality        | L1    | What value has entered ops?     |
 | Stored Value Reality     | L1    | What value is idle?             |
 | Picking Reality          | L1    | What value is in motion?        |
@@ -233,11 +268,10 @@ Answer:
 **Owned exclusively by: Execution Health**
 
 Answer:
-
 > **“Is the system keeping up?”**
 
 | Domain                     | Layer | Question Answered               |
-| -------------------------- | ----- | ------------------------------- |
+|----------------------------|-------|---------------------------------|
 | CPT Breach Reality         | L1    | Are orders past cutoff?         |
 | Blocked Orders Reality     | L1    | How many orders are execution-obstructed (cause-agnostic)? |
 | Aging Orders Reality       | L1½   | Are orders stagnating?          |
@@ -277,20 +311,28 @@ Layer 4 — Alignment Planes
 Order-Nexus FT2 Snapshot
 ```
 
-🚨 Execution-aware revenue enters **only at Layer 2** and may surface at L1
-**only after explicit downgrade (e.g. Blocked Revenue totals).**
+🚨 Execution-aware revenue enters **only at Layer 2** and may surface at L1 **only after explicit downgrade (e.g. Blocked Revenue totals).**
 
 ---
 
 ## 2. Revenue Semantics in FT2 (RE-CLARIFIED)
 
-### Revenue in FT2 **is**:
+### Revenue in FT2 is
 
 * observable
 * availability-based
-* execution-agnostic
+* execution-aware only via downgraded L2 aggregates
+* derived from SKU-level revenue units
 
-### Revenue in FT2 **is not**:
+**Truth Source:**  
+`order_revenue_units` is the sole revenue truth source for FT2
+
+Revenue units are materialized, not inferred.  
+Each unit represents factual SKU-level value.
+
+If revenue units do not exist, FT2 must show zero, not estimates.
+
+### Revenue in FT2 **is not**
 
 * paid
 * settled
@@ -305,33 +347,33 @@ Order-Nexus FT2 Snapshot
 
 ### InfoBlock: Orders Overview
 
-Rows (LOCKED):
+**Rows (LOCKED):**
 
 * Orders total
 * Fulfilled orders
 * Unfulfilled orders
 * Incoming orders
 
-Footer Rail (LOCKED):
-
+**Footer Rail (LOCKED):**
 > **ORDER OBLIGATIONS SHOWN — VALUE AND EXECUTION DETAILED ELSEWHERE**
 
 ---
 
 ### InfoBlock: Revenue Overview
 
-Rows (LOCKED):
+**Rows (LOCKED):**
 
 * Total sales
 * Earned
 * Pending
 * Blocked *(if applicable)*
 
-Footer Rail (LOCKED):
-
-> **SALES VALUE SHOWN — EXECUTION AVAILABILITY ONLY**
-> **BLOCK CAUSES MAY BE UNATTRIBUTED**
-> **PAYMENT AND PROFIT NOT EVALUATED**
+**Footer Rail (LOCKED):**
+> **SALES VALUE SHOWN — EXECUTION AVAILABILITY ONLY**  
+> **BLOCK CAUSES MAY BE UNATTRIBUTED**  
+> **PAYMENT AND PROFIT NOT EVALUATED**  
+> **SKU-LEVEL DETAIL REQUIRES CANONICAL VARIANT CODES (CVC)**  
+> **MISSING IDENTIFIERS RESULT IN AGGREGATE-ONLY VISIBILITY**
 
 ---
 
@@ -354,12 +396,12 @@ These are **constraints**, not backlog items.
 
 ## 🔐 FINAL SEAL — REV C
 
-✔ InfoBlocks fully enumerated and owned
-✔ Revenue framed as *availability*, not jargon
-✔ SMB cognitive load respected
-✔ Phase 6 cleanly isolated
-✔ No semantic leakage
-✔ FT2 remains terminal
+✔ InfoBlocks fully enumerated and owned  
+✔ Revenue framed as *availability*, not jargon  
+✔ SMB cognitive load respected  
+✔ Phase 6 cleanly isolated  
+✔ No semantic leakage  
+✔ FT2 remains terminal  
 
 🔒 **Order-Nexus FT2 Contract Audit — REV C.1 is current, aligned, and sealed.**
 

@@ -2,6 +2,9 @@
 
 import db from 'api-src/db';
 import { ReconciliationResult } from './reconciliation.types';
+import { writeOrderRevenueUnits } from './revenue-units.writer';
+import { evaluateCustomerObligations } from
+  'api-src/services/order-execution-intelligence/customerObligation.evaluator';
 
 export async function reconcileOrderFulfillment(
   canonicalOrderId: string
@@ -27,6 +30,12 @@ export async function reconcileOrderFulfillment(
     .where({ canonical_order_id: canonicalOrderId })
     .first();
 
+  console.log('[RECON][DEBUG] lookup', {
+    canonicalOrderId,
+    found: !!order,
+    row: order ?? null,
+  });
+
   if (!order) {
     // Hard stop — invalid input
     throw new Error(`Canonical order not found: ${canonicalOrderId}`);
@@ -38,14 +47,23 @@ export async function reconcileOrderFulfillment(
     order_id: order.platform_order_id,
     shop_id: order.shop_id,
 
-    status: 'processing', // MUST be allowed by CHECK constraint
+    status: 'processing',
     status_updated_at: order.order_created_at,
 
     execution_source: 'synthetic',
     execution_confidence: 'assumed',
-    synthetic_reason: 'missing_fulfillment_execution',
-    synthetic_created_at: db.fn.now(),
+    /* synthetic_reason: 'missing_fulfillment_execution', */
+    // synthetic_created_at intentionally omitted
   });
+
+  // 4. Materialize revenue units (Customer Obligation v3 boundary)
+  await writeOrderRevenueUnits(order.shop_id, order.canonical_order_id);
+
+  // Customer Obligation v3 — explicit evaluation boundary
+  await evaluateCustomerObligations(
+    order.shop_id,
+    order.canonical_order_id
+  );
 
   return 'synthetic';
 }

@@ -1,3 +1,18 @@
+/**
+ * ⚠️ FT2 CONTRACT — READ-ONLY, AGGREGATE-ONLY
+ * ------------------------------------------
+ * This file defines TERMINAL FT2 exposure types.
+ *
+ * HARD RULES:
+ * - No attribution
+ * - No causality
+ * - No category breakdowns
+ * - No execution intelligence
+ *
+ * If a field answers "why" instead of "what",
+ * it does NOT belong here.
+ */
+
 // Order-Nexus FT2 Snapshot (Resolver Output)
 //
 // Composed of:
@@ -92,17 +107,14 @@ export type OrderNexusFT2Snapshot =
   };
 
   obligations?: {
+    /**
+     * FT2 Obligations (Aggregate Only)
+     * --------------------------------
+     * - totalBlockedValue: magnitude-only signal
+     * - No attribution, causality, or category exposure
+     */
     totalBlockedValue: number | null;
 
-    blockedBy: {
-      inventory: number | null;
-      customer: number | null;
-      operational: number | null;
-      other: number | null;
-    } | null;
-
-    coverage: {
-      status: 'sufficient' | 'insufficient';
-    };
+    coverage: { status: 'sufficient' | 'insufficient' };
   };
 }

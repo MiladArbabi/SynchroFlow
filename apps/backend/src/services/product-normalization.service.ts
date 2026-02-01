@@ -23,6 +23,10 @@ export class ProductNormalizationService {
     return {
       shopId,
       platform: 'shopify',
+      /**
+       * rawProduct.id is already a Shopify GID.
+       * Never re-wrap canonical IDs.
+       */
       platformProductId: String(rawProduct.id),
       // Variant-level linkage is optional; FT0 focuses on product-level entity.
       // If you later decide to store variant-level canonical rows, you can

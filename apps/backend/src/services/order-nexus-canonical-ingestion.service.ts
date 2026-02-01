@@ -88,14 +88,22 @@ export class OrderNexusCanonicalIngestionService {
     this.channel = getQueueChannel(this.queueName);
   }
 
+   private buildCanonicalVariantCode(
+    shopId: number,
+    platformVariantId: string
+  ): string {
+    return `cvc:v1:${shopId}:${platformVariantId}`;
+  }
+
   async enqueueOrderForOrderNexus(
     shopId: number,
     orderId: string
   ): Promise<void> {
+
     // 1) Load canonical order – use .from() so the test sees it
-    const orderRow = await db()
-      .from<CanonicalOrderRow>('canonical_orders')
-      .where({ shop_id: shopId, id: orderId })
+    const orderRow = await db<CanonicalOrderRow>('canonical_orders')
+      .where('shop_id', shopId)
+      .andWhere('canonical_order_id', orderId)
       .first();
 
     if (!orderRow) {
@@ -107,6 +115,17 @@ export class OrderNexusCanonicalIngestionService {
     const lineItemRows = await db()
       .from<CanonicalLineItemRow>('canonical_order_line_items')
       .where({ shop_id: shopId, order_id: orderId });
+
+    // FT2 HARD GUARD — SKU / Variant identity must be explicit
+    if (
+      lineItemRows.some(
+        (li) => !li.variant_id && !li.sku
+      )
+    ) {
+      // Epistemic failure: SKU truth unavailable
+      // Fail closed — do not enqueue
+      return;
+    }
 
     // 3) Map to the minimal NormalizedOrder shape OrderNexus expects
     const normalizedOrder: NormalizedOrder = {
@@ -124,9 +143,14 @@ export class OrderNexusCanonicalIngestionService {
       shippingLines: [], // FT0: shippingLines omitted
       lineItems: lineItemRows.map((li) => ({
         productId: li.product_id ? String(li.product_id) : null,
-        variantId: li.variant_id ? String(li.variant_id) : undefined,
+        variantId: li.variant_id
+          ? this.buildCanonicalVariantCode(
+              orderRow.shop_id,
+              String(li.variant_id)
+            )
+          : undefined,
         quantity: li.quantity,
-        price: li.unit_price,
+        price: li.unit_price ?? null,
       })),
     };
 

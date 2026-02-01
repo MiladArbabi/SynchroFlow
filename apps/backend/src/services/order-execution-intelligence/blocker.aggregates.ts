@@ -168,6 +168,57 @@ export async function classifyBlockedRevenue(
     inventoryCoveragePct === 1 &&
     unknownValue === totalBlockedValue;
 
+  // ─────────────────────────────────────────────
+  // Customer Obligation v2 — Coverage signal (epistemic only)
+  //
+  // NOTE:
+  // - This computes *coverage*, not obligation
+  // - No attribution is performed here
+  // - Presence semantics are derived later by FTEP
+  // ─────────────────────────────────────────────
+  //
+  // Preconditions:
+  // - payment_state is a factual column
+  // - 'unpaid' is a non-terminal state
+  //
+  // Guarantees:
+  // - No blame
+  // - No failure semantics
+  // - Absence ≠ paid
+
+  let customerBlocked = 0;
+  let customerEvaluable = 0;
+
+  const paymentRows = await db('canonical_orders')
+    .where('shop_id', shopId)
+    .where('payment_state', '!=', 'unknown')
+    .select('payment_state', 'total_price');
+
+  for (const row of paymentRows) {
+    const revenue = Number(row.total_price);
+    if (!Number.isFinite(revenue)) continue;
+
+    customerEvaluable += revenue;
+
+    if (row.payment_state === 'unpaid') {
+      customerBlocked += revenue;
+    }
+  };
+
+  // Customer obligation coverage (v2)
+  // --------------------------------
+  // Coverage = % of blocked revenue whose payment_state is observable.
+  //
+  // NOTE:
+  // - This does NOT imply customer blockage
+  // - This does NOT affect buckets yet
+  // - Used only to prevent future over-classification
+
+  const customerCoveragePct =
+    totalBlockedValue === 0
+      ? 0
+      : customerEvaluable / totalBlockedValue;
+
   return {
     totalBlockedValue,
 
@@ -177,7 +228,14 @@ export async function classifyBlockedRevenue(
 
     coverage: {
       classifiedPct: inventoryOnly ? 1 : 0,
+
+      // Inventory truth coverage (v1)
       inventoryCoveragePct,
+
+      // Customer truth coverage (v2, non-activating)
+      customerCoveragePct,
+
+      // Unattributed blocked revenue
       unknownValue: inventoryOnly ? 0 : unknownValue,
     },
   };

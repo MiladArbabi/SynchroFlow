@@ -4,6 +4,21 @@ import type { OrderNexusIntelligence } from '../order-intelligence/orderIntellig
 import type { OrderFacts } from '../order-facts/orderFacts.types';
 
 /**
+ * FTEP Input Contract
+ * ------------------
+ * Explicit boundary between intelligence and exposure.
+ *
+ * Rules:
+ * - Intelligence may be incomplete or null
+ * - Facts are L1 only
+ * - No exposure logic allowed upstream
+ */
+export type OrderFtepInput = {
+  intelligence: OrderNexusIntelligence;
+  facts: OrderFacts;
+};
+
+/**
  * FT2 Exposure (Observability Only)
  * --------------------------------
  * No causation. No recommendations. No explanations.
@@ -43,22 +58,17 @@ export interface OrderNexusFT2Exposure {
 /**
  * Input contract for FTEP
  */
-export interface OrderFtepInput {
-  facts: OrderFacts;
-  intelligence: OrderNexusIntelligence;
-}
-
 export type FT2ObligationsExposure = {
+  /**
+   * FT2 Obligations (Aggregate Only)
+   * --------------------------------
+   * - Magnitude-only blocked revenue signal
+   * - No attribution, causality, or category exposure
+   */
   totalBlockedValue: number | null;
-
-  blockedBy: {
-    inventory: number | null;
-    customer: number | null;
-    operational: number | null;
-    other: number | null;
-  } | null;
 
   coverage: {
     status: 'sufficient' | 'insufficient';
   };
 };
+
