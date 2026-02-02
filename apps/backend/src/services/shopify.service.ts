@@ -10,6 +10,7 @@ import { mapShopifyOrderNodeToCanonical }
 import { enqueueProductForIngestion } 
   from './product-ingestion.service';
 import { recordIncompleteOrder } from './incomplete-order.service';
+import { publishReconciliationJob } from 'api-src/queues/reconciliation.queue';
 
 /**
  * IMPORTANT — EXECUTION SEMANTICS
@@ -121,6 +122,9 @@ export const performInitialSync = async (
                 id
                 quantity
                 sku
+                product {
+                  id
+                }
                 variant {
                   id
                   sku
@@ -253,7 +257,86 @@ export const performInitialSync = async (
             });
             continue;
           }
+
+          /**
+           * CANONICAL LINE ITEM PRODUCT HARD GATE (FT2)
+           * ------------------------------------------
+           * insertCanonicalOrder REQUIRES:
+           * - lineItem.productId !== null
+           *
+           * Variant presence alone is insufficient.
+           */
+          const hasMissingProduct = canonicalOrder.lineItems.some(
+            li => li.productId == null
+          );
+
+          if (hasMissingProduct) {
+            await recordIncompleteOrder({
+              shopId,
+              platform: 'shopify',
+              platformOrderId: canonicalOrder.platformOrderId,
+              reason: 'LINE_ITEM_PRODUCT_NOT_RESOLVED',
+            });
+            continue;
+          }
+
+
+          // --- CANONICAL VARIANT HARD GATE (FT2) ---
+          const variantIds = canonicalOrder.lineItems
+            .map(li => li.variantId)
+            .filter((v): v is string => typeof v === 'string');
+
+          if (variantIds.length === 0) {
+            await recordIncompleteOrder({
+              shopId,
+              platform: 'shopify',
+              platformOrderId: canonicalOrder.platformOrderId,
+              reason: 'NO_VARIANTS_ON_ORDER',
+            });
+            continue;
+          }
+
+          /**
+           * CANONICAL VARIANT HARD GATE (FT2)
+           * --------------------------------
+           * Purpose:
+           * - Enforce variant → product anchoring BEFORE canonical order insertion
+           *
+           * Facts:
+           * - canonical_variants is keyed by (shop_id, canonical_variant_id)
+           * - platform_variant_id does NOT exist in canonical storage
+           *
+           * Rule:
+           * - If ANY referenced canonical_variant_id lacks canonical_product_id,
+           *   the order MUST be deferred (not partially ingested).
+           *
+           * This gate prevents:
+           * - orphaned canonical_order_line_items
+           * - FT2 identity violations
+           * - false-positive revenue / order counts
+           */
+          const unresolved = await db('canonical_variants')
+            .where({ shop_id: shopId })
+            .whereIn('canonical_variant_id', variantIds)
+            .whereNull('canonical_product_id')
+            .count<{ count: string }>('id as count')
+            .first();
+
+          if (unresolved && Number(unresolved.count) > 0) {
+            await recordIncompleteOrder({
+              shopId,
+              platform: 'shopify',
+              platformOrderId: canonicalOrder.platformOrderId,
+              reason: 'CANONICAL_VARIANT_NOT_READY',
+            });
+
+            // ⛔ Do NOT insert canonical order yet
+            // Product worker must finish first
+            continue;
+          }
+
           await canonicalIngestion.insertCanonicalOrder(canonicalOrder);
+          publishReconciliationJob(canonicalOrder.id);
         }
 
         await trx('integrations').where({ id: integrationId }).update({

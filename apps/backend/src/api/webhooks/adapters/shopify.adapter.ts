@@ -1,11 +1,36 @@
 import { buildWebhookEnvelope } from '../buildWebhookEnvelope';
 import { WebhookEnvelope } from '../types';
+import crypto from 'crypto';
 
 export class ShopifyWebhookAdapter {
   static toEnvelope(req: any): WebhookEnvelope {
+    const rawBody =
+      req.rawBody ??
+      Buffer.from(JSON.stringify(req.body), 'utf8');
+
+    /**
+     * Deterministic Shopify eventId
+     * -----------------------------
+     * Shopify guarantees at-least-once delivery.
+     * We must guarantee exactly-once processing.
+     *
+     * Rules:
+     * - Prefer Shopify-provided webhook ID
+     * - Otherwise derive a stable hash from (topic + rawBody)
+     * - NEVER use a constant fallback
+     */
+    const providedEventId =
+      req.headers['x-shopify-webhook-id'] as string | undefined;
+
     const eventId =
-      (req.headers['x-shopify-webhook-id'] as string | undefined) ??
-      'missing_event_id';
+      providedEventId ??
+      crypto
+        .createHash('sha256')
+        .update(
+          `${req.headers['x-shopify-topic']}::${req.rawBody?.toString('utf8')}`,
+          'utf8'
+        )
+        .digest('hex');
 
     const shopDomain =
       req.headers['x-shopify-shop-domain'] as string | undefined;

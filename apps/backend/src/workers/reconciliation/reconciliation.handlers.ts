@@ -6,9 +6,70 @@ import { writeOrderRevenueUnits } from './revenue-units.writer';
 import { evaluateCustomerObligations } from
   'api-src/services/order-execution-intelligence/customerObligation.evaluator';
 
+type ObservedExecution = {
+  status: 'delivered';
+  received_at: Date;
+};
+
 export async function reconcileOrderFulfillment(
   canonicalOrderId: string
 ): Promise<ReconciliationResult> {
+
+    // 0. Check for VERIFIED observed fulfillment via webhook ledger
+  const observed = await db('integration_webhook_events')
+    .select('payload', 'received_at')
+    .where({
+      integration: 'shopify',
+      verified: true,
+    })
+    .whereIn('event_type', [
+      'orders/fulfilled',
+      'fulfillments/create',
+      'fulfillments/update',
+    ])
+    .andWhereRaw(
+      `(payload->>'order_id') = ? OR (payload->>'order_id') = ?`,
+      [
+        canonicalOrderId,
+        canonicalOrderId.replace('gid://shopify/Order/', ''),
+      ]
+    )
+    .orderBy('received_at', 'desc')
+    .first<ObservedExecution | undefined>();
+
+    if (observed) {
+    const order = await db('canonical_orders')
+      .where({ canonical_order_id: canonicalOrderId })
+      .first();
+
+    if (!order) {
+      throw new Error(`Canonical order not found for observed execution: ${canonicalOrderId}`);
+    }
+
+    await db('order_fulfillment_status')
+      .insert({
+        canonical_order_id: canonicalOrderId,
+        shop_id: order.shop_id,
+        order_id: order.platform_order_id,
+
+        status: 'delivered',
+        status_updated_at: observed.received_at,
+        execution_source: 'observed',
+        execution_confidence: 'certain',
+      })
+      .onConflict(['canonical_order_id'])
+      .merge({
+        shop_id: order.shop_id,
+        order_id: order.platform_order_id,
+
+        status: 'delivered',
+        status_updated_at: observed.received_at,
+        execution_source: 'observed',
+        execution_confidence: 'certain',
+      });
+
+    return 'observed';
+  }
 
   // 1. Check existing execution
   const existing = await db('order_fulfillment_status')
