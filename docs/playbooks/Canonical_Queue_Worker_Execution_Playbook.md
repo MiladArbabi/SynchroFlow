@@ -27,6 +27,7 @@ Truth may be **observed or assumed**, but it is **never missing**.
 * No execution without canonical identity
 * Canonical identity is resolved **before** execution
 * Canonical identity is never inferred downstream
+* Canonical identity includes **product and variant resolution**, not just orders
 
 ---
 
@@ -37,7 +38,10 @@ Every stateful table has **one and only one writer**.
 | Table                        | Authorized Writer                     |
 | ---------------------------- | ------------------------------------- |
 | `integration_webhook_events` | Webhook Ledger Service                |
-| `canonical_orders`           | Canonical Ingestion Workers           |
+| `canonical_orders`           | Canonical Ingestion Service           |
+| `canonical_order_line_items` | Canonical Commerce Ingestion Service  |
+| `canonical_products`         | Product Ingestion Worker              |
+| `canonical_variants`         | Product Ingestion Worker              |
 | `order_fulfillment_status`   | **Fulfillment Reconciliation System** |
 
 > **Important update:**
@@ -49,12 +53,13 @@ No other service may touch execution state.
 
 ### 1.3 Fail-Closed (Clarified)
 
-| Condition            | Action         |
-| -------------------- | -------------- |
-| Missing canonical ID | Retry          |
-| Missing execution    | **Synthesize** |
-| Invariant breach     | Fail + DLQ     |
-| Duplicate            | No-op          |
+| Condition                                 | Action           |
+| ----------------------------------------- | ---------------- |
+| Missing canonical order ID                | Retry            |
+| Missing canonical product / variant       | Block FT2        |
+| Missing execution                         | **Synthesize**   |
+| Invariant breach                          | Fail + DLQ       |
+| Duplicate                                 | No-op            |
 
 **Absence is not allowed to leak to users.**
 
@@ -62,21 +67,29 @@ No other service may touch execution state.
 
 ## 2. End-to-End Pipeline (Actual)
 
-```
 External Platform
    ↓
-Webhook Handler (NO domain writes)
+GraphQL / REST Sync
+   ↓
+Product Ingestion Queue
+   ↓
+Product Ingestion Worker
+   ↓
+canonical_products + canonical_variants
+   ↓
+Canonical Commerce Ingestion
+   ↓
+canonical_orders + canonical_order_line_items
    ↓
 integration_webhook_events  ← ledger
    ↓
-Queue (durable boundary)
+Reconciliation Queue
    ↓
 Reconciliation Consumer
    ↓
 order_fulfillment_status
    ↓
 Facts → FT2 → UI
-```
 
 **Synthetic execution lives here intentionally.**
 
@@ -127,6 +140,26 @@ fulfillment.reconciliation
 * Poisoned messages → DLQ
 * Consumer must be safe to replay
 
+### 4.4 Product Ingestion Queue (NEW · ENFORCED)
+
+Queue:
+product_ingestion
+
+Message shape:
+
+```json
+{
+  "shopId": 2,
+  "platform": "shopify",
+  "rawProduct": { ... }
+}
+Rules:
+
+Product ingestion is fire-and-forget
+No retries at FT2 level
+Identity errors block downstream eligibility
+Product ingestion must complete before FT2 evaluation
+
 ---
 
 ## 5. Fulfillment Reconciliation System (Reference Standard)
@@ -160,6 +193,16 @@ Reality:
 Therefore:
 
 > **Every canonical order must have exactly one execution row.**
+
+⚠️ Synthetic execution does NOT:
+
+* Create canonical products
+* Create canonical variants
+* Repair order → product joins
+* Backfill canonical identity
+
+Synthetic execution only ensures execution completeness.
+Identity completeness is a separate, mandatory prerequisite.
 
 ---
 
@@ -221,6 +264,12 @@ For **each canonical order**:
 3. If synthetic → replace if needed
 4. If missing → insert synthetic
 5. Enforce DB invariants
+
+Explicitly does NOT:
+
+* Resolve product identity
+* Resolve variant identity
+* Mutate canonical_order_line_items
 
 That’s it.
 
@@ -298,6 +347,18 @@ Because of reconciliation:
 SUM(fulfilled) + SUM(unfulfilled) = SUM(total)
 ```
 
+Important dependency:
+
+Revenue correctness requires **identity correctness**.
+
+If canonical_order_line_items lack canonical_product_id:
+
+* Revenue units may exist
+* Execution may be complete
+* FT2 must still block
+
+Revenue truth is meaningless without identity truth.
+
 This is now **always true** under execution coverage.
 
 This unlocks:
@@ -334,6 +395,8 @@ A pipeline is valid only if:
 * Execution rows complete
 * Synthetic accounted for
 * No NULL leaks to FT2
+* No orphaned canonical_order_line_items
+* Product ingestion completed before FT2 evaluation
 
 You verified all of these.
 

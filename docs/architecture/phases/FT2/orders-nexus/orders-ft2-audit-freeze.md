@@ -135,8 +135,35 @@ cvc:v1:{shop_id}:{platform_variant_id}
 
 FT2 never reasons over raw platform SKUs.
 
-If CVC is absent, SKU-level revenue and obligations are not addressable.  
-This is intentional.
+If CVC is absent, SKU-level revenue and obligations are not addressable.
+
+In this state:
+
+* SKU-level attribution is suppressed
+* Revenue may surface **only as aggregate totals**
+* FT2 may remain eligible **only if canonical product linkage exists**
+
+This is intentional and epistemically strict.
+
+### Canonical Identity Enforcement (NEW · HARD GATE)
+
+Orders FT2 eligibility requires **full canonical identity resolution** at ingestion time.
+
+**Hard Requirements:**
+
+* Every `canonical_order_line_items` row **MUST** satisfy:
+  * `canonical_variant_id IS NOT NULL`
+  * `canonical_product_id IS NOT NULL`
+* Variant → Product linkage is **resolved before FT2 evaluation**
+* FT2 **never** infers, repairs, or backfills canonical identity
+
+If any order line item lacks a canonical product reference:
+
+* Orders FT2 is **blocked**
+* Revenue aggregation is **disallowed**
+* Execution-aware domains are **suppressed**
+
+This behavior is intentional and non-recoverable inside FT2.
 
 ---
 
@@ -170,7 +197,10 @@ Blocked Revenue represents **availability loss**, not failure.
 
 **Rules:**
 
-* Derived exclusively from evaluated SKU-level revenue units after L2 obligation classification and explicit downgrade.
+* Derived exclusively from evaluated SKU-level revenue units after:
+  1. Canonical identity resolution
+  2. L2 obligation classification
+  3. Explicit downgrade to L1 aggregate
 * Blocked Revenue cannot exist without:
   1. Revenue units
   2. Obligation evaluation
@@ -325,7 +355,16 @@ Order-Nexus FT2 Snapshot
 * derived from SKU-level revenue units
 
 **Truth Source:**  
-`order_revenue_units` is the sole revenue truth source for FT2
+`order_revenue_units` is the sole revenue truth source for FT2.
+
+**Precondition:**
+Revenue units are valid **only if canonical identity is complete**:
+
+* `canonical_variant_id` present
+* `canonical_product_id` present
+* Variant → Product join proven
+
+If this precondition fails, revenue units may exist internally but are **not exposable** to FT2.
 
 Revenue units are materialized, not inferred.  
 Each unit represents factual SKU-level value.
@@ -373,7 +412,7 @@ If revenue units do not exist, FT2 must show zero, not estimates.
 > **BLOCK CAUSES MAY BE UNATTRIBUTED**  
 > **PAYMENT AND PROFIT NOT EVALUATED**  
 > **SKU-LEVEL DETAIL REQUIRES CANONICAL VARIANT CODES (CVC)**  
-> **MISSING IDENTIFIERS RESULT IN AGGREGATE-ONLY VISIBILITY**
+> **MISSING CANONICAL IDENTIFIERS RESULT IN AGGREGATE-ONLY OR BLOCKED VISIBILITY**
 
 ---
 
@@ -393,6 +432,24 @@ Orders FT2 intentionally excludes:
 These are **constraints**, not backlog items.
 
 ---
+
+## FT2 Eligibility Gate (CLARIFIED · NON-NEGOTIABLE)
+
+Orders FT2 eligibility requires:
+
+1. Canonical products present
+2. Canonical variants present
+3. All order line items joined to canonical products
+4. No orphaned canonical order line items
+
+Failure of any condition results in:
+
+* `eligible = false`
+* `status = BLOCKED`
+* Cross-domain blocker: `ORDERS × PRODUCTS`
+
+FT2 does not degrade gracefully under identity failure.
+It fails closed by design.
 
 ## 🔐 FINAL SEAL — REV C
 

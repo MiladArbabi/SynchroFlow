@@ -74,6 +74,16 @@ export const performInitialSync = async (
           productType
           status
           totalInventory
+
+          variants(first: 100) {
+            edges {
+              node {
+                id
+                sku
+                title
+              }
+            }
+          }
         }
       }
     }
@@ -178,6 +188,18 @@ export const performInitialSync = async (
 
         await syncProducts(trx, shopId, data.products.edges);
 
+        /**
+         * Canonical Variant Backfill Trigger
+         * ----------------------------------
+         * Purpose:
+         * - Replay all products through product_ingestion
+         * - Required when canonical_variants is introduced after initial sync
+         *
+         * Safety:
+         * - Idempotent
+         * - No writes outside product-worker
+         * - Safe to re-run
+         */
         for (const { node } of data.products.edges) {
           enqueueProductForIngestion({
             shopId,

@@ -19,6 +19,15 @@ This applies equally to:
 
 Everything else in this document enforces that rule.
 
+This rule applies equally to **identity resolution**.
+
+If canonical identity is incomplete or missing:
+* execution truth is invalid
+* eligibility signals are unreliable
+* FT2 must fail closed
+
+Identity gaps are ingestion failures, not evaluator bugs.
+
 ---
 
 ## 1. Always Start With a HARD SCAN (No Code Changes)
@@ -103,12 +112,35 @@ Eligibility Contract:
 - Minimum viable signals
 - Advisory signals
 ```
+### 1.4 Scan Canonical Joins (Identity Reality) 🆕
 
+Before touching code, prove joins exist:
+
+```sql
+SELECT COUNT(*) FROM canonical_<child>
+WHERE canonical_<parent>_id IS NULL;
+
+Examples:
+
+SELECT COUNT(*)
+FROM canonical_order_line_items
+WHERE canonical_product_id IS NULL;
+
+
+If count > 0:
+
+Eligibility must block
+
+FT2 is correct
+
+Ingestion is incomplete
+
+Do not debug evaluators until joins are clean.
 ---
 
 ## 2. 🚨 Transport & Execution Scan (NEW – HARD-LEARNED)
 
-> **Before assuming “ingestion is broken,” prove the handler is executed.**
+> **Before assuming “ingestion is broken,” prove the **correct handler** executed **and committed identity**.
 
 This thread exposed a critical rule:
 
@@ -169,6 +201,17 @@ Every domain **must** be phase-scoped.
 | FT2   | currency + totals | margins              |
 | FT3+  | line economics    | guesses              |
 
+### Example: Products / Variants (NEW · REQUIRED)
+
+| Phase | Required                         | Forbidden                     |
+| ----- | -------------------------------- | ----------------------------- |
+| FT0   | product existence                | order joins                   |
+| FT1   | variant presence                 | revenue attribution           |
+| FT2   | canonical product + variant IDs  | SKU inference, backfills      |
+| FT3+  | cost, margin, performance        | guessing                      |
+
+FT2 eligibility **requires canonical product identity**, not SKU strings.
+
 📌 Write this **before** coding.
 
 > If you can’t explain what the domain looks like at FT2 **in one paragraph**, you are not ready to ingest it.
@@ -223,10 +266,10 @@ Eligibility must **only** depend on Tier 1.
 
 ---
 
-### 4.3 🆕 Canonical Identity Is the Spine (NEW – NON-NEGOTIABLE)
+### 4.3 Canonical Identity Is the Spine (NEW – NON-NEGOTIABLE)
 
 Execution data without canonical identity is not execution truth.
-It is noise.
+It is **structurally invalid** and must never reach FT2.
 
 Every execution-level record must satisfy:
 
@@ -291,6 +334,23 @@ Therefore:
 
 ---
 
+### 5.3 Mappers Must Preserve Joinability
+
+Mappers must emit identifiers that allow **downstream joins**.
+
+Forbidden patterns:
+
+* Writing platform_variant_id without product linkage
+* Writing line items without resolvable canonical_variant_id
+* Assuming products will be resolved later
+
+If a mapper cannot guarantee joinability:
+* Write NULL explicitly
+* Let eligibility block
+* Fix ingestion, not evaluation
+
+---
+
 ## 6. Ingestion Service Rules (Clarified)
 
 ### 6.1 Never Insert Partial Rows Blindly
@@ -323,7 +383,7 @@ Therefore:
 
 ---
 
-6.3 🆕 Execution Ingestion Must Be Canonical-First
+6.3 Execution Ingestion Must Be Canonical-First
 
 Execution ingestion is a two-step contract, not a single write.
 
@@ -354,6 +414,24 @@ Allow NULL canonical references
 
 ---
 
+### 6.4 Order Ingestion Depends on Product Identity
+
+Canonical order ingestion may proceed **without enrichment**, but:
+
+* FT2 eligibility requires product identity
+* canonical_order_line_items MUST eventually link to canonical_products
+
+Allowed:
+* Insert orders
+* Insert line items with NULL canonical_product_id (temporarily)
+
+Required before FT2:
+* Backfill canonical_product_id
+* Verify joins via SQL
+
+
+---
+
 ## 7. Eligibility Evaluator Rules (FT2 Stability)
 
 ### 7.1 Eligibility Must Be Binary and Explainable
@@ -371,6 +449,16 @@ Not:
 * Are costs known?
 
 Those are **advisory**.
+
+FT2 must block if:
+
+* canonical_order_line_items exist
+* AND canonical_product_id is NULL for any row
+
+This is a CROSS_DOMAIN blocker:
+ORDERS × PRODUCTS
+
+The evaluator was correct to block.
 
 ---
 
@@ -440,7 +528,9 @@ Before declaring a domain “wired”:
 * [ ] Partial data does not crash pipeline
 * [ ] Advisory gaps surfaced, not hidden
 * [ ] Canonical identity present on all execution rows
+* [ ] Canonical product identity present on all order line items
 * [ ] No execution rows with NULL foreign keys
+* [ ] No order line items with NULL canonical_product_id
 * [ ] Execution joins verified by direct SQL
 
 If **any box is unchecked** → **stop**.

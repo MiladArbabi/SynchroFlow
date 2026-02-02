@@ -1,5 +1,5 @@
 // apps/backend/src/workers/product-worker.ts
-import db from 'api-src/db';
+import db from '../db';
 import { ProductNormalizationService } from '../services/product-normalization.service';
 import { VariantNormalizationService } from '../services/variant-normalization.service';
 import { CanonicalProductInput, CanonicalProductStatus } from '@lasyncro/shared';
@@ -60,9 +60,11 @@ export async function processProductMessage(
     // 1. Upsert canonical product
     await trx('canonical_products')
       .insert({
+        // canonical_product_id is DB-assigned (SERIAL PRIMARY KEY)
         shop_id: canonicalProduct.shopId,
         platform: canonicalProduct.platform,
         platform_product_id: canonicalProduct.platformProductId,
+        platform_variant_id: null,
         sku: canonicalProduct.sku,
         title: canonicalProduct.title,
         status: projectCanonicalStatusToFt0(canonicalProduct.status),
@@ -82,6 +84,7 @@ export async function processProductMessage(
         'shop_id',
         'platform',
         'platform_product_id',
+        'platform_variant_id',
       ])
       .merge({
         sku: canonicalProduct.sku,
@@ -97,7 +100,15 @@ export async function processProductMessage(
           canonicalVariants.map(v => ({
             shop_id: v.shop_id,
             canonical_variant_id: v.canonical_variant_id,
+
+            // IMPORTANT:
+            // canonical_product_id here is the PLATFORM product GID,
+            // NOT the numeric canonical_products PK.
+            //
+            // This is intentional: canonical_variants bridges
+            // canonical_order_line_items → platform product identity.
             canonical_product_id: v.canonical_product_id,
+
             sku: v.sku,
             title: v.title,
           }))

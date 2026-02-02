@@ -19,8 +19,8 @@ export class VariantNormalizationService {
      */
     const productId = String(rawProduct.id);
 
-    const variants = Array.isArray(rawProduct.variants)
-      ? rawProduct.variants
+    const variants = Array.isArray(rawProduct?.variants?.edges)
+      ? rawProduct.variants.edges.map((e: any) => e.node)
       : [];
 
     return variants

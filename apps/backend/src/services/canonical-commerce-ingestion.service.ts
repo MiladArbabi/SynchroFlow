@@ -75,6 +75,27 @@ export class CanonicalCommerceIngestionService {
       });
     }
 
+    /**
+     * CANONICAL IDENTITY INVARIANT
+     * ---------------------------
+     * If a line item references a variant, it MUST reference a product.
+     * Writing variant-backed line items without product anchoring breaks:
+     * - FT2 eligibility
+     * - Orders ↔ Products joins
+     * - Revenue attribution
+     *
+     * This is a hard failure by design.
+     */
+    for (const li of canonicalOrder.lineItems || []) {
+      if (li.variantId && !li.productId) {
+        throw new Error(
+          `[CANONICAL_IDENTITY_VIOLATION] Line item ${li.lineItemId} has variantId ` +
+          `${li.variantId} but no productId. Canonical invariant requires ` +
+          `variant → product anchoring at ingestion time.`
+        );
+      }
+    }
+
     const lineItems = (canonicalOrder.lineItems || []).map((li) => ({
       shop_id: canonicalOrder.shopId,
       canonical_line_item_id: li.lineItemId,
