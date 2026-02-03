@@ -336,7 +336,18 @@ export const performInitialSync = async (
           }
 
           await canonicalIngestion.insertCanonicalOrder(canonicalOrder);
-          publishReconciliationJob(canonicalOrder.id);
+
+          if (node.displayFulfillmentStatus === 'FULFILLED') {
+            publishReconciliationJob(canonicalOrder.id, {
+              status: 'delivered',
+              observedAt: new Date(
+                node.updatedAt ?? node.processedAt ?? node.createdAt
+              ),
+              source: 'shopify_sync',
+            });
+          } else {
+            publishReconciliationJob(canonicalOrder.id);
+          }
         }
 
         await trx('integrations').where({ id: integrationId }).update({

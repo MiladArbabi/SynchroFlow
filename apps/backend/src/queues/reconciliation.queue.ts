@@ -19,13 +19,23 @@ import { getQueueChannel } from 'api-src/queue';
 export const RECONCILIATION_QUEUE = 'fulfillment.reconciliation';
 
 export function publishReconciliationJob(
-  canonicalOrderId: string
+  canonicalOrderId: string,
+  observed?: {
+    status: 'delivered';
+    observedAt: Date;
+    source: 'shopify_sync';
+  }
 ) {
   const ch = getQueueChannel(RECONCILIATION_QUEUE);
 
   ch.sendToQueue(
     RECONCILIATION_QUEUE,
-    Buffer.from(JSON.stringify({ canonicalOrderId })),
+    Buffer.from(
+      JSON.stringify({
+        canonicalOrderId,
+        observed,
+      })
+    ),
     { persistent: true }
   );
 }

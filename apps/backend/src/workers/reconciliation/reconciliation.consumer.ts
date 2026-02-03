@@ -19,9 +19,11 @@ export function startReconciliationConsumer() {
     if (!msg) return;
 
     try {
-      const { canonicalOrderId } = JSON.parse(msg.content.toString());
+      const { canonicalOrderId, observed } = JSON.parse(
+        msg.content.toString()
+      );
 
-      await reconcileOrderFulfillment(canonicalOrderId);
+      await reconcileOrderFulfillment(canonicalOrderId, observed);
 
       ch.ack(msg);
     } catch (err) {
