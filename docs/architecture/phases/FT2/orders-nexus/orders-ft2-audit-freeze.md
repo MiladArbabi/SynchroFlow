@@ -73,7 +73,11 @@ Orders FT2 contains **no**:
 * prioritization
 * semantic interpretation inside InfoBlocks
 * **accounting semantics (paid, settled, net, margin)**
-* **execution inference unless explicitly downgraded via L2 classification**
+* * **no execution inference whatsoever**
+* execution truth may surface **only** via:
+  * observed execution (platform-confirmed), or
+  * synthetic placeholders explicitly marked as assumed
+* L2 classification may downgrade execution *visibility*, never invent execution
 * **SKU inference, backfilling, or reconstruction**
 
 If any of the above appear, the contract is broken.
@@ -99,8 +103,9 @@ Answer:
 | Data Coverage Reality      | L1    | Is source data structurally complete?    |
 | Economic Visibility Gate   | L2    | Is interpretation epistemically allowed? |
 
-📌 These domains surface **only** inside **Orders Overview**  
-📌 They never re-appear elsewhere.
+📌 These domains surface across FT2 InfoBlocks according to ownership
+📌 Orders Overview owns **order-state grounding only**
+📌 Revenue, execution, and risk grounding are owned by their respective InfoBlocks
 
 ---
 
@@ -163,7 +168,63 @@ If any order line item lacks a canonical product reference:
 * Revenue aggregation is **disallowed**
 * Execution-aware domains are **suppressed**
 
+## Execution Ledger Ownership (NEW · SEALED)
+
+Orders FT2 owns **no execution logic**, but it owns **execution truth visibility**.
+
+**Source of truth:**
+`order_fulfillment_status`
+
+**Guarantees:**
+
+* Exactly one execution row per canonical order
+* Canonical order is the primary key for execution truth
+* Platform order IDs are auxiliary references only
+* Observed execution always overrides synthetic execution
+* Execution state is replay-safe and restart-safe
+
+FT2 consumes execution truth.
+It never derives, mutates, or repairs it.
+
 This behavior is intentional and non-recoverable inside FT2.
+
+Canonical Fulfillment Determination (NEW · HARD DEFINITION)
+
+Fulfilled / Unfulfilled in Orders FT2 is determined exclusively by the execution ledger.
+
+Definitions:
+
+Fulfilled Order
+
+A canonical order that has an execution row with:
+
+status IN ('fulfilled', 'delivered')
+
+execution_source = 'observed'
+
+
+Unfulfilled Order
+
+A canonical order whose execution row is either:
+
+status = 'processing', or
+
+execution_source = 'synthetic', or
+
+missing an observed execution
+
+Hard Rules:
+
+Platform order fields (e.g. orders.fulfillment_status) are never consumed directly
+
+Platform data may only influence fulfillment via reconciliation
+
+Synthetic execution is treated as unfulfilled by FT2
+
+Observed execution always supersedes synthetic execution
+
+📌 Orders Overview reads exclusively from order_fulfillment_status
+📌 No inference, fallback, or dual-read paths exist
 
 ---
 
@@ -178,8 +239,17 @@ Answer:
 |-------------------------|-------|----------------------------------------------|
 | Total Sales Reality     | L1    | How much sales value exists in total?        |
 | Earned Revenue Reality  | L1    | How much value is tied to fulfilled orders?  |
-| Pending Revenue Reality | L1    | How much value is tied to open work?         |
+| Pending Revenue Reality | L1 | How much value is tied to orders without observed execution? |
 | Blocked Revenue Reality | L1    | How much value is unavailable due to unresolved execution blockers? |
+
+Pending Revenue includes:
+
+* All revenue units tied to canonical orders whose execution is:
+  * synthetic, or
+  * not yet observed
+
+Pending does **not** imply failure, delay, or risk.
+It reflects absence of confirmed execution only.
 
 **Hard Rules (LOCKED):**
 
@@ -386,15 +456,55 @@ If revenue units do not exist, FT2 must show zero, not estimates.
 
 ### InfoBlock: Orders Overview
 
-**Rows (LOCKED):**
+### InfoBlock: Orders Overview
 
-* Orders total
-* Fulfilled orders
-* Unfulfilled orders
-* Incoming orders
+**Rows (LOCKED · CANONICAL):**
+
+1. **Fulfilled orders**  
+   Lifetime count of canonical orders with observed execution  
+   (execution ledger backed, date-range invariant)
+
+2. **Unfulfilled orders**  
+   Lifetime count of canonical orders without observed execution  
+   (includes synthetic and in-progress execution)
+
+3. **Orders added**  
+   Canonical orders created within the selected FT2 date window  
+   (temporal inflow, execution-agnostic)
+
+📌 Platform order states are not read  
+📌 Synthetic execution is treated as unfulfilled  
+📌 Counts are mutually exclusive and ledger-backed
 
 **Footer Rail (LOCKED):**
-> **ORDER OBLIGATIONS SHOWN — VALUE AND EXECUTION DETAILED ELSEWHERE**
+> **ORDER STATE AND INFLOW SHOWN**  
+> **VALUE, EXECUTION, AND RISK DETAILED ELSEWHERE**
+
+### Orders Overview — Comparison Policy (SEALED)
+
+Comparative percentage change is permitted **only** on:
+
+* **Orders added**
+
+Comparisons are **forbidden** on:
+
+* Fulfilled orders
+* Unfulfilled orders
+
+Rationale:
+
+* Fulfilled and unfulfilled orders are **state-based** and date-range invariant
+* Orders added is the **only temporal inflow metric**
+
+Comparison rules:
+
+* Percentage only
+* Fail-closed (`null → —`)
+* Computed from canonical fixed windows (Layer 1½)
+* Not relative to user-selected date range
+* No interpretation or labeling
+
+This policy is non-negotiable.
 
 ---
 

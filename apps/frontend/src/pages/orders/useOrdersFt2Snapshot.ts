@@ -7,10 +7,9 @@ import type { FT2DateRange } from '@lasyncro/ui-ft2';
 export type OrdersFt2Snapshot = {
 
   orders?: {
-    total?: number | null;
+    active?: number | null;
     fulfilled?: number | null;
-    unfulfilled?: number | null;
-    incoming?: number | null;
+    added?: number | null;
   };
 
 

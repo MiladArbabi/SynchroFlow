@@ -268,10 +268,9 @@ This is **intentional and documented**.
 
 ### Rows (LOCKED)
 
-1. Orders total
-2. Fulfilled orders
-3. Unfulfilled orders
-4. Incoming orders
+1. Fulfilled orders        (state · lifetime · no diff)
+2. Unfulfilled orders      (state · snapshot · no diff)
+3. Orders added            (temporal · windowed · diff allowed)
 
 ### Diff Column
 

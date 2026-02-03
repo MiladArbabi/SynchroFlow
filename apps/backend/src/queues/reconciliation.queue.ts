@@ -30,12 +30,12 @@ export function publishReconciliationJob(
 
   ch.sendToQueue(
     RECONCILIATION_QUEUE,
-    Buffer.from(
-      JSON.stringify({
-        canonicalOrderId,
-        observed,
-      })
-    ),
+      Buffer.from(
+        JSON.stringify({
+          canonicalOrderId,
+          observed,
+        })
+      ),
     { persistent: true }
   );
 }

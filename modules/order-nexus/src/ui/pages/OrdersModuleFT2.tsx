@@ -39,11 +39,21 @@ export interface OrdersModuleFT2DataProps {
   /**
    * System grounding — order obligations (L1)
    */
+
+  /**
+   * FT2-adjacent comparison context (preformatted)
+   */
+  comparison: {
+    orders: {
+      fulfilled: string | null;
+      incoming: string | null;
+    };
+  };
+
   orders: {
-    total: number | null;
+    active: number | null;
     fulfilled: number | null;
-    unfulfilled: number | null;
-    incoming: number | null;
+    added: number | null;
   };
 
   /**
@@ -79,18 +89,6 @@ export interface OrdersModuleFT2DataProps {
         status: 'sufficient' | 'insufficient';
       };
     };
-
-  /**
-   * FT2-adjacent comparison context (preformatted)
-   */
-  comparison: {
-    orders: {
-      total: string | null;
-      fulfilled: string | null;
-      unfulfilled: string | null;
-      incoming: string | null;
-    };
-  };
 
   /**
    * Revenue — execution-aware 
@@ -152,26 +150,18 @@ export default function OrdersModuleFT2(
         * ───────────────────────────────────────── */}
         <InfoBlock title="Orders overview">
           <InfoBlockRow
-            label="Orders total"
-            value={orders.total}
-            diff={comparison.orders.total}
-          />
-
-          <InfoBlockRow
             label="Fulfilled orders"
             value={orders.fulfilled}
-            diff={comparison.orders.fulfilled}
           />
 
           <InfoBlockRow
             label="Unfulfilled orders"
-            value={orders.unfulfilled}
-            diff={comparison.orders.unfulfilled}
+            value={orders.active}
           />
 
           <InfoBlockRow
-            label="Incoming orders"
-            value={orders.incoming}
+            label="Orders added"
+            value={orders.added}
             diff={comparison.orders.incoming}
           />
 

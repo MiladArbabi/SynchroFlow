@@ -1,17 +1,3 @@
-Good instinct. This is exactly the right moment to **freeze knowledge into a durable contract** before entropy creeps back in.
-
-Below is a **production-grade playbook** you can drop directly into
-`docs/playbooks/canonical-products.md`.
-
-It is written to be:
-
-* **Authoritative** (states invariants, not suggestions)
-* **End-to-end** (A → Z, no gaps)
-* **Non-hand-wavy** (every rule is justified by failure modes you just lived through)
-* **Enforceable** (engineers can reason about correctness, not vibes)
-
----
-
 # Canonical Products Playbook
 
 **Location:** `docs/playbooks/canonical-products.md`

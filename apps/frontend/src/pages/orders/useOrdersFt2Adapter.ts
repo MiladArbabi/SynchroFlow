@@ -51,48 +51,34 @@ export function mapOrdersFt2Props(
 
   return {
     orders: {
-      total:
-        snapshot.orders?.total === undefined
+      active:
+        snapshot.orders?.active === undefined
           ? null
-          : snapshot.orders.total,
+          : snapshot.orders.active,
 
-    fulfilled:
-      snapshot.orders?.fulfilled === undefined
-        ? null
-        : snapshot.orders.fulfilled,
+      fulfilled:
+        snapshot.orders?.fulfilled === undefined
+          ? null
+          : snapshot.orders.fulfilled,
 
-    unfulfilled:
-      snapshot.orders?.unfulfilled === undefined
-        ? null
-        : snapshot.orders.unfulfilled,
+      added:
+        snapshot.orders?.added === undefined
+          ? null
+          : snapshot.orders.added,
+    },
 
-    incoming:
-      snapshot.orders?.incoming === undefined
-        ? null
-        : snapshot.orders.incoming,
-  },
 
   comparison: {
     orders: {
-      total:
-        formatPctDiff(
-          snapshot.comparison?.orders?.totalPctChange
-        ),
-
       fulfilled:
         formatPctDiff(
           snapshot.comparison?.orders?.fulfilledPctChange
         ),
 
-      unfulfilled:
-        formatPctDiff(
-          snapshot.comparison?.orders?.unfulfilledPctChange
-        ),
-
-      incoming:
-        formatPctDiff(
-          snapshot.comparison?.orders?.incomingPctChange
-        ),
+        incoming:
+          formatPctDiff(
+            snapshot.comparison?.orders?.incomingPctChange
+          ),
     },
   },
 

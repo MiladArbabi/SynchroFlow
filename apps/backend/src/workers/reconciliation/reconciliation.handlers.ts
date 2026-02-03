@@ -48,7 +48,7 @@ export async function reconcileOrderFulfillment(
         execution_source: 'observed',
         execution_confidence: 'certain',
       })
-      .onConflict(['canonical_order_id'])
+      .onConflict(['shop_id', 'canonical_order_id'])
       .merge({
         status: 'delivered',
         status_updated_at: observed.observedAt,

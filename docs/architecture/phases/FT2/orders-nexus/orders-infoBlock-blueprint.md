@@ -35,7 +35,7 @@ This block answers:
 | **Total Orders**       | Count of canonical orders in window    | “How many orders exist?”      |
 | **Fulfilled Orders**   | Orders with fulfillment complete       | “How many promises are done?” |
 | **Unfulfilled Orders** | Orders still requiring execution       | “How much work is left?”      |
-| **Incoming Orders**    | Newly created orders not yet processed | “What just came in?”          |
+| **Incoming Orders**    | Canonical orders whose order_created_at falls inside the FT2 window. | “Did new work get added while I wasn’t looking?”          |
 
 ---
 

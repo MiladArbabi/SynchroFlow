@@ -8,8 +8,7 @@ import { extractOrderShippingDelayFacts } from '../order-facts/orderShippingDela
 import { extractOrderTrendFacts } from 'api-src/services/order-facts/orderTrendFacts.service';
 import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFacts.service';
 import { extractFulfilledOrdersCount } from '../order-facts/orderFulfilledCountFacts.service';
-import { extractOrderRevenueAllocationFacts } from
-  'api-src/services/order-facts/orderRevenueAllocationFacts.service';
+import { extractOrderRevenueAllocationFacts } from 'api-src/services/order-facts/orderRevenueAllocationFacts.service';
 
 /**
  * NOTE ON TREND WIRING
@@ -37,6 +36,7 @@ import { pctChange } from 'api-src/utils/pctChange';
 // Allowed: aggregate-only downgrade helpers
 // Forbidden: classifiers, intelligence, attribution
 import { aggregateBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
+import { extractActiveOrdersCount } from '../order-facts/orderActiveCountFacts.service';
 
 /**
  * OrderNexus FT2 Resolver
@@ -61,6 +61,8 @@ const trendFacts = await extractOrderTrendFacts(shopId, range);
 const intelligence = deriveOrderIntelligence(facts, trendFacts);
 
 const fulfilledOrders = await extractFulfilledOrdersCount(shopId);
+const activeOrders = await extractActiveOrdersCount(shopId);
+
 const revenueAllocationFacts =
   await extractOrderRevenueAllocationFacts(shopId, range);
 
@@ -97,8 +99,7 @@ const grounding = {
 };
 
 const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId, range);
-const fulfillmentStatusFacts =
-  await extractOrderFulfillmentStatusFacts(shopId, range);
+const fulfillmentStatusFacts = await extractOrderFulfillmentStatusFacts(shopId, range);
 const shippingFacts = await extractOrderShippingFacts(shopId, range);
 const shippingDelayFacts = await extractOrderShippingDelayFacts(shopId, range);
 const fulfillmentIntelligence = deriveOrderFulfillmentIntelligence(
@@ -120,35 +121,38 @@ const executionCoverage =
     executionCoverage === 'sufficient' ? 'sufficient' : 'insufficient',
   );
 
-const unfulfilledOrders =
-  fulfillmentFacts.visibility !== 'sufficient'
-    ? null
-    : facts.ordersObserved == null || fulfilledOrders == null
-      ? null
-      : Math.max(facts.ordersObserved - fulfilledOrders, 0);
-
 const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, range);
 
 const previousTotal = trendFacts.previousWindowOrders ?? null;
 const currentTotal = trendFacts.currentWindowOrders ?? null;
 
-const previousIncoming = trendFacts.previousWindowOrders ?? null;
-const currentIncoming = trendFacts.currentWindowOrders ?? null;
-
-const incomingOrders = trendFacts.currentWindowOrders ?? null;
-
 const comparison = {
   orders: {
-    totalPctChange: pctChange(previousTotal, currentTotal),
+    /**
+     * Active Orders (FT2 · L1 · Execution-based)
+     * -----------------------------------------
+     * Orders that still represent open obligations.
+     * Lifetime, state-based, NOT time-windowed.
+     */
+    active: activeOrders,
 
-    // BLOCKED:
-    // No historical fulfillment state snapshots exist.
-    // Any comparison here would fabricate change.
-    fulfilledPctChange: null,
-    unfulfilledPctChange: null,
+    /**
+     * Fulfilled Orders (FT2 · L1 · Execution-based)
+     * --------------------------------------------
+     * Orders that have completed execution.
+     * Lifetime, state-based.
+     */
+    fulfilled: fulfilledOrders,
 
-    incomingPctChange: pctChange(previousIncoming, currentIncoming),
+    /**
+     * Orders Added (FT2 · L1 · Temporal)
+     * ---------------------------------
+     * Orders created within the selected FT2 window.
+     * Windowed via order_created_at.
+     */
+    added: facts.ordersObserved,
   },
+
 };
 
   // ─────────────────────────────────────────────
@@ -259,11 +263,47 @@ const comparison = {
     freshness: grounding.freshness,
     revenueContinuity: grounding.revenueContinuity,
 
+    /**
+     * Orders Overview (FT2 · L1)
+     * -------------------------
+     * Fully owned by FT2.
+     * MUST NOT inherit comparison semantics from FTEP exposure.
+     */
     orders: {
-      total: facts.ordersObserved,
+      /**
+       * Active Orders (FT2 · L1)
+       * -----------------------
+       * Requires a dedicated L1 count primitive.
+       * Not inferred from totals.
+       */
+      active: activeOrders,
+
+      /**
+       * Fulfilled Orders (FT2 · L1)
+       * ---------------------------
+       * Lifetime fulfilled orders.
+       */
       fulfilled: fulfilledOrders,
-      unfulfilled: unfulfilledOrders,
-      incoming: -999999,
+
+      /**
+       * Orders Added (FT2 · L1 · Temporal)
+       * ---------------------------------
+       * Orders created within the selected FT2 window.
+       */
+      added: facts.ordersObserved,
+    },
+
+    /**
+     * Orders Comparison (FT2)
+     * ----------------------
+     * Explicitly overridden to avoid exposure contract bleed.
+     */
+    comparison: {
+      orders: {
+        fulfilledPctChange: null,
+        unfulfilledPctChange: null,
+        incomingPctChange: pctChange(previousTotal, currentTotal),
+      },
     },
 
    /**
@@ -299,8 +339,6 @@ const comparison = {
     },
 
     obligations,
-
-    comparison,
 
     /**
      * FT2-ADJACENT REALITIES
