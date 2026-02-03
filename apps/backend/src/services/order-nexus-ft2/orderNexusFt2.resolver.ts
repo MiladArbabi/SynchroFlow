@@ -37,6 +37,7 @@ import { pctChange } from 'api-src/utils/pctChange';
 // Forbidden: classifiers, intelligence, attribution
 import { aggregateBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
 import { extractActiveOrdersCount } from '../order-facts/orderActiveCountFacts.service';
+import { extractRevenueUnitsFt2Facts } from '../order-facts/orderRevenueUnitsFt2Facts.service';
 
 /**
  * OrderNexus FT2 Resolver
@@ -306,13 +307,6 @@ const comparison = {
       },
     },
 
-   /**
-     * Revenue Overview (FT2)
-     * ---------------------
-     * - totalSales: execution-agnostic availability
-     * - earned/pending: execution-derived, coverage-gated
-     * - blocked: no primitive → null
-     */
     revenue: {
       totalSales: exposure.totals.revenueTotal,
 

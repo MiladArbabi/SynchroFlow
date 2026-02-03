@@ -49,8 +49,8 @@ export function ObligationOverviewInfoBlock({
         value={obligations.totalBlockedValue ?? null}
       />
       <InfoBlockFooter
-        line1="> BLOCKED VALUE SHOWN — AGGREGATE ONLY"
-        line2="> CAUSES AND ATTRIBUTION ARE SUPPRESSED BY DESIGN"
+        line1="> BLOCKED VALUE SHOWN — LIFETIME STATE"
+        line2="> NOT AFFECTED BY DATE RANGE SELECTION"
       />
     </InfoBlock>
   );

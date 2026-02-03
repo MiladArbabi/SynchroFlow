@@ -6,11 +6,8 @@ import {
   FT2Row,
 } from '@lasyncro/ui-ft2';
 
-import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
-} from '@lasyncro/ui-ft2';
+import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock';
+import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock';
 import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock';
 
 /**
@@ -141,73 +138,21 @@ export default function OrdersModuleFT2(
     obligations,
   } = props;
 
+  const fmtMoney = (v: number | null) =>
+    v == null ? null : Number(v.toFixed(2));
+
   return (
     <FT2Layout>
       <FT2Row intent="kpi">
 
-        {/* ─────────────────────────────────────────
-        * ORDERS OVERVIEW
-        * ───────────────────────────────────────── */}
-        <InfoBlock title="Orders overview">
-          <InfoBlockRow
-            label="Fulfilled orders"
-            value={orders.fulfilled}
-          />
+        <OrdersOverviewInfoBlock
+          orders={orders}
+          incomingDiff={comparison.orders.incoming}
+        />
 
-          <InfoBlockRow
-            label="Unfulfilled orders"
-            value={orders.active}
-          />
-
-          <InfoBlockRow
-            label="Orders added"
-            value={orders.added}
-            diff={comparison.orders.incoming}
-          />
-
-          <InfoBlockFooter
-            line1="> ORDER OBLIGATIONS SHOWN"
-            line2="> VALUE AND EXECUTION DETAILED ELSEWHERE"
-          />
-        </InfoBlock>
-
-        {/* ─────────────────────────────────────────
-        * REVENUE OVERVIEW (FT2 — TERMINAL)
-        * ───────────────────────────────────────── */}
-        <InfoBlock title="Revenue overview">
-          <InfoBlockRow
-            label="Total sales"
-            value={revenue.totalSales}
-          />
-
-          <InfoBlockRow
-            label="Earned revenue"
-            value={
-              revenue.executionCoverage === 'sufficient'
-                ? revenue.earned
-                : null
-            }
-          />
-
-          <InfoBlockRow
-            label="Pending revenue"
-            value={
-              revenue.executionCoverage === 'sufficient'
-                ? revenue.pending
-                : null
-            }
-          />
-
-          <InfoBlockRow
-            label="Blocked revenue"
-            value={revenue.blocked}
-          />
-
-          <InfoBlockFooter
-            line1="> SALES VALUE SHOWN"
-            line2="> PAYMENT AND PROFIT NOT EVALUATED"
-          />
-        </InfoBlock>
+        <RevenueOverviewInfoBlock
+          revenue={revenue}
+        />
 
         <ObligationOverviewInfoBlock
           obligations={

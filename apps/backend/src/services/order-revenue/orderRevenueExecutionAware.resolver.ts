@@ -4,7 +4,7 @@ import type { FT2RangeInput } from 'api-src/utils/ft2Period';
 
 
 /**
- * Phase 6 — Execution-Aware Revenue Resolver
+ * Execution-Aware Revenue Resolver
  * -----------------------------------------
  * Adds execution-aware revenue as an explicit mode.
  *

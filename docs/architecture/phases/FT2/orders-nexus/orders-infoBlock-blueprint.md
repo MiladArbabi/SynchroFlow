@@ -69,7 +69,6 @@ This is the **financial backbone** of the order module.
 | **Total Sales**           | Sum of canonical order value                   | “How much money exists?”            |
 | **Earned Revenue**        | Revenue tied to fulfilled orders               | “What have we actually earned?”     |
 | **Pending Revenue** | Revenue tied to unfulfilled orders (availability-based, execution-agnostic) | “What money unlocks if we ship?”    |
-| **Blocked Revenue** | Revenue unavailable due to unresolved execution constraints (downgraded from L2) | “Why is some revenue unavailable?” |
 
 * Pending revenue may include **synthetic execution**
 * Synthetic execution exists to preserve availability truth
