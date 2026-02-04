@@ -56,19 +56,20 @@ export interface OrderNexusFT2Exposure {
 }
 
 /**
- * Input contract for FTEP
+ * FT2 Obligations Exposure
+ * -----------------------
+ * Eligibility is explicit to avoid semantic ambiguity:
+ * - eligible = true  → constrained value is meaningful (may be 0)
+ * - eligible = false → do not reason over this signal
  */
 export type FT2ObligationsExposure = {
-  /**
-   * FT2 Obligations (Aggregate Only)
-   * --------------------------------
-   * - Magnitude-only blocked revenue signal
-   * - No attribution, causality, or category exposure
-   */
   totalBlockedValue: number | null;
+
+  eligibility: {
+    status: 'eligible' | 'ineligible';
+  };
 
   coverage: {
     status: 'sufficient' | 'insufficient';
   };
 };
-

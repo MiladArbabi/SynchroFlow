@@ -132,6 +132,22 @@ export async function computeObligationFlags(shopId: number): Promise<void> {
         has_inventory_block: false,
         });
 
-  // Explicit no-op by design
-  return;
+    /**
+     * Obligation Freshness (v1)
+     * ------------------------
+     * Mark all evaluated execution rows with a deterministic
+     * obligation evaluation timestamp.
+     *
+     * IMPORTANT:
+     * - This does NOT imply any block exists
+     * - This only asserts: "evaluation was performed"
+     * - FT2 may use this to fail-closed on stale data
+     */
+    await db('order_fulfillment_status')
+    .where('shop_id', shopId)
+    .update({
+        obligation_evaluated_at: db.fn.now(),
+    });
+
+    return;
 }

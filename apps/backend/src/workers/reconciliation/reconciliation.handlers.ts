@@ -95,7 +95,6 @@ export async function reconcileOrderFulfillment(
   // Customer Obligation v3 — explicit evaluation boundary
   await evaluateCustomerObligations(
     order.shop_id,
-    order.canonical_order_id
   );
 
   return 'synthetic';

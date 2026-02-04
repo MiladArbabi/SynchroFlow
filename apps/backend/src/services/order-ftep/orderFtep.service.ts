@@ -80,31 +80,30 @@ export function exposeOrderNexusFT2(
 }
 
 /**
- * FTEP — Obligation Downgrade
- * --------------------------
- * Downgrades L2 obligation intelligence into FT2-safe exposure.
- *
- * Hard rules:
- * - Full classification required
- * - Sums must match total blocked revenue
- * - Otherwise: fail closed
+ * FTEP — Obligation Downgrade (FT2)
+ * --------------------------------
+ * Rules:
+ * - Eligibility is explicit and independent
+ * - Constrained value of 0 is meaningful if eligible
+ * - Null means epistemically unavailable
  */
 export function downgradeObligations(
-  revenueBlockedTotal: number | null,
+  constrainedBlockedTotal: number | null,
   coverageStatus: 'sufficient' | 'insufficient',
 ): FT2ObligationsExposure {
-  if (revenueBlockedTotal == null) {
+  // Epistemic absence: cannot reason about obligations
+  if (constrainedBlockedTotal == null) {
     return {
       totalBlockedValue: null,
+      eligibility: { status: 'ineligible' },
       coverage: { status: 'insufficient' },
     };
   }
 
-  const round = (n: number) =>
-    Math.round(n * 100) / 100;
-
+  // Eligible whenever constrained value is explicitly computed
   return {
-    totalBlockedValue: round(revenueBlockedTotal),
+    totalBlockedValue: Math.round(constrainedBlockedTotal * 100) / 100,
+    eligibility: { status: 'eligible' },
     coverage: { status: coverageStatus },
   };
 }

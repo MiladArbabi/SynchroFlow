@@ -38,6 +38,7 @@ import { pctChange } from 'api-src/utils/pctChange';
 import { aggregateBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
 import { extractActiveOrdersCount } from '../order-facts/orderActiveCountFacts.service';
 import { extractRevenueUnitsFt2Facts } from '../order-facts/orderRevenueUnitsFt2Facts.service';
+import db from 'api-src/db';
 
 /**
  * OrderNexus FT2 Resolver
@@ -107,19 +108,49 @@ const fulfillmentIntelligence = deriveOrderFulfillmentIntelligence(
   fulfillmentFacts
 );
 
+/**
+ * Obligation Freshness Gate (FT2)
+ * ------------------------------
+ * FT2 may only expose constrained value if:
+ * - execution coverage is sufficient
+ * - obligation signals were evaluated recently
+ */
+const obligationFreshnessRow = await db('order_fulfillment_status')
+  .where('shop_id', shopId)
+  .max('obligation_evaluated_at as last_eval')
+  .first<{ last_eval: Date | null }>();
+
+const FRESHNESS_WINDOW_MS = 15 * 60 * 1000;
+
+const obligationFresh =
+  obligationFreshnessRow?.last_eval != null &&
+  Date.now() - new Date(obligationFreshnessRow.last_eval).getTime() <=
+    FRESHNESS_WINDOW_MS;
+
 const executionCoverage =
   fulfillmentStatusFacts.visibility === 'sufficient'
     ? 'sufficient'
     : 'insufficient';
 
- const blockedRevenueAgg =
-   executionCoverage === 'sufficient'
-     ? await aggregateBlockedRevenue(shopId)
-     : null;
+const obligationCoverage =
+  obligationFresh ? 'sufficient' : 'insufficient';
 
+ const constrainedRevenueAgg =
+  obligationCoverage === 'sufficient'
+    ? await aggregateBlockedRevenue(shopId)
+    : null;
+
+  /**
+   * FT2 Obligation Exposure
+   * ----------------------
+   * - Uses constrained value only
+   * - Eligibility is explicit (no inference)
+   */
   const obligations = downgradeObligations(
-    blockedRevenueAgg ? blockedRevenueAgg.totalBlocked : null,
-    executionCoverage === 'sufficient' ? 'sufficient' : 'insufficient',
+    constrainedRevenueAgg
+      ? constrainedRevenueAgg?.constrainedBlockedTotal ?? 0
+      : null,
+    obligationCoverage,
   );
 
 const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, range);
@@ -307,6 +338,17 @@ const comparison = {
       },
     },
 
+    /**
+     * Revenue Semantics (FT2)
+     * ----------------------
+     * earned     = fulfilled revenue
+     * pending    = unfulfilled AND unconstrained
+     * blocked    = explicitly constrained (inventory/customer/operational)
+     *
+     * Rule:
+     * pending + earned + blocked === totalSales
+     * (subject to rounding)
+     */
     revenue: {
       totalSales: exposure.totals.revenueTotal,
 
@@ -319,14 +361,14 @@ const comparison = {
         executionCoverage === 'sufficient'
           ? Math.max(
               (revenueAllocationFacts.unfulfilledRevenueTotal ?? 0)
-              - (blockedRevenueAgg?.totalBlocked ?? 0),
+              - (constrainedRevenueAgg?.constrainedBlockedTotal ?? 0),
               0
             )
           : null,
 
       blocked:
-        typeof blockedRevenueAgg?.totalBlocked === 'number'
-          ? Math.round(blockedRevenueAgg.totalBlocked * 100) / 100
+        typeof constrainedRevenueAgg?.constrainedBlockedTotal === 'number'
+          ? Math.round(constrainedRevenueAgg.constrainedBlockedTotal * 100) / 100
           : null,
 
       executionCoverage,

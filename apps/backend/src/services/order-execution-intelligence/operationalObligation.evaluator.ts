@@ -1,45 +1,44 @@
 /**
- * Customer Obligation v4 — Deterministic
- * -------------------------------------
+ * Operational Obligation v1 — Deterministic
+ * ----------------------------------------
  * Truth source:
- * - customer_blocking_events
+ * - operational_blocking_events
  *
  * Rules:
  * - Event-backed only
  * - No inference
- * - NULL = not evaluated
  * - true  = unresolved blocking event exists
  * - false = explicitly cleared
  */
 
 import db from 'api-src/db';
 
-export async function evaluateCustomerObligations(shopId: number) {
-  // 1. Mark blocked orders
+export async function evaluateOperationalObligations(shopId: number) {
+  // Mark blocked
   await db('order_fulfillment_status as ofs')
     .where('ofs.shop_id', shopId)
     .whereExists(function () {
       this.select(1)
-        .from('customer_blocking_events as e')
+        .from('operational_blocking_events as e')
         .whereRaw('e.canonical_order_id = ofs.canonical_order_id')
         .whereNull('e.resolved_at');
     })
     .update({
-      has_customer_block: true,
-      customer_block_evaluated_at: db.fn.now(),
+      has_operational_block: true,
+      obligation_evaluated_at: db.fn.now(),
     });
 
-  // 2. Explicitly clear non-blocked orders
+  // Clear non-blocked
   await db('order_fulfillment_status')
     .where('shop_id', shopId)
     .whereNotExists(function () {
       this.select(1)
-        .from('customer_blocking_events as e')
+        .from('operational_blocking_events as e')
         .whereRaw('e.canonical_order_id = order_fulfillment_status.canonical_order_id')
         .whereNull('e.resolved_at');
     })
     .update({
-      has_customer_block: false,
-      customer_block_evaluated_at: db.fn.now(),
+      has_operational_block: false,
+      obligation_evaluated_at: db.fn.now(),
     });
 }

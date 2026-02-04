@@ -26,6 +26,7 @@ import { computeObligationFlags } from './services/order-execution-intelligence/
 import { evaluateCustomerObligations } from './services/order-execution-intelligence/customerObligation.evaluator';
 import db from './db';
 import { writeOrderRevenueUnits } from './workers/reconciliation/revenue-units.writer';
+import { evaluateOperationalObligations } from './services/order-execution-intelligence/operationalObligation.evaluator';
 
 async function start() {
   console.log('[worker-entry] Booting worker runtime…');
@@ -96,6 +97,7 @@ async function start() {
     // 4. Aggregate obligations
     await computeObligationFlags(DEV_SHOP_ID);
 
+
     /**
      * Customer Obligation v3 — shop-level evaluation boundary
      * -------------------------------------------------------
@@ -103,6 +105,8 @@ async function start() {
      * Evaluates ALL existing revenue units.
      */
     await evaluateCustomerObligations(DEV_SHOP_ID);
+
+    /* await evaluateOperationalObligations(DEV_SHOP_ID); */
 
     await debugBlockedRevenue(DEV_SHOP_ID);
   }
