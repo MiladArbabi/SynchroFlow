@@ -8,17 +8,20 @@ type ExecutionRow = {
 };
 
 /**
- * aggregateBlockedRevenue (L2 → L1 downgrade helper)
- * -------------------------------------------------
- * Produces magnitude-only blocked revenue totals.
+ * aggregateBlockedRevenue (FT2-safe)
+ * ---------------------------------
+ * Computes CONSTRAINED blocked revenue only.
  *
- * Source of truth:
- * - classifyBlockedRevenue (execution-aware, expressive)
+ * Definition (v1):
+ * - Revenue tied to orders with explicit obligation flags = TRUE
+ * - Backlog or non-delivered status is NOT a constraint
  *
- * Guarantees:
- * - No reclassification
- * - No execution inference
- * - No semantic drift
+ * IMPORTANT:
+ * - Absence of constraints MUST return 0 (not backlog)
+ * - No default attribution
+ * - No coverage-based inference
+ *
+ * This function is the ONLY source feeding FT2 Obligation Overview.
  */
 export async function aggregateBlockedRevenue(
   shopId: number
@@ -26,38 +29,39 @@ export async function aggregateBlockedRevenue(
   totalBlocked: number;
   byCategory: Record<string, number>;
 }> {
-  const classification = await classifyBlockedRevenue(shopId);
-
   /**
-   * IMPORTANT:
-   * ----------
-   * This function is allowed to return partial truth.
-   * FT2 gating happens later via FTEP.
+   * v1 constraint: inventory only
+   * Future obligation types must be explicit and additive.
    */
+  const rows = await db('order_fulfillment_status as ofs')
+    .join(
+      'canonical_orders as o',
+      function () {
+        this.on('o.canonical_order_id', '=', 'ofs.canonical_order_id')
+            .andOn('o.shop_id', '=', 'ofs.shop_id');
+      }
+    )
+    .where('ofs.shop_id', shopId)
+    .where('ofs.has_inventory_block', true)
+    .select('o.total_price');
 
-  const totalBlocked = classification.totalBlockedValue;
+  let constrainedTotal = 0;
 
-  const byCategory =
-  classification.buckets && Object.keys(classification.buckets).length > 0
-    ? classification.buckets
-    : {};
-
-  // DEV sanity only — never enforce here
-  if (process.env.NODE_ENV !== 'production') {
-    const sum = Object.values(byCategory).reduce(
-      (a, b) => a + b,
-      0
-    );
-
-    if (sum > totalBlocked) {
-      console.warn(
-        '[L2:blocker][aggregate] Bucket sum exceeds totalBlocked',
-        { totalBlocked, sum, byCategory }
-      );
-    }
+  for (const row of rows) {
+    const revenue = Number(row.total_price);
+    if (!Number.isFinite(revenue)) continue;
+    constrainedTotal += revenue;
   }
 
-  return { totalBlocked, byCategory };
+  /**
+   * FT2 exposure rules:
+   * - totalBlocked = constrained value only
+   * - No category exposure in FT2 v1
+   */
+  return {
+    totalBlocked: constrainedTotal,
+    byCategory: {}, // intentionally empty (FT2 forbids attribution)
+  };
 }
 
 /**

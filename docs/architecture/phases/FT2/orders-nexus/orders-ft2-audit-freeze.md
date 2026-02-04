@@ -102,6 +102,8 @@ Orders FT2 exposes **four domain classes**, each owned by a single InfoBlock.
 📌 These domains surface across FT2 InfoBlocks according to ownership.  
 📌 Orders Overview owns **order-state grounding only**.  
 📌 Revenue, execution, and risk grounding are owned by their respective InfoBlocks.
+📌 Obligation Overview is the **exclusive FT2 surface** allowed to display constrained or blocked value.
+📌 Revenue Overview must never display blocked or constrained value.
 
 ---
 
@@ -213,17 +215,17 @@ A canonical order whose execution row is either:
 
 ### 💰 B. Revenue Availability Domains (PRIMARY · L1)
 
-**Owned exclusively by: Revenue Overview**
+**Owned by: Revenue Overview (sales availability)  
+Constrained value owned by: Obligation Overview**
 
 **Answer:**  
 > **“Where does the money exist right now?”**
 
 | Domain | Layer | Question Answered |
 | :--- | :--- | :--- |
-| Total Sales Reality | L1 | How much sales value exists in total? |
-| Earned Revenue Reality | L1 | How much value is tied to fulfilled orders? |
-| Pending Revenue Reality | L1 | How much value is tied to orders without observed execution? |
-| Blocked Revenue Reality | L1 | How much value is unavailable due to unresolved execution blockers? |
+| Total Sales Reality | L1 | How much sales value exists in this period? |
+| Earned Revenue Reality | L1 | How much value has completed execution? |
+| Pending Revenue Reality | L1 | How much value is still unresolved? |
 
 **Pending Revenue** includes:
 
@@ -240,9 +242,9 @@ Pending does **not** imply failure, delay, or risk. It reflects absence of confi
 * No recommendations or prioritization.
 * No execution diagnosis.
 
-#### Blocked Revenue Clarification (RE-SEALED)
+#### Blocked Revenue Clarification (MOVED · OWNED BY OBLIGATION OVERVIEW)
 
-Blocked Revenue represents **availability loss**, not failure.
+Blocked Revenue represents **constrained value**, not failure.
 
 **Definition:**
 > Revenue tied to canonical orders that cannot progress toward fulfillment due to unresolved execution blockers, as determined by downgraded L2 classification.
@@ -265,7 +267,7 @@ Blocked Revenue represents **availability loss**, not failure.
 
 Blocked Revenue is a **mirror of system readiness**, not a judgment.
 
-Blocked Revenue in FT2 is a **downgraded signal**:
+Blocked Revenue in FT2 is a **downgraded obligation signal**, surfaced only via Obligation Overview:
 
 * Source: L2 obligation evaluation
 * Exposure: L1 aggregate totals only
@@ -487,14 +489,13 @@ This policy is non-negotiable.
 * Total sales
 * Earned
 * Pending
-* Blocked *(if applicable)*
 
 **Footer Rail (LOCKED):**
 > **SALES VALUE SHOWN — EXECUTION AVAILABILITY ONLY**  
-> **BLOCK CAUSES MAY BE UNATTRIBUTED**  
 > **PAYMENT AND PROFIT NOT EVALUATED**  
+> **CONSTRAINED VALUE IS SHOWN IN OBLIGATION OVERVIEW**  
 > **SKU-LEVEL DETAIL REQUIRES CANONICAL VARIANT CODES (CVC)**  
-> **MISSING CANONICAL IDENTIFIERS RESULT IN AGGREGATE-ONLY OR BLOCKED VISIBILITY**
+> **MISSING CANONICAL IDENTIFIERS RESULT IN AGGREGATE-ONLY VISIBILITY**
 
 ---
 
@@ -541,6 +542,6 @@ FT2 does not degrade gracefully under identity failure. It fails closed by desig
 ✔ No semantic leakage  
 ✔ FT2 remains terminal  
 
-🔒 **Order-Nexus FT2 Contract Audit — REV C.1 is current, aligned, and sealed.**
+🔒 **Order-Nexus FT2 Contract Audit — REV C.2 is current, aligned, and sealed.**
 
 ---

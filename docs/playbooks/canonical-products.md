@@ -281,11 +281,3 @@ Once written:
 That is by design.
 
 ---
-
-If you want, next we can:
-
-* Add a **second playbook** for canonical orders
-* Write a **“Why FT2 blocks” explainer**
-* Or turn this into an **ADR** with historical context
-
-Just say the word.

@@ -30,19 +30,18 @@ This block answers:
 
 ### Rows (Authoritative)
 
-| Row                    | System Truth                           | SMB Question Answered         |
-| ---------------------- | -------------------------------------- | ----------------------------- |
-| **Total Orders**       | Count of canonical orders in window    | “How many orders exist?”      |
-| **Fulfilled Orders**   | Orders with fulfillment complete       | “How many promises are done?” |
-| **Unfulfilled Orders** | Orders still requiring execution       | “How much work is left?”      |
-| **Incoming Orders**    | Canonical orders whose order_created_at falls inside the FT2 window. | “Did new work get added while I wasn’t looking?”          |
+| Row                    | System Truth                                      | SMB Question Answered         |
+| ---------------------- | ------------------------------------------------- | ----------------------------- |
+| **Fulfilled Orders**   | Count of orders with execution complete           | “How many promises are done?” |
+| **Unfulfilled Orders** | Count of orders still representing obligations    | “How many promises remain?”  |
+| **Orders Added**       | Orders created inside the FT2 date window         | “Did new work get added?”     |
 
 ---
 
 ### Footer / Status Line (Meta, not data)
 
-> **ORDER OBLIGATIONS OBSERVED**
-> **EXECUTION STATES SHOWN ELSEWHERE**
+> **ORDER OBLIGATIONS SHOWN**
+> **VALUE AND EXECUTION DETAILED ELSEWHERE**
 
 This explicitly prevents users from over-interpreting this block.
 
@@ -52,27 +51,29 @@ This explicitly prevents users from over-interpreting this block.
 
 ### Purpose
 
-> Establish *where money exists* in principle.
+> Establish *sales value availability* within a selected period.
 
 This block answers:
 
-> “Where is my money right now?”
+This block answers:
 
-This is the **financial backbone** of the order module.
+> “How much sales value exists, is earned, or still pending in this period?”
 
 ---
 
 ### Rows (Non-Negotiable)
 
-| Row                       | System Truth                                   | SMB Question Answered               |
-| ------------------------- | ---------------------------------------------- | ----------------------------------- |
-| **Total Sales**           | Sum of canonical order value                   | “How much money exists?”            |
-| **Earned Revenue**        | Revenue tied to fulfilled orders               | “What have we actually earned?”     |
-| **Pending Revenue** | Revenue tied to unfulfilled orders (availability-based, execution-agnostic) | “What money unlocks if we ship?”    |
+### Rows (Non-Negotiable)
 
-* Pending revenue may include **synthetic execution**
-* Synthetic execution exists to preserve availability truth
-* Execution confidence is **never exposed in FT2**
+| Row               | System Truth                                                | SMB Question Answered                    |
+| ----------------- | ----------------------------------------------------------- | --------------------------------------- |
+| **Total Sales**   | Sum of order value created within the FT2 date window       | “How much sales value was generated?”   |
+| **Earned Revenue**| Portion of Total Sales with completed execution             | “What value is no longer at risk?”      |
+| **Pending Revenue** | Portion of Total Sales not yet execution-complete        | “What value is still unresolved?”       |
+
+* Earned and Pending revenue are execution-derived
+* Visibility is explicitly gated by execution coverage
+* Execution confidence is never inferred or explained
 
 ---
 
@@ -86,9 +87,9 @@ This is the **financial backbone** of the order module.
 
 ### Hard Rules
 
-* No execution stages here
-* No workflow detail
-* No customer or SKU breakdowns
+* No execution stages or workflow detail
+* No customer, SKU, or obligation breakdowns
+* **Blocked or constrained value MUST NOT appear here**
 
 ---
 
@@ -195,6 +196,7 @@ Each row can show:
 ---
 
 ## 6️⃣ InfoBlock #6 — **Obligation Overview**
+
 Visibility Gate (NON-NEGOTIABLE):
 
 This block renders only when:
@@ -242,12 +244,12 @@ Phase note (v1):
 
 ## Relationship to Revenue Overview
 
-| Revenue Overview       | Obligation Overview            |
-| ---------------------- | ------------------------------ |
-| Availability state     | Constraint distribution        |
-| “How much is blocked?” | “How blocked value is grouped” |
-| Single aggregate       | Structured aggregates          |
-| Always visible         | Coverage-gated                 |
+| Revenue Overview              | Obligation Overview                     |
+| ----------------------------- | -------------------------------------- |
+| Sales value availability      | Constrained value magnitude             |
+| “What is earned or pending?”  | “How much value is blocked?”            |
+| Temporal (window-based)       | Lifetime (state-based)                  |
+| Always visible                | Coverage-gated                          |
 
 ### Why this block matters
 
@@ -266,13 +268,12 @@ Blocked Revenue notes (LOCKED):
 
 ---
 
-
 ## Final Structural Summary
 
 | InfoBlock                | Core Question                |
 | ----------------------   | ---------------------------- |
-| Orders Overview          | “What promises exist?”       |
-| Revenue Overview         | “Where is my money?”         |
+| Orders Overview          | “What order obligations exist?”        |
+| Revenue Overview         | “What sales value exists in this period?” |
 | Returns Overview         | “What money is at risk?”     |
 | Revenue Risk             | “How fragile is my revenue?” |
 | Operational Flow (CPT)   | “Where is value stuck?”      |
