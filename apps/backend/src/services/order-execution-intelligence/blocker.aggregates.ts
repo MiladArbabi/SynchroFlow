@@ -63,6 +63,47 @@ export async function aggregateBlockedRevenue(
 };
 
 /**
+ * aggregateUnconstrainedPendingRevenue (FT2-safe)
+ * -----------------------------------------------
+ * Computes revenue that is:
+ * - NOT fulfilled
+ * - AND has NO obligation flags set
+ *
+ * This is true pending revenue.
+ * No inference. No subtraction.
+ */
+export async function aggregatePendingRevenue(
+  shopId: number
+): Promise<{ pendingTotal: number }> {
+  const row = await db('order_fulfillment_status as ofs')
+    .join(
+      'canonical_orders as o',
+      'o.canonical_order_id',
+      'ofs.canonical_order_id'
+    )
+    .where('ofs.shop_id', shopId)
+    .andWhere('ofs.status', '!=', 'delivered')
+    .andWhere(function () {
+      this.whereNull('ofs.has_inventory_block')
+        .orWhere('ofs.has_inventory_block', false);
+    })
+    .andWhere(function () {
+      this.whereNull('ofs.has_customer_block')
+        .orWhere('ofs.has_customer_block', false);
+    })
+    .andWhere(function () {
+      this.whereNull('ofs.has_operational_block')
+        .orWhere('ofs.has_operational_block', false);
+    })
+    .sum<{ sum: string | null }>('o.total_price as sum')
+    .first();
+
+  return {
+    pendingTotal: Number(row?.sum ?? 0),
+  };
+}
+
+/**
  * NOTE:
  * -----
  * Blocked revenue classification was intentionally removed.

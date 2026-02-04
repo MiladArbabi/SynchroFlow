@@ -27,15 +27,17 @@ This block is intentionally:
 
 ## 2. Rows (Canonical & Ordered)
 
-The Revenue Overview InfoBlock contains **exactly three rows**, in this order:
+The Revenue Overview InfoBlock contains **exactly four rows**, in this order:
 
 1. **Total sales**
 2. **Earned revenue**
 3. **Pending revenue**
+4. **Blocked revenue**
 
 No other rows are permitted.
 
-> ⚠️ **Blocked revenue is explicitly excluded** and belongs to **Obligation Overview**.
+> ⚠️ **Blocked revenue is shown here as a value partition only.**
+> No causes, attribution, or obligations are exposed in this block.
 
 ---
 
@@ -119,7 +121,10 @@ status IN ('fulfilled', 'delivered')
 
 **Definition:**
 
-Portion of Total Sales tied to orders not yet execution-complete.
+Portion of Total Sales tied to orders that are:
+
+* Not execution-complete
+* And **have no explicit blocking constraints**
 
 **Source of truth:**
 
@@ -128,8 +133,11 @@ Portion of Total Sales tied to orders not yet execution-complete.
 
 **Inclusion rule:**
 
-```text
+```typescript
 status NOT IN ('fulfilled', 'delivered')
+AND has_inventory_block   IS NOT TRUE
+AND has_customer_block    IS NOT TRUE
+AND has_operational_block IS NOT TRUE
 ```
 
 **Properties:**
@@ -146,13 +154,54 @@ status NOT IN ('fulfilled', 'delivered')
 
 ---
 
+### 3.4 Blocked Revenue (Execution-Derived · Coverage-Gated)
+
+**Question answered:**
+
+> “How much sales value is explicitly prevented from execution?”
+
+**Definition:**
+
+Portion of Total Sales tied to orders with at least one
+explicit execution constraint.
+
+**Source of truth:**
+
+* `canonical_orders.total_price`
+* `order_fulfillment_status`
+
+**Inclusion rule:**
+
+```typescript
+has_inventory_block   = true
+OR has_customer_block = true
+OR has_operational_block = true
+```
+
+Properties:
+
+Temporal
+Execution-derived
+Constraint-explicit
+Deterministic
+
+Visibility rule:
+Shown only if executionCoverage === 'sufficient'
+Otherwise renders as —
+Blocked revenue answers “what is structurally prevented”,
+not why or by whom.
+
+---
+
 ## 4. Explicit Non-Semantics (Global, Non-Negotiable)
 
 No row in Revenue Overview may encode or imply:
 
 * profit, margin, or cost
 * payment, settlement, or cash flow
-* blocked, disputed, or constrained value
+* reasons for blockage
+* attribution of blockage
+* responsibility or fault
 * causes, attribution, or responsibility
 * operational urgency
 * recommendations or prioritization
@@ -179,8 +228,23 @@ WHERE shop_id = :shopId
 
 ```sql
 SELECT
-  SUM(o.total_price) FILTER (WHERE f.status IN ('fulfilled','delivered')) AS earned,
-  SUM(o.total_price) FILTER (WHERE f.status NOT IN ('fulfilled','delivered')) AS pending
+  SUM(o.total_price) FILTER (
+    WHERE f.status IN ('fulfilled','delivered')
+  ) AS earned,
+
+  SUM(o.total_price) FILTER (
+    WHERE f.status NOT IN ('fulfilled','delivered')
+      AND f.has_inventory_block   IS NOT TRUE
+      AND f.has_customer_block    IS NOT TRUE
+      AND f.has_operational_block IS NOT TRUE
+  ) AS pending,
+
+  SUM(o.total_price) FILTER (
+    WHERE f.has_inventory_block
+       OR f.has_customer_block
+       OR f.has_operational_block
+  ) AS blocked
+
 FROM canonical_orders o
 JOIN order_fulfillment_status f
   ON o.canonical_order_id = f.canonical_order_id
@@ -192,6 +256,20 @@ WHERE o.shop_id = :shopId;
 
 ---
 
+### Invariant (Hard-Guaranteed)
+
+```typescript
+pending + blocked === total unfulfilled revenue
+This invariant is:
+```
+
+Verified against live data
+Enforced at aggregation level
+Required for FT2 correctness
+Any violation indicates a wiring or ingestion defect.
+
+---
+
 ## 6. Coverage Policy (Sealed)
 
 Revenue Overview exposes an explicit epistemic gate:
@@ -200,7 +278,7 @@ Revenue Overview exposes an explicit epistemic gate:
 executionCoverage: 'sufficient' | 'insufficient'
 ```
 
-### Rules:
+### Rules
 
 * `totalSales` → always visible
 * `earned`, `pending` → visible **only if sufficient**
@@ -229,14 +307,22 @@ Coverage is **observational**, not inferential.
   />
 
   <InfoBlockRow
-    label="Pending revenue"
-    value={
-      revenue.executionCoverage === 'sufficient'
-        ? revenue.pending
-        : null
-    }
-  />
-</InfoBlock>
+  label="Pending revenue"
+  value={
+    revenue.executionCoverage === 'sufficient'
+      ? revenue.pending
+      : null
+  }
+/>
+
+<InfoBlockRow
+  label="Blocked revenue"
+  value={
+    revenue.executionCoverage === 'sufficient'
+      ? revenue.blocked
+      : null
+  }
+/>
 ```
 
 UI rules:
@@ -253,7 +339,7 @@ UI rules:
 
 | Block               | Nature         | Date-Range Sensitive |
 | ------------------- | -------------- | -------------------- |
-| Revenue Overview    | Temporal flow  | ✅ Yes                |
+| Revenue Overview    | Temporal flow (partitioned) | ✅ Yes |
 | Orders Overview     | State counts   | ❌ No (except inflow) |
 | Obligation Overview | Lifetime state | ❌ No                 |
 
@@ -288,7 +374,7 @@ Anything more expressive belongs in **FT3**, not here.
 
 ---
 
-## 11. Final Certification
+## 11. Final Certification (Re-sealed)
 
 ✔ Temporal semantics sealed
 ✔ Execution coverage explicit
@@ -296,6 +382,7 @@ Anything more expressive belongs in **FT3**, not here.
 ✔ No financial inference
 ✔ UI contract passive and exact
 ✔ Backend invariants verified against live data
+✔ Pending vs Blocked invariant enforced and verified
 
 🔒 **Revenue Overview (FT2) is fully sealed.**
 

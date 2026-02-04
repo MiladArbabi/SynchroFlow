@@ -8,6 +8,7 @@ type RevenueOverviewInfoBlockProps = {
   revenue: {
     totalSales: number | null;
     earned: number | null;
+    blocked: number | null;
     pending: number | null;
     executionCoverage: 'sufficient' | 'insufficient';
   };
@@ -44,8 +45,17 @@ export function RevenueOverviewInfoBlock({
         }
       />
 
+      <InfoBlockRow
+        label="Blocked revenue"
+        value={
+          revenue.executionCoverage === 'sufficient'
+            ? fmtMoney(revenue.blocked)
+            : null
+        }
+      />
+
       <InfoBlockFooter
-        line1="> SALES VALUE SHOWN — EXECUTION AVAILABILITY ONLY"
+        line1="> VALUES SHOWN — CURRENT EXECUTION STATE"
         line2="> PAYMENT AND PROFIT NOT EVALUATED"
       />
     </InfoBlock>

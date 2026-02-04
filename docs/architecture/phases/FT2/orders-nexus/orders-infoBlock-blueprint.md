@@ -65,15 +65,20 @@ This block answers:
 
 ### Rows (Non-Negotiable)
 
-| Row               | System Truth                                                | SMB Question Answered                    |
-| ----------------- | ----------------------------------------------------------- | --------------------------------------- |
-| **Total Sales**   | Sum of order value created within the FT2 date window       | “How much sales value was generated?”   |
-| **Earned Revenue**| Portion of Total Sales with completed execution             | “What value is no longer at risk?”      |
-| **Pending Revenue** | Portion of Total Sales not yet execution-complete        | “What value is still unresolved?”       |
+### Rows (Non-Negotiable)
 
-* Earned and Pending revenue are execution-derived
+| Row                | System Truth                                                                 | SMB Question Answered                          |
+| ------------------ | ---------------------------------------------------------------------------- | --------------------------------------------- |
+| **Total Sales**    | Sum of order value created within the FT2 date window                         | “How much sales value was generated?”         |
+| **Earned Revenue** | Portion of Total Sales with execution complete                                | “What value is already resolved?”             |
+| **Pending Revenue**| Portion of Total Sales not yet execution-complete **and unconstrained**      | “What value should still move forward?”       |
+| **Blocked Revenue**| Portion of Total Sales explicitly constrained by execution blockers           | “What value is structurally prevented?”       |
+
+**Rules (Hard):**
+* Earned, Pending, and Blocked are **mutually exclusive**
+* `pending + blocked = total unfulfilled`
 * Visibility is explicitly gated by execution coverage
-* Execution confidence is never inferred or explained
+* No inference, no attribution, no explanation
 
 ---
 
@@ -216,7 +221,7 @@ Explain causes, suggest actions, imply urgency, or recommend prioritization.
 
 Core Question (Locked)
 
-“How much value is currently constrained — and how is that constraint distributed?”
+“How much value is currently constrained — and by what class of constraint?”
 
 Nothing about what to do.
 
@@ -244,12 +249,13 @@ Phase note (v1):
 
 ## Relationship to Revenue Overview
 
-| Revenue Overview              | Obligation Overview                     |
-| ----------------------------- | -------------------------------------- |
-| Sales value availability      | Constrained value magnitude             |
-| “What is earned or pending?”  | “How much value is blocked?”            |
-| Temporal (window-based)       | Lifetime (state-based)                  |
-| Always visible                | Coverage-gated                          |
+| Revenue Overview                     | Obligation Overview                              |
+| ------------------------------------ | ----------------------------------------------- |
+| Sales value partitioning             | Constraint topology                              |
+| Earned / Pending / Blocked           | Inventory / Customer / Operational / Other      |
+| Temporal (window-based)              | Lifetime (state-based)                           |
+| Aggregate-only, execution-gated      | Aggregate-only, obligation-coverage-gated       |
+| Answers “where is value?”            | Answers “what is constraining value?”           |
 
 ### Why this block matters
 
@@ -261,7 +267,7 @@ This prevents SMBs from:
 
 Blocked Revenue notes (LOCKED):
 
-* Derived from internal L2 obligation classification
+* Derived from explicit obligation evaluation flags
 * Downgraded to aggregate value only
 * No blocker categories exposed here
 * Absence of Blocked Revenue ≠ absence of constraints
@@ -273,7 +279,7 @@ Blocked Revenue notes (LOCKED):
 | InfoBlock                | Core Question                |
 | ----------------------   | ---------------------------- |
 | Orders Overview          | “What order obligations exist?”        |
-| Revenue Overview         | “What sales value exists in this period?” |
+| Revenue Overview         | “What sales value is earned, pending, or blocked in this period?” |
 | Returns Overview         | “What money is at risk?”     |
 | Revenue Risk             | “How fragile is my revenue?” |
 | Operational Flow (CPT)   | “Where is value stuck?”      |

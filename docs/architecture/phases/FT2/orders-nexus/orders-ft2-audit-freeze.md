@@ -102,8 +102,8 @@ Orders FT2 exposes **four domain classes**, each owned by a single InfoBlock.
 📌 These domains surface across FT2 InfoBlocks according to ownership.  
 📌 Orders Overview owns **order-state grounding only**.  
 📌 Revenue, execution, and risk grounding are owned by their respective InfoBlocks.
-📌 Obligation Overview is the **exclusive FT2 surface** allowed to display constrained or blocked value.
-📌 Revenue Overview must never display blocked or constrained value.
+📌 Revenue Overview may display blocked value only as an aggregate partition of sales availability.
+📌 Obligation Overview is the exclusive FT2 surface allowed to explain constraint structure.
 
 ---
 
@@ -215,8 +215,8 @@ A canonical order whose execution row is either:
 
 ### 💰 B. Revenue Availability Domains (PRIMARY · L1)
 
-**Owned by: Revenue Overview (sales availability)  
-Constrained value owned by: Obligation Overview**
+**Owned by: Revenue Overview (sales availability partitioning)  
+Constraint topology owned by: Obligation Overview**
 
 **Answer:**  
 > **“Where does the money exist right now?”**
@@ -225,13 +225,14 @@ Constrained value owned by: Obligation Overview**
 | :--- | :--- | :--- |
 | Total Sales Reality | L1 | How much sales value exists in this period? |
 | Earned Revenue Reality | L1 | How much value has completed execution? |
-| Pending Revenue Reality | L1 | How much value is still unresolved? |
+| Pending Revenue Reality | L1 | How much value is unfulfilled but unconstrained? |
+| Blocked Revenue Reality | L1 | How much value is unfulfilled and explicitly constrained? |
 
 **Pending Revenue** includes:
 
-* All revenue units tied to canonical orders whose execution is:
-  * Synthetic, or
+* Revenue tied to canonical orders whose execution is:
   * Not yet observed
+  * AND not constrained by any obligation flag
 
 Pending does **not** imply failure, delay, or risk. It reflects absence of confirmed execution only.
 
@@ -242,38 +243,23 @@ Pending does **not** imply failure, delay, or risk. It reflects absence of confi
 * No recommendations or prioritization.
 * No execution diagnosis.
 
-#### Blocked Revenue Clarification (MOVED · OWNED BY OBLIGATION OVERVIEW)
+### Blocked Revenue Reality (FT2 · Aggregate Partition)
 
-Blocked Revenue represents **constrained value**, not failure.
+Blocked Revenue represents **unfulfilled revenue with explicit execution constraints**.
 
 **Definition:**
-> Revenue tied to canonical orders that cannot progress toward fulfillment due to unresolved execution blockers, as determined by downgraded L2 classification.
+Revenue tied to canonical orders whose execution is blocked by at least one evaluated obligation flag.
 
-**Rules:**
+**Rules (LOCKED):**
 
-* Derived exclusively from evaluated SKU-level revenue units after:
-    1. Canonical identity resolution
-    2. L2 obligation classification
-    3. Explicit downgrade to L1 aggregate
-* Blocked Revenue cannot exist without:
-    1. Revenue units
-    2. Obligation evaluation
-    3. Explicit downgrade to L1 aggregate
-* If any layer is missing, Blocked Revenue must be zero or absent.
-* Downgraded to L1 as **aggregate totals only**.
-* Never exposes blocker categories, causes, or actions.
-* May equal Pending Revenue in early or incomplete systems.
-* Decreases only when execution truth improves (not via UI logic).
-
-Blocked Revenue is a **mirror of system readiness**, not a judgment.
-
-Blocked Revenue in FT2 is a **downgraded obligation signal**, surfaced only via Obligation Overview:
-
-* Source: L2 obligation evaluation
-* Exposure: L1 aggregate totals only
-* Obligation categories are intentionally suppressed
-
-FT2 never exposes *why* revenue is blocked — only *that* it is.
+* Blocked Revenue is a **subset of unfulfilled revenue**
+* `pending + blocked = total unfulfilled`
+* Derived directly from:
+  * `order_fulfillment_status.has_*_block = true`
+* Requires obligation evaluation freshness
+* Downgraded to **aggregate totals only**
+* Never explains causes or classes here
+* Attribution lives exclusively in Obligation Overview
 
 ##### Obligation Coverage vs Attribution (NEW · HARD GATE)
 
@@ -487,14 +473,15 @@ This policy is non-negotiable.
 **Rows (LOCKED):**
 
 * Total sales
-* Earned
-* Pending
+* Earned revenue
+* Pending revenue
+* Blocked revenue
 
 **Footer Rail (LOCKED):**
-> **SALES VALUE SHOWN — EXECUTION AVAILABILITY ONLY**  
-> **PAYMENT AND PROFIT NOT EVALUATED**  
-> **CONSTRAINED VALUE IS SHOWN IN OBLIGATION OVERVIEW**  
-> **SKU-LEVEL DETAIL REQUIRES CANONICAL VARIANT CODES (CVC)**  
+> SALES VALUE SHOWN — CURRENT EXECUTION STATE  
+> PAYMENT AND PROFIT NOT EVALUATED  
+> BLOCKED VALUE IS PARTITIONED — CAUSES SHOWN ELSEWHERE  
+> SKU-LEVEL DETAIL REQUIRES CANONICAL VARIANT CODES (CVC)
 > **MISSING CANONICAL IDENTIFIERS RESULT IN AGGREGATE-ONLY VISIBILITY**
 
 ---

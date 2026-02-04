@@ -35,7 +35,10 @@ import { pctChange } from 'api-src/utils/pctChange';
 // ⚠️ FT2 RESOLVER BOUNDARY
 // Allowed: aggregate-only downgrade helpers
 // Forbidden: classifiers, intelligence, attribution
-import { aggregateBlockedRevenue } from '../order-execution-intelligence/blocker.aggregates';
+import { 
+  aggregateBlockedRevenue, 
+  aggregatePendingRevenue 
+} from '../order-execution-intelligence/blocker.aggregates';
 import { extractActiveOrdersCount } from '../order-facts/orderActiveCountFacts.service';
 import { extractRevenueUnitsFt2Facts } from '../order-facts/orderRevenueUnitsFt2Facts.service';
 import db from 'api-src/db';
@@ -128,7 +131,7 @@ const obligationFresh =
     FRESHNESS_WINDOW_MS;
 
 const executionCoverage =
-  fulfillmentStatusFacts.visibility === 'sufficient'
+  fulfillmentStatusFacts.visibility === 'sufficient' && obligationFresh
     ? 'sufficient'
     : 'insufficient';
 
@@ -136,16 +139,26 @@ const obligationCoverage =
   obligationFresh ? 'sufficient' : 'insufficient';
 
  const constrainedRevenueAgg =
-  obligationCoverage === 'sufficient'
+  executionCoverage === 'sufficient'
     ? await aggregateBlockedRevenue(shopId)
     : null;
 
+const pendingRevenueAgg =
+  executionCoverage === 'sufficient'
+    ? await aggregatePendingRevenue(shopId)
+    : null;
+
   /**
-   * FT2 Obligation Exposure
-   * ----------------------
-   * - Uses constrained value only
-   * - Eligibility is explicit (no inference)
-   */
+   * NOTE:
+   * -----
+   * Obligations use obligationCoverage (freshness-based),
+   * Revenue uses executionCoverage (execution + freshness).
+   *
+   * This is intentional:
+   * - Obligations may be observable even when revenue is not.
+   * - Revenue must never outpace obligation freshness.
+  */
+
   const obligations = downgradeObligations(
     constrainedRevenueAgg
       ? constrainedRevenueAgg?.constrainedBlockedTotal ?? 0
@@ -349,6 +362,13 @@ const comparison = {
      * pending + earned + blocked === totalSales
      * (subject to rounding)
      */
+
+    /**
+     * Invariant (FT2):
+     * earned + pending + blocked === totalSales
+     * (subject to rounding)
+     */
+
     revenue: {
       totalSales: exposure.totals.revenueTotal,
 
@@ -359,11 +379,7 @@ const comparison = {
 
       pending:
         executionCoverage === 'sufficient'
-          ? Math.max(
-              (revenueAllocationFacts.unfulfilledRevenueTotal ?? 0)
-              - (constrainedRevenueAgg?.constrainedBlockedTotal ?? 0),
-              0
-            )
+          ? pendingRevenueAgg?.pendingTotal ?? null
           : null,
 
       blocked:

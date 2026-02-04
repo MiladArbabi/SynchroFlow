@@ -18,11 +18,6 @@ import {
 
 type ObligationOverviewInfoBlockProps = {
   obligations: {
-    /**
-     * FT2 Obligations (Aggregate Only)
-     */
-    totalBlockedValue: number | null;
-
     coverage: {
       status: 'sufficient' | 'insufficient';
     };
@@ -45,12 +40,17 @@ export function ObligationOverviewInfoBlock({
   return (
     <InfoBlock title="Obligation overview">
       <InfoBlockRow
-        label="Blocked value"
-        value={obligations.totalBlockedValue ?? null}
+        label="Constraint signals"
+        value={
+          obligations.coverage.status === 'sufficient'
+            ? 'Present'
+            : 'Insufficient data'
+        }
       />
+
       <InfoBlockFooter
-        line1="> BLOCKED VALUE SHOWN — LIFETIME STATE"
-        line2="> NOT AFFECTED BY DATE RANGE SELECTION"
+        line1="> ORDERS MAY BE CONSTRAINED BY EXPLICIT CONDITIONS"
+        line2="> INVENTORY, CUSTOMER, OR OPERATIONAL"
       />
     </InfoBlock>
   );
