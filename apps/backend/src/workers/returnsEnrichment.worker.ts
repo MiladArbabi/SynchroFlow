@@ -1,3 +1,9 @@
+/**
+ * @deprecated
+ * Returns enrichment is disabled.
+ * Refunds ingestion is the single source of truth.
+ */
+
 // apps/backend/src/workers/returnsEnrichment.worker.ts
 
 import db from 'api-src/db';
@@ -199,8 +205,7 @@ export async function processReturnEnrichment(msg: any) {
 }
 
 export function startReturnsEnrichmentWorker() {
-  const channel = getQueueChannel('returns.enrichment.v1');
-  channel.consume('returns.enrichment.v1', processReturnEnrichment, {
-    noAck: false,
-  });
+  console.warn(
+    '[DEPRECATED] Returns enrichment worker disabled — refunds pipeline active',
+  );
 }

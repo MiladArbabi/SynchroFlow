@@ -128,7 +128,8 @@ export class ShopifyAppService {
     );
 
     await this.registerAppUninstallWebhook(shopDomain);
-    await this.registerReturnsRequestedWebhook(shopDomain);
+    // RETURNS DEPRECATED — refunds pipeline is authoritative
+    await this.registerRefundsCreateWebhook(shopDomain);
 
     // Create app installation record (if not exists)
     const existingInstallation = await this.getAppInstallation(shopDomain);
@@ -385,16 +386,32 @@ export class ShopifyAppService {
   }
 
   /**
-   * Register Shopify returns requested webhook
+   * @deprecated
+   * Shopify returns webhooks are NOT reliable nor accessible
+   * under current scopes. Refunds are authoritative instead.
    */
-  static async registerReturnsRequestedWebhook(
+  static async registerReturnsRequestedWebhook(): Promise<void> {
+    console.warn(
+      '[DEPRECATED] registerReturnsRequestedWebhook skipped — refunds pipeline is authoritative',
+    );
+    return;
+  }
+
+  /**
+   * Register Shopify refunds create webhook
+   *
+   * Topic:
+   * - refunds/create (authoritative financial regression signal)
+   */
+  static async registerRefundsCreateWebhook(
     shopDomain: string,
   ): Promise<void> {
     try {
       const accessToken = await this.getDecryptedAccessToken(shopDomain);
       if (!accessToken) return;
 
-      const baseUrl = process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
+      const baseUrl =
+        process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
       if (!baseUrl || !baseUrl.startsWith('https://')) return;
 
       const webhookUrl = `https://${shopDomain}/admin/api/2024-01/webhooks.json`;
@@ -403,7 +420,7 @@ export class ShopifyAppService {
         webhookUrl,
         {
           webhook: {
-            topic: 'returns/requested',
+            topic: 'refunds/create',
             address: `${baseUrl}/api/v1/shopify/webhooks`,
             format: 'json',
           },
@@ -416,14 +433,12 @@ export class ShopifyAppService {
         },
       );
 
-      console.log('✅ Registered returns requested webhook');
-
-      // NOTE: error is typed as `any` to allow Axios error introspection (response/data)
-     } catch (error: any) {
+      console.log('✅ Registered refunds/create webhook');
+    } catch (error: any) {
       console.error(
-        '[ShopifyAppService] Failed to register returns webhook:',
+        '[ShopifyAppService] Failed to register refunds webhook:',
         error?.response?.data || error?.message || error,
       );
     }
-  }
+  };
 }

@@ -19,6 +19,7 @@ import { ShopifyWebhookAdapter } from 'api-src/api/webhooks/adapters/shopify.ada
 import {
   onShopifyAppUninstalled,
   handleOrderFulfillment,
+  handleRefundCreated,
 } from './handlers';
 
 /**
@@ -63,7 +64,12 @@ WebhookRouter.register({
   handle: handleOrderFulfillment,
 });
 
-
+// Refunds (authoritative revenue regression)
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'refunds/create',
+  handle: handleRefundCreated,
+});
 
 export async function shopifyWebhookHandler(
   req: Request,

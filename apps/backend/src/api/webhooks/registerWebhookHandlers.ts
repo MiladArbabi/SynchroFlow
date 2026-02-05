@@ -6,6 +6,7 @@ import { handleOrderFulfillment } from 'api-src/api/shopify/handlers/handleOrder
 
 // Stripe
 import { handleInvoicePaid } from '../billing/handlers';
+import { handleRefundCreated } from '../shopify/handlers/handleRefundCreated';
 
 /**
  * registerWebhookHandlers
@@ -28,11 +29,18 @@ export function registerWebhookHandlers() {
     handle: onShopifyAppUninstalled,
   });
 
-  // Fulfillment execution truth
+    // Fulfillment execution truth
   WebhookRouter.register({
     integration: 'shopify',
     eventType: 'fulfillments/create',
     handle: handleOrderFulfillment,
+  });
+
+  // Refunds (authoritative revenue regression)
+  WebhookRouter.register({
+    integration: 'shopify',
+    eventType: 'refunds/create',
+    handle: handleRefundCreated,
   });
 
   WebhookRouter.register({

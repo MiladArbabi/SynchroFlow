@@ -9,6 +9,7 @@ import { startWorker as startEventWorker } from './worker';
 import { startProductIngestionWorker } from './workers/product-ingestion.worker';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker';
 import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker';
+import { startRefundsIngestionWorker } from './workers/refundsIngestion.worker';
 import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation';
 import { runFulfillmentReconciliationBatch } from './workers/reconciliation';
 
@@ -28,7 +29,6 @@ import { evaluateCustomerObligations } from './services/order-execution-intellig
 import db from './db';
 import { writeOrderRevenueUnits } from './workers/reconciliation/revenue-units.writer';
 import { evaluateOperationalObligations } from './services/order-execution-intelligence/operationalObligation.evaluator';
-import { startReturnsEnrichmentWorker } from './workers/returnsEnrichment.worker';
 
 async function start() {
   console.log('[worker-entry] Booting worker runtime…');
@@ -45,7 +45,7 @@ async function start() {
   startReturnsIngestionWorker();
   console.log('[worker-entry] Starting reconciliation consumer...');
   startReconciliationConsumer();
-  startReturnsEnrichmentWorker();
+  startRefundsIngestionWorker();
 
   /**
   * DEV-ONLY: Obligation evaluation hook
