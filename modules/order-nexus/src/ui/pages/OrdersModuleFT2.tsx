@@ -8,6 +8,7 @@ import {
 
 import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock';
 import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock';
+import { ReturnsOverviewInfoBlock } from '../components/ReturnsOverviewInfoBlock';
 import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock';
 
 /**
@@ -65,6 +66,18 @@ export interface OrdersModuleFT2DataProps {
     pending: number | null;
     blocked: number | null;
     executionCoverage: 'sufficient' | 'insufficient';
+  };
+
+  /**
+   * Returns — post-execution regression
+   * -----------------------------------
+   * Financial only.
+   * Does NOT affect eligibility or execution.
+   */
+  returns?: {
+    returnedRevenue: number | null;
+    returnedUnits: number | null;
+    affectedOrders: number | null;
   };
 
   /**
@@ -130,13 +143,15 @@ export interface OrdersModuleFT2Props
 export default function OrdersModuleFT2(
   props: OrdersModuleFT2Props
 ) {
-  const {
-    orders,
-    comparison,
-    revenue,
-    revenueContinuity,
-    obligations,
-  } = props;
+    const {
+      orders,
+      comparison,
+      revenue,
+      returns,
+      revenueContinuity,
+      obligations,
+    } = props;
+
 
   const fmtMoney = (v: number | null) =>
     v == null ? null : Number(v.toFixed(2));
@@ -154,6 +169,14 @@ export default function OrdersModuleFT2(
           revenue={revenue}
         />
 
+        <ReturnsOverviewInfoBlock
+          returnedRevenue={returns?.returnedRevenue ?? null}
+          returnedUnits={returns?.returnedUnits ?? null}
+          affectedOrders={returns?.affectedOrders ?? null}
+        />
+        </FT2Row>
+
+        <FT2Row intent='kpi'>
         <ObligationOverviewInfoBlock
           obligations={
             obligations ?? {

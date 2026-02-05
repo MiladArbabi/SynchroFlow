@@ -8,6 +8,7 @@ import { startSyncWorker } from './sync.worker';
 import { startWorker as startEventWorker } from './worker';
 import { startProductIngestionWorker } from './workers/product-ingestion.worker';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker';
+import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker';
 import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation';
 import { runFulfillmentReconciliationBatch } from './workers/reconciliation';
 
@@ -27,6 +28,7 @@ import { evaluateCustomerObligations } from './services/order-execution-intellig
 import db from './db';
 import { writeOrderRevenueUnits } from './workers/reconciliation/revenue-units.writer';
 import { evaluateOperationalObligations } from './services/order-execution-intelligence/operationalObligation.evaluator';
+import { startReturnsEnrichmentWorker } from './workers/returnsEnrichment.worker';
 
 async function start() {
   console.log('[worker-entry] Booting worker runtime…');
@@ -40,8 +42,11 @@ async function start() {
   startEventWorker();
   startProductIngestionWorker();
   startWebhookWorker();
+  startReturnsIngestionWorker();
   console.log('[worker-entry] Starting reconciliation consumer...');
   startReconciliationConsumer();
+  startReturnsEnrichmentWorker();
+
   /**
   * DEV-ONLY: Obligation evaluation hook
   * ----------------------------------
@@ -96,7 +101,6 @@ async function start() {
 
     // 4. Aggregate obligations
     await computeObligationFlags(DEV_SHOP_ID);
-
 
     /**
      * Customer Obligation v3 — shop-level evaluation boundary

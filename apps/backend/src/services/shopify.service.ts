@@ -27,6 +27,7 @@ import { publishReconciliationJob } from 'api-src/queues/reconciliation.queue';
 // Add required scopes for Protected Customer Data
 const REQUIRED_SCOPES = [
   'read_orders',
+  'read_returns',
   'read_customers', 
   'read_products',
   'read_inventory',

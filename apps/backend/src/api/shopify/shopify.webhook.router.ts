@@ -34,6 +34,9 @@ router.post('/', async (req: Request, res: Response) => {
     case 'fulfillments/update':
     case 'orders/fulfilled': // defensive
       return shopifyWebhookHandler(req, res);
+    
+    case 'returns/requested':
+      return shopifyWebhookHandler(req, res);
 
     default:
       return res.status(200).json({ status: 'ignored' });

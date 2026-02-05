@@ -51,9 +51,6 @@ export class ShopifyAppService {
   /**
    * Register app uninstall webhook
    */
-    /**
-   * Register app uninstall webhook
-   */
   static async registerAppUninstallWebhook(
     shopDomain: string,
   ): Promise<void> {
@@ -131,6 +128,7 @@ export class ShopifyAppService {
     );
 
     await this.registerAppUninstallWebhook(shopDomain);
+    await this.registerReturnsRequestedWebhook(shopDomain);
 
     // Create app installation record (if not exists)
     const existingInstallation = await this.getAppInstallation(shopDomain);
@@ -149,7 +147,7 @@ export class ShopifyAppService {
         shop_id: shopId,
         shop_domain: shopDomain,
         access_token: this.encryptToken(accessToken),
-        scopes: 'read_products,read_orders,read_customers,read_inventory,read_fulfillments,write_script_tags',
+        scopes: 'read_products,read_orders,read_customers,read_inventory,read_fulfillments,read_returns,write_script_tags',
         installed_at: new Date()
       });
     }
@@ -209,6 +207,36 @@ export class ShopifyAppService {
   }
 
   /**
+ * Get decrypted access token by shop_id
+ * ------------------------------------
+ * Worker-safe credential access.
+ *
+ * Contract:
+ * - Returns decrypted token or null
+ * - Owns crypto boundary
+ * - NEVER throws
+ */
+  static async getDecryptedAccessTokenByShopId(
+    shopId: number
+  ): Promise<{ token: string; shopDomain: string } | null> {
+    const installation = await db('shopify_app_installations')
+      .where({ shop_id: shopId, uninstalled_at: null })
+      .first();
+
+    if (!installation) return null;
+
+    try {
+      const token = this.decryptToken(installation.access_token);
+      return {
+        token,
+        shopDomain: installation.shop_domain,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Get decrypted access token
    */
   static async getDecryptedAccessToken(shopDomain: string): Promise<string | null> {
@@ -246,64 +274,64 @@ export class ShopifyAppService {
 
     // Create the SDK initialization script
     const script = `
-// LaSyncro Specter SDK v1.0
-(function() {
-  window.SpecterSDKConfig = ${JSON.stringify(config)};
-  
-  // Initialize SDK
-  if (typeof window.SpecterSDK === 'undefined') {
-    window.SpecterSDK = new (function() {
-      this.config = window.SpecterSDKConfig;
-      this.session = null;
+    // LaSyncro Specter SDK v1.0
+    (function() {
+      window.SpecterSDKConfig = ${JSON.stringify(config)};
       
-      this.init = function() {
-        console.log('Specter SDK initialized for shop:', this.config.shopId);
-        this.trackSession();
+      // Initialize SDK
+      if (typeof window.SpecterSDK === 'undefined') {
+        window.SpecterSDK = new (function() {
+          this.config = window.SpecterSDKConfig;
+          this.session = null;
+          
+          this.init = function() {
+            console.log('Specter SDK initialized for shop:', this.config.shopId);
+            this.trackSession();
+            
+            if (this.config.features.exitIntent) {
+              this.setupExitIntent();
+            }
+          };
+          
+          this.trackSession = function() {
+            this.session = {
+              id: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+              timestamp: new Date(),
+              intentScore: this.calculateIntentScore()
+            };
+            
+            // Send session data to LaSyncro (simplified)
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon('/lasyncro/specter/session', JSON.stringify(this.session));
+            }
+          };
+          
+          this.calculateIntentScore = function() {
+            // Simplified intent scoring
+            return Math.min((Math.random() * 0.3) + 0.2 + 0.5, 1.0);
+          };
+          
+          this.setupExitIntent = function() {
+            document.addEventListener('mouseleave', function(e) {
+              if (e.clientY < 0) {
+                window.SpecterSDK.showExitIntentNudge();
+              }
+            });
+          };
+          
+          this.showExitIntentNudge = function() {
+            // Simplified nudge display
+            if (this.session && this.session.intentScore > 0.7) {
+              console.log('Showing exit intent nudge for high-intent visitor');
+              // In production, this would show a modal or banner
+            }
+          };
+        })();
         
-        if (this.config.features.exitIntent) {
-          this.setupExitIntent();
-        }
-      };
-      
-      this.trackSession = function() {
-        this.session = {
-          id: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-          timestamp: new Date(),
-          intentScore: this.calculateIntentScore()
-        };
-        
-        // Send session data to LaSyncro (simplified)
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon('/lasyncro/specter/session', JSON.stringify(this.session));
-        }
-      };
-      
-      this.calculateIntentScore = function() {
-        // Simplified intent scoring
-        return Math.min((Math.random() * 0.3) + 0.2 + 0.5, 1.0);
-      };
-      
-      this.setupExitIntent = function() {
-        document.addEventListener('mouseleave', function(e) {
-          if (e.clientY < 0) {
-            window.SpecterSDK.showExitIntentNudge();
-          }
-        });
-      };
-      
-      this.showExitIntentNudge = function() {
-        // Simplified nudge display
-        if (this.session && this.session.intentScore > 0.7) {
-          console.log('Showing exit intent nudge for high-intent visitor');
-          // In production, this would show a modal or banner
-        }
-      };
+        window.SpecterSDK.init();
+      }
     })();
-    
-    window.SpecterSDK.init();
-  }
-})();
-    `.trim();
+        `.trim();
 
     return script;
   };
@@ -353,6 +381,49 @@ export class ShopifyAppService {
     } catch (error) {
       console.error('[ShopifyAppService] Specter SDK install failed (non-fatal):', error);
       return;
+    }
+  }
+
+  /**
+   * Register Shopify returns requested webhook
+   */
+  static async registerReturnsRequestedWebhook(
+    shopDomain: string,
+  ): Promise<void> {
+    try {
+      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+      if (!accessToken) return;
+
+      const baseUrl = process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
+      if (!baseUrl || !baseUrl.startsWith('https://')) return;
+
+      const webhookUrl = `https://${shopDomain}/admin/api/2024-01/webhooks.json`;
+
+      await axios.post(
+        webhookUrl,
+        {
+          webhook: {
+            topic: 'returns/requested',
+            address: `${baseUrl}/api/v1/shopify/webhooks`,
+            format: 'json',
+          },
+        },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      console.log('✅ Registered returns requested webhook');
+
+      // NOTE: error is typed as `any` to allow Axios error introspection (response/data)
+     } catch (error: any) {
+      console.error(
+        '[ShopifyAppService] Failed to register returns webhook:',
+        error?.response?.data || error?.message || error,
+      );
     }
   }
 }

@@ -118,6 +118,7 @@ export const initiateOAuth = async (req: Request, res: Response) => {
     const scopes = [
       'read_products',
       'read_orders',
+      'read_returns',
       'read_customers',
       'read_inventory',
       'read_payouts',
@@ -331,7 +332,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           shop_id: shopId,
           shop_domain: oauthContext.shopDomain,
           access_token: encryptedToken,
-          scopes: 'read_products,read_orders,read_customers,read_inventory,read_fulfillments,write_script_tags',
+          scopes: 'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_script_tags',
           installed_at: new Date(),
         })
          .onConflict(['shop_domain'])

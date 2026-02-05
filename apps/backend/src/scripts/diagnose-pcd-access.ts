@@ -12,9 +12,9 @@ console.log('SHOPIFY_API_VERSION:', process.env.SHOPIFY_API_VERSION || 'Not set'
 
 // Check scopes from OAuth flow
 console.log('\n2. SCOPES CONFIGURATION:');
-const oauthScopes = 'read_products,read_orders,read_customers,read_inventory,read_payouts,read_fulfillments';
+const oauthScopes = 'read_products,read_orders,read_returns,read_customers,read_inventory,read_payouts,read_fulfillments';
 console.log('OAuth Scopes:', oauthScopes);
-console.log('API Config Scopes:', ['read_orders', 'read_customers', 'read_products', 'read_inventory', 'read_fulfillments'].join(', '));
+console.log('API Config Scopes:', ['read_orders', 'read_customers', 'read_products', 'read_returns', 'read_inventory', 'read_fulfillments'].join(', '));
 
 console.log('\n3. PROTECTED CUSTOMER DATA ACCESS:');
 console.log('Required for: Orders, Customers, Payouts');
