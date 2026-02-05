@@ -104,16 +104,16 @@ if (rows.length === 0) {
   if (rows.length === 0) return;
 
   /**
- * NOTE (CVC):
- * ----------
- * SKU is NOT a canonical identifier.
- * canonical_variant_code (CVC) is LaSyncro’s unit of truth.
- *
- * Reasons:
- * - Merchants omit SKUs
- * - SKUs mutate
- * - Warehouses need stable codes
- */
+   * NOTE (CVC):
+   * ----------
+   * SKU is NOT a canonical identifier.
+   * canonical_variant_code (CVC) is LaSyncro’s unit of truth.
+   *
+   * Reasons:
+   * - Merchants omit SKUs
+   * - SKUs mutate
+   * - Warehouses need stable codes
+   */
 
   // 3. Insert factual units
   await db('order_revenue_units')

@@ -51,26 +51,33 @@ export async function resolveRefundExecution(
       return;
     }
 
+    const aggregated: Record<string, number> = {};
+
     for (const line of lines) {
       const qty = Number(line.quantity_refunded);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
 
-      if (!Number.isFinite(qty) || qty <= 0) continue;
+        // Skip unresolved lines (by design)
+        if (!line.sku) continue;
 
-      await trx('order_revenue_units')
-        .where({
-          shop_id: execution.shop_id,
-          canonical_order_id: execution.canonical_order_id,
-          sku: line.sku,
-        })
-        .update({
-          returned_quantity: trx.raw(
-            'COALESCE(returned_quantity, 0) + ?',
-            [qty]
-          ),
-          has_return_block: true,
-          return_block_reason: 'customer_refunded',
-          return_evaluated_at: trx.fn.now(),
-        });
-    }
+        aggregated[line.sku] = (aggregated[line.sku] ?? 0) + qty;
+      }
+
+      for (const [sku, qty] of Object.entries(aggregated)) {
+        await trx('order_revenue_units')
+          .where({
+            canonical_order_id: execution.canonical_order_id,
+            sku,
+          })
+          .update({
+            returned_quantity: trx.raw(
+              'COALESCE(returned_quantity, 0) + ?',
+              [qty]
+            ),
+            has_return_block: true,
+            return_block_reason: 'customer_refunded',
+            return_evaluated_at: trx.fn.now(),
+          });
+      }
   });
 }

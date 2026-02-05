@@ -114,18 +114,6 @@ export async function handleRefundCreated(
         platform_refund_id: String(refundId),
       })
       .first();
-    
-    /**
-     * Refund Resolution Invocation
-     * ----------------------------
-     * This applies DERIVED effects to order_revenue_units.
-     * Safe to replay.
-     * Must never mutate refund_executions.
-     */
-    if (execution?.id) {
-      // Derived effects only — safe to replay
-      await resolveRefundExecution(execution.id);
-    }
 
     const refundLineItems = refundPayload.refund_line_items ?? [];
 
