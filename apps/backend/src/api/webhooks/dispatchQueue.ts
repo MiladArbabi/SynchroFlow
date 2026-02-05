@@ -1,27 +1,33 @@
 // apps/backend/src/api/webhooks/dispatchQueue.ts
 //
-// Phase 6B – Queue seam
-//
-// This module defines the async boundary for webhook dispatch.
-// It does NOT implement workers or retry logic.
-//
-// Contract:
-// - Accept a fully-formed WebhookEnvelope
-// - Enqueue exactly once
-// - Never throw (fail-closed upstream)
+// Phase 6B – Queue seam (IMPLEMENTED)
+// ----------------------------------
+// Responsibilities:
+// - Publish a fully-formed WebhookEnvelope
+// - Exactly-once attempt
+// - Durable queue
+// - Never throw (fail-closed)
 
 import { WebhookEnvelope } from './types';
+import { getQueueChannel } from 'api-src/queue';
+
+const QUEUE_NAME = 'webhook.dispatch.v1';
 
 export async function enqueueWebhookEnvelope(
   envelope: WebhookEnvelope
 ): Promise<void> {
-  // IMPLEMENTATION COMES IN FUTURE PHASE
-  // For now this is a seam only.
+  try {
+    const channel = getQueueChannel(QUEUE_NAME);
 
-  // This function will eventually:
-  // - serialize the envelope
-  // - publish to a durable queue
-  // - return immediately
+    const payload = Buffer.from(JSON.stringify(envelope), 'utf8');
 
-  return;
+    channel.sendToQueue(QUEUE_NAME, payload, {
+      persistent: true,
+      contentType: 'application/json',
+    });
+  } catch (err) {
+    // Fail-closed by contract — upstream must never break
+    // Ledger already recorded receipt
+    console.error('[enqueueWebhookEnvelope] publish failed', err);
+  }
 }

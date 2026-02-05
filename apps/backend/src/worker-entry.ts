@@ -9,7 +9,6 @@ import { startWorker as startEventWorker } from './worker';
 import { startProductIngestionWorker } from './workers/product-ingestion.worker';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker';
 import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker';
-import { startRefundsIngestionWorker } from './workers/refundsIngestion.worker';
 import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation';
 import { runFulfillmentReconciliationBatch } from './workers/reconciliation';
 
@@ -45,7 +44,7 @@ async function start() {
   startReturnsIngestionWorker();
   console.log('[worker-entry] Starting reconciliation consumer...');
   startReconciliationConsumer();
-  startRefundsIngestionWorker();
+  // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
 
   /**
   * DEV-ONLY: Obligation evaluation hook

@@ -1,3 +1,5 @@
+//apps/backend/src/queue.ts
+
 import amqp from 'amqp-connection-manager';
 import { AmqpConnectionManager, ChannelWrapper } from 'amqp-connection-manager';
 import { Channel } from 'amqplib';

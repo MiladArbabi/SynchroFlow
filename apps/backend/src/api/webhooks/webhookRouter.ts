@@ -62,24 +62,77 @@ export class WebhookRouter {
    */
   static async dispatch(envelope: WebhookEnvelope): Promise<void> {
 
-    // ─────────────────────────────────────────────
-    // Dispatch mode resolution (fail fast)
-    // ─────────────────────────────────────────────
+    const normalizedEventType =
+    typeof envelope.eventType === 'string'
+      ? envelope.eventType.replace(/^"+|"+$/g, '')
+      : envelope.eventType;
+
+    // Canonicalize envelope for downstream consumers (queued or sync)
+    envelope.eventType = normalizedEventType;
+
+    /**
+     * Refund payload narrowing
+     * ------------------------
+     * WebhookEnvelope.rawPayload is intentionally untyped.
+     * Refund idempotency requires extracting Shopify refund identity,
+     * so we narrow locally instead of polluting the global envelope type.
+     */
+    type ShopifyRefundPayload = {
+      id?: number | string;
+      admin_graphql_api_id?: string;
+    };
+
+    const refundPayload =
+      normalizedEventType === 'refunds/create'
+        ? (envelope.rawPayload as ShopifyRefundPayload)
+        : null;
+
+    const refundId =
+      refundPayload?.id ??
+      refundPayload?.admin_graphql_api_id ??
+      null;
+
+    // 🚨 MUST BE FIRST SIDE-EFFECT
+    const ledgerResult =
+      normalizedEventType === 'refunds/create'
+        ? { isDuplicate: false }
+        : await WebhookLedgerService.recordReceived({
+            integration: envelope.integration,
+            externalEventId: envelope.eventId,
+            eventType: normalizedEventType,
+            payload: envelope.rawPayload,
+            idempotencyKey: `${envelope.integration}:${envelope.eventId}`,
+          });
+
     const dispatchMode = getWebhookDispatchMode();
 
-    // 🚨 MUST BE FIRST LEDGER WRITE — NO CONDITIONS ABOVE THIS
-    const ledgerResult = await WebhookLedgerService.recordReceived({
-      integration: envelope.integration,
-      externalEventId: envelope.eventId,
-      eventType: envelope.eventType,
-      payload: envelope.rawPayload,
-      idempotencyKey: `${envelope.integration}:${envelope.eventId}`,
-    });
-
     if (ledgerResult.isDuplicate) {
+      /**
+       * IMPORTANT:
+       * Duplicate webhooks must NOT short-circuit dispatch.
+       *
+       * Rationale:
+       * - Platforms (e.g. Shopify) replay the same refund ID
+       * - Domain workers are idempotent by design
+       * - Suppressing dispatch causes permanent data loss
+       *
+       * Ledger records duplication,
+       * but execution must still proceed.
+       */
       await WebhookLedgerService.markDuplicate(envelope.eventId);
-      return;
+      // DO NOT return
     }
+
+    const key = WebhookRouter.key(
+      envelope.integration,
+      normalizedEventType
+    );
+
+    console.log('[WEBHOOK DISPATCH]', {
+      integration: envelope.integration,
+      eventType: normalizedEventType,
+      registeredKeys: Array.from(WebhookRouter.routes.keys()),
+    });
 
     if (dispatchMode === 'queued') {
       await enqueueWebhookEnvelope(envelope);
@@ -89,16 +142,10 @@ export class WebhookRouter {
     if (dispatchMode !== 'sync') {
       throw new Error(`Unsupported webhook dispatch mode: ${dispatchMode}`);
     }
-    
-    const key = WebhookRouter.key(
-      envelope.integration,
-      envelope.eventType
-    );
 
-    console.log('[WEBHOOK DISPATCH]', {
-      integration: envelope.integration,
-      eventType: JSON.stringify(envelope.eventType),
-      registeredKeys: Array.from(WebhookRouter.routes.keys()),
+    console.log('[DISPATCH_DECISION]', {
+      isDuplicate: ledgerResult.isDuplicate,
+      willInvokeHandler: true,
     });
 
     const handler = WebhookRouter.routes.get(key);

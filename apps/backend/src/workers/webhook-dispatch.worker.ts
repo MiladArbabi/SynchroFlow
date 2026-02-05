@@ -1,6 +1,6 @@
 // apps/backend/src/workers/webhook-dispatch.worker.ts
 //
-// Phase 7B – Webhook async re-entry worker
+// Webhook async re-entry worker
 //
 // This worker does NOT contain webhook logic.
 // It replays jobs through the canonical router.

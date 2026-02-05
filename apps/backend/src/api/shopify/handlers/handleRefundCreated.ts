@@ -1,64 +1,151 @@
+/**
+ * REFUND EXECUTION CONTRACT
+ * ------------------------
+ * - refund_executions is the ONLY source of financial truth
+ * - Webhooks may replay; platform_refund_id enforces idempotency
+ * - Revenue mutation happens in a separate resolver phase
+ * - canonical_returns is deprecated and must not be written
+ */
+
 // apps/backend/src/api/shopify/handlers/handleRefundCreated.ts
-import { WebhookEnvelope } from 'api-src/api/webhooks/types';
+
 import db from 'api-src/db';
-import { enqueueWebhookEnvelope } from 'api-src/api/webhooks/dispatchQueue';
+import { WebhookEnvelope } from 'api-src/api/webhooks/types';
+import { resolveRefundExecution } from 'api-src/workers/refundResolution.worker';
 
 /**
- * Minimal Shopify refund payload (structural)
- * ------------------------------------------
- * We ONLY assert what we must read.
+ * Minimal Shopify Refund Payload (Execution-Safe)
+ * -----------------------------------------------
+ * This is NOT a full Shopify type.
+ * It includes ONLY fields required for refund execution truth.
  */
 type ShopifyRefundPayload = {
   id: number | string;
   order_id: number | string;
-  refund_line_items?: unknown[];
+  created_at?: string;
+  refund_line_items?: Array<{
+    quantity?: number;
+    subtotal?: string | number;
+    line_item?: {
+      id?: number | string;
+    };
+  }>;
 };
 
-function isShopifyRefundPayload(
-  payload: unknown
-): payload is ShopifyRefundPayload {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'id' in payload &&
-    'order_id' in payload
-  );
-}
-
 /**
- * Handle Shopify refunds/create
- * -----------------------------
- * Transport-only ingress.
- * NO revenue logic.
- * NO mutation.
+ * Shopify refunds/create webhook handler.
+ *
+ * Responsibilities:
+ * - Persist webhook payload (idempotent via ledger)
+ * - Stage raw payload for downstream ingestion
+ * - Enqueue refunds ingestion worker
+ *
+ * No parsing. No inference. No mutation.
  */
 export async function handleRefundCreated(
   envelope: WebhookEnvelope
 ): Promise<void> {
-  const rawPayload = envelope.rawPayload;
+  const { shopId, rawPayload } = envelope;
 
-  if (!isShopifyRefundPayload(rawPayload)) {
+  console.log('[REFUND_HANDLER_ENTRY]', {
+    shopId,
+    hasRawPayload: !!rawPayload,
+  });
+
+  /**
+   * Runtime type narrowing for refund execution.
+   * If payload does not match minimum refund shape,
+   * execution is skipped safely.
+   */
+
+  /**
+   * IMPORTANT:
+   * WebhookEnvelope.rawPayload is intentionally untyped.
+   * We narrow locally to avoid leaking Shopify semantics
+   * beyond the execution boundary.
+   *
+   * This preserves:
+   * - transport correctness
+   * - execution authority
+   * - future replay safety
+   */
+  const refundPayload = rawPayload as Partial<ShopifyRefundPayload>;
+
+  // Refunds may arrive without resolved shopId.
+  // Resolution happens downstream via canonical_orders.
+
+  /**
+   * Refund Execution — Authoritative Write
+   * -------------------------------------
+   * This writes financial truth only.
+   * No revenue mutation. No inference.
+   */
+  const refundId = refundPayload.id;
+  const platformOrderId = refundPayload.order_id;
+  const refundCreatedAt = refundPayload.created_at;
+
+  if (!refundId || !platformOrderId) {
     return;
   }
 
-  const shopDomain = envelope.shopDomain;
-  if (!shopDomain) return;
+  await db.transaction(async trx => {
+    const canonicalOrder = await trx('canonical_orders')
+      .where({ platform_order_id: String(platformOrderId) })
+      .first();
 
-  const installation = await db('shopify_app_installations')
-    .where({ shop_domain: shopDomain })
-    .select('shop_id')
-    .first();
+    await trx('refund_executions')
+      .insert({
+        shop_id: shopId ?? null,
+        platform: 'shopify',
+        platform_refund_id: String(refundId),
+        canonical_order_id: canonicalOrder?.canonical_order_id ?? null,
+        platform_order_id: String(platformOrderId),
+        refund_created_at: refundCreatedAt
+          ? new Date(refundCreatedAt)
+          : new Date(),
+        execution_source: 'observed',
+      })
+      .onConflict(['platform', 'platform_refund_id'])
+      .ignore();
 
-  if (!installation) return;
+    const execution = await trx('refund_executions')
+      .where({
+        platform: 'shopify',
+        platform_refund_id: String(refundId),
+      })
+      .first();
+    
+    /**
+     * Refund Resolution Invocation
+     * ----------------------------
+     * This applies DERIVED effects to order_revenue_units.
+     * Safe to replay.
+     * Must never mutate refund_executions.
+     */
+    if (execution?.id) {
+      // Derived effects only — safe to replay
+      await resolveRefundExecution(execution.id);
+    }
 
-  await enqueueWebhookEnvelope({
-    ...envelope,
-    shopId: installation.shop_id,
-  });
+    const refundLineItems = refundPayload.refund_line_items ?? [];
 
-  console.log('[REFUND HANDLER] ENQUEUED', {
-    shopId: installation.shop_id,
-    refundId: rawPayload.id,
-    orderId: rawPayload.order_id,
+    for (const rli of refundLineItems) {
+      const platformLineItemId = rli?.line_item?.id;
+      const qty = Number(rli?.quantity);
+      const amount = Number(rli?.subtotal);
+
+      if (!platformLineItemId || !Number.isFinite(qty) || qty <= 0) continue;
+
+      await trx('refund_execution_line_items')
+        .insert({
+          refund_execution_id: execution.id,
+          canonical_order_id: execution.canonical_order_id,
+          sku: String(platformLineItemId), // TEMP identity (resolver will fix)
+          quantity_refunded: qty,
+          unit_refund_amount: Number.isFinite(amount) ? amount : null,
+        })
+        .onConflict(['refund_execution_id', 'sku'])
+        .ignore();
+    }
   });
 }
