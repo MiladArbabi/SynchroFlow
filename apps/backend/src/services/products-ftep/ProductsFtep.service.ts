@@ -6,7 +6,10 @@ import { ProductsFT2Exposure } from './ProductsFtep.types';
 interface BuildProductsFtepInput {
   facts: ProductsFacts;
   intelligence: ProductsIntelligence;
-}
+  alignment: {
+    alignment: 'aligned' | 'misaligned' | 'unknown';
+  } | null;
+};
 
 /**
  * buildProductsFtep (FT2 v2)
@@ -28,7 +31,7 @@ interface BuildProductsFtepInput {
 export function buildProductsFtep(
   input: BuildProductsFtepInput
 ): ProductsFT2Exposure {
-  const { facts, intelligence } = input;
+  const { facts, intelligence, alignment } = input;
 
   const context = {
     period: facts.period,
@@ -101,6 +104,6 @@ export function buildProductsFtep(
     operational: null,
     supply: null,
     dataFreshness: null,
-    alignment: null,
+    alignment,
   };
 }

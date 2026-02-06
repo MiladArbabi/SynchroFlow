@@ -97,8 +97,8 @@ const rows = await db('canonical_products')
   // SKU structure
   // ─────────────────────────────────────────────────────────
   const skuSet = new Set<string>();
-  let productsWithSkuCount = 0;
-  let productsWithoutSkuCount = 0;
+  let productsWithSkuCount: number | null = 0;
+  let productsWithoutSkuCount: number | null = 0;
 
   for (const row of rows) {
     if (row.sku !== null) {
@@ -133,8 +133,8 @@ const rows = await db('canonical_products')
    * - They are NEVER computed when facts are null
    * - Zero is a valid observable value here
    */
-  let productsWithVariantsCount = 0;
-  let singleVariantProductsCount = 0;
+  let productsWithVariantsCount: number | null = 0;
+  let singleVariantProductsCount: number | null = 0;
 
   for (const [, variantSet] of variantsByProduct.entries()) {
     if (variantSet.size >= 1) {

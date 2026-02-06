@@ -1,6 +1,8 @@
 import { ProductCrossDomainAlignmentIntelligence } from './ProductCrossDomainAlignmentIntelligence.types';
 
 interface BuildAlignmentInput {
+  alignmentEvidencePresent: boolean | null;
+
   supply: {
     replenishment: 'observable' | 'missing' | 'unknown';
     coverage: 'complete' | 'partial' | 'missing' | 'unknown';
@@ -22,7 +24,17 @@ interface BuildAlignmentInput {
 export function buildProductCrossDomainAlignmentIntelligence(
   input: BuildAlignmentInput
 ): ProductCrossDomainAlignmentIntelligence {
-  const { supply, operational, freshness } = input;
+  const {
+   alignmentEvidencePresent,
+   supply,
+   operational,
+   freshness,
+ } = input;
+
+ // GLOBAL missing-facts collapse
+ if (alignmentEvidencePresent !== true) {
+   return { alignment: 'unknown' };
+ }
 
   if (!supply || !operational || !freshness) {
     return { alignment: 'unknown' };

@@ -3,3 +3,6 @@ export type { ProductCrossDomainAlignmentIntelligence } from './ProductCrossDoma
 
 export { buildProductCrossDomainAlignmentFtep } from './ProductCrossDomainAlignmentFtep.service';
 export type { ProductCrossDomainAlignmentFT2Exposure } from './ProductCrossDomainAlignmentFtep.types';
+
+export { getProductCrossDomainAlignmentFacts } 
+  from './ProductCrossDomainAlignmentFacts.service';

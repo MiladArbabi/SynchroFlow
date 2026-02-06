@@ -17,13 +17,10 @@ interface GetProductSupplyFactsInput {
  * Layer 1 (Facts) — Supply & Replenishment Reality (Signal-Based).
  *
  * GUARANTEES:
- * - Uses ONLY existing canonical / operational tables
- * - Presence-based signals only
- * - No inference, no thresholds, no ratios
- * - Null when no observable truth exists
- *
- * FT2 NOTE:
- * - This domain observes supply *signals*, not suppliers or lead times
+ * - Presence-based evidence only
+ * - No inference, no fan-out
+ * - null ≠ 0 strictly enforced
+ * - SKU-backed signals only counted at product level
  */
 export async function getProductSupplyFacts(
   input: GetProductSupplyFactsInput
@@ -58,42 +55,55 @@ export async function getProductSupplyFacts(
     .map(p => p.sku)
     .filter((sku): sku is string => sku !== null);
 
+  // If no SKUs exist, no product-level supply is observable
+  if (skus.length === 0) {
+    return {
+      shopId,
+      period,
+
+      productsObserved,
+
+      productsWithAnySupplySignalCount: null,
+      productsWithInventorySignalCount: null,
+      productsWithFulfillmentSignalCount: null,
+
+      extractedAt: new Date().toISOString(),
+    };
+  }
+
   // ─────────────────────────────────────────
-  // Inventory signal presence (snapshot)
+  // Inventory signal presence (SKU-backed)
   // ─────────────────────────────────────────
   const inventoryRows = await db('inventory_truth')
     .where('shop_id', shopId)
     .whereIn('sku', skus)
     .distinct('sku');
 
-  const inventorySkuSet = new Set(
-    inventoryRows.map(r => r.sku)
-  );
-
   const productsWithInventorySignalCount =
-    inventorySkuSet.size;
+    inventoryRows.length > 0 ? inventoryRows.length : null;
 
   // ─────────────────────────────────────────
-  // Fulfillment signal presence (order-level)
+  // Fulfillment signal presence (order-level only)
   // ─────────────────────────────────────────
   const fulfillmentRows = await db('order_fulfillment_status')
     .where('shop_id', shopId)
-    .distinct('order_id');
-
-  const hasFulfillmentSignals =
-    fulfillmentRows.length > 0;
+    .limit(1);
 
   const productsWithFulfillmentSignalCount =
-    hasFulfillmentSignals ? productsObserved : 0;
+    fulfillmentRows.length > 0 ? null : null;
+  // NOTE:
+  // Fulfillment does NOT produce product-level counts.
+  // Presence contributes ONLY to union logic below.
 
   // ─────────────────────────────────────────
-  // Any supply signal (union)
+  // Any supply signal (evidence-backed union)
   // ─────────────────────────────────────────
+  const hasAnySupplySignal =
+    (productsWithInventorySignalCount !== null) ||
+    fulfillmentRows.length > 0;
+
   const productsWithAnySupplySignalCount =
-    productsWithInventorySignalCount > 0 ||
-    productsWithFulfillmentSignalCount > 0
-      ? productsObserved
-      : 0;
+    hasAnySupplySignal ? productsObserved : null;
 
   return {
     shopId,
@@ -103,7 +113,7 @@ export async function getProductSupplyFacts(
 
     productsWithAnySupplySignalCount,
     productsWithInventorySignalCount,
-    productsWithFulfillmentSignalCount,
+    productsWithFulfillmentSignalCount: null,
 
     extractedAt: new Date().toISOString(),
   };

@@ -22,6 +22,8 @@ import {
   buildProductCrossDomainAlignmentIntelligence,
   buildProductCrossDomainAlignmentFtep,
 } from './products-cross-domain-alignment';
+import { getProductCrossDomainAlignmentFacts } 
+  from './products-cross-domain-alignment';
 
 import { getProductDependencyFacts } from './products-dependency-facts';
 import { buildProductDependencyIntelligence } from './products-dependency-intelligence';
@@ -85,7 +87,11 @@ export async function getProductsFt2Snapshot(
   // ─────────────────────────────────────────
   const facts = await getProductsFacts(input);
   const intelligence = buildProductsIntelligence(facts);
-  const exposure = buildProductsFtep({ facts, intelligence });
+  const exposureBase = buildProductsFtep({
+    facts,
+    intelligence,
+    alignment: null,
+  });
 
   // ─────────────────────────────────────────
   // FT2-Paid — Product Data Integrity
@@ -144,6 +150,25 @@ export async function getProductsFt2Snapshot(
       intelligence: freshnessIntelligence,
     });
 
+  const alignmentFacts = getProductCrossDomainAlignmentFacts({
+    shopId,
+    period,
+
+    structuralProductsObserved: facts.productsObserved,
+    operationalProductsObserved: operationalFacts.productsObserved,
+    supplyProductsObserved: supplyFacts.productsObserved,
+
+    freshnessObserved: freshnessExposure.freshness
+      ? {
+          structural: freshnessExposure.freshness.structural,
+          inventory: freshnessExposure.freshness.inventory,
+          sales: freshnessExposure.freshness.sales,
+          fulfillment: freshnessExposure.freshness.fulfillment,
+          cost: freshnessExposure.freshness.cost,
+        }
+      : null,
+  });
+
   // ─────────────────────────────────────────
   // Cross-Domain Alignment (FT2-safe)
   // ─────────────────────────────────────────
@@ -161,13 +186,18 @@ export async function getProductsFt2Snapshot(
 
 const alignmentIntelligence =
   buildProductCrossDomainAlignmentIntelligence({
+    alignmentEvidencePresent:
+      alignmentFacts?.alignmentEvidencePresent ?? null,
     supply: supplyExposure?.supply ?? null,
     operational: operationalExposure?.operational ?? null,
     freshness: freshnessForAlignment,
   });
 
   const alignmentExposure =
-    buildProductCrossDomainAlignmentFtep(alignmentIntelligence);
+    buildProductCrossDomainAlignmentFtep({
+      facts: alignmentFacts,
+      intelligence: alignmentIntelligence,
+    });
 
   // ─────────────────────────────────────────
   // Dependency — Facts → Intelligence → FTEP
@@ -185,19 +215,16 @@ const alignmentIntelligence =
 
 
   return {
-    ...exposure,
+    ...exposureBase,
 
-    productDataIntegrity,
-
-    operational: operationalExposure.operational ?? null,
-    supply: supplyExposure.supply ?? null,
-
-    dataFreshness: freshnessExposure.freshness ?? null,
-
-    alignment: alignmentExposure.alignment
+    alignment: alignmentExposure
       ? { alignment: alignmentExposure.alignment }
       : null,
 
+    productDataIntegrity,
+    operational: operationalExposure.operational ?? null,
+    supply: supplyExposure.supply ?? null,
+    dataFreshness: freshnessExposure.freshness ?? null,
     dependency: dependency.dependency ?? null,
   };
 }

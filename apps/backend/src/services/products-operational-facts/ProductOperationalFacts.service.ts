@@ -69,16 +69,21 @@ export async function getProductOperationalFacts(
     inventoryRows.map(r => r.sku)
   );
 
-  let productsWithInventoryCount = 0;
-  let productsWithoutInventoryCount = 0;
+  let productsWithInventoryCount: number | null = null;
+  let productsWithoutInventoryCount: number | null = null;
 
-  for (const sku of skus) {
-    if (inventorySkuSet.has(sku)) {
-      productsWithInventoryCount += 1;
-    } else {
-      productsWithoutInventoryCount += 1;
-    }
-  }
+  if (skus.length > 0) {
+   productsWithInventoryCount = 0;
+   productsWithoutInventoryCount = 0;
+
+   for (const sku of skus) {
+     if (inventorySkuSet.has(sku)) {
+       productsWithInventoryCount += 1;
+     } else {
+       productsWithoutInventoryCount += 1;
+     }
+   }
+ }
 
   // ─────────────────────────────────────────
   // Sales observability (time-scoped, legal)
