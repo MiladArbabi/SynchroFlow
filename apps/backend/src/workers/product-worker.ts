@@ -58,7 +58,7 @@ export async function processProductMessage(
     // - platform_variant_id MUST be NULL for product-level rows
 
     // 1. Upsert canonical product
-    await trx('canonical_products')
+    const [productRow] = await trx('canonical_products')
       .insert({
         // canonical_product_id is DB-assigned (SERIAL PRIMARY KEY)
         shop_id: canonicalProduct.shopId,
@@ -91,7 +91,26 @@ export async function processProductMessage(
         title: canonicalProduct.title,
         status: projectCanonicalStatusToFt0(canonicalProduct.status),
         updated_at: canonicalProduct.updatedAt,
-      });
+      })
+      .returning(['canonical_product_id']);
+
+    /**
+     * Canonical Product Anchor
+     * ------------------------
+     * This numeric PK is the *only* valid anchor for:
+     * - canonical_variants
+     * - canonical_order_line_items
+     *
+     * Absence here is a HARD STOP.
+     */
+    const canonicalProductAnchorId =
+      productRow?.canonical_product_id;
+
+    if (!canonicalProductAnchorId) {
+      throw new Error(
+        '[product-worker][FATAL] canonical_product_anchor_id not resolved'
+      );
+    }
 
     // 2. Upsert canonical variants
     if (canonicalVariants.length > 0) {
@@ -107,7 +126,14 @@ export async function processProductMessage(
             //
             // This is intentional: canonical_variants bridges
             // canonical_order_line_items → platform product identity.
+            /**
+             * Identity vs Anchor
+             * ------------------
+             * canonical_product_id        → platform GID (string)
+             * canonical_product_anchor_id → canonical_products PK (number)
+             */
             canonical_product_id: v.canonical_product_id,
+            canonical_product_anchor_id: canonicalProductAnchorId,
 
             sku: v.sku,
             title: v.title,
@@ -116,6 +142,9 @@ export async function processProductMessage(
         .onConflict(['shop_id', 'canonical_variant_id'])
         .merge({
           canonical_product_id: trx.raw('excluded.canonical_product_id'),
+          canonical_product_anchor_id: trx.raw(
+            'excluded.canonical_product_anchor_id'
+          ),
           sku: trx.raw('excluded.sku'),
           title: trx.raw('excluded.title'),
           updated_at: trx.fn.now(),

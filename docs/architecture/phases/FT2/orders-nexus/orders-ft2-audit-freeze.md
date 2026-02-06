@@ -41,7 +41,8 @@ Orders FT2 is composed of:
     3. Refunds Overview *(gated)*
     4. Revenue Risk *(gated)*
     5. Operational Flow (CPT Lens) *(gated)*
-    6. Execution Health *(gated)*
+    6. Execution Health *(gated · includes obligation visibility)*
+
 3. **FT2-Adjacent Exploratory Surfaces**
     * Orders over time
     * Order size distribution
@@ -103,7 +104,7 @@ Orders FT2 exposes **four domain classes**, each owned by a single InfoBlock.
 📌 Orders Overview owns **order-state grounding only**.  
 📌 Revenue, execution, and risk grounding are owned by their respective InfoBlocks.
 📌 Revenue Overview may display blocked value only as an aggregate partition of sales availability.
-📌 Obligation Overview is the exclusive FT2 surface allowed to explain constraint structure.
+📌 Execution Health is the exclusive FT2 surface allowed to expose execution obstruction topology.
 
 ---
 
@@ -122,7 +123,7 @@ Orders FT2 operates on LaSyncro-owned canonical identifiers, not platform identi
 * Platform variant IDs are inputs, not identifiers.
 * All SKU-level truth in FT2 is anchored to Canonical Variant Code (CVC).
 
-**Canonical Variant Code (CVC):**
+**Canonical Variant Code (CVC) — LOCKED FORMAT**
 
 * Stable
 * Deterministic
@@ -135,6 +136,8 @@ Orders FT2 operates on LaSyncro-owned canonical identifiers, not platform identi
 ```
 cvc:v1:{shop_id}:{platform_variant_id}
 ```
+*** Earlier shorthand forms are deprecated and must not be emitted or interpreted.
+
 
 FT2 never reasons over raw platform SKUs.
 
@@ -404,7 +407,9 @@ Order-Nexus FT2 Snapshot
 * Derived from SKU-level revenue units
 
 **Truth Source:**  
-`order_revenue_units` is the sole revenue truth source for FT2.
+Logical revenue units derived from canonical order line items
+(`order_revenue_units` is a conceptual model, not a required table).
+
 
 **Precondition:**  
 Revenue units are valid **only if canonical identity is complete**:

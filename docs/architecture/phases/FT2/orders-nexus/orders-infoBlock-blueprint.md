@@ -2,6 +2,9 @@
 
 ## Global Principles (Apply to ALL InfoBlocks)
 
+> Canonical truth is the only admissible truth.
+> Platform records do not imply eligibility, completeness, or exposure.
+
 These rules are non-negotiable:
 
 1. **One infoBlock = one primary question**
@@ -9,6 +12,7 @@ These rules are non-negotiable:
 3. **Numbers must be explainable without tooltips**
 4. **Action emerges from structure, not instructions**
 5. **No duplicate semantics across blocks**
+6. **Only canonical orders may appear in FT2**
 
 If two rows answer the same SMB question → one of them is wrong.
 
@@ -18,7 +22,7 @@ If two rows answer the same SMB question → one of them is wrong.
 
 ### Purpose
 
-> Establish order obligations and execution presence at a glance.
+> Establish **canonical order obligations** and execution presence at a glance.
 
 This block answers:
 
@@ -32,10 +36,18 @@ This block answers:
 
 | Row                    | System Truth                                      | SMB Question Answered         |
 | ---------------------- | ------------------------------------------------- | ----------------------------- |
-| **Fulfilled Orders**   | Count of orders with execution complete           | “How many promises are done?” |
-| **Unfulfilled Orders** | Count of orders still representing obligations    | “How many promises remain?”  |
-| **Orders Added**       | Orders created inside the FT2 date window         | “Did new work get added?”     |
+| **Fulfilled Orders**   | Count of canonical orders with execution complete | “How many promises are done?” |
+| **Unfulfilled Orders** | Count of canonical orders still representing obligations | “How many promises remain?” |
+| **Orders Added**       | Canonical orders created inside the FT2 date window | “Did new work get added?” |
 
+> **Eligibility Rule (Locked):**
+>
+> Orders appear here **only if**:
+>
+> - canonical identity exists
+> - product + variant anchoring is resolved
+>
+> Platform orders that fail identity resolution are intentionally excluded.
 ---
 
 ### Footer / Status Line (Meta, not data)
@@ -57,13 +69,9 @@ This block answers:
 
 This block answers:
 
-> “How much sales value exists, is earned, or still pending in this period?”
+> “How much **canonical sales value** exists, is earned, or still pending in this period?”
 
 ---
-
-### Rows (Non-Negotiable)
-
-### Rows (Non-Negotiable)
 
 ### Rows (Non-Negotiable)
 
@@ -75,10 +83,12 @@ This block answers:
 | **Blocked Revenue**| Portion of Total Sales explicitly constrained by execution blockers           | “What value is structurally prevented?”       |
 
 **Rules (Hard):**
+
 * Earned, Pending, and Blocked are **mutually exclusive**
 * `pending + blocked = total unfulfilled`
-* Visibility is explicitly gated by execution coverage
+* Visibility is explicitly gated by **canonical execution coverage**
 * No inference, no attribution, no explanation
+* Platform orders with no canonical counterpart contribute **zero value**
 
 ---
 
@@ -102,7 +112,7 @@ This block answers:
 
 ### Purpose
 
-> Surface *recognized item revenue that has been refunded*, not logistics or customer service effort.
+> Surface *recognized canonical item revenue that has been refunded*
 
 This block answers:
 
@@ -126,8 +136,10 @@ This block answers:
 * This block models **refunds only**, not returns.
 * Shopify “returns” are not a reliable or complete truth source.
 * Tax, shipping, duties, rounding, and payment settlement are explicitly excluded.
-* All values are derived from refunded **item-level revenue units only**.
+* All values are derived from refunded **canonical item-level revenue units only**.
 * If no refunds exist, all rows render as epistemic absence (`—`).
+
+> Platform refund events without canonical line items are ignored by design.
 
 ---
 
@@ -158,7 +170,8 @@ This block answers:
 
 * No counts
 * No execution states
-* This block **never blocks FT2**, it informs it
+This block **never blocks FT2**, it informs it  
+(based solely on canonical revenue distribution)
 
 ---
 
@@ -172,7 +185,7 @@ This block answers:
 
 > “Where is my money stuck in the process?”
 
-This is the **execution-leverage block**.
+This is the **canonical execution-leverage block**.
 
 ---
 
@@ -199,6 +212,7 @@ Each row can show:
 * No revenue totals here
 * No fulfillment success metrics
 * This is **flow, not outcome**
+* Orders without canonical identity never appear in this block
 
 ---
 
@@ -207,7 +221,8 @@ Each row can show:
 Visibility Gate (NON-NEGOTIABLE):
 
 This block renders only when:
-• Obligation evaluation coverage ≥ threshold (defined in FTEP)
+• Obligation evaluation coverage ≥ threshold
+• Canonical order identity coverage ≥ threshold
 
 If coverage is insufficient:
 • Block is hidden entirely
@@ -272,7 +287,8 @@ Blocked Revenue notes (LOCKED):
 * Derived from explicit obligation evaluation flags
 * Downgraded to aggregate value only
 * No blocker categories exposed here
-* Absence of Blocked Revenue ≠ absence of constraints
+* Absence of Blocked Revenue ≠ absence of constraints  
+* Absence of rows may also indicate unresolved canonical identity
 
 ---
 
@@ -280,7 +296,7 @@ Blocked Revenue notes (LOCKED):
 
 | InfoBlock                | Core Question                |
 | ----------------------   | ---------------------------- |
-| Orders Overview          | “What order obligations exist?”        |
+| Orders Overview          | “What **canonical** order obligations exist?” |
 | Revenue Overview         | “What sales value is earned, pending, or blocked in this period?” |
 | Refunds Overview         | “What item revenue was refunded?” |
 | Revenue Risk             | “How fragile is my revenue?” |
@@ -288,6 +304,16 @@ Blocked Revenue notes (LOCKED):
 | Obligation Overview | “What is constraining value right now?” |
 
 ---
+
+## Canonical Guardrail (LOCKED)
+
+FT2 Order surfaces:
+
+* do not reconcile platform inconsistencies
+* do not “fill gaps” in missing identity
+* do not explain why orders are absent
+
+Silence is intentional.
 
 ## Why this blueprint works
 

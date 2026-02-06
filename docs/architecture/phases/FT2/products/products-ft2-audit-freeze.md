@@ -38,15 +38,24 @@ All domains adhere to the same pipeline.
 
 | Domain                     | Question Answered                 | Status            |
 | -------------------------- | --------------------------------- | ----------------- |
-| **Structural**             | Does the product exist correctly? | ✅ Implemented     |
+| **Structural**             | Does the product + variants exist correctly? | ✅ Implemented |
 | **Operational**            | Can it flow without breaking?     | ✅ Implemented     |
-| **Economic**               | Is money observable?              | ✅ Implemented     |
+| **Cost**                   | Is money observable?              | ✅ Implemented     |
 | **Supply**                 | Can it be replenished?            | ✅ Implemented     |
 | **Freshness**              | Can this data be trusted *now*?   | ✅ Implemented     |
 | **Dependency**             | What breaks if it changes?        | ✅ Implemented     |
-| **Cross-Domain Alignment** | Do realities agree?               | ✅ Implemented     |
+| **Cross-Domain Alignment** | Do realities agree?               | ✅ Implemented (evidence-gated) |
 | Compliance                 | Is it allowed to exist?           | ⛔ Not implemented |
 | Lifecycle Presence         | Is it actually alive?             | ⛔ Not implemented |
+
+> **Structural Domain Definition (Clarified):**
+>
+> Structural truth requires:
+> - a canonical product row **and**
+> - ≥1 canonical variant row
+>
+> Products without variants are treated as **structurally incomplete**
+> and suppressed at exposure time.
 
 Only implemented domains are exposed.
 No placeholders exist.
@@ -57,17 +66,36 @@ No placeholders exist.
 
 ### 3.1 Sources of Truth (Read-Only)
 
-| Domain      | Tables                     |
-| ----------- | -------------------------- |
-| Structural  | `canonical_products`       |
-| Inventory   | `inventory_truth`          |
-| Sales       | `historical_sales`         |
-| Fulfillment | `order_fulfillment_status` |
-| Cost        | `product_costs`            |
+| Domain                     | Tables / Inputs                                  |
+| -------------------------- | ------------------------------------------------ |
+| Structural                 | `canonical_products`, `canonical_variants`       |
+| Inventory                  | `inventory_truth`                                |
+| Sales                      | `historical_sales`                               |
+| Fulfillment                | `order_fulfillment_status`                       |
+| Cost                       | `product_costs`                                  |
+| Cross-Domain Alignment     | Derived presence facts (no joins, no inference)  |
+
+> **Canonical Identity Rule (FT2, Enforced):**
+>
+> Product existence is defined by the **product–variant composite**, not products alone.
+> A product is only structurally valid in FT2 if at least one canonical variant
+> is present and anchored.
+>
+> This prevents:
+>
+> * orphan SKUs
+> * non-orderable products
+> * false-positive product counts
 
 * Joins allowed **only inside Facts**
+  - and **only between canonical tables**
 * No inferred relationships
 * No synthetic rows
+
+> Platform tables (`orders`, `order_line_items`, etc.)  
+> are **never** joined into product facts.
+>
+> Canonical products are insulated from platform volatility by design.
 
 ---
 
@@ -77,6 +105,15 @@ No placeholders exist.
 * `null` means **no observable truth**
 * `null ≠ 0` enforced everywhere
 * Facts are **complete-or-null**
+* Cross-domain alignment facts additionally require **explicit evidence presence**
+* Product presence without variants → **Structural facts = null**
+
+This ensures that:
+- dormant catalog entries
+- draft-only products
+- ingestion-incomplete products
+
+do not contaminate FT2 exposure.
 
 ---
 
@@ -93,7 +130,11 @@ No placeholders exist.
 
 ### 4.2 Missing-Facts Collapse Rule (GLOBAL)
 
-If **any required fact** for a domain is `null`:
+Structural Intelligence additionally collapses to `unknown` if:
+- canonical_variants = 0 for the product
+
+If **any required fact** for a domain is `null`  
+—or if required **alignment evidence is absent**:
 
 → That **entire domain intelligence = `unknown`**
 
@@ -124,8 +165,12 @@ Nothing else may.
 ProductsFT2Exposure {
   context: {
     period: { from: string; to: string }
-    productsObserved: number | null
+    productsObserved: number | null // counts only products with ≥1 canonical variant
   }
+
+  > **productsObserved Semantics (Locked):**
+  > This value reflects the number of **order-capable products**.
+  > Catalog entries without variants are intentionally excluded.
 
   outcome | null
   trend | null
@@ -148,7 +193,14 @@ ProductsFT2Exposure {
     blastRadius: 'contained' | 'wide' | 'unknown'
   } | null
 
-  // Cross-domain agreement
+> **Dependency Grounding Rule:**
+>
+> Dependency surface and blast radius are evaluated **only**
+> from canonical product ↔ variant ↔ order participation.
+> Platform catalog relationships are ignored.
+
+
+  // Cross-domain agreement (evidence-gated)
   alignment: {
     alignment: 'aligned' | 'misaligned' | 'unknown'
   } | null
@@ -169,7 +221,7 @@ ProductsFT2Exposure {
 
 `null` means:
 
-> Truth exists but is **intentionally withheld** due to insufficient certainty or policy.
+> Truth exists but is **intentionally withheld** due to insufficient certainty, missing facts, or missing alignment evidence.
 
 This is **not missing data**.
 
@@ -198,7 +250,7 @@ Order of exposure is intentional:
 4. Supply observability
 5. Data freshness
 6. Dependency surface & blast radius
-7. Cross-domain alignment
+7. Cross-domain alignment (evidence-gated)
 8. Economic observability
 
 Nothing is explained.
@@ -242,6 +294,7 @@ Products FT2 does **not**:
 * suggest actions
 * optimize outcomes
 * infer causes
+* retroactively "fix" products missing variants
 
 Those are separate systems.
 
@@ -250,6 +303,7 @@ Those are separate systems.
 ## 🔒 FINAL VERDICT
 
 * Products / SKU-OS FT2 is **complete**
+* Products / SKU-OS FT2 is **complete and canonically bounded**
 * All implemented domains are **orthogonal & sealed**
 * Conversion spine is **structural, not persuasive**
 * Dependency (surface + blast radius) is FT2-safe

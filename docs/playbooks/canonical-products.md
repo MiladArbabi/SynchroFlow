@@ -23,6 +23,7 @@ This is a **contract**.
 ## Core Principles (Non-Negotiable)
 
 1. **Products are anchors, variants are edges**
+   (anchors are enforced via `canonical_product_anchor_id`)
 2. **Variants never exist without products**
 3. **Orders join to products ONLY via variants**
 4. **Canonical identity is resolved at ingestion time**
@@ -71,14 +72,16 @@ Bridges **order line items → canonical products**.
 | ---------------------- | -------------------- |
 | `shop_id`              | Tenant boundary      |
 | `canonical_variant_id` | Platform variant GID |
-| `canonical_product_id` | Platform product GID |
+| `canonical_product_id`        | Platform product GID (source identity) |
+| `canonical_product_anchor_id`| Canonical product anchor (DB-enforced) |
 | `sku`                  | Optional             |
 | `title`                | Optional             |
 
 **Invariants:**
 
 * One row per `(shop_id, canonical_variant_id)`
-* `canonical_product_id` is **REQUIRED**
+* `canonical_product_id` is **REQUIRED** (source reference)
+* `canonical_product_anchor_id` is **REQUIRED** and FK-enforced
 * Variants are **never authoritative** — they only point to products
 
 ---
@@ -93,13 +96,13 @@ Represents the atomic commercial unit of an order.
 | Column                   | Meaning                   |
 | ------------------------ | ------------------------- |
 | `canonical_variant_id`   | Variant join key          |
-| `canonical_product_id`   | **Must be populated**     |
+| `canonical_product_anchor_id` | **Must be populated (FK)** |
 | `canonical_line_item_id` | Stable line item identity |
 
 **Critical invariant:**
 
 > If `canonical_variant_id` is present,
-> `canonical_product_id MUST also be present`.
+> `canonical_product_anchor_id MUST also be present`.
 
 This is not optional.
 
@@ -167,7 +170,7 @@ This prevents silent corruption.
 This guardrail exists because:
 
 * FT2 requires **order ↔ product joinability**
-* Joinability depends on `canonical_product_id`
+* Joinability depends on `canonical_product_anchor_id`
 * Variant → product mapping **already exists** in `canonical_variants`
 * Allowing NULL product IDs causes:
 
@@ -247,10 +250,9 @@ Run **only these checks** (in order):
 
    ```sql
    SELECT COUNT(*)
-   FROM canonical_order_line_items li
-   JOIN canonical_variants v
-     ON li.canonical_variant_id = v.canonical_variant_id
-   WHERE li.shop_id = ?
+  FROM canonical_order_line_items
+  WHERE shop_id = ?
+    AND canonical_product_anchor_id IS NULL;
    ```
 4. Check NULL products:
 
@@ -270,7 +272,7 @@ If step 4 > 0 → **ingestion invariant was violated**.
 Canonical products are not a convenience layer.
 They are the **identity spine** of the platform.
 
-Once written:
+Once written (and anchor-linked):
 
 * Downstream systems assume correctness
 * Trust modules enforce strictness

@@ -29,47 +29,6 @@ export type ProductsFt2Snapshot = {
     direction: 'up' | 'down' | 'flat' | 'unknown';
   } | null;
 
-  dataGaps?: {
-    productsWithConflictingDataCount?: number | null;
-    totalProductsChecked?: number | null;
-
-    productsWithMultipleSkusCount?: number | null;
-    maxSkusPerProduct?: number | null;
-
-    variantGrowth?: Array<{
-      date: string;
-      totalProducts: number;
-      totalVariants: number;
-    }> | null;
-  } | null;
-
-  operationalRisk?: {
-    productsWithConfirmedStockCount?: number | null;
-    totalProducts?: number | null;
-
-    productsWhereSalesExceedStockCount?: number | null;
-
-    averageSystemsTouchedPerProduct?: number | null;
-    productsTouchingMultipleSystemsCount?: number | null;
-  } | null;
-
-  economicBlindSpots?: {
-    productsWithCostCount?: number | null;
-    productsWithoutCostCount?: number | null;
-
-    priceVsCostTrend?: Array<{
-      date: string;
-      averagePrice: number | null;
-      averageCost: number | null;
-    }> | null;
-
-    revenueVsProfit?: Array<{
-      productId: string;
-      revenue: number;
-      profit: number | null;
-    }> | null;
-  } | null;
-
   /**
    * FT2 — Product Data Integrity
    *
@@ -150,58 +109,6 @@ export function mapProductsFt2Props(
       snapshot.trend === undefined
         ? null
         : snapshot.trend,
-
-    dataGaps:
-      snapshot.dataGaps === undefined
-        ? null
-        : {
-            productsWithConflictingDataCount:
-              snapshot.dataGaps.productsWithConflictingDataCount ?? null,
-            totalProductsChecked:
-              snapshot.dataGaps.totalProductsChecked ?? null,
-
-            productsWithMultipleSkusCount:
-              snapshot.dataGaps.productsWithMultipleSkusCount ?? null,
-            maxSkusPerProduct:
-              snapshot.dataGaps.maxSkusPerProduct ?? null,
-
-            variantGrowth:
-              snapshot.dataGaps.variantGrowth ?? null,
-          },
-
-    operationalRisk:
-      snapshot.operationalRisk === undefined
-        ? null
-        : {
-            productsWithConfirmedStockCount:
-              snapshot.operationalRisk.productsWithConfirmedStockCount ?? null,
-            totalProducts:
-              snapshot.operationalRisk.totalProducts ?? null,
-
-            productsWhereSalesExceedStockCount:
-              snapshot.operationalRisk.productsWhereSalesExceedStockCount ?? null,
-
-            averageSystemsTouchedPerProduct:
-              snapshot.operationalRisk.averageSystemsTouchedPerProduct ?? null,
-            productsTouchingMultipleSystemsCount:
-              snapshot.operationalRisk.productsTouchingMultipleSystemsCount ?? null,
-          },
-
-    economicBlindSpots:
-      snapshot.economicBlindSpots === undefined
-        ? null
-        : {
-            productsWithCostCount:
-              snapshot.economicBlindSpots.productsWithCostCount ?? null,
-            productsWithoutCostCount:
-              snapshot.economicBlindSpots.productsWithoutCostCount ?? null,
-
-            priceVsCostTrend:
-              snapshot.economicBlindSpots.priceVsCostTrend ?? null,
-
-            revenueVsProfit:
-              snapshot.economicBlindSpots.revenueVsProfit ?? null,
-          },
     
     productDataIntegrity:
       snapshot.productDataIntegrity === undefined

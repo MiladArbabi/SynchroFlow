@@ -2,12 +2,15 @@
 import {
   FT2Layout,
   FT2Row,
-  FT2Surface,
-  FT2Stat,
-  FT2Ratio,
-  FT2DualTimeSeries,
-  FT2Distribution,
 } from '@lasyncro/ui-ft2';
+
+import { ProductsOverviewInfoBlock } from '../components/ProductsOverviewInfoBlock';
+import { ProductsOperationalInfoBlock } from '../components/ProductsOperationalInfoBlock';
+import { ProductsSupplyInfoBlock } from '../components/ProductsSupplyInfoBlock';
+import { ProductsDependencyInfoBlock } from '../components/ProductsDependencyInfoBlock';
+
+import { ProductsAlignmentInfoBlock } from '../components/ProductsAlignmentInfoBlock';
+
 
 /**
  * ProductsModuleFT2DataProps
@@ -38,74 +41,6 @@ export interface ProductsModuleFT2DataProps {
   /** Directional trend (if available) */
   trend: {
     direction: 'up' | 'down' | 'flat' | 'unknown';
-  } | null;
-
-  /**
-   * ─────────────────────────────────────────
-   * Layer 1 — DATA GAPS (Truth & Consistency)
-   * ─────────────────────────────────────────
-   */
-
-  dataGaps: {
-    /** Products with conflicting fields across systems */
-    productsWithConflictingDataCount: number | null;
-    totalProductsChecked: number | null;
-
-    /** Products represented by multiple SKUs */
-    productsWithMultipleSkusCount: number | null;
-    maxSkusPerProduct: number | null;
-
-    /** Variant growth over time */
-    variantGrowth: Array<{
-      date: string;
-      totalProducts: number;
-      totalVariants: number;
-    }> | null;
-  } | null;
-
-  /**
-   * ─────────────────────────────────────────
-   * Layer 2 — OPERATIONAL OBSERVABILITY (Flow & Control)
-   * ─────────────────────────────────────────
-   */
-
-  operationalRisk: {
-    /** Inventory visibility */
-    productsWithConfirmedStockCount: number | null;
-    totalProducts: number | null;
-
-    /** Demand vs stock pressure */
-    productsWhereSalesExceedStockCount: number | null;
-
-    /** Change impact / dependency surface */
-    averageSystemsTouchedPerProduct: number | null;
-    productsTouchingMultipleSystemsCount: number | null;
-  } | null;
-
-  /**
-   * ─────────────────────────────────────────
-   * Layer 3 — ECONOMIC BLIND SPOTS (Money)
-   * ─────────────────────────────────────────
-   */
-
-  economicBlindSpots: {
-    /** Cost coverage */
-    productsWithCostCount: number | null;
-    productsWithoutCostCount: number | null;
-
-    /** Price vs cost movement */
-    priceVsCostTrend: Array<{
-      date: string;
-      averagePrice: number | null;
-      averageCost: number | null;
-    }> | null;
-
-    /** Revenue vs profit attribution */
-    revenueVsProfit: Array<{
-      productId: string;
-      revenue: number;
-      profit: number | null;
-    }> | null;
   } | null;
 
   /**
@@ -188,242 +123,57 @@ export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
 export default function ProductsModuleFT2(
   props: ProductsModuleFT2Props
 ) {
-  const {
-    context,
-    outcome,
-    trend,
-    dataGaps,
-    operational,
-    operationalRisk,
-    economicBlindSpots,
-    productDataIntegrity,
-    supply,
-    dataFreshness,
-    alignment,
-    dependency,
+  
+  const { 
+    context, 
+    outcome, 
+    trend, 
+    operational, 
+    productDataIntegrity, 
+    supply, 
+    dependency, 
+    alignment
   } = props;
+
+  // FT2 structural snapshot
+  const productsObserved = context.productsObserved;
+
+  // Status breakdown not implemented in FT2 (intentional)
+  const activeProducts: number | null = null;
+  const inactiveOrArchivedProducts: number | null = null;
 
   return (
     <FT2Layout>
-      {/* ─────────────────────────────────────────
-      * Layer A.1 — Existence & Trust (Conversion Spine)
-      * ───────────────────────────────────────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Products detected">
-          <FT2Stat value={context.productsObserved} />
-        </FT2Surface>
+      <ProductsOverviewInfoBlock
+        productsObserved={productsObserved}
+        activeProducts={activeProducts}
+        inactiveOrArchivedProducts={inactiveOrArchivedProducts}
+      />
 
-        <FT2Surface variant="kpi" title="Structural integrity">
-          <div>
-            Integrity:{' '}
-            {productDataIntegrity
-              ? productDataIntegrity.integrity
-              : '—'}
-          </div>
-          <div>
-            Duplication:{' '}
-            {productDataIntegrity
-              ? productDataIntegrity.duplication
-              : '—'}
-          </div>
-        </FT2Surface>
+      <ProductsOperationalInfoBlock
+        inventory={operational?.inventory ?? null}
+        fulfillment={operational?.fulfillment ?? null}
+        stability={operational?.stability ?? null}
+      />
 
-        <FT2Surface variant="kpi" title="Inventory visibility">
-          <FT2Stat value={operational?.inventory ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Fulfillment visibility">
-          <FT2Stat value={operational?.fulfillment ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Operational stability">
-          <FT2Stat value={operational?.stability ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Cross-domain alignment">
-          <FT2Stat value={alignment?.alignment ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Dependency surface">
-          <FT2Stat value={dependency?.surface ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Dependency blast radius">
-          <FT2Stat value={dependency?.blastRadius ?? null} />
-        </FT2Surface>
+      <ProductsSupplyInfoBlock
+        replenishment={supply?.replenishment ?? null}
+        coverage={supply?.coverage ?? null}
+      />
       </FT2Row>
 
-      {/* ─────────────────────────────────────────
-      * Layer A.2 — Supply & Replenishment Observability
-      * ───────────────────────────────────────── */}
-      <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Replenishment signals">
-          <FT2Stat value={supply?.replenishment ?? null} />
-        </FT2Surface>
+    <FT2Row intent="kpi">
+      <ProductsDependencyInfoBlock
+        surface={dependency?.surface ?? null}
+        blastRadius={dependency?.blastRadius ?? null}
+      />
 
-        <FT2Surface variant="kpi" title="Supply signal coverage">
-          <FT2Stat value={supply?.coverage ?? null} />
-        </FT2Surface>
-      </FT2Row>
 
-            {/* ─────────────────────────────────────────
-      * Layer A.3 — Data Freshness & Trust Latency
-      * ───────────────────────────────────────── */}
-      <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Structural data freshness">
-          <FT2Stat value={dataFreshness?.structural ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Inventory data freshness">
-          <FT2Stat value={dataFreshness?.inventory ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Sales data freshness">
-          <FT2Stat value={dataFreshness?.sales ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Fulfillment data freshness">
-          <FT2Stat value={dataFreshness?.fulfillment ?? null} />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Cost data freshness">
-          <FT2Stat value={dataFreshness?.cost ?? null} />
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ─────────────────────────────────────────
-      * Layer B — Data Consistency & Gaps
-      * ───────────────────────────────────────── */}
-      <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Products with conflicting data (observed)">
-          {dataGaps?.totalProductsChecked === 0 ? (
-            '—'
-          ) : (
-            <FT2Ratio
-              numerator={dataGaps?.productsWithConflictingDataCount ?? null}
-              denominator={dataGaps?.totalProductsChecked ?? null}
-            />
-          )}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Duplicate SKU representations">
-          <div>
-            Products:{' '}
-            {dataGaps?.productsWithMultipleSkusCount ?? '—'}
-          </div>
-          <div>
-            Max SKUs:{' '}
-            {dataGaps?.maxSkusPerProduct ?? '—'}
-          </div>
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Variant growth">
-          {dataGaps?.variantGrowth
-            ? `Points: ${dataGaps.variantGrowth.length}`
-            : '—'}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ─────────────────────────────────────────
-      * Layer C — Operational Observability (Counts only)
-      * ───────────────────────────────────────── */}
-      <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Products with inventory signals">
-          {operationalRisk?.totalProducts === 0 ? (
-            '—'
-          ) : (
-            <FT2Ratio
-              numerator={
-                operationalRisk?.productsWithConfirmedStockCount ?? null
-              }
-              denominator={operationalRisk?.totalProducts ?? null}
-            />
-          )}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Oversold products detected">
-          <FT2Stat
-            value={
-              operationalRisk?.productsWhereSalesExceedStockCount ?? null
-            }
-          />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Systems touched per product">
-          <FT2Stat
-            value={
-              operationalRisk?.averageSystemsTouchedPerProduct ?? null
-            }
-          />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Multi-system products">
-          <FT2Stat
-            value={
-              operationalRisk?.productsTouchingMultipleSystemsCount ?? null
-            }
-          />
-        </FT2Surface>
-      </FT2Row>
-
-      {/* ─────────────────────────────────────────
-      * Layer D — Economic Observability (No optimization)
-      * ───────────────────────────────────────── */}
-      <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Products with cost data">
-          {economicBlindSpots &&
-          (economicBlindSpots.productsWithCostCount ?? 0) +
-            (economicBlindSpots.productsWithoutCostCount ?? 0) === 0 ? (
-            '—'
-          ) : (
-            <FT2Ratio
-              numerator={
-                economicBlindSpots?.productsWithCostCount ?? null
-              }
-              denominator={
-                economicBlindSpots
-                  ? (economicBlindSpots.productsWithCostCount ?? 0) +
-                    (economicBlindSpots.productsWithoutCostCount ?? 0)
-                  : null
-              }
-            />
-          )}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Price vs cost signals">
-          <FT2DualTimeSeries
-            left={
-              economicBlindSpots?.priceVsCostTrend
-                ? economicBlindSpots.priceVsCostTrend.map(p => ({
-                    date: p.date,
-                    value: p.averagePrice,
-                  }))
-                : null
-            }
-            right={
-              economicBlindSpots?.priceVsCostTrend
-                ? economicBlindSpots.priceVsCostTrend.map(p => ({
-                    date: p.date,
-                    value: p.averageCost,
-                  }))
-                : null
-            }
-          />
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Revenue vs profit spread">
-          <FT2Distribution
-            buckets={
-              economicBlindSpots?.revenueVsProfit
-                ? economicBlindSpots.revenueVsProfit.map(p => ({
-                    key: p.productId,
-                    value: p.profit,
-                  }))
-                : null
-            }
-          />
-        </FT2Surface>
-      </FT2Row>
+      <ProductsAlignmentInfoBlock
+        alignment={alignment?.alignment ?? null}
+      />
+    </FT2Row>
     </FT2Layout>
   );
 }
