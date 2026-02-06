@@ -98,34 +98,36 @@ This block answers:
 
 ---
 
-## 3️⃣ InfoBlock #3 — **Returns Overview**
+## 3️⃣ InfoBlock #3 — **Refunds Overview**
 
 ### Purpose
 
-> Surface *revenue erosion and liability*, not operational effort.
+> Surface *recognized item revenue that has been refunded*, not logistics or customer service effort.
 
 This block answers:
 
-> “How much money is at risk of being reversed?”
+> “How much item-level revenue has been refunded?”
 
 ---
 
-### Rows (Top 4–5)
+### Rows (3 rows)
 
-| Row                          | System Truth                      | SMB Question Answered            |
-| ---------------------------- | --------------------------------- | -------------------------------- |
-| **Returns Initiated**        | Orders with return requested      | “How many returns are in play?”  |
-| **Return Value at Risk**     | Revenue tied to initiated returns | “How much money might we lose?”  |
-| **Returns Received**         | Returned items physically back    | “What’s back in our hands?”      |
-| **Refunds Issued**           | Completed refunds                 | “What money is already gone?”    |
-| **Pending Refund Liability** | Returns received but not refunded | “What do I still owe customers?” |
+| Row                          | System Truth                                      | SMB Question Answered                 |
+| ---------------------------- | ------------------------------------------------- | ------------------------------------ |
+| **Refunded Item Revenue**    | SKU-level revenue units refunded                  | “How much sales value was refunded?” |
+| **Refunded Units**           | Total refunded item quantity                      | “How many items were refunded?”      |
+| **Orders Affected**          | Canonical orders with at least one refunded unit  | “Which orders were impacted?”        |
+
 
 ---
 
 ### Notes
 
-* This block is **liability-oriented**, not customer-service-oriented
-* No blame, no reason codes here
+* This block models **refunds only**, not returns.
+* Shopify “returns” are not a reliable or complete truth source.
+* Tax, shipping, duties, rounding, and payment settlement are explicitly excluded.
+* All values are derived from refunded **item-level revenue units only**.
+* If no refunds exist, all rows render as epistemic absence (`—`).
 
 ---
 
@@ -280,7 +282,7 @@ Blocked Revenue notes (LOCKED):
 | ----------------------   | ---------------------------- |
 | Orders Overview          | “What order obligations exist?”        |
 | Revenue Overview         | “What sales value is earned, pending, or blocked in this period?” |
-| Returns Overview         | “What money is at risk?”     |
+| Refunds Overview         | “What item revenue was refunded?” |
 | Revenue Risk             | “How fragile is my revenue?” |
 | Operational Flow (CPT)   | “Where is value stuck?”      |
 | Obligation Overview | “What is constraining value right now?” |

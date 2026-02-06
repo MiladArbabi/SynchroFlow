@@ -38,7 +38,7 @@ Orders FT2 is composed of:
     **LOCKED SET (v1):**
     1. Orders Overview
     2. Revenue Overview
-    3. Returns Overview *(gated)*
+    3. Refunds Overview *(gated)*
     4. Revenue Risk *(gated)*
     5. Operational Flow (CPT Lens) *(gated)*
     6. Execution Health *(gated)*
@@ -282,19 +282,30 @@ Attribution without coverage is forbidden.
 
 ---
 
-### 🔁 C. Reversal & Leakage Domains (PRIMARY · L1)
+### 🔁 C. Refund & Revenue Reversal Domains (PRIMARY · L1)
 
-**Owned exclusively by: Returns Overview**
+⚠️ **Important semantic boundary (SEALED):**
+
+Orders FT2 does **not** model “returns” as a logistics concept.
+
+* Shopify “returns” are not a first-class or reliable data source.
+* Orders FT2 operates **exclusively on refunds**.
+* All values in this domain are derived from **refunded item revenue only**.
+* Tax, shipping, adjustments, rounding, and payment semantics are explicitly excluded.
+
+If a platform exposes returns without refunds, this domain remains epistemically absent (`null`).
+
+**Owned exclusively by: Refunds Overview**
 
 **Answer:**  
-> **“Is value flowing back or leaking?”**
+> **“Has previously recognized item revenue been refunded?”**
 
 | Domain | Layer | Question Answered |
 | :--- | :--- | :--- |
-| Returns Presence Reality | L1 | Do returns exist? |
-| Returned Orders Reality | L1 | How many orders reversed? |
-| Returned Value Reality | L1 | How much value has exited? |
-| Return Exposure Reality | L1 | How much value is still at risk? |
+| Refund Presence Reality | L1 | Do refunds exist? |
+| Refunded Orders Reality | L1 | How many canonical orders were refunded? |
+| Refunded Item Revenue Reality | L1 | How much item-level revenue was refunded? |
+| Refund Exposure Reality | L1 | How much recognized revenue has been reversed? |
 
 ---
 
@@ -404,7 +415,8 @@ Revenue units are valid **only if canonical identity is complete**:
 
 If this precondition fails, revenue units may exist internally but are **not exposable** to FT2.
 
-Revenue units are materialized, not inferred. Each unit represents factual SKU-level value.
+Revenue units are materialized, not inferred.  
+Each unit represents factual SKU-level value and is the **sole basis for refund exposure in FT2**.
 
 If revenue units do not exist, FT2 must show zero, not estimates.
 
