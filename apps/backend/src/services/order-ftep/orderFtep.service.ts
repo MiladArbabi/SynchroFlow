@@ -29,6 +29,7 @@ import type {
   FT2ObligationsExposure,
   OrderFtepInput,
   OrderNexusFT2Exposure,
+  FT2RefundsExposure
 } from './orderFtep.types';
 
 export function exposeOrderNexusFT2(
@@ -77,6 +78,38 @@ export function exposeOrderNexusFT2(
 };
 
   return exposure;
+}
+
+/**
+ * FTEP — Refunds Downgrade (FT2)
+ * -----------------------------
+ * Rules:
+ * - Refunds are post-execution financial regression
+ * - No eligibility impact
+ * - No intelligence
+ * - Pure passthrough of L1 facts
+ *
+ * Semantics:
+ * - null  → epistemic absence
+ * - 0     → observed zero
+ */
+export function exposeRefunds(
+  input: {
+    returnedRevenue: number | null;
+    returnedUnits: number | null;
+    affectedOrders: number | null;
+  } | null
+): FT2RefundsExposure | null {
+
+  if (input == null) {
+    return null;
+  }
+
+  return {
+    returnedRevenue: input.returnedRevenue ?? null,
+    returnedUnits: input.returnedUnits ?? null,
+    affectedOrders: input.affectedOrders ?? null,
+  };
 }
 
 /**

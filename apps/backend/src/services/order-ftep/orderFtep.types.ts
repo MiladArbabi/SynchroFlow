@@ -1,5 +1,4 @@
 //apps/backend/src/services/order-ftep/orderFtep.types.ts
-// apps/backend/src/services/order-ftep/orderFtep.types.ts
 import type { OrderNexusIntelligence } from '../order-intelligence/orderIntelligence.service';
 import type { OrderFacts } from '../order-facts/orderFacts.types';
 
@@ -53,6 +52,16 @@ export interface OrderNexusFT2Exposure {
   visibility: {
     status: 'sufficient' | 'insufficient';
   } | null;
+
+  /**
+   * Refunds — FT2 (Post-Execution Regression)
+   * ----------------------------------------
+   * Financial-only.
+   * Observed-only.
+   * No intelligence.
+   * No eligibility impact.
+   */
+  refunds?: FT2RefundsExposure | null;
 }
 
 /**
@@ -73,3 +82,22 @@ export type FT2ObligationsExposure = {
     status: 'sufficient' | 'insufficient';
   };
 };
+
+/**
+ * FT2 Refunds Exposure
+ * --------------------
+ * Pure financial regression caused by refunds.
+ *
+ * Rules:
+ * - Layer 1 facts only
+ * - No intelligence input
+ * - No execution semantics
+ * - null = epistemic absence
+ * - 0 = observed zero
+ */
+export type FT2RefundsExposure = {
+  returnedRevenue: number | null;
+  returnedUnits: number | null;
+  affectedOrders: number | null;
+};
+

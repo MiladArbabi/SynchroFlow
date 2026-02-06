@@ -53,6 +53,18 @@ export type OrdersFt2Snapshot = {
     };
   };
 
+  /**
+   * Returns — post-execution regression
+   * -----------------------------------
+   * Financial only.
+   * Does NOT affect eligibility or execution.
+   */
+  refunds?: {
+    returnedRevenue: number | null;
+    returnedUnits: number | null;
+    affectedOrders: number | null;
+  };
+
   comparison?: {
     orders?: {
       totalPctChange?: number | null;

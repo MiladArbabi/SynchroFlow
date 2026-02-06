@@ -67,20 +67,22 @@ export function mapOrdersFt2Props(
           : snapshot.orders.added,
     },
 
+    returns: {
+      returnedRevenue:
+        snapshot.refunds?.returnedRevenue === undefined
+          ? null
+          : snapshot.refunds.returnedRevenue,
 
-  comparison: {
-    orders: {
-      fulfilled:
-        formatPctDiff(
-          snapshot.comparison?.orders?.fulfilledPctChange
-        ),
+      returnedUnits:
+        snapshot.refunds?.returnedUnits === undefined
+          ? null
+          : snapshot.refunds.returnedUnits,
 
-        incoming:
-          formatPctDiff(
-            snapshot.comparison?.orders?.incomingPctChange
-          ),
+      affectedOrders:
+        snapshot.refunds?.affectedOrders === undefined
+          ? null
+          : snapshot.refunds.affectedOrders,
     },
-  },
 
   /**
    * ─────────────────────────────────────────
@@ -127,6 +129,20 @@ export function mapOrdersFt2Props(
       snapshot.revenue?.executionCoverage === undefined
         ? null
         : snapshot.revenue.executionCoverage
+  },
+
+  comparison: {
+    orders: {
+      fulfilled:
+        formatPctDiff(
+          snapshot.comparison?.orders?.fulfilledPctChange
+        ),
+
+        incoming:
+          formatPctDiff(
+            snapshot.comparison?.orders?.incomingPctChange
+          ),
+    },
   },
 
   obligations:

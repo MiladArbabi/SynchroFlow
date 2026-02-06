@@ -9,6 +9,8 @@ import { extractOrderTrendFacts } from 'api-src/services/order-facts/orderTrendF
 import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFacts.service';
 import { extractFulfilledOrdersCount } from '../order-facts/orderFulfilledCountFacts.service';
 import { extractOrderRevenueAllocationFacts } from 'api-src/services/order-facts/orderRevenueAllocationFacts.service';
+import { extractRefundsFacts } from '../order-facts/orderReturnsFacts.service';
+import { exposeRefunds } from '../order-ftep/orderFtep.service';
 
 /**
  * NOTE ON TREND WIRING
@@ -58,7 +60,7 @@ export async function getOrderNexusFt2Snapshot(input: {
   shopId: number;
   range: FT2DateRangePreset | { preset: 'custom'; from: string; to: string },
 }): Promise<OrderNexusFT2Snapshot | null> {
-  const { shopId, range } = input;
+const { shopId, range } = input;
 
 // Step 1: Extract canonical order facts (Layer 1)
 const facts = await extractOrderFacts(shopId, range);
@@ -70,6 +72,9 @@ const activeOrders = await extractActiveOrdersCount(shopId);
 
 const revenueAllocationFacts =
   await extractOrderRevenueAllocationFacts(shopId, range);
+
+const refundsFacts = await extractRefundsFacts(shopId);
+const refundsExposure = exposeRefunds(refundsFacts);
 
 /**
   * IMPORTANT:
@@ -337,6 +342,8 @@ const comparison = {
        */
       added: facts.ordersObserved,
     },
+
+    refunds: refundsExposure,
 
     /**
      * Orders Comparison (FT2)
