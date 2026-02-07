@@ -11,7 +11,6 @@ import { ProductsDependencyInfoBlock } from '../components/ProductsDependencyInf
 
 import { ProductsAlignmentInfoBlock } from '../components/ProductsAlignmentInfoBlock';
 
-
 /**
  * ProductsModuleFT2DataProps
  * --------------------------

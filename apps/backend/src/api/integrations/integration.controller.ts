@@ -118,7 +118,7 @@ export const initiateOAuth = async (req: Request, res: Response) => {
     const scopes = [
       'read_products',
       'read_orders',
-      'read_returns',
+      'read_refunds',
       'read_customers',
       'read_inventory',
       'read_payouts',
