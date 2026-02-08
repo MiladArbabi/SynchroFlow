@@ -11,6 +11,8 @@ import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock
 import { ReturnsOverviewInfoBlock } from '../components/ReturnsOverviewInfoBlock';
 import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock';
 
+import { toEpistemic } from '@lasyncro/epistemic';
+
 /**
  * ─────────────────────────────────────────────────────────────
  * ORDERS MODULE — FT2
@@ -165,8 +167,14 @@ export default function OrdersModuleFT2(
           incomingDiff={comparison.orders.incoming}
         />
 
-        <RevenueOverviewInfoBlock
-          revenue={revenue}
+       <RevenueOverviewInfoBlock
+          revenue={{
+            totalSales: toEpistemic(revenue.totalSales),
+            earned: toEpistemic(revenue.earned),
+            pending: toEpistemic(revenue.pending),
+            blocked: toEpistemic(revenue.blocked),
+            executionCoverage: revenue.executionCoverage,
+          }}
         />
 
         <ReturnsOverviewInfoBlock

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "moduleResolution": "node",
+
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "ES2020",
+    "target": "ES2020",
+
+    "declaration": true,
+    "composite": true
+  },
+  "include": ["src/**/*.ts"]
+}

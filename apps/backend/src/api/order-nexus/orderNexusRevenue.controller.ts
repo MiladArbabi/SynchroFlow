@@ -4,15 +4,28 @@ import { resolveFt2RangeFromRequest } from
 import { getExecutionAwareRevenueSnapshot } from
   'api-src/services/order-revenue/orderRevenueExecutionAware.resolver';
 
+// ⬇️ NEW: epistemic adapter (Phase A only)
+import { legacyToEpistemic } from
+  'packages/epistemic';
+
 /**
  * Order-Nexus Revenue — Phase 6
  * -----------------------------
- * Explicit execution-aware revenue endpoint.
+ * Execution-aware revenue endpoint.
  *
- * Hard rules:
- * - Requires mode=execution_aware
- * - Never falls back to FT2
- * - Never infers missing execution
+ * ⚠️ EPISTEMIC NOTE (Phase A):
+ * ---------------------------
+ * This controller is an epistemic boundary.
+ * We explicitly wrap returned facts so that:
+ *
+ * - Knowledge state is explicit
+ * - Nulls are no longer ambiguous
+ * - Downstream consumers cannot silently suppress data
+ *
+ * IMPORTANT:
+ * - No business logic is changed here
+ * - Sufficiency semantics are preserved as-is
+ * - Epistemic correctness will be addressed in later phases
  */
 export default async function orderNexusRevenuePhase6Controller(
   req: any,
@@ -39,5 +52,25 @@ export default async function orderNexusRevenuePhase6Controller(
     range,
   });
 
-  return res.json(snapshot);
+  /**
+   * Epistemic wrapping (Phase A)
+   * ----------------------------
+   * We preserve the existing shape and meaning of the snapshot,
+   * but wrap numeric facts so their epistemic state is explicit.
+   *
+   * Mapping rule (temporary):
+   * - value !== null → KNOWN
+   * - value === null → UNKNOWN
+   *
+   * This is intentionally naive.
+   */
+  return res.json({
+    ...snapshot,
+
+    revenue: {
+      fulfilled: legacyToEpistemic(snapshot.revenue.fulfilled),
+      unfulfilled: legacyToEpistemic(snapshot.revenue.unfulfilled),
+      unknown: legacyToEpistemic(snapshot.revenue.unknown),
+    },
+  });
 }

@@ -1,8 +1,0 @@
-{
-  "name": "ai-engine",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "./venv/bin/uvicorn main:app --reload --app-dir ./ --host 0.0.0.0"
-  }
-}

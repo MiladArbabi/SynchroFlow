@@ -19,5 +19,8 @@
   "include": [
     "src/**/*", 
     "../shared/src/contracts.ts"
+  ],
+  "references": [
+    { "path": "../../packages/epistemic" }
   ]
 }

@@ -97,10 +97,9 @@
     "modules/shared/src/contracts.ts",
     "modules/finances/src/ui/FinancesAhaPanel.tsx"
   ],
-  "exclude": [
-  "apps/frontend/src/stories/**"
-  ],
+  "exclude": [],
   "references": [
+    { "path": "./packages/epistemic/tsconfig.json" },
     { "path": "./modules/shared/tsconfig.json" }
   ]
 }
