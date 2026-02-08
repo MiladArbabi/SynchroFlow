@@ -51,6 +51,19 @@ export interface EpistemicValue<T> {
 }
 ```
 
+### 3.1.1 Declaration Authority (CRITICAL)
+
+`EpistemicValue<T>` and `EpistemicState` MUST originate from
+`@lasyncro/epistemic` **compiled declarations**.
+
+Source imports, shadow interfaces, or local re-definitions are forbidden.
+
+Rationale:
+
+* TypeScript exhaustiveness depends on emitted `.d.ts`
+* Missing declarations silently collapse unions
+* Downstream packages lose epistemic guarantees without compile errors
+
 ### 3.2 Semantic Guarantees
 
 | Field               | Meaning                                                                         |
@@ -60,6 +73,25 @@ export interface EpistemicValue<T> {
 | `explanation`       | Human-readable justification. Mandatory outside Phase A when `state !== KNOWN`. |
 | `completenessRatio` | Optional confidence metric (0–1). Only valid for `INCOMPLETE`.                  |
 | `evaluatedAt`       | Temporal traceability. Required for debugging and replay.                       |
+
+---
+
+### 3.3 Exhaustiveness Is a Contract
+
+Any logic branching on `EpistemicState` MUST be exhaustive.
+
+Allowed pattern:
+
+```ts
+switch (value.state) {
+  case 'KNOWN': …
+  case 'INCOMPLETE': …
+  case 'UNKNOWN': …
+  default: {
+    const _exhaustive: never = value.state;
+    throw new Error(`Unhandled EpistemicState: ${_exhaustive}`);
+  }
+}
 
 ---
 
@@ -91,6 +123,13 @@ It is **structural truth only**.
 * ✅ `null` must flow end-to-end until explicitly resolved
 
 If data is missing, **the system must admit ignorance**.
+
+NOTE:
+`null` may exist inside `EpistemicValue`,
+but MUST NOT exist inside visual or UI-level contracts.
+
+Conversion from `null` → display placeholder
+is allowed ONLY in epistemic → visual projection.
 
 ---
 
@@ -203,16 +242,48 @@ Scenarios answer **“What does that imply?”**
 
 ---
 
-## 11. Rendering Rules (Phase A)
+## 11. Rendering Rules (Phase-Aware)
 
-### Phase A UI Rules
+### Phase A (Migration)
 
-* UI may read `.value` directly
-* UI must NOT branch on `.state`
-* UI must NOT hide epistemic absence
-* UI behavior must remain unchanged
+* UI may read `.value`
+* UI MUST NOT branch on `.state`
+* No visual differentiation
+* Behavior must remain unchanged
 
-Any visual logic based on epistemic state is **Phase B+ only**.
+### Phase B
+
+* UI may react to epistemic state
+* Interpretation MUST be centralized
+* Components may NOT inspect `EpistemicValue` directly
+
+### Phase C (Current)
+
+* UI receives ONLY `EpistemicVisualSignal`
+* Epistemic → Visual mapping occurs exactly once
+* Rendering MUST NOT fail silently
+* Tooltip, tone, and icon are optional but typed
+
+### Phase D+
+
+* UX may adapt based on confidence
+* Policy decisions still forbidden in UI
+
+---
+
+### 11.1 Canonical Visual Projection (MANDATORY)
+
+All epistemic UI rendering MUST pass through a visual projection layer.
+
+Example output type:
+
+```ts
+interface EpistemicVisualSignal {
+  display: string;
+  tooltip?: string;
+  tone: 'neutral' | 'warning' | 'error' | 'info';
+  icon?: 'check' | 'warning' | 'alert' | 'info';
+}
 
 ---
 
@@ -224,6 +295,9 @@ Every epistemic integration must include:
 2. **KNOWN vs UNKNOWN mapping test**
 3. **No-zero-coercion test**
 4. **Adapter-only responsibility test**
+5. Exhaustive `EpistemicState` switch test
+6. `.d.ts` emission verification test for `@lasyncro/epistemic`
+7. Cross-package type identity test (no shadow interfaces)
 
 If tests pass without these, the test suite is incomplete.
 
@@ -254,6 +328,17 @@ state: value ? 'KNOWN' : 'UNKNOWN'
 ```ts
 if (!epistemic.value) showEmpty()
 ```
+
+❌ Shadow typing:
+
+```ts
+interface EpistemicValue<T> { … }
+❌ Local visual signal re-definitions:
+
+type EpistemicVisualSignal = …
+❌ Importing epistemic types from source paths:
+
+import { EpistemicValue } from '../epistemic'
 
 ---
 

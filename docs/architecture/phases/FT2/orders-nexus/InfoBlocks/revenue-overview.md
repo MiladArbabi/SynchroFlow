@@ -270,24 +270,6 @@ Any violation indicates a wiring or ingestion defect.
 
 ---
 
-## 6. Coverage Policy (Sealed)
-
-Revenue Overview exposes an explicit epistemic gate:
-
-```ts
-executionCoverage: 'sufficient' | 'insufficient'
-```
-
-### Rules
-
-* `totalSales` → always visible
-* `earned`, `pending` → visible **only if sufficient**
-* Insufficient coverage → fail closed (`null → —`)
-
-Coverage is **observational**, not inferential.
-
----
-
 ## 7. UI Contract (Exact)
 
 ```tsx

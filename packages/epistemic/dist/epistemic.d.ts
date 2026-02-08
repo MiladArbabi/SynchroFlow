@@ -10,12 +10,7 @@
  *
  * This file defines WHAT the system knows — not HOW it behaves.
  */
-
-export type EpistemicState =
-  | 'KNOWN'        // Fully supported by available facts
-  | 'INCOMPLETE'   // Computable, but confidence is constrained
-  | 'UNKNOWN';     // Required facts are missing or unverifiable
-
+export type EpistemicState = 'KNOWN' | 'INCOMPLETE' | 'UNKNOWN';
 /**
  * EpistemicValue<T>
  * -----------------
@@ -24,29 +19,25 @@ export type EpistemicState =
  * This type encodes epistemic invariants directly into the type system.
  * If these constraints are violated, TypeScript MUST fail the build.
  */
-export type EpistemicValue<T> =
-  | {
-      state: 'KNOWN';
-      value: T;
-      evaluatedAt: string;
-      explanation?: undefined;
-      completenessRatio?: undefined;
-    }
-  | {
-      state: 'INCOMPLETE';
-      value: T | null;
-      evaluatedAt: string;
-      explanation?: string;
-      completenessRatio?: number;
-    }
-  | {
-      state: 'UNKNOWN';
-      value: null;
-      evaluatedAt: string;
-      explanation?: string;
-      completenessRatio?: undefined;
-    };
-
+export type EpistemicValue<T> = {
+    state: 'KNOWN';
+    value: T;
+    evaluatedAt: string;
+    explanation?: undefined;
+    completenessRatio?: undefined;
+} | {
+    state: 'INCOMPLETE';
+    value: T | null;
+    evaluatedAt: string;
+    explanation?: string;
+    completenessRatio?: number;
+} | {
+    state: 'UNKNOWN';
+    value: null;
+    evaluatedAt: string;
+    explanation?: string;
+    completenessRatio?: undefined;
+};
 /**
  * __EPISTEMIC_DECLARATION_ANCHOR__
  * --------------------------------
@@ -58,4 +49,4 @@ export type EpistemicValue<T> =
  *
  * If this disappears, epistemic exhaustiveness collapses silently.
  */
-export const __EPISTEMIC_DECLARATION_ANCHOR__ = true;
+export declare const __EPISTEMIC_DECLARATION_ANCHOR__ = true;

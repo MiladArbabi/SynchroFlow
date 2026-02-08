@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { FT2_TOKENS } from '../layout/tokens';
+import { FT2_TOKENS } from '../layout/ft2.tokens';
 
 /**
  * FT2EmptyState

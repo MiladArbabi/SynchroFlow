@@ -393,8 +393,6 @@ const comparison = {
         typeof constrainedRevenueAgg?.constrainedBlockedTotal === 'number'
           ? Math.round(constrainedRevenueAgg.constrainedBlockedTotal * 100) / 100
           : null,
-
-      executionCoverage,
     },
 
     obligations,

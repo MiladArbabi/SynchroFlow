@@ -124,11 +124,6 @@ export function mapOrdersFt2Props(
       snapshot.revenue?.blocked === undefined
         ? null
         : snapshot.revenue.blocked,
-
-    executionCoverage:
-      snapshot.revenue?.executionCoverage === undefined
-        ? null
-        : snapshot.revenue.executionCoverage
   },
 
   comparison: {

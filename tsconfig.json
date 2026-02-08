@@ -95,8 +95,7 @@
     "modules/order-nexus/src",
     "modules/customers/src",
     "modules/shared/src/contracts.ts",
-    "modules/finances/src/ui/FinancesAhaPanel.tsx"
-  ],
+    "modules/finances/src/ui/FinancesAhaPanel.tsx" ],
   "exclude": [],
   "references": [
     { "path": "./packages/epistemic/tsconfig.json" },

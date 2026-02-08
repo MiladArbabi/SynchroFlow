@@ -67,7 +67,6 @@ export interface OrdersModuleFT2DataProps {
     earned: number | null;
     pending: number | null;
     blocked: number | null;
-    executionCoverage: 'sufficient' | 'insufficient';
   };
 
   /**
@@ -173,7 +172,6 @@ export default function OrdersModuleFT2(
             earned: toEpistemic(revenue.earned),
             pending: toEpistemic(revenue.pending),
             blocked: toEpistemic(revenue.blocked),
-            executionCoverage: revenue.executionCoverage,
           }}
         />
 

@@ -4,20 +4,17 @@ import {
   InfoBlockFooter,
 } from '@lasyncro/ui-ft2';
 
-// ⬇️ Epistemic contract (Phase A)
+import { EpistemicInfoBlockRow } from '@lasyncro/ui-ft2';
 import type { EpistemicValue } from '@lasyncro/epistemic';
+import { renderEpistemicMoney } from './renderEpistemicMoney';
 
 /**
  * RevenueOverviewInfoBlockProps
  * -----------------------------
- * Phase A migration:
- * - Revenue fields now carry epistemic metadata
- * - Visual behavior remains unchanged
- *
- * IMPORTANT:
- * - This component is NOT yet epistemically correct
- * - It still gates display on executionCoverage
- * - That behavior will be removed in later phases
+ * Phase B2:
+ * - executionCoverage REMOVED
+ * - Epistemic state is the single authority
+ * - Component performs NO conditional logic
  */
 type RevenueOverviewInfoBlockProps = {
   revenue: {
@@ -25,61 +22,36 @@ type RevenueOverviewInfoBlockProps = {
     earned: EpistemicValue<number>;
     blocked: EpistemicValue<number>;
     pending: EpistemicValue<number>;
-
-    // Legacy coverage signal (unchanged in Phase A)
-    executionCoverage: 'sufficient' | 'insufficient';
   };
 };
-
-/**
- * Temporary formatter
- * -------------------
- * Phase A rule:
- * - Use raw `.value`
- * - Do not branch on epistemic state yet
- */
-const fmtMoney = (v: number | null) =>
-  v == null ? null : Number(v.toFixed(2));
 
 export function RevenueOverviewInfoBlock({
   revenue,
 }: RevenueOverviewInfoBlockProps) {
+
   return (
     <InfoBlock title="Revenue overview">
-      <InfoBlockRow
+      <EpistemicInfoBlockRow
         label="Total sales"
-        value={fmtMoney(revenue.totalSales.value)}
+        signal={renderEpistemicMoney(revenue.totalSales)}
       />
 
-      <InfoBlockRow
+      <EpistemicInfoBlockRow
         label="Earned revenue"
-        value={
-          revenue.executionCoverage === 'sufficient'
-            ? fmtMoney(revenue.earned.value)
-            : null
-        }
+        signal={renderEpistemicMoney(revenue.earned)}
       />
 
-      <InfoBlockRow
+      <EpistemicInfoBlockRow
         label="Pending revenue"
-        value={
-          revenue.executionCoverage === 'sufficient'
-            ? fmtMoney(revenue.pending.value)
-            : null
-        }
+        signal={renderEpistemicMoney(revenue.pending)}
       />
 
-      <InfoBlockRow
+      <EpistemicInfoBlockRow
         label="Blocked revenue"
-        value={
-          revenue.executionCoverage === 'sufficient'
-            ? fmtMoney(revenue.blocked.value)
-            : null
-        }
+        signal={renderEpistemicMoney(revenue.blocked)}
       />
-
       <InfoBlockFooter
-        line1="> VALUES SHOWN — CURRENT EXECUTION STATE"
+        line1="> VALUES SHOWN — EPISTEMIC STATE"
         line2="> PAYMENT AND PROFIT NOT EVALUATED"
       />
     </InfoBlock>

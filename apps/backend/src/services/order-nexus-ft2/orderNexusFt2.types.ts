@@ -64,9 +64,6 @@ export type OrderNexusFT2Snapshot =
 
     // No factual primitive yet
     blocked: number | null;
-
-    // Explicit epistemic gate
-    executionCoverage: 'sufficient' | 'insufficient';
   }
 
   ingestion: {
