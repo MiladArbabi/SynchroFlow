@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    /* ---- Core build settings ---- */
+    "module": "ES2020",
+    "target": "ES2020",
+    "moduleResolution": "node",
+
+    "rootDir": "src",
+    "outDir": "dist",
+
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": true,
+
+    "composite": true,
+    "noEmit": false,
+    "isolatedModules": false,
+    "allowImportingTsExtensions": false,
+
+    /* ---- Critical monorepo stabilizers ---- */
+    "skipLibCheck": true,
+    "types": [],
+    "lib": ["ES2020"]
+  },
+  "include": ["src/**/*.ts"]
+}

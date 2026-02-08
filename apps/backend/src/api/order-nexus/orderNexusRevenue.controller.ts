@@ -6,7 +6,7 @@ import { getExecutionAwareRevenueSnapshot } from
 
 // ⬇️ NEW: epistemic adapter (Phase A only)
 import { legacyToEpistemic } from
-  'packages/epistemic';
+  '@lasyncro/epistemic';
 
 /**
  * Order-Nexus Revenue — Phase 6
