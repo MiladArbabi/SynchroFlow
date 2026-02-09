@@ -159,6 +159,11 @@ export async function processProductMessage(
             canonical_product_id: v.canonical_product_id,
             canonical_product_anchor_id: canonicalProductAnchorId,
 
+            canonical_variant_code: 
+              v.sku && v.sku.trim() !== ''
+                ? v.sku
+                : `CV:${v.canonical_variant_id}`,
+
             sku: v.sku,
             title: v.title,
           }))
