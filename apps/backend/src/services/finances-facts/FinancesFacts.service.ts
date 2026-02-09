@@ -158,10 +158,13 @@ const refundsObserved =
     };
   });
 
-   console.debug('[FinancesFacts] extracted time series', {
-    bucket: 'day',
-    points: timeSeriesPoints.length,
-  });
+console.log('[finances:epistemic] facts', {
+  totalRevenue: totalRevenue,
+  totalCosts: totalCosts,
+  netResult: netResult,
+  refundsObserved: refundsObserved,
+  completenessPct: completenessPct,
+});
 
   return {
     shopId,

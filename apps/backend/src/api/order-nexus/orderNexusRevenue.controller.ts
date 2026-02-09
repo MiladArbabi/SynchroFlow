@@ -4,29 +4,29 @@ import { resolveFt2RangeFromRequest } from
 import { getExecutionAwareRevenueSnapshot } from
   'api-src/services/order-revenue/orderRevenueExecutionAware.resolver';
 
-// ⬇️ NEW: epistemic adapter (Phase A only)
-import { legacyToEpistemic } from
-  '@lasyncro/epistemic';
+/**
+ * EPISTEMIC GUARD (Phase 1 — Containment)
+ * --------------------------------------
+ * This controller MUST NOT construct, adapt, or infer EpistemicValue.
+ *
+ * Rationale:
+ * - Epistemic state must be computed exactly once, in a dedicated backend
+ *   epistemic computation layer.
+ * - Adapting primitives to EpistemicValue at the API boundary fabricates
+ *   knowledge and violates the epistemic contract.
+ *
+ * Status:
+ * - This endpoint intentionally returns primitives until the epistemic
+ *   computation layer is introduced (Phase 2).
+ * - See docs/epistemic/phase-1.md for details.
+ */
 
 /**
- * Order-Nexus Revenue — Phase 6
- * -----------------------------
- * Execution-aware revenue endpoint.
- *
- * ⚠️ EPISTEMIC NOTE (Phase A):
- * ---------------------------
- * This controller is an epistemic boundary.
- * We explicitly wrap returned facts so that:
- *
- * - Knowledge state is explicit
- * - Nulls are no longer ambiguous
- * - Downstream consumers cannot silently suppress data
- *
- * IMPORTANT:
- * - No business logic is changed here
- * - Sufficiency semantics are preserved as-is
- * - Epistemic correctness will be addressed in later phases
+ * This controller MUST NOT construct, adapt, or infer EpistemicValue.
+ * …
+ * This endpoint intentionally returns primitives
  */
+
 export default async function orderNexusRevenuePhase6Controller(
   req: any,
   res: any
@@ -52,25 +52,7 @@ export default async function orderNexusRevenuePhase6Controller(
     range,
   });
 
-  /**
-   * Epistemic wrapping (Phase A)
-   * ----------------------------
-   * We preserve the existing shape and meaning of the snapshot,
-   * but wrap numeric facts so their epistemic state is explicit.
-   *
-   * Mapping rule (temporary):
-   * - value !== null → KNOWN
-   * - value === null → UNKNOWN
-   *
-   * This is intentionally naive.
-   */
-  return res.json({
-    ...snapshot,
-
-    revenue: {
-      fulfilled: legacyToEpistemic(snapshot.revenue.fulfilled),
-      unfulfilled: legacyToEpistemic(snapshot.revenue.unfulfilled),
-      unknown: legacyToEpistemic(snapshot.revenue.unknown),
-    },
-  });
+  // Phase 1 containment:
+  // Return snapshot unchanged to avoid epistemic fabrication.
+  return res.json(snapshot);
 }

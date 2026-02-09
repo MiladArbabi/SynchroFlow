@@ -30,6 +30,19 @@ type SyntheticExecutionInput = {
  * - operational / economic joins
  * - FT2-safe downstream reasoning
  */
+
+/**
+ * EPISTEMIC NOTE (Phase 4 — Ingestion Purification)
+ * ------------------------------------------------
+ * Ingestion writes FACTS ONLY.
+ *
+ * - execution_source expresses provenance (observed | synthetic)
+ * - execution_confidence is deprecated and MUST NOT be written here
+ *
+ * All epistemic interpretation occurs downstream in the
+ * epistemic computation layer.
+ */
+
 export class OrderFulfillmentIngestionService {
   async ingestStatus(input: {
     shopId: number;
@@ -62,7 +75,8 @@ export class OrderFulfillmentIngestionService {
          * Synthetic execution is written by reconciliation workers.
          */
         execution_source: 'observed',
-        execution_confidence: 'certain',
+        // execution_confidence is deprecated:
+        // epistemic meaning is computed downstream, not at ingestion.
       })
       .onConflict(['shop_id', 'order_id'])
       .merge({
@@ -72,7 +86,6 @@ export class OrderFulfillmentIngestionService {
 
         // Observed execution always overrides synthetic
         execution_source: 'observed',
-        execution_confidence: 'certain',
       });
   }
 
@@ -100,7 +113,7 @@ export class OrderFulfillmentIngestionService {
         status_updated_at: db.fn.now(),
 
         execution_source: 'synthetic',
-        execution_confidence: 'assumed',
+        // execution_confidence intentionally omitted (deprecated)
       })
       .onConflict(['shop_id', 'order_id'])
       .ignore(); // observed execution always wins

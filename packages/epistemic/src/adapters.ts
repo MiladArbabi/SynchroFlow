@@ -20,10 +20,19 @@ export function legacyToEpistemic<T>(
   value: T | null,
   explanation?: string
 ): EpistemicValue<T> {
+  if (value === null) {
+    return {
+      value: null,
+      state: 'UNKNOWN',
+      explanation,
+      evaluatedAt: new Date().toISOString(),
+    };
+  }
+
   return {
     value,
-    state: value === null ? 'UNKNOWN' : 'KNOWN',
-    explanation,
+    state: 'KNOWN',
     evaluatedAt: new Date().toISOString(),
   };
+
 }

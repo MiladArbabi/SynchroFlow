@@ -26,7 +26,8 @@ export function executeAlignmentPlanes(
     return results;
   }
 
-    // Visibility gate — hard epistemic boundary
+  // Visibility gate — epistemic boundary
+  // UNKNOWN / INCOMPLETE visibility blocks execution
   if (!visibilityGate(metaInput.visibilities)) {
     for (const { plane } of planes) {
       results[plane.planeId] = 'unknown';

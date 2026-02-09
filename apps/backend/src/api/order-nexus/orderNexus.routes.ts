@@ -12,6 +12,9 @@ import {
 import orderNexusRevenueController
   from './orderNexusRevenue.controller';
 
+import orderNexusRevenueEpistemicController
+  from './orderNexusRevenueEpistemic.controller';
+
 const router = Router();
 
 /**
@@ -60,6 +63,18 @@ router.get(
   authenticateToken,
   requireFt2, // still requires FT2 eligibility
   orderNexusRevenueController
+);
+
+/**
+ * Phase 3 — Epistemic Revenue (Additive)
+ * -------------------------------------
+ * Truth-preserving epistemic surface.
+ */
+router.get(
+  '/revenue/epistemic',
+  authenticateToken,
+  requireFt2,
+  orderNexusRevenueEpistemicController
 );
 
 export default router;

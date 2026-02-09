@@ -15,10 +15,17 @@
  * We will replace this logic in later phases.
  */
 export function legacyToEpistemic(value, explanation) {
+    if (value === null) {
+        return {
+            value: null,
+            state: 'UNKNOWN',
+            explanation,
+            evaluatedAt: new Date().toISOString(),
+        };
+    }
     return {
         value,
-        state: value === null ? 'UNKNOWN' : 'KNOWN',
-        explanation,
+        state: 'KNOWN',
         evaluatedAt: new Date().toISOString(),
     };
 }

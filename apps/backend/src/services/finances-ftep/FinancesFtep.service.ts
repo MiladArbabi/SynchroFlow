@@ -1,6 +1,18 @@
+/**
+ * NOTE — EPISTEMIC BOUNDARY
+ * --------------------------------
+ * Finances does NOT yet produce EpistemicValue inputs.
+ * Decision safety here is intelligence-based only.
+ *
+ * Epistemic decision gating is FORBIDDEN
+ * until finances facts emit EpistemicValue<T>.
+ */
+
 import type { FinancesFacts } from 'api-src/services/finances-facts/FinancesFacts.types';
 import type { FinancesIntelligence } from 'api-src/services/finances-intelligence/FinancesIntelligence.service';
 import type { FinancesFT2Exposure } from './FinancesFtep.types';
+import { decisionEpistemicGate } from '../epistemic/decisionEpistemicGate';
+import type { EpistemicValue } from '@lasyncro/epistemic';
 
 /**
  * Finances FTEP — Truth Exposure Policy
@@ -16,6 +28,10 @@ import type { FinancesFT2Exposure } from './FinancesFtep.types';
 export function buildFinancesFtep(input: {
   facts: FinancesFacts;
   intelligence: FinancesIntelligence;
+  epistemic?: {
+    revenue?: EpistemicValue<number>;
+    netResult?: EpistemicValue<number>;
+  };
 }): FinancesFT2Exposure {
   const { facts, intelligence } = input;
 
@@ -108,15 +124,29 @@ export function buildFinancesFtep(input: {
         }
       : null;
 
-  /**
-   * Decision safety (downgraded)
-   */
-  const decisionSafety =
-    intelligence.decisionSafety.status === 'unknown'
-      ? null
-      : {
-          status: intelligence.decisionSafety.status,
-        };
+    // Epistemic Decision Gate (Phase 9)
+  // --------------------------------
+  // Decision safety is downgraded unless ALL epistemic inputs are KNOWN.
+  // Missing epistemic inputs preserve existing behavior (fail-closed).
+
+  let decisionSafety = {
+    status: intelligence.decisionSafety.status,
+  };
+
+  if (input.epistemic?.revenue || input.epistemic?.netResult) {
+    const epistemicInputs = [
+      input.epistemic.revenue,
+      input.epistemic.netResult,
+    ].filter(Boolean) as EpistemicValue<any>[];
+
+    const gate = decisionEpistemicGate(epistemicInputs);
+
+    decisionSafety = {
+      status: gate.allowed
+        ? intelligence.decisionSafety.status
+        : 'unknown',
+    };
+  }
 
   /**
    * Profit preconditions (downgraded)

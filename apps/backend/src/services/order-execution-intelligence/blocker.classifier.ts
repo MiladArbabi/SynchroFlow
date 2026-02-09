@@ -35,10 +35,13 @@ export async function classifyRevenueBlockers(
     .join('canonical_orders as o', 'o.canonical_order_id', 'f.canonical_order_id')
     .where('o.shop_id', shopId)
     .whereNotIn('f.status', ['fulfilled', 'delivered'])
+    // NOTE (Intelligence Cleanup):
+    // execution_confidence is intentionally NOT read here.
+    // Epistemic meaning is computed in the epistemic layer,
+    // not in L2 intelligence or classifiers.
     .select(
       'f.canonical_order_id',
       'f.execution_source',
-      'f.execution_confidence',
       'f.status_updated_at',
       'o.total_price'
     );
@@ -70,14 +73,17 @@ export async function classifyRevenueBlockers(
 
     let category: BlockerClassification['category'] = 'unknown';
 
+    // NOTE:
+    // Synthetic execution is identified by execution_source.
+    // execution_confidence is deprecated and no longer authoritative.
     // ─────────────────────────────────────────────
     // PRIORITY 1 — Missing Execution Truth
     // ─────────────────────────────────────────────
-    if (r.execution_source === 'synthetic' && r.execution_confidence === 'assumed') {
+    if (r.execution_source === 'synthetic') {
       category = 'missing_execution';
     }
 
-        /**
+    /**
      * ─────────────────────────────────────────────
      * FUTURE HARD BLOCKERS (DISABLED — RESERVED)
      * ─────────────────────────────────────────────
@@ -135,7 +141,6 @@ export async function classifyRevenueBlockers(
         ageDays: Number(ageDays.toFixed(2)),
         revenue: Number(r.total_price),
         execution_source: r.execution_source,
-        execution_confidence: r.execution_confidence,
       });
     }
 
