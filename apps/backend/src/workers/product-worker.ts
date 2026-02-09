@@ -36,7 +36,25 @@ function projectCanonicalStatusToFt0(
 export async function processProductMessage(
   msg: ProductIngestionMessage
 ): Promise<void> {
+
   const { shopId, platform, rawProduct } = msg;
+
+  if (!rawProduct.id?.startsWith('gid://shopify/Product/')) {
+    console.warn('[product-worker][SKIP] Non-Shopify product', rawProduct.id);
+    return;
+  }
+
+  if (!rawProduct.variants?.edges?.length) {
+    throw new Error(
+      `[CANONICAL_PRODUCT_INVALID] Product ${rawProduct.id} has no variants`
+    );
+  }
+  
+  console.log('[product-worker][DEBUG] rawProduct keys', {
+      id: rawProduct?.id,
+      hasVariants: !!rawProduct?.variants,
+      variantEdges: rawProduct?.variants?.edges?.length,
+    });
 
   if (platform !== 'shopify') return;
 
@@ -111,6 +129,12 @@ export async function processProductMessage(
         '[product-worker][FATAL] canonical_product_anchor_id not resolved'
       );
     }
+
+    console.log('[product-worker][DEBUG] variants normalized', {
+      shopId,
+      count: canonicalVariants.length,
+      sample: canonicalVariants[0],
+    });
 
     // 2. Upsert canonical variants
     if (canonicalVariants.length > 0) {

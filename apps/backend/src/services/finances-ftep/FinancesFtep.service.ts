@@ -124,21 +124,25 @@ export function buildFinancesFtep(input: {
         }
       : null;
 
-    // Epistemic Decision Gate (Phase 9)
-  // --------------------------------
-  // Decision safety is downgraded unless ALL epistemic inputs are KNOWN.
-  // Missing epistemic inputs preserve existing behavior (fail-closed).
+  /**
+   * Decision Safety — Epistemic Gate (Phase 14)
+   * ------------------------------------------
+   * Rules:
+   * - Intelligence decides ONLY if epistemic knowledge allows
+   * - UNKNOWN or INCOMPLETE epistemic state blocks decisions
+   * - Missing epistemic inputs preserve legacy behavior
+   */
 
   let decisionSafety = {
     status: intelligence.decisionSafety.status,
   };
 
-  if (input.epistemic?.revenue || input.epistemic?.netResult) {
-    const epistemicInputs = [
-      input.epistemic.revenue,
-      input.epistemic.netResult,
-    ].filter(Boolean) as EpistemicValue<any>[];
+  const epistemicInputs = [
+    input.epistemic?.revenue,
+    input.epistemic?.netResult,
+  ].filter(Boolean) as EpistemicValue<any>[];
 
+  if (epistemicInputs.length > 0) {
     const gate = decisionEpistemicGate(epistemicInputs);
 
     decisionSafety = {

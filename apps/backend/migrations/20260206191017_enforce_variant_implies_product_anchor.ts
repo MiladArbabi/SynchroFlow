@@ -1,3 +1,4 @@
+// apps/backend/migrations/20260206191017_enforce_variant_implies_product_anchor.ts
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

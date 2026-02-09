@@ -1,3 +1,18 @@
+/**
+ * CR-1 INGESTION RULE
+ * ------------------
+ * Order ingestion is defined by the presence of a row in:
+ *
+ *   order_ingestion_events
+ *
+ * NOT by:
+ * - canonical_orders presence
+ * - queue success
+ * - Specter events
+ *
+ * All evaluators and FT2 grounding MUST use this table.
+ */
+
 // apps/backend/src/services/order-nexus-canonical-ingestion.service.ts
 import db from 'api-src/db';
 import { getQueueChannel } from 'api-src/queue';
@@ -111,6 +126,33 @@ export class OrderNexusCanonicalIngestionService {
       return;
     }
 
+    /**
+     * Canonical Ingestion Fact (Authoritative)
+     * ----------------------------------------------
+     * This write is the ONLY source of truth for:
+     * - Order ingestion presence
+     * - FT2 ingestion grounding
+     *
+     * Rules:
+     * - Must succeed BEFORE enqueue
+     * - Same transaction boundary as enqueue intent
+     * - Idempotent (ON CONFLICT DO NOTHING)
+     *
+     * If this write fails, the order is NOT considered ingested,
+     * regardless of queue behavior.
+     */
+    await db('order_ingestion_events')
+      .insert({
+        shop_id: orderRow.shop_id,
+        canonical_order_id: orderRow.id,
+        module_id: 'order-nexus',
+        ingested_at: db.fn.now(),
+        source: 'queue',
+      })
+      .onConflict(['shop_id', 'canonical_order_id', 'module_id'])
+      .ignore();
+
+
     // 2) Load canonical line items – again via .from()
     const lineItemRows = await db()
       .from<CanonicalLineItemRow>('canonical_order_line_items')
@@ -161,7 +203,11 @@ export class OrderNexusCanonicalIngestionService {
       order: normalizedOrder,
     };
 
-    // Record canonical ingestion event in Specter (best-effort)
+    // Specter ingestion event (NON-AUTHORITATIVE)
+    // -------------------------------------------
+    // This is UX / observability metadata ONLY.
+    // Canonical ingestion truth lives exclusively in
+    // `order_ingestion_events`.
     // Enqueue to OrderNexus immediately (critical path)
     this.channel.sendToQueue(
       this.queueName,

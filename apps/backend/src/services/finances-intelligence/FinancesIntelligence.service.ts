@@ -147,6 +147,7 @@ export function buildFinancesIntelligence(
     timeSeries,
   } = facts;
 
+  
   /**
    * Net result status (snapshot-level)
    */
@@ -310,6 +311,13 @@ export function buildFinancesIntelligence(
    */
   const lossReason =
     netResult != null && netResult < 0 ? 'net_negative' : null;
+
+  console.log('[AUDIT:intelligence]', {
+    decisionSafety,
+    profitPreconditions,
+    blindSpots,
+  });
+
 
   return {
     netResult: {
