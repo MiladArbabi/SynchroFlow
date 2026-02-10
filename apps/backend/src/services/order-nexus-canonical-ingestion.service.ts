@@ -35,18 +35,18 @@ interface CanonicalOrderRow {
 }
 
 interface CanonicalLineItemRow {
-  line_item_id: string;
-  order_id: string;
+  canonical_line_item_id: string;
+  canonical_order_id: string;
   shop_id: number;
-  product_id: string | null;
-  variant_id: string | null;
+  canonical_product_id: string | null;
+  canonical_variant_id: string | null;
   title: string;
   sku: string | null;
   quantity: number;
-  unit_price: number;
-  total_price: number;
+  unit_price: number | null;
+  total_price: number | null;
   platform: string;
-  platform_line_item_id: string;
+  platform_line_item_id: string | null;
 }
 
 interface NormalizedOrderLineItem {
@@ -152,16 +152,18 @@ export class OrderNexusCanonicalIngestionService {
       .onConflict(['shop_id', 'canonical_order_id', 'module_id'])
       .ignore();
 
-
-    // 2) Load canonical line items – again via .from()
+    // 2) Load canonical line items – canonical join (authoritative)
     const lineItemRows = await db()
       .from<CanonicalLineItemRow>('canonical_order_line_items')
-      .where({ shop_id: shopId, order_id: orderId });
+      .where({
+        shop_id: shopId,
+        canonical_order_id: orderId,
+      });
 
     // FT2 HARD GUARD — SKU / Variant identity must be explicit
     if (
       lineItemRows.some(
-        (li) => !li.variant_id && !li.sku
+        (li) => !li.canonical_variant_id && !li.sku
       )
     ) {
       // Epistemic failure: SKU truth unavailable
@@ -184,15 +186,17 @@ export class OrderNexusCanonicalIngestionService {
       totalTax: Number(orderRow.total_tax ?? 0),
       shippingLines: [], // FT0: shippingLines omitted
       lineItems: lineItemRows.map((li) => ({
-        productId: li.product_id ? String(li.product_id) : null,
-        variantId: li.variant_id
+        productId: li.canonical_product_id
+          ? String(li.canonical_product_id)
+          : null,
+        variantId: li.canonical_variant_id
           ? this.buildCanonicalVariantCode(
               orderRow.shop_id,
-              String(li.variant_id)
+              String(li.canonical_variant_id)
             )
           : undefined,
         quantity: li.quantity,
-        price: li.unit_price ?? null,
+        price: Number(li.unit_price ?? 0),
       })),
     };
 

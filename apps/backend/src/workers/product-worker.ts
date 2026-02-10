@@ -116,12 +116,11 @@ export async function processProductMessage(
         created_at: canonicalProduct.createdAt,
         updated_at: canonicalProduct.updatedAt,
       })
-      .onConflict([
-        'shop_id',
-        'platform',
-        'platform_product_id',
-        'platform_variant_id',
-      ])
+      .onConflict(
+        trx.raw(
+          '(shop_id, platform, platform_product_id) WHERE platform_variant_id IS NULL'
+        )
+      )
       .merge({
         sku: canonicalProduct.sku,
         title: canonicalProduct.title,
@@ -191,30 +190,29 @@ export async function processProductMessage(
           updated_at: trx.fn.now(),
         });
       }
-    });
 
-    // ✅ DURABLE SUCCESS SIGNAL — PRODUCT INGESTED
-    try {
-      await db('shop_ingestion_events')
+      /**
+       * DURABLE INGESTION SIGNAL
+       * -----------------------
+       * This MUST be written inside the transaction.
+       * If this row exists, canonical products + variants
+       * are guaranteed to exist and be committed.
+       */
+      await trx('shop_ingestion_events')
         .insert({
           shop_id: shopId,
           module_id: 'product',
           event: 'ingested',
         })
-        .onConflict(['shop_id', 'module_id', 'event'])
-        .ignore();
-    } catch (e) {
-      // NON-FATAL: ingestion already committed
-      console.error(
-        '[product-worker][WARN] failed to record product ingestion success',
-        { shopId, error: (e as Error).message }
-      );
-    }
+          .onConflict(['shop_id', 'module_id', 'event'])
+          .ignore();
+        });
 
     console.log('[product-worker] committed product + variants', {
       shopId,
       canonicalProductId: canonicalProduct.platformProductId,
     });
+
   } catch (error: any) {
   // NON-FATAL telemetry — never invalidate committed ingestion
   try {

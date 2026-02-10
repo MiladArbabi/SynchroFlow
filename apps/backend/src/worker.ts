@@ -68,7 +68,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }
 
     // 2) Legacy transform path (kept for now for other consumers)
-    const mappingRules = await db('data_mapping_rules').where({
+    /* const mappingRules = await db('data_mapping_rules').where({
       shop_id: stagedEvent.shop_id,
     });
 
@@ -80,7 +80,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
     console.log(
       '[worker] Successfully transformed payload:',
       transformedPayload,
-    );
+    ); */
 
     // 3) NEW: persist canonical order snapshot
     // For FT0 we assume raw_payload is already in CanonicalOrder shape
