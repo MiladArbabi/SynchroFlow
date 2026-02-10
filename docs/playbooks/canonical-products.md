@@ -31,11 +31,42 @@ This is a **contract**.
 6. **Canonical Variant Code (CVC) is the only SKU-level identifier**
 7. **CVC is written once at ingestion and never inferred or mutated**
 
+8. **Product ingestion participates in the Canonical Queue & Worker Execution Contract**
+
+Product identity is not considered valid unless:
+- The product ingestion worker executed
+- The transaction committed
+- Canonical rows exist in the database
+
+Queue receipt, logs, or handler execution alone are insufficient.
+
+See:
+→ Canonical Queue & Worker Execution Playbook, §4.4 Product Ingestion Queue
+→ Canonical Queue & Worker Execution Playbook, §10 Acceptance Criteria
+
 If any of these are violated, downstream systems (FT2, revenue units, trust modules) **must fail**.
 
 ---
 
-0. Verify product anchor uniqueness is enforced correctly:
+0. Verify product ingestion execution path:
+
+Confirm:
+- product_ingestion queue received messages
+- Product Ingestion Worker started
+- Handler entered
+- Transaction committed
+- canonical_products rows exist
+
+If any step is missing:
+STOP — do not debug joins, FT2, or revenue.
+
+See:
+→ Canonical Queue & Worker Execution Playbook, §2 Transport & Execution Scan
+→ Canonical Queue & Worker Execution Playbook, §10 Acceptance Criteria
+
+---
+
+0.1 Verify product anchor uniqueness is enforced correctly:
 
 ```sql
 SELECT indexname, indexdef
@@ -174,6 +205,20 @@ No canonical writes happen here.
 **File:**
 `apps/backend/src/workers/product-worker.ts`
 
+⚠️ Transport & Execution Contract
+
+This worker is governed by the Canonical Queue & Worker Execution Playbook.
+
+Specifically:
+- Fire-and-forget semantics apply
+- No retries at FT2 level
+- Eligibility relies on committed DB state only
+- Partial execution is treated as non-execution
+
+See:
+→ Canonical Queue & Worker Execution Playbook, §4.4 Product Ingestion Queue
+→ Canonical Queue & Worker Execution Playbook, §1.1 Canonical-First Truth
+
 **Responsibilities:**
 
 1. Normalize product into `canonical_products`
@@ -232,6 +277,27 @@ FT2, reconciliation, and revenue units rely exclusively on:
 
 This reflects the actual spine of our system.
 
+This prevents silent corruption and enforces the Canonical-First Truth rule.
+
+Orders MUST NOT rely on product identity unless product ingestion
+has successfully committed canonical anchors.
+
+See:
+→ Canonical Queue & Worker Execution Playbook, §1.1 Canonical-First Truth
+→ Canonical Queue & Worker Execution Playbook, §2 End-to-End Pipeline
+
+This is aligned with the Reconciliation System contract:
+
+Reconciliation:
+- Guarantees execution completeness
+- MAY synthesize execution rows
+- MUST NOT repair canonical identity
+- MUST NOT infer or backfill product anchors or CVCs
+
+See:
+→ Canonical Queue & Worker Execution Playbook, §6 Synthetic Execution
+→ Canonical Queue & Worker Execution Playbook, §7 Reconciliation Worker
+
 ---
 
 ### D. Why This Guardrail Exists
@@ -284,6 +350,18 @@ If canonical identity is wrong here, the bug is **upstream**.
 This is intentional and correct.
 
 FT2 is a **trust gate**, not a data fixer.
+This FT2 behavior is REQUIRED by the execution pipeline.
+
+FT2 blocking on missing product identity is not a product rule alone —
+it is a system-wide invariant enforced across:
+
+- Product ingestion
+- Order ingestion
+- Execution reconciliation
+
+See:
+→ Canonical Queue & Worker Execution Playbook, §1.3 Fail-Closed
+→ Canonical Queue & Worker Execution Playbook, §9 Revenue & Metrics Implication
 
 ---
 
@@ -358,6 +436,14 @@ Once written (and anchor-linked):
 * No later stage is allowed to “fix” mistakes
 
 **If canonical identity is wrong, the system must stop.**
+
+This contract is inseparable from the Canonical Queue & Worker Execution Playbook.
+
+Product identity, execution truth, and eligibility gates
+are enforced as a single system.
+
+Any change to one playbook
+MUST be evaluated against the other.
 
 That is by design.
 
