@@ -133,13 +133,16 @@ Orders FT2 operates on LaSyncro-owned canonical identifiers, not platform identi
 
 **Format (v1):**
 
-```
-cvc:v1:{shop_id}:{platform_variant_id}
-```
-*** Earlier shorthand forms are deprecated and must not be emitted or interpreted.
+CVC resolution is deterministic at ingestion time.
 
+IF platform SKU is present and non-empty:
+canonical_variant_code = <platform SKU>
 
-FT2 never reasons over raw platform SKUs.
+ELSE:
+canonical_variant_code = 'CV:' + <canonical_variant_id>
+
+📌 Canonical Variant Code is **shop-scoped, immutable, and LaSyncro-owned**.  
+📌 Platform SKUs are advisory inputs, not identifiers.
 
 If CVC is absent, SKU-level revenue and obligations are not addressable. In this state:
 
@@ -149,17 +152,37 @@ If CVC is absent, SKU-level revenue and obligations are not addressable. In this
 
 This is intentional and epistemically strict.
 
-### Canonical Identity Enforcement (NEW · HARD GATE)
+### Canonical Identity Enforcement (HARD GATE)
+
+### Canonical Variant Code Integrity ( SEALED)
+
+Canonical Variant Code (CVC) is the **sole SKU-level identifier** allowed in Orders FT2.
+
+**Enforcement Guarantees:**
+
+* CVC is written at product ingestion time
+* CVC is NOT NULL in:
+  * `canonical_variants`
+  * `canonical_order_line_items`
+* Order line items MUST carry the exact CVC of their canonical variant
+* Runtime enforcement prevents:
+  * Missing CVC
+  * Divergent or mutated CVC values
+
+Violations hard-fail at write time.  
+FT2 never attempts reconciliation or repair.
 
 Orders FT2 eligibility requires **full canonical identity resolution** at ingestion time.
 
-**Hard Requirements:**
+**Hard Requirements (LOCKED):**
 
-* Every `canonical_order_line_items` row **MUST** satisfy:
+* Every `canonical_order_line_items` row MUST satisfy:
   * `canonical_variant_id IS NOT NULL`
-  * `canonical_product_id IS NOT NULL`
-* Variant → Product linkage is **resolved before FT2 evaluation**.
-* FT2 **never** infers, repairs, or backfills canonical identity.
+  * `canonical_product_anchor_id IS NOT NULL`
+  * `canonical_variant_code IS NOT NULL`
+* `canonical_variant_code` MUST match the authoritative value in `canonical_variants`
+* Variant → Product anchoring MUST be resolved before FT2 evaluation
+* FT2 never infers, repairs, or backfills canonical identity
 
 If any order line item lacks a canonical product reference:
 
@@ -167,7 +190,7 @@ If any order line item lacks a canonical product reference:
 * Revenue aggregation is **disallowed**.
 * Execution-aware domains are **suppressed**.
 
-## Execution Ledger Ownership (NEW · SEALED)
+## Execution Ledger Ownership (SEALED)
 
 Orders FT2 owns **no execution logic**, but it owns **execution truth visibility**.
 
@@ -185,7 +208,7 @@ FT2 consumes execution truth. It never derives, mutates, or repairs it.
 
 This behavior is intentional and non-recoverable inside FT2.
 
-### Canonical Fulfillment Determination (NEW · HARD DEFINITION)
+### Canonical Fulfillment Determination (HARD DEFINITION)
 
 Fulfilled / Unfulfilled in Orders FT2 is determined exclusively by the execution ledger.
 
@@ -264,7 +287,7 @@ Revenue tied to canonical orders whose execution is blocked by at least one eval
 * Never explains causes or classes here
 * Attribution lives exclusively in Obligation Overview
 
-##### Obligation Coverage vs Attribution (NEW · HARD GATE)
+##### Obligation Coverage vs Attribution (HARD GATE)
 
 Blocked Revenue is derived from **execution rows that are obligation-evaluable**.
 
@@ -415,7 +438,8 @@ Logical revenue units derived from canonical order line items
 Revenue units are valid **only if canonical identity is complete**:
 
 * `canonical_variant_id` present
-* `canonical_product_id` present
+* `canonical_product_anchor_id` present
+* `canonical_variant_code` present and verified
 * Variant → Product join proven
 
 If this precondition fails, revenue units may exist internally but are **not exposable** to FT2.
@@ -498,8 +522,8 @@ This policy is non-negotiable.
 > SALES VALUE SHOWN — CURRENT EXECUTION STATE  
 > PAYMENT AND PROFIT NOT EVALUATED  
 > BLOCKED VALUE IS PARTITIONED — CAUSES SHOWN ELSEWHERE  
-> SKU-LEVEL DETAIL REQUIRES CANONICAL VARIANT CODES (CVC)
-> **MISSING CANONICAL IDENTIFIERS RESULT IN AGGREGATE-ONLY VISIBILITY**
+> SKU-LEVEL DETAIL REQUIRES CANONICAL VARIANT CODES (CVC)  
+> **MISSING OR INVALID CVC RESULTS IN AGGREGATE-ONLY VISIBILITY**
 
 ---
 
@@ -526,8 +550,9 @@ Orders FT2 eligibility requires:
 
 1. Canonical products present
 2. Canonical variants present
-3. All order line items joined to canonical products
-4. No orphaned canonical order line items
+3. Canonical Variant Codes (CVC) resolved and verified
+4. All order line items anchored to canonical products
+5. No orphaned or identity-invalid canonical order line items
 
 Failure of any condition results in:
 
@@ -546,6 +571,6 @@ FT2 does not degrade gracefully under identity failure. It fails closed by desig
 ✔ No semantic leakage  
 ✔ FT2 remains terminal  
 
-🔒 **Order-Nexus FT2 Contract Audit — REV C.2 is current, aligned, and sealed.**
+🔒 **Order-Nexus FT2 Contract Audit — REV C.3 is current, aligned, and sealed.**
 
 ---

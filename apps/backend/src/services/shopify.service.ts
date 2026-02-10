@@ -11,6 +11,9 @@ import { enqueueProductForIngestion }
   from './product-ingestion.service';
 import { recordIncompleteOrder } from './incomplete-order.service';
 import { publishReconciliationJob } from 'api-src/queues/reconciliation.queue';
+import { getQueueChannel } from 'api-src/queue';
+
+type DbExecutor = Knex | Knex.Transaction;
 
 /**
  * IMPORTANT — EXECUTION SEMANTICS
@@ -83,6 +86,10 @@ export const performInitialSync = async (
                 id
                 sku
                 title
+                price
+                compareAtPrice
+                createdAt
+                updatedAt
               }
             }
           }
@@ -186,6 +193,8 @@ export const performInitialSync = async (
       sync_progress_total: totalProgress,
     });
 
+    const stagedEventIds: number[] = [];
+
     // 4. Use a transaction to sync all data or none
     await db.transaction(async (trx) => {
       if (data.products) {
@@ -220,153 +229,50 @@ export const performInitialSync = async (
         });
       }
 
-      if (data.orders) {
-        console.log(`[ShopifyService] Syncing ${data.orders.edges.length} orders...`);
-        await syncOrders(trx, shopId, data.orders.edges);
-
-        /**
-         * FT2 Canonical Order Contract
-         * ----------------------------
-         * FT2 requires order-level monetary completeness only.
-         * Line-item economics are optional and may be enriched later.
-         *
-         * DO NOT add line-item pricing requirements here.
-         */
-        const canonicalIngestion = new CanonicalCommerceIngestionService();
-
+      /**
+       * ORDER STAGING — CANONICAL INGESTION ENTRY POINT
+       * ----------------------------------------------
+       * Orders MUST be staged before canonical ingestion.
+       *
+       * Guarantees:
+       * - Durable fact preservation
+       * - Replayability via staged_events
+       * - Explicit execution proof for FT2
+       *
+       * No inference. No defaults. No execution.
+       */
+      if (data.orders?.edges?.length) {
         for (const { node } of data.orders.edges) {
-          const canonicalOrder =
-            mapShopifyOrderNodeToCanonical(node, shopId);
-
-          /**
-           * Canonical Order Eligibility (FT2)
-           * --------------------------------
-           * FT2 requires order-level monetary completeness only.
-           * Line-item economics are optional at this stage.
-           */
-          if (
-            !canonicalOrder.createdAt ||
-            !canonicalOrder.currency ||
-            canonicalOrder.totalPrice == null ||
-            canonicalOrder.subtotalPrice == null ||
-            canonicalOrder.totalTax == null
-          ) {
-            console.warn('[CANONICAL_SKIP_ORDER]', {
-              shopId,
-              platformOrderId: canonicalOrder.platformOrderId,
-              reason: 'INCOMPLETE_ORDER_TOTALS'
-            });
-            continue;
-          }
-
-          /**
-           * CANONICAL LINE ITEM PRODUCT HARD GATE (FT2)
-           * ------------------------------------------
-           * insertCanonicalOrder REQUIRES:
-           * - lineItem.productId !== null
-           *
-           * Variant presence alone is insufficient.
-           */
-          const hasMissingProduct = canonicalOrder.lineItems.some(
-            li => li.productId == null
+          const canonicalOrder = mapShopifyOrderNodeToCanonical(
+            node,
+            shopId,
           );
 
-          if (hasMissingProduct) {
-            await recordIncompleteOrder({
-              shopId,
-              platform: 'shopify',
-              platformOrderId: canonicalOrder.platformOrderId,
-              reason: 'LINE_ITEM_PRODUCT_NOT_RESOLVED',
-            });
-            continue;
-          }
+          const [staged] = await trx('staged_events')
+            .insert({
+              source_platform: 'shopify',
+              event_type: 'orders/sync',
+              raw_payload: canonicalOrder,
+              shop_id: shopId,
+            })
+            .returning<{ id: number }[]>('id');
 
-
-          // --- CANONICAL VARIANT HARD GATE (FT2) ---
-          const variantIds = canonicalOrder.lineItems
-            .map(li => li.variantId)
-            .filter((v): v is string => typeof v === 'string');
-
-          if (variantIds.length === 0) {
-            await recordIncompleteOrder({
-              shopId,
-              platform: 'shopify',
-              platformOrderId: canonicalOrder.platformOrderId,
-              reason: 'NO_VARIANTS_ON_ORDER',
-            });
-            continue;
-          }
-
-          /**
-           * CANONICAL VARIANT HARD GATE (FT2)
-           * --------------------------------
-           * Purpose:
-           * - Enforce variant → product anchoring BEFORE canonical order insertion
-           *
-           * Facts:
-           * - canonical_variants is keyed by (shop_id, canonical_variant_id)
-           * - platform_variant_id does NOT exist in canonical storage
-           *
-           * Rule:
-           * - If ANY referenced canonical_variant_id lacks canonical_product_id,
-           *   the order MUST be deferred (not partially ingested).
-           *
-           * This gate prevents:
-           * - orphaned canonical_order_line_items
-           * - FT2 identity violations
-           * - false-positive revenue / order counts
-           */
-          const unresolved = await db('canonical_variants')
-            .where({ shop_id: shopId })
-            .whereIn('canonical_variant_id', variantIds)
-            .whereNull('canonical_product_id')
-            .count<{ count: string }>('id as count')
-            .first();
-
-          if (unresolved && Number(unresolved.count) > 0) {
-            await recordIncompleteOrder({
-              shopId,
-              platform: 'shopify',
-              platformOrderId: canonicalOrder.platformOrderId,
-              reason: 'CANONICAL_VARIANT_NOT_READY',
-            });
-
-            // ⛔ Do NOT insert canonical order yet
-            // Product worker must finish first
-            continue;
-          }
-
-          await canonicalIngestion.insertCanonicalOrder(canonicalOrder);
-
-          if (node.displayFulfillmentStatus === 'FULFILLED') {
-            publishReconciliationJob(canonicalOrder.id, {
-              status: 'delivered',
-              observedAt: new Date(
-                node.updatedAt ?? node.processedAt ?? node.createdAt
-              ),
-              source: 'shopify_sync',
-            });
-          } else {
-            publishReconciliationJob(canonicalOrder.id);
-          }
+          stagedEventIds.push(staged.id);
         }
-
-        await trx('integrations').where({ id: integrationId }).update({
-          sync_status: 'SYNCING_LINE_ITEMS',
-          sync_progress_current: totalProducts + totalOrders,
-        });
-        console.log(`[ShopifyService] Syncing ${totalLineItems} line items...`);
-        await syncOrderLineItems(trx, shopId, data.orders.edges);
-        // --- END OF BLOCK ---
-
-       // --- 3. Report: COMPLETING ---
-        await trx('integrations').where({ id: integrationId }).update({
-          sync_status: 'COMPLETING',
-          // Current progress is now all products + all orders
-          sync_progress_current: totalProgress,
-        });
       }
     });
+
+    const channel = getQueueChannel('events');
+
+    for (const staged_event_id of stagedEventIds) {
+      channel.sendToQueue(
+        'events',
+        Buffer.from(JSON.stringify({ staged_event_id })),
+      );
+    }
+
+    // Products are now committed.
+    // Product worker can populate canonical_variants safely.
 
     // --- 4. Report: COMPLETED ---
     await db('integrations').where({ id: integrationId }).update({
@@ -390,7 +296,11 @@ export const performInitialSync = async (
 };
 
 // Simplified sync functions
-async function syncProducts(trx: Knex.Transaction, shopId: number, edges: any[]) {
+async function syncProducts(
+  trx: DbExecutor, 
+  shopId: number, 
+  edges: any[]
+) {
   const productsToInsert = edges.map(({ node }: any) => ({
     shop_id: shopId,
     platform_product_id: node.id,
@@ -411,7 +321,11 @@ async function syncProducts(trx: Knex.Transaction, shopId: number, edges: any[])
 };
 
 // Simplified orders sync without fulfillments
-async function syncOrders(trx: Knex.Transaction, shopId: number, edges: any[]) {
+async function syncOrders(
+  trx: DbExecutor, 
+  shopId: number, 
+  edges: any[]
+) {
   const ordersToInsert = edges.map(({ node }: any) => {
     // Under PCD without approval, we cannot access any customer or address data
     // We can only use the order data itself
@@ -445,7 +359,7 @@ async function syncOrders(trx: Knex.Transaction, shopId: number, edges: any[]) {
 }
 
 async function syncOrderLineItems(
-  trx: Knex.Transaction,
+  trx: DbExecutor,
   shopId: number,
   orderEdges: any[],
 ) {

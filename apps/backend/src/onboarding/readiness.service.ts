@@ -54,13 +54,13 @@ export class OnboardingReadinessService {
       readyModules: modules.filter(m => m.isReady).map(m => m.moduleId),
     };
 
-    console.log('[FT1_READINESS_SNAPSHOT]', {
+    /* console.log('[FT1_READINESS_SNAPSHOT]', {
       shopId,
       isComplete: ft1.isComplete,
       blockingModules: ft1.blockingModules,
       readyModules: ft1.readyModules,
       ts: new Date().toISOString(),
-    });
+    }); */
 
     return {
       shopId,

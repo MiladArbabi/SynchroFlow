@@ -22,8 +22,10 @@ Everything else in this document enforces that rule.
 This rule applies equally to **identity resolution**.
 
 If canonical identity is incomplete or missing:
+
 * execution truth is invalid
 * eligibility signals are unreliable
+* SKU-level attribution is disallowed
 * FT2 must fail closed
 
 Identity gaps are ingestion failures, not evaluator bugs.
@@ -126,6 +128,16 @@ SELECT COUNT(*)
 FROM canonical_order_line_items
 WHERE canonical_product_id IS NULL;
 
+Additional invariant scan (SKU identity):
+
+```sql
+SELECT COUNT(*)
+FROM canonical_order_line_items li
+JOIN canonical_variants v
+  ON li.shop_id = v.shop_id
+ AND li.canonical_variant_id = v.canonical_variant_id
+WHERE li.canonical_variant_code <> v.canonical_variant_code;
+```
 
 If count > 0:
 
@@ -207,8 +219,8 @@ Every domain **must** be phase-scoped.
 | ----- | -------------------------------- | ----------------------------- |
 | FT0   | product existence                | order joins                   |
 | FT1   | variant presence                 | revenue attribution           |
-| FT2   | canonical product + variant IDs  | SKU inference, backfills      |
-| FT3+  | cost, margin, performance        | guessing                      |
+| FT2   | canonical product + variant IDs + CVC | SKU inference, backfills |
+| FT2   | cost, margin, performance        | guessing                      |
 
 FT2 eligibility **requires canonical product identity**, not SKU strings.
 
@@ -281,11 +293,12 @@ status	Valid enum
 
 ❌ Forbidden:
 
-Writing execution rows with canonical_order_id = NULL
+❌ Writing execution rows with canonical_order_id = NULL
+❌ Writing execution rows keyed only by platform IDs
+❌ “Backfilling later” without an explicit retry contract
+❌ Writing SKU-level execution rows without Canonical Variant Code (CVC)
+❌ Inferring or regenerating CVC downstream
 
-Writing execution rows keyed only by platform IDs
-
-“Backfilling later” without an explicit retry contract
 
 ✅ Required:
 
@@ -344,8 +357,9 @@ Forbidden patterns:
 * Writing line items without resolvable canonical_variant_id
 * Assuming products will be resolved later
 
-If a mapper cannot guarantee joinability:
-* Write NULL explicitly
+If a mapper cannot guarantee joinability or canonical SKU identity:
+
+* Do not emit Canonical Variant Code
 * Let eligibility block
 * Fix ingestion, not evaluation
 
@@ -422,12 +436,16 @@ Canonical order ingestion may proceed **without enrichment**, but:
 * canonical_order_line_items MUST eventually link to canonical_products
 
 Allowed:
+
 * Insert orders
-* Insert line items with NULL canonical_product_id (temporarily)
+* Insert line items with NULL canonical_product_id (temporarily, FT0–FT1 only)
+* Insert line items with NULL canonical_variant_code (temporarily, FT0–FT1 only)
 
 Required before FT2:
-* Backfill canonical_product_id
-* Verify joins via SQL
+
+* Backfill canonical_product_anchor_id
+* Backfill canonical_variant_code (CVC)
+* Verify joins and CVC consistency via SQL
 
 
 ---
@@ -453,7 +471,10 @@ Those are **advisory**.
 FT2 must block if:
 
 * canonical_order_line_items exist
-* AND canonical_product_id is NULL for any row
+* AND any row has:
+  * canonical_product_anchor_id IS NULL
+  * OR canonical_variant_code IS NULL
+  * OR canonical_variant_code mismatches canonical_variants
 
 This is a CROSS_DOMAIN blocker:
 ORDERS × PRODUCTS
@@ -532,6 +553,10 @@ Before declaring a domain “wired”:
 * [ ] No execution rows with NULL foreign keys
 * [ ] No order line items with NULL canonical_product_id
 * [ ] Execution joins verified by direct SQL
+* [ ] Canonical Variant Code (CVC) present on all variants
+* [ ] Canonical Variant Code matches between:
+      canonical_variants ↔ canonical_order_line_items
+* [ ] No SKU-level execution without CVC
 
 If **any box is unchecked** → **stop**.
 

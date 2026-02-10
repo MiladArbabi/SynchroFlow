@@ -39,17 +39,29 @@ export async function processProductMessage(
 
   const { shopId, platform, rawProduct } = msg;
 
-  if (!rawProduct.id?.startsWith('gid://shopify/Product/')) {
-    console.warn('[product-worker][SKIP] Non-Shopify product', rawProduct.id);
-    return;
-  }
+  console.log('[AUDIT][RUNTIME_CONFLICT_KEYS]', [
+    'shop_id',
+    'platform',
+    'platform_product_id',
+    'platform_variant_id',
+  ]);
 
-  if (!rawProduct.variants?.edges?.length) {
+  if (!rawProduct.id?.startsWith('gid://shopify/Product/')) {
     throw new Error(
-      `[CANONICAL_PRODUCT_INVALID] Product ${rawProduct.id} has no variants`
+      `[PRODUCT_INGESTION_INVALID] Unsupported product id: ${rawProduct.id}`
     );
   }
-  
+
+  const variantEdges = rawProduct?.variants?.edges;
+  const hasVariants = Array.isArray(variantEdges) && variantEdges.length > 0;
+
+  if (!hasVariants) {
+    console.warn(
+      '[product-worker][WARN] Product has no variants — product-only ingest',
+      { productId: rawProduct.id }
+    );
+  };
+
   console.log('[product-worker][DEBUG] rawProduct keys', {
       id: rawProduct?.id,
       hasVariants: !!rawProduct?.variants,
@@ -58,27 +70,42 @@ export async function processProductMessage(
 
   if (platform !== 'shopify') return;
 
-  const canonicalProduct =
-    productNormalizer.normalizeShopifyProduct(rawProduct, shopId);
+  let canonicalProduct;
+    try {
+      canonicalProduct =
+        productNormalizer.normalizeShopifyProduct(rawProduct, shopId);
+    } catch (e) {
+      console.error('[product-worker][NORMALIZATION_FAILED]', {
+        shopId,
+        productId: rawProduct?.id,
+        error: (e as Error).message,
+      });
+      throw e;
+    }
 
   const canonicalVariants =
     variantNormalizer.normalizeShopifyVariants(rawProduct, shopId);
 
-  console.log('[product-worker] normalized product', {
+  /* console.log('[product-worker] normalized product', {
     shopId,
     canonicalProductId: canonicalProduct.platformProductId,
     variantCount: canonicalVariants.length,
-  });
+  }); */
 
-  await db.transaction(async trx => {
+  try {
+   await db.transaction(async trx => {
     // Canonical product invariant:
     // - One row per (shop_id, platform, platform_product_id)
     // - platform_variant_id MUST be NULL for product-level rows
 
+    console.log(
+      '[AUDIT][CANONICAL_PRODUCT_BEFORE_INSERT]',
+      canonicalProduct
+    );
+    
     // 1. Upsert canonical product
-    const [productRow] = await trx('canonical_products')
+    await trx('canonical_products')
       .insert({
-        // canonical_product_id is DB-assigned (SERIAL PRIMARY KEY)
         shop_id: canonicalProduct.shopId,
         platform: canonicalProduct.platform,
         platform_product_id: canonicalProduct.platformProductId,
@@ -89,15 +116,6 @@ export async function processProductMessage(
         created_at: canonicalProduct.createdAt,
         updated_at: canonicalProduct.updatedAt,
       })
-
-      /**
-       * Canonical product identity
-       * -------------------------
-       * Product-level rows MUST NOT include platform_variant_id
-       * because NULLs do not participate in Postgres UNIQUE constraints.
-       *
-       * Identity: (shop_id, platform, platform_product_id)
-       */
       .onConflict([
         'shop_id',
         'platform',
@@ -109,8 +127,17 @@ export async function processProductMessage(
         title: canonicalProduct.title,
         status: projectCanonicalStatusToFt0(canonicalProduct.status),
         updated_at: canonicalProduct.updatedAt,
+      });
+
+    const productRow = await trx('canonical_products')
+      .select('canonical_product_id')
+      .where({
+        shop_id: canonicalProduct.shopId,
+        platform: canonicalProduct.platform,
+        platform_product_id: canonicalProduct.platformProductId,
       })
-      .returning(['canonical_product_id']);
+      .whereNull('platform_variant_id')
+      .first();
 
     /**
      * Canonical Product Anchor
@@ -121,14 +148,18 @@ export async function processProductMessage(
      *
      * Absence here is a HARD STOP.
      */
-    const canonicalProductAnchorId =
-      productRow?.canonical_product_id;
-
-    if (!canonicalProductAnchorId) {
-      throw new Error(
-        '[product-worker][FATAL] canonical_product_anchor_id not resolved'
+    if (!productRow || !productRow.canonical_product_id) {
+      console.error(
+        '[product-worker][FATAL] canonical product insert did not return PK',
+        {
+          shopId,
+          platformProductId: canonicalProduct.platformProductId,
+        }
       );
+      throw new Error('[PRODUCT_INSERT_FAILED]');
     }
+
+    const canonicalProductAnchorId = productRow.canonical_product_id;
 
     console.log('[product-worker][DEBUG] variants normalized', {
       shopId,
@@ -143,27 +174,8 @@ export async function processProductMessage(
           canonicalVariants.map(v => ({
             shop_id: v.shop_id,
             canonical_variant_id: v.canonical_variant_id,
-
-            // IMPORTANT:
-            // canonical_product_id here is the PLATFORM product GID,
-            // NOT the numeric canonical_products PK.
-            //
-            // This is intentional: canonical_variants bridges
-            // canonical_order_line_items → platform product identity.
-            /**
-             * Identity vs Anchor
-             * ------------------
-             * canonical_product_id        → platform GID (string)
-             * canonical_product_anchor_id → canonical_products PK (number)
-             */
             canonical_product_id: v.canonical_product_id,
             canonical_product_anchor_id: canonicalProductAnchorId,
-
-            canonical_variant_code: 
-              v.sku && v.sku.trim() !== ''
-                ? v.sku
-                : `CV:${v.canonical_variant_id}`,
-
             sku: v.sku,
             title: v.title,
           }))
@@ -178,22 +190,52 @@ export async function processProductMessage(
           title: trx.raw('excluded.title'),
           updated_at: trx.fn.now(),
         });
+      }
+    });
+
+    // ✅ DURABLE SUCCESS SIGNAL — PRODUCT INGESTED
+    try {
+      await db('shop_ingestion_events')
+        .insert({
+          shop_id: shopId,
+          module_id: 'product',
+          event: 'ingested',
+        })
+        .onConflict(['shop_id', 'module_id', 'event'])
+        .ignore();
+    } catch (e) {
+      // NON-FATAL: ingestion already committed
+      console.error(
+        '[product-worker][WARN] failed to record product ingestion success',
+        { shopId, error: (e as Error).message }
+      );
     }
 
-    // 3. SKU-OS ingestion signal (monotonic)
-    await trx('shop_ingestion_events')
-      .insert({
-        shop_id: shopId,
-        module_id: 'sku-os',
-        event: 'product_ingested',
-      })
-      .onConflict(['shop_id', 'module_id', 'event'])
-      .ignore();
-  });
+    console.log('[product-worker] committed product + variants', {
+      shopId,
+      canonicalProductId: canonicalProduct.platformProductId,
+    });
+  } catch (error: any) {
+  // NON-FATAL telemetry — never invalidate committed ingestion
+  try {
+    await db('shop_ingestion_events').insert({
+      shop_id: msg.shopId,
+      module_id: 'sku-os',
+      event: 'product_ingestion_failed',
+      metadata: JSON.stringify({
+        error: error?.message ?? String(error),
+        productId: msg.rawProduct?.id ?? null,
+      }),
+    });
+  } catch {
+    /* swallow */
+  }
 
-  console.log('[product-worker] committed product + variants', {
-    shopId,
-    canonicalProductId: canonicalProduct.platformProductId,
-  });
-
+  console.error(
+    '[AUDIT][PRODUCT_WORKER_TRANSACTION_FAILED]',
+    error
+  );
+    // 🚫 DO NOT rethrow — product may already be committed
+    return;
+  }
 }

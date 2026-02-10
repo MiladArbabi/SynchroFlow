@@ -75,10 +75,30 @@ export async function closeQueue(): Promise<void> {
 }
 
 export const getQueueChannel = (queueName: string): ChannelWrapper => {
-  // If queue usage is disabled (e.g. in tests), return a stable no-op channel wrapper.
+  /**
+   * CRITICAL INVARIANT
+   * -----------------
+   * Queues MUST NOT silently no-op outside test environments.
+   *
+   * Silent no-op causes:
+   * - Lost execution
+   * - False progress signals
+   * - Permanent FT2 blockers
+   *
+   * If this throws, fix environment or queue initialization.
+   */
+
+  // HARD GUARD — queues must never silently no-op outside tests
   if (!connection) {
-    // Return a minimal channel-like wrapper that exposes sendToQueue + on/close/error handlers.
-    // Type-assert to ChannelWrapper to satisfy callers; methods are no-ops.
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error(
+        `[QUEUE_DISABLED] getQueueChannel("${queueName}") called with no active RabbitMQ connection.
+          This is forbidden outside tests.
+          Check DISABLE_QUEUE and initQueue() ordering.`
+      );
+    }
+
+    // Test-only no-op channel
     const noopWrapper: any = {
       sendToQueue: (_name: string, _buffer: Buffer) => true,
       on: (_ev: string, _fn: (...args: any[]) => void) => {},
@@ -88,6 +108,7 @@ export const getQueueChannel = (queueName: string): ChannelWrapper => {
     };
     return noopWrapper as ChannelWrapper;
   }
+
 
   if (!channels.has(queueName)) {
     if (!connection) {

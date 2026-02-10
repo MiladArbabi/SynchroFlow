@@ -28,6 +28,8 @@ This is a **contract**.
 3. **Orders join to products ONLY via variants**
 4. **Canonical identity is resolved at ingestion time**
 5. **No inference, no synthesis, no late binding**
+6. **Canonical Variant Code (CVC) is the only SKU-level identifier**
+7. **CVC is written once at ingestion and never inferred or mutated**
 
 If any of these are violated, downstream systems (FT2, revenue units, trust modules) **must fail**.
 
@@ -76,13 +78,19 @@ Bridges **order line items → canonical products**.
 | `canonical_product_anchor_id`| Canonical product anchor (DB-enforced) |
 | `sku`                  | Optional             |
 | `title`                | Optional             |
+| `canonical_variant_code` | LaSyncro-owned SKU-level identifier (CVC) |
 
 **Invariants:**
 
 * One row per `(shop_id, canonical_variant_id)`
 * `canonical_product_id` is **REQUIRED** (source reference)
 * `canonical_product_anchor_id` is **REQUIRED** and FK-enforced
+* `canonical_variant_code` is **REQUIRED** and NOT NULL
+* Canonical Variant Code is:
+  * Deterministic at ingestion
+  * Stable for the lifetime of the variant
 * Variants are **never authoritative** — they only point to products
+
 
 ---
 
@@ -98,11 +106,15 @@ Represents the atomic commercial unit of an order.
 | `canonical_variant_id`   | Variant join key          |
 | `canonical_product_anchor_id` | **Must be populated (FK)** |
 | `canonical_line_item_id` | Stable line item identity |
+| `canonical_variant_code` | MUST match variant’s CVC |
 
-**Critical invariant:**
+**Critical invariants (LOCKED):**
 
-> If `canonical_variant_id` is present,
-> `canonical_product_anchor_id MUST also be present`.
+> If `canonical_variant_id` is present:
+>
+> * `canonical_product_anchor_id MUST be present`
+> * `canonical_variant_code MUST be present`
+> * `canonical_variant_code MUST exactly match canonical_variants.canonical_variant_code`
 
 This is not optional.
 
@@ -134,6 +146,10 @@ No canonical writes happen here.
 **Key guarantees:**
 
 * Every variant written **always has a product**
+* Every variant written **always has a Canonical Variant Code (CVC)**
+* CVC is derived deterministically at ingestion time:
+  * Platform SKU if present
+  * Fallback to canonical variant identity if absent
 * Variant → product mapping is persisted **before** orders rely on it
 * No order ingestion should precede successful product ingestion
 
@@ -189,13 +205,14 @@ Failing early is the **only safe option**.
 * `reconciliation.handlers.ts`
 * `revenue-units.writer.ts`
 
-These systems **assume canonical identity is correct**.
+These systems **assume canonical identity and CVC correctness**.
 
 They **must not**:
 
 * Backfill product IDs
 * Infer missing relationships
 * Repair ingestion mistakes
+* Infer or regenerate Canonical Variant Codes (CVC)
 
 If canonical identity is wrong here, the bug is **upstream**.
 
@@ -283,3 +300,15 @@ Once written (and anchor-linked):
 That is by design.
 
 ---
+
+3.5. Check Canonical Variant Code integrity:
+
+```sql
+SELECT COUNT(*)
+FROM canonical_order_line_items li
+JOIN canonical_variants v
+  ON li.shop_id = v.shop_id
+ AND li.canonical_variant_id = v.canonical_variant_id
+WHERE li.canonical_variant_code <> v.canonical_variant_code;
+
+Result MUST be 0.

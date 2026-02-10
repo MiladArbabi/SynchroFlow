@@ -85,17 +85,86 @@ export async function processMessage(msg: { content: Buffer } | null) {
     // 3) NEW: persist canonical order snapshot
     // For FT0 we assume raw_payload is already in CanonicalOrder shape
     // for Shopify order events. Other event types can be handled separately.
-    try {
-       await getCanonicalIngestionService().insertCanonicalOrder(
-        stagedEvent.raw_payload as any, // CanonicalOrder
+    // 🚧 HARD PRODUCT INGESTION BARRIER (FINITE)
+    const productIngested = await db('shop_ingestion_events')
+      .where({
+        shop_id: stagedEvent.shop_id,
+        module_id: 'product',
+        event: 'ingested',
+      })
+      .first();
+
+    if (!productIngested) {
+      console.error(
+        '[worker][FATAL] No canonical products exist — blocking order ingestion',
+        { staged_event_id, shop_id: stagedEvent.shop_id }
       );
-    } catch (e) {
+
+      // Terminal ACK — no infinite requeue
+      getEventChannel().ack(msg as any);
+      return;
+    }
+
+    try {
+      await getCanonicalIngestionService().insertCanonicalOrder(
+        stagedEvent.raw_payload as any,
+      );
+    
+    /**
+     * Order Ingestion Barrier
+     * --------------------------------
+     * Orders MUST NOT ingest until product anchors exist.
+     *
+     * If canonical identity is missing, the message is requeued
+     * to preserve replayability once product ingestion completes.
+     */
+
+    } catch (e: any) {
+      if (
+        String(e?.message || '').includes('CANONICAL_IDENTITY_VIOLATION')
+      ) {
+        /**
+         * TERMINAL GUARD — prevent infinite requeue
+         * ----------------------------------------
+         * Requeue is only valid if canonical products may still appear.
+         * If NO canonical_products exist for this shop, progress is impossible.
+         */
+        const productCountRow = await db('canonical_products')
+          .where({ shop_id: stagedEvent.shop_id })
+          .count<{ count: string }>('canonical_product_id as count')
+          .first();
+
+        const productCount = Number(productCountRow?.count ?? 0);
+
+        if (productCount === 0) {
+          console.error(
+            '[worker][FATAL] No canonical products exist — blocking order ingestion',
+            { staged_event_id, shop_id: stagedEvent.shop_id }
+          );
+
+          // 🚫 ACK to stop infinite loop — progress is impossible
+          getEventChannel().ack(msg as any);
+          return;
+        }
+
+        console.error(
+          '[worker][BLOCKED] Product anchors missing after ingestion signal',
+          { staged_event_id }
+        );
+
+        // Terminal ACK — truth beats retries
+        getEventChannel().ack(msg as any);
+        return;
+      }
+
       console.error(
         '[worker] Failed to persist canonical order from staged event:',
         e,
       );
-      // Decide policy: for now we still ack to avoid poison messages.
-      // If you want strict ingestion semantics, switch this to nack.
+
+      // Non-identity errors are acknowledged to avoid poison loops
+      getEventChannel().ack(msg as any);
+      return;
     }
 
     // 3b) Enqueue canonical order into OrderNexus ingestion flow
