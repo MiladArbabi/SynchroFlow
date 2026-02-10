@@ -16,6 +16,7 @@
 // apps/backend/src/services/order-nexus-canonical-ingestion.service.ts
 import db from 'api-src/db';
 import { getQueueChannel } from 'api-src/queue';
+import { publishReconciliationJob } from 'api-src/queues/reconciliation.queue';
 import { appendEvent, recordShopSession } from 'modules-specter/store/session-store';
 
 interface CanonicalOrderRow {
@@ -144,13 +145,23 @@ export class OrderNexusCanonicalIngestionService {
     await db('order_ingestion_events')
       .insert({
         shop_id: orderRow.shop_id,
-        canonical_order_id: orderRow.id,
+        canonical_order_pk: orderRow.id,
         module_id: 'order-nexus',
         ingested_at: db.fn.now(),
         source: 'queue',
       })
       .onConflict(['shop_id', 'canonical_order_id', 'module_id'])
       .ignore();
+    
+    /**
+     * EXECUTION GROUNDING (MANDATORY)
+     * ------------------------------
+     * Ensure every canonical order is reconciled to execution truth.
+     *
+     * This does NOT write execution directly.
+     * It guarantees reconciliation will synthesize execution if missing.
+     */
+    await publishReconciliationJob(orderRow.id);
 
     // 2) Load canonical line items – canonical join (authoritative)
     const lineItemRows = await db()

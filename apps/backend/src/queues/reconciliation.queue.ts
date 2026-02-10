@@ -18,7 +18,7 @@ import { getQueueChannel } from 'api-src/queue';
 
 export const RECONCILIATION_QUEUE = 'fulfillment.reconciliation';
 
-export function publishReconciliationJob(
+export async function publishReconciliationJob(
   canonicalOrderId: string,
   observed?: {
     status: 'delivered';
@@ -28,14 +28,13 @@ export function publishReconciliationJob(
 ) {
   const ch = getQueueChannel(RECONCILIATION_QUEUE);
 
+  ch.addSetup((channel) =>
+    channel.assertQueue(RECONCILIATION_QUEUE, { durable: true })
+  );
+
   ch.sendToQueue(
     RECONCILIATION_QUEUE,
-      Buffer.from(
-        JSON.stringify({
-          canonicalOrderId,
-          observed,
-        })
-      ),
+    Buffer.from(JSON.stringify({ canonicalOrderId, observed })),
     { persistent: true }
   );
 }

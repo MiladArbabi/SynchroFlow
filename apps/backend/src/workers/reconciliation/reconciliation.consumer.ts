@@ -16,6 +16,8 @@ export function startReconciliationConsumer() {
   });
 
   ch.consume(QUEUE, async (msg) => {
+    console.log('[RECONSUMER] job received', msg.content.toString());
+
     if (!msg) return;
 
     try {

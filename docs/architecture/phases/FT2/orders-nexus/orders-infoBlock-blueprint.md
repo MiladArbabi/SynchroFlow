@@ -78,9 +78,9 @@ This block answers:
 | Row                | System Truth                                                                 | SMB Question Answered                          |
 | ------------------ | ---------------------------------------------------------------------------- | --------------------------------------------- |
 | **Total Sales**    | Sum of order value created within the FT2 date window                         | “How much sales value was generated?”         |
-| **Earned Revenue** | Portion of Total Sales with execution complete                                | “What value is already resolved?”             |
-| **Pending Revenue**| Portion of Total Sales not yet execution-complete **and unconstrained**      | “What value should still move forward?”       |
-| **Blocked Revenue**| Portion of Total Sales explicitly constrained by execution blockers           | “What value is structurally prevented?”       |
+| **Completed Value** | Portion of Total Sales with execution complete                                | “What value is already resolved?”             |
+| **Value in Progress**| Portion of Total Sales not yet execution-complete **and unconstrained**      | “What value should still move forward?”       |
+| **Constrained Value**| Portion of Total Sales explicitly constrained by execution blockers           | “What value is structurally prevented?”       |
 
 **Rules (Hard):**
 

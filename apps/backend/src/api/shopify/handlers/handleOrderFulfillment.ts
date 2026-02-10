@@ -2,8 +2,9 @@
 
 import { WebhookEnvelope } from 'api-src/api/webhooks/types';
 import db from 'api-src/db';
-import { enqueueWebhookEnvelope }
-  from 'api-src/api/webhooks/dispatchQueue';
+import { enqueueWebhookEnvelope } from 'api-src/api/webhooks/dispatchQueue';
+import OrderFulfillmentIngestionService from 'api-src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service';
+import { publishReconciliationJob } from 'api-src/queues/reconciliation.queue';
 
 /**
  * Minimal Shopify fulfillment payload (local, structural)
@@ -113,6 +114,16 @@ export async function handleOrderFulfillment(
     .select('canonical_order_id')
     .first();
 
+    if (!canonical) {
+      // Canonical order not yet ingested — defer to reconciliation
+      await enqueueWebhookEnvelope({
+        ...envelope,
+        shopId,
+      });
+
+      return;
+    }
+
   /**
    * Fulfillment state normalization
    * -------------------------------
@@ -124,18 +135,29 @@ export async function handleOrderFulfillment(
       : rawPayload.fulfillment_status === 'fulfilled'
         ? 'delivered'
         : 'processing';
-
-    /**
-     * Transport-only responsibility
-     * -----------------------------
-     * - Persist webhook envelope
-     * - Enqueue for reconciliation
-     * - NEVER write execution truth here
-     */
-      await enqueueWebhookEnvelope({
-        ...envelope,
+  
+      await OrderFulfillmentIngestionService.ingestStatus({
         shopId,
+        platformOrderId,
+        canonicalOrderId: canonical.canonical_order_id,
+        status: fulfillmentStatus as
+          | 'processing'
+          | 'in_transit'
+          | 'delivered'
+          | 'cancelled',
       });
+
+      if (!canonical.canonical_order_id) {
+        throw new Error('[FULFILLMENT HANDLER] Missing canonical_order_id');
+      }
+
+      if (fulfillmentStatus === 'delivered') {
+        await publishReconciliationJob(canonical.canonical_order_id, {
+          status: 'delivered',
+          observedAt: new Date(),
+          source: 'shopify_sync',
+        });
+      }
 
       console.log('[FULFILLMENT HANDLER] ENQUEUED', {
         shopId,

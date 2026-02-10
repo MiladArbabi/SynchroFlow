@@ -48,6 +48,7 @@ async function start() {
   startReconciliationConsumer();
   // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
 
+  await runFulfillmentReconciliationBatch(2);
   /**
   * DEV-ONLY: Obligation evaluation hook
   * ----------------------------------

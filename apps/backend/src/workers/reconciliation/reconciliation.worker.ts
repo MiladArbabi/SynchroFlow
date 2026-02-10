@@ -1,5 +1,4 @@
 // apps/backend/src/workers/reconciliation/reconciliation.worker.ts
-
 import db from 'api-src/db';
 import { reconcileOrderFulfillment } from './reconciliation.handlers';
 
@@ -9,18 +8,10 @@ export async function runFulfillmentReconciliationBatch(
 ): Promise<void> {
 
   // 1. Find canonical orders missing execution
-  const rows = await db('canonical_orders as o')
-  .leftJoin(
-    'order_fulfillment_status as f',
-    function () {
-      this.on('o.canonical_order_id', '=', 'f.canonical_order_id')
-          .andOn('o.shop_id', '=', 'f.shop_id');
-    }
-  )
-  .where('o.shop_id', shopId)
-  .whereNull('f.canonical_order_id')
-  .select('o.canonical_order_id')
-  .limit(limit);
+  const rows = await db('canonical_orders')
+    .where('shop_id', shopId)
+    .select('canonical_order_id')
+    .limit(limit);
 
   if (rows.length === 0) return;
 
@@ -30,6 +21,19 @@ export async function runFulfillmentReconciliationBatch(
       '[reconciliation][batch]',
       row.canonical_order_id
     );
-    await reconcileOrderFulfillment(row.canonical_order_id);
+    const order = await db('canonical_orders')
+      .where({ canonical_order_id: row.canonical_order_id })
+      .first();
+
+    await reconcileOrderFulfillment(
+      row.canonical_order_id,
+      order?.order_processed_at
+        ? {
+            status: 'delivered',
+            observedAt: order.order_processed_at,
+            source: 'shopify_sync',
+          }
+        : undefined
+    );
   }
 }
