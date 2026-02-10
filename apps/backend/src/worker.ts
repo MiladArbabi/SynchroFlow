@@ -1,9 +1,6 @@
 // apps/backend/src/worker.ts
-
-import { Channel } from 'amqplib';
 import { getQueueChannel } from './queue';
 import db from './db';
-import { transformPayload } from './transformer';
 import { CanonicalCommerceIngestionService } from 'api-src/services/canonical-commerce-ingestion.service';
 import { OrderNexusCanonicalIngestionService } from 'api-src/services/order-nexus-canonical-ingestion.service';
 
@@ -67,22 +64,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
       return;
     }
 
-    // 2) Legacy transform path (kept for now for other consumers)
-    /* const mappingRules = await db('data_mapping_rules').where({
-      shop_id: stagedEvent.shop_id,
-    });
-
-    const transformedPayload = transformPayload(
-      stagedEvent.raw_payload,
-      mappingRules,
-    );
-
-    console.log(
-      '[worker] Successfully transformed payload:',
-      transformedPayload,
-    ); */
-
-    // 3) NEW: persist canonical order snapshot
+    // 2) NEW: persist canonical order snapshot
     // For FT0 we assume raw_payload is already in CanonicalOrder shape
     // for Shopify order events. Other event types can be handled separately.
     // 🚧 HARD PRODUCT INGESTION BARRIER (FINITE)

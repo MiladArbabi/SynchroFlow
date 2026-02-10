@@ -1,6 +1,21 @@
+/**
+ * ⚠️ LEGACY SERVICE
+ * ----------------
+ * This service exists ONLY for:
+ * - legacy mapping-rule based ingestion
+ * - unit test scaffolding
+ *
+ * It is NOT part of:
+ * - canonical ingestion
+ * - FT0 / FT2 evaluation
+ * - production worker flows
+ *
+ * Canonical ingestion bypasses this service entirely.
+ */
+
 // apps/backend/src/services/staged-to-canonical.service.ts
+import { transformPayload } from 'api-src/transformer';
 import db from '../db';
-import { transformPayload } from '../transformer';
 import { getMappingRulesForShop } from 'api-src/services/mapping-rule.service';
 
 /**

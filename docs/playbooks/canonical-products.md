@@ -35,6 +35,25 @@ If any of these are violated, downstream systems (FT2, revenue units, trust modu
 
 ---
 
+0. Verify product anchor uniqueness is enforced correctly:
+
+```sql
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE tablename = 'canonical_products';
+
+Confirm:
+
+A UNIQUE INDEX exists
+
+It includes WHERE platform_variant_id IS NULL
+
+If not present or mismatched → STOP.
+Product ingestion cannot work.
+This would have caught the issue immediately.
+
+---
+
 ## Canonical Tables Overview
 
 ### 1. `canonical_products`
@@ -57,9 +76,27 @@ Represents the *product-level anchor* for all commerce activity.
 
 **Invariants:**
 
-* Exactly **one row per** `(shop_id, platform, platform_product_id, platform_variant_id)`
+* Exactly **one product anchor row per**:
+  `(shop_id, platform, platform_product_id)`
+  **WHERE `platform_variant_id IS NULL`**
 * `platform_variant_id MUST be NULL`
 * This table is the **only product anchor** used by FT2
+
+⚠️ PostgreSQL NOTE (ENFORCED):
+
+This invariant is enforced via a **PARTIAL UNIQUE INDEX**, not a constraint.
+
+Implications:
+- `UNIQUE INDEX ≠ UNIQUE CONSTRAINT`
+- `ON CONFLICT ON CONSTRAINT` is INVALID
+- ORMs (Knex included) do NOT detect partial indexes
+- Conflict targets MUST include the exact predicate:
+  `WHERE platform_variant_id IS NULL`
+
+Failure to do this results in:
+- Silent transaction rollbacks
+- Zero canonical_products rows
+- Downstream ingestion starvation
 
 ---
 
@@ -147,11 +184,22 @@ No canonical writes happen here.
 
 * Every variant written **always has a product**
 * Every variant written **always has a Canonical Variant Code (CVC)**
-* CVC is derived deterministically at ingestion time:
-  * Platform SKU if present
-  * Fallback to canonical variant identity if absent
+* Canonical Variant Code (CVC) is derived deterministically at ingestion time:
+  * From canonical variant identity
+  * NEVER inferred from SKU
+  * NEVER regenerated downstream
 * Variant → product mapping is persisted **before** orders rely on it
-* No order ingestion should precede successful product ingestion
+* No order ingestion may proceed until product ingestion has
+  **successfully COMMITTED canonical identity**
+
+  Rationale:
+- SKUs are mutable, optional, and non-unique
+- Canonical Variant Code must be stable for life
+- SKU may be stored as metadata, never as identity
+
+Queue receipt, logs, or worker execution
+do NOT constitute successful ingestion.
+Only committed rows count.
 
 ---
 
@@ -172,12 +220,17 @@ No canonical writes happen here.
 This is enforced via a **hard failure**, not a warning.
 
 ```ts
-if (li.variantId && !li.productId) {
-  throw new Error('[CANONICAL_IDENTITY_VIOLATION] ...');
+if (li.canonical_variant_id && !li.canonical_product_anchor_id) {
+  throw new Error('[CANONICAL_IDENTITY_VIOLATION] missing product anchor');
 }
 ```
+Note:
+`canonical_product_id` (platform GID) is NOT sufficient.
 
-This prevents silent corruption.
+FT2, reconciliation, and revenue units rely exclusively on:
+`canonical_product_anchor_id` (numeric PK).
+
+This reflects the actual spine of our system.
 
 ---
 
@@ -250,6 +303,15 @@ FT2 is a **trust gate**, not a data fixer.
 ❌ Inferring product IDs without canonical evidence
 
 ❌ Allowing ingestion to “succeed” with broken identity
+
+❌ Promoting partial unique indexes to constraints
+
+PostgreSQL does NOT support:
+`UNIQUE (...) WHERE ...` as a constraint.
+
+Any attempt to rely on constraint-based conflict resolution
+for partial identity is invalid by definition.
+This is a hard-earned rule, not theory.
 
 ---
 

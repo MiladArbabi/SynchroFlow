@@ -87,6 +87,26 @@ Canonical Storage Contract:
 - derived later
 ```
 
+⚠️ Column Names Are Canonical Truth
+
+Never assume logical names like:
+
+* order_id
+* product_id
+* variant_id
+
+Always use actual schema names:
+
+canonical_order_id
+canonical_product_id
+canonical_variant_id
+
+If code references a column that does not exist:
+
+* That is an ingestion bug
+* Not a typing issue
+* Not a mapper issue
+
 If storage requires something the source cannot guarantee → **storage is wrong** (not the mapper).
 
 ---
@@ -114,6 +134,7 @@ Eligibility Contract:
 - Minimum viable signals
 - Advisory signals
 ```
+
 ### 1.4 Scan Canonical Joins (Identity Reality) 🆕
 
 Before touching code, prove joins exist:
@@ -147,12 +168,13 @@ FT2 is correct
 
 Ingestion is incomplete
 
-Do not debug evaluators until joins are clean.
+Do not debug evaluators until joins are clean
 ---
 
 ## 2. 🚨 Transport & Execution Scan (NEW – HARD-LEARNED)
 
-> **Before assuming “ingestion is broken,” prove the **correct handler** executed **and committed identity**.
+> **Before assuming “ingestion is broken,” prove the correct handler executed,
+committed identity, AND survived a full transaction boundary.**
 
 This thread exposed a critical rule:
 
@@ -197,6 +219,32 @@ Rules:
 * If a handler “should” run → prove it did
 
 > **No execution proof = no debugging rights**
+
+---
+
+### 2.3 Queue Consumers Must Prove Commit, Not Receipt (NEW)
+
+A queue message being:
+
+* received
+* logged
+* acked
+
+does NOT mean ingestion succeeded.
+
+Required proof:
+
+* Transaction COMMIT reached
+* Canonical rows exist
+* Ingestion event written
+
+If you see:
+
+* logs without rows
+* rows without ingestion events
+* retries without growth
+
+You are debugging a rolled-back transaction.
 
 ---
 
@@ -285,30 +333,30 @@ It is **structurally invalid** and must never reach FT2.
 
 Every execution-level record must satisfy:
 
-Field	Rule
-canonical_order_id	Required
-shop_id	Required
-platform_order_id	Normalized
-status	Valid enum
+### Canonical Product Identity (CRITICAL)
+
+Canonical products MUST satisfy **exactly one row per product-level identity**:
+
+(shop_id, platform, platform_product_id)
+WHERE platform_variant_id IS NULL
+
+This identity:
+
+* MUST be enforced via a PARTIAL UNIQUE INDEX
+* MUST be targeted explicitly during upsert
+* MUST NOT be inferred via SKU or variant rows
 
 ❌ Forbidden:
 
-❌ Writing execution rows with canonical_order_id = NULL
-❌ Writing execution rows keyed only by platform IDs
-❌ “Backfilling later” without an explicit retry contract
-❌ Writing SKU-level execution rows without Canonical Variant Code (CVC)
-❌ Inferring or regenerating CVC downstream
-
+* Assuming a UNIQUE CONSTRAINT exists when only a UNIQUE INDEX exists
+* Using ON CONFLICT without matching the partial index predicate
+* Referencing index names as columns
+* Removing platform_variant_id from conflict keys without compensating logic
 
 ✅ Required:
 
-Canonical resolution before final execution write
-
-Deferred / retried execution if canonical linkage is unavailable
-
-If you cannot resolve canonical identity, you may not write execution truth.
-
-This rule alone would have prevented the entire incident.
+* Use `ON CONFLICT (cols) WHERE predicate` when partial uniqueness is intended
+* Verify conflict behavior with raw SQL before trusting ORM behavior
 
 ---
 
@@ -447,6 +495,65 @@ Required before FT2:
 * Backfill canonical_variant_code (CVC)
 * Verify joins and CVC consistency via SQL
 
+---
+
+### 6.5 Partial Unique Indexes Are NOT Constraints (NEW)
+
+PostgreSQL rules:
+
+* A UNIQUE INDEX ≠ UNIQUE CONSTRAINT
+* Partial uniqueness (`WHERE ...`) CANNOT be expressed as a constraint
+* `ON CONFLICT ON CONSTRAINT` WILL FAIL for partial indexes
+
+Therefore:
+
+❌ Invalid:
+ON CONFLICT ON CONSTRAINT uq_canonical_products_identity
+
+❌ Invalid:
+ON CONFLICT (shop_id, platform, platform_product_id)
+
+✅ Valid:
+ON CONFLICT (shop_id, platform, platform_product_id)
+WHERE platform_variant_id IS NULL
+
+Knex-specific rule:
+
+Knex does NOT auto-detect partial indexes.
+You MUST express the predicate manually using `trx.raw(...)`.
+
+Failure mode:
+
+* Insert fails silently
+* Transaction aborts
+* No ingestion event is written
+* Eligibility never flips
+
+---
+
+### 6.6 Canonical Product Ingestion Is Two-Tiered (NEW)
+
+Canonical Products have TWO identities:
+
+1) Logical Identity (Product-Level)
+   (shop_id, platform, platform_product_id)
+   WHERE platform_variant_id IS NULL
+
+2) Physical Anchor
+   canonical_product_id (numeric PK)
+
+Rules:
+
+* Variants MUST reference the numeric anchor
+* Orders MUST ultimately reference the anchor
+* Platform IDs are NOT anchors
+* SKU is NOT identity
+
+If anchor resolution fails:
+
+* Variants MUST NOT be written
+* Orders MUST defer product attribution
+* FT2 MUST block
 
 ---
 
@@ -480,6 +587,12 @@ This is a CROSS_DOMAIN blocker:
 ORDERS × PRODUCTS
 
 The evaluator was correct to block.
+
+This incident confirmed:
+
+* FT2 correctly failed closed
+* The evaluator surfaced ingestion faults
+* The bug was upstream, not evaluative
 
 ---
 
@@ -557,6 +670,8 @@ Before declaring a domain “wired”:
 * [ ] Canonical Variant Code matches between:
       canonical_variants ↔ canonical_order_line_items
 * [ ] No SKU-level execution without CVC
+* [ ] Partial unique indexes verified with raw SQL
+* [ ] ON CONFLICT clauses proven against live schema
 
 If **any box is unchecked** → **stop**.
 
@@ -603,12 +718,21 @@ Eligibility gates are not about perfection.
 They are about provable execution, stable identity, and safe progress.
 
 What failed was not math, UI, or FT2 logic.
-What failed was identity discipline at the ingestion boundary.
-You fixed it by:
-refusing assumptions
-demanding proof
-and enforcing canonical truth
-That’s not debugging.
-That’s systems architecture under load.
+What failed was assuming database semantics instead of proving them.
+
+Specifically:
+
+* Partial uniqueness was misunderstood
+* ORM abstractions were trusted blindly
+* Execution was inferred instead of proven
+
+The system recovered when:
+
+* Canonical identity was enforced
+* Partial indexes were respected
+* Ingestion truth was proven end-to-end
+
+That is not debugging.
+That is enforcing reality in distributed systems.
 
 ---

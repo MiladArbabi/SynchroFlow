@@ -33,7 +33,11 @@ Truth may be **observed or assumed**, but it is **never missing**.
 
 ### 1.2 Single-Writer Rule (Expanded)
 
-Every stateful table has **one and only one writer**.
+Every stateful table has one and only one logical writer.
+
+Exception:
+- Database constraints and indexes may enforce invariants
+- But may never substitute for application-level identity resolution
 
 | Table                        | Authorized Writer                     |
 | ---------------------------- | ------------------------------------- |
@@ -56,7 +60,7 @@ No other service may touch execution state.
 | Condition                                 | Action           |
 | ----------------------------------------- | ---------------- |
 | Missing canonical order ID                | Retry            |
-| Missing canonical product / variant       | Block FT2        |
+| Missing canonical product / variant | Block FT2 AND execution attribution |
 | Missing execution                         | **Synthesize**   |
 | Invariant breach                          | Fail + DLQ       |
 | Duplicate                                 | No-op            |
@@ -158,7 +162,14 @@ Rules:
 Product ingestion is fire-and-forget
 No retries at FT2 level
 Identity errors block downstream eligibility
-Product ingestion must complete before FT2 evaluation
+Product ingestion must complete AND commit canonical identity
+before:
+- Canonical commerce ingestion
+- FT2 evaluation
+- Any execution attribution
+
+Queue receipt is NOT sufficient.
+Transaction commit with canonical identity is required.
 
 ---
 
@@ -336,6 +347,25 @@ If the DB allows bad state → the system is lying.
 * Never weaken constraints for convenience
 
 Your failed migrations were **correct behavior**.
+
+### Partial Index Safety Rule (NEW)
+
+PostgreSQL rules enforced by incident:
+
+- UNIQUE INDEX ≠ UNIQUE CONSTRAINT
+- Partial uniqueness (WHERE ...) CANNOT be promoted to a constraint
+- ON CONFLICT ON CONSTRAINT will FAIL silently in ORMs
+- ORMs do NOT introspect partial indexes
+
+Therefore:
+- Partial identity MUST be expressed explicitly in queries
+- Conflict predicates MUST match index predicates exactly
+- All partial identity assumptions MUST be proven with raw SQL
+
+Violation of this rule causes:
+- Silent rollbacks
+- Missing ingestion events
+- False FT2 blockers
 
 ---
 
