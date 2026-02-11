@@ -76,8 +76,13 @@ export async function handleOrderCreated(
         lineItemId: String(li.id),
         orderId: canonicalOrderId,
 
-        productId: li.product_id ? String(li.product_id) : null,
-        variantId: li.variant_id ? String(li.variant_id) : null,
+        productId: li.product_id
+          ? `gid://shopify/Product/${li.product_id}`
+          : null,
+
+        variantId: li.variant_id
+          ? `gid://shopify/ProductVariant/${li.variant_id}`
+          : null,
 
         title: li.title,
         sku: li.sku ?? null,
