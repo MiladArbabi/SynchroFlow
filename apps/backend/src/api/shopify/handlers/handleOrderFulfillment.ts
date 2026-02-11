@@ -114,15 +114,16 @@ export async function handleOrderFulfillment(
     .select('canonical_order_id')
     .first();
 
-    if (!canonical) {
-      // Canonical order not yet ingested — defer to reconciliation
-      await enqueueWebhookEnvelope({
-        ...envelope,
+  if (!canonical) {
+    console.log(
+      '[FULFILLMENT HANDLER] canonical order not found — deferring to reconciliation batch',
+      {
         shopId,
-      });
-
-      return;
-    }
+        platformOrderId: canonicalPlatformOrderId,
+      }
+    );
+    return;
+  }
 
   /**
    * Fulfillment state normalization

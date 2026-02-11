@@ -93,16 +93,15 @@ export class WebhookRouter {
       null;
 
     // 🚨 MUST BE FIRST SIDE-EFFECT
-    const ledgerResult =
-      normalizedEventType === 'refunds/create'
-        ? { isDuplicate: false }
-        : await WebhookLedgerService.recordReceived({
-            integration: envelope.integration,
-            externalEventId: envelope.eventId,
-            eventType: normalizedEventType,
-            payload: envelope.rawPayload,
-            idempotencyKey: `${envelope.integration}:${envelope.eventId}`,
-          });
+    if (normalizedEventType !== 'refunds/create') {
+      await WebhookLedgerService.recordReceived({
+        integration: envelope.integration,
+        externalEventId: envelope.eventId,
+        eventType: normalizedEventType,
+        payload: envelope.rawPayload,
+        idempotencyKey: `${envelope.integration}:${envelope.eventId}`,
+      });
+    }
 
     let dispatchMode = getWebhookDispatchMode();
 
@@ -119,23 +118,6 @@ export class WebhookRouter {
     }
 
     console.log('[DISPATCH MODE]', dispatchMode);
-
-    if (ledgerResult.isDuplicate) {
-      /**
-       * IMPORTANT:
-       * Duplicate webhooks must NOT short-circuit dispatch.
-       *
-       * Rationale:
-       * - Platforms (e.g. Shopify) replay the same refund ID
-       * - Domain workers are idempotent by design
-       * - Suppressing dispatch causes permanent data loss
-       *
-       * Ledger records duplication,
-       * but execution must still proceed.
-       */
-      await WebhookLedgerService.markDuplicate(envelope.eventId);
-      // DO NOT return
-    }
 
     const key = WebhookRouter.key(
       envelope.integration,
@@ -158,7 +140,6 @@ export class WebhookRouter {
     }
 
     console.log('[DISPATCH_DECISION]', {
-      isDuplicate: ledgerResult.isDuplicate,
       willInvokeHandler: true,
     });
 

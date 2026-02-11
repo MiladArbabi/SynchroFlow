@@ -2,7 +2,6 @@ import db from 'api-src/db';
 
 export type WebhookProcessingStatus =
   | 'received'
-  | 'duplicate'
   | 'ignored'
   | 'processed'
   | 'failed';
@@ -14,25 +13,16 @@ export class WebhookLedgerService {
     eventType: string;
     payload: unknown;
     idempotencyKey: string;
-  }): Promise<{ isDuplicate: boolean }> {
-    try {
-      await db('integration_webhook_events').insert({
-        integration: params.integration,
-        external_event_id: params.externalEventId,
-        event_type: params.eventType,
-        payload: params.payload,
-        idempotency_key: params.idempotencyKey,
-        processing_status: 'received',
-        verified: true,
-      });
-
-      return { isDuplicate: false };
-    } catch (err: any) {
-      if (err.code === '23505') {
-        return { isDuplicate: true };
-      }
-      throw err;
-    }
+  }): Promise<void> {
+    await db('integration_webhook_events').insert({
+      integration: params.integration,
+      external_event_id: params.externalEventId,
+      event_type: params.eventType,
+      payload: params.payload,
+      idempotency_key: params.idempotencyKey,
+      processing_status: 'received',
+      verified: true,
+    });
   }
 
   static async markProcessed(
@@ -44,14 +34,6 @@ export class WebhookLedgerService {
       .update({
         processing_status: 'processed',
         shop_id: shopId ?? null,
-      });
-  }
-
-  static async markDuplicate(externalEventId: string): Promise<void> {
-    await db('integration_webhook_events')
-      .where({ external_event_id: externalEventId })
-      .update({
-        processing_status: 'duplicate',
       });
   }
 
