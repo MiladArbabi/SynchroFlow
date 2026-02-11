@@ -2,6 +2,7 @@
 
 import 'dotenv/config';
 import './bootstrap/tsconfig-paths-register';
+import 'api-src/api/shopify/shopify.webhook';
 
 import { initQueue } from './queue';
 import { startSyncWorker } from './sync.worker';
@@ -42,7 +43,7 @@ async function start() {
   startSyncWorker();
   startEventWorker();
   startProductIngestionWorker();
-  startWebhookWorker();
+  /* startWebhookWorker(); */
   startReturnsIngestionWorker();
   console.log('[worker-entry] Starting reconciliation consumer...');
   startReconciliationConsumer();

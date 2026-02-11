@@ -106,6 +106,8 @@ export class WebhookRouter {
 
     const dispatchMode = getWebhookDispatchMode();
 
+    console.log('[DISPATCH MODE][API]', dispatchMode);
+
     if (ledgerResult.isDuplicate) {
       /**
        * IMPORTANT:
