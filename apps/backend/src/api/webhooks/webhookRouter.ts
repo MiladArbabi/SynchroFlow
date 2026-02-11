@@ -105,6 +105,12 @@ export class WebhookRouter {
 
     let dispatchMode = getWebhookDispatchMode();
 
+    // Worker must always execute synchronously.
+    // It must NEVER re-enqueue.
+    if (process.env.WORKER_RUNTIME === 'true') {
+      dispatchMode = 'sync';
+    }
+
     console.log('[ROUTER ENV CHECK]', {
       WORKER_RUNTIME: process.env.WORKER_RUNTIME,
       type: typeof process.env.WORKER_RUNTIME,
@@ -157,6 +163,8 @@ export class WebhookRouter {
       await handler(envelope);
       await WebhookLedgerService.markProcessed(envelope.eventId);
     } catch (err: any) {
+      console.error('[WEBHOOK HANDLER ERROR]', err);
+      
       await WebhookLedgerService.markFailed(
         envelope.eventId,
         err?.message ?? 'handler_error'

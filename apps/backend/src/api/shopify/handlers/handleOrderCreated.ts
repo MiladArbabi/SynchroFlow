@@ -34,6 +34,9 @@ export async function handleOrderCreated(
 ): Promise<void> {
 
   const raw = envelope.rawPayload as Partial<ShopifyOrderCreatePayload>;
+
+  console.log('[ORDER CREATE HANDLER] ENTERED');
+
   const shopDomain = envelope.shopDomain;
 
   if (!raw?.id || !raw.created_at || !raw.updated_at || !shopDomain) {
@@ -67,7 +70,7 @@ export async function handleOrderCreated(
 
     totalPrice: raw.total_price != null ? Number(raw.total_price) : null,
     subtotalPrice: raw.subtotal_price != null ? Number(raw.subtotal_price) : null,
-    totalTax: raw.total_tax != null ? Number(raw.total_tax) : null,
+    totalTax: raw.total_tax != null ? Number(raw.total_tax) : 0,
 
     // 🔥 REQUIRED FIELD
     shippingLines: [],

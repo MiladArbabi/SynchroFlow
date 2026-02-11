@@ -78,7 +78,7 @@ export class OrderFulfillmentIngestionService {
         // execution_confidence is deprecated:
         // epistemic meaning is computed downstream, not at ingestion.
       })
-      .onConflict(['shop_id', 'order_id'])
+      .onConflict(['shop_id', 'canonical_order_id'])
       .merge({
         status,
         canonical_order_id: canonicalOrderId,
