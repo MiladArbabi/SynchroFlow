@@ -20,6 +20,7 @@ import {
   onShopifyAppUninstalled,
   handleOrderFulfillment,
   handleRefundCreated,
+  handleOrderCreated
 } from './handlers';
 
 /**
@@ -42,6 +43,13 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'app/uninstalled',
   handle: onShopifyAppUninstalled,
+});
+
+// Order Creations
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'orders/create',
+  handle: handleOrderCreated,
 });
 
 // Fulfillment lifecycle (execution truth)

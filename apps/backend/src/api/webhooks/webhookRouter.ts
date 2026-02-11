@@ -104,9 +104,21 @@ export class WebhookRouter {
             idempotencyKey: `${envelope.integration}:${envelope.eventId}`,
           });
 
-    const dispatchMode = getWebhookDispatchMode();
+    let dispatchMode = getWebhookDispatchMode();
 
-    console.log('[DISPATCH MODE][API]', dispatchMode);
+    console.log('[ROUTER ENV CHECK]', {
+      WORKER_RUNTIME: process.env.WORKER_RUNTIME,
+      type: typeof process.env.WORKER_RUNTIME,
+      equalsTrue: process.env.WORKER_RUNTIME === 'true'
+    });
+
+    // If this process is the worker, force sync execution.
+    // Worker must never re-enqueue.
+    if (process.env.WORKER_RUNTIME === 'true') {
+      dispatchMode = 'sync';
+    }
+
+    console.log('[DISPATCH MODE]', dispatchMode);
 
     if (ledgerResult.isDuplicate) {
       /**
@@ -136,7 +148,7 @@ export class WebhookRouter {
       registeredKeys: Array.from(WebhookRouter.routes.keys()),
     });
 
-    if (dispatchMode === 'queued') {
+    if (dispatchMode === 'queued' && !(envelope as any).__fromQueue) {
       await enqueueWebhookEnvelope(envelope);
       return;
     }

@@ -13,6 +13,7 @@ export interface WebhookDispatchJobV1 {
   rawPayload: unknown;
   shopDomain?: string;
   enqueuedAt: string;
+  __fromQueue: true; // internal transport flag
 }
 
 export type WebhookDispatchJob = WebhookDispatchJobV1;

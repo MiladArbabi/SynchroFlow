@@ -26,11 +26,11 @@ export async function reconcileOrderFulfillment(
     .where({ canonical_order_id: canonicalOrderId })
     .first();
 
-  console.log('[RECON][DEBUG] lookup', {
+  /* console.log('[RECON][DEBUG] lookup', {
     canonicalOrderId,
     found: !!order,
     row: order ?? null,
-  });
+  }); */
 
   if (!order) {
     // Hard stop — invalid input

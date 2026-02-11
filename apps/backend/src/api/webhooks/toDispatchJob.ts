@@ -22,5 +22,6 @@ export function toDispatchJob(
     rawPayload: envelope.rawPayload,
     shopDomain: envelope.shopDomain,
     enqueuedAt: new Date().toISOString(),
+    __fromQueue: true,
   };
 }

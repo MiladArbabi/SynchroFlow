@@ -32,20 +32,24 @@ import { evaluateOperationalObligations } from './services/order-execution-intel
 import { enqueueProductForIngestion } from './services/product-ingestion.service';
 
 async function start() {
+
+  console.log('[WORKER ENV]', {
+    WORKER_RUNTIME: process.env.WORKER_RUNTIME,
+    WEBHOOK_DISPATCH_MODE: process.env.WEBHOOK_DISPATCH_MODE,
+  });
   
   console.log('[worker-entry] Booting worker runtime…');
 
   await initQueue();
   console.log('[worker-entry] Queue initialized');
 
-  // Obligation flags are computed by a future scheduled worker.
   // DO NOT call computeObligationFlags() here.
   startSyncWorker();
   startEventWorker();
   startProductIngestionWorker();
-  /* startWebhookWorker(); */
+  startWebhookWorker();
   startReturnsIngestionWorker();
-  console.log('[worker-entry] Starting reconciliation consumer...');
+  /* console.log('[worker-entry] Starting reconciliation consumer...'); */
   startReconciliationConsumer();
   // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
 

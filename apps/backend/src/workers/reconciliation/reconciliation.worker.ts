@@ -17,10 +17,10 @@ export async function runFulfillmentReconciliationBatch(
 
   // 2. Reconcile each order (serial on purpose)
   for (const row of rows) {
-    console.log(
+    /* console.log(
       '[reconciliation][batch]',
       row.canonical_order_id
-    );
+    ); */
     const order = await db('canonical_orders')
       .where({ canonical_order_id: row.canonical_order_id })
       .first();

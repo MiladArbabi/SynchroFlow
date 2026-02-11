@@ -22,6 +22,13 @@ export interface WebhookEnvelope {
   // Routing metadata (optional, provider-specific)
   shopId?: number;
   shopDomain?: string;
+
+  /**
+   * Internal transport flag.
+   * True only when envelope originates from queue worker.
+   * Prevents re-enqueue loop.
+   */
+  __fromQueue?: true;
 }
 
 export interface WebhookDispatchJob {
