@@ -45,8 +45,8 @@ async function start() {
 
   // DO NOT call computeObligationFlags() here.
   startSyncWorker();
-  startEventWorker();
-  startProductIngestionWorker();
+/*   startEventWorker();
+ */  startProductIngestionWorker();
   startWebhookWorker();
 /*   startReturnsIngestionWorker();
  */  /* console.log('[worker-entry] Starting reconciliation consumer...'); */
