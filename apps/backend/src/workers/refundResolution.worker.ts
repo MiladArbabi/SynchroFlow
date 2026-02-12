@@ -126,6 +126,23 @@ export async function resolveRefundExecution(
         .where({ id: refundExecutionId })
         .update({
           total_refunded_amount: totalRefundedAmount,
+
+          /**
+           * ECONOMIC EXECUTION STATE TRANSITION
+           * -----------------------------------
+           * observed → applied
+           *
+           * Meaning:
+           * - Financial truth was materialized into derived state
+           * - Revenue units updated
+           * - Refund aggregation computed
+           *
+           * Replay-safe:
+           * - Always overwritten to 'applied'
+           * - No branching
+           */
+          execution_status: 'applied',
+
           updated_at: trx.fn.now(),
         });
   });

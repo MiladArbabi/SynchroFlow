@@ -9,7 +9,7 @@ import { startSyncWorker } from './sync.worker';
 import { startWorker as startEventWorker } from './worker';
 import { startProductIngestionWorker } from './workers/product-ingestion.worker';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker';
-import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker';
+/* import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker';*/
 import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation';
 import { runFulfillmentReconciliationBatch } from './workers/reconciliation';
 
@@ -48,8 +48,8 @@ async function start() {
   startEventWorker();
   startProductIngestionWorker();
   startWebhookWorker();
-  startReturnsIngestionWorker();
-  /* console.log('[worker-entry] Starting reconciliation consumer...'); */
+/*   startReturnsIngestionWorker();
+ */  /* console.log('[worker-entry] Starting reconciliation consumer...'); */
   startReconciliationConsumer();
   // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
 
