@@ -136,4 +136,30 @@ export async function handleRefundCreated(
         .ignore();
     }
   });
+
+  /**
+   * REFUND DERIVED EFFECT APPLICATION
+   * ---------------------------------
+   * Refund executions are financial truth.
+   * Derived state (revenue units, refund aggregation, blocks)
+   * must be applied immediately to guarantee:
+   *
+   * - Deterministic economic lifecycle
+   * - No dependency on fulfillment reconciliation
+   * - Replay-safe idempotency
+   *
+   * Safe because:
+   * - resolveRefundExecution is idempotent
+   * - It mutates derived state only
+   */
+  const execution = await db('refund_executions')
+    .where({
+      platform: 'shopify',
+      platform_refund_id: String(refundId),
+    })
+    .first();
+
+  if (execution?.id) {
+    await resolveRefundExecution(execution.id);
+  }
 }

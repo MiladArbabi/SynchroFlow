@@ -16,4 +16,5 @@ export * from './handleAppUninstalled';
 export * from './handleOrderFulfillment';
 export * from './handleRefundCreated'
 export * from './handleOrderCreated'
+export * from './handleOrderPaid'
 

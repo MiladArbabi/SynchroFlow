@@ -34,6 +34,7 @@ router.post('/', async (req: Request, res: Response) => {
     case 'fulfillments/update':
 
     case 'orders/create':
+    case 'orders/paid':
       return shopifyWebhookHandler(req, res);
     case 'orders/fulfilled': // defensive
       return shopifyWebhookHandler(req, res);

@@ -26,11 +26,28 @@ import db from 'api-src/db';
  * - return_block_reason
  * - return_evaluated_at
  *
+ *  * LIFECYCLE DEPENDENCY:
+ * ---------------------
+ * This worker assumes order_revenue_units already exist.
+ *
+ * If revenue units are not yet materialized
+ * (e.g., refund arrives before fulfillment reconciliation),
+ * update operations will affect 0 rows.
+ *
+ * Reconciliation layer is responsible for replaying
+ * refund executions after revenue units are created.
+ *
+ * This guarantees:
+ * - No silent corruption
+ * - Deterministic eventual consistency
+ * - Strict separation of financial truth vs derived state
+ * 
  * GUARANTEES:
  * - Replay-safe
  * - Idempotent per refund execution
  * - No execution mutation
  * - No SKU inference
+ * 
  */
 export async function resolveRefundExecution(
   refundExecutionId: number
@@ -79,5 +96,37 @@ export async function resolveRefundExecution(
             return_evaluated_at: trx.fn.now(),
           });
       }
+
+      /**
+       * ECONOMIC REFUND AGGREGATION — Phase 1
+       * --------------------------------------
+       * Deterministically compute total_refunded_amount
+       * for this refund execution.
+       *
+       * Rules:
+       * - Sum(quantity_refunded * unit_refund_amount)
+       * - unit_refund_amount NULL → treated as 0
+       * - Replay-safe (overwrite)
+       */
+      const refundTotalRow = await trx('refund_execution_line_items')
+        .where({ refund_execution_id: refundExecutionId })
+        .select(
+          trx.raw(`
+            COALESCE(
+              SUM(quantity_refunded * COALESCE(unit_refund_amount, 0)),
+              0
+            ) as total
+          `)
+        )
+        .first();
+
+      const totalRefundedAmount = Number(refundTotalRow?.total ?? 0);
+
+      await trx('refund_executions')
+        .where({ id: refundExecutionId })
+        .update({
+          total_refunded_amount: totalRefundedAmount,
+          updated_at: trx.fn.now(),
+        });
   });
 }

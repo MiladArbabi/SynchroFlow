@@ -84,7 +84,36 @@ export class CanonicalCommerceIngestionService {
         )
       : canonicalOrder.platformOrderId;
 
-  const orderRow = {
+  const orderInsertRow = {
+    shop_id: canonicalOrder.shopId,
+    canonical_order_id: canonicalOrder.id,
+    platform: canonicalOrder.platform,
+    platform_order_id: normalizedPlatformOrderId,
+    currency: canonicalOrder.currency,
+    total_price: canonicalOrder.totalPrice,
+    subtotal_price: canonicalOrder.subtotalPrice,
+    total_tax: canonicalOrder.totalTax,
+    source: canonicalOrder.source,
+    referrer_medium: canonicalOrder.referrerMedium,
+    customer_hashed_id: canonicalOrder.customer?.hashedId ?? null,
+    order_created_at: canonicalOrder.createdAt,
+    order_updated_at: canonicalOrder.updatedAt,
+    order_processed_at: canonicalOrder.processedAt,
+
+    /**
+     * ECONOMIC STATE INITIALIZATION — Phase 1
+     * --------------------------------------
+     * ORDERS_CREATE establishes economic birth.
+     * Canonical ingestion MUST transition order to 'unpaid'.
+     *
+     * Replay-safe:
+     * - Insert only
+     * - Never overwritten in merge
+     */
+    payment_state: 'unpaid',
+  };
+
+  const orderMergeRow = {
     shop_id: canonicalOrder.shopId,
     canonical_order_id: canonicalOrder.id,
     platform: canonicalOrder.platform,
@@ -261,9 +290,9 @@ export class CanonicalCommerceIngestionService {
         await (db as any).transaction(async (trx: any) => {
           await db('canonical_orders')
             .transacting(trx)
-            .insert(orderRow)
+            .insert(orderInsertRow)
             .onConflict('canonical_order_id')
-            .merge(orderRow);
+            .merge(orderMergeRow);
 
           if (lineItems.length > 0) {
             await db('canonical_order_line_items')
@@ -280,9 +309,9 @@ export class CanonicalCommerceIngestionService {
 
         await db('canonical_orders')
           .transacting(mockTrx)
-          .insert(orderRow)
+          .insert(orderInsertRow)
           .onConflict('canonical_order_id')
-          .merge(orderRow);
+          .merge(orderMergeRow);
 
         if (lineItems.length > 0) {
           await db('canonical_order_line_items')

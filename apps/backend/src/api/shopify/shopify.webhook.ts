@@ -20,7 +20,8 @@ import {
   onShopifyAppUninstalled,
   handleOrderFulfillment,
   handleRefundCreated,
-  handleOrderCreated
+  handleOrderCreated,
+  handleOrderPaid
 } from './handlers';
 
 /**
@@ -52,6 +53,20 @@ WebhookRouter.register({
   handle: handleOrderCreated,
 });
 
+// Legacy / fallback (defensive, not semantic)
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'orders/fulfilled',
+  handle: handleOrderFulfillment,
+});
+
+// Order Paid
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'orders/paid',
+  handle: handleOrderPaid,
+});
+
 // Fulfillment lifecycle (execution truth)
 WebhookRouter.register({
   integration: 'shopify',
@@ -62,13 +77,6 @@ WebhookRouter.register({
 WebhookRouter.register({
   integration: 'shopify',
   eventType: 'fulfillments/update',
-  handle: handleOrderFulfillment,
-});
-
-// Legacy / fallback (defensive, not semantic)
-WebhookRouter.register({
-  integration: 'shopify',
-  eventType: 'orders/fulfilled',
   handle: handleOrderFulfillment,
 });
 

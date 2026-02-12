@@ -115,7 +115,7 @@ export class OrderFulfillmentIngestionService {
         execution_source: 'synthetic',
         // execution_confidence intentionally omitted (deprecated)
       })
-      .onConflict(['shop_id', 'order_id'])
+      .onConflict(['shop_id', 'canonical_order_id'])
       .ignore(); // observed execution always wins
   }
 };
