@@ -5,7 +5,6 @@ export async function up(knex: Knex): Promise<void> {
     table
       .uuid('lasyncro_line_item_id')
       .primary()
-      .defaultTo(knex.raw('gen_random_uuid()'));
 
     // Sovereign order reference
     table.uuid('lasyncro_order_id')

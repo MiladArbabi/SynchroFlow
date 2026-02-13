@@ -4,7 +4,8 @@ import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('insight_feedback', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.uuid('id')
+      .primary()
     
     // Insight identification
     table.string('insight_id').notNullable();

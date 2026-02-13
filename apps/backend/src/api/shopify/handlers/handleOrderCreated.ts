@@ -2,8 +2,6 @@
 
 import { WebhookEnvelope } from 'api-src/api/webhooks/types';
 import db from 'api-src/db';
-import { CanonicalCommerceIngestionService }
-  from 'api-src/services/canonical-commerce-ingestion.service';
 import type { FT0CanonicalOrder }
   from '@lasyncro/shared/contracts/ft0-canonical-order';
 
@@ -52,65 +50,7 @@ export async function handleOrderCreated(
 
   const shopId = installation.shop_id;
 
-  const canonicalOrderId =
-    raw.admin_graphql_api_id ??
-    `gid://shopify/Order/${raw.id}`;
+  // Sovereign ingestion will be handled by new ingestion layer.
+  // Webhook handler now stops after resolving shop context.
 
-  const canonicalOrder: FT0CanonicalOrder = {
-    id: canonicalOrderId,
-    shopId,
-    platform: 'shopify',
-    platformOrderId: String(raw.id),
-
-    createdAt: raw.created_at ?? null,
-    updatedAt: raw.updated_at ?? null,
-    processedAt: raw.processed_at ?? raw.created_at ?? null,
-
-    currency: raw.currency ?? null,
-
-    totalPrice: raw.total_price != null ? Number(raw.total_price) : null,
-    subtotalPrice: raw.subtotal_price != null ? Number(raw.subtotal_price) : null,
-    totalTax: raw.total_tax != null ? Number(raw.total_tax) : 0,
-
-    // 🔥 REQUIRED FIELD
-    shippingLines: [],
-
-    lineItems: (raw.line_items ?? []).map(li => ({
-        lineItemId: String(li.id),
-        orderId: canonicalOrderId,
-
-        productId: li.product_id
-          ? `gid://shopify/Product/${li.product_id}`
-          : null,
-
-        variantId: li.variant_id
-          ? `gid://shopify/ProductVariant/${li.variant_id}`
-          : null,
-
-        title: li.title,
-        sku: li.sku ?? null,
-
-        quantity: Number(li.quantity),
-
-        unitPrice: li.price != null ? Number(li.price) : null,
-        totalPrice:
-        li.price != null
-            ? Number(li.price) * Number(li.quantity)
-            : null,
-
-        estimatedUnitCost: null,
-
-        platform: 'shopify',
-        platformLineItemId: String(li.id),
-    })),
-
-    customer: undefined,
-
-    source: raw.source_name ?? null,
-    referrerMedium: null,
-};
-
-
-  const canonicalService = new CanonicalCommerceIngestionService();
-  await canonicalService.insertCanonicalOrder(canonicalOrder);
 }

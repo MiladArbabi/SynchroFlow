@@ -3,13 +3,10 @@ import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import db from '../db';
 import { Knex } from 'knex';
-import CanonicalCommerceIngestionService
-  from './canonical-commerce-ingestion.service';
 import { mapShopifyOrderNodeToCanonical }
   from './mappers/shopify-to-canonical-order';
 import { enqueueProductForIngestion } 
   from './product-ingestion.service';
-import { recordIncompleteOrder } from './incomplete-order.service';
 import { publishReconciliationJob } from 'api-src/queues/reconciliation.queue';
 import { getQueueChannel } from 'api-src/queue';
 

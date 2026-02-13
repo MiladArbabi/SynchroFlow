@@ -52,6 +52,7 @@ Thumbs.db
 # ----------------------------------------------------------------------
 # Virtual environment
 /apps/ai-engine/venv/
+apps/backend/migrations_legacy
 
 # Python cache
 __pycache__/

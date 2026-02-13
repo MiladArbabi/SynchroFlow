@@ -20,8 +20,7 @@ export async function up(knex: Knex): Promise<void> {
     table
     .uuid('lasyncro_order_id')
       .primary()
-      .defaultTo(knex.raw('gen_random_uuid()'));
-
+      
     table.integer('shop_id')
       .unsigned()
       .notNullable()
