@@ -200,16 +200,19 @@ export const performInitialSync = async (
         await syncProducts(trx, shopId, data.products.edges);
 
         /**
-         * Canonical Variant Backfill Trigger
-         * ----------------------------------
-         * Purpose:
-         * - Replay all products through product_ingestion
-         * - Required when canonical_variants is introduced after initial sync
+         * PRODUCT INGESTION QUEUE (LEGACY DRAIN)
+         * --------------------------------------
+         * The canonical product layer has been removed.
          *
-         * Safety:
-         * - Idempotent
-         * - No writes outside product-worker
-         * - Safe to re-run
+         * Product identity now lives in:
+         *   - products (sovereign table)
+         *   - order_line_items (sovereign FK)
+         *
+         * The product_ingestion queue remains only for
+         * backward compatibility and safe draining.
+         *
+         * This enqueue is safe but no longer performs
+         * canonical persistence.
          */
         for (const { node } of data.products.edges) {
           enqueueProductForIngestion({
@@ -218,7 +221,7 @@ export const performInitialSync = async (
             rawProduct: node,
           });
         }
-
+        
         // --- 2. Report: SYNCING_ORDERS ---
         await trx('integrations').where({ id: integrationId }).update({
           sync_status: 'SYNCING_ORDERS',
@@ -269,7 +272,8 @@ export const performInitialSync = async (
     }
 
     // Products are now committed.
-    // Product worker can populate canonical_variants safely.
+    // Product ingestion writes directly to sovereign products table.
+    // No canonical layer exists.
 
     // --- 4. Report: COMPLETED ---
     await db('integrations').where({ id: integrationId }).update({

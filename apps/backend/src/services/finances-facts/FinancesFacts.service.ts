@@ -32,7 +32,7 @@ export async function buildFinancesFacts(
    * Source: canonical_orders.total_price
    * This is the ONLY authoritative monetary signal available today.
    */
-  const revenueRow = await db('canonical_orders')
+  const revenueRow = await db('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', period.from)
     .andWhere('order_created_at', '<=', period.to)

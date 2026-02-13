@@ -381,7 +381,7 @@ Important dependency:
 
 Revenue correctness requires **identity correctness**.
 
-If canonical_order_line_items lack canonical_product_id:
+If canonical_order_line_items lack lasyncro_product_id:
 
 * Revenue units may exist
 * Execution may be complete

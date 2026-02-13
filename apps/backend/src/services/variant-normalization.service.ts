@@ -3,7 +3,7 @@
 export interface CanonicalVariantInput {
   shop_id: number;
   canonical_variant_id: string;
-  canonical_product_id: string;
+  lasyncro_product_id: string;
   sku: string | null;
   title: string | null;
 }
@@ -28,7 +28,7 @@ export class VariantNormalizationService {
       .map(v => ({
         shop_id: shopId,
         canonical_variant_id: String(v.id),
-        canonical_product_id: productId,
+        lasyncro_product_id: productId,
         sku: v.sku ?? null,
         title: v.title ?? null,
       }));

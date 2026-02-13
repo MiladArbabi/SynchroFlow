@@ -30,7 +30,7 @@ export async function getProductSupplyFacts(
   // ─────────────────────────────────────────
   // Canonical products (snapshot)
   // ─────────────────────────────────────────
-  const products = await db('canonical_products')
+  const products = await db('products')
     .where('shop_id', shopId)
     .select(['sku']);
 

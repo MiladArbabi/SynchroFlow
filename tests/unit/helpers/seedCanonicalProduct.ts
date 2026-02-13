@@ -13,12 +13,12 @@ export async function seedCanonicalProduct({
   platformProductId = 'shopify-product-001',
   title = 'Test Product',
 }: SeedCanonicalProductInput) {
-  await db('canonical_products').insert({
+  await db('products').insert({
     shop_id: shopId,
     platform: 'shopify',
     platform_product_id: platformProductId,
     title,
-    // canonical_product_id is auto-generated
+    // lasyncro_product_id is auto-generated
     // status defaults to 'active'
   });
 }

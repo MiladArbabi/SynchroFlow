@@ -28,9 +28,9 @@ export async function getProductOperationalFacts(
   // ─────────────────────────────────────────
   // Canonical products (snapshot, no period)
   // ─────────────────────────────────────────
-  const products = await db('canonical_products')
+  const products = await db('products')
     .where('shop_id', shopId)
-    .select(['canonical_product_id', 'sku']);
+    .select(['lasyncro_product_id', 'sku']);
 
   if (products.length === 0) {
     return {

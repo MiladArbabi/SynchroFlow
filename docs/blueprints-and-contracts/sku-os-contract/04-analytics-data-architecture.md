@@ -123,7 +123,7 @@ WHERE fph.recalculated_at = (
 ```sql
 -- Example: Sales velocity from canonical order line items
 SELECT 
-  li.canonical_product_id AS product_id,
+  li.lasyncro_product_id AS product_id,
   COUNT(DISTINCT o.platform_order_id) AS order_count_30d,
   SUM(li.quantity) AS unit_sales_30d,
   SUM(li.quantity) / 30.0 AS avg_units_per_day
@@ -133,7 +133,7 @@ JOIN canonical_orders o
   AND o.shop_id = li.shop_id
 WHERE li.shop_id = :shopId 
   AND o.order_created_at >= NOW() - INTERVAL '30 days'
-GROUP BY li.canonical_product_id;
+GROUP BY li.lasyncro_product_id;
 ```
 
 #### 3. Inventory Integration (Future)
@@ -175,7 +175,7 @@ JOIN inventory_truth inv ON inv.sku = p.sku;
 -- Critical indexes for performance:
 -- 1. Product demand queries
 CREATE INDEX idx_canonical_order_line_items_shop_product 
-  ON canonical_order_line_items (shop_id, canonical_product_id, platform_order_id);
+  ON canonical_order_line_items (shop_id, lasyncro_product_id, platform_order_id);
 
 -- 2. Health fact table lookups
 CREATE INDEX idx_fact_product_health_latest 

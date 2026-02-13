@@ -126,14 +126,14 @@ export class FT2EvaluatorService {
     /* DOMAIN: PRODUCTS                                                    */
     /* ------------------------------------------------------------------ */
 
-    const productsA = await db('canonical_products')
+    const productsA = await db('products')
       .where({ shop_id: shopId })
-      .count<{ count: string }>('canonical_product_id as count')
+      .count<{ count: string }>('lasyncro_product_id as count')
       .first();
 
-    const productsB = await db('canonical_products')
+    const productsB = await db('products')
       .where({ shop_id: shopId })
-      .count<{ count: string }>('canonical_product_id as count')
+      .count<{ count: string }>('lasyncro_product_id as count')
       .first();
 
     const productsCountA = Number(productsA?.count ?? 0);
@@ -208,7 +208,7 @@ export class FT2EvaluatorService {
 
     const orphanedLineItems = await db('canonical_order_line_items')
       .where({ shop_id: shopId })
-      .whereNull('canonical_product_id')
+      .whereNull('lasyncro_product_id')
       .count<{ count: string }>('id as count')
       .first();
 

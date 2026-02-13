@@ -4,7 +4,8 @@ import db from 'api-db';
 import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
 
 /**
- * OrderTrendFacts (Layer 1½ — Canonical Trend Facts)
+ * OrderTrendFacts (Layer 1½ — Sovereign Trend Facts)
+ * Identity source: orders.lasyncro_order_id
  * --------------------------------------------------
  * Purpose:
   * Provide minimal, fixed-window, non-fabricated inputs
@@ -75,7 +76,7 @@ export async function extractOrderTrendFacts(
    * occur on more than one distinct day.
    * No magnitude. No trend.
    */
-  const revenueDaysRow = await db('canonical_orders')
+  const revenueDaysRow = await db('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', from)
     .andWhere('order_created_at', '<=', to)
@@ -92,11 +93,11 @@ export async function extractOrderTrendFacts(
   // If the database cannot fully evaluate the window,
   // the result MUST be treated as epistemically absent (null).
   async function countOrders(fromDate: Date, toDate: Date): Promise<number | null> {
-    const row = await db('canonical_orders')
+    const row = await db('orders')
       .where('shop_id', shopId)
       .andWhere('order_created_at', '>=', fromDate.toISOString())
       .andWhere('order_created_at', '<=', toDate.toISOString())
-      .count<{ count: string }>('canonical_order_id as count')
+      .count<{ count: string }>('lasyncro_order_id as count')
       .first();
 
     return row?.count !== undefined ? Number(row.count) : null;

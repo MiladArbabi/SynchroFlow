@@ -10,7 +10,7 @@ describe('product ingestion → canonical_products', () => {
   const userId = 2001;
 
   beforeEach(async () => {
-    await db('canonical_products').del();
+    await db('products').del();
     await db('integrations').del();
     await db('users').del();
     await db('shops').del();
@@ -32,7 +32,7 @@ describe('product ingestion → canonical_products', () => {
     };
 
     // sanity: canonical_products starts empty
-    const before = await db('canonical_products').count<{ count: string }>('* as count').first();
+    const before = await db('products').count<{ count: string }>('* as count').first();
     expect(Number(before?.count)).toBe(0);
 
     await processProductMessage({
@@ -41,7 +41,7 @@ describe('product ingestion → canonical_products', () => {
       rawProduct: rawShopifyProduct,
     });
 
-    const after = await db('canonical_products').count<{ count: string }>('* as count').first();
+    const after = await db('products').count<{ count: string }>('* as count').first();
     expect(Number(after?.count)).toBe(1);
   });
 });

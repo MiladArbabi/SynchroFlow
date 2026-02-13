@@ -96,7 +96,7 @@ Represents the *product-level anchor* for all commerce activity.
 
 | Column                 | Meaning                           |          |           |
 | ---------------------- | --------------------------------- | -------- | --------- |
-| `canonical_product_id` | Internal numeric PK (DB-assigned) |          |           |
+| `lasyncro_product_id` | Internal numeric PK (DB-assigned) |          |           |
 | `shop_id`              | Tenant boundary                   |          |           |
 | `platform`             | Source platform (`shopify`)       |          |           |
 | `platform_product_id`  | Platform product GID              |          |           |
@@ -142,7 +142,7 @@ Bridges **order line items → canonical products**.
 | ---------------------- | -------------------- |
 | `shop_id`              | Tenant boundary      |
 | `canonical_variant_id` | Platform variant GID |
-| `canonical_product_id`        | Platform product GID (source identity) |
+| `lasyncro_product_id`        | Platform product GID (source identity) |
 | `canonical_product_anchor_id`| Canonical product anchor (DB-enforced) |
 | `sku`                  | Optional             |
 | `title`                | Optional             |
@@ -151,7 +151,7 @@ Bridges **order line items → canonical products**.
 **Invariants:**
 
 * One row per `(shop_id, canonical_variant_id)`
-* `canonical_product_id` is **REQUIRED** (source reference)
+* `lasyncro_product_id` is **REQUIRED** (source reference)
 * `canonical_product_anchor_id` is **REQUIRED** and FK-enforced
 * `canonical_variant_code` is **REQUIRED** and NOT NULL
 * Canonical Variant Code is:
@@ -270,7 +270,7 @@ if (li.canonical_variant_id && !li.canonical_product_anchor_id) {
 }
 ```
 Note:
-`canonical_product_id` (platform GID) is NOT sufficient.
+`lasyncro_product_id` (platform GID) is NOT sufficient.
 
 FT2, reconciliation, and revenue units rely exclusively on:
 `canonical_product_anchor_id` (numeric PK).
@@ -370,7 +370,7 @@ See:
 ❌ Writing `canonical_order_line_items` with:
 
 * `canonical_variant_id` present
-* `canonical_product_id` NULL
+* `lasyncro_product_id` NULL
 
 ❌ Backfilling product IDs in:
 
@@ -417,7 +417,7 @@ Run **only these checks** (in order):
    SELECT COUNT(*)
    FROM canonical_order_line_items
    WHERE shop_id = ?
-     AND canonical_product_id IS NULL;
+     AND lasyncro_product_id IS NULL;
    ```
 
 If step 4 > 0 → **ingestion invariant was violated**.

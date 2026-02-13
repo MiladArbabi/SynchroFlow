@@ -9,7 +9,7 @@ describe('product ingestion → canonical persistence', () => {
 
   afterEach(async () => {
     await db('shop_ingestion_events').del();
-    await db('canonical_products').del();
+    await db('products').del();
     await db('users').del();
     await db('shops').del();
   });
@@ -34,7 +34,7 @@ describe('product ingestion → canonical persistence', () => {
       rawProduct: rawShopifyProduct,
     });
 
-    const rows = await db('canonical_products').where({ shop_id: shopId });
+    const rows = await db('products').where({ shop_id: shopId });
 
     expect(rows.length).toBeGreaterThan(0);
   });

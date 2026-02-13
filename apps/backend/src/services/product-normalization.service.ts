@@ -10,7 +10,7 @@ export class ProductNormalizationService {
    * Normalize a raw Shopify product payload into CanonicalProductInput.
    *
    * NOTE:
-   * - canonical_product_id is derived from platform_product_id
+   * - lasyncro_product_id is derived from platform_product_id
    * - and must be provided explicitly by the writer. 
    * - shopId is injected externally (from linkage / config)
    */
@@ -24,7 +24,7 @@ export class ProductNormalizationService {
     /**
      * IMPORTANT SCHEMA CONTRACT
      * -------------------------
-     * canonical_product_id is a DB-assigned INTEGER (SERIAL).
+     * lasyncro_product_id is a DB-assigned INTEGER (SERIAL).
      * This service MUST NOT attempt to set it.
      *
      * platformProductId is the ONLY external identifier.

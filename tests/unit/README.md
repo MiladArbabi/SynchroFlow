@@ -229,7 +229,7 @@ Canonical tables are **strict** by design.
 
 ### canonical_products
 
-* **Primary key is `canonical_product_id` (integer)**
+* **Primary key is `lasyncro_product_id` (integer)**
 * There is **no `id` column**
 
 ❌ Never do:
@@ -251,7 +251,7 @@ Canonical tables are **strict** by design.
 **Always count rows, never columns**
 
 ```ts
-const { count } = await db('canonical_products')
+const { count } = await db('products')
   .where({ shop_id })
   .count('* as count')
   .first();
@@ -287,8 +287,8 @@ Every schema-backed test **must** clean up in `beforeEach`:
 ```ts
 await db('ft0_state').where({ shop_id }).del().catch(() => {});
 await db('integrations').where({ shop_id }).del();
-await db('canonical_orders').where({ shop_id }).del();
-await db('canonical_products').where({ shop_id }).del();
+await db('orders').where({ shop_id }).del();
+await db('products').where({ shop_id }).del();
 await db('users').where({ id: userId }).del();
 await db('shops').where({ id: shopId }).del();
 ```

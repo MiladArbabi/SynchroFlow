@@ -3,26 +3,6 @@
 import { WebhookEnvelope } from 'api-src/api/webhooks/types';
 import db from 'api-src/db';
 
-/**
- * Shopify ORDERS_PAID Handler
- * ----------------------------
- * Economic Confirmation Boundary.
- *
- * Responsibilities:
- * - Transition canonical_orders.payment_state → 'paid'
- * - Enforce deterministic state transitions
- * - Remain replay-safe
- *
- * HARD RULES:
- * - Only 'unpaid' → 'paid' is allowed
- * - 'paid' → 'paid' is noop
- * - Any other transition is illegal and throws
- *
- * No fulfillment logic.
- * No revenue logic.
- * No inference.
- */
-
 type ShopifyOrderPaidPayload = {
   id?: string | number;
 };
@@ -38,6 +18,7 @@ function isOrderPaidPayload(payload: unknown): payload is ShopifyOrderPaidPayloa
 export async function handleOrderPaid(
   envelope: WebhookEnvelope
 ): Promise<void> {
+
   const rawPayload = envelope.rawPayload;
 
   if (!isOrderPaidPayload(rawPayload)) {
@@ -56,26 +37,36 @@ export async function handleOrderPaid(
 
   const shopId = installation.shop_id;
 
-  const canonicalPlatformOrderId = String(rawPayload.id).startsWith('gid://')
-    ? String(rawPayload.id).replace('gid://shopify/Order/', '')
-    : String(rawPayload.id);
+  const externalOrderId = String(rawPayload.id).startsWith('gid://')
+    ? String(rawPayload.id)
+    : `gid://shopify/Order/${rawPayload.id}`;
 
-  const order = await db('canonical_orders')
+  // Resolve sovereign identity
+  const identity = await db('external_order_identity_map')
     .where({
       shop_id: shopId,
-      platform_order_id: canonicalPlatformOrderId,
+      platform: 'shopify',
+      external_order_id: externalOrderId,
     })
+    .select('lasyncro_order_id')
     .first();
 
-  if (!order) {
-    // Canonical not yet present — ignore safely
+  if (!identity) {
     return;
   }
+
+  const lasyncroOrderId = identity.lasyncro_order_id;
+
+  const order = await db('orders')
+    .where({ lasyncro_order_id: lasyncroOrderId })
+    .first();
+
+  if (!order) return;
 
   const currentState = order.payment_state;
 
   if (currentState === 'paid') {
-    return; // replay-safe noop
+    return;
   }
 
   if (currentState !== 'unpaid') {
@@ -84,8 +75,8 @@ export async function handleOrderPaid(
     );
   }
 
-  await db('canonical_orders')
-    .where({ canonical_order_id: order.canonical_order_id })
+  await db('orders')
+    .where({ lasyncro_order_id: lasyncroOrderId })
     .update({
       payment_state: 'paid',
       updated_at: db.fn.now(),

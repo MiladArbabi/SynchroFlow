@@ -23,7 +23,8 @@ export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
      * 1. Count canonical transactions (orders)
      *    We only care if the count is KNOWN.
      */
-    const ordersRow = await db('canonical_orders')
+    const ordersRow = await db('orders')
+
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
       .first();

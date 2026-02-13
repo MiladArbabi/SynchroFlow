@@ -11,7 +11,8 @@
  * - FT2-safe, aggregate-only
  *
  * NEVER:
- * - Read canonical_orders.total_price
+ * - Read orders.total_price
+ * - Join order-level revenue
  * - Join platform IDs
  * - Classify execution
  */

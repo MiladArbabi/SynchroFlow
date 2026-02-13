@@ -10,7 +10,7 @@ describe('sku-os onboarding provider', () => {
   const userId = 2001;
 
   afterEach(async () => {
-    await db('canonical_products').del();
+    await db('products').del();
     await db('users').del();
     await db('shops').del();
   });

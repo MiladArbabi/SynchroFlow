@@ -45,7 +45,7 @@ describe('Shopify product ingestion enqueue', () => {
   const userId = 201;
 
   beforeEach(async () => {
-    await db('canonical_products').del();
+    await db('products').del();
     await db('integrations').del();
     await db('users').del();
     await db('shops').del();

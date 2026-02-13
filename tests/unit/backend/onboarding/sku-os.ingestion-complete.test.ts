@@ -10,7 +10,7 @@ describe('SKU-OS readiness after ingestion completion', () => {
   const userId = 9002;
 
   afterEach(async () => {
-    await db('canonical_products').del();
+    await db('products').del();
     await db('shop_ingestion_events').del();
     await db('users').del();
     await db('shops').del();

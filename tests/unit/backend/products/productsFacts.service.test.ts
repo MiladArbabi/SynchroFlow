@@ -12,7 +12,7 @@ describe('ProductsFacts.service (Layer 1)', () => {
   });
 
   afterEach(async () => {
-    await db('canonical_products').del();
+    await db('products').del();
     await db('users').del();
     await db('shops').del();
   });
@@ -29,7 +29,7 @@ describe('ProductsFacts.service (Layer 1)', () => {
       shopId: SHOP_ID,
       platformProductId: 'prod-2',
     });
-    await db('canonical_products')
+    await db('products')
       .where({ shop_id: SHOP_ID, platform_product_id: 'prod-2' })
       .update({ status: 'inactive' });
 
@@ -38,7 +38,7 @@ describe('ProductsFacts.service (Layer 1)', () => {
       shopId: SHOP_ID,
       platformProductId: 'prod-3',
     });
-    await db('canonical_products')
+    await db('products')
       .where({ shop_id: SHOP_ID, platform_product_id: 'prod-3' })
       .update({ status: 'archived' });
 
@@ -77,7 +77,7 @@ describe('ProductsFacts.service (Layer 1)', () => {
   });
 
   test('counts distinct non-null SKUs only', async () => {
-    await db('canonical_products').insert([
+    await db('products').insert([
       {
         shop_id: SHOP_ID,
         platform: 'shopify',
@@ -165,7 +165,7 @@ describe('ProductsFacts.service (Layer 1)', () => {
   });
 
   test('computes SKU presence facts (with / without SKU)', async () => {
-    await db('canonical_products').insert([
+    await db('products').insert([
       {
         shop_id: SHOP_ID,
         platform: 'shopify',
@@ -196,7 +196,7 @@ describe('ProductsFacts.service (Layer 1)', () => {
   });
 
   test('computes variant structure facts correctly', async () => {
-    await db('canonical_products').insert([
+    await db('products').insert([
       {
         shop_id: SHOP_ID,
         platform: 'shopify',

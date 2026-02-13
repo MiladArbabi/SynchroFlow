@@ -86,7 +86,8 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
 
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
     // 1) How many canonical orders did we ingest?
-    const ordersRow = await db('canonical_orders')
+    const ordersRow = await db('orders')
+
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
       .first();
@@ -143,7 +144,7 @@ export const skuOsOnboardingSignalProvider: OnboardingSignalProvider = {
     let freeTierUsageCount = 0;
 
     try {
-      const row = await db('canonical_products')
+      const row = await db('products')
         .where({ shop_id: shopId })
         .count<{ count: string }>('* as count')
         .first();

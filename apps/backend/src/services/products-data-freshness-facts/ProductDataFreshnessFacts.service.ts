@@ -31,7 +31,7 @@ export async function getProductDataFreshnessFacts(
   // ─────────────────────────────────────────
   // Structural — canonical_products.updated_at
   // ─────────────────────────────────────────
-  const structural = await db('canonical_products')
+  const structural = await db('products')
     .where('shop_id', shopId)
     .max('updated_at as ts')
     .first();

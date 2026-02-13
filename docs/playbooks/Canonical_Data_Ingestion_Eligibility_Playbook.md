@@ -98,7 +98,7 @@ Never assume logical names like:
 Always use actual schema names:
 
 canonical_order_id
-canonical_product_id
+lasyncro_product_id
 canonical_variant_id
 
 If code references a column that does not exist:
@@ -147,7 +147,7 @@ Examples:
 
 SELECT COUNT(*)
 FROM canonical_order_line_items
-WHERE canonical_product_id IS NULL;
+WHERE lasyncro_product_id IS NULL;
 
 Additional invariant scan (SKU identity):
 
@@ -486,7 +486,7 @@ Canonical order ingestion may proceed **without enrichment**, but:
 Allowed:
 
 * Insert orders
-* Insert line items with NULL canonical_product_id (temporarily, FT0–FT1 only)
+* Insert line items with NULL lasyncro_product_id (temporarily, FT0–FT1 only)
 * Insert line items with NULL canonical_variant_code (temporarily, FT0–FT1 only)
 
 Required before FT2:
@@ -540,7 +540,7 @@ Canonical Products have TWO identities:
    WHERE platform_variant_id IS NULL
 
 2) Physical Anchor
-   canonical_product_id (numeric PK)
+   lasyncro_product_id (numeric PK)
 
 Rules:
 
@@ -664,7 +664,7 @@ Before declaring a domain “wired”:
 * [ ] Canonical identity present on all execution rows
 * [ ] Canonical product identity present on all order line items
 * [ ] No execution rows with NULL foreign keys
-* [ ] No order line items with NULL canonical_product_id
+* [ ] No order line items with NULL lasyncro_product_id
 * [ ] Execution joins verified by direct SQL
 * [ ] Canonical Variant Code (CVC) present on all variants
 * [ ] Canonical Variant Code matches between:

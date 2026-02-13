@@ -7,7 +7,7 @@ import { specterOnboardingSignalProvider } from 'api-src/onboarding/providers/sp
 
 describe('OnboardingReadinessService – signal passthrough', () => {
   afterEach(async () => {
-    await db('canonical_products').del();
+    await db('products').del();
     await db('users').del();
     await db('shops').del();
   });

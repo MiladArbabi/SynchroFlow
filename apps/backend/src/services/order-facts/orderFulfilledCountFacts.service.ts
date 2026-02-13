@@ -22,13 +22,13 @@ export async function extractFulfilledOrdersCount(
    * order_fulfillment_status does NOT carry order timestamps.
    * Time-scoping execution data would fabricate truth.
    *
-   * Canonical order time lives in canonical_orders only.
+   * Sovereign order identity lives in orders (lasyncro_order_id).
    */
 
   const row = await db('order_fulfillment_status')
   .where({ shop_id: shopId })
   .whereIn('status', ['fulfilled', 'delivered'])
-  .countDistinct<{ count: string }>('canonical_order_id as count')
+  .countDistinct<{ count: string }>('lasyncro_order_id as count')
   .first();
 
   if (!row || row.count == null) {

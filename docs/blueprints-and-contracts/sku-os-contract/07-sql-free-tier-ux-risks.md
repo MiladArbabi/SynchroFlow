@@ -8,7 +8,7 @@
 ```sql
 -- Sales velocity (units per day last 30d)
 SELECT 
-  li.canonical_product_id AS product_id,
+  li.lasyncro_product_id AS product_id,
   SUM(li.quantity) / 30.0 AS avg_units_per_day,
   SUM(li.quantity) AS total_units_30d,
   COUNT(DISTINCT o.platform_order_id) AS order_count_30d
@@ -18,14 +18,14 @@ JOIN canonical_orders o
   AND o.shop_id = li.shop_id
 WHERE li.shop_id = :shopId 
   AND o.order_created_at >= NOW() - INTERVAL '30 days'
-GROUP BY li.canonical_product_id;
+GROUP BY li.lasyncro_product_id;
 ```
 
 #### Multi-Window Velocity Analysis:
 ```sql
 -- 7, 30, 90 day velocity windows
 SELECT 
-  li.canonical_product_id AS product_id,
+  li.lasyncro_product_id AS product_id,
   
   -- 7-day window
   SUM(CASE WHEN o.order_created_at >= NOW() - INTERVAL '7 days' 
@@ -56,7 +56,7 @@ JOIN canonical_orders o
   AND o.shop_id = li.shop_id
 WHERE li.shop_id = :shopId
   AND o.order_created_at >= NOW() - INTERVAL '90 days'
-GROUP BY li.canonical_product_id;
+GROUP BY li.lasyncro_product_id;
 ```
 
 ### 2. Days of Cover Calculation
@@ -85,7 +85,7 @@ FROM canonical_products p
 LEFT JOIN (
   -- Velocity subquery
   SELECT 
-    canonical_product_id,
+    lasyncro_product_id,
     SUM(quantity) / 30.0 AS avg_units_per_day
   FROM canonical_order_line_items li
   JOIN canonical_orders o 
@@ -93,8 +93,8 @@ LEFT JOIN (
     AND o.shop_id = li.shop_id
   WHERE li.shop_id = :shopId
     AND o.order_created_at >= NOW() - INTERVAL '30 days'
-  GROUP BY canonical_product_id
-) vel ON vel.canonical_product_id = p.product_id
+  GROUP BY lasyncro_product_id
+) vel ON vel.lasyncro_product_id = p.product_id
 LEFT JOIN inventory_truth inv 
   ON inv.sku = p.sku 
   AND inv.shop_id = p.shop_id
@@ -138,12 +138,12 @@ LEFT JOIN inventory_truth inv
   ON inv.sku = p.sku 
   AND inv.shop_id = p.shop_id
 LEFT JOIN (
-  SELECT canonical_product_id, SUM(quantity) / 30.0 AS avg_units_per_day
+  SELECT lasyncro_product_id, SUM(quantity) / 30.0 AS avg_units_per_day
   FROM canonical_order_line_items
   WHERE shop_id = :shopId
     AND created_at >= NOW() - INTERVAL '30 days'
-  GROUP BY canonical_product_id
-) vel ON vel.canonical_product_id = p.product_id
+  GROUP BY lasyncro_product_id
+) vel ON vel.lasyncro_product_id = p.product_id
 LEFT JOIN supplier_lead_times sup 
   ON sup.product_id = p.product_id 
   AND sup.shop_id = p.shop_id;

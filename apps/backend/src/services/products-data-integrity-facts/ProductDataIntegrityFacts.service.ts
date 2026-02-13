@@ -44,7 +44,7 @@ export async function getProductDataIntegrityFacts(
  * Time-scoped product integrity requires
  * a future canonical schema extension.
  */
-const rows = await db('canonical_products')
+const rows = await db('products')
   .where('shop_id', shopId)
   .select([
     'platform_product_id',

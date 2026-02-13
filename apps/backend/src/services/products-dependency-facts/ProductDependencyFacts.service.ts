@@ -30,7 +30,7 @@ export async function getProductDependencyFacts(
   // ─────────────────────────────────────────
   // Canonical product baseline
   // ─────────────────────────────────────────
-  const products = await db('canonical_products')
+  const products = await db('products')
     .where('shop_id', shopId)
     .select(['sku']);
 

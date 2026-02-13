@@ -18,7 +18,7 @@ export class VariantNormalizationService {
     }
 
     // IMPORTANT:
-    // canonical_product_id MUST match the value used by order ingestion
+    // lasyncro_product_id MUST match the value used by order ingestion
     // Orders store Shopify GIDs (gid://shopify/Product/*)
     const canonicalProductId = `gid://shopify/Product/${rawProduct.id}`;
 

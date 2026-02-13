@@ -51,17 +51,17 @@ apps/backend/src/workers/reconciliation/revenue-units.writer.ts:      sku: r.can
 apps/backend/src/workers/reconciliation/revenue-units.writer.ts:    'canonical_order_id',
 apps/backend/src/workers/product-worker.ts:    await trx('canonical_products')
 apps/backend/src/workers/product-worker.ts:    const productRow = await trx('canonical_products')
-apps/backend/src/workers/product-worker.ts:      .select('canonical_product_id')
+apps/backend/src/workers/product-worker.ts:      .select('lasyncro_product_id')
 apps/backend/src/workers/product-worker.ts:     * - canonical_variants
 apps/backend/src/workers/product-worker.ts:     * - canonical_order_line_items
-apps/backend/src/workers/product-worker.ts:    if (!productRow || !productRow.canonical_product_id) {
-apps/backend/src/workers/product-worker.ts:    const canonicalProductAnchorId = productRow.canonical_product_id;
+apps/backend/src/workers/product-worker.ts:    if (!productRow || !productRow.lasyncro_product_id) {
+apps/backend/src/workers/product-worker.ts:    const canonicalProductAnchorId = productRow.lasyncro_product_id;
 apps/backend/src/workers/product-worker.ts:      await trx('canonical_variants')
 apps/backend/src/workers/product-worker.ts:            canonical_variant_id: v.canonical_variant_id,
-apps/backend/src/workers/product-worker.ts:            canonical_product_id: v.canonical_product_id,
+apps/backend/src/workers/product-worker.ts:            lasyncro_product_id: v.lasyncro_product_id,
 apps/backend/src/workers/product-worker.ts:            canonical_product_anchor_id: canonicalProductAnchorId,
 apps/backend/src/workers/product-worker.ts:        .onConflict(['shop_id', 'canonical_variant_id'])
-apps/backend/src/workers/product-worker.ts:          canonical_product_id: trx.raw('excluded.canonical_product_id'),
+apps/backend/src/workers/product-worker.ts:          lasyncro_product_id: trx.raw('excluded.lasyncro_product_id'),
 apps/backend/src/workers/product-worker.ts:          canonical_product_anchor_id: trx.raw(
 apps/backend/src/workers/product-worker.ts:            'excluded.canonical_product_anchor_id'
 apps/backend/src/workers/refund-line-item.resolver.ts:    const mapping = await db('canonical_order_line_items')
@@ -77,7 +77,7 @@ apps/backend/src/workers/fulfillment-reconciliation.worker.ts:      canonicalOrd
 apps/backend/src/workers/refundsIngestion.worker.ts: * - canonical_returns writes
 apps/backend/src/services/products-facts/ProductsFacts.service.ts: * - Reads ONLY from canonical_products
 apps/backend/src/services/products-facts/ProductsFacts.service.ts:   * canonical_products does not currently expose
-apps/backend/src/services/products-facts/ProductsFacts.service.ts:const rows = await db('canonical_products')
+apps/backend/src/services/products-facts/ProductsFacts.service.ts:const rows = await db('products')
 apps/backend/src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.ts: * - canonical_order_id MUST be present
 apps/backend/src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.ts: * If canonical_order_id is missing, this is a caller bug.
 apps/backend/src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.ts:        '[OrderFulfillmentIngestionService] canonical_order_id is required. ' +
@@ -88,33 +88,34 @@ apps/backend/src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.
 apps/backend/src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.ts:      .onConflict(['shop_id', 'canonical_order_id'])
 apps/backend/src/services/shopify.service.ts:         * - Required when canonical_variants is introduced after initial sync
 apps/backend/src/services/shopify.service.ts:    // Product worker can populate canonical_variants safely.
-apps/backend/src/services/products-dependency-facts/ProductDependencyFacts.service.ts:  const products = await db('canonical_products')
-apps/backend/src/services/product-normalization.service.ts:   * - canonical_product_id is derived from platform_product_id
-apps/backend/src/services/product-normalization.service.ts:     * canonical_product_id is a DB-assigned INTEGER (SERIAL).
+apps/backend/src/services/products-dependency-facts/ProductDependencyFacts.service.ts:  const products = await db('products')
+apps/backend/src/services/product-normalization.service.ts:   * - lasyncro_product_id is derived from platform_product_id
+apps/backend/src/services/product-normalization.service.ts:     * lasyncro_product_id is a DB-assigned INTEGER (SERIAL).
 apps/backend/src/services/canonical-mapping-orchestrator.ts:  const defaultRequired = ['canonical_order_id'];
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts:   * Source: canonical_orders.total_price
-apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const revenueRow = await db('canonical_orders')
+apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const revenueRow = await db('orders')
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts: * Source: canonical_orders.total_price (negative orders or future refund table)
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts:const refundRow = await db('canonical_orders')
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const ordersCountRow = await db('canonical_orders')
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const dailyRows = await db('canonical_orders')
 apps/backend/src/services/products-data-integrity-facts/ProductDataIntegrityFacts.service.ts: * canonical_products is a current-state table.
-apps/backend/src/services/products-data-integrity-facts/ProductDataIntegrityFacts.service.ts:const rows = await db('canonical_products')
-apps/backend/src/services/products-operational-facts/ProductOperationalFacts.service.ts:  const products = await db('canonical_products')
-apps/backend/src/services/products-operational-facts/ProductOperationalFacts.service.ts:    .select(['canonical_product_id', 'sku']);
+apps/backend/src/services/products-data-integrity-facts/ProductDataIntegrityFacts.service.ts:const rows = await db('products')
+apps/backend/src/services/products-operational-facts/ProductOperationalFacts.service.ts:  const products = await db('products')
+apps/backend/src/services/products-operational-facts/ProductOperationalFacts.service.ts:    .select(['lasyncro_product_id', 'sku']);
 apps/backend/src/services/order-nexus-ft2/orderNexusFt2.timeseries.ts:  const rows = await db('canonical_orders')
 apps/backend/src/services/order-nexus-ft2/orderNexusFt2.timeseries.ts:      db.raw(`COUNT(canonical_order_id) as ordersObserved`),
 apps/backend/src/services/order-nexus-ft2/orderNexusFt2.coverage.ts:  const row = await db('canonical_order_line_items')
 apps/backend/src/services/order-nexus-ft2/orderNexusFt2.distribution.ts:  const values = (await db('canonical_orders')
 apps/backend/src/services/order-facts/orderTrendFacts.service.ts:  const revenueDaysRow = await db('canonical_orders')
 apps/backend/src/services/order-facts/orderTrendFacts.service.ts:    const row = await db('canonical_orders')
-apps/backend/src/services/order-facts/orderTrendFacts.service.ts:      .count<{ count: string }>('canonical_order_id as count')
+apps/backend/src/services/order-facts/orderTrendFacts.service.ts:      .count<{ count: string }>('lasyncro_order_id as count')
 apps/backend/src/services/order-facts/orderRevenueUnitsFt2Facts.service.ts: * - Read canonical_orders.total_price
 apps/backend/src/services/order-facts/orderFulfilledCountFacts.service.ts:   * Canonical order time lives in canonical_orders only.
 apps/backend/src/services/order-facts/orderFulfilledCountFacts.service.ts:  .countDistinct<{ count: string }>('canonical_order_id as count')
-apps/backend/src/services/order-facts/orderFacts.service.ts:  const ordersRow = await db('canonical_orders')
-apps/backend/src/services/order-facts/orderFacts.service.ts:    .count<{ count: string }>('canonical_order_id as count')
-apps/backend/src/services/order-facts/orderFacts.service.ts:  const revenueRow = await db('canonical_orders')
+apps/backend/src/services/order-facts/orderFacts.service.ts:  const ordersRow = await db('orders')
+
+apps/backend/src/services/order-facts/orderFacts.service.ts:    .count<{ count: string }>('lasyncro_order_id as count')
+apps/backend/src/services/order-facts/orderFacts.service.ts:  const revenueRow = await db('orders')
 apps/backend/src/services/order-facts/orderFacts.service.ts:  const coverageRow = await db('canonical_order_line_items')
 apps/backend/src/services/order-facts/orderActiveCountFacts.service.ts:    .countDistinct<{ count: string }>('canonical_order_id as count')
 apps/backend/src/services/order-facts/orderReturnsFacts.service.ts:      'canonical_order_id',
@@ -125,12 +126,12 @@ apps/backend/src/services/order-facts/orderRevenueAllocationFacts.service.ts:   
 apps/backend/src/services/order-facts/orderRevenueAllocationFacts.service.ts:      'f.canonical_order_id'
 apps/backend/src/services/ft2-evaluator.service.ts:    const ordersA = await db('canonical_orders')
 apps/backend/src/services/ft2-evaluator.service.ts:    const ordersB = await db('canonical_orders')
-apps/backend/src/services/ft2-evaluator.service.ts:    const productsA = await db('canonical_products')
-apps/backend/src/services/ft2-evaluator.service.ts:      .count<{ count: string }>('canonical_product_id as count')
-apps/backend/src/services/ft2-evaluator.service.ts:    const productsB = await db('canonical_products')
-apps/backend/src/services/ft2-evaluator.service.ts:      .count<{ count: string }>('canonical_product_id as count')
+apps/backend/src/services/ft2-evaluator.service.ts:    const productsA = await db('products')
+apps/backend/src/services/ft2-evaluator.service.ts:      .count<{ count: string }>('lasyncro_product_id as count')
+apps/backend/src/services/ft2-evaluator.service.ts:    const productsB = await db('products')
+apps/backend/src/services/ft2-evaluator.service.ts:      .count<{ count: string }>('lasyncro_product_id as count')
 apps/backend/src/services/ft2-evaluator.service.ts:    const orphanedLineItems = await db('canonical_order_line_items')
-apps/backend/src/services/ft2-evaluator.service.ts:      .whereNull('canonical_product_id')
+apps/backend/src/services/ft2-evaluator.service.ts:      .whereNull('lasyncro_product_id')
 apps/backend/src/services/ft2-evaluator.service.ts:    const ordersWithoutCustomer = await db('canonical_orders')
 apps/backend/src/services/order-execution-intelligence/customerObligation.evaluator.ts:        .whereRaw('e.canonical_order_id = ofs.canonical_order_id')
 apps/backend/src/services/order-execution-intelligence/customerObligation.evaluator.ts:        .whereRaw('e.canonical_order_id = order_fulfillment_status.canonical_order_id')
@@ -159,17 +160,19 @@ apps/backend/src/services/order-execution-intelligence/blocker.classifier.ts:   
 apps/backend/src/services/order-execution-intelligence/blocker.classifier.ts:        canonicalOrderId: r.canonical_order_id,
 apps/backend/src/services/order-execution-intelligence/blocker.classifier.ts:      canonicalOrderId: r.canonical_order_id,
 apps/backend/src/services/order-execution-intelligence/blockedRevenue.classification.ts:   * primitive exists in canonical_orders.
-apps/backend/src/services/products-supply-facts/ProductSupplyFacts.service.ts:  const products = await db('canonical_products')
+apps/backend/src/services/products-supply-facts/ProductSupplyFacts.service.ts:  const products = await db('products')
 apps/backend/src/services/variant-normalization.service.ts:  canonical_variant_id: string;
-apps/backend/src/services/variant-normalization.service.ts:  canonical_product_id: string;
+apps/backend/src/services/variant-normalization.service.ts:  lasyncro_product_id: string;
 apps/backend/src/services/variant-normalization.service.ts:        canonical_variant_id: String(v.id),
-apps/backend/src/services/variant-normalization.service.ts:        canonical_product_id: productId,
+apps/backend/src/services/variant-normalization.service.ts:        lasyncro_product_id: productId,
 apps/backend/src/services/products-data-freshness-facts/ProductDataFreshnessFacts.service.ts:  // Structural — canonical_products.updated_at
-apps/backend/src/services/products-data-freshness-facts/ProductDataFreshnessFacts.service.ts:  const structural = await db('canonical_products')
+apps/backend/src/services/products-data-freshness-facts/ProductDataFreshnessFacts.service.ts:  const structural = await db('products')
 apps/backend/src/onboarding/providers/finances.provider.ts: * - canonical_orders → transaction existence
 apps/backend/src/onboarding/providers/finances.provider.ts: * - canonical_order_line_items.estimated_unit_cost → cost readiness
-apps/backend/src/onboarding/providers/finances.provider.ts:    const ordersRow = await db('canonical_orders')
+apps/backend/src/onboarding/providers/finances.provider.ts:    const ordersRow = await db('orders')
+
 apps/backend/src/onboarding/providers/finances.provider.ts:    const missingCostRow = await db('canonical_order_line_items')
-apps/backend/src/onboarding/readiness.providers.ts:    const ordersRow = await db('canonical_orders')
+apps/backend/src/onboarding/readiness.providers.ts:    const ordersRow = await db('orders')
+
 apps/backend/src/onboarding/readiness.providers.ts:    const missingCostRow = await db('canonical_order_line_items')
-apps/backend/src/onboarding/readiness.providers.ts:      const row = await db('canonical_products')
+apps/backend/src/onboarding/readiness.providers.ts:      const row = await db('products')

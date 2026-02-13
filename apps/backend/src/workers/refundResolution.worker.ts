@@ -1,149 +1,103 @@
-/**
- * NOTE:
- * Refund resolution is DERIVED STATE.
- * It may be recomputed, replayed, or rebuilt.
- *
- * refund_executions remains the ONLY financial truth.
- */
-
-
 // apps/backend/src/workers/refundResolution.worker.ts
+
+/**
+ * Refund Resolution Worker (Sovereign UUID)
+ * ------------------------------------------
+ * DERIVED STATE ONLY.
+ *
+ * Financial truth:
+ *   refund_executions
+ *
+ * Derived mutation:
+ *   order_revenue_units.returned_quantity
+ *
+ * Idempotent.
+ * Replay-safe.
+ */
 
 import db from 'api-src/db';
 
-/**
- * Refund Resolution Worker
- * ------------------------
- * Applies refund execution effects onto order_revenue_units.
- *
- * INPUT:
- * - refund_executions
- * - refund_execution_line_items
- *
- * OUTPUT (DERIVED):
- * - order_revenue_units.returned_quantity
- * - has_return_block
- * - return_block_reason
- * - return_evaluated_at
- *
- *  * LIFECYCLE DEPENDENCY:
- * ---------------------
- * This worker assumes order_revenue_units already exist.
- *
- * If revenue units are not yet materialized
- * (e.g., refund arrives before fulfillment reconciliation),
- * update operations will affect 0 rows.
- *
- * Reconciliation layer is responsible for replaying
- * refund executions after revenue units are created.
- *
- * This guarantees:
- * - No silent corruption
- * - Deterministic eventual consistency
- * - Strict separation of financial truth vs derived state
- * 
- * GUARANTEES:
- * - Replay-safe
- * - Idempotent per refund execution
- * - No execution mutation
- * - No SKU inference
- * 
- */
 export async function resolveRefundExecution(
-  refundExecutionId: number
+  lasyncroRefundExecutionId: string
 ): Promise<void> {
+
   await db.transaction(async trx => {
+
     const execution = await trx('refund_executions')
-      .where({ id: refundExecutionId })
+      .where({
+        lasyncro_refund_execution_id: lasyncroRefundExecutionId,
+      })
       .first();
 
-    if (!execution || !execution.canonical_order_id) {
-      return;
-    }
+    if (!execution) return;
 
     const lines = await trx('refund_execution_line_items')
-      .where({ refund_execution_id: refundExecutionId });
+      .where({
+        lasyncro_refund_execution_id: lasyncroRefundExecutionId,
+      });
 
-    if (!lines.length) {
-      return;
-    }
+    if (!lines.length) return;
 
+    /**
+     * Aggregate refunded quantities per product
+     */
     const aggregated: Record<string, number> = {};
 
     for (const line of lines) {
       const qty = Number(line.quantity_refunded);
-        if (!Number.isFinite(qty) || qty <= 0) continue;
+      if (!Number.isFinite(qty) || qty <= 0) continue;
 
-        // Skip unresolved lines (by design)
-        if (!line.sku) continue;
+      const productId = line.lasyncro_product_id;
+      if (!productId) continue;
 
-        aggregated[line.sku] = (aggregated[line.sku] ?? 0) + qty;
-      }
+      aggregated[productId] =
+        (aggregated[productId] ?? 0) + qty;
+    }
 
-      for (const [sku, qty] of Object.entries(aggregated)) {
-        await trx('order_revenue_units')
-          .where({
-            canonical_order_id: execution.canonical_order_id,
-            sku,
-          })
-          .update({
-            returned_quantity: trx.raw(
-              'COALESCE(returned_quantity, 0) + ?',
-              [qty]
-            ),
-            has_return_block: true,
-            return_block_reason: 'customer_refunded',
-            return_evaluated_at: trx.fn.now(),
-          });
-      }
-
-      /**
-       * ECONOMIC REFUND AGGREGATION — Phase 1
-       * --------------------------------------
-       * Deterministically compute total_refunded_amount
-       * for this refund execution.
-       *
-       * Rules:
-       * - Sum(quantity_refunded * unit_refund_amount)
-       * - unit_refund_amount NULL → treated as 0
-       * - Replay-safe (overwrite)
-       */
-      const refundTotalRow = await trx('refund_execution_line_items')
-        .where({ refund_execution_id: refundExecutionId })
-        .select(
-          trx.raw(`
-            COALESCE(
-              SUM(quantity_refunded * COALESCE(unit_refund_amount, 0)),
-              0
-            ) as total
-          `)
-        )
-        .first();
-
-      const totalRefundedAmount = Number(refundTotalRow?.total ?? 0);
-
-      await trx('refund_executions')
-        .where({ id: refundExecutionId })
+    /**
+     * Apply returned quantities
+     */
+    for (const [productId, qty] of Object.entries(aggregated)) {
+      await trx('order_revenue_units')
+        .where({
+          lasyncro_order_id: execution.lasyncro_order_id,
+          lasyncro_product_id: productId,
+        })
         .update({
-          total_refunded_amount: totalRefundedAmount,
-
-          /**
-           * ECONOMIC EXECUTION STATE TRANSITION
-           * -----------------------------------
-           * observed → applied
-           *
-           * Meaning:
-           * - Financial truth was materialized into derived state
-           * - Revenue units updated
-           * - Refund aggregation computed
-           *
-           * Replay-safe:
-           * - Always overwritten to 'applied'
-           * - No branching
-           */
-          execution_status: 'applied',
-
+          returned_quantity: trx.raw(
+            'COALESCE(returned_quantity, 0) + ?',
+            [qty]
+          ),
           updated_at: trx.fn.now(),
         });
+    }
+
+    /**
+     * Deterministic refund total aggregation
+     */
+    const refundTotalRow = await trx('refund_execution_line_items')
+      .where({
+        lasyncro_refund_execution_id: lasyncroRefundExecutionId,
+      })
+      .select(
+        trx.raw(`
+          COALESCE(
+            SUM(quantity_refunded * COALESCE(unit_refund_amount, 0)),
+            0
+          ) as total
+        `)
+      )
+      .first();
+
+    const totalRefundAmount = Number(refundTotalRow?.total ?? 0);
+
+    await trx('refund_executions')
+      .where({
+        lasyncro_refund_execution_id: lasyncroRefundExecutionId,
+      })
+      .update({
+        total_refund_amount: totalRefundAmount,
+        updated_at: trx.fn.now(),
+      });
   });
 }

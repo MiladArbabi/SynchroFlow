@@ -5,7 +5,8 @@ import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft
 /**
  * OrderFactsService (Layer 1)
  * ---------------------------
- * Extracts raw, canonical facts about orders.
+ * Extracts raw sovereign facts about orders.
+ * Identity source: orders.lasyncro_order_id
  *
  * Rules:
  * - Reads from DB only
@@ -29,11 +30,12 @@ export async function extractOrderFacts(
           preset: range.preset as NonCustomPreset,
         });
 
-  const ordersRow = await db('canonical_orders')
+  const ordersRow = await db('orders')
+
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', from)
     .andWhere('order_created_at', '<=', to)
-    .count<{ count: string }>('canonical_order_id as count')
+    .count<{ count: string }>('lasyncro_order_id as count')
     .first();
 
   const ordersObserved =
@@ -61,7 +63,7 @@ export async function extractOrderFacts(
       ? 'unknown'
       : 'recent'; // conservative default; refined later if needed
 
-  const revenueRow = await db('canonical_orders')
+  const revenueRow = await db('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', from)
     .andWhere('order_created_at', '<=', to)
@@ -86,20 +88,21 @@ export async function extractOrderFacts(
    * - orphan temporal drift
    * - visibility inflation
    */
-  const coverageRow = await db('canonical_order_line_items')
-    .where('shop_id', shopId)
-    .andWhere('order_created_at', '>=', from)
-    .andWhere('order_created_at', '<=', to)
+  const coverageRow = await db('order_line_items as li')
+    .join('orders as o', 'o.lasyncro_order_id', 'li.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '>=', from)
+    .andWhere('o.order_created_at', '<=', to)
     .select(
-      db.raw('COUNT(id) as total'),
+      db.raw('COUNT(li.lasyncro_line_item_id) as total'),
       db.raw(
-        'SUM(CASE WHEN estimated_unit_cost IS NULL THEN 1 ELSE 0 END) as missing'
+        'SUM(CASE WHEN li.estimated_unit_cost IS NULL THEN 1 ELSE 0 END) as missing'
+      )
     )
-  )
-  .first<{
-    total: string | null;
-    missing: string | null;
-  }>();
+    .first<{
+      total: string | null;
+      missing: string | null;
+    }>();
 
     let completenessPct: number | null = null;
 

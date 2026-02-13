@@ -11,14 +11,15 @@ import { resolveFt2Range } from 'api-src/utils/ft2Period';
  * - Expose where positive revenue is structurally sitting.
  *
  * Guarantees:
- * - Canonical facts only
+ * - Sovereign facts only
  * - Order-level allocation
  * - No interpretation
  * - No proportional math
  * - No settlement or payment inference
  *
  * IMPORTANT:
- * - Revenue is sourced from canonical_orders.total_price
+ * - Revenue is sourced from orders.total_price
+ * - Identity: orders.lasyncro_order_id
  * - Fulfillment is order-level and state-based
  * - Partial fulfillment is NOT supported
  */
@@ -55,11 +56,11 @@ export async function extractOrderRevenueAllocationFacts(
    *
    * No time semantics beyond order_created_at window.
    */
-  const rows = await db('canonical_orders as o')
+  const rows = await db('orders as o')
     .leftJoin(
       'order_fulfillment_status as f',
-      'o.canonical_order_id',
-      'f.canonical_order_id'
+      'o.lasyncro_order_id',
+      'f.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
     .andWhere(function () {
