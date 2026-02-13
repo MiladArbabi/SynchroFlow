@@ -53,7 +53,12 @@ async function start() {
   startReconciliationConsumer();
   // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
 
-  await runFulfillmentReconciliationBatch(2);
+  /* if (process.env.NODE_ENV === 'development') {
+    const DEV_SHOP_ID = 2;
+
+    await runFulfillmentReconciliationBatch(DEV_SHOP_ID);
+  } */
+ 
   /**
   * DEV-ONLY: Obligation evaluation hook
   * ----------------------------------

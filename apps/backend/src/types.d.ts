@@ -22,7 +22,6 @@ export interface User {
     detected_mode?: 'survival' | 'growth' | 'architect';
     shopify_connected?: boolean;
     stripe_connected?: boolean;
-    first_insight_delivered?: boolean;
 }
 export interface UserMilestone {
     id: number;

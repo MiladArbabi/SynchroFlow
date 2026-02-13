@@ -52,11 +52,6 @@ export async function seed(knex: Knex): Promise<void> {
   const [shop] = await knex('shops')
     .insert({
       name: 'Default Dev Shop',
-      contact_email: 'dev@shop.com',
-      auth_secret: 'dev_secret',
-      primary_erp_type: 'none',
-      primary_ecomm_type: 'none',
-      platform: 'Shopify',
     })
     .returning('*');
 
@@ -77,6 +72,7 @@ export async function seed(knex: Knex): Promise<void> {
 
   const [user] = await knex('users')
     .insert({
+      shop_id: shop.id,
       email: DEV_USER_EMAIL,
       password_hash: passwordHash,
       first_name: 'Test',

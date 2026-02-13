@@ -19,26 +19,26 @@ export class FirstInsightService {
     delivered: boolean;
     alreadyDelivered?: boolean;
   }> {
-    // 1. Guard: user must exist
-    const user = await db('users')
-      .where({ shop_id: shopId })
+    // 1. Guard: shop must exist
+    const shop = await db('shops')
+      .where({ id: shopId })
       .first([
         'id',
         'first_insight_delivered',
         'orders_per_month_segment',
       ]);
 
-    if (!user) {
+    if (!shop) {
       return { delivered: false };
     }
 
     // 2. Idempotency: already delivered → exit
-    if (user.first_insight_delivered) {
+    if (shop.first_insight_delivered) {
       return { delivered: true, alreadyDelivered: true };
     }
 
-    // 3. Compute monthly order volume (FACT: canonical_orders exists)
-    const result = await db('canonical_orders')
+    // 3. Compute monthly order volume (FACT: orders exists)
+    const result = await db('orders')
       .where({ shop_id: shopId })
       .count<{ count: string }>('* as count')
       .first();
@@ -64,7 +64,7 @@ export class FirstInsightService {
 
     // 5. Atomic persist + audit
     await db.transaction(async trx => {
-      await trx('users')
+      await trx('shops')
         .where({ shop_id: shopId })
         .update({
           orders_per_month_segment: segment,

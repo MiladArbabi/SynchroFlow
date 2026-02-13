@@ -1,7 +1,7 @@
 // apps/backend/src/services/ft0-completion.service.ts
 /**
  * ============================================================
- * FT0 COMPLETION — CANONICAL DEFINITION (DO NOT DRIFT)
+ * FT0 COMPLETION
  * ============================================================
  *
  * FT0 represents *system readiness*, NOT customer success.
@@ -13,7 +13,7 @@
  * FT0 COMPLETES WHEN (ALL):
  * -------------------------
  * 1. A platform integration exists for the shop (e.g. Shopify)
- * 2. At least one canonical order exists (canonical_orders > 0)
+ * 2. At least one  order exists (orders > 0)
  * 3. First insight has been successfully delivered
  *
  * -------------------------
@@ -73,8 +73,8 @@ export class FT0CompletionService {
       return { completed: false };
     }
 
-    // 4. Canonical data must exist
-    const ordersRow = await db('canonical_orders')
+    // 4. Orders data must exist
+    const ordersRow = await db('orders')
         .where({ shop_id: shopId })
         .count<{ count: string }>('* as count')
         .first();
@@ -85,12 +85,24 @@ export class FT0CompletionService {
       return { completed: false };
     }
 
-    // 5. First insight must be delivered (commit latch)
-    const user = await db('users')
-      .where({ shop_id: shopId })
+    /**
+     * FIRST INSIGHT DELIVERY (SHOP-SCOPED)
+     * -------------------------------------
+     * This is a shop-level fact.
+     *
+     * FT0 represents system readiness of the commerce pipeline,
+     * not individual user progression.
+     *
+     * A shop may have multiple owners/admins.
+     * Insight delivery to any qualifying admin promotes the shop state.
+     *
+     * This flag MUST live on `shops`, never `users`.
+     */
+    const shop = await db('shops')
+      .where({ id: shopId })
       .first('first_insight_delivered');
 
-    if (!user?.first_insight_delivered) {
+    if (!shop?.first_insight_delivered) {
       return { completed: false };
     }
 

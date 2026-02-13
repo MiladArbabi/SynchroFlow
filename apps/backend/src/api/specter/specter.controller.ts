@@ -1,7 +1,7 @@
 // apps/backend/src/api/specter/specter.controller.ts
 import { Request, Response } from 'express';
 import db from 'api-src/db';
-import { User } from 'api-types';
+import { resolveShopIdForUser } from 'api-src/services/shop-resolution.service';
 import path from 'path';
 
 // --- Helper: resolve shop_id for the authenticated user ---
@@ -10,11 +10,9 @@ export const getShopIdFromRequest = async (req: Request): Promise<number | null>
   if (!authUser || !authUser.userId) return null;
 
   try {
-    const user = await db<User>('users')
-      .where({ id: authUser.userId })
-      .first('shop_id');
+    
+    return await resolveShopIdForUser(authUser.userId);
 
-    return user?.shop_id ?? null;
   } catch (e: any) {
     // If DB lookup fails (e.g., mocked test db), treat as no shop rather than crash.
     console.warn('[specter.controller] Warning: user shop lookup failed:', e && e.message ? e.message : e);

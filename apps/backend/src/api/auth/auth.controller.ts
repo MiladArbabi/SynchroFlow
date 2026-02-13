@@ -35,27 +35,22 @@ export const registerUser = async (req: Request, res: Response) => {
 
     // --- Hash the password ---
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const authSecret = crypto.randomBytes(32).toString('hex'); // <-- ADD THIS LINE
     
     // --- Create a new shop ---
     const [newShop] = await db('shops')
       .insert({
         name: `${firstName || email}'s Shop`,
-        contact_email: email.toLowerCase(),
-        auth_secret: authSecret,
-        primary_erp_type: 'none', 
-        primary_ecomm_type: 'none'
       })
-      .returning('id');
+      .returning('*');
 
-    // --- Save the new user ---
+    // --- Save the new user (assign primary shop) ---
     const [newUser] = await db<User>('users')
       .insert({
+        shop_id: newShop.id, // REQUIRED (users.shop_id NOT NULL)
         email: email.toLowerCase(),
         password_hash: passwordHash,
         first_name: firstName,
         last_name: lastName,
-        shop_id: newShop.id,
       })
       .returning('*');
 

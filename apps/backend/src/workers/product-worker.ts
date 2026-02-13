@@ -93,6 +93,18 @@ export async function processProductMessage(
   }); */
 
   try {
+
+    // TEMPORARY: Canonical layer disabled during sovereign transition.
+    // When PRODUCT_IDENTITY_REFACTOR is complete, remove this guard.
+    if (process.env.DISABLE_CANONICAL_LAYER === 'true') {
+      console.warn('[product-worker] canonical layer disabled — skipping canonical persistence', {
+        shopId,
+        platformProductId: canonicalProduct.platformProductId,
+      });
+
+      return;
+    }
+    
    await db.transaction(async trx => {
     // Canonical product invariant:
     // - One row per (shop_id, platform, platform_product_id)

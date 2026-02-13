@@ -179,10 +179,6 @@ export class UserStateService {
       return 'survival';
     }
 
-    if (!user.first_insight_delivered) {
-      return 'survival';
-    }
-
     // 3. Simple plan-based defaults (we'll enhance this later)
     // For now, all users get 'survival' until we have plan data
     return 'survival';
@@ -207,7 +203,6 @@ export class UserStateService {
           connected_platforms: [],
           shopify_connected: false,
           stripe_connected: false,
-          first_insight_delivered: false,
           orders_per_month_segment: null,
         },
         milestones: [],
@@ -235,7 +230,6 @@ export class UserStateService {
         connected_platforms: connectedPlatforms,
         shopify_connected: user.shopify_connected,
         stripe_connected: user.stripe_connected,
-        first_insight_delivered: user.first_insight_delivered,
         orders_per_month_segment: ordersPerMonthSegment,
       },
       milestones,
