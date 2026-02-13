@@ -3,136 +3,52 @@
 import db from 'api-src/db';
 
 /**
- * Revenue Unit Writer (v1)
- * -----------------------
- * Purpose:
- * - Materialize SKU-level revenue units
- * - Canonical source for customer obligation evaluation
+ * Revenue Unit Writer (Sovereign UUID Version)
+ * --------------------------------------------
+ * - Source: order_line_items
+ * - Identity: lasyncro_order_id
+ * - No canonical identity
+ * - No shop_id usage
  *
  * Guarantees:
- * - Zero inference
- * - Sum(quantity * unit_revenue) == order total
- *
- * Called ONLY from reconciliation.
- */
-
-/**
- * IMPORTANT:
- * ----------
- * Revenue units require factual unit_price.
- *
- * unit_price MUST be:
- * - Platform-reported
- * - Explicitly written at ingestion time
- *
- * Deriving unit_price from totals is forbidden.
- * Absence of unit_price correctly blocks customer obligation.
+ * - Uses platform-reported unit_price
+ * - No derived pricing
+ * - Idempotent on (lasyncro_order_id, lasyncro_product_id)
  */
 
 export async function writeOrderRevenueUnits(
-  shopId: number,
-  canonicalOrderId: string
+  lasyncroOrderId: string
 ) {
-
-  // 2. Fetch canonical line items
-  const rows = await db('canonical_order_line_items')
-    .where({ shop_id: shopId, canonical_order_id: canonicalOrderId })
+  // 1. Fetch sovereign line items
+  const rows = await db('order_line_items')
+    .where({ lasyncro_order_id: lasyncroOrderId })
     .select(
-      'canonical_variant_code',
+      'lasyncro_product_id',
       'sku',
+      'title',
       'quantity',
-      'unit_price'
+      'unit_price',
+      'line_total',
+      'estimated_unit_cost'
     );
-
-const total = rows.length;
-
-const missingUnitPrice = rows.filter(r => r.unit_price == null).length;
-const missingCvc = rows.filter(r => !r.canonical_variant_code).length;
-
-if (total > 0 && (missingUnitPrice > 0 || missingCvc > 0)) {
-  console.warn('[revenue-units][diagnostic]', {
-    shopId,
-    canonicalOrderId,
-    totalLineItems: total,
-    missingUnitPrice,
-    missingCanonicalVariantCode: missingCvc,
-    blockedReason:
-      missingUnitPrice > 0 && missingCvc > 0
-        ? 'MISSING_PRICE_AND_CVC'
-        : missingUnitPrice > 0
-          ? 'MISSING_UNIT_PRICE'
-          : 'MISSING_CVC',
-  });
-}
-
-// HARD STOP — revenue units must be addressable
-if (rows.some(r => !r.canonical_variant_code)) {
-  throw new Error(
-    `[CVC] Missing canonical_variant_code for order ${canonicalOrderId}`
-  );
-}
-
-if (rows.length === 0) {
-  const totalLineItems = await db('canonical_order_line_items')
-    .where({ shop_id: shopId, canonical_order_id: canonicalOrderId })
-    .count<{ count: string }>('id as count')
-    .first();
-
-  const missingUnitPrice = await db('canonical_order_line_items')
-    .where({ shop_id: shopId, canonical_order_id: canonicalOrderId })
-    .whereNull('unit_price')
-    .count<{ count: string }>('id as count')
-    .first();
-
-  const missingCvc = await db('canonical_order_line_items')
-    .where({ shop_id: shopId, canonical_order_id: canonicalOrderId })
-    .whereNull('canonical_variant_code')
-    .count<{ count: string }>('id as count')
-    .first();
-
-  console.warn('[revenue-units][absent]', {
-    shopId,
-    canonicalOrderId,
-    totalLineItems: Number(totalLineItems?.count ?? 0),
-    missingUnitPrice: Number(missingUnitPrice?.count ?? 0),
-    missingCanonicalVariantCode: Number(missingCvc?.count ?? 0),
-  });
-
-  return;
-}
 
   if (rows.length === 0) return;
 
-  /**
-   * NOTE (CVC):
-   * ----------
-   * SKU is NOT a canonical identifier.
-   * canonical_variant_code (CVC) is LaSyncro’s unit of truth.
-   *
-   * Reasons:
-   * - Merchants omit SKUs
-   * - SKUs mutate
-   * - Warehouses need stable codes
-   */
-
-  // 3. Insert factual units
+  // 2. Insert factual revenue units
   await db('order_revenue_units')
-  .insert(
-    rows.map((r) => ({
-      shop_id: shopId,
-      canonical_order_id: canonicalOrderId,
-
-      // Canonical identifier (REQUIRED)
-      sku: r.canonical_variant_code,
-
-      quantity: r.quantity,
-      unit_revenue: r.unit_price,
-    }))
-  )
-  .onConflict([
-    'shop_id',
-    'canonical_order_id',
-    'sku',
-  ])
-  .ignore();
+    .insert(
+      rows.map((r) => ({
+        lasyncro_revenue_unit_id: crypto.randomUUID(),
+        lasyncro_order_id: lasyncroOrderId,
+        lasyncro_product_id: r.lasyncro_product_id,
+        sku: r.sku,
+        title: r.title,
+        quantity: r.quantity,
+        unit_price: r.unit_price,
+        line_total: r.line_total,
+        estimated_unit_cost: r.estimated_unit_cost ?? null,
+      }))
+    )
+    .onConflict(['lasyncro_order_id', 'lasyncro_product_id'])
+    .ignore();
 }

@@ -1,25 +1,19 @@
-// NEW FILE
 // apps/backend/src/queues/reconciliation.queue.ts
 
 import { getQueueChannel } from 'api-src/queue';
 
 /**
- * Fulfillment Reconciliation Queue
- * --------------------------------
- * Purpose:
- * - Drive synthetic fulfillment backfill
- * - Decouple reconciliation from request paths
- *
- * Contract:
- * - Idempotent jobs
+ * Fulfillment Reconciliation Queue (Sovereign UUID Contract)
+ * -----------------------------------------------------------
+ * - One job = one lasyncro_order_id
+ * - Idempotent
  * - Safe to retry
- * - One job = one canonical_order_id
  */
 
 export const RECONCILIATION_QUEUE = 'fulfillment.reconciliation';
 
 export async function publishReconciliationJob(
-  canonicalOrderId: string,
+  lasyncroOrderId: string,
   observed?: {
     status: 'delivered';
     observedAt: Date;
@@ -34,7 +28,7 @@ export async function publishReconciliationJob(
 
   ch.sendToQueue(
     RECONCILIATION_QUEUE,
-    Buffer.from(JSON.stringify({ canonicalOrderId, observed })),
+    Buffer.from(JSON.stringify({ lasyncroOrderId, observed })),
     { persistent: true }
   );
 }

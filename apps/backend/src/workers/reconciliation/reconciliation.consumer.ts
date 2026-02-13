@@ -10,27 +10,25 @@ export function startReconciliationConsumer() {
 
   ch.addSetup((channel) => {
     return Promise.all([
-        channel.assertQueue(QUEUE, { durable: true }),
-        channel.prefetch(5), // prevent DB overload
+      channel.assertQueue(QUEUE, { durable: true }),
+      channel.prefetch(5),
     ]);
   });
 
   ch.consume(QUEUE, async (msg) => {
-    console.log('[RECONSUMER] job received', msg.content.toString());
-
     if (!msg) return;
 
     try {
-      const { canonicalOrderId, observed } = JSON.parse(
+      const { lasyncroOrderId, observed } = JSON.parse(
         msg.content.toString()
       );
 
-      await reconcileOrderFulfillment(canonicalOrderId, observed);
+      await reconcileOrderFulfillment(lasyncroOrderId, observed);
 
       ch.ack(msg);
     } catch (err) {
       console.error('[reconciliation] failed', err);
-      ch.nack(msg, false, false); // DLQ later
+      ch.nack(msg, false, false);
     }
   });
 }
