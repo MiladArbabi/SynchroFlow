@@ -1,5 +1,4 @@
 // apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
-
 import db from 'api-src/db';
 import { ReconciliationResult } from './reconciliation.types';
 import { writeOrderRevenueUnits } from './revenue-units.writer';
@@ -10,7 +9,7 @@ import { evaluateCustomerObligations } from
 export async function reconcileOrderFulfillment(
   lasyncroOrderId: string,
   observed?: {
-    status: 'delivered';
+    status: 'fulfilled';
     observedAt: Date;
     source: 'shopify_sync';
   }
@@ -26,17 +25,17 @@ export async function reconcileOrderFulfillment(
   }
 
   // 2. Observed execution wins
-  if (observed?.status === 'delivered') {
+  if (observed?.status === 'fulfilled') {
     await db('order_fulfillment_status')
       .insert({
         lasyncro_fulfillment_id: crypto.randomUUID(),
         lasyncro_order_id: lasyncroOrderId,
-        status: 'delivered',
+        status: 'fulfilled',
         status_updated_at: observed.observedAt,
       })
       .onConflict(['lasyncro_order_id'])
       .merge({
-        status: 'delivered',
+        status: 'fulfilled',
         status_updated_at: observed.observedAt,
       });
 
@@ -47,6 +46,9 @@ export async function reconcileOrderFulfillment(
   const existing = await db('order_fulfillment_status')
     .where({ lasyncro_order_id: lasyncroOrderId })
     .first();
+
+  // Revenue units must always be materialized once order exists
+  await writeOrderRevenueUnits(lasyncroOrderId);
 
   if (existing) {
     return 'noop';

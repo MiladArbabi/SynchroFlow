@@ -69,7 +69,7 @@ export async function handleOrderFulfillment(
     rawPayload.status === 'cancelled'
       ? 'cancelled'
       : rawPayload.fulfillment_status === 'fulfilled'
-        ? 'delivered'
+        ? 'fulfilled'
         : 'processing';
 
   await OrderFulfillmentIngestionService.ingestStatus({
@@ -77,13 +77,13 @@ export async function handleOrderFulfillment(
     status: fulfillmentStatus as
       | 'processing'
       | 'in_transit'
-      | 'delivered'
+      | 'fulfilled'
       | 'cancelled',
   });
 
-  if (fulfillmentStatus === 'delivered') {
+  if (fulfillmentStatus === 'fulfilled') {
     await publishReconciliationJob(lasyncroOrderId, {
-      status: 'delivered',
+      status: 'fulfilled',
       observedAt: new Date(),
       source: 'shopify_sync',
     });

@@ -23,9 +23,10 @@ export async function extractOrderFulfillmentStatusFacts(
    * status_updated_at is NOT an order timestamp.
    * Do NOT apply FT2 date-range filtering here.
    */
-  const rows = await db('order_fulfillment_status')
-    .where({ shop_id: shopId })
-    .select('status');
+  const rows = await db('order_fulfillment_status as ofs')
+    .join('orders as o', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .select('ofs.status');
 
   if (rows.length === 0) {
     return {
@@ -35,7 +36,7 @@ export async function extractOrderFulfillmentStatusFacts(
   }
 
   const fulfilledCount = rows.filter((r) =>
-    ['fulfilled', 'delivered'].includes(r.status)
+    ['fulfilled'].includes(r.status)
   ).length;
 
   if (fulfilledCount === rows.length) {

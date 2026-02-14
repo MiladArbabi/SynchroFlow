@@ -61,35 +61,40 @@ export async function getProductOperationalFacts(
   // ─────────────────────────────────────────
   // Inventory observability (snapshot)
   // ─────────────────────────────────────────
-  const inventoryRows = await db('inventory_truth')
-    .where('shop_id', shopId)
-    .select(['sku']);
+  const inventoryProductRows = await db('inventory_truth as it')
+  .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+  .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+  .where('v.shop_id', shopId)
+  .distinct('p.lasyncro_product_id');
 
-  const inventorySkuSet = new Set(
-    inventoryRows.map(r => r.sku)
-  );
+  const productsWithInventoryCount =
+    inventoryProductRows.length > 0
+      ? inventoryProductRows.length
+      : null;
 
-  let productsWithInventoryCount: number | null = null;
-  let productsWithoutInventoryCount: number | null = null;
-
-  if (skus.length > 0) {
-   productsWithInventoryCount = 0;
-   productsWithoutInventoryCount = 0;
-
-   for (const sku of skus) {
-     if (inventorySkuSet.has(sku)) {
-       productsWithInventoryCount += 1;
-     } else {
-       productsWithoutInventoryCount += 1;
-     }
-   }
- }
+  const productsWithoutInventoryCount =
+    productsWithInventoryCount !== null
+      ? productsObserved - productsWithInventoryCount
+      : null;
 
   // ─────────────────────────────────────────
   // Sales observability (time-scoped, legal)
   // ─────────────────────────────────────────
   let skusWithSalesCount: number | null = null;
   let totalSkusObserved: number | null = null;
+
+  const salesVariantRows = await db('order_revenue_units as ru')
+    .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
+    .join('variants as v', 'v.lasyncro_variant_id', 'ru.lasyncro_variant_id')
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '>=', period.from)
+    .andWhere('o.order_created_at', '<=', period.to)
+    .distinct('v.sku');
+
+  if (salesVariantRows.length > 0) {
+    skusWithSalesCount = salesVariantRows.length;
+    totalSkusObserved = skus.length;
+  }
 
   if (skus.length > 0) {
     const salesRows = await db('historical_sales')
@@ -106,9 +111,15 @@ export async function getProductOperationalFacts(
   // ─────────────────────────────────────────
   // Fulfillment observability (order-level)
   // ─────────────────────────────────────────
-  const fulfillmentRows = await db('order_fulfillment_status')
-    .where('shop_id', shopId)
-    .select(['order_id']);
+  // IMPORTANT:
+  // order_fulfillment_status has NO shop_id.
+  // Shop scoping MUST derive via orders join.
+  // Fulfillment is sovereign and order-scoped.
+
+  const fulfillmentRows = await db('order_fulfillment_status as ofs')
+    .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .select(['ofs.lasyncro_order_id']);
 
   const ordersWithFulfillmentStatusCount = fulfillmentRows.length;
 

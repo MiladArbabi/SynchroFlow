@@ -8,7 +8,7 @@ import db from 'api-db';
  *
  * Definition:
  * - An order is ACTIVE if its fulfillment status
- *   is NOT ('fulfilled', 'delivered')
+ *   is NOT ('fulfilled')
  *
  * Scope:
  * - Lifetime (NOT time-windowed)
@@ -38,7 +38,7 @@ export async function extractActiveOrdersCount(
       'ofs.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
-    .whereNotIn('ofs.status', ['fulfilled', 'delivered'])
+    .whereNotIn('ofs.status', ['fulfilled'])
     .countDistinct<{ count: string }>('ofs.lasyncro_order_id as count')
     .first();
 

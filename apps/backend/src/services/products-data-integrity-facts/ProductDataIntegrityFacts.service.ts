@@ -32,22 +32,14 @@ export async function getProductDataIntegrityFacts(
   const { shopId, period } = input;
 
 /**
- * PERIOD LIMITATION (EXPLICIT)
- *
- * canonical_products is a current-state table.
- * It does NOT expose a time-bound observation column.
- *
- * As a result:
- * - Product data integrity facts are snapshot-based
- * - Period is accepted but not applied
- *
- * Time-scoped product integrity requires
- * a future canonical schema extension.
+ * Canonical Atomic Surface:
+ * - Variants are atomic truth
+ * - Products are grouping only
  */
-const rows = await db('products')
+const rows = await db('variants')
   .where('shop_id', shopId)
   .select([
-    'platform_product_id',
+    'lasyncro_product_id',
     'sku',
   ]);
 
@@ -76,7 +68,7 @@ const rows = await db('products')
   const skusByProduct = new Map<string, Set<string>>();
 
   for (const row of rows) {
-    const productId = row.platform_product_id;
+    const productId = row.lasyncro_product_id;
     if (!skusByProduct.has(productId)) {
       skusByProduct.set(productId, new Set());
     }

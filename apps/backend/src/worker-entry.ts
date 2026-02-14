@@ -13,7 +13,6 @@ import { startWebhookWorker } from './workers/webhook-dispatch.worker';
 import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation';
 import { runFulfillmentReconciliationBatch } from './workers/reconciliation';
 
-import { debugBlockedRevenue } from './services/order-execution-intelligence/__debug.blockers';
 /**
  * Obligation flag worker
  * ---------------------
@@ -53,11 +52,11 @@ async function start() {
   startReconciliationConsumer();
   // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
 
-  /* if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === 'development') {
     const DEV_SHOP_ID = 2;
 
     await runFulfillmentReconciliationBatch(DEV_SHOP_ID);
-  } */
+  }
  
   /**
   * DEV-ONLY: Obligation evaluation hook

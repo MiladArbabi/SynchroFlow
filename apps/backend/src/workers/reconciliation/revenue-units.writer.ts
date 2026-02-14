@@ -3,52 +3,91 @@
 import db from 'api-src/db';
 
 /**
- * Revenue Unit Writer (Sovereign UUID Version)
+ * Revenue Unit Writer (Variant-Atomic Version)
  * --------------------------------------------
  * - Source: order_line_items
- * - Identity: lasyncro_order_id
- * - No canonical identity
- * - No shop_id usage
+ * - Atomic identity: lasyncro_variant_id
+ * - Product is analytical grouping only
  *
  * Guarantees:
- * - Uses platform-reported unit_price
- * - No derived pricing
- * - Idempotent on (lasyncro_order_id, lasyncro_product_id)
+ * - Variant-level economic fidelity
+ * - No product-level collapse
+ * - Idempotent on (lasyncro_order_id, lasyncro_variant_id)
  */
 
 export async function writeOrderRevenueUnits(
   lasyncroOrderId: string
 ) {
-  // 1. Fetch sovereign line items
-  const rows = await db('order_line_items')
-    .where({ lasyncro_order_id: lasyncroOrderId })
-    .select(
-      'lasyncro_product_id',
-      'sku',
-      'title',
-      'quantity',
-      'unit_price',
-      'line_total',
-      'estimated_unit_cost'
-    );
+  await db.transaction(async (trx) => {
 
-  if (rows.length === 0) return;
+    const order = await trx('orders')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .select(['order_processed_at', 'order_created_at', 'platform'])
+      .first();
 
-  // 2. Insert factual revenue units
-  await db('order_revenue_units')
-    .insert(
-      rows.map((r) => ({
-        lasyncro_revenue_unit_id: crypto.randomUUID(),
-        lasyncro_order_id: lasyncroOrderId,
-        lasyncro_product_id: r.lasyncro_product_id,
-        sku: r.sku,
-        title: r.title,
-        quantity: r.quantity,
-        unit_price: r.unit_price,
-        line_total: r.line_total,
-        estimated_unit_cost: r.estimated_unit_cost ?? null,
-      }))
-    )
-    .onConflict(['lasyncro_order_id', 'lasyncro_product_id'])
-    .ignore();
+    if (!order) {
+      throw new Error(`[RevenueUnitWriter] Order not found: ${lasyncroOrderId}`);
+    }
+
+    const occurredAt =
+      order.order_processed_at ?? order.order_created_at;
+
+    const rows = await trx('order_line_items')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .select(
+        'lasyncro_product_id',
+        'lasyncro_variant_id',
+        'sku',
+        'title',
+        'quantity',
+        'unit_price',
+        'line_total',
+        'estimated_unit_cost'
+      );
+
+    if (rows.length === 0) return;
+
+    const invalid = rows.filter(r => !r.lasyncro_variant_id);
+    if (invalid.length > 0) {
+      throw new Error(
+        `[RevenueUnitWriter] Missing lasyncro_variant_id for order ${lasyncroOrderId}`
+      );
+    }
+
+    const revenueUnits = rows.map((r) => ({
+      lasyncro_revenue_unit_id: crypto.randomUUID(),
+      lasyncro_order_id: lasyncroOrderId,
+      lasyncro_product_id: r.lasyncro_product_id,
+      lasyncro_variant_id: r.lasyncro_variant_id,
+      sku: r.sku,
+      title: r.title,
+      quantity: r.quantity,
+      unit_price: r.unit_price,
+      line_total: r.line_total,
+      estimated_unit_cost: r.estimated_unit_cost ?? null,
+    }));
+
+    await trx('order_revenue_units')
+      .insert(revenueUnits)
+      .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
+      .ignore();
+
+    // 🔥 SALE → INVENTORY LEDGER
+    await trx('inventory_movements')
+      .insert(
+        revenueUnits.map((ru) => ({
+          lasyncro_inventory_movement_id: crypto.randomUUID(),
+          lasyncro_variant_id: ru.lasyncro_variant_id,
+          movement_type: 'sale',
+          quantity_delta: -ru.quantity,
+          reference_type: 'order_revenue_unit',
+          reference_id: ru.lasyncro_revenue_unit_id,
+          platform: order.platform ?? null,
+          occurred_at: occurredAt,
+        }))
+      )
+      .onConflict(['reference_type', 'reference_id', 'lasyncro_variant_id'])
+      .ignore();
+  });
 }
+

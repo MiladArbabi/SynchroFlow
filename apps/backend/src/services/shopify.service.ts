@@ -445,29 +445,30 @@ async function syncOrderLineItems(
     if (!sovereignOrder) continue;
 
     for (const { node: lineItem } of order.lineItems?.edges || []) {
-      const platformProductId = lineItem.product?.id;
+      const platformVariantId = lineItem.variant?.id;
+        if (!platformVariantId) continue;
 
-      // Resolve sovereign product
-      const sovereignProduct = await trx('external_product_identity_map')
-        .select('lasyncro_variant_id')
-        .where({
-          shop_id: shopId,
-          platform: 'shopify',
-          external_product_id: platformProductId,
-        })
-        .first();
+        // Resolve sovereign variant directly
+        const sovereignVariant = await trx('external_product_identity_map')
+          .select('lasyncro_variant_id')
+          .where({
+            shop_id: shopId,
+            platform: 'shopify',
+            external_variant_id: platformVariantId,
+          })
+          .first();
 
-      if (!sovereignProduct) continue;
+        if (!sovereignVariant) continue;
 
-      // Resolve parent product from variant
-      const variantRow = await trx('variants')
-        .select('lasyncro_product_id')
-        .where({
-          lasyncro_variant_id: sovereignProduct.lasyncro_variant_id,
-        })
-        .first();
+        // Resolve parent product from variant
+        const variantRow = await trx('variants')
+          .select('lasyncro_product_id')
+          .where({
+            lasyncro_variant_id: sovereignVariant.lasyncro_variant_id,
+          })
+          .first();
 
-      if (!variantRow) continue;
+        if (!variantRow) continue;
 
       const quantity = lineItem.quantity || 0;
       const unitPrice = parseFloat(
@@ -479,6 +480,7 @@ async function syncOrderLineItems(
         lasyncro_line_item_id: crypto.randomUUID(),
         lasyncro_order_id: sovereignOrder.lasyncro_order_id,
         lasyncro_product_id: variantRow.lasyncro_product_id,
+        lasyncro_variant_id: sovereignVariant.lasyncro_variant_id,
         title: lineItem.title || 'Untitled',
         sku: lineItem.sku || null,
         quantity,

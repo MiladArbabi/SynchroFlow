@@ -35,30 +35,21 @@ export async function getProductsFacts(
  * - Period is resolved upstream via ft2Period
  * - Facts MUST apply it exactly as received
  * - No reinterpretation, no defaults, no overrides
- */
+ 
   /**
-   * PERIOD LIMITATION (EXPLICIT)
-   *
-   * canonical_products does not currently expose
-   * a time-bound observation column.
-   *
-   * As a result:
-   * - Period cannot be applied at the Facts layer
-   * - All current-state rows are observed
-   *
-   * This is FT2-correct and honest.
-   * Time-scoped product facts require
-   * a future canonical schema extension.
+   * Canonical Atomic Surface:
+   * - Variants are the economic and structural truth
+   * - Products are grouping only (via lasyncro_product_id)
+   * - No platform identity is used in FT2
    */
-
-const rows = await db('products')
-  .where('shop_id', shopId)
-  .select([
-    'sku',
-    'status',
-    'platform_product_id',
-    'platform_variant_id',
-  ]);
+  const rows = await db('variants')
+    .where('shop_id', shopId)
+    .select([
+      'lasyncro_product_id',
+      'lasyncro_variant_id',
+      'sku',
+      'status',
+    ]);
 
   // ─────────────────────────────────────────────────────────
   // Null preservation: no rows = no facts
@@ -109,23 +100,19 @@ const rows = await db('products')
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // Variant structure (grouped by platform_product_id)
-  // ─────────────────────────────────────────────────────────
-  const variantsSet = new Set<string>();
-  const variantsByProduct = new Map<string, Set<string>>();
+// Variant structure (grouped by lasyncro_product_id)
+const variantsSet = new Set<string>();
+const variantsByProduct = new Map<string, Set<string>>();
 
-  for (const row of rows) {
-    if (row.platform_variant_id !== null) {
-      variantsSet.add(row.platform_variant_id);
+for (const row of rows) {
+  variantsSet.add(row.lasyncro_variant_id);
 
-      const productId = row.platform_product_id;
-      if (!variantsByProduct.has(productId)) {
-        variantsByProduct.set(productId, new Set());
-      }
-      variantsByProduct.get(productId)!.add(row.platform_variant_id);
-    }
+  const productId = row.lasyncro_product_id;
+  if (!variantsByProduct.has(productId)) {
+    variantsByProduct.set(productId, new Set());
   }
+  variantsByProduct.get(productId)!.add(row.lasyncro_variant_id);
+}
 
   /**
    * Variant aggregation invariants:

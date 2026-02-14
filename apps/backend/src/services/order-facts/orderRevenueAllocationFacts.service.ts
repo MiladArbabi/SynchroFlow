@@ -66,12 +66,12 @@ export async function extractOrderRevenueAllocationFacts(
     .andWhere(function () {
         this.where(function () {
           // Fulfilled revenue is anchored to fulfillment timestamp
-          this.whereIn('f.status', ['fulfilled', 'delivered'])
+          this.whereIn('f.status', ['fulfilled'])
             .andWhere('f.status_updated_at', '>=', from)
             .andWhere('f.status_updated_at', '<=', to);
         }).orWhere(function () {
           // Unfulfilled revenue is anchored to order creation
-          this.whereNotIn('f.status', ['fulfilled', 'delivered'])
+          this.whereNotIn('f.status', ['fulfilled'])
             .andWhere('o.order_created_at', '<=', to);
         });
       })
@@ -111,8 +111,7 @@ export async function extractOrderRevenueAllocationFacts(
     }
 
     if (
-      row.fulfillmentStatus === 'fulfilled' ||
-      row.fulfillmentStatus === 'delivered'
+      row.fulfillmentStatus === 'fulfilled'
     ) {
       fulfilled += Number(row.revenue);
     } else {

@@ -50,7 +50,7 @@ const rows = await db('order_fulfillment_status as f')
     'f.lasyncro_order_id'
   )
   .where('o.shop_id', shopId)
-  .whereNotIn('f.status', ['fulfilled', 'delivered'])
+  .whereNotIn('f.status', ['fulfilled'])
   .select(
     'f.lasyncro_order_id',
     'f.execution_source',

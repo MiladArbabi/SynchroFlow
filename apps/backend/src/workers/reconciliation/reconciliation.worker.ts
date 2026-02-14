@@ -24,7 +24,7 @@ export async function runFulfillmentReconciliationBatch(
       row.lasyncro_order_id,
       row.order_processed_at
         ? {
-            status: 'delivered',
+            status: 'fulfilled',
             observedAt: row.order_processed_at,
             source: 'shopify_sync',
           }

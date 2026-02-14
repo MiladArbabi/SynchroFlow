@@ -39,35 +39,36 @@ export async function getProductDataFreshnessFacts(
   // ─────────────────────────────────────────
   // Inventory — inventory_truth.updated_at
   // ─────────────────────────────────────────
-  const inventory = await db('inventory_truth')
-    .where('shop_id', shopId)
-    .max('updated_at as ts')
+  const inventory = await db('inventory_truth as it')
+    .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+    .where('v.shop_id', shopId)
+    .max('it.updated_at as ts')
     .first();
 
   // ─────────────────────────────────────────
   // Sales — historical_sales.sale_date (time-scoped)
   // ─────────────────────────────────────────
-  const sales = await db('historical_sales')
-    .where('shop_id', shopId)
-    .andWhere('sale_date', '>=', period.from)
-    .andWhere('sale_date', '<=', period.to)
-    .max('sale_date as ts')
+  const sales = await db('order_revenue_units as ru')
+    .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '>=', period.from)
+    .andWhere('o.order_created_at', '<=', period.to)
+    .max('o.order_created_at as ts')
     .first();
 
   // ─────────────────────────────────────────
   // Fulfillment — order_fulfillment_status.status_updated_at
   // ─────────────────────────────────────────
-  const fulfillment = await db('order_fulfillment_status')
-    .where('shop_id', shopId)
-    .max('status_updated_at as ts')
+  const fulfillment = await db('order_fulfillment_status as ofs')
+    .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .max('ofs.status_updated_at as ts')
     .first();
 
   // ─────────────────────────────────────────
   // Costs — product_costs.updated_at
   // ─────────────────────────────────────────
-  const costs = await db('product_costs')
-    .max('updated_at as ts')
-    .first();
+  const costs = { ts: null };
 
   return {
     shopId,

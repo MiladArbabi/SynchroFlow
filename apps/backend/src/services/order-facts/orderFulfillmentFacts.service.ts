@@ -17,12 +17,12 @@ export async function extractOrderFulfillmentFacts(
 ) {
   /**
    * order_fulfillment_status is STATE-based.
-   * Exactly one row per order.
    * DO NOT apply FT2 time ranges here.
    */
-  const row = await db('order_fulfillment_status')
-    .where({ shop_id: shopId })
-    .count<{ total: string }>('id as total')
+  const row = await db('order_fulfillment_status as ofs')
+    .join('orders as o', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .count<{ total: string }>('ofs.lasyncro_fulfillment_id as total')
     .first();
 
   if (!row || Number(row.total) === 0) {

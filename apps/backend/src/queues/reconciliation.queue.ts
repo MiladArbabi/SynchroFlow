@@ -15,7 +15,7 @@ export const RECONCILIATION_QUEUE = 'fulfillment.reconciliation';
 export async function publishReconciliationJob(
   lasyncroOrderId: string,
   observed?: {
-    status: 'delivered';
+    status: 'fulfilled';
     observedAt: Date;
     source: 'shopify_sync';
   }

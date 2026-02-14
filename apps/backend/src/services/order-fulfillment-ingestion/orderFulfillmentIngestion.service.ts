@@ -14,7 +14,7 @@ export class OrderFulfillmentIngestionService {
 
   async ingestStatus(input: {
     lasyncroOrderId: string;
-    status: 'processing' | 'in_transit' | 'delivered' | 'cancelled';
+    status: 'processing' | 'in_transit' | 'fulfilled' | 'cancelled';
   }): Promise<void> {
 
     const { lasyncroOrderId, status } = input;

@@ -1,6 +1,6 @@
 // apps/backend/src/services/order-nexus-ft2/orderNexusFt2.resolver.ts
 import { extractOrderFacts } from 'api-src/services/order-facts/orderFacts.service';
-import { downgradeObligations, exposeOrderNexusFT2 } from 'api-src/services/order-ftep/orderFtep.service';
+import { exposeOrderNexusFT2 } from 'api-src/services/order-ftep/orderFtep.service';
 import { resolveAlignmentPlanes } from 'api-src/services/alignment-planes/alignmentPlanes.resolver';
 import { extractOrderShippingFacts } from '../order-facts/orderShippingFacts.service';
 import { extractOrderFulfillmentStatusFacts } from '../order-facts/orderFulfillmentStatusFacts.service';
@@ -123,17 +123,18 @@ const fulfillmentIntelligence = deriveOrderFulfillmentIntelligence(
  * - execution coverage is sufficient
  * - obligation signals were evaluated recently
  */
-const obligationFreshnessRow = await db('order_fulfillment_status')
+/* const obligationFreshnessRow = await db('order_fulfillment_status')
   .where('shop_id', shopId)
   .max('obligation_evaluated_at as last_eval')
-  .first<{ last_eval: Date | null }>();
+  .first<{ last_eval: Date | null }>(); */
 
 const FRESHNESS_WINDOW_MS = 15 * 60 * 1000;
 
-const obligationFresh =
+const obligationFresh = null;
+/* 
   obligationFreshnessRow?.last_eval != null &&
   Date.now() - new Date(obligationFreshnessRow.last_eval).getTime() <=
-    FRESHNESS_WINDOW_MS;
+    FRESHNESS_WINDOW_MS; */
 
 const executionCoverage =
   fulfillmentStatusFacts.visibility === 'sufficient' && obligationFresh
@@ -163,13 +164,6 @@ const pendingRevenueAgg =
    * - Obligations may be observable even when revenue is not.
    * - Revenue must never outpace obligation freshness.
   */
-
-  const obligations = downgradeObligations(
-    constrainedRevenueAgg
-      ? constrainedRevenueAgg?.constrainedBlockedTotal ?? 0
-      : null,
-    obligationCoverage,
-  );
 
 const customerPromiseFacts = await extractOrderCustomerPromiseFacts(shopId, range);
 
@@ -394,8 +388,6 @@ const comparison = {
           ? Math.round(constrainedRevenueAgg.constrainedBlockedTotal * 100) / 100
           : null,
     },
-
-    obligations,
 
     /**
      * FT2-ADJACENT REALITIES

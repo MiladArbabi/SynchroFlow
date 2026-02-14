@@ -25,11 +25,12 @@ export async function extractFulfilledOrdersCount(
    * Sovereign order identity lives in orders (lasyncro_order_id).
    */
 
-  const row = await db('order_fulfillment_status')
-  .where({ shop_id: shopId })
-  .whereIn('status', ['fulfilled', 'delivered'])
-  .countDistinct<{ count: string }>('lasyncro_order_id as count')
-  .first();
+  const row = await db('order_fulfillment_status as ofs')
+    .join('orders as o', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .whereIn('ofs.status', ['fulfilled'])
+    .countDistinct<{ count: string }>('ofs.lasyncro_order_id as count')
+    .first();
 
   if (!row || row.count == null) {
     return null;

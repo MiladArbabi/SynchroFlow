@@ -55,19 +55,19 @@ export async function buildFinancesFacts(
   /**
    * Refunds — Execution-backed financial truth
    * ------------------------------------------
-   * Source: refund_executions.total_refunded_amount
+   * Source: refund_executions.total_refund_amount
    *
    * IMPORTANT:
    * - This reflects applied refund executions only
    * - Detached from order creation semantics
    * - Independent of negative order modeling
    */
-  const refundRow = await db('refund_executions')
-    .where('shop_id', shopId)
-    .andWhere('refund_created_at', '>=', period.from)
-    .andWhere('refund_created_at', '<=', period.to)
-    .andWhere('execution_status', 'applied')
-    .sum<{ sum: string | null }>('total_refunded_amount as sum')
+  const refundRow = await db('refund_executions as r')
+    .join('orders as o', 'r.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('r.executed_at', '>=', period.from)
+    .andWhere('r.executed_at', '<=', period.to)
+    .sum<{ sum: string | null }>('r.total_refund_amount as sum')
     .first();
 
   /**

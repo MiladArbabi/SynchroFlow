@@ -17,7 +17,7 @@ import db from 'api-src/db';
 
 type ExecutionRow = {
   order_id: string;        // platform order id
-  status: 'processing' | 'in_transit' | 'delivered' | 'cancelled';
+  status: 'processing' | 'in_transit' | 'fulfilled' | 'cancelled';
   revenue: number;
 };
 
@@ -124,7 +124,7 @@ export async function aggregatePendingRevenue(
       'ofs.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
-    .andWhere('ofs.status', '!=', 'delivered')
+    .andWhere('ofs.status', '!=', 'fulfilled')
     .andWhere(function () {
       this.whereNull('ofs.has_inventory_block')
         .orWhere('ofs.has_inventory_block', false);
