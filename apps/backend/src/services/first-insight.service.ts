@@ -71,6 +71,7 @@ export class FirstInsightService {
         });
 
       await trx('activation_audit_events').insert({
+        event_id: crypto.randomUUID(),
         event_type: 'FIRST_INSIGHT_DELIVERED',
         shop_id: shopId,
         occurred_at: trx.fn.now(),
