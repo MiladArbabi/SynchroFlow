@@ -9,6 +9,9 @@ import { mapShopifyOrderNodeToCanonical }
 import { enqueueProductForIngestion } 
   from './product-ingestion.service';
 import { getQueueChannel } from 'api-src/queue';
+import { seedShopifyOpeningBalances } 
+  from './inventory/seedShopifyOpeningBalances';
+
 
 type DbExecutor = Knex | Knex.Transaction;
 
@@ -198,6 +201,13 @@ export const performInitialSync = async (
         console.log(`[ShopifyService] Syncing ${data.products.edges.length} products...`);
 
         await syncProducts(trx, shopId, data.products.edges);
+
+        await seedShopifyOpeningBalances(
+          trx,
+          accessToken,
+          platformShopName,
+          shopId
+        );
 
         /**
          * PRODUCT INGESTION QUEUE (LEGACY DRAIN)

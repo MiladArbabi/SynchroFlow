@@ -2,6 +2,7 @@
 
 import db from 'api-src/db';
 import { reconcileOrderFulfillment } from './reconciliation.handlers';
+import { rebuildInventoryProjection } from 'api-src/services/inventory/rebuildInventoryProjection';
 
 export async function runFulfillmentReconciliationBatch(
   shopId: number,
@@ -17,18 +18,20 @@ export async function runFulfillmentReconciliationBatch(
 
   if (rows.length === 0) return;
 
-  // 2. Reconcile each order (serial)
-  for (const row of rows) {
+    // 2. Reconcile each order (serial)
+    for (const row of rows) {
+      await reconcileOrderFulfillment(
+        row.lasyncro_order_id,
+        row.order_processed_at
+          ? {
+              status: 'fulfilled',
+              observedAt: row.order_processed_at,
+              source: 'shopify_sync',
+            }
+          : undefined
+      );
+    }
 
-    await reconcileOrderFulfillment(
-      row.lasyncro_order_id,
-      row.order_processed_at
-        ? {
-            status: 'fulfilled',
-            observedAt: row.order_processed_at,
-            source: 'shopify_sync',
-          }
-        : undefined
-    );
+    // 🔁 Deterministic projection rebuild after batch
+    await rebuildInventoryProjection();
   }
-}

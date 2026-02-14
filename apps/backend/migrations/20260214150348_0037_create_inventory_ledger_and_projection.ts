@@ -75,6 +75,28 @@ export async function up(knex: Knex): Promise<void> {
     CHECK (quantity_delta <> 0);
   `);
 
+    // ─────────────────────────────────────────
+  // 2️⃣b Enforce Append-Only Ledger Behavior
+  // ─────────────────────────────────────────
+  await knex.schema.raw(`
+    CREATE OR REPLACE FUNCTION prevent_inventory_movements_mutation()
+    RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'inventory_movements is append-only. % is not allowed.', TG_OP;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    CREATE TRIGGER inventory_movements_no_update
+    BEFORE UPDATE ON inventory_movements
+    FOR EACH ROW
+    EXECUTE FUNCTION prevent_inventory_movements_mutation();
+
+    CREATE TRIGGER inventory_movements_no_delete
+    BEFORE DELETE ON inventory_movements
+    FOR EACH ROW
+    EXECUTE FUNCTION prevent_inventory_movements_mutation();
+  `);
+
   // ─────────────────────────────────────────
   // 3️⃣ inventory_truth (Deterministic Projection)
   // ─────────────────────────────────────────
@@ -105,6 +127,11 @@ export async function up(knex: Knex): Promise<void> {
 
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('inventory_truth');
+  await knex.schema.raw(`
+    DROP TRIGGER IF EXISTS inventory_movements_no_update ON inventory_movements;
+    DROP TRIGGER IF EXISTS inventory_movements_no_delete ON inventory_movements;
+    DROP FUNCTION IF EXISTS prevent_inventory_movements_mutation();
+  `);
   await knex.schema.dropTableIfExists('inventory_movements');
   await knex.schema.raw(`
     DROP TYPE IF EXISTS inventory_movement_type;

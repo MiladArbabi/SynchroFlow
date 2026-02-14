@@ -39,6 +39,9 @@ export async function reconcileOrderFulfillment(
         status_updated_at: observed.observedAt,
       });
 
+    // ALWAYS materialize revenue units
+    await writeOrderRevenueUnits(lasyncroOrderId);
+
     return 'observed';
   }
 
