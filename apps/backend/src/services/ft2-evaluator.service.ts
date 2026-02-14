@@ -86,15 +86,22 @@ export class FT2EvaluatorService {
     /* DOMAIN: ORDERS                                                      */
     /* ------------------------------------------------------------------ */
 
-    const ordersA = await db('canonical_orders')
+    /**
+     * ORDERS DOMAIN — Sovereign Identity
+     * ----------------------------------
+     * Reads from `orders` (UUID-backed)
+     * lasyncro_order_id is the only valid identity anchor.
+     */
+    const ordersA = await db('orders')
       .where({ shop_id: shopId })
-      .count<{ count: string }>('id as count')
+      .count<{ count: string }>('lasyncro_order_id as count')
       .first();
 
-    const ordersB = await db('canonical_orders')
+    const ordersB = await db('orders')
       .where({ shop_id: shopId })
-      .count<{ count: string }>('id as count')
+      .count<{ count: string }>('lasyncro_order_id as count')
       .first();
+
 
     const ordersCountA = Number(ordersA?.count ?? 0);
     const ordersCountB = Number(ordersB?.count ?? 0);
@@ -109,7 +116,7 @@ export class FT2EvaluatorService {
       blockers.push({
         category: 'DATA_COVERAGE',
         domain: 'ORDERS',
-        reason: 'No canonical orders present',
+        reason: 'No orders present',
       });
     }
 
@@ -149,7 +156,7 @@ export class FT2EvaluatorService {
       blockers.push({
         category: 'DATA_COVERAGE',
         domain: 'PRODUCTS',
-        reason: 'No canonical products present',
+        reason: 'No products present',
       });
     }
 
@@ -202,17 +209,24 @@ export class FT2EvaluatorService {
       });
     }
 
-    /* ------------------------------------------------------------------ */
-    /* CROSS-DOMAIN: Orders ↔ Products                                     */
-    /* ------------------------------------------------------------------ */
-
-    const orphanedLineItems = await db('canonical_order_line_items')
-      .where({ shop_id: shopId })
-      .whereNull('lasyncro_product_id')
-      .count<{ count: string }>('id as count')
+    /**
+     * Cross-domain integrity (Orders ↔ Products)
+     * ------------------------------------------
+     * Sovereign SKU linkage is evaluated via order_revenue_units.
+     * Each revenue unit must carry a valid lasyncro_product_id.
+     */
+    const orphanedUnits = await db('order_revenue_units as ru')
+      .join(
+        'orders as o',
+        'o.lasyncro_order_id',
+        'ru.lasyncro_order_id'
+      )
+      .where('o.shop_id', shopId)
+      .whereNull('ru.lasyncro_product_id')
+      .count<{ count: string }>('ru.lasyncro_order_id as count')
       .first();
 
-    const orphanCount = Number(orphanedLineItems?.count ?? 0);
+    const orphanCount = Number(orphanedUnits?.count ?? 0);
 
     evidence.orders_products_join = {
       orphanCount,
@@ -223,19 +237,26 @@ export class FT2EvaluatorService {
       blockers.push({
         category: 'CROSS_DOMAIN',
         domains: ['ORDERS', 'PRODUCTS'],
-        reason: 'Order line items reference missing products',
+        reason: 'Revenue units reference missing products',
         details: { orphanCount },
       });
     }
+
 
     /* ------------------------------------------------------------------ */
     /* CROSS-DOMAIN: Orders ↔ Customers                                    */
     /* ------------------------------------------------------------------ */
 
-    const ordersWithoutCustomer = await db('canonical_orders')
+    /**
+     * ORDERS ↔ CUSTOMERS — Sovereign Check
+     * ------------------------------------
+     * Orders table is authoritative.
+     * customer_hashed_id remains nullable for guest checkouts.
+     */
+    const ordersWithoutCustomer = await db('orders')
       .where({ shop_id: shopId })
       .whereNull('customer_hashed_id')
-      .count<{ count: string }>('id as count')
+      .count<{ count: string }>('lasyncro_order_id as count')
       .first();
 
     const customerOrphanCount = Number(ordersWithoutCustomer?.count ?? 0);

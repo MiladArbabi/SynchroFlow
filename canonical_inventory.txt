@@ -15,7 +15,7 @@ apps/backend/src/api/shopify/handlers/handleRefundCreated.ts:  // Resolution hap
 apps/backend/src/api/shopify/handlers/handleRefundCreated.ts:    const canonicalOrder = await trx('canonical_orders')
 apps/backend/src/api/shopify/handlers/handleRefundCreated.ts:        canonical_order_id: canonicalOrder?.canonical_order_id ?? null,
 apps/backend/src/api/shopify/handlers/handleRefundCreated.ts:          canonical_order_id: execution.canonical_order_id,
-apps/backend/src/workers/reconciliation/reconciliation.worker.ts:  const rows = await db('canonical_orders')
+apps/backend/src/workers/reconciliation/reconciliation.worker.ts:  const rows = await db('orders')
 apps/backend/src/workers/reconciliation/reconciliation.worker.ts:    .select('canonical_order_id')
 apps/backend/src/workers/reconciliation/reconciliation.worker.ts:      row.canonical_order_id
 apps/backend/src/workers/reconciliation/reconciliation.worker.ts:    const order = await db('canonical_orders')
@@ -95,15 +95,15 @@ apps/backend/src/services/canonical-mapping-orchestrator.ts:  const defaultRequi
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts:   * Source: canonical_orders.total_price
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const revenueRow = await db('orders')
 apps/backend/src/services/finances-facts/FinancesFacts.service.ts: * Source: canonical_orders.total_price (negative orders or future refund table)
-apps/backend/src/services/finances-facts/FinancesFacts.service.ts:const refundRow = await db('canonical_orders')
-apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const ordersCountRow = await db('canonical_orders')
-apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const dailyRows = await db('canonical_orders')
+apps/backend/src/services/finances-facts/FinancesFacts.service.ts:const refundRow = await db('orders')
+apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const ordersCountRow = await db('orders')
+apps/backend/src/services/finances-facts/FinancesFacts.service.ts:  const dailyRows = await db('orders')
 apps/backend/src/services/products-data-integrity-facts/ProductDataIntegrityFacts.service.ts: * canonical_products is a current-state table.
 apps/backend/src/services/products-data-integrity-facts/ProductDataIntegrityFacts.service.ts:const rows = await db('products')
 apps/backend/src/services/products-operational-facts/ProductOperationalFacts.service.ts:  const products = await db('products')
 apps/backend/src/services/products-operational-facts/ProductOperationalFacts.service.ts:    .select(['lasyncro_product_id', 'sku']);
-apps/backend/src/services/order-nexus-ft2/orderNexusFt2.timeseries.ts:  const rows = await db('canonical_orders')
-apps/backend/src/services/order-nexus-ft2/orderNexusFt2.timeseries.ts:      db.raw(`COUNT(canonical_order_id) as ordersObserved`),
+apps/backend/src/services/order-nexus-ft2/orderNexusFt2.timeseries.ts:  const rows = await db('orders')
+apps/backend/src/services/order-nexus-ft2/orderNexusFt2.timeseries.ts:      db.raw(`COUNT(lasyncro_order_id) as ordersObserved`),
 apps/backend/src/services/order-nexus-ft2/orderNexusFt2.coverage.ts:  const row = await db('canonical_order_line_items')
 apps/backend/src/services/order-nexus-ft2/orderNexusFt2.distribution.ts:  const values = (await db('canonical_orders')
 apps/backend/src/services/order-facts/orderTrendFacts.service.ts:  const revenueDaysRow = await db('canonical_orders')

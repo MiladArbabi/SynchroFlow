@@ -19,10 +19,32 @@ export async function getOrderNexusFt2Coverage(
 ): Promise<OrdersFt2Coverage> {
   const { from, to } = resolveFt2Range(range);
 
-  const row = await db('canonical_order_line_items')
+    /**
+   * Temporal Integrity Rule (FT2)
+   * ------------------------------
+   * Coverage must be scoped by order_created_at,
+   * not line-item insertion time.
+   *
+   * Rationale:
+   * - Prevents ingestion drift
+   * - Prevents late-arriving data inflation
+   * - Preserves order-window sovereignty
+   */
+  /**
+ * Sovereign FT2 coverage layer
+ * -----------------------------
+ * Source: order_revenue_units
+ *
+ * Coverage definition:
+ * - totalLineItems = revenue units observed
+ * - missingCost = units with NULL estimated_unit_cost
+ *
+ * No canonical dependency.
+ */
+  const row = await db('order_revenue_units')
     .where('shop_id', shopId)
-    .andWhere('created_at', '>=', from)
-    .andWhere('created_at', '<=', to)
+    .andWhere('order_created_at', '>=', from)
+    .andWhere('order_created_at', '<=', to)
     .select(
       db.raw('COUNT(id) as total'),
       db.raw(

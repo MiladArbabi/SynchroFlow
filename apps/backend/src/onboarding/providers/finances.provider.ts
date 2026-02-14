@@ -6,9 +6,9 @@
  * - Do NOT compute finance logic
  * - Do NOT infer insights
  *
- * Canonical sources (verified by scans):
- * - canonical_orders → transaction existence
- * - canonical_order_line_items.estimated_unit_cost → cost readiness
+ * Sources (verified by scans):
+ * - orders → transaction existence
+ * - order_revenue_units.estimated_unit_cost → cost readiness
  */
 
 import db from '../../db';
@@ -20,13 +20,13 @@ export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
 
   async getSignals({ shopId }): Promise<ReadinessSignal[]> {
     /**
-     * 1. Count canonical transactions (orders)
+     * 1. Count transactions (orders)
      *    We only care if the count is KNOWN.
      */
     const ordersRow = await db('orders')
 
       .where({ shop_id: shopId })
-      .count<{ count: string }>('id as count')
+      .count<{ count: string }>('lasyncro_order_id as count')
       .first();
 
     const transactionCount =
@@ -36,10 +36,11 @@ export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
      * 2. Detect missing cost data
      *    Any NULL estimated_unit_cost means costs are NOT ready.
      */
-    const missingCostRow = await db('canonical_order_line_items')
-      .where({ shop_id: shopId })
-      .whereNull('estimated_unit_cost')
-      .count<{ count: string }>('id as count')
+    const missingCostRow = await db('order_revenue_units as ru')
+      .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
+      .where('o.shop_id', shopId)
+      .whereNull('ru.estimated_unit_cost')
+      .count<{ count: string }>('ru.lasyncro_order_id as count')
       .first();
 
     const missingCostCount =

@@ -3,11 +3,11 @@ import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import db from '../db';
 import { Knex } from 'knex';
+import crypto from 'crypto';
 import { mapShopifyOrderNodeToCanonical }
   from './mappers/shopify-to-canonical-order';
 import { enqueueProductForIngestion } 
   from './product-ingestion.service';
-import { publishReconciliationJob } from 'api-src/queues/reconciliation.queue';
 import { getQueueChannel } from 'api-src/queue';
 
 type DbExecutor = Knex | Knex.Transaction;
@@ -259,6 +259,19 @@ export const performInitialSync = async (
 
           stagedEventIds.push(staged.id);
         }
+      
+      /**
+       * SOVEREIGN MATERIALIZATION
+       * -------------------------
+       * Orders MUST exist in `orders` table for:
+       *   - FT2 evaluator
+       *   - cross-domain checks
+       *   - revenue units
+       *
+       * Staging alone is insufficient.
+       */
+      await syncOrders(trx, shopId, data.orders.edges);
+      await syncOrderLineItems(trx, shopId, data.orders.edges);
       }
     });
 
@@ -296,66 +309,116 @@ export const performInitialSync = async (
   }
 };
 
-// Simplified sync functions
 async function syncProducts(
-  trx: DbExecutor, 
-  shopId: number, 
+  trx: DbExecutor,
+  shopId: number,
   edges: any[]
 ) {
-  const productsToInsert = edges.map(({ node }: any) => ({
-    shop_id: shopId,
-    platform_product_id: node.id,
-    title: node.title,
-    vendor: node.vendor,
-    product_type: node.productType,
-    status: node.status,
-    total_inventory: node.totalInventory || 0,
-  }));
+  for (const { node } of edges) {
+    const productId = crypto.randomUUID();
 
-  if (productsToInsert.length > 0) {
-    await trx('shopify_products')
-      .insert(productsToInsert)
-      .onConflict(['shop_id', 'platform_product_id'])
-      .merge();
-    console.log(`[ShopifyService] Synced ${productsToInsert.length} products.`);
+    // 1. Insert product container
+    await trx('products')
+      .insert({
+        lasyncro_product_id: productId,
+        shop_id: shopId,
+        title: node.title,
+        status: node.status?.toLowerCase() || 'active',
+      })
+      .onConflict('lasyncro_product_id')
+      .ignore();
+
+    const variantEdges = node.variants?.edges || [];
+
+    for (const { node: variant } of variantEdges) {
+      const variantId = crypto.randomUUID();
+
+      // 2. Insert variant (atomic unit)
+      await trx('variants')
+        .insert({
+          lasyncro_variant_id: variantId,
+          lasyncro_product_id: productId,
+          shop_id: shopId,
+          sku: variant.sku || null,
+          title: variant.title,
+          status: 'active',
+        })
+        .onConflict('lasyncro_variant_id')
+        .ignore();
+
+      // 3. Insert external identity mapping (variant-level)
+      await trx('external_product_identity_map')
+        .insert({
+          id: crypto.randomUUID(), // REQUIRED (no DB default)
+          shop_id: shopId,
+          lasyncro_variant_id: variantId,
+          platform: 'shopify',
+          external_product_id: node.id,
+          external_variant_id: variant.id,
+          external_sku: variant.sku || null,
+        })
+        .onConflict([
+          'shop_id',
+          'platform',
+          'external_product_id',
+          'external_variant_id',
+        ])
+        .ignore();
+    }
   }
-};
 
-// Simplified orders sync without fulfillments
+  console.log(`[ShopifyService] Synced ${edges.length} products (variant-atomic).`);
+}
+
+// Sovereign Orders Materialization (Schema-Aligned)
 async function syncOrders(
-  trx: DbExecutor, 
-  shopId: number, 
+  trx: DbExecutor,
+  shopId: number,
   edges: any[]
 ) {
-  const ordersToInsert = edges.map(({ node }: any) => {
-    // Under PCD without approval, we cannot access any customer or address data
-    // We can only use the order data itself
-    
-    return {
-      shop_id: shopId,
-      platform_order_id: node.id,
-      order_number: node.name,
-      fulfillment_status: node.displayFulfillmentStatus?.toLowerCase() || 'pending',
-      financial_status: node.displayFinancialStatus?.toLowerCase() || 'pending',
-      total_price: parseFloat(node.totalPriceSet?.shopMoney?.amount || '0'),
-      currency: node.currencyCode,
-      created_at: node.createdAt,
-      source_name: node.sourceName,
-      // No customer data available under PCD without approval
-      customer_name: `Customer #${node.name}`,
-      customer_email: '', 
-      customer_phone: '',
-      platform_customer_id: null,
-      shipping_address: null, // No address data available
-    };
-  });
+  const ordersToInsert = edges.map(({ node }: any) => ({
+    lasyncro_order_id: crypto.randomUUID(), // internal UUID
+    shop_id: shopId,
+
+    payment_state:
+      node.displayFinancialStatus?.toLowerCase() || 'unknown',
+
+    currency: node.currencyCode,
+
+    total_price: parseFloat(
+      node.totalPriceSet?.shopMoney?.amount || '0'
+    ),
+
+    subtotal_price: parseFloat(
+      node.subtotalPriceSet?.shopMoney?.amount || '0'
+    ),
+
+    total_tax: parseFloat(
+      node.totalTaxSet?.shopMoney?.amount || '0'
+    ),
+
+    source: node.sourceName || null,
+    referrer_medium: null,
+
+    customer_hashed_id: null, // PCD restricted
+
+    order_created_at: node.createdAt,
+    order_updated_at: node.updatedAt,
+    order_processed_at: node.processedAt || null,
+
+    platform: 'shopify',
+    platform_order_id: node.id,
+  }));
 
   if (ordersToInsert.length > 0) {
     await trx('orders')
       .insert(ordersToInsert)
-      .onConflict('platform_order_id')
+      .onConflict(['shop_id', 'platform', 'platform_order_id'])
       .merge();
-    console.log(`[ShopifyService] Synced ${ordersToInsert.length} orders with minimal PCD-compliant data.`);
+
+    console.log(
+      `[ShopifyService] Synced ${ordersToInsert.length} orders (schema-aligned).`
+    );
   }
 }
 
@@ -364,105 +427,77 @@ async function syncOrderLineItems(
   shopId: number,
   orderEdges: any[],
 ) {
-  const lineItemsToInsert: any[] = [];
+  const rows: any[] = [];
 
-  // Iterate over each order
   for (const { node: order } of orderEdges) {
-    const orderId = order.id;
-    const lineItemEdges = order.lineItems?.edges || [];
+    const platformOrderId = order.id;
 
-    // Iterate over each line item in that order
-    for (const { node: lineItem } of lineItemEdges) {
-      lineItemsToInsert.push({
+    // Resolve sovereign order ID
+    const sovereignOrder = await trx('orders')
+      .select('lasyncro_order_id')
+      .where({
         shop_id: shopId,
-        platform_order_id: orderId,
-        platform_line_item_id: lineItem.id,
-        platform_product_id: lineItem.product?.id,
-        quantity: lineItem.quantity,
-        // We'll get price later if needed; for now, we just need product/quantity
+        platform: 'shopify',
+        platform_order_id: platformOrderId,
+      })
+      .first();
+
+    if (!sovereignOrder) continue;
+
+    for (const { node: lineItem } of order.lineItems?.edges || []) {
+      const platformProductId = lineItem.product?.id;
+
+      // Resolve sovereign product
+      const sovereignProduct = await trx('external_product_identity_map')
+        .select('lasyncro_variant_id')
+        .where({
+          shop_id: shopId,
+          platform: 'shopify',
+          external_product_id: platformProductId,
+        })
+        .first();
+
+      if (!sovereignProduct) continue;
+
+      // Resolve parent product from variant
+      const variantRow = await trx('variants')
+        .select('lasyncro_product_id')
+        .where({
+          lasyncro_variant_id: sovereignProduct.lasyncro_variant_id,
+        })
+        .first();
+
+      if (!variantRow) continue;
+
+      const quantity = lineItem.quantity || 0;
+      const unitPrice = parseFloat(
+        lineItem.originalUnitPriceSet?.shopMoney?.amount || '0'
+      );
+      const lineTotal = unitPrice * quantity;
+
+      rows.push({
+        lasyncro_line_item_id: crypto.randomUUID(),
+        lasyncro_order_id: sovereignOrder.lasyncro_order_id,
+        lasyncro_product_id: variantRow.lasyncro_product_id,
+        title: lineItem.title || 'Untitled',
+        sku: lineItem.sku || null,
+        quantity,
+        unit_price: unitPrice,
+        line_total: lineTotal,
+        platform: 'shopify',
+        external_line_item_id: lineItem.id,
       });
     }
   }
 
-  if (lineItemsToInsert.length > 0) {
+  if (rows.length > 0) {
     await trx('order_line_items')
-      .insert(lineItemsToInsert)
-      .onConflict(['shop_id', 'platform_line_item_id']) // Assumes this conflict target
-      .merge();
+      .insert(rows)
+      .onConflict(['platform', 'external_line_item_id'])
+      .ignore();
+
     console.log(
-      `[ShopifyService] Synced ${lineItemsToInsert.length} line items.`,
+      `[ShopifyService] Synced ${rows.length} line items (schema-aligned).`,
     );
-  }
-}
-
-async function syncOrdersAndFulfillments(trx: Knex.Transaction, shopId: number, edges: any[]) {
-  const ordersToInsert: any[] = [];
-  const fulfillmentsToInsert: any[] = []; 
-
-  for (const { node } of edges) {
-    ordersToInsert.push({
-      shop_id: shopId,
-      platform_order_id: node.id,
-      order_number: node.name,
-      fulfillment_status: node.fulfillmentStatus,
-      financial_status: node.financialStatus,
-      total_price: node.totalPriceSet.shopMoney.amount,
-      currency: node.currencyCode,
-      // We must get customer_id later. For now, we need to make it nullable or use a default.
-      // Let's assume the table was modified to make customer_id nullable for now.
-      // customer_id: null, // <-- IMPORTANT
-    });
-
-    for (const fulfillment of node.fulfillments) {
-      fulfillmentsToInsert.push({
-        shop_id: shopId,
-        platform_fulfillment_id: fulfillment.id,
-        platform_order_id: node.id, // Link back to the order
-        status: fulfillment.status,
-        tracking_company: fulfillment.trackingInfo?.[0]?.company,
-        tracking_number: fulfillment.trackingInfo?.[0]?.number,
-        total_shipping_cost: 0, // STUB: Shipping cost is hard to get. We'll add this later.
-      });
-    }
-  }
-
-  if (ordersToInsert.length > 0) {
-    // Note: This assumes 'customer_id' in 'orders' table is nullable
-    // If not, this migration will fail and we must alter the table.
-    await trx('orders')
-      .insert(ordersToInsert)
-      .onConflict('platform_order_id')
-      .merge();
-      
-    console.log(`[ShopifyService] Synced ${ordersToInsert.length} orders.`);
-  }
-
-  if (fulfillmentsToInsert.length > 0) {
-    await trx('shopify_fulfillments')
-      .insert(fulfillmentsToInsert)
-      .onConflict(['shop_id', 'platform_fulfillment_id'])
-      .merge();
-    console.log(`[ShopifyService] Synced ${fulfillmentsToInsert.length} fulfillments.`);
-  }
-}
-
-async function syncPayouts(trx: Knex.Transaction, shopId: number, edges: any[]) {
-  const payoutsToInsert = edges.map(({ node }: any) => ({
-    shop_id: shopId,
-    platform_payout_id: node.id,
-    status: node.status,
-    date: node.date,
-    currency: node.currency,
-    amount: node.amount,
-    fees: node.fee,
-    net_amount: node.netAmount,
-  }));
-
-  if (payoutsToInsert.length > 0) {
-    await trx('shopify_payouts')
-      .insert(payoutsToInsert)
-      .onConflict(['shop_id', 'platform_payout_id'])
-      .merge();
-    console.log(`[ShopifyService] Synced ${payoutsToInsert.length} payouts.`);
   }
 }

@@ -10,6 +10,16 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('shops', (table) => {
     table.increments('id').primary();
     table.string('name').notNullable();
+
+    /**
+     * Shop-Level Insight State
+     * ------------------------
+     * FT0 readiness anchor.
+     */
+    table.boolean('first_insight_delivered')
+      .notNullable()
+      .defaultTo(false);
+
     table.timestamps(true, true);
   });
 
@@ -54,5 +64,6 @@ export async function up(knex: Knex): Promise<void> {
 
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('orders');
+  await knex.schema.dropTableIfExists('user_states');
   await knex.schema.dropTableIfExists('shops');
 }

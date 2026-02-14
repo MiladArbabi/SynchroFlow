@@ -18,13 +18,25 @@ export async function extractRefundsFacts(shopId: number): Promise<{
   returnedRevenue: number | null;
   affectedOrders: number | null;
 }> {
-    const rows = await db('order_revenue_units')
-    .where('shop_id', shopId)
-    .whereNotNull('returned_quantity')
+    /**
+ * SOVEREIGN REFUND ANCHOR (v2)
+ * ----------------------------
+ * - UUID-anchored via lasyncro_order_id
+ * - shop_id derived from orders
+ * - Revenue primitive: returned_quantity * unit_price
+ */
+  const rows = await db('order_revenue_units as ru')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .where('ru.returned_quantity', '>', 0)
     .select(
-      'canonical_order_id',
-      'returned_quantity',
-      'unit_revenue'
+      'ru.lasyncro_order_id',
+      'ru.returned_quantity',
+      'ru.unit_price'
     );
 
   /**
@@ -47,12 +59,12 @@ export async function extractRefundsFacts(shopId: number): Promise<{
 
   for (const r of rows) {
     const q = Number(r.returned_quantity);
-    const v = q * Number(r.unit_revenue);
-    if (!Number.isFinite(v)) continue;
+    const v = q * Number(r.unit_price);
+    orders.add(r.lasyncro_order_id);
 
     returnedUnits += q;
     returnedRevenue += v;
-    orders.add(r.canonical_order_id);
+    orders.add(r.lasyncro_order_id);
   }
 
   return {

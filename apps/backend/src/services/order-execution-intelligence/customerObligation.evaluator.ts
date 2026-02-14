@@ -14,29 +14,46 @@
 
 import db from 'api-src/db';
 
+/**
+ * SOVEREIGN OBLIGATION ANCHOR (v2)
+ * --------------------------------
+ * - UUID-anchored via lasyncro_order_id
+ * - shop_id derived from orders
+ * - Blocking truth uses is_active boolean
+ */
 export async function evaluateCustomerObligations(shopId: number) {
-  // 1. Mark blocked orders
+  // Mark blocked orders
   await db('order_fulfillment_status as ofs')
-    .where('ofs.shop_id', shopId)
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ofs.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
     .whereExists(function () {
       this.select(1)
         .from('customer_blocking_events as e')
-        .whereRaw('e.canonical_order_id = ofs.canonical_order_id')
-        .whereNull('e.resolved_at');
+        .whereRaw('e.lasyncro_order_id = ofs.lasyncro_order_id')
+        .where('e.is_active', true);
     })
     .update({
       has_customer_block: true,
       customer_block_evaluated_at: db.fn.now(),
     });
 
-  // 2. Explicitly clear non-blocked orders
-  await db('order_fulfillment_status')
-    .where('shop_id', shopId)
+  // Clear non-blocked
+  await db('order_fulfillment_status as ofs')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ofs.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
     .whereNotExists(function () {
       this.select(1)
         .from('customer_blocking_events as e')
-        .whereRaw('e.canonical_order_id = order_fulfillment_status.canonical_order_id')
-        .whereNull('e.resolved_at');
+        .whereRaw('e.lasyncro_order_id = ofs.lasyncro_order_id')
+        .where('e.is_active', true);
     })
     .update({
       has_customer_block: false,

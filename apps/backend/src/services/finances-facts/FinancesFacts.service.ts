@@ -12,7 +12,8 @@ interface BuildFinancesFactsInput {
 /**
  * Finances Facts Service
  * ---------------------
- * Canonical source of raw financial truth.
+ * Sovereign source of raw financial truth.
+ * Identity: orders.lasyncro_order_id
  *
  * Rules:
  * - DB access ONLY
@@ -27,11 +28,20 @@ export async function buildFinancesFacts(
   const { shopId, period } = input;
 
   /**
-   * Revenue — canonical truth
-   * ------------------------
-   * Source: canonical_orders.total_price
-   * This is the ONLY authoritative monetary signal available today.
-   */
+   * Revenue — Gross Order Revenue
+    * -----------------------------
+    * Source: orders.total_price
+    *
+    * IMPORTANT:
+    * - This represents GROSS order revenue at creation time.
+    * - It does NOT reflect:
+    *   - Refund executions
+    *   - Partial returns
+    *   - Revenue unit adjustments
+    *
+    * This is structurally sovereign,
+    * but NOT execution-adjusted revenue.
+    */
   const revenueRow = await db('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', period.from)
@@ -42,55 +52,65 @@ export async function buildFinancesFacts(
   const totalRevenue =
     revenueRow?.sum != null ? Number(revenueRow.sum) : null;
 
-/**
- * Refunds — canonical truth (if available)
- * ---------------------------------------
- * Source: canonical_orders.total_price (negative orders or future refund table)
- *
- * Rules:
- * - Null means no refund evidence exists
- * - Zero is a valid observed value
- * - No assumptions about materiality
- */
-const refundRow = await db('canonical_orders')
-  .where('shop_id', shopId)
-  .andWhere('order_created_at', '>=', period.from)
-  .andWhere('order_created_at', '<=', period.to)
-  .andWhere('total_price', '<', 0)
-  .sum<{ sum: string | null }>('total_price as sum')
-  .first();
-
-const refundsObserved =
-  refundRow?.sum != null ? Math.abs(Number(refundRow.sum)) : null;
+  /**
+   * Refunds — Execution-backed financial truth
+   * ------------------------------------------
+   * Source: refund_executions.total_refunded_amount
+   *
+   * IMPORTANT:
+   * - This reflects applied refund executions only
+   * - Detached from order creation semantics
+   * - Independent of negative order modeling
+   */
+  const refundRow = await db('refund_executions')
+    .where('shop_id', shopId)
+    .andWhere('refund_created_at', '>=', period.from)
+    .andWhere('refund_created_at', '<=', period.to)
+    .andWhere('execution_status', 'applied')
+    .sum<{ sum: string | null }>('total_refunded_amount as sum')
+    .first();
 
   /**
-   * Costs — factually unavailable
-   * -----------------------------
-   * estimated_unit_cost is not populated yet.
-   * product_costs is not join-safe.
-   * Therefore: costs MUST remain null.
+   * Refund normalization
+   * -------------------
+   * `.first()` may return undefined.
+   * We normalize to explicit null when no row exists.
+   */
+  const refundsObserved =
+    refundRow == null || refundRow.sum == null
+      ? null
+      : Number(refundRow.sum);
+
+  /**
+   * Costs
+   * -----
+   * Costs are not yet canonical.
+   * No sovereign cost layer exists.
    */
   const totalCosts: number | null = null;
 
-  const netResult =
-    totalRevenue == null || totalCosts == null
-      ? null
-      : totalRevenue - totalCosts;
+  /**
+   * Net Result
+   * ----------
+   * Costs are not yet canonical.
+   * Net financial result is therefore epistemically unavailable.
+   */
+  const netResult: number | null = null;
 
   /**
    * Data Coverage — factual only
    * ----------------------------
    * Coverage here answers ONE question:
-   * "Did we observe any canonical orders in this period?"
+   * "Did we observe any sovereign orders in this period?"
    *
    * - 0 orders  → null (no evidence)
    * - ≥1 orders → 100 (fully observed)
    */
-  const ordersCountRow = await db('canonical_orders')
+  const ordersCountRow = await db('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', period.from)
     .andWhere('order_created_at', '<=', period.to)
-    .count<{ count: string }>('id as count')
+    .count<{ count: string }>('lasyncro_order_id as count')
     .first();
 
   const ordersCount =
@@ -115,13 +135,13 @@ const refundsObserved =
    * - Null means "no evidence", NOT zero
    */
   
-  const dailyRows = await db('canonical_orders')
+  const dailyRows = await db('orders')
     .select(
       db.raw(
         `
         date_trunc('day', order_created_at AT TIME ZONE 'UTC') as bucket_day,
         SUM(total_price) as revenue,
-        COUNT(id) as count
+        COUNT(lasyncro_order_id) as count
         `
       )
     )

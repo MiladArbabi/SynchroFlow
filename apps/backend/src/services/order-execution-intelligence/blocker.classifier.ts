@@ -31,20 +31,39 @@ export async function classifyRevenueBlockers(
   shopId: number
 ): Promise<BlockerClassification[]> {
 
-  const rows = await db('order_fulfillment_status as f')
-    .join('canonical_orders as o', 'o.canonical_order_id', 'f.canonical_order_id')
-    .where('o.shop_id', shopId)
-    .whereNotIn('f.status', ['fulfilled', 'delivered'])
-    // NOTE (Intelligence Cleanup):
-    // execution_confidence is intentionally NOT read here.
-    // Epistemic meaning is computed in the epistemic layer,
-    // not in L2 intelligence or classifiers.
-    .select(
-      'f.canonical_order_id',
-      'f.execution_source',
-      'f.status_updated_at',
-      'o.total_price'
-    );
+/**
+ * SOVEREIGN CLASSIFIER ANCHOR (v2)
+ * --------------------------------
+ * - UUID-anchored via lasyncro_order_id
+ * - shop_id derived from orders
+ * - Revenue primitive: quantity * unit_price
+ */
+const rows = await db('order_fulfillment_status as f')
+  .join(
+    'orders as o',
+    'o.lasyncro_order_id',
+    'f.lasyncro_order_id'
+  )
+  .join(
+    'order_revenue_units as ru',
+    'ru.lasyncro_order_id',
+    'f.lasyncro_order_id'
+  )
+  .where('o.shop_id', shopId)
+  .whereNotIn('f.status', ['fulfilled', 'delivered'])
+  .select(
+    'f.lasyncro_order_id',
+    'f.execution_source',
+    'f.status_updated_at'
+  )
+  .sum<{ total_revenue: string | null }>(
+    db.raw('(ru.quantity * ru.unit_price)')
+  )
+  .groupBy(
+    'f.lasyncro_order_id',
+    'f.execution_source',
+    'f.status_updated_at'
+  );
 
   const now = Date.now();
 
@@ -52,19 +71,19 @@ export async function classifyRevenueBlockers(
     // ─────────────────────────────────────────────
     // Invariant Assertions (DEV-SAFE)
     // ─────────────────────────────────────────────
-    if (!r.canonical_order_id) {
-      console.warn('[L2:blocker] Missing canonical_order_id', r);
+    if (!r.lasyncro_order_id) {
+      console.warn('[L2:blocker] Missing lasyncro_order_id', r);
     }
 
-    if (r.total_price == null) {
+    if (r.total_revenue == null) {
       console.warn('[L2:blocker] Missing total_price', {
-        canonicalOrderId: r.canonical_order_id,
+        lasyncroOrderId: r.lasyncro_order_id,
       });
     }
 
     if (!r.status_updated_at) {
       console.warn('[L2:blocker] Missing status_updated_at', {
-        canonicalOrderId: r.canonical_order_id,
+        lasyncroOrderId: r.lasyncro_order_id,
       });
     }
 
@@ -82,40 +101,6 @@ export async function classifyRevenueBlockers(
     if (r.execution_source === 'synthetic') {
       category = 'missing_execution';
     }
-
-    /**
-     * ─────────────────────────────────────────────
-     * FUTURE HARD BLOCKERS (DISABLED — RESERVED)
-     * ─────────────────────────────────────────────
-     *
-     * These categories are intentionally NOT active yet.
-     * They reserve semantic space so future signals do not
-     * collapse into existing buckets.
-     *
-     * IMPORTANT:
-     * - These will ALWAYS outrank stalled_execution
-     * - They represent external dependency deadlocks
-     * - Activation requires new canonical fact tables
-     *
-     * Planned categories (DO NOT ENABLE YET):
-     *
-     * inventory_blocked:
-     * - SKU unavailable or zero allocatable stock
-     * - Requires canonical_inventory_levels
-     *
-     * shipping_blocked:
-     * - Shipment cannot be created or handed off
-     * - Requires canonical_shipments / carrier handoff facts
-     *
-     * customer_blocked:
-     * - Explicit customer action required (confirmation, address fix)
-     * - Requires customer_interaction_facts
-     *
-     * payment_blocked (NON-FT2, FUTURE MODULE):
-     * - Included here ONLY to forbid accidental leakage
-     * - Payment semantics NEVER surface in Orders FT2
-     */
-
 
     // ─────────────────────────────────────────────
     // PRIORITY 2 — Stalled Execution
@@ -136,19 +121,18 @@ export async function classifyRevenueBlockers(
     // ─────────────────────────────────────────────
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[L2:blocker:classified]', {
-        canonicalOrderId: r.canonical_order_id,
+        lasyncroOrderId: r.lasyncro_order_id,
         category,
         ageDays: Number(ageDays.toFixed(2)),
-        revenue: Number(r.total_price),
+        revenue: Number(r.total_revenue ?? 0),
         execution_source: r.execution_source,
       });
     }
 
     return {
-      canonicalOrderId: r.canonical_order_id,
+      lasyncroOrderId: r.lasyncro_order_id,
       category,
-      revenue: Number(r.total_price),
+      revenue: Number(r.total_revenue ?? 0),
     };
   });
-
 }

@@ -53,13 +53,13 @@ const { from, to } =
           preset: range.preset as NonCustomPreset,
         });
 
-  const rows = await db('canonical_orders')
+  const rows = await db('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', from)
     .andWhere('order_created_at', '<=', to)
     .select(
       db.raw(`DATE(order_created_at) as date`),
-      db.raw(`COUNT(canonical_order_id) as ordersObserved`),
+      db.raw(`COUNT(lasyncro_order_id) as ordersObserved`),
       db.raw(`COALESCE(SUM(total_price), 0) as revenueTotal`)
     )
     .groupByRaw('DATE(order_created_at)')

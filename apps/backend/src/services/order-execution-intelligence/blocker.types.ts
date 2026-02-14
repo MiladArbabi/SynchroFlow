@@ -11,7 +11,7 @@ export type BlockerCategory =
   | 'unknown';               // safety fallback
 
 export interface BlockerClassification {
-  canonicalOrderId: string;
+  lasyncroOrderId: string;
   category: BlockerCategory;
   revenue: number;
 }

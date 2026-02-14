@@ -25,7 +25,6 @@ export class FirstInsightService {
       .first([
         'id',
         'first_insight_delivered',
-        'orders_per_month_segment',
       ]);
 
     if (!shop) {
@@ -65,9 +64,8 @@ export class FirstInsightService {
     // 5. Atomic persist + audit
     await db.transaction(async trx => {
       await trx('shops')
-        .where({ shop_id: shopId })
+        .where({ id: shopId })
         .update({
-          orders_per_month_segment: segment,
           first_insight_delivered: true,
           updated_at: trx.fn.now(),
         });

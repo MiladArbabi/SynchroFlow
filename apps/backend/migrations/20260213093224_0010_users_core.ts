@@ -42,8 +42,6 @@ export async function up(knex: Knex): Promise<void> {
     table.boolean('shopify_connected').defaultTo(false);
     table.boolean('stripe_connected').defaultTo(false);
 
-    table.boolean('first_insight_delivered').defaultTo(false);
-
     table.string('orders_per_month_segment', 20);
     table.string('entry_channel').defaultTo('unknown');
 
@@ -57,8 +55,30 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['email']);
   });
+
+  // ============================
+  // USER STATES (Onboarding KV)
+  // ============================
+  await knex.schema.createTable('user_states', (table) => {
+    table.increments('id').primary();
+
+    table.integer('user_id')
+      .unsigned()
+      .notNullable()
+      .references('id')
+      .inTable('users')
+      .onDelete('CASCADE');
+
+    table.string('key').notNullable();
+    table.text('value');
+
+    table.timestamps(true, true);
+
+    table.unique(['user_id', 'key']);
+  });
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('user_states');
   await knex.schema.dropTableIfExists('users');
 }

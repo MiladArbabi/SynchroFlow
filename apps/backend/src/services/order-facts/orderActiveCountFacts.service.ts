@@ -24,10 +24,22 @@ import db from 'api-db';
 export async function extractActiveOrdersCount(
   shopId: number
 ): Promise<number | null> {
-  const row = await db('order_fulfillment_status')
-    .where('shop_id', shopId)
-    .whereNotIn('status', ['fulfilled', 'delivered'])
-    .countDistinct<{ count: string }>('canonical_order_id as count')
+  
+  /**
+   * SOVEREIGN IDENTITY (v2)
+   * -----------------------
+   * Active orders are UUID-anchored.
+   * shop_id must be derived from orders.
+   */
+  const row = await db('order_fulfillment_status as ofs')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ofs.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .whereNotIn('ofs.status', ['fulfilled', 'delivered'])
+    .countDistinct<{ count: string }>('ofs.lasyncro_order_id as count')
     .first();
 
   return row?.count !== undefined ? Number(row.count) : null;

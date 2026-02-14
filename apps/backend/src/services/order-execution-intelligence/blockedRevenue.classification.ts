@@ -22,6 +22,24 @@ export type BlockedRevenueClassification = {
    * Absence MUST propagate as NULL through FT2.
    */
 
+  /**
+   * Economic Source Constraint
+   * --------------------------
+   * totalBlockedValue MUST be derived from:
+   *   order_revenue_units (quantity × unit_revenue)
+   *
+   * It MUST NOT be derived from:
+   *   orders.total_price
+   *
+   * Reason:
+   * - Order-level totals ignore partial refunds
+   * - Ignore returned quantities
+   * - Ignore SKU-level blocking
+   *
+   * This classification layer assumes
+   * revenue-unit–based aggregation upstream.
+   */
+
   totalBlockedValue: number;
 
   buckets: {
@@ -40,7 +58,7 @@ export type BlockedRevenueClassification = {
     * Coverage MUST NOT imply attribution.
    * ----------------------------------------
    * No customer payment / settlement / liability
-   * primitive exists in canonical_orders.
+   * primitive exists in orders.
    *
    * As of this version:
    * - Customer obligation CANNOT be evaluated

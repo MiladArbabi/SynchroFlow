@@ -7,7 +7,7 @@
  * mapping flows and unit tests.
  *
  * ❌ MUST NOT be used for:
- * - canonical_orders ingestion
+ * - sovereign orders ingestion (orders table)
  * - FT0 / FT2 ingestion paths
  * - production order ingestion
  *

@@ -24,7 +24,7 @@ export async function getOrderNexusFt2Distribution(
 ): Promise<OrdersFt2Distribution> {
   const { from, to } = resolveFt2Range(range);
 
-  const values = (await db('canonical_orders')
+  const values = (await db('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', from)
     .andWhere('order_created_at', '<=', to)

@@ -89,17 +89,18 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
     const ordersRow = await db('orders')
 
       .where({ shop_id: shopId })
-      .count<{ count: string }>('id as count')
+      .count<{ count: string }>('lasyncro_order_id as count')
       .first();
 
     const ordersIngested =
       ordersRow?.count != null ? Number(ordersRow.count) : null;
 
     // 2) How many line items are still missing a cost?
-    const missingCostRow = await db('canonical_order_line_items')
-      .where({ shop_id: shopId })
-      .whereNull('estimated_unit_cost')
-      .count<{ count: string }>('id as count')
+    const missingCostRow = await db('order_revenue_units as ru')
+      .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
+      .where('o.shop_id', shopId)
+      .whereNull('ru.estimated_unit_cost')
+      .count<{ count: string }>('ru.lasyncro_order_id as count')
       .first();
 
     const missingCostCount = Number(missingCostRow?.count ?? 0);

@@ -188,7 +188,7 @@ Replace the erroneous SQL in `orderNexusOnboardingSignalProvider.getSignals` wit
 export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'order-nexus',
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    const row = await db('canonical_orders').where({ shop_id: shopId }).count<{ count: string }>('id as count').first();
+    const row = await db('canonical_orders').where({ shop_id: shopId }).count<{ count: string }>('lasyncro_order_id as count').first();
     const ordersIngested = Number(row?.count ?? 0);
 
     // missingCostCount
