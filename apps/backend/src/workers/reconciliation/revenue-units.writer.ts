@@ -1,6 +1,7 @@
 // apps/backend/src/workers/reconciliation/revenue-units.writer.ts
 
 import db from 'api-src/db';
+import { v5 as uuidv5 } from 'uuid';
 
 /**
  * Revenue Unit Writer (Variant-Atomic Version)
@@ -14,6 +15,9 @@ import db from 'api-src/db';
  * - No product-level collapse
  * - Idempotent on (lasyncro_order_id, lasyncro_variant_id)
  */
+
+const REVENUE_UNIT_NAMESPACE =
+  '5f8b7f2e-5e3d-4a55-9f4b-3f7c6d8b91aa'; // fixed constant namespace
 
 export async function writeOrderRevenueUnits(
   lasyncroOrderId: string
@@ -55,7 +59,10 @@ export async function writeOrderRevenueUnits(
     }
 
     const revenueUnits = rows.map((r) => ({
-      lasyncro_revenue_unit_id: crypto.randomUUID(),
+      lasyncro_revenue_unit_id: uuidv5(
+        `${lasyncroOrderId}:${r.lasyncro_variant_id}`,
+        REVENUE_UNIT_NAMESPACE
+      ),
       lasyncro_order_id: lasyncroOrderId,
       lasyncro_product_id: r.lasyncro_product_id,
       lasyncro_variant_id: r.lasyncro_variant_id,
@@ -70,7 +77,13 @@ export async function writeOrderRevenueUnits(
     await trx('order_revenue_units')
       .insert(revenueUnits)
       .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
-      .ignore();
+      .merge({
+        quantity: trx.raw('EXCLUDED.quantity'),
+        unit_price: trx.raw('EXCLUDED.unit_price'),
+        line_total: trx.raw('EXCLUDED.line_total'),
+        estimated_unit_cost: trx.raw('EXCLUDED.estimated_unit_cost'),
+        updated_at: trx.fn.now(),
+      });
 
     // 🔥 SALE → INVENTORY LEDGER
     await trx('inventory_movements')
