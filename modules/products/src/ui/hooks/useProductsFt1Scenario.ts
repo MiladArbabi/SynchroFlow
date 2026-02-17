@@ -1,6 +1,6 @@
 // modules/products/src/ui/hooks/useProductsFt1Scenario.ts
 
-import type { ProductsFt1Scenario } from '../types';
+import type { ProductsFt1Scenario } from '../types.js';
 
 export function useProductsFt1Scenario(
   input: { 

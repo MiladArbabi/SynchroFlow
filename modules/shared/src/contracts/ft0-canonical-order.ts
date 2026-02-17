@@ -1,5 +1,5 @@
 //modules/shared/src/contracts/ft0-canonical-order.ts
-import type { CanonicalPlatform } from './canonical-commerce';
+import type { CanonicalPlatform } from './canonical-commerce.js';
 
 export interface FT0CanonicalOrder {
   id: string;

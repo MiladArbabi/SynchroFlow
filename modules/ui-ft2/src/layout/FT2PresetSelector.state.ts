@@ -1,4 +1,4 @@
-import type { FT2DateRangePreset } from '../contracts/ft2DateRange';
+import type { FT2DateRangePreset } from '../contracts/ft2DateRange.js';
 
 export type SemanticPreset = Exclude<FT2DateRangePreset, 'custom'>;
 

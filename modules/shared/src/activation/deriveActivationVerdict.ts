@@ -4,7 +4,7 @@ import {
   IntegrationSnapshot,
   EntitlementSnapshot,
   ActivationVerdict
-} from './types';
+} from './types.js';
 
 export function deriveActivationVerdict(input: {
   identity: IdentitySnapshot;

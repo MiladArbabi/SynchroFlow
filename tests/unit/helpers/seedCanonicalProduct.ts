@@ -1,6 +1,6 @@
 // tests/unit/helpers/seedCanonicalProduct.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 
 type SeedCanonicalProductInput = {
   shopId: number;

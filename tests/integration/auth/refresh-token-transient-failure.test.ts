@@ -1,5 +1,5 @@
 import request from 'supertest';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import app from 'api-server';
 
 describe('Auth invariant: transient refresh failure does not destroy session', () => {

@@ -8,7 +8,7 @@ import {
   InfoBlockContainer,
   InfoBlockHeader,
   InfoBlockBody,
-} from './InfoBlock.styles';
+} from './InfoBlock.styles.js';
 
 export interface InfoBlockProps {
   title: string;

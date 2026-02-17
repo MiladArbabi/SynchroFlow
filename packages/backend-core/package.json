@@ -1,0 +1,48 @@
+{
+  "name": "@lasyncro/backend-core",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+    "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+
+    "./db.js": {
+      "types": "./dist/db.d.ts",
+      "default": "./dist/db.js"
+    },
+
+    "./utils/*.js": {
+      "types": "./dist/utils/*.d.ts",
+      "default": "./dist/utils/*.js"
+    },
+
+    "./middleware/*.js": {
+      "types": "./dist/middleware/*.d.ts",
+      "default": "./dist/middleware/*.js"
+    },
+
+    "./services/*.js": {
+      "types": "./dist/services/*.d.ts",
+      "default": "./dist/services/*.js"
+    },
+
+    "./services/*/*.js": {
+      "types": "./dist/services/*/*.d.ts",
+      "default": "./dist/services/*/*.js"
+    },
+
+    "./services/*/*/*.js": {
+      "types": "./dist/services/*/*/*.d.ts",
+      "default": "./dist/services/*/*/*.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

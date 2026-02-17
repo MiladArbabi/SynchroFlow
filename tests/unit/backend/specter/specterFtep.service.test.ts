@@ -3,7 +3,7 @@ import { applySpecterFtep } from 'api-src/services/specter-ftep/specterFtep.serv
 import { SpecterFacts } from 'api-src/services/specter-facts/specterFacts.types';
 import { SpecterIntelligence } from 'api-src/services/specter-intelligence/specterIntelligence.service';
 import { getSpecterFacts } from 'api-src/services/specter-facts/specterFacts.service';
-import { createSessionStore } from 'modules-specter/store/session-store';
+import { createSessionStore } from '@lasyncro/specter/store/session-store';
 
 jest.mock('modules-specter/store/session-store');
 

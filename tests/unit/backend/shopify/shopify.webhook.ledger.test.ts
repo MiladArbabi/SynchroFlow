@@ -12,7 +12,7 @@
 
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 jest.mock('api-src/services/shopify-app.service', () => ({
   ShopifyAppService: {

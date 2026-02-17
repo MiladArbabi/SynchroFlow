@@ -6,10 +6,10 @@ import {
   FT2Row,
 } from '@lasyncro/ui-ft2';
 
-import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock';
-import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock';
-import { ReturnsOverviewInfoBlock } from '../components/ReturnsOverviewInfoBlock';
-import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock';
+import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
+import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
+import { ReturnsOverviewInfoBlock } from '../components/ReturnsOverviewInfoBlock.js';
+import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock.js';
 
 import { toEpistemic } from '@lasyncro/epistemic';
 

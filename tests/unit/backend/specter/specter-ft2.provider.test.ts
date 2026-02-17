@@ -1,5 +1,5 @@
 //tests/unit/backend/specter/specter-ft2.provider.test.ts
-import { InMemorySessionStore, setSessionStoreForTests } from 'modules-specter/store/session-store';
+import { InMemorySessionStore, setSessionStoreForTests } from '@lasyncro/specter/store/session-store';
 import { getSpecterFt2Snapshot } from 'api-src/services/specter-ft2.provider';
 
 describe('Specter FT2 Provider', () => {

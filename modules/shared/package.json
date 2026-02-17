@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json"
   },
@@ -26,7 +27,16 @@
     "./ui-contracts": {
       "types": "./dist/ui-contracts.d.ts",
       "default": "./dist/ui-contracts.js"
-    }
+    },
+    "./contracts/*": {
+     "types": "./dist/contracts/*.d.ts",
+     "default": "./dist/contracts/*.js"
+   },
+
+   "./activation/*": {
+     "types": "./dist/activation/*.d.ts",
+     "default": "./dist/activation/*.js"
+   }
   },
   "files": [
     "dist"

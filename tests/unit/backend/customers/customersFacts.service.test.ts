@@ -1,5 +1,5 @@
 // tests/unit/backend/customers/customersFacts.service.test.ts
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { getCustomersFacts } from 'api-src/services/customers-facts/customersFacts.service';
 
 describe('CustomersFacts.service (FT2)', () => {

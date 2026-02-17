@@ -1,10 +1,8 @@
 // modules/overview/src/ui/pages/OverviewModuleFT2.tsx
-
 import {
-  FT2Layout,
   FT2Row,
-  FT2Surface,
-  FT2Stat,
+  InfoBlock,
+  InfoBlockRow,
 } from '@lasyncro/ui-ft2';
 
 /**
@@ -112,20 +110,18 @@ const trustTone =
         : 'constrained';
 
   return (
-    <FT2Layout>
-      <FT2Row intent="kpi">
-        <FT2Surface title="Orders observed" trustTone={trustTone}>
-          <FT2Stat value={context.ordersObserved} />
-        </FT2Surface>
+    <>
+      <InfoBlock title="Orders observed">
+        <InfoBlockRow label='' value={context.ordersObserved}/>
+      </InfoBlock>
 
-        <FT2Surface title="Products observed" trustTone={trustTone}>
-          <FT2Stat value={context.productsObserved} />
-        </FT2Surface>
+      <InfoBlock title="Products observed">
+        <InfoBlockRow label='' value={context.productsObserved}/>
+      </InfoBlock>
 
-        <FT2Surface title="Customers observed" trustTone={trustTone}>
-          <FT2Stat value={context.customersObserved} />
-        </FT2Surface>
-      </FT2Row>
-    </FT2Layout>
+      <InfoBlock title="Customers observed">
+        <InfoBlockRow label='' value={context.customersObserved}/>
+      </InfoBlock>
+    </>
   );
 }

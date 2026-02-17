@@ -2,7 +2,7 @@
 
 import { UserStateService } from 'api-src/services/user-state.service';
 import { LifecycleService } from 'api-src/services/lifecycle.service';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 // ─────────────────────────────────────────────
 // HARD ISOLATION — NO REAL DB, NO REAL LIFECYCLE

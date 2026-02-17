@@ -1,5 +1,5 @@
-import CustomersModuleFT2 from './ui/pages/CustomersModuleFT2';
+import CustomersModuleFT2 from './ui/pages/CustomersModuleFT2.js';
 
-export * from './ui';
-export { default } from './ui';
+export * from './ui/index.js';
+export { default } from './ui/index.js';
 export { CustomersModuleFT2 };

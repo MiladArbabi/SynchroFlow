@@ -60,6 +60,32 @@ export class FT2EvaluatorService {
     const blockers: FT2Blocker[] = [];
     const evidence: Record<string, any> = {};
 
+    // -------------------------------------------------------------------
+    // SYNC GUARD — FT2 cannot be evaluated during active sync
+    // -------------------------------------------------------------------
+    const integration = await db('integrations')
+      .where({ shop_id: shopId })
+      .first();
+
+    if (!integration || integration.sync_status !== 'COMPLETED') {
+      return {
+        eligible: false,
+        status: 'BLOCKED',
+        blockers: [
+          {
+            category: 'DATA_COVERAGE',
+            domain: 'ORDERS',
+            reason: 'SYNC_IN_PROGRESS',
+          },
+        ],
+        evidence: {
+          syncStatus: integration?.sync_status ?? 'NOT_INITIALIZED',
+        },
+        evaluatorVersion: FT2EvaluatorService.VERSION,
+        evaluatedAt,
+      };
+    }
+
     if (process.env.NODE_ENV === 'test') {
       return {
         status: 'ELIGIBLE',
@@ -79,6 +105,30 @@ export class FT2EvaluatorService {
         },
         evaluatorVersion: 'ft2-evaluator@test-bypass',
         evaluatedAt: new Date().toISOString(),
+      };
+    }
+
+    // Hard gate: FT0 must be completed
+    const ft0 = await db('ft0_state')
+      .where({ shop_id: shopId, status: 'COMPLETED' })
+      .first();
+
+    if (!ft0) {
+      return {
+        eligible: false,
+        status: 'BLOCKED',
+        blockers: [
+          {
+            category: 'DATA_COVERAGE',
+            domain: 'ORDERS',
+            reason: 'FT0 not completed',
+          },
+        ],
+        evidence: {
+          sync: 'FT0 incomplete',
+        },
+        evaluatorVersion: FT2EvaluatorService.VERSION,
+        evaluatedAt,
       };
     }
 

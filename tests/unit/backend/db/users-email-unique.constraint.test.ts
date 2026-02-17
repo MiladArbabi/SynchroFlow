@@ -1,5 +1,5 @@
 //tests/unit/backend/auth/user-email-uniqueness.test.ts
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 
 describe('DB invariant: users.email must be unique', () => {
   beforeEach(async () => {

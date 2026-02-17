@@ -1,6 +1,6 @@
 // tests/unit/helpers/seedCanonicalOrder.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { randomUUID } from 'crypto';
 
 type SeedCanonicalOrderInput = { 

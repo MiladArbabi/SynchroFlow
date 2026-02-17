@@ -1,7 +1,7 @@
-export { EpistemicInfoBlockRow } from './EpistemicInfoBlockRow';
+export { EpistemicInfoBlockRow } from './EpistemicInfoBlockRow.js';
 
-export * from './InfoBlock';
-export * from './InfoBlockRow';
-export * from './InfoBlockFooter';
-export * from './EpistemicInfoBlockRow';
-export * from './epistemic.types';
+export * from './InfoBlock.js';
+export * from './InfoBlockRow.js';
+export * from './InfoBlockFooter.js';
+export * from './EpistemicInfoBlockRow.js';
+export * from './epistemic.types.js';

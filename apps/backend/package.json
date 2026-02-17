@@ -9,7 +9,7 @@
     "dev": "nodemon --watch src --ext ts --exec \"npm run build && node ./scripts/node-start.js\"",
     "dev:worker": "nodemon --watch src --ext ts --exec \"npm run build && node dist/worker-entry.js\"",
     "start:worker": "node dist/apps/backend/src/worker-entry.js",
-    "seed": "knex seed:run --specific=dev_seed.ts",
+    "seed": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs seed:run --specific=dev_seed.js",
     "migrate": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:latest",
     "migrate:rollback": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make"

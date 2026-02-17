@@ -1,4 +1,4 @@
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { LifecycleService } from 'api-src/services/lifecycle.service';
 import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
 import crypto from 'crypto';

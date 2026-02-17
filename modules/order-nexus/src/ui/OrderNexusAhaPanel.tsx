@@ -1,5 +1,5 @@
 import React from 'react';
-import { OrderNexusUiIntent } from './intents';
+import { OrderNexusUiIntent } from './intents.js';
 
 interface OrderNexusAhaSummary {
   hasRisk: boolean;

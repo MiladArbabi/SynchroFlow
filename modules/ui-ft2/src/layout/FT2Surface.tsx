@@ -3,7 +3,7 @@ import {
   Paper,
   IconButton,
 } from '@mui/material';
-import { FT2_TOKENS } from './ft2.tokens';
+import { FT2_TOKENS } from './ft2.tokens.js';
 
 const __DEV__ =
   typeof import.meta !== 'undefined' &&

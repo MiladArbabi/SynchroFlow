@@ -1,6 +1,6 @@
 // tests/unit/backend/auth/token.service.issueAuthTokens.test.ts
 import jwt from 'jsonwebtoken';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { issueAuthTokens } from 'api-src/api/auth/token.service';
 import * as TokenService from 'api-src/api/auth/token.service';
 

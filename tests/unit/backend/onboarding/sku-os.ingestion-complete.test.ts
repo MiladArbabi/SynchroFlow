@@ -1,6 +1,6 @@
 // tests/unit/backend/onboarding/sku-os.ingestion-complete.test.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedCanonicalProduct } from '../../helpers/seedCanonicalProduct';

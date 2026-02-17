@@ -4,12 +4,12 @@ import {
   FT2Row,
 } from '@lasyncro/ui-ft2';
 
-import { ProductsOverviewInfoBlock } from '../components/ProductsOverviewInfoBlock';
-import { ProductsOperationalInfoBlock } from '../components/ProductsOperationalInfoBlock';
-import { ProductsSupplyInfoBlock } from '../components/ProductsSupplyInfoBlock';
-import { ProductsDependencyInfoBlock } from '../components/ProductsDependencyInfoBlock';
+import { ProductsOverviewInfoBlock } from '../components/ProductsOverviewInfoBlock.js';
+import { ProductsOperationalInfoBlock } from '../components/ProductsOperationalInfoBlock.js';
+import { ProductsSupplyInfoBlock } from '../components/ProductsSupplyInfoBlock.js';
+import { ProductsDependencyInfoBlock } from '../components/ProductsDependencyInfoBlock.js';
 
-import { ProductsAlignmentInfoBlock } from '../components/ProductsAlignmentInfoBlock';
+import { ProductsAlignmentInfoBlock } from '../components/ProductsAlignmentInfoBlock.js';
 
 /**
  * ProductsModuleFT2DataProps

@@ -1,4 +1,4 @@
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { orderNexusOnboardingSignalProvider } from 'api-src/onboarding/readiness.providers';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedCanonicalOrder } from '../../helpers/seedCanonicalOrder';

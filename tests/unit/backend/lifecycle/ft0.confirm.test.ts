@@ -1,7 +1,7 @@
 //tests/unit/backend/lifecycle/ft0.confirm.test.ts
 import request from 'supertest';
 import app from 'api-server';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import { issueTestToken } from '../../helpers/auth';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 

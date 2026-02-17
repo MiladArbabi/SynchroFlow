@@ -1,6 +1,6 @@
 // tests/unit/backend/entitlements/entitlements.revocation.test.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { EntitlementsService } from 'api-src/services/entitlements.service';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 

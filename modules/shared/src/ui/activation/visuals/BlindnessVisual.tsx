@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { SemanticStatus } from '../types';
+import { SemanticStatus } from '../types.js';
 
 export interface BlindnessVisualProps {
   status: SemanticStatus;

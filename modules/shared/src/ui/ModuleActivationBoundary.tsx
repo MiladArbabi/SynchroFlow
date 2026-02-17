@@ -1,8 +1,8 @@
 // modules/shared/src/ui/ModuleActivationBoundary.tsx
 
 import React from 'react';
-import { ActivationUIState } from './activation/activation-mapper';
-import { ActivationSurfaceProps } from './activation/types';
+import { ActivationUIState } from './activation/activation-mapper.js';
+import { ActivationSurfaceProps } from './activation/types.js';
 
 export interface ModuleActivationBoundaryProps {
   activation: ActivationUIState;

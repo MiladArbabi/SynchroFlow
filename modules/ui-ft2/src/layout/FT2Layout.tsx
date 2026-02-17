@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { FT2_TOKENS } from './ft2.tokens';
+import { FT2_TOKENS } from './ft2.tokens.js';
 
 export type FT2LayoutProps = {
   children: React.ReactNode;

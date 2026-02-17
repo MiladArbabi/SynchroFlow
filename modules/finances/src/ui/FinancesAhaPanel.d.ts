@@ -1,4 +1,4 @@
-import { FinancesUiIntent } from './intents';
+import { FinancesUiIntent } from './intents.js';
 interface FinancesAhaSummary {
     hasRisk: boolean;
     riskCount: number;

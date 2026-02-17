@@ -1,4 +1,4 @@
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedCanonicalProduct } from '../../helpers/seedCanonicalProduct';
 import { getProductsFacts } from 'api-src/services/products-facts/ProductsFacts.service';

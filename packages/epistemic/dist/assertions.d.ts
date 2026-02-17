@@ -1,4 +1,4 @@
-import type { EpistemicValue } from './epistemic';
+import type { EpistemicValue } from './epistemic.js';
 /**
  * assertKnown
  * -----------

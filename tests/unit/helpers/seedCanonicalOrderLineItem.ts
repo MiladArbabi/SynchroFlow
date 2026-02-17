@@ -1,5 +1,5 @@
 // tests/unit/helpers/seedCanonicalOrderLineItem.ts
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 
 type SeedCanonicalOrderLineItemInput = {
   shopId: number;

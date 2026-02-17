@@ -1,4 +1,4 @@
-import { EpistemicValue } from './epistemic';
+import { EpistemicValue } from './epistemic.js';
 
 /**
  * legacyToEpistemic

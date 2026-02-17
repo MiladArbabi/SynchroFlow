@@ -14,12 +14,12 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 
 import { Dayjs } from 'dayjs';
 
-import type { FT2DateRange } from '../contracts/ft2DateRange';
-import { FT2PresetSelector } from './FT2PresetSelector';
+import type { FT2DateRange } from '../contracts/ft2DateRange.js';
+import { FT2PresetSelector } from './FT2PresetSelector.js';
 import {
   ft2PresetReducer,
   FT2PresetSelectorState,
-} from './FT2PresetSelector.state';
+} from './FT2PresetSelector.state.js';
 
 // ─────────────────────────────────────────────
 // Initial reducer state

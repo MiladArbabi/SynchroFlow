@@ -82,7 +82,7 @@ const response = await client.request(`
           movement_type: 'manual_adjustment',
           quantity_delta: qty,
           reference_type: 'opening_balance',
-          reference_id: `shopify-${shopifyVariantId}`,
+          reference_id: crypto.randomUUID(),
           platform: 'shopify',
           occurred_at: new Date(),
         })

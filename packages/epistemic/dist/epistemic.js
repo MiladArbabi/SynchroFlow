@@ -22,4 +22,3 @@
  * If this disappears, epistemic exhaustiveness collapses silently.
  */
 export const __EPISTEMIC_DECLARATION_ANCHOR__ = true;
-//# sourceMappingURL=epistemic.js.map

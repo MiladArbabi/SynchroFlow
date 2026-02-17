@@ -2,7 +2,7 @@
 // -------------------
 // Interpretation Rail (FT2-adjacent).
 // Copy-only. No logic.
-import { InfoBlockFooterContainer } from './InfoBlock.styles';
+import { InfoBlockFooterContainer } from './InfoBlock.styles.js';
 
 export interface InfoBlockFooterProps {
   line1: string;

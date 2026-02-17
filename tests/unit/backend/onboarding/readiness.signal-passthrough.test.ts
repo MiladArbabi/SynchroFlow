@@ -1,5 +1,5 @@
 // tests/unit/backend/onboarding/readiness.signal-passthrough.test.ts
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedCanonicalProduct } from '../../helpers/seedCanonicalProduct';
 import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';

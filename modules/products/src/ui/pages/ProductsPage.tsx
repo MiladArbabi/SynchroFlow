@@ -1,7 +1,7 @@
 // modules/products/src/ui/pages/ProductsPage.tsx
 
-import { useProductsFt1Scenario } from '../hooks/useProductsFt1Scenario';
-import { ProductsDiagnosticCard } from '../components/ProductsDiagnosticCard';
+import { useProductsFt1Scenario } from '../hooks/useProductsFt1Scenario.js';
+import { ProductsDiagnosticCard } from '../components/ProductsDiagnosticCard.js';
 
 export interface ProductsModuleProps {
   productCount: number | null;

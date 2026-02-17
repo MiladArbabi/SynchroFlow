@@ -1,7 +1,7 @@
 // tests/unit/backend/webhooks/webhook.ledger.duplicate.contract.test.ts
 
 import { WebhookLedgerService } from 'api-src/services/webhook-ledger.service';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 jest.mock('api-src/db', () => jest.fn());
 

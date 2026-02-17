@@ -8,7 +8,7 @@ import {
   InfoBlockRowLabel,
   InfoBlockRowValue,
   InfoBlockRowDiff,
-} from './InfoBlock.styles';
+} from './InfoBlock.styles.js';
 
 export type InfoBlockDiffTone = 'up' | 'down' | 'neutral';
 export type InfoBlockDiffPosition = 'left' | 'right';

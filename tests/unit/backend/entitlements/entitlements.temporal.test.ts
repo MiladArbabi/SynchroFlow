@@ -1,6 +1,6 @@
 // tests/unit/backend/entitlements/entitlements.temporal.test.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { EntitlementsService } from 'api-src/services/entitlements.service';
 import { CommercialGrantService } from 'api-src/services/commercial-grant.service';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';

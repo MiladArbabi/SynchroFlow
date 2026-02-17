@@ -1,5 +1,5 @@
 //tests/unit/backend/lifecycle/lifecycle.no-auto-latch.test.ts
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import { LifecycleService } from 'api-src/services/lifecycle.service';
 import { FT2LatchService } from 'api-src/services/ft2-latch.service';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';

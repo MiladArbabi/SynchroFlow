@@ -1,3 +1,3 @@
-export { legacyToEpistemic, legacyToEpistemic as toEpistemic } from './adapters';
-export type { EpistemicValue, EpistemicState } from './epistemic';
-export * from './assertions';
+export { legacyToEpistemic, legacyToEpistemic as toEpistemic } from './adapters.js';
+export type { EpistemicValue, EpistemicState } from './epistemic.js';
+export * from './assertions.js';

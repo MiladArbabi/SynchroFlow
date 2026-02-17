@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { FT2_TOKENS } from '../layout/ft2.tokens';
+import { FT2_TOKENS } from '../layout/ft2.tokens.js';
 
 export type FT2LegendItem = {
   label: string;

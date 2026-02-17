@@ -1,8 +1,8 @@
 // modules/shared/src/ui/activation/activation-mapper.ts
 
-import { ActivationSurfaceState } from '../../activation/deriveActivationSurfaceState';
-import { ActivationSurfaceProps } from './types';
-import { buildActivationSurfaceProps } from './buildActivationSurfaceProps';
+import { ActivationSurfaceState } from '../../activation/deriveActivationSurfaceState.js';
+import { ActivationSurfaceProps } from './types.js';
+import { buildActivationSurfaceProps } from './buildActivationSurfaceProps.js';
 
 /**
  * UI-level activation state.

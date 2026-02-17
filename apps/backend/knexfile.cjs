@@ -18,8 +18,12 @@ module.exports = {
     },
     migrations: {
       tableName: 'knex_migrations',
-      directory: path.join(__dirname, './migrations'),
-      extension: 'ts',
+      directory: path.join(__dirname, './dist/migrations'),
+      extension: 'js',
     },
-  },
+    seeds: {
+      directory: path.join(__dirname, './dist/seeds'),
+      extension: 'js',
+    }
+  }
 };

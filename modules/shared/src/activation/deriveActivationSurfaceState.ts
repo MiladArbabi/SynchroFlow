@@ -15,7 +15,7 @@ import type {
   ActivationSurfaceContext,
   ActivationVerdict,
   FT0Phase,
-} from './types';
+} from './types.js';
 
 /**
  * UI-facing activation surface state.

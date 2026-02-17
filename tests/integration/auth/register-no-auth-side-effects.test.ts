@@ -1,6 +1,6 @@
 import request from 'supertest';
 import app from 'api-server';
-import db from 'api-db'
+import db from '@lasyncro/backend-core/db.js'
 
 describe('Auth registration → no auth side-effects (regression guard)', () => {
   beforeEach(async () => {

@@ -1,5 +1,5 @@
 //tests/unit/backend/specter/specterFacts.service.test.ts
-import { InMemorySessionStore, setSessionStoreForTests } from 'modules-specter/store/session-store';
+import { InMemorySessionStore, setSessionStoreForTests } from '@lasyncro/specter/store/session-store';
 import { getSpecterFacts } from 'api-src/services/specter-facts/specterFacts.service';
 
 describe('SpecterFacts.service', () => {

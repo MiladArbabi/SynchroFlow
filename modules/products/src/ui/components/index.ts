@@ -1,5 +1,5 @@
-export { ProductsOverviewInfoBlock } from './ProductsOverviewInfoBlock';
-export { ProductsAlignmentInfoBlock } from './ProductsAlignmentInfoBlock';
-export { ProductsDependencyInfoBlock } from './ProductsDependencyInfoBlock';
-export { ProductsOperationalInfoBlock } from './ProductsOperationalInfoBlock';
-export { ProductsSupplyInfoBlock } from './ProductsSupplyInfoBlock';
+export { ProductsOverviewInfoBlock } from './ProductsOverviewInfoBlock.js';
+export { ProductsAlignmentInfoBlock } from './ProductsAlignmentInfoBlock.js';
+export { ProductsDependencyInfoBlock } from './ProductsDependencyInfoBlock.js';
+export { ProductsOperationalInfoBlock } from './ProductsOperationalInfoBlock.js';
+export { ProductsSupplyInfoBlock } from './ProductsSupplyInfoBlock.js';

@@ -2,9 +2,14 @@
   "name": "@lasyncro/products",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "types": "./dist/ui/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json"
+  },    
+  "dependencies": {
+    "@lasyncro/epistemic": "0.1.0",
+    "@lasyncro/ui-ft2": "0.1.0"
   },
   "exports": {
     ".": {

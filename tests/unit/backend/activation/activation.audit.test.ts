@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { createActivationTestApp } from 'api-src/api/activation/__tests__/createActivationTestApp';
 const app = createActivationTestApp();
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import { ACTIVATION_DERIVATION_VERSION } from '@lasyncro/shared/activation';
 
 jest.mock('api-src/db', () => {

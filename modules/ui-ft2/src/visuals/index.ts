@@ -1,10 +1,10 @@
-export { FT2Stat } from './FT2Stat';
-export { FT2Ratio } from './FT2Ratio';
-export { FT2Distribution } from './FT2Distribution';
-export { FT2TimeSeries } from './FT2TimeSeries';
-export { FT2DualTimeSeries } from './FT2DualTimeSeries';
-export * from './FT2Scatter';
+export { FT2Stat } from './FT2Stat.js';
+export { FT2Ratio } from './FT2Ratio.js';
+export { FT2Distribution } from './FT2Distribution.js';
+export { FT2TimeSeries } from './FT2TimeSeries.js';
+export { FT2DualTimeSeries } from './FT2DualTimeSeries.js';
+export * from './FT2Scatter.js';
 
-export * from './FT2AxisLabel';
-export * from './FT2Legend';
-export * from './FT2ImpactMatrix';
+export * from './FT2AxisLabel.js';
+export * from './FT2Legend.js';
+export * from './FT2ImpactMatrix.js';

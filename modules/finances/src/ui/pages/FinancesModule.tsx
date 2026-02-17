@@ -1,8 +1,8 @@
 // modules/finances/src/ui/pages/FinancesModule.tsx
 
-import { useFinancesFt1Scenario } from '../hooks/useFinancesFt1Scenario';
-import { FinancesDiagnosticCard } from '../components/FinancesDiagnosticCard';
-import type { FinancesUiIntent } from '../intents';
+import { useFinancesFt1Scenario } from '../hooks/useFinancesFt1Scenario.js';
+import { FinancesDiagnosticCard } from '../components/FinancesDiagnosticCard.js';
+import type { FinancesUiIntent } from '../intents.js';
 
 export interface FinancesModuleProps {
   transactionCount: number | null;

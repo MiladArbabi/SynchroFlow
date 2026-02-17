@@ -40,7 +40,7 @@ jest.mock('api-db', () => {
 });
 
 // import AFTER mock so Jest wiring is correct
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 
 describe('OrderFactsService (Layer 1)', () => {
   const shopId = 1;

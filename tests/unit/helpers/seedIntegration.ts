@@ -1,6 +1,6 @@
 // tests/unit/helpers/seedIntegration.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 
 type SeedIntegrationInput = {
   shopId: number;

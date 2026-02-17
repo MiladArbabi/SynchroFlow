@@ -16,7 +16,7 @@
  * - finances.baseSignalsReady
  */
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { onboardingSignalProviders } from 'api-src/onboarding/readiness.providers';
 
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';

@@ -1,6 +1,6 @@
 // modules/shared/src/contracts/free-tier.ts
 // Free Tier Exposure Policy Contract (FTEP v1.1) – LOCKED
-import { ModuleId } from './onboarding';
+import { ModuleId } from './onboarding.js';
 
 export type ModuleAccessState =
   | 'visible'

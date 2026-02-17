@@ -1,4 +1,4 @@
-import { FT2EmptyState } from './FT2EmptyState';
+import { FT2EmptyState } from './FT2EmptyState.js';
 
 export type FT2DistributionProps = {
   buckets: Array<{

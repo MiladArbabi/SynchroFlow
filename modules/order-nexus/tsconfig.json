@@ -4,7 +4,8 @@
     "rootDir": "src",
     "outDir": "dist",
 
-    "module": "ESNext",
+    "module": "Node16",
+    "moduleResolution": "node16",
     "jsx": "react-jsx",
 
     "declaration": true,
@@ -16,9 +17,7 @@
 
     "allowImportingTsExtensions": false
   },
-  "include": [
-    "src/**/*", 
-    "../shared/src/contracts.ts"  ],
+  "include": [ "src/**/*"],
   "references": [
     { "path": "../../packages/epistemic" }
   ]

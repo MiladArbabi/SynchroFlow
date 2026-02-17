@@ -1,7 +1,7 @@
 // modules/shared/src/ui/activation/buildActivationSurfaceProps.ts
 
-import { ActivationSurfaceState } from '../../activation/deriveActivationSurfaceState';
-import { ActivationSurfaceProps } from './types';
+import { ActivationSurfaceState } from '../../activation/deriveActivationSurfaceState.js';
+import { ActivationSurfaceProps } from './types.js';
 
 export function buildActivationSurfaceProps(
   state: ActivationSurfaceState,

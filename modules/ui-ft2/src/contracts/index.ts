@@ -1,1 +1,1 @@
-export * from './ft2DateRange';
+export * from './ft2DateRange.js';

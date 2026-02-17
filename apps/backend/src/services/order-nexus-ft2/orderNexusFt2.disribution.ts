@@ -19,5 +19,12 @@ export async function getOrderNexusFt2Distribution({
   shopId: number;
   range: FT2RangeInput;
 }): Promise<OrdersFt2Distribution> {
-  throw new Error('getOrderNexusFt2Distribution not implemented');
+  return {
+    totalOrders: 0,
+    minOrderValue: null,
+    medianOrderValue: null,
+    maxOrderValue: null,
+    histogram: [],
+  };
 }
+

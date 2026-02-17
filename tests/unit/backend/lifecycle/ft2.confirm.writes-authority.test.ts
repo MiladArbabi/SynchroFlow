@@ -1,7 +1,7 @@
 // tests/unit/backend/lifecycle/ft2.confirm.writes-authority.test.ts
 
 import request from 'supertest';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import app from 'api-server';
 import crypto from 'crypto';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';

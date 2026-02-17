@@ -1,4 +1,4 @@
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { LifecycleService } from 'api-src/services/lifecycle.service';
 
 describe('Lifecycle snapshot default', () => {

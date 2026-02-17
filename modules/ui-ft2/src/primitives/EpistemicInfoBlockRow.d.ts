@@ -1,4 +1,4 @@
-import type { EpistemicVisualSignal } from '../contracts/epistemicVisuals';
+import type { EpistemicVisualSignal } from '../contracts/epistemicVisuals.js';
 export declare function EpistemicInfoBlockRow({ label, signal, }: {
     label: string;
     signal: EpistemicVisualSignal;

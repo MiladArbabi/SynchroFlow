@@ -1,6 +1,6 @@
 //tests/integration/auth/middleware-login-bypass.test.ts
 import request from 'supertest';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import app from 'api-server';
 
 describe('Auth middleware invariant: login bypasses stale auth state', () => {

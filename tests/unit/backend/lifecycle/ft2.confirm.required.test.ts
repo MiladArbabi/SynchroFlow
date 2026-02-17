@@ -1,5 +1,5 @@
 //tests/unit/backend/lifecycle/ft2.confirm.required.test.ts
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import { LifecycleService } from 'api-src/services/lifecycle.service';
 import { FT2EvaluatorService } from 'api-src/services/ft2-evaluator.service';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';

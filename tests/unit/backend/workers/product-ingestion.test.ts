@@ -1,6 +1,6 @@
 // tests/unit/backend/workers/product-ingestion.test.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedIntegration } from '../../helpers/seedIntegration';
 import { processProductMessage } from 'api-src/workers/product-worker';

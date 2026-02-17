@@ -6,7 +6,7 @@ import {
 
 import { EpistemicInfoBlockRow } from '@lasyncro/ui-ft2';
 import type { EpistemicValue } from '@lasyncro/epistemic';
-import { renderEpistemicMoney } from './renderEpistemicMoney';
+import { renderEpistemicMoney } from './renderEpistemicMoney.js';
 
 /**
  * RevenueOverviewInfoBlockProps

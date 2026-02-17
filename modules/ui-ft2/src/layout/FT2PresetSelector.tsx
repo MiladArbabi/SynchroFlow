@@ -1,5 +1,5 @@
 import { Button, ButtonGroup, Box } from '@mui/material';
-import type { FT2DateRangePreset } from '../contracts/ft2DateRange';
+import type { FT2DateRangePreset } from '../contracts/ft2DateRange.js';
 
 const PRESETS: { label: string; value: FT2DateRangePreset }[] = [
   { label: 'Today', value: 'today' },

@@ -11,7 +11,7 @@
  *   services/lifecycle.service.ts
  */
 
-import { FT0Phase, IntegrationSnapshot } from './types';
+import { FT0Phase, IntegrationSnapshot } from './types.js';
 
 export function deriveFT0Phase(
   integrations: IntegrationSnapshot[],

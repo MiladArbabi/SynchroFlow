@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivationSurfaceProps } from './types';
+import { ActivationSurfaceProps } from './types.js';
 
 export const ActivationSurface: React.FC<ActivationSurfaceProps> = ({
   identity,

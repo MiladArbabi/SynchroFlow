@@ -2,10 +2,15 @@
   "name": "@lasyncro/overview",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Overview UI module",
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@lasyncro/epistemic": "0.1.0",
+    "@lasyncro/ui-ft2": "0.1.0"
   },
   "exports": {
     ".": {

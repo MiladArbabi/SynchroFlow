@@ -1,7 +1,7 @@
 //tests/unit/backend/specter/specter-ft2.controller.test.ts
 import request from 'supertest';
 import app from 'api-server';
-import { InMemorySessionStore, setSessionStoreForTests } from 'modules-specter/store/session-store';
+import { InMemorySessionStore, setSessionStoreForTests } from '@lasyncro/specter/store/session-store';
 
 describe('GET /api/v1/specter/ft2', () => {
   const shopId = 99;

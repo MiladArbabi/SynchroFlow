@@ -3,7 +3,7 @@
 import request from 'supertest';
 import crypto from 'crypto';
 import { createApp } from 'api-src/bootstrap/express';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 const app = createApp();
 

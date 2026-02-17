@@ -1,6 +1,6 @@
 // tests/unit/backend/lifecycle/lifecycle.service.test.ts
 import { LifecycleService } from 'api-src/services/lifecycle.service';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 jest.mock('api-src/db', () => jest.fn());
 

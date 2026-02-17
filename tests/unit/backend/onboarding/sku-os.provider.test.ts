@@ -1,6 +1,6 @@
 // tests/unit/backend/onboarding/sku-os.provider.test.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { skuOsOnboardingSignalProvider } from 'api-src/onboarding/readiness.providers';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedCanonicalProduct } from '../../helpers/seedCanonicalProduct';

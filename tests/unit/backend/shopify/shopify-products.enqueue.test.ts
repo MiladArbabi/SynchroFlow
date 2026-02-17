@@ -2,7 +2,7 @@
 
 import * as productWorker from 'api-src/workers/product-worker';
 import { performInitialSync } from 'api-src/services/shopify.service';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import { seedShopAndUser } from '../../helpers/seedShopAndUser';
 import { seedIntegration } from '../../helpers/seedIntegration';
 

@@ -1,1 +1,1 @@
-export { BlindnessVisual } from './BlindnessVisual';
+export { BlindnessVisual } from './BlindnessVisual.js';

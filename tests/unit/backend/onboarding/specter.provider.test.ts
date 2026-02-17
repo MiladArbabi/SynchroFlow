@@ -4,7 +4,7 @@ import { specterOnboardingSignalProvider } from 'api-src/onboarding/providers/sp
 import {
   InMemorySessionStore,
   setSessionStoreForTests
-} from 'modules-specter/store/session-store';
+} from '@lasyncro/specter/store/session-store';
 
 describe('Specter Onboarding Signal Provider (FT1 readiness)', () => {
   const shopId = 7777;

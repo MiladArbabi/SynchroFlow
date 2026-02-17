@@ -1,5 +1,5 @@
 // packages/epistemic/src/index.ts
-export { legacyToEpistemic, legacyToEpistemic as toEpistemic } from './adapters';
-export type { EpistemicValue, EpistemicState } from './epistemic';
+export { legacyToEpistemic, legacyToEpistemic as toEpistemic } from './adapters.js';
+export type { EpistemicValue, EpistemicState } from './epistemic.js';
 
-export * from './assertions';
+export * from './assertions.js';

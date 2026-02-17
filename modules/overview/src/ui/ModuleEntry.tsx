@@ -1,6 +1,6 @@
 // modules/overview/src/ui/ModuleEntry.tsx
 
-import type { ModuleDescriptor } from './ModuleDescriptor';
+import type { ModuleDescriptor } from './ModuleDescriptor.js';
 
 const descriptor: ModuleDescriptor = {
   id: 'overview',

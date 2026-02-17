@@ -1,7 +1,7 @@
 //tests/integration/auth/login-resets-stale-session.test.ts
 
 import request from 'supertest';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import app from 'api-server';
 
 function extractRefreshCookie(res: request.Response): string {

@@ -2,7 +2,7 @@
 
 import { confirmFt2, evaluateFt2 } from 'api-src/api/lifecycle/lifecycle.controller';
 import { FT2EvaluatorService } from 'api-src/services/ft2-evaluator.service';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 jest.mock('api-src/db', () => {
   const mockDb: any = jest.fn();

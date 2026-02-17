@@ -19,9 +19,9 @@
 
 // modules/order-nexus/src/ui/pages/OrdersModule.tsx
 
-import { useOrdersFt1Scenario } from '../hooks/useOrdersFt1Scenario';
-import { OrderNexusDiagnosticCard } from '../components/OrderNexusDiagnosticCard';
-import type { OrderNexusUiIntent } from '../intents';
+import { useOrdersFt1Scenario } from '../hooks/useOrdersFt1Scenario.js';
+import { OrderNexusDiagnosticCard } from '../components/OrderNexusDiagnosticCard.js';
+import type { OrderNexusUiIntent } from '../intents.js';
 
 export interface OrdersModuleProps {
   ordersIngested: number | null;

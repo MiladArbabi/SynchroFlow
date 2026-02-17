@@ -3,7 +3,7 @@
 // These tests exercise the in-memory snapshot paths so they are safe to run in CI without a Redis server.
 
 import { RedisSessionStore } from 'modules-specter/store/session-store-redis';
-import { AnonymousSession } from 'modules-specter/store/session-store';
+import { AnonymousSession } from '@lasyncro/specter/store/session-store';
 
 describe('RedisSessionStore — snapshot behaviour (no redis connection)', () => {
   let store: RedisSessionStore;

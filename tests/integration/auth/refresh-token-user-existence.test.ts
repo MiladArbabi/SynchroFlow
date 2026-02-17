@@ -1,7 +1,7 @@
 //tests/integration/auth/refresh-token-user-existence.test.ts
 
 import request from 'supertest';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import app from 'api-server';
 
 describe('Auth invariant: refresh token requires existing user', () => {

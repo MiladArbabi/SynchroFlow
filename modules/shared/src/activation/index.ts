@@ -1,6 +1,6 @@
 //modules/shared/src/activation/index.ts
-export * from './types';
-export * from './deriveFT0Phase';
-export * from './deriveActivationVerdict';
-export * from './derivationVersion';
-export * from './deriveActivationSurfaceState';
+export * from './types.js';
+export * from './deriveFT0Phase.js';
+export * from './deriveActivationVerdict.js';
+export * from './derivationVersion.js';
+export * from './deriveActivationSurfaceState.js';

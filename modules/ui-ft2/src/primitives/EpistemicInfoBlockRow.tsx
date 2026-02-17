@@ -21,9 +21,9 @@
  * are interpreted visually.
  */
 
-import { InfoBlockRow } from './InfoBlockRow';
-import type { EpistemicVisualSignal } from '../primitives/epistemic.types';
-import { epistemicToneTokens } from '../layout/tokens';
+import { InfoBlockRow } from './InfoBlockRow.js';
+import type { EpistemicVisualSignal } from '../primitives/epistemic.types.js';
+import { epistemicToneTokens } from '../layout/tokens.js';
 
 export interface EpistemicInfoBlockRowProps {
   label: string;

@@ -11,7 +11,7 @@ import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
 import { CommercialGrantService } from 'api-src/services/commercial-grant.service';
 import { signStripePayload } from '../../helpers/stripeTestSignature';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 
 jest.mock('api-src/services/commercial-grant.service');
 

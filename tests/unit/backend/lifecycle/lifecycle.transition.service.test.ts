@@ -1,7 +1,7 @@
 // tests/unit/backend/lifecycle/lifecycle.transition.service.test.ts
 
 import { LifecycleTransitionService } from 'api-src/services/lifecycle-transition.service';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 jest.mock('api-src/db', () => {
   const mockDb: any = jest.fn();

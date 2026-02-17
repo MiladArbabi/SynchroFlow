@@ -2,7 +2,7 @@
 
 import request from 'supertest';
 import app from 'api-server';
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import bcrypt from 'bcrypt';
 
 describe('Auth invariants: shop membership resolution', () => {

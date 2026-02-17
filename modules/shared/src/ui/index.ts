@@ -1,2 +1,2 @@
-export * from './activation';
-export * from './ModuleActivationBoundary';
+export * from './activation/index.js';
+export * from './ModuleActivationBoundary.js';

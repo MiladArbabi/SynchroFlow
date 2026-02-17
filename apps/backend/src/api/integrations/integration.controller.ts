@@ -15,6 +15,7 @@
 // apps/backend/src/api/integrations/integration.controller.ts
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import CryptoJS from 'crypto-js';
 import db from '@lasyncro/backend-core/db.js';
 import axios from 'axios';
 import { issueAuthTokens } from '../../api/auth/token.service.js';
