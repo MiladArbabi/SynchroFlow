@@ -15,15 +15,17 @@ import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('ft0_state', table => {
-    table.increments('id').primary();
-
+    /**
+     * shop_id is the primary identity.
+     * Exactly one row per shop.
+     */
     table
       .integer('shop_id')
       .notNullable()
+      .primary()
       .references('id')
       .inTable('shops')
-      .onDelete('CASCADE')
-      .unique();
+      .onDelete('CASCADE');
 
     table
       .string('status')

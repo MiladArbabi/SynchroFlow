@@ -2,16 +2,49 @@
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
-  await knex.schema.createTable('user_lifecycle_snapshot', (table) => {
-    table.integer('user_id').notNullable().primary();
-    table.integer('shop_id').notNullable();
+  await knex.schema.createTable('user_lifecycle_snapshot', table => {
+    table
+      .integer('user_id')
+      .notNullable()
+      .primary()
+      .references('id')
+      .inTable('users')
+      .onDelete('CASCADE');
 
-    table.string('phase', 32).notNullable();
-    table.timestamp('since', { useTz: true }).notNullable();
+    table
+      .integer('shop_id')
+      .notNullable()
+      .references('id')
+      .inTable('shops')
+      .onDelete('CASCADE');
 
-    table.uuid('last_event_id').notNullable();
+    table
+      .string('phase', 32)
+      .notNullable();
 
-    table.timestamp('updated_at', { useTz: true })
+    table
+      .timestamp('since', { useTz: true })
+      .notNullable();
+
+    /**
+     * last_event_id
+     * -------------
+     * Logical pointer to most recent lifecycle event.
+     *
+     * IMPORTANT:
+     * - No FK constraint here.
+     * - Snapshot must not be structurally coupled
+     *   to a specific ledger implementation.
+     * - Allows future switch from legacy
+     *   lifecycle_audit_events → lifecycle_events
+     *   without schema lock-in.
+     */
+    table
+      .uuid('last_event_id')
+      .notNullable();
+
+    table
+      .timestamp('updated_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
 
@@ -24,6 +57,7 @@ export async function up(knex: Knex): Promise<void> {
     CHECK (phase IN ('FT_MINUS_ONE', 'FT0', 'FT1', 'FT2'))
   `);
 }
+
 
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('user_lifecycle_snapshot');

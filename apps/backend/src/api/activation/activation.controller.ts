@@ -1,16 +1,12 @@
 //apps/backend/src/api/activation/activation.controller.ts
 
 /**
- * Activation Verdict Controller
- * -----------------------------
- * - IO-only layer
- * - Delegates ALL decision logic to shared pure derivation functions
- * - Writes authoritative audit events
+ * Activation verdict endpoint is strictly read-only.
+ * No audit events are emitted here.
  *
- * IMPORTANT:
- * - Do NOT introduce new verdict states here
- * - Do NOT duplicate derivation logic
- * - If a state is missing, it belongs in shared/activation/types.ts
+ * If activation auditing is required,
+ * it must occur in a dedicated write workflow,
+ * never in a read surface.
  */
 
 import { Request, Response } from 'express';
@@ -21,14 +17,11 @@ import {
   deriveActivationVerdict,
   IdentitySnapshot,
   IntegrationSnapshot,
-  EntitlementSnapshot,
-  ACTIVATION_DERIVATION_VERSION
+  EntitlementSnapshot
 } from '@lasyncro/shared/activation';
 import { buildActivationSurface } from './activation.surface.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
-import { FT0CompletionService } from '../../services/ft0-completion.service.js';
 import { resolveShopIdForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
-import { buildActivationAuditEvent } from './buildActivationAuditEvent.js';
 
 export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;
@@ -67,7 +60,7 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     }));
   }
 
-    // --- Entitlements ---
+  // --- Entitlements ---
   let entitlements: EntitlementSnapshot[] = [];
 
   if (userId) {
@@ -78,12 +71,20 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
         enabled: true,
       }));
     }
-  }
+  };
 
-  // --- Fact write: FT0 completion (idempotent, no derivation) ---
-  if (shopId) {
-    await FT0CompletionService.evaluateAndComplete(shopId);
-  }
+  /**
+   * IMPORTANT:
+   * Activation verdict endpoint is STRICTLY read-only.
+   * It must not mutate readiness, lifecycle, or entitlements.
+   *
+   * FT0 completion must be triggered by:
+   * - Sync completion pipeline
+   * - First insight delivery
+   * - Explicit readiness workflow
+   *
+   * Never from a read surface.
+   */
 
   // --- Pure activation derivation ---
   const verdict = deriveActivationVerdict({
@@ -95,31 +96,6 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
   // --- Activation UI surface ---
   const activationSurface = buildActivationSurface({
     verdict,
-  });
-
-  // --- Audit (must include surface) ---
-  const auditEvent = buildActivationAuditEvent({
-    derivationVersion: ACTIVATION_DERIVATION_VERSION,
-    userId,
-    shopId,
-    entryChannel,
-    identity,
-    integrations,
-    entitlements,
-    verdict,
-    activationSurface,
-  });
-
-  db('activation_audit_events').insert(auditEvent).catch((err: Error) => {
-    console.error(
-      JSON.stringify({
-        event: 'activation.audit.failed',
-        auditEventId: auditEvent.event_id,
-        userId,
-        shopId,
-        error: err?.message,
-      })
-    );
   });
 
   console.info(

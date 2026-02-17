@@ -108,53 +108,74 @@ export class FT0CompletionService {
 
     console.log('[FT0Completion] Preconditions passed, writing ft0_state for shopId:', shopId);
 
-    // 6. Complete FT0 (single authoritative write)
-    try {
-      const inserted = await db('ft0_state')
-      .insert({
-        shop_id: shopId,
-        status: 'COMPLETED',
-        completed_at: db.fn.now(),
-        completion_reason: {
-          integration: true,
-          syncCompleted: true,
-          orders: orderCount,
-          firstInsightDelivered: true,
-        },
-      })
-      .onConflict('shop_id')
-      .ignore()
-      .returning('shop_id');
-
-    // If nothing was inserted, FT0 already existed
-    if (inserted.length === 0) {
-      return { completed: true, alreadyCompleted: true };
-    }
-
-    // 🔔 FT0 COMPLETION AUDIT EVENT (emitted exactly once)
-    await db('activation_audit_events').insert({
-      event_id: crypto.randomUUID(),
-      event_type: 'FT0_COMPLETED',
-      shop_id: shopId,
-      occurred_at: db.fn.now(),
-      payload: {
-        orders: orderCount,
-        firstInsightDelivered: true,
-      },
+    console.debug('[FT0][READY_TO_COMPLETE]', {
+      shopId,
+      orderCount,
     });
 
-    return { completed: true };
-    } catch (err) {
-      // Defensive fallback (should never happen after uniqueness)
-      const existing = await db('ft0_state')
-        .where({ shop_id: shopId })
-        .first();
+    /**
+     * Atomic FT0 completion.
+     *
+     * Guarantees:
+     * - ft0_state and audit event are written in the same transaction.
+     * - Either both persist or neither persist.
+     * - No fallback reads.
+     */
+    return await db.transaction(async trx => {
+      const inserted = await trx('ft0_state')
+        .insert({
+          shop_id: shopId,
+          status: 'COMPLETED',
+          completed_at: trx.fn.now(),
+          completion_reason: {
+            integration: true,
+            syncCompleted: true,
+            orders: orderCount,
+            firstInsightDelivered: true,
+          },
+        })
+        .onConflict('shop_id')
+        .ignore()
+        .returning('shop_id');
 
-      if (existing?.status === 'COMPLETED') {
+      if (inserted.length === 0) {
+        console.debug('[FT0][ALREADY_COMPLETED]', { shopId });
         return { completed: true, alreadyCompleted: true };
       }
 
-      throw err;
-    }
+      /**
+       * Dual-write: Durable readiness state (v2 backbone)
+       *
+       * Presence = READY
+       * Absence = UNREADY
+       *
+       * This table replaces ft0_state as authoritative
+       * readiness signal for future read-switch.
+       */
+      await trx('system_readiness_state')
+        .insert({
+          shop_id: shopId,
+          became_ready_at: trx.fn.now(),
+        })
+        .onConflict('shop_id')
+        .ignore();
+
+      await trx('activation_audit_events').insert({
+
+        event_id: crypto.randomUUID(),
+        event_type: 'FT0_COMPLETED',
+        shop_id: shopId,
+        occurred_at: trx.fn.now(),
+        payload: {
+          orders: orderCount,
+          firstInsightDelivered: true,
+        },
+      });
+
+      console.info('[FT0][COMPLETED]', { shopId });
+
+      return { completed: true };
+    });
+
   }
 }

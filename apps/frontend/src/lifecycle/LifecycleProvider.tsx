@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 // apps/frontend/src/lifecycle/LifecycleProvider.tsx
 import React, { useEffect, useReducer } from 'react';
@@ -140,43 +141,6 @@ export function LifecycleProvider({
     integration.bootResolved && integration.hasIntegration,
     shopId ?? undefined
   );
-
-/*    console.log('[LIFECYCLE_READINESS_OUTPUT]', data); 
- */
-  /* ---------------- Integration → lifecycle events ---------------- */
-
-  useEffect(() => {
-    if (isHydratedTerminal) return;
-    if (integration.bootResolved) {
-      dispatch({ type: 'BOOT_RESOLVED' });
-    }
-  }, [integration.bootResolved, isHydratedTerminal]);
-
-  useEffect(() => {
-    if (isHydratedTerminal) return;
-    if (integration.existence === 'EXISTS') {
-      dispatch({ type: 'INTEGRATION_CREATED' });
-    } else {
-      dispatch({ type: 'INTEGRATION_DELETED' });
-    }
-  }, [integration.existence, isHydratedTerminal]);
-
-  useEffect(() => {
-    if (isHydratedTerminal) return;
-    if (!ft2RestoreResolved) return;
-
-    if (
-      integration.syncStatus === 'PENDING' ||
-      integration.syncStatus === 'SYNCING'
-    ) {
-      dispatch({ type: 'SYNC_STARTED' });
-    }
-
-    if (integration.syncStatus === 'COMPLETED') {
-      dispatch({ type: 'SYNC_COMPLETED' });
-    }
-  }, [integration.syncStatus, ft2RestoreResolved, isHydratedTerminal]);
-
 
   useEffect(() => {
     if (isHydratedTerminal) return;

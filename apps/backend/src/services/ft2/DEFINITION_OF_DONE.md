@@ -19,6 +19,7 @@ FT2 Completion answers **one question only**:
 **FT2 Completion is declarative, not inferred.**
 
 Nothing becomes “complete” because:
+
 - enough data exists
 - UI rendered successfully
 - time passed
@@ -31,10 +32,18 @@ Completion is granted **only** by explicit, verifiable conditions.
 
 ## Single Authority
 
-- `ft2-completion.service.ts` is the **single source of truth**
-- No other service may decide FT2 completion
-- No frontend logic may influence completion
-- No resolver may “assume” completion
+- `confirmFt2` (lifecycle.controller.ts) is the ONLY write authority for FT2 promotion.
+- No standalone completion service exists.
+- No background latch service exists.
+- No frontend logic may influence completion.
+- No resolver may “assume” completion.
+
+FT2 completion is:
+
+- Explicit
+- User-triggered
+- Transaction-bound
+- Lifecycle-synchronized
 
 ---
 
@@ -63,6 +72,7 @@ The following **must exist and be terminal**:
 | Specter FT2  | Snapshot resolved |
 
 Rules:
+
 - `null` snapshot = **not complete**
 - Partial objects = **not complete**
 - Exceptions are not allowed

@@ -88,7 +88,6 @@ export async function getLifecycle(req: Request, res: Response) {
  * MUST:
  * - Confirm endpoints MUST be idempotent on the target phase.
  */
-
 export async function confirmFt1(req: Request, res: Response) {
   try {
     if (!req.user || req.user.userId == null) {
@@ -97,7 +96,6 @@ export async function confirmFt1(req: Request, res: Response) {
 
     const userId = req.user.userId;
 
-    // Resolve shop context (authoritative)
     const { shopId } = await requireShopContextForUser(userId);
     if (!shopId) {
       return res.status(409).json({
@@ -105,44 +103,46 @@ export async function confirmFt1(req: Request, res: Response) {
       });
     }
 
-    // Idempotency: snapshot may already exist
     const existing = await db('user_lifecycle_snapshot')
       .where({ user_id: userId })
       .first<{ phase: string }>();
 
     if (existing?.phase === 'FT1' || existing?.phase === 'FT2') {
-      /* console.info('[LIFECYCLE][FT1_CONFIRM][IDEMPOTENT]', {
-        userId,
-        shopId,
-        phase: existing.phase,
-      }); */
       return res.status(200).json({ phase: existing.phase });
     }
 
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT0',
+    /**
+     * ATOMIC PROMOTION:
+     *
+     * FT1 confirmation must NOT fabricate FT0.
+     * Readiness (FT0) is durability-driven and handled
+     * exclusively by FT0CompletionService.
+     *
+     * Lifecycle promotion here is explicit and user-triggered.
+     */
+    await db.transaction(async trx => {
+      await LifecycleTransitionService.auditIfTransitioned(
+        { userId, shopId, currentPhase: 'FT1' },
+        trx
+      );
     });
-
-    // Write FT1 snapshot explicitly
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT1',
-    });
-
-    /* console.info('[LIFECYCLE][FT1_CONFIRM][PROMOTED]', {
-      userId,
-      shopId,
-    }); */
 
     return res.status(200).json({ phase: 'FT1' });
-  } catch (err) {
-    console.error('[lifecycle][ft1-confirm] failed', err);
-    return res.status(500).json({ error: 'Failed to confirm FT1' });
-  }
-}
+      } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message.includes('Invalid lifecycle transition')
+      ) {
+        return res.status(409).json({
+          error: 'invalid_lifecycle_transition',
+          message: err.message,
+        });
+      }
+
+      console.error('[lifecycle][ft1-confirm] failed', err);
+      return res.status(500).json({ error: 'Failed to confirm FT1' });
+    }
+};
 
 /**
  * FT2 Confirm — WRITE AUTHORITY
@@ -163,7 +163,6 @@ export async function confirmFt1(req: Request, res: Response) {
  * MUST:
  * - Confirm endpoints MUST be idempotent on the target phase.
  */
-
 export async function confirmFt2(req: Request, res: Response) {
   try {
     if (!req.user || req.user.userId == null) {
@@ -172,28 +171,15 @@ export async function confirmFt2(req: Request, res: Response) {
 
     const userId = req.user.userId;
 
-    // 1. Snapshot read — lifecycle authority
     const snapshot = await db('user_lifecycle_snapshot')
       .where({ user_id: userId })
       .first<{ phase: string; shop_id: number }>();
 
-    console.info('[LIFECYCLE][CONFIRM][FT2][ATTEMPT]', {
-      userId,
-    });
-
-    // Idempotency: already FT2
     if (snapshot?.phase === 'FT2') {
-      console.info('[LIFECYCLE][CONFIRM][FT2][IDEMPOTENT]', { userId });
       return res.status(200).json({ phase: 'FT2' });
     }
 
-    // Strict precondition: must be FT1
     if (!snapshot || snapshot.phase !== 'FT1') {
-      console.info('[LIFECYCLE][CONFIRM][FT2][REJECTED]', {
-        userId,
-        phase: snapshot?.phase ?? 'NONE',
-      });
-
       return res.status(409).json({
         error: 'ft1_not_confirmed',
         phase: snapshot?.phase ?? null,
@@ -202,7 +188,6 @@ export async function confirmFt2(req: Request, res: Response) {
 
     const shopId = snapshot.shop_id;
 
-    // 1. Re-evaluate FT2 eligibility
     const evaluation = await FT2EvaluatorService.evaluate(shopId);
 
     if (!evaluation.eligible) {
@@ -212,42 +197,67 @@ export async function confirmFt2(req: Request, res: Response) {
       });
     }
 
-    // intentionally omitted — audit service resolves prior phase
-    // 2. Capture previous lifecycle phase BEFORE FT2
-    /* const previousPhase = await LifecycleService.resolveForUser(userId); */
+    /**
+     * ATOMIC FT2 PROMOTION:
+     * - Write durable FT2 latch
+     * - Write lifecycle audit
+     * - Update snapshot
+     * All must succeed or fail together.
+     */
+    await db.transaction(async trx => {
+      await trx('ft2_state')
+        .insert({
+          shop_id: shopId,
+          completed_at: trx.fn.now(),
+          evaluator_version: evaluation.evaluatorVersion,
+          evaluation_snapshot: evaluation,
+        })
+        .onConflict('shop_id')
+        .ignore();
 
-    // 2. Write FT2 latch (idempotent)
-    await db('ft2_state')
-      .insert({
-        shop_id: shopId,
-        completed_at: db.fn.now(),
-        evaluator_version: evaluation.evaluatorVersion,
-        evaluation_snapshot: evaluation,
-      })
-      .onConflict('shop_id')
-      .ignore();
+      /**
+       * Dual-write: Durable FT2 eligibility state (v2 backbone)
+       *
+       * This table will replace ft2_state during read-switch.
+       * Eligibility snapshot persisted verbatim.
+       */
+      await trx('expansion_eligibility_state')
+        .insert({
+          shop_id: shopId,
+          eligible: true,
+          evaluator_version: evaluation.evaluatorVersion,
+          evaluation_snapshot: evaluation,
+          evaluated_at: trx.fn.now(),
+        })
+        .onConflict('shop_id')
+        .merge({
+          eligible: true,
+          evaluator_version: evaluation.evaluatorVersion,
+          evaluation_snapshot: evaluation,
+          evaluated_at: trx.fn.now(),
+          updated_at: trx.fn.now(),
+        });
 
-    console.info('[LIFECYCLE][FT2_CONFIRM][LATCH_WRITTEN]', {
-      userId,
-      shopId,
+      await LifecycleTransitionService.auditIfTransitioned(
+
+        { userId, shopId, currentPhase: 'FT2' },
+        trx
+      );
     });
 
-    // 3. Audit FT1 → FT2 explicitly
-    await LifecycleTransitionService.auditIfTransitioned({
-      userId,
-      shopId,
-      currentPhase: 'FT2',
-    });
-
-    console.info('[LIFECYCLE][FT2_CONFIRM][PROMOTED]', {
-      userId,
-      shopId,
-    });
-
-    // 4. Deterministic command response
     return res.status(200).json({ phase: 'FT2' });
-  } catch (err) {
+    } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message.includes('Invalid lifecycle transition')
+    ) {
+      return res.status(409).json({
+        error: 'invalid_lifecycle_transition',
+        message: err.message,
+      });
+    }
+
     console.error('[lifecycle][ft2-confirm] failed', err);
     return res.status(500).json({ error: 'Failed to confirm FT2' });
   }
-}
+};

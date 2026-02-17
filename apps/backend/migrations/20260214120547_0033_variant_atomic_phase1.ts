@@ -31,26 +31,32 @@ export async function up(knex: Knex): Promise<void> {
       .references("lasyncro_variant_id")
       .inTable("variants")
       .onDelete("RESTRICT");
-
-    table.unique(
-      ["lasyncro_order_id", "lasyncro_variant_id"],
-      "order_revenue_units_order_variant_unique"
-    );
   });
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.alterTable("order_revenue_units", (table) => {
-    table.dropUnique(
-      ["lasyncro_order_id", "lasyncro_variant_id"],
-      "order_revenue_units_order_variant_unique"
-    );
-    table.dropForeign(["lasyncro_variant_id"]);
-    table.dropColumn("lasyncro_variant_id");
-  });
+  await knex.raw(`
+    ALTER TABLE order_revenue_units
+    DROP CONSTRAINT IF EXISTS order_revenue_units_order_variant_unique;
+  `);
 
-  await knex.schema.alterTable("order_line_items", (table) => {
-    table.dropForeign(["lasyncro_variant_id"]);
-    table.dropColumn("lasyncro_variant_id");
-  });
-}
+  await knex.raw(`
+    ALTER TABLE order_revenue_units
+    DROP CONSTRAINT IF EXISTS order_revenue_units_lasyncro_variant_id_foreign;
+  `);
+
+  await knex.raw(`
+    ALTER TABLE order_line_items
+    DROP CONSTRAINT IF EXISTS order_line_items_lasyncro_variant_id_foreign;
+  `);
+
+  await knex.raw(`
+    ALTER TABLE order_revenue_units
+    DROP COLUMN IF EXISTS lasyncro_variant_id;
+  `);
+
+  await knex.raw(`
+    ALTER TABLE order_line_items
+    DROP COLUMN IF EXISTS lasyncro_variant_id;
+  `);
+};

@@ -108,12 +108,21 @@ export class FT2EvaluatorService {
       };
     }
 
-    // Hard gate: FT0 must be completed
-    const ft0 = await db('ft0_state')
-      .where({ shop_id: shopId, status: 'COMPLETED' })
+    /**
+     * HARD GATE — System Readiness
+     *
+     * FT2 eligibility requires durable system readiness.
+     *
+     * Presence in system_readiness_state = READY
+     * Absence = UNREADY
+     *
+     * Evaluator must not depend on legacy ft0_state.
+     */
+    const readiness = await db('system_readiness_state')
+      .where({ shop_id: shopId })
       .first();
 
-    if (!ft0) {
+    if (!readiness) {
       return {
         eligible: false,
         status: 'BLOCKED',
@@ -121,11 +130,11 @@ export class FT2EvaluatorService {
           {
             category: 'DATA_COVERAGE',
             domain: 'ORDERS',
-            reason: 'FT0 not completed',
+            reason: 'SYSTEM_NOT_READY',
           },
         ],
         evidence: {
-          sync: 'FT0 incomplete',
+          readiness: 'absent',
         },
         evaluatorVersion: FT2EvaluatorService.VERSION,
         evaluatedAt,
