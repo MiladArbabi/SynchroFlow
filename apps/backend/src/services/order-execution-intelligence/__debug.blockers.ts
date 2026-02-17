@@ -1,6 +1,6 @@
 // apps/backend/src/services/order-execution-intelligence/__debug.blockers.ts
 
-import { aggregateBlockedRevenue } from './blocker.aggregates';
+import { aggregateBlockedRevenue } from './blocker.aggregates.js';
 
 /**
  * DEBUG ONLY — REMOVE AFTER AUDIT

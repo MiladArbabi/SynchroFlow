@@ -21,7 +21,7 @@
  * is fully deprecated.
  */
 
-import { getQueueChannel } from '../queue';
+import { getQueueChannel } from '../queue.js';
 
 const QUEUE_NAME = 'product_ingestion';
 

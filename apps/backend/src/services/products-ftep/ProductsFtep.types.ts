@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-ftep/ProductsFtep.types.ts
 import {
   ProductDataIntegrityFT2Exposure,
-} from '../products-data-integrity-ftep/ProductDataIntegrityFtep.types';
+} from '../products-data-integrity-ftep/ProductDataIntegrityFtep.types.js';
 
 /**
  * Layer 3 — ProductsFTEP (Truth Exposure Policy) — v2

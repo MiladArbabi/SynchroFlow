@@ -1,5 +1,5 @@
 // apps/backend/src/services/lifecycle.resolver.ts
-import { UserLifecyclePhase } from './lifecycle.service';
+import { UserLifecyclePhase } from './lifecycle.service.js';
 
 export function resolveLifecyclePhase(input: {
   hasShop: boolean;

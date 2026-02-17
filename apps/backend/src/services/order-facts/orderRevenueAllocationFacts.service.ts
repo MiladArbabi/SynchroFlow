@@ -1,6 +1,6 @@
 //apps/backend/src/services/order-facts/orderRevenueAllocationFacts.service.ts
-import db from 'api-src/db';
-import { resolveFt2Range } from 'api-src/utils/ft2Period';
+import db from '@lasyncro/backend-core/db.js';
+import { resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 /**
  * Order Revenue Allocation Facts (Layer 1)

@@ -1,4 +1,4 @@
-export { buildProductDataIntegrityFtep } from './ProductDataIntegrityFtep.service';
+export { buildProductDataIntegrityFtep } from './ProductDataIntegrityFtep.service.js';
 export type {
   ProductDataIntegrityFT2Exposure,
-} from './ProductDataIntegrityFtep.types';
+} from './ProductDataIntegrityFtep.types.js';

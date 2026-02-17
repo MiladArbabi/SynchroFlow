@@ -16,11 +16,11 @@
 
 //apps/backend/src/api/lifecycle/lifecycle.controller.ts
 import { Request, Response } from 'express';
-import { LifecycleService } from '../../services/lifecycle.service';
-import { LifecycleTransitionService } from 'api-src/services/lifecycle-transition.service';
-import { FT2EvaluatorService } from 'api-src/services/ft2-evaluator.service';
-import db from 'api-src/db';
-import { requireShopContextForUser } from 'api-src/services/shop-resolution.service';
+import { LifecycleService } from '../../services/lifecycle.service.js';
+import db from '@lasyncro/backend-core/db.js';
+import { FT2EvaluatorService } from '../../services/ft2-evaluator.service.js';
+import { LifecycleTransitionService } from '../../services/lifecycle-transition.service.js';
+import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 export async function getLifecycle(req: Request, res: Response) {
   try {

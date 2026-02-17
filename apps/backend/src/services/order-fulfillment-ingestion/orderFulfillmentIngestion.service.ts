@@ -1,6 +1,6 @@
 // apps/backend/src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.ts
 
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 /**
  * Sovereign Fulfillment Ingestion Service

@@ -1,17 +1,8 @@
 // apps/backend/src/services/products-data-freshness.provider.ts
-
-import {
-  getProductDataFreshnessFacts,
-} from './products-data-freshness-facts';
-import {
-  buildProductDataFreshnessIntelligence,
-} from './products-data-freshness-intelligence';
-import {
-  buildProductDataFreshnessFtep,
-} from './products-data-freshness-ftep';
-import {
-  ProductDataFreshnessFT2Exposure,
-} from './products-data-freshness-ftep/ProductDataFreshnessFtep.types';
+import { getProductDataFreshnessFacts } from "./products-data-freshness-facts/index.js";
+import { buildProductDataFreshnessFtep } from "./products-data-freshness-ftep/ProductDataFreshnessFtep.service.js";
+import { ProductDataFreshnessFT2Exposure } from "./products-data-freshness-ftep/ProductDataFreshnessFtep.types.js";
+import { buildProductDataFreshnessIntelligence } from "./products-data-freshness-intelligence/index.js";
 
 interface GetProductDataFreshnessSnapshotInput {
   shopId: number;

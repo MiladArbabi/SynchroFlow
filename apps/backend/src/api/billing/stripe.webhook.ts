@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { WebhookRouter } from '../webhooks/webhookRouter';
-import { StripeWebhookAdapter } from '../webhooks/adapters/stripe.adapter';
+import { WebhookRouter } from '../webhooks/webhookRouter.js';
+import { StripeWebhookAdapter } from '../webhooks/adapters/stripe.adapter.js';
 
 type WebhookOutcome =
   | 'grant_applied'

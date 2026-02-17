@@ -1,5 +1,5 @@
 import { ReadinessSignal } from '@lasyncro/shared';
-import type { OnboardingSignalProvider } from '../readiness.providers';
+import type { OnboardingSignalProvider } from '../readiness.providers.js';
 
 export const devReadinessOverrideProvider: OnboardingSignalProvider = {
   moduleId: 'platform',

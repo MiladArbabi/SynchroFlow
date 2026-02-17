@@ -1,16 +1,14 @@
 // apps/backend/src/services/shopify.service.ts
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
-import db from '../db';
+
 import { Knex } from 'knex';
 import crypto from 'crypto';
-import { mapShopifyOrderNodeToCanonical }
-  from './mappers/shopify-to-canonical-order';
-import { enqueueProductForIngestion } 
-  from './product-ingestion.service';
-import { getQueueChannel } from 'api-src/queue';
-import { seedShopifyOpeningBalances } 
-  from './inventory/seedShopifyOpeningBalances';
+import db from '@lasyncro/backend-core/db.js';
+import { getQueueChannel } from '../queue.js';
+import { seedShopifyOpeningBalances } from './inventory/seedShopifyOpeningBalances.js';
+import { mapShopifyOrderNodeToCanonical } from './mappers/shopify-to-canonical-order.js';
+import { enqueueProductForIngestion } from './product-ingestion.service.js';
 
 
 type DbExecutor = Knex | Knex.Transaction;

@@ -1,5 +1,5 @@
-export { getProductDataIntegrityFacts } from './ProductDataIntegrityFacts.service';
+export { getProductDataIntegrityFacts } from './ProductDataIntegrityFacts.service.js';
 export type {
   ProductDataIntegrityFacts,
-} from './ProductDataIntegrityFacts.types';
+} from './ProductDataIntegrityFacts.types.js';
 

@@ -25,7 +25,7 @@
 
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 console.log('[AUTH][ENV_CHECK]', {
   JWT_SECRET: !!process.env.JWT_SECRET,

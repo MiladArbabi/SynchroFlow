@@ -1,8 +1,9 @@
 //apps/backend/src/services/specter-ft2.provider.ts
-import { getSpecterFacts } from './specter-facts';
-import { deriveSpecterIntelligence } from './specter-intelligence';
-import { applySpecterFtep } from './specter-ftep';
-import { SpecterFT2Exposure } from './specter-ftep/specterFtep.types';
+
+import { getSpecterFacts } from "./specter-facts/specterFacts.service.js";
+import { applySpecterFtep } from "./specter-ftep/specterFtep.service.js";
+import { SpecterFT2Exposure } from "./specter-ftep/specterFtep.types.js";
+import { deriveSpecterIntelligence } from "./specter-intelligence/specterIntelligence.service.js";
 
 /**
  * Specter FT2 Provider

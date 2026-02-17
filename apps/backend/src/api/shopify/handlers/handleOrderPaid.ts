@@ -1,7 +1,7 @@
 // apps/backend/src/api/shopify/handlers/handleOrderPaid.ts
 
-import { WebhookEnvelope } from 'api-src/api/webhooks/types';
-import db from 'api-src/db';
+import { WebhookEnvelope } from '../../../api/webhooks/types.js';
+import db from '@lasyncro/backend-core/db.js';
 
 type ShopifyOrderPaidPayload = {
   id?: string | number;

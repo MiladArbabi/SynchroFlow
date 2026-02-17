@@ -13,10 +13,11 @@
  * Canonical ingestion bypasses this service entirely.
  */
 
+import db from "@lasyncro/backend-core/db.js";
+import { transformPayload } from "transformer.js";
+import { getMappingRulesForShop } from "./mapping-rule.service.js";
+
 // apps/backend/src/services/staged-to-canonical.service.ts
-import { transformPayload } from 'api-src/transformer';
-import db from '../db';
-import { getMappingRulesForShop } from 'api-src/services/mapping-rule.service';
 
 /**
  * Map a staged_event into canonical entities and persist them.

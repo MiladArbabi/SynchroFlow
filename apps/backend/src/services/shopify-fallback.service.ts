@@ -1,7 +1,7 @@
 // apps/backend/src/services/shopify-fallback.service.ts
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
-import db from '../db';
+import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
 
 // Add required scopes for non-PCD data

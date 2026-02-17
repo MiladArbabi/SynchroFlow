@@ -6,8 +6,8 @@ import {
   getUserProductCosts,
   updateUserProductCosts,
   updateUserState,
-} from './user-state.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
+} from './user-state.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
 const router = Router();
 

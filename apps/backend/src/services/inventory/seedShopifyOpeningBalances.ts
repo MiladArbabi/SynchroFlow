@@ -1,5 +1,6 @@
 import { Knex } from 'knex';
-import { createShopifyGraphQLClient } from '../shopify-client.factory';
+import { createShopifyGraphQLClient } from '../../services/shopify-client.factory.js';
+
 
 export async function seedShopifyOpeningBalances(
   trx: Knex.Transaction,

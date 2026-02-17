@@ -1,2 +1,2 @@
 // index.ts
-export { handleInvoicePaid } from './handleInvoicePaid';
+export { handleInvoicePaid } from './handleInvoicePaid.js';

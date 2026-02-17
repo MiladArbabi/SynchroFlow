@@ -11,9 +11,9 @@
  * - order_revenue_units.estimated_unit_cost → cost readiness
  */
 
-import db from '../../db';
+import db from '@lasyncro/backend-core/db.js';
 import { ReadinessSignal } from '@lasyncro/shared';
-import type { OnboardingSignalProvider } from '../readiness.providers';
+import type { OnboardingSignalProvider } from '../readiness.providers.js';
 
 export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'finances',

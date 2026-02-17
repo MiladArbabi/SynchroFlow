@@ -1,5 +1,5 @@
 // apps/backend/src/api/products/products.service.ts
-import db from "../../db";
+import db from "@lasyncro/backend-core/db.js";
 
 export interface Product {
   id: number;

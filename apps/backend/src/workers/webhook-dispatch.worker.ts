@@ -6,10 +6,10 @@
 // It replays jobs through the canonical router.
 //
 
-import { getQueueChannel } from '../queue';
-import { WebhookRouter } from 'api-src/api/webhooks/webhookRouter';
-import { fromDispatchJob } from 'api-src/api/webhooks/fromDispatchJob';
-import { WebhookDispatchJob } from 'api-src/api/webhooks/types.dispatchJob';
+import { getQueueChannel } from '../queue.js';
+import { WebhookRouter } from '../api/webhooks/webhookRouter.js';
+import { fromDispatchJob } from '../api/webhooks/fromDispatchJob.js';
+import { WebhookDispatchJob } from '../api/webhooks/types.dispatchJob.js';
 
 const QUEUE_NAME = 'webhook.dispatch.v1';
 

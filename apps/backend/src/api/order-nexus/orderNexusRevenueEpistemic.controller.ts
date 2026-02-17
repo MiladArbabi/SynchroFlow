@@ -1,11 +1,7 @@
-import { resolveFt2RangeFromRequest } from
-  'api-src/utils/resolveFt2RangeFromRequest';
+import { computeExecutionAwareRevenueEpistemic } from "../../services/epistemic/orderRevenueExecutionAware.epistemic.js";
+import { getExecutionAwareRevenueSnapshot } from "../../services/order-revenue/orderRevenueExecutionAware.resolver.js";
+import { resolveFt2RangeFromRequest } from "../../utils/resolveFt2RangeFromRequest.js";
 
-import { getExecutionAwareRevenueSnapshot } from
-  'api-src/services/order-revenue/orderRevenueExecutionAware.resolver';
-
-import { computeExecutionAwareRevenueEpistemic } from
-  'api-src/services/epistemic/orderRevenueExecutionAware.epistemic';
 
 /**
  * Order-Nexus Revenue — Epistemic (Phase 3)

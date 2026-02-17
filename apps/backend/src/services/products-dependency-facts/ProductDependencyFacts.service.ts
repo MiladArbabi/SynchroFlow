@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-dependency-facts/ProductDependencyFacts.service.ts
 
-import db from 'api-db';
-import { ProductDependencyFacts } from './ProductDependencyFacts.types';
+import db from '@lasyncro/backend-core/db.js';
+import { ProductDependencyFacts } from './ProductDependencyFacts.types.js';
 
 interface GetProductDependencyFactsInput {
   shopId: number;

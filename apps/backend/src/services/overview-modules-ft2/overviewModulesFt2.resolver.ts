@@ -1,14 +1,13 @@
 // apps/backend/src/services/overview-modules-ft2/overviewModulesFt2.resolver.ts
 
-import { OrderNexusFT2Snapshot } from '../order-nexus-ft2/orderNexusFt2.types';
-import { ProductsFT2Exposure } from '../products-ftep';
-import { CustomersFT2Exposure } from '../customers-ftep';
+import { getCustomersFt2Snapshot } from '../../services/customers-ft2.provider.js';
+import { CustomersFT2Exposure } from '../../services/customers-ftep/customersFtep.types.js';
+import { getOrderNexusFt2Snapshot } from '../../services/order-nexus-ft2/orderNexusFt2.resolver.js';
+import { OrderNexusFT2Snapshot } from '../../services/order-nexus-ft2/orderNexusFt2.types.js';
+import { getProductsFt2Snapshot } from '../../services/products-ft2.provider.js';
+import { ProductsFT2Exposure } from '../../services/products-ftep/ProductsFtep.types.js';
+import { FT2RangeInput, resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
-import {
-  FT2DateRangePreset,
-  FT2RangeInput,
-  resolveFt2Range,
-} from 'api-src/utils/ft2Period';
 
 export interface OverviewModulesFt2Snapshot {
   orders: OrderNexusFT2Snapshot | null;
@@ -37,18 +36,6 @@ export async function getOverviewModulesFt2Snapshot(input: {
   const { shopId, range } = input;
 
   const period = resolveFt2Range(input.range);
-
-  const { getOrderNexusFt2Snapshot } = await import(
-    'api-src/services/order-nexus-ft2/orderNexusFt2.resolver'
-  );
-
-  const { getProductsFt2Snapshot } = await import(
-    'api-src/services/products-ft2.provider'
-  );
-
-  const { getCustomersFt2Snapshot } = await import(
-    'api-src/services/customers-ft2.provider'
-  );
 
   return {
     orders: await getOrderNexusFt2Snapshot({

@@ -1,6 +1,6 @@
 // apps/backend/src/api/webhooks/buildWebhookEnvelope.ts
 
-import { WebhookEnvelope } from './types';
+import { WebhookEnvelope } from './types.js';
 import crypto from 'crypto';
 
 /**

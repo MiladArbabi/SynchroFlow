@@ -10,11 +10,11 @@
 // - Contain routing logic
 // - Contain side effects
 
-export { onShopifyAppUninstalled } from './appUninstalled.handler';
+export { onShopifyAppUninstalled } from './appUninstalled.handler.js';
 
-export * from './handleAppUninstalled';
-export * from './handleOrderFulfillment';
-export * from './handleRefundCreated'
-export * from './handleOrderCreated'
-export * from './handleOrderPaid'
+export * from './handleAppUninstalled.js';
+export * from './handleOrderFulfillment.js';
+export * from './handleRefundCreated.js'
+export * from './handleOrderCreated.js'
+export * from './handleOrderPaid.js'
 

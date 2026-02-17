@@ -1,9 +1,9 @@
 //apps/backend/src/services/user-state.service.ts
-import db from '../db';
-import { User, UserMilestone } from '../types';
-import { LifecycleService } from './lifecycle.service';
-import { OnboardingReadinessService } from 'api-src/onboarding/readiness.service';
-import { OnboardingReadinessSnapshot } from '@lasyncro/shared/index';
+import db from '@lasyncro/backend-core/db.js';
+import { User, UserMilestone } from '../types.js';
+import { LifecycleService } from '../services/lifecycle.service.js';
+import { OnboardingReadinessService } from '../onboarding/readiness.service.js';
+import { OnboardingReadinessSnapshot } from '@lasyncro/shared';
 
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';

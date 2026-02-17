@@ -1,5 +1,5 @@
-import { executeAlignmentPlanes } from './engine';
-import { alignmentPlaneRegistry } from './registry';
+import { executeAlignmentPlanes } from './engine.js';
+import { alignmentPlaneRegistry } from './registry.js';
 
 /**
  * Alignment Planes Resolver

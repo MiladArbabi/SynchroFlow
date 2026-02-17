@@ -1,4 +1,4 @@
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 /**
  * Fulfilled Orders Count (Layer 1)

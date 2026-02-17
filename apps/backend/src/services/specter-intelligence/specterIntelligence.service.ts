@@ -1,6 +1,6 @@
 // apps/backend/src/services/specter-intelligence/specterIntelligence.service.ts
 
-import { SpecterFacts } from 'api-src/services/specter-facts/specterFacts.types';
+import { SpecterFacts } from "../../services/specter-facts/specterFacts.types.js";
 
 export interface SpecterIntelligence {
   /**

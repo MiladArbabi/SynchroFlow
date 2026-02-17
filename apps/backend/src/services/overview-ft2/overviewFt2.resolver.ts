@@ -1,3 +1,9 @@
+import { getCustomersFt2Snapshot } from '../../services/customers-ft2.provider.js';
+import { getOrderNexusFt2Snapshot } from '../../services/order-nexus-ft2/orderNexusFt2.resolver.js';
+import { getProductsFt2Snapshot } from '../../services/products-ft2.provider.js';
+import { getTrustFt2Snapshot } from '../../services/trust-ft2/trustFt2.resolver.js';
+import { getFt2Period } from '@lasyncro/backend-core/utils/ft2Period.js';
+
 export interface OverviewFt2Snapshot {
   trust: {
     dataFreshness: 'fresh' | 'stale' | 'unknown' | null;
@@ -59,10 +65,6 @@ export async function getOverviewFt2Snapshot(input: {
    * No partial rendering is allowed.
    */
 
-  const { getTrustFt2Snapshot } = await import(
-    'api-src/services/trust-ft2/trustFt2.resolver'
-  );
-
   const trust = await getTrustFt2Snapshot({ shopId });
 
   /**
@@ -79,22 +81,6 @@ export async function getOverviewFt2Snapshot(input: {
   // ─────────────────────────────────────────────
   // TERMINAL FT2 COMPOSITION (MINIMAL)
   // ─────────────────────────────────────────────
-
-  const { getOrderNexusFt2Snapshot } = await import(
-    'api-src/services/order-nexus-ft2/orderNexusFt2.resolver'
-  );
-
-  const { getProductsFt2Snapshot } = await import(
-    'api-src/services/products-ft2.provider'
-  );
-
-  const { getCustomersFt2Snapshot } = await import(
-    'api-src/services/customers-ft2.provider'
-  );
-
-  const { getFt2Period } = await import(
-    'api-src/utils/ft2Period'
-  );
 
   const period = getFt2Period();
 

@@ -11,7 +11,7 @@
   * the architecture is broken.
   */
 
-import { ROOverviewFacts } from './roOverviewFacts.service';
+import { ROOverviewFacts } from './roOverviewFacts.service.js';
 
 export type RORenderMode = 'renderable' | 'collapsed' | 'blocked';
 

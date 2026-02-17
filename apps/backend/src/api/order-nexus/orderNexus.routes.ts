@@ -1,19 +1,19 @@
 import { Router } from 'express';
-import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { requireFt2 } from 'api-src/middleware/require-ft2.middleware';
 
-import orderNexusFt2Controller from './orderNexusFt2.controller';
+import orderNexusFt2Controller from './orderNexusFt2.controller.js';
 import {
   orderNexusFt2TimeseriesController,
   orderNexusFt2DistributionController,
   orderNexusFt2CoverageController,
-} from './orderNexusFt2Facts.controller';
+} from './orderNexusFt2Facts.controller.js';
 
 import orderNexusRevenueController
-  from './orderNexusRevenue.controller';
+  from './orderNexusRevenue.controller.js';
 
 import orderNexusRevenueEpistemicController
-  from './orderNexusRevenueEpistemic.controller';
+  from './orderNexusRevenueEpistemic.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 
 const router = Router();
 

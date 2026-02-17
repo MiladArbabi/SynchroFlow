@@ -3,7 +3,7 @@
 // Enhanced behaviour:
 // - Start Redis store if SPECTER_SESSION_STORE=redis OR if a Redis URL is provided via env.
 // - Keep idempotent init/close and robust logging.
-import { initRedisSessionStore as initImpl, closeRedisSessionStore as closeImpl } from 'modules-specter/store/session-store-redis';
+import { initRedisSessionStore as initImpl, closeRedisSessionStore as closeImpl } from '@lasyncro/specter/store/session-store-redis';
 
 let instance: any = null;
 

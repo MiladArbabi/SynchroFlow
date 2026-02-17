@@ -1,17 +1,8 @@
 // apps/backend/src/services/products-data-integrity.provider.ts
-
-import {
-  getProductDataIntegrityFacts,
-} from './products-data-integrity-facts';
-import {
-  buildProductDataIntegrityIntelligence,
-} from './products-data-integrity-intelligence';
-import {
-  buildProductDataIntegrityFtep,
-} from './products-data-integrity-ftep';
-import {
-  ProductDataIntegrityFT2Exposure,
-} from './products-data-integrity-ftep/ProductDataIntegrityFtep.types';
+import { getProductDataIntegrityFacts } from "./products-data-integrity-facts/ProductDataIntegrityFacts.service.js";
+import { buildProductDataIntegrityFtep } from "./products-data-integrity-ftep/ProductDataIntegrityFtep.service.js";
+import { ProductDataIntegrityFT2Exposure } from "./products-data-integrity-ftep/ProductDataIntegrityFtep.types.js";
+import { buildProductDataIntegrityIntelligence } from "./products-data-integrity-intelligence/ProductDataIntegrityIntelligence.service.js";
 
 interface GetProductDataIntegritySnapshotInput {
   shopId: number;

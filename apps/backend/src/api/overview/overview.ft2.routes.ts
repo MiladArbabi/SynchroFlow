@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { requireFt2 } from 'api-src/middleware/require-ft2.middleware';
 
-import { getOverviewFt2 } from './overview.ft2.controller';
-import { getOverviewModulesFt2 } from './overview.modules-ft2.controller';
+import { getOverviewFt2 } from './overview.ft2.controller.js';
+import { getOverviewModulesFt2 } from './overview.modules-ft2.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 
 const router = Router();
 

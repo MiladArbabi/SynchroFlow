@@ -1,11 +1,6 @@
 import { Request, Response } from 'express';
-import { getOverviewModulesFt2Snapshot } from
-  'api-src/services/overview-modules-ft2/overviewModulesFt2.resolver';
-
-import {
-  FT2DateRangePreset,
-  resolveFt2Range,
-} from 'api-src/utils/ft2Period';
+import { getOverviewModulesFt2Snapshot } from '../../services/overview-modules-ft2/overviewModulesFt2.resolver.js';
+import { FT2DateRangePreset } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 /**
  * GET /api/v1/modules/overview/modules-ft2

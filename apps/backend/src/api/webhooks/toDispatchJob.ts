@@ -8,8 +8,8 @@
 // - Deterministic output
 // - Replay-safe
 
-import { WebhookEnvelope } from './types';
-import { WebhookDispatchJob } from './types.dispatchJob';
+import { WebhookEnvelope } from './types.js';
+import { WebhookDispatchJob } from './types.dispatchJob.js';
 
 export function toDispatchJob(
   envelope: WebhookEnvelope

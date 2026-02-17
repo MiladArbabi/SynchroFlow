@@ -1,6 +1,6 @@
 // apps/backend/src/api/orders/orders.controller.ts
 import { Request, Response } from 'express';
-import * as ordersService from './orders.service';
+import * as ordersService from './orders.service.js';
 
 /**
  * @route   GET /api/v1/orders
@@ -39,7 +39,9 @@ export const httpGetAllOrders = async (req: Request, res: Response) => {
  * @access  Private
  */
 export const httpGetOrderProfitability = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const rawId = req.params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
   try {
     const profitability = await ordersService.getOrderProfitabilityById(id);
     res.status(200).json(profitability);
@@ -55,7 +57,9 @@ export const httpGetOrderProfitability = async (req: Request, res: Response) => 
  * @access  Private
  */
 export const httpGetOrderDetails = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const rawId = req.params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  
   try {
     const details = await ordersService.getOrderDetailsById(id);
     if (details) {

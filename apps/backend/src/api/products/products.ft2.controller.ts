@@ -1,10 +1,7 @@
 import { Request, Response } from 'express';
-import { getProductsFt2Snapshot } from 'api-src/services/products-ft2.provider';
-import {
-  FT2DateRangePreset,
-  getFt2Period,
-  resolveFt2PeriodFromPreset,
-} from 'api-src/utils/ft2Period';
+import { getProductsFt2Snapshot } from '../../services/products-ft2.provider.js';
+import { FT2DateRangePreset, resolveFt2PeriodFromPreset, getFt2Period } from '@lasyncro/backend-core/utils/ft2Period.js';
+
 
 /**
  * GET /api/v1/modules/products/ft2

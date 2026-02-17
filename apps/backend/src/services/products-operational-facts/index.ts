@@ -1,2 +1,2 @@
-export { getProductOperationalFacts } from './ProductOperationalFacts.service';
-export type { ProductOperationalFacts } from './ProductOperationalFacts.types';
+export { getProductOperationalFacts } from './ProductOperationalFacts.service.js';
+export type { ProductOperationalFacts } from './ProductOperationalFacts.types.js';

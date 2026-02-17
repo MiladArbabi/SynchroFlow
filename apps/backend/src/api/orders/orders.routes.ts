@@ -1,6 +1,6 @@
 // apps/backend/src/api/orders/orders.routes.ts
 import { Router } from 'express';
-import * as ordersController from './orders.controller';
+import * as ordersController from './orders.controller.js';
 
 const router = Router();
 

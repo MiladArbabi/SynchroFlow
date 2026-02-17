@@ -1,9 +1,6 @@
-import { getFinancesFt2Snapshot } from 'api-src/services/finances-ft2.provider';
-import {
-  FT2DateRangePreset,
-  getFt2Period,
-  resolveFt2PeriodFromPreset,
-} from 'api-src/utils/ft2Period';
+import { getFinancesFt2Snapshot } from "../../services/finances-ft2.provider.js";
+import { FT2DateRangePreset, resolveFt2PeriodFromPreset, getFt2Period } from "@lasyncro/backend-core/utils/ft2Period.js";
+
 
 export async function financesFt2Controller(req: any, res: any) {
   const shopId = req.user?.shopId;

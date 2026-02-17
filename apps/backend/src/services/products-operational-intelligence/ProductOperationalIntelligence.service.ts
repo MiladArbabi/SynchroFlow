@@ -1,5 +1,5 @@
-import { ProductOperationalFacts } from '../products-operational-facts/ProductOperationalFacts.types';
-import { ProductOperationalIntelligence } from './ProductOperationalIntelligence.types';
+import { ProductOperationalFacts } from '../products-operational-facts/ProductOperationalFacts.types.js';
+import { ProductOperationalIntelligence } from './ProductOperationalIntelligence.types.js';
 
 /**
  * buildProductOperationalIntelligence

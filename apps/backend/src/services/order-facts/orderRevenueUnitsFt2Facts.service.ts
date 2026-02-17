@@ -32,7 +32,7 @@
  * - L2 diagnostics
  */
 
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 export async function extractRevenueUnitsFt2Facts(
   shopId: number

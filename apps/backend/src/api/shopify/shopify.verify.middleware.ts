@@ -11,7 +11,7 @@
 // Reference:
 // https://shopify.dev/docs/apps/webhooks/configuration/https
 
-import { createWebhookVerifier } from 'api-src/api/webhooks/verifyWebhook';
+import { createWebhookVerifier } from "../../api/webhooks/verifyWebhook.js";
 
 console.log(
   '[SHOPIFY VERIFY ENV]',

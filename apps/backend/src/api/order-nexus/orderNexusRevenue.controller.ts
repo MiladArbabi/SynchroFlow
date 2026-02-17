@@ -1,8 +1,3 @@
-import { resolveFt2RangeFromRequest } from
-  'api-src/utils/resolveFt2RangeFromRequest';
-
-import { getExecutionAwareRevenueSnapshot } from
-  'api-src/services/order-revenue/orderRevenueExecutionAware.resolver';
 
 /**
  * EPISTEMIC GUARD (Phase 1 — Containment)
@@ -20,6 +15,9 @@ import { getExecutionAwareRevenueSnapshot } from
  *   computation layer is introduced (Phase 2).
  * - See docs/epistemic/phase-1.md for details.
  */
+
+import { getExecutionAwareRevenueSnapshot } from "../../services/order-revenue/orderRevenueExecutionAware.resolver.js";
+import { resolveFt2RangeFromRequest } from "../../utils/resolveFt2RangeFromRequest.js";
 
 /**
  * This controller MUST NOT construct, adapt, or infer EpistemicValue.

@@ -1,2 +1,2 @@
-export * from './orderFacts.types';
-export * from './orderFacts.service';
+export * from './orderFacts.types.js';
+export * from './orderFacts.service.js';

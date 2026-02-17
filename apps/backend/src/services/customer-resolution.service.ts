@@ -1,5 +1,5 @@
 // apps/backend/src/services/customer-resolution.service.ts
-import db from '../db';
+import db from "@lasyncro/backend-core/db.js";
 
 export interface PlatformCustomer {
   platform: 'shopify' | 'klaviyo' | 'zendesk' | 'stripe';

@@ -1,2 +1,2 @@
-export * from './FinancesFtep.types';
-export * from './FinancesFtep.service';
+export * from './FinancesFtep.types.js';
+export * from './FinancesFtep.service.js';

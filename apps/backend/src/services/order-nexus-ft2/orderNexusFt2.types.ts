@@ -13,6 +13,8 @@
  * it does NOT belong here.
  */
 
+import { OrderNexusFT2Exposure } from "../../services/order-ftep/index.js";
+
 // Order-Nexus FT2 Snapshot (Resolver Output)
 //
 // Composed of:
@@ -21,7 +23,7 @@
 // - Alignment planes (read-only)
 //
 // This is NOT an FTEP type.
-import type { OrderNexusFT2Exposure } from 'api-src/services/order-ftep/orderFtep.types';
+
 
 export type OrderNexusFT2Snapshot =
   OrderNexusFT2Exposure & {

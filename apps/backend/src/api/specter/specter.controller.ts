@@ -1,8 +1,8 @@
 // apps/backend/src/api/specter/specter.controller.ts
 import { Request, Response } from 'express';
-import db from 'api-src/db';
-import { resolveShopIdForUser } from 'api-src/services/shop-resolution.service';
+import db from '@lasyncro/backend-core/db.js';
 import path from 'path';
+import { resolveShopIdForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 // --- Helper: resolve shop_id for the authenticated user ---
 export const getShopIdFromRequest = async (req: Request): Promise<number | null> => {
@@ -100,7 +100,7 @@ export const getSpecterState = async (req: Request, res: Response) => {
     // 2) try dynamic import for ESM-style mocks (jest.unstable_mockModule)
     if (!storeGetShopSession || !storeGetRecentEvents || !storeGetShopConfig) {
       try {
-        const esmModule: any = await import('modules-specter/store/session-store');
+        const esmModule: any = await import('@lasyncro/specter/store/session-store');
         tryAssignFrom(esmModule);
       } catch (e) {
         // ignore

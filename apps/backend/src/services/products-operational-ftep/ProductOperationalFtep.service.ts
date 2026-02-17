@@ -1,5 +1,5 @@
-import { ProductOperationalIntelligence } from '../products-operational-intelligence/ProductOperationalIntelligence.types';
-import { ProductOperationalFT2Exposure } from './ProductOperationalFtep.types';
+import { ProductOperationalIntelligence } from '../products-operational-intelligence/ProductOperationalIntelligence.types.js';
+import { ProductOperationalFT2Exposure } from './ProductOperationalFtep.types.js';
 
 interface BuildProductOperationalFtepInput {
   intelligence: ProductOperationalIntelligence;

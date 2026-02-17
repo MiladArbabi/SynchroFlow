@@ -1,7 +1,6 @@
 // apps/backend/src/services/order-facts/orderShippingFacts.service.ts
 
-import db from 'api-src/db';
-import { resolveFt2Range } from 'api-src/utils/ft2Period';
+import { resolveFt2Range } from "@lasyncro/backend-core/utils/ft2Period.js";
 
 /**
  * Shipping Facts (Layer 1)

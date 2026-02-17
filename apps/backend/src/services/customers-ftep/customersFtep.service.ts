@@ -1,7 +1,6 @@
-import { CustomersFacts } from 'api-src/services/customers-facts';
-import { CustomersIntelligence } from 'api-src/services/customers-intelligence';
-import { CustomersFT2Exposure } from './customersFtep.types';
-import { CustomerTruthReadiness } from '../ft2/ctr.types';
+import { CustomersFacts } from "../../services/customers-facts/customersFacts.types.js";
+import { CustomerTruthReadiness } from "../../services/ft2/ctr.types.js";
+import { CustomersFT2Exposure } from "./customersFtep.types.js";
 
 /**
  * Customers FTEP (FT2)

@@ -1,12 +1,12 @@
 // apps/backend/src/sync.worker.ts (add integration validation)
-import { getQueueChannel } from './queue';
-import db from './db';
+import { getQueueChannel } from './queue.js';
+import db from '@lasyncro/backend-core/db.js';
 import CryptoJS from 'crypto-js';
-import { performInitialSync } from './services/shopify.service';
-import { performSmartSync } from './services/shopify-sync-orchestrator.service';
+import { performInitialSync } from './services/shopify.service.js';
+import { performSmartSync } from './services/shopify-sync-orchestrator.service.js';
 
-import { FirstInsightService } from './services/first-insight.service';
-import { FT0CompletionService } from './services/ft0-completion.service';
+import { FirstInsightService } from './services/first-insight.service.js';
+import { FT0CompletionService } from './services/ft0-completion.service.js';
 
 // --- Helper function for decryption ---
 const decryptToken = (encryptedToken: string): string => {

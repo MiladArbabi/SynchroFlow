@@ -1,8 +1,8 @@
 // apps/backend/src/api/products/products.ft2.routes.ts
 import { Router } from 'express';
-import { getProductsFt2 } from './products.ft2.controller';
-import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { requireFt2 } from 'api-src/middleware/require-ft2.middleware';
+import { getProductsFt2 } from './products.ft2.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 
 const router = Router();
 

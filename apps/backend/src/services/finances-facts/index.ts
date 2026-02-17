@@ -1,2 +1,2 @@
-export * from './FinancesFacts.types';
-export * from './FinancesFacts.service';
+export * from './FinancesFacts.types.js';
+export * from './FinancesFacts.service.js';

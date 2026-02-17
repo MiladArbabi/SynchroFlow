@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-data-freshness-ftep/ProductDataFreshnessFtep.service.ts
 
-import { ProductDataFreshnessIntelligence } from '../products-data-freshness-intelligence/ProductDataFreshnessIntelligence.types';
-import { ProductDataFreshnessFT2Exposure } from './ProductDataFreshnessFtep.types';
+import { ProductDataFreshnessIntelligence } from '../products-data-freshness-intelligence/ProductDataFreshnessIntelligence.types.js';
+import { ProductDataFreshnessFT2Exposure } from './ProductDataFreshnessFtep.types.js';
 
 /**
  * buildProductDataFreshnessFtep

@@ -1,4 +1,4 @@
-import { ProductCrossDomainAlignmentIntelligence } from './ProductCrossDomainAlignmentIntelligence.types';
+import { ProductCrossDomainAlignmentIntelligence } from "./index.js";
 
 interface BuildAlignmentInput {
   alignmentEvidencePresent: boolean | null;

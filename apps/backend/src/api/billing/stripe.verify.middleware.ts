@@ -11,8 +11,8 @@
 // Reference:
 // https://stripe.com/docs/webhooks/signatures
 
+import { createWebhookVerifier } from "../../api/webhooks/verifyWebhook.js";
 
-import { createWebhookVerifier } from 'api-src/api/webhooks/verifyWebhook';
 
 export const verifyStripeSignature = createWebhookVerifier({
   header: 'stripe-signature',

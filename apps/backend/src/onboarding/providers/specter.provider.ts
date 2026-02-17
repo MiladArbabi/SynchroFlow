@@ -3,8 +3,8 @@ import {
   ReadinessSignal,
 } from '@lasyncro/shared';
 
-import type { OnboardingSignalProvider } from '../readiness.providers';
-import { createSessionStore } from 'modules-specter/store/session-store';
+import type { OnboardingSignalProvider } from '../readiness.providers.js';
+import { createSessionStore } from '@lasyncro/specter/store/session-store';
 
 // --- Specter provider: FT1 readiness ONLY ---
 export const specterOnboardingSignalProvider: OnboardingSignalProvider = {

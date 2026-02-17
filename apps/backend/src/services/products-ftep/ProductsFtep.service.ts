@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-ftep/ProductsFtep.service.ts
-import { ProductsFacts } from '../products-facts/ProductsFacts.types';
-import { ProductsIntelligence } from '../products-intelligence/ProductsIntelligence.types';
-import { ProductsFT2Exposure } from './ProductsFtep.types';
+import { ProductsFacts } from '../products-facts/ProductsFacts.types.js';
+import { ProductsIntelligence } from '../products-intelligence/ProductsIntelligence.types.js';
+import { ProductsFT2Exposure } from './ProductsFtep.types.js';
 
 interface BuildProductsFtepInput {
   facts: ProductsFacts;

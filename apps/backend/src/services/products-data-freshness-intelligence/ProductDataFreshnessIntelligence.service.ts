@@ -1,6 +1,7 @@
 // apps/backend/src/services/products-data-freshness-intelligence/ProductDataFreshnessIntelligence.service.ts
-import { ProductDataFreshnessFacts } from '../products-data-freshness-facts/ProductDataFreshnessFacts.types';
-import { ProductDataFreshnessIntelligence } from './ProductDataFreshnessIntelligence.types';
+
+import { ProductDataFreshnessFacts } from "../../services/products-data-freshness-facts/index.js";
+import { ProductDataFreshnessIntelligence } from "./ProductDataFreshnessIntelligence.types.js";
 
 /**
  * buildProductDataFreshnessIntelligence

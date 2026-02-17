@@ -10,19 +10,14 @@
 // - No verification, no lifecycle logic
 // - Ledger schema is NOT extended
 
+import { ShopifyWebhookAdapter } from '../../api/webhooks/adapters/shopify.adapter.js';
+import { WebhookRouter } from '../../api/webhooks/webhookRouter.js';
 import { Request, Response } from 'express';
-// apps/backend/src/api/shopify/shopify.webhook.ts
-
-import { WebhookRouter } from 'api-src/api/webhooks/webhookRouter';
-import { ShopifyWebhookAdapter } from 'api-src/api/webhooks/adapters/shopify.adapter';
-
-import {
-  onShopifyAppUninstalled,
-  handleOrderFulfillment,
-  handleRefundCreated,
-  handleOrderCreated,
-  handleOrderPaid
-} from './handlers';
+import { onShopifyAppUninstalled } from './handlers/appUninstalled.handler.js';
+import { handleOrderCreated } from './handlers/handleOrderCreated.js';
+import { handleOrderFulfillment } from './handlers/handleOrderFulfillment.js';
+import { handleOrderPaid } from './handlers/handleOrderPaid.js';
+import { handleRefundCreated } from './handlers/handleRefundCreated.js';
 
 /**
  * Shopify Webhook Route Registration

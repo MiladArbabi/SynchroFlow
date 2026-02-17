@@ -1,6 +1,6 @@
 //apps/backend/src/services/order-ftep/orderFtep.types.ts
-import type { OrderNexusIntelligence } from '../order-intelligence/orderIntelligence.service';
-import type { OrderFacts } from '../order-facts/orderFacts.types';
+import type { OrderNexusIntelligence } from '../order-intelligence/orderIntelligence.service.js';
+import type { OrderFacts } from '../order-facts/orderFacts.types.js';
 
 /**
  * FTEP Input Contract

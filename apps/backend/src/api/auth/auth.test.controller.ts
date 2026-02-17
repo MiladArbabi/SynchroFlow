@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { issueAuthTokens } from './token.service';
-import db from 'api-src/db';
+import { issueAuthTokens } from './token.service.js';
+import db from '@lasyncro/backend-core/db.js';
 
 export async function testIssueAccessToken(req: Request, res: Response) {
   if (process.env.NODE_ENV !== 'test') {

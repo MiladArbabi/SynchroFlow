@@ -1,5 +1,5 @@
 // apps/backend/src/services/ft2-completion.service.ts
-import db from "api-src/db";
+import db from '@lasyncro/backend-core/db.js';
 
 export class FT2CompletionService {
   static async markCompleted(shopId: number): Promise<void> {

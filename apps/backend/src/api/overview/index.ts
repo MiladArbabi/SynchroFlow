@@ -1,6 +1,6 @@
 // apps/backend/src/api/overview/index.ts
 import { Router } from 'express';
-import overviewFt2Routes from './overview.ft2.routes';
+import overviewFt2Routes from './overview.ft2.routes.js';
 
 const router = Router();
 

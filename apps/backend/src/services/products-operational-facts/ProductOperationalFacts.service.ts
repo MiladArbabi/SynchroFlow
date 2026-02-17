@@ -1,5 +1,5 @@
-import db from 'api-db';
-import { ProductOperationalFacts } from './ProductOperationalFacts.types';
+import db from '@lasyncro/backend-core/db.js';
+import { ProductOperationalFacts } from './ProductOperationalFacts.types.js';
 
 interface GetProductOperationalFactsInput {
   shopId: number;

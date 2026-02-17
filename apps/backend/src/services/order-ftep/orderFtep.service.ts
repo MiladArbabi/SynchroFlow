@@ -30,7 +30,7 @@ import type {
   OrderFtepInput,
   OrderNexusFT2Exposure,
   FT2RefundsExposure
-} from './orderFtep.types';
+} from './orderFtep.types.js';
 
 export function exposeOrderNexusFT2(
   input: OrderFtepInput

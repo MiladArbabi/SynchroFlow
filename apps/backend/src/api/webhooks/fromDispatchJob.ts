@@ -6,8 +6,8 @@
 // MUST be deterministic and side-effect free.
 //
 
-import { WebhookEnvelope } from './types';
-import { WebhookDispatchJob } from './types.dispatchJob';
+import { WebhookEnvelope } from './types.js';
+import { WebhookDispatchJob } from './types.dispatchJob.js';
 
 export function fromDispatchJob(
   job: WebhookDispatchJob

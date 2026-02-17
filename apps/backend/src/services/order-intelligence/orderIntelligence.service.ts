@@ -22,8 +22,8 @@
  * - Expose narratives
  */
 
-import type { OrderFacts } from '../order-facts/orderFacts.types';
-import { OrderTrendFacts } from '../order-facts/orderTrendFacts.service';
+import type { OrderFacts } from '../order-facts/orderFacts.types.js';
+import { OrderTrendFacts } from '../order-facts/orderTrendFacts.service.js';
 
 /**
  * Intelligence Thresholds (INTERNAL)

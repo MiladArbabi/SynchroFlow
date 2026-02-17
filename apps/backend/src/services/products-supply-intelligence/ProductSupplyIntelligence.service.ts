@@ -1,6 +1,7 @@
 // apps/backend/src/services/products-supply-intelligence/ProductSupplyIntelligence.service.ts
-import { ProductSupplyFacts } from '../products-supply-facts/ProductSupplyFacts.types';
-import { ProductSupplyIntelligence } from './ProductSupplyIntelligence.types';
+
+import { ProductSupplyFacts } from "../../services/products-supply-facts/ProductSupplyFacts.types.js";
+import { ProductSupplyIntelligence } from "./ProductSupplyIntelligence.types.js";
 
 /**
  * buildProductSupplyIntelligence

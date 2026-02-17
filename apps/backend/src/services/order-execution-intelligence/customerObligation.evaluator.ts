@@ -12,7 +12,7 @@
  * - false = explicitly cleared
  */
 
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 /**
  * SOVEREIGN OBLIGATION ANCHOR (v2)

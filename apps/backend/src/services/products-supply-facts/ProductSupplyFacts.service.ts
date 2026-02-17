@@ -1,7 +1,6 @@
 // apps/backend/src/services/products-supply-facts/ProductSupplyFacts.service.ts
-
-import db from 'api-db';
-import { ProductSupplyFacts } from './ProductSupplyFacts.types';
+import db from '@lasyncro/backend-core/db.js';
+import { ProductSupplyFacts } from './ProductSupplyFacts.types.js';
 
 interface GetProductSupplyFactsInput {
   shopId: number;

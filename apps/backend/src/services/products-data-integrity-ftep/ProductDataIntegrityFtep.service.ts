@@ -1,9 +1,9 @@
 import {
   ProductDataIntegrityIntelligence,
-} from '../products-data-integrity-intelligence/ProductDataIntegrityIntelligence.types';
+} from '../products-data-integrity-intelligence/ProductDataIntegrityIntelligence.types.js';
 import {
   ProductDataIntegrityFT2Exposure,
-} from './ProductDataIntegrityFtep.types';
+} from './ProductDataIntegrityFtep.types.js';
 
 interface BuildProductDataIntegrityFtepInput {
   intelligence: ProductDataIntegrityIntelligence;

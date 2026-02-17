@@ -1,7 +1,7 @@
 // apps/backend/src/api/layouts/layout.controller.ts
 import { Request, Response } from 'express';
-import db from '../../db';
-import { requireShopIdForUser } from 'api-src/services/shop-resolution.service';
+import db from '@lasyncro/backend-core/db.js';
+import { requireShopIdForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 /**
  * Layout Controller

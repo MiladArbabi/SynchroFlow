@@ -1,6 +1,6 @@
 // apps/backend/src/services/products-facts/ProductsFacts.service.ts
-import db from 'api-db';
-import { ProductsFacts } from './ProductsFacts.types';
+import db from '@lasyncro/backend-core/db.js';
+import { ProductsFacts } from './ProductsFacts.types.js';
 
 interface GetProductsFactsInput {
   shopId: number;

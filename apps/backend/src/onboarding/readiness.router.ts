@@ -1,7 +1,7 @@
 // apps/backend/src/onboarding/readiness.router.ts
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth.middleware';
-import { OnboardingReadinessService } from './readiness.service';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { OnboardingReadinessService } from './readiness.service.js';
 
 const router = Router();
 const service = new OnboardingReadinessService();

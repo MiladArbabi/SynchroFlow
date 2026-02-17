@@ -1,6 +1,6 @@
-import type { AlignmentPlane, AlignmentResult } from './alignmentPlane.types';
-import { crossDomainTrustPlane } from './crossDomainTrust.plane';
-import { visibilityGate } from './visibilityGate';
+import { AlignmentPlane, AlignmentResult } from "./alignmentPlane.types.js";
+import { crossDomainTrustPlane } from "./crossDomainTrust.plane.js";
+import { visibilityGate } from "./visibilityGate.js";
 
 /**
  * Alignment Plane Engine

@@ -1,36 +1,30 @@
 // apps/backend/src/bootstrap/express.ts
 import express, { Express } from 'express';
 import cookieParser from 'cookie-parser';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
-// routes
-import layoutRoutes from '../api/layouts/layout.routes';
-import orderRoutes from '../api/orders/orders.routes';
-import customerRoutes from '../api/customers/customers.routes';
-import integrationRoutes from '../api/integrations/integration.routes';
-import productsRoutes from '../api/products/products.routes';
-import authRoutes from '../api/auth/auth.routes';
-import userStateRoutes from '../api/user-state/user-state.routes';
-import shopifyRoutes from '../api/shopify/shopify.routes';
-import onboardingReadinessRouter from '../onboarding/readiness.router';
-import { authenticateToken } from '../middleware/auth.middleware';
-import { registerActivationRoutes } from '../api/activation/activation.routes';
-import { registerLifecycleRoutes } from 'api-src/api/lifecycle';
-
-// Specter routes (FT0)
-import specterRouter from '../api/specter/specter.routes';
-import customersFt2Routes from '../api/customers/customers.ft2.routes';
-
-import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
-import productsFt2Routes from '../api/products/products.ft2.routes';
-import overviewFt2Routes from '../api/overview';
-import trustFt2Routes from '../api/trust';
-import financesRoutes from '../api/finances/finances.routes';
-
-//entitlments and payment services
-import { getMyEntitlements } from '../api/entitlements/entitlements.controller';
-import { stripeWebhookHandler } from '../api/billing/stripe.webhook';
-import { verifyStripeSignature } from 'api-src/api/billing/stripe.verify.middleware';
+import layoutRoutes from '../api/layouts/layout.routes.js';
+import orderRoutes from '../api/orders/orders.routes.js';
+import customerRoutes from '../api/customers/customers.routes.js';
+import integrationRoutes from '../api/integrations/integration.routes.js';
+import productsRoutes from '../api/products/products.routes.js';
+import authRoutes from '../api/auth/auth.routes.js';
+import userStateRoutes from '../api/user-state/user-state.routes.js';
+import shopifyRoutes from '../api/shopify/shopify.routes.js';
+import onboardingReadinessRouter from '../onboarding/readiness.router.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { registerActivationRoutes } from '../api/activation/activation.routes.js';
+import specterRouter from '../api/specter/specter.routes.js';
+import customersFt2Routes from '../api/customers/customers.ft2.routes.js';
+import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
+import productsFt2Routes from '../api/products/products.ft2.routes.js';
+import overviewFt2Routes from '../api/overview/index.js';
+import trustFt2Routes from '../api/trust/index.js';
+import financesRoutes from '../api/finances/finances.routes.js';
+import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
+import { stripeWebhookHandler } from '../api/billing/stripe.webhook.js';
+import { verifyStripeSignature } from '../api/billing/stripe.verify.middleware.js';
+import { registerLifecycleRoutes } from '../api/lifecycle/lifecycle.routes.js';
 
 // Raw body capture for webhook verification
 // -----------------------------------------

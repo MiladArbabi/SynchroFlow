@@ -1,1 +1,1 @@
-export * from './specterIntelligence.service';
+export * from './specterIntelligence.service.js';

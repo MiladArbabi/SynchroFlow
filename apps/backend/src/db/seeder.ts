@@ -1,5 +1,5 @@
 // apps/backend/src/db/seeder.ts
-import db from '../db';
+import db from '@lasyncro/backend-core/db.js';
 
 export async function seedSandboxData(shopId: number): Promise<void> {
   console.log(`[seeder] Starting sandbox data seed for shopId: ${shopId}`);

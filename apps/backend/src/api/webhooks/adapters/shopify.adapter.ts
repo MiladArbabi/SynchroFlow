@@ -1,5 +1,5 @@
-import { buildWebhookEnvelope } from '../buildWebhookEnvelope';
-import { WebhookEnvelope } from '../types';
+import { buildWebhookEnvelope } from '../buildWebhookEnvelope.js';
+import { WebhookEnvelope } from '../types.js';
 import crypto from 'crypto';
 
 export class ShopifyWebhookAdapter {

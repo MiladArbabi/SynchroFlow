@@ -16,10 +16,10 @@
 // - Fail-fast, fail-closed
 
 import { Request, Response } from 'express';
-import db from 'api-src/db';
-import { performInitialSync } from 'api-src/services/shopify.service';
-import { ShopifyAppService } from 'api-src/services/shopify-app.service';
-import { requireAuthStrict } from 'api-src/middleware/requireAuthStrict';
+import db from '@lasyncro/backend-core/db.js';
+import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
+import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
+import { performInitialSync } from '@lasyncro/backend-core/services/shopify.service.js';
 
 export async function triggerManualInitialSync(
   req: Request,

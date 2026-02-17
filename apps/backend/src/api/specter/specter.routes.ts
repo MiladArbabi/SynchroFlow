@@ -1,12 +1,12 @@
 // apps/backend/src/api/specter/specter.routes.ts
 import { Router } from 'express';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import {
   getSpecterState,
   getSpecterConfig,
   upsertSpecterConfig
-} from './specter.controller';
-import { httpGetSpecterFt2 } from './specter.ft2.controller';
+} from './specter.controller.js';
+import { httpGetSpecterFt2 } from './specter.ft2.controller.js';
 
 const router = Router();
 

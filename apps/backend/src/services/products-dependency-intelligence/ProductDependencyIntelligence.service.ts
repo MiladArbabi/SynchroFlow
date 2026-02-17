@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-dependency-intelligence/ProductDependencyIntelligence.service.ts
 
-import { ProductDependencyFacts } from '../products-dependency-facts/ProductDependencyFacts.types';
-import { ProductDependencyIntelligence } from './ProductDependencyIntelligence.types';
+import { ProductDependencyFacts } from '../products-dependency-facts/ProductDependencyFacts.types.js';
+import { ProductDependencyIntelligence } from './ProductDependencyIntelligence.types.js';
 
 /**
  * buildProductDependencyIntelligence

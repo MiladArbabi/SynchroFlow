@@ -1,5 +1,6 @@
 // handleInvoicePaid.ts
-import { WebhookEnvelope } from 'api-src/api/webhooks/types';
+
+import { WebhookEnvelope } from "api/webhooks/types.js";
 
 export async function handleInvoicePaid(
   envelope: WebhookEnvelope

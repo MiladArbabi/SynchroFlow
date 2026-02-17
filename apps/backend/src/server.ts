@@ -1,10 +1,12 @@
 // apps/backend/src/server.ts
 import dotenv from 'dotenv';
 dotenv.config();
-import { createApp } from './bootstrap/express';
-import { initSpecterStore, closeSpecterStore } from './bootstrap/specter-store';
-import { initQueue, closeQueue } from './bootstrap/queue';
-import { startWorkers } from './bootstrap/workers';
+import { createApp } from './bootstrap/express.js';
+import { initSpecterStore, closeSpecterStore } from './bootstrap/specter-store.js';
+import { initQueue, closeQueue } from './bootstrap/queue.js';
+import { startWorkers } from './bootstrap/workers.js';
+import { fileURLToPath } from 'url';
+import path from 'path';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -13,6 +15,9 @@ const app = createApp();
 
 // Start sequence and graceful shutdown wiring
 let server: ReturnType<typeof app.listen> | null = null;
+
+const __filename = fileURLToPath(import.meta.url);
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 
 async function start() {
   // ensure optional infra initialized before declaring ready
@@ -47,8 +52,7 @@ async function shutdown(sig?: string) {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-if (require.main === module) {
-  // run start when file executed directly (node ./dist/server.js)
+if (isMain) {
   start().catch((err) => {
     console.error('[server] Failed to start:', err && (err as Error).message ? (err as Error).message : err);
     process.exit(1);

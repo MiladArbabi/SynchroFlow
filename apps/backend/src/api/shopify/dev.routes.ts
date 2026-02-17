@@ -1,8 +1,8 @@
 //apps/backend/src/api/shopify/dev.routes.ts
 // apps/backend/src/api/shopify/dev.routes.ts
 import { Router, Request, Response } from 'express';
-import db from '../../db';
-import { performSmartSync } from '../../services/shopify-sync-orchestrator.service';
+import db from '@lasyncro/backend-core/db.js';
+import { performSmartSync } from '../../services/shopify-sync-orchestrator.service.js';
 import CryptoJS from 'crypto-js';
 
 const router = Router();

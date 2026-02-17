@@ -1,7 +1,7 @@
 //apps/backend/src/api/specter/specter.ft2.controller.ts
 import { Request, Response } from 'express';
-import { getSpecterFt2Snapshot } from 'api-src/services/specter-ft2.provider';
-import { resolveFt2Range } from 'api-src/utils/ft2Period';
+import { getSpecterFt2Snapshot } from '../../services/specter-ft2.provider.js';
+import { resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 /**
  * GET /api/v1/specter/ft2

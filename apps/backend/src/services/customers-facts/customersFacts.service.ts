@@ -1,9 +1,9 @@
 //apps/backend/src/services/customers-facts/customersFacts.service.ts
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import {
   CustomersFacts,
   GetCustomersFactsInput
-} from './customersFacts.types';
+} from './customersFacts.types.js';
 
 /**
  * Customers Facts (FT2)

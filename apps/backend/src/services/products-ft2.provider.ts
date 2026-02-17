@@ -1,33 +1,29 @@
 // apps/backend/src/services/products-ft2.provider.ts
-import { getProductsFacts } from './products-facts';
-import { buildProductsIntelligence } from './products-intelligence';
-import { buildProductsFtep } from './products-ftep';
-import { ProductsFT2Exposure } from './products-ftep/ProductsFtep.types';
+import { getProductsFacts } from './products-facts/index.js';
+import { buildProductsIntelligence } from './products-intelligence/index.js';
+import { buildProductsFtep } from './products-ftep/index.js';
+import { ProductsFT2Exposure } from './products-ftep/ProductsFtep.types.js';
 
-import { getProductDataIntegritySnapshot } from './products-data-integrity.provider';
+import { getProductDataIntegritySnapshot } from './products-data-integrity.provider.js';
 
-import { getProductOperationalFacts } from './products-operational-facts';
-import { buildProductOperationalIntelligence } from './products-operational-intelligence';
-import { buildProductOperationalFtep } from './products-operational-ftep';
+import { getProductOperationalFacts } from './products-operational-facts/index.js';
+import { buildProductOperationalIntelligence } from './products-operational-intelligence/index.js';
+import { buildProductOperationalFtep } from './products-operational-ftep/index.js';
 
-import { getProductSupplyFacts } from './products-supply-facts';
-import { buildProductSupplyIntelligence } from './products-supply-intelligence';
-import { buildProductSupplyFtep } from './products-supply-ftep';
+import { getProductSupplyFacts } from './products-supply-facts/index.js';
+import { buildProductSupplyIntelligence } from './products-supply-intelligence/index.js';
+import { buildProductSupplyFtep } from './products-supply-ftep/index.js';
 
-import { getProductDataFreshnessFacts } from './products-data-freshness-facts';
-import { buildProductDataFreshnessIntelligence } from './products-data-freshness-intelligence';
-import { buildProductDataFreshnessFtep } from './products-data-freshness-ftep';
+import { getProductDataFreshnessFacts } from './products-data-freshness-facts/index.js';
+import { buildProductDataFreshnessIntelligence } from './products-data-freshness-intelligence/index.js';
+import { getProductCrossDomainAlignmentFacts } from './products-cross-domain-alignment/ProductCrossDomainAlignmentFacts.service.js';
+import { buildProductCrossDomainAlignmentFtep } from './products-cross-domain-alignment/ProductCrossDomainAlignmentFtep.service.js';
+import { buildProductCrossDomainAlignmentIntelligence } from './products-cross-domain-alignment/ProductCrossDomainAlignmentIntelligence.service.js';
+import { buildProductDataFreshnessFtep } from './products-data-freshness-ftep/ProductDataFreshnessFtep.service.js';
+import { getProductDependencyFacts } from './products-dependency-facts/ProductDependencyFacts.service.js';
+import { buildProductDependencyFtep } from './products-dependency-ftep/ProductDependencyFtep.service.js';
+import { buildProductDependencyIntelligence } from './products-dependency-intelligence/ProductDependencyIntelligence.service.js';
 
-import {
-  buildProductCrossDomainAlignmentIntelligence,
-  buildProductCrossDomainAlignmentFtep,
-} from './products-cross-domain-alignment';
-import { getProductCrossDomainAlignmentFacts } 
-  from './products-cross-domain-alignment';
-
-import { getProductDependencyFacts } from './products-dependency-facts';
-import { buildProductDependencyIntelligence } from './products-dependency-intelligence';
-import {buildProductDependencyFtep } from './products-dependency-ftep';
 
 interface GetProductsFt2SnapshotInput {
   shopId: number;

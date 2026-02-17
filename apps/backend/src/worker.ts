@@ -1,6 +1,6 @@
 // apps/backend/src/worker.ts
-import { getQueueChannel } from './queue';
-import db from './db';
+import { getQueueChannel } from './queue.js';
+import db from '@lasyncro/backend-core/db.js';
 
 // Lazily obtain the specific channel for 'events' so tests can safely mock getQueueChannel
 let eventChannel: ReturnType<typeof getQueueChannel> | null = null;

@@ -8,11 +8,12 @@
  * until finances facts emit EpistemicValue<T>.
  */
 
-import type { FinancesFacts } from 'api-src/services/finances-facts/FinancesFacts.types';
-import type { FinancesIntelligence } from 'api-src/services/finances-intelligence/FinancesIntelligence.service';
-import type { FinancesFT2Exposure } from './FinancesFtep.types';
-import { decisionEpistemicGate } from '../epistemic/decisionEpistemicGate';
+
 import type { EpistemicValue } from '@lasyncro/epistemic';
+import { decisionEpistemicGate } from '../../services/epistemic/decisionEpistemicGate.js';
+import { FinancesFacts } from '../../services/finances-facts/FinancesFacts.types.js';
+import { FinancesIntelligence } from '../../services/finances-intelligence/FinancesIntelligence.service.js';
+import { FinancesFT2Exposure } from './FinancesFtep.types.js';
 
 /**
  * Finances FTEP — Truth Exposure Policy

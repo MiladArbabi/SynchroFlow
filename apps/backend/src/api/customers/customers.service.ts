@@ -1,7 +1,7 @@
 // apps/backend/src/api/customers/customers.service.ts
-import { CustomerOrder, SupportTicket } from './customers.types';
-import { CustomerResolutionService, UnifiedCustomerProfile } from '../../services/customer-resolution.service';
-import db from '../../db';
+import { CustomerOrder, SupportTicket } from './customers.types.js';
+import { CustomerResolutionService, UnifiedCustomerProfile } from '../../services/customer-resolution.service.js';
+import db from '@lasyncro/backend-core/db.js';
 
 export interface CustomerProfileData {
   name: string;

@@ -1,5 +1,7 @@
 // apps/backend/src/services/specter-ftep/specterFtep.types.ts
-import { ConsistencyIssues, InstrumentationGaps } from 'api-src/services/specter-facts/specterFacts.types';
+
+import { ConsistencyIssues, InstrumentationGaps } from "../../services/specter-facts/specterFacts.types.js";
+
 
 export interface SpecterFT2Exposure {
   context: {

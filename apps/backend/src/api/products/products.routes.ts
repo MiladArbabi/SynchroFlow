@@ -1,7 +1,7 @@
 // apps/backend/src/api/products/products.routes.ts
 import { Router } from 'express';
-import { fetchProducts } from './products.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { fetchProducts } from './products.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
 const router = Router();
 

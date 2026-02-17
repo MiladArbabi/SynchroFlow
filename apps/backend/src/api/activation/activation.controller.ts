@@ -14,7 +14,7 @@
  */
 
 import { Request, Response } from 'express';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 
 import {
@@ -24,13 +24,11 @@ import {
   EntitlementSnapshot,
   ACTIVATION_DERIVATION_VERSION
 } from '@lasyncro/shared/activation';
-
-import { EntitlementsService } from 'api-src/services/entitlements.service';
-import { resolveShopIdForUser } from 'api-src/services/shop-resolution.service';
-import { buildActivationAuditEvent } from './buildActivationAuditEvent';
-
-import { FT0CompletionService } from 'api-src/services/ft0-completion.service';
-import { buildActivationSurface } from './activation.surface';
+import { buildActivationSurface } from './activation.surface.js';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { FT0CompletionService } from '../../services/ft0-completion.service.js';
+import { resolveShopIdForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { buildActivationAuditEvent } from './buildActivationAuditEvent.js';
 
 export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;

@@ -1,5 +1,5 @@
-import db from 'api-db';
-import type { FinancesFacts } from './FinancesFacts.types';
+import db from '@lasyncro/backend-core/db.js';
+import type { FinancesFacts } from './FinancesFacts.types.js';
 
 interface BuildFinancesFactsInput {
   shopId: number;

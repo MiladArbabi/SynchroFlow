@@ -1,6 +1,6 @@
 // apps/backend/src/api/user-state/user-state.controller.ts
 import { Request, Response } from 'express';
-import { UserStateService, OrdersPerMonthSegment } from '../../services/user-state.service';
+import { UserStateService, OrdersPerMonthSegment } from '../../services/user-state.service.js';
 
 export const getUserState = async (req: Request, res: Response) => {
   try {

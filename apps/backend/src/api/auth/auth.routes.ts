@@ -1,7 +1,7 @@
 // apps/backend/src/api/auth/auth.routes.ts
 import { Router } from 'express';
-import { registerUser, loginUser, refreshToken, logoutUser, getDevToken } from './auth.controller';
-import { testIssueAccessToken } from './auth.test.controller';
+import { registerUser, loginUser, refreshToken, logoutUser, getDevToken } from './auth.controller.js';
+import { testIssueAccessToken } from './auth.test.controller.js';
 
 const router = Router();
 

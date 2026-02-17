@@ -1,34 +1,17 @@
 // apps/backend/src/worker-entry.ts
+import './bootstrap/env.js';
+import './bootstrap/tsconfig-paths-register.js';
+import './api/shopify/shopify.webhook.js';
 
-import 'dotenv/config';
-import './bootstrap/tsconfig-paths-register';
-import 'api-src/api/shopify/shopify.webhook';
+import { initQueue } from './queue.js';
+import { startSyncWorker } from './sync.worker.js';
+import { startWorker as startEventWorker } from './worker.js';
+import { startProductIngestionWorker } from './workers/product-ingestion.worker.js';
+import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
+/* import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker.js';*/
+import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation/index.js';
+import { runFulfillmentReconciliationBatch } from './workers/reconciliation/index.js';
 
-import { initQueue } from './queue';
-import { startSyncWorker } from './sync.worker';
-import { startWorker as startEventWorker } from './worker';
-import { startProductIngestionWorker } from './workers/product-ingestion.worker';
-import { startWebhookWorker } from './workers/webhook-dispatch.worker';
-/* import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker';*/
-import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation';
-import { runFulfillmentReconciliationBatch } from './workers/reconciliation';
-
-/**
- * Obligation flag worker
- * ---------------------
- * Imported intentionally but NOT executed.
- *
- * Reason:
- * - Obligation semantics are not yet defined
- * - Execution must be explicit and scheduled
- * - Prevents accidental background writes
- */
-import { computeObligationFlags } from './services/order-execution-intelligence/obligationFlags.worker';
-import { evaluateCustomerObligations } from './services/order-execution-intelligence/customerObligation.evaluator';
-import db from './db';
-import { writeOrderRevenueUnits } from './workers/reconciliation/revenue-units.writer';
-import { evaluateOperationalObligations } from './services/order-execution-intelligence/operationalObligation.evaluator';
-import { enqueueProductForIngestion } from './services/product-ingestion.service';
 
 async function start() {
 

@@ -1,6 +1,6 @@
 //apps/backend/src/services/products-intelligence/ProductsIntelligence.service.ts
-import { ProductsFacts } from '../products-facts/ProductsFacts.types';
-import { ProductsIntelligence } from './ProductsIntelligence.types';
+import { ProductsFacts } from '../products-facts/ProductsFacts.types.js';
+import { ProductsIntelligence } from './ProductsIntelligence.types.js';
 
 /**
  * buildProductsIntelligence

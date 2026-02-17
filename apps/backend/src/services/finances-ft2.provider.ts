@@ -1,7 +1,8 @@
-import { buildFinancesFacts } from 'api-src/services/finances-facts';
-import { buildFinancesIntelligence } from 'api-src/services/finances-intelligence/FinancesIntelligence.service';
-import { buildFinancesFtep } from 'api-src/services/finances-ftep';
-import { EpistemicValue } from 'packages/epistemic';
+import { EpistemicValue } from "../../../../packages/epistemic/dist/epistemic.js";
+import { buildFinancesFacts } from "./finances-facts/FinancesFacts.service.js";
+import { buildFinancesFtep } from "./finances-ftep/FinancesFtep.service.js";
+import { buildFinancesIntelligence } from "./finances-intelligence/FinancesIntelligence.service.js";
+
 
 interface GetFinancesFt2SnapshotInput {
   shopId: number;

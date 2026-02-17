@@ -1,20 +1,22 @@
 {
   "name": "api",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "prebuild": "sh -c 'if [ \"$SKIP_DEPS\" = \"1\" ]; then echo \"Skipping build:deps (SKIP_DEPS=1)\"; else npm --prefix ../.. run build:deps; fi'",
     "build": "tsc --project tsconfig.json",
     "start": "node ./scripts/node-start.js",
     "dev": "nodemon --watch src --ext ts --exec \"npm run build && node ./scripts/node-start.js\"",
-    "dev:worker": "nodemon --watch src --ext ts --exec \"npm run build && node dist/apps/backend/src/worker-entry.js\"",
+    "dev:worker": "nodemon --watch src --ext ts --exec \"npm run build && node dist/worker-entry.js\"",
     "start:worker": "node dist/apps/backend/src/worker-entry.js",
     "seed": "knex seed:run --specific=dev_seed.ts",
-    "migrate": "DOTENV_CONFIG_PATH=../../.env npx knex migrate:latest",
-    "migrate:rollback": "DOTENV_CONFIG_PATH=../../.env npx knex migrate:rollback",
-    "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex migrate:make"
+    "migrate": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:latest",
+    "migrate:rollback": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
+    "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make"
   },
   "dependencies": {
     "@lasyncro/shared": "1.0.0",
+    "@lasyncro/backend-core": "0.1.0",
     "amqp-connection-manager": "^5.0.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
@@ -32,7 +34,7 @@
     "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/crypto-js": "^4.2.2",
-    "@types/express": "^4.17.21",
+    "@types/express": "^5.0.6",
     "@types/express-session": "^1.18.2",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.9",

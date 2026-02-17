@@ -1,2 +1,2 @@
 //apps/backend/src/api/activation/index.ts
-export * from './activation.surface';
+export * from './activation.surface.js';

@@ -1,2 +1,2 @@
-export * from './customersFtep.service';
-export * from './customersFtep.types';
+export * from './customersFtep.service.js';
+export * from './customersFtep.types.js';

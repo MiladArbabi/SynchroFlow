@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authenticateToken } from '../../middleware/auth.middleware';
-import { httpGetCustomersFt2 } from './customers.ft2.controller';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { httpGetCustomersFt2 } from './customers.ft2.controller.js';
 
 const router = Router();
 

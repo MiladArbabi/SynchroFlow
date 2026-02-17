@@ -1,4 +1,4 @@
-export { buildProductDataIntegrityIntelligence } from './ProductDataIntegrityIntelligence.service';
+export { buildProductDataIntegrityIntelligence } from './ProductDataIntegrityIntelligence.service.js';
 export type {
   ProductDataIntegrityIntelligence,
-} from './ProductDataIntegrityIntelligence.types';
+} from './ProductDataIntegrityIntelligence.types.js';

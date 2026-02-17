@@ -1,6 +1,6 @@
-import { extractOrderRevenueAllocationFacts } from
-  'api-src/services/order-facts/orderRevenueAllocationFacts.service';
-import type { FT2RangeInput } from 'api-src/utils/ft2Period';
+import { extractOrderRevenueAllocationFacts } from "../../services/order-facts/orderRevenueAllocationFacts.service.js";
+import { FT2RangeInput } from "@lasyncro/backend-core/utils/ft2Period.js";
+
 
 /**
  * Execution-Aware Revenue — Canonical Types

@@ -1,9 +1,9 @@
 // apps/backend/src/api/customers/customers.routes.ts
 import { Router } from 'express';
-import { getCustomerDetails, getCustomerList } from './customers.controller'; 
-import { httpGetCustomersFt2 } from './customers.ft2.controller';
-import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { requireFt2 } from 'api-src/middleware/require-ft2.middleware';
+import { getCustomerDetails, getCustomerList } from './customers.controller.js'; 
+import { httpGetCustomersFt2 } from './customers.ft2.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 
 const router = Router();
 

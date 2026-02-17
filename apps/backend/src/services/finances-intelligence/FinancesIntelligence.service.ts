@@ -1,4 +1,5 @@
-import type { FinancesFacts } from 'api-src/services/finances-facts/FinancesFacts.types';
+import { FinancesFacts } from "../../services/finances-facts/FinancesFacts.types.js";
+
 
 export type FinancesStatus = 'good' | 'bad' | 'unknown';
 export type TrendDirection = 'up' | 'down' | 'flat' | 'unknown';

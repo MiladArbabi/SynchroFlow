@@ -1,8 +1,8 @@
 // apps/backend/src/services/specter-ftep/specterFtep.service.ts
-import { SpecterFacts } from 'api-src/services/specter-facts/specterFacts.types';
-import { SpecterIntelligence } from 'api-src/services/specter-intelligence/specterIntelligence.service';
-import { SpecterFT2Exposure } from './specterFtep.types';
-import { CustomerTruthReadiness } from '../ft2/ctr.types';
+import { CustomerTruthReadiness } from "../../services/ft2/ctr.types.js";
+import { SpecterFacts } from "../../services/specter-facts/specterFacts.types.js";
+import { SpecterIntelligence } from "../../services/specter-intelligence/specterIntelligence.service.js";
+import { SpecterFT2Exposure } from "./specterFtep.types.js";
 
 /**
  * Specter FTEP

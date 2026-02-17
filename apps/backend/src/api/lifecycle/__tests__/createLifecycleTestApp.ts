@@ -1,6 +1,6 @@
 //apps/backend/src/api/lifecycle/__tests__/createLifecycleTestApp.ts
 import express from 'express';
-import { registerLifecycleRoutes } from '../lifecycle.routes';
+import { registerLifecycleRoutes } from '../lifecycle.routes.js';
 
 export function createLifecycleTestApp() {
   const app = express();

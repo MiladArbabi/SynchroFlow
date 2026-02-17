@@ -1,6 +1,7 @@
 //apps/backend/src/services/customers-intelligence/customersIntelligence.service.ts
-import { CustomersFacts } from 'api-src/services/customers-facts';
-import { CustomersIntelligence } from './customersIntelligence.types';
+
+import { CustomersFacts } from '../../services/customers-facts/index.js';
+import { CustomersIntelligence } from './customersIntelligence.types.js';
 
 /**
  * Customers Intelligence (FT2)

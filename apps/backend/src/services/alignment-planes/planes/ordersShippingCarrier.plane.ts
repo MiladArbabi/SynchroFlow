@@ -1,4 +1,4 @@
-import type { AlignmentPlane } from '../alignmentPlane.types';
+import type { AlignmentPlane } from '../alignmentPlane.types.js';
 
 /**
  * Orders ↔ Shipping Carrier Alignment Plane

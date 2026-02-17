@@ -1,5 +1,5 @@
 // apps/backend/src/services/alignment-planes/planes/shippingDelayCustomerPromise.plane.ts
-import type { AlignmentPlane } from '../alignmentPlane.types';
+import type { AlignmentPlane } from '../alignmentPlane.types.js';
 
 /**
  * Shipping Delay ↔ Customer Promise Alignment Plane

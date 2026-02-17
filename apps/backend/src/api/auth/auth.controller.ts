@@ -1,15 +1,14 @@
 // apps/backend/src/api/auth/auth.controller.ts
 import { Request, Response } from 'express';
-import db from '../../db';
+import db from '@lasyncro/backend-core/db.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import { User } from 'api-types'; 
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { issueAuthTokens } from './token.service';
-
-import { audit } from 'api-src/utils/audit';
-import { rateLimit } from 'api-src/utils/rateLimit';
-import { requireShopContextForUser, ResolvedShopContext } from 'api-src/services/shop-resolution.service';
+import { issueAuthTokens } from './token.service.js';
+import { ResolvedShopContext, requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { audit } from '../../utils/audit.js';
+import { rateLimit } from '../../utils/rateLimit.js';
+import { User } from '../../types.js';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 

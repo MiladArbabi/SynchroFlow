@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { WebhookRouter } from './webhookRouter';
-import db from 'api-src/db';
+import { WebhookRouter } from './webhookRouter.js';
+import db from '@lasyncro/backend-core/db.js';
 
 export async function replayWebhook(
   req: Request,

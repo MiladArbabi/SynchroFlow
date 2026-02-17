@@ -1,6 +1,6 @@
 // apps/backend/src/bootstrap/queue.ts
 // Re-exports and small helpers for queue lifecycle
-import { initQueue as initImpl, closeQueue as closeImpl } from '../queue';
+import { initQueue as initImpl, closeQueue as closeImpl } from '../queue.js';
 
 export async function initQueue(): Promise<void> {
   try {

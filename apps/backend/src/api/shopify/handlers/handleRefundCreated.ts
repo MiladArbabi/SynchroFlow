@@ -8,9 +8,9 @@
 
 // apps/backend/src/api/shopify/handlers/handleRefundCreated.ts
 
-import db from 'api-src/db';
-import { WebhookEnvelope } from 'api-src/api/webhooks/types';
-import { resolveRefundExecution } from 'api-src/workers/refundResolution.worker';
+import db from '@lasyncro/backend-core/db.js';
+import { WebhookEnvelope } from '../../../api/webhooks/types.js';
+import { resolveRefundExecution } from '../../../workers/refundResolution.worker.js';
 
 /**
  * Minimal Shopify Refund Payload (Execution-Safe)

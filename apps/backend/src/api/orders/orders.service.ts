@@ -1,5 +1,5 @@
 // apps/backend/src/api/orders/orders.service.ts
-import db from "../../db";
+import db from "@lasyncro/backend-core/db.js";
 
 // Real database interfaces based on ACTUAL schema
 interface Order {

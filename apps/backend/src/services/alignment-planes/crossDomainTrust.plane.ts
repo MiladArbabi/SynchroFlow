@@ -1,4 +1,4 @@
-import { AlignmentPlane, AlignmentResult } from './alignmentPlane.types';
+import { AlignmentPlane, AlignmentResult } from './alignmentPlane.types.js';
 
 /**
  * Cross-Domain Trust Plane (META)

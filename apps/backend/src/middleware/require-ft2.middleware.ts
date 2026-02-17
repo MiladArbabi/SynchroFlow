@@ -1,7 +1,7 @@
 // apps/backend/src/middleware/require-ft2.middleware.ts
 
 import { Request, Response, NextFunction } from 'express';
-import { LifecycleService } from 'api-src/services/lifecycle.service';
+import { LifecycleService } from '../services/lifecycle.service.js';
 
 export async function requireFt2(
   req: Request,

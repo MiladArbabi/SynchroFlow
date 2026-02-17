@@ -1,8 +1,6 @@
 // apps/backend/src/services/products-cross-domain-alignment/ProductCrossDomainAlignmentFacts.service.ts
 
-import {
-  ProductCrossDomainAlignmentFacts,
-} from './ProductCrossDomainAlignmentFacts.types';
+import { ProductCrossDomainAlignmentFacts } from "./ProductCrossDomainAlignmentFacts.types.js";
 
 interface GetProductCrossDomainAlignmentFactsInput {
   shopId: number;

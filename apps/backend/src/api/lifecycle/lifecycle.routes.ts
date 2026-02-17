@@ -1,8 +1,8 @@
 //apps/backend/src/api/lifecycle/lifecycle.routes.ts
 import { Express } from 'express';
-import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { getLifecycle, confirmFt2, confirmFt1, evaluateFt2 } from './lifecycle.controller';
-import { getLifecycleHistory } from './lifecycle-history.controller';
+import { getLifecycle, confirmFt2, confirmFt1, evaluateFt2 } from './lifecycle.controller.js';
+import { getLifecycleHistory } from './lifecycle-history.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
 export function registerLifecycleRoutes(app: Express) {
   app.get('/api/v1/lifecycle', authenticateToken, getLifecycle);

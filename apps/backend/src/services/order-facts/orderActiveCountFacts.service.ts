@@ -1,4 +1,4 @@
-import db from 'api-db';
+import db from "@lasyncro/backend-core/db.js";
 
 /**
  * extractActiveOrdersCount (L1)

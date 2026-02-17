@@ -1,7 +1,6 @@
 // apps/backend/src/workers/reconciliation/reconciliation.consumer.ts
-
-import { getQueueChannel } from 'api-src/queue';
-import { reconcileOrderFulfillment } from './reconciliation.handlers';
+import { getQueueChannel } from '../../queue.js';
+import { reconcileOrderFulfillment } from './reconciliation.handlers.js';
 
 const QUEUE = 'fulfillment.reconciliation';
 

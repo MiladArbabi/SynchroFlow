@@ -49,8 +49,33 @@ export async function up(knex: Knex): Promise<void> {
       .integer('quantity_delta')
       .notNullable();
 
-    table.string('reference_type', 255).notNullable();
-    table.string('reference_id', 255).notNullable();
+    table
+      .string('reference_type', 50)
+      .notNullable();
+
+    /**
+     * Allowed reference domains:
+     * - order_revenue_unit
+     * - refund_execution
+     *
+     * Add new domains explicitly via migration.
+     */
+    table
+      .uuid('reference_id')
+      .notNullable();
+
+    /**
+     * ECONOMIC REFERENCE TYPING
+     * -------------------------
+     * All ledger reference identifiers must be UUID.
+     *
+     * This eliminates string-casting,
+     * strengthens type integrity,
+     * and prepares for future FK enforcement.
+     *
+     * Ledger is sovereign. References must be strictly typed.
+     */
+
 
     table.string('platform', 255).nullable();
     table.string('location_code', 255).nullable();
@@ -123,6 +148,18 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).defaultTo(knex.fn.now());
   });
+
+  await knex.schema.raw(`
+    ALTER TABLE inventory_movements
+    ADD CONSTRAINT inventory_reference_type_check
+    CHECK (
+      reference_type IN (
+        'order_revenue_unit',
+        'refund_execution',
+        'opening_balance'
+      )
+    );
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

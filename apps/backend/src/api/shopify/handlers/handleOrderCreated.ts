@@ -1,9 +1,7 @@
 // apps/backend/src/api/shopify/handlers/handleOrderCreated.ts
 
-import { WebhookEnvelope } from 'api-src/api/webhooks/types';
-import db from 'api-src/db';
-import type { FT0CanonicalOrder }
-  from '@lasyncro/shared/contracts/ft0-canonical-order';
+import { WebhookEnvelope } from '../../../api/webhooks/types.js';
+import db from '@lasyncro/backend-core/db.js';
 
 type ShopifyOrderCreatePayload = {
   id: number | string;

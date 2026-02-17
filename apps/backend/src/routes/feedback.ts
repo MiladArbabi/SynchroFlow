@@ -1,9 +1,9 @@
 // apps/backend/src/routes/feedback.ts
 import { Router } from 'express';
 import { z } from 'zod';
-import db from '../db';
-import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { FeedbackService } from 'api-src/services/feedbackService';
+import db from '@lasyncro/backend-core/db.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { FeedbackService } from '../services/feedbackService.js';
 
 const router = Router();
 
@@ -73,7 +73,11 @@ router.post('/', authenticateToken, async (req, res) => {
 // GET /api/v1/feedback/insights/:insightId - Get feedback for a specific insight
 router.get('/insights/:insightId', authenticateToken, async (req, res) => {
   try {
-    const { insightId } = req.params;
+    const rawInsightId = req.params.insightId;
+    const insightId = Array.isArray(rawInsightId)
+      ? rawInsightId[0]
+      : rawInsightId;
+
     const userId = req.user?.userId;
 
     if (typeof userId !== 'number') {

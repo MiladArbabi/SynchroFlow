@@ -12,25 +12,20 @@
  * All OAuth state must be resolved via database lookups.
  */
 
-
 // apps/backend/src/api/integrations/integration.controller.ts
 import { Request, Response } from 'express';
 import crypto from 'crypto';
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import axios from 'axios';
-import { ShopifyAppService } from 'api-src/services/shopify-app.service';
-import { EntitlementsService } from 'api-src/services/entitlements.service';
-import CryptoJS from 'crypto-js';
-import { getQueueChannel, connection } from '../../queue';
-import { issueAuthTokens } from '../auth/token.service';
+import { issueAuthTokens } from '../../api/auth/token.service.js';
+import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
 
-import { audit } from 'api-src/utils/audit';
-import { rateLimit } from 'api-src/utils/rateLimit';
-import { requireAuth } from 'api-src/middleware/requireAuth';
-import { requireAuthStrict } from 'api-src/middleware/requireAuthStrict';
-import {
-  requireShopContextForUser,
-} from 'api-src/services/shop-resolution.service';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
+import { audit } from '../../utils/audit.js';
+import { rateLimit } from '../../utils/rateLimit.js';
+import { getQueueChannel, connection } from '../../queue.js';
 
 // --- Helper function for encryption ---
 const encryptToken = (token: string): string => {
@@ -530,8 +525,12 @@ export const preFlightCheck = async (req: Request, res: Response) => {
 
 export const triggerManualSync = async (req: Request, res: Response) => {
   try {
-    const { integrationId } = req.params;
     const { userId } = requireAuthStrict(req);
+
+    const rawIntegrationId = req.params.integrationId;
+    const integrationId = Array.isArray(rawIntegrationId)
+      ? rawIntegrationId[0]
+      : rawIntegrationId;
 
     let shopId: number;
     try {

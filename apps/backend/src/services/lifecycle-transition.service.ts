@@ -1,8 +1,8 @@
 // apps/backend/src/services/lifecycle-transition.service.ts
 
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
-import { UserLifecyclePhase } from './lifecycle.service';
+import { UserLifecyclePhase } from './lifecycle.service.js';
 
 type AuditInput = {
   userId: number;

@@ -1,16 +1,23 @@
 // apps/backend/src/services/order-nexus-ft2/orderNexusFt2.resolver.ts
-import { extractOrderFacts } from 'api-src/services/order-facts/orderFacts.service';
-import { exposeOrderNexusFT2 } from 'api-src/services/order-ftep/orderFtep.service';
-import { resolveAlignmentPlanes } from 'api-src/services/alignment-planes/alignmentPlanes.resolver';
-import { extractOrderShippingFacts } from '../order-facts/orderShippingFacts.service';
-import { extractOrderFulfillmentStatusFacts } from '../order-facts/orderFulfillmentStatusFacts.service';
-import { extractOrderShippingDelayFacts } from '../order-facts/orderShippingDelayFacts.service';
-import { extractOrderTrendFacts } from 'api-src/services/order-facts/orderTrendFacts.service';
-import { extractOrderFulfillmentFacts } from '../order-facts/orderFulfillmentFacts.service';
-import { extractFulfilledOrdersCount } from '../order-facts/orderFulfilledCountFacts.service';
-import { extractOrderRevenueAllocationFacts } from 'api-src/services/order-facts/orderRevenueAllocationFacts.service';
-import { extractRefundsFacts } from '../order-facts/orderReturnsFacts.service';
-import { exposeRefunds } from '../order-ftep/orderFtep.service';
+import { resolveAlignmentPlanes } from "../../services/alignment-planes/alignmentPlanes.resolver.js";
+import { aggregateBlockedRevenue, aggregatePendingRevenue } from "../../services/order-execution-intelligence/blocker.aggregates.js";
+import { extractActiveOrdersCount } from "../../services/order-facts/orderActiveCountFacts.service.js";
+import { extractOrderCustomerPromiseFacts } from "../../services/order-facts/orderCustomerPromiseFacts.service.js";
+import { extractOrderFacts } from "../../services/order-facts/orderFacts.service.js";
+import { extractFulfilledOrdersCount } from "../../services/order-facts/orderFulfilledCountFacts.service.js";
+import { extractOrderFulfillmentFacts } from "../../services/order-facts/orderFulfillmentFacts.service.js";
+import { extractOrderFulfillmentStatusFacts } from "../../services/order-facts/orderFulfillmentStatusFacts.service.js";
+import { extractRefundsFacts } from "../../services/order-facts/orderReturnsFacts.service.js";
+import { extractOrderRevenueAllocationFacts } from "../../services/order-facts/orderRevenueAllocationFacts.service.js";
+import { extractOrderShippingDelayFacts } from "../../services/order-facts/orderShippingDelayFacts.service.js";
+import { extractOrderShippingFacts } from "../../services/order-facts/orderShippingFacts.service.js";
+import { extractOrderTrendFacts } from "../../services/order-facts/orderTrendFacts.service.js";
+import { exposeRefunds, exposeOrderNexusFT2 } from "../../services/order-ftep/orderFtep.service.js";
+import { deriveOrderFulfillmentIntelligence } from "../../services/order-intelligence/orderFulfillmentIntelligence.service.js";
+import { deriveOrderIntelligence } from "../../services/order-intelligence/orderIntelligence.service.js";
+import { FT2DateRangePreset } from "@lasyncro/backend-core/utils/ft2Period.js";
+import { pctChange } from "../../utils/pctChange.js";
+import { OrderNexusFT2Snapshot } from "./orderNexusFt2.types.js";
 
 /**
  * NOTE ON TREND WIRING
@@ -27,23 +34,10 @@ import { exposeRefunds } from '../order-ftep/orderFtep.service';
  * No analytical surfaces feed intelligence.
  */
 
-import type { OrderNexusFT2Snapshot } from './orderNexusFt2.types';
-import { FT2DateRangePreset } from 'api-src/utils/ft2Period';
-import { deriveOrderIntelligence } from 'api-src/services/order-intelligence/orderIntelligence.service';
-import { deriveOrderFulfillmentIntelligence } from '../order-intelligence/orderFulfillmentIntelligence.service';
-import { extractOrderCustomerPromiseFacts } from '../order-facts/orderCustomerPromiseFacts.service';
 
-import { pctChange } from 'api-src/utils/pctChange';
 // ⚠️ FT2 RESOLVER BOUNDARY
 // Allowed: aggregate-only downgrade helpers
 // Forbidden: classifiers, intelligence, attribution
-import { 
-  aggregateBlockedRevenue, 
-  aggregatePendingRevenue 
-} from '../order-execution-intelligence/blocker.aggregates';
-import { extractActiveOrdersCount } from '../order-facts/orderActiveCountFacts.service';
-import { extractRevenueUnitsFt2Facts } from '../order-facts/orderRevenueUnitsFt2Facts.service';
-import db from 'api-src/db';
 
 /**
  * OrderNexus FT2 Resolver

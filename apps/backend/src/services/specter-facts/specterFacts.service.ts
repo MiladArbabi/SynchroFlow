@@ -1,6 +1,6 @@
 //apps/backend/src/services/specter-facts/specterFacts.service.ts
-import { ConsistencyIssue, ConsistencyIssues, GetSpecterFactsInput, InstrumentationGap, InstrumentationGaps, SpecterFacts } from './specterFacts.types';
-import { createSessionStore } from 'modules-specter/store/session-store';
+import { createSessionStore } from '@lasyncro/specter/store/session-store';
+import { ConsistencyIssue, ConsistencyIssues, GetSpecterFactsInput, InstrumentationGap, InstrumentationGaps, SpecterFacts } from './specterFacts.types.js';
 
 /**
  * Specter Facts

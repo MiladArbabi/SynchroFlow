@@ -1,6 +1,6 @@
 // apps/backend/src/api/customers/customers.controller.ts
  import { Request, Response } from 'express';
-import { CustomersService } from './customers.service';
+import { CustomersService } from './customers.service.js';
  
  /**
   * @route   GET /api/v1/customers/:id
@@ -9,7 +9,9 @@ import { CustomersService } from './customers.service';
   */
  export const getCustomerDetails = async (req: Request, res: Response) => {
    try {
-     const { id } = req.params;
+     const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    
     // TODO: Get shopId from authenticated user session
     const shopId = 1; // Temporary hardcoded for development
     

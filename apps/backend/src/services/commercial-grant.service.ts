@@ -13,12 +13,12 @@
 // - Audited
 // - NO entitlement reads
 
-import db from '../db';
-import { EntitlementsService, CommercialGrantEvent } from './entitlements.service';
+import db from '@lasyncro/backend-core/db.js';
+import { EntitlementsService, CommercialGrantEvent } from '@lasyncro/backend-core/services/entitlements.service.js';
 import {
   FT2_PAID_MODULES,
   FT2_PAID_FLAGS,
-} from '../contracts/ft2-paid.contract';
+} from '../contracts/ft2-paid.contract.js';
 
 export class CommercialGrantService {
   static async apply(event: CommercialGrantEvent): Promise<void> {

@@ -1,7 +1,6 @@
 // apps/backend/src/services/order-facts/orderTrendFacts.service.ts
-
-import db from 'api-db';
-import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from 'api-src/utils/ft2Period';
+import db from "@lasyncro/backend-core/db.js";
+import { FT2DateRangePreset, resolveFt2PeriodFromPreset } from "@lasyncro/backend-core/utils/ft2Period.js";
 
 /**
  * OrderTrendFacts (Layer 1½ — Sovereign Trend Facts)

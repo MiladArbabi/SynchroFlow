@@ -7,8 +7,8 @@ import {
   OnboardingTaskCompletionRule,
   FT1Verdict
 } from '@lasyncro/shared';
-import { onboardingSignalProviders } from './readiness.providers';
-import { MODULE_ONBOARDING_MANIFESTS } from './readiness.manifest';
+import { onboardingSignalProviders } from './readiness.providers.js';
+import { MODULE_ONBOARDING_MANIFESTS } from './readiness.manifest.js';
 
 export class OnboardingReadinessService {
   async getSnapshot(ctx: { shopId: number; userId?: number }): Promise<OnboardingReadinessSnapshot> {

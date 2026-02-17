@@ -1,4 +1,4 @@
-import { AlignmentPlane } from '../alignmentPlane.types';
+import { AlignmentPlane } from '../alignmentPlane.types.js';
 
 type EngagementRevenueInput = {
   customers: {

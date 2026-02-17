@@ -1,4 +1,4 @@
-import type { AlignmentPlane } from '../alignmentPlane.types';
+import type { AlignmentPlane } from '../alignmentPlane.types.js';
 
 /**
  * Operational ↔ Economic Alignment Plane

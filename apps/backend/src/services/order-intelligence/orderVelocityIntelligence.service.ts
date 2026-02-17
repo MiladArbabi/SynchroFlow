@@ -1,5 +1,5 @@
 import type { OrderTrendFacts } from
-  '../order-facts/orderTrendFacts.service';
+  '../order-facts/orderTrendFacts.service.js';
 
 /**
   * Order Velocity Intelligence (Layer 2)

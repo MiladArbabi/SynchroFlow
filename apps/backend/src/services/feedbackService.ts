@@ -1,5 +1,5 @@
 //apps/backend/src/services/feedbackService.ts
-import db from "api-db";
+import db from "@lasyncro/backend-core/db.js";
 
 export interface FeedbackData {
   insightId: string;

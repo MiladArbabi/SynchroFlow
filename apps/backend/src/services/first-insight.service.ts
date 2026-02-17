@@ -1,6 +1,6 @@
 // apps/backend/src/services/first-insight.service.ts
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 
 type OrdersPerMonthSegment =

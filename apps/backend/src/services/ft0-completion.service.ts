@@ -45,7 +45,7 @@
  * ============================================================
  */
 
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 
 export class FT0CompletionService {

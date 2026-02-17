@@ -1,4 +1,4 @@
-import type { AlignmentPlane } from '../alignmentPlane.types';
+import type { AlignmentPlane } from '../alignmentPlane.types.js';
 
 export const orderVelocityFulfillmentPlane: AlignmentPlane<{
   orders: {

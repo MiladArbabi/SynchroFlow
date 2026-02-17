@@ -6,9 +6,9 @@ import {
   getSyncStatus,
   preFlightCheck,
   triggerManualSync
-} from './integration.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
-import { triggerManualInitialSync } from './manualSync.controller';
+} from './integration.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { triggerManualInitialSync } from './manualSync.controller.js';
 
 const router = Router();
 

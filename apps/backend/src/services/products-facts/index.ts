@@ -1,2 +1,2 @@
-export { getProductsFacts } from './ProductsFacts.service';
-export type { ProductsFacts } from './ProductsFacts.types';
+export { getProductsFacts } from './ProductsFacts.service.js';
+export type { ProductsFacts } from './ProductsFacts.types.js';

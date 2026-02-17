@@ -1,6 +1,6 @@
 // apps/backend/src/api/products/products.controller.ts
 import { Request, Response } from 'express';
-import { getProducts } from './products.service';
+import { getProducts } from './products.service.js';
 
 export const fetchProducts = async (req: Request, res: Response) => {
   try {

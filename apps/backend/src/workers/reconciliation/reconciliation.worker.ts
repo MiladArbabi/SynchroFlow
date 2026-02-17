@@ -1,17 +1,29 @@
 // apps/backend/src/workers/reconciliation/reconciliation.worker.ts
 
-import db from 'api-src/db';
-import { reconcileOrderFulfillment } from './reconciliation.handlers';
-import { rebuildInventoryProjection } from 'api-src/services/inventory/rebuildInventoryProjection';
+import db from '@lasyncro/backend-core/db.js';
+import { reconcileOrderFulfillment } from './reconciliation.handlers.js';
+import { rebuildInventoryProjection } from '../../services/inventory/rebuildInventoryProjection.js';
 
 export async function runFulfillmentReconciliationBatch(
   shopId: number,
   limit = 500
 ): Promise<void> {
 
-  // 1. Find sovereign orders for shop
+  /**
+   * DELTA-BASED RECONCILIATION SELECTION
+   * ------------------------------------
+   * Only reconcile orders that:
+   *   - Have never been reconciled
+   *   - OR have been updated since last reconciliation
+   *
+   * Prevents full-dataset rewrites.
+   */
   const rows = await db('orders')
     .where('shop_id', shopId)
+    .andWhere(function () {
+      this.whereNull('last_reconciled_at')
+          .orWhere('order_updated_at', '>', db.ref('last_reconciled_at'));
+    })
     .select('lasyncro_order_id', 'order_processed_at')
     .orderBy('order_created_at', 'asc')
     .limit(limit);
@@ -30,6 +42,10 @@ export async function runFulfillmentReconciliationBatch(
             }
           : undefined
       );
+
+      await db('orders')
+        .where({ lasyncro_order_id: row.lasyncro_order_id })
+        .update({ last_reconciled_at: db.fn.now() });
     }
 
     // 🔁 Deterministic projection rebuild after batch

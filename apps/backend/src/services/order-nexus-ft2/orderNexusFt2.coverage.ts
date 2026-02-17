@@ -1,5 +1,5 @@
-import db from 'api-db';
-import { FT2RangeInput, resolveFt2Range } from 'api-src/utils/ft2Period';
+import db from '@lasyncro/backend-core/db.js';
+import { FT2RangeInput, resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 export type OrdersFt2Coverage = {
   totalLineItems: number;

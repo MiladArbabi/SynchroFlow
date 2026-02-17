@@ -1,7 +1,7 @@
 // apps/backend/src/services/ft2-latch.service.ts
-import db from 'api-src/db';
-import { FT2EvaluatorService } from './ft2-evaluator.service';
-import { EntitlementsService } from './entitlements.service';
+import db from '@lasyncro/backend-core/db.js';
+import { FT2EvaluatorService } from './ft2-evaluator.service.js';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 
 /**
  * FT2 Latch Service

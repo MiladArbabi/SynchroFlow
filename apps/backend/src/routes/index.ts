@@ -1,20 +1,19 @@
 // apps/backend/src/routes/index.ts
 import { Router } from 'express';
 // Placeholder routes - these will be implemented in future issues
-import shopRoutes from './shops'; 
-import integrationRoutes from './integrations';
-import userRoutes from './users';
-
-import feedbackRoutes from './feedback'; 
-import ordersRoutes from '../api/orders/orders.routes'
-import productsRoutes from '../api/products/products.routes'
-import customersRoutes from '../api/customers/customers.routes'
-import userStateRoutes from '../api/user-state/user-state.routes'
-import onboardingReadinessRouter from '../onboarding/readiness.router';
-import specterRouter from '../api/specter/specter.routes';
-import orderNexusRoutes from '../api/order-nexus/orderNexus.routes';
-import financesRoutes from 'api-src/api/finances';
-import overviewRoutes from './overview';
+import shopRoutes from './shops.js'; 
+import integrationRoutes from './integrations.js';
+import userRoutes from './users.js';
+import feedbackRoutes from './feedback.js'; 
+import ordersRoutes from '../api/orders/orders.routes.js';
+import productsRoutes from '../api/products/products.routes.js';
+import customersRoutes from '../api/customers/customers.routes.js';
+import userStateRoutes from '../api/user-state/user-state.routes.js';
+import onboardingReadinessRouter from '../onboarding/readiness.router.js';
+import specterRouter from '../api/specter/specter.routes.js';
+import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
+import overviewRoutes from './overview.js';
+import financesRoutes from '../api/finances/index.js';
 
 const router = Router();
 

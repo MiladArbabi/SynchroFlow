@@ -14,6 +14,10 @@
  * It does NOT explain, rank, score, or advise.
  */
 
+import { getProductDataFreshnessSnapshot } from '../../services/products-data-freshness.provider.js';
+import { getProductDataIntegritySnapshot } from '../../services/products-data-integrity.provider.js';
+import { getFt2Period } from '@lasyncro/backend-core/utils/ft2Period.js';
+
 export interface TrustFt2Snapshot {
   dataFreshness: 'fresh' | 'stale' | 'unknown' | null;
   dataIntegrity: 'consistent' | 'inconsistent' | 'unknown' | null;
@@ -60,18 +64,7 @@ export async function getTrustFt2Snapshot(input: {
    */
 
   // FT2 period authority (no UI override)
-  const { getFt2Period } = await import(
-    'api-src/utils/ft2Period'
-  );
-
   const period = getFt2Period();
-
-  // Providers (explicit, typed)
-  const {
-    getProductDataIntegritySnapshot,
-  } = await import(
-    'api-src/services/products-data-integrity.provider'
-  );
 
   /**
    * L1 — Presence (observation only)
@@ -118,12 +111,6 @@ export async function getTrustFt2Snapshot(input: {
         return 'unknown';
     }
   })();
-
-    const {
-    getProductDataFreshnessSnapshot,
-  } = await import(
-    'api-src/services/products-data-freshness.provider'
-  );
 
   const freshnessExposure =
     typeof getProductDataFreshnessSnapshot === 'function'

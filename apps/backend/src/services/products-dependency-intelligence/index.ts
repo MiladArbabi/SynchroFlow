@@ -1,2 +1,2 @@
-export { buildProductDependencyIntelligence } from './ProductDependencyIntelligence.service';
-export type { ProductDependencyIntelligence } from './ProductDependencyIntelligence.types';
+export { buildProductDependencyIntelligence } from './ProductDependencyIntelligence.service.js';
+export type { ProductDependencyIntelligence } from './ProductDependencyIntelligence.types.js';

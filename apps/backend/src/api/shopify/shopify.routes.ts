@@ -7,11 +7,11 @@
 // - Verification happens before routing
 // - No topic-specific paths
 
-import './shopify.webhook'; 
+import './shopify.webhook.js'; 
 
 import express, { Router } from 'express';
-import { verifyShopifySignature } from './shopify.verify.middleware';
-import webhookRouter from './shopify.webhook.router';
+import { verifyShopifySignature } from './shopify.verify.middleware.js';
+import webhookRouter from './shopify.webhook.router.js';
 
 const router = Router();
 

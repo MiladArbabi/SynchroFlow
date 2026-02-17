@@ -15,7 +15,7 @@
  * Replay-safe.
  */
 
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 
 export async function resolveRefundExecution(
   lasyncroRefundExecutionId: string

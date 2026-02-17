@@ -1,6 +1,6 @@
-import db from 'api-src/db';
-import { getQueueChannel } from 'api-src/queue';
-import { WebhookEnvelope } from 'api-src/api/webhooks/types';
+import db from '@lasyncro/backend-core/db.js';
+import { getQueueChannel } from 'queue.js';
+import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 
 /**
  * Shopify returns/requested webhook handler.

@@ -12,7 +12,7 @@
 // - No domain logic
 
 import { Router, Request, Response } from 'express';
-import { shopifyWebhookHandler } from './shopify.webhook';
+import { shopifyWebhookHandler } from './shopify.webhook.js';
 
 const router = Router();
 

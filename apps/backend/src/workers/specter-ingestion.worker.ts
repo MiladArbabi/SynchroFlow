@@ -15,10 +15,10 @@
   * - Idempotent start/stop and clearer debug messages for easier local troubleshooting.
   */
 
-import { getQueueChannel } from '../queue';
+import { getQueueChannel } from '../queue.js';
 import debugLib from 'debug';
 // session-store helpers (FT0)
-import { appendEvent, recordShopSession } from 'modules-specter/store/session-store';
+import { appendEvent, recordShopSession } from '@lasyncro/specter/store/session-store';
 
 const debug = debugLib('worker:specter-ingest');
 

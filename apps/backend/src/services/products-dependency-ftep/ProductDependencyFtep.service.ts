@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-dependency-ftep/ProductDependencyFtep.service.ts
 
-import { ProductDependencyIntelligence } from '../products-dependency-intelligence/ProductDependencyIntelligence.types';
-import { ProductDependencyFT2Exposure } from './ProductDependencyFtep.types';
+import { ProductDependencyIntelligence } from '../products-dependency-intelligence/ProductDependencyIntelligence.types.js';
+import { ProductDependencyFT2Exposure } from './ProductDependencyFtep.types.js';
 
 /**
  * buildProductDependencyFtep

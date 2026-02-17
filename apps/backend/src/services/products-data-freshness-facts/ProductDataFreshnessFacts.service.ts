@@ -1,7 +1,6 @@
 // apps/backend/src/services/products-data-freshness-facts/ProductDataFreshnessFacts.service.ts
-
-import db from 'api-db';
-import { ProductDataFreshnessFacts } from './ProductDataFreshnessFacts.types';
+import db from "@lasyncro/backend-core/db.js";
+import { ProductDataFreshnessFacts } from "./ProductDataFreshnessFacts.types.js";
 
 interface GetProductDataFreshnessFactsInput {
   shopId: number;

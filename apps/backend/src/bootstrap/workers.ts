@@ -19,7 +19,7 @@ export async function startWorkers(): Promise<void> {
 
   // start api worker
   try {
-    const w = await import('../worker');
+    const w = await import('../worker.js');
     if (typeof w.startWorker === 'function') {
       w.startWorker();
       if ((w as any).stopWorker && typeof (w as any).stopWorker === 'function') {
@@ -33,7 +33,7 @@ export async function startWorkers(): Promise<void> {
 
   // start sync worker
   try {
-    const s = await import('../sync.worker');
+    const s = await import('../sync.worker.js');
     if (typeof s.startSyncWorker === 'function') {
       s.startSyncWorker();
       if ((s as any).stopSyncWorker && typeof (s as any).stopSyncWorker === 'function') {
@@ -47,7 +47,7 @@ export async function startWorkers(): Promise<void> {
 
   // start Specter ingestion worker (FT0) if present
   try {
-    const specter = await import('../workers/specter-ingestion.worker');
+    const specter = await import('../workers/specter-ingestion.worker.js');
     if (typeof specter.startSpecterIngestionWorker === 'function') {
       try { await Promise.resolve(specter.startSpecterIngestionWorker()); } catch (_) { /* ignore start error */ }
       if (typeof specter.stopSpecterIngestionWorker === 'function') {
@@ -62,7 +62,7 @@ export async function startWorkers(): Promise<void> {
 
   // start Product ingestion worker (FT0)
   try {
-    const product = await import('../workers/product-ingestion.worker');
+    const product = await import('../workers/product-ingestion.worker.js');
     if (typeof product.startProductIngestionWorker === 'function') {
       await Promise.resolve(product.startProductIngestionWorker());
       if (typeof product.stopProductIngestionWorker === 'function') {

@@ -1,5 +1,5 @@
 //apps/backend/src/api/layouts/layout.service.ts
-import knex from "../../db";
+import knex from "knex";
 import { Layout } from "react-grid-layout";
 
 // This type should be kept in sync with the frontend

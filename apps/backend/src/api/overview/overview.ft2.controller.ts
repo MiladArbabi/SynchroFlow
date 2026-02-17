@@ -1,6 +1,6 @@
 // apps/backend/src/api/overview/overview.ft2.controller.ts
 import { Request, Response } from 'express';
-import { getOverviewFt2Snapshot } from 'api-src/services/overview-ft2/overviewFt2.resolver';
+import { getOverviewFt2Snapshot } from '../../services/overview-ft2/overviewFt2.resolver.js';
 
 export async function getOverviewFt2(
   req: Request,

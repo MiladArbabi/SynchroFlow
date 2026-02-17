@@ -1,6 +1,6 @@
 //apps/backend/src/api/lifecycle/lifecycle-history.controller.ts
 import { Request, Response } from 'express';
-import { LifecycleHistoryService } from 'api-src/services/lifecycle-history.service';
+import { LifecycleHistoryService } from '../../services/lifecycle-history.service.js';
 
 export async function getLifecycleHistory(req: Request, res: Response) {
   try {

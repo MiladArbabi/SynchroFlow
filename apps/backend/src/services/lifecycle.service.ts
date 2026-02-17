@@ -22,8 +22,8 @@
 
 
 // apps/backend/src/services/lifecycle.service.ts
-import db from 'api-src/db';
-import type { LifecyclePhase } from './lifecycle.contract';
+import db from '@lasyncro/backend-core/db.js';
+import type { LifecyclePhase } from './lifecycle.contract.js';
 
 export type UserLifecyclePhase =
   | 'FT_MINUS_ONE'

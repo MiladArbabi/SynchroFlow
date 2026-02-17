@@ -17,7 +17,7 @@
 
 // apps/backend/src/services/entitlement-revocation.service.ts
 
-import db from "api-src/db";
+import db from '@lasyncro/backend-core/db.js';
 
 export class EntitlementRevocationService {
   static async revokeEntitlements(params: {

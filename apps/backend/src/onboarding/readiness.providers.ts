@@ -1,5 +1,5 @@
 // apps/backend/src/onboarding/readiness.providers.ts
-import db from '../db';
+import db from '@lasyncro/backend-core/db.js';
 import {
   ReadinessSignal,
   ModuleId,
@@ -9,12 +9,12 @@ import {
   ReadinessSignalValue
 } from '@lasyncro/shared';
 
-import { specterOnboardingSignalProvider } from './providers/specter.provider';
-import { financesOnboardingSignalProvider } from './providers/finances.provider';
+import { specterOnboardingSignalProvider } from './providers/specter.provider.js';
+import { financesOnboardingSignalProvider } from './providers/finances.provider.js';
 
-import { UserStateService } from '../services/user-state.service';
-import { deriveKnownCount } from './utils/deriveKnownCount';
-import { devReadinessOverrideProvider } from './providers/dev-readiness.provider';
+import { UserStateService } from '../services/user-state.service.js';
+import { deriveKnownCount } from './utils/deriveKnownCount.js';
+import { devReadinessOverrideProvider } from './providers/dev-readiness.provider.js';
 
 // canonical module IDs the provider will try to resolve (exported so tests can mock them)
  export const SPECTER_STORE_CANDIDATES = [

@@ -1,6 +1,6 @@
 // apps/backend/src/workers/reconciliation/revenue-units.writer.ts
 
-import db from 'api-src/db';
+import db from '@lasyncro/backend-core/db.js';
 import { v5 as uuidv5 } from 'uuid';
 
 /**
@@ -74,16 +74,28 @@ export async function writeOrderRevenueUnits(
       estimated_unit_cost: r.estimated_unit_cost ?? null,
     }));
 
+    /**
+     * ECONOMIC IMMUTABILITY RULE
+     * --------------------------
+     * Revenue units are economic facts derived from order_line_items.
+     *
+     * They must be INSERT-ONLY.
+     * They must NEVER be mutated once materialized.
+     *
+     * If upstream order data changes in the future,
+     * we introduce compensating ledger events — not row mutation.
+     *
+     * This preserves:
+     * - Ledger symmetry
+     * - Deterministic replay safety
+     * - Economic audit integrity
+     *
+     * On conflict → ignore.
+     */
     await trx('order_revenue_units')
       .insert(revenueUnits)
       .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
-      .merge({
-        quantity: trx.raw('EXCLUDED.quantity'),
-        unit_price: trx.raw('EXCLUDED.unit_price'),
-        line_total: trx.raw('EXCLUDED.line_total'),
-        estimated_unit_cost: trx.raw('EXCLUDED.estimated_unit_cost'),
-        updated_at: trx.fn.now(),
-      });
+      .ignore();
 
     // 🔥 SALE → INVENTORY LEDGER
     await trx('inventory_movements')

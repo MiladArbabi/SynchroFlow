@@ -1,8 +1,7 @@
 // apps/backend/src/api/trust/trust.ft2.controller.ts
 
 import { Request, Response } from 'express';
-import { getTrustFt2Snapshot } from 'api-src/services/trust-ft2/trustFt2.resolver';
-
+import { getTrustFt2Snapshot } from '../../services/trust-ft2/trustFt2.resolver.js';
 /**
  * GET /api/v1/modules/trust/ft2
  *

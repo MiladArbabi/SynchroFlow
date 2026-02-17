@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-cross-domain-alignment/ProductCrossDomainAlignmentFtep.service.ts
 
-import { ProductCrossDomainAlignmentFT2Exposure } from './ProductCrossDomainAlignmentFtep.types';
-import { ProductCrossDomainAlignmentIntelligence } from './ProductCrossDomainAlignmentIntelligence.types';
+import { ProductCrossDomainAlignmentFT2Exposure } from './ProductCrossDomainAlignmentFtep.types.js';
+import { ProductCrossDomainAlignmentIntelligence } from './ProductCrossDomainAlignmentIntelligence.types.js';
 
 interface BuildAlignmentFtepInput {
   facts: {

@@ -3,7 +3,7 @@
 // Canonical webhook dispatch job
 // Versioned and replay-safe
 
-import { WebhookEnvelope } from './types';
+import { WebhookEnvelope } from './types.js';
 
 export interface WebhookDispatchJobV1 {
   version: 1;

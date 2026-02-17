@@ -10,8 +10,8 @@
 // - Throws on failure
 // - Does NOT perform transport concerns
 
-import { WebhookEnvelope } from 'api-src/api/webhooks/types';
-import { handleAppUninstalled } from './handleAppUninstalled';
+import { WebhookEnvelope } from '../../../api/webhooks/types.js';
+import { handleAppUninstalled } from './handleAppUninstalled.js';
 
 export async function onShopifyAppUninstalled(
   envelope: WebhookEnvelope

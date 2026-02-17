@@ -1,6 +1,6 @@
 //apps/backend/src/services/product-ingestion.service.ts
 
-import { getQueueChannel } from '../queue';
+import { getQueueChannel } from '../queue.js';
 
 export interface ProductIngestionQueueMessage {
   shopId: number;

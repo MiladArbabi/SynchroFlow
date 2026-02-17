@@ -15,10 +15,10 @@
 // - Payload parsing
 //
 
-import { WebhookEnvelope } from './types';
-import { WebhookLedgerService } from 'api-src/services/webhook-ledger.service';
-import { getWebhookDispatchMode } from './dispatchMode';
-import { enqueueWebhookEnvelope } from './dispatchQueue';
+import { WebhookEnvelope } from './types.js';
+import { WebhookLedgerService } from '@lasyncro/backend-core/services/webhook-ledger.service.js';
+import { getWebhookDispatchMode } from './dispatchMode.js';
+import { enqueueWebhookEnvelope } from './dispatchQueue.js';
 
 type WebhookHandler = (envelope: WebhookEnvelope) => Promise<void>;
 

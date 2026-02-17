@@ -1,4 +1,4 @@
-import db from '../../db';
+import db from "@lasyncro/backend-core/db.js";
 
 interface LedgerRow {
   lasyncro_variant_id: string;

@@ -1,6 +1,6 @@
 // apps/backend/src/queues/reconciliation.queue.ts
 
-import { getQueueChannel } from 'api-src/queue';
+import { getQueueChannel } from "../queue.js";
 
 /**
  * Fulfillment Reconciliation Queue (Sovereign UUID Contract)

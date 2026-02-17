@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authenticateToken } from 'api-src/middleware/auth.middleware';
-import { financesFt2Controller } from './finances.ft2.controller';
+import { financesFt2Controller } from './finances.ft2.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
 const router = Router();
 

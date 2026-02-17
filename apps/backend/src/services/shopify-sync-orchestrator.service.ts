@@ -1,7 +1,8 @@
 // apps/backend/src/services/shopify-sync-orchestrator.service.ts
-import { performInitialSync } from './shopify.service';
-import { performNonPCDSync } from './shopify-fallback.service';
-import { appendEvent, recordShopSession } from 'modules-specter/store/session-store';
+
+import { appendEvent, recordShopSession } from "@lasyncro/specter/store/session-store";
+import { performNonPCDSync } from "./shopify-fallback.service.js";
+import { performInitialSync } from "./shopify.service.js";
 
 /**
  * Orchestrates a "smart" sync for Shopify integrations.

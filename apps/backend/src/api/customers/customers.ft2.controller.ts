@@ -1,10 +1,7 @@
 // apps/backend/src/api/customers/customers.ft2.controller.ts
 import { Request, Response } from 'express';
-import { getCustomersFt2Snapshot } from 'api-src/services/customers-ft2.provider';
-import {
-  FT2DateRangePreset,
-  resolveFt2Range,
-} from 'api-src/utils/ft2Period';
+import { getCustomersFt2Snapshot } from '../../services/customers-ft2.provider.js';
+import { FT2DateRangePreset, resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 /**
  * GET /api/v1/modules/customers/ft2

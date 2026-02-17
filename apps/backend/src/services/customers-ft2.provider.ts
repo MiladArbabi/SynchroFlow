@@ -1,7 +1,7 @@
 // apps/backend/src/services/customers-ft2.provider.ts
-import { getCustomersFacts } from './customers-facts';
-import { applyCustomersFtep } from './customers-ftep';
-import { CustomersFT2Exposure } from './customers-ftep/customersFtep.types';
+import { getCustomersFacts } from "./customers-facts/customersFacts.service.js";
+import { applyCustomersFtep } from "./customers-ftep/customersFtep.service.js";
+import { CustomersFT2Exposure } from "./customers-ftep/customersFtep.types.js";
 
 /**
  * Customers FT2 Provider

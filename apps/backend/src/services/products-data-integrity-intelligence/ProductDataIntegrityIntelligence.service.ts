@@ -1,9 +1,9 @@
 import {
   ProductDataIntegrityFacts,
-} from '../products-data-integrity-facts/ProductDataIntegrityFacts.types';
+} from '../products-data-integrity-facts/ProductDataIntegrityFacts.types.js';
 import {
   ProductDataIntegrityIntelligence,
-} from './ProductDataIntegrityIntelligence.types';
+} from './ProductDataIntegrityIntelligence.types.js';
 
 /**
  * buildProductDataIntegrityIntelligence

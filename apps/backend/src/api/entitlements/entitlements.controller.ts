@@ -1,6 +1,6 @@
 // apps/backend/src/api/entitlements/entitlements.controller.ts
 import { Request, Response } from 'express';
-import { EntitlementsService } from '../../services/entitlements.service';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 
 /**
  * GET /api/v1/entitlements/me

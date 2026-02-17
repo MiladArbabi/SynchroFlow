@@ -1,7 +1,7 @@
 // apps/backend/src/services/products-supply-ftep/ProductSupplyFtep.service.ts
 
-import { ProductSupplyIntelligence } from '../products-supply-intelligence/ProductSupplyIntelligence.types';
-import { ProductSupplyFT2Exposure } from './ProductSupplyFtep.types';
+import { ProductSupplyIntelligence } from '../products-supply-intelligence/ProductSupplyIntelligence.types.js';
+import { ProductSupplyFT2Exposure } from './ProductSupplyFtep.types.js';
 
 /**
  * buildProductSupplyFtep

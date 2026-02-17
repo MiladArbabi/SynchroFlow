@@ -1,7 +1,7 @@
-import db from 'api-db';
+import db from '@lasyncro/backend-core/db.js';
 import {
   ProductDataIntegrityFacts,
-} from './ProductDataIntegrityFacts.types';
+} from './ProductDataIntegrityFacts.types.js';
 
 interface GetProductDataIntegrityFactsInput {
   shopId: number;

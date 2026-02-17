@@ -1,5 +1,5 @@
-import db from 'api-src/db';
-import { BlockerClassification } from './blocker.types';
+import db from '@lasyncro/backend-core/db.js';
+import { BlockerClassification } from './blocker.types.js';
 
 /**
  * classifyRevenueBlockers (L2 — INTERNAL ONLY)

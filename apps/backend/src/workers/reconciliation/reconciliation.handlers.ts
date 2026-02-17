@@ -1,10 +1,9 @@
 // apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
-import db from 'api-src/db';
-import { ReconciliationResult } from './reconciliation.types';
-import { writeOrderRevenueUnits } from './revenue-units.writer';
-import { resolveRefundExecution } from 'api-src/workers/refundResolution.worker';
-import { evaluateCustomerObligations } from
-  'api-src/services/order-execution-intelligence/customerObligation.evaluator';
+import db from '@lasyncro/backend-core/db.js';
+import { ReconciliationResult } from './reconciliation.types.js';
+import { writeOrderRevenueUnits } from './revenue-units.writer.js';
+import { resolveRefundExecution } from '../refundResolution.worker.js';
+import { evaluateCustomerObligations } from '../../services/order-execution-intelligence/customerObligation.evaluator.js';
 
 export async function reconcileOrderFulfillment(
   lasyncroOrderId: string,
@@ -24,7 +23,7 @@ export async function reconcileOrderFulfillment(
     throw new Error(`Order not found: ${lasyncroOrderId}`);
   }
 
-  // 2. Observed execution wins
+  // 2. Observed execution wins (monotonic fulfillment)
   if (observed?.status === 'fulfilled') {
     await db('order_fulfillment_status')
       .insert({
@@ -38,40 +37,40 @@ export async function reconcileOrderFulfillment(
         status: 'fulfilled',
         status_updated_at: observed.observedAt,
       });
+  } else {
+    // 3. Ensure fulfillment state exists
+    const existing = await db('order_fulfillment_status')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first();
 
-    // ALWAYS materialize revenue units
-    await writeOrderRevenueUnits(lasyncroOrderId);
-
-    return 'observed';
+    if (!existing) {
+      await db('order_fulfillment_status')
+        .insert({
+          lasyncro_fulfillment_id: crypto.randomUUID(),
+          lasyncro_order_id: lasyncroOrderId,
+          status: 'processing',
+          status_updated_at: order.order_created_at,
+        })
+        .onConflict(['lasyncro_order_id'])
+        .ignore();
+    }
   }
 
-  // 3. Check existing execution
-  const existing = await db('order_fulfillment_status')
-    .where({ lasyncro_order_id: lasyncroOrderId })
-    .first();
-
-  // Revenue units must always be materialized once order exists
+  /**
+   * ECONOMIC MATERIALIZATION BOUNDARY
+   * ---------------------------------
+   * Revenue units are materialized exactly once per reconciliation pass.
+   *
+   * Rules:
+   * - Insert-only (no mutation)
+   * - Deterministic identity (UUID v5)
+   * - Idempotent via ON CONFLICT DO NOTHING
+   *
+   * This must remain single-invocation.
+   */
   await writeOrderRevenueUnits(lasyncroOrderId);
 
-  if (existing) {
-    return 'noop';
-  }
-
-  // 4. Insert synthetic execution
-  await db('order_fulfillment_status')
-    .insert({
-      lasyncro_fulfillment_id: crypto.randomUUID(),
-      lasyncro_order_id: lasyncroOrderId,
-      status: 'processing',
-      status_updated_at: order.order_created_at,
-    })
-    .onConflict(['lasyncro_order_id'])
-    .ignore();
-
-  // 5. Materialize revenue units
-  await writeOrderRevenueUnits(lasyncroOrderId);
-
-  // 6. Apply refund executions
+  // 4. Apply refund executions
   const refundExecutions = await db('refund_executions')
     .where({ lasyncro_order_id: lasyncroOrderId });
 
@@ -79,8 +78,8 @@ export async function reconcileOrderFulfillment(
     await resolveRefundExecution(execution.lasyncro_refund_execution_id);
   }
 
-  // 7. Evaluate customer obligations
+  // 5. Evaluate customer obligations
   await evaluateCustomerObligations(order.shop_id);
 
-  return 'synthetic';
+  return observed?.status === 'fulfilled' ? 'observed' : 'synthetic';
 }

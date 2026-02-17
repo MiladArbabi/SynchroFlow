@@ -1,8 +1,5 @@
-import { buildFinancesFacts } from
-  'api-src/services/finances-facts';
-
-import { computeFinancesEpistemic } from
-  'api-src/services/epistemic/finances.epistemic';
+import { computeFinancesEpistemic } from "../../services/epistemic/finances.epistemic.js";
+import { buildFinancesFacts } from "../../services/finances-facts/FinancesFacts.service.js";
 
 /**
  * Finances — Epistemic Endpoint (Phase 13)
