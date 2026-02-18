@@ -47,6 +47,7 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
+import { LifecycleTransitionService } from './lifecycle-transition.service.js';
 
 export class FT0CompletionService {
   static async evaluateAndComplete(
@@ -108,7 +109,7 @@ export class FT0CompletionService {
 
     console.log('[FT0Completion] Preconditions passed, writing ft0_state for shopId:', shopId);
 
-    console.debug('[FT0][READY_TO_COMPLETE]', {
+    console.log('[FT0][READY_TO_COMPLETE]', {
       shopId,
       orderCount,
     });
@@ -139,7 +140,7 @@ export class FT0CompletionService {
         .returning('shop_id');
 
       if (inserted.length === 0) {
-        console.debug('[FT0][ALREADY_COMPLETED]', { shopId });
+        console.log('[FT0][ALREADY_COMPLETED]', { shopId });
         return { completed: true, alreadyCompleted: true };
       }
 
@@ -160,8 +161,8 @@ export class FT0CompletionService {
         .onConflict('shop_id')
         .ignore();
 
-      await trx('activation_audit_events').insert({
-
+      await trx('activation_audit_events')
+      .insert({
         event_id: crypto.randomUUID(),
         event_type: 'FT0_COMPLETED',
         shop_id: shopId,
@@ -172,7 +173,48 @@ export class FT0CompletionService {
         },
       });
 
-      console.info('[FT0][COMPLETED]', { shopId });
+      /**
+       * LIFECYCLE PROMOTION (ATOMIC WITH DURABILITY)
+       * --------------------------------------------
+       * FT0 completion is shop-scoped durability.
+       * All current shop members must transition:
+       *
+       *   FT_MINUS_ONE → FT0
+       *   FT0 → FT1
+       *
+       * This guarantees automatic FT1 landing.
+       */
+
+      const members = await trx('shop_memberships')
+        .where({ shop_id: shopId })
+        .select<{ user_id: number }[]>('user_id');
+
+      console.log('[FT0][LIFECYCLE_PROMOTION_START]', {
+        shopId,
+        memberCount: members.length,
+      });
+
+      for (const member of members) {
+        const userId = member.user_id;
+
+        console.log('[FT0][PROMOTE_TO_FT0]', { shopId, userId });
+
+        await LifecycleTransitionService.auditIfTransitioned(
+          { userId, shopId, currentPhase: 'FT0' },
+          trx
+        );
+
+        console.log('[FT0][PROMOTE_TO_FT1]', { shopId, userId });
+
+        await LifecycleTransitionService.auditIfTransitioned(
+          { userId, shopId, currentPhase: 'FT1' },
+          trx
+        );
+      }
+
+      console.log('[FT0][LIFECYCLE_PROMOTION_COMPLETE]', { shopId });
+
+      console.log('[FT0][COMPLETED]', { shopId });
 
       return { completed: true };
     });

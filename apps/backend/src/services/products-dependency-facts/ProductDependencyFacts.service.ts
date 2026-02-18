@@ -82,10 +82,15 @@ export async function getProductDependencyFacts(
   // SKU-backed presence scans
   // ─────────────────────────────────────────
   const inventorySkus = new Set(
-    (await db('inventory_truth')
-      .where('shop_id', shopId)
-      .whereIn('sku', skus)
-      .select(['sku']))
+    (await db('inventory_truth as it')
+      .join('variants as v', function () {
+        this.on('v.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
+            .andOn('v.shop_id', '=', 'it.shop_id');
+      })
+      .where('it.shop_id', shopId)
+      .whereIn('v.sku', skus)
+      .distinct('v.sku')
+      .select('v.sku'))
       .map(r => r.sku)
   );
 
@@ -136,8 +141,9 @@ export async function getProductDependencyFacts(
   // Non-SKU systems (presence only)
   // ─────────────────────────────────────────
   const hasFulfillmentSignals =
-    (await db('order_fulfillment_status')
-      .where('shop_id', shopId)
+    (await db('order_fulfillment_status as ofs')
+      .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+      .where('o.shop_id', shopId)
       .limit(1)).length > 0;
 
   const hasCostSignals =

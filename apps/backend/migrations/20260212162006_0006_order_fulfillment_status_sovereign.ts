@@ -21,6 +21,20 @@ export async function up(knex: Knex): Promise<void> {
     END$$;
   `);
 
+  await knex.raw(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_type WHERE typname = 'inventory_block_type'
+      ) THEN
+        CREATE TYPE inventory_block_type AS ENUM (
+          'stockout',
+          'oversell'
+        );
+      END IF;
+    END$$;
+  `);
+
   // 2️⃣ Create table using native enum type directly
   await knex.schema.createTable('order_fulfillment_status', (table) => {
 
@@ -44,6 +58,10 @@ export async function up(knex: Knex): Promise<void> {
       .defaultTo(knex.fn.now());
 
     table.text('status_reason');
+
+    table
+      .specificType('inventory_block_type', 'inventory_block_type')
+      .nullable();
 
     table.timestamp('created_at', { useTz: true })
       .notNullable()
@@ -94,6 +112,10 @@ export async function down(knex: Knex): Promise<void> {
   `);
 
   await knex.schema.dropTableIfExists('order_fulfillment_status');
+
+  await knex.raw(`
+    DROP TYPE IF EXISTS inventory_block_type;
+  `);
 
   await knex.raw(`
     DROP TYPE IF EXISTS fulfillment_status_type;

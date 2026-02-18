@@ -26,7 +26,12 @@ export async function writeOrderRevenueUnits(
 
     const order = await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
-      .select(['order_processed_at', 'order_created_at', 'platform'])
+      .select([
+        'order_processed_at',
+        'order_created_at',
+        'platform',
+        'shop_id',
+      ])
       .first();
 
     if (!order) {
@@ -97,21 +102,26 @@ export async function writeOrderRevenueUnits(
       .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
       .ignore();
 
-    // 🔥 SALE → INVENTORY LEDGER
     await trx('inventory_movements')
       .insert(
         revenueUnits.map((ru) => ({
           lasyncro_inventory_movement_id: crypto.randomUUID(),
+          device_event_id: uuidv5(
+            `${ru.lasyncro_revenue_unit_id}:sale`,
+            REVENUE_UNIT_NAMESPACE
+          ),
+          shop_id: order.shop_id,
           lasyncro_variant_id: ru.lasyncro_variant_id,
           movement_type: 'sale',
           quantity_delta: -ru.quantity,
           reference_type: 'order_revenue_unit',
           reference_id: ru.lasyncro_revenue_unit_id,
           platform: order.platform ?? null,
+          location_code: `WH-${order.shop_id}-ROOT`,
           occurred_at: occurredAt,
         }))
       )
-      .onConflict(['reference_type', 'reference_id', 'lasyncro_variant_id'])
+      .onConflict(['device_event_id'])
       .ignore();
   });
 }

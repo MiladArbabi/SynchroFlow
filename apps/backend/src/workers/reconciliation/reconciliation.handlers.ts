@@ -3,7 +3,6 @@ import db from '@lasyncro/backend-core/db.js';
 import { ReconciliationResult } from './reconciliation.types.js';
 import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { resolveRefundExecution } from '../refundResolution.worker.js';
-import { evaluateCustomerObligations } from '../../services/order-execution-intelligence/customerObligation.evaluator.js';
 
 export async function reconcileOrderFulfillment(
   lasyncroOrderId: string,
@@ -77,9 +76,6 @@ export async function reconcileOrderFulfillment(
   for (const execution of refundExecutions) {
     await resolveRefundExecution(execution.lasyncro_refund_execution_id);
   }
-
-  // 5. Evaluate customer obligations
-  await evaluateCustomerObligations(order.shop_id);
 
   return observed?.status === 'fulfilled' ? 'observed' : 'synthetic';
 }

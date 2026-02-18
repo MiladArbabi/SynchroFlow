@@ -1,5 +1,5 @@
 import React from 'react';
-import { confirmFt2, confirmFt1 } from 'api/lifecycle';
+import { confirmFt2 } from 'api/lifecycle';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { Ft1ChecklistSurface } from 'ui/src/ui/ft1-checklist/Ft1ChecklistSurface';
 
@@ -34,7 +34,6 @@ export function Ft1Outlet() {
             setConfirming(true);
 
             try {
-              await confirmFt1();
               await confirmFt2();
 
               window.dispatchEvent(

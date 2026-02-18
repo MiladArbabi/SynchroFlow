@@ -64,6 +64,10 @@ export async function up(knex: Knex): Promise<void> {
       .uuid('reference_id')
       .notNullable();
 
+    table
+      .uuid('device_event_id')
+      .nullable();
+
     /**
      * ECONOMIC REFERENCE TYPING
      * -------------------------
@@ -76,22 +80,22 @@ export async function up(knex: Knex): Promise<void> {
      * Ledger is sovereign. References must be strictly typed.
      */
 
-
     table.string('platform', 255).nullable();
-    table.string('location_code', 255).nullable();
+    table.string('location_code', 255).notNullable();
 
     table.timestamp('occurred_at', { useTz: true }).notNullable();
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
 
-    // Invariants
-    table.unique(
-      ['reference_type', 'reference_id', 'lasyncro_variant_id'],
-      'inventory_movements_reference_unique'
-    );
-
     table.index('lasyncro_variant_id');
     table.index('occurred_at');
     table.index(['lasyncro_variant_id', 'occurred_at']);
+
+    table.index(['lasyncro_variant_id', 'location_code']);
+
+    table.unique(
+      ['device_event_id'],
+      'inventory_movements_device_event_unique'
+    );
   });
 
   await knex.schema.raw(`
@@ -127,12 +131,28 @@ export async function up(knex: Knex): Promise<void> {
   // ─────────────────────────────────────────
   await knex.schema.createTable('inventory_truth', (table) => {
     table
+      .integer('shop_id')
+      .notNullable()
+      .references('id')
+      .inTable('shops')
+      .onDelete('CASCADE');
+
+    table
       .uuid('lasyncro_variant_id')
-      .primary()
       .notNullable()
       .references('lasyncro_variant_id')
       .inTable('variants')
       .onDelete('CASCADE');
+
+    table
+      .string('location_code', 255)
+      .notNullable();
+
+    table.primary([
+      'shop_id',
+      'lasyncro_variant_id',
+      'location_code',
+    ]);
 
     table.integer('on_hand_quantity').notNullable();
     table.integer('reserved_quantity').notNullable().defaultTo(0);
@@ -148,18 +168,6 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).defaultTo(knex.fn.now());
   });
-
-  await knex.schema.raw(`
-    ALTER TABLE inventory_movements
-    ADD CONSTRAINT inventory_reference_type_check
-    CHECK (
-      reference_type IN (
-        'order_revenue_unit',
-        'refund_execution',
-        'opening_balance'
-      )
-    );
-  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

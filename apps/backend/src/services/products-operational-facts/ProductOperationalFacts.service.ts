@@ -62,10 +62,13 @@ export async function getProductOperationalFacts(
   // Inventory observability (snapshot)
   // ─────────────────────────────────────────
   const inventoryProductRows = await db('inventory_truth as it')
-  .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
-  .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
-  .where('v.shop_id', shopId)
-  .distinct('p.lasyncro_product_id');
+    .join('variants as v', function () {
+      this.on('v.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
+          .andOn('v.shop_id', '=', 'it.shop_id');
+    })
+    .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+    .where('it.shop_id', shopId)
+    .distinct('p.lasyncro_product_id');
 
   const productsWithInventoryCount =
     inventoryProductRows.length > 0

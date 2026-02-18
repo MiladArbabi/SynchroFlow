@@ -34,18 +34,29 @@ export const registerUser = async (req: Request, res: Response) => {
 
     // --- Hash the password ---
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    
-    // --- Create a new shop ---
-    const [newShop] = await db('shops')
+
+    const newUser = await db.transaction<User>(async trx => {
+
+    // 1️⃣ Create shop
+    const [newShop] = await trx('shops')
       .insert({
         name: `${firstName || email}'s Shop`,
       })
       .returning('*');
 
-    // --- Save the new user (assign primary shop) ---
-    const [newUser] = await db<User>('users')
+    // 2️⃣ Bootstrap root warehouse
+    await trx('warehouse_locations').insert({
+      shop_id: newShop.id,
+      location_code: `WH-${newShop.id}-ROOT`,
+      type: 'warehouse',
+      parent_location_code: null,
+      active: true,
+    });
+
+    // 3️⃣ Create user
+    const [createdUser] = await trx<User>('users')
       .insert({
-        shop_id: newShop.id, // REQUIRED (users.shop_id NOT NULL)
+        shop_id: newShop.id,
         email: email.toLowerCase(),
         password_hash: passwordHash,
         first_name: firstName,
@@ -53,12 +64,27 @@ export const registerUser = async (req: Request, res: Response) => {
       })
       .returning('*');
 
-    // --- Create shop membership (OWNER) ---
-    await db('shop_memberships').insert({
+    // 4️⃣ Membership
+    await trx('shop_memberships').insert({
       shop_id: newShop.id,
-      user_id: newUser.id,
+      user_id: createdUser.id,
       role: 'owner',
     });
+
+    const { LifecycleProjectionService } = await import(
+      '../../services/lifecycle-projection.service.js'
+    );
+
+    await LifecycleProjectionService.projectForMembership(
+      {
+        shopId: newShop.id,
+        userId: createdUser.id,
+      },
+      trx
+    );
+
+    return createdUser;
+  });
 
     const { password_hash, ...publicUser } = newUser;
     

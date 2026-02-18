@@ -2,109 +2,102 @@ import db from '@lasyncro/backend-core/db.js';
 
 /**
  * Obligation Flag Worker (L2)
- * --------------------------
- * Writes obligation signals onto execution rows.
+ * ---------------------------
+ * Writes execution obligation signals onto order_fulfillment_status.
  *
  * Contract:
- * - Writes ONLY obligation flags
- * - Never infers fulfillment or revenue
+ * - Reads from inventory_truth only
+ * - Never mutates ledger
+ * - Never infers fulfillment state
+ * - SAFE to rerun (idempotent)
  *
- * This worker is SAFE to rerun.
+ * Inventory Semantics:
+ * - available > 0  → executable (NULL)
+ * - available == 0 → stockout
+ * - available < 0  → oversell
  */
 
-/**
- * SOVEREIGN INVENTORY OBLIGATION ANCHOR (v2)
- * ------------------------------------------
- * - UUID-anchored via lasyncro_order_id
- * - shop_id derived from orders
- * - Inventory join based on SKU only
- */
-export async function computeObligationFlags(shopId: number): Promise<void> {
+export async function computeObligationFlags(
+  shopId: number
+): Promise<void> {
+  type InventoryRow = {
+    lasyncro_order_id: string;
+    total_available: string | number | null;
+  };
 
-  // 1️⃣ Collect inventory-evaluated revenue units for this shop
+  // 1️⃣ Aggregate availability per order
   const inventoryRows = await db('order_revenue_units as ru')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'ru.lasyncro_order_id'
-    )
-    .leftJoin(
-      'inventory_truth as it',
-      'it.sku',
-      'ru.sku'
-    )
+    .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
+    .leftJoin('inventory_truth as it', function () {
+      this.on('it.lasyncro_variant_id', '=', 'ru.lasyncro_variant_id')
+          .andOn('it.shop_id', '=', 'o.shop_id');
+    })
     .where('o.shop_id', shopId)
-    .select(
-      'ru.lasyncro_order_id',
-      'it.quantity_available',
-      'it.quantity_reserved',
-      'it.quantity_buffer'
-    );
+    .groupBy('ru.lasyncro_order_id')
+    .select('ru.lasyncro_order_id')
+    .sum({ total_available: 'it.available_quantity' }) as InventoryRow[];
 
-  const inventoryBlockedOrders = new Set<string>();
+  const stockoutOrders = new Set<string>();
+  const oversellOrders = new Set<string>();
 
   for (const row of inventoryRows) {
-    if (
-      row.quantity_available == null ||
-      row.quantity_reserved == null ||
-      row.quantity_buffer == null
-    ) {
-      continue;
-    }
+    if (row.total_available == null) continue;
 
-    const netAvailable =
-      row.quantity_available -
-      row.quantity_reserved -
-      row.quantity_buffer;
+    const available = Number(row.total_available);
 
-    if (netAvailable <= 0) {
-      inventoryBlockedOrders.add(row.lasyncro_order_id);
+    if (available === 0) {
+      stockoutOrders.add(row.lasyncro_order_id);
+    } else if (available < 0) {
+      oversellOrders.add(row.lasyncro_order_id);
     }
   }
 
-  // 2️⃣ Mark blocked
-  await db('order_fulfillment_status as ofs')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'ofs.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
+  // 2️⃣ Write stockout classification
+  if (stockoutOrders.size > 0) {
+    await db('order_fulfillment_status')
+      .whereIn('lasyncro_order_id', Array.from(stockoutOrders))
+      .update({
+        inventory_block_type: 'stockout',
+      });
+  }
+
+  // 3️⃣ Write oversell classification
+  if (oversellOrders.size > 0) {
+    await db('order_fulfillment_status')
+      .whereIn('lasyncro_order_id', Array.from(oversellOrders))
+      .update({
+        inventory_block_type: 'oversell',
+      });
+  }
+
+  // 4️⃣ Clear executable orders (NULL)
+  await db('order_fulfillment_status')
     .whereIn(
-      'ofs.lasyncro_order_id',
-      Array.from(inventoryBlockedOrders)
+      'lasyncro_order_id',
+      db('orders')
+        .select('lasyncro_order_id')
+        .where('shop_id', shopId)
     )
-    .update({
-      has_inventory_block: true,
-    });
-
-  // 3️⃣ Clear non-blocked
-  await db('order_fulfillment_status as ofs')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'ofs.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
     .whereNotIn(
-      'ofs.lasyncro_order_id',
-      Array.from(inventoryBlockedOrders)
+      'lasyncro_order_id',
+      [
+        ...stockoutOrders,
+        ...oversellOrders,
+      ]
     )
     .update({
-      has_inventory_block: false,
+      inventory_block_type: null,
     });
 
-  // 4️⃣ Freshness mark
-  await db('order_fulfillment_status as ofs')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'ofs.lasyncro_order_id'
+  // 5️⃣ Freshness mark
+  await db('order_fulfillment_status')
+    .whereIn(
+      'lasyncro_order_id',
+      db('orders')
+        .select('lasyncro_order_id')
+        .where('shop_id', shopId)
     )
-    .where('o.shop_id', shopId)
     .update({
       obligation_evaluated_at: db.fn.now(),
     });
-
-  return;
 }

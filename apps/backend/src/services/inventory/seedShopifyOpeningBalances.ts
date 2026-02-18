@@ -1,6 +1,9 @@
 import { Knex } from 'knex';
+import { v5 as uuidv5 } from 'uuid';
 import { createShopifyGraphQLClient } from '../../services/shopify-client.factory.js';
 
+const OPENING_BALANCE_NAMESPACE =
+  '9f0e7b9c-6d4a-4e91-bc5e-2a1f8c7d3e44';
 
 export async function seedShopifyOpeningBalances(
   trx: Knex.Transaction,
@@ -78,15 +81,21 @@ const response = await client.request(`
       await trx('inventory_movements')
         .insert({
           lasyncro_inventory_movement_id: crypto.randomUUID(),
+          device_event_id: uuidv5(
+            `${shopId}:${mapping.lasyncro_variant_id}:opening_balance`,
+            OPENING_BALANCE_NAMESPACE
+          ),
+          shop_id: shopId,
           lasyncro_variant_id: mapping.lasyncro_variant_id,
           movement_type: 'manual_adjustment',
           quantity_delta: qty,
           reference_type: 'opening_balance',
           reference_id: crypto.randomUUID(),
           platform: 'shopify',
+          location_code: `WH-${shopId}-ROOT`,
           occurred_at: new Date(),
         })
-        .onConflict(['reference_type', 'reference_id', 'lasyncro_variant_id'])
+        .onConflict(['device_event_id'])
         .ignore();
     }
   }

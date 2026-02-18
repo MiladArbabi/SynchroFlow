@@ -3,13 +3,11 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "./dist",
+    "baseUrl": ".",
     "composite": false,
     "declaration": false,
     "declarationMap": false
   },
-  "include": [
-    "migrations/**/*.ts",
-    "seeds/**/*.ts"
-  ],
+  "include": ["migrations"],
   "exclude": ["node_modules", "dist"]
 }

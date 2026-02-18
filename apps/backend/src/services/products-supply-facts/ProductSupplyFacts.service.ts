@@ -73,10 +73,14 @@ export async function getProductSupplyFacts(
   // ─────────────────────────────────────────
   // Inventory signal presence (SKU-backed)
   // ─────────────────────────────────────────
-  const inventoryRows = await db('inventory_truth')
-    .where('shop_id', shopId)
-    .whereIn('sku', skus)
-    .distinct('sku');
+  const inventoryRows = await db('inventory_truth as it')
+    .join('variants as v', function () {
+      this.on('v.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
+          .andOn('v.shop_id', '=', 'it.shop_id');
+    })
+    .where('it.shop_id', shopId)
+    .whereIn('v.sku', skus)
+    .distinct('v.sku');
 
   const productsWithInventorySignalCount =
     inventoryRows.length > 0 ? inventoryRows.length : null;
@@ -84,8 +88,9 @@ export async function getProductSupplyFacts(
   // ─────────────────────────────────────────
   // Fulfillment signal presence (order-level only)
   // ─────────────────────────────────────────
-  const fulfillmentRows = await db('order_fulfillment_status')
-    .where('shop_id', shopId)
+  const fulfillmentRows = await db('order_fulfillment_status as ofs')
+    .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+    .where('o.shop_id', shopId)
     .limit(1);
 
   const productsWithFulfillmentSignalCount =
