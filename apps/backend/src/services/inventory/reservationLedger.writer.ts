@@ -30,7 +30,6 @@ function buildEventId(
 /**
  * Reservation Hold
  * ----------------
- * quantity_delta MUST be negative.
  */
 export async function writeReservationHold(
   input: ReservationInput
@@ -83,7 +82,7 @@ export async function writeReservationHold(
       shop_id: shopId,
       lasyncro_variant_id: lasyncroVariantId,
       movement_type: 'reservation_hold',
-      quantity_delta: -Math.abs(quantity),
+      quantity_delta: Math.abs(quantity),
       reference_type: referenceType,
       reference_id: referenceId,
       platform: null,
@@ -97,7 +96,6 @@ export async function writeReservationHold(
 /**
  * Reservation Release
  * -------------------
- * quantity_delta MUST be positive.
  */
 export async function writeReservationRelease(
   input: ReservationInput
@@ -129,7 +127,7 @@ export async function writeReservationRelease(
       shop_id: shopId,
       lasyncro_variant_id: lasyncroVariantId,
       movement_type: 'reservation_release',
-      quantity_delta: Math.abs(quantity),
+      quantity_delta: -Math.abs(quantity),
       reference_type: referenceType,
       reference_id: referenceId,
       platform: null,

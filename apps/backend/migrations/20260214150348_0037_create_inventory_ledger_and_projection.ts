@@ -104,7 +104,34 @@ export async function up(knex: Knex): Promise<void> {
     CHECK (quantity_delta <> 0);
   `);
 
-    // ─────────────────────────────────────────
+    await knex.schema.raw(`
+    ALTER TABLE inventory_movements
+    ADD CONSTRAINT inventory_movement_sign_check
+    CHECK (
+      (
+        movement_type IN (
+          'inbound_purchase',
+          'refund_return',
+          'manual_adjustment',
+          'reconciliation_correction',
+          'reservation_hold'
+        )
+        AND quantity_delta > 0
+      )
+      OR
+      (
+        movement_type IN (
+          'sale',
+          'damage',
+          'shrinkage',
+          'reservation_release'
+        )
+        AND quantity_delta < 0
+      )
+    );
+  `);
+
+  // ─────────────────────────────────────────
   // 2️⃣b Enforce Append-Only Ledger Behavior
   // ─────────────────────────────────────────
   await knex.schema.raw(`
