@@ -8,6 +8,9 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["migrations"],
+  "include": [
+    "migrations/**/*.ts",
+    "seeds/**/*.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

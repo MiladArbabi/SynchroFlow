@@ -65,9 +65,13 @@ const response = await client.request(`
   for (const p of response.data.products.edges) {
     for (const v of p.node.variants.edges) {
       const shopifyVariantId = v.node.id;
-      const qty = v.node.inventoryQuantity ?? 0;
+      const rawQty = v.node.inventoryQuantity ?? 0;
 
-      if (qty === 0) continue;
+      // Shopify may expose negative available inventory if overselling.
+      // Opening balance represents physical stock only.
+      const qty = Math.max(rawQty, 0);
+
+      if (qty <= 0) continue;
 
       const mapping = await trx('external_product_identity_map')
         .where({

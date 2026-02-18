@@ -10,7 +10,6 @@ import { startProductIngestionWorker } from './workers/product-ingestion.worker.
 import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
 /* import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker.js';*/
 import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation/index.js';
-import { runFulfillmentReconciliationBatch } from './workers/reconciliation/index.js';
 import { rebuildInventoryProjection } from './services/inventory/rebuildInventoryProjection.js';
 import { computeObligationFlags } from './services/order-execution-intelligence/obligationFlags.worker.js';
 
@@ -35,20 +34,6 @@ async function start() {
  */  /* console.log('[worker-entry] Starting reconciliation consumer...'); */
   startReconciliationConsumer();
   // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
-
-  if (process.env.NODE_ENV === 'development') {
-    const DEV_SHOP_ID = 1;
-
-    await runFulfillmentReconciliationBatch(DEV_SHOP_ID);
-
-    console.log('[DEV] Rebuilding inventory projection...');
-    await rebuildInventoryProjection();
-    console.log('[DEV] Inventory projection rebuilt.');
-
-    console.log('[DEV] Evaluating obligation flags...');
-    await computeObligationFlags(DEV_SHOP_ID);
-    console.log('[DEV] Obligation evaluation complete.');
-  }
  
   /**
   * DEV-ONLY: Obligation evaluation hook
