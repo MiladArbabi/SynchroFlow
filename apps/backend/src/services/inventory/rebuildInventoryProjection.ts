@@ -8,20 +8,41 @@ interface LedgerRow {
   reserved: string | number | null;
 }
 
-export async function rebuildInventoryProjectionForShop(
-  shopId: number
+/**
+ * VARIANT-SCOPED PROJECTION REBUILD
+ * ----------------------------------
+ * Deterministic replay of inventory projection for specific variants only.
+ *
+ * Design Guarantees:
+ * - Append-only ledger replay
+ * - Shop-scoped advisory lock (hashtext(shopId))
+ * - Deletes only affected variants
+ * - Recomputes only affected variants
+ * - Safe under concurrent reconciliation jobs
+ *
+ * This replaces full-shop replay to eliminate O(N shop) load amplification.
+ */
+export async function rebuildInventoryProjectionForVariants(
+  shopId: number,
+  variantIds: string[]
 ): Promise<void> {
+  if (variantIds.length === 0) return;
+
   await db.transaction(async (trx) => {
 
-    // 🔒 Projection mutex (transaction-scoped)
-    await trx.raw(`SELECT pg_advisory_xact_lock(987654321);`);
+    // 🔒 Shop-scoped advisory lock
+    await trx.raw(
+      `SELECT pg_advisory_xact_lock(hashtext(?));`,
+      [String(shopId)]
+    );
 
-    // 1️⃣ Clear projection
+    // 1️⃣ Delete only affected variants
     await trx('inventory_truth')
       .where({ shop_id: shopId })
+      .whereIn('lasyncro_variant_id', variantIds)
       .del();
 
-    // 2️⃣ Aggregate by shop + variant + location
+    // 2️⃣ Aggregate only affected variants
     const rows = await trx('inventory_movements')
       .select(
         'shop_id',
@@ -29,6 +50,7 @@ export async function rebuildInventoryProjectionForShop(
         'location_code'
       )
       .where({ shop_id: shopId })
+      .whereIn('lasyncro_variant_id', variantIds)
       .sum({
         on_hand: trx.raw(`
           CASE
@@ -60,14 +82,14 @@ export async function rebuildInventoryProjectionForShop(
         'shop_id',
         'lasyncro_variant_id',
         'location_code'
-      ) as LedgerRow[];
+      );
 
     if (rows.length === 0) return;
 
     const now = new Date();
 
     await trx('inventory_truth').insert(
-      rows.map(r => {
+      rows.map((r: any) => {
         const onHand = Number(r.on_hand ?? 0);
         const reserved = Number(r.reserved ?? 0);
         const available = onHand - reserved;

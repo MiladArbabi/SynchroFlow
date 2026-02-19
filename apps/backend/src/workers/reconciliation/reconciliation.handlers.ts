@@ -11,7 +11,10 @@ export async function reconcileOrderFulfillment(
     observedAt: Date;
     source: 'shopify_sync';
   }
-): Promise<ReconciliationResult> {
+): Promise<{
+  result: ReconciliationResult;
+  affectedVariantIds: string[];
+}> {
 
   // 1. Fetch sovereign order
   const order = await db('orders')
@@ -69,6 +72,12 @@ export async function reconcileOrderFulfillment(
    */
   await writeOrderRevenueUnits(lasyncroOrderId);
 
+  const variantRows = await db('order_revenue_units')
+    .where({ lasyncro_order_id: lasyncroOrderId })
+    .distinct('lasyncro_variant_id');
+
+  const affectedVariantIds = variantRows.map(r => r.lasyncro_variant_id);
+
   // 4. Apply refund executions
   const refundExecutions = await db('refund_executions')
     .where({ lasyncro_order_id: lasyncroOrderId });
@@ -77,5 +86,8 @@ export async function reconcileOrderFulfillment(
     await resolveRefundExecution(execution.lasyncro_refund_execution_id);
   }
 
-  return observed?.status === 'fulfilled' ? 'observed' : 'synthetic';
+  return {
+    result: observed?.status === 'fulfilled' ? 'observed' : 'synthetic',
+    affectedVariantIds,
+  };
 }
