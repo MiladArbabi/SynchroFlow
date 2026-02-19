@@ -9,7 +9,7 @@ import { getQueueChannel } from '../queue.js';
 import { seedShopifyOpeningBalances } from './inventory/seedShopifyOpeningBalances.js';
 import { mapShopifyOrderNodeToCanonical } from './mappers/shopify-to-canonical-order.js';
 import { enqueueProductForIngestion } from './product-ingestion.service.js';
-
+import { publishReconciliationJob } from '../queues/reconciliation.queue.js';
 
 type DbExecutor = Knex | Knex.Transaction;
 
@@ -192,6 +192,7 @@ export const performInitialSync = async (
     });
 
     const stagedEventIds: number[] = [];
+    let sovereignOrderIds: string[] = [];
 
     // 4. Use a transaction to sync all data or none
     await db.transaction(async (trx) => {
@@ -278,10 +279,37 @@ export const performInitialSync = async (
        *
        * Staging alone is insufficient.
        */
-      await syncOrders(trx, shopId, data.orders.edges);
-      await syncOrderLineItems(trx, shopId, data.orders.edges);
+      sovereignOrderIds = await syncOrders(
+        trx,
+        shopId,
+        data.orders.edges
+      );
+
+      await syncOrderLineItems(
+        trx,
+        shopId,
+        data.orders.edges
+      );
+
+      if (sovereignOrderIds.length > 0) {
+        await trx('order_reconciliation_intents')
+          .insert(
+            sovereignOrderIds.map(id => ({
+              reconciliation_intent_id: crypto.randomUUID(),
+              lasyncro_order_id: id,
+            }))
+          )
+          .onConflict(['lasyncro_order_id'])
+          .ignore();
+        }
       }
     });
+
+    if (sovereignOrderIds.length > 0) {
+      for (const id of sovereignOrderIds) {
+        await publishReconciliationJob(id);
+      }
+    }
 
     const channel = getQueueChannel('events');
 
@@ -383,7 +411,7 @@ async function syncOrders(
   trx: DbExecutor,
   shopId: number,
   edges: any[]
-) {
+): Promise<string[]> {
   const ordersToInsert = edges.map(({ node }: any) => ({
     lasyncro_order_id: crypto.randomUUID(), // internal UUID
     shop_id: shopId,
@@ -427,7 +455,10 @@ async function syncOrders(
     console.log(
       `[ShopifyService] Synced ${ordersToInsert.length} orders (schema-aligned).`
     );
+
+    return ordersToInsert.map(o => o.lasyncro_order_id);
   }
+  return [];
 }
 
 async function syncOrderLineItems(

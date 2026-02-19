@@ -8,6 +8,7 @@ import routes from "routes";
 
 import { ToastProvider } from "contexts/ToastContext";
 import { Ft1Outlet } from "lifecycle/Ft1Outlet";
+import { ConnectStoreModal } from "components/ConnectStoreModal";
 
 interface AppLayoutProps {
   children?: ReactNode;
@@ -112,6 +113,12 @@ const AppLayout = (props: AppLayoutProps) => {
           </Box>
         </Box>
       </Box>
+    
+    <ConnectStoreModal
+      isOpen={props.isConnectModalOpen}
+      onClose={props.onCloseConnectModal}
+    />
+
     </ToastProvider>
   );
 };

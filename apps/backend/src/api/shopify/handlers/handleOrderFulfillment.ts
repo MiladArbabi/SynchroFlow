@@ -1,9 +1,9 @@
 // apps/backend/src/api/shopify/handlers/handleOrderFulfillment.ts
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
-import OrderFulfillmentIngestionService from '../../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
-import { publishReconciliationJob } from '../../../queues/reconciliation.queue.js';
-
+import 
+  OrderFulfillmentIngestionService from 
+'../../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 
 type ShopifyFulfillmentPayload = {
   id: string | number;
@@ -81,23 +81,6 @@ export async function handleOrderFulfillment(
       | 'cancelled',
   });
 
-  if (fulfillmentStatus === 'fulfilled') {
-
-    const inserted = await db('order_reconciliation_intents')
-      .insert({
-        reconciliation_intent_id: crypto.randomUUID(),
-        lasyncro_order_id: lasyncroOrderId,
-      })
-      .onConflict(['lasyncro_order_id'])
-      .ignore()
-      .returning('lasyncro_order_id');
-
-    if (inserted.length > 0) {
-      await publishReconciliationJob(lasyncroOrderId, {
-        status: 'fulfilled',
-        observedAt: new Date(),
-        source: 'shopify_sync',
-      });
-    }
-  }
+  // Reconciliation scheduling removed.
+  // Economic materialization occurs deterministically at ingestion boundary.
 };
