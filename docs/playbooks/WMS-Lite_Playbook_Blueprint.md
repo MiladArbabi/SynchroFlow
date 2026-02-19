@@ -37,7 +37,7 @@ It:
 ```
 inventory_movements  (append-only ledger)
           ↓
-rebuildInventoryProjection()
+rebuildInventoryProjectionforShop(order.shop_id)
           ↓
 inventory_truth      (deterministic projection)
           ↓
@@ -206,7 +206,7 @@ Oversell is not a bug.
 
 ## 3. Projection Rebuild
 
-`rebuildInventoryProjection()`:
+`rebuildInventoryProjectionForShop(order.shop_id)`:
 
 * Deletes affected shops
 * Re-aggregates entire ledger

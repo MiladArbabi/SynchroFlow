@@ -22,10 +22,6 @@ export async function publishReconciliationJob(
 ) {
   const ch = getQueueChannel(RECONCILIATION_QUEUE);
 
-  ch.addSetup((channel) =>
-    channel.assertQueue(RECONCILIATION_QUEUE, { durable: true })
-  );
-
   ch.sendToQueue(
     RECONCILIATION_QUEUE,
     Buffer.from(JSON.stringify({ lasyncroOrderId, observed })),

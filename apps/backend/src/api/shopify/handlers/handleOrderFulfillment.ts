@@ -82,10 +82,22 @@ export async function handleOrderFulfillment(
   });
 
   if (fulfillmentStatus === 'fulfilled') {
-    await publishReconciliationJob(lasyncroOrderId, {
-      status: 'fulfilled',
-      observedAt: new Date(),
-      source: 'shopify_sync',
-    });
+
+    const inserted = await db('order_reconciliation_intents')
+      .insert({
+        reconciliation_intent_id: crypto.randomUUID(),
+        lasyncro_order_id: lasyncroOrderId,
+      })
+      .onConflict(['lasyncro_order_id'])
+      .ignore()
+      .returning('lasyncro_order_id');
+
+    if (inserted.length > 0) {
+      await publishReconciliationJob(lasyncroOrderId, {
+        status: 'fulfilled',
+        observedAt: new Date(),
+        source: 'shopify_sync',
+      });
+    }
   }
-}
+};

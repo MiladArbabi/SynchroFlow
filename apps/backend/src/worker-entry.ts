@@ -10,7 +10,7 @@ import { startProductIngestionWorker } from './workers/product-ingestion.worker.
 import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
 /* import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker.js';*/
 import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation/index.js';
-import { rebuildInventoryProjection } from './services/inventory/rebuildInventoryProjection.js';
+import { rebuildInventoryProjectionForShop } from './services/inventory/rebuildInventoryProjection.js';
 import { computeObligationFlags } from './services/order-execution-intelligence/obligationFlags.worker.js';
 
 async function start() {

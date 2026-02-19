@@ -124,10 +124,9 @@ export const getQueueChannel = (queueName: string): ChannelWrapper => {
 
     const channelWrapper = (connection as AmqpConnectionManager).createChannel({
       json: false,
-      setup: (channel: Channel) => {
-        // Keep durable flag to ensure persistence
-        return channel.assertQueue(queueName, { durable: true });
-      }
+      // No topology declaration here.
+      // Queue shape must be defined by the consumer layer.
+      setup: async () => {}
     });
 
     // Keep channel error handling to avoid process crash

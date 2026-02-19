@@ -8,15 +8,17 @@ interface LedgerRow {
   reserved: string | number | null;
 }
 
-export async function rebuildInventoryProjection(): Promise<void> {
+export async function rebuildInventoryProjectionForShop(
+  shopId: number
+): Promise<void> {
   await db.transaction(async (trx) => {
+
+    // 🔒 Projection mutex (transaction-scoped)
+    await trx.raw(`SELECT pg_advisory_xact_lock(987654321);`);
 
     // 1️⃣ Clear projection
     await trx('inventory_truth')
-      .whereIn(
-        ['shop_id'],
-        trx('inventory_movements').distinct('shop_id')
-      )
+      .where({ shop_id: shopId })
       .del();
 
     // 2️⃣ Aggregate by shop + variant + location
@@ -26,6 +28,7 @@ export async function rebuildInventoryProjection(): Promise<void> {
         'lasyncro_variant_id',
         'location_code'
       )
+      .where({ shop_id: shopId })
       .sum({
         on_hand: trx.raw(`
           CASE

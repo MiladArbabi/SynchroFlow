@@ -168,13 +168,18 @@ export async function up(knex) {
     });
 }
 export async function down(knex) {
+    await knex.schema.dropTableIfExists('order_reconciliation_intents');
+
     await knex.schema.dropTableIfExists('inventory_truth');
+
     await knex.schema.raw(`
     DROP TRIGGER IF EXISTS inventory_movements_no_update ON inventory_movements;
     DROP TRIGGER IF EXISTS inventory_movements_no_delete ON inventory_movements;
     DROP FUNCTION IF EXISTS prevent_inventory_movements_mutation();
   `);
+
     await knex.schema.dropTableIfExists('inventory_movements');
+
     await knex.schema.raw(`
     DROP TYPE IF EXISTS inventory_movement_type;
   `);

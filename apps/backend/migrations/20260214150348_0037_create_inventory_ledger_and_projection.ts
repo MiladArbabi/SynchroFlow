@@ -195,17 +195,43 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).defaultTo(knex.fn.now());
   });
+
+  // 4️⃣ order_reconciliation_intents (Publish Barrier)
+  await knex.schema.createTable('order_reconciliation_intents', (table) => {
+    table.uuid('reconciliation_intent_id').primary();
+    table.uuid('lasyncro_order_id').notNullable();
+    table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
+
+    table.unique(['lasyncro_order_id'], 'order_reconciliation_unique');
+
+    table.foreign('lasyncro_order_id')
+      .references('lasyncro_order_id')
+      .inTable('orders')
+      .onDelete('CASCADE');
+  });
 }
 
 export async function down(knex: Knex): Promise<void> {
+
+  // Drop reconciliation barrier first (FK to orders)
+  await knex.schema.dropTableIfExists('order_reconciliation_intents');
+
+  // Drop projection
   await knex.schema.dropTableIfExists('inventory_truth');
+
+  // Drop ledger triggers + function
   await knex.schema.raw(`
     DROP TRIGGER IF EXISTS inventory_movements_no_update ON inventory_movements;
     DROP TRIGGER IF EXISTS inventory_movements_no_delete ON inventory_movements;
     DROP FUNCTION IF EXISTS prevent_inventory_movements_mutation();
   `);
+
+  // Drop ledger
   await knex.schema.dropTableIfExists('inventory_movements');
+
+  // Drop enum
   await knex.schema.raw(`
     DROP TYPE IF EXISTS inventory_movement_type;
   `);
 }
+

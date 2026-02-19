@@ -1,7 +1,7 @@
 // apps/backend/src/workers/reconciliation/reconciliation.consumer.ts
 import { getQueueChannel } from '../../queue.js';
 import { reconcileOrderFulfillment } from './reconciliation.handlers.js';
-import { rebuildInventoryProjection } from '../../services/inventory/rebuildInventoryProjection.js';
+import { rebuildInventoryProjectionForShop } from '../../services/inventory/rebuildInventoryProjection.js';
 import { computeObligationFlags } from '../../services/order-execution-intelligence/obligationFlags.worker.js';
 import db from '@lasyncro/backend-core/db.js';
 
@@ -11,10 +11,38 @@ export function startReconciliationConsumer() {
   const ch = getQueueChannel(QUEUE);
 
   ch.addSetup((channel) => {
+    console.log('[reconciliation] topology setup executing');
     return Promise.all([
-      channel.assertQueue(QUEUE, { durable: true }),
-      channel.prefetch(5),
-    ]);
+    // 1. Dead-letter exchange
+    channel.assertExchange(
+      'fulfillment.reconciliation.dlx',
+      'direct',
+      { durable: true }
+    ),
+
+    // 2. Dead-letter queue
+    channel.assertQueue(
+      'fulfillment.reconciliation.dlq',
+      { durable: true }
+    ),
+
+    channel.bindQueue(
+      'fulfillment.reconciliation.dlq',
+      'fulfillment.reconciliation.dlx',
+      'dead'
+    ),
+
+    // 3. Main queue with DLX
+    channel.assertQueue(QUEUE, {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': 'fulfillment.reconciliation.dlx',
+        'x-dead-letter-routing-key': 'dead',
+      },
+    }),
+
+    channel.prefetch(5),
+  ]);
   });
 
   ch.consume(QUEUE, async (msg) => {
@@ -39,7 +67,7 @@ export function startReconciliationConsumer() {
       }
 
       // 3. Rebuild projection (deterministic replay-safe)
-      await rebuildInventoryProjection();
+      await rebuildInventoryProjectionForShop(order.shop_id);
 
       // 4. Recompute obligation flags for this shop
       await computeObligationFlags(order.shop_id);
@@ -48,7 +76,31 @@ export function startReconciliationConsumer() {
       ch.ack(msg);
     } catch (err) {
       console.error('[reconciliation] failed', err);
-      ch.nack(msg, false, false);
+
+      const headers = msg.properties.headers || {};
+      const retryCount = Number(headers['x-retry-count'] || 0);
+
+      if (retryCount >= 3) {
+        console.error('[reconciliation] permanently failed after 3 retries');
+        ch.nack(msg, false, false); // drop after bounded retries
+        return;
+      }
+
+      // Requeue with incremented retry count
+      ch.sendToQueue(
+        QUEUE,
+        msg.content,
+        {
+          persistent: true,
+          headers: {
+            ...headers,
+            'x-retry-count': retryCount + 1,
+          },
+        }
+      );
+
+      ch.ack(msg); // acknowledge original
     }
+
   });
 }
