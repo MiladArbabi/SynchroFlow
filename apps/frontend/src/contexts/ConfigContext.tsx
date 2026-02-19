@@ -6,7 +6,6 @@ import config, { ConfigProps, ThemeDirection, ThemeMode } from '../config';
 // Define action types
 type ActionType =
   | { type: 'SET_MENU_ORIENTATION'; payload: ConfigProps['menuOrientation'] }
-  | { type: 'SET_MINI_DRAWER'; payload: ConfigProps['miniDrawer'] }
   | { type: 'SET_FONT_FAMILY'; payload: ConfigProps['fontFamily'] }
   | { type: 'SET_BORDER_RADIUS'; payload: ConfigProps['borderRadius'] }
   | { type: 'SET_OUTLINED_FILLED'; payload: ConfigProps['outlinedFilled'] }
@@ -34,8 +33,6 @@ const configReducer = (state: ConfigProps, action: ActionType): ConfigProps => {
   switch (action.type) {
     case 'SET_MENU_ORIENTATION':
       return { ...state, menuOrientation: action.payload };
-    case 'SET_MINI_DRAWER':
-      return { ...state, miniDrawer: action.payload };
     case 'SET_FONT_FAMILY':
       return { ...state, fontFamily: action.payload };
     case 'SET_BORDER_RADIUS':

@@ -38,7 +38,6 @@ export const DEFAULT_THEME_MODE = ThemeMode.SYSTEM;
 // Config state definition
 export type ConfigProps = {
   menuOrientation: MenuOrientation;
-  miniDrawer: boolean;
   fontFamily: string;
   borderRadius: number;
   outlinedFilled: boolean;
@@ -52,7 +51,6 @@ export type ConfigProps = {
 
 const config: ConfigProps = {
   menuOrientation: MenuOrientation.VERTICAL,
-  miniDrawer: false,
   fontFamily: `'Roboto', sans-serif`,
   borderRadius: 8,
   outlinedFilled: true,

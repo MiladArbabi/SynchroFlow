@@ -1,60 +1,42 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/index.tsx
-import React, { ReactNode, useRef, useEffect, useState } from "react"; 
+import React, { ReactNode, useEffect, useState } from "react";
 import { axiosInstance } from "api/axiosConfig";
-// --- PANEL IMPORTS ---
-import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from "react-resizable-panels"; 
-
 import { Box } from "@mui/material";
 import SidenavContent from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
 
-// --- MODAL/BANNER IMPORTS ---
-import { ConnectStoreModal } from 'components/ConnectStoreModal';
-import { Outlet } from 'react-router-dom';
-
-// --- CONTEXT IMPORT ---
-import useConfig from 'hooks/useConfig';
-
-import { ToastProvider } from 'contexts/ToastContext';
+import { ToastProvider } from "contexts/ToastContext";
 import { Ft1Outlet } from "lifecycle/Ft1Outlet";
 
-// Define simple styles for the handles
-const handleStyle = { width: "4px", background: "#e0e0e0" };
-const verticalHandleStyle = { height: "4px", background: "#e0e0e0" };
-
-// --- CONSTANTS for panel sizes ---
-const SIDENAV_DEFAULT_SIZE = 16; // Percentage
-const SIDENAV_MIN_SIZE = 5;      // Percentage (for collapsed state)
-const SIDENAV_MAX_SIZE = 25;     // Percentage
-
 interface AppLayoutProps {
-  children?: ReactNode; // ✅ optional
-
+  children?: ReactNode;
   isConnectModalOpen: boolean;
   onCloseConnectModal: () => void;
 }
 
+type SidenavState = 'EXPANDED' | 'COMPACT' | 'CLOSED';
+
+const SIDENAV_WIDTH_EXPANDED = 180;
+const SIDENAV_WIDTH_COMPACT = 75;
+const SIDENAV_WIDTH_CLOSED = 0;
+
 const AppLayout = (props: AppLayoutProps) => {
-  
-  /* console.error('[APP_LAYOUT] MOUNTED', {
-    props,
-    ts: performance.now(),
-  }); */
+  const [isConnected, setIsConnected] = useState(false);
+  const [sidenavState, setSidenavState] = useState<SidenavState>('EXPANDED');
 
-  // --- GET STATE & REF ---
-  const { state, dispatch } = useConfig();
-  const sidenavPanelRef = useRef<ImperativePanelHandle>(null); // Ref for the Sidenav panel
-  const opsPanelRef = useRef<ImperativePanelHandle>(null);
-  const [isSidenavOpen, setSidenavOpen] = useState(true);
-  const [isConnected, setIsConnected] = useState(false); 
+  const sidenavWidth =
+  sidenavState === 'EXPANDED'
+    ? SIDENAV_WIDTH_EXPANDED
+    : sidenavState === 'COMPACT'
+    ? SIDENAV_WIDTH_COMPACT
+    : SIDENAV_WIDTH_CLOSED;
 
-  // --- LOGIC LIFTED FROM DASHBOARD ---
+  // Connectivity check
   useEffect(() => {
     const fetchLayout = async () => {
       try {
-        await axiosInstance.get('/api/v1/layouts/dashboard');
+        await axiosInstance.get("/api/v1/layouts/dashboard");
         setIsConnected(true);
       } catch {
         setIsConnected(false);
@@ -64,168 +46,73 @@ const AppLayout = (props: AppLayoutProps) => {
     fetchLayout();
   }, []);
 
-  // --- EFFECT TO CONTROL PANEL ---
-  useEffect(() => {
-    const panel = sidenavPanelRef.current;
-    if (panel) {
-      const isCurrentlyCollapsed = panel.isCollapsed(); // <-- Use the correct method to check state
-
-      if (state.miniDrawer) { // If miniDrawer is true (requesting closed/mini state)
-        if (!isCurrentlyCollapsed) { // Only collapse if not already collapsed
-          panel.collapse();
-        }
-        // Optional: Ensure size is minimal *after* collapsing
-        // if(panel.getSize() > SIDENAV_MIN_SIZE) {
-        //    panel.resize(SIDENAV_MIN_SIZE); // Might cause flashing, test carefully
-        // }
-
-      } else { // If miniDrawer is false (requesting open state)
-        if (isCurrentlyCollapsed) { // Only expand if currently collapsed
-          panel.expand();
-          // Resize back to default *after* expanding ensures it opens fully
-          panel.resize(SIDENAV_DEFAULT_SIZE);
-        }
-        // Optional: Ensure size is default even if not collapsed but maybe manually resized smaller
-        else if (panel.getSize() < SIDENAV_DEFAULT_SIZE) {
-             panel.resize(SIDENAV_DEFAULT_SIZE);
-        }
-      }
-    }
-  }, [state.miniDrawer]);
-
-  // --- GLOBAL HOTKEY LISTENER ---
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for Cmd+J (Mac) or Ctrl+J (Windows/Linux)
-      if ((event.metaKey || event.ctrlKey) && event.key === 'j') {
-        event.preventDefault();
-        // Dispatch the action to toggle the console
-        dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
-      }
-    };
-
-    // Add event listener
-    window.addEventListener('keydown', handleKeyDown);
-
-    // Clean up on unmount
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [dispatch]); // Dependency array with dispatch
-
-  // --- EFFECT TO CONTROL OPS CONSOLE PANEL ---
-  useEffect(() => {
-    const panel = opsPanelRef.current;
-    if (panel) {
-      if (state.isOpsConsoleOpen) { // <-- 4. READ FROM CONFIG STATE
-        if (panel.isCollapsed()) {
-          panel.expand();
-          panel.resize(25); // Resize to default 25%
-        }
-      } else {
-        if (!panel.isCollapsed()) {
-          panel.collapse();
-        }
-      }
-    }
-  }, [state.isOpsConsoleOpen]); // <-- 5. DEPEND ON CONFIG STATE
-  // --- END OPS CONSOLE EFFECT ---
-
   return (
-      <ToastProvider>
-          <Box sx={{ width: "100vw", height: "100vh" }}> 
-            <PanelGroup direction="horizontal">
-              {/* Sidenav Panel */}
-              <Panel
-                ref={sidenavPanelRef} // Assign the ref
-                defaultSize={SIDENAV_DEFAULT_SIZE}
-                minSize={SIDENAV_MIN_SIZE}
-                maxSize={SIDENAV_MAX_SIZE}
-                collapsible={true} // Ensure it's collapsible
-                // We can optionally set collapsedSize if needed, but minSize might be sufficient
-                onCollapse={() => dispatch({ type: 'SET_MINI_DRAWER', payload: true })} // <-- 2. Sync drag-to-collapse
-                onExpand={() => dispatch({ type: 'SET_MINI_DRAWER', payload: false })}   // <-- 3. Sync drag-to-expand
-                collapsedSize={SIDENAV_MIN_SIZE} // Explicitly set collapsed size
-                order={1} // Define order for layout
-              >
-                {/* Use overflow: hidden and flex column for content */}
-                <Box sx={{ height: "100%", borderRight: "1px solid #e0e0e0", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <SidenavContent
-                  brandName="LaSyncro"
-                  routes={routes}
-                  isSidenavOpen={isSidenavOpen}
-                  isConnected={isConnected}
-                />
-                </Box>
-              </Panel>
-              <PanelResizeHandle style={handleStyle} />
-
-              {/* Main Content Panel */}
-              <Panel order={2}> {/* Define order */}
-                <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-                  {/* Topnavbar Area */}
-                  <Box sx={{ height: "60px", flexShrink: 0, borderBottom: "1px solid #e0e0e0" }}>
-                    {/* Pass necessary props, but NOT the toggle handler */}
-                    <TopnavbarContent isEditing={false} onEditToggle={function (): void {
-                  throw new Error("Function not implemented.");
-                } } onAddWidget={function (): void {
-                  throw new Error("Function not implemented.");
-                } } />
-                  </Box>
-
-                  {/* Resizable area for Workspace and Ops Console */}
-                  <Box sx={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
-                    <PanelGroup direction="vertical">
-                      {/* Workspace Panel (Outlet) */}
-                      <Panel defaultSize={75} minSize={50} order={1}>
-                        <Box sx={{ height: "100%", width: "100%", overflowY: "auto", position: "relative" }}>
-
-                          {/* FT1 global promotion + checklist (stable position) */}
-                          <Ft1Outlet />
-
-                          {/* Module content */}
-                          {props.children}
-
-                        </Box>
-                      </Panel>
-
-                      <PanelResizeHandle style={verticalHandleStyle} />
-
-                      {/* Ops Console Panel */}
-                        <Panel
-                          ref={opsPanelRef} // <-- 6. ASSIGN REF
-                          defaultSize={0} // <-- 7. DEFAULT TO 0 (collapsed)
-                          minSize={10}
-                          collapsible={true}
-                          collapsedSize={0} // <-- 8. EXPLICITLY 0
-                          onCollapse={() => {
-                            // 9. Sync state if user manually collapses
-                            if (state.isOpsConsoleOpen) {
-                              dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
-                            }
-                          }}
-                          onExpand={() => {
-                            // 10. Sync state if user manually expands
-                            if (!state.isOpsConsoleOpen) {
-                              dispatch({ type: 'TOGGLE_OPS_CONSOLE' });
-                            }
-                          }}
-                          order={2}
-                        >
-                        </Panel>
-                      </PanelGroup>
-                    </Box>
-                  </Box>
-                </Panel>
-              </PanelGroup>
-
-            {/* --- RENDER MODALS AT LAYOUT LEVEL --- */}
-            <ConnectStoreModal
-              isOpen={props.isConnectModalOpen}
-              onClose={props.onCloseConnectModal}
-            />
+    <ToastProvider>
+      <Box sx={{ width: "100vw", height: "100vh", display: "flex" }}>
+        
+        {/* SIDENAV */}
+        <Box
+          sx={{
+            width: `${sidenavWidth}px`,
+            minWidth: `${sidenavWidth}px`,
+            maxWidth: `${sidenavWidth}px`,
+            height: "100%",
+            borderRight: sidenavState !== 'CLOSED' ? "1px solid #e0e0e0" : "none",
+            display: sidenavState === 'CLOSED' ? 'none' : 'flex',
+            flexDirection: "column",
+            overflow: "hidden",
+            transition: "width 0.2s ease"
+          }}
+        >
+          <SidenavContent
+            brandName="LaSyncro"
+            routes={routes}
+            sidenavState={sidenavState}
+            isConnected={isConnected}
+          />
         </Box>
-      </ToastProvider>
+
+        {/* MAIN AREA */}
+        <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
+          
+          {/* TOP NAVBAR */}
+          <Box
+            sx={{
+              height: "60px",
+              flexShrink: 0,
+              borderBottom: "1px solid #e0e0e0"
+            }}
+          >
+            <TopnavbarContent
+              isEditing={false}
+              onEditToggle={() => {}}
+              onAddWidget={() => {}}
+              onToggleSidenav={() => {
+                setSidenavState(prev =>
+                  prev === 'EXPANDED'
+                    ? 'COMPACT'
+                    : prev === 'COMPACT'
+                    ? 'CLOSED'
+                    : 'EXPANDED'
+                );
+              }}
+            />
+          </Box>
+
+          {/* CONTENT AREA */}
+          <Box
+            sx={{
+              flexGrow: 1,
+              overflowY: "auto",
+              position: "relative"
+            }}
+          >
+            <Ft1Outlet />
+            {props.children}
+          </Box>
+        </Box>
+      </Box>
+    </ToastProvider>
   );
 };
 
