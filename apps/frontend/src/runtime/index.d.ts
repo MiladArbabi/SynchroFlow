@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/runtime/index.d.ts
 export interface RouteDescriptor {
   id: string;

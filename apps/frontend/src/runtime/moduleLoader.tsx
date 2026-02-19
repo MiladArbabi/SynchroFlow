@@ -13,6 +13,9 @@ export interface UIModule {
   id: string;
   name?: string;
   version?: string;
+
+  lifecycleTier?: 'FT1_CORE' | 'FT2_READY' | 'FT2_PAYWALL';
+
   routes?: Array<any>;
   navItems?: Array<any>;
   navGroups?: Array<any>;
@@ -124,6 +127,7 @@ export async function loadAllModules() {
       id: descriptor.id,
       name: descriptor.name ?? descriptor.id,
       version: descriptor.version ?? '0.0.0',
+      lifecycleTier: descriptor.lifecycleTier ?? 'FT1_CORE',
     });
 
     // 1️⃣ Lifecycle-based registration (preferred)

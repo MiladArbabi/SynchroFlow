@@ -1,5 +1,5 @@
 // modules/overview/src/ui/ModuleEntry.tsx
-
+import { IconShieldCheck } from '@tabler/icons-react';
 import type { ModuleDescriptor } from './ModuleDescriptor.js';
 
 const descriptor: ModuleDescriptor = {
@@ -23,6 +23,7 @@ const descriptor: ModuleDescriptor = {
       path: '/overview',
       group: 'operations',
       order: 20,
+      icon: IconShieldCheck, 
       requiredModuleId: 'overview',
     },
   ],

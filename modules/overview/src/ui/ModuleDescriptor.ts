@@ -19,6 +19,7 @@ export interface NavItemDescriptor {
   title: string;
   path: string;
   order?: number;
+  icon?: any;
   group?: string;
   requiredModuleId?: string;
 }

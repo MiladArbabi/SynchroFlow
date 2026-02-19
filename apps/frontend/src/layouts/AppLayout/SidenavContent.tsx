@@ -22,8 +22,8 @@ import {
 } from '@tabler/icons-react';
 import SimpleBar from 'ui-component/third-party/SimpleBar';
 import LogoSection from 'layout/MainLayout/LogoSection';
-
-import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
+import { useResolvedNavigation } from 'runtime/useResolvedNavigation';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 
 interface SidenavProps {
   brandName: string;
@@ -41,7 +41,10 @@ const SidenavContent: React.FC<SidenavProps> = ({
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [drawerOpen, setDrawerOpen] = React.useState(true);
-  const { phase } = useShopLifecycle();
+  const { groups } = useResolvedNavigation();
+
+  const { snapshot } = useEntitlements();
+  console.log('SNAPSHOT MODULES:', Array.from(snapshot.modules));
 
   const logo = useMemo(
     () => (
@@ -52,23 +55,7 @@ const SidenavContent: React.FC<SidenavProps> = ({
     [drawerOpen]
   );
 
-  const navItems = [
-    ...(phase === 'FT1_READY' || phase === 'FT2_READY'
-      ? [
-          {
-            label: 'Overview',
-            path: '/overview',
-            icon: <IconShieldCheck size={18} />,
-          },
-        ]
-      : []),
-
-    { label: 'Orders', path: '/orders', icon: <IconShoppingCart size={18} /> },
-    { label: 'Products', path: '/products', icon: <IconBox size={18} /> },
-    { label: 'Customers', path: '/customers', icon: <IconUsers size={18} /> },
-    { label: 'Finances', path: '/finances', icon: <IconCash size={18} /> },
-  ];
-
+  console.log('SIDENAV GROUPS RENDER:', groups);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -87,43 +74,26 @@ const SidenavContent: React.FC<SidenavProps> = ({
       >
         <Box sx={{ flexGrow: 1 }}>
           <List sx={{ px: drawerOpen ? 1 : 0.5 }}>
-            {navItems.map((item) => (
+            {groups.flatMap(group => group.items).map((item) => (
+
                 <ListItemButton
-                  key={item.path}
+                  key={item.id}
                   sx={{ borderRadius: '8px' }}
                   selected={pathname === item.path}
                   onClick={() => navigate(item.path)}
                 >
                 <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
-                  {item.icon}
+                  {item.icon ? React.createElement(item.icon, { size: 18 }) : null}
                 </ListItemIcon>
                 {drawerOpen && (
                   <ListItemText
-                    primary={<Typography variant="body2">{item.label}</Typography>}
+                    primary={<Typography variant="body2">{item.title}</Typography>}
                   />
                 )}
               </ListItemButton>
             ))}
           </List>
         </Box>
-
-        {/* Account Settings — pinned bottom */}
-        <List sx={{ px: drawerOpen ? 1 : 0.5, pb: 1 }}>
-          <ListItemButton
-            sx={{ borderRadius: '8px' }}
-            selected={pathname === '/account/settings'}
-            onClick={() => navigate('/account/settings')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, justifyContent: 'center' }}>
-              <IconSettings size={18} />
-            </ListItemIcon>
-            {drawerOpen && (
-              <ListItemText
-                primary={<Typography variant="body2">Settings</Typography>}
-              />
-            )}
-          </ListItemButton>
-        </List>
       </SimpleBar>
     </Box>
   );

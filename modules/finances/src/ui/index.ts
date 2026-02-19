@@ -1,4 +1,6 @@
 // modules/finances/src/ui/index.ts
+export { default } from './ModuleEntry.js';
+
 export { default as FinancesModule } from './pages/FinancesModule.js';
 export { default as FinancesModuleFT2 } from './pages/FinancesModuleFT2.js';
 

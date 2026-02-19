@@ -18,7 +18,9 @@ export interface ModuleDescriptor {
   name?: string;
   version?: string;
   description?: string;
-  // optional startup hook the host can call
+
+  lifecycleTier?: 'FT1_CORE' | 'FT2_READY' | 'FT2_PAYWALL';
+
   register?: (hostApi?: any) => any;
   unregister?: () => any;
   meta?: Record<string, any>;
@@ -36,6 +38,20 @@ export interface NavItemDescriptor {
   meta?: Record<string, any>;
 }
 
+// --- Reactive subscription layer ---
+const listeners = new Set<() => void>();
+
+export function subscribeModules(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyModules() {
+  listeners.forEach(l => l());
+}
+
 const modulesStore: Record<string, ModuleDescriptor> = {};
 const navItemStore: Record<string, NavItemDescriptor> = {};
 let modulesCache: ModuleDescriptor[] | null = null;
@@ -45,11 +61,13 @@ export function registerModule(mod: ModuleDescriptor) {
   if (!mod || !mod.id) throw new Error('registerModule: id required');
   modulesStore[mod.id] = mod;
   modulesCache = null;
+  notifyModules();
 }
 
 export function unregisterModule(moduleId: string) {
   delete modulesStore[moduleId];
   modulesCache = null;
+  notifyModules();
 }
 
 export function getRegisteredModules(): ModuleDescriptor[] {
