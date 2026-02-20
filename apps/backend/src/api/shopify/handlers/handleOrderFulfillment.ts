@@ -72,11 +72,16 @@ export async function handleOrderFulfillment(
         ? 'fulfilled'
         : 'processing';
 
+  /**
+   * Webhook execution mapping
+   * --------------------------
+   * Shopify does not provide a true "in_transit" state.
+   * Execution transitions are simplified into sovereign states.
+   */
   await OrderFulfillmentIngestionService.ingestStatus({
     lasyncroOrderId,
     status: fulfillmentStatus as
       | 'processing'
-      | 'in_transit'
       | 'fulfilled'
       | 'cancelled',
   });

@@ -10,6 +10,7 @@ import { seedShopifyOpeningBalances } from './inventory/seedShopifyOpeningBalanc
 import { mapShopifyOrderNodeToCanonical } from './mappers/shopify-to-canonical-order.js';
 import { enqueueProductForIngestion } from './product-ingestion.service.js';
 import { publishReconciliationJob } from '../queues/reconciliation.queue.js';
+import OrderFulfillmentIngestionService from './order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 
 type DbExecutor = Knex | Knex.Transaction;
 
@@ -291,6 +292,24 @@ export const performInitialSync = async (
         data.orders.edges
       );
 
+      /**
+       * Fulfillment Snapshot Hydration
+       * ------------------------------
+       * Establish baseline execution truth for all synced orders.
+       *
+       * Must execute AFTER:
+       *   - orders are inserted
+       *   - line items are materialized
+       *
+       * Still inside the same DB transaction to guarantee atomic onboarding.
+       */
+      await hydrateFulfillmentSnapshot(
+        trx,
+        shopId,
+        data.orders.edges
+      );
+
+
       if (sovereignOrderIds.length > 0) {
         await trx('order_reconciliation_intents')
           .insert(
@@ -539,6 +558,88 @@ async function syncOrderLineItems(
 
     console.log(
       `[ShopifyService] Synced ${rows.length} line items (schema-aligned).`,
+    );
+  }
+};
+
+/**
+ * Fulfillment Snapshot Hydrator
+ * -----------------------------
+ * Purpose:
+ *   Reconstruct authoritative fulfillment state during initial sync.
+ *
+ * Invariants:
+ *   - NEVER writes directly to order_fulfillment_status.
+ *   - Uses OrderFulfillmentIngestionService as the ONLY write boundary.
+ *   - Fully idempotent (relies on ingestion upsert logic).
+ *   - Represents terminal snapshot state only (no transition states).
+ *
+ * Execution Semantics:
+ *   Snapshot establishes baseline truth.
+ *   Webhooks apply future deltas.
+ */
+async function hydrateFulfillmentSnapshot(
+  trx: DbExecutor,
+  shopId: number,
+  orderEdges: any[]
+): Promise<void> {
+
+  /**
+   * Deterministic mapping:
+   * Shopify → Sovereign execution state
+   *
+   * NOTE:
+   * - Snapshot must not emit "processing".
+   * - Snapshot reflects terminal observable state only.
+   */
+  function mapSnapshotStatus(
+    displayStatus: string | null | undefined
+  ): 'pending' | 'fulfilled' | 'partially_fulfilled' | 'cancelled' {
+
+    switch (displayStatus) {
+      case 'FULFILLED':
+        return 'fulfilled';
+
+      case 'PARTIALLY_FULFILLED':
+        return 'partially_fulfilled';
+
+      case 'RESTOCKED':
+        return 'cancelled';
+
+      case 'UNFULFILLED':
+      default:
+        return 'pending';
+    }
+  }
+
+  for (const { node } of orderEdges) {
+    const platformOrderId = node.id;
+
+    console.log('[HYDRATE]', platformOrderId, node.displayFulfillmentStatus);
+
+    // Resolve sovereign order identity (UUID anchor)
+    const sovereignOrder = await trx('orders')
+      .select('lasyncro_order_id')
+      .where({
+        shop_id: shopId,
+        platform: 'shopify',
+        platform_order_id: platformOrderId,
+      })
+      .first();
+
+    if (!sovereignOrder) continue;
+
+    const mappedStatus = mapSnapshotStatus(
+      node.displayFulfillmentStatus
+    );
+
+    // Authoritative ingestion boundary
+    await OrderFulfillmentIngestionService.ingestStatus(
+      {
+        lasyncroOrderId: sovereignOrder.lasyncro_order_id,
+        status: mappedStatus,
+      },
+      trx
     );
   }
 }

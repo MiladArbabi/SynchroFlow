@@ -1,6 +1,7 @@
 // apps/backend/src/services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.ts
 
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 
 /**
  * Sovereign Fulfillment Ingestion Service
@@ -12,10 +13,25 @@ import db from '@lasyncro/backend-core/db.js';
 
 export class OrderFulfillmentIngestionService {
 
-  async ingestStatus(input: {
-    lasyncroOrderId: string;
-    status: 'processing' | 'in_transit' | 'fulfilled' | 'cancelled';
-  }): Promise<void> {
+  /**
+   * Ingest sovereign fulfillment state.
+   *
+   * @param executor Optional DB executor (transaction-safe).
+   *                 Defaults to global db instance.
+   */
+  async ingestStatus(
+    input: {
+      lasyncroOrderId: string;
+      status:
+        | 'pending'
+        | 'processing'
+        | 'fulfilled'
+        | 'partially_fulfilled'
+        | 'cancelled'
+        | 'failed';
+    },
+    executor: Knex | Knex.Transaction = db
+  ): Promise<void> {
 
     const { lasyncroOrderId, status } = input;
 
@@ -25,17 +41,17 @@ export class OrderFulfillmentIngestionService {
       );
     }
 
-    await db('order_fulfillment_status')
+    await executor('order_fulfillment_status')
       .insert({
         lasyncro_fulfillment_id: crypto.randomUUID(),
         lasyncro_order_id: lasyncroOrderId,
         status,
-        status_updated_at: db.fn.now(),
+        status_updated_at: executor.fn.now(),
       })
       .onConflict(['lasyncro_order_id'])
       .merge({
         status,
-        status_updated_at: db.fn.now(),
+        status_updated_at: executor.fn.now(),
       });
   }
 }
