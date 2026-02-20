@@ -32,6 +32,10 @@ PGPASSWORD=sf_pass psql \
   -c "SELECT 1;"
 ```
 
+rabbitMQ bash terminal
+```bash
+docker exec -it synchroflow_mq bash
+```
 ---
 
 ## 1. Core Mental Model (Read This First)

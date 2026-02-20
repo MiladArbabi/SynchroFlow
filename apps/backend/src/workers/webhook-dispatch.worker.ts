@@ -24,6 +24,7 @@ export async function processWebhookDispatchMessage(
     ) as WebhookDispatchJob;
 
     const envelope = fromDispatchJob(job);
+    (envelope as any).__fromQueue = true;
 
     // 🔁 Re-enter canonical path
     await WebhookRouter.dispatch(envelope);

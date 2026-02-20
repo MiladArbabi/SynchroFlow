@@ -1,5 +1,12 @@
 // apps/backend/src/worker-entry.ts
 import './bootstrap/env.js';
+
+// 🔒 HARD GUARANTEE: Worker runtime flag
+// --------------------------------------
+// Worker must always execute webhooks synchronously.
+// This flag is authoritative and must not depend on shell env.
+process.env.WORKER_RUNTIME = 'true';
+
 import './bootstrap/tsconfig-paths-register.js';
 import './api/shopify/shopify.webhook.js';
 

@@ -21,9 +21,15 @@ export async function enqueueWebhookEnvelope(
 
     const payload = Buffer.from(JSON.stringify(envelope), 'utf8');
 
+    await channel.addSetup(async (ch: any) => {
+      await ch.assertQueue(QUEUE_NAME, { durable: true });
+    });
+
+    channel.sendToQueue(QUEUE_NAME, payload, {
+      persistent: true,
+    });
+
   } catch (err) {
-    // Fail-closed by contract — upstream must never break
-    // Ledger already recorded receipt
     console.error('[enqueueWebhookEnvelope] publish failed', err);
   }
 }
