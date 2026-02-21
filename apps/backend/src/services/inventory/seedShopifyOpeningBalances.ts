@@ -87,7 +87,7 @@ const response = await client.request(`
           ),
           shop_id: shopId,
           lasyncro_variant_id: mapping.lasyncro_variant_id,
-          movement_type: 'manual_adjustment',
+          movement_type: 'opening_balance',
           quantity_delta: qty,
           reference_type: 'opening_balance',
           reference_id: crypto.randomUUID(),

@@ -58,7 +58,8 @@ export async function rebuildInventoryProjectionForVariants(
               'inbound_purchase',
               'refund_return',
               'manual_adjustment',
-              'reconciliation_correction'
+              'reconciliation_correction',
+              'opening_balance'
             ) THEN quantity_delta
             WHEN movement_type IN (
               'sale',
@@ -84,46 +85,56 @@ export async function rebuildInventoryProjectionForVariants(
         'location_code'
       );
 
-    if (rows.length === 0) {
-      const now = new Date();
+    const now = new Date();
 
-      await trx('inventory_truth').insert(
-        variantIds.map((variantId) => ({
+    const aggregatedByVariant = new Map(
+      rows.map((r: any) => [r.lasyncro_variant_id, r])
+    );
+
+    const inserts = variantIds.map((variantId) => {
+      const r = aggregatedByVariant.get(variantId);
+
+      if (!r) {
+        return {
           shop_id: shopId,
           lasyncro_variant_id: variantId,
-          location_code: 'UNSPECIFIED',
+          location_code: 'WH-' + shopId + '-ROOT',
           on_hand_quantity: 0,
           reserved_quantity: 0,
           committed_quantity: 0,
           available_quantity: 0,
           sellable_quantity: 0,
           last_evaluated_at: now,
-        }))
-      );
-
-      return;
-    }
-
-    const now = new Date();
-
-    await trx('inventory_truth').insert(
-      rows.map((r: any) => {
-        const onHand = Number(r.on_hand ?? 0);
-        const reserved = Number(r.reserved ?? 0);
-        const available = onHand - reserved;
-
-        return {
-          shop_id: r.shop_id,
-          lasyncro_variant_id: r.lasyncro_variant_id,
-          location_code: r.location_code,
-          on_hand_quantity: onHand,
-          reserved_quantity: reserved,
-          committed_quantity: 0,
-          available_quantity: available,
-          sellable_quantity: available,
-          last_evaluated_at: now,
         };
-      })
-    );
+      }
+
+      const onHand = Number(r.on_hand ?? 0);
+      const reserved = Number(r.reserved ?? 0);
+      const available = onHand - reserved;
+
+      return {
+        shop_id: r.shop_id,
+        lasyncro_variant_id: r.lasyncro_variant_id,
+        location_code: r.location_code,
+        on_hand_quantity: onHand,
+        reserved_quantity: reserved,
+        committed_quantity: 0,
+        available_quantity: available,
+        sellable_quantity: available,
+        last_evaluated_at: now,
+      };
+    });
+
+    await trx('inventory_truth')
+      .insert(inserts)
+      .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
+      .merge({
+        on_hand_quantity: trx.raw('EXCLUDED.on_hand_quantity'),
+        reserved_quantity: trx.raw('EXCLUDED.reserved_quantity'),
+        committed_quantity: trx.raw('EXCLUDED.committed_quantity'),
+        available_quantity: trx.raw('EXCLUDED.available_quantity'),
+        sellable_quantity: trx.raw('EXCLUDED.sellable_quantity'),
+        last_evaluated_at: trx.raw('EXCLUDED.last_evaluated_at'),
+      });
   });
 }

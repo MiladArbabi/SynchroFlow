@@ -18,6 +18,7 @@ import { handleOrderCreated } from './handlers/handleOrderCreated.js';
 import { handleOrderFulfillment } from './handlers/handleOrderFulfillment.js';
 import { handleOrderPaid } from './handlers/handleOrderPaid.js';
 import { handleRefundCreated } from './handlers/handleRefundCreated.js';
+import { handleInventoryLevelUpdate } from './handlers/handleInventoryLevelUpdate.js';
 
 /**
  * Shopify Webhook Route Registration
@@ -80,6 +81,25 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'refunds/create',
   handle: handleRefundCreated,
+});
+
+/**
+ * Inventory Synchronization
+ * -------------------------
+ * Real-time mirror of Shopify inventory levels.
+ * Handler implementation intentionally separate.
+ */
+
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'inventory_levels/update',
+  handle: handleInventoryLevelUpdate,
+});
+
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'inventory_items/update',
+  handle: handleInventoryLevelUpdate,
 });
 
 export async function shopifyWebhookHandler(

@@ -23,6 +23,7 @@ export async function up(knex: Knex): Promise<void> {
     table.string('platform').notNullable();              // shopify, amazon, woo
     table.string('external_product_id').notNullable();  // platform product id
     table.string('external_variant_id');                // optional variant id
+    table.string('external_inventory_item_id');        // platform inventory item id (required for inventory webhook reconciliation)
     table.string('external_sku');                       // raw platform SKU
 
     table.timestamp('created_at', { useTz: true })
@@ -35,6 +36,12 @@ export async function up(knex: Knex): Promise<void> {
       'external_product_id',
       'external_variant_id'
     ], 'external_product_identity_unique');
+
+    table.unique([
+      'shop_id',
+      'platform',
+      'external_inventory_item_id'
+    ], 'external_inventory_item_unique');
   });
 }
 

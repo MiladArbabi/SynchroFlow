@@ -14,6 +14,7 @@ export async function up(knex: Knex): Promise<void> {
           'inbound_purchase',
           'sale',
           'refund_return',
+          'opening_balance',
           'manual_adjustment',
           'damage',
           'shrinkage',
@@ -128,7 +129,11 @@ export async function up(knex: Knex): Promise<void> {
         )
         AND quantity_delta < 0
       )
-    );
+      OR
+      (
+        movement_type = 'opening_balance'
+      )
+    )
   `);
 
   // ─────────────────────────────────────────

@@ -40,6 +40,10 @@ export async function up(knex: Knex): Promise<void> {
       .onDelete('SET NULL');
 
     table
+      .string('external_location_id', 255)
+      .nullable(); // Shopify location_id mapping
+
+    table
       .specificType('type', 'warehouse_location_type')
       .notNullable();
 
@@ -59,6 +63,7 @@ export async function up(knex: Knex): Promise<void> {
     table.primary(['location_code']);
 
     table.unique(['shop_id', 'location_code']);
+    table.unique(['shop_id', 'external_location_id'], 'warehouse_external_location_unique');
     table.index(['shop_id']);
   });
 }

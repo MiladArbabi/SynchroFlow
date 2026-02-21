@@ -89,6 +89,9 @@ export const performInitialSync = async (
                 compareAtPrice
                 createdAt
                 updatedAt
+                inventoryItem {
+                  id
+                }
               }
             }
           }
@@ -404,12 +407,13 @@ async function syncProducts(
       // 3. Insert external identity mapping (variant-level)
       await trx('external_product_identity_map')
         .insert({
-          id: crypto.randomUUID(), // REQUIRED (no DB default)
+          id: crypto.randomUUID(),
           shop_id: shopId,
           lasyncro_variant_id: variantId,
           platform: 'shopify',
           external_product_id: node.id,
           external_variant_id: variant.id,
+          external_inventory_item_id: variant.inventoryItem?.id || null,
           external_sku: variant.sku || null,
         })
         .onConflict([
