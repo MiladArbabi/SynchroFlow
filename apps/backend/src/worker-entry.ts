@@ -13,10 +13,8 @@ import './api/shopify/shopify.webhook.js';
 import { initQueue } from './queue.js';
 import { startSyncWorker } from './sync.worker.js';
 import { startWorker as startEventWorker } from './worker.js';
-import { startProductIngestionWorker } from './workers/product-ingestion.worker.js';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
-/* import { startWorker as startReturnsIngestionWorker } from './workers/returnsIngestion.worker.js';*/
-import { reconcileOrderFulfillment, startReconciliationConsumer } from './workers/reconciliation/index.js';
+import { startReconciliationConsumer } from './workers/reconciliation/index.js';
 
 async function start() {
 
@@ -31,13 +29,9 @@ async function start() {
   console.log('[worker-entry] Queue initialized');
 
   startSyncWorker();
-/*   startEventWorker();
- */  startProductIngestionWorker();
+  startEventWorker();
   startWebhookWorker();
-/*   startReturnsIngestionWorker();
- */  /* console.log('[worker-entry] Starting reconciliation consumer...'); */
   startReconciliationConsumer();
-  // startRefundsIngestionWorker(); // DEPRECATED — intentionally disabled
  
   /**
   * DEV-ONLY: Obligation evaluation hook

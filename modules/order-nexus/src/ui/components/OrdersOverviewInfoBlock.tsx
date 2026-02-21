@@ -6,19 +6,24 @@ import {
 
 type OrdersOverviewInfoBlockProps = {
   orders: {
+    total: number | null;
     fulfilled: number | null;
-    active: number | null;
-    added: number | null;
+    unfulfilled: number | null;
+    constrained: number | null;
   };
-  incomingDiff: string | null;
 };
 
 export function OrdersOverviewInfoBlock({
   orders,
-  incomingDiff,
 }: OrdersOverviewInfoBlockProps) {
   return (
     <InfoBlock title="Orders overview">
+
+      <InfoBlockRow
+        label="Total orders"
+        value={orders.total}
+      />
+
       <InfoBlockRow
         label="Fulfilled orders"
         value={orders.fulfilled}
@@ -26,18 +31,17 @@ export function OrdersOverviewInfoBlock({
 
       <InfoBlockRow
         label="Unfulfilled orders"
-        value={orders.active}
+        value={orders.unfulfilled}
       />
 
       <InfoBlockRow
-        label="Orders added"
-        value={orders.added}
-        diff={incomingDiff}
+        label="Constrained orders"
+        value={orders.constrained}
       />
 
       <InfoBlockFooter
-        line1="> ORDER OBLIGATIONS SHOWN"
-        line2="> VALUE AND EXECUTION DETAILED ELSEWHERE"
+        line1="> LIFETIME OPERATIONAL STATE"
+        line2="> NON-TEMPORAL, EXECUTION-BASED"
       />
     </InfoBlock>
   );

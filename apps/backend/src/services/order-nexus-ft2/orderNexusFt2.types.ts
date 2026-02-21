@@ -29,9 +29,10 @@ export type OrderNexusFT2Snapshot =
   OrderNexusFT2Exposure & {
 
   orders: {
-    active: number | null;
+    total: number | null;
     fulfilled: number | null;
-    added: number | null;
+    unfulfilled: number | null;
+    constrained: number | null;
   };
 
   comparison: {

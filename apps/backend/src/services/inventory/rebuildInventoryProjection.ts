@@ -84,7 +84,25 @@ export async function rebuildInventoryProjectionForVariants(
         'location_code'
       );
 
-    if (rows.length === 0) return;
+    if (rows.length === 0) {
+      const now = new Date();
+
+      await trx('inventory_truth').insert(
+        variantIds.map((variantId) => ({
+          shop_id: shopId,
+          lasyncro_variant_id: variantId,
+          location_code: 'UNSPECIFIED',
+          on_hand_quantity: 0,
+          reserved_quantity: 0,
+          committed_quantity: 0,
+          available_quantity: 0,
+          sellable_quantity: 0,
+          last_evaluated_at: now,
+        }))
+      );
+
+      return;
+    }
 
     const now = new Date();
 

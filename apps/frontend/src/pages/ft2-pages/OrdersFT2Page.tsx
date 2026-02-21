@@ -24,8 +24,6 @@ import { mapOrdersFt2DistributionProps } from '../orders/useOrdersFt2Distributio
 import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
 import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
 
-import { useTrustFt2Snapshot } from 'pages/trust/useTrustFt2Snapshot';
-
 import { useState } from 'react';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
@@ -39,11 +37,9 @@ export default function OrdersFT2Page() {
     to: null,
   });
 
-  const snapshotQuery = useOrdersFt2Snapshot(range);
+  const snapshotQuery = useOrdersFt2Snapshot();
   const timeseriesQuery = useOrdersFt2Timeseries(range);
   const distributionQuery = useOrdersFt2Distribution(range);
-
-  const trustSnapshot = useTrustFt2Snapshot();
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) {
@@ -54,7 +50,6 @@ export default function OrdersFT2Page() {
 
   const headerProps = mapOrdersFt2Props(
     snapshotQuery.data,
-    trustSnapshot.data ?? null
   );
 
   const timeseriesProps = mapOrdersFt2TimeseriesProps(timeseriesQuery.data);

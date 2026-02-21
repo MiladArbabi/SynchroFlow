@@ -1,6 +1,9 @@
 // apps/backend/src/worker.ts
 import { getQueueChannel } from './queue.js';
 import db from '@lasyncro/backend-core/db.js';
+import crypto from 'crypto';
+
+import { publishReconciliationJob } from './queues/reconciliation.queue.js';
 
 // Lazily obtain the specific channel for 'events' so tests can safely mock getQueueChannel
 let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
@@ -34,6 +37,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
       .first<{
         id: number;
         shop_id: number;
+        event_type: string;
         raw_payload: Record<string, any>;
       }>();
 
@@ -45,8 +49,122 @@ export async function processMessage(msg: { content: Buffer } | null) {
       return;
     }
 
-    // Sovereign model: ingestion handled elsewhere
-    // Worker now only acknowledges staged event
+  /**
+   * Canonical Order Ingestion (Schema-Aligned)
+   * -----------------------------------------
+   * Creates:
+   * - orders
+   * - external_order_identity_map
+   * - order_fulfillment_status
+   *
+   * Idempotency enforced via:
+   *   (shop_id, platform, external_order_id)
+   */
+
+  if (stagedEvent.event_type === 'orders/create') {
+    const payload = stagedEvent.raw_payload as any;
+    const externalOrderId = String(payload.id);
+
+    let newlyCreatedOrderId: string | null = null;
+
+    await db.transaction(async (trx) => {
+
+      const existingOrder = await trx('orders')
+        .where({
+          shop_id: stagedEvent.shop_id,
+          platform: 'shopify',
+          platform_order_id: externalOrderId,
+        })
+        .first();
+
+      if (existingOrder) return;
+
+      const lasyncroOrderId = crypto.randomUUID();
+      newlyCreatedOrderId = lasyncroOrderId;
+
+      // Insert canonical order only after identity secured
+      await trx('orders').insert({
+        lasyncro_order_id: lasyncroOrderId,
+        shop_id: stagedEvent.shop_id,
+        currency: payload.currency,
+        total_price: payload.total_price,
+        subtotal_price: payload.subtotal_price ?? payload.total_price,
+        total_tax: payload.total_tax ?? 0,
+        order_created_at: payload.created_at,
+        order_updated_at: payload.updated_at,
+        platform: 'shopify',
+        platform_order_id: externalOrderId,
+      });
+
+      await trx('external_order_identity_map').insert({
+        lasyncro_order_id: lasyncroOrderId,
+        shop_id: stagedEvent.shop_id,
+        platform: 'shopify',
+        external_order_id: externalOrderId,
+      });
+
+      // Insert fulfillment status
+      await trx('order_fulfillment_status').insert({
+        lasyncro_fulfillment_id: crypto.randomUUID(),
+        lasyncro_order_id: lasyncroOrderId,
+        status: 'pending',
+      });
+
+      /**
+       * Revenue Unit Ingestion
+       * ----------------------
+       * For each Shopify line item:
+       * - Resolve variant via external_product_identity_map
+       * - Insert into order_revenue_units
+       * - Skip if variant mapping not found
+       */
+
+      if (Array.isArray(payload.line_items)) {
+        for (const item of payload.line_items) {
+          const externalVariantId = item.variant_id
+            ? `gid://shopify/ProductVariant/${item.variant_id}`
+            : null;
+
+          if (!externalVariantId) continue;
+
+          const identity = await trx('external_product_identity_map')
+            .where({
+              shop_id: stagedEvent.shop_id,
+              platform: 'shopify',
+              external_variant_id: externalVariantId,
+            })
+            .first();
+
+          if (!identity) continue; // Strict: skip unmapped variants
+
+          const variant = await trx('variants')
+            .where({ lasyncro_variant_id: identity.lasyncro_variant_id })
+            .first();
+
+          if (!variant) continue;
+
+          await trx('order_revenue_units')
+            .insert({
+              lasyncro_revenue_unit_id: crypto.randomUUID(),
+              lasyncro_order_id: lasyncroOrderId,
+              lasyncro_product_id: variant.lasyncro_product_id,
+              lasyncro_variant_id: identity.lasyncro_variant_id,
+              sku: item.sku ?? null,
+              title: item.title,
+              quantity: item.quantity,
+              unit_price: item.price,
+              line_total: Number(item.price) * Number(item.quantity),
+            })
+            .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
+            .ignore();
+        }
+      }
+    });
+
+    if (newlyCreatedOrderId) {
+      await publishReconciliationJob(newlyCreatedOrderId);
+    }
+  }
 
     // 4) Success path → ack
     getEventChannel().ack(msg as any);

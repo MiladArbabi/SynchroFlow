@@ -2,6 +2,7 @@
 
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
+import { getQueueChannel } from '../../../queue.js';
 
 type ShopifyOrderCreatePayload = {
   id: number | string;
@@ -48,7 +49,17 @@ export async function handleOrderCreated(
 
   const shopId = installation.shop_id;
 
-  // Sovereign ingestion will be handled by new ingestion layer.
-  // Webhook handler now stops after resolving shop context.
+  const [staged] = await db('staged_events')
+    .insert({
+      shop_id: shopId,
+      event_type: 'orders/create',
+      raw_payload: raw,
+      source_platform: 'shopify',
+    })
+    .returning('*');
 
+  getQueueChannel('events').sendToQueue(
+    'events',
+    Buffer.from(JSON.stringify({ staged_event_id: staged.id }))
+  );
 }

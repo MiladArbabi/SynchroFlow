@@ -2,16 +2,15 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
-import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
 export type OrdersFt2Snapshot = {
 
   orders?: {
-    active?: number | null;
+    total?: number | null;
     fulfilled?: number | null;
-    added?: number | null;
+    unfulfilled?: number | null;
+    constrained?: number | null;
   };
-
 
   /**
    * ─────────────────────────────────────────
@@ -29,7 +28,6 @@ export type OrdersFt2Snapshot = {
     earned?: number | null;
     pending?: number | null;
     blocked?: number | null;
-    executionCoverage?: 'sufficient' | 'insufficient';
   };
 
   /**
@@ -65,50 +63,11 @@ export type OrdersFt2Snapshot = {
     affectedOrders: number | null;
   };
 
-  comparison?: {
-    orders?: {
-      totalPctChange?: number | null;
-      fulfilledPctChange?: number | null;
-      unfulfilledPctChange?: number | null;
-      incomingPctChange?: number | null;
-    };
-  };
-
-  context?: {
-    ordersObserved?: number | null;
-  };
-
-  totals?: {
-    revenueTotal?: number | null;
-    costTotal?: number | null;
-    /**
-     * FT2 Snapshot
-     * ------------
-     * Currency is intentionally absent.
-     */
-    // currency removed per FT2 contract
-    /* currency?: string | null; */
-  };
-
-  outcome?: {
-    /**
-     * FT2 Outcome
-     * -----------
-     * Directional classification only.
-     * No causation, no explanation, no recommendation.
-     */
-    status: 'positive' | 'negative';
-  } | null;
-
-  trend?: {
-    direction: 'up' | 'down' | 'flat';
-  } | null;
-
   dataCoverage?: {
     completenessPct?: number | null;
   };
 
-    visibility?: {
+  visibility?: {
     status: 'sufficient' | 'insufficient';
   } | null;
 
@@ -134,17 +93,6 @@ export type OrdersFt2Snapshot = {
   revenueContinuity?: {
     status: 'isolated' | 'continuous';
   } | null;
-
-  /**
-   * ─────────────────────────────────────────
-   * STRUCTURAL COHERENCE
-   * ─────────────────────────────────────────
-   */
-  alignment?: {
-    demandReality?: 'aligned' | 'divergent' | 'unknown';
-    engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
-    operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
-  };
 };
 
 /**
@@ -158,30 +106,12 @@ export type OrdersFt2Snapshot = {
  * - Read-only
  * - No transformation
  */
-export function useOrdersFt2Snapshot(range: FT2DateRange) {
+export function useOrdersFt2Snapshot() {
   return useQuery<OrdersFt2Snapshot>({
-    queryKey: [
-      'order-nexus',
-      'ft2',
-      range.preset,
-      range.from,
-      range.to,
-    ],
+    queryKey: ['order-nexus', 'ft2'],
     queryFn: async () => {
       const { data } = await axiosInstance.get(
-        '/api/v1/modules/order-nexus/ft2',
-        {
-        params:
-          range.preset === 'custom'
-            ? {
-                preset: 'custom',
-                from: range.from,
-                to: range.to,
-              }
-            : {
-                preset: range.preset,
-            },
-        });
+        '/api/v1/modules/order-nexus/ft2');
       return data;
     },
   });

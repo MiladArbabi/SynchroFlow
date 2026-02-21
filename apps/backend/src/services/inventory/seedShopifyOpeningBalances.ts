@@ -67,11 +67,7 @@ const response = await client.request(`
       const shopifyVariantId = v.node.id;
       const rawQty = v.node.inventoryQuantity ?? 0;
 
-      // Shopify may expose negative available inventory if overselling.
-      // Opening balance represents physical stock only.
-      const qty = Math.max(rawQty, 0);
-
-      if (qty <= 0) continue;
+      const qty = rawQty ?? 0;
 
       const mapping = await trx('external_product_identity_map')
         .where({

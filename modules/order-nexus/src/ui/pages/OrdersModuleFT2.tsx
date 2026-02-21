@@ -36,32 +36,14 @@ import { toEpistemic } from '@lasyncro/epistemic';
  * This component performs NO data derivation.
  */
 export interface OrdersModuleFT2DataProps {
-  /**
-   * System grounding — order obligations (L1)
-   */
-
-  /**
-   * FT2-adjacent comparison context (preformatted)
-   */
-  comparison: {
-    orders: {
-      fulfilled: string | null;
-      incoming: string | null;
-    };
-  };
 
   orders: {
-    active: number | null;
+    total: number | null;
     fulfilled: number | null;
-    added: number | null;
+    unfulfilled: number | null;
+    constrained: number | null;
   };
 
-  /**
-   * Revenue — FT2 observed-only
-   * --------------------------
-   * Availability-based only.
-   * No execution or payment semantics.
-   */
   revenue: {
     totalSales: number | null;
     earned: number | null;
@@ -69,68 +51,25 @@ export interface OrdersModuleFT2DataProps {
     blocked: number | null;
   };
 
-  /**
-   * Returns — post-execution regression
-   * -----------------------------------
-   * Financial only.
-   * Does NOT affect eligibility or execution.
-   */
   returns?: {
     returnedRevenue: number | null;
     returnedUnits: number | null;
     affectedOrders: number | null;
   };
 
-  /**
-    * Obligation Overview (FT2)
-    * -------------------------
-    * Downgraded, read-only visibility into constrained value.
-    */
-    obligations?: {
-      totalBlockedValue: number | null;
-
-      blockedBy: {
-        inventory: number | null;
-        customer: number | null;
-        operational: number | null;
-        other: number | null;
-      } | null;
-
-      coverage: {
-        status: 'sufficient' | 'insufficient';
-      };
-    };
-
-  /**
-   * Revenue — execution-aware 
-   * -----------------------------------
-   * Optional.
-   * Rendered ONLY when explicitly selected by the user.
-   * Visibility gates whether values may be shown.
-   */
-  executionRevenue?: {
-    fulfilled: number;
-    unfulfilled: number;
-    unknown: number;
-    visibility: {
+  obligations?: {
+    totalBlockedValue: number | null;
+    blockedBy: {
+      inventory: number | null;
+      customer: number | null;
+      operational: number | null;
+      other: number | null;
+    } | null;
+    coverage: {
       status: 'sufficient' | 'insufficient';
     };
   };
-
-  /**
-   * Revenue continuity (L1½)
-   */
-  revenueContinuity:
-    | { status: 'isolated' | 'continuous' }
-    | null;
-
-  /**
-   * Trust FT2 (module-level)
-   */
-  trust: {
-    trustEligible: boolean | null;
-  } | null;
-}
+};
 
 /**
  * Rendering-only props
@@ -146,16 +85,10 @@ export default function OrdersModuleFT2(
 ) {
     const {
       orders,
-      comparison,
       revenue,
       returns,
-      revenueContinuity,
       obligations,
     } = props;
-
-
-  const fmtMoney = (v: number | null) =>
-    v == null ? null : Number(v.toFixed(2));
 
   return (
     <FT2Layout>
@@ -163,7 +96,6 @@ export default function OrdersModuleFT2(
 
         <OrdersOverviewInfoBlock
           orders={orders}
-          incomingDiff={comparison.orders.incoming}
         />
 
        <RevenueOverviewInfoBlock

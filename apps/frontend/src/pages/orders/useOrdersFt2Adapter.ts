@@ -3,27 +3,6 @@ import type { OrdersModuleFT2DataProps } from '@lasyncro/order-nexus';
 import { OrdersFt2Snapshot } from './useOrdersFt2Snapshot';
 
 /**
- * formatPctDiff (UI-only)
- * ----------------------
- * Converts numeric percentage change into
- * a stable, presentation-safe string.
- *
- * Rules:
- * - null / undefined → null
- * - 0 → "0%"
- * - positive → "+X%"
- * - negative → "-X%"
- * - No symbols beyond + / -
- */
-function formatPctDiff(value?: number | null): string | null {
-  if (value === null || value === undefined) return null;
-  if (!Number.isFinite(value)) return null;
-
-  if (value === 0) return '0%';
-  return value > 0 ? `+${value}%` : `${value}%`;
-}
-
-/**
  * mapOrdersFt2Props
  * -----------------
  * Canonical FT2 Orders adapter.
@@ -43,28 +22,30 @@ function formatPctDiff(value?: number | null): string | null {
  * The adapter is a *pipe*, not a brain.
  */
 export function mapOrdersFt2Props(
-  snapshot: OrdersFt2Snapshot,
-  trust: { trustEligible: boolean | null } | null
-): OrdersModuleFT2DataProps & {
-  trust: { trustEligible: boolean | null } | null;
-} {
+  snapshot: OrdersFt2Snapshot
+): OrdersModuleFT2DataProps {
 
   return {
     orders: {
-      active:
-        snapshot.orders?.active === undefined
+      total:
+        snapshot.orders?.total === undefined
           ? null
-          : snapshot.orders.active,
+          : snapshot.orders.total,
 
       fulfilled:
         snapshot.orders?.fulfilled === undefined
           ? null
           : snapshot.orders.fulfilled,
 
-      added:
-        snapshot.orders?.added === undefined
+      unfulfilled:
+        snapshot.orders?.unfulfilled === undefined
           ? null
-          : snapshot.orders.added,
+          : snapshot.orders.unfulfilled,
+
+      constrained:
+        snapshot.orders?.constrained === undefined
+          ? null
+          : snapshot.orders.constrained,
     },
 
     returns: {
@@ -126,34 +107,9 @@ export function mapOrdersFt2Props(
         : snapshot.revenue.blocked,
   },
 
-  comparison: {
-    orders: {
-      fulfilled:
-        formatPctDiff(
-          snapshot.comparison?.orders?.fulfilledPctChange
-        ),
-
-        incoming:
-          formatPctDiff(
-            snapshot.comparison?.orders?.incomingPctChange
-          ),
-    },
-  },
-
   obligations:
     snapshot.obligations === undefined
       ? null
-      : snapshot.obligations,
-
-  /**
-   * Revenue signal continuity (L1½)
-   * Bypasses intelligence. Pass-through only.
-   */
-  revenueContinuity:
-    snapshot.revenueContinuity === undefined
-      ? null
-      : snapshot.revenueContinuity,
-
-  trust: trust ?? null,
+      : snapshot.obligations
   };
 }
