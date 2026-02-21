@@ -1,6 +1,4 @@
 import { extractOrderRevenueAllocationFacts } from "../../services/order-facts/orderRevenueAllocationFacts.service.js";
-import { FT2RangeInput } from "@lasyncro/backend-core/utils/ft2Period.js";
-
 
 /**
  * Execution-Aware Revenue — Canonical Types
@@ -39,14 +37,13 @@ export type ExecutionAwareRevenueSnapshot = {
  * - Visibility communicates epistemic sufficiency
  */
 export async function getExecutionAwareRevenueSnapshot(
-  input: { shopId: number; range: FT2RangeInput }
+  input: { shopId: number }
 ): Promise<ExecutionAwareRevenueSnapshot> {
 
-  const { shopId, range } = input;
+  const { shopId } = input;
 
   const allocation = await extractOrderRevenueAllocationFacts(
     shopId,
-    range
   );
 
   const hasAnyExecutionData =

@@ -1,7 +1,5 @@
 import { computeExecutionAwareRevenueEpistemic } from "../../services/epistemic/orderRevenueExecutionAware.epistemic.js";
 import { getExecutionAwareRevenueSnapshot } from "../../services/order-revenue/orderRevenueExecutionAware.resolver.js";
-import { resolveFt2RangeFromRequest } from "../../utils/resolveFt2RangeFromRequest.js";
-
 
 /**
  * Order-Nexus Revenue — Epistemic (Phase 3)
@@ -38,11 +36,8 @@ export default async function orderNexusRevenueEpistemicController(
     });
   }
 
-  const range = resolveFt2RangeFromRequest(req);
-
   const snapshot = await getExecutionAwareRevenueSnapshot({
     shopId,
-    range,
   });
 
   const epistemicRevenue =

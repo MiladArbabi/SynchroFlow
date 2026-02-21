@@ -1,8 +1,8 @@
+import { getFt2Period } from '@lasyncro/backend-core/utils/ft2Period.js';
 import { getCustomersFt2Snapshot } from '../../services/customers-ft2.provider.js';
-import { getOrderNexusFt2Snapshot } from '../../services/order-nexus-ft2/orderNexusFt2.resolver.js';
+import { getOrderNexusFt2StateSnapshot } from '../../services/order-nexus-ft2/orderNexusFt2.state.resolver.js';
 import { getProductsFt2Snapshot } from '../../services/products-ft2.provider.js';
 import { getTrustFt2Snapshot } from '../../services/trust-ft2/trustFt2.resolver.js';
-import { getFt2Period } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 export interface OverviewFt2Snapshot {
   trust: {
@@ -81,17 +81,9 @@ export async function getOverviewFt2Snapshot(input: {
   // ─────────────────────────────────────────────
   // TERMINAL FT2 COMPOSITION (MINIMAL)
   // ─────────────────────────────────────────────
-
   const period = getFt2Period();
 
-  const ordersFt2 = await getOrderNexusFt2Snapshot({
-  shopId,
-    range: {
-      preset: 'custom',
-      from: period.from,
-      to: period.to,
-    },
-  });
+  const ordersFt2 = await getOrderNexusFt2StateSnapshot(shopId);
 
   const productsFt2 = await getProductsFt2Snapshot({
     shopId,
@@ -113,7 +105,7 @@ export async function getOverviewFt2Snapshot(input: {
     },
 
     context: {
-      ordersObserved: ordersFt2?.context.ordersObserved ?? null,
+      ordersObserved: null,
       productsObserved: productsFt2?.context.productsObserved ?? null,
       customersObserved: null,
     },

@@ -1,7 +1,4 @@
 // apps/backend/src/services/order-facts/orderShippingFacts.service.ts
-
-import { resolveFt2Range } from "@lasyncro/backend-core/utils/ft2Period.js";
-
 /**
  * Shipping Facts (Layer 1)
  * -----------------------
@@ -21,7 +18,6 @@ import { resolveFt2Range } from "@lasyncro/backend-core/utils/ft2Period.js";
  */
 export async function extractOrderShippingFacts(
   shopId: number,
-  range: Parameters<typeof resolveFt2Range>[0]
 ) {
   
   return {

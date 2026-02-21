@@ -1,8 +1,7 @@
 // apps/backend/src/services/overview-modules-ft2/overviewModulesFt2.resolver.ts
-
 import { getCustomersFt2Snapshot } from '../../services/customers-ft2.provider.js';
 import { CustomersFT2Exposure } from '../../services/customers-ftep/customersFtep.types.js';
-import { getOrderNexusFt2Snapshot } from '../../services/order-nexus-ft2/orderNexusFt2.resolver.js';
+import { getOrderNexusFt2StateSnapshot } from '../../services/order-nexus-ft2/orderNexusFt2.state.resolver.js';
 import { OrderNexusFT2Snapshot } from '../../services/order-nexus-ft2/orderNexusFt2.types.js';
 import { getProductsFt2Snapshot } from '../../services/products-ft2.provider.js';
 import { ProductsFT2Exposure } from '../../services/products-ftep/ProductsFtep.types.js';
@@ -38,10 +37,7 @@ export async function getOverviewModulesFt2Snapshot(input: {
   const period = resolveFt2Range(input.range);
 
   return {
-    orders: await getOrderNexusFt2Snapshot({
-      shopId,
-      range: input.range, // presets allowed
-    }),
+    orders: await getOrderNexusFt2StateSnapshot(shopId),
 
     products: await getProductsFt2Snapshot({
       shopId,

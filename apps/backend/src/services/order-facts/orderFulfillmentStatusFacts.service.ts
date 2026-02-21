@@ -1,5 +1,4 @@
 import db from '@lasyncro/backend-core/db.js';
-import { resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 /**
  * Fulfillment Status Facts (Layer 1)
@@ -14,7 +13,6 @@ import { resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
  */
 export async function extractOrderFulfillmentStatusFacts(
   shopId: number,
-  range: Parameters<typeof resolveFt2Range>[0]
 ) {
 
   /**

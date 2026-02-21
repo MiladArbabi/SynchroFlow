@@ -17,7 +17,6 @@
  */
 export async function extractOrderShippingDelayFacts(
   _shopId: number,
-  _range: unknown
 ) {
   return {
     delaySignal: 'absent' as const,

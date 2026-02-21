@@ -1,6 +1,5 @@
 //apps/backend/src/services/order-facts/orderRevenueAllocationFacts.service.ts
 import db from '@lasyncro/backend-core/db.js';
-import { resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 /**
  * Order Revenue Allocation Facts (Layer 1)
@@ -40,13 +39,11 @@ import { resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
 
 export async function extractOrderRevenueAllocationFacts(
   shopId: number,
-  range: Parameters<typeof resolveFt2Range>[0]
 ): Promise<{
   fulfilledRevenueTotal: number;
   unfulfilledRevenueTotal: number;
   unknownRevenueTotal: number;
 }> {
-  const { from, to } = resolveFt2Range(range);
 
   /**
    * Join canonical orders with fulfillment state.
@@ -63,18 +60,6 @@ export async function extractOrderRevenueAllocationFacts(
       'f.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
-    .andWhere(function () {
-        this.where(function () {
-          // Fulfilled revenue is anchored to fulfillment timestamp
-          this.whereIn('f.status', ['fulfilled'])
-            .andWhere('f.status_updated_at', '>=', from)
-            .andWhere('f.status_updated_at', '<=', to);
-        }).orWhere(function () {
-          // Unfulfilled revenue is anchored to order creation
-          this.whereNotIn('f.status', ['fulfilled'])
-            .andWhere('o.order_created_at', '<=', to);
-        });
-      })
     .select(
       'o.total_price as revenue',
       'f.status as fulfillmentStatus'

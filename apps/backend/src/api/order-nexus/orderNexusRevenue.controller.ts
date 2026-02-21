@@ -17,7 +17,6 @@
  */
 
 import { getExecutionAwareRevenueSnapshot } from "../../services/order-revenue/orderRevenueExecutionAware.resolver.js";
-import { resolveFt2RangeFromRequest } from "../../utils/resolveFt2RangeFromRequest.js";
 
 /**
  * This controller MUST NOT construct, adapt, or infer EpistemicValue.
@@ -43,11 +42,8 @@ export default async function orderNexusRevenuePhase6Controller(
     });
   }
 
-  const range = resolveFt2RangeFromRequest(req);
-
   const snapshot = await getExecutionAwareRevenueSnapshot({
     shopId,
-    range,
   });
 
   // Phase 1 containment:
