@@ -45,9 +45,13 @@ export async function handleOrderFulfillment(
 
   const shopId = installation.shop_id;
 
-  const externalOrderId = String(rawPayload.order_id).startsWith('gid://')
-    ? String(rawPayload.order_id)
-    : `gid://shopify/Order/${rawPayload.order_id}`;
+  /**
+   * CANONICAL EXTERNAL ID ENFORCEMENT
+   * ----------------------------------
+   * External identity must equal webhook payload.order_id string.
+   * No GID wrapping. No transformation.
+   */
+  const externalOrderId = String(rawPayload.order_id);
 
   // Resolve sovereign identity
   const identity = await db('external_order_identity_map')

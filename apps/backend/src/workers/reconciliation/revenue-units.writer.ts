@@ -29,7 +29,6 @@ export async function writeOrderRevenueUnits(
       .select([
         'order_processed_at',
         'order_created_at',
-        'platform',
         'shop_id',
       ])
       .first();
@@ -116,7 +115,7 @@ export async function writeOrderRevenueUnits(
           quantity_delta: -ru.quantity,
           reference_type: 'order_revenue_unit',
           reference_id: ru.lasyncro_revenue_unit_id,
-          platform: order.platform ?? null,
+          platform: null,
           location_code: `WH-${order.shop_id}-ROOT`,
           occurred_at: occurredAt,
         }))

@@ -11,6 +11,7 @@ import { mapShopifyOrderNodeToCanonical } from './mappers/shopify-to-canonical-o
 import { enqueueProductForIngestion } from './product-ingestion.service.js';
 import { publishReconciliationJob } from '../queues/reconciliation.queue.js';
 import OrderFulfillmentIngestionService from './order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
+import { resolveExternalOrderId } from './identity/resolveExternalOrder.service.js';
 
 type DbExecutor = Knex | Knex.Transaction;
 
@@ -464,17 +465,31 @@ async function syncOrders(
     order_created_at: node.createdAt,
     order_updated_at: node.updatedAt,
     order_processed_at: node.processedAt || null,
-
-    platform: 'shopify',
-    platform_order_id: node.id,
   }));
 
   if (ordersToInsert.length > 0) {
-    await trx('orders')
-      .insert(ordersToInsert)
-      .onConflict(['shop_id', 'platform', 'platform_order_id'])
-      .merge();
-
+    /**
+     * ORDER MATERIALIZATION DISABLED
+     * --------------------------------
+     * Sovereign orders must originate exclusively
+     * from canonical webhook ingestion boundary.
+     *
+     * GraphQL syncOrders is no longer authorized
+     * to materialize sovereign order rows.
+     */
+    
+    /**
+     * ORDER IDENTITY WRITE DISABLED
+     * ------------------------------
+     * Canonical external identity enforcement occurs
+     * exclusively at webhook ingestion boundary (worker).
+     *
+     * GraphQL sync must NOT write to:
+     * - external_order_identity_map
+     *
+     * Reason:
+     * Prevent GID format drift and dual ingestion writers.
+     */
     console.log(
       `[ShopifyService] Synced ${ordersToInsert.length} orders (schema-aligned).`
     );
@@ -495,14 +510,17 @@ async function syncOrderLineItems(
     const platformOrderId = order.id;
 
     // Resolve sovereign order ID
-    const sovereignOrder = await trx('orders')
-      .select('lasyncro_order_id')
-      .where({
-        shop_id: shopId,
-        platform: 'shopify',
-        platform_order_id: platformOrderId,
-      })
-      .first();
+    const lasyncroOrderId = await resolveExternalOrderId(
+      shopId,
+      'shopify',
+      platformOrderId
+    );
+
+    if (!lasyncroOrderId) continue;
+
+    const sovereignOrder = {
+      lasyncro_order_id: lasyncroOrderId,
+    };
 
     if (!sovereignOrder) continue;
 
@@ -622,14 +640,17 @@ async function hydrateFulfillmentSnapshot(
     console.log('[HYDRATE]', platformOrderId, node.displayFulfillmentStatus);
 
     // Resolve sovereign order identity (UUID anchor)
-    const sovereignOrder = await trx('orders')
-      .select('lasyncro_order_id')
-      .where({
-        shop_id: shopId,
-        platform: 'shopify',
-        platform_order_id: platformOrderId,
-      })
-      .first();
+    const lasyncroOrderId = await resolveExternalOrderId(
+      shopId,
+      'shopify',
+      platformOrderId
+    );
+
+    if (!lasyncroOrderId) continue;
+
+    const sovereignOrder = {
+      lasyncro_order_id: lasyncroOrderId,
+    };
 
     if (!sovereignOrder) continue;
 

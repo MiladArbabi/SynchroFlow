@@ -57,27 +57,40 @@ export async function processMessage(msg: { content: Buffer } | null) {
    * - external_order_identity_map
    * - order_fulfillment_status
    *
-   * Idempotency enforced via:
-   *   (shop_id, platform, external_order_id)
+    * Idempotency enforced via:
+    *   external_order_identity_map
+    *   UNIQUE (shop_id, platform, external_order_id)
    */
 
   if (stagedEvent.event_type === 'orders/create') {
     const payload = stagedEvent.raw_payload as any;
     const externalOrderId = String(payload.id);
 
+    /**
+     * CANONICAL FORMAT GUARD
+     * ----------------------
+     * Shopify external order identity must be numeric string.
+     * Reject GID or malformed identifiers at ingestion boundary.
+     */
+    if (!/^\d+$/.test(externalOrderId)) {
+      throw new Error(
+        `[IDENTITY_CANONICAL_VIOLATION] Non-numeric external_order_id: ${externalOrderId}`
+      );
+    }
+
     let newlyCreatedOrderId: string | null = null;
 
     await db.transaction(async (trx) => {
 
-      const existingOrder = await trx('orders')
-        .where({
-          shop_id: stagedEvent.shop_id,
-          platform: 'shopify',
-          platform_order_id: externalOrderId,
-        })
-        .first();
+      const existingIdentity = await trx('external_order_identity_map')
+      .where({
+        shop_id: stagedEvent.shop_id,
+        platform: 'shopify',
+        external_order_id: externalOrderId,
+      })
+      .first();
 
-      if (existingOrder) return;
+    if (existingIdentity) return;
 
       const lasyncroOrderId = crypto.randomUUID();
       newlyCreatedOrderId = lasyncroOrderId;
@@ -92,8 +105,6 @@ export async function processMessage(msg: { content: Buffer } | null) {
         total_tax: payload.total_tax ?? 0,
         order_created_at: payload.created_at,
         order_updated_at: payload.updated_at,
-        platform: 'shopify',
-        platform_order_id: externalOrderId,
       });
 
       await trx('external_order_identity_map').insert({

@@ -108,7 +108,7 @@ export default function OrdersModuleFT2(
         />
 
         <ReturnsOverviewInfoBlock
-          returnedRevenue={returns?.returnedRevenue ?? null}
+          returnedRevenue={toEpistemic(returns?.returnedRevenue ?? null)}
           returnedUnits={returns?.returnedUnits ?? null}
           affectedOrders={returns?.affectedOrders ?? null}
         />

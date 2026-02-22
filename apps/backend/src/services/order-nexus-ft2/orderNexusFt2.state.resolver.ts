@@ -34,6 +34,136 @@ export async function getOrderNexusFt2StateSnapshot(
   // Revenue state (lifetime, state-anchored)
   const revenueAllocation = await extractOrderRevenueAllocationFacts(shopId);
 
+  /**
+   * Total Structural Revenue (FT2 Canonical)
+   * ----------------------------------------
+   * Definition:
+   * - Lifetime, state-based
+   * - Net of returns
+   * - Derived from revenue units only
+   * - No execution classification
+   * - No obligation logic
+   *
+   * Invariant:
+   *   SUM((quantity - returned_quantity) * unit_price)
+   */
+  const totalRevenueRow = await db('order_revenue_units as ru')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .sum<{ sum: string | null }>(
+      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+    )
+    .first();
+
+  const totalStructuralRevenue =
+    totalRevenueRow?.sum != null
+      ? Math.round(Number(totalRevenueRow.sum) * 100) / 100
+      : 0;
+
+  /**
+   * Earned Revenue (FT2 Canonical)
+   * ------------------------------
+   * Definition:
+   * - Revenue units
+   * - Net of returns
+   * - Orders with fulfillment status = 'fulfilled'
+   * - Lifetime, state-based
+   */
+  const earnedRevenueRow = await db('order_revenue_units as ru')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .join(
+      'order_fulfillment_status as ofs',
+      'ofs.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .andWhere('ofs.status', 'fulfilled')
+    .sum<{ sum: string | null }>(
+      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+    )
+    .first();
+
+  const earnedStructuralRevenue =
+    earnedRevenueRow?.sum != null
+      ? Math.round(Number(earnedRevenueRow.sum) * 100) / 100
+      : 0;
+
+  /**
+   * Pending Revenue (FT2 Canonical)
+   * --------------------------------
+   * Definition:
+   * - Revenue units
+   * - Net of returns
+   * - Orders with fulfillment status != 'fulfilled'
+   * - Lifetime, state-based
+   *
+   * NOTE:
+   * Pending = Unfulfilled (no constraint isolation yet)
+   */
+  const pendingRevenueRow = await db('order_revenue_units as ru')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .join(
+      'order_fulfillment_status as ofs',
+      'ofs.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .andWhereNot('ofs.status', 'fulfilled')
+    .sum<{ sum: string | null }>(
+      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+    )
+    .first();
+
+  const pendingStructuralRevenue =
+    pendingRevenueRow?.sum != null
+      ? Math.round(Number(pendingRevenueRow.sum) * 100) / 100
+      : 0;
+
+  /**
+   * Constrained Revenue (FT2 Canonical)
+   * -----------------------------------
+   * Definition:
+   * - Revenue units
+   * - Net of returns
+   * - Orders with explicit obligation flags
+   *   (inventory OR customer OR operational)
+   * - Lifetime, state-based
+   */
+  const constrainedRevenueRow = await db('order_revenue_units as ru')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .join(
+      'order_fulfillment_status as ofs',
+      'ofs.lasyncro_order_id',
+      'ru.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .whereNotNull('ofs.inventory_block_type')
+    .sum<{ sum: string | null }>(
+      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+    )
+    .first();
+
+  const constrainedStructuralRevenue =
+    constrainedRevenueRow?.sum != null
+      ? Math.round(Number(constrainedRevenueRow.sum) * 100) / 100
+      : 0;
+
   // Refunds (lifetime)
   const refundsFacts = await extractRefundsFacts(shopId);
 
@@ -88,9 +218,17 @@ export async function getOrderNexusFt2StateSnapshot(
       constrained, // will wire from existing constrained logic next task
     },
     revenue: {
-      pending: revenueAllocation.unfulfilledRevenueTotal,
-      blocked: 0, // blocked handled separately next task
-      earned: revenueAllocation.fulfilledRevenueTotal,
+      /**
+       * FT2 Revenue — Structural State
+       * ------------------------------
+       * totalSales = canonical structural revenue
+       * earned/pending temporarily execution-based (to be isolated next)
+       * blocked = placeholder (to be wired next)
+       */
+      totalSales: totalStructuralRevenue,
+      earned: earnedStructuralRevenue,
+      pending: pendingStructuralRevenue,
+      blocked: constrainedStructuralRevenue,
     },
     refunds: refundsFacts,
     alignment,

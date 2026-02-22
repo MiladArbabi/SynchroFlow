@@ -20,6 +20,18 @@ export async function up(knex: Knex): Promise<void> {
     table.string('platform').notNullable(); // shopify, amazon, woocommerce, etc.
     table.string('external_order_id').notNullable();
 
+    /**
+     * CANONICAL NUMERIC ENFORCEMENT
+     * -----------------------------
+     * External order identity must be numeric string only.
+     * Prevents GID format drift at schema level.
+     */
+    table.check(
+      "external_order_id ~ '^[0-9]+$'",
+      [],
+      'external_order_id_numeric_check'
+    );
+
     table.timestamps(true, true);
 
     table.unique(['shop_id', 'platform', 'external_order_id']);

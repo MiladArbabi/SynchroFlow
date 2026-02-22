@@ -11,6 +11,7 @@
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import { resolveRefundExecution } from '../../../workers/refundResolution.worker.js';
+import { resolveExternalOrderId } from '../../../services/identity/resolveExternalOrder.service.js';
 
 /**
  * Minimal Shopify Refund Payload (Execution-Safe)
@@ -44,12 +45,24 @@ type ShopifyRefundPayload = {
 export async function handleRefundCreated(
   envelope: WebhookEnvelope
 ): Promise<void> {
-  const { shopId, rawPayload } = envelope;
+
+  const { rawPayload, shopDomain } = envelope;
 
   console.log('[REFUND_HANDLER_ENTRY]', {
-    shopId,
+    shopDomain,
     hasRawPayload: !!rawPayload,
   });
+
+  if (!shopDomain) return;
+
+  const installation = await db('shopify_app_installations')
+    .where({ shop_domain: shopDomain })
+    .select('shop_id')
+    .first();
+
+  if (!installation) return;
+
+  const shopId = installation.shop_id;
 
   /**
    * Runtime type narrowing for refund execution.
@@ -70,9 +83,6 @@ export async function handleRefundCreated(
    */
   const refundPayload = rawPayload as Partial<ShopifyRefundPayload>;
 
-  // Refunds may arrive without resolved shopId.
-  // Resolution happens downstream via orders.
-
   /**
    * Refund Execution — Authoritative Write
    * -------------------------------------
@@ -82,6 +92,8 @@ export async function handleRefundCreated(
   const refundId = refundPayload.id;
   const platformOrderId = refundPayload.order_id;
   const refundCreatedAt = refundPayload.created_at;
+
+  console.log('REFUND platformOrderId', platformOrderId);
 
   if (!refundId || !platformOrderId) {
     return;
@@ -95,18 +107,14 @@ export async function handleRefundCreated(
      * All refund executions must resolve through
      * external_order_identity_map.
      */
-    const identity = await trx('external_order_identity_map')
-      .where({
-        shop_id: shopId,
-        platform: 'shopify',
-        external_order_id: String(platformOrderId),
-      })
-      .select('lasyncro_order_id')
-      .first();
+    const lasyncroOrderId = await resolveExternalOrderId(
+      shopId,
+      'shopify',
+      String(platformOrderId),
+      trx
+    );
 
-    if (!identity) return;
-
-    const lasyncroOrderId = identity.lasyncro_order_id;
+    if (!lasyncroOrderId) return;
 
     await trx('refund_executions')
       .insert({

@@ -2,10 +2,14 @@ import {
   InfoBlock,
   InfoBlockRow,
   InfoBlockFooter,
+  EpistemicInfoBlockRow,
 } from '@lasyncro/ui-ft2';
 
+import type { EpistemicValue } from '@lasyncro/epistemic';
+import { renderEpistemicMoney } from './renderEpistemicMoney.js';
+
 type ReturnsOverviewInfoBlockProps = {
-  returnedRevenue: number | null;
+  returnedRevenue: EpistemicValue<number>;
   returnedUnits: number | null;
   affectedOrders: number | null;
 };
@@ -17,13 +21,10 @@ export function ReturnsOverviewInfoBlock({
 }: ReturnsOverviewInfoBlockProps) {
   return (
     <InfoBlock title="Returns overview">
-      <InfoBlockRow
+
+      <EpistemicInfoBlockRow
         label="Returned revenue"
-        value={
-          returnedRevenue != null
-            ? `-${returnedRevenue.toFixed(2)}`
-            : null
-        }
+        signal={renderEpistemicMoney(returnedRevenue)}
       />
 
       <InfoBlockRow
