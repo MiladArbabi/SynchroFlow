@@ -37,6 +37,12 @@ export async function handleOrderCreated(
   const shopDomain = envelope.shopDomain;
 
   if (!raw?.id || !raw.created_at || !raw.updated_at || !shopDomain) {
+    console.error('[ORDER CREATE GUARD FAILED]', {
+      hasId: !!raw?.id,
+      hasCreatedAt: !!raw?.created_at,
+      hasUpdatedAt: !!raw?.updated_at,
+      shopDomain,
+    });
     return;
   }
 
@@ -45,7 +51,12 @@ export async function handleOrderCreated(
     .select('shop_id')
     .first();
 
-  if (!installation) return;
+  if (!installation) {
+    console.error('[ORDER CREATE INSTALLATION NOT FOUND]', {
+      shopDomain,
+    });
+    return;
+  }
 
   const shopId = installation.shop_id;
 
@@ -57,6 +68,8 @@ export async function handleOrderCreated(
       source_platform: 'shopify',
     })
     .returning('*');
+
+  console.log('[STAGED INSERTED]', staged.id);
 
   getQueueChannel('events').sendToQueue(
     'events',

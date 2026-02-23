@@ -147,6 +147,46 @@ export async function processMessage(msg: { content: Buffer } | null) {
           });
 
           /**
+           * BASELINE FULFILLMENT HYDRATION (SYNC ONLY)
+           * Transaction-bound to avoid pool exhaustion.
+           */
+          if (stagedEvent.event_type === 'orders/sync') {
+
+            const snapshotStatus = payload.displayFulfillmentStatus;
+
+            let baselineStatus:
+              | 'pending'
+              | 'processing'
+              | 'fulfilled'
+              | 'partially_fulfilled'
+              | 'cancelled'
+              | 'failed' = 'pending';
+
+            switch (snapshotStatus) {
+              case 'FULFILLED':
+                baselineStatus = 'fulfilled';
+                break;
+              case 'PARTIALLY_FULFILLED':
+                baselineStatus = 'partially_fulfilled';
+                break;
+              case 'UNFULFILLED':
+                baselineStatus = 'pending';
+                break;
+              case 'CANCELLED':
+                baselineStatus = 'cancelled';
+                break;
+            }
+
+            await OrderFulfillmentIngestionService.ingestStatus(
+              {
+                lasyncroOrderId: lasyncroOrderId,
+                status: baselineStatus,
+              },
+              trx   // CRITICAL: reuse transaction
+            );
+          }
+
+          /**
            * Line Item Materialization
            * -------------------------
            * Required for OAuth sync path.
@@ -226,13 +266,6 @@ export async function processMessage(msg: { content: Buffer } | null) {
            *
            * This worker is NOT an execution authority.
            */
-
-          // DO NOT write fulfillment state here.
-          // Fulfillment execution truth is established exclusively by:
-          // 1. Snapshot hydrator (initial sync)
-          // 2. Webhook ingestion boundary
-          //
-          // Worker must not initialize default fulfillment state.
         });
 
         if (newlyCreatedOrderId) {
@@ -319,12 +352,24 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         if (!lasyncroOrderId) break;
 
+        /**
+         * FULFILLMENT EXECUTION TRUTH
+         * ----------------------------
+         * Shopify `fulfillments/create` and `fulfillments/update`
+         * represent authoritative execution signals.
+         *
+         * Observed payload structure:
+         * - No top-level `fulfillment_status`
+         * - Top-level `status` may be "success"
+         *
+         * Therefore:
+         * - Event type itself implies fulfillment
+         * - Only explicit cancellation overrides
+         */
         const status =
           payload.status === 'cancelled'
             ? 'cancelled'
-            : payload.fulfillment_status === 'fulfilled'
-              ? 'fulfilled'
-              : 'processing';
+            : 'fulfilled';
 
         await OrderFulfillmentIngestionService.ingestStatus({
           lasyncroOrderId,

@@ -26,20 +26,27 @@ export async function extractActiveOrdersCount(
 ): Promise<number | null> {
   
   /**
-   * SOVEREIGN IDENTITY (v2)
-   * -----------------------
-   * Active orders are UUID-anchored.
-   * shop_id must be derived from orders.
+   * ACTIVE ORDER DEFINITION (v2)
+   * -----------------------------
+   * An order is ACTIVE if:
+   * - No fulfillment row exists
+   * OR
+   * - Fulfillment status != 'fulfilled'
+   *
+   * Anchor: orders table (sovereign identity)
    */
-  const row = await db('order_fulfillment_status as ofs')
-    .join(
-      'orders as o',
+  const row = await db('orders as o')
+    .leftJoin(
+      'order_fulfillment_status as ofs',
       'o.lasyncro_order_id',
       'ofs.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
-    .whereNotIn('ofs.status', ['fulfilled'])
-    .countDistinct<{ count: string }>('ofs.lasyncro_order_id as count')
+    .where(function () {
+      this.whereNull('ofs.status')
+          .orWhereNotIn('ofs.status', ['fulfilled']);
+    })
+    .countDistinct<{ count: string }>('o.lasyncro_order_id as count')
     .first();
 
   return row?.count !== undefined ? Number(row.count) : null;

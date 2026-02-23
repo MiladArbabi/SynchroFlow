@@ -209,10 +209,20 @@ export async function getOrderNexusFt2StateSnapshot(
     planes: [],
   });
 
+  const totalOrdersRow = await db('orders')
+    .where('shop_id', shopId)
+    .count<{ count: string }>('lasyncro_order_id as count')
+    .first();
+
+  const totalOrders =
+    totalOrdersRow?.count != null
+      ? Number(totalOrdersRow.count)
+      : 0;
+
   // Snapshot placeholder (shape refined next task)
   const snapshot: OrderNexusFT2Snapshot = {
     orders: {
-      total: (fulfilledOrders ?? 0) + (activeOrders ?? 0),
+      total: totalOrders,
       fulfilled: fulfilledOrders ?? 0,
       unfulfilled: activeOrders ?? 0,
       constrained, // will wire from existing constrained logic next task

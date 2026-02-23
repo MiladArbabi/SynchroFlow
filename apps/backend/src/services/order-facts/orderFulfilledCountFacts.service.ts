@@ -16,20 +16,23 @@ export async function extractFulfilledOrdersCount(
 ) {
 
   /**
-   * IMPORTANT (FT2):
-   * Fulfilled order count is STATE-based, not time-scoped.
+   * FULFILLED ORDER DEFINITION (v2)
+   * --------------------------------
+   * An order is fulfilled if:
+   * - A fulfillment row exists
+   * - status = 'fulfilled'
    *
-   * order_fulfillment_status does NOT carry order timestamps.
-   * Time-scoping execution data would fabricate truth.
-   *
-   * Sovereign order identity lives in orders (lasyncro_order_id).
+   * Anchor: orders table
    */
-
-  const row = await db('order_fulfillment_status as ofs')
-    .join('orders as o', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+  const row = await db('orders as o')
+    .leftJoin(
+      'order_fulfillment_status as ofs',
+      'o.lasyncro_order_id',
+      'ofs.lasyncro_order_id'
+    )
     .where('o.shop_id', shopId)
-    .whereIn('ofs.status', ['fulfilled'])
-    .countDistinct<{ count: string }>('ofs.lasyncro_order_id as count')
+    .where('ofs.status', 'fulfilled')
+    .countDistinct<{ count: string }>('o.lasyncro_order_id as count')
     .first();
 
   if (!row || row.count == null) {
