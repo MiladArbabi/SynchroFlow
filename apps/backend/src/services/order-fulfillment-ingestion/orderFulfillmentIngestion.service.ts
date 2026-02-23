@@ -6,19 +6,66 @@ import crypto from 'crypto';
 
 /**
  * Sovereign Fulfillment Ingestion Service
- * ---------------------------------------
- * - Identity: lasyncro_order_id
- * - Writes factual execution state only
- * - Idempotent on lasyncro_order_id
+ * =======================================
+ *
+ * Responsibilities:
+ * - Persist canonical execution truth
+ * - Enforce monotonic state transitions
+ * - Remain transaction-safe
+ * - Preserve deterministic replay guarantees
+ *
+ * Design Guarantees:
+ * ------------------
+ * 1. Execution state is anchored by lasyncro_order_id
+ * 2. Snapshot establishes baseline
+ * 3. Webhooks apply forward-only deltas
+ * 4. Late or duplicated webhooks cannot regress truth
+ * 5. All writes are idempotent
+ *
+ * This service MUST NEVER:
+ * - Infer execution state
+ * - Open uncontrolled DB connections inside worker loops
+ * - Downgrade fulfillment state
  */
 
 export class OrderFulfillmentIngestionService {
 
   /**
+   * Execution State Precedence Model
+   * ---------------------------------
+   * Defines monotonic progression order.
+   *
+   * Higher number = stronger execution certainty.
+   *
+   * pending                → 0
+   * processing             → 1
+   * partially_fulfilled    → 2
+   * fulfilled              → 3
+   * cancelled              → 4
+   * failed                 → 5
+   *
+   * Cancellation is allowed to override prior states.
+   */
+  private static readonly precedence: Record<string, number> = {
+    pending: 0,
+    processing: 1,
+    partially_fulfilled: 2,
+    fulfilled: 3,
+    cancelled: 4,
+    failed: 5,
+  };
+
+  /**
    * Ingest sovereign fulfillment state.
    *
-   * @param executor Optional DB executor (transaction-safe).
-   *                 Defaults to global db instance.
+   * @param input   Execution state payload
+   * @param executor Optional Knex transaction (MANDATORY in worker paths)
+   *
+   * Behavior:
+   * - Inserts baseline if none exists
+   * - Enforces monotonic transitions
+   * - Blocks regression
+   * - Allows explicit cancellation
    */
   async ingestStatus(
     input: {
@@ -42,17 +89,63 @@ export class OrderFulfillmentIngestionService {
       );
     }
 
+    if (!OrderFulfillmentIngestionService.precedence.hasOwnProperty(status)) {
+      throw new Error(
+        `[OrderFulfillmentIngestionService] Invalid fulfillment status: ${status}`
+      );
+    }
+
     console.log('[INGEST]', lasyncroOrderId, status);
 
-    await executor('order_fulfillment_status')
-      .insert({
+    // Fetch existing state (transaction-safe)
+    const existing = await executor('order_fulfillment_status')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first<{ status: string }>();
+
+    /**
+     * BASELINE INSERT
+     * ---------------
+     * If no prior state exists, create authoritative row.
+     */
+    if (!existing) {
+      await executor('order_fulfillment_status').insert({
         lasyncro_fulfillment_id: crypto.randomUUID(),
         lasyncro_order_id: lasyncroOrderId,
         status,
         status_updated_at: executor.fn.now(),
-      })
-      .onConflict(['lasyncro_order_id'])
-      .merge({
+      });
+      return;
+    }
+
+    const currentPrecedence =
+      OrderFulfillmentIngestionService.precedence[existing.status] ?? 0;
+
+    const newPrecedence =
+      OrderFulfillmentIngestionService.precedence[status] ?? 0;
+
+    /**
+     * MONOTONIC ENFORCEMENT
+     * ---------------------
+     * Allowed:
+     * - Forward progression
+     * - Equal state (idempotent)
+     * - Explicit cancellation
+     *
+     * Blocked:
+     * - Any regression
+     */
+    const allowUpdate =
+      status === 'cancelled' ||
+      newPrecedence >= currentPrecedence;
+
+    if (!allowUpdate) {
+      // Silent block to preserve deterministic state
+      return;
+    }
+
+    await executor('order_fulfillment_status')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .update({
         status,
         status_updated_at: executor.fn.now(),
       });

@@ -78,19 +78,47 @@ export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
     CREATE OR REPLACE FUNCTION enforce_fulfillment_status_monotonic()
     RETURNS trigger AS $$
+    DECLARE
+      old_rank INTEGER;
+      new_rank INTEGER;
     BEGIN
-      IF OLD.status = 'fulfilled' AND NEW.status <> 'fulfilled' THEN
-        RAISE EXCEPTION 'Fulfillment status cannot regress once fulfilled';
-      END IF;
 
+      -- Precedence model
+      old_rank := CASE OLD.status
+        WHEN 'pending' THEN 0
+        WHEN 'processing' THEN 1
+        WHEN 'partially_fulfilled' THEN 2
+        WHEN 'fulfilled' THEN 3
+        WHEN 'cancelled' THEN 4
+        WHEN 'failed' THEN 5
+        ELSE 0
+      END;
+
+      new_rank := CASE NEW.status
+        WHEN 'pending' THEN 0
+        WHEN 'processing' THEN 1
+        WHEN 'partially_fulfilled' THEN 2
+        WHEN 'fulfilled' THEN 3
+        WHEN 'cancelled' THEN 4
+        WHEN 'failed' THEN 5
+        ELSE 0
+      END;
+
+      -- Cancellation is terminal
       IF OLD.status = 'cancelled' AND NEW.status <> 'cancelled' THEN
         RAISE EXCEPTION 'Cancelled fulfillment cannot transition';
+      END IF;
+
+      -- Prevent regression
+      IF new_rank < old_rank THEN
+        RAISE EXCEPTION 'Fulfillment status cannot regress';
       END IF;
 
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
   `);
+  
 
   await knex.raw(`
     CREATE TRIGGER fulfillment_status_monotonic_trigger
