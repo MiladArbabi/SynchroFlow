@@ -1,6 +1,7 @@
 // apps/backend/src/api/shopify/handlers/handleOrderFulfillment.ts
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
+import { getQueueChannel } from '../../../queue.js';
 import 
   OrderFulfillmentIngestionService from 
 '../../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
@@ -51,10 +52,22 @@ export async function handleOrderFulfillment(
    * Fulfillment state transitions must enter
    * canonical pipeline via staged_events only.
    */
-  await db('staged_events').insert({
-    source_platform: 'shopify',
-    event_type: 'orders/fulfilled',
-    raw_payload: rawPayload,
-    shop_id: shopId,
-  });
+  const [id] = await db('staged_events')
+    .insert({
+      source_platform: 'shopify',
+      event_type: 'orders/fulfilled',
+      raw_payload: rawPayload,
+      shop_id: shopId,
+    })
+    .returning('id');
+
+  const stagedEventId =
+    typeof id === 'object' ? id.id : id;
+
+  const channel = getQueueChannel('events');
+
+  channel.sendToQueue(
+    'events',
+    Buffer.from(JSON.stringify({ staged_event_id: stagedEventId }))
+  );
 };
