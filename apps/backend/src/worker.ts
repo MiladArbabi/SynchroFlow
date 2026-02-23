@@ -212,11 +212,25 @@ export async function processMessage(msg: { content: Buffer } | null) {
               .ignore();
           }
 
-          await trx('order_fulfillment_status').insert({
-            lasyncro_fulfillment_id: crypto.randomUUID(),
-            lasyncro_order_id: lasyncroOrderId,
-            status: 'pending',
-          });
+          /**
+           * ❗ CRITICAL EXECUTION BOUNDARY
+           * --------------------------------
+           * order_fulfillment_status MUST NOT be initialized here.
+           *
+           * Reason:
+           * - Initial sync snapshot hydrator already establishes baseline execution truth.
+           * - Webhook ingestion updates execution deltas.
+           * - Writing default "pending" here corrupts canonical state.
+           *
+           * This worker is NOT an execution authority.
+           */
+
+          // DO NOT write fulfillment state here.
+          // Fulfillment execution truth is established exclusively by:
+          // 1. Snapshot hydrator (initial sync)
+          // 2. Webhook ingestion boundary
+          //
+          // Worker must not initialize default fulfillment state.
         });
 
         if (newlyCreatedOrderId) {
@@ -240,7 +254,8 @@ export async function processMessage(msg: { content: Buffer } | null) {
             const shopId = stagedEvent.shop_id;
 
             // Prevent concurrent FT0 execution in this process
-            if (!ft0InFlight.has(shopId)) {
+            if (!ft0InFlight.has(shopId)) {                                                               
+               
               ft0InFlight.add(shopId);
               try {
                 await FT0CompletionService.evaluateAndComplete(shopId);

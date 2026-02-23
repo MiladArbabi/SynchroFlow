@@ -41,6 +41,8 @@ export class OrderFulfillmentIngestionService {
       );
     }
 
+    console.log('[INGEST]', lasyncroOrderId, status);
+
     await executor('order_fulfillment_status')
       .insert({
         lasyncro_fulfillment_id: crypto.randomUUID(),

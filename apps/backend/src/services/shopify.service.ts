@@ -592,7 +592,7 @@ async function syncOrderLineItems(
  *   Webhooks apply future deltas.
  */
 async function hydrateFulfillmentSnapshot(
-  trx: DbExecutor,
+  trx: Knex.Transaction,
   shopId: number,
   orderEdges: any[]
 ): Promise<void> {
@@ -626,16 +626,41 @@ async function hydrateFulfillmentSnapshot(
   }
 
   for (const { node } of orderEdges) {
-    const platformOrderId = node.id;
+    const platformOrderGid = node.id;
 
-    console.log('[HYDRATE]', platformOrderId, node.displayFulfillmentStatus);
+    console.log('[HYDRATE RAW]', {
+      gid: platformOrderGid,
+      displayFulfillmentStatus: node.displayFulfillmentStatus,
+      typeof: typeof node.displayFulfillmentStatus
+    });
+
+    /**
+     * Normalize Shopify GID → numeric external_order_id
+     *
+     * Shopify GraphQL returns:
+     *   gid://shopify/Order/16567328080242
+     *
+     * Identity map stores:
+     *   16567328080242
+     *
+     * Hydration MUST strip the GID prefix before resolution.
+     */
+    const platformOrderId = platformOrderGid.split('/').pop() ?? null;
+
+    if (!platformOrderId) continue;
 
     // Resolve sovereign order identity (UUID anchor)
     const lasyncroOrderId = await resolveExternalOrderId(
       shopId,
       'shopify',
-      platformOrderId
+      platformOrderId,
+      trx
     );
+
+    console.log('[RESOLVE]', {
+      platformOrderId,
+      lasyncroOrderId
+    });
 
     if (!lasyncroOrderId) continue;
 

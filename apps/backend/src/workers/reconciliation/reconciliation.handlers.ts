@@ -39,24 +39,20 @@ export async function reconcileOrderFulfillment(
         status: 'fulfilled',
         status_updated_at: observed.observedAt,
       });
-  } else {
-    // 3. Ensure fulfillment state exists
-    const existing = await db('order_fulfillment_status')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .first();
-
-    if (!existing) {
-      await db('order_fulfillment_status')
-        .insert({
-          lasyncro_fulfillment_id: crypto.randomUUID(),
-          lasyncro_order_id: lasyncroOrderId,
-          status: 'processing',
-          status_updated_at: order.order_created_at,
-        })
-        .onConflict(['lasyncro_order_id'])
-        .ignore();
+      } else {
+      /**
+       * ❗ EXECUTION AUTHORITY BOUNDARY
+       * --------------------------------
+       * Reconciliation must NOT initialize or mutate
+       * fulfillment execution state.
+       *
+       * Execution truth is established exclusively by:
+       * 1. Snapshot hydrator (initial sync)
+       * 2. Webhook ingestion boundary
+       *
+       * Reconciliation is economic-only.
+       */
     }
-  }
 
   /**
    * ECONOMIC MATERIALIZATION BOUNDARY
