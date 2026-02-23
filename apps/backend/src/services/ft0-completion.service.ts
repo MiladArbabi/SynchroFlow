@@ -54,6 +54,15 @@ export class FT0CompletionService {
     shopId: number
   ): Promise<{ completed: boolean; alreadyCompleted?: boolean }> {
 
+    // Fast path: already completed
+    const existing = await db('ft0_state')
+      .where({ shop_id: shopId })
+      .first('shop_id');
+
+    if (existing) {
+      return { completed: true, alreadyCompleted: true };
+    }
+
     console.log('[FT0Completion] evaluateAndComplete called for shopId:', shopId);
 
     // 2. Integration must exist
@@ -123,26 +132,42 @@ export class FT0CompletionService {
      * - No fallback reads.
      */
     return await db.transaction(async trx => {
-      const inserted = await trx('ft0_state')
-        .insert({
-          shop_id: shopId,
-          status: 'COMPLETED',
-          completed_at: trx.fn.now(),
-          completion_reason: {
-            integration: true,
-            syncCompleted: true,
-            orders: orderCount,
-            firstInsightDelivered: true,
-          },
-        })
-        .onConflict('shop_id')
-        .ignore()
-        .returning('shop_id');
 
-      if (inserted.length === 0) {
-        console.log('[FT0][ALREADY_COMPLETED]', { shopId });
+      /**
+       * SERIALIZATION LOCK
+       * ------------------
+       * Lock shop row to prevent concurrent FT0 execution.
+       */
+      await trx('shops')
+        .where({ id: shopId })
+        .forUpdate()
+        .first();
+
+      /**
+       * RECHECK FT0 INSIDE LOCK
+       * ------------------------
+       * Prevent race between concurrent workers.
+       */
+      const existingFt0 = await trx('ft0_state')
+        .where({ shop_id: shopId })
+        .first('shop_id');
+
+      if (existingFt0) {
+        console.log('[FT0][ALREADY_COMPLETED_LOCKED]', { shopId });
         return { completed: true, alreadyCompleted: true };
       }
+
+      await trx('ft0_state').insert({
+        shop_id: shopId,
+        status: 'COMPLETED',
+        completed_at: trx.fn.now(),
+        completion_reason: {
+          integration: true,
+          syncCompleted: true,
+          orders: orderCount,
+          firstInsightDelivered: true,
+        },
+      });
 
       /**
        * Dual-write: Durable readiness state (v2 backbone)
@@ -157,9 +182,7 @@ export class FT0CompletionService {
         .insert({
           shop_id: shopId,
           became_ready_at: trx.fn.now(),
-        })
-        .onConflict('shop_id')
-        .ignore();
+        });
 
       await trx('activation_audit_events')
       .insert({
@@ -220,4 +243,4 @@ export class FT0CompletionService {
     });
 
   }
-}
+};

@@ -1,3 +1,27 @@
+/**
+ * ============================================================
+ * 🚨 LIFECYCLE WRITE AUTHORITY CONTRACT
+ * ============================================================
+ *
+ * Lifecycle mutations are allowed ONLY from:
+ *
+ * 1. FT0CompletionService (canonical durability boundary)
+ * 2. FT2 confirm endpoint (explicit user-confirmed promotion)
+ *
+ * The following layers MUST NEVER call this service:
+ *
+ * - OAuth controllers
+ * - Sync workers
+ * - External ingestion layers
+ * - Webhooks
+ * - staged_events ingestion
+ *
+ * Lifecycle reflects proven system state — not integration existence.
+ *
+ * Violating this contract corrupts onboarding invariants.
+ * ============================================================
+ */
+
 // apps/backend/src/services/lifecycle-transition.service.ts
 
 import db from '@lasyncro/backend-core/db.js';

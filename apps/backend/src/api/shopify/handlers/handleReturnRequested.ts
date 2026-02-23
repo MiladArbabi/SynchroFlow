@@ -15,7 +15,6 @@ import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 export async function handleReturnRequested(envelope: WebhookEnvelope) {
   
   const { shopId, rawPayload } = envelope;
-  const channel = getQueueChannel('returns.ingestion');
 
   const [staged] = await db('staged_events')
     .insert({
@@ -25,9 +24,4 @@ export async function handleReturnRequested(envelope: WebhookEnvelope) {
       shop_id: shopId,
     })
     .returning<{ id: number }[]>('id');
-
-  channel.sendToQueue(
-    'returns.ingestion',
-    Buffer.from(JSON.stringify({ staged_event_id: staged.id })),
-  );
 }

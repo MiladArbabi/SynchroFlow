@@ -17,8 +17,15 @@ export async function up(knex: Knex): Promise<void> {
       .inTable('orders')
       .onDelete('CASCADE');
 
-    table.string('platform', 255).nullable();
-    table.string('external_refund_id', 255).nullable();
+    table.string('platform', 255).notNullable();
+
+    table.string('external_refund_id', 255)
+      .notNullable();
+
+    table.unique(
+      ['platform', 'external_refund_id'],
+      'refund_executions_platform_external_unique'
+    );
 
     table.decimal('total_refund_amount', 14, 2)
       .notNullable();

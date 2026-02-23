@@ -38,51 +38,15 @@ export async function handleOrderPaid(
   const shopId = installation.shop_id;
 
   /**
-   * CANONICAL EXTERNAL ID ENFORCEMENT
-   * ----------------------------------
-   * External identity must equal webhook payload.id string.
-   * No GID wrapping. No transformation.
+   * PAYMENT STAGING (UNIFIED INGESTION)
+   * ------------------------------------
+   * Payment state transitions must be handled
+   * exclusively by canonical worker.
    */
-  const externalOrderId = String(rawPayload.id);
-
-  // Resolve sovereign identity
-  const identity = await db('external_order_identity_map')
-    .where({
-      shop_id: shopId,
-      platform: 'shopify',
-      external_order_id: externalOrderId,
-    })
-    .select('lasyncro_order_id')
-    .first();
-
-  if (!identity) {
-    return;
-  }
-
-  const lasyncroOrderId = identity.lasyncro_order_id;
-
-  const order = await db('orders')
-    .where({ lasyncro_order_id: lasyncroOrderId })
-    .first();
-
-  if (!order) return;
-
-  const currentState = order.payment_state;
-
-  if (currentState === 'paid') {
-    return;
-  }
-
-  if (currentState !== 'unpaid') {
-    throw new Error(
-      `[ECONOMIC_STATE_VIOLATION] Illegal transition ${currentState} → paid`
-    );
-  }
-
-  await db('orders')
-    .where({ lasyncro_order_id: lasyncroOrderId })
-    .update({
-      payment_state: 'paid',
-      updated_at: db.fn.now(),
-    });
+  await db('staged_events').insert({
+    source_platform: 'shopify',
+    event_type: 'orders/paid',
+    raw_payload: rawPayload,
+    shop_id: shopId,
+  });
 }

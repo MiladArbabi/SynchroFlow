@@ -46,50 +46,15 @@ export async function handleOrderFulfillment(
   const shopId = installation.shop_id;
 
   /**
-   * CANONICAL EXTERNAL ID ENFORCEMENT
-   * ----------------------------------
-   * External identity must equal webhook payload.order_id string.
-   * No GID wrapping. No transformation.
+   * FULFILLMENT STAGING (UNIFIED INGESTION)
+   * ----------------------------------------
+   * Fulfillment state transitions must enter
+   * canonical pipeline via staged_events only.
    */
-  const externalOrderId = String(rawPayload.order_id);
-
-  // Resolve sovereign identity
-  const identity = await db('external_order_identity_map')
-    .where({
-      shop_id: shopId,
-      platform: 'shopify',
-      external_order_id: externalOrderId,
-    })
-    .select('lasyncro_order_id')
-    .first();
-
-  if (!identity) {
-    return;
-  }
-
-  const lasyncroOrderId = identity.lasyncro_order_id;
-
-  const fulfillmentStatus =
-    rawPayload.status === 'cancelled'
-      ? 'cancelled'
-      : rawPayload.fulfillment_status === 'fulfilled'
-        ? 'fulfilled'
-        : 'processing';
-
-  /**
-   * Webhook execution mapping
-   * --------------------------
-   * Shopify does not provide a true "in_transit" state.
-   * Execution transitions are simplified into sovereign states.
-   */
-  await OrderFulfillmentIngestionService.ingestStatus({
-    lasyncroOrderId,
-    status: fulfillmentStatus as
-      | 'processing'
-      | 'fulfilled'
-      | 'cancelled',
+  await db('staged_events').insert({
+    source_platform: 'shopify',
+    event_type: 'orders/fulfilled',
+    raw_payload: rawPayload,
+    shop_id: shopId,
   });
-
-  // Reconciliation scheduling removed.
-  // Economic materialization occurs deterministically at ingestion boundary.
 };

@@ -1,11 +1,28 @@
 // apps/backend/src/worker.ts
+
 import { getQueueChannel } from './queue.js';
 import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
-
+import { resolveExternalOrderId } from './services/identity/resolveExternalOrder.service.js';
+import OrderFulfillmentIngestionService from './services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 import { publishReconciliationJob } from './queues/reconciliation.queue.js';
+import { resolveRefundExecution } from './workers/refundResolution.worker.js';
 
-// Lazily obtain the specific channel for 'events' so tests can safely mock getQueueChannel
+import { FirstInsightService } from './services/first-insight.service.js';
+import { FT0CompletionService } from './services/ft0-completion.service.js';
+
+/**
+ * FT0 EXECUTION LATCH (PROCESS-SCOPED)
+ * -------------------------------------
+ * Prevents concurrent FT0 executions for the same shop
+ * within this worker process.
+ *
+ * This does NOT replace DB idempotency.
+ * It only suppresses redundant concurrent triggers.
+ */
+const ft0InFlight = new Set<number>();
+
+// Lazily obtain the specific channel for 'events'
 let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
 function getEventChannel() {
   if (!eventChannel) {
@@ -14,11 +31,8 @@ function getEventChannel() {
   return eventChannel as NonNullable<typeof eventChannel>;
 }
 
-// This is the function our test is targeting
 export async function processMessage(msg: { content: Buffer } | null) {
-  if (msg === null) {
-    return;
-  }
+  if (msg === null) return;
 
   const content = msg.content.toString();
 
@@ -26,12 +40,10 @@ export async function processMessage(msg: { content: Buffer } | null) {
     const { staged_event_id } = JSON.parse(content);
 
     if (!staged_event_id) {
-      console.error('[worker] Message is missing staged_event_id');
       getEventChannel().ack(msg as any);
       return;
     }
 
-    // 1) Load staged event
     const stagedEvent = await db('staged_events')
       .where({ id: staged_event_id })
       .first<{
@@ -42,160 +54,340 @@ export async function processMessage(msg: { content: Buffer } | null) {
       }>();
 
     if (!stagedEvent) {
-      console.error(
-        `[worker] Staged event with id ${staged_event_id} not found.`,
-      );
       getEventChannel().ack(msg as any);
       return;
     }
 
-  /**
-   * Canonical Order Ingestion (Schema-Aligned)
-   * -----------------------------------------
-   * Creates:
-   * - orders
-   * - external_order_identity_map
-   * - order_fulfillment_status
-   *
-    * Idempotency enforced via:
-    *   external_order_identity_map
-    *   UNIQUE (shop_id, platform, external_order_id)
-   */
-
-  if (stagedEvent.event_type === 'orders/create') {
-    const payload = stagedEvent.raw_payload as any;
-    const externalOrderId = String(payload.id);
-
     /**
-     * CANONICAL FORMAT GUARD
-     * ----------------------
-     * Shopify external order identity must be numeric string.
-     * Reject GID or malformed identifiers at ingestion boundary.
+     * CANONICAL EVENT DISPATCHER
+     * ---------------------------
+     * All external signals must be materialized
+     * exclusively through this boundary.
      */
-    if (!/^\d+$/.test(externalOrderId)) {
-      throw new Error(
-        `[IDENTITY_CANONICAL_VIOLATION] Non-numeric external_order_id: ${externalOrderId}`
-      );
-    }
-
-    let newlyCreatedOrderId: string | null = null;
-
-    await db.transaction(async (trx) => {
-
-      const existingIdentity = await trx('external_order_identity_map')
-      .where({
-        shop_id: stagedEvent.shop_id,
-        platform: 'shopify',
-        external_order_id: externalOrderId,
-      })
-      .first();
-
-    if (existingIdentity) return;
-
-      const lasyncroOrderId = crypto.randomUUID();
-      newlyCreatedOrderId = lasyncroOrderId;
-
-      // Insert canonical order only after identity secured
-      await trx('orders').insert({
-        lasyncro_order_id: lasyncroOrderId,
-        shop_id: stagedEvent.shop_id,
-        currency: payload.currency,
-        total_price: payload.total_price,
-        subtotal_price: payload.subtotal_price ?? payload.total_price,
-        total_tax: payload.total_tax ?? 0,
-        order_created_at: payload.created_at,
-        order_updated_at: payload.updated_at,
-      });
-
-      await trx('external_order_identity_map').insert({
-        lasyncro_order_id: lasyncroOrderId,
-        shop_id: stagedEvent.shop_id,
-        platform: 'shopify',
-        external_order_id: externalOrderId,
-      });
-
-      // Insert fulfillment status
-      await trx('order_fulfillment_status').insert({
-        lasyncro_fulfillment_id: crypto.randomUUID(),
-        lasyncro_order_id: lasyncroOrderId,
-        status: 'pending',
-      });
+    switch (stagedEvent.event_type) {
 
       /**
-       * Revenue Unit Ingestion
-       * ----------------------
-       * For each Shopify line item:
-       * - Resolve variant via external_product_identity_map
-       * - Insert into order_revenue_units
-       * - Skip if variant mapping not found
+       * ---------------------------------------------------------
+       * ORDER CREATION (Webhook + Sync Unified)
+       * ---------------------------------------------------------
        */
+      case 'orders/create':
+      case 'orders/sync': {
 
-      if (Array.isArray(payload.line_items)) {
-        for (const item of payload.line_items) {
-          const externalVariantId = item.variant_id
-            ? `gid://shopify/ProductVariant/${item.variant_id}`
-            : null;
+        const payload = stagedEvent.raw_payload as any;
+        /**
+         * Shopify Order ID Canonicalization
+         * ----------------------------------
+         * Accepts:
+         * - numeric (webhooks)
+         * - gid://shopify/Order/<id> (GraphQL)
+         */
+        let externalOrderId = String(payload.id);
 
-          if (!externalVariantId) continue;
+        if (externalOrderId.startsWith('gid://')) {
+          const parts = externalOrderId.split('/');
+          externalOrderId = parts[parts.length - 1];
+        }
 
-          const identity = await trx('external_product_identity_map')
+        if (!/^\d+$/.test(externalOrderId)) {
+          throw new Error(
+            `[IDENTITY_CANONICAL_VIOLATION] Invalid Shopify Order ID: ${externalOrderId}`
+          );
+        }
+
+        let newlyCreatedOrderId: string | null = null;
+
+        await db.transaction(async (trx) => {
+
+          const existingIdentity = await trx('external_order_identity_map')
             .where({
               shop_id: stagedEvent.shop_id,
               platform: 'shopify',
-              external_variant_id: externalVariantId,
+              external_order_id: externalOrderId,
             })
             .first();
 
-          if (!identity) continue; // Strict: skip unmapped variants
+          if (existingIdentity) return;
 
-          const variant = await trx('variants')
-            .where({ lasyncro_variant_id: identity.lasyncro_variant_id })
-            .first();
+          const lasyncroOrderId = crypto.randomUUID();
+          newlyCreatedOrderId = lasyncroOrderId;
 
-          if (!variant) continue;
+          await trx('orders').insert({
+            lasyncro_order_id: lasyncroOrderId,
+            shop_id: stagedEvent.shop_id,
 
-          await trx('order_revenue_units')
-            .insert({
-              lasyncro_revenue_unit_id: crypto.randomUUID(),
-              lasyncro_order_id: lasyncroOrderId,
-              lasyncro_product_id: variant.lasyncro_product_id,
-              lasyncro_variant_id: identity.lasyncro_variant_id,
-              sku: item.sku ?? null,
-              title: item.title,
-              quantity: item.quantity,
-              unit_price: item.price,
-              line_total: Number(item.price) * Number(item.quantity),
-            })
-            .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
-            .ignore();
+            currency: payload.currencyCode ?? payload.currency ?? null,
+
+            total_price:
+              payload.totalPriceSet?.shopMoney?.amount != null
+                ? Number(payload.totalPriceSet.shopMoney.amount)
+                : payload.total_price ?? null,
+
+            subtotal_price:
+              payload.subtotalPriceSet?.shopMoney?.amount != null
+                ? Number(payload.subtotalPriceSet.shopMoney.amount)
+                : payload.subtotal_price ?? null,
+
+            total_tax:
+              payload.totalTaxSet?.shopMoney?.amount != null
+                ? Number(payload.totalTaxSet.shopMoney.amount)
+                : payload.total_tax ?? null,
+
+            order_created_at: payload.createdAt ?? payload.created_at ?? null,
+            order_updated_at: payload.updatedAt ?? payload.updated_at ?? null,
+
+            payment_state: 'unpaid',
+          });
+
+          await trx('external_order_identity_map').insert({
+            lasyncro_order_id: lasyncroOrderId,
+            shop_id: stagedEvent.shop_id,
+            platform: 'shopify',
+            external_order_id: externalOrderId,
+          });
+
+          /**
+           * Line Item Materialization
+           * -------------------------
+           * Required for OAuth sync path.
+           */
+          const lineEdges =
+            payload.lineItems?.edges ??
+            payload.line_items ??
+            [];
+
+          for (const edge of lineEdges) {
+
+            const li = edge.node ?? edge;
+
+            const variantGid = li.variant?.id ?? li.variant_id ?? null;
+            if (!variantGid) continue;
+
+            const variantId = variantGid.startsWith('gid://')
+              ? variantGid
+              : `gid://shopify/ProductVariant/${variantGid}`;
+
+            const variantIdentity = await trx('external_product_identity_map')
+              .where({
+                shop_id: stagedEvent.shop_id,
+                platform: 'shopify',
+                external_variant_id: variantId,
+              })
+              .first();
+
+            if (!variantIdentity) continue;
+
+            const variantRow = await trx('variants')
+              .where({
+                lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
+              })
+              .first();
+
+            if (!variantRow) continue;
+
+            const quantity = li.quantity ?? 0;
+
+            const unitPrice =
+              li.originalUnitPriceSet?.shopMoney?.amount != null
+                ? Number(li.originalUnitPriceSet.shopMoney.amount)
+                : li.price != null
+                  ? Number(li.price)
+                  : 0;
+
+            await trx('order_line_items')
+              .insert({
+                lasyncro_line_item_id: crypto.randomUUID(),
+                lasyncro_order_id: lasyncroOrderId,
+                lasyncro_product_id: variantRow.lasyncro_product_id,
+                lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
+                title: li.title ?? '',
+                sku: li.sku ?? null,
+                quantity,
+                unit_price: unitPrice,
+                line_total: unitPrice * quantity,
+                platform: 'shopify',
+                external_line_item_id: li.id,
+              })
+              .onConflict(['platform', 'external_line_item_id'])
+              .ignore();
+          }
+
+          await trx('order_fulfillment_status').insert({
+            lasyncro_fulfillment_id: crypto.randomUUID(),
+            lasyncro_order_id: lasyncroOrderId,
+            status: 'pending',
+          });
+        });
+
+        if (newlyCreatedOrderId) {
+          await publishReconciliationJob(newlyCreatedOrderId);
+
+          /**
+           * FIRST INSIGHT + FT0 TRIGGER
+           * --------------------------------
+           * FT0 must only execute when first insight transitions
+           * from NOT_DELIVERED → DELIVERED.
+           *
+           * This guarantees:
+           * - Orders exist
+           * - Insight persisted
+           * - Canonical ingestion completed
+           * - Single execution
+           */
+          const insight = await FirstInsightService.computeAndPersist(stagedEvent.shop_id);
+
+          if (insight.delivered && !insight.alreadyDelivered) {
+            const shopId = stagedEvent.shop_id;
+
+            // Prevent concurrent FT0 execution in this process
+            if (!ft0InFlight.has(shopId)) {
+              ft0InFlight.add(shopId);
+              try {
+                await FT0CompletionService.evaluateAndComplete(shopId);
+              } finally {
+                ft0InFlight.delete(shopId);
+              }
+            }
+          }
         }
+
+        break;
       }
-    });
 
-    if (newlyCreatedOrderId) {
-      await publishReconciliationJob(newlyCreatedOrderId);
+      /**
+       * ---------------------------------------------------------
+       * PAYMENT EVENT
+       * ---------------------------------------------------------
+       */
+      case 'orders/paid': {
+
+        const payload = stagedEvent.raw_payload as any;
+        const externalOrderId = String(payload.id);
+
+        const lasyncroOrderId = await resolveExternalOrderId(
+          stagedEvent.shop_id,
+          'shopify',
+          externalOrderId
+        );
+
+        if (!lasyncroOrderId) break;
+
+        await db('orders')
+          .where({ lasyncro_order_id: lasyncroOrderId })
+          .update({
+            payment_state: 'paid',
+            updated_at: db.fn.now(),
+          });
+
+        break;
+      }
+
+      /**
+       * ---------------------------------------------------------
+       * FULFILLMENT EVENT
+       * ---------------------------------------------------------
+       */
+      case 'orders/fulfilled': {
+
+        const payload = stagedEvent.raw_payload as any;
+        const externalOrderId = String(payload.order_id);
+
+        const lasyncroOrderId = await resolveExternalOrderId(
+          stagedEvent.shop_id,
+          'shopify',
+          externalOrderId
+        );
+
+        if (!lasyncroOrderId) break;
+
+        const status =
+          payload.status === 'cancelled'
+            ? 'cancelled'
+            : payload.fulfillment_status === 'fulfilled'
+              ? 'fulfilled'
+              : 'processing';
+
+        await OrderFulfillmentIngestionService.ingestStatus({
+          lasyncroOrderId,
+          status,
+        });
+
+        break;
+      }
+
+      /**
+       * ---------------------------------------------------------
+       * REFUND EVENT
+       * ---------------------------------------------------------
+       */
+      case 'refunds/create': {
+
+      const payload = stagedEvent.raw_payload as any;
+
+      await db.transaction(async (trx) => {
+
+        const lasyncroOrderId = await resolveExternalOrderId(
+          stagedEvent.shop_id,
+          'shopify',
+          String(payload.order_id),
+          trx
+        );
+
+        if (!lasyncroOrderId) return;
+
+        const externalRefundId = String(payload.id);
+
+        let execution = await trx('refund_executions')
+          .where({
+            platform: 'shopify',
+            external_refund_id: externalRefundId,
+          })
+          .first();
+
+        if (!execution) {
+
+          const refundExecutionId = crypto.randomUUID();
+
+          await trx('refund_executions').insert({
+            lasyncro_refund_execution_id: refundExecutionId,
+            lasyncro_order_id: lasyncroOrderId,
+            platform: 'shopify',
+            external_refund_id: externalRefundId,
+            total_refund_amount: 0,
+            executed_at: payload.created_at
+              ? new Date(payload.created_at)
+              : new Date(),
+          });
+
+          execution = {
+            lasyncro_refund_execution_id: refundExecutionId,
+          };
+        }
+
+        await resolveRefundExecution(
+          execution.lasyncro_refund_execution_id
+        );
+      });
+
+      break;
     }
-  }
 
-    // 4) Success path → ack
+      default:
+        break;
+    }
+
     getEventChannel().ack(msg as any);
+
   } catch (error) {
-    // Mapping / processing failed. Our current policy for FT0:
-    // - Do not poison the queue for mapping/validation/runtime errors.
-    // - Log the error and ACK the message so it is not retried endlessly.
-    console.error('[worker] Error processing message:', error);
+    console.error('[worker] Error processing staged event:', error);
     try {
       getEventChannel().ack(msg as any);
-    } catch (ackErr) {
-      // If ack fails for some reason, log it (but avoid throwing from the handler).
-      console.error('[worker] Failed to ack failed message:', ackErr);
-    }
+    } catch {}
   }
 }
 
-// This function starts the consumer
 export function startWorker() {
-  console.log('[worker] Starting API worker...');
+  console.log('[worker] Starting unified canonical worker...');
   getEventChannel().consume('events', processMessage, { noAck: false });
-  console.log('[worker] Worker started. Waiting for events...');
+  console.log('[worker] Worker ready. Awaiting staged events...');
 }

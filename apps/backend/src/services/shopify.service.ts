@@ -7,9 +7,7 @@ import crypto from 'crypto';
 import db from '@lasyncro/backend-core/db.js';
 import { getQueueChannel } from '../queue.js';
 import { seedShopifyOpeningBalances } from './inventory/seedShopifyOpeningBalances.js';
-import { mapShopifyOrderNodeToCanonical } from './mappers/shopify-to-canonical-order.js';
 import { enqueueProductForIngestion } from './product-ingestion.service.js';
-import { publishReconciliationJob } from '../queues/reconciliation.queue.js';
 import OrderFulfillmentIngestionService from './order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 import { resolveExternalOrderId } from './identity/resolveExternalOrder.service.js';
 
@@ -257,16 +255,11 @@ export const performInitialSync = async (
        */
       if (data.orders?.edges?.length) {
         for (const { node } of data.orders.edges) {
-          const canonicalOrder = mapShopifyOrderNodeToCanonical(
-            node,
-            shopId,
-          );
-
           const [staged] = await trx('staged_events')
             .insert({
               source_platform: 'shopify',
               event_type: 'orders/sync',
-              raw_payload: canonicalOrder,
+              raw_payload: node,
               shop_id: shopId,
             })
             .returning<{ id: number }[]>('id');
@@ -314,25 +307,23 @@ export const performInitialSync = async (
       );
 
 
-      if (sovereignOrderIds.length > 0) {
-        await trx('order_reconciliation_intents')
-          .insert(
-            sovereignOrderIds.map(id => ({
-              reconciliation_intent_id: crypto.randomUUID(),
-              lasyncro_order_id: id,
-            }))
-          )
-          .onConflict(['lasyncro_order_id'])
-          .ignore();
-        }
+      /**
+       * RECONCILIATION INTENT DISABLED (SYNC PATH)
+       * -------------------------------------------
+       * Orders are no longer materialized via GraphQL sync.
+       * Canonical order creation occurs exclusively through webhook ingestion.
+       *
+       * Therefore reconciliation intents must NOT be created here.
+       */
       }
     });
 
-    if (sovereignOrderIds.length > 0) {
-      for (const id of sovereignOrderIds) {
-        await publishReconciliationJob(id);
-      }
-    }
+    /**
+     * RECONCILIATION DISPATCH DISABLED (SYNC PATH)
+     * --------------------------------------------
+     * Reconciliation is triggered only by canonical
+     * webhook ingestion boundary.
+     */
 
     const channel = getQueueChannel('events');
 

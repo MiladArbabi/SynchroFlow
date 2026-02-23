@@ -130,12 +130,6 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
      
     console.log(`[sync.worker] Sync job COMPLETED for ${integrationId}`);
 
-    // 🔑 FIRST INSIGHT (idempotent)
-    await FirstInsightService.computeAndPersist(integration.shop_id);
-
-    // 🔑 FT0 COMPLETION (depends on first insight)
-    await FT0CompletionService.evaluateAndComplete(integration.shop_id);
-
     syncChannel.ack(msg as any);
 
   } catch (error) {

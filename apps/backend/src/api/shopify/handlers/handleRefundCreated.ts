@@ -99,76 +99,16 @@ export async function handleRefundCreated(
     return;
   }
 
-  await db.transaction(async trx => {
-
-    /**
-     * Sovereign Identity Resolution
-     * ------------------------------
-     * All refund executions must resolve through
-     * external_order_identity_map.
-     */
-    const lasyncroOrderId = await resolveExternalOrderId(
-      shopId,
-      'shopify',
-      String(platformOrderId),
-      trx
-    );
-
-    if (!lasyncroOrderId) return;
-
-    await trx('refund_executions')
-      .insert({
-        lasyncro_refund_execution_id: crypto.randomUUID(),
-        lasyncro_order_id: lasyncroOrderId,
-        platform: 'shopify',
-        external_refund_id: String(refundId),
-        total_refund_amount: 0, // authoritative amount comes from resolver phase
-        executed_at: refundCreatedAt
-          ? new Date(refundCreatedAt)
-          : new Date(),
-      })
-      .onConflict(['external_refund_id'])
-      .ignore();
-
-    const execution = await trx('refund_executions')
-      .where({
-        external_refund_id: String(refundId),
-      })
-      .first();
-
-    const refundLineItems = refundPayload.refund_line_items ?? [];
-
-    for (const rli of refundLineItems) {
-      const platformLineItemId = rli?.line_item?.id;
-      const qty = Number(rli?.quantity);
-      const amount = Number(rli?.subtotal);
-
-      if (!platformLineItemId || !Number.isFinite(qty) || qty <= 0) continue;
-    }
-  });
-
-  /**
-   * REFUND DERIVED EFFECT APPLICATION
-   * ---------------------------------
-   * Refund executions are financial truth.
-   * Derived state (revenue units, refund aggregation, blocks)
-   * must be applied immediately to guarantee:
-   *
-   * - Deterministic economic lifecycle
-   * - No dependency on fulfillment reconciliation
-   * - Replay-safe idempotency
-   *
-   * Safe because:
-   * - resolveRefundExecution is idempotent
-   * - It mutates derived state only
+ /**
+   * REFUND STAGING (UNIFIED INGESTION)
+   * -----------------------------------
+   * Refunds must enter canonical pipeline via staged_events.
+   * No direct domain mutation is permitted here.
    */
-  const execution = await db('refund_executions')
-    .where({
-      external_refund_id: String(refundId),
-    })
-    .first();
-
-  if (execution?.id) {
-    await resolveRefundExecution(execution.id);
-  }
+  await db('staged_events').insert({
+    source_platform: 'shopify',
+    event_type: 'refunds/create',
+    raw_payload: rawPayload,
+    shop_id: shopId,
+  });
 }

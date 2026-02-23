@@ -343,7 +343,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       };
     });
 
-    // --- Step 2.2.2.c: Post-commit side effects ---
+    // --- Post-commit side effects ---
     await EntitlementsService.grantDefaultFreeTierForShop(result.shopId);
 
     const syncChannel = getQueueChannel('sync_jobs');
