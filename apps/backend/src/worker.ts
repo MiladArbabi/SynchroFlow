@@ -160,8 +160,10 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
             const li = edge.node ?? edge;
 
-            const variantGid = li.variant?.id ?? li.variant_id ?? null;
+            let variantGid = li.variant?.id ?? li.variant_id ?? null;
             if (!variantGid) continue;
+
+            variantGid = String(variantGid);
 
             const variantId = variantGid.startsWith('gid://')
               ? variantGid
@@ -291,8 +293,10 @@ export async function processMessage(msg: { content: Buffer } | null) {
           .where({ lasyncro_order_id: lasyncroOrderId })
           .update({
             payment_state: 'paid',
-            updated_at: db.fn.now(),
-          });
+            order_updated_at: db.fn.now(),
+        });
+
+        await publishReconciliationJob(lasyncroOrderId);
 
         break;
       }
@@ -327,6 +331,8 @@ export async function processMessage(msg: { content: Buffer } | null) {
           status,
         });
 
+        await publishReconciliationJob(lasyncroOrderId);
+
         break;
       }
 
@@ -339,9 +345,11 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
       const payload = stagedEvent.raw_payload as any;
 
+      let lasyncroOrderId: string | null = null;
+
       await db.transaction(async (trx) => {
 
-        const lasyncroOrderId = await resolveExternalOrderId(
+        lasyncroOrderId = await resolveExternalOrderId(
           stagedEvent.shop_id,
           'shopify',
           String(payload.order_id),
@@ -360,7 +368,6 @@ export async function processMessage(msg: { content: Buffer } | null) {
           .first();
 
         if (!execution) {
-
           const refundExecutionId = crypto.randomUUID();
 
           await trx('refund_executions').insert({
@@ -384,6 +391,10 @@ export async function processMessage(msg: { content: Buffer } | null) {
         );
       });
 
+      if (lasyncroOrderId) {
+        await publishReconciliationJob(lasyncroOrderId);
+      }
+
       break;
     }
 
@@ -395,9 +406,15 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
   } catch (error) {
     console.error('[worker] Error processing staged event:', error);
+
     try {
-      getEventChannel().ack(msg as any);
-    } catch {}
+      getEventChannel().nack(msg as any, false, false);
+    } catch (nackError) {
+      console.error(
+        '[worker] Failed to nack message after processing error:',
+        nackError
+      );
+    }
   }
 }
 

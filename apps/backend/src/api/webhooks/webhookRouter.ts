@@ -108,23 +108,11 @@ export class WebhookRouter {
 
     let dispatchMode = getWebhookDispatchMode();
 
-    // Worker must always execute synchronously.
-    // It must NEVER re-enqueue.
-    if (process.env.WORKER_RUNTIME === 'true') {
-      dispatchMode = 'sync';
-    }
-
     console.log('[ROUTER ENV CHECK]', {
       WORKER_RUNTIME: process.env.WORKER_RUNTIME,
       type: typeof process.env.WORKER_RUNTIME,
       equalsTrue: process.env.WORKER_RUNTIME === 'true'
     });
-
-    // If this process is the worker, force sync execution.
-    // Worker must never re-enqueue.
-    if (process.env.WORKER_RUNTIME === 'true') {
-      dispatchMode = 'sync';
-    }
 
     console.log('[DISPATCH MODE]', dispatchMode);
 
@@ -142,6 +130,11 @@ export class WebhookRouter {
     if (dispatchMode === 'queued' && !(envelope as any).__fromQueue) {
       await enqueueWebhookEnvelope(envelope);
       return;
+    }
+
+    // If message is coming from queue, execute synchronously.
+    if ((envelope as any).__fromQueue) {
+      dispatchMode = 'sync';
     }
 
     if (dispatchMode !== 'sync') {

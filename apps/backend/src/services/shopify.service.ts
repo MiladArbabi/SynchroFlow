@@ -268,44 +268,35 @@ export const performInitialSync = async (
         }
       
       /**
-       * SOVEREIGN MATERIALIZATION
-       * -------------------------
-       * Orders MUST exist in `orders` table for:
-       *   - FT2 evaluator
-       *   - cross-domain checks
-       *   - revenue units
-       *
-       * Staging alone is insufficient.
+       * ❗ ORDER MATERIALIZATION REMOVED
+       * --------------------------------
+       * Orders are staged only.
+       * Canonical materialization occurs exclusively
+       * via staged_events → worker boundary.
        */
-      sovereignOrderIds = await syncOrders(
-        trx,
-        shopId,
-        data.orders.edges
-      );
-
-      await syncOrderLineItems(
-        trx,
-        shopId,
-        data.orders.edges
-      );
 
       /**
-       * Fulfillment Snapshot Hydration
-       * ------------------------------
-       * Establish baseline execution truth for all synced orders.
+       * ❗ LINE ITEM SNAPSHOT REMOVED
+       * -----------------------------
+       * Line items must materialize only after
+       * canonical order creation inside worker.
        *
-       * Must execute AFTER:
-       *   - orders are inserted
-       *   - line items are materialized
-       *
-       * Still inside the same DB transaction to guarantee atomic onboarding.
+       * Snapshot sync must not depend on identity
+       * that does not yet exist.
        */
-      await hydrateFulfillmentSnapshot(
-        trx,
-        shopId,
-        data.orders.edges
-      );
 
+      /**
+       * ❗ FULFILLMENT HYDRATION REMOVED
+       * --------------------------------
+       * Execution state must enter system exclusively
+       * via staged_events → worker canonical boundary.
+       *
+       * GraphQL snapshot sync MUST NOT mutate
+       * order_fulfillment_status directly.
+       *
+       * Fulfillment state will be established
+       * only via webhook ingestion.
+       */
 
       /**
        * RECONCILIATION INTENT DISABLED (SYNC PATH)
@@ -421,6 +412,14 @@ async function syncProducts(
   console.log(`[ShopifyService] Synced ${edges.length} products (variant-atomic).`);
 }
 
+/**
+ * @deprecated
+ * Snapshot-based order materialization removed.
+ *
+ * Orders must originate exclusively
+ * from staged_events → worker boundary.
+ */
+
 // Sovereign Orders Materialization (Schema-Aligned)
 async function syncOrders(
   trx: DbExecutor,
@@ -489,6 +488,14 @@ async function syncOrders(
   }
   return [];
 }
+
+/**
+ * @deprecated
+ * Snapshot-based line item materialization removed.
+ *
+ * Line items are created exclusively
+ * during worker canonical ingestion.
+ */
 
 async function syncOrderLineItems(
   trx: DbExecutor,
@@ -576,6 +583,16 @@ async function syncOrderLineItems(
 };
 
 /**
+ * @deprecated
+ * Removed due to canonical boundary violation.
+ *
+ * Execution state must flow exclusively
+ * through staged_events → worker.
+ *
+ * This function must not be invoked.
+ */
+
+/**
  * Fulfillment Snapshot Hydrator
  * -----------------------------
  * Purpose:
@@ -591,11 +608,11 @@ async function syncOrderLineItems(
  *   Snapshot establishes baseline truth.
  *   Webhooks apply future deltas.
  */
-async function hydrateFulfillmentSnapshot(
-  trx: Knex.Transaction,
-  shopId: number,
-  orderEdges: any[]
-): Promise<void> {
+  async function hydrateFulfillmentSnapshot(
+    trx: Knex.Transaction,
+    shopId: number,
+    orderEdges: any[]
+  ): Promise<void> {
 
   /**
    * Deterministic mapping:

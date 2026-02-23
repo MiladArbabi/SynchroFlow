@@ -12,11 +12,9 @@
  * - production order ingestion
  *
  * Canonical ingestion is handled exclusively by:
- * - CanonicalCommerceIngestionService
- * - worker.ts ingestion pipeline
+ * - staged_events → worker.ts canonical ingestion pipeline
  *
  * Removal requires:
- * - deleting staged-to-canonical.service.ts
  * - migrating remaining tests
  */
 

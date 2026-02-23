@@ -1,5 +1,5 @@
 // apps/backend/src/api/shopify/handlers/handleOrderPaid.ts
-
+import { getQueueChannel } from '../../../queue.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
 
@@ -43,10 +43,17 @@ export async function handleOrderPaid(
    * Payment state transitions must be handled
    * exclusively by canonical worker.
    */
-  await db('staged_events').insert({
-    source_platform: 'shopify',
-    event_type: 'orders/paid',
-    raw_payload: rawPayload,
-    shop_id: shopId,
-  });
+    const [staged] = await db('staged_events')
+    .insert({
+      source_platform: 'shopify',
+      event_type: 'orders/paid',
+      raw_payload: rawPayload,
+      shop_id: shopId,
+    })
+    .returning('*');
+
+  getQueueChannel('events').sendToQueue(
+    'events',
+    Buffer.from(JSON.stringify({ staged_event_id: staged.id }))
+  );
 }

@@ -2,6 +2,7 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
+import crypto from 'crypto';
 
 /**
  * Sovereign Fulfillment Ingestion Service

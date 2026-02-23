@@ -25,34 +25,16 @@ export async function reconcileOrderFulfillment(
     throw new Error(`Order not found: ${lasyncroOrderId}`);
   }
 
-  // 2. Observed execution wins (monotonic fulfillment)
-  if (observed?.status === 'fulfilled') {
-    await db('order_fulfillment_status')
-      .insert({
-        lasyncro_fulfillment_id: crypto.randomUUID(),
-        lasyncro_order_id: lasyncroOrderId,
-        status: 'fulfilled',
-        status_updated_at: observed.observedAt,
-      })
-      .onConflict(['lasyncro_order_id'])
-      .merge({
-        status: 'fulfilled',
-        status_updated_at: observed.observedAt,
-      });
-      } else {
-      /**
-       * ❗ EXECUTION AUTHORITY BOUNDARY
-       * --------------------------------
-       * Reconciliation must NOT initialize or mutate
-       * fulfillment execution state.
-       *
-       * Execution truth is established exclusively by:
-       * 1. Snapshot hydrator (initial sync)
-       * 2. Webhook ingestion boundary
-       *
-       * Reconciliation is economic-only.
-       */
-    }
+  /**
+   * ❗ EXECUTION AUTHORITY REMOVED
+   * ------------------------------
+   * Reconciliation must NEVER mutate execution state.
+   *
+   * Fulfillment truth is established exclusively via:
+   *   staged_events → worker canonical ingestion.
+   *
+   * Reconciliation is strictly economic materialization.
+   */
 
   /**
    * ECONOMIC MATERIALIZATION BOUNDARY
