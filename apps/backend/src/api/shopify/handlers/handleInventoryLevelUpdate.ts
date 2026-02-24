@@ -79,6 +79,31 @@ const available: number = payload.available;
 
     if (delta === 0) return;
 
+    /**
+     * ORDER-SCOPED OBLIGATION RECOMPUTE
+     * ----------------------------------
+     * Must occur inside same transaction as:
+     * - movement insert
+     * - projection rebuild
+     *
+     * Prevents projection/obligation drift.
+     */
+    const affectedOrders = await trx('order_revenue_units as ru')
+      .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
+      .where({
+        'ru.lasyncro_variant_id': variantId,
+        'o.shop_id': shopId,
+      })
+      .distinct('ru.lasyncro_order_id');
+
+    const orderIds: string[] = affectedOrders.map(
+      (r: any) => r.lasyncro_order_id
+    );
+
+    if (orderIds.length > 0) {
+      await computeObligationFlagsForOrders(orderIds, trx);
+    }
+
     await trx('inventory_movements')
       .insert({
         lasyncro_inventory_movement_id: crypto.randomUUID(),
@@ -101,29 +126,8 @@ const available: number = payload.available;
 
     await rebuildInventoryProjectionForVariants(
       shopId,
-      [variantId]
+      [variantId],
+      trx
     );
   });
-
-  if (!variantId) {
-    return;
-  }
-
-  // 1️⃣ Find affected orders for this variant
-  const affectedOrders = await db('order_revenue_units')
-    .where({
-      shop_id: shopId,
-      lasyncro_variant_id: variantId,
-    })
-    .distinct('lasyncro_order_id');
-
-  const orderIds: string[] = affectedOrders.map(
-    (r: any) => r.lasyncro_order_id
-  );
-
-  // 2️⃣ Recompute obligations only if needed
-  if (orderIds.length > 0) {
-    await computeObligationFlagsForOrders(orderIds);
-  }
-
 }

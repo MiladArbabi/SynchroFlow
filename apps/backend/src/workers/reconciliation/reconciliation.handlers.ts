@@ -78,6 +78,20 @@ return db.transaction(async (trx) => {
       trx
     );
 
+    /**
+     * RECONCILIATION WATERMARK
+     * ------------------------
+     * Marks successful atomic reconciliation pass.
+     *
+     * Enforces delta-based reconciliation contract:
+     *   reconcile only if order_updated_at > last_reconciled_at
+     */
+    await trx('orders')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .update({
+        last_reconciled_at: trx.fn.now(),
+      });
+
     return {
       result: observed?.status === 'fulfilled' ? 'observed' : 'synthetic',
       affectedVariantIds,

@@ -1,4 +1,5 @@
 // apps/backend/src/workers/reconciliation/reconciliation.consumer.ts
+import db from '@lasyncro/backend-core/db.js';
 import { getQueueChannel } from '../../queue.js';
 import { reconcileOrderFulfillment } from './reconciliation.handlers.js';
 
@@ -49,6 +50,33 @@ export function startReconciliationConsumer() {
       const { lasyncroOrderId, observed } = JSON.parse(
         msg.content.toString()
       );
+
+      /**
+       * DELTA RECONCILIATION GATE
+       * --------------------------
+       * Enforces migration contract:
+       *   reconcile only if
+       *   last_reconciled_at IS NULL
+       *   OR order_updated_at > last_reconciled_at
+       */
+      const order = await db('orders')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .select('order_updated_at', 'last_reconciled_at')
+        .first();
+
+      if (!order) {
+        ch.ack(msg);
+        return;
+      }
+
+      if (
+        order.last_reconciled_at &&
+        new Date(order.order_updated_at) <= new Date(order.last_reconciled_at)
+      ) {
+        // No delta — skip reconciliation
+        ch.ack(msg);
+        return;
+      }
 
       /**
        * ECONOMIC AUTHORITY COMPLETE
