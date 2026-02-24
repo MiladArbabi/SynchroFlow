@@ -5,6 +5,22 @@ if (environment === 'production' && !process.env.DATABASE_URL) {
 }
 const baseConfig = {
     client: 'pg',
+    /**
+     * Explicit pool configuration
+     * ----------------------------
+     * Prevents uncontrolled worker concurrency from
+     * exhausting database connections.
+     *
+     * Concurrency model:
+     * - Worker prefetch will be capped separately.
+     * - Pool must exceed worker concurrency.
+     */
+    pool: {
+        min: 2,
+        max: 20,
+        acquireTimeoutMillis: 10000,
+        idleTimeoutMillis: 30000,
+    },
 };
 const config = {
     development: {

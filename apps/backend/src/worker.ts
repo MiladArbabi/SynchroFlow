@@ -5,11 +5,12 @@ import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { resolveExternalOrderId } from './services/identity/resolveExternalOrder.service.js';
 import OrderFulfillmentIngestionService from './services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
-import { publishReconciliationJob } from './queues/reconciliation.queue.js';
 import { resolveRefundExecution } from './workers/refundResolution.worker.js';
 
 import { FirstInsightService } from './services/first-insight.service.js';
 import { FT0CompletionService } from './services/ft0-completion.service.js';
+
+import OutboxService from './services/outbox/outbox.service.js';
 
 /**
  * FT0 EXECUTION LATCH (PROCESS-SCOPED)
@@ -269,7 +270,17 @@ export async function processMessage(msg: { content: Buffer } | null) {
         });
 
         if (newlyCreatedOrderId) {
-          await publishReconciliationJob(newlyCreatedOrderId);
+          await db.transaction(async (trx) => {
+            await OutboxService.enqueue(
+              {
+                aggregateType: 'order',
+                aggregateId: newlyCreatedOrderId!,
+                eventType: 'reconciliation.requested',
+                payload: { lasyncroOrderId: newlyCreatedOrderId },
+              },
+              trx
+            );
+          });
 
           /**
            * FIRST INSIGHT + FT0 TRIGGER
@@ -322,14 +333,26 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         if (!lasyncroOrderId) break;
 
-        await db('orders')
-          .where({ lasyncro_order_id: lasyncroOrderId })
-          .update({
-            payment_state: 'paid',
-            order_updated_at: db.fn.now(),
-        });
+        await db.transaction(async (trx) => {
 
-        await publishReconciliationJob(lasyncroOrderId);
+          await trx('orders')
+            .where({ lasyncro_order_id: lasyncroOrderId })
+            .update({
+              payment_state: 'paid',
+              order_updated_at: trx.fn.now(),
+            });
+
+          await OutboxService.enqueue(
+            {
+              aggregateType: 'order',
+              aggregateId: lasyncroOrderId,
+              eventType: 'reconciliation.requested',
+              payload: { lasyncroOrderId },
+            },
+            trx
+          );
+
+        });
 
         break;
       }
@@ -371,12 +394,29 @@ export async function processMessage(msg: { content: Buffer } | null) {
             ? 'cancelled'
             : 'fulfilled';
 
-        await OrderFulfillmentIngestionService.ingestStatus({
-          lasyncroOrderId,
-          status,
-        });
+        await db.transaction(async (trx) => {
 
-        await publishReconciliationJob(lasyncroOrderId);
+        await OrderFulfillmentIngestionService.ingestStatus(
+          {
+            lasyncroOrderId,
+            status,
+          },
+          trx
+        );
+
+        await OutboxService.enqueue(
+          {
+            aggregateType: 'order',
+            aggregateId: lasyncroOrderId,
+            eventType: 'reconciliation.requested',
+            payload: {
+              lasyncroOrderId,
+            },
+          },
+          trx
+        );
+
+      });
 
         break;
       }
@@ -437,7 +477,17 @@ export async function processMessage(msg: { content: Buffer } | null) {
       });
 
       if (lasyncroOrderId) {
-        await publishReconciliationJob(lasyncroOrderId);
+        await db.transaction(async (trx) => {
+          await OutboxService.enqueue(
+            {
+              aggregateType: 'order',
+              aggregateId: lasyncroOrderId!,
+              eventType: 'reconciliation.requested',
+              payload: { lasyncroOrderId },
+            },
+            trx
+          );
+        });
       }
 
       break;
@@ -465,6 +515,22 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
 export function startWorker() {
   console.log('[worker] Starting unified canonical worker...');
-  getEventChannel().consume('events', processMessage, { noAck: false });
+
+  const channel = getEventChannel();
+
+  /**
+   * HARD CONCURRENCY CAP
+   * --------------------
+   * Must remain <= DB pool max.
+   * Current DB pool max = 20
+   *
+   * We cap at 5 for safety.
+   */
+  channel.addSetup(async (ch: any) => {
+    await ch.prefetch(5);
+  });
+
+  channel.consume('events', processMessage, { noAck: false });
+
   console.log('[worker] Worker ready. Awaiting staged events...');
 }

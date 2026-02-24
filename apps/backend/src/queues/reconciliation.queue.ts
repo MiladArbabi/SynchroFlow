@@ -22,9 +22,26 @@ export async function publishReconciliationJob(
 ) {
   const ch = getQueueChannel(RECONCILIATION_QUEUE);
 
-  ch.sendToQueue(
+  const payload = Buffer.from(
+    JSON.stringify({ lasyncroOrderId, observed })
+  );
+
+  /**
+   * CRITICAL DURABILITY GUARD
+   * --------------------------
+   * Await broker acceptance.
+   * If publish fails, throw.
+   * Upstream worker must not ack original event.
+   */
+  const result = await ch.sendToQueue(
     RECONCILIATION_QUEUE,
-    Buffer.from(JSON.stringify({ lasyncroOrderId, observed })),
+    payload,
     { persistent: true }
   );
+
+  if (!result) {
+    throw new Error(
+      `[reconciliation.queue] Failed to publish reconciliation job for ${lasyncroOrderId}`
+    );
+  }
 }

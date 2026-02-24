@@ -1,0 +1,58 @@
+import type { Knex } from 'knex';
+
+export async function up(knex: Knex): Promise<void> {
+
+  await knex.schema.createTable('integration_outbox', (table) => {
+
+    table.uuid('id').primary();
+
+    table
+      .text('aggregate_type')
+      .notNullable();
+
+    table
+      .uuid('aggregate_id')
+      .notNullable();
+
+    table
+      .text('event_type')
+      .notNullable();
+
+    table
+      .jsonb('payload')
+      .notNullable();
+
+    table
+      .timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table
+      .timestamp('published_at', { useTz: true })
+      .nullable();
+
+    table
+      .integer('retry_count')
+      .notNullable()
+      .defaultTo(0);
+
+    table
+      .text('last_error')
+      .nullable();
+
+    table.index(
+      ['published_at', 'created_at'],
+      'integration_outbox_pending_idx'
+    );
+  });
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX integration_outbox_dedup_idx
+    ON integration_outbox (aggregate_type, aggregate_id, event_type)
+    WHERE published_at IS NULL;
+  `);
+}
+
+export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('integration_outbox');
+}

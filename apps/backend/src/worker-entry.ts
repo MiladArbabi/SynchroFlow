@@ -16,6 +16,8 @@ import { startWorker as startEventWorker } from './worker.js';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
 import { startReconciliationConsumer } from './workers/reconciliation/index.js';
 
+import { startOutboxDispatcher } from './workers/outbox.dispatcher.js';
+
 async function start() {
 
   console.log('[WORKER ENV]', {
@@ -32,6 +34,8 @@ async function start() {
   startEventWorker();
   startWebhookWorker();
   startReconciliationConsumer();
+
+  startOutboxDispatcher();
  
   /**
   * DEV-ONLY: Obligation evaluation hook
