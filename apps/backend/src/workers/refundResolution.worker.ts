@@ -15,13 +15,21 @@
  * Replay-safe.
  */
 
-import db from '@lasyncro/backend-core/db.js';
+import { Knex } from 'knex';
 
 export async function resolveRefundExecution(
-  lasyncroRefundExecutionId: string
+  lasyncroRefundExecutionId: string,
+  trx: Knex.Transaction
 ): Promise<void> {
 
-  await db.transaction(async trx => {
+  /**
+   * TRANSACTION CONTRACT
+   * --------------------
+   * Refund resolution MUST participate in reconciliation transaction.
+   * It MUST NOT open its own transaction.
+   */
+
+  await trx.transaction(async trx => {
 
     const execution = await trx('refund_executions')
       .where({
@@ -39,7 +47,13 @@ export async function resolveRefundExecution(
     if (!lines.length) return;
 
     /**
-     * Aggregate refunded quantities per product
+     * VARIANT-ATOMIC REFUND AGGREGATION
+     * ----------------------------------
+     * Revenue units are variant-scoped.
+     * Refund application must match that scope.
+     *
+     * Aggregating at product level corrupts
+     * cross-variant quantities.
      */
     const aggregated: Record<string, number> = {};
 
@@ -47,21 +61,21 @@ export async function resolveRefundExecution(
       const qty = Number(line.quantity_refunded);
       if (!Number.isFinite(qty) || qty <= 0) continue;
 
-      const productId = line.lasyncro_product_id;
-      if (!productId) continue;
+      const variantId = line.lasyncro_variant_id;
+      if (!variantId) continue;
 
-      aggregated[productId] =
-        (aggregated[productId] ?? 0) + qty;
+      aggregated[variantId] =
+        (aggregated[variantId] ?? 0) + qty;
     }
 
     /**
      * Apply returned quantities
      */
-    for (const [productId, qty] of Object.entries(aggregated)) {
+    for (const [variantId, qty] of Object.entries(aggregated)) {
       await trx('order_revenue_units')
         .where({
           lasyncro_order_id: execution.lasyncro_order_id,
-          lasyncro_product_id: productId,
+          lasyncro_variant_id: variantId,
         })
         .update({
           returned_quantity: trx.raw(

@@ -3,6 +3,8 @@ import db from '@lasyncro/backend-core/db.js';
 import { ReconciliationResult } from './reconciliation.types.js';
 import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { resolveRefundExecution } from '../refundResolution.worker.js';
+import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
+import { computeObligationFlagsForOrders } from '../../services/order-execution-intelligence/obligationFlags.worker.js';
 
 export async function reconcileOrderFulfillment(
   lasyncroOrderId: string,
@@ -16,56 +18,69 @@ export async function reconcileOrderFulfillment(
   affectedVariantIds: string[];
 }> {
 
-  // 1. Fetch sovereign order
-  const order = await db('orders')
-    .where({ lasyncro_order_id: lasyncroOrderId })
-    .first();
+return db.transaction(async (trx) => {
 
-  if (!order) {
-    throw new Error(`Order not found: ${lasyncroOrderId}`);
-  }
+    // 1️⃣ Lock sovereign order to prevent concurrent reconciliation
+    const order = await trx('orders')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .forUpdate()
+      .first();
 
-  /**
-   * ❗ EXECUTION AUTHORITY REMOVED
-   * ------------------------------
-   * Reconciliation must NEVER mutate execution state.
-   *
-   * Fulfillment truth is established exclusively via:
-   *   staged_events → worker canonical ingestion.
-   *
-   * Reconciliation is strictly economic materialization.
-   */
+    if (!order) {
+      throw new Error(`Order not found: ${lasyncroOrderId}`);
+    }
 
-  /**
-   * ECONOMIC MATERIALIZATION BOUNDARY
-   * ---------------------------------
-   * Revenue units are materialized exactly once per reconciliation pass.
-   *
-   * Rules:
-   * - Insert-only (no mutation)
-   * - Deterministic identity (UUID v5)
-   * - Idempotent via ON CONFLICT DO NOTHING
-   *
-   * This must remain single-invocation.
-   */
-  await writeOrderRevenueUnits(lasyncroOrderId);
+    /**
+     * ATOMIC RECONCILIATION BOUNDARY
+     * ------------------------------
+     * All economic, projection, and obligation mutations
+     * MUST occur inside this single transaction.
+     *
+     * Guarantees:
+     * - No partial economic state
+     * - No projection drift
+     * - No obligation drift
+     */
 
-  const variantRows = await db('order_revenue_units')
-    .where({ lasyncro_order_id: lasyncroOrderId })
-    .distinct('lasyncro_variant_id');
+    // 2️⃣ Economic materialization
+    await writeOrderRevenueUnits(lasyncroOrderId, trx);
 
-  const affectedVariantIds = variantRows.map(r => r.lasyncro_variant_id);
+    // 3️⃣ Apply refund executions
+    const refundExecutions = await trx('refund_executions')
+      .where({ lasyncro_order_id: lasyncroOrderId });
 
-  // 4. Apply refund executions
-  const refundExecutions = await db('refund_executions')
-    .where({ lasyncro_order_id: lasyncroOrderId });
+    for (const execution of refundExecutions) {
+      await resolveRefundExecution(
+        execution.lasyncro_refund_execution_id,
+        trx
+      );
+    }
 
-  for (const execution of refundExecutions) {
-    await resolveRefundExecution(execution.lasyncro_refund_execution_id);
-  }
+    // 4️⃣ Derive affected variants AFTER economic mutation
+    const variantRows = await trx('order_revenue_units')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .distinct('lasyncro_variant_id');
 
-  return {
-    result: observed?.status === 'fulfilled' ? 'observed' : 'synthetic',
-    affectedVariantIds,
-  };
+    const affectedVariantIds = variantRows.map(r => r.lasyncro_variant_id);
+
+    // 5️⃣ Projection rebuild (transaction-participating)
+    if (affectedVariantIds.length > 0) {
+      await rebuildInventoryProjectionForVariants(
+        order.shop_id,
+        affectedVariantIds,
+        trx
+      );
+    }
+
+    // 6️⃣ Obligation recomputation (transaction-participating)
+    await computeObligationFlagsForOrders(
+      [lasyncroOrderId],
+      trx
+    );
+
+    return {
+      result: observed?.status === 'fulfilled' ? 'observed' : 'synthetic',
+      affectedVariantIds,
+    };
+  });
 }

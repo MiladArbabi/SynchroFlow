@@ -1,11 +1,6 @@
 // apps/backend/src/workers/reconciliation/reconciliation.consumer.ts
 import { getQueueChannel } from '../../queue.js';
 import { reconcileOrderFulfillment } from './reconciliation.handlers.js';
-import {
-  rebuildInventoryProjectionForVariants
-} from '../../services/inventory/rebuildInventoryProjection.js';
-import { computeObligationFlagsForOrders } from '../../services/order-execution-intelligence/obligationFlags.worker.js';
-import db from '@lasyncro/backend-core/db.js';
 
 const QUEUE = 'fulfillment.reconciliation';
 
@@ -55,32 +50,19 @@ export function startReconciliationConsumer() {
         msg.content.toString()
       );
 
-      // 1. Reconcile economic state
+      /**
+       * ECONOMIC AUTHORITY COMPLETE
+       * ---------------------------
+       * Projection and obligation recomputation
+       * now occur inside reconciliation transaction.
+       *
+       * Consumer is transport-layer only.
+       */
+      
       const { affectedVariantIds } =
-        await reconcileOrderFulfillment(lasyncroOrderId, observed);
+      await reconcileOrderFulfillment(lasyncroOrderId, observed);
 
-      // 2. Fetch shop_id deterministically
-      const order = await db('orders')
-        .where({ lasyncro_order_id: lasyncroOrderId })
-        .select('shop_id')
-        .first();
-
-      if (!order) {
-        throw new Error(`Order not found after reconciliation: ${lasyncroOrderId}`);
-      }
-
-      // 3. Rebuild projection only if variants were affected
-      if (affectedVariantIds.length > 0) {
-        await rebuildInventoryProjectionForVariants(
-          order.shop_id,
-          affectedVariantIds
-        );
-      }
-
-      // 4. Recompute obligation flags
-      await computeObligationFlagsForOrders([lasyncroOrderId]);
-
-      // 5. Ack only after full economic + execution consistency
+      // Ack only after full economic + execution consistency
       ch.ack(msg);
     } catch (err) {
       console.error('[reconciliation] failed', err);

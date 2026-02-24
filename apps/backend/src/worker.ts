@@ -5,7 +5,6 @@ import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { resolveExternalOrderId } from './services/identity/resolveExternalOrder.service.js';
 import OrderFulfillmentIngestionService from './services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
-import { resolveRefundExecution } from './workers/refundResolution.worker.js';
 
 import { FirstInsightService } from './services/first-insight.service.js';
 import { FT0CompletionService } from './services/ft0-completion.service.js';
@@ -471,9 +470,18 @@ export async function processMessage(msg: { content: Buffer } | null) {
           };
         }
 
-        await resolveRefundExecution(
-          execution.lasyncro_refund_execution_id
-        );
+        /**
+         * ECONOMIC MUTATION REMOVED
+         * -------------------------
+         * Refund execution must NOT be applied here.
+         *
+         * Reconciliation is the single economic materialization authority.
+         *
+         * This prevents double-application of returned quantities.
+         *
+         * Refund execution is persisted only.
+         * Reconciliation will deterministically apply it.
+         */
       });
 
       if (lasyncroOrderId) {

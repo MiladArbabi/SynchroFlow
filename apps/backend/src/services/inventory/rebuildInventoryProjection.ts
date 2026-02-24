@@ -1,4 +1,4 @@
-import db from "@lasyncro/backend-core/db.js";
+import { Knex } from "knex";
 
 interface LedgerRow {
   shop_id: number;
@@ -24,11 +24,17 @@ interface LedgerRow {
  */
 export async function rebuildInventoryProjectionForVariants(
   shopId: number,
-  variantIds: string[]
+  variantIds: string[],
+  trx: Knex.Transaction
 ): Promise<void> {
   if (variantIds.length === 0) return;
 
-  await db.transaction(async (trx) => {
+  /**
+   * TRANSACTION CONTRACT
+   * --------------------
+   * Projection rebuild MUST participate in reconciliation transaction.
+   * It MUST NOT open its own transaction.
+   */
 
     // 🔒 Shop-scoped advisory lock
     await trx.raw(
@@ -136,5 +142,4 @@ export async function rebuildInventoryProjectionForVariants(
         sellable_quantity: trx.raw('EXCLUDED.sellable_quantity'),
         last_evaluated_at: trx.raw('EXCLUDED.last_evaluated_at'),
       });
-  });
-}
+  };

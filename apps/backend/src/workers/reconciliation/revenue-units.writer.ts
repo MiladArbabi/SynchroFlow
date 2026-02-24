@@ -1,6 +1,5 @@
 // apps/backend/src/workers/reconciliation/revenue-units.writer.ts
-
-import db from '@lasyncro/backend-core/db.js';
+import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 
 /**
@@ -20,9 +19,17 @@ const REVENUE_UNIT_NAMESPACE =
   '5f8b7f2e-5e3d-4a55-9f4b-3f7c6d8b91aa'; // fixed constant namespace
 
 export async function writeOrderRevenueUnits(
-  lasyncroOrderId: string
+  lasyncroOrderId: string,
+  trx: Knex.Transaction
 ) {
-  await db.transaction(async (trx) => {
+  /**
+   * TRANSACTION CONTRACT
+   * --------------------
+   * This function MUST participate in reconciliation transaction.
+   * It MUST NOT open its own transaction.
+   *
+   * Caller is responsible for atomic boundary.
+   */
 
     const order = await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
@@ -122,6 +129,5 @@ export async function writeOrderRevenueUnits(
       )
       .onConflict(['device_event_id'])
       .ignore();
-  });
-}
+  };
 

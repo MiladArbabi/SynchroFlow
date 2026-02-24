@@ -1,4 +1,4 @@
-import db from '@lasyncro/backend-core/db.js';
+import { Knex } from 'knex';
 
 /**
  * ORDER-SCOPED Obligation Flag Evaluation
@@ -12,8 +12,16 @@ import db from '@lasyncro/backend-core/db.js';
  * - Safe under concurrent reconciliation
  */
 export async function computeObligationFlagsForOrders(
-  orderIds: string[]
+  orderIds: string[],
+  trx: Knex.Transaction
 ): Promise<void> {
+
+  /**
+   * TRANSACTION CONTRACT
+   * --------------------
+   * Obligation recomputation MUST participate
+   * in reconciliation transaction.
+   */
   if (orderIds.length === 0) return;
 
   type InventoryRow = {
@@ -22,7 +30,7 @@ export async function computeObligationFlagsForOrders(
   };
 
   // 1️⃣ Aggregate availability only for affected orders
-  const inventoryRows = await db('order_revenue_units as ru')
+  const inventoryRows = await trx('order_revenue_units as ru')
     .leftJoin('inventory_truth as it', function () {
       this.on('it.lasyncro_variant_id', '=', 'ru.lasyncro_variant_id');
     })
@@ -48,20 +56,20 @@ export async function computeObligationFlagsForOrders(
 
   // 2️⃣ Write stockout classification
   if (stockoutOrders.size > 0) {
-    await db('order_fulfillment_status')
+    await trx('order_fulfillment_status')
       .whereIn('lasyncro_order_id', Array.from(stockoutOrders))
       .update({ inventory_block_type: 'stockout' });
   }
 
   // 3️⃣ Write oversell classification
   if (oversellOrders.size > 0) {
-    await db('order_fulfillment_status')
+    await trx('order_fulfillment_status')
       .whereIn('lasyncro_order_id', Array.from(oversellOrders))
       .update({ inventory_block_type: 'oversell' });
   }
 
   // 4️⃣ Clear executable orders
-  await db('order_fulfillment_status')
+  await trx('order_fulfillment_status')
     .whereIn('lasyncro_order_id', orderIds)
     .whereNotIn('lasyncro_order_id', [
       ...stockoutOrders,
@@ -70,9 +78,9 @@ export async function computeObligationFlagsForOrders(
     .update({ inventory_block_type: null });
 
   // 5️⃣ Freshness mark
-  await db('order_fulfillment_status')
+  await trx('order_fulfillment_status')
     .whereIn('lasyncro_order_id', orderIds)
     .update({
-      obligation_evaluated_at: db.fn.now(),
+      obligation_evaluated_at: trx.fn.now(),
     });
 }
