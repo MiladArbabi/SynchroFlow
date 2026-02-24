@@ -1,6 +1,7 @@
 // apps/backend/src/workers/reconciliation/revenue-units.writer.ts
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
+import crypto from 'crypto';
 
 /**
  * Revenue Unit Writer (Variant-Atomic Version)

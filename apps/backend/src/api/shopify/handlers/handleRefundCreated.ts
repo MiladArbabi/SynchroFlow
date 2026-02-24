@@ -9,6 +9,8 @@
 // apps/backend/src/api/shopify/handlers/handleRefundCreated.ts
 
 import db from '@lasyncro/backend-core/db.js';
+import { getQueueChannel } from '../../../queue.js';
+
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import { resolveRefundExecution } from '../../../workers/refundResolution.worker.js';
 import { resolveExternalOrderId } from '../../../services/identity/resolveExternalOrder.service.js';
@@ -99,16 +101,39 @@ export async function handleRefundCreated(
     return;
   }
 
- /**
+   /**
    * REFUND STAGING (UNIFIED INGESTION)
    * -----------------------------------
    * Refunds must enter canonical pipeline via staged_events.
-   * No direct domain mutation is permitted here.
+   * After persistence, we MUST enqueue the staged_event_id
+   * to the 'events' queue so the unified worker can process it.
+   *
+   * Without this, refund executions will never materialize.
    */
-  await db('staged_events').insert({
-    source_platform: 'shopify',
-    event_type: 'refunds/create',
-    raw_payload: rawPayload,
-    shop_id: shopId,
-  });
+    const [id] = await db('staged_events')
+    .insert({
+      source_platform: 'shopify',
+      event_type: 'refunds/create',
+      raw_payload: rawPayload,
+      shop_id: shopId,
+    })
+    .returning('id');
+
+  /**
+   * Normalize Knex returning shape.
+   * In some drivers `.returning('id')` yields:
+   * - { id: number }
+   * - number
+   *
+   * Canonical worker expects integer staged_event_id.
+   */
+  const stagedEventId =
+    typeof id === 'object' && id !== null
+      ? (id as any).id
+      : id;
+
+  getQueueChannel('events').sendToQueue(
+    'events',
+    Buffer.from(JSON.stringify({ staged_event_id: stagedEventId }))
+  );
 }

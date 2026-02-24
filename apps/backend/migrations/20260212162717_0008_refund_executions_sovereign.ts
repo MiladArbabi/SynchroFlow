@@ -79,6 +79,11 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['lasyncro_refund_execution_id']);
     table.index(['lasyncro_revenue_unit_id']);
+
+    table.unique(
+      ['lasyncro_refund_execution_id', 'lasyncro_revenue_unit_id'],
+      'refund_execution_line_items_execution_ru_unique'
+    );
   });
 
 

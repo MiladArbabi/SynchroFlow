@@ -40,8 +40,23 @@ export async function up(knex: Knex): Promise<void> {
       .text('last_error')
       .nullable();
 
+    /**
+     * TERMINAL FAILURE MARKER
+     * ------------------------
+     * Set when retry_count exceeds ceiling.
+     * Failed rows are excluded from dispatcher scans.
+     */
+    table
+      .timestamp('failed_at', { useTz: true })
+      .nullable();
+
+    /**
+     * Dispatcher scan index
+     * ----------------------
+     * Only unpublished and non-failed rows are scanned.
+     */
     table.index(
-      ['published_at', 'created_at'],
+      ['published_at', 'failed_at', 'created_at'],
       'integration_outbox_pending_idx'
     );
   });
@@ -49,7 +64,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
     CREATE UNIQUE INDEX integration_outbox_dedup_idx
     ON integration_outbox (aggregate_type, aggregate_id, event_type)
-    WHERE published_at IS NULL;
+    WHERE published_at IS NULL AND failed_at IS NULL;
   `);
 }
 

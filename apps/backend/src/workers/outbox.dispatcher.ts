@@ -20,6 +20,14 @@ import { getQueueChannel } from '../queue.js';
 const QUEUE = 'fulfillment.reconciliation';
 const POLL_INTERVAL_MS = 1000;
 const BATCH_SIZE = 10;
+const RETRY_CEILING = 10;
+
+/**
+ * RETRY CEILING
+ * -------------
+ * Prevents infinite poison retries.
+ * Rows exceeding ceiling are marked failed_at.
+ */
 
 let running = false;
 
@@ -48,6 +56,7 @@ async function dispatchBatch(channel: ReturnType<typeof getQueueChannel>) {
     // 1️⃣ Lock unpublished rows
     const rows = await trx('integration_outbox')
       .whereNull('published_at')
+      .whereNull('failed_at')
       .orderBy('created_at', 'asc')
       .limit(BATCH_SIZE)
       .forUpdate()
@@ -57,19 +66,56 @@ async function dispatchBatch(channel: ReturnType<typeof getQueueChannel>) {
 
     for (const row of rows) {
 
-      // 2️⃣ Publish to broker
-      channel.sendToQueue(
-        QUEUE,
-        Buffer.from(JSON.stringify(row.payload)),
-        { persistent: true }
-      );
+      try {
+        /**
+         * BROKER PUBLISH ATTEMPT
+         * -----------------------
+         * If sendToQueue throws synchronously,
+         * we treat as publish failure.
+         */
+        const ok = channel.sendToQueue(
+          QUEUE,
+          Buffer.from(JSON.stringify(row.payload)),
+          { persistent: true }
+        );
 
-      // 3️⃣ Mark as published
-      await trx('integration_outbox')
-        .where({ id: row.id })
-        .update({
-          published_at: trx.fn.now(),
-        });
+        if (!ok) {
+          throw new Error('Broker backpressure: sendToQueue returned false');
+        }
+
+        /**
+         * SUCCESS → mark as published
+         */
+        await trx('integration_outbox')
+          .where({ id: row.id })
+          .update({
+            published_at: trx.fn.now(),
+            last_error: null,
+          });
+
+      } catch (err: any) {
+
+        /**
+         * FAILURE → increment retry + persist error
+         * ------------------------------------------
+         * Row remains unpublished.
+         * Dispatcher will retry on next poll.
+         */
+        await trx('integration_outbox')
+          .where({ id: row.id })
+          .update({
+            retry_count: trx.raw('retry_count + 1'),
+            last_error: String(err?.message ?? err),
+            failed_at: trx.raw(
+              `CASE 
+                WHEN retry_count + 1 >= ? 
+                THEN NOW() 
+                ELSE failed_at 
+              END`,
+              [RETRY_CEILING]
+            ),
+          });
+      }
     }
   });
 }

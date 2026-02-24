@@ -429,6 +429,14 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
       const payload = stagedEvent.raw_payload as any;
 
+      console.log('[REFUND WORKER DEBUG]', {
+        shop_id: stagedEvent.shop_id,
+        platform: 'shopify',
+        order_id_raw: payload.order_id,
+        order_id_string: String(payload.order_id),
+        type: typeof payload.order_id,
+      });
+
       let lasyncroOrderId: string | null = null;
 
       await db.transaction(async (trx) => {
@@ -469,6 +477,72 @@ export async function processMessage(msg: { content: Buffer } | null) {
             lasyncro_refund_execution_id: refundExecutionId,
           };
         }
+
+        /**
+         * ---------------------------------------------------------
+         * REFUND LINE ITEM INGESTION
+         * ---------------------------------------------------------
+         * Persist granular refund units.
+         * This does NOT mutate revenue units.
+         * Reconciliation remains economic authority.
+         *
+         * Idempotency:
+         * - refund_execution_line_items keyed by UUID
+         * - execution header already platform-idempotent
+         */
+        const refundLineItems = Array.isArray(payload.refund_line_items)
+          ? payload.refund_line_items
+          : [];
+
+        for (const item of refundLineItems) {
+          const externalLineItemId = String(
+            item?.line_item?.id ?? item?.line_item_id ?? ''
+          );
+
+          if (!externalLineItemId) continue;
+
+          const revenueUnit = await trx('order_line_items')
+            .select('lasyncro_variant_id', 'lasyncro_product_id')
+            .where({
+              lasyncro_order_id: lasyncroOrderId,
+              platform: 'shopify',
+              external_line_item_id: externalLineItemId,
+            })
+            .first();
+
+          if (!revenueUnit) {
+            console.warn('[REFUND_INGEST_SKIP] Revenue unit not found', {
+              lasyncroOrderId,
+              externalLineItemId,
+            });
+            continue;
+          }
+
+          const ru = await trx('order_revenue_units')
+            .select('lasyncro_revenue_unit_id')
+            .where({
+              lasyncro_order_id: lasyncroOrderId,
+              lasyncro_variant_id: revenueUnit.lasyncro_variant_id,
+            })
+            .first();
+
+          if (!ru) continue;
+
+          await trx('refund_execution_line_items')
+            .insert({
+              lasyncro_refund_line_item_id: crypto.randomUUID(),
+              lasyncro_refund_execution_id:
+                execution.lasyncro_refund_execution_id,
+              lasyncro_revenue_unit_id: ru.lasyncro_revenue_unit_id,
+              refunded_quantity: Number(item.quantity ?? 0),
+              refunded_amount: Number(item.subtotal ?? 0),
+            })
+            .onConflict([
+              'lasyncro_refund_execution_id',
+              'lasyncro_revenue_unit_id',
+            ])
+            .ignore();
+}
 
         /**
          * ECONOMIC MUTATION REMOVED

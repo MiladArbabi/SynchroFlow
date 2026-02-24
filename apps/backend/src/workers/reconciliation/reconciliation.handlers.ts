@@ -18,9 +18,8 @@ export async function reconcileOrderFulfillment(
   affectedVariantIds: string[];
 }> {
 
-return db.transaction(async (trx) => {
+  return db.transaction(async (trx) => {
 
-    // 1️⃣ Lock sovereign order to prevent concurrent reconciliation
     const order = await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .forUpdate()
@@ -30,22 +29,29 @@ return db.transaction(async (trx) => {
       throw new Error(`Order not found: ${lasyncroOrderId}`);
     }
 
-    /**
-     * ATOMIC RECONCILIATION BOUNDARY
-     * ------------------------------
-     * All economic, projection, and obligation mutations
-     * MUST occur inside this single transaction.
-     *
-     * Guarantees:
-     * - No partial economic state
-     * - No projection drift
-     * - No obligation drift
-     */
-
-    // 2️⃣ Economic materialization
     await writeOrderRevenueUnits(lasyncroOrderId, trx);
 
-    // 3️⃣ Apply refund executions
+    /**
+     * REFUND REPLAY SAFETY RESET
+     * --------------------------
+     * Reconciliation is replayable by design.
+     * Refund resolution is additive.
+     *
+     * To ensure deterministic replay safety,
+     * we MUST reset returned_quantity before re-applying
+     * all refund_executions.
+     *
+     * This guarantees:
+     * - No double application
+     * - Deterministic structural revenue
+     * - Correct inventory rebuild
+     */
+    await trx('order_revenue_units')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .update({
+        returned_quantity: 0,
+      });
+
     const refundExecutions = await trx('refund_executions')
       .where({ lasyncro_order_id: lasyncroOrderId });
 
@@ -56,14 +62,12 @@ return db.transaction(async (trx) => {
       );
     }
 
-    // 4️⃣ Derive affected variants AFTER economic mutation
     const variantRows = await trx('order_revenue_units')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .distinct('lasyncro_variant_id');
 
     const affectedVariantIds = variantRows.map(r => r.lasyncro_variant_id);
 
-    // 5️⃣ Projection rebuild (transaction-participating)
     if (affectedVariantIds.length > 0) {
       await rebuildInventoryProjectionForVariants(
         order.shop_id,
@@ -72,20 +76,11 @@ return db.transaction(async (trx) => {
       );
     }
 
-    // 6️⃣ Obligation recomputation (transaction-participating)
     await computeObligationFlagsForOrders(
       [lasyncroOrderId],
       trx
     );
 
-    /**
-     * RECONCILIATION WATERMARK
-     * ------------------------
-     * Marks successful atomic reconciliation pass.
-     *
-     * Enforces delta-based reconciliation contract:
-     *   reconcile only if order_updated_at > last_reconciled_at
-     */
     await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .update({
