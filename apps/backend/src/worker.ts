@@ -418,7 +418,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
       });
 
         break;
-      }
+    }
 
       /**
        * ---------------------------------------------------------
@@ -542,7 +542,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
               'lasyncro_revenue_unit_id',
             ])
             .ignore();
-}
+          }
 
         /**
          * ECONOMIC MUTATION REMOVED
@@ -556,6 +556,26 @@ export async function processMessage(msg: { content: Buffer } | null) {
          * Refund execution is persisted only.
          * Reconciliation will deterministically apply it.
          */
+
+        /**
+       * DELTA INVALIDATION — REFUND ECONOMIC EVENT
+       * ------------------------------------------
+       * Refund persistence is an economic mutation.
+       *
+       * Reconciliation delta gate requires:
+       *   order_updated_at > last_reconciled_at
+       *
+       * Without bumping order_updated_at,
+       * reconciliation will be skipped for refunds.
+       *
+       * This does NOT mutate economic state.
+       * It only invalidates the delta gate.
+       */
+      await trx('orders')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .update({
+          order_updated_at: trx.fn.now(),
+        });
       });
 
       if (lasyncroOrderId) {
