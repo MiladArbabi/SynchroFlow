@@ -17,7 +17,7 @@ import db from '@lasyncro/backend-core/db.js';
  * - No settlement or payment inference
  *
  * IMPORTANT:
- * - Revenue is sourced from orders.total_price
+ * - Revenue is sourced from order_revenue_units_net.net_revenue
  * - Identity: orders.lasyncro_order_id
  * - Fulfillment is order-level and state-based
  * - Partial fulfillment is NOT supported
@@ -46,22 +46,29 @@ export async function extractOrderRevenueAllocationFacts(
 }> {
 
   /**
-   * Join canonical orders with fulfillment state.
-   * Classification rules:
-   * - fulfilled / delivered → fulfilled revenue
-   * - all other states       → unfulfilled revenue
-   *
-   * No time semantics beyond order_created_at window.
+   * STRUCTURAL REVENUE SOURCE (NET VIEW)
+   * ------------------------------------
+   * Revenue derived from immutable revenue units.
+   * Net of refunds via order_revenue_units_net.
    */
-  const rows = await db('orders as o')
+  const rows = await db('order_revenue_units_net as runet')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'runet.lasyncro_order_id'
+    )
     .leftJoin(
       'order_fulfillment_status as f',
       'o.lasyncro_order_id',
       'f.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
+    .groupBy(
+      'o.lasyncro_order_id',
+      'f.status'
+    )
     .select(
-      'o.total_price as revenue',
+      db.raw('SUM(runet.net_revenue) as revenue'),
       'f.status as fulfillmentStatus'
     );
 

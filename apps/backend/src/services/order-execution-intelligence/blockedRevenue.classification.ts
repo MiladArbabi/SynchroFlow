@@ -21,12 +21,17 @@ export type BlockedRevenueClassification = {
    * Absence of evaluation ≠ no obligation.
    * Absence MUST propagate as NULL through FT2.
    */
-
+  
   /**
    * Economic Source Constraint
    * --------------------------
    * totalBlockedValue MUST be derived from:
-   *   order_revenue_units (quantity × unit_revenue)
+   *   order_revenue_units_net.net_revenue
+   *
+   * Rationale:
+   * - Immutable revenue units
+   * - Net of refunds
+   * - Single-source-of-truth via DB view
    *
    * It MUST NOT be derived from:
    *   orders.total_price

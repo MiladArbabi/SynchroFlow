@@ -42,13 +42,28 @@ const available: number = payload.available;
   const shopId: number | undefined = envelope.shopId;
 
   if (typeof shopId !== 'number') {
+    console.log('[inventory_sync] missing shopId', {
+      eventId: envelope.eventId,
+    });
     return;
   }
   
-  const externalInventoryItemId =
-    payload.inventory_item_id ?? payload.admin_graphql_api_id;
+  let externalInventoryItemGid: string | null = null;
 
-    if (!externalInventoryItemId) return;
+  if (payload.admin_graphql_api_id) {
+    externalInventoryItemGid = payload.admin_graphql_api_id;
+  } else if (payload.inventory_item_id) {
+    externalInventoryItemGid =
+      `gid://shopify/InventoryItem/${payload.inventory_item_id}`;
+  }
+
+  if (!externalInventoryItemGid) {
+    console.warn('[inventory_sync] missing inventory item id', {
+      eventId: envelope.eventId,
+      payload,
+    });
+    return;
+  }
 
     let variantId: string | null = null;
 
@@ -57,11 +72,17 @@ const available: number = payload.available;
     const mapping = await trx('external_product_identity_map')
       .where({
         shop_id: shopId,
-        external_inventory_item_id: String(externalInventoryItemId),
+        external_inventory_item_id: String(externalInventoryItemGid),
       })
       .first();
 
-    if (!mapping) return;
+    if (!mapping) {
+      console.warn('[inventory_sync] mapping not found', {
+        shopId,
+        externalInventoryItemGid,
+      });
+      return;
+    }
 
     variantId = mapping?.lasyncro_variant_id ?? null;
 
@@ -77,7 +98,15 @@ const available: number = payload.available;
     const projectedQty = Number(projection?.on_hand_quantity ?? 0);
     const delta = available - projectedQty;
 
-    if (delta === 0) return;
+    if (delta === 0) {
+      console.info('[inventory_sync] no delta detected', {
+        shopId,
+        variantId,
+        available,
+        projectedQty,
+      });
+      return;
+    }
 
     /**
      * ORDER-SCOPED OBLIGATION RECOMPUTE
@@ -99,10 +128,6 @@ const available: number = payload.available;
     const orderIds: string[] = affectedOrders.map(
       (r: any) => r.lasyncro_order_id
     );
-
-    if (orderIds.length > 0) {
-      await computeObligationFlagsForOrders(orderIds, trx);
-    }
 
     await trx('inventory_movements')
       .insert({
@@ -129,5 +154,9 @@ const available: number = payload.available;
       [variantId],
       trx
     );
+
+    if (orderIds.length > 0) {
+      await computeObligationFlagsForOrders(orderIds, trx);
+    }
   });
 }

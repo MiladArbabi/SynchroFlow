@@ -47,15 +47,15 @@ export async function getOrderNexusFt2StateSnapshot(
    * Invariant:
    *   SUM((quantity - returned_quantity) * unit_price)
    */
-  const totalRevenueRow = await db('order_revenue_units as ru')
+  const totalRevenueRow = await db('order_revenue_units_net as runet')
     .join(
       'orders as o',
       'o.lasyncro_order_id',
-      'ru.lasyncro_order_id'
+      'runet.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
     .sum<{ sum: string | null }>(
-      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+      db.raw('runet.net_revenue')
     )
     .first();
 
@@ -73,21 +73,21 @@ export async function getOrderNexusFt2StateSnapshot(
    * - Orders with fulfillment status = 'fulfilled'
    * - Lifetime, state-based
    */
-  const earnedRevenueRow = await db('order_revenue_units as ru')
+  const earnedRevenueRow = await db('order_revenue_units_net as runet')
     .join(
       'orders as o',
       'o.lasyncro_order_id',
-      'ru.lasyncro_order_id'
+      'runet.lasyncro_order_id'
     )
     .join(
       'order_fulfillment_status as ofs',
       'ofs.lasyncro_order_id',
-      'ru.lasyncro_order_id'
+      'runet.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
     .andWhere('ofs.status', 'fulfilled')
     .sum<{ sum: string | null }>(
-      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+      db.raw('runet.net_revenue')
     )
     .first();
 
@@ -108,21 +108,21 @@ export async function getOrderNexusFt2StateSnapshot(
    * NOTE:
    * Pending = Unfulfilled (no constraint isolation yet)
    */
-  const pendingRevenueRow = await db('order_revenue_units as ru')
+  const pendingRevenueRow = await db('order_revenue_units_net as runet')
     .join(
       'orders as o',
       'o.lasyncro_order_id',
-      'ru.lasyncro_order_id'
+      'runet.lasyncro_order_id'
     )
     .join(
       'order_fulfillment_status as ofs',
       'ofs.lasyncro_order_id',
-      'ru.lasyncro_order_id'
+      'runet.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
     .andWhereNot('ofs.status', 'fulfilled')
     .sum<{ sum: string | null }>(
-      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+      db.raw('runet.net_revenue')
     )
     .first();
 
@@ -141,21 +141,21 @@ export async function getOrderNexusFt2StateSnapshot(
    *   (inventory OR customer OR operational)
    * - Lifetime, state-based
    */
-  const constrainedRevenueRow = await db('order_revenue_units as ru')
+  const constrainedRevenueRow = await db('order_revenue_units_net as runet')
     .join(
       'orders as o',
       'o.lasyncro_order_id',
-      'ru.lasyncro_order_id'
+      'runet.lasyncro_order_id'
     )
     .join(
       'order_fulfillment_status as ofs',
       'ofs.lasyncro_order_id',
-      'ru.lasyncro_order_id'
+      'runet.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
     .whereNotNull('ofs.inventory_block_type')
     .sum<{ sum: string | null }>(
-      db.raw('(ru.quantity - ru.returned_quantity) * ru.unit_price')
+      db.raw('runet.net_revenue')
     )
     .first();
 

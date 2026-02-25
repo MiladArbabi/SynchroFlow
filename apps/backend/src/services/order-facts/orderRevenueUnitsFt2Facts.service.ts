@@ -5,7 +5,6 @@
  *
  * Guarantees:
  * - SKU-level aggregation
- * - Quantity × unit_revenue only
  * - No execution inference
  * - No obligation logic
  * - FT2-safe, aggregate-only
@@ -42,31 +41,35 @@ export async function extractRevenueUnitsFt2Facts(
   pending: number;
   blocked: number;
 }> {
-  const rows = await db('order_revenue_units')
-    .where('shop_id', shopId)
-    .select(
-      'quantity',
-      'unit_revenue',
-      'has_customer_block'
-    );
+
+  /**
+   * STRUCTURAL REVENUE (NET VIEW)
+   * -----------------------------
+   * Immutable revenue units
+   * Net of refunds
+   * No execution inference
+   */
+  const rows = await db('order_revenue_units_net as runet')
+    .join(
+      'orders as o',
+      'o.lasyncro_order_id',
+      'runet.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .select('runet.net_revenue');
 
   let total = 0;
-  let blocked = 0;
 
   for (const r of rows) {
-    const v = Number(r.quantity) * Number(r.unit_revenue);
+    const v = Number(r.net_revenue);
     if (!Number.isFinite(v)) continue;
-
     total += v;
-    if (r.has_customer_block === true) {
-      blocked += v;
-    }
   }
 
   return {
     total,
-    earned: total - blocked,
-    pending: total - blocked,
-    blocked,
+    earned: total,
+    pending: total,
+    blocked: 0,
   };
 }

@@ -8,8 +8,12 @@
  * Financial truth:
  *   refund_executions
  *
- * Derived mutation:
- *   order_revenue_units.returned_quantity
+ * Revenue units are immutable.
+ * Refund quantities are derived at read-time
+ * from refund_execution_line_items.
+ *
+ * This worker maintains:
+ *   - refund_executions.total_refund_amount
  *
  * Idempotent.
  * Replay-safe.
@@ -37,36 +41,16 @@ export async function resolveRefundExecution(
 
   if (!execution) return;
 
-  const lines = await trx('refund_execution_line_items')
-    .where({
-      lasyncro_refund_execution_id: lasyncroRefundExecutionId,
-    });
-
-  if (!lines.length) return;
-
-  for (const line of lines) {
-    const totalRow = await trx('refund_execution_line_items')
-      .where({
-        lasyncro_revenue_unit_id: line.lasyncro_revenue_unit_id,
-      })
-      .select(
-        trx.raw(`
-          COALESCE(SUM(refunded_quantity), 0) as total
-        `)
-      )
-      .first();
-
-    const totalReturned = Number(totalRow?.total ?? 0);
-
-    await trx('order_revenue_units')
-      .where({
-        lasyncro_revenue_unit_id: line.lasyncro_revenue_unit_id,
-      })
-      .update({
-        returned_quantity: totalReturned,
-        updated_at: trx.fn.now(),
-      });
-  }
+  /**
+   * REFUND DERIVATION MODEL
+   * -----------------------
+   * Revenue units are immutable.
+   * Refund quantities are derived at read-time
+   * from refund_execution_line_items.
+   *
+   * No per-line mutation or aggregation occurs here.
+   * This worker only maintains refund_executions.total_refund_amount.
+   */
 
   const refundTotalRow = await trx('refund_execution_line_items')
     .where({

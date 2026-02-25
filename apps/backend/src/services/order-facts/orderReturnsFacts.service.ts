@@ -18,26 +18,25 @@ export async function extractRefundsFacts(shopId: number): Promise<{
   returnedRevenue: number | null;
   affectedOrders: number | null;
 }> {
-    /**
- * SOVEREIGN REFUND ANCHOR (v2)
- * ----------------------------
- * - UUID-anchored via lasyncro_order_id
- * - shop_id derived from orders
- * - Revenue primitive: returned_quantity * unit_price
+  
+/**
+ * REFUND FACTS VIA NET VIEW
+ * --------------------------
+ * refunded_quantity is derived in DB view.
  */
-  const rows = await db('order_revenue_units as ru')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'ru.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
-    .where('ru.returned_quantity', '>', 0)
-    .select(
-      'ru.lasyncro_order_id',
-      'ru.returned_quantity',
-      'ru.unit_price'
-    );
+const rows = await db('order_revenue_units_net as runet')
+  .join(
+    'orders as o',
+    'o.lasyncro_order_id',
+    'runet.lasyncro_order_id'
+  )
+  .where('o.shop_id', shopId)
+  .where('runet.refunded_quantity', '>', 0)
+  .select(
+    'runet.lasyncro_order_id',
+    'runet.refunded_quantity',
+    'runet.unit_price'
+  );
 
   /**
    * L1 NULL SEMANTICS

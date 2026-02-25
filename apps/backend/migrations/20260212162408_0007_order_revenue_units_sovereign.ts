@@ -1,3 +1,12 @@
+/**
+ * IMMUTABLE REVENUE UNIT MODEL (v2)
+ * ---------------------------------
+ * Revenue units are structural economic atoms.
+ * Refund quantities are derived from refund_execution_line_items.
+ *
+ * returned_quantity column removed.
+ */
+
 import type { Knex } from "knex";
 
 export async function up(knex: Knex): Promise<void> {
@@ -31,11 +40,6 @@ export async function up(knex: Knex): Promise<void> {
 
     table.decimal('estimated_unit_cost', 12, 2).nullable();
 
-    // Returns / refund tracking
-    table.integer('returned_quantity')
-      .notNullable()
-      .defaultTo(0);
-
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
@@ -49,13 +53,6 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['lasyncro_product_id']);
     table.index(['sku']);
   });
-
-  // Enforce returned_quantity <= quantity
-  await knex.raw(`
-    ALTER TABLE order_revenue_units
-    ADD CONSTRAINT order_revenue_units_returned_quantity_check
-    CHECK (returned_quantity >= 0 AND returned_quantity <= quantity);
-  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
