@@ -171,6 +171,33 @@ export async function reconcileOrderFulfillment(
       }
     }
     
+    /**
+     * PREDICTIVE RISK MODEL (RULE-BASED)
+     * -----------------------------------
+     * Deterministic heuristic model.
+     * No ML, no randomness.
+     */
+
+    let fraudScore = 0;
+    let returnProbability = 0;
+    let grossRevenue = 0;
+    let estimatedCost = 0;
+    const grossMargin = grossRevenue - estimatedCost;
+
+    const marginPct =
+      grossRevenue > 0
+        ? grossMargin / grossRevenue
+        : 0;
+
+    if (isCustomerBlocked) fraudScore += 0.4;
+    if (isInventoryBlocked) fraudScore += 0.1;
+    if (isOperationalBlocked) fraudScore += 0.1;
+
+    if (marginPct < 0.05) returnProbability += 0.3;
+    if (grossRevenue > 1000) returnProbability += 0.2;
+
+    fraudScore = Math.min(fraudScore, 1);
+    returnProbability = Math.min(returnProbability, 1);
 
     await trx('order_risk_snapshot')
       .insert({
@@ -180,6 +207,8 @@ export async function reconcileOrderFulfillment(
         is_customer_blocked: isCustomerBlocked,
         is_operational_blocked: isOperationalBlocked,
         is_at_risk: isAtRisk,
+        fraud_score: fraudScore,
+        return_probability: returnProbability,
         evaluated_at: trx.fn.now(),
       })
       .onConflict('lasyncro_order_id')
@@ -201,16 +230,23 @@ export async function reconcileOrderFulfillment(
       .select(
         'runet.net_revenue',
         'runet.net_quantity',
-        'ru.estimated_unit_cost'
+        'ru.estimated_unit_cost',
+        'ru.discount_amount',
+        'ru.shipping_cost',
+        'ru.payment_fee',
+        'ru.fulfillment_cost'
       );
 
-    let grossRevenue = 0;
-    let estimatedCost = 0;
-
     for (const r of marginRows) {
-      const revenue = Number(r.net_revenue);
-      const qty = Number(r.net_quantity);
+
+      const revenue = Number(r.net_revenue ?? 0);
+      const qty = Number(r.net_quantity ?? 0);
       const unitCost = Number(r.estimated_unit_cost ?? 0);
+
+      const discount = Number(r.discount_amount ?? 0);
+      const shipping = Number(r.shipping_cost ?? 0);
+      const paymentFee = Number(r.payment_fee ?? 0);
+      const fulfillmentCost = Number(r.fulfillment_cost ?? 0);
 
       if (Number.isFinite(revenue)) {
         grossRevenue += revenue;
@@ -219,14 +255,13 @@ export async function reconcileOrderFulfillment(
       if (Number.isFinite(qty) && Number.isFinite(unitCost)) {
         estimatedCost += qty * unitCost;
       }
+
+      estimatedCost +=
+        discount +
+        shipping +
+        paymentFee +
+        fulfillmentCost;
     }
-
-    const grossMargin = grossRevenue - estimatedCost;
-
-    const marginPct =
-      grossRevenue > 0
-        ? grossMargin / grossRevenue
-        : 0;
 
     await trx('order_margin_snapshot')
       .insert({
@@ -237,6 +272,77 @@ export async function reconcileOrderFulfillment(
         gross_margin: grossMargin,
         margin_pct: marginPct,
         evaluated_at: trx.fn.now(),
+      })
+      .onConflict('lasyncro_order_id')
+      .merge();
+
+    /**
+     * ORDER AGE SNAPSHOT MATERIALIZATION
+     * -----------------------------------
+     * Replace-on-reconcile.
+     * Fully derived from canonical state.
+     */
+    const ofsAge = await trx('order_fulfillment_status')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .select('fulfilled_at')
+      .first();
+
+    const now = new Date();
+
+    const createdAt = order.order_created_at
+      ? new Date(order.order_created_at)
+      : null;
+
+    const paidAt = order.paid_at
+      ? new Date(order.paid_at)
+      : null;
+
+    const fulfilledAt = ofsAge?.fulfilled_at
+      ? new Date(ofsAge.fulfilled_at)
+      : null;
+
+    const promisedShipBy = order.promised_ship_by
+      ? new Date(order.promised_ship_by)
+      : null;
+
+    const promisedDeliveryAt = order.promised_delivery_at
+      ? new Date(order.promised_delivery_at)
+      : null;
+
+    const ageSinceCreation =
+      createdAt
+        ? Math.floor((now.getTime() - createdAt.getTime()) / 1000)
+        : 0;
+
+    const ageSincePaid =
+      paidAt
+        ? Math.floor((now.getTime() - paidAt.getTime()) / 1000)
+        : null;
+
+    const ageSinceFulfillment =
+      fulfilledAt
+        ? Math.floor((now.getTime() - fulfilledAt.getTime()) / 1000)
+        : null;
+
+    const isShippingSlaBreached =
+      promisedShipBy && !fulfilledAt
+        ? now > promisedShipBy
+        : false;
+
+    const isDeliverySlaBreached =
+      promisedDeliveryAt && !fulfilledAt
+        ? now > promisedDeliveryAt
+        : false;
+
+    await trx('order_age_snapshot')
+      .insert({
+        lasyncro_order_id: lasyncroOrderId,
+        age_since_creation_seconds: ageSinceCreation,
+        age_since_paid_seconds: ageSincePaid,
+        age_since_fulfillment_seconds: ageSinceFulfillment,
+        is_shipping_sla_breached: isShippingSlaBreached,
+        is_delivery_sla_breached: isDeliverySlaBreached,
+        snapshot_generated_at: trx.fn.now(),
       })
       .onConflict('lasyncro_order_id')
       .merge();

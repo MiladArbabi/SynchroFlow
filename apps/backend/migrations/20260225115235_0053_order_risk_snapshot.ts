@@ -32,6 +32,16 @@ export async function up(knex: Knex): Promise<void> {
 
     table.boolean('is_at_risk').notNullable();
 
+    /**
+     * PREDICTIVE RISK LAYER
+     * ---------------------
+     * Model-driven probabilistic fields.
+     *
+     * These are derived during reconciliation.
+     */
+    table.decimal('fraud_score', 5, 4).nullable();        // 0.0000 – 1.0000
+    table.decimal('return_probability', 5, 4).nullable(); // 0.0000 – 1.0000
+
     table.timestamp('evaluated_at')
       .notNullable()
       .defaultTo(knex.fn.now());

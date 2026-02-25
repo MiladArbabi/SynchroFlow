@@ -56,6 +56,19 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('status_updated_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
+    
+    /**
+     * EXECUTION COMPLETION TIMESTAMPS
+     * --------------------------------
+     * fulfilled_at:
+     *   Set when status transitions to 'fulfilled'.
+     *
+     * This is separate from status_updated_at to preserve:
+     * - execution completion truth
+     * - SLA measurement capability
+     * - latency modeling
+     */
+    table.timestamp('fulfilled_at', { useTz: true }).nullable();
 
     table.text('status_reason');
 
@@ -126,6 +139,50 @@ export async function up(knex: Knex): Promise<void> {
     FOR EACH ROW
     EXECUTE FUNCTION enforce_fulfillment_status_monotonic();
   `);
+
+  /**
+   * =========================================================
+   * ORDER FULFILLMENT HISTORY (APPEND-ONLY EXECUTION LOG)
+   * =========================================================
+   *
+   * Purpose:
+   * - Preserve full execution timeline
+   * - Enable latency analysis
+   * - Allow SLA breach reconstruction
+   * - Provide replay-safe audit trail
+   *
+   * This table is:
+   * - Append-only
+   * - Never updated
+   * - Never deleted (except cascade)
+   */
+  await knex.schema.createTable('order_fulfillment_history', (table) => {
+
+    table
+      .uuid('lasyncro_fulfillment_event_id')
+      .primary();
+
+    table
+      .uuid('lasyncro_order_id')
+      .notNullable()
+      .references('lasyncro_order_id')
+      .inTable('orders')
+      .onDelete('CASCADE');
+
+    table
+      .specificType('status', 'fulfillment_status_type')
+      .notNullable();
+
+    table.timestamp('event_occurred_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.timestamp('recorded_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.index(['lasyncro_order_id']);
+  });
 }
 
 export async function down(knex: Knex): Promise<void> {
@@ -139,6 +196,7 @@ export async function down(knex: Knex): Promise<void> {
     DROP FUNCTION IF EXISTS enforce_fulfillment_status_monotonic;
   `);
 
+  await knex.schema.dropTableIfExists('order_fulfillment_history');
   await knex.schema.dropTableIfExists('order_fulfillment_status');
 
   await knex.raw(`

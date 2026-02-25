@@ -40,6 +40,17 @@ export async function up(knex: Knex): Promise<void> {
 
     table.decimal('estimated_unit_cost', 12, 2).nullable();
 
+    /**
+     * MARGIN DEPTH EXTENSION
+     * ----------------------
+     * Immutable economic cost dimensions.
+     * Required for structurally correct margin modeling.
+     */
+    table.decimal('discount_amount', 12, 2).notNullable().defaultTo(0);
+    table.decimal('shipping_cost', 12, 2).notNullable().defaultTo(0);
+    table.decimal('payment_fee', 12, 2).notNullable().defaultTo(0);
+    table.decimal('fulfillment_cost', 12, 2).notNullable().defaultTo(0);
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());

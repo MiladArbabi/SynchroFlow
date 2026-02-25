@@ -44,8 +44,16 @@ export async function processMessage(msg: { content: Buffer } | null) {
       return;
     }
 
+    /**
+     * REPLAY SAFETY GUARD
+     * -------------------
+     * If processed_at is already set,
+     * this event has already been executed.
+     * Never allow double execution.
+     */
     const stagedEvent = await db('staged_events')
       .where({ id: staged_event_id })
+      .whereNull('processed_at')
       .first<{
         id: number;
         shop_id: number;
@@ -54,6 +62,13 @@ export async function processMessage(msg: { content: Buffer } | null) {
       }>();
 
     if (!stagedEvent) {
+      /**
+       * Either:
+       * - staged event does not exist
+       * - OR already processed (replay guard)
+       *
+       * In both cases: ACK safely.
+       */
       getEventChannel().ack(msg as any);
       return;
     }
@@ -334,10 +349,17 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         await db.transaction(async (trx) => {
 
+          /**
+           * CASH REALIZATION COMMIT
+           * -----------------------
+           * Payment webhook is authoritative signal of payment confirmation.
+           * Sets paid_at if not already set (idempotent).
+           */
           await trx('orders')
             .where({ lasyncro_order_id: lasyncroOrderId })
             .update({
               payment_state: 'paid',
+              paid_at: trx.raw('COALESCE(paid_at, ?)', [trx.fn.now()]),
               order_updated_at: trx.fn.now(),
             });
 
@@ -599,10 +621,62 @@ export async function processMessage(msg: { content: Buffer } | null) {
         break;
     }
 
+    /**
+     * INGESTION SUCCESS COMMIT (ATOMIC)
+     * ----------------------------------
+     * Clears failure markers and finalizes deterministic ingestion.
+     */
+    await db('staged_events')
+      .where({ id: staged_event_id })
+      .update({
+        processed_at: db.fn.now(),
+        failed_at: null,
+        retry_count: 0,
+        error_message: null,
+      });
+
     getEventChannel().ack(msg as any);
 
   } catch (error) {
     console.error('[worker] Error processing staged event:', error);
+
+    /**
+     * INGESTION FAILURE TRACKING
+     * ---------------------------
+     * Persist failure state before nack.
+     * Guarantees:
+     * - retry visibility
+     * - deterministic replay observability
+     * - root cause traceability
+     */
+    try {
+      const parsed = JSON.parse(content) as { staged_event_id?: number };
+
+      let processingSucceeded = false;
+
+      if (parsed?.staged_event_id) {
+        await db('staged_events')
+          .where({ id: parsed.staged_event_id })
+          .update({
+            failed_at: db.fn.now(),
+            retry_count: db.raw('retry_count + 1'),
+            error_message:
+              error instanceof Error
+                ? error.message
+                : JSON.stringify(error),
+          });
+          } else {
+            console.error('[INGESTION_FAILURE_NO_STAGED_ID]', { rawMessage: content });
+          }
+        } catch (parseError) {
+          console.error('[INGESTION_FAILURE_PARSE_ERROR]', {
+            originalMessage: content,
+            parseError:
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError),
+          });
+        }
 
     try {
       getEventChannel().nack(msg as any, false, false);

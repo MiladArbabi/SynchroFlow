@@ -113,6 +113,29 @@ export class OrderFulfillmentIngestionService {
         lasyncro_order_id: lasyncroOrderId,
         status,
         status_updated_at: executor.fn.now(),
+
+        /**
+         * EXECUTION COMPLETION COMMIT
+         * ---------------------------
+         * If baseline state is already fulfilled,
+         * set fulfilled_at at creation.
+         */
+        fulfilled_at:
+          status === 'fulfilled'
+            ? executor.fn.now()
+            : null,
+      });
+
+      /**
+       * FULFILLMENT HISTORY APPEND (BASELINE)
+       * -------------------------------------
+       * Append-only execution event log.
+       */
+      await executor('order_fulfillment_history').insert({
+        lasyncro_fulfillment_event_id: crypto.randomUUID(),
+        lasyncro_order_id: lasyncroOrderId,
+        status,
+        event_occurred_at: executor.fn.now(),
       });
       return;
     }
@@ -148,6 +171,30 @@ export class OrderFulfillmentIngestionService {
       .update({
         status,
         status_updated_at: executor.fn.now(),
+
+        /**
+         * EXECUTION COMPLETION COMMIT (IDEMPOTENT)
+         * ----------------------------------------
+         * Only set fulfilled_at if transitioning into fulfilled
+         * and not already set.
+         */
+        fulfilled_at:
+          status === 'fulfilled'
+            ? executor.raw('COALESCE(fulfilled_at, ?)', [executor.fn.now()])
+            : executor.raw('fulfilled_at'),
+      });
+
+      /**
+       * FULFILLMENT HISTORY APPEND (TRANSITION)
+       * ---------------------------------------
+       * Append-only record of execution transition.
+       * Only executed when monotonic update allowed.
+       */
+      await executor('order_fulfillment_history').insert({
+        lasyncro_fulfillment_event_id: crypto.randomUUID(),
+        lasyncro_order_id: lasyncroOrderId,
+        status,
+        event_occurred_at: executor.fn.now(),
       });
   }
 }

@@ -92,11 +92,15 @@ export class WebhookRouter {
       refundPayload?.admin_graphql_api_id ??
       null;
 
-    // 🚨 MUST BE FIRST SIDE-EFFECT (HTTP ingress only)
-    if (
-      normalizedEventType !== 'refunds/create' &&
-      !(envelope as any).__fromQueue
-    ) {
+    /**
+     * LEDGER INGESTION (UNIFIED)
+     * --------------------------
+     * All webhook events, including refunds, must first
+     * enter integration_webhook_events ledger.
+     *
+     * Refund idempotency at execution layer remains additive.
+     */
+    if (!(envelope as any).__fromQueue) {
       await WebhookLedgerService.recordReceived({
         integration: envelope.integration,
         externalEventId: envelope.eventId,

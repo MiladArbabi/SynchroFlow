@@ -55,6 +55,49 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('order_updated_at', { useTz: true }).notNullable();
     table.timestamp('order_processed_at', { useTz: true });
 
+    /**
+     * CASH REALIZATION LAYER
+     * -----------------------
+     * These timestamps represent economic execution truth.
+     *
+     * paid_at:
+     *   When payment is authorized/confirmed.
+     *
+     * captured_at:
+     *   When funds are captured from payment processor.
+     *
+     * settlement_at:
+     *   When funds settle into merchant account.
+     *
+     * These fields are nullable and must only be set
+     * by canonical ingestion boundaries.
+     */
+    table.timestamp('paid_at', { useTz: true }).nullable();
+    table.timestamp('captured_at', { useTz: true }).nullable();
+    table.timestamp('settlement_at', { useTz: true }).nullable();
+
+    /**
+     * SLA PROMISE LAYER
+     * -----------------
+     * Represents merchant commitment timestamps.
+     *
+     * promised_ship_by:
+     *   Latest time order must be shipped.
+     *
+     * promised_delivery_at:
+     *   Expected delivery completion time.
+     *
+     * These fields enable:
+     * - SLA breach detection
+     * - Operational latency modeling
+     * - Aging classification
+     *
+     * They are canonical truth inputs,
+     * not derived values.
+     */
+    table.timestamp('promised_ship_by', { useTz: true }).nullable();
+    table.timestamp('promised_delivery_at', { useTz: true }).nullable();
+
     table.timestamp('last_reconciled_at', { useTz: true })
       .nullable()
       .index();
