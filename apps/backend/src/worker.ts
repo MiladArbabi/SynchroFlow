@@ -59,28 +59,8 @@ export async function processMessage(msg: { content: Buffer } | null) {
         shop_id: number;
         event_type: string;
         raw_payload: Record<string, any>;
+        event_time: Date | null;
       }>();
-
-    /**
-     * STAGED EVENT TIME ANCHOR
-     * -------------------------
-     * Used for deterministic processed_at marking.
-     * Never use wall-clock.
-     */
-    const raw = stagedEvent.raw_payload as any;
-
-    const stagedEventTime =
-      raw?.updated_at ??
-      raw?.created_at ??
-      null;
-
-    if (!stagedEventTime) {
-      throw new Error(
-        '[EVENT_TIME_VIOLATION] Staged event missing event-time'
-      );
-    }
-
-    const stagedEventTimestamp = new Date(stagedEventTime);
 
     if (!stagedEvent) {
       /**
@@ -93,6 +73,20 @@ export async function processMessage(msg: { content: Buffer } | null) {
       getEventChannel().ack(msg as any);
       return;
     }
+
+    /**
+     * CANONICAL EVENT-TIME ANCHOR
+     * ---------------------------
+     * Worker must rely on staged_events.event_time.
+     * Raw payload timestamps are forbidden beyond ingestion.
+     */
+    if (!stagedEvent.event_time) {
+      throw new Error(
+        '[EVENT_TIME_VIOLATION] staged_event missing canonical event_time'
+      );
+    }
+
+    const canonicalEventTime = new Date(stagedEvent.event_time);
 
     /**
      * CANONICAL EVENT DISPATCHER
@@ -148,6 +142,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
           const lasyncroOrderId = crypto.randomUUID();
           newlyCreatedOrderId = lasyncroOrderId;
 
+
           await trx('orders').insert({
             lasyncro_order_id: lasyncroOrderId,
             shop_id: stagedEvent.shop_id,
@@ -169,8 +164,18 @@ export async function processMessage(msg: { content: Buffer } | null) {
                 ? Number(payload.totalTaxSet.shopMoney.amount)
                 : payload.total_tax ?? null,
 
-            order_created_at: payload.createdAt ?? payload.created_at ?? null,
-            order_updated_at: payload.updatedAt ?? payload.updated_at ?? null,
+            /**
+             * ORDER CREATION EVENT-TIME (Canonical)
+             * --------------------------------------
+             * Must rely exclusively on staged_events.event_time.
+             */
+            order_created_at: canonicalEventTime,
+
+            /**
+             * Initial update anchor equals canonical creation time.
+             * Future mutations will advance this deterministically.
+             */
+            order_updated_at: canonicalEventTime,
 
             payment_state: 'unpaid',
 
@@ -313,12 +318,25 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         if (newlyCreatedOrderId) {
           await db.transaction(async (trx) => {
+
+            const orderRow = await trx('orders')
+              .where({ lasyncro_order_id: newlyCreatedOrderId })
+              .select('aggregate_version')
+              .first();
+
+            if (!orderRow) {
+              throw new Error('[ORDER_VERSION_MISSING_AFTER_CREATE]');
+            }
+
             await OutboxService.enqueue(
               {
                 aggregateType: 'order',
                 aggregateId: newlyCreatedOrderId!,
                 eventType: 'reconciliation.requested',
-                payload: { lasyncroOrderId: newlyCreatedOrderId },
+                payload: {
+                  lasyncroOrderId: newlyCreatedOrderId,
+                  aggregateVersion: orderRow.aggregate_version,
+                },
               },
               trx
             );
@@ -376,25 +394,14 @@ export async function processMessage(msg: { content: Buffer } | null) {
         if (!lasyncroOrderId) break;
 
         await db.transaction(async (trx) => {
-
-          /**
-           * PAYMENT EVENT TIME (Event-Time Required)
-           * -----------------------------------------
-           * Payment webhook must provide event-time.
-           * Wall-clock fallback forbidden.
-           */
-          const paymentEventTime =
-            payload.updated_at ??
-            payload.processed_at ??
-            null;
-
-          if (!paymentEventTime) {
-            throw new Error(
-              '[EVENT_TIME_VIOLATION] Payment missing event-time'
-            );
-          }
-
-          const paymentTimestamp = new Date(paymentEventTime);
+        
+        /**
+         * PAYMENT EVENT TIME (Canonical)
+         * --------------------------------
+         * Must rely exclusively on staged_events.event_time.
+         * Raw payload timestamps are forbidden beyond ingestion.
+         */
+        const paymentTimestamp = canonicalEventTime;
 
           /**
            * CASH REALIZATION COMMIT
@@ -483,21 +490,12 @@ export async function processMessage(msg: { content: Buffer } | null) {
             : 'fulfilled';
         
         /**
-         * FULFILLMENT EVENT TIME (Event-Time Required)
-         * ---------------------------------------------
+         * FULFILLMENT EVENT TIME (Canonical)
+         * -----------------------------------
+         * Must rely exclusively on staged_events.event_time.
+         * Raw payload timestamps are forbidden beyond ingestion.
          */
-        const fulfillmentEventTime =
-          payload.updated_at ??
-          payload.created_at ??
-          null;
-
-        if (!fulfillmentEventTime) {
-          throw new Error(
-            '[EVENT_TIME_VIOLATION] Fulfillment missing event-time'
-          );
-        }
-
-        const fulfillmentTimestamp = new Date(fulfillmentEventTime);
+        const fulfillmentTimestamp = canonicalEventTime;
 
         await db.transaction(async (trx) => {
 
@@ -565,23 +563,12 @@ export async function processMessage(msg: { content: Buffer } | null) {
         if (!lasyncroOrderId) return;
 
         /**
-         * REFUND EVENT TIME (Event-Time Required)
-         * ----------------------------------------
-         * Refund webhook must provide canonical event-time.
-         * Wall-clock fallback forbidden.
+         * REFUND EVENT TIME (Canonical)
+         * ------------------------------
+         * Must rely exclusively on staged_events.event_time.
+         * Raw payload timestamps are forbidden beyond ingestion.
          */
-        const refundEventTime =
-          payload.created_at ??
-          payload.processed_at ??
-          null;
-
-        if (!refundEventTime) {
-          throw new Error(
-            '[EVENT_TIME_VIOLATION] Refund missing event-time'
-          );
-        }
-
-        const refundExecutedAt = new Date(refundEventTime);
+        const refundExecutedAt = canonicalEventTime;
 
         const externalRefundId = String(payload.id);
 
@@ -724,10 +711,17 @@ export async function processMessage(msg: { content: Buffer } | null) {
     await db('staged_events')
       .where({ id: staged_event_id })
       .update({
-        processed_at: stagedEventTimestamp,
+        processed_at: db.fn.now(),
         failed_at: null,
         retry_count: 0,
         error_message: null,
+
+        /**
+         * CLEAR FAILURE CLASSIFICATION
+         * ----------------------------
+         * Ensures successful replay removes poison state.
+         */
+        failure_type: null,
       });
 
     getEventChannel().ack(msg as any);
@@ -755,6 +749,21 @@ export async function processMessage(msg: { content: Buffer } | null) {
           .update({
             failed_at: db.fn.now(),
             retry_count: db.raw('retry_count + 1'),
+
+            /**
+             * FAILURE CLASSIFICATION
+             * -----------------------
+             * Explicit poison typing.
+             */
+            failure_type:
+              error instanceof Error &&
+              error.message?.includes('EVENT_TIME_VIOLATION')
+                ? 'schema_violation'
+                : error instanceof Error &&
+                  error.message?.includes('IDENTITY')
+                  ? 'identity_violation'
+                  : 'permanent',
+
             error_message:
               error instanceof Error
                 ? error.message

@@ -67,6 +67,18 @@ export async function handleRefundCreated(
   const shopId = installation.shop_id;
 
   /**
+   * IDEMPOTENCY ENFORCEMENT
+   * -----------------------
+   * Upstream eventId must be persisted
+   * to activate staged_events unique constraint.
+   */
+  if (!envelope.eventId) {
+    throw new Error(
+      '[INGESTION_IDENTITY_VIOLATION] Missing external eventId'
+    );
+  }
+
+  /**
    * Runtime type narrowing for refund execution.
    * If payload does not match minimum refund shape,
    * execution is skipped safely.
@@ -101,6 +113,19 @@ export async function handleRefundCreated(
     return;
   }
 
+  /**
+   * INGESTION EVENT-TIME ENFORCEMENT
+   * ---------------------------------
+   * Refund must carry canonical event-time.
+   * Accepted field:
+   * - created_at
+   */
+  if (!refundCreatedAt) {
+    throw new Error(
+      '[EVENT_TIME_VIOLATION] Refund missing event_time at ingestion'
+    );
+  }
+
    /**
    * REFUND STAGING (UNIFIED INGESTION)
    * -----------------------------------
@@ -111,13 +136,15 @@ export async function handleRefundCreated(
    * Without this, refund executions will never materialize.
    */
     const [id] = await db('staged_events')
-    .insert({
-      source_platform: 'shopify',
-      event_type: 'refunds/create',
-      raw_payload: rawPayload,
-      shop_id: shopId,
-    })
-    .returning('id');
+      .insert({
+        source_platform: 'shopify',
+        event_type: 'refunds/create',
+        raw_payload: rawPayload,
+        shop_id: shopId,
+        external_event_id: envelope.eventId,
+        event_time: new Date(refundCreatedAt),
+      })
+      .returning('id');
 
   /**
    * Normalize Knex returning shape.

@@ -43,8 +43,10 @@ export async function handleOrderCreated(
       hasUpdatedAt: !!raw?.updated_at,
       shopDomain,
     });
+
     return;
   }
+
 
   const installation = await db('shopify_app_installations')
     .where({ shop_domain: shopDomain })
@@ -58,7 +60,33 @@ export async function handleOrderCreated(
     return;
   }
 
+  /**
+   * INGESTION EVENT-TIME ENFORCEMENT
+   * ---------------------------------
+   * Canonical event-time must be persisted at ingestion boundary.
+   * Never rely on worker-only extraction.
+   */
+  const eventTime = raw.created_at ?? null;
+
+  if (!eventTime) {
+    throw new Error(
+      '[EVENT_TIME_VIOLATION] Order create missing created_at at ingestion'
+    );
+  }
+
   const shopId = installation.shop_id;
+
+  /**
+   * IDEMPOTENCY ENFORCEMENT
+   * -----------------------
+   * Upstream eventId must be persisted
+   * to activate unique constraint on staged_events.
+   */
+  if (!envelope.eventId) {
+    throw new Error(
+      '[INGESTION_IDENTITY_VIOLATION] Missing external eventId'
+    );
+  }
 
   const [staged] = await db('staged_events')
     .insert({
@@ -66,6 +94,8 @@ export async function handleOrderCreated(
       event_type: 'orders/create',
       raw_payload: raw,
       source_platform: 'shopify',
+      external_event_id: envelope.eventId,
+      event_time: new Date(eventTime),
     })
     .returning('*');
 

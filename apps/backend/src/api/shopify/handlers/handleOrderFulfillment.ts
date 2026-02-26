@@ -11,6 +11,8 @@ type ShopifyFulfillmentPayload = {
   order_id: string | number;
   status?: string | null;
   fulfillment_status?: string | null;
+  updated_at?: string;
+  created_at?: string;
 };
 
 function isShopifyFulfillmentPayload(
@@ -47,6 +49,37 @@ export async function handleOrderFulfillment(
   const shopId = installation.shop_id;
 
   /**
+   * INGESTION EVENT-TIME ENFORCEMENT
+   * ---------------------------------
+   * Fulfillment must carry canonical event-time.
+   * Accepted fields:
+   * - updated_at
+   * - created_at
+   */
+  const eventTime =
+    (rawPayload as any).updated_at ??
+    (rawPayload as any).created_at ??
+    null;
+
+  if (!eventTime) {
+    throw new Error(
+      '[EVENT_TIME_VIOLATION] Fulfillment missing event_time at ingestion'
+    );
+  }
+
+  /**
+   * IDEMPOTENCY ENFORCEMENT
+   * -----------------------
+   * Upstream eventId must be persisted
+   * to activate unique constraint on staged_events.
+   */
+  if (!envelope.eventId) {
+    throw new Error(
+      '[INGESTION_IDENTITY_VIOLATION] Missing external eventId'
+    );
+  }
+
+  /**
    * FULFILLMENT STAGING (UNIFIED INGESTION)
    * ----------------------------------------
    * Fulfillment state transitions must enter
@@ -58,6 +91,8 @@ export async function handleOrderFulfillment(
       event_type: 'orders/fulfilled',
       raw_payload: rawPayload,
       shop_id: shopId,
+      external_event_id: envelope.eventId,
+      event_time: new Date(eventTime),
     })
     .returning('id');
 

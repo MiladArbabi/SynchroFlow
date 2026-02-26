@@ -16,6 +16,7 @@ interface ShopifyInventoryPayload {
   inventory_item_id?: number;
   available?: number;
   location_id?: number;
+  updated_at?: string;
   admin_graphql_api_id?: string;
 }
 
@@ -24,6 +25,43 @@ export async function handleInventoryLevelUpdate(
 ): Promise<void> {
 
   const payload = envelope.rawPayload as Partial<ShopifyInventoryPayload>;
+
+  const shopDomain = envelope.shopDomain;
+    if (!shopDomain) {
+      console.error('[INVENTORY_INGESTION_VIOLATION] Missing shopDomain', {
+        eventId: envelope.eventId,
+      });
+      return;
+    }
+
+    const installation = await db('shopify_app_installations')
+      .where({ shop_domain: shopDomain })
+      .select('shop_id')
+      .first();
+
+    if (!installation) {
+      console.error('[INVENTORY_INGESTION_VIOLATION] Installation not found', {
+        shopDomain,
+        eventId: envelope.eventId,
+      });
+      return;
+    }
+
+    const shopId = installation.shop_id;
+
+  /**
+   * IDEMPOTENCY ENFORCEMENT
+   * -----------------------
+   * Upstream eventId must be persisted
+   * to activate staged_events unique constraint.
+   */
+  if (!envelope.eventId) {
+    throw new Error(
+      '[INGESTION_IDENTITY_VIOLATION] Missing external eventId'
+    );
+  }
+
+  console.debug('[inventory_sync] payload keys', Object.keys(payload || {}));
 
 if (
   payload == null ||
@@ -36,16 +74,7 @@ if (
   return;
 }
 
-const available: number = payload.available;
-
-  const shopId: number | undefined = envelope.shopId;
-
-  if (typeof shopId !== 'number') {
-    console.log('[inventory_sync] missing shopId', {
-      eventId: envelope.eventId,
-    });
-    return;
-  }
+  const available: number = payload.available;
   
   let externalInventoryItemGid: string | null = null;
 
@@ -62,6 +91,18 @@ const available: number = payload.available;
       payload,
     });
     return;
+  }
+
+  /**
+   * INGESTION EVENT-TIME ENFORCEMENT
+   * ---------------------------------
+   * Inventory update must carry canonical event-time.
+   * Field: updated_at
+   */
+  if (!payload.updated_at) {
+    throw new Error(
+      '[EVENT_TIME_VIOLATION] Inventory missing event_time at ingestion'
+    );
   }
 
   /**
@@ -83,6 +124,8 @@ const available: number = payload.available;
       event_type: 'inventory_levels/update',
       raw_payload: envelope.rawPayload,
       shop_id: shopId,
+      external_event_id: envelope.eventId,
+      event_time: new Date(payload.updated_at),
     })
     .returning('id');
 

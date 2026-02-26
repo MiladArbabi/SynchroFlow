@@ -5,6 +5,8 @@ import db from '@lasyncro/backend-core/db.js';
 
 type ShopifyOrderPaidPayload = {
   id?: string | number;
+  updated_at?: string;
+  processed_at?: string;
 };
 
 function isOrderPaidPayload(payload: unknown): payload is ShopifyOrderPaidPayload {
@@ -38,6 +40,37 @@ export async function handleOrderPaid(
   const shopId = installation.shop_id;
 
   /**
+   * INGESTION EVENT-TIME ENFORCEMENT
+   * ---------------------------------
+   * Payment must carry canonical event-time.
+   * Accepted fields:
+   * - updated_at
+   * - processed_at
+   */
+  const eventTime =
+    (rawPayload as any).updated_at ??
+    (rawPayload as any).processed_at ??
+    null;
+
+  if (!eventTime) {
+    throw new Error(
+      '[EVENT_TIME_VIOLATION] Payment missing event_time at ingestion'
+    );
+  }
+
+  /**
+   * IDEMPOTENCY ENFORCEMENT
+   * -----------------------
+   * Upstream eventId must be persisted
+   * to activate unique constraint on staged_events.
+   */
+  if (!envelope.eventId) {
+    throw new Error(
+      '[INGESTION_IDENTITY_VIOLATION] Missing external eventId'
+    );
+  }
+
+  /**
    * PAYMENT STAGING (UNIFIED INGESTION)
    * ------------------------------------
    * Payment state transitions must be handled
@@ -49,6 +82,8 @@ export async function handleOrderPaid(
       event_type: 'orders/paid',
       raw_payload: rawPayload,
       shop_id: shopId,
+      external_event_id: envelope.eventId,
+      event_time: new Date(eventTime),
     })
     .returning('*');
 

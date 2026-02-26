@@ -39,3 +39,54 @@ export async function assertDecisionSchema() {
 
   console.debug('[SchemaGuard][Decision] Schema verified');
 }
+
+/**
+ * Control Snapshot Schema Guard
+ * ------------------------------
+ * Ensures Control-Tower compression layer
+ * remains structurally compatible with API surface.
+ */
+export async function assertControlSnapshotSchema() {
+  const columns = await db('orders_operational_control_snapshot')
+    .columnInfo();
+
+  const required = [
+    'shop_id',
+    'snapshot_date',
+    'realized_revenue',
+    'at_risk_revenue',
+    'blocked_revenue',
+    'revenue_leakage',
+    'avg_contribution_margin_pct',
+    'orders_at_sla_risk',
+    'aging_24h',
+    'aging_48h',
+    'aging_72h_plus',
+    'pending_fulfillment',
+    'pending_payment',
+    'exception_orders',
+    'constrained_orders',
+    'revenue_blocked_inventory',
+    'revenue_blocked_customer',
+    'revenue_blocked_operational',
+    'queue_manual_review',
+    'queue_awaiting_inventory',
+    'queue_ready_to_ship',
+    'queue_awaiting_customer',
+    'evaluated_at',
+  ];
+
+  const missing = required.filter((c) => !columns[c]);
+
+  if (missing.length > 0) {
+    console.error('[SchemaGuard][ControlSnapshot] Missing columns', missing);
+
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error(
+        `Control snapshot schema mismatch: ${missing.join(', ')}`
+      );
+    }
+  }
+
+  console.debug('[SchemaGuard][ControlSnapshot] Schema verified');
+}

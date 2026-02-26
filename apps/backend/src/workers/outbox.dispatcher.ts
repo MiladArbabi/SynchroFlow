@@ -23,6 +23,15 @@ const BATCH_SIZE = 10;
 const RETRY_CEILING = 10;
 
 /**
+ * OUTBOX METRICS (Process-Scoped)
+ * --------------------------------
+ * Basic visibility before Prometheus integration.
+ */
+let publishedCount = 0;
+let failedCount = 0;
+let skippedCount = 0;
+
+/**
  * RETRY CEILING
  * -------------
  * Prevents infinite poison retries.
@@ -53,19 +62,42 @@ export async function startOutboxDispatcher() {
 async function dispatchBatch(channel: ReturnType<typeof getQueueChannel>) {
   await db.transaction(async (trx) => {
 
+    const pendingCount = await trx('integration_outbox')
+      .whereNull('published_at')
+      .whereNull('failed_at')
+      .count<{ count: string }>('id as count')
+      .first();
+
+    const pending = Number(pendingCount?.count ?? 0);
+
+    if (pending > 0) {
+      console.info('[outbox][backlog]', { pending });
+    }
+
     /**
      * VERSION-ORDERED DISPATCH
      * -------------------------
      * Guarantees strict per-aggregate causal ordering.
      * Prevents created_at clock skew from reordering events.
      */
-    const rows = await trx('integration_outbox')
-      .whereNull('published_at')
-      .whereNull('failed_at')
+    const rows = await trx('integration_outbox as io')
+      .whereNull('io.published_at')
+      .whereNull('io.failed_at')
+      .whereRaw(`
+        io.aggregate_version = (
+          SELECT MIN(io2.aggregate_version)
+          FROM integration_outbox io2
+          WHERE
+            io2.aggregate_type = io.aggregate_type
+            AND io2.aggregate_id = io.aggregate_id
+            AND io2.published_at IS NULL
+            AND io2.failed_at IS NULL
+        )
+      `)
       .orderBy([
-        { column: 'aggregate_type', order: 'asc' },
-        { column: 'aggregate_id', order: 'asc' },
-        { column: 'aggregate_version', order: 'asc' },
+        { column: 'io.aggregate_type', order: 'asc' },
+        { column: 'io.aggregate_id', order: 'asc' },
+        { column: 'io.aggregate_version', order: 'asc' },
       ])
       .limit(BATCH_SIZE)
       .forUpdate()
@@ -102,6 +134,22 @@ async function dispatchBatch(channel: ReturnType<typeof getQueueChannel>) {
             last_error: null,
           });
 
+        const latencyMs =
+          new Date().getTime() - new Date(row.created_at).getTime();
+
+          /**
+           * OUTBOX METRIC — SUCCESS
+           * ------------------------
+           * Structured log for deterministic publish trace.
+           */
+          console.info('[outbox][published]', {
+            id: row.id,
+            aggregateType: row.aggregate_type,
+            aggregateId: row.aggregate_id,
+            aggregateVersion: row.aggregate_version,
+            latencyMs,
+          });
+
       } catch (err: any) {
 
         /**
@@ -124,6 +172,28 @@ async function dispatchBatch(channel: ReturnType<typeof getQueueChannel>) {
               [RETRY_CEILING]
             ),
           });
+
+          /**
+           * OUTBOX METRIC — RETRY
+           * ----------------------
+           * Tracks transient broker failures.
+           */
+          console.warn('[outbox][retry]', {
+            id: row.id,
+            aggregateType: row.aggregate_type,
+            aggregateId: row.aggregate_id,
+            aggregateVersion: row.aggregate_version,
+            error: String(err?.message ?? err),
+          });
+
+        if (row.retry_count + 1 >= RETRY_CEILING) {
+          console.error('[outbox][failed_terminal]', {
+            id: row.id,
+            aggregateType: row.aggregate_type,
+            aggregateId: row.aggregate_id,
+            aggregateVersion: row.aggregate_version,
+          });
+        }
       }
     }
   });

@@ -7,7 +7,10 @@ import { initQueue, closeQueue } from './bootstrap/queue.js';
 import { startWorkers } from './bootstrap/workers.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { assertDecisionSchema } from './utils/schemaGuard.js';
+import { 
+  assertControlSnapshotSchema, 
+  assertDecisionSchema 
+} from './utils/schemaGuard.js';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -26,6 +29,7 @@ async function start() {
   await initQueue();
   await startWorkers();
   await assertDecisionSchema();
+  await assertControlSnapshotSchema();
 
   server = app.listen(port, HOST, () => {
     console.log(`Server is listening on http://${HOST}:${port}`);

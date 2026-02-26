@@ -72,36 +72,19 @@ export function startReconciliationConsumer() {
         return;
       }
 
-      /**
-       * STRICT VERSION PROJECTION GATE
-       * --------------------------------
-       * Reconcile only if:
-       * - incoming version equals current aggregate version
-       * - and has not yet been projected
-       */
-      if (
-        typeof aggregateVersion !== 'number' ||
-        aggregateVersion !== order.aggregate_version ||
-        aggregateVersion <= order.last_projected_version
-      ) {
+      if (typeof aggregateVersion !== 'number') {
         ch.ack(msg);
         return;
       }
 
-      /**
-       * ECONOMIC AUTHORITY COMPLETE
-       * ---------------------------
-       * Projection and obligation recomputation
-       * now occur inside reconciliation transaction.
-       *
-       * Consumer is transport-layer only.
-       */
-      
-      const { affectedVariantIds } =
-      await reconcileOrderFulfillment(lasyncroOrderId, observed);
+      await reconcileOrderFulfillment(
+        lasyncroOrderId,
+        aggregateVersion,
+        observed
+      );
 
-      // Ack only after full economic + execution consistency
       ch.ack(msg);
+      
     } catch (err) {
       console.error('[reconciliation] failed', err);
 

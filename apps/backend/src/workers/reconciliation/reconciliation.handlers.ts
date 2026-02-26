@@ -8,6 +8,7 @@ import { computeObligationFlagsForOrders } from '../../services/order-execution-
 
 export async function reconcileOrderFulfillment(
   lasyncroOrderId: string,
+  aggregateVersion: number,
   observed?: {
     status: 'fulfilled';
     observedAt: Date;
@@ -26,7 +27,30 @@ export async function reconcileOrderFulfillment(
       .first();
 
     if (!order) {
-      throw new Error(`Order not found: ${lasyncroOrderId}`);
+      /**
+       * RECONCILIATION SAFETY GUARD
+       * ----------------------------
+       * Order missing under projection is a structural violation.
+       * Fail fast to avoid silent data divergence.
+       */
+      throw new Error(
+        `[RECONCILIATION_INVARIANT_VIOLATION] Order not found: ${lasyncroOrderId}`
+      );
+    }
+
+    /**
+     * STRICT VERSION PROJECTION GATE (Atomic)
+     * ----------------------------------------
+     * Prevents duplicate or stale projections under concurrency.
+     */
+    if (
+      aggregateVersion !== order.aggregate_version ||
+      aggregateVersion <= order.last_projected_version
+    ) {
+      return {
+        result: 'synthetic',
+        affectedVariantIds: [],
+      };
     }
 
     await writeOrderRevenueUnits(lasyncroOrderId, trx);
@@ -351,11 +375,42 @@ export async function reconcileOrderFulfillment(
       ? new Date(order.promised_delivery_at)
       : null;
 
-    const ageSinceCreation =
-      createdAt
-        ? Math.floor((now.getTime() - createdAt.getTime()) / 1000)
-        : 0;
+    /**
+     * AGE INVARIANT
+     * -------------
+     * Order creation event-time is mandatory.
+     * Null here indicates structural violation.
+     */
+    if (!createdAt) {
+      throw new Error(
+        '[AGE_INVARIANT_VIOLATION] order_created_at missing during reconciliation'
+      );
+    }
 
+    const ageSinceCreation =
+      Math.floor((now.getTime() - createdAt.getTime()) / 1000);
+
+    /**
+     * AGING BUCKETS (Paid Orders Only)
+     * ---------------------------------
+     * Buckets operate exclusively on age_since_paid_seconds.
+     * Unpaid orders are excluded by design.
+     *
+     * If unpaid aging is required,
+     * this query must be structurally expanded.
+     */
+
+    /**
+     * AGE SINCE PAID
+     * --------------
+     * Defined ONLY for paid orders.
+     *
+     * Unpaid orders intentionally produce NULL.
+     * They must not appear in paid-aging buckets.
+     *
+     * Any future change to aging semantics
+     * must update control snapshot aggregation.
+     */
     const ageSincePaid =
       paidAt
         ? Math.floor((now.getTime() - paidAt.getTime()) / 1000)
