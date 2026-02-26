@@ -31,6 +31,30 @@ export async function reconcileOrderFulfillment(
 
     await writeOrderRevenueUnits(lasyncroOrderId, trx);
 
+        /**
+     * SNAPSHOT DATE (Event-Time Anchored)
+     * -----------------------------------
+     * Must be derived from deterministic domain event-time.
+     *
+     * Anchor Rule:
+     * - Use max(order_updated_at, order_created_at)
+     * - Never use wall-clock.
+     *
+     * Guarantees:
+     * - Replay determinism
+     * - Cross-node consistency
+     * - No execution-time drift
+     */
+    const eventAnchor =
+      order.order_updated_at ??
+      order.order_created_at;
+
+    if (!eventAnchor) {
+      throw new Error(
+        '[EVENT_TIME_VIOLATION] Order missing event-time anchor'
+      );
+    }
+
     /**
      * REFUND REPLAY SAFETY RESET
      * --------------------------
@@ -299,7 +323,13 @@ export async function reconcileOrderFulfillment(
       .select('fulfilled_at')
       .first();
 
-    const now = new Date();
+    /**
+     * AGE CALCULATION CLOCK (Event-Time Anchored)
+     * -------------------------------------------
+     * Must use deterministic domain event-time.
+     * Never use wall-clock.
+     */
+    const now = new Date(eventAnchor);
 
     const createdAt = order.order_created_at
       ? new Date(order.order_created_at)
@@ -484,13 +514,9 @@ export async function reconcileOrderFulfillment(
         .merge();
     }
 
-    /**
-     * DAILY OPERATIONAL BRIEF MATERIALIZATION
-     * ----------------------------------------
-     * Replace per (shop_id, brief_date).
-     * Deterministic cross-order compression layer.
-     */
-    const briefDate = new Date().toISOString().split('T')[0];
+    const briefDate = new Date(eventAnchor)
+      .toISOString()
+      .split('T')[0];
 
     /* --- Critical Orders (healthScore >= 70) --- */
     const criticalOrders = await trx('order_risk_snapshot')
@@ -583,10 +609,277 @@ export async function reconcileOrderFulfillment(
       .onConflict(['shop_id', 'brief_date'])
       .merge();
 
+      /**
+       * PENDING PAYMENT
+       * ---------------
+       * Definition:
+       * - payment_state = 'unpaid'
+       * - No captured_at timestamp
+       *
+       * Strictly financial state.
+       * No inference.
+       */
+      const pendingPaymentRow = await trx('orders')
+        .where('shop_id', order.shop_id)
+        .andWhere('payment_state', 'unpaid')
+        .whereNull('captured_at')
+        .count<{ count: string }>('lasyncro_order_id as count')
+        .first();
+      
+      /**
+       * ORDERS OPERATIONAL CONTROL SNAPSHOT
+       * ------------------------------------
+       * Phase 1 Control Tower materialization.
+       *
+       * Replace-on-reconcile.
+       * Shop-level compression across:
+       * - Revenue Integrity
+       * - Order Health
+       * - Constraint Intelligence
+       * - Work Queues
+       *
+       * Must remain deterministic and replay-safe.
+       */
+
+      const snapshotDate = briefDate;
+
+      /* ─────────────────────────────
+        REVENUE INTEGRITY
+      ───────────────────────────── */
+
+      const realizedRevenueRow = await trx('orders')
+        .where('shop_id', order.shop_id)
+        .whereNotNull('captured_at')
+        .sum<{ sum: string }>('total_price as sum')
+        .first();
+
+      const atRiskRevenueRow = await trx('order_revenue_units_net as runet')
+        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'runet.lasyncro_order_id')
+        .where('ors.shop_id', order.shop_id)
+        .andWhere('ors.is_at_risk', true)
+        .sum<{ sum: string }>('runet.net_revenue as sum')
+        .first();
+
+      const blockedRevenueRow = await trx('order_revenue_units_net as runet')
+        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'runet.lasyncro_order_id')
+        .where('ors.shop_id', order.shop_id)
+        .andWhere(function () {
+          this.where('ors.is_inventory_blocked', true)
+              .orWhere('ors.is_operational_blocked', true)
+              .orWhere('ors.is_customer_blocked', true);
+        })
+        .sum<{ sum: string }>('runet.net_revenue as sum')
+        .first();
+
+      const avgMarginRow = await trx('order_margin_snapshot')
+        .where('shop_id', order.shop_id)
+        .avg<{ avg: string }>('margin_pct as avg')
+        .first();
+
+      /* ─────────────────────────────
+        ORDER HEALTH
+      ───────────────────────────── */
+
+      const ordersAtSlaRisk = Number(slaBreachedOrders?.count ?? 0);
+
+      const agingBuckets = await trx('order_age_snapshot as oas')
+        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+        .where('o.shop_id', order.shop_id)
+        .select(
+          trx.raw(`
+            COUNT(*) FILTER (WHERE oas.age_since_paid_seconds >= 86400 AND oas.age_since_paid_seconds < 172800) as aging_24h
+          `),
+          trx.raw(`
+            COUNT(*) FILTER (WHERE oas.age_since_paid_seconds >= 172800 AND oas.age_since_paid_seconds < 259200) as aging_48h
+          `),
+          trx.raw(`
+            COUNT(*) FILTER (WHERE oas.age_since_paid_seconds >= 259200) as aging_72h_plus
+          `)
+        )
+        .first();
+
+      /**
+       * Constrained Orders (authoritative)
+       * ----------------------------------
+       * Derived from order_risk_snapshot.
+       * Must not depend on FT2 resolver variables.
+       */
+      const constrainedOrdersRow = await trx('order_risk_snapshot')
+        .where('shop_id', order.shop_id)
+        .andWhere(function () {
+          this.where('is_inventory_blocked', true)
+              .orWhere('is_operational_blocked', true)
+              .orWhere('is_customer_blocked', true);
+        })
+        .count<{ count: string }>('lasyncro_order_id as count')
+        .first();
+
+      const constrainedOrdersCount =
+        Number(constrainedOrdersRow?.count ?? 0);
+
+      const inventoryBlockedRevenueRow = inventoryBlockedRevenue;
+
+      const customerBlockedRevenueRow = await trx('order_revenue_units_net as runet')
+        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'runet.lasyncro_order_id')
+        .where('ors.shop_id', order.shop_id)
+        .andWhere('ors.is_customer_blocked', true)
+        .sum<{ sum: string }>('runet.net_revenue as sum')
+        .first();
+
+      const operationalBlockedRevenueRow = await trx('order_revenue_units_net as runet')
+        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'runet.lasyncro_order_id')
+        .where('ors.shop_id', order.shop_id)
+        .andWhere('ors.is_operational_blocked', true)
+        .sum<{ sum: string }>('runet.net_revenue as sum')
+        .first();
+
+      /* ─────────────────────────────
+        WORK QUEUES (Deterministic)
+      ───────────────────────────── */
+
+      const queueManualReview = await trx('order_risk_snapshot')
+        .where('shop_id', order.shop_id)
+        .andWhere('fraud_score', '>', 0.8)
+        .count<{ count: string }>('lasyncro_order_id as count')
+        .first();
+
+      const queueAwaitingInventory = await trx('order_risk_snapshot')
+        .where('shop_id', order.shop_id)
+        .andWhere('is_inventory_blocked', true)
+        .count<{ count: string }>('lasyncro_order_id as count')
+        .first();
+
+      /**
+       * EXCEPTION ORDERS
+       * ----------------
+       * Definition (strict):
+       * - Any at-risk flag
+       * - Any active constraint
+       * - Any SLA breach
+       *
+       * No health-score thresholds.
+       * Pure state-based abnormality detection.
+       */
+      const exceptionOrdersRow = await trx('order_risk_snapshot as ors')
+        .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'ors.lasyncro_order_id')
+        .where('ors.shop_id', order.shop_id)
+        .andWhere(function () {
+          this.where('ors.is_at_risk', true)
+              .orWhere('ors.is_inventory_blocked', true)
+              .orWhere('ors.is_customer_blocked', true)
+              .orWhere('ors.is_operational_blocked', true)
+              .orWhere('oas.is_shipping_sla_breached', true)
+              .orWhere('oas.is_delivery_sla_breached', true);
+        })
+        .count<{ count: string }>('ors.lasyncro_order_id as count')
+        .first();
+
+      /**
+       * READY-TO-SHIP QUEUE
+       * --------------------
+       * Definition (strict):
+       * - Fulfillment status = pending
+       * - No active inventory, customer, or operational blocks
+       *
+       * This explicitly separates:
+       *   pending + blocked   → constrained
+       *   pending + no blocks → ready to ship
+       *
+       * Deterministic.
+       */
+      const queueReadyToShip = await trx('order_fulfillment_status as ofs')
+        .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .where('o.shop_id', order.shop_id)
+        .andWhere('ofs.status', 'pending')
+        .andWhere('ors.is_inventory_blocked', false)
+        .andWhere('ors.is_customer_blocked', false)
+        .andWhere('ors.is_operational_blocked', false)
+        .count<{ count: string }>('ofs.lasyncro_order_id as count')
+        .first();
+
+      const queueAwaitingCustomer = await trx('order_risk_snapshot')
+        .where('shop_id', order.shop_id)
+        .andWhere('is_customer_blocked', true)
+        .count<{ count: string }>('lasyncro_order_id as count')
+        .first();
+
+      await trx('orders_operational_control_snapshot')
+        .insert({
+          shop_id: order.shop_id,
+          snapshot_date: snapshotDate,
+
+          realized_revenue: Number(realizedRevenueRow?.sum ?? 0),
+          at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),
+          blocked_revenue: Number(blockedRevenueRow?.sum ?? 0),
+          
+          /**
+           * REVENUE LEAKAGE
+           * ---------------
+           * Defined as irreversible revenue destruction
+           * (e.g. cancelled or failed fulfillment).
+           *
+           * Current system has no such terminal states present.
+           * Refunds are already netted in revenue units.
+           *
+           * Therefore leakage = 0.
+           *
+           * If future statuses introduce terminal loss states,
+           * this must be recalculated deterministically.
+           */
+          revenue_leakage: 0,
+          avg_contribution_margin_pct: Number(avgMarginRow?.avg ?? 0),
+
+          orders_at_sla_risk: ordersAtSlaRisk,
+          aging_24h: Number((agingBuckets as any)?.aging_24h ?? 0),
+          aging_48h: Number((agingBuckets as any)?.aging_48h ?? 0),
+
+          aging_72h_plus: Number((agingBuckets as any)?.aging_72h_plus ?? 0),
+          /**
+           * Pending Fulfillment
+           * -------------------
+           * Orders not yet fulfilled.
+           * Derived from order_fulfillment_status.
+           */
+          pending_fulfillment: Number(
+            (
+              await trx('order_fulfillment_status as ofs')
+                .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+                .where('o.shop_id', order.shop_id)
+                .andWhereNot('ofs.status', 'fulfilled')
+                .count<{ count: string }>('ofs.lasyncro_order_id as count')
+                .first()
+            )?.count ?? 0
+          ),
+
+          pending_payment: Number(pendingPaymentRow?.count ?? 0),
+          exception_orders: Number(exceptionOrdersRow?.count ?? 0),
+
+          constrained_orders: constrainedOrdersCount,
+          revenue_blocked_inventory: Number(inventoryBlockedRevenueRow?.sum ?? 0),
+          revenue_blocked_customer: Number(customerBlockedRevenueRow?.sum ?? 0),
+          revenue_blocked_operational: Number(operationalBlockedRevenueRow?.sum ?? 0),
+
+          queue_manual_review: Number(queueManualReview?.count ?? 0),
+          queue_awaiting_inventory: Number(queueAwaitingInventory?.count ?? 0),
+          queue_ready_to_ship: Number(queueReadyToShip?.count ?? 0),
+          queue_awaiting_customer: Number(queueAwaitingCustomer?.count ?? 0),
+
+          evaluated_at: trx.fn.now(),
+        })
+        .onConflict(['shop_id', 'snapshot_date'])
+        .merge();
+
     await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .update({
-        last_reconciled_at: trx.fn.now(),
+        /**
+         * RECONCILIATION MARKER (Event-Time Anchored)
+         * --------------------------------------------
+         * Must align with domain event-time to preserve
+         * deterministic delta gate semantics.
+         */
+        last_projected_version: order.aggregate_version,
       });
 
     return {

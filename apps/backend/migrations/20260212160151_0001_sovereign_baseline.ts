@@ -103,6 +103,36 @@ export async function up(knex: Knex): Promise<void> {
       .index();
 
     /**
+     * AGGREGATE VERSION (Monotonic)
+     * -----------------------------
+     * Strictly increments on every domain mutation.
+     *
+     * Purpose:
+     * - Deterministic ordering
+     * - Event sequencing
+     * - Outbox stabilization
+     * - Concurrency conflict detection
+     *
+     * Must ONLY be incremented inside canonical
+     * ingestion or reconciliation boundaries.
+     */
+    table.integer('aggregate_version')
+      .notNullable()
+      .defaultTo(0)
+      .index();
+
+    /**
+     * PROJECTION VERSION TRACKER
+     * ---------------------------
+     * Highest aggregate_version successfully projected.
+     * Enforces idempotent reconciliation.
+     */
+    table
+      .integer('last_projected_version')
+      .notNullable()
+      .defaultTo(0);
+
+    /**
      * RECONCILIATION BOUNDARY
      * -----------------------
      * Marks the last successful reconciliation pass.

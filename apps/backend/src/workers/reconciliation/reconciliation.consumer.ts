@@ -47,21 +47,24 @@ export function startReconciliationConsumer() {
     if (!msg) return;
 
     try {
-      const { lasyncroOrderId, observed } = JSON.parse(
+      const { lasyncroOrderId, aggregateVersion, observed } = JSON.parse(
         msg.content.toString()
       );
 
       /**
-       * DELTA RECONCILIATION GATE
-       * --------------------------
-       * Enforces migration contract:
-       *   reconcile only if
-       *   last_reconciled_at IS NULL
-       *   OR order_updated_at > last_reconciled_at
+       * VERSION-BASED RECONCILIATION GATE
+       * ---------------------------------
+       * Reconciliation executes only for the current
+       * aggregate_version of the order.
+       *
+       * Guarantees:
+       * - Strict monotonic processing
+       * - Stale event suppression
+       * - Replay safety
        */
       const order = await db('orders')
         .where({ lasyncro_order_id: lasyncroOrderId })
-        .select('order_updated_at', 'last_reconciled_at')
+        .select('aggregate_version', 'last_projected_version')
         .first();
 
       if (!order) {
@@ -69,11 +72,18 @@ export function startReconciliationConsumer() {
         return;
       }
 
+      /**
+       * STRICT VERSION PROJECTION GATE
+       * --------------------------------
+       * Reconcile only if:
+       * - incoming version equals current aggregate version
+       * - and has not yet been projected
+       */
       if (
-        order.last_reconciled_at &&
-        new Date(order.order_updated_at) <= new Date(order.last_reconciled_at)
+        typeof aggregateVersion !== 'number' ||
+        aggregateVersion !== order.aggregate_version ||
+        aggregateVersion <= order.last_projected_version
       ) {
-        // No delta — skip reconciliation
         ch.ack(msg);
         return;
       }

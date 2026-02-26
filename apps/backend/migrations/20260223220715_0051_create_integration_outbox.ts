@@ -18,6 +18,16 @@ export async function up(knex: Knex): Promise<void> {
       .text('event_type')
       .notNullable();
 
+    /**
+     * AGGREGATE VERSION (Ordering Anchor)
+     * ------------------------------------
+     * Captures version at mutation time.
+     * Enables strict per-aggregate publish ordering.
+     */
+    table
+      .integer('aggregate_version')
+      .notNullable();
+
     table
       .jsonb('payload')
       .notNullable();
@@ -63,7 +73,11 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     CREATE UNIQUE INDEX integration_outbox_dedup_idx
-    ON integration_outbox (aggregate_type, aggregate_id, event_type)
+    ON integration_outbox (
+      aggregate_type,
+      aggregate_id,
+      aggregate_version
+    )
     WHERE published_at IS NULL AND failed_at IS NULL;
   `);
 }

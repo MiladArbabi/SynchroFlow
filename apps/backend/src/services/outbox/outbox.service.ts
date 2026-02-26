@@ -27,12 +27,22 @@ export class OutboxService {
       );
     }
 
+    if (
+      input.aggregateType === 'order' &&
+      typeof (input.payload as any)?.aggregateVersion !== 'number'
+    ) {
+      throw new Error(
+        '[OUTBOX_VERSION_VIOLATION] Missing aggregateVersion'
+      );
+    }
+
     await trx('integration_outbox')
     .insert({
       id: crypto.randomUUID(),
       aggregate_type: input.aggregateType,
       aggregate_id: input.aggregateId,
       event_type: input.eventType,
+      aggregate_version: (input.payload as any).aggregateVersion,
       payload: input.payload,
     })
   }

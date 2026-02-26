@@ -53,11 +53,20 @@ export async function startOutboxDispatcher() {
 async function dispatchBatch(channel: ReturnType<typeof getQueueChannel>) {
   await db.transaction(async (trx) => {
 
-    // 1️⃣ Lock unpublished rows
+    /**
+     * VERSION-ORDERED DISPATCH
+     * -------------------------
+     * Guarantees strict per-aggregate causal ordering.
+     * Prevents created_at clock skew from reordering events.
+     */
     const rows = await trx('integration_outbox')
       .whereNull('published_at')
       .whereNull('failed_at')
-      .orderBy('created_at', 'asc')
+      .orderBy([
+        { column: 'aggregate_type', order: 'asc' },
+        { column: 'aggregate_id', order: 'asc' },
+        { column: 'aggregate_version', order: 'asc' },
+      ])
       .limit(BATCH_SIZE)
       .forUpdate()
       .skipLocked();

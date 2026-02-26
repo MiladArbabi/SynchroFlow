@@ -61,6 +61,27 @@ export async function processMessage(msg: { content: Buffer } | null) {
         raw_payload: Record<string, any>;
       }>();
 
+    /**
+     * STAGED EVENT TIME ANCHOR
+     * -------------------------
+     * Used for deterministic processed_at marking.
+     * Never use wall-clock.
+     */
+    const raw = stagedEvent.raw_payload as any;
+
+    const stagedEventTime =
+      raw?.updated_at ??
+      raw?.created_at ??
+      null;
+
+    if (!stagedEventTime) {
+      throw new Error(
+        '[EVENT_TIME_VIOLATION] Staged event missing event-time'
+      );
+    }
+
+    const stagedEventTimestamp = new Date(stagedEventTime);
+
     if (!stagedEvent) {
       /**
        * Either:
@@ -152,6 +173,13 @@ export async function processMessage(msg: { content: Buffer } | null) {
             order_updated_at: payload.updatedAt ?? payload.updated_at ?? null,
 
             payment_state: 'unpaid',
+
+            /**
+             * AGGREGATE VERSION INITIALIZATION
+             * ---------------------------------
+             * Creation = first domain mutation.
+             */
+            aggregate_version: 1,
           });
 
           await trx('external_order_identity_map').insert({
@@ -350,6 +378,25 @@ export async function processMessage(msg: { content: Buffer } | null) {
         await db.transaction(async (trx) => {
 
           /**
+           * PAYMENT EVENT TIME (Event-Time Required)
+           * -----------------------------------------
+           * Payment webhook must provide event-time.
+           * Wall-clock fallback forbidden.
+           */
+          const paymentEventTime =
+            payload.updated_at ??
+            payload.processed_at ??
+            null;
+
+          if (!paymentEventTime) {
+            throw new Error(
+              '[EVENT_TIME_VIOLATION] Payment missing event-time'
+            );
+          }
+
+          const paymentTimestamp = new Date(paymentEventTime);
+
+          /**
            * CASH REALIZATION COMMIT
            * -----------------------
            * Payment webhook is authoritative signal of payment confirmation.
@@ -359,16 +406,36 @@ export async function processMessage(msg: { content: Buffer } | null) {
             .where({ lasyncro_order_id: lasyncroOrderId })
             .update({
               payment_state: 'paid',
-              paid_at: trx.raw('COALESCE(paid_at, ?)', [trx.fn.now()]),
-              order_updated_at: trx.fn.now(),
+
+              // Preserve first payment timestamp only (idempotent)
+              paid_at: trx.raw(
+                'COALESCE(paid_at, ?)',
+                [paymentTimestamp]
+              ),
+
+              // Event-time anchored mutation
+              order_updated_at: paymentTimestamp,
             });
+
+          /**
+           * FETCH CURRENT AGGREGATE VERSION
+           * --------------------------------
+           * Must reflect post-mutation version.
+           */
+          const { aggregate_version } = await trx('orders')
+            .where({ lasyncro_order_id: lasyncroOrderId })
+            .select('aggregate_version')
+            .first();
 
           await OutboxService.enqueue(
             {
               aggregateType: 'order',
               aggregateId: lasyncroOrderId,
               eventType: 'reconciliation.requested',
-              payload: { lasyncroOrderId },
+              payload: { 
+                lasyncroOrderId,
+                aggregateVersion: aggregate_version,
+               },
             },
             trx
           );
@@ -414,6 +481,23 @@ export async function processMessage(msg: { content: Buffer } | null) {
           payload.status === 'cancelled'
             ? 'cancelled'
             : 'fulfilled';
+        
+        /**
+         * FULFILLMENT EVENT TIME (Event-Time Required)
+         * ---------------------------------------------
+         */
+        const fulfillmentEventTime =
+          payload.updated_at ??
+          payload.created_at ??
+          null;
+
+        if (!fulfillmentEventTime) {
+          throw new Error(
+            '[EVENT_TIME_VIOLATION] Fulfillment missing event-time'
+          );
+        }
+
+        const fulfillmentTimestamp = new Date(fulfillmentEventTime);
 
         await db.transaction(async (trx) => {
 
@@ -425,6 +509,26 @@ export async function processMessage(msg: { content: Buffer } | null) {
           trx
         );
 
+        /**
+         * AGGREGATE MUTATION — FULFILLMENT
+         */
+        await trx('orders')
+          .where({ lasyncro_order_id: lasyncroOrderId })
+          .update({
+            order_updated_at: fulfillmentTimestamp,
+            aggregate_version: trx.raw('aggregate_version + 1'),
+          });
+
+        /**
+         * FETCH CURRENT AGGREGATE VERSION
+         * --------------------------------
+         * Must reflect post-mutation version.
+         */
+        const { aggregate_version } = await trx('orders')
+          .where({ lasyncro_order_id: lasyncroOrderId })
+          .select('aggregate_version')
+          .first();
+
         await OutboxService.enqueue(
           {
             aggregateType: 'order',
@@ -432,6 +536,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
             eventType: 'reconciliation.requested',
             payload: {
               lasyncroOrderId,
+              aggregateVersion: aggregate_version,
             },
           },
           trx
@@ -442,22 +547,9 @@ export async function processMessage(msg: { content: Buffer } | null) {
         break;
     }
 
-      /**
-       * ---------------------------------------------------------
-       * REFUND EVENT
-       * ---------------------------------------------------------
-       */
-      case 'refunds/create': {
+    case 'refunds/create': {
 
       const payload = stagedEvent.raw_payload as any;
-
-      console.log('[REFUND WORKER DEBUG]', {
-        shop_id: stagedEvent.shop_id,
-        platform: 'shopify',
-        order_id_raw: payload.order_id,
-        order_id_string: String(payload.order_id),
-        type: typeof payload.order_id,
-      });
 
       let lasyncroOrderId: string | null = null;
 
@@ -472,6 +564,25 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         if (!lasyncroOrderId) return;
 
+        /**
+         * REFUND EVENT TIME (Event-Time Required)
+         * ----------------------------------------
+         * Refund webhook must provide canonical event-time.
+         * Wall-clock fallback forbidden.
+         */
+        const refundEventTime =
+          payload.created_at ??
+          payload.processed_at ??
+          null;
+
+        if (!refundEventTime) {
+          throw new Error(
+            '[EVENT_TIME_VIOLATION] Refund missing event-time'
+          );
+        }
+
+        const refundExecutedAt = new Date(refundEventTime);
+
         const externalRefundId = String(payload.id);
 
         let execution = await trx('refund_executions')
@@ -482,6 +593,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
           .first();
 
         if (!execution) {
+
           const refundExecutionId = crypto.randomUUID();
 
           await trx('refund_executions').insert({
@@ -490,9 +602,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
             platform: 'shopify',
             external_refund_id: externalRefundId,
             total_refund_amount: 0,
-            executed_at: payload.created_at
-              ? new Date(payload.created_at)
-              : new Date(),
+            executed_at: refundExecutedAt,
           });
 
           execution = {
@@ -501,22 +611,18 @@ export async function processMessage(msg: { content: Buffer } | null) {
         }
 
         /**
-         * ---------------------------------------------------------
          * REFUND LINE ITEM INGESTION
-         * ---------------------------------------------------------
-         * Persist granular refund units.
-         * This does NOT mutate revenue units.
-         * Reconciliation remains economic authority.
-         *
-         * Idempotency:
-         * - refund_execution_line_items keyed by UUID
-         * - execution header already platform-idempotent
+         * ---------------------------
+         * Economic mutation is deferred to reconciliation.
+         * This layer is persistence-only.
          */
+
         const refundLineItems = Array.isArray(payload.refund_line_items)
           ? payload.refund_line_items
           : [];
 
         for (const item of refundLineItems) {
+
           const externalLineItemId = String(
             item?.line_item?.id ?? item?.line_item_id ?? ''
           );
@@ -532,13 +638,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
             })
             .first();
 
-          if (!revenueUnit) {
-            console.warn('[REFUND_INGEST_SKIP] Revenue unit not found', {
-              lasyncroOrderId,
-              externalLineItemId,
-            });
-            continue;
-          }
+          if (!revenueUnit) continue;
 
           const ru = await trx('order_revenue_units')
             .select('lasyncro_revenue_unit_id')
@@ -564,58 +664,53 @@ export async function processMessage(msg: { content: Buffer } | null) {
               'lasyncro_revenue_unit_id',
             ])
             .ignore();
-          }
+        }
 
         /**
-         * ECONOMIC MUTATION REMOVED
-         * -------------------------
-         * Refund execution must NOT be applied here.
-         *
-         * Reconciliation is the single economic materialization authority.
-         *
-         * This prevents double-application of returned quantities.
-         *
-         * Refund execution is persisted only.
-         * Reconciliation will deterministically apply it.
+         * AGGREGATE MUTATION — REFUND
+         * -----------------------------
+         * - Event-time anchored
+         * - Version incremented atomically
          */
+        await trx('orders')
+          .where({ lasyncro_order_id: lasyncroOrderId })
+          .update({
+            order_updated_at: refundExecutedAt,
+            aggregate_version: trx.raw('aggregate_version + 1'),
+          });
 
         /**
-       * DELTA INVALIDATION — REFUND ECONOMIC EVENT
-       * ------------------------------------------
-       * Refund persistence is an economic mutation.
-       *
-       * Reconciliation delta gate requires:
-       *   order_updated_at > last_reconciled_at
-       *
-       * Without bumping order_updated_at,
-       * reconciliation will be skipped for refunds.
-       *
-       * This does NOT mutate economic state.
-       * It only invalidates the delta gate.
-       */
-      await trx('orders')
-        .where({ lasyncro_order_id: lasyncroOrderId })
-        .update({
-          order_updated_at: trx.fn.now(),
-        });
-      });
+         * FETCH CURRENT AGGREGATE VERSION
+         * --------------------------------
+         * Must reflect post-mutation version.
+         */
+        const { aggregate_version } = await trx('orders')
+          .where({ lasyncro_order_id: lasyncroOrderId })
+          .select('aggregate_version')
+          .first();
 
-      if (lasyncroOrderId) {
-        await db.transaction(async (trx) => {
-          await OutboxService.enqueue(
-            {
-              aggregateType: 'order',
-              aggregateId: lasyncroOrderId!,
-              eventType: 'reconciliation.requested',
-              payload: { lasyncroOrderId },
+        /**
+         * VERSION-COUPLED OUTBOX EVENT
+         * ------------------------------
+         * Enables strict per-aggregate ordering.
+         */
+        await OutboxService.enqueue(
+          {
+            aggregateType: 'order',
+            aggregateId: lasyncroOrderId,
+            eventType: 'reconciliation.requested',
+            payload: {
+              lasyncroOrderId,
+              aggregateVersion: aggregate_version,
             },
-            trx
-          );
-        });
-      }
+          },
+          trx
+        );
+      });
 
       break;
     }
+  
 
       default:
         break;
@@ -629,7 +724,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
     await db('staged_events')
       .where({ id: staged_event_id })
       .update({
-        processed_at: db.fn.now(),
+        processed_at: stagedEventTimestamp,
         failed_at: null,
         retry_count: 0,
         error_message: null,
