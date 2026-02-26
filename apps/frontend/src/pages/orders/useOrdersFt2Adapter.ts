@@ -22,10 +22,12 @@ import { OrdersFt2Snapshot } from './useOrdersFt2Snapshot';
  * The adapter is a *pipe*, not a brain.
  */
 export function mapOrdersFt2Props(
-  snapshot: OrdersFt2Snapshot
+  snapshot: OrdersFt2Snapshot,
+  decision: OrdersModuleFT2DataProps['decision']
 ): OrdersModuleFT2DataProps {
 
   return {
+    decision,
     orders: {
       total:
         snapshot.orders?.total === undefined

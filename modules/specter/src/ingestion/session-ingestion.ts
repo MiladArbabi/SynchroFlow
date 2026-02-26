@@ -1,7 +1,7 @@
 // modules/specter/src/ingestion/session-ingestion.ts
-import { PrivacyGuards } from '../compliance/privacy-guards';
+import { PrivacyGuards } from '../compliance/privacy-guards.js';
 import { randomUUID, randomBytes } from 'crypto';
-import { sessionStore, InMemorySessionStore, AnonymousSession } from '../store/session-store';
+import { sessionStore, InMemorySessionStore, AnonymousSession } from '../store/session-store.js';
 
 // Resolve module shape for ESM/CommonJS interop and Jest mocks:
 // Accepts:

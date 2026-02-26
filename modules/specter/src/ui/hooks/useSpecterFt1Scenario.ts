@@ -1,5 +1,5 @@
 // modules/specter/src/ui/hooks/useSpecterFt1Scenario.ts
-import type { SpecterFt1Scenario } from '../types';
+import type { SpecterFt1Scenario } from '../types.js';
 
 interface SpecterFt1Input {
   sessionCount: number | null;

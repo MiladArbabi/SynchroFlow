@@ -3,9 +3,13 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-
-    "module": "Node16",
-    "moduleResolution": "node16",
+    
+    /**
+    * Standardized ESM mode for monorepo consistency.
+    * Required for correct package "exports" resolution.
+    */
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "target": "ES2020",
 
     "declaration": true,

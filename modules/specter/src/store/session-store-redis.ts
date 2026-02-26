@@ -1,6 +1,6 @@
 // modules/specter/src/store/session-store-redis.ts
 import { createClient, RedisClientType } from 'redis';
-import { AnonymousSession, SessionStore } from './session-store';
+import { AnonymousSession, SessionStore } from './session-store.js';
 import { randomUUID } from 'crypto';
 
 // Simple logger wrapper so we can later swap to pino easily

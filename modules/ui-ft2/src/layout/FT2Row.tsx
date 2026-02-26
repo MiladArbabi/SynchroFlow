@@ -3,7 +3,11 @@ import type { ReactNode, ReactElement } from 'react';
 import { FT2_TOKENS } from './ft2.tokens.js';
 import type { FT2SurfaceProps } from './FT2Surface.js';
 
-export type FT2RowIntent = 'kpi' | 'analysis' | 'support';
+export type FT2RowIntent =
+  | 'kpi'
+  | 'decision'
+  | 'analysis'
+  | 'support';
 
 export type FT2RowProps = {
   children: ReactNode;

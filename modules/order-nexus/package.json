@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "@lasyncro/epistemic": "0.1.0",
-    "@lasyncro/ui-ft2": "0.1.0"
+    "@lasyncro/ui-ft2": "0.1.0",
+    "@lasyncro/ui-decision": "0.1.0"
   },
   "exports": {
     ".": {

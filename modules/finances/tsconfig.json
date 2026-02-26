@@ -3,8 +3,12 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "module": "Node16",
-    "moduleResolution": "node16",
+    /**
+    * Standardized ESM mode for monorepo consistency.
+    * Required for correct package "exports" resolution.
+    */
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "jsx": "react-jsx",
     "declaration": true,
     "sourceMap": true,

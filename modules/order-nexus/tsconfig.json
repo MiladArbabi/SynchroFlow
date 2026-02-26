@@ -4,8 +4,18 @@
     "rootDir": "src",
     "outDir": "dist",
 
-    "module": "Node16",
-    "moduleResolution": "node16",
+    /**
+    * REQUIRED for NodeNext resolution.
+    * Emits native ESM compatible with Vite/Rollup.
+    */
+    "module": "NodeNext",
+    /**
+    * REQUIRED:
+    * NodeNext enables proper resolution of package.json "exports"
+    * across workspace ESM modules.
+    * Do NOT downgrade to "node".
+    */
+    "moduleResolution": "NodeNext",
     "jsx": "react-jsx",
 
     "declaration": true,

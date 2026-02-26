@@ -1,5 +1,5 @@
 // modules/specter/src/store/__test-helpers__/session-store-helper.ts
-import { InMemorySessionStore } from '../../store/session-store';
+import { InMemorySessionStore } from '../../store/session-store.js';
 
 // Keep a compatible helper but use the canonical name `reset`
 export function reset(store: InMemorySessionStore) {

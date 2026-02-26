@@ -9,8 +9,12 @@
     /* LIBRARY EMIT */
     "rootDir": "src",
     "outDir": "dist",
-    "module": "Node16",
-    "moduleResolution": "node16",
+    /**
+    * Standardized ESM mode for monorepo consistency.
+    * Required for correct package "exports" resolution.
+    */
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "composite": true,
     "target": "ES2020",
 

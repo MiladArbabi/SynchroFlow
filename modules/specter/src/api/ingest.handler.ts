@@ -1,5 +1,5 @@
 // Minimal HTTP handler wrapper for specter ingestion (used by tests)
-import { ingestRawSession } from '../ingestion/session-ingestion';
+import { ingestRawSession } from '../ingestion/session-ingestion.js';
 
 /**
  * Handler(req, res)

@@ -24,6 +24,9 @@ import { mapOrdersFt2DistributionProps } from '../orders/useOrdersFt2Distributio
 import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
 import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
 
+import { useOrdersOperationalBrief } from '../orders/useOrdersOperationalBrief';
+import { useOrdersPriorityStack } from '../orders/useOrdersPriorityStack';
+
 import { useState } from 'react';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
@@ -41,15 +44,49 @@ export default function OrdersFT2Page() {
   const timeseriesQuery = useOrdersFt2Timeseries(range);
   const distributionQuery = useOrdersFt2Distribution(range);
 
-  if (!snapshotQuery.isSuccess) {
+  const operationalBriefQuery = useOrdersOperationalBrief();
+  const priorityStackQuery = useOrdersPriorityStack();
+
+  if (
+    !snapshotQuery.isSuccess ||
+    !operationalBriefQuery.isSuccess ||
+    !priorityStackQuery.isSuccess
+  ) {
     if (__DEV__) {
       console.debug('[OrdersFT2Page] awaiting FT2 snapshot');
     }
     return <div>Loading orders insights…</div>;
   }
 
+  const brief = operationalBriefQuery.data;
+
+  const decision = {
+    brief: brief
+      ? {
+          critical_orders_count: brief.critical_orders_count,
+          negative_margin_orders_count: brief.negative_margin_orders_count,
+          sla_breached_count: brief.sla_breached_count,
+          inventory_blocked_revenue: brief.inventory_blocked_revenue,
+          refund_exposure: brief.refund_exposure,
+        }
+      : {
+          critical_orders_count: 0,
+          negative_margin_orders_count: 0,
+          sla_breached_count: 0,
+          inventory_blocked_revenue: 0,
+          refund_exposure: 0,
+        },
+
+    priorityStack:
+      priorityStackQuery.data?.map((row) => ({
+        order_id: row.order_id,
+        order_health_score: row.order_health_score,
+      })) ?? [],
+  };
+
   const headerProps = mapOrdersFt2Props(
     snapshotQuery.data,
+    decision,
   );
 
   const timeseriesProps = mapOrdersFt2TimeseriesProps(timeseriesQuery.data);

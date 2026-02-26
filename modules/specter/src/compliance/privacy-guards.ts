@@ -2,7 +2,7 @@
 // Implements PCD guards and URL PII stripping for Specter.
 // Matches the locked behavior in the Specter blueprint.
 
-import sessionIdService from '../session-id-service';
+import sessionIdService from '../session-id-service.js';
 
 export interface RawSession {
   shopId: number;

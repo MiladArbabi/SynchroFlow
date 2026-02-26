@@ -117,14 +117,52 @@ export const FT2_TOKENS = {
    * Semantic layout intents mapped to
    * deterministic geometry.
    */
-  row: {
+   row: {
+    /**
+     * KPI Tier
+     * --------
+     * Epistemic snapshot layer.
+     */
     kpi: {
       height: 120,
     },
+
+    /**
+     * Decision Tier
+     * -------------
+     * Operational prioritization layer.
+     *
+     * Characteristics:
+     * - Full-width
+     * - Single-column
+     * - Taller than analysis
+     * - Sits directly below KPI
+     *
+     * Purpose:
+     * - Surface urgency
+     * - Drive attention
+     * - Bridge KPI → Analysis
+     */
+    decision: {
+      columns: 1,
+      height: 340,
+    },
+
+    /**
+     * Analysis Tier
+     * -------------
+     * Multi-column breakdown layer.
+     */
     analysis: {
       columns: 2,
       height: 280,
     },
+
+    /**
+     * Support Tier
+     * ------------
+     * Contextual, secondary surfaces.
+     */
     support: {
       columns: 3,
       height: 160,

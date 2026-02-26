@@ -180,39 +180,26 @@ export async function reconcileOrderFulfillment(
 
     let fraudScore = 0;
     let returnProbability = 0;
+
+    /**
+     * Financial accumulators.
+     * NOTE:
+     * Gross margin and marginPct MUST be computed
+     * only AFTER revenue aggregation loop.
+     */
     let grossRevenue = 0;
     let estimatedCost = 0;
-    const grossMargin = grossRevenue - estimatedCost;
 
-    const marginPct =
-      grossRevenue > 0
-        ? grossMargin / grossRevenue
-        : 0;
+    // Defer margin computation until after aggregation.
+    let grossMargin = 0;
+    let marginPct = 0;
 
     if (isCustomerBlocked) fraudScore += 0.4;
     if (isInventoryBlocked) fraudScore += 0.1;
     if (isOperationalBlocked) fraudScore += 0.1;
 
-    if (marginPct < 0.05) returnProbability += 0.3;
-    if (grossRevenue > 1000) returnProbability += 0.2;
-
     fraudScore = Math.min(fraudScore, 1);
     returnProbability = Math.min(returnProbability, 1);
-
-    await trx('order_risk_snapshot')
-      .insert({
-        lasyncro_order_id: lasyncroOrderId,
-        shop_id: order.shop_id,
-        is_inventory_blocked: isInventoryBlocked,
-        is_customer_blocked: isCustomerBlocked,
-        is_operational_blocked: isOperationalBlocked,
-        is_at_risk: isAtRisk,
-        fraud_score: fraudScore,
-        return_probability: returnProbability,
-        evaluated_at: trx.fn.now(),
-      })
-      .onConflict('lasyncro_order_id')
-      .merge();
 
     /**
      * ORDER MARGIN SNAPSHOT MATERIALIZATION
@@ -262,6 +249,31 @@ export async function reconcileOrderFulfillment(
         paymentFee +
         fulfillmentCost;
     }
+
+    /**
+     * FINALIZED MARGIN COMPUTATION
+     * -----------------------------
+     * Must execute AFTER revenue + cost aggregation.
+     * Ensures replay-safe deterministic financial truth.
+     */
+    grossMargin = grossRevenue - estimatedCost;
+
+    marginPct =
+      grossRevenue > 0
+        ? grossMargin / grossRevenue
+        : 0;
+    
+    /**
+     * RETURN PROBABILITY — FINANCIAL DEPENDENCIES
+     * --------------------------------------------
+     * Must execute AFTER finalized margin computation.
+     * Ensures deterministic correctness.
+     */
+    if (marginPct < 0.05) returnProbability += 0.3;
+    if (grossRevenue > 1000) returnProbability += 0.2;
+
+    // Clamp again after financial adjustments
+    returnProbability = Math.min(returnProbability, 1);
 
     await trx('order_margin_snapshot')
       .insert({
@@ -333,6 +345,72 @@ export async function reconcileOrderFulfillment(
       promisedDeliveryAt && !fulfilledAt
         ? now > promisedDeliveryAt
         : false;
+    
+    /**
+     * ORDER HEALTH SCORE (0–100)
+     * ---------------------------
+     * Semantic Contract:
+     * Measures immediate operational + financial urgency.
+     *
+     * Components:
+     * - SLA breach escalation
+     * - Hard operational blockers
+     * - Negative margin penalty
+     * - Revenue exposure scaling
+     * - Aging pressure (paid but unfulfilled)
+     *
+     * Deterministic. Replay-safe.
+     */
+    let healthScore = 0;
+
+    /* --- SLA Escalation (max 30) --- */
+    if (isShippingSlaBreached) healthScore += 20;
+    if (isDeliverySlaBreached) healthScore += 10;
+
+    /* --- Hard Operational Blockers (max 30) --- */
+    if (isInventoryBlocked) healthScore += 15;
+    if (isOperationalBlocked) healthScore += 10;
+    if (isCustomerBlocked) healthScore += 5;
+
+    /* --- Financial Urgency (max 25) --- */
+    if (grossMargin < 0) healthScore += 15;
+
+    if (grossRevenue > 0) {
+      const revenueScale = Math.min(grossRevenue / 5000, 1); 
+      healthScore += Math.round(revenueScale * 10);
+    }
+
+    /* --- Aging Escalation (max 15) --- */
+    if (ageSincePaid && ageSincePaid > 0) {
+      const days = ageSincePaid / 86400;
+      const agingScale = Math.min(days / 7, 1); 
+      healthScore += Math.round(agingScale * 15);
+    }
+
+    /* Clamp to 0–100 */
+    healthScore = Math.min(Math.max(healthScore, 0), 100);
+
+    /**
+     * ORDER RISK SNAPSHOT MATERIALIZATION
+     * ------------------------------------
+     * Must execute AFTER health score computation.
+     * Replace-on-reconcile.
+     */
+    await trx('order_risk_snapshot')
+      .insert({
+        lasyncro_order_id: lasyncroOrderId,
+        shop_id: order.shop_id,
+        is_inventory_blocked: isInventoryBlocked,
+        is_customer_blocked: isCustomerBlocked,
+        is_operational_blocked: isOperationalBlocked,
+        is_at_risk: isAtRisk,
+        fraud_score: fraudScore,
+        return_probability: returnProbability,
+        order_health_score: healthScore,
+        evaluated_at: trx.fn.now(),
+      })
+      .onConflict('lasyncro_order_id')
+      .merge();
 
     await trx('order_age_snapshot')
       .insert({
@@ -405,6 +483,105 @@ export async function reconcileOrderFulfillment(
         .onConflict(['shop_id', 'revenue_date'])
         .merge();
     }
+
+    /**
+     * DAILY OPERATIONAL BRIEF MATERIALIZATION
+     * ----------------------------------------
+     * Replace per (shop_id, brief_date).
+     * Deterministic cross-order compression layer.
+     */
+    const briefDate = new Date().toISOString().split('T')[0];
+
+    /* --- Critical Orders (healthScore >= 70) --- */
+    const criticalOrders = await trx('order_risk_snapshot')
+      .where('shop_id', order.shop_id)
+      .andWhere('order_health_score', '>=', 70)
+      .count<{ count: string }>('lasyncro_order_id as count')
+      .first();
+
+    /* --- Negative Margin Orders --- */
+    const negativeMarginOrders = await trx('order_margin_snapshot')
+      .where('shop_id', order.shop_id)
+      .andWhere('gross_margin', '<', 0)
+      .count<{ count: string }>('lasyncro_order_id as count')
+      .first();
+
+    /* --- SLA Breached Orders --- */
+    const slaBreachedOrders = await trx('order_age_snapshot')
+      .whereIn('lasyncro_order_id',
+        trx('orders')
+          .where('shop_id', order.shop_id)
+          .select('lasyncro_order_id')
+      )
+      .andWhere(function () {
+        this.where('is_shipping_sla_breached', true)
+            .orWhere('is_delivery_sla_breached', true);
+      })
+      .count<{ count: string }>('lasyncro_order_id as count')
+      .first();
+
+    /* --- Inventory Blocked Revenue --- */
+    const inventoryBlockedRevenue = await trx('order_revenue_units_net as runet')
+      .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'runet.lasyncro_order_id')
+      .where('ors.shop_id', order.shop_id)
+      .andWhere('ors.is_inventory_blocked', true)
+      .sum<{ sum: string }>('runet.net_revenue as sum')
+      .first();
+
+    /* --- Cash Realized Today --- */
+    const cashToday = await trx('orders')
+      .where('shop_id', order.shop_id)
+      .andWhereRaw('DATE(captured_at) = ?', [briefDate])
+      .sum<{ sum: string }>('total_price as sum')
+      .first();
+
+    /* --- Refund Exposure (at-risk revenue) --- */
+    const refundExposure = await trx('order_revenue_units_net as runet')
+      .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'runet.lasyncro_order_id')
+      .where('ors.shop_id', order.shop_id)
+      .andWhere('ors.is_at_risk', true)
+      .sum<{ sum: string }>('runet.net_revenue as sum')
+      .first();
+
+    /**
+     * TOP 10 PRIORITY ORDERS
+     * -----------------------
+     * Deterministic ordering:
+     * 1. Health score DESC
+     * 2. Shipping SLA breach DESC
+     * 3. Gross margin ASC (worse margin first)
+     * 4. Age since paid DESC
+     * 5. Stable UUID ASC (final deterministic stabilizer)
+     */
+    const topPriorityOrders = await trx('order_risk_snapshot as ors')
+      .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'ors.lasyncro_order_id')
+      .join('order_margin_snapshot as oms', 'oms.lasyncro_order_id', 'ors.lasyncro_order_id')
+      .where('ors.shop_id', order.shop_id)
+      .orderBy([
+        { column: 'ors.order_health_score', order: 'desc' },
+        { column: 'oas.is_shipping_sla_breached', order: 'desc' },
+        { column: 'oms.gross_margin', order: 'asc' },
+        { column: 'oas.age_since_paid_seconds', order: 'desc' },
+        { column: 'ors.lasyncro_order_id', order: 'asc' },
+      ])
+      .limit(10)
+      .pluck('ors.lasyncro_order_id');
+
+    await trx('daily_operational_brief_snapshot')
+      .insert({
+        shop_id: order.shop_id,
+        brief_date: briefDate,
+        critical_orders_count: Number(criticalOrders?.count ?? 0),
+        negative_margin_orders_count: Number(negativeMarginOrders?.count ?? 0),
+        sla_breached_count: Number(slaBreachedOrders?.count ?? 0),
+        inventory_blocked_revenue: Number(inventoryBlockedRevenue?.sum ?? 0),
+        cash_realized_today: Number(cashToday?.sum ?? 0),
+        refund_exposure: Number(refundExposure?.sum ?? 0),
+        top_10_priority_order_ids: JSON.stringify(topPriorityOrders ?? []),
+        evaluated_at: trx.fn.now(),
+      })
+      .onConflict(['shop_id', 'brief_date'])
+      .merge();
 
     await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })

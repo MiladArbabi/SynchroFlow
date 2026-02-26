@@ -42,6 +42,23 @@ export async function up(knex: Knex): Promise<void> {
     table.decimal('fraud_score', 5, 4).nullable();        // 0.0000 – 1.0000
     table.decimal('return_probability', 5, 4).nullable(); // 0.0000 – 1.0000
 
+    /**
+     * OPERATIONAL HEALTH SCORE
+     * ------------------------
+     * Deterministic composite severity score.
+     * Range: 0–100 (integer).
+     *
+     * Computed exclusively during reconciliation.
+     * Replace-on-reconcile.
+     *
+     * Purpose:
+     * Enables cross-order prioritization without
+     * runtime aggregation.
+     */
+    table.integer('order_health_score')
+      .notNullable()
+      .defaultTo(0);
+
     table.timestamp('evaluated_at')
       .notNullable()
       .defaultTo(knex.fn.now());

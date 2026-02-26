@@ -11,6 +11,9 @@ import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock
 import { ReturnsOverviewInfoBlock } from '../components/ReturnsOverviewInfoBlock.js';
 import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock.js';
 
+import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
+import { OrdersPriorityStackSection } from '../components/OrdersPriorityStackSection.js';
+
 import { toEpistemic } from '@lasyncro/epistemic';
 
 /**
@@ -69,6 +72,26 @@ export interface OrdersModuleFT2DataProps {
       status: 'sufficient' | 'insufficient';
     };
   };
+
+  /**
+   * Decision Layer (Authoritative Backend Snapshot)
+   * -----------------------------------------------
+   * Fully derived. No client computation.
+   * Backend owns ordering and scoring.
+   */
+  decision: {
+    brief: {
+      critical_orders_count: number;
+      negative_margin_orders_count: number;
+      sla_breached_count: number;
+      inventory_blocked_revenue: string | number;
+      refund_exposure: string | number;
+    };
+    priorityStack: {
+      order_id: string;
+      order_health_score: number;
+    }[];
+  };
 };
 
 /**
@@ -88,17 +111,20 @@ export default function OrdersModuleFT2(
       revenue,
       returns,
       obligations,
+      decision,
     } = props;
 
   return (
     <FT2Layout>
       <FT2Row intent="kpi">
 
+        <OrdersPriorityStackSection  items={decision.priorityStack.slice(0, 5)} />
+
         <OrdersOverviewInfoBlock
           orders={orders}
         />
 
-       <RevenueOverviewInfoBlock
+        <RevenueOverviewInfoBlock
           revenue={{
             totalSales: toEpistemic(revenue.totalSales),
             earned: toEpistemic(revenue.earned),
@@ -106,15 +132,19 @@ export default function OrdersModuleFT2(
             blocked: toEpistemic(revenue.blocked),
           }}
         />
+      </FT2Row>
 
-        <ReturnsOverviewInfoBlock
-          returnedRevenue={toEpistemic(returns?.returnedRevenue ?? null)}
-          returnedUnits={returns?.returnedUnits ?? null}
-          affectedOrders={returns?.affectedOrders ?? null}
-        />
-        </FT2Row>
+      <FT2Row intent='kpi'>
+        <OrdersDecisionBrief {...decision.brief} />
+      </FT2Row>
 
-        <FT2Row intent='kpi'>
+      {/* <ReturnsOverviewInfoBlock
+        returnedRevenue={toEpistemic(returns?.returnedRevenue ?? null)}
+        returnedUnits={returns?.returnedUnits ?? null}
+        affectedOrders={returns?.affectedOrders ?? null}
+      /> */}
+
+      {/* <FT2Row intent='kpi'>
         <ObligationOverviewInfoBlock
           obligations={
             obligations ?? {
@@ -131,8 +161,7 @@ export default function OrdersModuleFT2(
             }
           }
         />
-
-      </FT2Row>
+      </FT2Row> */}
     </FT2Layout>
   );
 }

@@ -1,32 +1,30 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    /* REQUIRED OVERRIDES */
     "noEmit": false,
     "allowImportingTsExtensions": false,
     "isolatedModules": false,
 
-    /* LIBRARY EMIT */
     "rootDir": "src",
     "outDir": "dist",
 
     /**
-    * Standardized ESM mode.
-    * Required for consistent package "exports" resolution across monorepo.
+    * REQUIRED:
+    * NodeNext ensures correct resolution of workspace packages
+    * and package.json "exports" under ESM.
     */
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "composite": true,
     "target": "ES2020",
 
     "declaration": true,
     "declarationMap": false,
     "sourceMap": true,
 
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true
+    "jsx": "react-jsx",
+    "composite": true,
+    "skipLibCheck": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.spec.*"]
+  "exclude": ["node_modules", "dist"]
 }

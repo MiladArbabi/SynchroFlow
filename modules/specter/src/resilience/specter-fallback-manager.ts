@@ -2,7 +2,7 @@
 import {
   SpecterCustomerSignal,
   createDefaultCustomerSignal,
-} from '../public/specter-customer-intelligence-service';
+} from '../public/specter-customer-intelligence-service.js';
 
 export type CustomerSignalResult = {
   signal: SpecterCustomerSignal;

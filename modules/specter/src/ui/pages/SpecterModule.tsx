@@ -1,8 +1,8 @@
 // modules/specter/src/ui/pages/SpecterModule.tsx
 
-import { useSpecterFt1Scenario } from '../hooks/useSpecterFt1Scenario';
-import { SpecterDiagnosticCard } from '../components/SpecterDiagnosticCard';
-import type { SpecterUiIntent } from '../intents';
+import { useSpecterFt1Scenario } from '../hooks/useSpecterFt1Scenario.js';
+import { SpecterDiagnosticCard } from '../components/SpecterDiagnosticCard.js';
+import type { SpecterUiIntent } from '../intents.js';
 
 export interface SpecterModuleProps {
   sessionCount: number | null;
