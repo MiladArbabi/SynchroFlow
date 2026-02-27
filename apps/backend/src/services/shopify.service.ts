@@ -256,11 +256,30 @@ export const performInitialSync = async (
       if (data.orders?.edges?.length) {
         for (const { node } of data.orders.edges) {
           const [staged] = await trx('staged_events')
+            /**
+             * SYNC INGESTION — CANONICAL EVENT-TIME REQUIRED
+             * -----------------------------------------------
+             * Sync path must obey same ingestion invariants
+             * as webhook path.
+             *
+             * Use Shopify createdAt as canonical event-time.
+             */
             .insert({
               source_platform: 'shopify',
               event_type: 'orders/sync',
               raw_payload: node,
               shop_id: shopId,
+
+              /**
+               * Hard invariant: event_time required.
+               */
+              event_time: new Date(node.createdAt),
+
+              /**
+               * Sync events do not provide webhook eventId.
+               * Use Shopify order id as deterministic identity.
+               */
+              external_event_id: String(node.id),
             })
             .returning<{ id: number }[]>('id');
 

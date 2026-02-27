@@ -29,14 +29,14 @@ export async function up(knex: Knex): Promise<void> {
     table.jsonb('raw_payload').notNullable();
 
     /**
-     * CANONICAL EVENT-TIME
-     * --------------------
-     * Extracted from upstream payload.
-     * Required for deterministic replay guarantees.
-     *
-     * Must NOT be wall-clock.
+     * CANONICAL EVENT-TIME (HARD GUARANTEE)
+     * -------------------------------------
+     * MUST exist.
+     * Deterministic replay depends on it.
+     * Worker will reject NULL.
      */
-    table.timestamp('event_time', { useTz: true }).nullable();
+    table.timestamp('event_time', { useTz: true })
+      .notNullable();
 
     // 'shopify', 'woocommerce', etc.
     table.string('source_platform').notNullable();

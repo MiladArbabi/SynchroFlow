@@ -387,8 +387,18 @@ export async function reconcileOrderFulfillment(
       );
     }
 
-    const ageSinceCreation =
+    const rawAgeSinceCreation =
       Math.floor((now.getTime() - createdAt.getTime()) / 1000);
+
+    if (rawAgeSinceCreation < 0) {
+      console.error('[AGE_NEGATIVE_GUARD] creation age < 0', {
+        lasyncroOrderId,
+        eventAnchor,
+        createdAt,
+      });
+    }
+
+    const ageSinceCreation = Math.max(rawAgeSinceCreation, 0);
 
     /**
      * AGING BUCKETS (Paid Orders Only)
@@ -400,25 +410,40 @@ export async function reconcileOrderFulfillment(
      * this query must be structurally expanded.
      */
 
-    /**
-     * AGE SINCE PAID
-     * --------------
-     * Defined ONLY for paid orders.
-     *
-     * Unpaid orders intentionally produce NULL.
-     * They must not appear in paid-aging buckets.
-     *
-     * Any future change to aging semantics
-     * must update control snapshot aggregation.
-     */
-    const ageSincePaid =
+    const rawAgeSincePaid =
       paidAt
         ? Math.floor((now.getTime() - paidAt.getTime()) / 1000)
         : null;
 
-    const ageSinceFulfillment =
+    if (rawAgeSincePaid !== null && rawAgeSincePaid < 0) {
+      console.error('[AGE_NEGATIVE_GUARD] paid age < 0', {
+        lasyncroOrderId,
+        eventAnchor,
+        paidAt,
+      });
+    }
+
+    const ageSincePaid =
+      rawAgeSincePaid !== null
+        ? Math.max(rawAgeSincePaid, 0)
+        : null;
+
+    const rawAgeSinceFulfillment =
       fulfilledAt
         ? Math.floor((now.getTime() - fulfilledAt.getTime()) / 1000)
+        : null;
+
+    if (rawAgeSinceFulfillment !== null && rawAgeSinceFulfillment < 0) {
+      console.error('[AGE_NEGATIVE_GUARD] fulfillment age < 0', {
+        lasyncroOrderId,
+        eventAnchor,
+        fulfilledAt,
+      });
+    }
+
+    const ageSinceFulfillment =
+      rawAgeSinceFulfillment !== null
+        ? Math.max(rawAgeSinceFulfillment, 0)
         : null;
 
     const isShippingSlaBreached =
@@ -432,19 +457,27 @@ export async function reconcileOrderFulfillment(
         : false;
     
     /**
-     * ORDER HEALTH SCORE (0–100)
-     * ---------------------------
-     * Semantic Contract:
-     * Measures immediate operational + financial urgency.
+     * ORDER HEALTH SCORE CONTRACT (0–100)
+     * ------------------------------------
+     * Deterministic urgency model.
      *
-     * Components:
-     * - SLA breach escalation
-     * - Hard operational blockers
-     * - Negative margin penalty
-     * - Revenue exposure scaling
-     * - Aging pressure (paid but unfulfilled)
+     * Total score is capped at 100.
+     * Each dimension has a fixed maximum allocation.
      *
-     * Deterministic. Replay-safe.
+     * DIMENSIONS:
+     *
+     * 1. SLA Escalation          → max 30
+     * 2. Operational Blockers    → max 30
+     * 3. Financial Urgency       → max 25
+     * 4. Aging Escalation        → max 15
+     *
+     * TOTAL MAX = 100
+     *
+     * Invariants:
+     * - No randomness
+     * - No external dependencies
+     * - Must remain replay-safe
+     * - Any weight change requires version note
      */
     let healthScore = 0;
 
@@ -476,6 +509,17 @@ export async function reconcileOrderFulfillment(
     healthScore = Math.min(Math.max(healthScore, 0), 100);
 
     /**
+     * HEALTH SCORE INVARIANT
+     * ----------------------
+     * Hard guarantee: score must remain within 0–100.
+     */
+    if (healthScore < 0 || healthScore > 100) {
+      throw new Error(
+        '[HEALTH_SCORE_INVARIANT_VIOLATION] Score out of bounds'
+      );
+    }
+
+    /**
      * ORDER RISK SNAPSHOT MATERIALIZATION
      * ------------------------------------
      * Must execute AFTER health score computation.
@@ -484,6 +528,15 @@ export async function reconcileOrderFulfillment(
     await trx('order_risk_snapshot')
       .insert({
         lasyncro_order_id: lasyncroOrderId,
+
+        /**
+         * PROJECTION VERSION (CRITICAL)
+         * ------------------------------
+         * Binds snapshot to exact aggregate_version
+         * used during reconciliation.
+         */
+        aggregate_version: order.aggregate_version,
+
         shop_id: order.shop_id,
         is_inventory_blocked: isInventoryBlocked,
         is_customer_blocked: isCustomerBlocked,
@@ -500,11 +553,22 @@ export async function reconcileOrderFulfillment(
     await trx('order_age_snapshot')
       .insert({
         lasyncro_order_id: lasyncroOrderId,
+
+        /**
+         * PROJECTION VERSION (CRITICAL)
+         * ------------------------------
+         * Snapshot must bind to exact aggregate_version
+         * used during reconciliation.
+         */
+        aggregate_version: order.aggregate_version,
+
         age_since_creation_seconds: ageSinceCreation,
         age_since_paid_seconds: ageSincePaid,
         age_since_fulfillment_seconds: ageSinceFulfillment,
+
         is_shipping_sla_breached: isShippingSlaBreached,
         is_delivery_sla_breached: isDeliverySlaBreached,
+
         snapshot_generated_at: trx.fn.now(),
       })
       .onConflict('lasyncro_order_id')
