@@ -22,6 +22,21 @@ import OutboxService from './services/outbox/outbox.service.js';
  */
 const ft0InFlight = new Set<number>();
 
+/**
+ * DETERMINISTIC ORDER ID NAMESPACE
+ * --------------------------------
+ * Stable namespace required for uuidv5.
+ * Must never change once deployed.
+ */
+const ORDER_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // fixed RFC namespace
+
+/**
+ * PROJECTION IDENTITY
+ * -------------------
+ * This worker projects domain_events into operational tables.
+ */
+const PROJECTION_NAME = 'orders_projection';
+
 // Lazily obtain the specific channel for 'events'
 let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
 function getEventChannel() {
@@ -37,56 +52,68 @@ export async function processMessage(msg: { content: Buffer } | null) {
   const content = msg.content.toString();
 
   try {
-    const { staged_event_id } = JSON.parse(content);
+    const { domain_event_id } = JSON.parse(content);
 
-    if (!staged_event_id) {
+    if (!domain_event_id) {
       getEventChannel().ack(msg as any);
       return;
     }
 
     /**
-     * REPLAY SAFETY GUARD
-     * -------------------
-     * If processed_at is already set,
-     * this event has already been executed.
-     * Never allow double execution.
+     * DOMAIN EVENT FETCH
+     * ------------------
+     * domain_events are immutable.
+     * Replay safety must be enforced via projection cursors.
      */
-    const stagedEvent = await db('staged_events')
-      .where({ id: staged_event_id })
-      .whereNull('processed_at')
-      .first<{
-        id: number;
-        shop_id: number;
-        event_type: string;
-        raw_payload: Record<string, any>;
-        event_time: Date | null;
-      }>();
+    const domainEvent = await db('domain_events')
+    .where({ id: domain_event_id })
+    .first<{
+      id: number;
+      shop_id: number;
+      event_type: string;
+      event_payload: Record<string, any>;
+      event_time: Date;
+    }>();
 
-    if (!stagedEvent) {
-      /**
-       * Either:
-       * - staged event does not exist
-       * - OR already processed (replay guard)
-       *
-       * In both cases: ACK safely.
-       */
-      getEventChannel().ack(msg as any);
-      return;
+    if (!domainEvent) {
+      throw new Error(
+        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`
+      );
     }
 
     /**
      * CANONICAL EVENT-TIME ANCHOR
      * ---------------------------
-     * Worker must rely on staged_events.event_time.
+     * Worker must rely on domain_events.event_time.
      * Raw payload timestamps are forbidden beyond ingestion.
      */
-    if (!stagedEvent.event_time) {
+    if (!domainEvent.event_time) {
       throw new Error(
-        '[EVENT_TIME_VIOLATION] staged_event missing canonical event_time'
+        '[EVENT_TIME_VIOLATION] domain_event missing canonical event_time'
       );
     }
 
-    const canonicalEventTime = new Date(stagedEvent.event_time);
+    const canonicalEventTime = new Date(domainEvent.event_time);
+
+    /**
+     * PROJECTION CURSOR ENFORCEMENT
+     * -----------------------------
+     * Enforces strict monotonic processing.
+     */
+    const cursor = await db('projection_cursors')
+      .where({ projection_name: PROJECTION_NAME })
+      .first<{ last_processed_event_id: number }>();
+
+    const expectedNextId =
+      cursor?.last_processed_event_id != null
+        ? cursor.last_processed_event_id + 1
+        : domain_event_id;
+
+    if (domain_event_id !== expectedNextId) {
+      throw new Error(
+        `[PROJECTION_ORDER_VIOLATION] expected=${expectedNextId} got=${domain_event_id}`
+      );
+    }
 
     /**
      * CANONICAL EVENT DISPATCHER
@@ -94,7 +121,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
      * All external signals must be materialized
      * exclusively through this boundary.
      */
-    switch (stagedEvent.event_type) {
+    switch (domainEvent.event_type) {
 
       /**
        * ---------------------------------------------------------
@@ -104,7 +131,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
       case 'orders/create':
       case 'orders/sync': {
 
-        const payload = stagedEvent.raw_payload as any;
+        const payload = domainEvent.event_payload as any;
         /**
          * Shopify Order ID Canonicalization
          * ----------------------------------
@@ -129,23 +156,41 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         await db.transaction(async (trx) => {
 
-          const existingIdentity = await trx('external_order_identity_map')
-            .where({
-              shop_id: stagedEvent.shop_id,
-              platform: 'shopify',
-              external_order_id: externalOrderId,
-            })
-            .first();
-
-          if (existingIdentity) return;
-
-          const lasyncroOrderId = crypto.randomUUID();
+          /**
+           * DETERMINISTIC ORDER ID
+           * ----------------------
+           * Derived from (shop_id + platform + external_order_id).
+           * Enables full rebuild without identity map dependency.
+           */
+          const lasyncroOrderId = crypto
+            .createHash('sha1')
+            .update(
+              `${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${externalOrderId}`
+            )
+            .digest('hex')
+            .slice(0, 32)
+            .replace(
+              /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+              '$1-$2-$3-$4-$5'
+          );
+          
           newlyCreatedOrderId = lasyncroOrderId;
 
+          /**
+           * EXISTENCE CHECK (DETERMINISTIC)
+           * --------------------------------
+           * Order ID is deterministic.
+           * If order already exists, skip creation.
+           */
+          const existingOrder = await trx('orders')
+            .where({ lasyncro_order_id: lasyncroOrderId })
+            .first();
+
+          if (existingOrder) return;
 
           await trx('orders').insert({
             lasyncro_order_id: lasyncroOrderId,
-            shop_id: stagedEvent.shop_id,
+            shop_id: domainEvent.shop_id,
 
             currency: payload.currencyCode ?? payload.currency ?? null,
 
@@ -167,7 +212,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
             /**
              * ORDER CREATION EVENT-TIME (Canonical)
              * --------------------------------------
-             * Must rely exclusively on staged_events.event_time.
+             * Must rely exclusively on domain_events.event_time.
              */
             order_created_at: canonicalEventTime,
 
@@ -187,18 +232,25 @@ export async function processMessage(msg: { content: Buffer } | null) {
             aggregate_version: 1,
           });
 
-          await trx('external_order_identity_map').insert({
-            lasyncro_order_id: lasyncroOrderId,
-            shop_id: stagedEvent.shop_id,
-            platform: 'shopify',
-            external_order_id: externalOrderId,
-          });
+          /**
+           * Identity map retained only for legacy compatibility.
+           * Deterministic ID removes replay dependency.
+           */
+          await trx('external_order_identity_map')
+            .insert({
+              lasyncro_order_id: lasyncroOrderId,
+              shop_id: domainEvent.shop_id,
+              platform: 'shopify',
+              external_order_id: externalOrderId,
+            })
+            .onConflict(['platform', 'external_order_id'])
+            .ignore();
 
           /**
            * BASELINE FULFILLMENT HYDRATION (SYNC ONLY)
            * Transaction-bound to avoid pool exhaustion.
            */
-          if (stagedEvent.event_type === 'orders/sync') {
+          if (domainEvent.event_type === 'orders/sync') {
 
             const snapshotStatus = payload.displayFulfillmentStatus;
 
@@ -259,7 +311,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
             const variantIdentity = await trx('external_product_identity_map')
               .where({
-                shop_id: stagedEvent.shop_id,
+                shop_id: domainEvent.shop_id,
                 platform: 'shopify',
                 external_variant_id: variantId,
               })
@@ -286,7 +338,22 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
             await trx('order_line_items')
               .insert({
-                lasyncro_line_item_id: crypto.randomUUID(),
+                /**
+                 * DETERMINISTIC LINE ITEM ID
+                 * --------------------------
+                 * Derived from (shop_id + external_order_id + external_line_item_id).
+                 */
+                lasyncro_line_item_id: crypto
+                  .createHash('sha1')
+                  .update(
+                    `${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${externalOrderId}:line:${li.id}`
+                  )
+                  .digest('hex')
+                  .slice(0, 32)
+                  .replace(
+                    /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+                    '$1-$2-$3-$4-$5'
+                  ),
                 lasyncro_order_id: lasyncroOrderId,
                 lasyncro_product_id: variantRow.lasyncro_product_id,
                 lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
@@ -354,10 +421,10 @@ export async function processMessage(msg: { content: Buffer } | null) {
            * - Canonical ingestion completed
            * - Single execution
            */
-          const insight = await FirstInsightService.computeAndPersist(stagedEvent.shop_id);
+          const insight = await FirstInsightService.computeAndPersist(domainEvent.shop_id);
 
           if (insight.delivered && !insight.alreadyDelivered) {
-            const shopId = stagedEvent.shop_id;
+            const shopId = domainEvent.shop_id;
 
             // Prevent concurrent FT0 execution in this process
             if (!ft0InFlight.has(shopId)) {                                                               
@@ -382,11 +449,11 @@ export async function processMessage(msg: { content: Buffer } | null) {
        */
       case 'orders/paid': {
 
-        const payload = stagedEvent.raw_payload as any;
+        const payload = domainEvent.event_payload as any;
         const externalOrderId = String(payload.id);
 
         const lasyncroOrderId = await resolveExternalOrderId(
-          stagedEvent.shop_id,
+          domainEvent.shop_id,
           'shopify',
           externalOrderId
         );
@@ -398,7 +465,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
         /**
          * PAYMENT EVENT TIME (Canonical)
          * --------------------------------
-         * Must rely exclusively on staged_events.event_time.
+         * Must rely exclusively on domain_events.event_time.
          * Raw payload timestamps are forbidden beyond ingestion.
          */
         const paymentTimestamp = canonicalEventTime;
@@ -459,11 +526,11 @@ export async function processMessage(msg: { content: Buffer } | null) {
        */
       case 'orders/fulfilled': {
 
-        const payload = stagedEvent.raw_payload as any;
+        const payload = domainEvent.event_payload as any;
         const externalOrderId = String(payload.order_id);
 
         const lasyncroOrderId = await resolveExternalOrderId(
-          stagedEvent.shop_id,
+          domainEvent.shop_id,
           'shopify',
           externalOrderId
         );
@@ -492,7 +559,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
         /**
          * FULFILLMENT EVENT TIME (Canonical)
          * -----------------------------------
-         * Must rely exclusively on staged_events.event_time.
+         * Must rely exclusively on domain_events.event_time.
          * Raw payload timestamps are forbidden beyond ingestion.
          */
         const fulfillmentTimestamp = canonicalEventTime;
@@ -547,14 +614,14 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
     case 'refunds/create': {
 
-      const payload = stagedEvent.raw_payload as any;
+      const payload = domainEvent.event_payload as any;
 
       let lasyncroOrderId: string | null = null;
 
       await db.transaction(async (trx) => {
 
         lasyncroOrderId = await resolveExternalOrderId(
-          stagedEvent.shop_id,
+          domainEvent.shop_id,
           'shopify',
           String(payload.order_id),
           trx
@@ -565,7 +632,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
         /**
          * REFUND EVENT TIME (Canonical)
          * ------------------------------
-         * Must rely exclusively on staged_events.event_time.
+         * Must rely exclusively on domain_events.event_time.
          * Raw payload timestamps are forbidden beyond ingestion.
          */
         const refundExecutedAt = canonicalEventTime;
@@ -581,7 +648,22 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         if (!execution) {
 
-          const refundExecutionId = crypto.randomUUID();
+          /**
+           * DETERMINISTIC REFUND EXECUTION ID
+           * ----------------------------------
+           * Derived from (shop_id + external_order_id + external_refund_id).
+           */
+          const refundExecutionId = crypto
+            .createHash('sha1')
+            .update(
+              `${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${payload.order_id}:refund:${externalRefundId}`
+            )
+            .digest('hex')
+            .slice(0, 32)
+            .replace(
+              /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+              '$1-$2-$3-$4-$5'
+            );
 
           await trx('refund_executions').insert({
             lasyncro_refund_execution_id: refundExecutionId,
@@ -639,7 +721,22 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
           await trx('refund_execution_line_items')
             .insert({
-              lasyncro_refund_line_item_id: crypto.randomUUID(),
+              /**
+               * DETERMINISTIC REFUND LINE ITEM ID
+               * ----------------------------------
+               * Derived from (refund_execution_id + revenue_unit_id).
+               */
+              lasyncro_refund_line_item_id: crypto
+                .createHash('sha1')
+                .update(
+                  `${ORDER_UUID_NAMESPACE}:${execution.lasyncro_refund_execution_id}:${ru.lasyncro_revenue_unit_id}`
+                )
+                .digest('hex')
+                .slice(0, 32)
+                .replace(
+                  /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+                  '$1-$2-$3-$4-$5'
+                ),
               lasyncro_refund_execution_id:
                 execution.lasyncro_refund_execution_id,
               lasyncro_revenue_unit_id: ru.lasyncro_revenue_unit_id,
@@ -704,86 +801,50 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }
 
     /**
-     * INGESTION SUCCESS COMMIT (ATOMIC)
-     * ----------------------------------
-     * Clears failure markers and finalizes deterministic ingestion.
+     * CURSOR ADVANCE (ATOMIC)
+     * -----------------------
      */
-    await db('staged_events')
-      .where({ id: staged_event_id })
-      .update({
-        processed_at: db.fn.now(),
-        failed_at: null,
-        retry_count: 0,
-        error_message: null,
+    await db.transaction(async (trx) => {
+      const existing = await trx('projection_cursors')
+        .where({ projection_name: PROJECTION_NAME })
+        .first();
 
-        /**
-         * CLEAR FAILURE CLASSIFICATION
-         * ----------------------------
-         * Ensures successful replay removes poison state.
-         */
-        failure_type: null,
-      });
+      if (!existing) {
+        await trx('projection_cursors').insert({
+          projection_name: PROJECTION_NAME,
+          last_processed_event_id: domain_event_id,
+        });
+      } else {
+        await trx('projection_cursors')
+          .where({ projection_name: PROJECTION_NAME })
+          .update({
+            last_processed_event_id: domain_event_id,
+            updated_at: trx.fn.now(),
+          });
+      }
+    });
+
+    /**
+     * SUCCESS:
+     * domain_events are immutable.
+     * Projection progress must be tracked via projection_cursors.
+     */
 
     getEventChannel().ack(msg as any);
 
   } catch (error) {
-    console.error('[worker] Error processing staged event:', error);
+    console.error('[worker] Error processing domain event:', error);
 
     /**
-     * INGESTION FAILURE TRACKING
-     * ---------------------------
-     * Persist failure state before nack.
-     * Guarantees:
-     * - retry visibility
-     * - deterministic replay observability
-     * - root cause traceability
+     * FAILURE:
+     * domain_events are immutable.
+     * Projection retry orchestration must be externalized.
+     * No event log mutation allowed.
      */
-    try {
-      const parsed = JSON.parse(content) as { staged_event_id?: number };
-
-      let processingSucceeded = false;
-
-      if (parsed?.staged_event_id) {
-        await db('staged_events')
-          .where({ id: parsed.staged_event_id })
-          .update({
-            failed_at: db.fn.now(),
-            retry_count: db.raw('retry_count + 1'),
-
-            /**
-             * FAILURE CLASSIFICATION
-             * -----------------------
-             * Explicit poison typing.
-             */
-            failure_type:
-              error instanceof Error &&
-              error.message?.includes('EVENT_TIME_VIOLATION')
-                ? 'schema_violation'
-                : error instanceof Error &&
-                  error.message?.includes('IDENTITY')
-                  ? 'identity_violation'
-                  : 'permanent',
-
-            error_message:
-              error instanceof Error
-                ? error.message
-                : JSON.stringify(error),
-          });
-          } else {
-            console.error('[INGESTION_FAILURE_NO_STAGED_ID]', { rawMessage: content });
-          }
-        } catch (parseError) {
-          console.error('[INGESTION_FAILURE_PARSE_ERROR]', {
-            originalMessage: content,
-            parseError:
-              parseError instanceof Error
-                ? parseError.message
-                : String(parseError),
-          });
-        }
 
     try {
       getEventChannel().nack(msg as any, false, false);
+
     } catch (nackError) {
       console.error(
         '[worker] Failed to nack message after processing error:',
@@ -812,5 +873,5 @@ export function startWorker() {
 
   channel.consume('events', processMessage, { noAck: false });
 
-  console.log('[worker] Worker ready. Awaiting staged events...');
+  console.log('[worker] Worker ready. Awaiting domain events...');
 }

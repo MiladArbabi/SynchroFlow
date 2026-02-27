@@ -77,10 +77,9 @@ export async function handleOrderCreated(
   const shopId = installation.shop_id;
 
   /**
-   * IDEMPOTENCY ENFORCEMENT
-   * -----------------------
-   * Upstream eventId must be persisted
-   * to activate unique constraint on staged_events.
+   * NOTE:
+   * Idempotency must be enforced at domain boundary,
+   * not via mutable ingestion buffer.
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -88,21 +87,42 @@ export async function handleOrderCreated(
     );
   }
 
-  const [staged] = await db('staged_events')
+  /**
+   * IMMUTABLE DOMAIN EVENT INSERT
+   * -----------------------------
+   * No ingestion state.
+   * No retry tracking.
+   * Deterministic rebuild source of truth.
+   */
+  const [domainEventId] = await db('domain_events')
     .insert({
       shop_id: shopId,
       event_type: 'orders/create',
-      raw_payload: raw,
-      source_platform: 'shopify',
-      external_event_id: envelope.eventId,
+      event_payload: raw,
       event_time: new Date(eventTime),
+      event_version: 1,
+      event_sequence: db.raw(
+        `
+        COALESCE(
+          (SELECT MAX(event_sequence) + 1
+          FROM domain_events
+          WHERE shop_id = ?),
+          1
+        )
+        `,
+        [shopId]
+      ),
     })
-    .returning('*');
+    .returning('id');
 
-  console.log('[STAGED INSERTED]', staged.id);
+  console.log('[DOMAIN_EVENT_INSERTED]', domainEventId.id ?? domainEventId);
 
   getQueueChannel('events').sendToQueue(
     'events',
-    Buffer.from(JSON.stringify({ staged_event_id: staged.id }))
+      Buffer.from(
+        JSON.stringify({
+          domain_event_id: domainEventId.id ?? domainEventId,
+        })
+      )
   );
 }

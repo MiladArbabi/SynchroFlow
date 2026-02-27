@@ -67,10 +67,9 @@ export async function handleRefundCreated(
   const shopId = installation.shop_id;
 
   /**
-   * IDEMPOTENCY ENFORCEMENT
-   * -----------------------
-   * Upstream eventId must be persisted
-   * to activate staged_events unique constraint.
+   * NOTE:
+   * Idempotency must be enforced at domain boundary.
+   * No mutable ingestion buffer.
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -127,40 +126,40 @@ export async function handleRefundCreated(
   }
 
    /**
-   * REFUND STAGING (UNIFIED INGESTION)
-   * -----------------------------------
-   * Refunds must enter canonical pipeline via staged_events.
-   * After persistence, we MUST enqueue the staged_event_id
-   * to the 'events' queue so the unified worker can process it.
-   *
-   * Without this, refund executions will never materialize.
-   */
-    const [id] = await db('staged_events')
+     * IMMUTABLE DOMAIN EVENT INSERT
+     * -----------------------------
+     * Append-only canonical event log.
+     */
+    const [domainEventId] = await db('domain_events')
       .insert({
-        source_platform: 'shopify',
-        event_type: 'refunds/create',
-        raw_payload: rawPayload,
         shop_id: shopId,
-        external_event_id: envelope.eventId,
+        event_type: 'refunds/create',
+        event_payload: rawPayload,
         event_time: new Date(refundCreatedAt),
+        event_version: 1,
+        event_sequence: db.raw(
+          `
+          COALESCE(
+            (SELECT MAX(event_sequence) + 1
+            FROM domain_events
+            WHERE shop_id = ?),
+            1
+          )
+          `,
+          [shopId]
+        ),
       })
       .returning('id');
 
-  /**
-   * Normalize Knex returning shape.
-   * In some drivers `.returning('id')` yields:
-   * - { id: number }
-   * - number
-   *
-   * Canonical worker expects integer staged_event_id.
-   */
-  const stagedEventId =
-    typeof id === 'object' && id !== null
-      ? (id as any).id
-      : id;
+      const finalDomainEventId =
+      typeof domainEventId === 'object' && domainEventId !== null
+        ? (domainEventId as any).id
+        : domainEventId;
 
-  getQueueChannel('events').sendToQueue(
-    'events',
-    Buffer.from(JSON.stringify({ staged_event_id: stagedEventId }))
-  );
+    getQueueChannel('events').sendToQueue(
+      'events',
+      Buffer.from(
+        JSON.stringify({ domain_event_id: finalDomainEventId })
+      )
+    );
 }

@@ -68,10 +68,9 @@ export async function handleOrderFulfillment(
   }
 
   /**
-   * IDEMPOTENCY ENFORCEMENT
-   * -----------------------
-   * Upstream eventId must be persisted
-   * to activate unique constraint on staged_events.
+   * NOTE:
+   * Idempotency must be enforced at domain boundary.
+   * No mutable ingestion buffer.
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -80,29 +79,44 @@ export async function handleOrderFulfillment(
   }
 
   /**
-   * FULFILLMENT STAGING (UNIFIED INGESTION)
-   * ----------------------------------------
-   * Fulfillment state transitions must enter
-   * canonical pipeline via staged_events only.
+   * IMMUTABLE DOMAIN EVENT INSERT
+   * -----------------------------
+   * Append-only canonical event log.
    */
-  const [id] = await db('staged_events')
+  const [domainEventId] = await db('domain_events')
     .insert({
-      source_platform: 'shopify',
-      event_type: 'orders/fulfilled',
-      raw_payload: rawPayload,
       shop_id: shopId,
-      external_event_id: envelope.eventId,
+      event_type: 'orders/fulfilled',
+      event_payload: rawPayload,
       event_time: new Date(eventTime),
+      event_version: 1,
+      event_sequence: db.raw(
+        `
+        COALESCE(
+          (SELECT MAX(event_sequence) + 1
+          FROM domain_events
+          WHERE shop_id = ?),
+          1
+        )
+        `,
+        [shopId]
+      ),
     })
     .returning('id');
 
-  const stagedEventId =
-    typeof id === 'object' ? id.id : id;
+  const finalDomainEventId =
+    typeof domainEventId === 'object'
+      ? domainEventId.id
+      : domainEventId;
 
   const channel = getQueueChannel('events');
 
   channel.sendToQueue(
     'events',
-    Buffer.from(JSON.stringify({ staged_event_id: stagedEventId }))
+      Buffer.from(
+        JSON.stringify({
+          domain_event_id: finalDomainEventId,
+        })
+      )
   );
 };

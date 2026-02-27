@@ -59,10 +59,9 @@ export async function handleOrderPaid(
   }
 
   /**
-   * IDEMPOTENCY ENFORCEMENT
-   * -----------------------
-   * Upstream eventId must be persisted
-   * to activate unique constraint on staged_events.
+   * NOTE:
+   * Idempotency must be enforced at domain boundary.
+   * No mutable ingestion buffer is used.
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -71,24 +70,37 @@ export async function handleOrderPaid(
   }
 
   /**
-   * PAYMENT STAGING (UNIFIED INGESTION)
-   * ------------------------------------
-   * Payment state transitions must be handled
-   * exclusively by canonical worker.
+   * IMMUTABLE DOMAIN EVENT INSERT
+   * -----------------------------
+   * Append-only canonical event log.
    */
-    const [staged] = await db('staged_events')
+  const [domainEventId] = await db('domain_events')
     .insert({
-      source_platform: 'shopify',
-      event_type: 'orders/paid',
-      raw_payload: rawPayload,
       shop_id: shopId,
-      external_event_id: envelope.eventId,
+      event_type: 'orders/paid',
+      event_payload: rawPayload,
       event_time: new Date(eventTime),
+      event_version: 1,
+      event_sequence: db.raw(
+        `
+        COALESCE(
+          (SELECT MAX(event_sequence) + 1
+          FROM domain_events
+          WHERE shop_id = ?),
+          1
+        )
+        `,
+        [shopId]
+      ),
     })
-    .returning('*');
+    .returning('id');
 
   getQueueChannel('events').sendToQueue(
     'events',
-    Buffer.from(JSON.stringify({ staged_event_id: staged.id }))
+    Buffer.from(
+      JSON.stringify({
+        domain_event_id: domainEventId.id ?? domainEventId,
+      })
+    )
   );
 }

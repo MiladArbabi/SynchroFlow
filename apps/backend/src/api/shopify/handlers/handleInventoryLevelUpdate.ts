@@ -50,10 +50,9 @@ export async function handleInventoryLevelUpdate(
     const shopId = installation.shop_id;
 
   /**
-   * IDEMPOTENCY ENFORCEMENT
-   * -----------------------
-   * Upstream eventId must be persisted
-   * to activate staged_events unique constraint.
+   * NOTE:
+   * Idempotency must be enforced at domain boundary.
+   * No mutable ingestion buffer.
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -106,39 +105,40 @@ if (
   }
 
   /**
-   * INVENTORY STAGING (UNIFIED INGESTION)
-   * -------------------------------------
-   * Inventory events must enter canonical pipeline via staged_events.
-   * Direct domain mutation from webhook is forbidden.
-   *
-   * Downstream worker is responsible for:
-   * - identity resolution
-   * - movement insertion
-   * - projection rebuild
-   * - obligation recompute
+   * IMMUTABLE DOMAIN EVENT INSERT
+   * -----------------------------
+   * Append-only canonical event log.
    */
-
-  const [id] = await db('staged_events')
+  const [domainEventId] = await db('domain_events')
     .insert({
-      source_platform: 'shopify',
-      event_type: 'inventory_levels/update',
-      raw_payload: envelope.rawPayload,
       shop_id: shopId,
-      external_event_id: envelope.eventId,
+      event_type: 'inventory_levels/update',
+      event_payload: envelope.rawPayload,
       event_time: new Date(payload.updated_at),
+      event_version: 1,
+      event_sequence: db.raw(
+        `
+        COALESCE(
+          (SELECT MAX(event_sequence) + 1
+          FROM domain_events
+          WHERE shop_id = ?),
+          1
+        )
+        `,
+        [shopId]
+      ),
     })
     .returning('id');
 
-  /**
-   * Normalize Knex returning shape.
-   */
-  const stagedEventId =
-    typeof id === 'object' && id !== null
-      ? (id as any).id
-      : id;
+    const finalDomainEventId =
+    typeof domainEventId === 'object' && domainEventId !== null
+      ? (domainEventId as any).id
+      : domainEventId;
 
   getQueueChannel('events').sendToQueue(
     'events',
-    Buffer.from(JSON.stringify({ staged_event_id: stagedEventId }))
+    Buffer.from(
+      JSON.stringify({ domain_event_id: finalDomainEventId })
+    )
   );
 }
