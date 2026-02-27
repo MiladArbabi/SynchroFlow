@@ -1,19 +1,23 @@
 import type { Knex } from 'knex';
 
 /**
- * STAGED EVENTS
- * -------------
- * Durable raw event buffer for:
- * - Shopify webhooks
- * - Replayable ingestion
- * - Deterministic worker processing
+ * DOMAIN EVENTS (IMMUTABLE CANONICAL LOG)
+ * ---------------------------------------
+ * This table replaces staged_events.
  *
- * This table is intentionally platform-agnostic.
+ * STRICT RULES:
+ * - Append-only
+ * - No processing state
+ * - No retry tracking
+ * - No mutation flags
+ * - Sufficient for deterministic full rebuild
+ *
+ * Projection state must live elsewhere.
  */
 
 export async function up(knex: Knex): Promise<void> {
-  await knex.schema.createTable('staged_events', (table) => {
-    table.increments('id').primary();
+  await knex.schema.createTable('domain_events', (table) => {
+    table.bigIncrements('id').primary();
 
     table
       .integer('shop_id')
@@ -22,91 +26,83 @@ export async function up(knex: Knex): Promise<void> {
       .inTable('shops')
       .onDelete('CASCADE');
 
-    // e.g. 'product.created', 'order.updated'
+    /**
+     * Domain-level classification
+     * e.g. 'orders.create'
+     */
     table.string('event_type').notNullable();
 
-    // Raw JSON payload from platform
-    table.jsonb('raw_payload').notNullable();
+    /**
+     * Immutable business payload
+     */
+    table.jsonb('event_payload').notNullable();
 
     /**
-     * CANONICAL EVENT-TIME (HARD GUARANTEE)
-     * -------------------------------------
-     * MUST exist.
-     * Deterministic replay depends on it.
-     * Worker will reject NULL.
+     * Canonical event-time anchor.
+     * Deterministic replay depends on this.
      */
     table.timestamp('event_time', { useTz: true })
       .notNullable();
 
-    // 'shopify', 'woocommerce', etc.
-    table.string('source_platform').notNullable();
+    /**
+     * Versioning for schema evolution.
+     * Enables deterministic deserialization.
+     */
+    table.integer('event_version')
+      .notNullable()
+      .defaultTo(1);
 
     /**
-     * IDEMPOTENCY BOUNDARY
-     * --------------------
-     * External event identity from upstream platform.
-     * Required for replay safety and duplicate suppression.
-     *
-     * Must be unique per (shop_id, source_platform, external_event_id).
+     * Per-shop monotonic ordering key.
+     * Required for deterministic rebuild.
      */
-    table.string('external_event_id').nullable();
-
-    /**
-     * INGESTION STATE TRACKING
-     * ------------------------
-     * Enables deterministic replay visibility and dead-letter modeling.
-     */
-    table.timestamp('processed_at', { useTz: true }).nullable();
-    table.timestamp('failed_at', { useTz: true }).nullable();
-    table.integer('retry_count').notNullable().defaultTo(0);
-    table.text('error_message').nullable();
-
-    /**
-     * FAILURE CLASSIFICATION
-     * ----------------------
-     * Explicit poison typing for deterministic retry handling.
-     *
-     * Values:
-     * - transient
-     * - permanent
-     * - schema_violation
-     * - identity_violation
-     */
-    table
-      .text('failure_type')
-      .nullable();
+    table.bigInteger('event_sequence')
+      .notNullable();
 
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
 
     /**
-     * HARD IDEMPOTENCY ENFORCEMENT
+     * Enforce strict per-shop ordering.
      */
     table.unique(
-      ['shop_id', 'source_platform', 'external_event_id'],
-      'staged_events_external_identity_unique'
+      ['shop_id', 'event_sequence'],
+      'domain_events_shop_sequence_unique'
     );
 
     table.index(['shop_id']);
     table.index(['event_type']);
-    table.index(['source_platform']);
-    table.index(['processed_at']);
-    table.index(['failed_at']);
     table.index(['event_time']);
-
-    /**
-     * POISON VISIBILITY INDEX
-     * ------------------------
-     * Enables fast filtering of failed events by classification.
-     */
-    table.index(
-      ['failure_type', 'failed_at'],
-      'staged_events_failure_type_idx'
-    );
   });
+
+  /**
+   * HARD IMMUTABILITY GUARD
+   * -----------------------
+   * Prevent UPDATE and DELETE at DB level.
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION prevent_domain_event_mutation()
+    RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'domain_events is immutable';
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER domain_events_no_update
+    BEFORE UPDATE ON domain_events
+    FOR EACH ROW EXECUTE FUNCTION prevent_domain_event_mutation();
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER domain_events_no_delete
+    BEFORE DELETE ON domain_events
+    FOR EACH ROW EXECUTE FUNCTION prevent_domain_event_mutation();
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropTableIfExists('staged_events');
+  await knex.schema.dropTableIfExists('domain_events');
 }
