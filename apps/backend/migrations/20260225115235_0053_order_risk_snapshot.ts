@@ -76,6 +76,38 @@ export async function up(knex: Knex): Promise<void> {
       .defaultTo(knex.fn.now());
   });
 
+  /**
+   * PROJECTION CONSISTENCY ENFORCEMENT
+   * -----------------------------------
+   * Snapshot must reference exact (id, version)
+   * in canonical orders table.
+   */
+  await knex.raw(`
+    ALTER TABLE order_risk_snapshot
+    ADD CONSTRAINT order_risk_snapshot_projection_fk
+    FOREIGN KEY (lasyncro_order_id, aggregate_version)
+    REFERENCES orders (lasyncro_order_id, aggregate_version)
+    ON DELETE CASCADE
+  `);
+
+  /**
+   * PROBABILISTIC INVARIANTS (HARD GUARANTEE)
+   * -----------------------------------------
+   * Scores must remain bounded within [0,1].
+   * Null allowed (model may not run).
+   */
+  await knex.raw(`
+    ALTER TABLE order_risk_snapshot
+    ADD CONSTRAINT order_risk_snapshot_fraud_score_valid_range
+      CHECK (fraud_score IS NULL OR (fraud_score >= 0 AND fraud_score <= 1)),
+    ADD CONSTRAINT order_risk_snapshot_return_probability_valid_range
+      CHECK (return_probability IS NULL OR (return_probability >= 0 AND return_probability <= 1)),
+    ADD CONSTRAINT order_risk_snapshot_health_score_valid_range
+      CHECK (order_health_score >= 0 AND order_health_score <= 100),
+    ADD CONSTRAINT order_risk_snapshot_aggregate_version_positive
+      CHECK (aggregate_version > 0)
+  `);
+
   await knex.schema.alterTable('order_risk_snapshot', (table) => {
     table.index(['shop_id']);
   });

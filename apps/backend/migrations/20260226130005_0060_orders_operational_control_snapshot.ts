@@ -156,6 +156,32 @@ export async function up(knex: Knex): Promise<void> {
     }
   );
 
+  /**
+   * FINANCIAL INVARIANTS (HARD GUARANTEE)
+   * -------------------------------------
+   * Aggregated revenue fields must never be negative.
+   * Leakage remains constrained >= 0 by definition.
+   */
+  await knex.raw(`
+    ALTER TABLE orders_operational_control_snapshot
+    ADD CONSTRAINT oocs_realized_revenue_non_negative
+      CHECK (realized_revenue >= 0),
+    ADD CONSTRAINT oocs_at_risk_revenue_non_negative
+      CHECK (at_risk_revenue >= 0),
+    ADD CONSTRAINT oocs_blocked_revenue_non_negative
+      CHECK (blocked_revenue >= 0),
+    ADD CONSTRAINT oocs_revenue_leakage_non_negative
+      CHECK (revenue_leakage >= 0),
+    ADD CONSTRAINT oocs_inventory_blocked_revenue_non_negative
+      CHECK (revenue_blocked_inventory >= 0),
+    ADD CONSTRAINT oocs_customer_blocked_revenue_non_negative
+      CHECK (revenue_blocked_customer >= 0),
+    ADD CONSTRAINT oocs_operational_blocked_revenue_non_negative
+      CHECK (revenue_blocked_operational >= 0),
+    ADD CONSTRAINT oocs_aggregate_version_positive
+      CHECK (aggregate_version > 0)
+  `);
+
   await knex.schema.alterTable(
     'orders_operational_control_snapshot',
     (table) => {

@@ -73,6 +73,29 @@ export function startReconciliationConsumer() {
       }
 
       if (typeof aggregateVersion !== 'number') {
+        console.error('[reconciliation] invalid aggregateVersion type');
+        ch.ack(msg);
+        return;
+      }
+
+      /**
+       * STRICT VERSION GATE (Queue Boundary)
+       * -------------------------------------
+       * Prevents:
+       * - Stale event execution
+       * - Duplicate projection
+       * - Projection ahead of aggregate
+       *
+       * Structural invariants are DB-enforced,
+       * but we fail fast here for operational clarity.
+       */
+      if (
+        aggregateVersion !== order.aggregate_version ||
+        aggregateVersion <= order.last_projected_version
+      ) {
+        console.warn(
+          `[reconciliation] version gate blocked: order=${lasyncroOrderId} eventVersion=${aggregateVersion} current=${order.aggregate_version} projected=${order.last_projected_version}`
+        );
         ch.ack(msg);
         return;
       }

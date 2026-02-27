@@ -21,6 +21,13 @@ export async function reconcileOrderFulfillment(
 
   return db.transaction(async (trx) => {
 
+    /**
+     * ACTIVATE SNAPSHOT WRITE GUARD
+     * -----------------------------
+     * Enables snapshot writes for this transaction only.
+     */
+    await trx.raw(`SET LOCAL synchroflow.reconciliation = 'true'`);
+
     const order = await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .forUpdate()
@@ -1005,6 +1012,22 @@ export async function reconcileOrderFulfillment(
         })
         .onConflict(['shop_id', 'snapshot_date'])
         .merge();
+
+    /**
+     * PROJECTION AUDIT WRITE (IMMUTABLE)
+     * -----------------------------------
+     * Records successful projection at exact aggregate_version.
+     *
+     * Must execute inside same transaction to ensure:
+     * - Atomicity
+     * - Replay correctness
+     * - No phantom projections
+     */
+    await trx('order_projection_audit_log').insert({
+      lasyncro_order_id: lasyncroOrderId,
+      aggregate_version: order.aggregate_version,
+      source: 'reconciliation_worker',
+    });
 
     await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })

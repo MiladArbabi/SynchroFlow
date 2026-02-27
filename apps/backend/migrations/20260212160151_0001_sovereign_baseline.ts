@@ -118,7 +118,7 @@ export async function up(knex: Knex): Promise<void> {
      */
     table.integer('aggregate_version')
       .notNullable()
-      .defaultTo(0)
+      .defaultTo(1) // Version 1 = first domain mutation (creation)
       .index();
 
     /**
@@ -151,9 +151,119 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['shop_id', 'order_created_at']);
     table.index(['shop_id', 'customer_hashed_id']);
   });
+
+  /**
+   * PROJECTION CONSISTENCY ANCHOR
+   * -----------------------------
+   * Enables snapshot tables to enforce
+   * (lasyncro_order_id, aggregate_version) binding.
+   *
+   * REQUIRED for composite FK integrity.
+   */
+  await knex.raw(`
+    ALTER TABLE orders
+    ADD CONSTRAINT orders_id_version_unique
+    UNIQUE (lasyncro_order_id, aggregate_version)
+  `);
+
+  /**
+   * SNAPSHOT WRITE GUARD FUNCTION
+   * ------------------------------
+   * Blocks writes to snapshot tables unless explicitly
+   * executed inside reconciliation boundary.
+   *
+   * Reconciliation must execute:
+   *   SET LOCAL synchroflow.reconciliation = 'true';
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION enforce_reconciliation_guard()
+    RETURNS trigger AS $$
+    BEGIN
+      IF current_setting('synchroflow.reconciliation', true) IS DISTINCT FROM 'true' THEN
+        RAISE EXCEPTION
+          'SNAPSHOT_WRITE_BLOCKED: must execute inside reconciliation boundary';
+      END IF;
+
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  /**
+   * PROJECTION WRITE AUDIT LOG (IMMUTABLE)
+   * ---------------------------------------
+   * Records every successful projection pass.
+   *
+   * Purpose:
+   * - Deterministic replay verification
+   * - Divergence detection
+   * - Operational forensics
+   *
+   * Append-only.
+   * No updates.
+   * No deletes.
+   */
+  await knex.schema.createTable('order_projection_audit_log', (table) => {
+    table.uuid('audit_id')
+      .primary()
+      .defaultTo(knex.raw('gen_random_uuid()'));
+
+    table.uuid('lasyncro_order_id')
+      .notNullable()
+      .references('lasyncro_order_id')
+      .inTable('orders')
+      .onDelete('CASCADE');
+
+    table.integer('aggregate_version')
+      .notNullable();
+
+    table.timestamp('projected_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.text('source')
+      .notNullable(); // e.g. "reconciliation_worker"
+
+    table.index(['lasyncro_order_id']);
+  });
+
+  /**
+   * Projection binding guarantee.
+   */
+  await knex.raw(`
+    ALTER TABLE order_projection_audit_log
+    ADD CONSTRAINT order_projection_audit_fk
+    FOREIGN KEY (lasyncro_order_id, aggregate_version)
+    REFERENCES orders (lasyncro_order_id, aggregate_version)
+    ON DELETE CASCADE
+  `);
+
+  /**
+   * VERSION INVARIANTS (HARD GUARANTEE)
+   * ------------------------------------
+   * aggregate_version:
+   *   - Must always be strictly positive.
+   *
+   * last_projected_version:
+   *   - Must be >= 0
+   *   - Must never exceed aggregate_version
+   *
+   * These constraints seal projection correctness
+   * at the database level and prevent structural corruption.
+   */
+  await knex.raw(`
+    ALTER TABLE orders
+    ADD CONSTRAINT orders_aggregate_version_positive
+      CHECK (aggregate_version > 0),
+    ADD CONSTRAINT orders_last_projected_version_non_negative
+      CHECK (last_projected_version >= 0),
+    ADD CONSTRAINT orders_projection_not_ahead_of_aggregate
+      CHECK (last_projected_version <= aggregate_version)
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('order_projection_audit_log');
   await knex.schema.dropTableIfExists('orders');
   await knex.schema.dropTableIfExists('user_states');
   await knex.schema.dropTableIfExists('shops');

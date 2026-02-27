@@ -79,8 +79,35 @@ export async function up(knex: Knex): Promise<void> {
     table.check('age_since_fulfillment_seconds IS NULL OR age_since_fulfillment_seconds >= 0', [], 'age_since_fulfillment_seconds_non_negative');
 
     table.index(['is_shipping_sla_breached']);
+
+    /**
+     * PROJECTION VERSION INVARIANT
+     * ----------------------------
+     * aggregate_version must always be positive.
+     * Zero indicates projection corruption.
+     */
+    table.check(
+      'aggregate_version > 0',
+      [],
+      'order_age_snapshot_aggregate_version_positive'
+    );
+
     table.index(['is_delivery_sla_breached']);
   });
+
+  /**
+   * PROJECTION CONSISTENCY ENFORCEMENT
+   * -----------------------------------
+   * Snapshot must reference exact (id, version)
+   * in canonical orders table.
+   */
+  await knex.raw(`
+    ALTER TABLE order_age_snapshot
+    ADD CONSTRAINT order_age_snapshot_projection_fk
+    FOREIGN KEY (lasyncro_order_id, aggregate_version)
+    REFERENCES orders (lasyncro_order_id, aggregate_version)
+    ON DELETE CASCADE
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

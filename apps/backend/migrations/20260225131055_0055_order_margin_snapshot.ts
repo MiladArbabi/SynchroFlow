@@ -50,6 +50,50 @@ export async function up(knex: Knex): Promise<void> {
       .defaultTo(knex.fn.now());
   });
 
+  /**
+   * PROJECTION CONSISTENCY ENFORCEMENT
+   * -----------------------------------
+   * Snapshot must reference exact (id, version)
+   * in canonical orders table.
+   */
+  await knex.raw(`
+    ALTER TABLE order_margin_snapshot
+    ADD CONSTRAINT order_margin_snapshot_projection_fk
+    FOREIGN KEY (lasyncro_order_id, aggregate_version)
+    REFERENCES orders (lasyncro_order_id, aggregate_version)
+    ON DELETE CASCADE
+  `);
+
+  /**
+   * FINANCIAL INVARIANTS (HARD GUARANTEE)
+   * -------------------------------------
+   * Revenue and cost must never be negative.
+   * Margin may be negative — DO NOT constrain.
+   */
+  await knex.raw(`
+    ALTER TABLE order_margin_snapshot
+    ADD CONSTRAINT order_margin_snapshot_gross_revenue_non_negative
+      CHECK (gross_revenue >= 0),
+    ADD CONSTRAINT order_margin_snapshot_estimated_cost_non_negative
+      CHECK (estimated_cost >= 0),
+    ADD CONSTRAINT order_margin_snapshot_margin_pct_valid_range
+      CHECK (margin_pct >= 0 AND margin_pct <= 1),
+    ADD CONSTRAINT order_margin_snapshot_aggregate_version_positive
+      CHECK (aggregate_version > 0)
+  `);
+
+  /**
+   * WRITE GUARD TRIGGER
+   * --------------------
+   * Prevents manual INSERT/UPDATE outside reconciliation.
+   */
+  await knex.raw(`
+    CREATE TRIGGER order_margin_snapshot_guard
+    BEFORE INSERT OR UPDATE ON order_margin_snapshot
+    FOR EACH ROW
+    EXECUTE FUNCTION enforce_reconciliation_guard();
+  `);
+
   await knex.schema.alterTable('order_margin_snapshot', (table) => {
     table.index(['shop_id']);
   });
