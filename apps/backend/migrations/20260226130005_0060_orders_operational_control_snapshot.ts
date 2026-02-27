@@ -36,6 +36,19 @@ export async function up(knex: Knex): Promise<void> {
       table.date('snapshot_date').notNullable();
 
       /**
+       * PROJECTION VERSION (HARD GUARANTEE)
+       * ------------------------------------
+       * Records the aggregate_version of the triggering
+       * reconciliation event.
+       *
+       * Enables replay determinism validation for
+       * shop-level compression snapshot.
+       */
+      table.integer('aggregate_version')
+        .notNullable()
+        .comment('Projection version used to compute this control snapshot');
+
+      /**
        * ─────────────────────────────────────────
        * REVENUE INTEGRITY
        * ─────────────────────────────────────────

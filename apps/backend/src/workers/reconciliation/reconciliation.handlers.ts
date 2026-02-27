@@ -326,6 +326,15 @@ export async function reconcileOrderFulfillment(
     await trx('order_margin_snapshot')
       .insert({
         lasyncro_order_id: lasyncroOrderId,
+
+        /**
+         * PROJECTION VERSION (CRITICAL)
+         * ------------------------------
+         * Binds snapshot to exact aggregate_version
+         * used during reconciliation.
+         */
+        aggregate_version: order.aggregate_version,
+
         shop_id: order.shop_id,
         gross_revenue: grossRevenue,
         estimated_cost: estimatedCost,
@@ -927,6 +936,14 @@ export async function reconcileOrderFulfillment(
         .insert({
           shop_id: order.shop_id,
           snapshot_date: snapshotDate,
+
+          /**
+           * PROJECTION VERSION (CRITICAL)
+           * ------------------------------
+           * Binds shop-level compression snapshot
+           * to exact aggregate_version.
+           */
+          aggregate_version: order.aggregate_version,
 
           realized_revenue: Number(realizedRevenueRow?.sum ?? 0),
           at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),

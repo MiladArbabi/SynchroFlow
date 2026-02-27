@@ -20,6 +20,18 @@ export async function up(knex: Knex): Promise<void> {
       .references('lasyncro_order_id')
       .inTable('orders')
       .onDelete('CASCADE');
+    
+    /**
+     * PROJECTION VERSION (HARD GUARANTEE)
+     * ------------------------------------
+     * Records the exact aggregate_version used
+     * during reconciliation.
+     *
+     * Enables deterministic replay validation.
+     */
+    table.integer('aggregate_version')
+      .notNullable()
+      .comment('Projection version used to compute this snapshot');
 
     table.integer('shop_id')
       .notNullable()
