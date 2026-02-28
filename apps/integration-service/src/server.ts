@@ -74,16 +74,28 @@ app.post(
     const { shop_id } = req.params;
 
     try {
-      // Save the raw payload to our staging table
-      const [stagedEvent] = await db('staged_events').insert({
-        shop_id: Number(shop_id),
-        source_platform: 'shopify',
-        event_type: 'orders/create',
-        raw_payload: payload,
-      }).returning('id');
+      /**
+       * CANONICAL INGESTION CONTRACT
+       * ----------------------------
+       * - Append-only domain_events
+       * - Idempotent via (shop_id, external_event_id)
+       * - Worker consumes { domain_event_id } only
+       */
+      const [inserted] = await db('domain_events')
+        .insert({
+          shop_id: Number(shop_id),
+          event_type: 'orders/create',
+          event_payload: payload,
+          event_time: new Date(payload.created_at),
+          event_version: 1,
+          external_event_id: req.get('X-Shopify-Webhook-Id'),
+        })
+        .returning('id');
 
-      // Publish the ID of the staged event to the queue
-      await publishToQueue('events', JSON.stringify({ staged_event_id: stagedEvent.id }));
+      await publishToQueue(
+        'events',
+        JSON.stringify({ domain_event_id: inserted.id }),
+      );
 
       console.log('Received and verified Shopify webhook for order:', payload.order_id);
       res.status(200).send('Webhook received');
@@ -97,7 +109,7 @@ app.post(
 // --- Integration Triggers ---
 app.post('/integrations/shopify/start-trial-sync', express.json(), async (req: Request, res: Response) => {
   try {
-    const { shopId, shop, accessToken } = req.body;
+    const { shopId, shop, accessToken, payload } = req.body;
 
     if (!shopId || !shop || !accessToken) {
       return res.status(400).json({ error: 'shopId, shop, and accessToken are required.' });
@@ -119,20 +131,27 @@ app.post('/integrations/shopify/start-trial-sync', express.json(), async (req: R
         hashCustomerId,
       });
 
-      // Save the canonical payload to our staging table
-      const [stagedEvent] = await db('staged_events')
+      /**
+       * CANONICAL INGESTION CONTRACT
+       * ----------------------------
+       * - Append-only domain_events
+       * - Idempotent via (shop_id, external_event_id)
+       * - Worker consumes { domain_event_id } only
+       */
+      const [inserted] = await db('domain_events')
         .insert({
-          shop_id: shopId,
-          source_platform: 'shopify',
-          event_type: 'orders/create', // canonical order create
-          raw_payload: canonicalOrder,
+          shop_id: Number(shopId),
+          event_type: 'orders/create',
+          event_payload: payload,
+          event_time: new Date(payload.created_at),
+          event_version: 1,
+          external_event_id: req.get('X-Shopify-Webhook-Id'),
         })
         .returning('id');
 
-      // Publish the ID of the staged event to the queue
       await publishToQueue(
         'events',
-        JSON.stringify({ staged_event_id: stagedEvent.id }),
+        JSON.stringify({ domain_event_id: inserted.id }),
       );
     }
 

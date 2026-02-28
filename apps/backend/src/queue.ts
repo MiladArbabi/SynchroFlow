@@ -129,6 +129,48 @@ export const getQueueChannel = (queueName: string): ChannelWrapper => {
       setup: async () => {}
     });
 
+    /**
+     * PROJECTION PROTOCOL ENFORCEMENT
+     * --------------------------------
+     * The 'events' queue is reserved exclusively for
+     * canonical domain event projection triggers.
+     *
+     * Only messages of shape:
+     *   { domain_event_id: number }
+     * are permitted.
+     *
+     * Any attempt to publish other payloads will throw.
+     */
+    if (queueName === 'events') {
+      const originalSend = channelWrapper.sendToQueue.bind(channelWrapper);
+
+      channelWrapper.sendToQueue = (name: string, buffer: Buffer, options?: any) => {
+        try {
+          const parsed = JSON.parse(buffer.toString());
+          const id = Number(parsed?.domain_event_id);
+
+          if (!Number.isInteger(id)) {
+            console.error('[QUEUE_PROTOCOL_VIOLATION_BLOCKED]', {
+              queue: 'events',
+              payload: parsed,
+            });
+
+            throw new Error(
+              '[QUEUE_PROTOCOL_VIOLATION] events queue requires { domain_event_id: number }'
+            );
+          }
+        } catch (err) {
+          console.error('[QUEUE_PROTOCOL_INVALID_JSON]', {
+            queue: 'events',
+            raw: buffer.toString(),
+          });
+          throw err;
+        }
+
+        return originalSend(name, buffer, options);
+      };
+    }
+
     // Keep channel error handling to avoid process crash
     channelWrapper.on('error', (err: any) => {
       if (process.env.NODE_ENV !== 'test') {

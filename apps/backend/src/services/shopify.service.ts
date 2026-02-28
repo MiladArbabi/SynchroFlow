@@ -194,7 +194,6 @@ export const performInitialSync = async (
       sync_progress_total: totalProgress,
     });
 
-    const stagedEventIds: number[] = [];
     let sovereignOrderIds: string[] = [];
 
     // 4. Use a transaction to sync all data or none
@@ -255,35 +254,54 @@ export const performInitialSync = async (
        */
       if (data.orders?.edges?.length) {
         for (const { node } of data.orders.edges) {
-          const [staged] = await trx('staged_events')
-            /**
-             * SYNC INGESTION — CANONICAL EVENT-TIME REQUIRED
-             * -----------------------------------------------
-             * Sync path must obey same ingestion invariants
-             * as webhook path.
-             *
-             * Use Shopify createdAt as canonical event-time.
-             */
-            .insert({
-              source_platform: 'shopify',
-              event_type: 'orders/sync',
-              raw_payload: node,
-              shop_id: shopId,
+          /**
+           * IMMUTABLE DOMAIN EVENT INSERT (SYNC PATH)
+           * ------------------------------------------
+           * Sync ingestion must follow identical contract as webhook ingestion.
+           *
+           * Canonical boundary:
+           * - Append-only
+           * - DB-enforced idempotency (shop_id, external_event_id)
+           * - Deterministic replay source
+           */
+          let domainEventId: number | null = null;
 
-              /**
-               * Hard invariant: event_time required.
-               */
-              event_time: new Date(node.createdAt),
+          try {
+            const [inserted] = await trx('domain_events')
+              .insert({
+                shop_id: shopId,
+                event_type: 'orders/sync',
+                event_payload: node,
+                event_time: new Date(node.createdAt),
+                event_version: 1,
+                external_event_id: String(node.id),
+              })
+              .returning<{ id: number }[]>('id');
 
-              /**
-               * Sync events do not provide webhook eventId.
-               * Use Shopify order id as deterministic identity.
-               */
-              external_event_id: String(node.id),
-            })
-            .returning<{ id: number }[]>('id');
+            domainEventId = inserted.id;
 
-          stagedEventIds.push(staged.id);
+          } catch (err: any) {
+            if (err?.code === '23505') {
+              // Duplicate sync event — safe to ignore (idempotent)
+              console.warn('[SYNC_DUPLICATE_DOMAIN_EVENT]', {
+                shopId,
+                externalEventId: node.id,
+              });
+              continue;
+            }
+
+            throw err;
+          }
+
+          /**
+           * DOMAIN EVENT OUTBOX INSERT (SYNC PATH)
+           * ---------------------------------------
+           * Sync ingestion must use domain_event_outbox.
+           * Direct writes to generic outbox are forbidden.
+           */
+          await trx('domain_event_outbox').insert({
+            domain_event_id: domainEventId,
+          });
         }
       
       /**
@@ -327,22 +345,6 @@ export const performInitialSync = async (
        */
       }
     });
-
-    /**
-     * RECONCILIATION DISPATCH DISABLED (SYNC PATH)
-     * --------------------------------------------
-     * Reconciliation is triggered only by canonical
-     * webhook ingestion boundary.
-     */
-
-    const channel = getQueueChannel('events');
-
-    for (const staged_event_id of stagedEventIds) {
-      channel.sendToQueue(
-        'events',
-        Buffer.from(JSON.stringify({ staged_event_id })),
-      );
-    }
 
     // Products are now committed.
     // Product ingestion writes directly to sovereign products table.
@@ -705,18 +707,5 @@ async function syncOrderLineItems(
     };
 
     if (!sovereignOrder) continue;
-
-    const mappedStatus = mapSnapshotStatus(
-      node.displayFulfillmentStatus
-    );
-
-    // Authoritative ingestion boundary
-    await OrderFulfillmentIngestionService.ingestStatus(
-      {
-        lasyncroOrderId: sovereignOrder.lasyncro_order_id,
-        status: mappedStatus,
-      },
-      trx
-    );
   }
 }

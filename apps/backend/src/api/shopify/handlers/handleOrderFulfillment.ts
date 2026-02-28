@@ -1,10 +1,6 @@
 // apps/backend/src/api/shopify/handlers/handleOrderFulfillment.ts
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
-import { getQueueChannel } from '../../../queue.js';
-import 
-  OrderFulfillmentIngestionService from 
-'../../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 
 type ShopifyFulfillmentPayload = {
   id: string | number;
@@ -50,11 +46,6 @@ export async function handleOrderFulfillment(
 
   /**
    * INGESTION EVENT-TIME ENFORCEMENT
-   * ---------------------------------
-   * Fulfillment must carry canonical event-time.
-   * Accepted fields:
-   * - updated_at
-   * - created_at
    */
   const eventTime =
     (rawPayload as any).updated_at ??
@@ -68,9 +59,7 @@ export async function handleOrderFulfillment(
   }
 
   /**
-   * NOTE:
-   * Idempotency must be enforced at domain boundary.
-   * No mutable ingestion buffer.
+   * INGESTION IDENTITY ENFORCEMENT
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -78,45 +67,53 @@ export async function handleOrderFulfillment(
     );
   }
 
+  let domainEventId: number;
+
+  try {
+
+    const result = await db('domain_events')
+      .insert({
+        shop_id: shopId,
+        event_type: 'orders/fulfilled',
+        event_payload: rawPayload,
+        event_time: new Date(eventTime),
+        event_version: 1,
+        external_event_id: envelope.eventId,
+      })
+      .returning('id');
+
+    domainEventId = result[0].id ?? result[0];
+
+  } catch (error: any) {
+
+    /**
+     * DUPLICATE DELIVERY HANDLING
+     * ---------------------------
+     * Unique constraint:
+     * (shop_id, external_event_id)
+     */
+    if (error?.code === '23505') {
+
+      console.warn('[DOMAIN_EVENT_DUPLICATE]', {
+        shopId,
+        externalEventId: envelope.eventId,
+        eventType: 'orders/fulfilled',
+      });
+
+      return; // Do NOT enqueue duplicate
+    }
+
+    throw error;
+  }
+
+
   /**
-   * IMMUTABLE DOMAIN EVENT INSERT
-   * -----------------------------
-   * Append-only canonical event log.
+   * DOMAIN EVENT OUTBOX INSERT
+   * ---------------------------
+   * Projection publishing must go through
+   * domain_event_outbox for deterministic dispatch.
    */
-  const [domainEventId] = await db('domain_events')
-    .insert({
-      shop_id: shopId,
-      event_type: 'orders/fulfilled',
-      event_payload: rawPayload,
-      event_time: new Date(eventTime),
-      event_version: 1,
-      event_sequence: db.raw(
-        `
-        COALESCE(
-          (SELECT MAX(event_sequence) + 1
-          FROM domain_events
-          WHERE shop_id = ?),
-          1
-        )
-        `,
-        [shopId]
-      ),
-    })
-    .returning('id');
-
-  const finalDomainEventId =
-    typeof domainEventId === 'object'
-      ? domainEventId.id
-      : domainEventId;
-
-  const channel = getQueueChannel('events');
-
-  channel.sendToQueue(
-    'events',
-      Buffer.from(
-        JSON.stringify({
-          domain_event_id: finalDomainEventId,
-        })
-      )
-  );
-};
+  await db('domain_event_outbox').insert({
+    domain_event_id: domainEventId,
+  });
+}

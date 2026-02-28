@@ -2,25 +2,15 @@
  * REFUND EXECUTION CONTRACT
  * ------------------------
  * - refund_executions is the ONLY source of financial truth
- * - Webhooks may replay; platform_refund_id enforces idempotency
+ * - Webhooks may replay; DB enforces idempotency
  * - Revenue mutation happens in a separate resolver phase
  */
 
 // apps/backend/src/api/shopify/handlers/handleRefundCreated.ts
 
 import db from '@lasyncro/backend-core/db.js';
-import { getQueueChannel } from '../../../queue.js';
-
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
-import { resolveRefundExecution } from '../../../workers/refundResolution.worker.js';
-import { resolveExternalOrderId } from '../../../services/identity/resolveExternalOrder.service.js';
 
-/**
- * Minimal Shopify Refund Payload (Execution-Safe)
- * -----------------------------------------------
- * This is NOT a full Shopify type.
- * It includes ONLY fields required for refund execution truth.
- */
 type ShopifyRefundPayload = {
   id: number | string;
   order_id: number | string;
@@ -34,16 +24,6 @@ type ShopifyRefundPayload = {
   }>;
 };
 
-/**
- * Shopify refunds/create webhook handler.
- *
- * Responsibilities:
- * - Persist webhook payload (idempotent via ledger)
- * - Stage raw payload for downstream ingestion
- * - Enqueue refunds ingestion worker
- *
- * No parsing. No inference. No mutation.
- */
 export async function handleRefundCreated(
   envelope: WebhookEnvelope
 ): Promise<void> {
@@ -67,9 +47,7 @@ export async function handleRefundCreated(
   const shopId = installation.shop_id;
 
   /**
-   * NOTE:
-   * Idempotency must be enforced at domain boundary.
-   * No mutable ingestion buffer.
+   * INGESTION IDENTITY ENFORCEMENT
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -77,47 +55,16 @@ export async function handleRefundCreated(
     );
   }
 
-  /**
-   * Runtime type narrowing for refund execution.
-   * If payload does not match minimum refund shape,
-   * execution is skipped safely.
-   */
-
-  /**
-   * IMPORTANT:
-   * WebhookEnvelope.rawPayload is intentionally untyped.
-   * We narrow locally to avoid leaking Shopify semantics
-   * beyond the execution boundary.
-   *
-   * This preserves:
-   * - transport correctness
-   * - execution authority
-   * - future replay safety
-   */
   const refundPayload = rawPayload as Partial<ShopifyRefundPayload>;
 
-  /**
-   * Refund Execution — Authoritative Write
-   * -------------------------------------
-   * This writes financial truth only.
-   * No revenue mutation. No inference.
-   */
   const refundId = refundPayload.id;
   const platformOrderId = refundPayload.order_id;
   const refundCreatedAt = refundPayload.created_at;
 
-  console.log('REFUND platformOrderId', platformOrderId);
-
-  if (!refundId || !platformOrderId) {
-    return;
-  }
+  if (!refundId || !platformOrderId) return;
 
   /**
    * INGESTION EVENT-TIME ENFORCEMENT
-   * ---------------------------------
-   * Refund must carry canonical event-time.
-   * Accepted field:
-   * - created_at
    */
   if (!refundCreatedAt) {
     throw new Error(
@@ -125,41 +72,52 @@ export async function handleRefundCreated(
     );
   }
 
-   /**
-     * IMMUTABLE DOMAIN EVENT INSERT
-     * -----------------------------
-     * Append-only canonical event log.
-     */
-    const [domainEventId] = await db('domain_events')
+  let domainEventId: number;
+
+  try {
+
+    const result = await db('domain_events')
       .insert({
         shop_id: shopId,
         event_type: 'refunds/create',
         event_payload: rawPayload,
         event_time: new Date(refundCreatedAt),
         event_version: 1,
-        event_sequence: db.raw(
-          `
-          COALESCE(
-            (SELECT MAX(event_sequence) + 1
-            FROM domain_events
-            WHERE shop_id = ?),
-            1
-          )
-          `,
-          [shopId]
-        ),
+        external_event_id: envelope.eventId,
       })
       .returning('id');
 
-      const finalDomainEventId =
-      typeof domainEventId === 'object' && domainEventId !== null
-        ? (domainEventId as any).id
-        : domainEventId;
+    domainEventId = result[0].id ?? result[0];
 
-    getQueueChannel('events').sendToQueue(
-      'events',
-      Buffer.from(
-        JSON.stringify({ domain_event_id: finalDomainEventId })
-      )
-    );
+  } catch (error: any) {
+
+    /**
+     * DUPLICATE DELIVERY HANDLING
+     * ---------------------------
+     * Unique constraint:
+     * (shop_id, external_event_id)
+     */
+    if (error?.code === '23505') {
+
+      console.warn('[DOMAIN_EVENT_DUPLICATE]', {
+        shopId,
+        externalEventId: envelope.eventId,
+        eventType: 'refunds/create',
+      });
+
+      return; // Do NOT enqueue duplicate
+    }
+
+    throw error;
+  }
+
+  /**
+   * DOMAIN EVENT OUTBOX INSERT
+   * ---------------------------
+   * Projection publishing must go through
+   * domain_event_outbox for deterministic dispatch.
+   */
+  await db('domain_event_outbox').insert({
+    domain_event_id: domainEventId,
+  });
 }

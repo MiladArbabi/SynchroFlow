@@ -3,7 +3,6 @@ import type { Knex } from 'knex';
 /**
  * DOMAIN EVENTS (IMMUTABLE CANONICAL LOG)
  * ---------------------------------------
- * This table replaces staged_events.
  *
  * STRICT RULES:
  * - Append-only
@@ -45,35 +44,48 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable();
 
     /**
+     * NOTE:
+     * event_sequence removed.
+     *
+     * Global deterministic ordering is guaranteed
+     * by the primary key (id).
+     *
+     * Per-shop sequence was unused in projection,
+     * race-prone under concurrency,
+     * and provided no additional ordering guarantee.
+     */
+
+    /**
      * Versioning for schema evolution.
      * Enables deterministic deserialization.
      */
     table.integer('event_version')
       .notNullable()
       .defaultTo(1);
-
+    
     /**
-     * Per-shop monotonic ordering key.
-     * Required for deterministic rebuild.
+     * External webhook identity.
+     * Required for ingestion idempotency.
+     * Duplicate delivery MUST NOT create duplicate domain events.
      */
-    table.bigInteger('event_sequence')
-      .notNullable();
+    table.string('external_event_id').notNullable();
 
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
 
-    /**
-     * Enforce strict per-shop ordering.
-     */
-    table.unique(
-      ['shop_id', 'event_sequence'],
-      'domain_events_shop_sequence_unique'
-    );
-
     table.index(['shop_id']);
     table.index(['event_type']);
     table.index(['event_time']);
+
+    /**
+     * Enforce ingestion idempotency.
+     * One external event per shop.
+     */
+    table.unique(
+      ['shop_id', 'external_event_id'],
+      'domain_events_shop_external_event_unique'
+    );
   });
 
   /**

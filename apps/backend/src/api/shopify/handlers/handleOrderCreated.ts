@@ -1,8 +1,6 @@
 // apps/backend/src/api/shopify/handlers/handleOrderCreated.ts
-
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
-import { getQueueChannel } from '../../../queue.js';
 
 type ShopifyOrderCreatePayload = {
   id: number | string;
@@ -43,10 +41,8 @@ export async function handleOrderCreated(
       hasUpdatedAt: !!raw?.updated_at,
       shopDomain,
     });
-
     return;
   }
-
 
   const installation = await db('shopify_app_installations')
     .where({ shop_domain: shopDomain })
@@ -77,9 +73,10 @@ export async function handleOrderCreated(
   const shopId = installation.shop_id;
 
   /**
-   * NOTE:
-   * Idempotency must be enforced at domain boundary,
-   * not via mutable ingestion buffer.
+   * INGESTION IDENTITY ENFORCEMENT
+   * ------------------------------
+   * external_event_id is REQUIRED and persisted.
+   * DB uniqueness guarantees idempotency.
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -87,42 +84,56 @@ export async function handleOrderCreated(
     );
   }
 
+  let domainEventId: number;
+
+  try {
+
+    const result = await db('domain_events')
+      .insert({
+        shop_id: shopId,
+        event_type: 'orders/create',
+        event_payload: raw,
+        event_time: new Date(eventTime),
+        event_version: 1,
+        external_event_id: envelope.eventId,
+      })
+      .returning('id');
+
+    domainEventId = result[0].id ?? result[0];
+
+  } catch (error: any) {
+
+    /**
+     * DUPLICATE DELIVERY HANDLING
+     * ---------------------------
+     * Unique constraint:
+     * (shop_id, external_event_id)
+     *
+     * PostgreSQL error code 23505 = unique_violation
+     */
+    if (error?.code === '23505') {
+
+      console.warn('[DOMAIN_EVENT_DUPLICATE]', {
+        shopId,
+        externalEventId: envelope.eventId,
+        eventType: 'orders/create',
+      });
+
+      return; // Do NOT enqueue duplicate
+    }
+
+    throw error; // Unexpected DB error
+  }
+
+  console.log('[DOMAIN_EVENT_INSERTED]', domainEventId);
+
   /**
-   * IMMUTABLE DOMAIN EVENT INSERT
-   * -----------------------------
-   * No ingestion state.
-   * No retry tracking.
-   * Deterministic rebuild source of truth.
+   * DOMAIN EVENT OUTBOX INSERT
+   * ---------------------------
+   * Projection publishing must go through
+   * domain_event_outbox for deterministic dispatch.
    */
-  const [domainEventId] = await db('domain_events')
-    .insert({
-      shop_id: shopId,
-      event_type: 'orders/create',
-      event_payload: raw,
-      event_time: new Date(eventTime),
-      event_version: 1,
-      event_sequence: db.raw(
-        `
-        COALESCE(
-          (SELECT MAX(event_sequence) + 1
-          FROM domain_events
-          WHERE shop_id = ?),
-          1
-        )
-        `,
-        [shopId]
-      ),
-    })
-    .returning('id');
-
-  console.log('[DOMAIN_EVENT_INSERTED]', domainEventId.id ?? domainEventId);
-
-  getQueueChannel('events').sendToQueue(
-    'events',
-      Buffer.from(
-        JSON.stringify({
-          domain_event_id: domainEventId.id ?? domainEventId,
-        })
-      )
-  );
-}
+  await db('domain_event_outbox').insert({
+    domain_event_id: domainEventId,
+  });
+};

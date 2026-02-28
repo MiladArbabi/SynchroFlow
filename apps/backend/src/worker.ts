@@ -1,5 +1,4 @@
 // apps/backend/src/worker.ts
-
 import { getQueueChannel } from './queue.js';
 import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
@@ -37,6 +36,33 @@ const ORDER_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // fixed RF
  */
 const PROJECTION_NAME = 'orders_projection';
 
+/**
+ * CURSOR ADVANCEMENT (TRANSACTION-BOUND)
+ * --------------------------------------
+ * Cursor MUST advance atomically with projection writes.
+ * Never advance outside aggregate mutation transaction.
+ */
+async function advanceCursor(
+  trx: any,
+  domainEventId: number
+) {
+  /**
+   * ATOMIC UPSERT
+   * -------------
+   * Prevents duplicate insert race under concurrency.
+   */
+  await trx('projection_cursors')
+    .insert({
+      projection_name: PROJECTION_NAME,
+      last_processed_event_id: domainEventId,
+    })
+    .onConflict('projection_name')
+    .merge({
+      last_processed_event_id: domainEventId,
+      updated_at: trx.fn.now(),
+    });
+}
+
 // Lazily obtain the specific channel for 'events'
 let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
 function getEventChannel() {
@@ -46,16 +72,114 @@ function getEventChannel() {
   return eventChannel as NonNullable<typeof eventChannel>;
 }
 
-export async function processMessage(msg: { content: Buffer } | null) {
+/**
+ * PURE PROJECTION ENTRY POINT
+ * ----------------------------
+ * Transport-agnostic projection execution.
+ *
+ * This function:
+ * - Must not depend on RabbitMQ
+ * - Is safe for CLI replay
+ * - Reuses existing projection logic
+ */
+export async function projectDomainEvent(domain_event_id: number) {
+  await projectDomainEventFromMessage({
+    content: Buffer.from(
+      JSON.stringify({ domain_event_id })
+    ),
+  });
+}
+
+async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
   if (msg === null) return;
 
   const content = msg.content.toString();
 
   try {
-    const { domain_event_id } = JSON.parse(content);
+    let parsed: any;
+
+    try {
+      parsed = JSON.parse(content);
+    } catch (err) {
+      console.error('[PROJECTION_INVALID_JSON]', {
+        raw: content,
+      });
+      throw err;
+    }
+
+    const domain_event_id = Number(parsed?.domain_event_id);
+
+    /**
+     * PROJECTION CURSOR INVARIANT
+     * ---------------------------
+     * Projection must be strictly monotonic.
+     * Replaying an already-processed or lower ID
+     * indicates:
+     * - Queue contamination
+     * - Replay ordering violation
+     * - Duplicate delivery without cursor protection
+     *
+     * This is a hard failure to protect determinism.
+     */
+    const cursor = await db('projection_cursors')
+      .where({ projection_name: PROJECTION_NAME })
+      .first<{ last_processed_event_id: number }>();
+
+    if (cursor && domain_event_id <= cursor.last_processed_event_id) {
+
+      const errorMessage =
+        `[PROJECTION_CURSOR_REGRESSION] event_id=${domain_event_id} cursor=${cursor.last_processed_event_id}`;
+
+      /**
+       * PRODUCTION SAFETY: DEAD-LETTER REGRESSION
+       * ------------------------------------------
+       * Regression must never silently pass.
+       * In development → crash (hard invariant).
+       * In non-dev → route to DLQ and ack original.
+       */
+
+      if (process.env.NODE_ENV === 'development') {
+        throw new Error(errorMessage);
+      }
+
+      console.error(errorMessage);
+
+      try {
+        getEventChannel().sendToQueue(
+          'events.dead',
+          Buffer.from(
+            JSON.stringify({
+              reason: 'PROJECTION_CURSOR_REGRESSION',
+              domain_event_id,
+              cursor: cursor.last_processed_event_id,
+            })
+          ),
+          { persistent: true }
+        );
+      } catch (dlqErr) {
+        console.error('[DLQ_PUBLISH_FAILED]', dlqErr);
+      }
+
+      if (msg && 'fields' in (msg as any)) {
+        getEventChannel().ack(msg as any);
+      }
+
+      return;
+    }
+
+    if (!Number.isInteger(domain_event_id)) {
+      console.error('[PROJECTION_PROTOCOL_VIOLATION]', {
+        expected: '{ domain_event_id: number }',
+        received: parsed,
+      });
+
+      throw new Error('[DOMAIN_EVENT_ID_INVALID_TYPE]');
+    }
 
     if (!domain_event_id) {
-      getEventChannel().ack(msg as any);
+      if (msg && 'fields' in (msg as any)) {
+        getEventChannel().ack(msg as any);
+      }
       return;
     }
 
@@ -76,9 +200,46 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }>();
 
     if (!domainEvent) {
-      throw new Error(
-        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`
-      );
+
+      const errorMessage =
+        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`;
+
+      /**
+       * PRODUCTION SAFETY: DEAD-LETTER UNKNOWN EVENT
+       * --------------------------------------------
+       * Queue references event that does not exist.
+       * Indicates:
+       * - Stale message
+       * - Queue contamination
+       * - Manual publish error
+       */
+
+      if (process.env.NODE_ENV === 'development') {
+        throw new Error(errorMessage);
+      }
+
+      console.error(errorMessage);
+
+      try {
+        getEventChannel().sendToQueue(
+          'events.dead',
+          Buffer.from(
+            JSON.stringify({
+              reason: 'DOMAIN_EVENT_NOT_FOUND',
+              domain_event_id,
+            })
+          ),
+          { persistent: true }
+        );
+      } catch (dlqErr) {
+        console.error('[DLQ_PUBLISH_FAILED]', dlqErr);
+      }
+
+      if (msg && 'fields' in (msg as any)) {
+        getEventChannel().ack(msg as any);
+      }
+
+      return;
     }
 
     /**
@@ -94,26 +255,6 @@ export async function processMessage(msg: { content: Buffer } | null) {
     }
 
     const canonicalEventTime = new Date(domainEvent.event_time);
-
-    /**
-     * PROJECTION CURSOR ENFORCEMENT
-     * -----------------------------
-     * Enforces strict monotonic processing.
-     */
-    const cursor = await db('projection_cursors')
-      .where({ projection_name: PROJECTION_NAME })
-      .first<{ last_processed_event_id: number }>();
-
-    const expectedNextId =
-      cursor?.last_processed_event_id != null
-        ? cursor.last_processed_event_id + 1
-        : domain_event_id;
-
-    if (domain_event_id !== expectedNextId) {
-      throw new Error(
-        `[PROJECTION_ORDER_VIOLATION] expected=${expectedNextId} got=${domain_event_id}`
-      );
-    }
 
     /**
      * CANONICAL EVENT DISPATCHER
@@ -152,16 +293,38 @@ export async function processMessage(msg: { content: Buffer } | null) {
           );
         }
 
-        let newlyCreatedOrderId: string | null = null;
-
         await db.transaction(async (trx) => {
 
           /**
-           * DETERMINISTIC ORDER ID
-           * ----------------------
-           * Derived from (shop_id + platform + external_order_id).
-           * Enables full rebuild without identity map dependency.
+           * TRANSACTIONAL MONOTONIC CURSOR ENFORCEMENT
+           * --------------------------------------------
+           * Must occur inside transaction to avoid TOCTOU race.
+           * Row is locked via FOR UPDATE.
            */
+          const cursorRow = await trx('projection_cursors')
+            .where({ projection_name: PROJECTION_NAME })
+            .forUpdate()
+            .first<{ last_processed_event_id: number }>();
+
+          if (
+            cursorRow?.last_processed_event_id != null &&
+            domain_event_id <= cursorRow.last_processed_event_id
+          ) {
+            throw new Error(
+              `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+            );
+          }
+
+          /**
+           * FULL ATOMIC PROJECTION UNIT
+           * ----------------------------
+           * Order creation (if needed),
+           * baseline hydration,
+           * line items,
+           * reconciliation emission,
+           * cursor advancement.
+           */
+
           const lasyncroOrderId = crypto
             .createHash('sha1')
             .update(
@@ -172,242 +335,185 @@ export async function processMessage(msg: { content: Buffer } | null) {
             .replace(
               /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
               '$1-$2-$3-$4-$5'
-          );
-          
-          newlyCreatedOrderId = lasyncroOrderId;
+            );
 
-          /**
-           * EXISTENCE CHECK (DETERMINISTIC)
-           * --------------------------------
-           * Order ID is deterministic.
-           * If order already exists, skip creation.
-           */
           const existingOrder = await trx('orders')
             .where({ lasyncro_order_id: lasyncroOrderId })
             .first();
 
-          if (existingOrder) return;
+          if (!existingOrder) {
 
-          await trx('orders').insert({
-            lasyncro_order_id: lasyncroOrderId,
-            shop_id: domainEvent.shop_id,
-
-            currency: payload.currencyCode ?? payload.currency ?? null,
-
-            total_price:
-              payload.totalPriceSet?.shopMoney?.amount != null
-                ? Number(payload.totalPriceSet.shopMoney.amount)
-                : payload.total_price ?? null,
-
-            subtotal_price:
-              payload.subtotalPriceSet?.shopMoney?.amount != null
-                ? Number(payload.subtotalPriceSet.shopMoney.amount)
-                : payload.subtotal_price ?? null,
-
-            total_tax:
-              payload.totalTaxSet?.shopMoney?.amount != null
-                ? Number(payload.totalTaxSet.shopMoney.amount)
-                : payload.total_tax ?? null,
-
-            /**
-             * ORDER CREATION EVENT-TIME (Canonical)
-             * --------------------------------------
-             * Must rely exclusively on domain_events.event_time.
-             */
-            order_created_at: canonicalEventTime,
-
-            /**
-             * Initial update anchor equals canonical creation time.
-             * Future mutations will advance this deterministically.
-             */
-            order_updated_at: canonicalEventTime,
-
-            payment_state: 'unpaid',
-
-            /**
-             * AGGREGATE VERSION INITIALIZATION
-             * ---------------------------------
-             * Creation = first domain mutation.
-             */
-            aggregate_version: 1,
-          });
-
-          /**
-           * Identity map retained only for legacy compatibility.
-           * Deterministic ID removes replay dependency.
-           */
-          await trx('external_order_identity_map')
-            .insert({
+            await trx('orders').insert({
               lasyncro_order_id: lasyncroOrderId,
               shop_id: domainEvent.shop_id,
-              platform: 'shopify',
-              external_order_id: externalOrderId,
-            })
-            .onConflict(['platform', 'external_order_id'])
-            .ignore();
+              currency: payload.currencyCode ?? payload.currency ?? null,
+              total_price:
+                payload.totalPriceSet?.shopMoney?.amount != null
+                  ? Number(payload.totalPriceSet.shopMoney.amount)
+                  : payload.total_price ?? null,
+              subtotal_price:
+                payload.subtotalPriceSet?.shopMoney?.amount != null
+                  ? Number(payload.subtotalPriceSet.shopMoney.amount)
+                  : payload.subtotal_price ?? null,
+              total_tax:
+                payload.totalTaxSet?.shopMoney?.amount != null
+                  ? Number(payload.totalTaxSet.shopMoney.amount)
+                  : payload.total_tax ?? null,
+              order_created_at: canonicalEventTime,
+              order_updated_at: canonicalEventTime,
+              payment_state: 'unpaid',
+              aggregate_version: 1,
+            });
 
-          /**
-           * BASELINE FULFILLMENT HYDRATION (SYNC ONLY)
-           * Transaction-bound to avoid pool exhaustion.
-           */
-          if (domainEvent.event_type === 'orders/sync') {
-
-            const snapshotStatus = payload.displayFulfillmentStatus;
-
-            let baselineStatus:
-              | 'pending'
-              | 'processing'
-              | 'fulfilled'
-              | 'partially_fulfilled'
-              | 'cancelled'
-              | 'failed' = 'pending';
-
-            switch (snapshotStatus) {
-              case 'FULFILLED':
-                baselineStatus = 'fulfilled';
-                break;
-              case 'PARTIALLY_FULFILLED':
-                baselineStatus = 'partially_fulfilled';
-                break;
-              case 'UNFULFILLED':
-                baselineStatus = 'pending';
-                break;
-              case 'CANCELLED':
-                baselineStatus = 'cancelled';
-                break;
-            }
-
-            await OrderFulfillmentIngestionService.ingestStatus(
-              {
-                lasyncroOrderId: lasyncroOrderId,
-                status: baselineStatus,
-              },
-              trx   // CRITICAL: reuse transaction
-            );
-          }
-
-          /**
-           * Line Item Materialization
-           * -------------------------
-           * Required for OAuth sync path.
-           */
-          const lineEdges =
-            payload.lineItems?.edges ??
-            payload.line_items ??
-            [];
-
-          for (const edge of lineEdges) {
-
-            const li = edge.node ?? edge;
-
-            let variantGid = li.variant?.id ?? li.variant_id ?? null;
-            if (!variantGid) continue;
-
-            variantGid = String(variantGid);
-
-            const variantId = variantGid.startsWith('gid://')
-              ? variantGid
-              : `gid://shopify/ProductVariant/${variantGid}`;
-
-            const variantIdentity = await trx('external_product_identity_map')
-              .where({
+            await trx('external_order_identity_map')
+              .insert({
+                lasyncro_order_id: lasyncroOrderId,
                 shop_id: domainEvent.shop_id,
                 platform: 'shopify',
-                external_variant_id: variantId,
+                external_order_id: externalOrderId,
               })
-              .first();
-
-            if (!variantIdentity) continue;
-
-            const variantRow = await trx('variants')
-              .where({
-                lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
-              })
-              .first();
-
-            if (!variantRow) continue;
-
-            const quantity = li.quantity ?? 0;
-
-            const unitPrice =
-              li.originalUnitPriceSet?.shopMoney?.amount != null
-                ? Number(li.originalUnitPriceSet.shopMoney.amount)
-                : li.price != null
-                  ? Number(li.price)
-                  : 0;
-
-            await trx('order_line_items')
-              .insert({
-                /**
-                 * DETERMINISTIC LINE ITEM ID
-                 * --------------------------
-                 * Derived from (shop_id + external_order_id + external_line_item_id).
-                 */
-                lasyncro_line_item_id: crypto
-                  .createHash('sha1')
-                  .update(
-                    `${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${externalOrderId}:line:${li.id}`
-                  )
-                  .digest('hex')
-                  .slice(0, 32)
-                  .replace(
-                    /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
-                    '$1-$2-$3-$4-$5'
-                  ),
-                lasyncro_order_id: lasyncroOrderId,
-                lasyncro_product_id: variantRow.lasyncro_product_id,
-                lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
-                title: li.title ?? '',
-                sku: li.sku ?? null,
-                quantity,
-                unit_price: unitPrice,
-                line_total: unitPrice * quantity,
-                platform: 'shopify',
-                external_line_item_id: li.id,
-              })
-              .onConflict(['platform', 'external_line_item_id'])
+              .onConflict(['shop_id', 'platform', 'external_order_id'])
               .ignore();
+
+            if (domainEvent.event_type === 'orders/sync') {
+
+              const snapshotStatus = payload.displayFulfillmentStatus;
+
+              let baselineStatus:
+                | 'pending'
+                | 'processing'
+                | 'fulfilled'
+                | 'partially_fulfilled'
+                | 'cancelled'
+                | 'failed' = 'pending';
+
+              switch (snapshotStatus) {
+                case 'FULFILLED':
+                  baselineStatus = 'fulfilled';
+                  break;
+                case 'PARTIALLY_FULFILLED':
+                  baselineStatus = 'partially_fulfilled';
+                  break;
+                case 'UNFULFILLED':
+                  baselineStatus = 'pending';
+                  break;
+                case 'CANCELLED':
+                  baselineStatus = 'cancelled';
+                  break;
+              }
+
+              await OrderFulfillmentIngestionService.ingestStatus(
+                {
+                  lasyncroOrderId,
+                  status: baselineStatus,
+                  canonicalEventTime: new Date(domainEvent.event_time),
+                },
+                trx
+              );
+            }
+
+            const lineEdges =
+              payload.lineItems?.edges ??
+              payload.line_items ??
+              [];
+
+            for (const edge of lineEdges) {
+
+              const li = edge.node ?? edge;
+
+              let variantGid = li.variant?.id ?? li.variant_id ?? null;
+              if (!variantGid) continue;
+
+              variantGid = String(variantGid);
+
+              const variantId = variantGid.startsWith('gid://')
+                ? variantGid
+                : `gid://shopify/ProductVariant/${variantGid}`;
+
+              const variantIdentity = await trx('external_product_identity_map')
+                .where({
+                  shop_id: domainEvent.shop_id,
+                  platform: 'shopify',
+                  external_variant_id: variantId,
+                })
+                .first();
+
+              if (!variantIdentity) continue;
+
+              const variantRow = await trx('variants')
+                .where({
+                  lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
+                })
+                .first();
+
+              if (!variantRow) continue;
+
+              const quantity = li.quantity ?? 0;
+
+              const unitPrice =
+                li.originalUnitPriceSet?.shopMoney?.amount != null
+                  ? Number(li.originalUnitPriceSet.shopMoney.amount)
+                  : li.price != null
+                    ? Number(li.price)
+                    : 0;
+
+              await trx('order_line_items')
+                .insert({
+                  lasyncro_line_item_id: crypto
+                    .createHash('sha1')
+                    .update(
+                      `${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${externalOrderId}:line:${li.id}`
+                    )
+                    .digest('hex')
+                    .slice(0, 32)
+                    .replace(
+                      /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+                      '$1-$2-$3-$4-$5'
+                    ),
+                  lasyncro_order_id: lasyncroOrderId,
+                  lasyncro_product_id: variantRow.lasyncro_product_id,
+                  lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
+                  title: li.title ?? '',
+                  sku: li.sku ?? null,
+                  quantity,
+                  unit_price: unitPrice,
+                  line_total: unitPrice * quantity,
+                  platform: 'shopify',
+                  external_line_item_id: li.id,
+                })
+                .onConflict(['platform', 'external_line_item_id'])
+                .ignore();
+            }
           }
 
           /**
-           * ❗ CRITICAL EXECUTION BOUNDARY
-           * --------------------------------
-           * order_fulfillment_status MUST NOT be initialized here.
-           *
-           * Reason:
-           * - Initial sync snapshot hydrator already establishes baseline execution truth.
-           * - Webhook ingestion updates execution deltas.
-           * - Writing default "pending" here corrupts canonical state.
-           *
-           * This worker is NOT an execution authority.
+           * Always emit reconciliation request
+           * (preserves previous behavior)
            */
-        });
+          const orderRow = await trx('orders')
+            .where({ lasyncro_order_id: lasyncroOrderId })
+            .select('aggregate_version')
+            .first();
 
-        if (newlyCreatedOrderId) {
-          await db.transaction(async (trx) => {
+          if (!orderRow) {
+            throw new Error('[ORDER_VERSION_MISSING_AFTER_CREATE]');
+          }
 
-            const orderRow = await trx('orders')
-              .where({ lasyncro_order_id: newlyCreatedOrderId })
-              .select('aggregate_version')
-              .first();
-
-            if (!orderRow) {
-              throw new Error('[ORDER_VERSION_MISSING_AFTER_CREATE]');
-            }
-
-            await OutboxService.enqueue(
-              {
-                aggregateType: 'order',
-                aggregateId: newlyCreatedOrderId!,
-                eventType: 'reconciliation.requested',
-                payload: {
-                  lasyncroOrderId: newlyCreatedOrderId,
-                  aggregateVersion: orderRow.aggregate_version,
-                },
+          await OutboxService.enqueue(
+            {
+              aggregateType: 'order',
+              aggregateId: lasyncroOrderId,
+              eventType: 'reconciliation.requested',
+              payload: {
+                lasyncroOrderId,
+                aggregateVersion: orderRow.aggregate_version,
               },
-              trx
-            );
-          });
+            },
+            trx
+          );
+
+          await advanceCursor(trx, domain_event_id);
+        });
 
           /**
            * FIRST INSIGHT + FT0 TRIGGER
@@ -437,7 +543,6 @@ export async function processMessage(msg: { content: Buffer } | null) {
               }
             }
           }
-        }
 
         break;
       }
@@ -461,6 +566,26 @@ export async function processMessage(msg: { content: Buffer } | null) {
         if (!lasyncroOrderId) break;
 
         await db.transaction(async (trx) => {
+
+          /**
+           * TRANSACTIONAL MONOTONIC CURSOR ENFORCEMENT
+           * --------------------------------------------
+           * Must occur inside transaction to avoid TOCTOU race.
+           * Row is locked via FOR UPDATE.
+           */
+          const cursorRow = await trx('projection_cursors')
+            .where({ projection_name: PROJECTION_NAME })
+            .forUpdate()
+            .first<{ last_processed_event_id: number }>();
+
+          if (
+            cursorRow?.last_processed_event_id != null &&
+            domain_event_id <= cursorRow.last_processed_event_id
+          ) {
+            throw new Error(
+              `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+            );
+          }
         
         /**
          * PAYMENT EVENT TIME (Canonical)
@@ -514,6 +639,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
             trx
           );
 
+          await advanceCursor(trx, domain_event_id);
         });
 
         break;
@@ -566,10 +692,31 @@ export async function processMessage(msg: { content: Buffer } | null) {
 
         await db.transaction(async (trx) => {
 
+          /**
+           * TRANSACTIONAL MONOTONIC CURSOR ENFORCEMENT
+           * --------------------------------------------
+           * Must occur inside transaction to avoid TOCTOU race.
+           * Row is locked via FOR UPDATE.
+           */
+          const cursorRow = await trx('projection_cursors')
+            .where({ projection_name: PROJECTION_NAME })
+            .forUpdate()
+            .first<{ last_processed_event_id: number }>();
+
+          if (
+            cursorRow?.last_processed_event_id != null &&
+            domain_event_id <= cursorRow.last_processed_event_id
+          ) {
+            throw new Error(
+              `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+            );
+          }
+
         await OrderFulfillmentIngestionService.ingestStatus(
           {
             lasyncroOrderId,
             status,
+            canonicalEventTime: new Date(domainEvent.event_time),
           },
           trx
         );
@@ -607,6 +754,7 @@ export async function processMessage(msg: { content: Buffer } | null) {
           trx
         );
 
+      await advanceCursor(trx, domain_event_id);
       });
 
         break;
@@ -619,6 +767,26 @@ export async function processMessage(msg: { content: Buffer } | null) {
       let lasyncroOrderId: string | null = null;
 
       await db.transaction(async (trx) => {
+
+          /**
+           * TRANSACTIONAL MONOTONIC CURSOR ENFORCEMENT
+           * --------------------------------------------
+           * Must occur inside transaction to avoid TOCTOU race.
+           * Row is locked via FOR UPDATE.
+           */
+          const cursorRow = await trx('projection_cursors')
+            .where({ projection_name: PROJECTION_NAME })
+            .forUpdate()
+            .first<{ last_processed_event_id: number }>();
+
+          if (
+            cursorRow?.last_processed_event_id != null &&
+            domain_event_id <= cursorRow.last_processed_event_id
+          ) {
+            throw new Error(
+              `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+            );
+          }
 
         lasyncroOrderId = await resolveExternalOrderId(
           domainEvent.shop_id,
@@ -790,68 +958,58 @@ export async function processMessage(msg: { content: Buffer } | null) {
           },
           trx
         );
+
+        await advanceCursor(trx, domain_event_id);
       });
 
       break;
     }
   
-
       default:
         break;
     }
 
-    /**
-     * CURSOR ADVANCE (ATOMIC)
-     * -----------------------
-     */
-    await db.transaction(async (trx) => {
-      const existing = await trx('projection_cursors')
-        .where({ projection_name: PROJECTION_NAME })
-        .first();
-
-      if (!existing) {
-        await trx('projection_cursors').insert({
-          projection_name: PROJECTION_NAME,
-          last_processed_event_id: domain_event_id,
-        });
-      } else {
-        await trx('projection_cursors')
-          .where({ projection_name: PROJECTION_NAME })
-          .update({
-            last_processed_event_id: domain_event_id,
-            updated_at: trx.fn.now(),
-          });
+      /**
+       * SUCCESS:
+       * domain_events are immutable.
+       * Projection progress must be tracked via projection_cursors.
+       */
+      if (msg && 'fields' in (msg as any)) {
+        getEventChannel().ack(msg as any);
       }
-    });
+    } catch (error) {
 
     /**
-     * SUCCESS:
-     * domain_events are immutable.
-     * Projection progress must be tracked via projection_cursors.
+     * PROJECTION ERRORS MUST NOT BE SWALLOWED
+     * ----------------------------------------
+     * - Worker transport may nack.
+     * - CLI replay must fail immediately.
+     *
+     * Deterministic rebuild requires hard failure.
      */
 
-    getEventChannel().ack(msg as any);
-
-  } catch (error) {
-    console.error('[worker] Error processing domain event:', error);
-
-    /**
-     * FAILURE:
-     * domain_events are immutable.
-     * Projection retry orchestration must be externalized.
-     * No event log mutation allowed.
-     */
-
-    try {
-      getEventChannel().nack(msg as any, false, false);
-
-    } catch (nackError) {
-      console.error(
-        '[worker] Failed to nack message after processing error:',
-        nackError
-      );
+    if (msg && 'fields' in (msg as any)) {
+      try {
+        getEventChannel().nack(msg as any, false, false);
+      } catch (nackError) {
+        console.error(
+          '[worker] Failed to nack message after processing error:',
+          nackError
+        );
+      }
     }
+
+    throw error; // CRITICAL: propagate failure
   }
+};
+
+/**
+ * WORKER TRANSPORT ADAPTER
+ * -------------------------
+ * Handles RabbitMQ delivery semantics only.
+ */
+export async function processMessage(msg: { content: Buffer } | null) {
+  return projectDomainEventFromMessage(msg);
 }
 
 export function startWorker() {
@@ -867,8 +1025,38 @@ export function startWorker() {
    *
    * We cap at 5 for safety.
    */
-  channel.addSetup(async (ch: any) => {
-    await ch.prefetch(5);
+    channel.addSetup(async (ch: any) => {
+
+    /**
+     * EVENTS QUEUE TOPOLOGY
+     * ----------------------
+     * Canonical projection queue.
+     */
+    await ch.assertQueue('events', { durable: true });
+
+    /**
+     * DEAD-LETTER QUEUE — PROJECTION FAILURES
+     * ----------------------------------------
+     * Holds:
+     * - DOMAIN_EVENT_NOT_FOUND
+     * - PROJECTION_CURSOR_REGRESSION
+     *
+     * Must exist in production to avoid crash loops.
+     */
+    await ch.assertQueue('events.dead', { durable: true });
+
+    /**
+     * STRICT MONOTONIC PROJECTION INVARIANT
+     * -------------------------------------
+     * Projection enforces strictly increasing domain_event_id.
+     *
+     * Prefetch MUST be 1.
+     * Any parallel in-flight message can complete out-of-order
+     * and violate cursor monotonicity → deterministic crash.
+     *
+     * This worker is intentionally single-flight.
+     */
+    await ch.prefetch(1);
   });
 
   channel.consume('events', processMessage, { noAck: false });

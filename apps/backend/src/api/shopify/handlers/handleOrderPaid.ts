@@ -1,5 +1,4 @@
 // apps/backend/src/api/shopify/handlers/handleOrderPaid.ts
-import { getQueueChannel } from '../../../queue.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
 
@@ -43,9 +42,6 @@ export async function handleOrderPaid(
    * INGESTION EVENT-TIME ENFORCEMENT
    * ---------------------------------
    * Payment must carry canonical event-time.
-   * Accepted fields:
-   * - updated_at
-   * - processed_at
    */
   const eventTime =
     (rawPayload as any).updated_at ??
@@ -59,9 +55,10 @@ export async function handleOrderPaid(
   }
 
   /**
-   * NOTE:
-   * Idempotency must be enforced at domain boundary.
-   * No mutable ingestion buffer is used.
+   * INGESTION IDENTITY ENFORCEMENT
+   * ------------------------------
+   * external_event_id is REQUIRED and persisted.
+   * DB uniqueness guarantees idempotency.
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -69,38 +66,54 @@ export async function handleOrderPaid(
     );
   }
 
-  /**
-   * IMMUTABLE DOMAIN EVENT INSERT
-   * -----------------------------
-   * Append-only canonical event log.
-   */
-  const [domainEventId] = await db('domain_events')
-    .insert({
-      shop_id: shopId,
-      event_type: 'orders/paid',
-      event_payload: rawPayload,
-      event_time: new Date(eventTime),
-      event_version: 1,
-      event_sequence: db.raw(
-        `
-        COALESCE(
-          (SELECT MAX(event_sequence) + 1
-          FROM domain_events
-          WHERE shop_id = ?),
-          1
-        )
-        `,
-        [shopId]
-      ),
-    })
-    .returning('id');
+  let domainEventId: number;
 
-  getQueueChannel('events').sendToQueue(
-    'events',
-    Buffer.from(
-      JSON.stringify({
-        domain_event_id: domainEventId.id ?? domainEventId,
+  try {
+
+    const result = await db('domain_events')
+      .insert({
+        shop_id: shopId,
+        event_type: 'orders/paid',
+        event_payload: rawPayload,
+        event_time: new Date(eventTime),
+        event_version: 1,
+        external_event_id: envelope.eventId,
       })
-    )
-  );
+      .returning('id');
+
+    domainEventId = result[0].id ?? result[0];
+
+  } catch (error: any) {
+
+    /**
+     * DUPLICATE DELIVERY HANDLING
+     * ---------------------------
+     * Unique constraint:
+     * (shop_id, external_event_id)
+     *
+     * PostgreSQL error code 23505 = unique_violation
+     */
+    if (error?.code === '23505') {
+
+      console.warn('[DOMAIN_EVENT_DUPLICATE]', {
+        shopId,
+        externalEventId: envelope.eventId,
+        eventType: 'orders/paid',
+      });
+
+      return; // Do NOT enqueue duplicate
+    }
+
+    throw error;
+  }
+
+  /**
+   * DOMAIN EVENT OUTBOX INSERT
+   * ---------------------------
+   * Projection publishing must go through
+   * domain_event_outbox for deterministic dispatch.
+   */
+  await db('domain_event_outbox').insert({
+    domain_event_id: domainEventId,
+  });
 }

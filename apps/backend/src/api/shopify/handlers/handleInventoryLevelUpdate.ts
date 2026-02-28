@@ -5,12 +5,11 @@
  * - Mirror Shopify inventory exactly
  * - No direct writes to inventory_truth
  * - All corrections must be movements
- * - Idempotent via device_event_id
+ * - Idempotent via external_event_id (DB-enforced)
  */
 
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
-import { getQueueChannel } from '../../../queue.js';
 
 interface ShopifyInventoryPayload {
   inventory_item_id?: number;
@@ -25,34 +24,32 @@ export async function handleInventoryLevelUpdate(
 ): Promise<void> {
 
   const payload = envelope.rawPayload as Partial<ShopifyInventoryPayload>;
-
   const shopDomain = envelope.shopDomain;
-    if (!shopDomain) {
-      console.error('[INVENTORY_INGESTION_VIOLATION] Missing shopDomain', {
-        eventId: envelope.eventId,
-      });
-      return;
-    }
 
-    const installation = await db('shopify_app_installations')
-      .where({ shop_domain: shopDomain })
-      .select('shop_id')
-      .first();
+  if (!shopDomain) {
+    console.error('[INVENTORY_INGESTION_VIOLATION] Missing shopDomain', {
+      eventId: envelope.eventId,
+    });
+    return;
+  }
 
-    if (!installation) {
-      console.error('[INVENTORY_INGESTION_VIOLATION] Installation not found', {
-        shopDomain,
-        eventId: envelope.eventId,
-      });
-      return;
-    }
+  const installation = await db('shopify_app_installations')
+    .where({ shop_domain: shopDomain })
+    .select('shop_id')
+    .first();
 
-    const shopId = installation.shop_id;
+  if (!installation) {
+    console.error('[INVENTORY_INGESTION_VIOLATION] Installation not found', {
+      shopDomain,
+      eventId: envelope.eventId,
+    });
+    return;
+  }
+
+  const shopId = installation.shop_id;
 
   /**
-   * NOTE:
-   * Idempotency must be enforced at domain boundary.
-   * No mutable ingestion buffer.
+   * INGESTION IDENTITY ENFORCEMENT
    */
   if (!envelope.eventId) {
     throw new Error(
@@ -60,21 +57,17 @@ export async function handleInventoryLevelUpdate(
     );
   }
 
-  console.debug('[inventory_sync] payload keys', Object.keys(payload || {}));
+  if (
+    payload == null ||
+    typeof payload.available !== 'number'
+  ) {
+    console.warn('[inventory_sync] invalid payload shape', {
+      eventId: envelope.eventId,
+      hasAvailable: typeof payload?.available === 'number',
+    });
+    return;
+  }
 
-if (
-  payload == null ||
-  typeof payload.available !== 'number'
-) {
-  console.warn('[inventory_sync] invalid payload shape', {
-    eventId: envelope.eventId,
-    hasAvailable: typeof payload?.available === 'number',
-  });
-  return;
-}
-
-  const available: number = payload.available;
-  
   let externalInventoryItemGid: string | null = null;
 
   if (payload.admin_graphql_api_id) {
@@ -94,9 +87,6 @@ if (
 
   /**
    * INGESTION EVENT-TIME ENFORCEMENT
-   * ---------------------------------
-   * Inventory update must carry canonical event-time.
-   * Field: updated_at
    */
   if (!payload.updated_at) {
     throw new Error(
@@ -104,41 +94,52 @@ if (
     );
   }
 
+  let domainEventId: number;
+
+  try {
+
+    const result = await db('domain_events')
+      .insert({
+        shop_id: shopId,
+        event_type: 'inventory_levels/update',
+        event_payload: envelope.rawPayload,
+        event_time: new Date(payload.updated_at),
+        event_version: 1,
+        external_event_id: envelope.eventId,
+      })
+      .returning('id');
+
+    domainEventId = result[0].id ?? result[0];
+
+  } catch (error: any) {
+
+    /**
+     * DUPLICATE DELIVERY HANDLING
+     * ---------------------------
+     * Unique constraint:
+     * (shop_id, external_event_id)
+     */
+    if (error?.code === '23505') {
+
+      console.warn('[DOMAIN_EVENT_DUPLICATE]', {
+        shopId,
+        externalEventId: envelope.eventId,
+        eventType: 'inventory_levels/update',
+      });
+
+      return; // Do NOT enqueue duplicate
+    }
+
+    throw error;
+  }
+
   /**
-   * IMMUTABLE DOMAIN EVENT INSERT
-   * -----------------------------
-   * Append-only canonical event log.
+   * DOMAIN EVENT OUTBOX INSERT
+   * ---------------------------
+   * Projection publishing must go through
+   * domain_event_outbox for deterministic dispatch.
    */
-  const [domainEventId] = await db('domain_events')
-    .insert({
-      shop_id: shopId,
-      event_type: 'inventory_levels/update',
-      event_payload: envelope.rawPayload,
-      event_time: new Date(payload.updated_at),
-      event_version: 1,
-      event_sequence: db.raw(
-        `
-        COALESCE(
-          (SELECT MAX(event_sequence) + 1
-          FROM domain_events
-          WHERE shop_id = ?),
-          1
-        )
-        `,
-        [shopId]
-      ),
-    })
-    .returning('id');
-
-    const finalDomainEventId =
-    typeof domainEventId === 'object' && domainEventId !== null
-      ? (domainEventId as any).id
-      : domainEventId;
-
-  getQueueChannel('events').sendToQueue(
-    'events',
-    Buffer.from(
-      JSON.stringify({ domain_event_id: finalDomainEventId })
-    )
-  );
+  await db('domain_event_outbox').insert({
+    domain_event_id: domainEventId,
+  });
 }

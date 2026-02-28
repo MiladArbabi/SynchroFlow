@@ -1,0 +1,77 @@
+import db from '@lasyncro/backend-core/db.js';
+import { getQueueChannel } from '../queue.js';
+
+const QUEUE = 'events';
+const POLL_INTERVAL_MS = 500;
+const BATCH_SIZE = 20;
+const RETRY_CEILING = 10;
+
+let running = false;
+
+export async function startDomainEventOutboxDispatcher() {
+  if (running) return;
+  running = true;
+
+  console.log('[domain-event-outbox] Dispatcher started');
+
+  const channel = getQueueChannel(QUEUE);
+
+  while (running) {
+    try {
+      await db.transaction(async (trx) => {
+
+        const rows = await trx('domain_event_outbox')
+          .whereNull('published_at')
+          .orderBy('id', 'asc')
+          .limit(BATCH_SIZE)
+          .forUpdate()
+          .skipLocked();
+
+        for (const row of rows) {
+          try {
+            const ok = channel.sendToQueue(
+              QUEUE,
+              Buffer.from(JSON.stringify({
+                domain_event_id: row.domain_event_id,
+              })),
+              { persistent: true }
+            );
+
+            if (!ok) {
+              throw new Error('Broker backpressure');
+            }
+
+            await trx('domain_event_outbox')
+              .where({ id: row.id })
+              .update({
+                published_at: trx.fn.now(),
+                last_error: null,
+              });
+
+          } catch (err: any) {
+
+            await trx('domain_event_outbox')
+              .where({ id: row.id })
+              .update({
+                retry_count: trx.raw('retry_count + 1'),
+                last_error: String(err?.message ?? err),
+              });
+
+            if (row.retry_count + 1 >= RETRY_CEILING) {
+              console.error('[domain-event-outbox][terminal]', {
+                id: row.id,
+                domain_event_id: row.domain_event_id,
+              });
+            }
+          }
+        }
+
+      });
+
+    } catch (err) {
+      console.error('[domain-event-outbox] error:', err);
+    }
+
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+}

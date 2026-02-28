@@ -364,12 +364,19 @@ export async function reconcileOrderFulfillment(
       .first();
 
     /**
-     * AGE CALCULATION CLOCK (Event-Time Anchored)
-     * -------------------------------------------
-     * Must use deterministic domain event-time.
-     * Never use wall-clock.
-     */
-    const now = new Date(eventAnchor);
+    * AGE CALCULATION CLOCK (Aggregate-State Anchored)
+    * ------------------------------------------------
+    * Use the order's canonical order_updated_at.
+    * This value is projection-deterministic and
+    * already reflects the latest domain event.
+    */
+   if (!order.order_updated_at) {
+     throw new Error(
+       '[AGE_INVARIANT_VIOLATION] order_updated_at missing during reconciliation'
+     );
+   }
+
+    const now = new Date(order.order_updated_at);
 
     const createdAt = order.order_created_at
       ? new Date(order.order_created_at)
@@ -390,6 +397,13 @@ export async function reconcileOrderFulfillment(
     const promisedDeliveryAt = order.promised_delivery_at
       ? new Date(order.promised_delivery_at)
       : null;
+
+    console.log('[AGE_DEBUG]', {
+      lasyncroOrderId,
+      now,
+      orderUpdatedAt: order.order_updated_at,
+      fulfilledAt,
+    });
 
     /**
      * AGE INVARIANT
@@ -817,18 +831,40 @@ export async function reconcileOrderFulfillment(
 
       const ordersAtSlaRisk = Number(slaBreachedOrders?.count ?? 0);
 
+      /**
+       * AGING BUCKETS (STRICT OPERATIONAL BACKLOG)
+       * -------------------------------------------
+       * Includes ONLY:
+       * - payment_state = 'paid'
+       * - unfulfilled orders
+       * - non-null age_since_paid_seconds
+       *
+       * Explicit guards prevent semantic drift.
+       */
       const agingBuckets = await trx('order_age_snapshot as oas')
         .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'oas.lasyncro_order_id')
         .where('o.shop_id', order.shop_id)
+        .andWhere('o.payment_state', 'paid')
+        .andWhere('ofs.status', 'pending')
+        .whereNotNull('oas.age_since_paid_seconds')
         .select(
           trx.raw(`
-            COUNT(*) FILTER (WHERE oas.age_since_paid_seconds >= 86400 AND oas.age_since_paid_seconds < 172800) as aging_24h
+            COUNT(*) FILTER (
+              WHERE oas.age_since_paid_seconds >= 86400
+              AND oas.age_since_paid_seconds < 172800
+            ) as aging_24h
           `),
           trx.raw(`
-            COUNT(*) FILTER (WHERE oas.age_since_paid_seconds >= 172800 AND oas.age_since_paid_seconds < 259200) as aging_48h
+            COUNT(*) FILTER (
+              WHERE oas.age_since_paid_seconds >= 172800
+              AND oas.age_since_paid_seconds < 259200
+            ) as aging_48h
           `),
           trx.raw(`
-            COUNT(*) FILTER (WHERE oas.age_since_paid_seconds >= 259200) as aging_72h_plus
+            COUNT(*) FILTER (
+              WHERE oas.age_since_paid_seconds >= 259200
+            ) as aging_72h_plus
           `)
         )
         .first();
@@ -872,8 +908,18 @@ export async function reconcileOrderFulfillment(
         WORK QUEUES (Deterministic)
       ───────────────────────────── */
 
+      /**
+       * MANUAL REVIEW QUEUE (STRICT)
+       * -----------------------------
+       * Includes ONLY:
+       * - fraud_score IS NOT NULL
+       * - fraud_score > 0.8
+       *
+       * Explicit NULL guard prevents silent semantic drift.
+       */
       const queueManualReview = await trx('order_risk_snapshot')
         .where('shop_id', order.shop_id)
+        .whereNotNull('fraud_score')
         .andWhere('fraud_score', '>', 0.8)
         .count<{ count: string }>('lasyncro_order_id as count')
         .first();
@@ -939,6 +985,31 @@ export async function reconcileOrderFulfillment(
         .count<{ count: string }>('lasyncro_order_id as count')
         .first();
 
+      /**
+       * REVENUE LEAKAGE (DETERMINISTIC)
+       * --------------------------------
+       * Leakage is defined as net revenue attached to
+       * terminally cancelled fulfillments.
+       *
+       * Guarded by explicit fulfillment status check.
+       *
+       * If cancellation semantics expand,
+       * this query must be version-reviewed.
+       */
+      const revenueLeakageRow = await trx('order_revenue_units_net as runet')
+        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'runet.lasyncro_order_id')
+        .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
+        .where('o.shop_id', order.shop_id)
+        .andWhere('ofs.status', 'cancelled')
+        .sum<{ sum: string }>('runet.net_revenue as sum')
+        .first();
+
+      const revenueLeakage = Number(revenueLeakageRow?.sum ?? 0);
+
+      if (revenueLeakage < 0) {
+        throw new Error('[REVENUE_LEAKAGE_INVARIANT] Leakage cannot be negative');
+      }
+
       await trx('orders_operational_control_snapshot')
         .insert({
           shop_id: order.shop_id,
@@ -970,7 +1041,7 @@ export async function reconcileOrderFulfillment(
            * If future statuses introduce terminal loss states,
            * this must be recalculated deterministically.
            */
-          revenue_leakage: 0,
+          revenue_leakage: revenueLeakage,
           avg_contribution_margin_pct: Number(avgMarginRow?.avg ?? 0),
 
           orders_at_sla_risk: ordersAtSlaRisk,

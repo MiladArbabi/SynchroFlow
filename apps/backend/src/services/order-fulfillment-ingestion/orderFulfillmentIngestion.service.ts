@@ -77,11 +77,12 @@ export class OrderFulfillmentIngestionService {
         | 'partially_fulfilled'
         | 'cancelled'
         | 'failed';
+        canonicalEventTime: Date;
     },
     executor: Knex | Knex.Transaction = db
   ): Promise<void> {
 
-    const { lasyncroOrderId, status } = input;
+    const { lasyncroOrderId, status, canonicalEventTime } = input;
 
     if (!lasyncroOrderId) {
       throw new Error(
@@ -92,6 +93,12 @@ export class OrderFulfillmentIngestionService {
     if (!OrderFulfillmentIngestionService.precedence.hasOwnProperty(status)) {
       throw new Error(
         `[OrderFulfillmentIngestionService] Invalid fulfillment status: ${status}`
+      );
+    }
+
+    if (!canonicalEventTime) {
+      throw new Error(
+        '[OrderFulfillmentIngestionService] canonicalEventTime is required.'
       );
     }
 
@@ -112,7 +119,7 @@ export class OrderFulfillmentIngestionService {
         lasyncro_fulfillment_id: crypto.randomUUID(),
         lasyncro_order_id: lasyncroOrderId,
         status,
-        status_updated_at: executor.fn.now(),
+        status_updated_at: canonicalEventTime,
 
         /**
          * EXECUTION COMPLETION COMMIT
@@ -122,7 +129,7 @@ export class OrderFulfillmentIngestionService {
          */
         fulfilled_at:
           status === 'fulfilled'
-            ? executor.fn.now()
+            ? canonicalEventTime
             : null,
       });
 
@@ -135,7 +142,7 @@ export class OrderFulfillmentIngestionService {
         lasyncro_fulfillment_event_id: crypto.randomUUID(),
         lasyncro_order_id: lasyncroOrderId,
         status,
-        event_occurred_at: executor.fn.now(),
+        event_occurred_at: canonicalEventTime
       });
       return;
     }
@@ -170,7 +177,7 @@ export class OrderFulfillmentIngestionService {
       .where({ lasyncro_order_id: lasyncroOrderId })
       .update({
         status,
-        status_updated_at: executor.fn.now(),
+        status_updated_at: canonicalEventTime,
 
         /**
          * EXECUTION COMPLETION COMMIT (IDEMPOTENT)
@@ -180,7 +187,7 @@ export class OrderFulfillmentIngestionService {
          */
         fulfilled_at:
           status === 'fulfilled'
-            ? executor.raw('COALESCE(fulfilled_at, ?)', [executor.fn.now()])
+            ? executor.raw('COALESCE(fulfilled_at, ?)', [canonicalEventTime])
             : executor.raw('fulfilled_at'),
       });
 
@@ -194,7 +201,7 @@ export class OrderFulfillmentIngestionService {
         lasyncro_fulfillment_event_id: crypto.randomUUID(),
         lasyncro_order_id: lasyncroOrderId,
         status,
-        event_occurred_at: executor.fn.now(),
+        event_occurred_at: canonicalEventTime,
       });
   }
 }
