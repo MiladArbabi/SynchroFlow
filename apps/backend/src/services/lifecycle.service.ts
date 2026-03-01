@@ -24,6 +24,7 @@
 // apps/backend/src/services/lifecycle.service.ts
 import db from '@lasyncro/backend-core/db.js';
 import type { LifecyclePhase } from './lifecycle.contract.js';
+import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 export type UserLifecyclePhase =
   | 'FT_MINUS_ONE'
@@ -43,8 +44,17 @@ export class LifecycleService {
 
   static async resolveForUser(userId: number): Promise<LifecyclePhase> {
     // 0. SNAPSHOT AUTHORITY (single source of truth)
+    /**
+     * SHOP-SCOPED LIFECYCLE RESOLUTION
+     * ---------------------------------
+     * Lifecycle snapshot uniqueness boundary = shop_id.
+     * User lifecycle is derived from their active shop.
+     */
+
+    const shopContext = await requireShopContextForUser(userId);
+
     const snapshot = await db('user_lifecycle_snapshot')
-      .where({ user_id: userId })
+      .where({ shop_id: shopContext.shopId })
       .first<{ phase: LifecyclePhase }>();
 
     if (snapshot) {

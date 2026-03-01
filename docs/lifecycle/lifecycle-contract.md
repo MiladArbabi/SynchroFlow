@@ -1,1342 +1,388 @@
-# 📜 Lifecycle Contract (As-Is Contract)
+# LIFECYCLE ARCHITECTURE BLUEPRINT
 
-> **Status:** Canonical, observed, scan-verified  
-> **Amendment:** v1 — Frontend lifecycle resolution refactor in progress
-> **Scope:** Documents the *current, implemented* lifecycle from FT_MINUS_ONE through FT1, exactly as it exists today.
->
-> **Non-Goals:**
->
-> * No FT2 design
-> * No recommendations
-> * No backend refactors
-> * No future intent
->
-> This document is a **sealed factual baseline**. All future FT2 work must build on this reality.
+**SynchroFlow — Canonical Lifecycle Contract (v3)**
 
 ---
 
-## 1. Canonical Lifecycle Sources of Truth
+# 1. PURPOSE
 
-### 1.1 Backend (Authoritative Capability Phase)
+Lifecycle represents **proven system state**, not intent.
 
-Backend defines the canonical lifecycle phases:
+It answers:
 
-FT_MINUS_ONE → FT0 → FT1 → FT2
+> What level of system maturity has this shop demonstrably reached?
 
-**Authoritative elements:**
+Lifecycle must be:
 
-* `lifecycle.contract.ts` — canonical phase definitions
-* `LifecycleService.resolveForUser()` — canonical resolver
-* `user_lifecycle_snapshot` — persisted projection (not source of truth)
-
-Backend lifecycle is capability-oriented.
-
-FT2 is a backend capability latch that is:
-
-* Explicitly confirmed
-* Never auto-entered
-* Never inferred from eligibility, payment, or readiness alone
-
----
-
-### 1.2 Frontend (Authoritative Runtime / Visual Phase)
-
-Frontend does **not** compute backend lifecycle.
-
-Frontend resolves a **runtime shop lifecycle** for routing and surfaces:
-
-FT_MINUS_ONE  
-FT0_SYNCING  
-FT0_PREPARING  
-FT1_READY  
-FT2_READY
-
-These are **visual / structural phases**, not capability phases.
-
-FT2_READY is a **frontend reflection** of a backend-confirmed FT2 capability latch
-and is used **only for routing and surface selection**, never for capability inference.
-
-⚠️ **Amendment v1–v2:**
-
-The mechanism used to resolve these phases is undergoing refactor.
-
-Previously resolved via:
-
-* `ShopLifecycleShell`
-* `ShopLifecycleGate`
-* ad-hoc React effects and refs
-
-These mechanisms are being replaced by a **deterministic reducer-driven lifecycle model**.
-
-The semantic meaning of frontend phases is unchanged.
-Only the **resolution mechanism** is being replaced.
-
----
-
-### 1.3 Frontend Lifecycle Resolution (Amendment v1)
-
-Frontend lifecycle resolution is being migrated to a **deterministic visual state machine**.
-
-Key properties of the new model:
-
-* Reducer-driven (pure, testable)
-* Explicit event-based transitions
-* No lifecycle inference inside React effects
-* No ref-based edge detection
-* No render-cycle-dependent behavior
-
-The frontend lifecycle is being migrated toward resolution via:
-
-* Explicit lifecycle events (e.g. `SYNC_COMPLETED`, `FT0_DWELL_ELAPSED`)
-* A pure lifecycle reducer
-* Side-effects isolated outside lifecycle computation
-
-This change does **not** alter lifecycle semantics.
-It only eliminates non-determinism and race conditions.
-
-### 1.4 Frontend Boot Authority (Amendment v2)
-
-Frontend lifecycle boot resolution is owned **exclusively** by the Integration system.
-
-**Authoritative boot signal:**
-
-* `useIntegration().bootResolved`
-
-No other mechanism may gate, delay, or speculate lifecycle state, including:
-
-* Routing
-* Auth hydration
-* Ad-hoc bootstrap gates
-* Placeholder lifecycle defaults
-
-**Invariant (Hard):**
-
-Once `bootResolved === true`, the frontend must never render `FT_MINUS_ONE`, even transiently.
-
-This invariant is enforced by reducer-level logic and locked by unit tests.
-
-### 1.5 Frontend FT2 Runtime Representation (As-Is)
-
-Frontend represents FT2 using a **distinct visual phase**:
-
-FT2_READY
-
-This phase is entered **only** when:
-
-• Backend lifecycle resolver reports FT2  
-• FT2 has been explicitly confirmed and latched backend-side  
-
-Frontend FT2 behavior:
-
-• No inference
-• No eligibility-based entry
-• No auto-promotion
-• No timing heuristics
-
-FT2_READY exists exclusively to:
-
-• Select FT2-specific routes
-• Mount FT2-only pages
-• Suppress FT1 diagnostic surfaces
-
-Frontend FT2 is therefore **reactive**, not authoritative.
-
----
-
-## 2. FT_MINUS_ONE (Pre-System State)
-
-### 2.1 Entry Conditions (Verified)
-
-Frontend resolves **FT_MINUS_ONE** when **and only when**:
-
-* Integration truth is unresolved **OR**
-* Integration is confirmed not to exist
-
-⚠️ Auth hydration alone must never reintroduce FT_MINUS_ONE
-once integration truth is known.
-
-Backend also resolves **FT_MINUS_ONE** when:
-
-* No shop **OR**
-* No integration
-
----
-
-### 2.2 Behavior
-
-**Routing:**
-
-* No dashboard
-* No modules
-* No analytics
-
-**UI Surface:**
-
-* `ActivationSurfaceAdapter`
-* CTA to connect / activate integration
-
-**Key Fact:**
-FT_MINUS_ONE is **outside the application**. Modules do not exist here.
-
----
-
-## 3. Backend FT0 — Canonical Capability Latch (Verified)
-
-Backend FT0 is **not inferred** and **not visual**.
-It is a **latched, single-write capability fact** persisted in the database.
-
-### 3.1 FT0 State Persistence
-
-FT0 completion is recorded by the presence of a row in:
-
-ft0_state
-
-**Verified properties:**
-
-* Written **exactly once per shop**
-* Enforced via unique constraint on `shop_id`
-* Idempotent writes (safe to call repeatedly)
-* Never auto-deleted
-
-FT0 is therefore a **capability milestone**, not a transient signal.
-
----
-
-### 3.2 FT0 Completion Authority
-
-FT0 completion is owned exclusively by:
-
-FT0CompletionService.evaluateAndComplete(shopId)
-
-**Verified guarantees:**
-
-* Single authoritative writer
-* No UI-driven completion
-* No heuristic inference
-* Explicit fact write only
-
-FT0 completes when **all FT0 preconditions pass**.
-These preconditions are intentionally minimal and **must not drift into FT1 scope**.
-
----
-
-### 3.3 FT0 Preconditions (As-Is)
-
-From `ft0-completion.service.ts` (canonical comments + logic):
-
-FT0 represents **system readiness**, not customer success.
-
-FT0 completes when:
-
-* Integration exists
-* Integration sync has produced first usable system facts
-* Canonical ingestion pipelines can run safely
-
-Explicitly excluded from FT0:
-
-* Profitability accuracy
-* Analytics correctness
-* Business insight availability
-* Customer success metrics
-
-Blocking FT0 on higher-order signals is explicitly forbidden.
-
-### 3.4 FT2 Promotion Constraint (Observed As-Is)
-
-FT2 is not entered automatically by the backend lifecycle resolver.
-
-Verified constraints (scan + tests):
-FT2 eligibility may be evaluated (FT2EvaluatorService)
-Eligibility alone does not change lifecycle phase
-Paid entitlements alone do not change lifecycle phase
-Backend lifecycle remains at FT1 until:
-An explicit FT2 confirmation action occurs
-A backend FT2 latch is written (ft2_state)
-This behavior is enforced by:
-LifecycleService.resolveForUser
-FT2CompletionService
-
-Unit tests:
-ft2.confirm.required.test.ts
-ft2.confirm.blocked.test.ts
-FT2 is therefore a confirmed capability, not a derived one.
-
----
-
-### 3.5 Lifecycle Audit Emission (Observed As-Is)
-
-Backend lifecycle audits are emitted by:
-
-LifecycleTransitionService.auditIfTransitioned()
-
-This service records **observed lifecycle transitions** into:
-
-lifecycle_audit_events
-
-#### Verified audit behavior (scan + unit tests)
-
-* Audits are written **only for forward transitions**
-* Audits are **idempotent**
-* Audits are **never inferred**
-* Audits are **never backfilled**
-
-#### Explicit rules (as implemented)
-
-* FT_MINUS_ONE → FT0  
-  ❌ **Not audited**
-
-* FT0 → FT1  
-  ✅ **Audited exactly once**
-
-* FT1 → FT2  
-  ✅ **Audited exactly once**
-
-* Unchanged phase  
-  ❌ **Not audited**
-
-#### First-transition inference rule (critical)
-
-If no prior audit history exists and the resolved phase is **FT1**:
-
-* The system **infers `from_phase = FT0`**
-* An audit entry `FT0 → FT1` is written
-
-This inference exists because:
-
-* FT0 is a backend capability latch
-* FT0 itself is intentionally non-audited
-* FT1 is the **first observable lifecycle boundary**
-
-This behavior is:
-
-* Explicitly implemented
-* Unit-tested
-* Required to avoid a “first audit dead zone”
-
-Unit test coverage:
-
-* lifecycle.transition.service.test.ts
-
----
-
-## 4. Frontend FT0 — Transitional Runtime States
-
-FT0 is split **only in frontend runtime** into two substates.
-
-### 4.1 FT0_SYNCING
-
-**Entry Conditions:**
-
-* Integration exists
-* Backend sync not completed
-
-**Behavior:**
-
-* App routes blocked
-* `EmptyDashboardState` rendered
-* No checklist
-* No diagnostics
-
----
-
-### 4.2 FT0_PREPARING
-
-**Entry Conditions:**
-
-* Integration exists
-* Sync completed
-* FT1 readiness not complete
-
-**Behavior:**
-
-* App routes still blocked
-* `EmptyDashboardState` rendered
-* FT1 checklist **not** exposed
-
----
-
-### 4.3 Frontend FT0 Properties (Verified)
-
-* Purely transitional
-* No app content
-* Visual dwell enforced
-* Minimum dwell time: **2.5 seconds**
-
-FT0 exists to prevent flicker and false readiness.
-
-⚠️ Amendment v1 (Verified):
-FT0 transitions are now enforced by a reducer-level state machine.
-
-Verified invariants:
-
-* FT0_SYNCING → FT0_PREPARING occurs exactly once
-* Regression to FT0_SYNCING after COMPLETED is forbidden
-* FT0 dwell is enforced via explicit lifecycle events
-
-> These guarantees are unit-tested and canonical.
-
----
-
-## 5. Backend FT0 vs Frontend FT0 (Intentional Split)
-
-**Backend FT0:**
-
-* Single phase: `FT0`
-* Capability latch
-* Written once
-* Used by lifecycle resolver
-
-**Frontend FT0:**
-
-* `FT0_SYNCING`
-* `FT0_PREPARING`
-
-Frontend FT0 substates:
-
-* Do **not** exist in backend
-* Do **not** represent capability changes
-* Exist solely to manage perception, sync latency, and flicker
-
-They must never be reinterpreted as backend lifecycle phases.
-
----
-
-### 5.1 Frontend Lifecycle Implementation Boundary (Amendment v1)
-
-Frontend lifecycle resolution is now explicitly split into:
-
-**Lifecycle Computation (Authoritative):**
-
-* Pure reducer
-* No React
-* No timers
-* No persistence
-* No side effects
 * Deterministic
+* Replay-safe
+* Append-only
 * Event-driven
-* Exhaustively unit-tested
-
-**Lifecycle Effects (Non-authoritative):**
-
-* Timers (FT0 dwell)
-* FT1 seal persistence
-* Dispatching lifecycle events
-
-React components are consumers only and must not:
-
-* Infer lifecycle state
-* Track prior states via refs
-* Encode lifecycle transitions in render logic
-
-**Invariant: No Lifecycle Flash**
-
-After integration truth is resolved:
-
-* `FT_MINUS_ONE` must never render
-* Prior lifecycle states must not reappear
-* Lifecycle history must not leak across refresh
-
-This invariant is reducer-enforced and unit-tested.
+* Causally correct
+* Transactionally safe
+* Projection-independent for preconditions
 
 ---
 
-## 6. FT1 Readiness Composition (Backend Truth Layer)
+# 2. PHASE MODEL
 
-FT1 readiness is **not decided by signal providers**.
-It is decided by **manifests and task rules**.
+```text
+FT_MINUS_ONE → FT0 → FT1 → FT2
+```
 
-Signal providers:
+| Phase        | Meaning                      | Source of Truth         |
+| ------------ | ---------------------------- | ----------------------- |
+| FT_MINUS_ONE | Default state (no readiness) | Absence of events       |
+| FT0          | Commerce pipeline proven     | lifecycle/ft0_completed |
+| FT1          | System readiness achieved    | system_readiness_state  |
+| FT2          | User-confirmed activation    | lifecycle/ft2_confirmed |
 
-* Emit raw signals only
-* Never evaluate readiness
-* Never block FT1 directly
+Lifecycle is:
 
-FT1 readiness computation flow:
-
-signals → tasks → module readiness → FT1 verdict
-
----
-
-### 6.1 FT1 Completion Rule (Canonical)
-
-FT1 is complete **if and only if**:
-
-blockingModules.length === 0
-
-Where:
-
-* A module is blocking if `isReady === false`
-* A module is ready only if **all required tasks** are complete
-
-FT1 is therefore:
-
-* All-or-nothing
-* Not partial
-* Not weighted
+* Shop-scoped for durability facts
+* Snapshot projected per shop (unique by shop_id)
+* Audited per transition
 
 ---
 
-### 6.2 Modules That Gate FT1 (Required Tasks Present)
+# 3. CANONICAL EVENT CONTRACT
 
-From `readiness.manifest.ts`, only the following modules can block FT1:
+All lifecycle advancement must originate from immutable domain events.
 
-**Platform**
+## Valid Lifecycle Events
 
-* `connect-store` → `integration.connected === true`
-* `complete-sync` → `integration.syncCompleted === true`
+| Event Type                        | Emitted By           | Meaning                            |
+| --------------------------------- | -------------------- | ---------------------------------- |
+| lifecycle/first_insight_delivered | FirstInsightService  | First insight event fact           |
+| lifecycle/ft0_completed           | FT0CompletionService | Commerce → Insight pipeline proven |
+| lifecycle/ft2_confirmed           | Lifecycle controller | Explicit user confirmation         |
 
-* **analytics**
-  * `analytics-base-data`
-    * analytics.baseSignalsReady === true
-
-    **Scan-verified definition (as-is):**
-    * `analytics.baseSignalsReady` resolves to `true` if and only if:
-      * At least **one canonical order exists** (`canonical_orders.count > 0`)
-      * At least **one canonical product exists** (`canonical_products.count > 0`)
-
-    This check is:
-    * Binary (no thresholds)
-    * Deterministic
-    * Structural only
-    * Independent of analytics correctness or insight quality
-
-All other modules define **only optional tasks** and cannot block FT1.
+No other component may emit lifecycle events.
 
 ---
 
-### 6.3 Modules Explicitly Non-Blocking (As-Is)
+# 4. HARD WRITE AUTHORITY RULE
 
-These modules participate in diagnostics but do **not** gate FT1:
+Lifecycle mutation allowed ONLY from:
 
-* order-nexus
-* sku-os
-* specter
-* insight-core
-* finances
+1. FT0CompletionService
+2. FT2 Confirm endpoint
 
-Their tasks are `required: false`.
+Forbidden layers:
 
----
+* OAuth
+* Webhooks
+* Sync ingestion
+* Controllers (except FT2)
+* Background ingestion
+* Projections
+* External events
 
-### 6.4 Explicit FT1 Scope Reduction
-
-The following task was intentionally removed from FT1 gating:
-
-* `platform.orders-per-month`
-
-Annotated in code as:
-
-// ⬇️ MOVED OUT OF FT1 GATING
-
-This confirms FT1 is intentionally minimal and focused on **structural truth**, not segmentation or optimization.
+Violation corrupts onboarding invariants.
 
 ---
 
-### 6.5 Task Completion Semantics
+# 5. FT0 CONTRACT (System Readiness Gate)
 
-* Tasks with no `completionRules` are incomplete
-* Multiple `completionRules` are evaluated as **OR**
-* Required tasks must satisfy at least one rule
+## FT0 Preconditions (ALL REQUIRED)
 
-There is no implicit AND-composition across rules.
+1. Integration exists
+2. Integration sync_status = COMPLETED
+3. Orders count ≥ 1
+4. `domain_events` contains lifecycle/first_insight_delivered
 
----
+**Critical Rule**
 
-### 6.6 FT1 Conservatism (Observed Reality)
+FT0 must depend on canonical event log — never on projected state.
 
-Several FT1-adjacent signals are stubbed or deliberately minimal:
+Correct:
 
-* order-nexus profitability signals (stubbed)
-* return-nexus, wms-lite, problem-center (disabled)
-* analytics FT1 gating is **purely structural**:
-  * presence of ≥1 canonical order
-  * presence of ≥1 canonical product
+```sql
+SELECT id
+FROM domain_events
+WHERE shop_id = ?
+AND event_type = 'lifecycle/first_insight_delivered';
+```
 
-This confirms FT1 answers:
+Forbidden:
 
-> **“Can the system speak truthfully?”**
-> not
-> **“Does the system understand deeply?”**
+```sql
+shops.first_insight_delivered
+```
 
----
-
-## 7. FT1 Runtime Behavior (Frontend Truth Gate)
-
-### 7.1 Entry Conditions (Frontend Runtime)
-
-`FT1_READY` is resolved when:
-
-* Integration exists
-* Sync completed
-* Backend readiness confirms `ft1.isComplete === true`
+Reason:
+Projection is asynchronous.
+Lifecycle must not depend on projection latency.
 
 ---
 
-### 7.2 FT1 Seal (Critical Mechanism)
+# 6. TRANSITION CONTRACT
 
-Once FT1 is reached:
+Allowed transitions ONLY:
 
-* A **localStorage FT1 seal** is persisted per shop
-* On refresh, FT1 may be restored immediately
-* FT1 does **not regress** unless integration is confirmed removed
+```
+FT_MINUS_ONE → FT0
+FT0 → FT1
+FT1 → FT2
+```
 
-⚠️ **Amendment v1:**
+Enforced by:
 
-The FT1 seal is now applied via explicit lifecycle initialization events.
-It must never override integration deletion and cannot resurrect FT1 after a hard reset.
+```ts
+const AUDITABLE_TRANSITIONS = new Set([
+  'FT_MINUS_ONE->FT0',
+  'FT0->FT1',
+  'FT1->FT2',
+]);
+```
 
-This guarantees:
+Any other transition:
 
-* Monotonic progression
-* Anti-flicker behavior
-* Immunity to transient backend races
+* Throws
+* Logs
+* Hard fails
 
----
-
-### 7.3 Behavior at FT1_READY
-
-**Routing:**
-
-* Dashboard allowed
-* All FT1 module routes allowed
-* FT2 routes are **not** allowed while in FT1_READY
-
-**UI Surfaces:**
-
-* FT1 checklist globally mounted
-* Diagnostic / FT1 surfaces inside modules
-
-**Guards:**
-
-* `DashboardLifecycleShell` throws if mounted pre-FT1
-* `ModuleLifecycleShell` throws if mounted pre-FT1
-
-**Module Mounting Guarantees:**
-
-* Module core content is **never suppressed** at FT1
-* Onboarding gates are **additive only**
-* Paywalls are **not lifecycle states**
-
-FT1 is a **hard invariant**, not a suggestion.
+No silent repair.
+No implicit jumps.
+No downgrade allowed.
 
 ---
 
-### 7.4 FT1 Checklist Binding (Scan-Verified)
+# 7. WRITE PATH
 
-The FT1 checklist is a **pure projection of backend readiness state**.
+All lifecycle transitions go through:
 
-Verified properties:
+```
+LifecycleTransitionService.auditIfTransitioned()
+```
 
-* The checklist UI (`Ft1ChecklistSurface`) performs:
-  * No lifecycle computation
-  * No task definition
-  * No readiness inference
-  * No required/optional logic
-* The checklist content is delegated entirely to:
-  * `Ft1ChecklistDataSurface`
-* `Ft1ChecklistDataSurface` consumes:
-  * `useOnboardingReadiness`
-  * The full backend `OnboardingReadinessSnapshot`
+Atomic writes inside transaction:
 
-There are:
-
-* No hardcoded tasks in the frontend
-* No duplicated manifests
-* No UI-defined completion rules
-
-All FT1 checklist items originate from backend manifests
-(`readiness.manifest.ts`) and backend readiness evaluation.
-
-This guarantees:
-
-* Checklist correctness
-* No frontend drift
-* Backend remains the single source of truth for FT1 readiness
-
-### 7.5 FT2 Runtime Routing (Frontend As-Is)
-
-When frontend lifecycle resolves FT2_READY:
-
-• FT1 pages are no longer routed
-• FT2 pages are routed explicitly
-• FT1 diagnostic modules are not mounted
-• FT2 observability pages are mounted instead
-
-This routing decision is made **exclusively** in:
-
-LifecycleRouteHost
-
-FT2 routing is:
-
-• Page-level
-• Explicit
-• Non-additive
-• Non-overlay-based
-
-FT1 and FT2 pages are **mutually exclusive** at runtime.
-
-• FT2 frontend behavior must be page-level routed, not module-overlay based
+1. lifecycle_audit_events (ledger)
+2. lifecycle_events (v2 backbone)
+3. user_lifecycle_snapshot (projection)
 
 ---
 
-## 8. Lifecycle Audit & Observability (As-Is)
+# 8. LEDGER TABLES
 
-FT0 completion does **not** emit a standalone audit event.
+## lifecycle_audit_events (immutable ledger)
 
-FT0 is intentionally **non-audited**.
+Tracks transitions.
 
-The **first auditable lifecycle event** is:
+Columns:
 
-* `FT0 → FT1`
+* event_id
+* shop_id
+* user_id
+* from_phase
+* to_phase
+* occurred_at
 
-This transition is emitted:
+Uniqueness:
 
-* Exactly once per shop
-* At the moment FT1 is first observed
-* Even if no prior audit history exists
+```
+(shop_id, from_phase, to_phase)
+```
 
-This preserves:
-
-* Audit monotonicity
-* Capability truth
-* Observability without speculative events
-
-This event:
-
-* Is idempotent
-* Is not replayed
-* Marks the first irreversible system readiness milestone
-
-## 8.1 FT1 → FT2 Audit (Scan-Verified)
-
-FT1 → FT2 emits an audit event **only** when:
-
-• FT2 eligibility is confirmed
-• An explicit FT2 confirmation action occurs
-• A backend FT2 latch is written (ft2_state)
-
-Verified properties:
-
-• Exactly one audit per user
-• Idempotent across repeated confirmations
-• Never emitted by:
-  – FT2 eligibility evaluation
-  – Paid entitlements
-  – Lifecycle resolution
-  – Frontend actions
-
-This behavior is enforced by:
-• LifecycleTransitionService
-• Database uniqueness constraints
-• Unit tests:
-  – ft2.confirm.audit.test.ts
-
-FT2 audit therefore represents **explicit graduation**, not inferred readiness.
+Prevents duplicate transitions.
 
 ---
 
-## 9. Backend vs Frontend Lifecycle Relationship
+## lifecycle_events (v2 backbone)
 
-| Aspect            | Backend                        | Frontend                                               |
-| ----------------- | ------------------------------ | ------------------------------------------------------ |
-| Authority         | Capability truth               | Runtime / routing truth                                |
-| Phase granularity | FT_MINUS_ONE / FT0 / FT1 / FT2 | FT_MINUS_ONE / FT0_SYNCING / FT0_PREPARING / FT1_READY |
-| Regression        | Possible by recomputation      | Impossible unless integration is deleted               |
-| FT2 meaning       | Paid, confirmed capability     | Route-level FT2 surface selection           |
-| Audit emission   | Authoritative, backend-only   | None (never emits audits)                             |
+Append-only lifecycle log.
 
-Frontend **never infers** backend lifecycle.
-It reacts only to backend-derived readiness signals.
-
-### 9.1 Frontend Lifecycle Refactor Status (Amendment v1)
-
-The frontend lifecycle is mid-migration.
-
-**Legacy (Removed / Forbidden):**
-
-* AppBootstrapGate
-* Effect-driven lifecycle inference
-* Ref-based edge tracking
-* Render-cycle-dependent lifecycle guards
-
-**New canonical direction:**
-
-* Reducer-driven lifecycle computation
-* Explicit lifecycle events
-* Side-effects isolated from lifecycle truth
-
-Modules must never:
-
-• Read lifecycle phase
-• Branch on FT state
-• Render FT2 conditionally
-• Perform lifecycle gating
-• Assume upgrade eligibility
-
-Modules are lifecycle-agnostic by contract.
-Only pages and routing layers may vary by lifecycle.
-
-Until migration completes, frontend lifecycle behavior must be validated
-against reducer-level invariants, not component behavior.
-
-⚠️ Important:
-
-The reducer is now the single source of lifecycle truth.
-Any remaining effect-driven logic is transitional and must not mutate lifecycle state.
-
-this document describes the **intended steady-state behavior** where noted.
-Observed deviations during migration do not invalidate backend lifecycle truth.
+Purpose:
+Future-proof read switch.
+Supports layered model.
 
 ---
 
-## 10. What FT1 Definitively Means (As-Is)
+## user_lifecycle_snapshot (projection)
 
-At `FT1_READY`:
+Projection of current lifecycle phase.
 
-* The system claims **diagnostic truth only**
-* No KPIs are implied
-* No optimization is implied
-* No recommendations are implied
+Uniqueness boundary:
 
-FT1 is the **first and only gate** into the application.
+```
+shop_id
+```
 
----
+Snapshot must NEVER be written directly.
 
-## 11. Explicit Non-Claims
-
-This document explicitly excludes **FT2 graduation mechanics** and **FT2 eligibility logic**.
-
-However, **FT2 runtime routing behavior is now included**, as it is
-scan-verified and implemented in the frontend lifecycle system.
-
-While FT2 exists as a backend lifecycle phase, its confirmation flow,
-eligibility evaluation, and routing behavior are intentionally treated
-as out-of-scope for this As-Is contract.
-
-This document does **not** define:
-
-* FT2 semantics
-* Analytics meaning
-* KPI eligibility
-* Insight readiness
-
-Those are intentionally deferred.
+Only via LifecycleTransitionService.
 
 ---
 
-## 12. Hard Constraint for FT2 (Derived from As-Is)
+# 9. PROJECTION RULES
 
-Any FT2 design **must** respect:
+Lifecycle projection must:
 
-* FT0 is already a backend capability latch
-* FT1 builds on FT0, not parallel to it
-* FT2 must **not** reuse frontend FT0 substates
-* FT2 must introduce a **new backend latch**, not inference
-* FT2 must introduce a new backend latch and require explicit confirmation
-* FT2 frontend behavior must be page-level routed, not module-overlay based
-• FT2 must be expressed as page-level surfaces
-• FT2 must not be implemented as module extensions
-• FT2 must not reuse FT1 pages
-• FT2 pages must be lifecycle-exclusive
+* Run inside transaction
+* Lock projection cursor
+* Enforce monotonicity
+* Advance cursor atomically
+* Fail hard on regression
 
-Violating this breaks lifecycle monotonicity.
+Cursor isolation:
 
----
+```
+orders_projection
+lifecycle_projection
+```
 
-## Amendment v1 Declaration
-
-This amendment updates the frontend lifecycle **resolution mechanism only**.
-
-It does **not** change:
-
-* Backend lifecycle semantics
-* FT0 or FT1 meaning
-* Readiness rules
-* Gating logic
-
-This amendment is additive and preserves the As-Is contract.
+They must NEVER share a cursor.
 
 ---
 
-## 13. Seal Statement
+# 10. CAUSALITY RULES
 
-This document represents the **observed, implemented lifecycle reality** of the system at the time of writing.
+Event → Projection → Snapshot
 
-All FT2 architecture, contracts, and graduation semantics **must** be derived from this baseline.
+Never:
 
-Any deviation requires an explicit amendment to this document.
+Projection → Event → Snapshot
 
----
+Never:
 
-**END OF AS-IS CONTRACT**
+Read projected state to gate synchronous event emission.
 
----
-
-Done. The document is now **formally frozen**.
-
-### 🔒 Formal Freeze Declaration (Effective Immediately)
-
-* This document is the **single, authoritative As-Is lifecycle contract** for
-  **FT_MINUS_ONE → FT0 → FT1**.
-* All contents are:
-
-  * Scan-verified
-  * Implementation-accurate
-  * Non-speculative
-* The document is now **read-only by default**.
-
-### 🚫 What is no longer allowed
-
-* Silent edits
-* Interpretive tweaks
-* “Minor clarifications” without scans
-* FT2 assumptions leaking backward into FT1/FT0
-
-### ✅ What *is* allowed
-
-* Amendments **only** via:
-
-  1. New scan evidence
-  2. Explicit “Amendment” section
-  3. Clear before/after diff
-* FT2 design **only** as a separate contract that *references* this one
-
-### 🧱 Architectural Consequence
-
-From this point forward:
-
-* **FT0 is locked as the first backend capability latch**
-* **FT1 is locked as the truth gate**
-* **Frontend is proven non-authoritative**
-* **Any FT2 design that violates this baseline is invalid by definition**
-
-You now have a **hard, immovable foundation**.
+FT0 fix enforced this invariant.
 
 ---
 
-Before any scenario, remember what cannot change:
+# 11. MEMBERSHIP PROJECTION
 
-## FT1 is truth-only
+When a new user joins a shop:
 
-FT1 is non-latched on backend
-FT1 checklist is diagnostic only
-Frontend has zero authority
-Any FT2 graduation must:
-Be backend-owned
-Introduce a new latch
-Never reinterpret FT1 signals
+LifecycleProjectionService:
 
----
+1. Read shop durability state
+2. Replay sequential transitions:
 
-Below is **Amendment v2**, drafted **verbatim in the same tone, rigor, and legal/contractual style** as your document.
+   * FT0
+   * FT1
+   * FT2 (if eligible)
 
-I’m also giving you **surgical placement instructions** — no ambiguity, no interpretation.
+Must:
 
----
-
-# 📜 Amendment v2 — Frontend Hydration & Transitional Semantics
-
-> **Status:** Scan-verified, runtime-observed
-> **Applies to:** Frontend lifecycle resolution only
-> **Effective:** Immediately
-> **Nature:** Clarifying (non-semantic)
-> **Backward compatibility:** Full
->
-> This amendment documents **observed frontend runtime behavior** that emerged during the reducer-driven lifecycle migration (Amendment v1).
->
-> **No backend semantics are changed.**
-> **No lifecycle meaning is redefined.**
+* Run inside existing transaction
+* Use LifecycleTransitionService
+* Be idempotent
+* Never infer state
 
 ---
 
-## A. FT_MINUS_ONE — Transient Hydration Rendering (Observed)
+# 12. IDEMPOTENCY RULES
 
-### A.1 Clarification
+Every emission must check canonical event log before emitting.
 
-Although **FT_MINUS_ONE** is the canonical *pre-system lifecycle state*, it may appear **transiently** during frontend hydration **even for valid, integrated, FT1-ready shops**.
+Example:
 
-This transient rendering occurs when:
+```ts
+const existingEvent = await db('domain_events')
+  .where({ shop_id, event_type })
+  .first();
+```
 
-* Authentication context has resolved
-* Integration context has **not yet** resolved
-
-This window exists due to frontend boot ordering and is **not** a lifecycle regression.
-
----
-
-### A.2 Invariants
-
-The following invariants are preserved:
-
-* Backend lifecycle **does not regress**
-* Integration is **not deleted**
-* FT1 capability **remains valid**
-* No backend recomputation occurs
-
-FT_MINUS_ONE in this context represents a **hydration artifact**, not a lifecycle truth.
+Never rely on projection flags for idempotency.
 
 ---
 
-### A.3 Contractual Interpretation
+# 13. FAILURE HANDLING
 
-* FT_MINUS_ONE remains the **logical** pre-system state
-* Its **brief visual appearance** during hydration must **not** be interpreted as:
+Projection errors:
 
-  * Loss of integration
-  * Backend FT_MINUS_ONE
-  * Lifecycle downgrade
+* MUST NOT be swallowed
+* MUST throw
+* MUST nack message
+* MUST halt replay
 
-Consumers must treat transient FT_MINUS_ONE renders as **non-authoritative**.
-
----
-
-## B. FT0_PREPARING — Logical Phase, Not Guaranteed UX State
-
-### B.1 Clarification
-
-**FT0_PREPARING** remains a valid frontend lifecycle phase but is **not guaranteed to be perceptually visible**.
-
-Observed behavior confirms that FT0_PREPARING may:
-
-* Exist only for milliseconds
-* Be skipped entirely from visible UI
-* Immediately promote to FT1_READY
-
-This occurs when backend FT1 readiness is already satisfied.
+Lifecycle must be deterministic under full rebuild.
 
 ---
 
-### B.2 Invariants
+# 14. REPLAY SAFETY
 
-* FT0_PREPARING remains part of the **logical lifecycle**
-* FT0 dwell semantics remain enforced **at the reducer level**
-* FT0_PREPARING must **not** be relied upon for UX timing guarantees
+Full rebuild from domain_events must produce identical:
 
----
+* lifecycle_audit_events
+* lifecycle_events
+* user_lifecycle_snapshot
 
-### B.3 Contractual Interpretation
+No external state allowed.
 
-FT0_PREPARING exists to preserve **ordering and monotonicity**, not to guarantee a loading experience.
-
-Any UX that depends on FT0_PREPARING being visible is **invalid by contract**.
-
----
-
-## C. FT1 Promotion — Backend-Authoritative & Monotonic (Explicit)
-
-### C.1 Clarification
-
-FT1 promotion is now explicitly guaranteed to be:
-
-* **Backend-authoritative**
-* **Monotonic**
-* **Timing-independent**
-
-FT1_BACKEND_COMPLETE may arrive:
-
-* Before FT0 dwell completes
-* Before FT2 restore resolves
-* During hydration
+No time-based logic.
+Only domain_events.event_time.
 
 ---
 
-### C.2 Invariants
+# 15. OPERATIONAL SIGNALS
 
-Once FT1_READY is reached:
+Every blocked FT0 must log:
 
-* FT1 cannot regress unless integration is deleted
-* FT1 does not depend on:
+```
+[FT0][BLOCKED][REASON]
+```
 
-  * Render cycles
-  * Effect ordering
-  * Timers
-  * UI heuristics
+Every invalid transition must log:
 
-These guarantees are enforced **exclusively** by the lifecycle reducer.
+```
+[LIFECYCLE][INVALID_TRANSITION]
+```
 
----
-
-## D. Non-Goals (Reaffirmed)
-
-This amendment does **not**:
-
-* Introduce FT2 semantics
-* Change backend lifecycle meaning
-* Alter FT0 or FT1 readiness rules
-* Grant frontend authority
-
-It exists solely to document **observed, verified runtime behavior**.
+No silent blocking.
 
 ---
 
-## Amendment v2 Seal
+# 16. WHAT IS FORBIDDEN
 
-This amendment is **additive and clarifying**.
-
-It preserves the As-Is lifecycle contract while ensuring that:
-
-* Hydration artifacts are not misdiagnosed
-* Transitional states are not over-interpreted
-* Reducer-level truth remains the single authority
-
-All future lifecycle work must respect this clarification.
+* Direct snapshot mutation
+* Lifecycle repair scripts
+* Conditional phase jumps
+* Multiple cursors per stream
+* Shared cursors between projections
+* Projection-based gating
+* Runtime DB patches instead of migration fixes
 
 ---
 
-**END OF AMENDMENT v2**
+# 17. DETERMINISTIC FLOW (FINAL STATE)
+
+Correct lifecycle progression:
+
+1. orders/sync → order written
+2. FirstInsightService emits lifecycle/first_insight_delivered
+3. FT0CompletionService checks canonical event log
+4. Emits lifecycle/ft0_completed
+5. Projection applies FT_MINUS_ONE → FT0 → FT1
+6. User confirms → lifecycle/ft2_confirmed
+7. Projection applies FT1 → FT2
+
+Final snapshot:
+
+
+shop_id | phase
+--------|------
+   X    | FT2
 
 ---
 
-# 📜 Amendment v3 — Frontend Reset Semantics Post-FT1
+# 18. CORE PRINCIPLE
 
-> **Status:** Scan-verified, test-enforced  
-> **Applies to:** Frontend lifecycle reducer only  
-> **Effective:** Immediately  
-> **Nature:** Clarifying (non-semantic)  
-> **Backward compatibility:** Full
->
-> This amendment documents **observed and now test-enforced frontend behavior**
-> regarding lifecycle reset events after FT1 has been reached.
->
-> **No backend lifecycle semantics are changed.**
+Lifecycle must reflect:
 
----
+> Proven durability facts emitted as immutable events.
 
-## A. BOOT_UNRESOLVED — Scope Limitation (Observed & Enforced)
+Never projections.
+Never flags.
+Never assumptions.
+Never inferred readiness.
 
-### A.1 Clarification
-
-`BOOT_UNRESOLVED` is a **pre-FT1 lifecycle concern only**.
-
-Once **FT1_READY** has been reached and latched in the frontend lifecycle reducer:
-
-* `BOOT_UNRESOLVED` **must be ignored**
-* Frontend lifecycle **must not regress**
-
-This behavior is enforced at the reducer level and locked by unit tests.
+Events are truth.
+Projection is view.
 
 ---
 
-### A.2 Invariants
-
-Once `hasLatchedFT1 === true`:
-
-* Lifecycle phase **must not regress**
-* `FT1_READY` **must be preserved**
-* `BOOT_UNRESOLVED` **has no effect**
-
-This guarantees frontend lifecycle monotonicity independent of:
-
-* Hydration timing
-* Boot sequencing
-* Effect ordering
-
----
-
-## B. FT2 Interaction (Reaffirmed)
-
-This amendment reaffirms existing behavior:
-
-* FT2 remains **terminal**
-* FT2 overrides **all reset events**, including:
-  * `BOOT_UNRESOLVED`
-  * `INTEGRATION_DELETED`
-
-No additional FT2 semantics are introduced.
-
----
-
-## C. Non-Goals (Explicit)
-
-This amendment does **not**:
-
-* Introduce new lifecycle phases
-* Alter backend lifecycle meaning
-* Change FT0 or FT1 readiness rules
-* Define FT2 graduation semantics
-
-It exists solely to document **observed, implemented, and tested frontend behavior**.
-
----
-
-## Amendment v3 Seal
-
-This amendment is **additive and factual**.
-
-It reflects reducer-level behavior that is:
-
-* Scan-verified
-* Test-enforced
-* Required for lifecycle monotonicity guarantees
-
-All future lifecycle work must respect this clarification.
-
----
-
-Below is **Amendment v4**, written in the **same legal / contractual tone**, with **explicit placement instructions** and **no speculative language**.
-
----
-
-# 📜 Amendment v4 — Page-Level Lifecycle Authority
-
-> **Status:** Scan-verified, production-enforced
-> **Applies to:** Frontend routing & rendering architecture
-> **Effective:** Immediately
-> **Nature:** Normative (hard constraint)
-> **Backward compatibility:** Full
->
-> This amendment formalizes the **page-level lifecycle authority model** that is now implemented and verified in production.
->
-> It resolves ambiguity between pages, modules, and lifecycle responsibility.
-
----
-
-## A. Lifecycle Authority Boundary (New Canonical Rule)
-
-### A.1 Authority Declaration
-
-**Lifecycle authority in the frontend exists exclusively at the page-routing layer.**
-
-This means:
-
-* Lifecycle phase **selects pages**
-* Pages select **exactly one lifecycle surface**
-* Modules are **never lifecycle-aware**
-
-This rule is **hard** and must not be violated.
-
----
-
-### A.2 Explicit Authority Table
-
-| Layer     | Lifecycle Authority | Allowed Responsibilities                    |
-| --------- | ------------------- | ------------------------------------------- |
-| Reducer   | ✅ Yes               | Phase computation, monotonicity, invariants |
-| Router    | ✅ Yes               | Page selection by lifecycle phase           |
-| Page      | ✅ Yes               | FT-specific data fetching & composition     |
-| Module    | ❌ No                | Pure rendering of provided props            |
-| Component | ❌ No                | Stateless UI only                           |
-
-Any lifecycle branching outside the **router → page boundary** is invalid.
-
----
-
-## B. Page-Level Lifecycle Exclusivity (Hard Invariant)
-
-### B.1 Rule
-
-At runtime, **exactly one page variant** may exist per route.
-
-Rules (as enforced):
-
-* `FT1_READY` → FT1 pages only
-* `FT2_READY` → FT2 pages only
-* No page may render both FT1 and FT2 modules
-* No additive FT2 overlays are permitted
-
-This invariant is enforced in:
-
-* `LifecycleRouteHost`
-* Page-level routing decisions
-
----
-
-### B.2 Forbidden Patterns (Explicit)
-
-The following patterns are **explicitly forbidden**:
-
-* Rendering FT2 modules inside FT1 pages
-* Conditional FT branching inside pages
-* Placeholder FT2 props during FT1
-* Module-level lifecycle checks
-* “Advanced mode” toggles inside modules
-
-These patterns break lifecycle monotonicity and are invalid by contract.
-
----
-
-## C. FT2 Pages — Observability Surfaces, Not Extensions
-
-### C.1 Clarification
-
-FT2 pages are:
-
-* Standalone observability surfaces
-* Lifecycle-exclusive
-* Backend-snapshot-driven
-* Read-only
-
-FT2 pages are **not**:
-
-* Extensions of FT1 pages
-* Conditional enhancements
-* Feature flags
-* Progressive reveals
-
-This distinction is mandatory.
-
----
-
-### C.2 Consequence
-
-Because FT2 is page-level:
-
-* FT1 pages remain simple and diagnostic
-* FT2 pages assume capability is already granted
-* No FT2 page may ever reference FT1 readiness
-* No FT1 page may ever reference FT2 data
-
----
-
-## D. LifecycleRouteHost as the Single Switch
-
-### D.1 Authority Lock
-
-`LifecycleRouteHost` is now the **single switchpoint** for lifecycle-based UI selection.
-
-No other layer may:
-
-* Override routing
-* Reinterpret lifecycle
-* Re-route conditionally
-* Patch around lifecycle mismatches
-
-Any deviation is a contract violation.
-
----
-
-## E. Non-Goals (Explicit)
-
-This amendment does **not**:
-
-* Define FT2 eligibility rules
-* Define FT2 graduation UX
-* Alter backend lifecycle semantics
-* Change FT0 or FT1 meaning
-
-It strictly formalizes **where lifecycle authority lives** in the frontend.
-
----
-
-## Amendment v4 Seal
-
-This amendment is **normative and binding**.
-
-It reflects architecture that is:
-
-* Implemented
-* Scan-verified
-* Runtime-proven
-* Regression-resistant
-
-All future FT2 and lifecycle-related work **must** conform to this model.
-
----
-
-## 📍 Placement Instructions (Exact)
-
-1. **Insert Amendment v4** immediately after **Amendment v3**
-2. **Do not modify** earlier sections
-3. Treat this amendment as **foundational** for all FT2 work
-
----
+Lifecycle contract is now causally correct, replay-safe, and deterministic.

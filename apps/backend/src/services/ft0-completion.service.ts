@@ -45,9 +45,15 @@
  * ============================================================
  */
 
+/**
+ * DEBUGGING NOTE (2026-03):
+ * FT0 is edge-triggered from lifecycle/first_insight_delivered.
+ * If any precondition fails at that moment,
+ * FT0 will NOT retry automatically.
+ * Blocking reasons are logged explicitly.
+ */
+
 import db from '@lasyncro/backend-core/db.js';
-import crypto from 'crypto';
-import { LifecycleTransitionService } from './lifecycle-transition.service.js';
 
 export class FT0CompletionService {
   static async evaluateAndComplete(
@@ -71,6 +77,7 @@ export class FT0CompletionService {
       .first();
 
     if (!integration) {
+      console.error('[FT0][BLOCKED][NO_INTEGRATION]', { shopId });
       return { completed: false };
     }
 
@@ -80,6 +87,7 @@ export class FT0CompletionService {
       .first();
 
     if (!completedSync) {
+      console.error('[FT0][BLOCKED][SYNC_NOT_COMPLETED]', { shopId });
       return { completed: false };
     }
 
@@ -92,27 +100,32 @@ export class FT0CompletionService {
     const orderCount = Number(ordersRow?.count ?? 0);
 
     if (orderCount < 1) {
+      console.error('[FT0][BLOCKED][NO_ORDERS]', {
+        shopId,
+        orderCount,
+      });
       return { completed: false };
     }
 
-    /**
-     * FIRST INSIGHT DELIVERY (SHOP-SCOPED)
-     * -------------------------------------
-     * This is a shop-level fact.
+   /**
+     * FIRST INSIGHT DELIVERY (CANONICAL FACT CHECK)
+     * ----------------------------------------------
+     * DO NOT depend on projected state (shops.first_insight_delivered).
+     * Projection is asynchronous and may lag inside the same causal chain.
      *
-     * FT0 represents system readiness of the commerce pipeline,
-     * not individual user progression.
-     *
-     * A shop may have multiple owners/admins.
-     * Insight delivery to any qualifying admin promotes the shop state.
-     *
-     * This flag MUST live on `shops`, never `users`.
+     * FT0 must rely on immutable domain_events as canonical truth.
      */
-    const shop = await db('shops')
-      .where({ id: shopId })
-      .first('first_insight_delivered');
+    const insightEvent = await db('domain_events')
+      .where({
+        shop_id: shopId,
+        event_type: 'lifecycle/first_insight_delivered',
+      })
+      .first('id');
 
-    if (!shop?.first_insight_delivered) {
+    if (!insightEvent) {
+      console.error('[FT0][BLOCKED][INSIGHT_EVENT_NOT_FOUND]', {
+        shopId,
+      });
       return { completed: false };
     }
 
@@ -124,6 +137,23 @@ export class FT0CompletionService {
     });
 
     /**
+     * EMISSION IDEMPOTENCY GUARD
+     * --------------------------
+     * Prevent duplicate lifecycle/ft0_completed emissions.
+     * Must check canonical domain_events log.
+     */
+    const existingEvent = await db('domain_events')
+      .where({
+        shop_id: shopId,
+        event_type: 'lifecycle/ft0_completed',
+      })
+      .first('id');
+
+    if (existingEvent) {
+      return { completed: true, alreadyCompleted: true };
+    }
+
+    /**
      * Atomic FT0 completion.
      *
      * Guarantees:
@@ -132,115 +162,36 @@ export class FT0CompletionService {
      * - No fallback reads.
      */
     return await db.transaction(async trx => {
+      const externalEventId = `internal:lifecycle/ft0_completed:${shopId}:${Date.now()}`;
 
-      /**
-       * SERIALIZATION LOCK
-       * ------------------
-       * Lock shop row to prevent concurrent FT0 execution.
-       */
-      await trx('shops')
-        .where({ id: shopId })
-        .forUpdate()
-        .first();
-
-      /**
-       * RECHECK FT0 INSIDE LOCK
-       * ------------------------
-       * Prevent race between concurrent workers.
-       */
-      const existingFt0 = await trx('ft0_state')
-        .where({ shop_id: shopId })
-        .first('shop_id');
-
-      if (existingFt0) {
-        console.log('[FT0][ALREADY_COMPLETED_LOCKED]', { shopId });
-        return { completed: true, alreadyCompleted: true };
-      }
-
-      await trx('ft0_state').insert({
-        shop_id: shopId,
-        status: 'COMPLETED',
-        completed_at: trx.fn.now(),
-        completion_reason: {
-          integration: true,
-          syncCompleted: true,
-          orders: orderCount,
-          firstInsightDelivered: true,
-        },
-      });
-
-      /**
-       * Dual-write: Durable readiness state (v2 backbone)
-       *
-       * Presence = READY
-       * Absence = UNREADY
-       *
-       * This table replaces ft0_state as authoritative
-       * readiness signal for future read-switch.
-       */
-      await trx('system_readiness_state')
+      const [event] = await trx('domain_events')
         .insert({
           shop_id: shopId,
-          became_ready_at: trx.fn.now(),
-        });
+          event_type: 'lifecycle/ft0_completed',
+          event_payload: {
+            orders: orderCount,
+            firstInsightDelivered: true,
+          },
+          event_time: trx.fn.now(),
+          event_version: 1,
+          /**
+           * INTERNAL EVENT IDENTITY
+           * -----------------------
+           * Required by domain_events schema.
+           * Must be deterministic and unique per emission.
+           *
+           * Format:
+           * internal:<event_type>:<shop_id>:<epoch_ms>
+           */
+          external_event_id: externalEventId,
+        })
+        .returning(['id']);
 
-      await trx('activation_audit_events')
-      .insert({
-        event_id: crypto.randomUUID(),
-        event_type: 'FT0_COMPLETED',
-        shop_id: shopId,
-        occurred_at: trx.fn.now(),
-        payload: {
-          orders: orderCount,
-          firstInsightDelivered: true,
-        },
+      await trx('domain_event_outbox').insert({
+        domain_event_id: event.id,
       });
-
-      /**
-       * LIFECYCLE PROMOTION (ATOMIC WITH DURABILITY)
-       * --------------------------------------------
-       * FT0 completion is shop-scoped durability.
-       * All current shop members must transition:
-       *
-       *   FT_MINUS_ONE → FT0
-       *   FT0 → FT1
-       *
-       * This guarantees automatic FT1 landing.
-       */
-
-      const members = await trx('shop_memberships')
-        .where({ shop_id: shopId })
-        .select<{ user_id: number }[]>('user_id');
-
-      console.log('[FT0][LIFECYCLE_PROMOTION_START]', {
-        shopId,
-        memberCount: members.length,
-      });
-
-      for (const member of members) {
-        const userId = member.user_id;
-
-        console.log('[FT0][PROMOTE_TO_FT0]', { shopId, userId });
-
-        await LifecycleTransitionService.auditIfTransitioned(
-          { userId, shopId, currentPhase: 'FT0' },
-          trx
-        );
-
-        console.log('[FT0][PROMOTE_TO_FT1]', { shopId, userId });
-
-        await LifecycleTransitionService.auditIfTransitioned(
-          { userId, shopId, currentPhase: 'FT1' },
-          trx
-        );
-      }
-
-      console.log('[FT0][LIFECYCLE_PROMOTION_COMPLETE]', { shopId });
-
-      console.log('[FT0][COMPLETED]', { shopId });
 
       return { completed: true };
     });
-
   }
 };

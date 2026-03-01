@@ -65,10 +65,10 @@ export async function up(knex: Knex): Promise<void> {
     
     /**
      * External webhook identity.
-     * Required for ingestion idempotency.
-     * Duplicate delivery MUST NOT create duplicate domain events.
+     * Nullable because internal domain events
+     * (lifecycle, system events) have no external source.
      */
-    table.string('external_event_id').notNullable();
+    table.string('external_event_id').nullable();
 
     table.timestamp('created_at', { useTz: true })
       .notNullable()
@@ -79,14 +79,18 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['event_time']);
 
     /**
-     * Enforce ingestion idempotency.
-     * One external event per shop.
+     * Ingestion idempotency constraint.
+     * Applies only when external_event_id IS NOT NULL.
+     *
+     * Allows internal domain events to omit external identity.
      */
-    table.unique(
-      ['shop_id', 'external_event_id'],
-      'domain_events_shop_external_event_unique'
-    );
   });
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX domain_events_shop_external_event_unique
+    ON domain_events (shop_id, external_event_id)
+    WHERE external_event_id IS NOT NULL;
+  `);
 
   /**
    * HARD IMMUTABILITY GUARD

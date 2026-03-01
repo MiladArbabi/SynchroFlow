@@ -9,6 +9,7 @@ import { FirstInsightService } from './services/first-insight.service.js';
 import { FT0CompletionService } from './services/ft0-completion.service.js';
 
 import OutboxService from './services/outbox/outbox.service.js';
+import { Knex } from 'knex';
 
 /**
  * FT0 EXECUTION LATCH (PROCESS-SCOPED)
@@ -16,8 +17,7 @@ import OutboxService from './services/outbox/outbox.service.js';
  * Prevents concurrent FT0 executions for the same shop
  * within this worker process.
  *
- * This does NOT replace DB idempotency.
- * It only suppresses redundant concurrent triggers.
+ * Does NOT replace DB idempotency.
  */
 const ft0InFlight = new Set<number>();
 
@@ -27,44 +27,45 @@ const ft0InFlight = new Set<number>();
  * Stable namespace required for uuidv5.
  * Must never change once deployed.
  */
-const ORDER_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // fixed RFC namespace
+const ORDER_UUID_NAMESPACE =
+  '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
 /**
- * PROJECTION IDENTITY
- * -------------------
- * This worker projects domain_events into operational tables.
+ * Projection Streams
+ * ------------------
+ * Orders and Lifecycle MUST NOT share cursors.
  */
-const PROJECTION_NAME = 'orders_projection';
+const ORDERS_PROJECTION = 'orders_projection';
+const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 
 /**
  * CURSOR ADVANCEMENT (TRANSACTION-BOUND)
  * --------------------------------------
  * Cursor MUST advance atomically with projection writes.
- * Never advance outside aggregate mutation transaction.
  */
 async function advanceCursor(
-  trx: any,
-  domainEventId: number
+  trx: Knex.Transaction,
+  projectionName: string,
+  domain_event_id: number
 ) {
-  /**
-   * ATOMIC UPSERT
-   * -------------
-   * Prevents duplicate insert race under concurrency.
-   */
   await trx('projection_cursors')
     .insert({
-      projection_name: PROJECTION_NAME,
-      last_processed_event_id: domainEventId,
+      projection_name: projectionName,
+      last_processed_event_id: domain_event_id,
+      updated_at: trx.fn.now(),
     })
     .onConflict('projection_name')
     .merge({
-      last_processed_event_id: domainEventId,
+      last_processed_event_id: domain_event_id,
       updated_at: trx.fn.now(),
     });
 }
 
-// Lazily obtain the specific channel for 'events'
+/**
+ * Lazily obtain channel for 'events'
+ */
 let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
+
 function getEventChannel() {
   if (!eventChannel) {
     eventChannel = getQueueChannel('events');
@@ -75,12 +76,7 @@ function getEventChannel() {
 /**
  * PURE PROJECTION ENTRY POINT
  * ----------------------------
- * Transport-agnostic projection execution.
- *
- * This function:
- * - Must not depend on RabbitMQ
- * - Is safe for CLI replay
- * - Reuses existing projection logic
+ * Transport-agnostic.
  */
 export async function projectDomainEvent(domain_event_id: number) {
   await projectDomainEventFromMessage({
@@ -90,8 +86,10 @@ export async function projectDomainEvent(domain_event_id: number) {
   });
 }
 
-async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
-  if (msg === null) return;
+async function projectDomainEventFromMessage(
+  msg: { content: Buffer } | null
+) {
+  if (!msg) return;
 
   const content = msg.content.toString();
 
@@ -101,83 +99,22 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
     try {
       parsed = JSON.parse(content);
     } catch (err) {
-      console.error('[PROJECTION_INVALID_JSON]', {
-        raw: content,
-      });
+      console.error('[PROJECTION_INVALID_JSON]', { raw: content });
       throw err;
     }
 
     const domain_event_id = Number(parsed?.domain_event_id);
-
-    /**
-     * PROJECTION CURSOR INVARIANT
-     * ---------------------------
-     * Projection must be strictly monotonic.
-     * Replaying an already-processed or lower ID
-     * indicates:
-     * - Queue contamination
-     * - Replay ordering violation
-     * - Duplicate delivery without cursor protection
-     *
-     * This is a hard failure to protect determinism.
-     */
-    const cursor = await db('projection_cursors')
-      .where({ projection_name: PROJECTION_NAME })
-      .first<{ last_processed_event_id: number }>();
-
-    if (cursor && domain_event_id <= cursor.last_processed_event_id) {
-
-      const errorMessage =
-        `[PROJECTION_CURSOR_REGRESSION] event_id=${domain_event_id} cursor=${cursor.last_processed_event_id}`;
-
-      /**
-       * PRODUCTION SAFETY: DEAD-LETTER REGRESSION
-       * ------------------------------------------
-       * Regression must never silently pass.
-       * In development → crash (hard invariant).
-       * In non-dev → route to DLQ and ack original.
-       */
-
-      if (process.env.NODE_ENV === 'development') {
-        throw new Error(errorMessage);
-      }
-
-      console.error(errorMessage);
-
-      try {
-        getEventChannel().sendToQueue(
-          'events.dead',
-          Buffer.from(
-            JSON.stringify({
-              reason: 'PROJECTION_CURSOR_REGRESSION',
-              domain_event_id,
-              cursor: cursor.last_processed_event_id,
-            })
-          ),
-          { persistent: true }
-        );
-      } catch (dlqErr) {
-        console.error('[DLQ_PUBLISH_FAILED]', dlqErr);
-      }
-
-      if (msg && 'fields' in (msg as any)) {
-        getEventChannel().ack(msg as any);
-      }
-
-      return;
-    }
 
     if (!Number.isInteger(domain_event_id)) {
       console.error('[PROJECTION_PROTOCOL_VIOLATION]', {
         expected: '{ domain_event_id: number }',
         received: parsed,
       });
-
       throw new Error('[DOMAIN_EVENT_ID_INVALID_TYPE]');
     }
 
     if (!domain_event_id) {
-      if (msg && 'fields' in (msg as any)) {
+      if ('fields' in (msg as any)) {
         getEventChannel().ack(msg as any);
       }
       return;
@@ -186,60 +123,59 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
     /**
      * DOMAIN EVENT FETCH
      * ------------------
-     * domain_events are immutable.
-     * Replay safety must be enforced via projection cursors.
+     * Immutable source of truth.
      */
     const domainEvent = await db('domain_events')
-    .where({ id: domain_event_id })
-    .first<{
-      id: number;
-      shop_id: number;
-      event_type: string;
-      event_payload: Record<string, any>;
-      event_time: Date;
-    }>();
+      .where({ id: domain_event_id })
+      .first<{
+        id: number;
+        shop_id: number;
+        event_type: string;
+        event_payload: Record<string, any>;
+        event_time: Date;
+      }>();
 
     if (!domainEvent) {
+      throw new Error(
+        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`
+      );
+    }
 
-      const errorMessage =
-        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`;
+    /**
+     * PROJECTION STREAM RESOLUTION
+     * ----------------------------
+     * Must resolve AFTER event fetch.
+     */
+    const projectionName =
+      domainEvent.event_type.startsWith('lifecycle/')
+        ? LIFECYCLE_PROJECTION
+        : ORDERS_PROJECTION;
 
-      /**
-       * PRODUCTION SAFETY: DEAD-LETTER UNKNOWN EVENT
-       * --------------------------------------------
-       * Queue references event that does not exist.
-       * Indicates:
-       * - Stale message
-       * - Queue contamination
-       * - Manual publish error
-       */
+    /**
+     * MONOTONIC CURSOR INVARIANT
+     * --------------------------
+     * Strictly increasing event IDs per stream.
+     */
+    const cursor = await db('projection_cursors')
+      .where({ projection_name: projectionName })
+      .first<{ last_processed_event_id: number }>();
 
-      if (process.env.NODE_ENV === 'development') {
-        throw new Error(errorMessage);
-      }
+    if (
+      cursor?.last_processed_event_id != null &&
+      domain_event_id <= cursor.last_processed_event_id
+    ) {
+      throw new Error(
+        `[PROJECTION_CURSOR_REGRESSION] event_id=${domain_event_id} cursor=${cursor.last_processed_event_id}`
+      );
+    }
 
-      console.error(errorMessage);
-
-      try {
-        getEventChannel().sendToQueue(
-          'events.dead',
-          Buffer.from(
-            JSON.stringify({
-              reason: 'DOMAIN_EVENT_NOT_FOUND',
-              domain_event_id,
-            })
-          ),
-          { persistent: true }
-        );
-      } catch (dlqErr) {
-        console.error('[DLQ_PUBLISH_FAILED]', dlqErr);
-      }
-
-      if (msg && 'fields' in (msg as any)) {
-        getEventChannel().ack(msg as any);
-      }
-
-      return;
+    /**
+     * CANONICAL EVENT TIME CHECK
+     */
+    if (!domainEvent.event_time) {
+      throw new Error(
+        '[EVENT_TIME_VIOLATION] missing canonical event_time'
+      );
     }
 
     /**
@@ -272,6 +208,10 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
       case 'orders/create':
       case 'orders/sync': {
 
+        console.log('[ORDERS_SYNC][FT0_CHECK_TRIGGER]', {
+          shopId: domainEvent.shop_id,
+        });
+
         const payload = domainEvent.event_payload as any;
         /**
          * Shopify Order ID Canonicalization
@@ -302,7 +242,7 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
            * Row is locked via FOR UPDATE.
            */
           const cursorRow = await trx('projection_cursors')
-            .where({ projection_name: PROJECTION_NAME })
+            .where({ projection_name: ORDERS_PROJECTION })
             .forUpdate()
             .first<{ last_processed_event_id: number }>();
 
@@ -512,40 +452,44 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
             trx
           );
 
-          await advanceCursor(trx, domain_event_id);
-        });
+          /**
+           * LIFECYCLE BOOTSTRAP (v3)
+           * -------------------------
+           * Insight must emit BEFORE FT0 evaluation.
+           * FT0 depends on first_insight durability.
+           */
+          const countRow = await trx('orders')
+            .where({ shop_id: domainEvent.shop_id })
+            .count<{ count: string }>('* as count')
+            .first();
+
+          const currentCount = Number(countRow?.count ?? 0);
+
+          if (currentCount >= 1) {
+            await FirstInsightService.computeAndPersist(domainEvent.shop_id);
+          }
 
           /**
-           * FIRST INSIGHT + FT0 TRIGGER
-           * --------------------------------
-           * FT0 must only execute when first insight transitions
-           * from NOT_DELIVERED → DELIVERED.
-           *
-           * This guarantees:
-           * - Orders exist
-           * - Insight persisted
-           * - Canonical ingestion completed
-           * - Single execution
+           * FT0 TRIGGER — SYNC PATH
+           * ------------------------
+           * Must run AFTER insight emission attempt.
            */
-          const insight = await FirstInsightService.computeAndPersist(domainEvent.shop_id);
+          const shopId = domainEvent.shop_id;
 
-          if (insight.delivered && !insight.alreadyDelivered) {
-            const shopId = domainEvent.shop_id;
-
-            // Prevent concurrent FT0 execution in this process
-            if (!ft0InFlight.has(shopId)) {                                                               
-               
-              ft0InFlight.add(shopId);
-              try {
-                await FT0CompletionService.evaluateAndComplete(shopId);
-              } finally {
-                ft0InFlight.delete(shopId);
-              }
+          if (!ft0InFlight.has(shopId)) {
+            ft0InFlight.add(shopId);
+            try {
+              await FT0CompletionService.evaluateAndComplete(shopId);
+            } finally {
+              ft0InFlight.delete(shopId);
             }
           }
 
+          await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
+        });
+
         break;
-      }
+      };
 
       /**
        * ---------------------------------------------------------
@@ -574,7 +518,7 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
            * Row is locked via FOR UPDATE.
            */
           const cursorRow = await trx('projection_cursors')
-            .where({ projection_name: PROJECTION_NAME })
+            .where({ projection_name: ORDERS_PROJECTION })
             .forUpdate()
             .first<{ last_processed_event_id: number }>();
 
@@ -639,7 +583,7 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
             trx
           );
 
-          await advanceCursor(trx, domain_event_id);
+          await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
         });
 
         break;
@@ -699,7 +643,7 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
            * Row is locked via FOR UPDATE.
            */
           const cursorRow = await trx('projection_cursors')
-            .where({ projection_name: PROJECTION_NAME })
+            .where({ projection_name: ORDERS_PROJECTION })
             .forUpdate()
             .first<{ last_processed_event_id: number }>();
 
@@ -754,7 +698,7 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
           trx
         );
 
-      await advanceCursor(trx, domain_event_id);
+      await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
       });
 
         break;
@@ -775,7 +719,7 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
            * Row is locked via FOR UPDATE.
            */
           const cursorRow = await trx('projection_cursors')
-            .where({ projection_name: PROJECTION_NAME })
+            .where({ projection_name: ORDERS_PROJECTION })
             .forUpdate()
             .first<{ last_processed_event_id: number }>();
 
@@ -959,11 +903,310 @@ async function projectDomainEventFromMessage(msg: { content: Buffer } | null) {
           trx
         );
 
-        await advanceCursor(trx, domain_event_id);
+        await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
       });
 
       break;
     }
+
+      /**
+       * ---------------------------------------------------------
+       * LIFECYCLE — FT0 COMPLETED (EVENT-DRIVEN)
+       * ---------------------------------------------------------
+       *
+       * Source: FT0CompletionService
+       * Contract:
+       * - Service emits immutable domain event
+       * - Projection performs ALL durability and lifecycle promotion
+       *
+       * Replay guarantees:
+       * - Idempotent via shop_id uniqueness
+       * - Cursor advanced atomically
+       */
+      case 'lifecycle/ft0_completed': {
+
+        const payload = domainEvent.event_payload as {
+          orders: number;
+          firstInsightDelivered: boolean;
+        };
+
+        await db.transaction(async (trx) => {
+
+          const cursorRow = await trx('projection_cursors')
+            .where({ projection_name: LIFECYCLE_PROJECTION })
+            .forUpdate()
+            .first<{ last_processed_event_id: number }>();
+
+          if (
+            cursorRow?.last_processed_event_id != null &&
+            domain_event_id <= cursorRow.last_processed_event_id
+          ) {
+            throw new Error(
+              `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+            );
+          }
+
+          const shopId = domainEvent.shop_id;
+
+          /**
+           * Durable FT0 latch
+           */
+          await trx('ft0_state')
+            .insert({
+              shop_id: shopId,
+              status: 'COMPLETED',
+              completed_at: trx.fn.now(),
+              completion_reason: payload,
+            })
+            .onConflict('shop_id')
+            .ignore();
+
+          /**
+           * Durable readiness backbone
+           */
+          await trx('system_readiness_state')
+            .insert({
+              shop_id: shopId,
+              became_ready_at: trx.fn.now(),
+            })
+            .onConflict('shop_id')
+            .ignore();
+
+          /**
+           * Activation audit
+           */
+          await trx('activation_audit_events')
+            .insert({
+              event_id: crypto.randomUUID(),
+              event_type: 'FT0_COMPLETED',
+              shop_id: shopId,
+              occurred_at: trx.fn.now(),
+              payload,
+            });
+
+          /**
+           * Lifecycle promotion:
+           * FT_MINUS_ONE → FT0
+           * FT0 → FT1
+           */
+          const members = await trx('shop_memberships')
+            .where({ shop_id: shopId })
+            .select<{ user_id: number }[]>('user_id');
+
+          for (const member of members) {
+            const userId = member.user_id;
+
+            /**
+             * Lifecycle transition MUST go through LifecycleTransitionService.
+             * Direct snapshot mutation is forbidden (see ISSUE-017).
+             */
+            const { LifecycleTransitionService } = await import(
+              './services/lifecycle-transition.service.js'
+            );
+
+            /**
+             * SHOP-SCOPED SEQUENTIAL TRANSITIONS
+             * -----------------------------------
+             * FT_MINUS_ONE → FT0
+             * FT0 → FT1
+             *
+             * Required to preserve lifecycle invariant chain.
+             */
+            await LifecycleTransitionService.auditIfTransitioned(
+              {
+                userId,
+                shopId,
+                currentPhase: 'FT0',
+              },
+              trx
+            );
+
+            await LifecycleTransitionService.auditIfTransitioned(
+              {
+                userId,
+                shopId,
+                currentPhase: 'FT1',
+              },
+              trx
+            );
+          }
+
+          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id);
+        });
+
+        break;
+      }
+
+      /**
+       * ---------------------------------------------------------
+       * LIFECYCLE — FT2 CONFIRMED (EVENT-DRIVEN)
+       * ---------------------------------------------------------
+       *
+       * Source: lifecycle.controller.ts
+       * Contract:
+       * - Controller emits immutable domain event
+       * - Projection mutates lifecycle state
+       *
+       * Guarantees:
+       * - Replay-safe
+       * - Deterministic
+       * - Idempotent via unique shop_id constraint
+       */
+      case 'lifecycle/ft2_confirmed': {
+
+        const payload = domainEvent.event_payload as {
+          user_id: number;
+          evaluator_version: string;
+          evaluation_snapshot: any;
+        };
+
+        await db.transaction(async (trx) => {
+
+          /**
+           * Monotonic cursor enforcement inside transaction
+           */
+          const cursorRow = await trx('projection_cursors')
+            .where({ projection_name: LIFECYCLE_PROJECTION })
+            .forUpdate()
+            .first<{ last_processed_event_id: number }>();
+
+          if (
+            cursorRow?.last_processed_event_id != null &&
+            domain_event_id <= cursorRow.last_processed_event_id
+          ) {
+            throw new Error(
+              `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+            );
+          }
+
+          const shopId = domainEvent.shop_id;
+
+          /**
+           * Durable FT2 latch
+           */
+          await trx('ft2_state')
+            .insert({
+              shop_id: shopId,
+              completed_at: trx.fn.now(),
+              evaluator_version: payload.evaluator_version,
+              evaluation_snapshot: payload.evaluation_snapshot,
+            })
+            .onConflict('shop_id')
+            .ignore();
+
+          /**
+           * Eligibility backbone
+           */
+          await trx('expansion_eligibility_state')
+            .insert({
+              shop_id: shopId,
+              eligible: true,
+              evaluator_version: payload.evaluator_version,
+              evaluation_snapshot: payload.evaluation_snapshot,
+              evaluated_at: trx.fn.now(),
+            })
+            .onConflict('shop_id')
+            .merge({
+              eligible: true,
+              evaluator_version: payload.evaluator_version,
+              evaluation_snapshot: payload.evaluation_snapshot,
+              evaluated_at: trx.fn.now(),
+              updated_at: trx.fn.now(),
+            });
+
+          /**
+           * Lifecycle transition MUST go through LifecycleTransitionService.
+           * Direct snapshot mutation is forbidden (see ISSUE-017).
+           */
+          const { LifecycleTransitionService } = await import(
+            './services/lifecycle-transition.service.js'
+          );
+
+          await LifecycleTransitionService.auditIfTransitioned(
+            {
+              userId: payload.user_id,
+              shopId,
+              currentPhase: 'FT2',
+            },
+            trx
+          );
+
+          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id);
+        });
+
+        break;
+      }
+
+      /**
+       * ---------------------------------------------------------
+       * LIFECYCLE — FIRST INSIGHT DELIVERED (EVENT-DRIVEN)
+       * ---------------------------------------------------------
+       *
+       * Source: FirstInsightService
+       * Contract:
+       * - Service emits immutable domain event
+       * - Projection performs durability mutation + audit
+       *
+       * Replay guarantees:
+       * - Idempotent via shops.first_insight_delivered flag
+       * - Cursor advanced atomically
+       */
+      case 'lifecycle/first_insight_delivered': {
+
+        const payload = domainEvent.event_payload as {
+          insight: string;
+          value: string;
+          orderCount: number;
+        };
+
+        await db.transaction(async (trx) => {
+
+          const cursorRow = await trx('projection_cursors')
+            .where({ projection_name: LIFECYCLE_PROJECTION })
+            .forUpdate()
+            .first<{ last_processed_event_id: number }>();
+
+          if (
+            cursorRow?.last_processed_event_id != null &&
+            domain_event_id <= cursorRow.last_processed_event_id
+          ) {
+            throw new Error(
+              `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+            );
+          }
+
+          const shopId = domainEvent.shop_id;
+
+          /**
+           * Idempotent update:
+           * Only flip if not already delivered.
+           */
+          const updated = await trx('shops')
+            .where({ id: shopId, first_insight_delivered: false })
+            .update({
+              first_insight_delivered: true,
+              updated_at: trx.fn.now(),
+            });
+
+          /**
+           * Write audit only if state actually changed.
+           */
+          if (updated > 0) {
+            await trx('activation_audit_events')
+              .insert({
+                event_id: crypto.randomUUID(),
+                event_type: 'FIRST_INSIGHT_DELIVERED',
+                shop_id: shopId,
+                occurred_at: trx.fn.now(),
+                payload,
+              });
+          }
+
+          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id);
+        });
+
+        break;
+      }
   
       default:
         break;

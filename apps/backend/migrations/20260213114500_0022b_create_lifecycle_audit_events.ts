@@ -9,8 +9,13 @@ export async function up(knex: Knex): Promise<void> {
     table.string('to_phase').notNullable();
     table.timestamp('occurred_at').notNullable().defaultTo(knex.fn.now());
 
+    /**
+     * DESIGN CONTRACT (v3):
+     * Lifecycle is SHOP-SCOPED.
+     * Prevent duplicate shop-level transitions.
+     */
     table.unique(
-      ['user_id', 'from_phase', 'to_phase'],
+      ['shop_id', 'from_phase', 'to_phase'],
       'lifecycle_audit_unique_transition'
     );
 

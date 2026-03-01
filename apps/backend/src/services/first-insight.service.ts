@@ -61,26 +61,61 @@ export class FirstInsightService {
         ? '501-1000'
         : '1000+';
 
-    // 5. Atomic persist + audit
-    await db.transaction(async trx => {
-      await trx('shops')
-        .where({ id: shopId })
-        .update({
-          first_insight_delivered: true,
-          updated_at: trx.fn.now(),
-        });
-
-      await trx('activation_audit_events').insert({
-        event_id: crypto.randomUUID(),
-        event_type: 'FIRST_INSIGHT_DELIVERED',
+    /**
+     * EMISSION IDEMPOTENCY GUARD
+     * --------------------------
+     * Prevent duplicate lifecycle/first_insight_delivered events.
+     * Canonical check against domain_events.
+     */
+    const existingEvent = await db('domain_events')
+      .where({
         shop_id: shopId,
-        occurred_at: trx.fn.now(),
-        payload: {
-          insight: 'orders_per_month_segment',
-          value: segment,
-          orderCount,
-        },
+        event_type: 'lifecycle/first_insight_delivered',
+      })
+      .first('id');
+
+    if (existingEvent) {
+      return { delivered: true, alreadyDelivered: true };
+    }
+
+    // 5. Atomic persist + audit
+    /**
+     * DOMAIN EVENT EMISSION — FIRST INSIGHT DELIVERED
+     * ------------------------------------------------
+     * Service no longer mutates durability state directly.
+     * Emits immutable domain event.
+     *
+     * Projection worker is responsible for:
+     * - Setting shops.first_insight_delivered = true
+     * - Writing activation_audit_events
+     *
+     * Guarantees:
+     * - Deterministic replay
+     * - No side-channel durability writes
+     */
+    await db.transaction(async trx => {
+
+      const externalEventId = `internal:lifecycle/first_insight_delivered:${shopId}:${Date.now()}`;
+
+      const [event] = await trx('domain_events')
+        .insert({
+          shop_id: shopId,
+          event_type: 'lifecycle/first_insight_delivered',
+          event_payload: {
+            insight: 'orders_per_month_segment',
+            value: segment,
+            orderCount,
+          },
+          event_time: trx.fn.now(),
+          event_version: 1,
+          external_event_id: externalEventId,
+        })
+        .returning(['id']);
+
+      await trx('domain_event_outbox').insert({
+        domain_event_id: event.id,
       });
+
     });
 
     return { delivered: true };

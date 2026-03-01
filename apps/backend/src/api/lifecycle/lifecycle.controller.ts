@@ -19,7 +19,6 @@ import { Request, Response } from 'express';
 import { LifecycleService } from '../../services/lifecycle.service.js';
 import db from '@lasyncro/backend-core/db.js';
 import { FT2EvaluatorService } from '../../services/ft2-evaluator.service.js';
-import { LifecycleTransitionService } from '../../services/lifecycle-transition.service.js';
 import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 export async function getLifecycle(req: Request, res: Response) {
@@ -83,6 +82,20 @@ export async function getLifecycle(req: Request, res: Response) {
  * MUST:
  * - Confirm endpoints MUST be idempotent on the target phase.
  */
+
+/**
+ * ARCHITECTURAL NOTE (EVENT-DRIVEN LIFECYCLE)
+ * --------------------------------------------
+ * FT2 confirmation emits a domain event.
+ * No lifecycle tables are mutated here.
+ *
+ * All state transitions must occur inside projection worker.
+ *
+ * This guarantees:
+ * - Deterministic rebuild
+ * - Replay purity
+ * - No controller-driven lifecycle mutation
+ */
 export async function confirmFt2(req: Request, res: Response) {
   try {
     if (!req.user || req.user.userId == null) {
@@ -91,8 +104,10 @@ export async function confirmFt2(req: Request, res: Response) {
 
     const userId = req.user.userId;
 
+    const shopContext = await requireShopContextForUser(userId);
+
     const snapshot = await db('user_lifecycle_snapshot')
-      .where({ user_id: userId })
+      .where({ shop_id: shopContext.shopId })
       .first<{ phase: string; shop_id: number }>();
 
     if (snapshot?.phase === 'FT2') {
@@ -118,51 +133,41 @@ export async function confirmFt2(req: Request, res: Response) {
     }
 
     /**
-     * ATOMIC FT2 PROMOTION:
-     * - Write durable FT2 latch
-     * - Write lifecycle audit
-     * - Update snapshot
-     * All must succeed or fail together.
+     * DOMAIN EVENT EMISSION — FT2 CONFIRMED
+     * --------------------------------------
+     * Controller no longer mutates lifecycle state directly.
+     * It emits an immutable domain event.
+     *
+     * Projection layer is responsible for:
+     * - Writing ft2_state
+     * - Writing expansion_eligibility_state
+     * - Updating lifecycle snapshot
+     *
+     * This preserves replay determinism.
      */
     await db.transaction(async trx => {
-      await trx('ft2_state')
+
+      const externalEventId = `internal:lifecycle/ft2_confirmed:${shopId}:${Date.now()}`;
+
+      const [event] = await trx('domain_events')
         .insert({
           shop_id: shopId,
-          completed_at: trx.fn.now(),
-          evaluator_version: evaluation.evaluatorVersion,
-          evaluation_snapshot: evaluation,
+          event_type: 'lifecycle/ft2_confirmed',
+          event_payload: {
+            user_id: userId,
+            evaluator_version: evaluation.evaluatorVersion,
+            evaluation_snapshot: evaluation,
+          },
+          event_time: trx.fn.now(),
+          event_version: 1,
+          external_event_id: externalEventId,
         })
-        .onConflict('shop_id')
-        .ignore();
+        .returning(['id']);
 
-      /**
-       * Dual-write: Durable FT2 eligibility state (v2 backbone)
-       *
-       * This table will replace ft2_state during read-switch.
-       * Eligibility snapshot persisted verbatim.
-       */
-      await trx('expansion_eligibility_state')
-        .insert({
-          shop_id: shopId,
-          eligible: true,
-          evaluator_version: evaluation.evaluatorVersion,
-          evaluation_snapshot: evaluation,
-          evaluated_at: trx.fn.now(),
-        })
-        .onConflict('shop_id')
-        .merge({
-          eligible: true,
-          evaluator_version: evaluation.evaluatorVersion,
-          evaluation_snapshot: evaluation,
-          evaluated_at: trx.fn.now(),
-          updated_at: trx.fn.now(),
-        });
+      await trx('domain_event_outbox').insert({
+        domain_event_id: event.id,
+      });
 
-      await LifecycleTransitionService.auditIfTransitioned(
-
-        { userId, shopId, currentPhase: 'FT2' },
-        trx
-      );
     });
 
     return res.status(200).json({ phase: 'FT2' });

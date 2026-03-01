@@ -3,19 +3,27 @@ import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('user_lifecycle_snapshot', table => {
-    table
-      .integer('user_id')
-      .notNullable()
-      .primary()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
-
+    /**
+     * DESIGN CONTRACT (v3):
+     * Lifecycle is SHOP-SCOPED.
+     * One lifecycle state per shop.
+     *
+     * user_id is retained for audit reference only.
+     * shop_id is the authoritative uniqueness boundary.
+     */
     table
       .integer('shop_id')
       .notNullable()
+      .primary()
       .references('id')
       .inTable('shops')
+      .onDelete('CASCADE');
+
+    table
+      .integer('user_id')
+      .notNullable()
+      .references('id')
+      .inTable('users')
       .onDelete('CASCADE');
 
     table
@@ -29,15 +37,9 @@ export async function up(knex: Knex): Promise<void> {
     /**
      * last_event_id
      * -------------
-     * Logical pointer to most recent lifecycle event.
-     *
-     * IMPORTANT:
-     * - No FK constraint here.
-     * - Snapshot must not be structurally coupled
-     *   to a specific ledger implementation.
-     * - Allows future switch from legacy
-     *   lifecycle_audit_events → lifecycle_events
-     *   without schema lock-in.
+     * UUID reference to lifecycle_events.event_id.
+     * No FK constraint to avoid migration order coupling.
+     * Consistency enforced at projection layer.
      */
     table
       .uuid('last_event_id')

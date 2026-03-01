@@ -71,8 +71,12 @@ export class LifecycleTransitionService {
 
     const { userId, shopId, currentPhase } = input;
 
+    /**
+     * SHOP-SCOPED LIFECYCLE:
+     * Snapshot uniqueness boundary = shop_id
+     */
     const snapshot = await trx('user_lifecycle_snapshot')
-      .where({ user_id: userId })
+      .where({ shop_id: shopId })
       .first<{ phase: UserLifecyclePhase }>();
 
     const previousPhase: UserLifecyclePhase =
@@ -94,9 +98,12 @@ export class LifecycleTransitionService {
       );
     }
 
+    /**
+     * SHOP-SCOPED UNIQUENESS CHECK
+     */
     const existing = await trx('lifecycle_audit_events')
       .where({
-        user_id: userId,
+        shop_id: shopId,
         from_phase: previousPhase,
         to_phase: currentPhase,
       })
@@ -116,7 +123,7 @@ export class LifecycleTransitionService {
         to_phase: currentPhase,
         occurred_at: occurredAt,
       })
-      .onConflict(['user_id', 'from_phase', 'to_phase'])
+      .onConflict(['shop_id', 'from_phase', 'to_phase'])
       .ignore();
 
     /**
@@ -150,7 +157,7 @@ export class LifecycleTransitionService {
         last_event_id: eventId,
         updated_at: trx.fn.now(),
       })
-      .onConflict('user_id')
+      .onConflict('shop_id')
       .merge({
         phase: currentPhase,
         since: occurredAt,
