@@ -5,11 +5,12 @@
  */
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'crypto';
+
 import { fileURLToPath } from 'url';
 import { getQueueChannel } from '../queue.js';
 import { initQueue } from '../queue.js';
 
-import { startOutboxDispatcher, stopOutboxDispatcher } from '../workers/outbox.dispatcher.js';
 import { startReconciliationConsumer } from '../workers/reconciliation/reconciliation.consumer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,23 +19,8 @@ dotenv.config({
   path: path.resolve(__dirname, '../../../../.env'),
 });
 
-import db from '@lasyncro/backend-core/db.js';
 import { projectDomainEvent } from '../worker.js';
-
-async function waitForOutboxDrain() {
-  while (true) {
-    const row = await db('integration_outbox')
-      .whereNull('published_at')
-      .count<{ count: string }>('id as count')
-      .first();
-
-    const remaining = Number(row?.count ?? 0);
-
-    if (remaining === 0) break;
-
-    await new Promise((r) => setTimeout(r, 500));
-  }
-}
+import db from '@lasyncro/backend-core/db.js';
 
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');
@@ -74,13 +60,12 @@ async function truncateProjections() {
       /**
        * OUTBOX MUST BE CLEARED FOR DETERMINISTIC REBUILD
        * -------------------------------------------------
-       * integration_outbox is projection-derived.
-       * Replaying events will re-emit version-coupled records.
-       * Keeping old rows violates unique constraint:
-       * (aggregate_type, aggregate_id, aggregate_version)
        */
-      integration_outbox,
+      domain_event_outbox,
 
+      /**
+       * ORDERS PROJECTION TABLES
+       */
       orders,
       order_line_items,
       order_revenue_units,
@@ -100,7 +85,22 @@ async function truncateProjections() {
       revenue_projection_daily,
       daily_operational_brief_snapshot,
 
-      inventory_movements
+      inventory_movements,
+
+      /**
+       * LIFECYCLE PROJECTION TABLES
+       * ----------------------------
+       * REQUIRED for deterministic rebuild.
+       * These tables are projection-derived and must NOT survive replay.
+       */
+      user_lifecycle_snapshot,
+      lifecycle_audit_events,
+      lifecycle_events,
+
+      ft0_state,
+      ft2_state,
+      system_readiness_state,
+      expansion_eligibility_state
 
     RESTART IDENTITY CASCADE;
   `);
@@ -129,6 +129,37 @@ async function replayEvents() {
   }
 }
 
+/**
+ * DETERMINISTIC STATE HASH
+ * ------------------------
+ * Produces canonical SHA256 hash of projection state.
+ * Used for replay validation.
+ */
+async function computeStateHash(): Promise<string> {
+  const tables = [
+    'orders',
+    'order_line_items',
+    'order_revenue_units',
+    'order_age_snapshot',
+    'order_margin_snapshot',
+    'order_risk_snapshot',
+    'orders_operational_control_snapshot',
+    'projection_cursors',
+  ];
+
+  const hash = crypto.createHash('sha256');
+
+  for (const table of tables) {
+    const rows = await db(table)
+      .select('*')
+      .orderByRaw('1'); // deterministic ordering
+
+    hash.update(JSON.stringify(rows));
+  }
+
+  return hash.digest('hex');
+}
+
 async function main() {
   console.log('[REBUILD] Starting full deterministic rebuild...');
 
@@ -140,11 +171,10 @@ async function main() {
   await initQueue();
   await truncateProjections();
   startReconciliationConsumer();
-  startOutboxDispatcher();
   await replayEvents();
 
-  await waitForOutboxDrain();
-  stopOutboxDispatcher();
+  const stateHash = await computeStateHash();
+  console.log('[REBUILD_STATE_HASH]', stateHash);
 
   console.log('[REBUILD] Completed successfully.');
   process.exit(0);

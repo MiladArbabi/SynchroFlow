@@ -346,11 +346,58 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     // --- Post-commit side effects ---
     await EntitlementsService.grantDefaultFreeTierForShop(result.shopId);
 
+    /**
+     * SYNC JOB ENQUEUE (REQUIRED)
+     * ----------------------------
+     * integration/sync_requested emits durability fact.
+     * Sync worker still requires explicit queue job.
+     *
+     * Removing this breaks ingestion + lifecycle chain.
+     */
     const syncChannel = getQueueChannel('sync_jobs');
+
     syncChannel.sendToQueue(
       'sync_jobs',
-      Buffer.from(JSON.stringify({ integrationId: result.integration.id }))
+      Buffer.from(
+        JSON.stringify({
+          integrationId: result.integration.id,
+        })
+      ),
+      { persistent: true }
     );
+
+    console.info('[SYNC_JOB_ENQUEUED]', {
+      integrationId: result.integration.id,
+      shopId: result.shopId,
+    });
+
+    /**
+     * DOMAIN EVENT EMISSION — SYNC REQUESTED
+     * --------------------------------------
+     * No direct queue publishing allowed.
+     * Sync must originate from immutable domain event.
+     * Projection or downstream worker is responsible for execution.
+     */
+    await db.transaction(async trx => {
+      const externalEventId = `internal:integration/sync_requested:${result.integration.id}:${Date.now()}`;
+
+      const [event] = await trx('domain_events')
+        .insert({
+          shop_id: result.shopId,
+          event_type: 'integration/sync_requested',
+          event_payload: {
+            integration_id: result.integration.id,
+          },
+          event_time: trx.fn.now(),
+          event_version: 1,
+          external_event_id: externalEventId,
+        })
+        .returning(['id']);
+
+      await trx('domain_event_outbox').insert({
+        domain_event_id: event.id,
+      });
+    });
 
     // 🔒 Security invariants
     if (!oauthContext.userId) {
@@ -549,10 +596,36 @@ export const triggerManualSync = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Integration not found.' });
     }
 
-    // Queue the sync job
-    const syncChannel = getQueueChannel('sync_jobs');
-    const jobPayload = { integrationId: parseInt(integrationId) };
-    syncChannel.sendToQueue('sync_jobs', Buffer.from(JSON.stringify(jobPayload)));
+    /**
+     * DOMAIN EVENT EMISSION — MANUAL SYNC REQUESTED
+     * ---------------------------------------------
+     * Direct queue publishing is forbidden.
+     * Manual sync must originate from immutable domain event.
+     */
+    await db.transaction(async trx => {
+      const externalEventId = `internal:integration/manual_sync_requested:${integrationId}:${Date.now()}`;
+
+      const [event] = await trx('domain_events')
+        .insert({
+          shop_id: shopId,
+          event_type: 'integration/manual_sync_requested',
+          event_payload: {
+            integration_id: parseInt(integrationId),
+          },
+          event_time: trx.fn.now(),
+          event_version: 1,
+          external_event_id: externalEventId,
+        })
+        .returning(['id']);
+
+      await trx('domain_event_outbox').insert({
+        domain_event_id: event.id,
+      });
+    });
+
+    console.info('[integration][manual_sync_requested]', {
+      integrationId: parseInt(integrationId),
+    });
     
     console.log(`Manually queued sync job for integration ID: ${integrationId}`);
     

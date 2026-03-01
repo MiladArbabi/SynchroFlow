@@ -16,7 +16,6 @@ import { startWorker as startEventWorker } from './worker.js';
 import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
 import { startReconciliationConsumer } from './workers/reconciliation/index.js';
 
-import { startOutboxDispatcher } from './workers/outbox.dispatcher.js';
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
 
 async function start() {

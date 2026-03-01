@@ -2,14 +2,13 @@
 import { getQueueChannel } from './queue.js';
 import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
+import { Knex } from 'knex';
+
 import { resolveExternalOrderId } from './services/identity/resolveExternalOrder.service.js';
 import OrderFulfillmentIngestionService from './services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 
 import { FirstInsightService } from './services/first-insight.service.js';
 import { FT0CompletionService } from './services/ft0-completion.service.js';
-
-import OutboxService from './services/outbox/outbox.service.js';
-import { Knex } from 'knex';
 
 /**
  * FT0 EXECUTION LATCH (PROCESS-SCOPED)
@@ -151,23 +150,18 @@ async function projectDomainEventFromMessage(
         ? LIFECYCLE_PROJECTION
         : ORDERS_PROJECTION;
 
-    /**
-     * MONOTONIC CURSOR INVARIANT
-     * --------------------------
-     * Strictly increasing event IDs per stream.
+   /**
+     * TRANSACTIONAL CURSOR ENFORCEMENT ONLY
+     * --------------------------------------
+     * Strict monotonic + contiguous invariants
+     * must be enforced inside the projection transaction
+     * using SELECT ... FOR UPDATE.
+     *
+     * Queue delivery order is NOT a replay guarantee.
+     * The database is the canonical ordering authority.
+     *
+     * Therefore, no pre-transaction cursor checks are allowed here.
      */
-    const cursor = await db('projection_cursors')
-      .where({ projection_name: projectionName })
-      .first<{ last_processed_event_id: number }>();
-
-    if (
-      cursor?.last_processed_event_id != null &&
-      domain_event_id <= cursor.last_processed_event_id
-    ) {
-      throw new Error(
-        `[PROJECTION_CURSOR_REGRESSION] event_id=${domain_event_id} cursor=${cursor.last_processed_event_id}`
-      );
-    }
 
     /**
      * CANONICAL EVENT TIME CHECK
@@ -439,18 +433,15 @@ async function projectDomainEventFromMessage(
             throw new Error('[ORDER_VERSION_MISSING_AFTER_CREATE]');
           }
 
-          await OutboxService.enqueue(
-            {
-              aggregateType: 'order',
-              aggregateId: lasyncroOrderId,
-              eventType: 'reconciliation.requested',
-              payload: {
-                lasyncroOrderId,
-                aggregateVersion: orderRow.aggregate_version,
-              },
-            },
-            trx
-          );
+          /**
+           * RECONCILIATION EMISSION REMOVED
+           * --------------------------------
+           * Projection layer must never emit domain events.
+           * Reconciliation must be triggered by ingestion or
+           * a separate orchestration service, not projection.
+           *
+           * This preserves deterministic replay.
+           */
 
           /**
            * LIFECYCLE BOOTSTRAP (v3)
@@ -570,18 +561,15 @@ async function projectDomainEventFromMessage(
             .select('aggregate_version')
             .first();
 
-          await OutboxService.enqueue(
-            {
-              aggregateType: 'order',
-              aggregateId: lasyncroOrderId,
-              eventType: 'reconciliation.requested',
-              payload: { 
-                lasyncroOrderId,
-                aggregateVersion: aggregate_version,
-               },
-            },
-            trx
-          );
+          /**
+           * RECONCILIATION EMISSION REMOVED
+           * --------------------------------
+           * Projection layer must never emit domain events.
+           * Reconciliation must be triggered by ingestion or
+           * a separate orchestration service, not projection.
+           *
+           * This preserves deterministic replay.
+           */
 
           await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
         });
@@ -685,18 +673,15 @@ async function projectDomainEventFromMessage(
           .select('aggregate_version')
           .first();
 
-        await OutboxService.enqueue(
-          {
-            aggregateType: 'order',
-            aggregateId: lasyncroOrderId,
-            eventType: 'reconciliation.requested',
-            payload: {
-              lasyncroOrderId,
-              aggregateVersion: aggregate_version,
-            },
-          },
-          trx
-        );
+        /**
+           * RECONCILIATION EMISSION REMOVED
+           * --------------------------------
+           * Projection layer must never emit domain events.
+           * Reconciliation must be triggered by ingestion or
+           * a separate orchestration service, not projection.
+           *
+           * This preserves deterministic replay.
+           */
 
       await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
       });
@@ -886,22 +871,14 @@ async function projectDomainEventFromMessage(
           .first();
 
         /**
-         * VERSION-COUPLED OUTBOX EVENT
-         * ------------------------------
-         * Enables strict per-aggregate ordering.
+         * RECONCILIATION EMISSION REMOVED
+         * --------------------------------
+         * Projection layer must never emit domain events.
+         * Reconciliation must be triggered by ingestion or
+         * a separate orchestration service, not projection.
+         *
+         * This preserves deterministic replay.
          */
-        await OutboxService.enqueue(
-          {
-            aggregateType: 'order',
-            aggregateId: lasyncroOrderId,
-            eventType: 'reconciliation.requested',
-            payload: {
-              lasyncroOrderId,
-              aggregateVersion: aggregate_version,
-            },
-          },
-          trx
-        );
 
         await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
       });

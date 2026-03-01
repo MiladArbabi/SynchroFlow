@@ -60,7 +60,29 @@ export class FT0CompletionService {
     shopId: number
   ): Promise<{ completed: boolean; alreadyCompleted?: boolean }> {
 
-    // Fast path: already completed
+    /**
+     * CANONICAL COMPLETION GUARD
+     * --------------------------
+     * Rebuild replays may re-trigger evaluation multiple times.
+     * Domain event log is source-of-truth.
+     *
+     * If lifecycle/ft0_completed already exists,
+     * skip evaluation immediately.
+     */
+    const existingEvent = await db('domain_events')
+      .where({
+        shop_id: shopId,
+        event_type: 'lifecycle/ft0_completed',
+      })
+      .first('id');
+
+    if (existingEvent) {
+      return { completed: true, alreadyCompleted: true };
+    }
+
+    /**
+     * Projection durability guard (secondary)
+     */
     const existing = await db('ft0_state')
       .where({ shop_id: shopId })
       .first('shop_id');
@@ -135,23 +157,6 @@ export class FT0CompletionService {
       shopId,
       orderCount,
     });
-
-    /**
-     * EMISSION IDEMPOTENCY GUARD
-     * --------------------------
-     * Prevent duplicate lifecycle/ft0_completed emissions.
-     * Must check canonical domain_events log.
-     */
-    const existingEvent = await db('domain_events')
-      .where({
-        shop_id: shopId,
-        event_type: 'lifecycle/ft0_completed',
-      })
-      .first('id');
-
-    if (existingEvent) {
-      return { completed: true, alreadyCompleted: true };
-    }
 
     /**
      * Atomic FT0 completion.

@@ -110,7 +110,25 @@ export class WebhookRouter {
       });
     }
 
+    /**
+     * DISPATCH MODE RESOLUTION (CANONICAL SAFE)
+     * ------------------------------------------
+     * Canonical domain-event layer replaces legacy webhook queue.
+     *
+     * If canonical layer is enabled (DISABLE_CANONICAL_LAYER !== 'true'),
+     * we MUST force synchronous handler execution.
+     *
+     * Queued mode is forbidden without webhook worker.
+     */
     let dispatchMode = getWebhookDispatchMode();
+
+    const canonicalEnabled =
+      process.env.DISABLE_CANONICAL_LAYER !== 'true';
+
+    if (canonicalEnabled && dispatchMode === 'queued') {
+      console.warn('[WEBHOOK_MODE_OVERRIDE] Forcing sync due to canonical layer');
+      dispatchMode = 'sync';
+    }
 
     console.log('[ROUTER ENV CHECK]', {
       WORKER_RUNTIME: process.env.WORKER_RUNTIME,
@@ -130,6 +148,20 @@ export class WebhookRouter {
       eventType: normalizedEventType,
       registeredKeys: Array.from(WebhookRouter.routes.keys()),
     });
+
+    /**
+     * HARD GUARD — queued mode requires webhook worker.
+     * -------------------------------------------------
+     * If canonical layer is active and we reach here,
+     * ingestion would be short-circuited.
+     */
+    if (
+      dispatchMode === 'queued' &&
+      process.env.DISABLE_CANONICAL_LAYER !== 'true'
+    ) {
+      console.error('[WEBHOOK_QUEUE_FORBIDDEN_UNDER_CANONICAL]');
+      throw new Error('Webhook queued mode not allowed under canonical layer');
+    }
 
     if (dispatchMode === 'queued' && !(envelope as any).__fromQueue) {
       await enqueueWebhookEnvelope(envelope);

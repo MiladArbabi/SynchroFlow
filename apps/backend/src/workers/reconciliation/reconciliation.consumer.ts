@@ -39,7 +39,13 @@ export function startReconciliationConsumer() {
       },
     }),
 
-    channel.prefetch(5),
+    /**
+     * INVARIANT: STRICT SINGLE-FLIGHT PROCESSING
+     * -------------------------------------------
+     * Must remain 1 to preserve deterministic ordering guarantees.
+     * Changing this breaks projection monotonicity assumptions.
+     */
+    channel.prefetch(1),
   ]);
   });
 

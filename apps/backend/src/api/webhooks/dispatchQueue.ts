@@ -14,9 +14,9 @@
 // Envelope MUST NOT be serialized directly.
 //
 
+import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from './types.js';
 import { WebhookDispatchJob } from './types.dispatchJob.js';
-import { getQueueChannel } from '../../queue.js';
 
 const QUEUE_NAME = 'webhook.dispatch.v1';
 
@@ -24,7 +24,6 @@ export async function enqueueWebhookEnvelope(
   envelope: WebhookEnvelope
 ): Promise<void> {
   try {
-    const channel = getQueueChannel(QUEUE_NAME);
 
     /**
      * Construct canonical dispatch job.
@@ -41,20 +40,56 @@ export async function enqueueWebhookEnvelope(
       __fromQueue: true,
     };
 
-    const payload = Buffer.from(JSON.stringify(job), 'utf8');
-
-    await channel.addSetup(async (ch: any) => {
-      await ch.assertQueue(QUEUE_NAME, { durable: true });
-    });
-
-    channel.sendToQueue(QUEUE_NAME, payload, {
-      persistent: true,
-    });
-
     console.log('[WEBHOOK ENQUEUED]', {
       integration: job.integration,
       eventType: job.eventType,
       shopDomain: job.shopDomain,
+      eventId: job.eventId,
+    });
+
+    /**
+     * INVARIANT: shopId is mandatory for domain event emission.
+     * ----------------------------------------------------------
+     * Webhook without shop context is a structural violation.
+     * Fail fast to avoid corrupt domain state.
+     */
+    if (typeof envelope.shopId !== 'number') {
+      console.error('[WEBHOOK_INVARIANT_VIOLATION] missing shopId', {
+        integration: job.integration,
+        eventId: job.eventId,
+        eventType: job.eventType,
+      });
+      throw new Error('WEBHOOK_SHOP_ID_REQUIRED');
+    }
+
+    /**
+     * DOMAIN EVENT EMISSION — WEBHOOK RECEIVED
+     * ----------------------------------------
+     * Webhooks must enter the system as immutable domain events.
+     * No direct broker publishing allowed.
+     */
+    await db.transaction(async trx => {
+      const externalEventId = `webhook:${job.integration}:${job.eventId}`;
+
+      const [event] = await trx('domain_events')
+        .insert({
+          shop_id: envelope.shopId,
+          event_type: `webhook/${job.eventType}`,
+          event_payload: job,
+          event_time: trx.fn.now(),
+          event_version: 1,
+          external_event_id: externalEventId,
+        })
+        .returning(['id']);
+
+      await trx('domain_event_outbox').insert({
+        domain_event_id: event.id,
+      });
+    });
+
+    console.info('[WEBHOOK_DOMAIN_EVENT_EMITTED]', {
+      integration: job.integration,
+      eventType: job.eventType,
       eventId: job.eventId,
     });
 
