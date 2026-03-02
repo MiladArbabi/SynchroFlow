@@ -5,6 +5,32 @@ import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
 import { computeObligationFlagsForOrders } from '../../services/order-execution-intelligence/obligationFlags.worker.js';
+import crypto from 'crypto';
+
+/**
+ * DETERMINISTIC ID GENERATOR
+ * --------------------------
+ * Stable SHA256-based identifier derived from:
+ * - entity type
+ * - order id
+ * - aggregate version
+ *
+ * Guarantees:
+ * - Replay determinism
+ * - Cross-node consistency
+ * - No wall-clock influence
+ */
+function deterministicId(
+  entity: string,
+  orderId: string,
+  aggregateVersion: number
+): string {
+  return crypto
+    .createHash('sha256')
+    .update(`${entity}:${orderId}:${aggregateVersion}`)
+    .digest('hex')
+    .slice(0, 32);
+}
 
 export async function reconcileOrderFulfillment(
   lasyncroOrderId: string,
@@ -62,7 +88,7 @@ export async function reconcileOrderFulfillment(
 
     await writeOrderRevenueUnits(lasyncroOrderId, trx);
 
-        /**
+    /**
      * SNAPSHOT DATE (Event-Time Anchored)
      * -----------------------------------
      * Must be derived from deterministic domain event-time.
@@ -75,6 +101,21 @@ export async function reconcileOrderFulfillment(
      * - Replay determinism
      * - Cross-node consistency
      * - No execution-time drift
+     */
+
+    /**
+     * EVENT-TIME MATERIALIZATION RULE
+     * --------------------------------
+     * All projection timestamps MUST derive from eventAnchor.
+     *
+     * Forbidden inside reconciliation:
+     * - trx.fn.now()
+     * - Date.now()
+     * - new Date() without anchor
+     *
+     * This preserves:
+     * - Deterministic rebuilds
+     * - Stable state hashing
      */
     const eventAnchor =
       order.order_updated_at ??
@@ -143,12 +184,16 @@ export async function reconcileOrderFulfillment(
      */
     await trx('order_fulfillment_status')
       .insert({
-        lasyncro_fulfillment_id: crypto.randomUUID(),
+        lasyncro_fulfillment_id: deterministicId(
+          'order_fulfillment_status',
+          lasyncroOrderId,
+          aggregateVersion
+        ),
         lasyncro_order_id: lasyncroOrderId,
         status: 'pending', // enum-aligned
-        status_updated_at: trx.fn.now(),
-        created_at: trx.fn.now(),
-        updated_at: trx.fn.now(),
+        status_updated_at: new Date(eventAnchor),
+        created_at: new Date(eventAnchor),
+        updated_at: new Date(eventAnchor),
       })
       .onConflict('lasyncro_order_id')
       .ignore();
@@ -203,11 +248,15 @@ export async function reconcileOrderFulfillment(
       if (isActive && !activeEvent) {
         // OPEN
         await trx('order_constraint_events').insert({
-          constraint_event_id: crypto.randomUUID(),
+          constraint_event_id: deterministicId(
+            `order_constraint_event:${type}`,
+            lasyncroOrderId,
+            aggregateVersion
+          ),
           lasyncro_order_id: lasyncroOrderId,
           shop_id: order.shop_id,
           constraint_type: type,
-          started_at: trx.fn.now(),
+          started_at: new Date(eventAnchor),
           resolved_at: null,
           is_active: true,
         });
@@ -220,7 +269,7 @@ export async function reconcileOrderFulfillment(
             constraint_event_id: activeEvent.constraint_event_id,
           })
           .update({
-            resolved_at: trx.fn.now(),
+            resolved_at: new Date(eventAnchor),
             is_active: false,
           });
       }
@@ -269,6 +318,16 @@ export async function reconcileOrderFulfillment(
         'runet.lasyncro_revenue_unit_id'
       )
       .where('runet.lasyncro_order_id', lasyncroOrderId)
+      /**
+       * DETERMINISTIC ROW ORDERING
+       * ---------------------------
+       * Aggregation loops MUST operate on a stable row order.
+       * Postgres does not guarantee ordering without ORDER BY.
+       *
+       * We enforce ordering by revenue_unit_id to preserve
+       * replay determinism and floating-point stability.
+       */
+      .orderBy('runet.lasyncro_revenue_unit_id', 'asc')
       .select(
         'runet.net_revenue',
         'runet.net_quantity',
@@ -347,7 +406,7 @@ export async function reconcileOrderFulfillment(
         estimated_cost: estimatedCost,
         gross_margin: grossMargin,
         margin_pct: marginPct,
-        evaluated_at: trx.fn.now(),
+        evaluated_at: new Date(eventAnchor),
       })
       .onConflict('lasyncro_order_id')
       .merge();
@@ -575,7 +634,7 @@ export async function reconcileOrderFulfillment(
         fraud_score: fraudScore,
         return_probability: returnProbability,
         order_health_score: healthScore,
-        evaluated_at: trx.fn.now(),
+        evaluated_at: new Date(eventAnchor),
       })
       .onConflict('lasyncro_order_id')
       .merge();
@@ -599,7 +658,7 @@ export async function reconcileOrderFulfillment(
         is_shipping_sla_breached: isShippingSlaBreached,
         is_delivery_sla_breached: isDeliverySlaBreached,
 
-        snapshot_generated_at: trx.fn.now(),
+        snapshot_generated_at: new Date(eventAnchor),
       })
       .onConflict('lasyncro_order_id')
       .merge();
@@ -635,6 +694,13 @@ export async function reconcileOrderFulfillment(
         .where('o.shop_id', order.shop_id)
         .andWhereRaw('DATE(o.order_created_at) = ?', [revenueDate])
         .groupByRaw('DATE(o.order_created_at)')
+         /**
+         * DETERMINISTIC GROUP RESULT ORDERING
+         * -----------------------------------
+         * GROUP BY does not guarantee row order.
+         * Stable ordering is required for replay hashing.
+         */
+        .orderByRaw('DATE(o.order_created_at) ASC')
         .select(
           trx.raw('SUM(runet.net_revenue) as gross_revenue'),
           trx.raw('COUNT(DISTINCT o.lasyncro_order_id) as order_count'),
@@ -657,7 +723,7 @@ export async function reconcileOrderFulfillment(
           gross_revenue: Number(dailyRows?.gross_revenue ?? 0),
           order_count: Number(dailyRows?.order_count ?? 0),
           at_risk_revenue: Number(dailyRows?.at_risk_revenue ?? 0),
-          evaluated_at: trx.fn.now(),
+          evaluated_at: new Date(eventAnchor),
         })
         .onConflict(['shop_id', 'revenue_date'])
         .merge();
@@ -753,7 +819,7 @@ export async function reconcileOrderFulfillment(
         cash_realized_today: Number(cashToday?.sum ?? 0),
         refund_exposure: Number(refundExposure?.sum ?? 0),
         top_10_priority_order_ids: JSON.stringify(topPriorityOrders ?? []),
-        evaluated_at: trx.fn.now(),
+        evaluated_at: new Date(eventAnchor),
       })
       .onConflict(['shop_id', 'brief_date'])
       .merge();
@@ -1079,7 +1145,7 @@ export async function reconcileOrderFulfillment(
           queue_ready_to_ship: Number(queueReadyToShip?.count ?? 0),
           queue_awaiting_customer: Number(queueAwaitingCustomer?.count ?? 0),
 
-          evaluated_at: trx.fn.now(),
+          evaluated_at: new Date(eventAnchor),
         })
         .onConflict(['shop_id', 'snapshot_date'])
         .merge();

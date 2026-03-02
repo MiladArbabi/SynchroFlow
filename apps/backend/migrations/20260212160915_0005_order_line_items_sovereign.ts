@@ -36,13 +36,8 @@ export async function up(knex: Knex): Promise<void> {
     table.string('platform').nullable();
     table.string('external_line_item_id').nullable();
 
-    table.timestamp('created_at', { useTz: true })
-      .notNullable()
-      .defaultTo(knex.fn.now());
-
-    table.timestamp('updated_at', { useTz: true })
-      .notNullable()
-      .defaultTo(knex.fn.now());
+    table.timestamp('created_at', { useTz: true }).notNullable();
+    table.timestamp('updated_at', { useTz: true }).notNullable();
 
     // Indexes
     table.index(['lasyncro_order_id']);

@@ -6,12 +6,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import crypto from 'crypto';
-
 import { fileURLToPath } from 'url';
-import { getQueueChannel } from '../queue.js';
-import { initQueue } from '../queue.js';
-
-import { startReconciliationConsumer } from '../workers/reconciliation/reconciliation.consumer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,23 +21,12 @@ async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');
 
   /**
-   * PROJECTION QUEUE PURGE
-   * -----------------------
-   * Deterministic rebuild requires a clean projection queue.
-   * Purge must execute only after channel is connected.
+   * REBUILD PURITY RULE
+   * -------------------
+   * Rebuild must not interact with RabbitMQ.
+   * Projection replay is fully DB-driven.
    */
-  try {
-    const channel = getQueueChannel('events');
-
-    await channel.addSetup(async (ch) => {
-      await ch.purgeQueue('events');
-    });
-
-    console.log('[REBUILD] Projection queue purged.');
-  } catch (err) {
-    console.error('[REBUILD_QUEUE_PURGE_FAILED]', err);
-    throw err;
-  }
+  console.log('[REBUILD] Queue interaction skipped (deterministic mode)');
 
   /**
    * FULL PROJECTION RESET
@@ -150,11 +134,30 @@ async function computeStateHash(): Promise<string> {
   const hash = crypto.createHash('sha256');
 
   for (const table of tables) {
+    /**
+     * DETERMINISTIC COLUMN ORDER
+     * --------------------------
+     * Object.keys() enumeration order is not guaranteed stable
+     * across executions.
+     * We must sort column names lexicographically before using
+     * them for ORDER BY.
+     */
+    const columns = Object
+      .keys(await db(table).columnInfo())
+      .sort();
+
     const rows = await db(table)
       .select('*')
-      .orderByRaw('1'); // deterministic ordering
+      .orderBy(columns);
 
-    hash.update(JSON.stringify(rows));
+    const tableHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(rows))
+      .digest('hex');
+
+    console.log(`[REBUILD_TABLE_HASH] ${table} ${tableHash}`);
+
+    hash.update(tableHash);
   }
 
   return hash.digest('hex');
@@ -168,10 +171,16 @@ async function main() {
    * --------------------
    * Required before purgeQueue().
    */
-  await initQueue();
   await truncateProjections();
-  startReconciliationConsumer();
   await replayEvents();
+
+  /**
+   * REBUILD PURITY RULE
+   * -------------------
+   * No queue initialization.
+   * No consumer startup.
+   * Deterministic replay only.
+   */
 
   const stateHash = await computeStateHash();
   console.log('[REBUILD_STATE_HASH]', stateHash);

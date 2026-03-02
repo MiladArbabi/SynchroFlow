@@ -132,21 +132,8 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo(0);
 
-    /**
-     * RECONCILIATION BOUNDARY
-     * -----------------------
-     * Marks the last successful reconciliation pass.
-     *
-     * Worker must reconcile only when:
-     *   last_reconciled_at IS NULL
-     *   OR order_updated_at > last_reconciled_at
-     *
-     * This enforces delta-based reconciliation
-     * and prevents full-dataset rewrites.
-     */
-
-
-    table.timestamps(true, true);
+    table.timestamp('created_at', { useTz: true }).notNullable();
+    table.timestamp('updated_at', { useTz: true }).notNullable();
 
     table.index(['shop_id', 'order_created_at']);
     table.index(['shop_id', 'customer_hashed_id']);

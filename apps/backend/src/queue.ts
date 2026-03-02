@@ -2,7 +2,6 @@
 
 import amqp from 'amqp-connection-manager';
 import { AmqpConnectionManager, ChannelWrapper } from 'amqp-connection-manager';
-import { Channel } from 'amqplib';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672';
 // Heartbeat / reconnect tuning (seconds). Allows overriding via env in CI/dev.
@@ -13,29 +12,22 @@ const RECONNECT: number = Number(process.env.RABBITMQ_RECONNECT_SECONDS || proce
 // Set DISABLE_QUEUE=1 in jest.setup (we already do this for tests).
 export let connection: AmqpConnectionManager | null = null;
 
+/**
+ * CRITICAL ARCHITECTURAL RULE
+ * ----------------------------
+ * Queue connection MUST NEVER initialize at module load time.
+ *
+ * All connections must be established explicitly via initQueue().
+ *
+ * This guarantees:
+ * - Deterministic CLI rebuilds
+ * - No hidden side effects on import
+ * - Predictable runtime boot order
+ */
+
 // extra safety: enforce disable in test env too
 if (process.env.NODE_ENV === 'test') {
   process.env.DISABLE_QUEUE = '1';
-}
-
-if (process.env.DISABLE_QUEUE === '1') {
-  // Tests set this env var to avoid real network connections and log noise.
-  // Provide a null connection and let getQueueChannel return a no-op channel.
-  // Keep a lightweight debug log so CI can confirm opt-out behaviour.
-  // eslint-disable-next-line no-console
-  console.log('[api/queue.ts] Queue disabled via DISABLE_QUEUE=1 - using no-op channel for tests');
-} else {
-  // 1. Add heartbeat to keep connection alive and detect drops faster
-  connection = amqp.connect([RABBITMQ_URL], {
-    heartbeatIntervalInSeconds: 5,
-    reconnectTimeInSeconds: 5,
-  });
-
-  connection.on('connect', () => console.log('[api/queue.ts] Connected to RabbitMQ'));
-  connection.on('disconnect', (e: { err: Error }) => {
-      // Use console.error so it stands out in logs
-      console.error('[api/queue.ts] Disconnected from RabbitMQ:', e.err?.message);
-  });
 }
 
 const channels = new Map<string, ChannelWrapper>();

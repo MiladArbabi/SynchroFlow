@@ -2,11 +2,7 @@
 import { getQueueChannel } from './queue.js';
 import db from '@lasyncro/backend-core/db.js';
 import CryptoJS from 'crypto-js';
-import { performInitialSync } from './services/shopify.service.js';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service.js';
-
-import { FirstInsightService } from './services/first-insight.service.js';
-import { FT0CompletionService } from './services/ft0-completion.service.js';
 
 // --- Helper function for decryption ---
 const decryptToken = (encryptedToken: string): string => {
@@ -49,7 +45,7 @@ const validateIntegration = (integration: any): {
 };
 
 const SYNC_QUEUE_NAME = 'sync_jobs';
-const syncChannel = getQueueChannel(SYNC_QUEUE_NAME);
+let syncChannel: ReturnType<typeof getQueueChannel>;
 
 export async function processSyncJob(msg: { content: Buffer } | null) {
   if (msg === null) {
@@ -150,6 +146,10 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 // This function starts the consumer
 export function startSyncWorker() {
   console.log('[sync.worker] Starting Sync worker...');
+
+  syncChannel = getQueueChannel(SYNC_QUEUE_NAME);
+
   syncChannel.consume(SYNC_QUEUE_NAME, processSyncJob, { noAck: false });
+
   console.log('[sync.worker] Sync worker started. Waiting for jobs...');
 }

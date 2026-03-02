@@ -45,18 +45,35 @@ const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 async function advanceCursor(
   trx: Knex.Transaction,
   projectionName: string,
-  domain_event_id: number
+  domain_event_id: number,
+  eventTime: Date
 ) {
   await trx('projection_cursors')
     .insert({
       projection_name: projectionName,
       last_processed_event_id: domain_event_id,
-      updated_at: trx.fn.now(),
+      /**
+       * DETERMINISTIC CURSOR TIME
+       * -------------------------
+       * Cursor timestamps must derive from canonical
+       * domain event_time.
+       *
+       * Wall-clock time breaks deterministic rebuild.
+       */
+      updated_at: eventTime,
     })
     .onConflict('projection_name')
     .merge({
       last_processed_event_id: domain_event_id,
-      updated_at: trx.fn.now(),
+      /**
+       * DETERMINISTIC CURSOR TIME
+       * -------------------------
+       * Cursor timestamps must derive from canonical
+       * domain event_time.
+       *
+       * Wall-clock time breaks deterministic rebuild.
+       */
+      updated_at: eventTime,
     });
 }
 
@@ -297,6 +314,8 @@ async function projectDomainEventFromMessage(
               order_updated_at: canonicalEventTime,
               payment_state: 'unpaid',
               aggregate_version: 1,
+              created_at: canonicalEventTime,
+              updated_at: canonicalEventTime,
             });
 
             await trx('external_order_identity_map')
@@ -414,6 +433,8 @@ async function projectDomainEventFromMessage(
                   line_total: unitPrice * quantity,
                   platform: 'shopify',
                   external_line_item_id: li.id,
+                  created_at: canonicalEventTime,
+                  updated_at: canonicalEventTime,
                 })
                 .onConflict(['platform', 'external_line_item_id'])
                 .ignore();
@@ -466,6 +487,9 @@ async function projectDomainEventFromMessage(
            * Must run AFTER insight emission attempt.
            */
           const shopId = domainEvent.shop_id;
+          const eventRow = await trx('domain_events')
+            .where({ id: domain_event_id })
+            .first();
 
           if (!ft0InFlight.has(shopId)) {
             ft0InFlight.add(shopId);
@@ -476,7 +500,7 @@ async function projectDomainEventFromMessage(
             }
           }
 
-          await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
+          await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id, eventRow.event_time);
         });
 
         break;
@@ -529,6 +553,9 @@ async function projectDomainEventFromMessage(
          * Raw payload timestamps are forbidden beyond ingestion.
          */
         const paymentTimestamp = canonicalEventTime;
+        const eventRow = await trx('domain_events')
+          .where({ id: domain_event_id })
+          .first();
 
           /**
            * CASH REALIZATION COMMIT
@@ -549,7 +576,8 @@ async function projectDomainEventFromMessage(
 
               // Event-time anchored mutation
               order_updated_at: paymentTimestamp,
-            });
+              updated_at: paymentTimestamp,
+          });
 
           /**
            * FETCH CURRENT AGGREGATE VERSION
@@ -571,7 +599,7 @@ async function projectDomainEventFromMessage(
            * This preserves deterministic replay.
            */
 
-          await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
+          await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id, eventRow.event_time);
         });
 
         break;
@@ -683,7 +711,11 @@ async function projectDomainEventFromMessage(
            * This preserves deterministic replay.
            */
 
-      await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
+        const eventRow = await trx('domain_events')
+            .where({ id: domain_event_id })
+            .first();
+
+        await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id, eventRow.event_time);
       });
 
         break;
@@ -880,7 +912,11 @@ async function projectDomainEventFromMessage(
          * This preserves deterministic replay.
          */
 
-        await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id);
+        const eventRow = await trx('domain_events')
+            .where({ id: domain_event_id })
+            .first();
+
+        await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id, eventRow.event_time);
       });
 
       break;
@@ -923,7 +959,12 @@ async function projectDomainEventFromMessage(
             );
           }
 
+          const eventRow = await trx('domain_events')
+            .where({ id: domain_event_id })
+            .first();
+
           const shopId = domainEvent.shop_id;
+          const eventTime = new Date(eventRow.event_time);
 
           /**
            * Durable FT0 latch
@@ -932,7 +973,7 @@ async function projectDomainEventFromMessage(
             .insert({
               shop_id: shopId,
               status: 'COMPLETED',
-              completed_at: trx.fn.now(),
+              completed_at: eventTime,
               completion_reason: payload,
             })
             .onConflict('shop_id')
@@ -944,7 +985,7 @@ async function projectDomainEventFromMessage(
           await trx('system_readiness_state')
             .insert({
               shop_id: shopId,
-              became_ready_at: trx.fn.now(),
+              became_ready_at: eventTime,
             })
             .onConflict('shop_id')
             .ignore();
@@ -957,7 +998,7 @@ async function projectDomainEventFromMessage(
               event_id: crypto.randomUUID(),
               event_type: 'FT0_COMPLETED',
               shop_id: shopId,
-              occurred_at: trx.fn.now(),
+              occurred_at: eventTime,
               payload,
             });
 
@@ -1008,7 +1049,7 @@ async function projectDomainEventFromMessage(
             );
           }
 
-          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id);
+          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id, eventRow.event_time);
         });
 
         break;
@@ -1056,7 +1097,12 @@ async function projectDomainEventFromMessage(
             );
           }
 
+          const eventRow = await trx('domain_events')
+            .where({ id: domain_event_id })
+            .first();
+
           const shopId = domainEvent.shop_id;
+          const eventTime = new Date(eventRow.event_time);
 
           /**
            * Durable FT2 latch
@@ -1064,7 +1110,7 @@ async function projectDomainEventFromMessage(
           await trx('ft2_state')
             .insert({
               shop_id: shopId,
-              completed_at: trx.fn.now(),
+              completed_at: eventTime,
               evaluator_version: payload.evaluator_version,
               evaluation_snapshot: payload.evaluation_snapshot,
             })
@@ -1080,15 +1126,15 @@ async function projectDomainEventFromMessage(
               eligible: true,
               evaluator_version: payload.evaluator_version,
               evaluation_snapshot: payload.evaluation_snapshot,
-              evaluated_at: trx.fn.now(),
+              evaluated_at: eventTime,
             })
             .onConflict('shop_id')
             .merge({
               eligible: true,
               evaluator_version: payload.evaluator_version,
               evaluation_snapshot: payload.evaluation_snapshot,
-              evaluated_at: trx.fn.now(),
-              updated_at: trx.fn.now(),
+              evaluated_at: eventTime,
+              updated_at: eventTime,
             });
 
           /**
@@ -1108,7 +1154,7 @@ async function projectDomainEventFromMessage(
             trx
           );
 
-          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id);
+          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id, eventRow.event_time);
         });
 
         break;
@@ -1152,7 +1198,12 @@ async function projectDomainEventFromMessage(
             );
           }
 
+          const eventRow = await trx('domain_events')
+            .where({ id: domain_event_id })
+            .first();
+
           const shopId = domainEvent.shop_id;
+          const eventTime = new Date(eventRow.event_time);
 
           /**
            * Idempotent update:
@@ -1162,7 +1213,7 @@ async function projectDomainEventFromMessage(
             .where({ id: shopId, first_insight_delivered: false })
             .update({
               first_insight_delivered: true,
-              updated_at: trx.fn.now(),
+              updated_at: eventTime,
             });
 
           /**
@@ -1174,12 +1225,12 @@ async function projectDomainEventFromMessage(
                 event_id: crypto.randomUUID(),
                 event_type: 'FIRST_INSIGHT_DELIVERED',
                 shop_id: shopId,
-                occurred_at: trx.fn.now(),
+                occurred_at: eventTime,
                 payload,
               });
           }
 
-          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id);
+          await advanceCursor(trx, LIFECYCLE_PROJECTION, domain_event_id, eventRow.event_time);
         });
 
         break;
