@@ -82,9 +82,19 @@ export async function enqueueWebhookEnvelope(
         })
         .returning(['id']);
 
-      await trx('domain_event_outbox').insert({
-        domain_event_id: event.id,
-      });
+        console.info('[OUTBOX_TRIGGER_EXPECTED]', {
+          domainEventId: event.id,
+        });
+
+      /**
+       * OUTBOX HANDLED BY DB TRIGGER
+       * ----------------------------
+       * domain_event_auto_outbox AFTER INSERT trigger
+       * guarantees exactly one outbox row.
+       *
+       * DO NOT insert into domain_event_outbox manually.
+       * Doing so causes duplicate key violations.
+       */
     });
 
     console.info('[WEBHOOK_DOMAIN_EVENT_EMITTED]', {

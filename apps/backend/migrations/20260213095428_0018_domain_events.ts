@@ -92,6 +92,24 @@ export async function up(knex: Knex): Promise<void> {
     WHERE external_event_id IS NOT NULL;
   `);
 
+  await knex.raw(`
+    CREATE UNIQUE INDEX domain_events_shop_first_insight_unique
+    ON domain_events (shop_id)
+    WHERE event_type = 'lifecycle/first_insight_delivered';
+  `);
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX domain_events_shop_ft0_unique
+    ON domain_events (shop_id)
+    WHERE event_type = 'lifecycle/ft0_completed';
+  `);
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX domain_events_shop_ft2_unique
+    ON domain_events (shop_id)
+    WHERE event_type = 'lifecycle/ft2_confirmed';
+  `);
+
   /**
    * HARD IMMUTABILITY GUARD
    * -----------------------

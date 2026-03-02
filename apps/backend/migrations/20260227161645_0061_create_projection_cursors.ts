@@ -41,6 +41,40 @@ export async function up(knex: Knex): Promise<void> {
     BEFORE DELETE ON projection_cursors
     FOR EACH ROW EXECUTE FUNCTION prevent_projection_cursor_delete();
   `);
+
+  /**
+   * STRICT MONOTONIC ADVANCEMENT GUARD
+   * ----------------------------------
+   * Prevents cursor regression at DB level.
+   *
+   * Invariant:
+   * NEW.last_processed_event_id > OLD.last_processed_event_id
+   *
+   * Any regression indicates projection order violation
+   * and must crash immediately.
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION enforce_projection_cursor_monotonicity()
+    RETURNS trigger AS $$
+    BEGIN
+      IF NEW.last_processed_event_id <= OLD.last_processed_event_id THEN
+        RAISE EXCEPTION
+          'projection_cursors monotonicity violation: attempted % after %',
+          NEW.last_processed_event_id,
+          OLD.last_processed_event_id;
+      END IF;
+
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER projection_cursors_no_regression
+    BEFORE UPDATE ON projection_cursors
+    FOR EACH ROW
+    EXECUTE FUNCTION enforce_projection_cursor_monotonicity();
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

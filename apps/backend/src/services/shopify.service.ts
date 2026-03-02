@@ -294,14 +294,17 @@ export const performInitialSync = async (
           }
 
           /**
-           * DOMAIN EVENT OUTBOX INSERT (SYNC PATH)
-           * ---------------------------------------
-           * Sync ingestion must use domain_event_outbox.
-           * Direct writes to generic outbox are forbidden.
+           * OUTBOX OWNERSHIP (DB-ENFORCED)
+           * -------------------------------
+           * domain_event_outbox is now created automatically
+           * via AFTER INSERT trigger on domain_events.
+           *
+           * Manual inserts are forbidden.
+           *
+           * Invariant:
+           * Every domain_event has exactly one outbox row,
+           * enforced at database level.
            */
-          await trx('domain_event_outbox').insert({
-            domain_event_id: domainEventId,
-          });
         }
       
       /**

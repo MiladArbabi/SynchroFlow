@@ -126,14 +126,4 @@ export async function handleOrderCreated(
   }
 
   console.log('[DOMAIN_EVENT_INSERTED]', domainEventId);
-
-  /**
-   * DOMAIN EVENT OUTBOX INSERT
-   * ---------------------------
-   * Projection publishing must go through
-   * domain_event_outbox for deterministic dispatch.
-   */
-  await db('domain_event_outbox').insert({
-    domain_event_id: domainEventId,
-  });
 };

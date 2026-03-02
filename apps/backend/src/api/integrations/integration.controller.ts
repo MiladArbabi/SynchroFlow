@@ -394,9 +394,15 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         })
         .returning(['id']);
 
-      await trx('domain_event_outbox').insert({
-        domain_event_id: event.id,
-      });
+      /**
+       * OUTBOX OWNERSHIP (DB-ENFORCED)
+       * --------------------------------
+       * domain_event_outbox row is created automatically
+       * via AFTER INSERT trigger on domain_events.
+       *
+       * Manual inserts are forbidden.
+       * Guarantees exactly one outbox row per event.
+       */
     });
 
     // 🔒 Security invariants
@@ -618,9 +624,20 @@ export const triggerManualSync = async (req: Request, res: Response) => {
         })
         .returning(['id']);
 
-      await trx('domain_event_outbox').insert({
-        domain_event_id: event.id,
+      console.info('[OUTBOX_TRIGGER_EXPECTED]', {
+        domainEventId: event.id,
+        eventType: 'integration/manual_sync_requested',
       });
+
+      /**
+       * OUTBOX HANDLED BY DB TRIGGER
+       * ----------------------------
+       * domain_event_auto_outbox AFTER INSERT trigger
+       * guarantees exactly one outbox row.
+       *
+       * Manual inserts are forbidden and will cause
+       * domain_event_outbox_domain_event_unique violations.
+       */
     });
 
     console.info('[integration][manual_sync_requested]', {

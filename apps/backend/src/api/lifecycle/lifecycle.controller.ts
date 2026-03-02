@@ -147,7 +147,7 @@ export async function confirmFt2(req: Request, res: Response) {
      */
     await db.transaction(async trx => {
 
-      const externalEventId = `internal:lifecycle/ft2_confirmed:${shopId}:${Date.now()}`;
+      const externalEventId = `internal:lifecycle/ft2_confirmed:${shopId}`;
 
       const [event] = await trx('domain_events')
         .insert({
@@ -164,9 +164,20 @@ export async function confirmFt2(req: Request, res: Response) {
         })
         .returning(['id']);
 
-      await trx('domain_event_outbox').insert({
-        domain_event_id: event.id,
+      console.info('[OUTBOX_TRIGGER_EXPECTED]', {
+        domainEventId: event.id,
+        eventType: 'lifecycle/ft2_confirmed',
       });
+
+      /**
+       * OUTBOX HANDLED BY DB TRIGGER
+       * ----------------------------
+       * domain_event_auto_outbox AFTER INSERT trigger
+       * guarantees exactly one outbox row.
+       *
+       * Manual inserts are forbidden and cause
+       * domain_event_outbox_domain_event_unique violations.
+       */
 
     });
 

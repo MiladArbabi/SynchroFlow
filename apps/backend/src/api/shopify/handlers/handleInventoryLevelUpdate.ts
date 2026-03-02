@@ -132,14 +132,4 @@ export async function handleInventoryLevelUpdate(
 
     throw error;
   }
-
-  /**
-   * DOMAIN EVENT OUTBOX INSERT
-   * ---------------------------
-   * Projection publishing must go through
-   * domain_event_outbox for deterministic dispatch.
-   */
-  await db('domain_event_outbox').insert({
-    domain_event_id: domainEventId,
-  });
 }

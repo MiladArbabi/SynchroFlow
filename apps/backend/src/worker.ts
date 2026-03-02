@@ -1296,25 +1296,39 @@ export function startWorker() {
    *
    * We cap at 5 for safety.
    */
-    channel.addSetup(async (ch: any) => {
+  channel.addSetup(async (ch: any) => {
+
+    await ch.assertExchange('events.dlx', 'direct', { durable: true });
 
     /**
-     * EVENTS QUEUE TOPOLOGY
-     * ----------------------
-     * Canonical projection queue.
-     */
-    await ch.assertQueue('events', { durable: true });
-
-    /**
-     * DEAD-LETTER QUEUE — PROJECTION FAILURES
-     * ----------------------------------------
-     * Holds:
-     * - DOMAIN_EVENT_NOT_FOUND
-     * - PROJECTION_CURSOR_REGRESSION
+     * ⚠ QUEUE TOPOLOGY IMMUTABILITY WARNING
+     * --------------------------------------
+     * RabbitMQ does NOT allow argument changes after queue creation.
      *
-     * Must exist in production to avoid crash loops.
+     * If you modify:
+     *   - x-dead-letter-exchange
+     *   - x-dead-letter-routing-key
+     *   - durability
+     *
+     * You MUST delete the queue in the broker first.
+     *
+     * Otherwise RabbitMQ will crash the channel with:
+     * PRECONDITION_FAILED - inequivalent arg
+     *
+     * This is an infrastructure invariant.
+     * Do NOT change queue arguments casually.
      */
+    await ch.assertQueue('events', {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': 'events.dlx',
+        'x-dead-letter-routing-key': 'dead'
+      }
+    });
+
     await ch.assertQueue('events.dead', { durable: true });
+
+    await ch.bindQueue('events.dead', 'events.dlx', 'dead');
 
     /**
      * STRICT MONOTONIC PROJECTION INVARIANT
