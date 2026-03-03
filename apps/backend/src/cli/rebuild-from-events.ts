@@ -14,6 +14,14 @@ dotenv.config({
   path: path.resolve(__dirname, '../../../../.env'),
 });
 
+ /**
+  * REBUILD MODE FLAG
+  * ------------------
+  * Explicitly disables all queue side-effects during replay.
+  * Worker must check this flag.
+  */
+ process.env.REBUILD_MODE = 'true';
+
 import { projectDomainEvent } from '../worker.js';
 import db from '@lasyncro/backend-core/db.js';
 

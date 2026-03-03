@@ -1,6 +1,8 @@
 // apps/backend/src/api/shopify/handlers/handleOrderFulfillment.ts
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
+import { ensureOrderIdentityExists }
+  from '../../../services/order-identity-guard.service.js';
 
 type ShopifyFulfillmentPayload = {
   id: string | number;
@@ -29,18 +31,29 @@ export async function handleOrderFulfillment(
   const rawPayload = envelope.rawPayload;
 
   if (!isShopifyFulfillmentPayload(rawPayload)) {
-    return;
+    console.error('[FULFILLMENT_INGESTION_REJECTED][INVALID_PAYLOAD]', {
+      receivedKeys: rawPayload ? Object.keys(rawPayload as any) : null
+    });
+    throw new Error('FULFILLMENT_INVALID_PAYLOAD');
   }
 
   const shopDomain = envelope.shopDomain;
-  if (!shopDomain) return;
+  if (!shopDomain) {
+    console.error('[FULFILLMENT_INGESTION_REJECTED][MISSING_SHOP_DOMAIN]');
+    throw new Error('FULFILLMENT_MISSING_SHOP_DOMAIN');
+  }
 
   const installation = await db('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
 
-  if (!installation) return;
+  if (!installation) {
+    console.error('[FULFILLMENT_INGESTION_REJECTED][INSTALLATION_NOT_FOUND]', {
+      shopDomain
+    });
+    throw new Error('FULFILLMENT_INSTALLATION_NOT_FOUND');
+  }
 
   const shopId = installation.shop_id;
 
@@ -67,10 +80,29 @@ export async function handleOrderFulfillment(
     );
   }
 
+  /**
+   * FULFILLMENT IDENTITY GUARD
+   * --------------------------
+   * Fulfillment must never enter canonical layer
+   * before baseline order exists.
+   *
+   * If identity missing:
+   * - Fetch order via Shopify GraphQL
+   * - Emit orders/sync
+   *
+   * Deterministic and replay-safe.
+   */
+  const externalOrderId = String(rawPayload.order_id);
+
+  await ensureOrderIdentityExists(
+    shopId,
+    shopDomain,
+    externalOrderId
+  );
+
   let domainEventId: number;
 
   try {
-
     const result = await db('domain_events')
       .insert({
         shop_id: shopId,
@@ -83,7 +115,7 @@ export async function handleOrderFulfillment(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
-
+    
   } catch (error: any) {
 
     /**

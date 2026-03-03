@@ -8,13 +8,14 @@ import {
 
 import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
 import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
-import { ReturnsOverviewInfoBlock } from '../components/ReturnsOverviewInfoBlock.js';
-import { ObligationOverviewInfoBlock } from '../components/ObligationOverviewInfoBlock.js';
+import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlock.js';
+import { OrderHealthInfoBlock } from '../components/OrderHealthInfoBlock.js';
 
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
 import { OrdersPriorityStackSection } from '../components/OrdersPriorityStackSection.js';
 
 import { toEpistemic } from '@lasyncro/epistemic';
+
 
 /**
  * ─────────────────────────────────────────────────────────────
@@ -52,6 +53,45 @@ export interface OrdersModuleFT2DataProps {
     earned: number | null;
     pending: number | null;
     blocked: number | null;
+  };
+
+    /**
+   * Phase 1 — Operational Control Snapshot
+   * --------------------------------------
+   * Fully derived backend snapshot.
+   * Strict passthrough only.
+   *
+   * NOTE:
+   * This module is environment-agnostic.
+   * No logging or runtime branching allowed here.
+   */
+  operationalControl: {
+    snapshot_date: string;
+    aggregate_version: number;
+
+    realized_revenue: number;
+    at_risk_revenue: number;
+    blocked_revenue: number;
+    revenue_leakage: number;
+    avg_contribution_margin_pct: number;
+
+    orders_at_sla_risk: number;
+    aging_24h: number;
+    aging_48h: number;
+    aging_72h_plus: number;
+    pending_fulfillment: number;
+    pending_payment: number;
+    exception_orders: number;
+
+    constrained_orders: number;
+    revenue_blocked_inventory: number;
+    revenue_blocked_customer: number;
+    revenue_blocked_operational: number;
+
+    queue_manual_review: number;
+    queue_awaiting_inventory: number;
+    queue_ready_to_ship: number;
+    queue_awaiting_customer: number;
   };
 
   returns?: {
@@ -94,17 +134,9 @@ export interface OrdersModuleFT2DataProps {
   };
 };
 
-/**
- * Rendering-only props
- */
-export interface OrdersModuleFT2Props
-  extends OrdersModuleFT2DataProps {
-  timeseries: ReactNode;
-  distribution: ReactNode;
-}
 
 export default function OrdersModuleFT2(
-  props: OrdersModuleFT2Props
+  props: OrdersModuleFT2DataProps
 ) {
     const {
       orders,
@@ -112,6 +144,7 @@ export default function OrdersModuleFT2(
       returns,
       obligations,
       decision,
+      operationalControl
     } = props;
 
   return (
@@ -122,6 +155,14 @@ export default function OrdersModuleFT2(
 
         <OrdersOverviewInfoBlock
           orders={orders}
+        />
+
+        <RevenueIntegrityInfoBlock
+          realized_revenue={operationalControl.realized_revenue}
+          at_risk_revenue={operationalControl.at_risk_revenue}
+          blocked_revenue={operationalControl.blocked_revenue}
+          revenue_leakage={operationalControl.revenue_leakage}
+          avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
         />
 
         <RevenueOverviewInfoBlock
@@ -136,6 +177,16 @@ export default function OrdersModuleFT2(
 
       <FT2Row intent='kpi'>
         <OrdersDecisionBrief {...decision.brief} />
+        
+        <OrderHealthInfoBlock
+          orders_at_sla_risk={operationalControl.orders_at_sla_risk}
+          aging_24h={operationalControl.aging_24h}
+          aging_48h={operationalControl.aging_48h}
+          aging_72h_plus={operationalControl.aging_72h_plus}
+          pending_fulfillment={operationalControl.pending_fulfillment}
+          pending_payment={operationalControl.pending_payment}
+          exception_orders={operationalControl.exception_orders}
+        />
       </FT2Row>
 
       {/* <ReturnsOverviewInfoBlock

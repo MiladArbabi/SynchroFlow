@@ -6,7 +6,6 @@ export { default as OrdersModuleFT2 } from './pages/OrdersModuleFT2.js';
 
 export type { OrdersModuleProps } from './pages/OrdersModule.js';
 export type {
-  OrdersModuleFT2Props,
   OrdersModuleFT2DataProps,
 } from './pages/OrdersModuleFT2.js';
 

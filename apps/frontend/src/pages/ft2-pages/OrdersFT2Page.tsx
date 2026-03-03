@@ -15,50 +15,88 @@
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
-import { useOrdersFt2Timeseries } from '../orders/useOrdersFt2Timeseries';
-import { useOrdersFt2Distribution } from '../orders/useOrdersFt2Distribution';
 
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
-import { mapOrdersFt2TimeseriesProps } from '../orders/useOrdersFt2TimeseriesAdapter';
-import { mapOrdersFt2DistributionProps } from '../orders/useOrdersFt2DistributionAdapter';
-import OrdersDistributionWidget from 'widgets/orders/OrdersDistributionWidget';
-import OrdersTimeseriesWidget from 'widgets/orders/OrdersTimeseriesWidget';
 
 import { useOrdersOperationalBrief } from '../orders/useOrdersOperationalBrief';
 import { useOrdersPriorityStack } from '../orders/useOrdersPriorityStack';
-
-import { useState } from 'react';
-import type { FT2DateRange } from '@lasyncro/ui-ft2';
-import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
+import { useOrdersControlSnapshot } from '../orders/useOrdersControlSnapshot';
 
 const __DEV__ = import.meta.env.DEV;
 
 export default function OrdersFT2Page() {
-  const [range, setRange] = useState<FT2DateRange>({
-    preset: 'past_30_days',
-    from: null,
-    to: null,
-  });
 
   const snapshotQuery = useOrdersFt2Snapshot();
-  const timeseriesQuery = useOrdersFt2Timeseries(range);
-  const distributionQuery = useOrdersFt2Distribution(range);
 
-  const operationalBriefQuery = useOrdersOperationalBrief();
-  const priorityStackQuery = useOrdersPriorityStack();
+    const operationalBriefQuery = useOrdersOperationalBrief();
+    const priorityStackQuery = useOrdersPriorityStack();
+    const controlSnapshotQuery = useOrdersControlSnapshot();
 
   if (
     !snapshotQuery.isSuccess ||
-    !operationalBriefQuery.isSuccess ||
     !priorityStackQuery.isSuccess
   ) {
-    if (__DEV__) {
-      console.debug('[OrdersFT2Page] awaiting FT2 snapshot');
-    }
+    console.log('[AUDIT][snapshot]', {
+      isSuccess: snapshotQuery.isSuccess,
+      status: snapshotQuery.status,
+      fetchStatus: snapshotQuery.fetchStatus,
+      hasData: !!snapshotQuery.data,
+    });
+
+    console.log('[AUDIT][operationalBrief]', {
+      isSuccess: operationalBriefQuery.isSuccess,
+      status: operationalBriefQuery.status,
+      fetchStatus: operationalBriefQuery.fetchStatus,
+      hasData: !!operationalBriefQuery.data,
+    });
+
+    console.log('[AUDIT][priorityStack]', {
+      isSuccess: priorityStackQuery.isSuccess,
+      status: priorityStackQuery.status,
+      fetchStatus: priorityStackQuery.fetchStatus,
+      hasData: !!priorityStackQuery.data,
+    });
+
+    console.log('[AUDIT][controlSnapshot]', {
+      isSuccess: controlSnapshotQuery.isSuccess,
+      status: controlSnapshotQuery.status,
+      fetchStatus: controlSnapshotQuery.fetchStatus,
+      hasData: !!controlSnapshotQuery.data,
+    });
+
     return <div>Loading orders insights…</div>;
   }
 
   const brief = operationalBriefQuery.data;
+  const operationalControl =
+  controlSnapshotQuery.data ?? {
+    snapshot_date: new Date().toISOString(),
+    aggregate_version: 0,
+
+    realized_revenue: 0,
+    at_risk_revenue: 0,
+    blocked_revenue: 0,
+    revenue_leakage: 0,
+    avg_contribution_margin_pct: 0,
+
+    orders_at_sla_risk: 0,
+    aging_24h: 0,
+    aging_48h: 0,
+    aging_72h_plus: 0,
+    pending_fulfillment: 0,
+    pending_payment: 0,
+    exception_orders: 0,
+
+    constrained_orders: 0,
+    revenue_blocked_inventory: 0,
+    revenue_blocked_customer: 0,
+    revenue_blocked_operational: 0,
+
+    queue_manual_review: 0,
+    queue_awaiting_inventory: 0,
+    queue_ready_to_ship: 0,
+    queue_awaiting_customer: 0,
+  };
 
   const decision = {
     brief: brief
@@ -89,26 +127,19 @@ export default function OrdersFT2Page() {
     decision,
   );
 
-  const timeseriesProps = mapOrdersFt2TimeseriesProps(timeseriesQuery.data);
-  const distributionProps = mapOrdersFt2DistributionProps(distributionQuery.data);
+  if (__DEV__) {
+    console.debug('[OrdersFT2Page] control snapshot', controlSnapshotQuery.data);
+  }
 
   if (__DEV__) {
     console.debug('[OrdersFT2Page] rendering OrdersModuleFT2', headerProps);
-    console.debug('[OrdersFT2Page] rendering OrdersTimeseriesWidget', timeseriesProps);
-    console.debug('[OrdersFT2Page] distribution', distributionProps);
   }
 
   return (
     <>
-      <FT2DateRangeBar
-        value={range}
-        onChange={setRange}
-      />
-
       <OrdersModuleFT2
         {...headerProps}
-        timeseries={<OrdersTimeseriesWidget {...timeseriesProps} />}
-        distribution={<OrdersDistributionWidget {...distributionProps} />}
+        operationalControl={operationalControl}
       />
     </>
   );

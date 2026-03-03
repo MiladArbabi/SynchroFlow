@@ -17,6 +17,7 @@ import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
 import { startReconciliationConsumer } from './workers/reconciliation/index.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
+import { startReconciliationIntentDispatcher } from './workers/reconciliation/reconciliation.intent.dispatcher.js';
 
 async function start() {
 
@@ -37,6 +38,7 @@ async function start() {
 
   /* startOutboxDispatcher(); */
   startDomainEventOutboxDispatcher();
+  startReconciliationIntentDispatcher();
  
   /**
   * DEV-ONLY: Obligation evaluation hook

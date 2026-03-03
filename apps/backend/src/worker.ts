@@ -363,8 +363,19 @@ async function projectDomainEventFromMessage(
                 },
                 trx
               );
-            }
 
+              /**
+               * RECONCILIATION EMISSION FORBIDDEN HERE
+               * ---------------------------------------
+               * orders/sync establishes baseline state only.
+               * No aggregate_version increment occurs here.
+               * Emitting reconciliation would violate version gate contract.
+               *
+               * Reconciliation MUST be emitted from:
+               * case 'orders/fulfilled'
+               */
+            }
+            
             const lineEdges =
               payload.lineItems?.edges ??
               payload.line_items ??
@@ -621,7 +632,32 @@ async function projectDomainEventFromMessage(
           externalOrderId
         );
 
-        if (!lasyncroOrderId) break;
+        if (!lasyncroOrderId) {
+          /**
+           * MISSING AGGREGATE DETECTED
+           * --------------------------
+           * Fulfillment arrived before order aggregate exists.
+           * We emit deterministic signal for backfill orchestration.
+           * Never silently drop execution truth.
+           */
+          await db('domain_events').insert({
+            shop_id: domainEvent.shop_id,
+            event_type: 'orders/missing_detected',
+            event_payload: {
+              external_order_id: externalOrderId,
+              source_event_id: domain_event_id,
+              reason: 'fulfillment_before_aggregate'
+            },
+            event_time: domainEvent.event_time
+          });
+
+          console.warn('[MISSING_ORDER_DETECTED]', {
+            externalOrderId,
+            sourceEventId: domain_event_id
+          });
+
+          break;
+        }
 
         /**
          * FULFILLMENT EXECUTION TRUTH
@@ -649,6 +685,23 @@ async function projectDomainEventFromMessage(
          * Raw payload timestamps are forbidden beyond ingestion.
          */
         const fulfillmentTimestamp = canonicalEventTime;
+
+        /**
+         * SIDE-EFFECT INTENT HOLDER
+         * --------------------------
+         * Must be executed strictly after transaction commit.
+         */
+        let reconciliationIntent:
+          | {
+              lasyncroOrderId: string;
+              aggregateVersion: number;
+              observed?: {
+                status: 'fulfilled';
+                observedAt: Date;
+                source: 'shopify_sync';
+              };
+            }
+          | undefined;
 
         await db.transaction(async (trx) => {
 
@@ -702,6 +755,25 @@ async function projectDomainEventFromMessage(
           .first();
 
         /**
+         * SIDE-EFFECT INTENT (POST-COMMIT REQUIRED)
+         * ------------------------------------------
+         * Queue publish MUST occur strictly after transaction commit.
+         * We capture intent here and execute outside transaction.
+         */
+        reconciliationIntent = {
+          lasyncroOrderId,
+          aggregateVersion: aggregate_version,
+          observed:
+            status === 'fulfilled'
+              ? {
+                  status: 'fulfilled',
+                  observedAt: new Date(domainEvent.event_time),
+                  source: 'shopify_sync' as const,
+                }
+              : undefined,
+        };
+
+        /**
            * RECONCILIATION EMISSION REMOVED
            * --------------------------------
            * Projection layer must never emit domain events.
@@ -717,6 +789,31 @@ async function projectDomainEventFromMessage(
 
         await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id, eventRow.event_time);
       });
+
+      /**
+       * RECONCILIATION INTENT PERSISTENCE
+       * ----------------------------------
+       * Projection layer must never publish to queues.
+       * Instead, we persist reconciliation intent.
+       * A dedicated dispatcher will emit queue side-effects.
+       */
+      if (reconciliationIntent) {
+        await db('order_reconciliation_intents').insert({
+          lasyncro_order_id: reconciliationIntent.lasyncroOrderId,
+          aggregate_version: reconciliationIntent.aggregateVersion,
+          observed: reconciliationIntent.observed
+            ? JSON.stringify(reconciliationIntent.observed)
+            : null,
+          created_at: new Date(),
+        });
+      }
+
+        if (reconciliationIntent && process.env.REBUILD_MODE === 'true') {
+          console.log(
+            '[REBUILD_MODE] reconciliation publish skipped',
+            reconciliationIntent.lasyncroOrderId
+          );
+        }
 
         break;
     }
@@ -1288,36 +1385,10 @@ export function startWorker() {
 
   const channel = getEventChannel();
 
-  /**
-   * HARD CONCURRENCY CAP
-   * --------------------
-   * Must remain <= DB pool max.
-   * Current DB pool max = 20
-   *
-   * We cap at 5 for safety.
-   */
   channel.addSetup(async (ch: any) => {
 
     await ch.assertExchange('events.dlx', 'direct', { durable: true });
 
-    /**
-     * ⚠ QUEUE TOPOLOGY IMMUTABILITY WARNING
-     * --------------------------------------
-     * RabbitMQ does NOT allow argument changes after queue creation.
-     *
-     * If you modify:
-     *   - x-dead-letter-exchange
-     *   - x-dead-letter-routing-key
-     *   - durability
-     *
-     * You MUST delete the queue in the broker first.
-     *
-     * Otherwise RabbitMQ will crash the channel with:
-     * PRECONDITION_FAILED - inequivalent arg
-     *
-     * This is an infrastructure invariant.
-     * Do NOT change queue arguments casually.
-     */
     await ch.assertQueue('events', {
       durable: true,
       arguments: {
@@ -1327,24 +1398,19 @@ export function startWorker() {
     });
 
     await ch.assertQueue('events.dead', { durable: true });
-
     await ch.bindQueue('events.dead', 'events.dlx', 'dead');
 
-    /**
-     * STRICT MONOTONIC PROJECTION INVARIANT
-     * -------------------------------------
-     * Projection enforces strictly increasing domain_event_id.
-     *
-     * Prefetch MUST be 1.
-     * Any parallel in-flight message can complete out-of-order
-     * and violate cursor monotonicity → deterministic crash.
-     *
-     * This worker is intentionally single-flight.
-     */
     await ch.prefetch(1);
-  });
 
-  channel.consume('events', processMessage, { noAck: false });
+    /**
+     * CONSUMER ATTACHMENT INSIDE SETUP
+     * ---------------------------------
+     * Guarantees consumer is reattached on reconnect.
+     * Prevents silent non-consumption.
+     */
+    await ch.consume('events', processMessage, { noAck: false });
+
+  });
 
   console.log('[worker] Worker ready. Awaiting domain events...');
 }

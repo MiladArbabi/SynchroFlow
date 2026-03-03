@@ -201,18 +201,54 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('updated_at', { useTz: true }).defaultTo(knex.fn.now());
   });
 
-  // 4️⃣ order_reconciliation_intents (Publish Barrier)
+  // 4️⃣ order_reconciliation_intents (Versioned Publish Barrier)
   await knex.schema.createTable('order_reconciliation_intents', (table) => {
-    table.uuid('reconciliation_intent_id').primary();
-    table.uuid('lasyncro_order_id').notNullable();
-    table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
+    table
+      .uuid('reconciliation_intent_id')
+      .primary()
+      .notNullable()
+      .defaultTo(knex.raw('gen_random_uuid()'));
 
-    table.unique(['lasyncro_order_id'], 'order_reconciliation_unique');
-
-    table.foreign('lasyncro_order_id')
+    table
+      .uuid('lasyncro_order_id')
+      .notNullable()
       .references('lasyncro_order_id')
       .inTable('orders')
       .onDelete('CASCADE');
+
+    /**
+     * VERSION CONTRACT
+     * -----------------
+     * Intent is tied to specific aggregate_version.
+     * Guarantees monotonic reconciliation dispatch.
+     */
+    table
+      .integer('aggregate_version')
+      .notNullable();
+
+    /**
+     * Optional observed payload (serialized JSON).
+     * Kept nullable for structural flexibility.
+     */
+    table
+      .jsonb('observed')
+      .nullable();
+
+    table
+      .timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    /**
+     * Uniqueness must be version-scoped.
+     * Multiple reconciliation waves per order allowed.
+     */
+    table.unique(
+      ['lasyncro_order_id', 'aggregate_version'],
+      'order_reconciliation_version_unique'
+    );
+
+    table.index(['lasyncro_order_id']);
   });
 }
 

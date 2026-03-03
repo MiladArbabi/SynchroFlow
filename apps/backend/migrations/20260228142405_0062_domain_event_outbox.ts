@@ -1,5 +1,16 @@
 import { Knex } from 'knex';
 
+/**
+ * ARCHITECTURE NOTE — SINGLE OUTBOX SYSTEM
+ * -----------------------------------------
+ * SynchroFlow uses exactly ONE outbox table:
+ *   - domain_event_outbox (event-core boundary)
+ *
+ * No secondary outbox tables are permitted.
+ * If you believe another outbox is required,
+ * STOP and re-evaluate architectural ownership.
+ */
+
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('domain_event_outbox', (table) => {
     table.bigIncrements('id').primary();
@@ -44,9 +55,16 @@ export async function up(knex: Knex): Promise<void> {
     CREATE OR REPLACE FUNCTION auto_create_domain_event_outbox()
     RETURNS trigger AS $$
     BEGIN
+      -- TRACE: emit structural execution proof
+      RAISE NOTICE 'OUTBOX_TRIGGER txid=%, pid=%, domain_event_id=%',
+        txid_current(),
+        pg_backend_pid(),
+        NEW.id;
+
       INSERT INTO domain_event_outbox (domain_event_id)
       VALUES (NEW.id)
       ON CONFLICT (domain_event_id) DO NOTHING;
+
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
@@ -61,5 +79,17 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
+  // Drop trigger first (if exists)
+  await knex.raw(`
+    DROP TRIGGER IF EXISTS domain_event_auto_outbox
+    ON domain_events;
+  `);
+
+  // Drop function explicitly (avoid orphaned functions)
+  await knex.raw(`
+    DROP FUNCTION IF EXISTS auto_create_domain_event_outbox();
+  `);
+
+  // Then drop table
   await knex.schema.dropTableIfExists('domain_event_outbox');
 }

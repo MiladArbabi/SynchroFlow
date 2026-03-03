@@ -1,11 +1,9 @@
 // packages/integration-service/src/server.ts
 import express, { Request, Response, NextFunction } from 'express';
-import dotenv from 'dotenv';
 import crypto from 'crypto';
 import db from './db';
 import { publishToQueue } from './queue';
 import { fetchRecentOrders } from './clients/shopify';
-import { mapShopifyOrderToCanonical } from './mappers/canonical-commerce-mapper';
 
 const app = express();
 const port = process.env.INTEGRATION_PORT || 3001;

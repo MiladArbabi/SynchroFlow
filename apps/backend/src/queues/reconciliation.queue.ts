@@ -12,8 +12,20 @@ import { getQueueChannel } from "../queue.js";
 
 export const RECONCILIATION_QUEUE = 'fulfillment.reconciliation';
 
+/**
+ * QUEUE CONTRACT (STRICT)
+ * ------------------------
+ * Payload MUST include:
+ * - lasyncroOrderId
+ * - aggregateVersion (required)
+ * - observed (optional)
+ *
+ * Consumer enforces strict version gate.
+ * Any contract deviation will be dead-lettered.
+ */
 export async function publishReconciliationJob(
   lasyncroOrderId: string,
+  aggregateVersion: number,
   observed?: {
     status: 'fulfilled';
     observedAt: Date;
@@ -23,7 +35,7 @@ export async function publishReconciliationJob(
   const ch = getQueueChannel(RECONCILIATION_QUEUE);
 
   const payload = Buffer.from(
-    JSON.stringify({ lasyncroOrderId, observed })
+    JSON.stringify({ lasyncroOrderId, aggregateVersion, observed })
   );
 
   /**
