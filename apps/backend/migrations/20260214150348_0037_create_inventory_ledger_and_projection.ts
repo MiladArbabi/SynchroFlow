@@ -68,6 +68,24 @@ export async function up(knex: Knex): Promise<void> {
     table
       .uuid('device_event_id')
       .nullable();
+      
+    /**
+     * ECONOMIC IDEMPOTENCY KEY
+     * ------------------------
+     * device_event_id represents the deterministic economic identity
+     * of a movement-producing event.
+     *
+     * Rebuild safety:
+     * - Movement row IDs may differ between deterministic replays
+     * - device_event_id guarantees idempotent ledger insertion
+     *
+     * Example deterministic producers:
+     * - revenue_unit sale events
+     * - reservation ledger events
+     *
+     * If two writers attempt to emit the same economic event,
+     * this constraint prevents duplicate ledger effects.
+     */
 
     /**
      * ECONOMIC REFERENCE TYPING

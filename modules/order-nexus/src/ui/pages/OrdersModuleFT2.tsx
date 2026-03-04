@@ -156,14 +156,6 @@ export default function OrdersModuleFT2(
           orders={orders}
         />
 
-        <RevenueIntegrityInfoBlock
-          realized_revenue={operationalControl.realized_revenue}
-          at_risk_revenue={operationalControl.at_risk_revenue}
-          blocked_revenue={operationalControl.blocked_revenue}
-          revenue_leakage={operationalControl.revenue_leakage}
-          avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
-        />
-
         <RevenueOverviewInfoBlock
           revenue={{
             totalSales: toEpistemic(revenue.totalSales),
@@ -176,6 +168,14 @@ export default function OrdersModuleFT2(
 
       <FT2Row intent='kpi'>
         <OrdersDecisionBrief {...decision.brief} />
+
+        <RevenueIntegrityInfoBlock
+          realized_revenue={operationalControl.realized_revenue}
+          at_risk_revenue={operationalControl.at_risk_revenue}
+          blocked_revenue={operationalControl.blocked_revenue}
+          revenue_leakage={operationalControl.revenue_leakage}
+          avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
+        />
 
         <OrderHealthInfoBlock
           orders_at_sla_risk={operationalControl.orders_at_sla_risk}

@@ -6,6 +6,15 @@ import { getQueueChannel } from '../../../queue.js';
 type ShopifyOrderCreatePayload = {
   id: number | string;
   admin_graphql_api_id?: string;
+
+  /**
+   * PAYMENT STATUS (Shopify REST)
+   * ------------------------------
+   * Determines whether order is already paid
+   * when created.
+   */
+  financial_status?: string;
+
   currency: string;
   total_price: string | number;
   subtotal_price?: string | number;
@@ -101,6 +110,45 @@ export async function handleOrderCreated(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
+
+    /**
+     * PAYMENT STATE DETECTION
+     * -----------------------
+     * Shopify may send orders already paid at creation.
+     * In that case we must emit a deterministic orders/paid
+     * domain event so projections can update payment_state.
+     */
+    const financialStatus = raw.financial_status?.toLowerCase();
+
+    if (financialStatus === 'paid') {
+
+      const paidEvent = await db('domain_events')
+        .insert({
+          shop_id: shopId,
+          event_type: 'orders/paid',
+          event_payload: {
+            id: raw.id,
+          },
+          event_time: new Date(eventTime),
+          event_version: 1,
+          external_event_id: `${envelope.eventId}:paid`,
+        })
+        .returning('id');
+
+      const paidEventId = paidEvent[0].id ?? paidEvent[0];
+
+      const channel = getQueueChannel('events');
+
+      channel.sendToQueue(
+        'events',
+        Buffer.from(
+          JSON.stringify({ domain_event_id: paidEventId })
+        ),
+        { persistent: true }
+      );
+
+      console.log('[DOMAIN_EVENT_PUBLISHED]', paidEventId);
+    }
 
   } catch (error: any) {
 

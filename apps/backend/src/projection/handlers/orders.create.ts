@@ -9,6 +9,17 @@ import { FirstInsightService } from '../../services/first-insight.service.js';
 import { FT0CompletionService } from '../../services/ft0-completion.service.js';
 import { advanceCursor } from '../projection.engine.js';
 
+/**
+ * REVENUE UNIT MATERIALIZATION
+ * ----------------------------
+ * Revenue units represent immutable economic atoms
+ * derived from order_line_items.
+ *
+ * They MUST be created at order creation time,
+ * not at fulfillment.
+ */
+import { writeOrderRevenueUnits } from '../../workers/reconciliation/revenue-units.writer.js';
+
 const ORDER_UUID_NAMESPACE =
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
@@ -29,6 +40,22 @@ export async function handleOrdersCreate({
   });
 
   const payload = domainEvent.event_payload as any;
+
+  /**
+   * PAYMENT STATE DERIVATION
+   * ------------------------
+   * Orders arriving via sync or webhook may already be paid.
+   * Shopify signals payment through financial status fields.
+   *
+   * Deterministic rule:
+   * paid → payment_state='paid'
+   * otherwise → unpaid
+   */
+  const paymentState =
+    payload.financial_status?.toLowerCase() === 'paid' ||
+    payload.displayFinancialStatus?.toLowerCase() === 'paid'
+      ? 'paid'
+      : 'unpaid';
 
   let externalOrderId = String(payload.id);
 
@@ -97,7 +124,7 @@ export async function handleOrdersCreate({
             : payload.total_tax ?? null,
         order_created_at: canonicalEventTime,
         order_updated_at: canonicalEventTime,
-        payment_state: 'unpaid',
+        payment_state: paymentState,
         aggregate_version: 1,
         created_at: canonicalEventTime,
         updated_at: canonicalEventTime,
@@ -113,10 +140,6 @@ export async function handleOrdersCreate({
         .onConflict(['shop_id', 'platform', 'external_order_id'])
         .ignore();
 
-      if (domainEvent.event_type === 'orders/sync') {
-
-        const snapshotStatus = payload.displayFulfillmentStatus;
-
         let baselineStatus:
           | 'pending'
           | 'processing'
@@ -124,6 +147,8 @@ export async function handleOrdersCreate({
           | 'partially_fulfilled'
           | 'cancelled'
           | 'failed' = 'pending';
+
+        const snapshotStatus = payload.displayFulfillmentStatus;
 
         switch (snapshotStatus) {
           case 'FULFILLED':
@@ -149,60 +174,28 @@ export async function handleOrdersCreate({
           trx
         );
 
-        /**
-         * SYNC RECONCILIATION TRIGGER
-         * ---------------------------
-         * Shopify sync delivers snapshot fulfillment state.
-         *
-         * The reconciliation pipeline historically relied on
-         * the `orders/fulfilled` domain event, but during
-         * snapshot ingestion we may already observe fulfilled
-         * orders.
-         *
-         * To maintain projection completeness, we emit a
-         * reconciliation intent when the snapshot status
-         * indicates fulfillment.
-         *
-         * This guarantees the following pipeline executes:
-         *
-         * orders/sync
-         *   → reconciliation intent
-         *   → reconciliation worker
-         *   → revenue unit materialization
-         *   → operational control snapshot
-         *
-         * Determinism:
-         * - aggregate_version used as reconciliation version
-         * - no wall-clock timestamps used for domain logic
-         */
+      const orderRow = await trx('orders')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .select('aggregate_version')
+        .first();
 
-        if (baselineStatus === 'fulfilled') {
-
-          const orderRow = await trx('orders')
-            .where({ lasyncro_order_id: lasyncroOrderId })
-            .select('aggregate_version')
-            .first();
-
-          if (!orderRow) {
-            throw new Error('[ORDER_VERSION_MISSING_FOR_RECONCILIATION]');
-          }
-
-          await trx('order_reconciliation_intents')
-            .insert({
-              lasyncro_order_id: lasyncroOrderId,
-              aggregate_version: orderRow.aggregate_version,
-              observed: JSON.stringify({
-                status: 'fulfilled',
-                observedAt: domainEvent.event_time,
-                source: 'shopify_sync'
-              }),
-              created_at: domainEvent.event_time
-            })
-            .onConflict(['lasyncro_order_id', 'aggregate_version'])
-            .ignore();
-
-        }
+      if (!orderRow) {
+        throw new Error('[ORDER_VERSION_MISSING_FOR_RECONCILIATION]');
       }
+
+      await trx('order_reconciliation_intents')
+        .insert({
+          lasyncro_order_id: lasyncroOrderId,
+          aggregate_version: orderRow.aggregate_version,
+          observed: JSON.stringify({
+            status: baselineStatus,
+            observedAt: domainEvent.event_time,
+            source: domainEvent.event_type
+          }),
+          created_at: domainEvent.event_time
+        })
+        .onConflict(['lasyncro_order_id', 'aggregate_version'])
+        .ignore();
 
       const lineEdges =
         payload.lineItems?.edges ??
@@ -279,6 +272,19 @@ export async function handleOrdersCreate({
           .ignore();
       }
     }
+
+    /**
+     * ECONOMIC MATERIALIZATION STEP
+     * -----------------------------
+     * After all order_line_items are written,
+     * we materialize revenue units for this order.
+     *
+     * This guarantees:
+     * - revenue visibility for pending orders
+     * - deterministic rebuild correctness
+     * - decoupling revenue from fulfillment
+     */
+    await writeOrderRevenueUnits(lasyncroOrderId, trx);
 
     const orderRow = await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })

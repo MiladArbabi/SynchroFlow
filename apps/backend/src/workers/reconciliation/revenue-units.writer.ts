@@ -4,15 +4,22 @@ import { v5 as uuidv5 } from 'uuid';
 import crypto from 'crypto';
 
 /**
- * Revenue Unit Writer (Variant-Atomic Version)
- * --------------------------------------------
- * - Source: order_line_items
- * - Atomic identity: lasyncro_variant_id
- * - Product is analytical grouping only
+ * Revenue Unit Writer (Variant-Aggregated Model)
+ * ----------------------------------------------
+ * Source: order_line_items
+ *
+ * Economic Model:
+ * - Each row represents ONE variant within an order.
+ * - Quantity is stored on the row (aggregated units).
+ * - Identity: (lasyncro_order_id, lasyncro_variant_id)
+ *
+ * This is NOT a unit-atomic ledger.
+ * If true unit-level economics are required in the future,
+ * a separate `revenue_unit_ledger` must be introduced.
  *
  * Guarantees:
  * - Variant-level economic fidelity
- * - No product-level collapse
+ * - Deterministic replay safety
  * - Idempotent on (lasyncro_order_id, lasyncro_variant_id)
  */
 
@@ -69,6 +76,24 @@ export async function writeOrderRevenueUnits(
         `[RevenueUnitWriter] Missing lasyncro_variant_id for order ${lasyncroOrderId}`
       );
     }
+
+    /**
+     * OPERATIONAL VISIBILITY
+     * ----------------------
+     * This log allows operators to trace revenue-unit materialization
+     * during reconciliation and deterministic rebuilds.
+     *
+     * Critical economic boundary:
+     * - Creates revenue units
+     * - Emits inventory ledger movements
+     *
+     * Absence of this log historically made reconciliation debugging opaque.
+     */
+    
+    console.info('[REVENUE_UNITS_WRITE]', {
+      orderId: lasyncroOrderId,
+      variantCount: rows.length
+    });
 
     const revenueUnits = rows.map((r) => ({
       lasyncro_revenue_unit_id: uuidv5(
