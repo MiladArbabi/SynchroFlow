@@ -1,0 +1,138 @@
+// apps/backend/src/projection/handlers/lifecycle.ft2_confirmed.ts
+
+import db from '@lasyncro/backend-core/db.js';
+import crypto from 'crypto';
+import { Knex } from 'knex';
+import { advanceCursor } from '../projection.engine.js';
+
+/**
+ * PROJECTION STREAM
+ * -----------------
+ * Lifecycle events MUST use independent cursor.
+ */
+const LIFECYCLE_PROJECTION = 'lifecycle_projection';
+
+/**
+ * HANDLE: lifecycle/ft2_confirmed
+ * --------------------------------
+ *
+ * Contract:
+ * - Event emitted by lifecycle.controller.ts
+ * - Immutable domain event
+ * - Projection performs ALL durability mutations
+ *
+ * Guarantees:
+ * - Monotonic cursor enforcement (transaction-bound)
+ * - Deterministic replay safety
+ * - Idempotent via shop_id uniqueness constraints
+ */
+export async function handleLifecycleFT2Confirmed({
+  domainEvent,
+  domain_event_id,
+  canonicalEventTime,
+}: {
+  domainEvent: any;
+  domain_event_id: number;
+  canonicalEventTime: Date;
+}) {
+  const payload = domainEvent.event_payload as {
+    user_id: number;
+    evaluator_version: string;
+    evaluation_snapshot: any;
+  };
+
+  await db.transaction(async (trx: Knex.Transaction) => {
+    /**
+     * TRANSACTIONAL MONOTONIC CURSOR ENFORCEMENT
+     * ------------------------------------------
+     * Must occur inside transaction.
+     * Row locked via FOR UPDATE.
+     */
+    const cursorRow = await trx('projection_cursors')
+      .where({ projection_name: LIFECYCLE_PROJECTION })
+      .forUpdate()
+      .first<{ last_processed_event_id: number }>();
+
+    if (
+      cursorRow?.last_processed_event_id != null &&
+      domain_event_id <= cursorRow.last_processed_event_id
+    ) {
+      throw new Error(
+        `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+      );
+    }
+
+    /**
+     * Canonical event-time anchor
+     * MUST derive exclusively from domain_events.event_time.
+     */
+    const eventRow = await trx('domain_events')
+      .where({ id: domain_event_id })
+      .first();
+
+    const shopId = domainEvent.shop_id;
+    const eventTime = new Date(eventRow.event_time);
+
+    /**
+     * Durable FT2 latch
+     */
+    await trx('ft2_state')
+      .insert({
+        shop_id: shopId,
+        completed_at: eventTime,
+        evaluator_version: payload.evaluator_version,
+        evaluation_snapshot: payload.evaluation_snapshot,
+      })
+      .onConflict('shop_id')
+      .ignore();
+
+    /**
+     * Eligibility backbone
+     * ---------------------
+     * Upsert to preserve latest evaluator state.
+     */
+    await trx('expansion_eligibility_state')
+      .insert({
+        shop_id: shopId,
+        eligible: true,
+        evaluator_version: payload.evaluator_version,
+        evaluation_snapshot: payload.evaluation_snapshot,
+        evaluated_at: eventTime,
+      })
+      .onConflict('shop_id')
+      .merge({
+        eligible: true,
+        evaluator_version: payload.evaluator_version,
+        evaluation_snapshot: payload.evaluation_snapshot,
+        evaluated_at: eventTime,
+        updated_at: eventTime,
+      });
+
+    /**
+     * Lifecycle transition MUST go through service.
+     * Direct mutation forbidden.
+     */
+    const { LifecycleTransitionService } = await import(
+      '../../services/lifecycle-transition.service.js'
+    );
+
+    await LifecycleTransitionService.auditIfTransitioned(
+      {
+        userId: payload.user_id,
+        shopId,
+        currentPhase: 'FT2',
+      },
+      trx
+    );
+
+    /**
+     * Atomic cursor advancement
+     */
+    await advanceCursor(
+      trx,
+      LIFECYCLE_PROJECTION,
+      domain_event_id,
+      eventRow.event_time
+    );
+  });
+}

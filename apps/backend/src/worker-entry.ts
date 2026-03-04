@@ -38,7 +38,7 @@ async function start() {
 
   /* startOutboxDispatcher(); */
   startDomainEventOutboxDispatcher();
-  startReconciliationIntentDispatcher();
+  /* startReconciliationIntentDispatcher(); */
  
   /**
   * DEV-ONLY: Obligation evaluation hook

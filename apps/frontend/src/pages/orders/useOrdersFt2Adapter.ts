@@ -109,6 +109,22 @@ export function mapOrdersFt2Props(
         : snapshot.revenue.blocked,
   },
 
+  /**
+   * ─────────────────────────────────────────
+   * OPERATIONAL CONTROL (FT2 SNAPSHOT)
+   * ─────────────────────────────────────────
+   * Strict passthrough.
+   *
+   * Rules:
+   * - No derivation
+   * - No fallback logic
+   * - Backend snapshot is authoritative
+   */
+  operationalControl:
+    snapshot.operationalControl === undefined
+      ? null
+      : snapshot.operationalControl,
+
   obligations:
     snapshot.obligations === undefined
       ? null

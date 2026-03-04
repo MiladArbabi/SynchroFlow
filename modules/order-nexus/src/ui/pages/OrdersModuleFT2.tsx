@@ -16,7 +16,6 @@ import { OrdersPriorityStackSection } from '../components/OrdersPriorityStackSec
 
 import { toEpistemic } from '@lasyncro/epistemic';
 
-
 /**
  * ─────────────────────────────────────────────────────────────
  * ORDERS MODULE — FT2
@@ -177,7 +176,7 @@ export default function OrdersModuleFT2(
 
       <FT2Row intent='kpi'>
         <OrdersDecisionBrief {...decision.brief} />
-        
+
         <OrderHealthInfoBlock
           orders_at_sla_risk={operationalControl.orders_at_sla_risk}
           aging_24h={operationalControl.aging_24h}
@@ -188,31 +187,6 @@ export default function OrdersModuleFT2(
           exception_orders={operationalControl.exception_orders}
         />
       </FT2Row>
-
-      {/* <ReturnsOverviewInfoBlock
-        returnedRevenue={toEpistemic(returns?.returnedRevenue ?? null)}
-        returnedUnits={returns?.returnedUnits ?? null}
-        affectedOrders={returns?.affectedOrders ?? null}
-      /> */}
-
-      {/* <FT2Row intent='kpi'>
-        <ObligationOverviewInfoBlock
-          obligations={
-            obligations ?? {
-              totalBlockedValue: null,
-              blockedBy: {
-                inventory: null,
-                customer: null,
-                operational: null,
-                other: null,
-              },
-              coverage: {
-                status: 'insufficient',
-              },
-            }
-          }
-        />
-      </FT2Row> */}
     </FT2Layout>
   );
 }

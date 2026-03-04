@@ -1,7 +1,7 @@
 // apps/frontend/src/pages/orders/useOrdersFt2Snapshot.ts
-
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import { OrdersModuleFT2DataProps } from '@lasyncro/order-nexus';
 
 export type OrdersFt2Snapshot = {
 
@@ -29,6 +29,8 @@ export type OrdersFt2Snapshot = {
     pending?: number | null;
     blocked?: number | null;
   };
+
+  operationalControl?: OrdersModuleFT2DataProps['operationalControl'];
 
   /**
    * ─────────────────────────────────────────

@@ -1,0 +1,179 @@
+// apps/backend/src/projection/handlers/refunds.create.ts
+
+/**
+ * REFUNDS — CREATE PROJECTION HANDLER
+ * ------------------------------------
+ * Mechanical extraction from projection.engine.ts.
+ *
+ * No behavior changes.
+ * No cleanup.
+ * Determinism issues intentionally preserved.
+ */
+
+import db from '@lasyncro/backend-core/db.js';
+import crypto from 'crypto';
+import { Knex } from 'knex';
+
+import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
+import { advanceCursor } from '../projection.engine.js';
+
+const ORDER_UUID_NAMESPACE =
+  '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+
+const ORDERS_PROJECTION = 'orders_projection';
+
+export async function handleRefundsCreate({
+  domainEvent,
+  domain_event_id,
+  canonicalEventTime,
+}: {
+  domainEvent: any;
+  domain_event_id: number;
+  canonicalEventTime: Date;
+}) {
+
+  const payload = domainEvent.event_payload as any;
+
+  let lasyncroOrderId: string | null = null;
+
+  await db.transaction(async (trx: Knex.Transaction) => {
+
+    const cursorRow = await trx('projection_cursors')
+      .where({ projection_name: ORDERS_PROJECTION })
+      .forUpdate()
+      .first<{ last_processed_event_id: number }>();
+
+    if (
+      cursorRow?.last_processed_event_id != null &&
+      domain_event_id <= cursorRow.last_processed_event_id
+    ) {
+      throw new Error(
+        `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
+      );
+    }
+
+    lasyncroOrderId = await resolveExternalOrderId(
+      domainEvent.shop_id,
+      'shopify',
+      String(payload.order_id),
+      trx
+    );
+
+    if (!lasyncroOrderId) return;
+
+    const refundExecutedAt = canonicalEventTime;
+    const externalRefundId = String(payload.id);
+
+    let execution = await trx('refund_executions')
+      .where({
+        platform: 'shopify',
+        external_refund_id: externalRefundId,
+      })
+      .first();
+
+    if (!execution) {
+
+      const refundExecutionId = crypto
+        .createHash('sha1')
+        .update(
+          `${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${payload.order_id}:refund:${externalRefundId}`
+        )
+        .digest('hex')
+        .slice(0, 32)
+        .replace(
+          /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+          '$1-$2-$3-$4-$5'
+        );
+
+      await trx('refund_executions').insert({
+        lasyncro_refund_execution_id: refundExecutionId,
+        lasyncro_order_id: lasyncroOrderId,
+        platform: 'shopify',
+        external_refund_id: externalRefundId,
+        total_refund_amount: 0,
+        executed_at: refundExecutedAt,
+      });
+
+      execution = {
+        lasyncro_refund_execution_id: refundExecutionId,
+      };
+    }
+
+    const refundLineItems = Array.isArray(payload.refund_line_items)
+      ? payload.refund_line_items
+      : [];
+
+    for (const item of refundLineItems) {
+
+      const externalLineItemId = String(
+        item?.line_item?.id ?? item?.line_item_id ?? ''
+      );
+
+      if (!externalLineItemId) continue;
+
+      const revenueUnit = await trx('order_line_items')
+        .select('lasyncro_variant_id', 'lasyncro_product_id')
+        .where({
+          lasyncro_order_id: lasyncroOrderId,
+          platform: 'shopify',
+          external_line_item_id: externalLineItemId,
+        })
+        .first();
+
+      if (!revenueUnit) continue;
+
+      const ru = await trx('order_revenue_units')
+        .select('lasyncro_revenue_unit_id')
+        .where({
+          lasyncro_order_id: lasyncroOrderId,
+          lasyncro_variant_id: revenueUnit.lasyncro_variant_id,
+        })
+        .first();
+
+      if (!ru) continue;
+
+      await trx('refund_execution_line_items')
+        .insert({
+          lasyncro_refund_line_item_id: crypto
+            .createHash('sha1')
+            .update(
+              `${ORDER_UUID_NAMESPACE}:${execution.lasyncro_refund_execution_id}:${ru.lasyncro_revenue_unit_id}`
+            )
+            .digest('hex')
+            .slice(0, 32)
+            .replace(
+              /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+              '$1-$2-$3-$4-$5'
+            ),
+          lasyncro_refund_execution_id:
+            execution.lasyncro_refund_execution_id,
+          lasyncro_revenue_unit_id: ru.lasyncro_revenue_unit_id,
+          refunded_quantity: Number(item.quantity ?? 0),
+          refunded_amount: Number(item.subtotal ?? 0),
+        })
+        .onConflict([
+          'lasyncro_refund_execution_id',
+          'lasyncro_revenue_unit_id',
+        ])
+        .ignore();
+    }
+
+    await trx('orders')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .update({
+        order_updated_at: refundExecutedAt,
+        aggregate_version: trx.raw('aggregate_version + 1'),
+      });
+
+    const eventRow = await trx('domain_events')
+      .where({ id: domain_event_id })
+      .first();
+
+    await advanceCursor(
+      trx,
+      ORDERS_PROJECTION,
+      domain_event_id,
+      eventRow.event_time
+    );
+  });
+}

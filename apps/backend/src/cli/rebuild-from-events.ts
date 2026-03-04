@@ -22,7 +22,7 @@ dotenv.config({
   */
  process.env.REBUILD_MODE = 'true';
 
-import { projectDomainEvent } from '../worker.js';
+import { projectDomainEvent } from '../projection/projection.engine.js';
 import db from '@lasyncro/backend-core/db.js';
 
 async function truncateProjections() {

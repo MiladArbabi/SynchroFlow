@@ -69,6 +69,41 @@ export type OrderNexusFT2Snapshot =
     blocked: number | null;
   }
 
+  /**
+   * Phase 1 — Operational Control Snapshot
+   * --------------------------------------
+   * Fully derived backend snapshot.
+   * Strict passthrough only.
+   */
+  operationalControl: {
+    snapshot_date: string;
+    aggregate_version: number;
+
+    realized_revenue: number;
+    at_risk_revenue: number;
+    blocked_revenue: number;
+    revenue_leakage: number;
+    avg_contribution_margin_pct: number;
+
+    orders_at_sla_risk: number;
+    aging_24h: number;
+    aging_48h: number;
+    aging_72h_plus: number;
+    pending_fulfillment: number;
+    pending_payment: number;
+    exception_orders: number;
+
+    constrained_orders: number;
+    revenue_blocked_inventory: number;
+    revenue_blocked_customer: number;
+    revenue_blocked_operational: number;
+
+    queue_manual_review: number;
+    queue_awaiting_inventory: number;
+    queue_ready_to_ship: number;
+    queue_awaiting_customer: number;
+  } | null;
+
   ingestion: {
     status: 'present' | 'absent';
   } | null;

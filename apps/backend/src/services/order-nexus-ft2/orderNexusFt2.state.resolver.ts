@@ -219,6 +219,22 @@ export async function getOrderNexusFt2StateSnapshot(
       ? Number(totalOrdersRow.count)
       : 0;
 
+  /**
+   * OPERATIONAL CONTROL SNAPSHOT (PHASE 1)
+   * --------------------------------------
+   * Canonical control-tower compression layer.
+   *
+   * Rules:
+   * - Read-only
+   * - Replace-on-reconcile respected
+   * - Latest snapshot per shop
+   * - No aggregation or inference here
+   */
+  const operationalControlRow = await db('orders_operational_control_snapshot')
+    .where({ shop_id: shopId })
+    .orderBy('snapshot_date', 'desc')
+    .first();
+
   // Snapshot placeholder (shape refined next task)
   const snapshot: OrderNexusFT2Snapshot = {
     orders: {
@@ -240,6 +256,44 @@ export async function getOrderNexusFt2StateSnapshot(
       pending: pendingStructuralRevenue,
       blocked: constrainedStructuralRevenue,
     },
+
+    /**
+   * Operational Control Snapshot (FT2 Surface)
+   * ------------------------------------------
+   * Fully derived backend snapshot.
+   * Strict passthrough to UI.
+   */
+  operationalControl: operationalControlRow
+    ? {
+        snapshot_date: operationalControlRow.snapshot_date,
+        aggregate_version: operationalControlRow.aggregate_version ?? 0,
+
+        realized_revenue: operationalControlRow.realized_revenue,
+        at_risk_revenue: operationalControlRow.at_risk_revenue,
+        blocked_revenue: operationalControlRow.blocked_revenue,
+        revenue_leakage: operationalControlRow.revenue_leakage,
+        avg_contribution_margin_pct: operationalControlRow.avg_contribution_margin_pct,
+
+        orders_at_sla_risk: operationalControlRow.orders_at_sla_risk,
+        aging_24h: operationalControlRow.aging_24h,
+        aging_48h: operationalControlRow.aging_48h,
+        aging_72h_plus: operationalControlRow.aging_72h_plus,
+        pending_fulfillment: operationalControlRow.pending_fulfillment,
+        pending_payment: operationalControlRow.pending_payment,
+        exception_orders: operationalControlRow.exception_orders,
+
+        constrained_orders: operationalControlRow.constrained_orders,
+        revenue_blocked_inventory: operationalControlRow.revenue_blocked_inventory,
+        revenue_blocked_customer: operationalControlRow.revenue_blocked_customer,
+        revenue_blocked_operational: operationalControlRow.revenue_blocked_operational,
+
+        queue_manual_review: operationalControlRow.queue_manual_review,
+        queue_awaiting_inventory: operationalControlRow.queue_awaiting_inventory,
+        queue_ready_to_ship: operationalControlRow.queue_ready_to_ship,
+        queue_awaiting_customer: operationalControlRow.queue_awaiting_customer,
+      }
+    : null,
+
     refunds: refundsFacts,
     alignment,
     freshness: {
