@@ -8,6 +8,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
+import { reconcileOrderFulfillment } from '../workers/reconciliation/reconciliation.handlers.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 dotenv.config({
@@ -122,6 +124,65 @@ async function replayEvents() {
 }
 
 /**
+ * DETERMINISTIC RECONCILIATION EXECUTION
+ * --------------------------------------
+ * During normal runtime reconciliation is executed
+ * asynchronously via queue dispatcher.
+ *
+ * Deterministic rebuild cannot rely on queues.
+ *
+ * Therefore we must execute reconciliation inline
+ * for every captured reconciliation intent.
+ *
+ * Guarantees:
+ * - Revenue units materialized
+ * - Inventory projections rebuilt
+ * - Operational snapshots computed
+ * - Deterministic replay safety preserved
+ */
+async function executeReconciliationIntents() {
+
+  console.log('[REBUILD] Executing reconciliation intents...');
+
+  const intents = await db('order_reconciliation_intents')
+    .orderBy('created_at', 'asc');
+
+  for (const intent of intents) {
+
+    /**
+     * OBSERVED PAYLOAD NORMALIZATION
+     * ------------------------------
+     * The `observed` column is JSONB.
+     *
+     * During runtime it may arrive either as:
+     * - string (older migrations)
+     * - object (pg JSONB automatic decoding)
+     *
+     * Deterministic rebuild must support both
+     * without throwing parsing errors.
+     */
+    let observed;
+
+    if (intent.observed) {
+      observed =
+        typeof intent.observed === 'string'
+          ? JSON.parse(intent.observed)
+          : intent.observed;
+    }
+
+    await reconcileOrderFulfillment(
+      intent.lasyncro_order_id,
+      intent.aggregate_version,
+      observed
+    );
+  }
+
+  console.log(
+    `[REBUILD] Reconciliation completed for ${intents.length} intents`
+  );
+}
+
+/**
  * DETERMINISTIC STATE HASH
  * ------------------------
  * Produces canonical SHA256 hash of projection state.
@@ -181,6 +242,14 @@ async function main() {
    */
   await truncateProjections();
   await replayEvents();
+
+  /**
+   * RECONCILIATION PHASE
+   * --------------------
+   * Required for deterministic rebuild because
+   * runtime reconciliation normally occurs via worker.
+   */
+  await executeReconciliationIntents();
 
   /**
    * REBUILD PURITY RULE

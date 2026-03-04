@@ -1,21 +1,24 @@
 // apps/backend/src/projection/projection.engine.ts
-
 import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
-import { getQueueChannel } from '../queue.js';
 
 import { projectionRegistry } from './projection.registry.js';
+
+/**
+ * PROJECTION ENGINE
+ * -----------------
+ * Transport-agnostic execution layer.
+ *
+ * IMPORTANT:
+ * Queue transport must NEVER be imported here.
+ * Worker transport owns all RabbitMQ interaction.
+ */
 
 /**
  * Projection Streams
  */
 const ORDERS_PROJECTION = 'orders_projection';
 const LIFECYCLE_PROJECTION = 'lifecycle_projection';
-
-/**
- * Lazily obtain channel for 'events'
- */
-let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
 
 /**
  * CURSOR ADVANCEMENT (TRANSACTION-BOUND)
@@ -139,18 +142,6 @@ export async function projectDomainEventFromMessage(
     if (!domainEvent.event_time) {
       throw new Error(
         '[EVENT_TIME_VIOLATION] missing canonical event_time'
-      );
-    }
-
-    /**
-     * CANONICAL EVENT-TIME ANCHOR
-     * ---------------------------
-     * Worker must rely on domain_events.event_time.
-     * Raw payload timestamps are forbidden beyond ingestion.
-     */
-    if (!domainEvent.event_time) {
-      throw new Error(
-        '[EVENT_TIME_VIOLATION] domain_event missing canonical event_time'
       );
     }
 

@@ -247,9 +247,29 @@ export async function getOrderNexusFt2StateSnapshot(
       /**
        * FT2 Revenue — Structural State
        * ------------------------------
-       * totalSales = canonical structural revenue
-       * earned/pending temporarily execution-based (to be isolated next)
-       * blocked = placeholder (to be wired next)
+       * Canonical structural revenue classification derived
+       * from revenue units and fulfillment constraints.
+       *
+       * Definitions:
+       *
+       * totalSales
+       *   Lifetime structural revenue (net of returns)
+       *
+       * earned
+       *   Revenue whose orders are fully fulfilled
+       *
+       * pending
+       *   Revenue whose orders are not yet fulfilled
+       *
+       * blocked
+       *   Revenue structurally constrained by operational
+       *   obligations (inventory / fulfillment constraints).
+       *
+       * Source:
+       *   order_revenue_units_net
+       *   + order_fulfillment_status.inventory_block_type
+       *
+       * This is NOT a placeholder. It is canonical FT2 state.
        */
       totalSales: totalStructuralRevenue,
       earned: earnedStructuralRevenue,

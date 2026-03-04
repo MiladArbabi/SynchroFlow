@@ -14,8 +14,6 @@ const ORDER_UUID_NAMESPACE =
 
 const ORDERS_PROJECTION = 'orders_projection';
 
-const ft0InFlight = new Set<number>();
-
 export async function handleOrdersCreate({
   domainEvent,
   domain_event_id,
@@ -150,6 +148,60 @@ export async function handleOrdersCreate({
           },
           trx
         );
+
+        /**
+         * SYNC RECONCILIATION TRIGGER
+         * ---------------------------
+         * Shopify sync delivers snapshot fulfillment state.
+         *
+         * The reconciliation pipeline historically relied on
+         * the `orders/fulfilled` domain event, but during
+         * snapshot ingestion we may already observe fulfilled
+         * orders.
+         *
+         * To maintain projection completeness, we emit a
+         * reconciliation intent when the snapshot status
+         * indicates fulfillment.
+         *
+         * This guarantees the following pipeline executes:
+         *
+         * orders/sync
+         *   → reconciliation intent
+         *   → reconciliation worker
+         *   → revenue unit materialization
+         *   → operational control snapshot
+         *
+         * Determinism:
+         * - aggregate_version used as reconciliation version
+         * - no wall-clock timestamps used for domain logic
+         */
+
+        if (baselineStatus === 'fulfilled') {
+
+          const orderRow = await trx('orders')
+            .where({ lasyncro_order_id: lasyncroOrderId })
+            .select('aggregate_version')
+            .first();
+
+          if (!orderRow) {
+            throw new Error('[ORDER_VERSION_MISSING_FOR_RECONCILIATION]');
+          }
+
+          await trx('order_reconciliation_intents')
+            .insert({
+              lasyncro_order_id: lasyncroOrderId,
+              aggregate_version: orderRow.aggregate_version,
+              observed: JSON.stringify({
+                status: 'fulfilled',
+                observedAt: domainEvent.event_time,
+                source: 'shopify_sync'
+              }),
+              created_at: domainEvent.event_time
+            })
+            .onConflict(['lasyncro_order_id', 'aggregate_version'])
+            .ignore();
+
+        }
       }
 
       const lineEdges =
@@ -248,19 +300,9 @@ export async function handleOrdersCreate({
       await FirstInsightService.computeAndPersist(domainEvent.shop_id);
     }
 
-    const shopId = domainEvent.shop_id;
     const eventRow = await trx('domain_events')
       .where({ id: domain_event_id })
       .first();
-
-    if (!ft0InFlight.has(shopId)) {
-      ft0InFlight.add(shopId);
-      try {
-        await FT0CompletionService.evaluateAndComplete(shopId);
-      } finally {
-        ft0InFlight.delete(shopId);
-      }
-    }
 
     await advanceCursor(trx, ORDERS_PROJECTION, domain_event_id, eventRow.event_time);
   });
