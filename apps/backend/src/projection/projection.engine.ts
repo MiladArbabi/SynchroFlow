@@ -136,6 +136,46 @@ export async function projectDomainEventFromMessage(
      * Therefore, no pre-transaction cursor checks are allowed here.
      */
 
+   /**
+     * CONTIGUOUS PROJECTION ORDER ENFORCEMENT
+     * ---------------------------------------
+     * RabbitMQ delivery order is NOT a correctness guarantee.
+     *
+     * Projection streams must process domain events strictly
+     * in contiguous ID order:
+     *
+     *   expected_event_id = last_processed_event_id + 1
+     *
+     * Any gap indicates:
+     * - lost message
+     * - queue reordering
+     * - consumer restart race
+     *
+     * In those cases we fail fast to preserve projection integrity.
+     */
+    const cursor = await db('projection_cursors')
+      .where({ projection_name: projectionName })
+      .first<{ last_processed_event_id: number }>();
+
+    if (cursor?.last_processed_event_id != null) {
+
+      const expectedEventId = cursor.last_processed_event_id + 1;
+
+      if (domain_event_id !== expectedEventId) {
+
+        console.error('[PROJECTION_CONTIGUOUS_VIOLATION]', {
+          projection: projectionName,
+          lastProcessed: cursor.last_processed_event_id,
+          expected: expectedEventId,
+          received: domain_event_id,
+        });
+
+        throw new Error(
+          `[PROJECTION_CONTIGUOUS_VIOLATION] projection=${projectionName} expected=${expectedEventId} received=${domain_event_id}`
+        );
+      }
+    }
+
     /**
      * CANONICAL EVENT TIME CHECK
      */
@@ -146,6 +186,58 @@ export async function projectDomainEventFromMessage(
     }
 
     const canonicalEventTime = new Date(domainEvent.event_time);
+
+    /**
+     * CENTRALIZED PROJECTION CURSOR ENFORCEMENT
+     * -----------------------------------------
+     * All projection ordering invariants are enforced here.
+     *
+     * Guarantees:
+     * - contiguous event processing
+     * - duplicate suppression
+     * - deterministic replay
+     *
+     * Handlers must NOT implement cursor logic.
+     */
+
+    await db.transaction(async (trx: Knex.Transaction) => {
+
+      const cursorRow = await trx('projection_cursors')
+        .where({ projection_name: projectionName })
+        .forUpdate()
+        .first<{ last_processed_event_id: number }>();
+
+      /**
+       * DUPLICATE EVENT
+       */
+      if (
+        cursorRow?.last_processed_event_id != null &&
+        domain_event_id <= cursorRow.last_processed_event_id
+      ) {
+        console.warn('[PROJECTION_DUPLICATE_EVENT_IGNORED]', {
+          projection: projectionName,
+          last: cursorRow.last_processed_event_id,
+          received: domain_event_id,
+        });
+        return;
+      }
+
+      const handler = projectionRegistry[domainEvent.event_type];
+
+      if (!handler) {
+        return;
+      }
+
+      /**
+       * HANDLER EXECUTION
+       */
+      await handler({
+        domainEvent,
+        domain_event_id,
+        canonicalEventTime,
+      });
+
+    });
 
     const handler = projectionRegistry[domainEvent.event_type];
 

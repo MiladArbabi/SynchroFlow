@@ -1,7 +1,6 @@
 // apps/backend/src/api/shopify/handlers/handleOrderCreated.ts
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
-import { getQueueChannel } from '../../../queue.js';
 
 type ShopifyOrderCreatePayload = {
   id: number | string;
@@ -135,19 +134,20 @@ export async function handleOrderCreated(
         })
         .returning('id');
 
-      const paidEventId = paidEvent[0].id ?? paidEvent[0];
-
-      const channel = getQueueChannel('events');
-
-      channel.sendToQueue(
-        'events',
-        Buffer.from(
-          JSON.stringify({ domain_event_id: paidEventId })
-        ),
-        { persistent: true }
-      );
-
-      console.log('[DOMAIN_EVENT_PUBLISHED]', paidEventId);
+      /**
+       * OUTBOX DISPATCH RULE
+       * --------------------
+       * Domain events must NOT be published directly to RabbitMQ.
+       *
+       * The DB trigger `domain_event_auto_outbox` automatically inserts
+       * a row into `domain_event_outbox` which is then dispatched by
+       * the domain-event-outbox worker.
+       *
+       * This guarantees:
+       * - transactional event durability
+       * - no lost projections
+       * - deterministic replay safety
+       */
     }
 
   } catch (error: any) {
@@ -177,23 +177,14 @@ export async function handleOrderCreated(
   console.log('[DOMAIN_EVENT_INSERTED]', domainEventId);
 
   /**
-   * PROJECTION EMISSION (CRITICAL)
-   * --------------------------------
-   * Every domain event MUST be emitted to the `events` queue.
-   * Projection worker is queue-driven and will not run without this.
+   * OUTBOX DISPATCH RULE
+   * --------------------
+   * Event dispatch is handled by the domain_event_outbox dispatcher.
    *
-   * Deterministic payload:
-   *   { domain_event_id: number }
+   * The `domain_event_auto_outbox` trigger guarantees that
+   * every inserted domain event produces an outbox entry.
+   *
+   * Direct queue publishing here would create a dual dispatch
+   * path and violate event transport determinism.
    */
-  const channel = getQueueChannel('events');
-
-  channel.sendToQueue(
-    'events',
-    Buffer.from(
-      JSON.stringify({ domain_event_id: domainEventId })
-    ),
-    { persistent: true }
-  );
-
-  console.log('[DOMAIN_EVENT_PUBLISHED]', domainEventId);
 };

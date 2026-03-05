@@ -33,19 +33,15 @@ export async function handleLifecycleFT0Completed({
 
   await db.transaction(async (trx: Knex.Transaction) => {
 
-    const cursorRow = await trx('projection_cursors')
-      .where({ projection_name: LIFECYCLE_PROJECTION })
-      .forUpdate()
-      .first<{ last_processed_event_id: number }>();
-
-    if (
-      cursorRow?.last_processed_event_id != null &&
-      domain_event_id <= cursorRow.last_processed_event_id
-    ) {
-      throw new Error(
-        `[PROJECTION_ORDER_VIOLATION] last=${cursorRow.last_processed_event_id} got=${domain_event_id}`
-      );
-    }
+    /**
+     * CURSOR ENFORCEMENT MOVED
+     * ------------------------
+     * Projection ordering is now enforced centrally
+     * in projection.engine.ts.
+     *
+     * Handlers must remain pure projection logic
+     * without queue or cursor coordination.
+     */
 
     const eventRow = await trx('domain_events')
       .where({ id: domain_event_id })

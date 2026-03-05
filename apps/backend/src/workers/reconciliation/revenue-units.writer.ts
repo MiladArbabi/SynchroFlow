@@ -55,8 +55,17 @@ export async function writeOrderRevenueUnits(
     const occurredAt =
       order.order_processed_at ?? order.order_created_at;
 
+    /**
+     * DETERMINISTIC SOURCE ORDERING
+     * -----------------------------
+     * Revenue units must be derived from line items in a
+     * deterministic order to guarantee replay-stable state hashes.
+     *
+     * Variant ID provides a stable canonical ordering key.
+     */
     const rows = await trx('order_line_items')
       .where({ lasyncro_order_id: lasyncroOrderId })
+      .orderBy('lasyncro_variant_id', 'asc')
       .select(
         'lasyncro_product_id',
         'lasyncro_variant_id',
@@ -89,7 +98,7 @@ export async function writeOrderRevenueUnits(
      *
      * Absence of this log historically made reconciliation debugging opaque.
      */
-    
+
     console.info('[REVENUE_UNITS_WRITE]', {
       orderId: lasyncroOrderId,
       variantCount: rows.length
@@ -137,7 +146,20 @@ export async function writeOrderRevenueUnits(
     await trx('inventory_movements')
       .insert(
         revenueUnits.map((ru) => ({
-          lasyncro_inventory_movement_id: crypto.randomUUID(),
+          /**
+           * DETERMINISTIC INVENTORY MOVEMENT ID
+           * -----------------------------------
+           * Inventory movements must be deterministic to allow
+           * replay-safe rebuilds and stable system state hashing.
+           *
+           * Identity is derived from:
+           * - revenue unit id
+           * - movement type
+           */
+          lasyncro_inventory_movement_id: uuidv5(
+            `${ru.lasyncro_revenue_unit_id}:inventory:sale`,
+            REVENUE_UNIT_NAMESPACE
+          ),
           device_event_id: uuidv5(
             `${ru.lasyncro_revenue_unit_id}:sale`,
             REVENUE_UNIT_NAMESPACE

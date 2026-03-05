@@ -72,21 +72,15 @@ export async function handleOrdersCreate({
 
   await db.transaction(async (trx: Knex.Transaction) => {
 
-    const cursorRow = await trx('projection_cursors')
-      .where({ projection_name: ORDERS_PROJECTION })
-      .forUpdate()
-      .first<{ last_processed_event_id: number }>();
-
-    if (
-      cursorRow?.last_processed_event_id != null &&
-      domain_event_id <= cursorRow.last_processed_event_id
-    ) {
-      console.warn('[PROJECTION_DUPLICATE_EVENT_IGNORED]', {
-        last: cursorRow.last_processed_event_id,
-        received: domain_event_id,
-      });
-      return;
-    }
+    /**
+     * CURSOR ENFORCEMENT MOVED
+     * ------------------------
+     * Projection ordering is now enforced centrally
+     * in projection.engine.ts.
+     *
+     * Handlers must remain pure projection logic
+     * without queue or cursor coordination.
+     */
 
     const lasyncroOrderId = crypto
       .createHash('sha1')

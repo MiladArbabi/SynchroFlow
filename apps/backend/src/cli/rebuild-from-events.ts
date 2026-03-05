@@ -39,76 +39,86 @@ async function truncateProjections() {
   console.log('[REBUILD] Queue interaction skipped (deterministic mode)');
 
   /**
-   * FULL PROJECTION RESET
-   * ----------------------
-   * Deterministic rebuild requires ALL projection-derived
-   * tables to be cleared.
+   * SAFE PROJECTION TRUNCATION
+   * ---------------------------
+   * PostgreSQL does not support TRUNCATE ... IF EXISTS.
    *
-   * IMPORTANT:
-   * - domain_events must NEVER be truncated.
-   * - identity/source-of-truth tables must NEVER be truncated.
+   * Therefore we dynamically truncate only tables that
+   * currently exist in the schema.
+   *
+   * Guarantees:
+   * - rebuild never fails during migration development
+   * - deterministic rebuild preserved
    */
-  await db.raw(`
-    TRUNCATE TABLE
 
-      /**
-       * OUTBOX MUST BE CLEARED FOR DETERMINISTIC REBUILD
-       * -------------------------------------------------
-       */
-      domain_event_outbox,
+  const projectionTables = [
+    'domain_event_outbox',
+    'orders',
+    'order_line_items',
+    'order_revenue_units',
+    'refund_executions',
+    'refund_execution_line_items',
+    'order_fulfillment_status',
+    'order_fulfillment_history',
+    'order_constraint_events',
+    'order_projection_audit_log',
+    'order_reconciliation_intents',
+    'order_age_snapshot',
+    'order_margin_snapshot',
+    'order_risk_snapshot',
+    'orders_operational_control_snapshot',
+    'revenue_projection_daily',
+    'daily_operational_brief_snapshot',
+    'inventory_movements',
+    'user_lifecycle_snapshot',
+    'lifecycle_audit_events',
+    'lifecycle_events',
+    'ft0_state',
+    'ft2_state',
+    'system_readiness_state',
+    'expansion_eligibility_state'
+  ];
 
-      /**
-       * ORDERS PROJECTION TABLES
-       */
-      orders,
-      order_line_items,
-      order_revenue_units,
-      refund_executions,
-      refund_execution_line_items,
+  for (const table of projectionTables) {
+    const exists = await db
+      .select('tablename')
+      .from('pg_tables')
+      .where({
+        schemaname: 'public',
+        tablename: table
+      })
+      .first();
 
-      order_fulfillment_status,
-      order_fulfillment_history,
-      order_constraint_events,
-      order_projection_audit_log,
-      order_reconciliation_intents,
-
-      order_age_snapshot,
-      order_margin_snapshot,
-      order_risk_snapshot,
-      orders_operational_control_snapshot,
-      revenue_projection_daily,
-      daily_operational_brief_snapshot,
-
-      inventory_movements,
-
-      /**
-       * LIFECYCLE PROJECTION TABLES
-       * ----------------------------
-       * REQUIRED for deterministic rebuild.
-       * These tables are projection-derived and must NOT survive replay.
-       */
-      user_lifecycle_snapshot,
-      lifecycle_audit_events,
-      lifecycle_events,
-
-      ft0_state,
-      ft2_state,
-      system_readiness_state,
-      expansion_eligibility_state
-
-    RESTART IDENTITY CASCADE;
-  `);
+    if (exists) {
+      await db.raw(
+        `TRUNCATE TABLE "${table}" RESTART IDENTITY CASCADE`
+      );
+    }
+  }
 
   /**
-   * Reset projection cursors.
+   * SAFE CURSOR RESET
+   * -----------------
+   * projection_cursors may not exist during early
+   * migration development.
    *
-   * IMPORTANT:
-   * DELETE is forbidden by DB trigger.
-   * TRUNCATE is required for deterministic rebuild.
+   * Rebuild must never fail due to schema evolution.
    */
-  await db.raw(`
-    TRUNCATE TABLE projection_cursors RESTART IDENTITY;
-  `);
+
+  const cursorTableExists = await db
+    .select('tablename')
+    .from('pg_tables')
+    .where({
+      schemaname: 'public',
+      tablename: 'projection_cursors'
+    })
+    .first();
+
+  if (cursorTableExists) {
+    await db.raw(
+      `TRUNCATE TABLE "projection_cursors" RESTART IDENTITY`
+    );
+  }
 }
 
 async function replayEvents() {
@@ -235,6 +245,30 @@ async function computeStateHash(): Promise<string> {
 async function main() {
   console.log('[REBUILD] Starting full deterministic rebuild...');
 
+  /**
+   * EVENT STORE INTEGRITY CHECK
+   * ---------------------------
+   * Rebuild requires the canonical domain event log.
+   *
+   * If the table does not exist, migrations were not applied
+   * or the wrong database is connected.
+   */
+
+  const eventStoreExists = await db
+    .select('tablename')
+    .from('pg_tables')
+    .where({
+      schemaname: 'public',
+      tablename: 'domain_events'
+    })
+    .first();
+
+  if (!eventStoreExists) {
+    throw new Error(
+      '[REBUILD_FATAL] domain_events table missing. Run migrations or verify DB connection.'
+    );
+  };
+  
   /**
    * QUEUE INITIALIZATION
    * --------------------

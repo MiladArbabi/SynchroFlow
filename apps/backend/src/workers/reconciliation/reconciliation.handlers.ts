@@ -163,9 +163,20 @@ export async function reconcileOrderFulfillment(
       );
     }
 
+    /**
+     * DETERMINISTIC VARIANT EXTRACTION
+     * --------------------------------
+     * DISTINCT without ORDER BY produces unstable ordering.
+     *
+     * Variant ordering must be canonical to guarantee:
+     * - deterministic rebuilds
+     * - stable inventory projection rebuild order
+     * - deterministic operational signal computation
+     */
     const variantRows = await trx('order_revenue_units')
       .where({ lasyncro_order_id: lasyncroOrderId })
-      .distinct('lasyncro_variant_id');
+      .distinct('lasyncro_variant_id')
+      .orderBy('lasyncro_variant_id', 'asc');
 
     const affectedVariantIds = variantRows.map(r => r.lasyncro_variant_id);
 
