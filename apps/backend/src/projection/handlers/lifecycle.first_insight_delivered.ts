@@ -92,13 +92,10 @@ export async function handleLifecycleFirstInsightDelivered({
     }
 
     /**
-     * Atomic cursor advancement
+     * CURSOR ADVANCEMENT REMOVED
+     * --------------------------
+     * Projection engine centrally manages replay progress.
+     * Handlers must remain pure projection logic.
      */
-    await advanceCursor(
-      trx,
-      LIFECYCLE_PROJECTION,
-      domain_event_id,
-      eventRow.event_time
-    );
   });
 }

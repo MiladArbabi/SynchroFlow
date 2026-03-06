@@ -158,16 +158,12 @@ export async function handleOrdersFulfilled({
           : undefined,
     };
 
-    const eventRow = await trx('domain_events')
-      .where({ id: domain_event_id })
-      .first();
-
-    await advanceCursor(
-      trx,
-      ORDERS_PROJECTION,
-      domain_event_id,
-      eventRow.event_time
-    );
+    /**
+     * CURSOR ADVANCEMENT REMOVED
+     * --------------------------
+     * Projection engine centrally manages replay progress.
+     * Handlers must remain pure projection logic.
+     */
   });
 
   /**

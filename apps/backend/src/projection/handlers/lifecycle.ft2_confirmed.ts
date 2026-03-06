@@ -115,15 +115,5 @@ export async function handleLifecycleFT2Confirmed({
       },
       trx
     );
-
-    /**
-     * Atomic cursor advancement
-     */
-    await advanceCursor(
-      trx,
-      LIFECYCLE_PROJECTION,
-      domain_event_id,
-      eventRow.event_time
-    );
   });
 }

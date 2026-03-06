@@ -40,10 +40,6 @@ export async function handleOrdersPaid({
 
     const paymentTimestamp = canonicalEventTime;
 
-    const eventRow = await trx('domain_events')
-      .where({ id: domain_event_id })
-      .first();
-
     await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .update({
@@ -53,11 +49,11 @@ export async function handleOrdersPaid({
         updated_at: paymentTimestamp,
       });
 
-    await advanceCursor(
-      trx,
-      ORDERS_PROJECTION,
-      domain_event_id,
-      eventRow.event_time
-    );
+      /**
+       * CURSOR ADVANCEMENT REMOVED
+       * --------------------------
+       * Projection engine centrally manages replay progress.
+       * Handlers must remain pure projection logic.
+       */
   });
 }

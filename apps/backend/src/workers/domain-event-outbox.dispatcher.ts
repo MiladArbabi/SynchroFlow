@@ -65,7 +65,6 @@ export async function startDomainEventOutboxDispatcher() {
             }
           }
         }
-
       });
 
     } catch (err) {

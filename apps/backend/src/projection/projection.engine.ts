@@ -136,45 +136,17 @@ export async function projectDomainEventFromMessage(
      * Therefore, no pre-transaction cursor checks are allowed here.
      */
 
-   /**
-     * CONTIGUOUS PROJECTION ORDER ENFORCEMENT
-     * ---------------------------------------
-     * RabbitMQ delivery order is NOT a correctness guarantee.
+    /**
+     * ORDER ENFORCEMENT NOTE
+     * ----------------------
+     * Projection ordering must ONLY be enforced inside the
+     * transaction using SELECT ... FOR UPDATE.
      *
-     * Projection streams must process domain events strictly
-     * in contiguous ID order:
-     *
-     *   expected_event_id = last_processed_event_id + 1
-     *
-     * Any gap indicates:
-     * - lost message
-     * - queue reordering
-     * - consumer restart race
-     *
-     * In those cases we fail fast to preserve projection integrity.
+     * Pre-transaction checks are forbidden because:
+     * - they race with concurrent workers
+     * - they violate deterministic replay
+     * - they duplicate cursor logic
      */
-    const cursor = await db('projection_cursors')
-      .where({ projection_name: projectionName })
-      .first<{ last_processed_event_id: number }>();
-
-    if (cursor?.last_processed_event_id != null) {
-
-      const expectedEventId = cursor.last_processed_event_id + 1;
-
-      if (domain_event_id !== expectedEventId) {
-
-        console.error('[PROJECTION_CONTIGUOUS_VIOLATION]', {
-          projection: projectionName,
-          lastProcessed: cursor.last_processed_event_id,
-          expected: expectedEventId,
-          received: domain_event_id,
-        });
-
-        throw new Error(
-          `[PROJECTION_CONTIGUOUS_VIOLATION] projection=${projectionName} expected=${expectedEventId} received=${domain_event_id}`
-        );
-      }
-    }
 
     /**
      * CANONICAL EVENT TIME CHECK
@@ -208,47 +180,78 @@ export async function projectDomainEventFromMessage(
         .first<{ last_processed_event_id: number }>();
 
       /**
-       * DUPLICATE EVENT
+       * CONTIGUOUS EVENT ENFORCEMENT
+       * ----------------------------
+       * When cursor exists:
+       *   enforce strict sequential processing.
+       *
+       * When cursor does NOT exist:
+       *   this is the first event for the projection
+       *   and must be processed normally.
        */
-      if (
-        cursorRow?.last_processed_event_id != null &&
-        domain_event_id <= cursorRow.last_processed_event_id
-      ) {
-        console.warn('[PROJECTION_DUPLICATE_EVENT_IGNORED]', {
-          projection: projectionName,
-          last: cursorRow.last_processed_event_id,
-          received: domain_event_id,
-        });
-        return;
+
+      if (cursorRow?.last_processed_event_id != null) {
+
+        const expectedEventId = cursorRow.last_processed_event_id + 1;
+
+        /**
+         * DUPLICATE EVENT
+         */
+        if (domain_event_id === cursorRow.last_processed_event_id) {
+          console.warn('[PROJECTION_DUPLICATE_EVENT_IGNORED]', {
+            projection: projectionName,
+            event: domain_event_id,
+          });
+          return;
+        }
+
+        /**
+         * MONOTONIC ORDER ENFORCEMENT
+         * ---------------------------
+         * Projection streams share the global domain_events table.
+         *
+         * Therefore event IDs are NOT contiguous per projection.
+         *
+         * Invariant:
+         *   domain_event_id must strictly increase.
+         */
+        if (domain_event_id < cursorRow.last_processed_event_id) {
+          throw new Error(
+            `[PROJECTION_ORDER_VIOLATION] projection=${projectionName} last=${cursorRow.last_processed_event_id} received=${domain_event_id}`
+          );
+        }
       }
 
       const handler = projectionRegistry[domainEvent.event_type];
 
-      if (!handler) {
-        return;
+      /**
+       * HANDLER EXECUTION (OPTIONAL)
+       * ----------------------------
+       * Not every domain event belongs to every projection stream.
+       * If a handler exists we execute it.
+       */
+      if (handler) {
+        await handler({
+          domainEvent,
+          domain_event_id,
+          canonicalEventTime,
+        });
       }
 
       /**
-       * HANDLER EXECUTION
+       * CURSOR ADVANCEMENT
+       * ------------------
+       * Cursor must advance for every processed event,
+       * even if the projection has no handler for it.
        */
-      await handler({
-        domainEvent,
+      await advanceCursor(
+        trx,
+        projectionName,
         domain_event_id,
-        canonicalEventTime,
-      });
+        canonicalEventTime
+      );
 
     });
-
-    const handler = projectionRegistry[domainEvent.event_type];
-
-    if (handler) {
-    await handler({
-        domainEvent,
-        domain_event_id,
-        canonicalEventTime,
-    });
-    return;
-    }
 
     /**
      * CANONICAL EVENT DISPATCHER

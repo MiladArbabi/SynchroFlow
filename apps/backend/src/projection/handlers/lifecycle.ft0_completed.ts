@@ -107,11 +107,11 @@ export async function handleLifecycleFT0Completed({
       );
     }
 
-    await advanceCursor(
-      trx,
-      LIFECYCLE_PROJECTION,
-      domain_event_id,
-      eventRow.event_time
-    );
+    /**
+     * CURSOR ADVANCEMENT REMOVED
+     * --------------------------
+     * Projection engine centrally manages replay progress.
+     * Handlers must remain pure projection logic.
+     */
   });
 }
