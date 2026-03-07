@@ -51,6 +51,13 @@ async function truncateProjections() {
    * - deterministic rebuild preserved
    */
 
+  /**
+   * LEGACY TABLE
+   * -------------
+   * lifecycle_audit_events kept only for historical rebuilds.
+   * No new writes should occur after migration to lifecycle_events.
+   */
+
   const projectionTables = [
     'domain_event_outbox',
     'orders',
@@ -124,12 +131,22 @@ async function truncateProjections() {
 async function replayEvents() {
   console.log('[REBUILD] Replaying domain events...');
 
-  const events = await db('domain_events')
-    .orderBy('id', 'asc')
-    .select('id');
+  let lastProcessed = 0;
 
-  for (const event of events) {
-    await projectDomainEvent(event.id);
+  while (true) {
+
+    const events = await db('domain_events')
+      .where('id', '>', lastProcessed)
+      .orderBy('id', 'asc')
+      .select('id')
+      .limit(500);
+
+    if (events.length === 0) break;
+
+    for (const event of events) {
+      await projectDomainEvent(event.id);
+      lastProcessed = event.id;
+    }
   }
 }
 

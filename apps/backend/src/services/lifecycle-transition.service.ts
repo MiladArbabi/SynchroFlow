@@ -45,8 +45,8 @@ const AUDITABLE_TRANSITIONS = new Set([
  * LifecycleTransitionService — ATOMIC WRITE PROJECTION
  * -----------------------------------------------------
  * Writes:
- *   1. lifecycle_audit_events (ledger)
- *   2. user_lifecycle_snapshot (projection)
+ *   1. lifecycle_events (append-only ledger)
+ *   2. user_lifecycle_snapshot (materialized state)
  *
  * TRANSACTION CONTRACT:
  * - If trx is provided → participates in caller transaction.
@@ -99,32 +99,25 @@ export class LifecycleTransitionService {
     }
 
     /**
-     * SHOP-SCOPED UNIQUENESS CHECK
+     * DUPLICATE TRANSITION CHECK
+     * --------------------------
+     * lifecycle_events is the canonical lifecycle ledger.
+     * Prevent duplicate transitions by inspecting the
+     * existing append-only event stream.
      */
-    const existing = await trx('lifecycle_audit_events')
+    const existing = await trx('lifecycle_events')
       .where({
         shop_id: shopId,
-        from_phase: previousPhase,
-        to_phase: currentPhase,
+        event_type: 'PHASE_TRANSITION',
       })
+      .andWhereRaw("payload->>'from' = ?", [previousPhase])
+      .andWhereRaw("payload->>'to' = ?", [currentPhase])
       .first();
 
     if (existing) return;
 
     const eventId = crypto.randomUUID();
     const occurredAt = trx.fn.now();
-
-    await trx('lifecycle_audit_events')
-      .insert({
-        event_id: eventId,
-        user_id: userId,
-        shop_id: shopId,
-        from_phase: previousPhase,
-        to_phase: currentPhase,
-        occurred_at: occurredAt,
-      })
-      .onConflict(['shop_id', 'from_phase', 'to_phase'])
-      .ignore();
 
     /**
      * Dual-write: v2 lifecycle backbone (append-only)

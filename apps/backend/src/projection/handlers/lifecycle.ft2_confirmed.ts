@@ -30,10 +30,12 @@ export async function handleLifecycleFT2Confirmed({
   domainEvent,
   domain_event_id,
   canonicalEventTime,
+  trx,
 }: {
   domainEvent: any;
   domain_event_id: number;
   canonicalEventTime: Date;
+  trx: Knex.Transaction;
 }) {
   const payload = domainEvent.event_payload as {
     user_id: number;
@@ -41,7 +43,11 @@ export async function handleLifecycleFT2Confirmed({
     evaluation_snapshot: any;
   };
 
-  await db.transaction(async (trx: Knex.Transaction) => {
+  /**
+   * TRANSACTION CONTRACT
+   * Projection engine owns the transaction boundary.
+   * Handlers must reuse provided trx.
+   */
     
     /**
      * CURSOR ENFORCEMENT MOVED
@@ -115,5 +121,4 @@ export async function handleLifecycleFT2Confirmed({
       },
       trx
     );
-  });
-}
+  };

@@ -29,10 +29,12 @@ export async function handleOrdersCreate({
   domainEvent,
   domain_event_id,
   canonicalEventTime,
+  trx,
 }: {
   domainEvent: any;
   domain_event_id: number;
   canonicalEventTime: Date;
+  trx: Knex.Transaction;
 }) {
 
   console.log('[ORDERS_SYNC][FT0_CHECK_TRIGGER]', {
@@ -69,9 +71,6 @@ export async function handleOrdersCreate({
       `[IDENTITY_CANONICAL_VIOLATION] Invalid Shopify Order ID: ${externalOrderId}`
     );
   }
-
-  await db.transaction(async (trx: Knex.Transaction) => {
-
     /**
      * CURSOR ENFORCEMENT MOVED
      * ------------------------
@@ -80,6 +79,18 @@ export async function handleOrdersCreate({
      *
      * Handlers must remain pure projection logic
      * without queue or cursor coordination.
+     */
+
+    /**
+     * PROJECTION HANDLER CONTRACT
+     * ---------------------------
+     * Handlers must:
+     * - operate exclusively within provided trx
+     * - avoid opening transactions
+     * - remain deterministic
+     * - avoid external side effects
+     *
+     * Ordering and atomicity are enforced by projection.engine.
      */
 
     const lasyncroOrderId = crypto
@@ -306,5 +317,4 @@ export async function handleOrdersCreate({
      * Projection engine centrally manages cursor progression.
      * Handlers must remain pure projection logic.
      */
-  });
-}
+  }

@@ -20,10 +20,13 @@ const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 export async function handleLifecycleFT0Completed({
   domainEvent,
   domain_event_id,
+  canonicalEventTime,
+  trx,
 }: {
   domainEvent: any;
   domain_event_id: number;
-  canonicalEventTime: Date; // passed but not used (original logic uses eventRow.event_time)
+  canonicalEventTime: Date;
+  trx: Knex.Transaction;
 }) {
 
   const payload = domainEvent.event_payload as {
@@ -31,7 +34,11 @@ export async function handleLifecycleFT0Completed({
     firstInsightDelivered: boolean;
   };
 
-  await db.transaction(async (trx: Knex.Transaction) => {
+  /**
+   * TRANSACTION CONTRACT
+   * Projection engine owns the transaction boundary.
+   * Handlers must reuse provided trx.
+   */
 
     /**
      * CURSOR ENFORCEMENT MOVED
@@ -113,5 +120,4 @@ export async function handleLifecycleFT0Completed({
      * Projection engine centrally manages replay progress.
      * Handlers must remain pure projection logic.
      */
-  });
-}
+  };

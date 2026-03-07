@@ -1,4 +1,5 @@
 // apps/backend/src/projection/projection.registry.ts
+import { Knex } from 'knex';
 
 import { handleOrdersCreate } from './handlers/orders.create.js';
 import { handleOrdersPaid } from './handlers/orders.paid.js';
@@ -8,10 +9,21 @@ import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.
 import { handleLifecycleFT2Confirmed } from './handlers/lifecycle.ft2_confirmed.js';
 import { handleLifecycleFirstInsightDelivered } from './handlers/lifecycle.first_insight_delivered.js';
 
+/**
+ * PROJECTION HANDLER CONTRACT
+ * ---------------------------
+ * All handlers execute inside the projection engine transaction.
+ * trx is injected by projection.engine to guarantee:
+ *
+ * - atomic projection updates
+ * - deterministic replay
+ * - consistent cursor advancement
+ */
 export type ProjectionHandler = (params: {
   domainEvent: any;
   domain_event_id: number;
   canonicalEventTime: Date;
+  trx: Knex.Transaction;
 }) => Promise<void>;
 
 export const projectionRegistry: Record<string, ProjectionHandler> = {

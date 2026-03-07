@@ -26,17 +26,23 @@ export async function handleRefundsCreate({
   domainEvent,
   domain_event_id,
   canonicalEventTime,
+  trx,
 }: {
   domainEvent: any;
   domain_event_id: number;
   canonicalEventTime: Date;
+  trx: Knex.Transaction;
 }) {
 
   const payload = domainEvent.event_payload as any;
 
   let lasyncroOrderId: string | null = null;
 
-  await db.transaction(async (trx: Knex.Transaction) => {
+  /**
+   * TRANSACTION CONTRACT
+   * Projection engine owns the transaction boundary.
+   * Handlers must reuse provided trx.
+   */
 
     /**
      * CURSOR ENFORCEMENT MOVED
@@ -167,5 +173,4 @@ export async function handleRefundsCreate({
      * Projection engine centrally manages replay progress.
      * Handlers must remain pure projection logic.
      */
-  });
-}
+  };

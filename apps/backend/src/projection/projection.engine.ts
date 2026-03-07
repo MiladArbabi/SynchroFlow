@@ -225,16 +225,18 @@ export async function projectDomainEventFromMessage(
       const handler = projectionRegistry[domainEvent.event_type];
 
       /**
-       * HANDLER EXECUTION (OPTIONAL)
-       * ----------------------------
-       * Not every domain event belongs to every projection stream.
-       * If a handler exists we execute it.
+       * HANDLER EXECUTION
+       * -----------------
+       * Handlers must execute inside the projection transaction.
+       * The trx handle is injected to guarantee atomic projection
+       * and deterministic rebuild behavior.
        */
       if (handler) {
         await handler({
           domainEvent,
           domain_event_id,
           canonicalEventTime,
+          trx,
         });
       }
 

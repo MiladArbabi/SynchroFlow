@@ -31,10 +31,12 @@ export async function handleOrdersFulfilled({
   domainEvent,
   domain_event_id,
   canonicalEventTime,
+  trx,
 }: {
   domainEvent: any;
   domain_event_id: number;
   canonicalEventTime: Date;
+  trx: Knex.Transaction;
 }) {
 
   const payload = domainEvent.event_payload as any;
@@ -100,7 +102,15 @@ export async function handleOrdersFulfilled({
       }
     | undefined;
 
-  await db.transaction(async (trx: Knex.Transaction) => {
+  /**
+   * TRANSACTION CONTRACT
+   * --------------------
+   * Projection engine owns the transaction boundary.
+   * Handler must reuse the provided trx.
+   *
+   * Nested transactions break deterministic replay
+   * and can cause deadlocks.
+   */
 
     /**
      * CURSOR ENFORCEMENT MOVED
@@ -157,14 +167,6 @@ export async function handleOrdersFulfilled({
             }
           : undefined,
     };
-
-    /**
-     * CURSOR ADVANCEMENT REMOVED
-     * --------------------------
-     * Projection engine centrally manages replay progress.
-     * Handlers must remain pure projection logic.
-     */
-  });
 
   /**
    * RECONCILIATION INTENT PERSISTENCE
