@@ -48,11 +48,15 @@ export async function reconcileOrderFulfillment(
   return db.transaction(async (trx) => {
 
     /**
-     * ACTIVATE SNAPSHOT WRITE GUARD
-     * -----------------------------
-     * Enables snapshot writes for this transaction only.
+     * RECONCILIATION SNAPSHOT WRITE FLAG
+     * ----------------------------------
+     * Signals database triggers that reconciliation writes
+     * are allowed in this transaction.
+     *
+     * Uses custom application namespace (app.*) because
+     * PostgreSQL rejects unknown root parameters.
      */
-    await trx.raw(`SET LOCAL synchroflow.reconciliation = 'true'`);
+    await trx.raw(`SET LOCAL "synchroflow.reconciliation" = 'true'`);
 
     const order = await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })

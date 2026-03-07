@@ -16,6 +16,21 @@ import './bootstrap/workers.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
 
+/**
+ * ORDER RECONCILIATION DISPATCHER
+ * --------------------------------
+ * Consumes order_reconciliation_intents and
+ * materializes analytical snapshots:
+ *
+ * - order_margin_snapshot
+ * - order_risk_snapshot
+ * - order_age_snapshot
+ * - orders_operational_control_snapshot
+ *
+ * Without this worker the Orders UI shows zeros.
+ */
+import { startReconciliationIntentDispatcher } from './workers/reconciliation/reconciliation.intent.dispatcher.js';
+
 async function start() {
 
   console.log('[WORKER ENV]', {
@@ -70,7 +85,9 @@ async function start() {
    */
 
   await startWorkers();
+
   startDomainEventOutboxDispatcher();
+  startReconciliationIntentDispatcher(); // executes reconciliation intents
 
  console.log('[worker-entry] All workers started');
 

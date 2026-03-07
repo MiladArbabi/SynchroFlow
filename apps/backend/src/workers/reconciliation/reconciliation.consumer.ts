@@ -106,10 +106,27 @@ export function startReconciliationConsumer() {
         return;
       }
 
+      /**
+       * SOURCE NORMALIZATION
+       * --------------------
+       * Historical ingestion pipelines produced `orders/sync`.
+       * Reconciliation engine expects canonical source `shopify_sync`.
+       *
+       * Normalize here to preserve backward compatibility
+       * and deterministic rebuild behavior.
+       */
+      const normalizedObserved = observed
+        ? {
+            ...observed,
+            source: 'shopify_sync',
+            observedAt: new Date(observed.observedAt),
+          }
+        : undefined;
+
       await reconcileOrderFulfillment(
         lasyncroOrderId,
         aggregateVersion,
-        observed
+        normalizedObserved
       );
 
       ch.ack(msg);

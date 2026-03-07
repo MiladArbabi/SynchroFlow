@@ -69,6 +69,32 @@ export async function startWorkers(): Promise<void> {
         workerStopFns.push(async () => await product.stopProductIngestionWorker());
       }
       console.log('[bootstrap/workers] Product ingestion worker started');
+
+      /**
+       * RECONCILIATION CONSUMER
+       * -----------------------
+       * Consumes fulfillment.reconciliation queue and executes
+       * analytical snapshot materialization.
+       *
+       * Without this worker:
+       * - reconciliation queue accumulates
+       * - snapshot tables remain empty
+       * - Orders UI shows zeros.
+       */
+      try {
+        const reconciliation = await import('../workers/reconciliation/reconciliation.consumer.js');
+
+        if (typeof reconciliation.startReconciliationConsumer === 'function') {
+          await Promise.resolve(reconciliation.startReconciliationConsumer());
+
+          console.log('[bootstrap/workers] Reconciliation consumer started');
+        }
+      } catch (err) {
+        console.warn(
+          '[bootstrap/workers] Reconciliation consumer not available:',
+          err && (err as Error).message ? (err as Error).message : err
+        );
+      }
     }
   } catch (err) {
     console.warn(
