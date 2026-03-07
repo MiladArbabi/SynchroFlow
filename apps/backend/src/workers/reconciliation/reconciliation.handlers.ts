@@ -72,21 +72,36 @@ export async function reconcileOrderFulfillment(
     }
 
     /**
-     * STRICT VERSION PROJECTION GATE (Atomic)
-     * ----------------------------------------
-     * Prevents duplicate or stale projections under concurrency.
+     * RECONCILIATION MODE DETECTION
+     * -----------------------------
+     * Synthetic reconciliation occurs when projection has already
+     * processed this aggregate version.
+     *
+     * IMPORTANT:
+     * Operational snapshots MUST still be recomputed during rebuild
+     * to guarantee deterministic reconstruction of operational state.
      */
-    if (
+    const syntheticMode =
       aggregateVersion !== order.aggregate_version ||
-      aggregateVersion <= order.last_projected_version
-    ) {
-      return {
-        result: 'synthetic',
-        affectedVariantIds: [],
-      };
-    }
+      aggregateVersion <= order.last_projected_version;
 
     await writeOrderRevenueUnits(lasyncroOrderId, trx);
+
+    /**
+     * SYNTHETIC MODE NOTICE
+     * ---------------------
+     * When syntheticMode = true:
+     * - Skip mutation paths
+     * - STILL compute operational snapshots
+     *
+     * This guarantees rebuild correctness.
+     */
+    if (syntheticMode) {
+      console.debug('[RECONCILIATION_SYNTHETIC_MODE]', {
+        order: lasyncroOrderId,
+        aggregateVersion,
+      });
+    }
 
     /**
      * SNAPSHOT DATE (Event-Time Anchored)

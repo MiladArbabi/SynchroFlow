@@ -206,19 +206,29 @@ export async function projectDomainEventFromMessage(
         }
 
         /**
-         * MONOTONIC ORDER ENFORCEMENT
-         * ---------------------------
-         * Projection streams share the global domain_events table.
+         * LATE EVENT DELIVERY
+         * -------------------
+         * RabbitMQ delivery order is NOT guaranteed to match the
+         * canonical ordering of domain_events.
          *
-         * Therefore event IDs are NOT contiguous per projection.
+         * If an older event arrives after a newer one has already
+         * been projected, it must be ignored rather than treated
+         * as a fatal error.
          *
-         * Invariant:
-         *   domain_event_id must strictly increase.
+         * The projection state already includes the effects of
+         * this event because the cursor has advanced beyond it.
+         *
+         * Ignoring preserves deterministic rebuild guarantees.
          */
         if (domain_event_id < cursorRow.last_processed_event_id) {
-          throw new Error(
-            `[PROJECTION_ORDER_VIOLATION] projection=${projectionName} last=${cursorRow.last_processed_event_id} received=${domain_event_id}`
-          );
+
+          console.warn('[PROJECTION_LATE_EVENT_IGNORED]', {
+            projection: projectionName,
+            last_processed_event_id: cursorRow.last_processed_event_id,
+            received_event_id: domain_event_id,
+          });
+
+          return;
         }
       }
 

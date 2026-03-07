@@ -11,13 +11,10 @@ import './bootstrap/tsconfig-paths-register.js';
 import './api/shopify/shopify.webhook.js';
 
 import { initQueue } from './queue.js';
-import { startSyncWorker } from './sync.worker.js';
-import { startWorker as startEventWorker } from './worker.js';
-import { startWebhookWorker } from './workers/webhook-dispatch.worker.js';
-import { startReconciliationConsumer } from './workers/reconciliation/index.js';
+import { startWorkers } from './bootstrap/workers.js';
+import './bootstrap/workers.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
-import { startReconciliationIntentDispatcher } from './workers/reconciliation/reconciliation.intent.dispatcher.js';
 
 async function start() {
 
@@ -31,26 +28,49 @@ async function start() {
   await initQueue();
   console.log('[worker-entry] Queue initialized');
 
-  startSyncWorker();
-  startEventWorker();
-  startWebhookWorker();
-  startReconciliationConsumer();
-
-  /* startOutboxDispatcher(); */
-  startDomainEventOutboxDispatcher();
-  /* startReconciliationIntentDispatcher(); */
- 
   /**
-  * DEV-ONLY: Obligation evaluation hook
-  * ----------------------------------
-  * Purpose:
-  * - Manual verification during schema bring-up
-  * - MUST be removed once scheduled workers exist
-  *
-  * Rules:
-  * - Hardcoded shopId is allowed ONLY here
-  * - Never runs implicitly
-  */
+   * DEV SAFETY: PURGE STALE EVENT TRIGGERS
+   * --------------------------------------
+   * Projection engine enforces strict monotonic ordering.
+   *
+   * When the worker restarts during development,
+   * RabbitMQ may still contain older domain_event_id triggers.
+   *
+   * These stale triggers will violate the projection cursor
+   * and crash the worker.
+   *
+   * Therefore we purge the events queue in development mode.
+   */
+
+  if (process.env.NODE_ENV === 'development') {
+    const { execSync } = await import('node:child_process');
+
+    try {
+      execSync(
+        'docker exec synchroflow_mq rabbitmqctl purge_queue events',
+        { stdio: 'inherit' }
+      );
+
+      console.log('[worker-entry] events queue purged (dev safety)');
+    } catch (err) {
+      console.warn('[worker-entry] events purge skipped');
+    }
+  }
+
+  /**
+   * BOOTSTRAP WORKERS
+   * -----------------
+   * Starts auxiliary workers registered in bootstrap/workers.ts.
+   *
+   * Required for:
+   * - product_ingestion worker
+   * - specter ingestion worker
+   *
+   * Without this call queues may accumulate messages silently.
+   */
+
+  await startWorkers();
+  startDomainEventOutboxDispatcher();
 
  console.log('[worker-entry] All workers started');
 

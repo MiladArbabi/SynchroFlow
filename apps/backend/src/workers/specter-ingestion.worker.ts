@@ -125,8 +125,23 @@ export async function startSpecterIngestionWorker(): Promise<void> {
       return;
     }
 
+    /**
+     * QUEUE TOPOLOGY DECLARATION
+     * --------------------------
+     * RabbitMQ closes the channel if a consumer attaches to a
+     * queue that does not exist.
+     *
+     * This assertion guarantees the queue exists before consume.
+     */
+    await channel.addSetup(async (ch: any) => {
+      await ch.assertQueue(QUEUE_NAME, { durable: true });
+    });
+
     // Register consumer; getQueueChannel returns an object compatible with .consume returning a promise
-    await channel.consume(QUEUE_NAME, processSpecterMessage, { noAck: false })
+    await channel.consume(
+      QUEUE_NAME, 
+      processSpecterMessage, 
+      { noAck: false })
       .then((info: any) => {
         consumerTag = info?.consumerTag ?? null;
         debug('startSpecterIngestionWorker: consumer registered', { queue: QUEUE_NAME, consumerTag });

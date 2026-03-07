@@ -8,6 +8,7 @@ import { handleRefundsCreate } from './handlers/refunds.create.js';
 import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.js';
 import { handleLifecycleFT2Confirmed } from './handlers/lifecycle.ft2_confirmed.js';
 import { handleLifecycleFirstInsightDelivered } from './handlers/lifecycle.first_insight_delivered.js';
+import { handleIntegrationSyncRequested } from './handlers/integration.sync_requested.js';
 
 /**
  * PROJECTION HANDLER CONTRACT
@@ -29,6 +30,7 @@ export type ProjectionHandler = (params: {
 export const projectionRegistry: Record<string, ProjectionHandler> = {
   'orders/create': handleOrdersCreate,
   'orders/sync': handleOrdersCreate,
+  'integration/sync_requested': handleIntegrationSyncRequested,
   'orders/paid': handleOrdersPaid,
   'orders/fulfilled': handleOrdersFulfilled,
   'refunds/create': handleRefundsCreate,
