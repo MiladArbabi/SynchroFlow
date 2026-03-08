@@ -25,13 +25,26 @@ router.get(
   httpGetOperationalControl
 );
 
+/**
+ * Decision Engine Snapshots
+ * -------------------------
+ * These endpoints require authenticated tenant context because
+ * controllers rely on req.user.shopId for strict tenant isolation.
+ *
+ * Missing authenticateToken would result in:
+ * - req.user undefined
+ * - 401 responses from controllers
+ * - frontend refresh/login loops
+ */
 router.get(
   '/decision/operational-brief',
+  authenticateToken,
   httpGetDailyOperationalBrief
 );
 
 router.get(
   '/decision/priority-stack',
+  authenticateToken,
   httpGetPriorityStack
 );
 

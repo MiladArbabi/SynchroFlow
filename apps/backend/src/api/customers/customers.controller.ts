@@ -12,8 +12,13 @@ import { CustomersService } from './customers.service.js';
      const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
     
-    // TODO: Get shopId from authenticated user session
-    const shopId = 1; // Temporary hardcoded for development
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      return res.status(401).json({
+        error: 'Unauthorized: missing shop context',
+      });
+    }
     
     const customerData = await CustomersService.getCustomerDetailsById(id, shopId);
  
@@ -36,8 +41,19 @@ import { CustomersService } from './customers.service.js';
  */
 export const getCustomerList = async (req: Request, res: Response) => {
   try {
-    // TODO: Get shopId from authenticated user session
-    const shopId = 1; // Temporary hardcoded for development
+    /**
+     * TENANT IDENTITY RESOLUTION
+     * --------------------------
+     * Customer endpoints must always be scoped
+     * to the authenticated shop context.
+     */
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      return res.status(401).json({
+        error: 'Unauthorized: missing shop context',
+      });
+    }
     
     const customers = await CustomersService.getCustomerList(shopId);
     

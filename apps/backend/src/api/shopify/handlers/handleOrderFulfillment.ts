@@ -30,6 +30,18 @@ export async function handleOrderFulfillment(
 
   const rawPayload = envelope.rawPayload;
 
+  /**
+   * INGESTION TRACE
+   * ----------------
+   * Emits entry signal for webhook ingestion pipeline.
+   * Enables operational debugging and replay tracing.
+   */
+  console.log('[ORDER_FULFILLMENT_HANDLER_ENTRY]', {
+    shopDomain: envelope.shopDomain,
+    eventId: envelope.eventId,
+    hasPayload: !!envelope.rawPayload,
+  });
+
   if (!isShopifyFulfillmentPayload(rawPayload)) {
     console.error('[FULFILLMENT_INGESTION_REJECTED][INVALID_PAYLOAD]', {
       receivedKeys: rawPayload ? Object.keys(rawPayload as any) : null

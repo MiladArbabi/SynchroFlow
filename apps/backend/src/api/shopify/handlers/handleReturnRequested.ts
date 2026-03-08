@@ -18,6 +18,18 @@ export async function handleReturnRequested(
   const { shopId, rawPayload } = envelope;
 
   /**
+   * INGESTION TRACE
+   * ----------------
+   * Emits entry signal for webhook ingestion pipeline.
+   * Enables operational debugging and replay tracing.
+   */
+  console.log('[RETURN_REQUESTED_HANDLER_ENTRY]', {
+    shopId,
+    eventId: envelope.eventId,
+    hasPayload: !!rawPayload,
+  });
+
+  /**
    * INGESTION IDENTITY ENFORCEMENT
    */
   if (!envelope.eventId) {

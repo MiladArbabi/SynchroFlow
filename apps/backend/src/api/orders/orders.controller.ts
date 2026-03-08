@@ -9,7 +9,22 @@ import * as ordersService from './orders.service.js';
  */
 export const httpGetAllOrders = async (req: Request, res: Response) => {
   try {
-    const orders = await ordersService.getAllOrders();
+
+    /**
+     * TENANT IDENTITY ENFORCEMENT
+     * ---------------------------
+     * Controllers must inject shopId into service layer.
+     * Service layer must never infer tenant identity.
+     */
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      return res.status(401).json({
+        error: 'Unauthorized: missing shop context',
+      });
+    }
+
+    const orders = await ordersService.getAllOrders(shopId);
     res.status(200).json(orders);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -43,7 +58,18 @@ export const httpGetOrderProfitability = async (req: Request, res: Response) => 
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
   try {
-    const profitability = await ordersService.getOrderProfitabilityById(id);
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      return res.status(401).json({
+        error: 'Unauthorized: missing shop context',
+      });
+    }
+
+    const profitability = await ordersService.getOrderProfitabilityById(
+      shopId,
+      id
+    );
     res.status(200).json(profitability);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -61,7 +87,18 @@ export const httpGetOrderDetails = async (req: Request, res: Response) => {
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   
   try {
-    const details = await ordersService.getOrderDetailsById(id);
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      return res.status(401).json({
+        error: 'Unauthorized: missing shop context',
+      });
+    }
+
+    const details = await ordersService.getOrderDetailsById(
+      shopId,
+      id
+    );
     if (details) {
       res.status(200).json(details);
     } else {

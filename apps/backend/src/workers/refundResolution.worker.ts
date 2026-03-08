@@ -68,12 +68,23 @@ export async function resolveRefundExecution(
 
   const totalRefundAmount = Number(refundTotalRow?.total ?? 0);
 
+  /**
+   * DETERMINISTIC TIMESTAMP RULE
+   * ----------------------------
+   * Reconciliation projections must never use wall-clock time.
+   *
+   * We reuse the execution row timestamp instead of trx.fn.now()
+   * to guarantee deterministic rebuild behavior.
+   *
+   * Source of truth:
+   * refund_executions.created_at
+   */
   await trx('refund_executions')
     .where({
       lasyncro_refund_execution_id: lasyncroRefundExecutionId,
     })
     .update({
       total_refund_amount: totalRefundAmount,
-      updated_at: trx.fn.now(),
+      updated_at: execution.created_at,
     });
 }

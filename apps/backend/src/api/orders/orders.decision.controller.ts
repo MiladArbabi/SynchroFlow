@@ -17,11 +17,22 @@ import db from '@lasyncro/backend-core/db.js';
  * - Backend ordering authoritative
  */
 export const httpGetDailyOperationalBrief = async (
-  _req: Request,
+  req: Request,
   res: Response
 ) => {
   try {
-    const shopId = 1; // TODO: derive from auth context
+    /**
+     * TENANT IDENTITY RESOLUTION
+     * --------------------------
+     * Operational brief must be scoped to authenticated tenant.
+     */
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      return res.status(401).json({
+        error: 'Unauthorized: missing shop context',
+      });
+    }
 
     console.debug('[Decision][OperationalBrief] Fetch latest snapshot', {
         shopId,

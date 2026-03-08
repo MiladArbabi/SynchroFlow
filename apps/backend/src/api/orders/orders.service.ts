@@ -12,8 +12,13 @@ interface OrderList {
 /**
  * Get all orders for a shop using sovereign identity
  */
-export const getAllOrders = async (): Promise<OrderList[]> => {
-  const shopId = 1; // TODO: derive from auth context
+/**
+ * TENANT-SCOPED ORDER LIST
+ * ------------------------
+ * Service layer must never hardcode tenant identity.
+ * shopId must always be injected by the controller layer.
+ */
+export const getAllOrders = async (shopId: number): Promise<OrderList[]> => {
 
   const orders = await db('orders')
     .select(
@@ -30,36 +35,49 @@ export const getAllOrders = async (): Promise<OrderList[]> => {
 };
 
 /**
- * Get order profitability by sovereign ID
+ * TENANT-SCOPED PROFITABILITY
+ * ---------------------------
+ * shopId must be provided by controller auth context.
  */
-export const getOrderProfitabilityById = async (lasyncroOrderId: string) => {
-  const shopId = 1;
+export const getOrderProfitabilityById = async (
+  shopId: number,
+  lasyncroOrderId: string
+) => {
 
-  const order = await db('orders')
-    .select('total_price')
+  /**
+   * PROFITABILITY SOURCE OF TRUTH
+   * ------------------------------
+   * Profitability must be read from order_margin_snapshot.
+   * Snapshot is produced deterministically by reconciliation.
+   */
+  const row = await db('orders as o')
+    .join(
+      'order_margin_snapshot as oms',
+      'oms.lasyncro_order_id',
+      'o.lasyncro_order_id'
+    )
+    .select(
+      'o.total_price',
+      'oms.gross_margin'
+    )
     .where({
-      shop_id: shopId,
-      lasyncro_order_id: lasyncroOrderId,
+      'o.shop_id': shopId,
+      'o.lasyncro_order_id': lasyncroOrderId,
     })
     .first();
 
-  if (!order) {
-    throw new Error('Order not found');
-  }
+  const revenue = Number(row.total_price);
+  const margin = Number(row.gross_margin ?? 0);
 
-  const revenue = Number(order.total_price);
-  const cogs = revenue * 0.6;
-  const shippingCost = revenue * 0.1;
-  const fees = revenue * 0.03;
-  const margin = revenue - cogs - shippingCost - fees;
-  const marginPercent = (margin / revenue) * 100;
+  /**
+   * Margin percentage derived from authoritative snapshot.
+   */
+  const marginPercent =
+    revenue === 0 ? 0 : (margin / revenue) * 100;
 
   return {
     orderId: lasyncroOrderId,
     revenue,
-    cogs,
-    shippingCost,
-    fees,
     margin,
     marginPercent: Math.round(marginPercent * 10) / 10
   };
@@ -68,8 +86,15 @@ export const getOrderProfitabilityById = async (lasyncroOrderId: string) => {
 /**
  * Get order details by sovereign ID
  */
-export const getOrderDetailsById = async (lasyncroOrderId: string) => {
-  const shopId = 1;
+/**
+ * TENANT-SCOPED ORDER DETAILS
+ * ---------------------------
+ * Prevents cross-tenant order access.
+ */
+export const getOrderDetailsById = async (
+  shopId: number,
+  lasyncroOrderId: string
+) => {
 
   const order = await db('orders')
     .where({
@@ -80,7 +105,10 @@ export const getOrderDetailsById = async (lasyncroOrderId: string) => {
 
   if (!order) return null;
 
-  const profitability = await getOrderProfitabilityById(lasyncroOrderId);
+    const profitability = await getOrderProfitabilityById(
+      shopId,
+      lasyncroOrderId
+    );
 
   return {
     id: order.lasyncro_order_id,

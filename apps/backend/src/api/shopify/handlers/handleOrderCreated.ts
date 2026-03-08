@@ -39,6 +39,18 @@ export async function handleOrderCreated(
 
   const raw = envelope.rawPayload as Partial<ShopifyOrderCreatePayload>;
 
+  /**
+   * INGESTION TRACE
+   * ----------------
+   * Emits entry signal for webhook ingestion pipeline.
+   * Enables operational debugging and replay tracing.
+   */
+  console.log('[ORDER_CREATE_HANDLER_ENTRY]', {
+    shopDomain: envelope.shopDomain,
+    eventId: envelope.eventId,
+    hasPayload: !!envelope.rawPayload,
+  });
+
   console.log('[ORDER CREATE HANDLER] ENTERED');
 
   const shopDomain = envelope.shopDomain;

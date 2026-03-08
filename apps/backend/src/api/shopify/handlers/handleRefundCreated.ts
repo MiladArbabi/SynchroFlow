@@ -35,14 +35,37 @@ export async function handleRefundCreated(
     hasRawPayload: !!rawPayload,
   });
 
-  if (!shopDomain) return;
+  /**
+   * INGESTION GUARD — SHOP DOMAIN
+   * -----------------------------
+   * Missing shop domain means webhook transport envelope is malformed.
+   * Must emit operational signal to avoid silent event loss.
+   */
+  if (!shopDomain) {
+    console.error('[REFUND_CREATE_GUARD_FAILED]', {
+      reason: 'missing_shop_domain',
+      envelope,
+    });
+    return;
+  }
 
   const installation = await db('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
 
-  if (!installation) return;
+  /**
+   * INGESTION GUARD — INSTALLATION RESOLUTION
+   * -----------------------------------------
+   * Refund event cannot be attributed to tenant.
+   * Must be observable.
+   */
+  if (!installation) {
+    console.error('[REFUND_CREATE_INSTALLATION_NOT_FOUND]', {
+      shopDomain,
+    });
+    return;
+  }
 
   const shopId = installation.shop_id;
 
@@ -61,7 +84,20 @@ export async function handleRefundCreated(
   const platformOrderId = refundPayload.order_id;
   const refundCreatedAt = refundPayload.created_at;
 
-  if (!refundId || !platformOrderId) return;
+  /**
+   * INGESTION GUARD — REFUND IDENTITY
+   * ---------------------------------
+   * Refund webhook missing canonical identifiers.
+   * Event must be observable for investigation.
+   */
+  if (!refundId || !platformOrderId) {
+    console.error('[REFUND_CREATE_IDENTITY_GUARD_FAILED]', {
+      refundId,
+      platformOrderId,
+      shopDomain,
+    });
+    return;
+  }
 
   /**
    * INGESTION EVENT-TIME ENFORCEMENT

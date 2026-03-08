@@ -8,7 +8,20 @@ export const fetchProducts = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const search = req.query.search as string | undefined;
 
-    const result = await getProducts(page, limit, search);
+    /**
+     * TENANT IDENTITY ENFORCEMENT
+     * ---------------------------
+     * shopId must be injected from authenticated request context.
+     */
+    const shopId = req.user?.shopId;
+
+    if (!shopId) {
+      return res.status(401).json({
+        error: 'Unauthorized: missing shop context',
+      });
+    }
+
+    const result = await getProducts(shopId, page, limit, search);
     res.json(result);
   } catch (error: any) {
     console.error('Failed to fetch products:', error);

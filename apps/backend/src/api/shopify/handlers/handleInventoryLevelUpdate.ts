@@ -24,6 +24,19 @@ export async function handleInventoryLevelUpdate(
 ): Promise<void> {
 
   const payload = envelope.rawPayload as Partial<ShopifyInventoryPayload>;
+  
+  /**
+   * INGESTION TRACE
+   * ----------------
+   * Emits entry signal for webhook ingestion pipeline.
+   * Enables operational debugging and replay tracing.
+   */
+  console.log('[INVENTORY_UPDATE_HANDLER_ENTRY]', {
+    shopDomain: envelope.shopDomain,
+    eventId: envelope.eventId,
+    hasPayload: !!envelope.rawPayload,
+  });
+
   const shopDomain = envelope.shopDomain;
 
   if (!shopDomain) {
@@ -61,7 +74,13 @@ export async function handleInventoryLevelUpdate(
     payload == null ||
     typeof payload.available !== 'number'
   ) {
-    console.warn('[inventory_sync] invalid payload shape', {
+    /**
+     * INGESTION GUARD — PAYLOAD SHAPE
+     * -------------------------------
+     * Inventory webhook missing canonical available quantity.
+     * Must emit explicit operational signal.
+     */
+    console.error('[INVENTORY_UPDATE_PAYLOAD_GUARD_FAILED]', {
       eventId: envelope.eventId,
       hasAvailable: typeof payload?.available === 'number',
     });
@@ -78,7 +97,13 @@ export async function handleInventoryLevelUpdate(
   }
 
   if (!externalInventoryItemGid) {
-    console.warn('[inventory_sync] missing inventory item id', {
+    /**
+     * INGESTION GUARD — INVENTORY ITEM ID
+     * -----------------------------------
+     * Inventory webhook missing canonical item identity.
+     * Event must be observable to prevent silent desync.
+     */
+    console.error('[INVENTORY_UPDATE_IDENTITY_GUARD_FAILED]', {
       eventId: envelope.eventId,
       payload,
     });

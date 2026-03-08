@@ -22,19 +22,59 @@ export async function handleOrderPaid(
 
   const rawPayload = envelope.rawPayload;
 
+  /**
+   * INGESTION TRACE
+   * ----------------
+   * Emits entry signal for webhook ingestion pipeline.
+   * Enables operational debugging and replay tracing.
+   */
+  console.log('[ORDER_PAID_HANDLER_ENTRY]', {
+    shopDomain: envelope.shopDomain,
+    eventId: envelope.eventId,
+    hasPayload: !!envelope.rawPayload,
+  });
+
   if (!isOrderPaidPayload(rawPayload)) {
     return;
   }
 
   const shopDomain = envelope.shopDomain;
-  if (!shopDomain) return;
+  /**
+   * INGESTION GUARD — SHOP DOMAIN
+   * -----------------------------
+   * Webhook delivery without shop domain indicates
+   * malformed transport envelope.
+   *
+   * This must emit an operational signal instead
+   * of silently dropping the event.
+   */
+  if (!shopDomain) {
+    console.error('[ORDER_PAID_GUARD_FAILED]', {
+      reason: 'missing_shop_domain',
+      envelope,
+    });
+    return;
+  }
 
   const installation = await db('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
 
-  if (!installation) return;
+  /**
+   * INGESTION GUARD — INSTALLATION RESOLUTION
+   * -----------------------------------------
+   * If Shopify installation cannot be resolved,
+   * the event cannot be attributed to a tenant.
+   *
+   * This condition must be observable.
+   */
+  if (!installation) {
+    console.error('[ORDER_PAID_INSTALLATION_NOT_FOUND]', {
+      shopDomain,
+    });
+    return;
+  }
 
   const shopId = installation.shop_id;
 

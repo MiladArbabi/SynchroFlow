@@ -24,12 +24,18 @@ export interface ProductsResponse {
   };
 }
 
+/**
+ * TENANT IDENTITY CONTRACT
+ * ------------------------
+ * Service layer must never infer tenant identity.
+ * shopId must be injected by controller auth context.
+ */
 export const getProducts = async (
+  shopId: number,
   page: number = 1,
   limit: number = 20,
   search?: string
 ): Promise<ProductsResponse> => {
-  const shopId = 1; // TODO: Get from authenticated user/session
   
   // Build query with search
   let query = db('shopify_products')
