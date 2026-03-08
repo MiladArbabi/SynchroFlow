@@ -19,6 +19,21 @@ export async function up(knex: Knex): Promise<void> {
       .references('lasyncro_product_id')
       .inTable('products')
       .onDelete('RESTRICT');
+  
+    /**
+     * VARIANT IDENTITY
+     * ----------------
+     * Required for deterministic revenue-unit creation.
+     *
+     * IMPORTANT:
+     * FK constraint is intentionally NOT enforced here
+     * because the variants table is created later in
+     * migration sequence (0027).
+     *
+     * Referential integrity is enforced upstream
+     * during product ingestion and reconciliation.
+     */
+    table.uuid('lasyncro_variant_id').notNullable();
 
     // Commercial attributes
     table.string('sku').nullable();
@@ -29,9 +44,6 @@ export async function up(knex: Knex): Promise<void> {
     table.decimal('unit_price', 12, 2).notNullable();
     table.decimal('line_total', 14, 2).notNullable();
 
-    // Cost layer (optional but critical for margin engine)
-    table.decimal('estimated_unit_cost', 12, 2).nullable();
-
     // Platform traceability (NOT identity)
     table.string('platform').nullable();
     table.string('external_line_item_id').nullable();
@@ -41,6 +53,11 @@ export async function up(knex: Knex): Promise<void> {
 
     // Indexes
     table.index(['lasyncro_order_id']);
+    /**
+     * Reconciliation lookup index
+     * Ensures deterministic ordering for revenue-unit creation
+     */
+    table.index(['lasyncro_variant_id']);
     table.index(['lasyncro_product_id']);
     table.index(['sku']);
   });

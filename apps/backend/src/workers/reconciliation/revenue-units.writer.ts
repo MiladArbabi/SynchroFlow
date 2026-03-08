@@ -56,25 +56,30 @@ export async function writeOrderRevenueUnits(
       order.order_processed_at ?? order.order_created_at;
 
     /**
-     * DETERMINISTIC SOURCE ORDERING
-     * -----------------------------
-     * Revenue units must be derived from line items in a
-     * deterministic order to guarantee replay-stable state hashes.
+     * COST PROPAGATION JOIN
+     * ---------------------
+     * Revenue units must snapshot economic cost at
+     * reconciliation time using the canonical source:
      *
-     * Variant ID provides a stable canonical ordering key.
+     * variants.unit_cost
+     *
+     * This guarantees deterministic replay and ensures
+     * margin calculations remain stable even if product
+     * catalog data changes later.
      */
-    const rows = await trx('order_line_items')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .orderBy('lasyncro_variant_id', 'asc')
+    const rows = await trx('order_line_items as oli')
+      .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+      .where({ 'oli.lasyncro_order_id': lasyncroOrderId })
+      .orderBy('oli.lasyncro_variant_id', 'asc')
       .select(
-        'lasyncro_product_id',
-        'lasyncro_variant_id',
-        'sku',
-        'title',
-        'quantity',
-        'unit_price',
-        'line_total',
-        'estimated_unit_cost'
+        'oli.lasyncro_product_id',
+        'oli.lasyncro_variant_id',
+        'oli.sku',
+        'oli.title',
+        'oli.quantity',
+        'oli.unit_price',
+        'oli.line_total',
+        trx.raw('v.unit_cost as estimated_unit_cost')
       );
 
     if (rows.length === 0) return;
@@ -121,22 +126,15 @@ export async function writeOrderRevenueUnits(
     }));
 
     /**
-     * ECONOMIC IMMUTABILITY RULE
-     * --------------------------
-     * Revenue units are economic facts derived from order_line_items.
+     * ECONOMIC IMMUTABILITY ENFORCEMENT
+     * ---------------------------------
+     * Revenue units are immutable economic facts.
      *
-     * They must be INSERT-ONLY.
-     * They must NEVER be mutated once materialized.
+     * If a revenue unit already exists we must NOT
+     * mutate its financial attributes.
      *
-     * If upstream order data changes in the future,
-     * we introduce compensating ledger events — not row mutation.
-     *
-     * This preserves:
-     * - Ledger symmetry
-     * - Deterministic replay safety
-     * - Economic audit integrity
-     *
-     * On conflict → ignore.
+     * Rebuilds rely on deterministic replay of the
+     * original economic snapshot.
      */
     await trx('order_revenue_units')
       .insert(revenueUnits)

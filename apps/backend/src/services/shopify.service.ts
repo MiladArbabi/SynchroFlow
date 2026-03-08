@@ -90,6 +90,9 @@ export const performInitialSync = async (
                 updatedAt
                 inventoryItem {
                   id
+                  unitCost {
+                    amount
+                  }
                 }
               }
             }
@@ -406,6 +409,9 @@ async function syncProducts(
           shop_id: shopId,
           sku: variant.sku || null,
           title: variant.title,
+          unit_cost: variant.inventoryItem?.unitCost?.amount
+            ? Number(variant.inventoryItem.unitCost.amount)
+            : null,
           status: 'active',
         })
         .onConflict('lasyncro_variant_id')

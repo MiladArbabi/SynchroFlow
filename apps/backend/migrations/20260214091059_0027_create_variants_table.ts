@@ -22,6 +22,8 @@ export async function up(knex: Knex): Promise<void> {
 
     table.string('title', 255).nullable();
 
+    table.decimal('unit_cost', 12, 2).nullable();
+
     table.string('status', 255).notNullable().defaultTo('active');
 
     table.timestamps(true, true);

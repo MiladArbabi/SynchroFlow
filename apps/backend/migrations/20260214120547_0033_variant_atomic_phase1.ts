@@ -1,62 +1,33 @@
 import type { Knex } from "knex";
 
 export async function up(knex: Knex): Promise<void> {
-  // -------------------------------
-  // 1️⃣ order_line_items — add variant anchor
-  // -------------------------------
-  await knex.schema.alterTable("order_line_items", (table) => {
-    table
-      .uuid("lasyncro_variant_id")
-      .nullable()
-      .index("order_line_items_lasyncro_variant_id_index");
 
-    table
-      .foreign("lasyncro_variant_id")
-      .references("lasyncro_variant_id")
-      .inTable("variants")
-      .onDelete("RESTRICT");
-  });
+  /**
+   * MIGRATION DEPRECATED (SCHEMA MOVED EARLIER)
+   * -------------------------------------------
+   * Originally introduced `lasyncro_variant_id`
+   * on order_line_items.
+   *
+   * This column now exists in base migration:
+   *
+   * 0005_order_line_items_sovereign
+   *
+   * To preserve migration history while avoiding
+   * duplicate column creation, this migration is
+   * now intentionally a NO-OP.
+   */
 
-  // -------------------------------
-  // 2️⃣ order_revenue_units — add variant anchor
-  // -------------------------------
-  await knex.schema.alterTable("order_revenue_units", (table) => {
-    table
-      .uuid("lasyncro_variant_id")
-      .nullable()
-      .index("order_revenue_units_lasyncro_variant_id_index");
-
-    table
-      .foreign("lasyncro_variant_id")
-      .references("lasyncro_variant_id")
-      .inTable("variants")
-      .onDelete("RESTRICT");
-  });
+  return;
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.raw(`
-    ALTER TABLE order_revenue_units
-    DROP CONSTRAINT IF EXISTS order_revenue_units_order_variant_unique;
-  `);
 
-  await knex.raw(`
-    ALTER TABLE order_revenue_units
-    DROP CONSTRAINT IF EXISTS order_revenue_units_lasyncro_variant_id_foreign;
-  `);
+  /**
+   * NO-OP
+   * -----
+   * Column removal handled by base migration.
+   * This migration intentionally performs nothing.
+   */
 
-  await knex.raw(`
-    ALTER TABLE order_line_items
-    DROP CONSTRAINT IF EXISTS order_line_items_lasyncro_variant_id_foreign;
-  `);
-
-  await knex.raw(`
-    ALTER TABLE order_revenue_units
-    DROP COLUMN IF EXISTS lasyncro_variant_id;
-  `);
-
-  await knex.raw(`
-    ALTER TABLE order_line_items
-    DROP COLUMN IF EXISTS lasyncro_variant_id;
-  `);
-};
+  return;
+}
