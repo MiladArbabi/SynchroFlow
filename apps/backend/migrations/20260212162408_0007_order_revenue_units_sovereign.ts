@@ -38,7 +38,18 @@ export async function up(knex: Knex): Promise<void> {
     table.decimal('unit_price', 12, 2).notNullable();
     table.decimal('line_total', 14, 2).notNullable();
 
-    table.decimal('estimated_unit_cost', 12, 2).nullable();
+    /**
+     * ECONOMIC COST SNAPSHOT
+     * ----------------------
+     * Cost must be captured for every revenue unit.
+     *
+     * Allowing NULL creates incomplete economic facts
+     * and breaks deterministic margin projections.
+     *
+     * Invariant:
+     * Every revenue unit must carry a historical cost.
+     */
+    table.decimal('estimated_unit_cost', 12, 2).notNullable();
 
     /**
      * MARGIN DEPTH EXTENSION

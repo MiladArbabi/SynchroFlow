@@ -95,12 +95,22 @@ export const orderNexusOnboardingSignalProvider: OnboardingSignalProvider = {
     const ordersIngested =
       ordersRow?.count != null ? Number(ordersRow.count) : null;
 
-    // 2) How many line items are still missing a cost?
-    const missingCostRow = await db('order_revenue_units as ru')
-      .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
-      .where('o.shop_id', shopId)
-      .whereNull('ru.estimated_unit_cost')
-      .count<{ count: string }>('ru.lasyncro_order_id as count')
+    /**
+     * CATALOG COST COMPLETENESS CHECK
+     * --------------------------------
+     * OrderNexus profitability readiness must be evaluated
+     * against the canonical product catalog.
+     *
+     * Using variants.unit_cost ensures we detect missing cost
+     * even before orders exist.
+     *
+     * Historical revenue snapshots (order_revenue_units)
+     * must NOT be used for readiness detection.
+     */
+    const missingCostRow = await db('variants as v')
+      .where('v.shop_id', shopId)
+      .where('v.unit_cost', 0)
+      .count<{ count: string }>('v.lasyncro_variant_id as count')
       .first();
 
     const missingCostCount = Number(missingCostRow?.count ?? 0);

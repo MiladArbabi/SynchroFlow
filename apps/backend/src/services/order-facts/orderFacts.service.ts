@@ -77,26 +77,26 @@ export async function extractOrderFacts(
   const costTotal: number | null = null;
 
   /**
-   * Data Coverage (Canonical, Time-Scoped)
-   * -------------------------------------
-   * Coverage is computed strictly over line items
-   * whose order_created_at falls within the same
-   * FT2 temporal window as canonical orders.
+   * ECONOMIC COST COVERAGE
+   * ----------------------
+   * Coverage must be computed from revenue units, not line items.
    *
-   * This prevents:
-   * - late-arriving line items
-   * - orphan temporal drift
-   * - visibility inflation
+   * Reason:
+   * - Cost snapshot exists ONLY in order_revenue_units.estimated_unit_cost
+   * - order_line_items does NOT contain cost data.
+   *
+   * Using revenue units guarantees the coverage metric reflects
+   * the actual economic snapshot used by reconciliation.
    */
-  const coverageRow = await db('order_line_items as li')
-    .join('orders as o', 'o.lasyncro_order_id', 'li.lasyncro_order_id')
+  const coverageRow = await db('order_revenue_units as ru')
+    .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '>=', from)
     .andWhere('o.order_created_at', '<=', to)
     .select(
-      db.raw('COUNT(li.lasyncro_line_item_id) as total'),
+      db.raw('COUNT(ru.lasyncro_revenue_unit_id) as total'),
       db.raw(
-        'SUM(CASE WHEN li.estimated_unit_cost IS NULL THEN 1 ELSE 0 END) as missing'
+        'SUM(CASE WHEN ru.estimated_unit_cost IS NULL THEN 1 ELSE 0 END) as missing'
       )
     )
     .first<{

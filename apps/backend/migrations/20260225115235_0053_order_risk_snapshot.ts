@@ -70,6 +70,22 @@ export async function up(knex: Knex): Promise<void> {
     table.integer('order_health_score')
       .notNullable()
       .defaultTo(0);
+    
+    /**
+     * HEALTH SCORE COMPONENTS
+     * -----------------------
+     * Persist the individual components used to compute
+     * order_health_score so the scoring model is auditable
+     * and explainable for operational debugging.
+     *
+     * These fields store the contribution of each factor
+     * to the final score at reconciliation time.
+     */
+    table.integer('aging_risk_component').notNullable().defaultTo(0);
+    table.integer('sla_risk_component').notNullable().defaultTo(0);
+    table.integer('inventory_risk_component').notNullable().defaultTo(0);
+    table.integer('customer_risk_component').notNullable().defaultTo(0);
+    table.integer('operational_risk_component').notNullable().defaultTo(0);
 
     table.timestamp('evaluated_at')
       .notNullable()

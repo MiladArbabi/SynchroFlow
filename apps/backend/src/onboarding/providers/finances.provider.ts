@@ -8,7 +8,7 @@
  *
  * Sources (verified by scans):
  * - orders → transaction existence
- * - order_revenue_units.estimated_unit_cost → cost readiness
+ * - variants.unit_cost → catalog cost completeness
  */
 
 import db from '@lasyncro/backend-core/db.js';
@@ -20,7 +20,7 @@ export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
 
   async getSignals({ shopId }): Promise<ReadinessSignal[]> {
     /**
-     * 1. Count transactions (orders)
+     *.   Count transactions (orders)
      *    We only care if the count is KNOWN.
      */
     const ordersRow = await db('orders')
@@ -33,14 +33,25 @@ export const financesOnboardingSignalProvider: OnboardingSignalProvider = {
       ordersRow?.count != null ? Number(ordersRow.count) : null;
 
     /**
-     * 2. Detect missing cost data
-     *    Any NULL estimated_unit_cost means costs are NOT ready.
+     * CATALOG COST COMPLETENESS CHECK
+     * --------------------------------
+     * Financial readiness must be evaluated from the
+     * canonical catalog source of truth:
+     *
+     *   variants.unit_cost
+     *
+     * NOT from historical revenue snapshots
+     * (variants.unit_cost).
+     *
+     * Reason:
+     * - Merchants may have products but no orders yet
+     * - Missing costs must be detected before any orders exist
+     * - variants is the canonical catalog layer
      */
-    const missingCostRow = await db('order_revenue_units as ru')
-      .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
-      .where('o.shop_id', shopId)
-      .whereNull('ru.estimated_unit_cost')
-      .count<{ count: string }>('ru.lasyncro_order_id as count')
+    const missingCostRow = await db('variants as v')
+      .where('v.shop_id', shopId)
+      .where('v.unit_cost', 0)
+      .count<{ count: string }>('v.lasyncro_variant_id as count')
       .first();
 
     const missingCostCount =

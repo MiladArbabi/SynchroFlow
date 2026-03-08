@@ -56,16 +56,39 @@ export async function writeOrderRevenueUnits(
       order.order_processed_at ?? order.order_created_at;
 
     /**
-     * COST PROPAGATION JOIN
-     * ---------------------
-     * Revenue units must snapshot economic cost at
-     * reconciliation time using the canonical source:
+     * HISTORICAL COST SNAPSHOT
+     * ------------------------
+     * Cost is read from variants at reconciliation time ONLY
+     * when revenue units are first created.
      *
-     * variants.unit_cost
+     * During deterministic rebuild:
+     * - existing revenue units are reused
+     * - catalog cost changes must NOT affect past economics
      *
-     * This guarantees deterministic replay and ensures
-     * margin calculations remain stable even if product
-     * catalog data changes later.
+     * Invariant:
+     * order_revenue_units.estimated_unit_cost is the historical truth.
+     */
+
+    /**
+     * COST SNAPSHOT SOURCE
+     * --------------------
+     * Revenue unit economics are derived from the catalog cost
+     * stored on variants.unit_cost at the moment revenue units
+     * are first materialized.
+     *
+     * Important invariant:
+     * - order_revenue_units.estimated_unit_cost becomes the
+     *   immutable historical cost snapshot for that order.
+     *
+     * Determinism model:
+     * - variants.unit_cost must exist (NOT NULL)
+     * - revenue units snapshot cost once
+     * - rebuilds must never recompute historical economics
+     *
+     * Therefore:
+     * - catalog cost changes only affect FUTURE orders
+     * - historical margins remain stable because the
+     *   economic snapshot is stored in order_revenue_units
      */
     const rows = await trx('order_line_items as oli')
       .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
@@ -126,15 +149,17 @@ export async function writeOrderRevenueUnits(
     }));
 
     /**
-     * ECONOMIC IMMUTABILITY ENFORCEMENT
-     * ---------------------------------
-     * Revenue units are immutable economic facts.
+     * ECONOMIC SNAPSHOT GUARANTEE
+     * ---------------------------
+     * Once a revenue unit exists its economic attributes must NEVER change.
      *
-     * If a revenue unit already exists we must NOT
-     * mutate its financial attributes.
+     * Conflict strategy:
+     * - If revenue unit already exists → DO NOTHING
+     * - Existing estimated_unit_cost remains authoritative
      *
-     * Rebuilds rely on deterministic replay of the
-     * original economic snapshot.
+     * This prevents:
+     * - historical margin mutation
+     * - replay drift during deterministic rebuilds
      */
     await trx('order_revenue_units')
       .insert(revenueUnits)

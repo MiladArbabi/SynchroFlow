@@ -600,28 +600,64 @@ export async function reconcileOrderFulfillment(
      */
     let healthScore = 0;
 
+    /**
+     * HEALTH SCORE COMPONENT ACCUMULATORS
+     * -----------------------------------
+     * These variables track the contribution of each scoring
+     * factor so they can be persisted in order_risk_snapshot.
+     */
+    let agingRiskContribution = 0;
+    let slaRiskContribution = 0;
+    let inventoryRiskContribution = 0;
+    let customerRiskContribution = 0;
+    let operationalRiskContribution = 0;
+
     /* --- SLA Escalation (max 30) --- */
-    if (isShippingSlaBreached) healthScore += 20;
-    if (isDeliverySlaBreached) healthScore += 10;
+    if (isShippingSlaBreached) {
+      slaRiskContribution += 20;
+      healthScore += 20;
+    }
 
-    /* --- Hard Operational Blockers (max 30) --- */
-    if (isInventoryBlocked) healthScore += 15;
-    if (isOperationalBlocked) healthScore += 10;
-    if (isCustomerBlocked) healthScore += 5;
+    if (isDeliverySlaBreached) {
+      slaRiskContribution += 10;
+      healthScore += 10;
+    }
 
-    /* --- Financial Urgency (max 25) --- */
-    if (grossMargin < 0) healthScore += 15;
+    /* --- Operational Blocking Signals --- */
+    if (isInventoryBlocked) {
+      inventoryRiskContribution = 15;
+      healthScore += inventoryRiskContribution;
+    }
+
+    if (isOperationalBlocked) {
+      operationalRiskContribution = 10;
+      healthScore += operationalRiskContribution;
+    }
+
+    if (isCustomerBlocked) {
+      customerRiskContribution = 5;
+      healthScore += customerRiskContribution;
+    }
+
+    if (grossMargin < 0) {
+      slaRiskContribution += 15;
+      healthScore += 15;
+    }
 
     if (grossRevenue > 0) {
       const revenueScale = Math.min(grossRevenue / 5000, 1); 
-      healthScore += Math.round(revenueScale * 10);
+      const revenueContribution = Math.round(revenueScale * 10);
+      slaRiskContribution += revenueContribution;
+      healthScore += revenueContribution;
     }
 
     /* --- Aging Escalation (max 15) --- */
     if (ageSincePaid && ageSincePaid > 0) {
       const days = ageSincePaid / 86400;
-      const agingScale = Math.min(days / 7, 1); 
-      healthScore += Math.round(agingScale * 15);
+      const agingScale = Math.min(days / 7, 1);
+
+      agingRiskContribution = Math.round(agingScale * 15);
+      healthScore += agingRiskContribution;
     }
 
     /* Clamp to 0–100 */
@@ -647,23 +683,37 @@ export async function reconcileOrderFulfillment(
     await trx('order_risk_snapshot')
       .insert({
         lasyncro_order_id: lasyncroOrderId,
-
-        /**
-         * PROJECTION VERSION (CRITICAL)
-         * ------------------------------
-         * Binds snapshot to exact aggregate_version
-         * used during reconciliation.
-         */
         aggregate_version: order.aggregate_version,
-
         shop_id: order.shop_id,
+
         is_inventory_blocked: isInventoryBlocked,
         is_customer_blocked: isCustomerBlocked,
         is_operational_blocked: isOperationalBlocked,
         is_at_risk: isAtRisk,
+
         fraud_score: fraudScore,
         return_probability: returnProbability,
+
+        /**
+         * HEALTH SCORE SNAPSHOT
+         * ---------------------
+         * The final computed health score used for
+         * operational prioritization.
+         */
         order_health_score: healthScore,
+
+        /**
+         * HEALTH SCORE COMPONENT SNAPSHOT
+         * --------------------------------
+         * Persist the contribution of each risk factor
+         * so the scoring model is fully auditable.
+         */
+        aging_risk_component: agingRiskContribution,
+        sla_risk_component: slaRiskContribution,
+        inventory_risk_component: inventoryRiskContribution,
+        customer_risk_component: customerRiskContribution,
+        operational_risk_component: operationalRiskContribution,
+
         evaluated_at: new Date(eventAnchor),
       })
       .onConflict('lasyncro_order_id')

@@ -22,7 +22,19 @@ export async function up(knex: Knex): Promise<void> {
 
     table.string('title', 255).nullable();
 
-    table.decimal('unit_cost', 12, 2).nullable();
+    /**
+     * PRODUCT COST INVARIANT
+     * ----------------------
+     * Every variant must carry a canonical cost.
+     *
+     * Reason:
+     * - revenue_units economic snapshot requires cost
+     * - NULL cost would violate NOT NULL invariant in
+     *   order_revenue_units.estimated_unit_cost
+     *
+     * Cost must be known before reconciliation.
+     */
+    table.decimal('unit_cost', 12, 2).notNullable();
 
     table.string('status', 255).notNullable().defaultTo('active');
 

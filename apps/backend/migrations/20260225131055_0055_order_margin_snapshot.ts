@@ -77,7 +77,7 @@ export async function up(knex: Knex): Promise<void> {
     ADD CONSTRAINT order_margin_snapshot_estimated_cost_non_negative
       CHECK (estimated_cost >= 0),
     ADD CONSTRAINT order_margin_snapshot_margin_pct_valid_range
-      CHECK (margin_pct >= 0 AND margin_pct <= 1),
+      CHECK (margin_pct <= 1),
     ADD CONSTRAINT order_margin_snapshot_aggregate_version_positive
       CHECK (aggregate_version > 0)
   `);

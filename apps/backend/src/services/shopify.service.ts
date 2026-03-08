@@ -399,6 +399,30 @@ async function syncProducts(
     const variantEdges = node.variants?.edges || [];
 
     for (const { node: variant } of variantEdges) {
+
+      /**
+       * CATALOG COST EXTRACTION
+       * -----------------------
+       * Shopify frequently omits variant cost.
+       *
+       * Ingestion must never fail because of missing cost.
+       * Instead we record the variant with a placeholder
+       * cost and allow the economics pipeline to detect
+       * missing cost during reconciliation.
+       * TODO: Capture the products with missing costs and prompt user
+       * to fill in the missing costs!
+       */
+      const unitCostAmount = variant.inventoryItem?.unitCost?.amount;
+
+      let unitCost = 0;
+
+      if (!unitCostAmount) {
+        console.warn(
+          `[SHOPIFY_COST_MISSING] Variant ${variant.id} has no inventory cost`
+        );
+      } else {
+        unitCost = Number(unitCostAmount);
+      }
       const variantId = crypto.randomUUID();
 
       // 2. Insert variant (atomic unit)
@@ -409,9 +433,7 @@ async function syncProducts(
           shop_id: shopId,
           sku: variant.sku || null,
           title: variant.title,
-          unit_cost: variant.inventoryItem?.unitCost?.amount
-            ? Number(variant.inventoryItem.unitCost.amount)
-            : null,
+          unit_cost: unitCost,
           status: 'active',
         })
         .onConflict('lasyncro_variant_id')
