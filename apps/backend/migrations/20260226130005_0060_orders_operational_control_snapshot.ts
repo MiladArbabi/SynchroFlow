@@ -64,6 +64,26 @@ export async function up(knex: Knex): Promise<void> {
       table.decimal('blocked_revenue', 14, 2)
         .notNullable()
         .defaultTo(0);
+      
+      /**
+       * Pending Revenue
+       * ---------------
+       * Revenue tied to orders that are not yet fulfilled.
+       *
+       * Definition:
+       * SUM(net_revenue) WHERE fulfillment_status != 'fulfilled'
+       *
+       * Computed inside reconciliation projection and
+       * persisted here to prevent resolver-side recomputation.
+       *
+       * Guarantees:
+       * - deterministic rebuilds
+       * - strict projection authority
+       * - UI passthrough safety
+       */
+      table.decimal('pending_revenue', 14, 2)
+        .notNullable()
+        .defaultTo(0);
 
       table.decimal('revenue_leakage', 14, 2)
         .notNullable()
@@ -170,6 +190,8 @@ export async function up(knex: Knex): Promise<void> {
       CHECK (at_risk_revenue >= 0),
     ADD CONSTRAINT oocs_blocked_revenue_non_negative
       CHECK (blocked_revenue >= 0),
+    ADD CONSTRAINT oocs_pending_revenue_non_negative
+      CHECK (pending_revenue >= 0),
     ADD CONSTRAINT oocs_revenue_leakage_non_negative
       CHECK (revenue_leakage >= 0),
     ADD CONSTRAINT oocs_inventory_blocked_revenue_non_negative

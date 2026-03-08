@@ -247,11 +247,6 @@ export async function reconcileOrderFulfillment(
     const isCustomerBlocked = !!ofs?.customer_block_type;
     const isOperationalBlocked = !!ofs?.operational_block_type;
 
-    const isAtRisk =
-      isInventoryBlocked ||
-      isCustomerBlocked ||
-      isOperationalBlocked;
-
     /**
      * ORDER CONSTRAINT EVENT LIFECYCLE
      * ---------------------------------
@@ -687,8 +682,23 @@ export async function reconcileOrderFulfillment(
       healthScore += agingRiskContribution;
     }
 
-    /* Clamp to 0–100 */
-    healthScore = Math.min(Math.max(healthScore, 0), 100);
+   /**
+     * OPERATIONAL RISK THRESHOLD
+     * --------------------------
+     * Health score distribution (empirically observed):
+     *
+     *   0–2 → normal
+     *   3–4 → elevated
+     *   ≥5  → operational risk
+     *
+     * The scoring model currently produces values in
+     * the approximate range 0–10.
+     *
+     * IMPORTANT:
+     * If scoring weights are modified, this threshold
+     * MUST be reviewed or risk detection will silently fail.
+     */
+    const isAtRisk = healthScore >= 5;
 
     /**
      * HEALTH SCORE INVARIANT
@@ -883,13 +893,19 @@ export async function reconcileOrderFulfillment(
       .sum<{ sum: string }>('total_price as sum')
       .first();
 
-    /* --- Refund Exposure (at-risk revenue) --- */
-    const refundExposure = await trx('order_revenue_units_net as runet')
-      .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'runet.lasyncro_order_id')
-      .where('ors.shop_id', order.shop_id)
-      .andWhere('ors.is_at_risk', true)
-      .sum<{ sum: string }>('runet.net_revenue as sum')
-      .first();
+    /**
+     * REFUND EXPOSURE
+     * ----------------
+     * Placeholder until refund projection layer exists.
+     *
+     * IMPORTANT:
+     * Refund exposure MUST represent financial liability from
+     * returned or refunded items — not operational risk.
+     *
+     * Previous implementation incorrectly reused at-risk revenue.
+     * That created semantic duplication with `at_risk_revenue`.
+     */
+    const refundExposure = { sum: 0 };
 
     /**
      * TOP 10 PRIORITY ORDERS
@@ -990,6 +1006,37 @@ export async function reconcileOrderFulfillment(
               .orWhere('ors.is_operational_blocked', true)
               .orWhere('ors.is_customer_blocked', true);
         })
+        .sum<{ sum: string }>('runet.net_revenue as sum')
+        .first();
+
+      /**
+       * Pending Revenue
+       * ----------------
+       * Revenue attached to orders that are NOT fulfilled.
+       *
+       * Definition:
+       * pending_revenue =
+       *   SUM(net_revenue)
+       *   WHERE fulfillment_status != 'fulfilled'
+       *
+       * IMPORTANT:
+       * - Independent of risk model
+       * - Derived strictly from fulfillment state
+       * - Must remain deterministic for rebuild replay
+       */
+      const pendingRevenueRow = await trx('order_revenue_units_net as runet')
+        .join(
+          'order_fulfillment_status as ofs',
+          'ofs.lasyncro_order_id',
+          'runet.lasyncro_order_id'
+        )
+        .join(
+          'orders as o',
+          'o.lasyncro_order_id',
+          'runet.lasyncro_order_id'
+        )
+        .where('o.shop_id', order.shop_id)
+        .andWhereNot('ofs.status', 'fulfilled')
         .sum<{ sum: string }>('runet.net_revenue as sum')
         .first();
 
@@ -1199,6 +1246,7 @@ export async function reconcileOrderFulfillment(
           realized_revenue: Number(realizedRevenueRow?.sum ?? 0),
           at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),
           blocked_revenue: Number(blockedRevenueRow?.sum ?? 0),
+          pending_revenue: Number(pendingRevenueRow?.sum ?? 0),
           
           /**
            * REVENUE LEAKAGE

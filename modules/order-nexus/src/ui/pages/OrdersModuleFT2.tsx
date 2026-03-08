@@ -150,7 +150,13 @@ export default function OrdersModuleFT2(
     <FT2Layout>
       <FT2Row intent="kpi">
 
-        <OrdersPriorityStackSection  items={decision.priorityStack.slice(0, 5)} />
+      /**
+        * PRIORITY STACK
+        * --------------
+        * The backend API already returns deterministically ranked orders.
+        * UI must never truncate or reorder the stack to prevent priority drift.
+        */
+        <OrdersPriorityStackSection items={decision.priorityStack} />
 
         <OrdersOverviewInfoBlock
           orders={orders}

@@ -9,8 +9,6 @@ import { extractActiveOrdersCount } from "../../services/order-facts/orderActive
 import { deriveOrderFulfillmentIntelligence } from "../../services/order-intelligence/orderFulfillmentIntelligence.service.js";
 import { OrderNexusFT2Snapshot } from "./orderNexusFt2.types.js";
 
-import { extractOrderRevenueAllocationFacts } from "../../services/order-facts/orderRevenueAllocationFacts.service.js";
-
 /**
  * STATE-ONLY FT2 RESOLVER
  * ------------------------
@@ -31,8 +29,19 @@ export async function getOrderNexusFt2StateSnapshot(
   const fulfillmentIntelligence =
     deriveOrderFulfillmentIntelligence(fulfillmentFacts);
 
-  // Revenue state (lifetime, state-anchored)
-  const revenueAllocation = await extractOrderRevenueAllocationFacts(shopId);
+  /**
+   * ECONOMIC PROJECTION SOURCE
+   * --------------------------
+   * Revenue metrics are NOT derived here.
+   *
+   * Canonical revenue projections are materialized by
+   * the reconciliation engine into:
+   *
+   *   orders_operational_control_snapshot
+   *
+   * This resolver must only read those projections to
+   * guarantee deterministic rebuild equivalence.
+   */
 
   /**
    * REVENUE SOURCE OF TRUTH
@@ -108,20 +117,91 @@ export async function getOrderNexusFt2StateSnapshot(
       : 0;
 
   /**
-   * OPERATIONAL CONTROL SNAPSHOT (PHASE 1)
-   * --------------------------------------
-   * Canonical control-tower compression layer.
+   * DETERMINISTIC SNAPSHOT SELECTION
+   * --------------------------------
+   * Snapshots may share the same snapshot_date because
+   * reconciliation jobs run multiple times per day.
    *
-   * Rules:
-   * - Read-only
-   * - Replace-on-reconcile respected
-   * - Latest snapshot per shop
-   * - No aggregation or inference here
+   * Deterministic ordering therefore requires:
+   *
+   * 1. snapshot_date DESC
+   * 2. aggregate_version DESC
+   *
+   * aggregate_version is monotonic within the event stream
+   * and guarantees stable replay ordering.
    */
   const operationalControlRow = await db('orders_operational_control_snapshot')
     .where({ shop_id: shopId })
-    .orderBy('snapshot_date', 'desc')
+    .orderBy([
+      { column: 'snapshot_date', order: 'desc' },
+      { column: 'aggregate_version', order: 'desc' },
+    ])
     .first();
+
+  /**
+   * OPERATIONAL DECISION BRIEF
+   * --------------------------
+   * Latest decision snapshot for execution surface.
+   *
+   * Source:
+   *   daily_operational_brief_snapshot
+   *
+   * This snapshot is produced by reconciliation and must
+   * be exposed through the FT2 state surface to avoid
+   * multi-API drift in the UI.
+   */
+  const decisionBriefRow = await db('daily_operational_brief_snapshot')
+    .where({ shop_id: shopId })
+    .orderBy('brief_date', 'desc')
+    .first();
+
+  /**
+   * PRIORITY STACK
+   * --------------
+   * Deterministically ranked orders based on
+   * order_health_score from risk snapshot.
+   *
+   * Backend owns ranking authority.
+   */
+  const priorityStackRows = await db('order_risk_snapshot')
+    .where({ shop_id: shopId })
+    .orderBy([
+      { column: 'order_health_score', order: 'desc' },
+      { column: 'lasyncro_order_id', order: 'asc' },
+    ])
+    .select(
+      'lasyncro_order_id as order_id',
+      'order_health_score'
+    );
+  
+  /**
+   * NUMERIC NORMALIZATION
+   * ---------------------
+   * PostgreSQL NUMERIC columns are returned as strings by node-postgres.
+   * The FT2 resolver contract requires numeric primitives.
+   *
+   * Normalize once here to prevent:
+   * - string concatenation errors
+   * - UI runtime crashes
+   * - epistemic type violations
+   */
+  const realizedRevenue = Number(operationalControlRow?.realized_revenue ?? 0);
+  const atRiskRevenue = Number(operationalControlRow?.at_risk_revenue ?? 0);
+  const blockedRevenue = Number(operationalControlRow?.blocked_revenue ?? 0);
+
+  /**
+   * Pending Revenue
+   * ---------------
+   * Projection value computed by reconciliation.
+   *
+   * IMPORTANT:
+   * Resolver must NEVER recompute revenue projections.
+   * This value is a direct passthrough from
+   * orders_operational_control_snapshot.pending_revenue.
+   */
+  const pendingRevenue = Number(
+    operationalControlRow?.pending_revenue ?? 0
+  );
 
   // Snapshot placeholder (shape refined next task)
   const snapshot: OrderNexusFT2Snapshot = {
@@ -131,27 +211,20 @@ export async function getOrderNexusFt2StateSnapshot(
       unfulfilled: activeOrders ?? 0,
       constrained, // will wire from existing constrained logic next task
     },
-    
+
     /**
-     * Revenue metrics must come from the operational
-     * control snapshot to guarantee deterministic parity
-     * with reconciliation projections.
+     * REVENUE — PROJECTION PASSTHROUGH
+     * --------------------------------
+     * Resolver must NOT recompute economic metrics.
+     * All revenue values originate from the reconciliation projection.
      */
     revenue: operationalControlRow
       ? {
-          totalSales:
-            operationalControlRow.realized_revenue +
-            operationalControlRow.at_risk_revenue,
-
-          earned: operationalControlRow.realized_revenue,
-
-          pending:
-            operationalControlRow.at_risk_revenue -
-            operationalControlRow.blocked_revenue,
-
-          blocked: operationalControlRow.blocked_revenue,
-        }
-      : {
+          totalSales: realizedRevenue + atRiskRevenue,
+          earned: realizedRevenue,
+          pending: pendingRevenue,
+          blocked: blockedRevenue,
+        } : {
           totalSales: 0,
           earned: 0,
           pending: 0,
@@ -194,6 +267,20 @@ export async function getOrderNexusFt2StateSnapshot(
         queue_awaiting_customer: operationalControlRow.queue_awaiting_customer,
       }
     : null,
+
+    decision: {
+      brief: decisionBriefRow
+        ? {
+            critical_orders_count: decisionBriefRow.critical_orders_count,
+            negative_margin_orders_count: decisionBriefRow.negative_margin_orders_count,
+            sla_breached_count: decisionBriefRow.sla_breached_count,
+            inventory_blocked_revenue: decisionBriefRow.inventory_blocked_revenue,
+            refund_exposure: decisionBriefRow.refund_exposure,
+          }
+        : null,
+
+      priorityStack: priorityStackRows ?? [],
+    },
 
     refunds: refundsFacts,
     alignment,

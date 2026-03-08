@@ -39,47 +39,38 @@ export const httpGetPriorityStack = async (
     });
 
     const rows = await db('order_risk_snapshot as ors')
-      .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'ors.lasyncro_order_id')
-      .join('order_margin_snapshot as oms', 'oms.lasyncro_order_id', 'ors.lasyncro_order_id')
     /**
-       * PRIORITY RANKING DATA REQUIREMENTS
-       * ----------------------------------
-       * The API must expose fields required for canonical
-       * priority ordering defined in reconciliation.
-       *
-       * These fields are derived from authoritative snapshots.
-       */
-      .select(
-        'ors.lasyncro_order_id as order_id',
-        'ors.order_health_score',
-        'ors.is_inventory_blocked',
-        'ors.is_customer_blocked',
-        'ors.is_operational_blocked',
-        'ors.is_at_risk',
-        'ors.fraud_score',
-        'ors.return_probability',
-        'ors.evaluated_at',
-        'oas.is_shipping_sla_breached',
-        'oas.age_since_paid_seconds',
-        'oms.gross_margin'
-      )
-    .where('ors.shop_id', shopId)
-    /**
-     * CANONICAL PRIORITY ORDERING
-     * ---------------------------
-     * Must match reconciliation ordering exactly.
+     * PRIORITY STACK DATA
+     * -------------------
+     * Only expose fields required by the FT2 priority stack UI.
      *
-     * This prevents priority drift between:
-     * - operational snapshots
-     * - UI decision stack
+     * Ranking is already encoded in order_health_score
+     * by the reconciliation projection.
      */
+    .select(
+      'ors.lasyncro_order_id as order_id',
+      'ors.order_health_score',
+      'ors.evaluated_at'
+    )
+    .where('ors.shop_id', shopId)
+
+    /**
+     * PRIORITY ORDERING
+     * -----------------
+     * Ordering must match the canonical ranking defined
+     * inside the reconciliation projection.
+     *
+     * API layer must never introduce independent ranking logic.
+     *
+     * Current implementation relies solely on the
+     * projected order_health_score which already encodes
+     * the reconciliation priority model.
+     */
+
     .orderBy([
       { column: 'ors.order_health_score', order: 'desc' },
-      { column: 'oas.is_shipping_sla_breached', order: 'desc' },
-      { column: 'oms.gross_margin', order: 'asc' },
-      { column: 'oas.age_since_paid_seconds', order: 'desc' },
       { column: 'ors.lasyncro_order_id', order: 'asc' },
-]);
+    ]);
 
     console.debug('[Decision][PriorityStack] Rows', {
       count: rows.length,

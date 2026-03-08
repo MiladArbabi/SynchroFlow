@@ -30,6 +30,32 @@ export type OrdersFt2Snapshot = {
     blocked?: number | null;
   };
 
+  /**
+  * ─────────────────────────────────────────
+  * DECISION SURFACE (FT2)
+  * Backend authoritative signals.
+  * ─────────────────────────────────────────
+  *
+  * Contract:
+  * - Produced by reconciliation projections
+  * - Embedded in FT2 snapshot
+  * - UI must not recompute or refetch
+  */
+  decision?: {
+    brief: {
+      critical_orders_count: number;
+      negative_margin_orders_count: number;
+      sla_breached_count: number;
+      inventory_blocked_revenue: number | string;
+      refund_exposure: number | string;
+    } | null;
+
+    priorityStack: {
+      order_id: string;
+      order_health_score: number;
+    }[];
+  };
+
   operationalControl?: OrdersModuleFT2DataProps['operationalControl'];
 
   /**
