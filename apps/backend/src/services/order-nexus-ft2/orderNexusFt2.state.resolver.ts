@@ -35,134 +35,22 @@ export async function getOrderNexusFt2StateSnapshot(
   const revenueAllocation = await extractOrderRevenueAllocationFacts(shopId);
 
   /**
-   * Total Structural Revenue (FT2 Canonical)
-   * ----------------------------------------
-   * Definition:
-   * - Lifetime, state-based
-   * - Net of returns
-   * - Derived from revenue units only
-   * - No execution classification
-   * - No obligation logic
+   * REVENUE SOURCE OF TRUTH
+   * -----------------------
+   * Revenue must NEVER be recomputed inside resolvers.
    *
-   * Invariant:
-   *   SUM((quantity - returned_quantity) * unit_price)
-   */
-  const totalRevenueRow = await db('order_revenue_units_net as runet')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'runet.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
-    .sum<{ sum: string | null }>(
-      db.raw('runet.net_revenue')
-    )
-    .first();
-
-  const totalStructuralRevenue =
-    totalRevenueRow?.sum != null
-      ? Math.round(Number(totalRevenueRow.sum) * 100) / 100
-      : 0;
-
-  /**
-   * Earned Revenue (FT2 Canonical)
-   * ------------------------------
-   * Definition:
-   * - Revenue units
-   * - Net of returns
-   * - Orders with fulfillment status = 'fulfilled'
-   * - Lifetime, state-based
-   */
-  const earnedRevenueRow = await db('order_revenue_units_net as runet')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'runet.lasyncro_order_id'
-    )
-    .join(
-      'order_fulfillment_status as ofs',
-      'ofs.lasyncro_order_id',
-      'runet.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
-    .andWhere('ofs.status', 'fulfilled')
-    .sum<{ sum: string | null }>(
-      db.raw('runet.net_revenue')
-    )
-    .first();
-
-  const earnedStructuralRevenue =
-    earnedRevenueRow?.sum != null
-      ? Math.round(Number(earnedRevenueRow.sum) * 100) / 100
-      : 0;
-
-  /**
-   * Pending Revenue (FT2 Canonical)
-   * --------------------------------
-   * Definition:
-   * - Revenue units
-   * - Net of returns
-   * - Orders with fulfillment status != 'fulfilled'
-   * - Lifetime, state-based
+   * Canonical economic projections are produced by the
+   * reconciliation engine and materialized into:
    *
-   * NOTE:
-   * Pending = Unfulfilled (no constraint isolation yet)
+   *   orders_operational_control_snapshot
+   *
+   * This resolver must only READ those projections.
+   *
+   * Reason:
+   * - Prevent projection drift
+   * - Ensure deterministic rebuild equivalence
+   * - Keep UI metrics aligned with reconciliation layer
    */
-  const pendingRevenueRow = await db('order_revenue_units_net as runet')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'runet.lasyncro_order_id'
-    )
-    .join(
-      'order_fulfillment_status as ofs',
-      'ofs.lasyncro_order_id',
-      'runet.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
-    .andWhereNot('ofs.status', 'fulfilled')
-    .sum<{ sum: string | null }>(
-      db.raw('runet.net_revenue')
-    )
-    .first();
-
-  const pendingStructuralRevenue =
-    pendingRevenueRow?.sum != null
-      ? Math.round(Number(pendingRevenueRow.sum) * 100) / 100
-      : 0;
-
-  /**
-   * Constrained Revenue (FT2 Canonical)
-   * -----------------------------------
-   * Definition:
-   * - Revenue units
-   * - Net of returns
-   * - Orders with explicit obligation flags
-   *   (inventory OR customer OR operational)
-   * - Lifetime, state-based
-   */
-  const constrainedRevenueRow = await db('order_revenue_units_net as runet')
-    .join(
-      'orders as o',
-      'o.lasyncro_order_id',
-      'runet.lasyncro_order_id'
-    )
-    .join(
-      'order_fulfillment_status as ofs',
-      'ofs.lasyncro_order_id',
-      'runet.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
-    .whereNotNull('ofs.inventory_block_type')
-    .sum<{ sum: string | null }>(
-      db.raw('runet.net_revenue')
-    )
-    .first();
-
-  const constrainedStructuralRevenue =
-    constrainedRevenueRow?.sum != null
-      ? Math.round(Number(constrainedRevenueRow.sum) * 100) / 100
-      : 0;
 
   // Refunds (lifetime)
   const refundsFacts = await extractRefundsFacts(shopId);
@@ -243,39 +131,32 @@ export async function getOrderNexusFt2StateSnapshot(
       unfulfilled: activeOrders ?? 0,
       constrained, // will wire from existing constrained logic next task
     },
-    revenue: {
-      /**
-       * FT2 Revenue — Structural State
-       * ------------------------------
-       * Canonical structural revenue classification derived
-       * from revenue units and fulfillment constraints.
-       *
-       * Definitions:
-       *
-       * totalSales
-       *   Lifetime structural revenue (net of returns)
-       *
-       * earned
-       *   Revenue whose orders are fully fulfilled
-       *
-       * pending
-       *   Revenue whose orders are not yet fulfilled
-       *
-       * blocked
-       *   Revenue structurally constrained by operational
-       *   obligations (inventory / fulfillment constraints).
-       *
-       * Source:
-       *   order_revenue_units_net
-       *   + order_fulfillment_status.inventory_block_type
-       *
-       * This is NOT a placeholder. It is canonical FT2 state.
-       */
-      totalSales: totalStructuralRevenue,
-      earned: earnedStructuralRevenue,
-      pending: pendingStructuralRevenue,
-      blocked: constrainedStructuralRevenue,
-    },
+    
+    /**
+     * Revenue metrics must come from the operational
+     * control snapshot to guarantee deterministic parity
+     * with reconciliation projections.
+     */
+    revenue: operationalControlRow
+      ? {
+          totalSales:
+            operationalControlRow.realized_revenue +
+            operationalControlRow.at_risk_revenue,
+
+          earned: operationalControlRow.realized_revenue,
+
+          pending:
+            operationalControlRow.at_risk_revenue -
+            operationalControlRow.blocked_revenue,
+
+          blocked: operationalControlRow.blocked_revenue,
+        }
+      : {
+          totalSales: 0,
+          earned: 0,
+          pending: 0,
+          blocked: 0,
+        },
 
     /**
    * Operational Control Snapshot (FT2 Surface)

@@ -57,6 +57,21 @@ export async function rebuildInventoryProjectionForVariants(
       )
       .where({ shop_id: shopId })
       .whereIn('lasyncro_variant_id', variantIds)
+      /**
+       * INVENTORY ON-HAND CALCULATION
+       * ------------------------------
+       * Ledger semantics:
+       *
+       * inbound movements  → +quantity
+       * outbound movements → -quantity
+       *
+       * IMPORTANT:
+       * quantity_delta from Shopify ingestion is always positive.
+       * Outbound movements MUST therefore be negated here.
+       *
+       * Failure to negate outbound movements causes inventory_truth
+       * to drift negative across the entire catalog.
+       */
       .sum({
         on_hand: trx.raw(`
           CASE
@@ -67,11 +82,13 @@ export async function rebuildInventoryProjectionForVariants(
               'reconciliation_correction',
               'opening_balance'
             ) THEN quantity_delta
+
             WHEN movement_type IN (
               'sale',
               'damage',
               'shrinkage'
-            ) THEN quantity_delta
+            ) THEN -quantity_delta
+
             ELSE 0
           END
         `),

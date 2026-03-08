@@ -24,12 +24,40 @@ export async function computeObligationFlagsForOrders(
    */
   if (orderIds.length === 0) return;
 
+  /**
+   * Inventory aggregation row
+   *
+   * required_quantity:
+   *   SUM(order_revenue_units.quantity)
+   *
+   * total_available:
+   *   SUM(inventory_truth.available_quantity)
+   *
+   * lasyncro_order_id:
+   *   order identity anchor
+   */
   type InventoryRow = {
     lasyncro_order_id: string;
+    required_quantity: string | number | null;
     total_available: string | number | null;
   };
 
-  // 1️⃣ Aggregate availability only for affected orders
+  /**
+   * INVENTORY OBLIGATION EVALUATION
+   * --------------------------------
+   * Correct rule:
+   * An order is inventory-blocked only when
+   * available inventory < required order quantity.
+   *
+   * Previous implementation incorrectly summed
+   * inventory availability only, ignoring required
+   * quantities. That caused every order to appear
+   * blocked when inventory levels were small.
+   *
+   * Deterministic invariant:
+   *   required_quantity > available_quantity → blocked
+   */
+
   const inventoryRows = await trx('order_revenue_units as ru')
     .leftJoin('inventory_truth as it', function () {
       this.on('it.lasyncro_variant_id', '=', 'ru.lasyncro_variant_id');
@@ -37,19 +65,27 @@ export async function computeObligationFlagsForOrders(
     .whereIn('ru.lasyncro_order_id', orderIds)
     .groupBy('ru.lasyncro_order_id')
     .select('ru.lasyncro_order_id')
+    .sum({ required_quantity: 'ru.quantity' })
     .sum({ total_available: 'it.available_quantity' }) as InventoryRow[];
 
   const stockoutOrders = new Set<string>();
   const oversellOrders = new Set<string>();
 
   for (const row of inventoryRows) {
-    if (row.total_available == null) continue;
+    const required = Number(row.required_quantity ?? 0);
+    const available = Number(row.total_available ?? 0);
 
-    const available = Number(row.total_available);
+    /**
+     * Deterministic stock evaluation
+     *
+     * available >= required  → executable
+     * available == 0         → stockout
+     * available < required   → oversell
+     */
 
-    if (available === 0) {
+    if (available === 0 && required > 0) {
       stockoutOrders.add(row.lasyncro_order_id);
-    } else if (available < 0) {
+    } else if (available < required) {
       oversellOrders.add(row.lasyncro_order_id);
     }
   }

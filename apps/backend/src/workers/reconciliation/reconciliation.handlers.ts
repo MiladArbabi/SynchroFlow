@@ -453,6 +453,33 @@ export async function reconcileOrderFulfillment(
       .first();
 
     /**
+     * ECONOMIC FULFILLMENT PROPAGATION
+     * --------------------------------
+     * When an order is marked fulfilled we propagate the
+     * fulfillment state to the economic ledger.
+     *
+     * Rationale:
+     * - order_fulfillment_status = operational state
+     * - order_revenue_units = economic ledger
+     *
+     * The ledger must reflect fulfillment so that:
+     * - inventory reconciliation
+     * - revenue realization
+     * - refund allocation
+     * remain correct.
+     *
+     * Deterministic rule:
+     * If fulfilled_at exists → all units are fulfilled.
+     */
+    if (ofsAge?.fulfilled_at) {
+      await trx('order_revenue_units')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .update({
+          fulfilled_quantity: trx.raw('quantity')
+        });
+    }
+
+    /**
     * AGE CALCULATION CLOCK (Aggregate-State Anchored)
     * ------------------------------------------------
     * Use the order's canonical order_updated_at.
