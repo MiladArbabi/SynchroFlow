@@ -156,23 +156,20 @@ export async function getOrderNexusFt2StateSnapshot(
     .first();
 
   /**
-   * PRIORITY STACK
-   * --------------
-   * Deterministically ranked orders based on
-   * order_health_score from risk snapshot.
+   * LEGACY PRIORITY STACK
+   * ---------------------
+   * Previously exposed ranked orders based on
+   * order_risk_snapshot.order_health_score.
    *
-   * Backend owns ranking authority.
+   * Replaced by Operations Queue architecture.
+   *
+   * Operational signals now originate from:
+   * orders_operational_control_snapshot
+   *
+   * Query intentionally disabled to prevent
+   * accidental reintroduction of the ranking surface.
    */
-  const priorityStackRows = await db('order_risk_snapshot')
-    .where({ shop_id: shopId })
-    .orderBy([
-      { column: 'order_health_score', order: 'desc' },
-      { column: 'lasyncro_order_id', order: 'asc' },
-    ])
-    .select(
-      'lasyncro_order_id as order_id',
-      'order_health_score'
-    );
+  const priorityStackRows = [];
   
   /**
    * NUMERIC NORMALIZATION
@@ -279,7 +276,16 @@ export async function getOrderNexusFt2StateSnapshot(
           }
         : null,
 
-      priorityStack: priorityStackRows ?? [],
+      /**
+       * DEPRECATED FIELD
+       * ----------------
+       * Retained temporarily for backward compatibility
+       * with existing snapshot adapters.
+       *
+       * Always empty since Operations Queue replaced
+       * the Priority Stack architecture.
+       */
+      priorityStack: [],
     },
 
     refunds: refundsFacts,

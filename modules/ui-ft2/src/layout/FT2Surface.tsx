@@ -37,8 +37,43 @@ export type FT2SurfaceProps = {
   trustTone?: 'trusted' | 'constrained' | 'blocked';
 
   /**
-   * Semantic width multiplier inside FT2Row.
-   * Interpreted ONLY by FT2Row.
+   * Surface span inside FT2Row
+   * --------------------------
+   *
+   * Defines proportional width of this surface relative
+   * to other surfaces inside the same FT2Row.
+   *
+   * Example:
+   *
+   *   <FT2Row>
+   *     <FT2Surface span={1}/>
+   *     <FT2Surface span={1}/>
+   *     <FT2Surface span={2}/>
+   *   </FT2Row>
+   *
+   * Layout result:
+   *
+   *   25% | 25% | 50%
+   *
+   * Implementation details:
+   *
+   * - FT2Row reads `span` from each child surface
+   * - totalSpan is computed
+   * - width = span / totalSpan
+   *
+   * Important rules:
+   *
+   * 1. FT2Surface must be the direct child of FT2Row
+   * 2. InfoBlock must be nested inside FT2Surface
+   * 3. Surfaces without span default to span = 1
+   *
+   * Historical context:
+   *
+   * Earlier implementations ignored span and relied
+   * on fixed-width InfoBlocks, which caused horizontal
+   * scrolling dashboards and layout drift.
+   *
+   * The span contract now drives deterministic layout.
    */
   span?: 1 | 2;
 };

@@ -1,20 +1,32 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
 
-import React, { ReactNode, useState } from 'react';
-import {
-  FT2Layout,
-  FT2Row,
-} from '@lasyncro/ui-ft2';
+import { FT2Layout, FT2Row, FT2Surface } from '@lasyncro/ui-ft2';
+/**
+ * FT2 LAYOUT CONTRACT
+ * -------------------
+ * Every FT2Row child must be an FT2Surface.
+ * Surfaces define layout spans and enforce
+ * separation between layout and narrative primitives.
+ */
 
 import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
 import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
 import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlock.js';
 import { OrderHealthInfoBlock } from '../components/OrderHealthInfoBlock.js';
+import { toEpistemic } from '@lasyncro/epistemic';
 
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
-import { OrdersPriorityStackSection } from '../components/OrdersPriorityStackSection.js';
 
-import { toEpistemic } from '@lasyncro/epistemic';
+/**
+ * OPERATIONS QUEUE
+ * ----------------
+ * Replaces legacy Priority Stack.
+ *
+ * Surface now exposes operational signals derived from
+ * orders_operational_control_snapshot instead of
+ * order_risk_snapshot ranking.
+ */
+import { OperationsQueueSection } from '../components/OperationsQueueSection.js';
 
 /**
  * ─────────────────────────────────────────────────────────────
@@ -150,48 +162,63 @@ export default function OrdersModuleFT2(
     <FT2Layout>
       <FT2Row intent="kpi">
 
-      /**
-        * PRIORITY STACK
-        * --------------
-        * The backend API already returns deterministically ranked orders.
-        * UI must never truncate or reorder the stack to prevent priority drift.
-        */
-        <OrdersPriorityStackSection items={decision.priorityStack} />
+        <FT2Surface span={1}>
+          <OperationsQueueSection
+            queue_manual_review={operationalControl.queue_manual_review}
+            queue_awaiting_inventory={operationalControl.queue_awaiting_inventory}
+            queue_ready_to_ship={operationalControl.queue_ready_to_ship}
+            queue_awaiting_customer={operationalControl.queue_awaiting_customer}
+            orders_at_sla_risk={operationalControl.orders_at_sla_risk}
+            pending_fulfillment={operationalControl.pending_fulfillment}
+          />
+        </FT2Surface>
 
-        <OrdersOverviewInfoBlock
-          orders={orders}
-        />
+        <FT2Surface span={1}>
+          <OrdersOverviewInfoBlock
+            orders={orders}
+          />
+        </FT2Surface>
 
-        <RevenueOverviewInfoBlock
-          revenue={{
-            totalSales: toEpistemic(revenue.totalSales),
-            earned: toEpistemic(revenue.earned),
-            pending: toEpistemic(revenue.pending),
-            blocked: toEpistemic(revenue.blocked),
-          }}
-        />
+        <FT2Surface span={1}>
+          <RevenueOverviewInfoBlock
+            revenue={{
+              totalSales: toEpistemic(revenue.totalSales),
+              earned: toEpistemic(revenue.earned),
+              pending: toEpistemic(revenue.pending),
+              blocked: toEpistemic(revenue.blocked),
+            }}
+          />
+        </FT2Surface>
+
       </FT2Row>
 
-      <FT2Row intent='kpi'>
-        <OrdersDecisionBrief {...decision.brief} />
+      <FT2Row intent="kpi">
+        <FT2Surface span={1}>
+          <OrdersDecisionBrief {...decision.brief} />
+        </FT2Surface>
 
-        <RevenueIntegrityInfoBlock
-          realized_revenue={operationalControl.realized_revenue}
-          at_risk_revenue={operationalControl.at_risk_revenue}
-          blocked_revenue={operationalControl.blocked_revenue}
-          revenue_leakage={operationalControl.revenue_leakage}
-          avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
-        />
+        <FT2Surface span={1}>
+          <RevenueIntegrityInfoBlock
+            realized_revenue={operationalControl.realized_revenue}
+            at_risk_revenue={operationalControl.at_risk_revenue}
+            blocked_revenue={operationalControl.blocked_revenue}
+            revenue_leakage={operationalControl.revenue_leakage}
+            avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
+          />
+        </FT2Surface>
 
-        <OrderHealthInfoBlock
-          orders_at_sla_risk={operationalControl.orders_at_sla_risk}
-          aging_24h={operationalControl.aging_24h}
-          aging_48h={operationalControl.aging_48h}
-          aging_72h_plus={operationalControl.aging_72h_plus}
-          pending_fulfillment={operationalControl.pending_fulfillment}
-          pending_payment={operationalControl.pending_payment}
-          exception_orders={operationalControl.exception_orders}
-        />
+        <FT2Surface span={1}>
+          <OrderHealthInfoBlock
+            orders_at_sla_risk={operationalControl.orders_at_sla_risk}
+            aging_24h={operationalControl.aging_24h}
+            aging_48h={operationalControl.aging_48h}
+            aging_72h_plus={operationalControl.aging_72h_plus}
+            pending_fulfillment={operationalControl.pending_fulfillment}
+            pending_payment={operationalControl.pending_payment}
+            exception_orders={operationalControl.exception_orders}
+          />
+        </FT2Surface>
+
       </FT2Row>
     </FT2Layout>
   );

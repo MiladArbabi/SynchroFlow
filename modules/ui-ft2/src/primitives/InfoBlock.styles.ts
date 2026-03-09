@@ -11,7 +11,16 @@
 import { styled } from '@mui/material/styles';
 
 export const InfoBlockContainer = styled('div')({
-  width: 350,
+  /**
+   * Width is controlled by FT2Surface.
+   * InfoBlock must remain a narrative primitive,
+   * not a layout container.
+   * 
+   * * InfoBlock must fill the surface but never exceed it.
+   * Layout control belongs to FT2Surfa
+   */
+  width: '100%',
+  maxWidth: '100%',
   display: 'flex',
   flexDirection: 'column',
   background: 'var(--ft2-infoblock-bg)',
