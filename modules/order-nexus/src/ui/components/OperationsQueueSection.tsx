@@ -1,7 +1,6 @@
-import { PanelRow, PanelFooter } from '@lasyncro/ui-ft2';
-import type { OperationalSignal } from '../../contracts/operationalSignals.js';
+import { FT2Panel, PanelRow, PanelFooter, PanelActions, PanelBlock } from '@lasyncro/ui-ft2';import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { getSignalIcon, getSeverityPriority } from '../helpers/signalSeverity.js';
-import { Button, Stack } from '@mui/material';
+import { Button } from '@mui/material';
 
 /**
  * OperationsQueueSection
@@ -55,38 +54,26 @@ export function OperationsQueueSection({
   );
 
   return (
-   <>
+   <FT2Panel title="Operations Queue">
 
       {orderedSignals.map((signal) => (
-        <div key={signal.id}>
+        <PanelBlock key={signal.id}>
           <PanelRow
             label={`${getSignalIcon(signal.severity)} ${signal.title}`}
             value={signal.impact}
           />
 
-          {signal.metadata && (
-            <PanelRow
-              label="Details"
-              value={JSON.stringify(signal.metadata)}
-            />
-          )}
+          {((signal.actions && signal.actions.length > 0) ||
+            (signal.batchActions && signal.batchActions.length > 0)) && (
+            <PanelActions>
 
-          {signal.actions && signal.actions.length > 0 && (
-            <Stack direction="row" spacing={1} sx={{ pl: 3, pb: 1 }}>
-              {signal.actions.map((action) => (
+              {signal.actions?.map((action) => (
                 <Button
                   key={action.id}
                   size="small"
                   variant="outlined"
+                  sx={{ width: 'auto', whiteSpace: 'nowrap' }}
                   onClick={() => {
-                    /**
-                     * Operational intent emission
-                     * ---------------------------
-                     * Emits actionType to parent orchestration layer.
-                     *
-                     * If no handler is provided we emit a clear
-                     * diagnostic signal instead of silently failing.
-                     */
                     if (onAction) {
                       onAction(action.actionType, signal);
                     } else {
@@ -100,26 +87,13 @@ export function OperationsQueueSection({
                   {action.label}
                 </Button>
               ))}
-            </Stack>
-          )}
 
-          {signal.batchActions && signal.batchActions.length > 0 && (
-            <Stack
-              direction="row"
-              spacing={1}
-              sx={{
-                pl: 3,
-                pb: 1,
-                borderTop: '1px dashed rgba(0,0,0,0.1)',
-                mt: 1,
-                pt: 1,
-              }}
-            >
-              {signal.batchActions.map((action) => (
+              {signal.batchActions?.map((action) => (
                 <Button
                   key={action.id}
                   size="small"
                   variant="contained"
+                  sx={{ width: 'auto', whiteSpace: 'nowrap' }}
                   color="primary"
                   onClick={() => {
                     if (onAction) {
@@ -135,9 +109,10 @@ export function OperationsQueueSection({
                   {action.label}
                 </Button>
               ))}
-            </Stack>
+
+            </PanelActions>
           )}
-        </div>
+        </PanelBlock>
       ))}
 
       <PanelFooter
@@ -145,6 +120,6 @@ export function OperationsQueueSection({
         line2="> SOURCE: orders_operational_control_snapshot"
       />
 
-   </>
+   </FT2Panel>
   );
 }

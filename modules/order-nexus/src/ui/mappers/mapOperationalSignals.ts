@@ -46,7 +46,10 @@ export function mapOperationalSignals(
     id: 'inventory-shortage',
     severity: 'critical',
     title: 'Inventory shortage',
-    impact: `${snapshot.queue_awaiting_inventory} orders blocked`,
+    impact:
+      snapshot.queue_awaiting_inventory === 1
+        ? '1 order affected'
+        : `${snapshot.queue_awaiting_inventory} orders affected`,
 
     /**
      * Metadata enables progressive disclosure inside the
@@ -63,7 +66,7 @@ export function mapOperationalSignals(
     actions: [
       {
         id: 'inspect_inventory_block',
-        label: 'Inspect orders',
+        label: 'Inspect',
         actionType: 'open_inventory_blocked_orders',
       },
     ],
@@ -74,7 +77,7 @@ export function mapOperationalSignals(
     batchActions: [
       {
         id: 'notify_supplier',
-        label: 'Notify supplier',
+        label: 'Notify',
         actionType: 'notify_inventory_supplier',
       },
     ],
@@ -211,7 +214,7 @@ export function mapOperationalSignals(
       batchActions: [
         {
           id: 'start_fulfillment',
-          label: 'Start fulfillment',
+          label: 'Fulfill',
           actionType: 'start_fulfillment_batch',
         },
       ],

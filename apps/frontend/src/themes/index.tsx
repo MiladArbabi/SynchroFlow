@@ -93,9 +93,33 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
     MuiCssBaseline: {
       styleOverrides: {
         '[data-color-scheme="light"]': {
-          '--ft2-surface-bg': lightPalette.background.paper,
+          /**
+           * FT2 Page Background
+           * -------------------
+           * Ensures dashboard page background is
+           * visually distinct from panel surfaces.
+           */
+          backgroundColor: 'var(--ft2-page-bg)',
+          /**
+           * FT2 Panel Surface
+           * -----------------
+           * Panels must visually lift from the page background.
+           */
+          /**
+           * Panel surface
+           * Must be brighter than page background
+           * to create surface lift.
+           */
+          '--ft2-surface-bg': '#FFFFFF',
+
+          /**
+           * Panel header zone
+           * Slight inset to separate header from panel body.
+           */
           '--ft2-surface-inset-bg': lightPalette.action.hover,
           '--ft2-surface-divider': lightPalette.divider,
+
+          '--ft2-page-bg': lightPalette.background.default,
 
           '--ft2-surface-shadow': `0 1px 2px ${withAlpha('#000000', 0.12)}, 
                          0 2px 4px ${withAlpha('#000000', 0.08)}`,
@@ -119,9 +143,17 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           },
 
         '[data-color-scheme="dark"]': {
-          '--ft2-surface-bg': darkPalette.background.paper,
+          backgroundColor: 'var(--ft2-page-bg)',
+
+          /**
+           * Panel surface
+           * Slight lift above dark page background.
+           */
+          '--ft2-surface-bg': '#171A21',
           '--ft2-surface-inset-bg': darkPalette.action.hover,
           '--ft2-surface-divider': darkPalette.divider,
+
+          '--ft2-page-bg': darkPalette.background.default,
 
           '--ft2-surface-shadow': `0 1px 2px ${withAlpha('#FFFFFF', 0.10)}, 
                          0 2px 4px ${withAlpha('#FFFFFF', 0.06)}`,

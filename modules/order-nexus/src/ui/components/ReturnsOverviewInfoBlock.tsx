@@ -4,7 +4,6 @@ import {
 } from '@lasyncro/ui-ft2';
 
 import type { EpistemicValue } from '@lasyncro/epistemic';
-import { renderEpistemicMoney } from './renderEpistemicMoney.js';
 
 type ReturnsOverviewInfoBlockProps = {
   returnedRevenue: EpistemicValue<number>;

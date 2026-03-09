@@ -67,15 +67,17 @@ const RowContainer = styled('div', {
   diffPosition?: 'left' | 'right';
 }>(({ hasDiff, diffPosition }) => ({
   display: 'grid',
+  width: '100%',
 
   gridTemplateColumns: hasDiff
-    ? diffPosition === 'left'
-      ? '1fr 36px 48px'
-      : '1fr 48px 36px'
-    : '1fr 48px',
+  ? diffPosition === 'left'
+    ? 'auto 36px auto'
+    : 'auto auto 36px'
+  : 'auto auto',
 
   alignItems: 'center',
   padding: '6px 14px',
+  columnGap: 8,
 
   fontFamily: '"IBM Plex Mono", monospace',
   fontSize: 12,

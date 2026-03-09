@@ -5,9 +5,7 @@
 // Deterministic display of operational health metrics.
 // Pure passthrough. No computation.
 
-import {
-  PanelRow
-} from '@lasyncro/ui-ft2';
+import { FT2Panel, PanelRow,PanelFooter } from '@lasyncro/ui-ft2';
 
 export interface OrderHealthInfoBlockProps {
   orders_at_sla_risk: number;
@@ -33,7 +31,7 @@ export function OrderHealthInfoBlock(
   } = props;
 
   return (
-    <>
+    <FT2Panel title="Order Health">
       <PanelRow
         label="Orders at SLA Risk"
         value={orders_at_sla_risk}
@@ -62,6 +60,11 @@ export function OrderHealthInfoBlock(
         label="Exception Orders"
         value={exception_orders}
       />
-    </>
+
+       <PanelFooter
+        line1="> HEALTH OF ORDERS"
+        line2="> HOW ARE MY ORDERS DOING?"
+      />
+    </FT2Panel>
   );
 }

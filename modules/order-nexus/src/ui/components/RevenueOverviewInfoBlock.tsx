@@ -1,7 +1,4 @@
-import {
-  PanelRow,
-  PanelFooter,
-} from '@lasyncro/ui-ft2';
+import { FT2Panel, PanelRow,PanelFooter } from '@lasyncro/ui-ft2';
 
 /**
  * RevenueOverviewInfoBlockProps
@@ -25,7 +22,7 @@ export function RevenueOverviewInfoBlock({
 }: RevenueOverviewInfoBlockProps) {
 
   return (
-    <>
+    <FT2Panel title="Revenue Sync">
       <PanelRow
         label="Total sales"
         value={revenue.totalSales}
@@ -49,6 +46,6 @@ export function RevenueOverviewInfoBlock({
         line1="> VALUES SHOWN — EPISTEMIC STATE"
         line2="> PAYMENT AND PROFIT NOT EVALUATED"
       />
-    </>
+    </FT2Panel>
   );
 }

@@ -20,29 +20,30 @@ import { FT2_TOKENS } from './ft2.tokens.js';
  * must expose an optional `span` prop.
  *
  * This intentionally avoids coupling the row engine
- * to specific surface implementations (FT2Surface, FT2Panel, etc).
+ * to specific container implementations (FT2Panel or any component exposing `span`).
  */
 type LayoutChildProps = {
   span?: number;
 };
 
 /**
- * PANEL MIGRATION NOTE
- * --------------------
- * FT2Row previously depended directly on FT2Surface.
+ * PANEL LAYOUT CONTRACT
+ * ---------------------
+ * FT2Row is intentionally decoupled from specific UI containers.
  *
- * This coupling prevented the introduction of a unified
- * FT2Panel abstraction.
+ * The row engine reads only a minimal `span` contract,
+ * allowing any compatible component to participate in layout.
  *
- * The row engine now reads only a minimal `span` contract,
- * allowing any compatible component (Surface, Panel, etc)
- * to participate in the layout system.
+ * Primary container used by FT2 architecture:
+ *   FT2Panel
+ *
+ * Any component exposing `span?: number` may participate.
  */
 
 /**
  * Development mode detection
  * --------------------------
- * Mirrors FT2Surface implementation to allow
+ * Mirrors FT2Panel development instrumentation to allow
  * development-only instrumentation inside FT2Row.
  */
 const __DEV__ =
@@ -68,9 +69,9 @@ export function FT2Row({ children, intent }: FT2RowProps) {
     /**
      * Development guard
      * -----------------
-     * FT2Row layout is designed to operate on FT2Surface.
-     * If other components are placed directly in FT2Row,
-     * span logic will degrade to default = 1.
+     * FT2Row expects children participating in the span contract.
+     *
+     * If a child does not expose `span`, layout defaults to span = 1.
      *
      * This warning prevents silent layout drift during development.
      */
@@ -91,8 +92,7 @@ export function FT2Row({ children, intent }: FT2RowProps) {
            * FT2Row expects children that participate in the span layout contract.
            *
            * Valid children:
-           *   - FT2Surface (legacy)
-           *   - FT2Panel (future)
+           *   - FT2Panel
            *   - Any component exposing `span`
            *
            * This diagnostic prevents accidental placement of raw

@@ -1,7 +1,4 @@
-import {
-  PanelRow,
-  PanelFooter,
-} from '@lasyncro/ui-ft2';
+import { FT2Panel, PanelRow,PanelFooter } from '@lasyncro/ui-ft2';
 
 /**
  * OrdersDecisionBrief
@@ -30,7 +27,7 @@ export function OrdersDecisionBrief({
   refund_exposure,
 }: OrdersDecisionBriefProps) {
   return (
-    <>
+    <FT2Panel title="Decisions Sync">
 
       <PanelRow
         label="Critical orders"
@@ -61,6 +58,6 @@ export function OrdersDecisionBrief({
         line1="> BACKEND-DERIVED RISK SNAPSHOT"
         line2="> ORDERING AUTHORITATIVE"
       />
-    </>
+    </FT2Panel>
   );
 }

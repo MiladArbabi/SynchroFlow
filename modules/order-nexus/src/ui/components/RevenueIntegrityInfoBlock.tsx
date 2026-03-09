@@ -4,12 +4,7 @@
 // --------------------------------------
 // Renders deterministic revenue control metrics.
 // Pure display. No derivation.
-
-import React from 'react';
-import {
-  PanelRow,
-  PanelFooter,
-} from '@lasyncro/ui-ft2';
+import { FT2Panel, PanelRow,PanelFooter } from '@lasyncro/ui-ft2';
 
 export interface RevenueIntegrityInfoBlockProps {
   realized_revenue: number;
@@ -31,7 +26,7 @@ export function RevenueIntegrityInfoBlock(
   } = props;
 
   return (
-    <>
+    <FT2Panel title="Revenue Integrity">
       <PanelRow
         label="Realized Revenue"
         value={realized_revenue}
@@ -52,6 +47,11 @@ export function RevenueIntegrityInfoBlock(
         label="Avg Contribution Margin %"
         value={avg_contribution_margin_pct}
       />
-    </>
+
+      <PanelFooter
+        line1="> INTEGRITY OF REVENUE"
+        line2="> IS MY MONEY SAFE?"
+      />
+    </FT2Panel>
   );
 }

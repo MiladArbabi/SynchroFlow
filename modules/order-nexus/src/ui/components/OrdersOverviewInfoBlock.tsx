@@ -1,7 +1,4 @@
-import {
-  PanelRow,
-  PanelFooter,
-} from '@lasyncro/ui-ft2';
+import { FT2Panel, PanelRow, PanelFooter } from '@lasyncro/ui-ft2';
 
 type OrdersOverviewInfoBlockProps = {
   orders: {
@@ -22,7 +19,7 @@ export function OrdersOverviewInfoBlock({
    * This component now renders rows only.
    */
   return (
-    <>
+    <FT2Panel title="Orders Sync">
       <PanelRow
         label="Total orders"
         value={orders.total}
@@ -47,6 +44,6 @@ export function OrdersOverviewInfoBlock({
         line1="> LIFETIME OPERATIONAL STATE"
         line2="> NON-TEMPORAL, EXECUTION-BASED"
       />
-    </>
+    </FT2Panel>
   );
 }

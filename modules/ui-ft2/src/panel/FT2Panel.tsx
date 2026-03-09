@@ -28,6 +28,7 @@
 import { Paper, Box } from '@mui/material';
 import type { ReactNode } from 'react';
 import { FT2_TOKENS } from '../layout/ft2.tokens.js';
+import { PanelHeader } from './PanelHeader.js';
 
 export type FT2PanelProps = {
   title?: string;
@@ -66,6 +67,15 @@ export function FT2Panel({
         overflow: 'hidden',
 
         backgroundColor: FT2_TOKENS.surface.background,
+        /**
+         * Structural edge
+         * ---------------
+         * Ensures panels remain visually separated
+         * from page background even when shadows
+         * are subtle in certain themes.
+         */
+        border: '1px solid var(--ft2-surface-divider)',
+
         boxShadow: FT2_TOKENS.surfaceShadow.default,
 
         borderLeft:
@@ -76,24 +86,7 @@ export function FT2Panel({
     >
 
       {/* Panel Header */}
-      {title && (
-        <Box
-          data-ft2-panel-header
-          sx={{
-            height: FT2_TOKENS.controlZoneHeight,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            px: FT2_TOKENS.surfacePadding.standard / 8,
-
-            backgroundColor: FT2_TOKENS.surfaceTitle.background,
-            borderBottom: `1px solid ${FT2_TOKENS.surfaceTitle.divider}`,
-            ...FT2_TOKENS.typography.surfaceTitle,
-          }}
-        >
-          {title}
-        </Box>
-      )}
+      {title && <PanelHeader title={title} />}
 
       {/* Panel Body */}
       <Box

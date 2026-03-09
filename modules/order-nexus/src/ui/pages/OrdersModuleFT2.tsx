@@ -18,7 +18,6 @@ import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.j
 import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
 import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlock.js';
 import { OrderHealthInfoBlock } from '../components/OrderHealthInfoBlock.js';
-import { toEpistemic } from '@lasyncro/epistemic';
 
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
 import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
@@ -205,20 +204,15 @@ export default function OrdersModuleFT2(
     <FT2Layout>
       <FT2Row intent="kpi">
 
-        <FT2Panel span={1}>
           <OperationsQueueSection
             signals={operationalSignals}
             onAction={handleOperationsAction}
           />
-        </FT2Panel>
 
-        <FT2Panel span={1}>
           <OrdersOverviewInfoBlock
             orders={orders}
           />
-        </FT2Panel>
 
-        <FT2Panel span={1}>
           <RevenueOverviewInfoBlock
             revenue={{
               totalSales: revenue.totalSales,
@@ -227,36 +221,30 @@ export default function OrdersModuleFT2(
               blocked: revenue.blocked,
             }}
           />
-        </FT2Panel>
 
       </FT2Row>
 
       <FT2Row intent="kpi">
-        <FT2Panel span={1}>
-          <OrdersDecisionBrief {...decision.brief} />
-        </FT2Panel>
 
-        <FT2Panel span={1}>
-          <RevenueIntegrityInfoBlock
-            realized_revenue={operationalControl.realized_revenue}
-            at_risk_revenue={operationalControl.at_risk_revenue}
-            blocked_revenue={operationalControl.blocked_revenue}
-            revenue_leakage={operationalControl.revenue_leakage}
-            avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
-          />
-        </FT2Panel>
+        <OrdersDecisionBrief {...decision.brief} />
 
-        <FT2Panel span={1}>
-          <OrderHealthInfoBlock
-            orders_at_sla_risk={operationalControl.orders_at_sla_risk}
-            aging_24h={operationalControl.aging_24h}
-            aging_48h={operationalControl.aging_48h}
-            aging_72h_plus={operationalControl.aging_72h_plus}
-            pending_fulfillment={operationalControl.pending_fulfillment}
-            pending_payment={operationalControl.pending_payment}
-            exception_orders={operationalControl.exception_orders}
-          />
-        </FT2Panel>
+        <RevenueIntegrityInfoBlock
+          realized_revenue={operationalControl.realized_revenue}
+          at_risk_revenue={operationalControl.at_risk_revenue}
+          blocked_revenue={operationalControl.blocked_revenue}
+          revenue_leakage={operationalControl.revenue_leakage}
+          avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
+        />
+
+        <OrderHealthInfoBlock
+          orders_at_sla_risk={operationalControl.orders_at_sla_risk}
+          aging_24h={operationalControl.aging_24h}
+          aging_48h={operationalControl.aging_48h}
+          aging_72h_plus={operationalControl.aging_72h_plus}
+          pending_fulfillment={operationalControl.pending_fulfillment}
+          pending_payment={operationalControl.pending_payment}
+          exception_orders={operationalControl.exception_orders}
+        />
 
       </FT2Row>
     </FT2Layout>
