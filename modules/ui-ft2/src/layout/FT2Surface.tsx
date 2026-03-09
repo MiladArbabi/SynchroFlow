@@ -111,16 +111,30 @@ export function FT2Surface({
       sx={{
         width: '100%',
         height: '100%',
-        minWidth:
-          (variant === 'kpi' ? 160 : 240) *
-          (span ?? 1),
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
+        /**
+       * Layout contract with FT2Row
+       * ---------------------------
+       * FT2Row owns horizontal span calculation.
+       * Surfaces must not enforce fixed pixel width.
+       *
+       * Historical note:
+       * Previous implementation used pixel minWidth
+       * which caused:
+       *  - premature wrapping
+       *  - ghost whitespace
+       *  - broken span layouts
+       *
+       * Surfaces now respect the width provided
+       * by the FT2Row layout engine.
+       */
+      minWidth: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
 
-        backgroundColor: FT2_TOKENS.surface.background,
-        // Structural depth
-        boxShadow: FT2_TOKENS.surfaceShadow.default,
+      backgroundColor: FT2_TOKENS.surface.background,
+      // Structural depth
+      boxShadow: FT2_TOKENS.surfaceShadow.default,
 
         /**
          * Trust Boundary
@@ -128,10 +142,10 @@ export function FT2Surface({
          * Thin, non-verbal epistemic affordance.
          * Attached to surface, not values.
          */
-        borderLeft:
-          trustTone
-            ? `3px solid ${FT2_TOKENS.trustTone[trustTone]}`
-            : 'none',
+      borderLeft:
+        trustTone
+          ? `3px solid ${FT2_TOKENS.trustTone[trustTone]}`
+          : 'none',
       }}
     >
       {/* ───── Control Zone ───── */}

@@ -16,6 +16,7 @@ import { OrderHealthInfoBlock } from '../components/OrderHealthInfoBlock.js';
 import { toEpistemic } from '@lasyncro/epistemic';
 
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
+import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
 
 /**
  * OPERATIONS QUEUE
@@ -27,6 +28,32 @@ import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
  * order_risk_snapshot ranking.
  */
 import { OperationsQueueSection } from '../components/OperationsQueueSection.js';
+
+/**
+ * Operational action dispatcher
+ * -----------------------------
+ * Central orchestration point for Operations Queue actions.
+ *
+ * Design rules:
+ * - UI emits intent
+ * - Module layer decides execution
+ * - Enables analytics and audit instrumentation
+ */
+function handleOperationsAction(actionType: string, signal: any) {
+  console.info('[OrdersModuleFT2] Operational action received', {
+    actionType,
+    signalId: signal?.id,
+  });
+
+  /**
+   * Placeholder orchestration layer.
+   *
+   * Future integration points:
+   * - router navigation
+   * - order execution APIs
+   * - batch workflows
+   */
+}
 
 /**
  * ─────────────────────────────────────────────────────────────
@@ -138,10 +165,6 @@ export interface OrdersModuleFT2DataProps {
       inventory_blocked_revenue: string | number;
       refund_exposure: string | number;
     };
-    priorityStack: {
-      order_id: string;
-      order_health_score: number;
-    }[];
   };
 };
 
@@ -158,18 +181,29 @@ export default function OrdersModuleFT2(
       operationalControl
     } = props;
 
+    /**
+     * Operational signals
+     * -------------------
+     * Derived from operational control snapshot.
+     * This decouples UI components from raw snapshot fields.
+     */
+    const operationalSignals = mapOperationalSignals({
+      queue_manual_review: operationalControl.queue_manual_review,
+      queue_awaiting_inventory: operationalControl.queue_awaiting_inventory,
+      queue_ready_to_ship: operationalControl.queue_ready_to_ship,
+      queue_awaiting_customer: operationalControl.queue_awaiting_customer,
+      orders_at_sla_risk: operationalControl.orders_at_sla_risk,
+      pending_fulfillment: operationalControl.pending_fulfillment,
+    });
+
   return (
     <FT2Layout>
       <FT2Row intent="kpi">
 
         <FT2Surface span={1}>
           <OperationsQueueSection
-            queue_manual_review={operationalControl.queue_manual_review}
-            queue_awaiting_inventory={operationalControl.queue_awaiting_inventory}
-            queue_ready_to_ship={operationalControl.queue_ready_to_ship}
-            queue_awaiting_customer={operationalControl.queue_awaiting_customer}
-            orders_at_sla_risk={operationalControl.orders_at_sla_risk}
-            pending_fulfillment={operationalControl.pending_fulfillment}
+            signals={operationalSignals}
+            onAction={handleOperationsAction}
           />
         </FT2Surface>
 

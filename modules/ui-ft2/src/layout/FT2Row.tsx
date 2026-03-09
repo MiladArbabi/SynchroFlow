@@ -1,4 +1,13 @@
-import { Grid } from '@mui/material';
+/**
+ * NOTE
+ * ----
+ * FT2Row uses a custom span engine.
+ * MUI Grid was removed because it introduces a second
+ * layout system that conflicts with the span algorithm.
+ *
+ * Paper is used instead of Box for better theme integration.
+ */
+import { Paper } from '@mui/material';
 import type { ReactNode, ReactElement } from 'react';
 import { FT2_TOKENS } from './ft2.tokens.js';
 import type { FT2SurfaceProps } from './FT2Surface.js';
@@ -149,9 +158,22 @@ export function FT2Row({ children, intent }: FT2RowProps) {
   const totalSpan = layoutMeta.reduce((a, b) => a + b.span, 0);
   const unitSize = 12 / totalSpan;
 
+  /**
+   * Gap-aware span engine
+   * ---------------------
+   * Flexbox gaps add physical width to the row.
+   * If we ignore them the sum of surface widths exceeds 100%,
+   * which causes premature wrapping and overlap.
+   *
+   * We subtract the total gap width before computing surface width.
+   */
+  const gapPx = FT2_TOKENS.surfaceGap / 8;
+  const gapCount = items.length > 0 ? items.length - 1 : 0;
+  const totalGapWidth = gapPx * gapCount;
+
   return (
-    <Grid
-      container
+    <Paper
+      elevation={0}
       data-ft2-row
       data-ft2-intent={intent}
       sx={{
@@ -178,27 +200,54 @@ export function FT2Row({ children, intent }: FT2RowProps) {
         const childType = layoutMeta[index]?.childType ?? 'unknown';
         const width = span * unitSize;
 
+        /**
+         * Convert span width into percentage of
+         * the remaining space after subtracting gaps.
+         */
+        const widthPercent = (width / 12) * 100;
+
         return (
-          <Grid
+          <Paper
+            elevation={0}
             key={index}
             data-ft2-span={span}
             data-ft2-child-type={childType}
             sx={{
               display: 'flex',
-              flexShrink: 0,
-              minWidth: 'auto',
 
               /**
-               * Apply computed width.
-               * Grid uses 12-column baseline.
+               * Layout stability rule
+               * ---------------------
+               * Flex items must define both width and flexBasis.
+               *
+               * Without flexBasis, flexbox may recalculate intrinsic
+               * width based on content which can cause:
+               *
+               * - premature wrapping
+               * - inconsistent column distribution
+               *
+               * width + flexBasis ensures span calculation from
+               * FT2Row remains deterministic.
                */
-              width: `${(width / 12) * 100}%`,
+              flexShrink: 0,
+              flexGrow: 0,
+
+              /**
+               * Gap-aware width
+               *
+               * calc() ensures the flex item width accounts
+               * for horizontal gaps between surfaces.
+               */
+              flexBasis: `calc(${widthPercent}% - ${gapPx}px)`,
+              width: `calc(${widthPercent}% - ${gapPx}px)`,
+
+              minWidth: 0,
             }}
           >
             {child}
-          </Grid>
+          </Paper>
         );
       })}
-    </Grid>
+    </Paper>
   );
 }

@@ -1,4 +1,7 @@
 import { InfoBlock, InfoBlockRow, InfoBlockFooter } from '@lasyncro/ui-ft2';
+import type { OperationalSignal } from '../../contracts/operationalSignals.js';
+import { getSignalIcon, getSeverityPriority } from '../helpers/signalSeverity.js';
+import { Button, Stack } from '@mui/material';
 
 /**
  * OperationsQueueSection
@@ -16,74 +19,132 @@ import { InfoBlock, InfoBlockRow, InfoBlockFooter } from '@lasyncro/ui-ft2';
  */
 
 export interface OperationsQueueSectionProps {
-  queue_manual_review: number;
-  queue_awaiting_inventory: number;
-  queue_ready_to_ship: number;
-  queue_awaiting_customer: number;
+  /**
+   * Operational signals derived from snapshot data.
+   */
+  signals: OperationalSignal[];
 
-  orders_at_sla_risk: number;
-  pending_fulfillment: number;
+  /**
+   * Explicit action dispatcher.
+   *
+   * Design rule:
+   * The queue surface does not perform business logic.
+   * It emits operational intents which higher layers handle.
+   *
+   * This prevents hidden side effects and allows
+   * instrumentation and audit logging.
+   */
+  onAction?: (actionType: string, signal: OperationalSignal) => void;
 }
 
 export function OperationsQueueSection({
-  queue_manual_review,
-  queue_awaiting_inventory,
-  queue_ready_to_ship,
-  queue_awaiting_customer,
-  orders_at_sla_risk,
-  pending_fulfillment,
+  signals,
+  onAction,
 }: OperationsQueueSectionProps) {
 
+  /**
+   * Severity-based ordering
+   * -----------------------
+   * Ensures operational triage always surfaces
+   * the most critical signals first.
+   */
+  const orderedSignals = [...signals].sort(
+    (a, b) =>
+      getSeverityPriority(a.severity) -
+      getSeverityPriority(b.severity)
+  );
+
   return (
-    <InfoBlock title="Operations queue">
+   <InfoBlock title="Operations queue">
 
-      {queue_awaiting_inventory > 0 && (
-        <InfoBlockRow
-          label="🚨 Inventory shortage"
-          value={`${queue_awaiting_inventory} orders blocked`}
-        />
-      )}
+      {orderedSignals.map((signal) => (
+        <div key={signal.id}>
+          <InfoBlockRow
+            label={`${getSignalIcon(signal.severity)} ${signal.title}`}
+            value={signal.impact}
+          />
 
-      {orders_at_sla_risk > 0 && (
-        <InfoBlockRow
-          label="⚠️ SLA risk"
-          value={`${orders_at_sla_risk} orders nearing deadline`}
-        />
-      )}
+          {signal.metadata && (
+            <InfoBlockRow
+              label="Details"
+              value={JSON.stringify(signal.metadata)}
+            />
+          )}
 
-      {queue_manual_review > 0 && (
-        <InfoBlockRow
-          label="⚠️ Payment / fraud review"
-          value={`${queue_manual_review} orders awaiting verification`}
-        />
-      )}
+          {signal.actions && signal.actions.length > 0 && (
+            <Stack direction="row" spacing={1} sx={{ pl: 3, pb: 1 }}>
+              {signal.actions.map((action) => (
+                <Button
+                  key={action.id}
+                  size="small"
+                  variant="outlined"
+                  onClick={() => {
+                    /**
+                     * Operational intent emission
+                     * ---------------------------
+                     * Emits actionType to parent orchestration layer.
+                     *
+                     * If no handler is provided we emit a clear
+                     * diagnostic signal instead of silently failing.
+                     */
+                    if (onAction) {
+                      onAction(action.actionType, signal);
+                    } else {
+                      console.warn(
+                        `[OperationsQueue] No action handler registered for`,
+                        action.actionType
+                      );
+                    }
+                  }}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </Stack>
+          )}
 
-      {queue_ready_to_ship > 0 && (
-        <InfoBlockRow
-          label="ℹ️ Ready to ship"
-          value={`${queue_ready_to_ship} orders awaiting fulfillment`}
-        />
-      )}
-
-      {queue_awaiting_customer > 0 && (
-        <InfoBlockRow
-          label="ℹ️ Awaiting customer"
-          value={`${queue_awaiting_customer} orders waiting on response`}
-        />
-      )}
-
-      {pending_fulfillment > 0 && (
-        <InfoBlockRow
-          label="ℹ️ Pending fulfillment"
-          value={`${pending_fulfillment} orders`}
-        />
-      )}
+          {signal.batchActions && signal.batchActions.length > 0 && (
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                pl: 3,
+                pb: 1,
+                borderTop: '1px dashed rgba(0,0,0,0.1)',
+                mt: 1,
+                pt: 1,
+              }}
+            >
+              {signal.batchActions.map((action) => (
+                <Button
+                  key={action.id}
+                  size="small"
+                  variant="contained"
+                  color="primary"
+                  onClick={() => {
+                    if (onAction) {
+                      onAction(action.actionType, signal);
+                    } else {
+                      console.warn(
+                        `[OperationsQueue] No batch action handler registered for`,
+                        action.actionType
+                      );
+                    }
+                  }}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </Stack>
+          )}
+        </div>
+      ))}
 
       <InfoBlockFooter
         line1="> OPERATIONAL SIGNAL CLUSTERS"
         line2="> SOURCE: orders_operational_control_snapshot"
       />
 
-    </InfoBlock>
+   </InfoBlock>
   );
 }
