@@ -15,7 +15,8 @@
     "declaration": true,
     "sourceMap": true,
     "composite": true,
-
+    "noEmit": false,
+    
     "jsx": "react-jsx",
 
     "strict": true,

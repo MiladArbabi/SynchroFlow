@@ -1,7 +1,6 @@
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 /**
@@ -31,37 +30,37 @@ export function OrdersDecisionBrief({
   refund_exposure,
 }: OrdersDecisionBriefProps) {
   return (
-    <InfoBlock title="Operational decision snapshot">
+    <>
 
-      <InfoBlockRow
+      <PanelRow
         label="Critical orders"
         value={critical_orders_count}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Negative margin orders"
         value={negative_margin_orders_count}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="SLA breached orders"
         value={sla_breached_count}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Inventory blocked revenue"
         value={inventory_blocked_revenue}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Refund exposure"
         value={refund_exposure}
       />
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> BACKEND-DERIVED RISK SNAPSHOT"
         line2="> ORDERING AUTHORITATIVE"
       />
-    </InfoBlock>
+    </>
   );
 }

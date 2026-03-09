@@ -1,12 +1,7 @@
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
-
-import { EpistemicInfoBlockRow } from '@lasyncro/ui-ft2';
-import type { EpistemicValue } from '@lasyncro/epistemic';
-import { renderEpistemicMoney } from './renderEpistemicMoney.js';
 
 /**
  * RevenueOverviewInfoBlockProps
@@ -18,10 +13,10 @@ import { renderEpistemicMoney } from './renderEpistemicMoney.js';
  */
 type RevenueOverviewInfoBlockProps = {
   revenue: {
-    totalSales: EpistemicValue<number>;
-    earned: EpistemicValue<number>;
-    blocked: EpistemicValue<number>;
-    pending: EpistemicValue<number>;
+    totalSales: number | null;
+    earned: number | null;
+    blocked: number | null;
+    pending: number | null;
   };
 };
 
@@ -30,30 +25,30 @@ export function RevenueOverviewInfoBlock({
 }: RevenueOverviewInfoBlockProps) {
 
   return (
-    <InfoBlock title="Revenue overview">
-      <EpistemicInfoBlockRow
+    <>
+      <PanelRow
         label="Total sales"
-        signal={renderEpistemicMoney(revenue.totalSales)}
+        value={revenue.totalSales}
       />
 
-      <EpistemicInfoBlockRow
+      <PanelRow
         label="Earned revenue"
-        signal={renderEpistemicMoney(revenue.earned)}
+        value={revenue.earned}
       />
 
-      <EpistemicInfoBlockRow
+      <PanelRow
         label="Pending revenue"
-        signal={renderEpistemicMoney(revenue.pending)}
+        value={revenue.pending}
       />
 
-      <EpistemicInfoBlockRow
+      <PanelRow
         label="Blocked revenue"
-        signal={renderEpistemicMoney(revenue.blocked)}
+        value={revenue.blocked}
       />
-      <InfoBlockFooter
+      <PanelFooter
         line1="> VALUES SHOWN — EPISTEMIC STATE"
         line2="> PAYMENT AND PROFIT NOT EVALUATED"
       />
-    </InfoBlock>
+    </>
   );
 }

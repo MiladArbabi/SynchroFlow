@@ -1,7 +1,6 @@
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 type ProductsOverviewInfoBlockProps = {
@@ -16,26 +15,26 @@ export function ProductsOverviewInfoBlock({
   inactiveOrArchivedProducts,
 }: ProductsOverviewInfoBlockProps) {
   return (
-    <InfoBlock title="Products overview">
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Products detected"
         value={productsObserved}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Active products"
         value={activeProducts}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Inactive or archived"
         value={inactiveOrArchivedProducts}
       />
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> CATALOG PRESENCE SNAPSHOT"
         line2="> STRUCTURAL REALITY ONLY"
       />
-    </InfoBlock>
+    </>
   );
 }

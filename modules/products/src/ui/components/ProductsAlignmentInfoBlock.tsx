@@ -1,7 +1,6 @@
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 type ProductsAlignmentInfoBlockProps = {
@@ -12,16 +11,16 @@ export function ProductsAlignmentInfoBlock({
   alignment,
 }: ProductsAlignmentInfoBlockProps) {
   return (
-    <InfoBlock title="Cross-domain alignment">
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Reality agreement"
         value={alignment}
       />
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> MULTI-DOMAIN CONSISTENCY CHECK"
         line2="> SIGNAL ONLY — NO INTERPRETATION"
       />
-    </InfoBlock>
+    </>
   );
 }

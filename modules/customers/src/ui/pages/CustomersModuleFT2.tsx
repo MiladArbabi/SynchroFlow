@@ -1,28 +1,11 @@
 // modules/customers/src/ui/pages/CustomersModuleFT2.tsx
-//
-// Customers FT2 — Canonical UI Renderer
-// ------------------------------------
-// ROLE:
-// - Pure FT2 presentation layer
-// - Renders only FTEP-exposed truth
-// - No inference, no readiness logic, no lifecycle thinking
-//
-// RULES (ENFORCED BY DESIGN):
-// - One surface = one truth
-// - Null means absence (surface hidden unless specified)
-// - Unknown is rendered explicitly only when allowed
-// - Free vs Paid is visibility-only (no placeholders, no degradation)
-//
-// NOTE:
-// - This component assumes all gating and downgrading
-//   already happened in Specter FTEP.
-// - This file must remain boring. That is the feature.
 
-import React from 'react';
+
 import {
   FT2Layout,
   FT2Row,
-  FT2Surface,
+  FT2Panel,
+  PanelRow
 } from '@lasyncro/ui-ft2';
 
 /* =========================
@@ -124,82 +107,21 @@ export default function CustomersModuleFT2(
           OpsConsole + Core Signals
         ========================= */}
       <FT2Row intent="kpi">
-        {/* Ops Console (span = 2) */}
-        <FT2Surface
-          variant="standard"
-          title="Insights"
-          span={2}
-        >
-          {/* Placeholder — dynamic OpsConsole will replace this */}
-          <div>• Signal ingestion active</div>
-          <div>• Data coverage nominal</div>
-          <div>• No blocking anomalies</div>
-        </FT2Surface>
 
-        <FT2Surface variant="kpi" title="Customer activity observed">
-          {renderDetected(sessionsPresent)}
-        </FT2Surface>
+      <FT2Panel span={1} title="Customers System Status">
 
-        {/* Core KPI 1 — Activity Direction */}
-        <FT2Surface variant="kpi" title="Customer activity movement">
-          {renderDirection(activityDirection)}
-        </FT2Surface>
+        {/* Temporary operational placeholder
+          Ensures runtime JSX emission until
+          full Customers FT2 panel implementation.
+        */}
 
-        {/* Core KPI 2 — Multi-step Sessions */}
-        <FT2Surface variant="kpi" title="Multi-step sessions">
-          {renderDetected(multiStepSessionsPresent)}
-        </FT2Surface>
+        <PanelRow label="Signal ingestion" value="Active" />
+        <PanelRow label="Data coverage" value="Nominal" />
+        <PanelRow label="Blocking anomalies" value="None detected" />
 
-        {/* Core KPI 3 — Early Exit */}
-        <FT2Surface variant="kpi" title="Exited without interaction">
-          {renderDetected(exitWithoutInteractionPresent)}
-        </FT2Surface>
+      </FT2Panel>
 
-        {/* Core KPI 4 — Returning Visitors */}
-        <FT2Surface variant="kpi" title="Returning visitors">
-          {renderDetected(returningSessionsPresent)}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* =========================
-          Row 2 — Analysis / Shape
-          (Charts & Visuals)
-        ========================= */}
-      <FT2Row intent="analysis">
-        <FT2Surface title="Session distribution">
-          {/* Placeholder for FT2Distribution / FT2Scatter */}
-        </FT2Surface>
-
-        <FT2Surface title="Activity over time">
-          {/* Placeholder for FT2TimeSeries */}
-        </FT2Surface>
-      </FT2Row>
-
-      {/* =========================
-          Row 3 — Supporting Signals
-          (Complementary KPIs)
-        ========================= */}
-      <FT2Row intent="support">
-        <FT2Surface variant="kpi" title="Average session depth">
-          {renderDetected(averageSessionDepthPresent)}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Exit intent detected">
-          {renderDetected(exitIntentDetected)}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Data coverage">
-          {renderCoverage(dataCoverage)}
-        </FT2Surface>
-
-        <FT2Surface
-          variant="standard"
-          title="Insights"
-          span={2}
-        >
-          {renderDetected(surfaceBreadthPresent)}
-        </FT2Surface>
-      </FT2Row>
+    </FT2Row>
 
     </FT2Layout>
   );

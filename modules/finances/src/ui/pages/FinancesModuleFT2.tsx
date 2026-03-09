@@ -4,7 +4,6 @@ import React, { ReactNode } from 'react';
 import {
   FT2Layout,
   FT2Row,
-  FT2Surface,
 } from '@lasyncro/ui-ft2';
 
 /**
@@ -116,71 +115,7 @@ export default function FinancesModuleFT2(
 
       {/* ───────── Core Financial Reality ───────── */}
       <FT2Row intent="kpi">
-        <FT2Surface variant="kpi" title="Revenue observed">
           {context.revenueObserved ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Net observed">
-          {context.netObserved ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Financial readiness">
-          {timeAwareness === null
-            ? '—'
-            : timeAwareness.history === 'sufficient'
-              ? 'Ready'
-              : 'Partial'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Cost knowledge">
-          {costReality?.status ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Decision safety">
-          {decisionSafety?.status ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface variant="kpi" title="Profit validity">
-          {profitPreconditions?.status ?? '—'}
-        </FT2Surface>
-
-      </FT2Row>
-
-      {/* ───────── Activity Over Time ───────── */}
-      <FT2Row intent="analysis">
-        <FT2Surface title="Revenue activity (observed)">
-          {timeline === null || timeline.points.length === 0
-            ? '—'
-            : 'Data available'}
-        </FT2Surface>
-
-        <FT2Surface title="Refund impact">
-          {refundImpact?.status ?? '—'}
-        </FT2Surface>
-
-        <FT2Surface title="Financial stability">
-          {financialConsistency?.status ?? '—'}
-        </FT2Surface>
-
-      </FT2Row>
-
-      {/* ───────── Blind Spots ───────── */}
-      <FT2Row intent="support">
-        <FT2Surface title="Blind spots">
-          {blindSpots === null
-            ? '—'
-            : [
-                blindSpots.costs === 'unknown' && 'Costs',
-                blindSpots.refunds === 'unknown' && 'Refunds',
-                blindSpots.history === 'insufficient' && 'History',
-              ]
-                .filter(Boolean)
-                .join(', ') || 'None'}
-        </FT2Surface>
-
-        <FT2Surface title="Refund visibility">
-          {refundReality?.status ?? '—'}
-        </FT2Surface>
       </FT2Row>
 
     </FT2Layout>

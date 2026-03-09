@@ -11,9 +11,8 @@
  */
 
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 type ObligationOverviewInfoBlockProps = {
@@ -38,8 +37,8 @@ export function ObligationOverviewInfoBlock({
 }: ObligationOverviewInfoBlockProps) {
 
   return (
-    <InfoBlock title="Obligation overview">
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Constraint signals"
         value={
           obligations.coverage.status === 'sufficient'
@@ -48,10 +47,10 @@ export function ObligationOverviewInfoBlock({
         }
       />
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> ORDERS MAY BE CONSTRAINED BY EXPLICIT CONDITIONS"
         line2="> INVENTORY, CUSTOMER, OR OPERATIONAL"
       />
-    </InfoBlock>
+    </>
   );
 }

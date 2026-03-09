@@ -1,4 +1,4 @@
-import { InfoBlock, InfoBlockRow, InfoBlockFooter } from '@lasyncro/ui-ft2';
+import { PanelRow, PanelFooter } from '@lasyncro/ui-ft2';
 import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { getSignalIcon, getSeverityPriority } from '../helpers/signalSeverity.js';
 import { Button, Stack } from '@mui/material';
@@ -55,17 +55,17 @@ export function OperationsQueueSection({
   );
 
   return (
-   <InfoBlock title="Operations queue">
+   <>
 
       {orderedSignals.map((signal) => (
         <div key={signal.id}>
-          <InfoBlockRow
+          <PanelRow
             label={`${getSignalIcon(signal.severity)} ${signal.title}`}
             value={signal.impact}
           />
 
           {signal.metadata && (
-            <InfoBlockRow
+            <PanelRow
               label="Details"
               value={JSON.stringify(signal.metadata)}
             />
@@ -140,11 +140,11 @@ export function OperationsQueueSection({
         </div>
       ))}
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> OPERATIONAL SIGNAL CLUSTERS"
         line2="> SOURCE: orders_operational_control_snapshot"
       />
 
-   </InfoBlock>
+   </>
   );
 }

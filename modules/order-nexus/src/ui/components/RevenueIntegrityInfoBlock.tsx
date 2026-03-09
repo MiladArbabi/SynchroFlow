@@ -7,8 +7,8 @@
 
 import React from 'react';
 import {
-  InfoBlock,
-  InfoBlockRow,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 export interface RevenueIntegrityInfoBlockProps {
@@ -31,27 +31,27 @@ export function RevenueIntegrityInfoBlock(
   } = props;
 
   return (
-    <InfoBlock title="Revenue Integrity">
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Realized Revenue"
         value={realized_revenue}
       />
-      <InfoBlockRow
+      <PanelRow
         label="At-Risk Revenue"
         value={at_risk_revenue}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Blocked Revenue"
         value={blocked_revenue}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Revenue Leakage"
         value={revenue_leakage}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Avg Contribution Margin %"
         value={avg_contribution_margin_pct}
       />
-    </InfoBlock>
+    </>
   );
 }

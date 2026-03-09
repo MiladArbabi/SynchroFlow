@@ -1,12 +1,17 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
+import { FT2Layout, FT2Row, FT2Panel } from '@lasyncro/ui-ft2';
 
-import { FT2Layout, FT2Row, FT2Surface } from '@lasyncro/ui-ft2';
 /**
  * FT2 LAYOUT CONTRACT
  * -------------------
- * Every FT2Row child must be an FT2Surface.
- * Surfaces define layout spans and enforce
- * separation between layout and narrative primitives.
+ * Every FT2Row child must implement the span contract.
+ *
+ * Current implementation:
+ *   FT2Panel
+ *
+ * Historical note:
+ *   FT2Surface was previously used but has been
+ *   superseded by the unified FT2Panel primitive.
  */
 
 import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
@@ -200,38 +205,38 @@ export default function OrdersModuleFT2(
     <FT2Layout>
       <FT2Row intent="kpi">
 
-        <FT2Surface span={1}>
+        <FT2Panel span={1}>
           <OperationsQueueSection
             signals={operationalSignals}
             onAction={handleOperationsAction}
           />
-        </FT2Surface>
+        </FT2Panel>
 
-        <FT2Surface span={1}>
+        <FT2Panel span={1}>
           <OrdersOverviewInfoBlock
             orders={orders}
           />
-        </FT2Surface>
+        </FT2Panel>
 
-        <FT2Surface span={1}>
+        <FT2Panel span={1}>
           <RevenueOverviewInfoBlock
             revenue={{
-              totalSales: toEpistemic(revenue.totalSales),
-              earned: toEpistemic(revenue.earned),
-              pending: toEpistemic(revenue.pending),
-              blocked: toEpistemic(revenue.blocked),
+              totalSales: revenue.totalSales,
+              earned: revenue.earned,
+              pending: revenue.pending,
+              blocked: revenue.blocked,
             }}
           />
-        </FT2Surface>
+        </FT2Panel>
 
       </FT2Row>
 
       <FT2Row intent="kpi">
-        <FT2Surface span={1}>
+        <FT2Panel span={1}>
           <OrdersDecisionBrief {...decision.brief} />
-        </FT2Surface>
+        </FT2Panel>
 
-        <FT2Surface span={1}>
+        <FT2Panel span={1}>
           <RevenueIntegrityInfoBlock
             realized_revenue={operationalControl.realized_revenue}
             at_risk_revenue={operationalControl.at_risk_revenue}
@@ -239,9 +244,9 @@ export default function OrdersModuleFT2(
             revenue_leakage={operationalControl.revenue_leakage}
             avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
           />
-        </FT2Surface>
+        </FT2Panel>
 
-        <FT2Surface span={1}>
+        <FT2Panel span={1}>
           <OrderHealthInfoBlock
             orders_at_sla_risk={operationalControl.orders_at_sla_risk}
             aging_24h={operationalControl.aging_24h}
@@ -251,7 +256,7 @@ export default function OrdersModuleFT2(
             pending_payment={operationalControl.pending_payment}
             exception_orders={operationalControl.exception_orders}
           />
-        </FT2Surface>
+        </FT2Panel>
 
       </FT2Row>
     </FT2Layout>

@@ -10,47 +10,33 @@
 import { Paper } from '@mui/material';
 import type { ReactNode, ReactElement } from 'react';
 import { FT2_TOKENS } from './ft2.tokens.js';
-import type { FT2SurfaceProps } from './FT2Surface.js';
 
 /**
- * FT2 Layout Grammar
- * ------------------
- *
- * Canonical structure:
- *
- *   FT2Layout
- *     └ FT2Row
- *         └ FT2Surface (controls span)
- *             └ InfoBlock (narrative primitive)
- *
- * Responsibilities
+ * LayoutChildProps
  * ----------------
+ * Minimal contract required by FT2Row span engine.
  *
- * FT2Layout
- *   → page container and vertical rhythm
+ * Any component participating in FT2Row layout
+ * must expose an optional `span` prop.
  *
- * FT2Row
- *   → horizontal composition engine
- *   → computes span distribution
+ * This intentionally avoids coupling the row engine
+ * to specific surface implementations (FT2Surface, FT2Panel, etc).
+ */
+type LayoutChildProps = {
+  span?: number;
+};
+
+/**
+ * PANEL MIGRATION NOTE
+ * --------------------
+ * FT2Row previously depended directly on FT2Surface.
  *
- * FT2Surface
- *   → layout surface
- *   → span and epistemic boundary
+ * This coupling prevented the introduction of a unified
+ * FT2Panel abstraction.
  *
- * InfoBlock
- *   → narrative data representation
- *   → NEVER controls layout
- *
- * Historical Note
- * ----------------
- * Earlier implementations allowed InfoBlock directly inside FT2Row,
- * which caused:
- *
- *  - fixed-width layouts
- *  - horizontal scroll dashboards
- *  - unused span system
- *
- * The layout engine now enforces surface-based composition.
+ * The row engine now reads only a minimal `span` contract,
+ * allowing any compatible component (Surface, Panel, etc)
+ * to participate in the layout system.
  */
 
 /**
@@ -100,17 +86,25 @@ export function FT2Row({ children, intent }: FT2RowProps) {
             (child as any)?.type?.displayName;
           
           /**
-           * Structural diagnostic marker
-           * ----------------------------
-           * If FT2Row receives a non-FT2Surface child we tag it so
-           * UI inspectors and automated tests can detect layout violations.
+           * Layout child validation
+           * -----------------------
+           * FT2Row expects children that participate in the span layout contract.
+           *
+           * Valid children:
+           *   - FT2Surface (legacy)
+           *   - FT2Panel (future)
+           *   - Any component exposing `span`
+           *
+           * This diagnostic prevents accidental placement of raw
+           * components that bypass the span engine.
            */
-          const isSurface = componentName === 'FT2Surface';
+          const props = (child as any)?.props;
+          const hasSpanProp = props && 'span' in props;
 
-          if (!isSurface) {
+          if (!hasSpanProp) {
             console.warn(
-              `[FT2Row] Non-FT2Surface child detected (${componentName}). ` +
-              `Wrap content inside <FT2Surface> to enable span control.`
+              `[FT2Row] Child (${componentName}) does not expose a 'span' prop. ` +
+              `Components inside FT2Row should implement the span layout contract.`
             );
           }
         }
@@ -147,8 +141,14 @@ export function FT2Row({ children, intent }: FT2RowProps) {
       child !== null &&
       'props' in child
     ) {
-      const props = (child as ReactElement<FT2SurfaceProps>).props;
-      span = props.span ?? 1;
+      /**
+       * Layout metadata extraction
+       * --------------------------
+       * Row reads only the `span` property.
+       * The component type itself is irrelevant.
+       */
+      const props = (child as ReactElement<LayoutChildProps>).props;
+      span = props?.span ?? 1;
     }
 
     return { span, childType };

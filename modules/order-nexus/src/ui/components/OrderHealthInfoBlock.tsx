@@ -6,8 +6,7 @@
 // Pure passthrough. No computation.
 
 import {
-  InfoBlock,
-  InfoBlockRow,
+  PanelRow
 } from '@lasyncro/ui-ft2';
 
 export interface OrderHealthInfoBlockProps {
@@ -34,35 +33,35 @@ export function OrderHealthInfoBlock(
   } = props;
 
   return (
-    <InfoBlock title="Order Health">
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Orders at SLA Risk"
         value={orders_at_sla_risk}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Aging 24h"
         value={aging_24h}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Aging 48h"
         value={aging_48h}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Aging 72h+"
         value={aging_72h_plus}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Pending Fulfillment"
         value={pending_fulfillment}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Pending Payment"
         value={pending_payment}
       />
-      <InfoBlockRow
+      <PanelRow
         label="Exception Orders"
         value={exception_orders}
       />
-    </InfoBlock>
+    </>
   );
 }

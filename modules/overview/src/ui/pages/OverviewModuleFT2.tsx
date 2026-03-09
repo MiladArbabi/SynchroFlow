@@ -1,8 +1,6 @@
 // modules/overview/src/ui/pages/OverviewModuleFT2.tsx
 import {
-  FT2Row,
-  InfoBlock,
-  InfoBlockRow,
+  PanelRow,
 } from '@lasyncro/ui-ft2';
 
 /**
@@ -111,17 +109,11 @@ const trustTone =
 
   return (
     <>
-      <InfoBlock title="Orders observed">
-        <InfoBlockRow label='' value={context.ordersObserved}/>
-      </InfoBlock>
+        <PanelRow label='' value={context.ordersObserved}/>
 
-      <InfoBlock title="Products observed">
-        <InfoBlockRow label='' value={context.productsObserved}/>
-      </InfoBlock>
+        <PanelRow label='' value={context.productsObserved}/>
 
-      <InfoBlock title="Customers observed">
-        <InfoBlockRow label='' value={context.customersObserved}/>
-      </InfoBlock>
+        <PanelRow label='' value={context.customersObserved}/>
     </>
   );
 }

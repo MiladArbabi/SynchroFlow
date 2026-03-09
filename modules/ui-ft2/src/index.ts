@@ -1,18 +1,26 @@
 export { FT2Layout } from './layout/FT2Layout.js';
 export { FT2Row } from './layout/FT2Row.js';
-export { FT2Surface } from './layout/FT2Surface.js';
 export { FT2_TOKENS } from './layout/ft2.tokens.js';
 
-export type {
-  FT2SurfaceVariant,
-} from './layout/FT2Surface.js';
-
+export * from './panel/index.js';
 export * from './layout/index.js';
 export * from './contracts/index.js';
-
 export * from './visuals/index.js';
 export * from './primitives/index.js';
 
-export { InfoBlock } from './primitives/InfoBlock.js';
+/**
+ * COMPATIBILITY EXPORT — FT2Surface
+ * ---------------------------------
+ * Legacy modules still import FT2Surface.
+ *
+ * The panel architecture replaced FT2Surface
+ * with FT2Panel. Until all modules are migrated,
+ * we provide a temporary alias.
+ *
+ * Removal plan:
+ * - migrate remaining modules
+ * - remove this export
+ */
+export { FT2Panel as FT2Surface } from './panel/FT2Panel.js';
+
 export { InfoBlockRow } from './primitives/InfoBlockRow.js';
-export { InfoBlockFooter } from './primitives/InfoBlockFooter.js';

@@ -1,7 +1,6 @@
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 type ProductsDependencyInfoBlockProps = {
@@ -14,21 +13,21 @@ export function ProductsDependencyInfoBlock({
   blastRadius,
 }: ProductsDependencyInfoBlockProps) {
   return (
-    <InfoBlock title="Dependency surface">
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Dependency surface"
         value={surface}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Blast radius"
         value={blastRadius}
       />
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> DEPENDENCY EXPOSURE SHOWN"
         line2="> IMPACT ASSESSMENT IS USER-INFERRED"
       />
-    </InfoBlock>
+    </>
   );
 }

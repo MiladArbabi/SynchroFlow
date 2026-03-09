@@ -1,7 +1,6 @@
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 type ProductsSupplyInfoBlockProps = {
@@ -14,21 +13,21 @@ export function ProductsSupplyInfoBlock({
   coverage,
 }: ProductsSupplyInfoBlockProps) {
   return (
-    <InfoBlock title="Supply & replenishment">
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Replenishment observability"
         value={replenishment}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Supply coverage"
         value={coverage}
       />
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> SUPPLY SIGNALS SHOWN"
         line2="> NO FORECASTING OR OPTIMIZATION"
       />
-    </InfoBlock>
+    </>
   );
 }

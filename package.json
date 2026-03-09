@@ -9,9 +9,11 @@
     "modules/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build:modules && npm run build:apps",
     "build:deps": "npx tsc -p modules/shared/tsconfig.build.json && npm --workspace ./modules/specter run build",
     "build:backend": "npm run build:deps && npm --workspace ./apps/backend run build",
+    "build:modules": "npm --workspace modules/customers run build && npm --workspace modules/finances run build && npm --workspace modules/order-nexus run build && npm --workspace modules/products run build && npm --workspace modules/overview run build",
+    "build:apps": "npm --workspace ui run build && npm --workspace api run build",
     "start": "node apps/backend/dist/src/server.js",
     "dev": "concurrently \"npm:dev-api\" \"npm:dev-worker\" \"npm:dev-ui\"",
     "dev-worker": "npm run dev:worker --workspace=api",

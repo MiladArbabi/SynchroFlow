@@ -1,7 +1,6 @@
 import {
-  InfoBlock,
-  InfoBlockRow,
-  InfoBlockFooter,
+  PanelRow,
+  PanelFooter,
 } from '@lasyncro/ui-ft2';
 
 type OrdersOverviewInfoBlockProps = {
@@ -16,33 +15,38 @@ type OrdersOverviewInfoBlockProps = {
 export function OrdersOverviewInfoBlock({
   orders,
 }: OrdersOverviewInfoBlockProps) {
+  /**
+   * PANEL CONTENT ONLY
+   * ------------------
+   * Container ownership moved to FT2Panel.
+   * This component now renders rows only.
+   */
   return (
-    <InfoBlock title="Orders overview">
-
-      <InfoBlockRow
+    <>
+      <PanelRow
         label="Total orders"
         value={orders.total}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Fulfilled orders"
         value={orders.fulfilled}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Unfulfilled orders"
         value={orders.unfulfilled}
       />
 
-      <InfoBlockRow
+      <PanelRow
         label="Constrained orders"
         value={orders.constrained}
       />
 
-      <InfoBlockFooter
+      <PanelFooter
         line1="> LIFETIME OPERATIONAL STATE"
         line2="> NON-TEMPORAL, EXECUTION-BASED"
       />
-    </InfoBlock>
+    </>
   );
 }
