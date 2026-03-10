@@ -25,6 +25,61 @@ import type {
   OperationalSignalSeverity 
 } from '../../contracts/operationalSignals.js';
 
+/**
+ * SIGNAL IDENTIFIERS
+ * ------------------
+ * Central registry for operational signal identifiers.
+ *
+ * Prevents lifecycle registry fragmentation caused
+ * by string typos or inconsistent naming.
+ *
+ * These identifiers are used by:
+ * - signalId()
+ * - lifecycle registry
+ * - detection registry
+ */
+const SIGNAL_IDS = {
+  INVENTORY_SHORTAGE: 'inventory-shortage',
+  SLA_RISK: 'sla-risk',
+  PAYMENT_REVIEW: 'payment-review',
+  AGING_24H: 'aging-24h',
+  AGING_ORDERS: 'aging-orders',
+  OPERATIONAL_EXCEPTION: 'operational-exception',
+  PARTIAL_FULFILLMENT: 'partial-fulfillment',
+  READY_TO_SHIP: 'ready-to-ship',
+  AWAITING_CUSTOMER: 'awaiting-customer',
+  PENDING_PAYMENTS: 'pending-payment',
+  PAYMENT_RETRY: 'payment-retry',
+  CONSTRAINED_ORDERS: 'constrained-orders',
+  PENDING_FULFILLMENT: 'pending-fulfillment'
+} as const;
+
+/**
+ * SIGNAL IDENTIFIER INTEGRITY CHECK
+ * ---------------------------------
+ * Ensures no duplicate identifiers exist in SIGNAL_IDS.
+ *
+ * Duplicate identifiers would corrupt:
+ * - signalDetectionRegistry
+ * - signalLifecycleRegistry
+ * - signalResolvedAtRegistry
+ *
+ * This guard executes once at module initialization.
+ */
+{
+  const ids = Object.values(SIGNAL_IDS);
+  const duplicates = ids.filter(
+    (id, index) => ids.indexOf(id) !== index
+  );
+
+  if (duplicates.length > 0) {
+    console.error(
+      '[OperationalSignals] Duplicate signal identifiers detected:',
+      duplicates
+    );
+  }
+}
+
 export type OperationalControlSnapshot = {
   queue_manual_review: number;
   queue_awaiting_inventory: number;
@@ -32,32 +87,153 @@ export type OperationalControlSnapshot = {
   queue_awaiting_customer: number;
   orders_at_sla_risk: number;
   pending_fulfillment: number;
+
+  /**
+   * ORDER AGING INTELLIGENCE
+   * ------------------------
+   * Derived by reconciliation projection.
+   * Used to detect orders stuck in fulfillment pipeline.
+   */
+  aging_24h: number;
+  aging_48h: number;
+  aging_72h_plus: number;
+
+  /**
+   * OPERATIONAL EXCEPTIONS
+   * ----------------------
+   * Orders with fulfillment or carrier anomalies.
+   * Derived by reconciliation projection.
+   */
+  exception_orders: number;
+
+  /**
+   * PAYMENT BLOCKAGE
+   * ----------------
+   * Orders awaiting payment confirmation or retry.
+   * Derived by reconciliation projection.
+   */
+  pending_payment: number;
+
+  /**
+   * CONSTRAINT INTELLIGENCE
+   * -----------------------
+   * Orders blocked by system constraints
+   * (inventory, operational, or customer).
+   *
+   * Projection source:
+   * orders_operational_control_snapshot.constrained_orders
+   */
+  constrained_orders: number;
+
+  /**
+   * PARTIAL FULFILLMENT OPPORTUNITY
+   * --------------------------------
+   * Orders containing both:
+   * - available inventory
+   * - out-of-stock items
+   *
+   * Allows warehouse to ship partial orders.
+   * Derived by reconciliation projection.
+   */
+  partial_fulfillment_opportunity: number;
 };
 
 /**
- * Signal detection registry
+ * SNAPSHOT FIELD COVERAGE REGISTRY
+ * --------------------------------
+ * Ensures every projection field is intentionally
+ * handled by the signal engine.
  *
- * Maintains first detection timestamp for
- * operational signal clusters.
+ * If reconciliation introduces a new snapshot metric
+ * and the mapper does not explicitly reference it,
+ * a warning will surface during development.
  *
- * This prevents signal age from resetting
- * on every snapshot refresh.
+ * This prevents projection → UI drift.
  */
-const signalDetectionRegistry = new Map<string, string>();
+const SNAPSHOT_FIELD_COVERAGE: Record<string, 'signal' | 'ignored'> = {
+  queue_manual_review: 'signal',
+  queue_awaiting_inventory: 'signal',
+  queue_ready_to_ship: 'signal',
+  queue_awaiting_customer: 'signal',
+
+  orders_at_sla_risk: 'signal',
+
+  /**
+   * Fulfillment backlog signal
+   * --------------------------
+   * Snapshot field:
+   * orders_operational_control_snapshot.pending_fulfillment
+   *
+   * Consumed by signal:
+   * SIGNAL_IDS.PENDING_FULFILLMENT
+   */
+  pending_fulfillment: 'signal',
+  pending_payment: 'signal',
+
+  aging_24h: 'signal',
+  aging_48h: 'signal',
+  aging_72h_plus: 'signal',
+
+  exception_orders: 'signal',
+
+  constrained_orders: 'signal',
+
+  partial_fulfillment_opportunity: 'signal'
+};
+
+  /**
+   * SIGNAL DETECTION REGISTRY
+   * -------------------------
+   * Tracks first detection timestamp for signal clusters.
+   *
+   * Frozen container prevents accidental reassignment
+   * while still allowing Map entry mutation.
+   */
+  const signalDetectionRegistry = Object.freeze(
+    new Map<string, string>()
+  );
+
+  /**
+   * SIGNAL LIFECYCLE REGISTRY
+   * -------------------------
+   * Maintains lifecycle transitions for active signals.
+   */
+  const signalLifecycleRegistry = Object.freeze(
+    new Map<string, OperationalSignalLifecycle>()
+  );
+
+  /**
+   * SIGNAL RESOLUTION REGISTRY
+   * --------------------------
+   * Tracks resolved signals for delayed cleanup.
+   */
+  const signalResolvedAtRegistry = Object.freeze(
+    new Map<string, number>()
+  );
 
 /**
- * Lifecycle registry
+ * Metric warning registry
+ * -----------------------
+ * Tracks previously emitted metric anomalies so we
+ * avoid repeating identical warnings across snapshot
+ * refresh cycles.
  *
- * Preserves lifecycle state across snapshot refreshes
- * while a signal remains active.
+ * Module-scope by design.
  */
-const signalLifecycleRegistry = new Map<string, OperationalSignalLifecycle>();
+const metricWarningRegistry = new Set<string>();
 
 /**
- * Tracks when signals entered RESOLVED state.
- * Used to prune lifecycle registry after a safe window.
+ * Signal identity
+ * ----------------
+ * Signals are namespaced by module to prevent
+ * lifecycle registry collisions across modules.
+ *
+ * Format:
+ * orders:<signal-type>
  */
-const signalResolvedAtRegistry = new Map<string, number>();
+function signalId(type: string): string {
+  return `orders:${type}`;
+}
 
 /**
  * Lifecycle transition handler
@@ -74,7 +250,8 @@ export function updateSignalLifecycle(
    *
    * Prevents invalid lifecycle regressions.
    */
-  const current = signalLifecycleRegistry.get(type);
+  const key = signalId(type);
+  const current = signalLifecycleRegistry.get(key);
 
   const order = {
     NEW: 1,
@@ -84,7 +261,7 @@ export function updateSignalLifecycle(
   };
 
   if (!current || order[lifecycle] >= order[current]) {
-    signalLifecycleRegistry.set(type, lifecycle);
+    signalLifecycleRegistry.set(key, lifecycle);
   }
 }
 
@@ -107,11 +284,6 @@ export function mapOperationalSignals(
    * upstream data corruption.
    */
   const MAX_QUEUE_METRIC = 100000;
-
-  /**
-   * Prevents repeated console warnings for the same metric issue.
-   */
-  const metricWarningRegistry = new Set<string>();
 
   /**
    * Prevent diagnostic registry from growing indefinitely.
@@ -211,7 +383,34 @@ export function mapOperationalSignals(
     queue_awaiting_customer: safeMetric(snapshot.queue_awaiting_customer),
     orders_at_sla_risk: safeMetric(snapshot.orders_at_sla_risk),
     pending_fulfillment: safeMetric(snapshot.pending_fulfillment),
+
+    aging_24h: safeMetric(snapshot.aging_24h),
+    aging_48h: safeMetric(snapshot.aging_48h),
+    aging_72h_plus: safeMetric(snapshot.aging_72h_plus),
+    exception_orders: safeMetric(snapshot.exception_orders),
+    constrained_orders: safeMetric(snapshot.constrained_orders),
+    pending_payment: safeMetric(snapshot.pending_payment),
+    partial_fulfillment_opportunity: safeMetric(snapshot.partial_fulfillment_opportunity)
   };
+
+  /**
+   * SNAPSHOT COVERAGE VALIDATION
+   * ----------------------------
+   * Detect projection fields that are not declared
+   * in the coverage registry.
+   *
+   * IMPORTANT
+   * ---------
+   * This intentionally avoids Node globals (process.env)
+   * because this module executes in the browser runtime.
+   */
+  Object.keys(snapshot).forEach((key) => {
+    if (!(key in SNAPSHOT_FIELD_COVERAGE)) {
+      console.warn(
+        `[OperationalSignals] Snapshot field "${key}" is not registered in SNAPSHOT_FIELD_COVERAGE`
+      );
+    }
+  });
 
   const signals: OperationalSignal[] = [];
 
@@ -221,15 +420,24 @@ export function mapOperationalSignals(
   const activeSignalTypes = new Set<string>();
 
   /**
-   * Ensures a signal type is only emitted once per snapshot.
-   * Prevents accidental duplicate signals during mapper evolution.
+   * Duplicate signal guard
+   * ----------------------
+   * Ensures each signal type is emitted only once
+   * per snapshot evaluation cycle.
+   *
+   * Uses the raw signal type rather than the namespaced
+   * signal ID to keep mapper logic stable even if
+   * signalId() implementation evolves.
    */
   function registerSignalType(type: string): boolean {
-    if (activeSignalTypes.has(type)) {
+
+    const normalizedType = signalId(type);
+
+    if (activeSignalTypes.has(normalizedType)) {
       return false;
     }
 
-    activeSignalTypes.add(type);
+    activeSignalTypes.add(normalizedType);
     return true;
   }
 
@@ -237,22 +445,24 @@ export function mapOperationalSignals(
    * Returns stable detection timestamp for a signal type.
    */
   function getDetectedAt(type: string): string {
-    if (!signalDetectionRegistry.has(type)) {
-      signalDetectionRegistry.set(type, new Date().toISOString());
+    const key = signalId(type);
+    if (!signalDetectionRegistry.has(key)) {
+      signalDetectionRegistry.set(key, new Date().toISOString());
     }
-
-    return signalDetectionRegistry.get(type)!;
+    return signalDetectionRegistry.get(key)!;
   }
 
   /**
    * Returns stable lifecycle state for a signal.
    */
   function getLifecycle(type: string): OperationalSignalLifecycle {
-    if (!signalLifecycleRegistry.has(type)) {
-      signalLifecycleRegistry.set(type, 'NEW');
+    const key = signalId(type);
+
+    if (!signalLifecycleRegistry.has(key)) {
+      signalLifecycleRegistry.set(key, 'NEW');
     }
 
-    return signalLifecycleRegistry.get(type)!;
+    return signalLifecycleRegistry.get(key)!;
   }
 
   /**
@@ -266,8 +476,24 @@ function escalateSeverity(
   detectedAt: string
 ): OperationalSignalSeverity {
 
+  /**
+   * Timestamp guard
+   * ---------------
+   * Prevents corrupted detection timestamps from
+   * breaking severity escalation logic.
+   */
+  const detectedTime = new Date(detectedAt).getTime();
+
+  if (!Number.isFinite(detectedTime)) {
+    console.warn(
+      '[OperationalSignals] Invalid detectedAt timestamp',
+      { detectedAt }
+    );
+    return severity;
+  }
+
   const ageMinutes =
-    (evaluationTime - new Date(detectedAt).getTime()) / 60000;
+    (evaluationTime - detectedTime) / 60000;
 
   if (severity === 'info' && ageMinutes >= 15) {
     return 'warning';
@@ -281,32 +507,20 @@ function escalateSeverity(
 }
 
   /**
-   * Stable signal identity
-   *
-   * Signals represent operational clusters,
-   * not individual events. Therefore the ID
-   * must remain stable across snapshots so
-   * React reconciliation and UI state remain stable.
-   */
-  function signalId(type: string) {
-    return type;
-  }
-
-  /**
    * Critical incident
    * -----------------
    * Inventory blocking order fulfillment.
    */
   if (safeSnapshot.queue_awaiting_inventory > 0) {
-    const detectedAt = getDetectedAt('inventory-shortage');
+    const detectedAt = getDetectedAt(SIGNAL_IDS.INVENTORY_SHORTAGE);
       /**
        * Emit signal only on first registration.
        * registerSignalType() returns TRUE when the signal
        * type has not yet been emitted during this snapshot cycle.
        */
-      if (registerSignalType('inventory-shortage')) {
+      if (registerSignalType(SIGNAL_IDS.INVENTORY_SHORTAGE)) {
         signals.push({
-        id: signalId('inventory-shortage'),
+        id: signalId(SIGNAL_IDS.INVENTORY_SHORTAGE),
         severity: escalateSeverity('critical', detectedAt),
         detectedAt,
         lifecycle: getLifecycle('inventory-shortage'),
@@ -345,6 +559,11 @@ function escalateSeverity(
             label: 'Notify Supplier',
             actionType: 'notify_inventory_supplier',
           },
+          {
+            id: 'split_shipments',
+            label: 'Split shipments',
+            actionType: 'split_shipments',
+          },
         ],
       });
     }
@@ -356,15 +575,18 @@ function escalateSeverity(
    * Orders approaching SLA breach.
    */
   if (safeSnapshot.orders_at_sla_risk > 0) {
-    const detectedAt = getDetectedAt('sla-risk');
-    if (registerSignalType('sla-risk')) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.SLA_RISK);
+    if (registerSignalType(SIGNAL_IDS.SLA_RISK)) {
       signals.push({
-        id: signalId('sla-risk'),
+        id: signalId(SIGNAL_IDS.SLA_RISK),
         severity: escalateSeverity('warning', detectedAt),
         detectedAt,
         lifecycle: getLifecycle('sla-risk'),
         title: 'SLA risk',
-        impact: `${safeSnapshot.orders_at_sla_risk} orders nearing deadline`,
+        impact:
+          safeSnapshot.orders_at_sla_risk === 1
+            ? '1 order nearing deadline'
+            : `${safeSnapshot.orders_at_sla_risk} orders nearing deadline`,
 
         metadata: {
           queue: 'sla_risk',
@@ -383,7 +605,7 @@ function escalateSeverity(
           {
             id: 'prioritize_orders',
             label: 'Prioritize fulfillment',
-            actionType: 'prioritize_orders',
+            actionType: 'prioritize_stuck_orders',
           },
         ],
       });
@@ -394,15 +616,23 @@ function escalateSeverity(
    * Payment / fraud review queue
    */
   if (safeSnapshot.queue_manual_review > 0) {
-    const detectedAt = getDetectedAt('payment-review');
-    if (registerSignalType('payment-review')) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.PAYMENT_REVIEW);
+    if (registerSignalType(SIGNAL_IDS.PAYMENT_REVIEW)) {
       signals.push({
-        id: signalId('payment-review'),
+        id: signalId(SIGNAL_IDS.PAYMENT_REVIEW),
         severity: escalateSeverity('warning', detectedAt),
-        lifecycle: getLifecycle('payment-review'),
+        lifecycle: getLifecycle(SIGNAL_IDS.PAYMENT_REVIEW),
         detectedAt,
-        title: 'Payment / fraud review',
-        impact: `${safeSnapshot.queue_manual_review} orders awaiting verification`,
+        title: 'Payment review',
+        /**
+         * Grammar guard
+         * -------------
+         * Ensures correct singular/plural operator messaging.
+         */
+        impact:
+          safeSnapshot.queue_manual_review === 1
+            ? '1 order awaiting verification'
+            : `${safeSnapshot.queue_manual_review} orders awaiting verification`,
 
         metadata: {
           queue: 'manual_review',
@@ -418,6 +648,57 @@ function escalateSeverity(
         ],
       });
     }
+  };
+
+    /**
+   * Payment pending queue
+   * ---------------------
+   * Orders awaiting payment capture or confirmation.
+   *
+   * Projection source:
+   * orders_operational_control_snapshot.pending_payment
+   *
+   * NOTE
+   * ----
+   * This signal exists to ensure all snapshot metrics
+   * emitted by reconciliation are represented in the
+   * operational signal engine.
+   */
+  if (safeSnapshot.pending_payment > 0) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.PENDING_FULFILLMENT);
+     if (registerSignalType(SIGNAL_IDS.PENDING_FULFILLMENT)) {
+      signals.push({
+        id: signalId(SIGNAL_IDS.PENDING_PAYMENTS),
+        severity: escalateSeverity('warning', detectedAt),
+        lifecycle: getLifecycle('pending-payment'),
+        detectedAt,
+
+        title: 'Payment pending',
+
+        /**
+         * Grammar guard
+         * -------------
+         * Ensures correct singular/plural operator messaging.
+         */
+        impact:
+          safeSnapshot.pending_payment === 1
+            ? '1 order awaiting payment'
+            : `${safeSnapshot.pending_payment} orders awaiting payment`,
+
+        metadata: {
+          queue: 'pending_payment',
+          affectedOrders: safeSnapshot.pending_payment,
+        },
+
+        actions: [
+          {
+            id: 'inspect_pending_payments',
+            label: 'Inspect orders',
+            actionType: 'open_pending_payment_orders',
+          },
+        ],
+      });
+    }
   }
 
   /**
@@ -426,15 +707,18 @@ function escalateSeverity(
    * Orders ready for fulfillment.
    */
   if (safeSnapshot.queue_ready_to_ship > 0) {
-    const detectedAt = getDetectedAt('ready-to-ship');
-    if (registerSignalType('ready-to-ship')) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.READY_TO_SHIP);
+    if (registerSignalType(SIGNAL_IDS.READY_TO_SHIP)) {
       signals.push({
-        id: signalId('ready-to-ship'),
+        id: signalId(SIGNAL_IDS.READY_TO_SHIP),
         severity: escalateSeverity('info', detectedAt),
-        lifecycle: getLifecycle('ready-to-ship'),
+        lifecycle: getLifecycle(SIGNAL_IDS.READY_TO_SHIP),
         detectedAt,
-        title: 'Ready to ship',
-        impact: `${safeSnapshot.queue_ready_to_ship} orders awaiting fulfillment`,
+        title: 'Ready for fulfillment',
+        impact:
+          safeSnapshot.queue_ready_to_ship === 1
+            ? '1 order awaiting fulfillment'
+            : `${safeSnapshot.queue_ready_to_ship} orders awaiting fulfillment`,
 
         metadata: {
           queue: 'ready_to_ship',
@@ -442,10 +726,16 @@ function escalateSeverity(
         },
 
         batchActions: [
+          /**
+           * Generate pick list
+           * ------------------
+           * Warehouse picking must occur BEFORE
+           * label generation to prevent shipment mix-ups.
+           */
           {
-            id: 'print_labels',
-            label: 'Print labels',
-            actionType: 'print_shipping_labels',
+            id: 'generate_pick_list',
+            label: 'Generate pick list',
+            actionType: 'generate_pick_list',
           },
         ],
       });
@@ -456,15 +746,18 @@ function escalateSeverity(
    * Customer dependency
    */
   if (safeSnapshot.queue_awaiting_customer > 0) {
-    const detectedAt = getDetectedAt('awaiting-customer');
-    if (registerSignalType('awaiting-customer')) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.AWAITING_CUSTOMER);
+    if (registerSignalType(SIGNAL_IDS.AWAITING_CUSTOMER)) {
       signals.push({
-        id: signalId('awaiting-customer'),
+        id: signalId(SIGNAL_IDS.AWAITING_CUSTOMER),
         severity: escalateSeverity('info', detectedAt),
-        lifecycle: getLifecycle('awaiting-customer'),
+        lifecycle: getLifecycle(SIGNAL_IDS.AWAITING_CUSTOMER),
         detectedAt,
-        title: 'Awaiting customer',
-        impact: `${safeSnapshot.queue_awaiting_customer} orders waiting on response`,
+        title: 'Awaiting customer response',
+        impact:
+          safeSnapshot.queue_awaiting_customer === 1
+            ? '1 order blocked'
+            : `${safeSnapshot.queue_awaiting_customer} orders blocked`,
 
         metadata: {
           queue: 'awaiting_customer',
@@ -486,15 +779,18 @@ function escalateSeverity(
    * Fulfillment backlog
    */
   if (safeSnapshot.pending_fulfillment > 0) {
-    const detectedAt = getDetectedAt('pending-fulfillment');
-    if (registerSignalType('pending-fulfillment')) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.PENDING_PAYMENTS);
+    if (registerSignalType(SIGNAL_IDS.PENDING_PAYMENTS)) {
       signals.push({
-        id: signalId('pending-fulfillment'),
+        id: signalId(SIGNAL_IDS.PENDING_FULFILLMENT),
         severity: escalateSeverity('info', detectedAt),
-        lifecycle: getLifecycle('pending-fulfillment'),
+        lifecycle: getLifecycle(SIGNAL_IDS.PENDING_FULFILLMENT),
         detectedAt,
-        title: 'Pending fulfillment',
-        impact: `${safeSnapshot.pending_fulfillment} orders`,
+        title: 'Fulfillment backlog',
+        impact:
+          safeSnapshot.pending_fulfillment === 1
+            ? '1 order pending'
+            : `${safeSnapshot.pending_fulfillment} orders pending`,
 
         metadata: {
           queue: 'pending_fulfillment',
@@ -510,7 +806,321 @@ function escalateSeverity(
         ],
       });
     }
+  };
+
+  /**
+   * Early aging signal
+   * ------------------
+   * Orders entering early delay window.
+   *
+   * Projection source:
+   * orders_operational_control_snapshot.aging_24h
+   *
+   * This signal provides early operator awareness
+   * before orders escalate into SLA risk.
+   */
+  if (safeSnapshot.aging_24h > 0) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.AGING_24H);
+
+    if (registerSignalType(SIGNAL_IDS.AGING_24H)) {
+      signals.push({
+        id: signalId(SIGNAL_IDS.AGING_24H),
+        severity: escalateSeverity('info', detectedAt),
+        lifecycle: getLifecycle(SIGNAL_IDS.AGING_24H),
+        detectedAt,
+
+        title: 'Orders aging beyond 24h',
+
+        /**
+         * Grammar guard
+         */
+        impact:
+          safeSnapshot.aging_24h === 1
+            ? '1 order aging beyond 24 hours'
+            : `${safeSnapshot.aging_24h} orders aging beyond 24 hours`,
+
+        metadata: {
+          queue: 'aging_24h',
+          affectedOrders: safeSnapshot.aging_24h,
+        },
+
+        actions: [
+          {
+            id: 'inspect_aging_orders',
+            label: 'Inspect orders',
+            actionType: 'investigate_aging_orders',
+          },
+        ],
+      });
+    }
+  };
+
+  /**
+   * AGING UNFULFILLED ORDERS
+   * ------------------------
+   * Orders aging beyond normal operational window.
+   *
+   * Trigger:
+   * aging_48h OR aging_72h_plus > 0
+   *
+   * These orders are likely blocked by
+   * operational, warehouse, or system issues.
+   */
+  if (safeSnapshot.aging_48h > 0 || safeSnapshot.aging_72h_plus > 0) {
+
+    const affected =
+      safeSnapshot.aging_48h + safeSnapshot.aging_72h_plus;
+
+    const detectedAt = getDetectedAt(SIGNAL_IDS.AGING_ORDERS);
+
+    if (registerSignalType(SIGNAL_IDS.AGING_ORDERS)) {
+
+      signals.push({
+        id: signalId(SIGNAL_IDS.AGING_ORDERS),
+        severity: escalateSeverity('critical', detectedAt),
+        lifecycle: getLifecycle(SIGNAL_IDS.AGING_ORDERS),
+        detectedAt,
+
+        title: '1 order unfulfilled > 48 hours',
+
+        impact:
+          affected === 1
+            ? '1 order unfulfilled > 48 hours'
+            : `${affected} orders unfulfilled > 48 hours`,
+
+        metadata: {
+          aging_48h: safeSnapshot.aging_48h,
+          aging_72h_plus: safeSnapshot.aging_72h_plus,
+        },
+
+        actions: [
+          {
+            id: 'investigate_orders',
+            label: 'Investigate orders',
+            actionType: 'investigate_orders',
+          },
+        ],
+
+        batchActions: [
+          {
+            id: 'prioritize_orders',
+            label: 'Prioritize fulfillment',
+            actionType: 'investigate_aging_orders',
+          },
+        ],
+      });
+    }
   }
+
+  /**
+   * OPERATIONAL EXCEPTIONS
+   * ----------------------
+   * Orders experiencing carrier, fulfillment,
+   * or processing anomalies.
+   *
+   * Derived from snapshot exception_orders.
+   */
+  if (safeSnapshot.exception_orders > 0) {
+
+    const detectedAt = getDetectedAt(SIGNAL_IDS.OPERATIONAL_EXCEPTION);
+
+    if (registerSignalType(SIGNAL_IDS.OPERATIONAL_EXCEPTION)) {
+
+      signals.push({
+        id: signalId(SIGNAL_IDS.OPERATIONAL_EXCEPTION),
+        severity: escalateSeverity('critical', detectedAt),
+        lifecycle: getLifecycle(SIGNAL_IDS.OPERATIONAL_EXCEPTION),
+        detectedAt,
+
+        title: 'Operational exception detected',
+
+        /**
+         * Grammar normalization
+         * ---------------------
+         * Aligns wording with other operational queue signals
+         * using consistent "orders needing action" phrasing.
+         */
+        impact:
+          safeSnapshot.exception_orders === 1
+            ? '1 order needs intervention'
+            : `${safeSnapshot.exception_orders} orders need intervention`,
+
+        metadata: {
+          exception_orders: safeSnapshot.exception_orders,
+        },
+
+        actions: [
+          {
+            id: 'inspect_exception_orders',
+            label: 'Inspect orders',
+            actionType: 'inspect_exception_orders',
+          },
+        ],
+
+        batchActions: [
+          {
+            id: 'contact_warehouse',
+            label: 'Contact warehouse',
+            actionType: 'contact_warehouse',
+          },
+        ],
+      });
+    }
+  }
+
+  /**
+   * ORDER CONSTRAINTS
+   * -----------------
+   * Orders blocked by operational constraints
+   * such as inventory, customer issues,
+   * or fulfillment blockers.
+   *
+   * Projection source:
+   * orders_operational_control_snapshot.constrained_orders
+   */
+  if (safeSnapshot.constrained_orders > 0) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.CONSTRAINED_ORDERS);
+
+    if (registerSignalType(SIGNAL_IDS.CONSTRAINED_ORDERS)) {
+      signals.push({
+        id: signalId(SIGNAL_IDS.CONSTRAINED_ORDERS),
+        severity: escalateSeverity('warning', detectedAt),
+        lifecycle: getLifecycle(SIGNAL_IDS.CONSTRAINED_ORDERS),
+        detectedAt,
+
+        title: 'Orders blocked by constraints',
+
+        /**
+         * Grammar guard
+         */
+        impact:
+          safeSnapshot.constrained_orders === 1
+            ? '1 order blocked by operational constraints'
+            : `${safeSnapshot.constrained_orders} orders blocked by operational constraints`,
+
+        metadata: {
+          queue: 'constrained_orders',
+          affectedOrders: safeSnapshot.constrained_orders,
+        },
+
+        actions: [
+          {
+            id: 'inspect_constrained_orders',
+            label: 'Inspect orders',
+            actionType: 'inspect_constrained_orders',
+          },
+        ],
+      });
+    }
+  }
+
+  /**
+   * PAYMENT RETRY REQUIRED
+   * ----------------------
+   * Orders blocked due to failed or incomplete payment.
+   *
+   * Trigger:
+   * pending_payment > 0
+   */
+  if (safeSnapshot.pending_payment > 0) {
+
+    const detectedAt = getDetectedAt(SIGNAL_IDS.PAYMENT_RETRY);
+
+    if (registerSignalType(SIGNAL_IDS.PAYMENT_RETRY)) {
+
+      signals.push({
+        id: signalId(SIGNAL_IDS.PAYMENT_RETRY),
+        severity: escalateSeverity('critical', detectedAt),
+        lifecycle: getLifecycle(SIGNAL_IDS.PAYMENT_RETRY),
+        detectedAt,
+
+        title: 'Payment retry required',
+
+        /**
+         * Grammar guard
+         * -------------
+         * Ensures correct singular/plural rendering in UI.
+         */
+        impact:
+          safeSnapshot.pending_payment === 1
+            ? '1 order requires payment retry'
+            : `${safeSnapshot.pending_payment} orders require payment retry`,
+
+        metadata: {
+          pending_payment: safeSnapshot.pending_payment,
+        },
+
+        actions: [
+          {
+            id: 'review_payment_orders',
+            label: 'Review orders',
+            actionType: 'review_payment_orders',
+          },
+        ],
+
+        batchActions: [
+          {
+            id: 'contact_customer_payment',
+            label: 'Contact customer',
+            actionType: 'contact_customer_payment',
+          },
+        ],
+      });
+    }
+  }
+
+/**
+ * PARTIAL FULFILLMENT OPPORTUNITY
+ * --------------------------------
+ * Orders contain both:
+ * - in-stock items
+ * - out-of-stock items
+ *
+ * Allows warehouse to ship available items
+ * while backordering remaining SKUs.
+ */
+if (safeSnapshot.partial_fulfillment_opportunity > 0) {
+
+  const detectedAt = getDetectedAt(SIGNAL_IDS.PARTIAL_FULFILLMENT);
+
+  if (registerSignalType(SIGNAL_IDS.PARTIAL_FULFILLMENT)) {
+
+    signals.push({
+      id: signalId(SIGNAL_IDS.PARTIAL_FULFILLMENT),
+      severity: escalateSeverity('warning', detectedAt),
+      lifecycle: getLifecycle(SIGNAL_IDS.PARTIAL_FULFILLMENT),
+      detectedAt,
+
+      title: 'Partial fulfillment available',
+
+      impact:
+        safeSnapshot.partial_fulfillment_opportunity === 1
+          ? '1 order eligible for partial shipment'
+          : `${safeSnapshot.partial_fulfillment_opportunity} orders eligible for partial shipment`,
+
+      metadata: {
+        partial_fulfillment_opportunity:
+          safeSnapshot.partial_fulfillment_opportunity,
+      },
+
+      actions: [
+        {
+          id: 'inspect_partial_orders',
+          label: 'Inspect orders',
+          actionType: 'inspect_partial_orders',
+        },
+      ],
+
+      batchActions: [
+        {
+          id: 'split_shipments',
+          label: 'Split shipments',
+          actionType: 'split_shipments',
+        },
+      ],
+    });
+  }
+}
 
   /**
    * Resolve signals that disappeared from snapshot
@@ -544,11 +1154,33 @@ function escalateSeverity(
    */
   const RESOLUTION_RETENTION_MS = 10 * 60 * 1000;
 
+  /**
+   * Lifecycle registry pruning
+   * --------------------------
+   * Removes resolved signal lifecycle entries after the
+   * retention window expires.
+   *
+   * Instrumentation is included so operators can observe
+   * cleanup activity during runtime diagnostics.
+   */
+  let prunedEntries = 0;
+
   for (const [key, resolvedAt] of signalResolvedAtRegistry.entries()) {
     if (evaluationTime - resolvedAt > RESOLUTION_RETENTION_MS) {
       signalResolvedAtRegistry.delete(key);
       signalLifecycleRegistry.delete(key);
+      prunedEntries++;
     }
+  }
+
+  /**
+   * Emit pruning telemetry only when work occurred
+   * to avoid console noise during normal operation.
+   */
+  if (prunedEntries > 0) {
+    console.info(
+      `[OperationalSignals] lifecycle cleanup pruned ${prunedEntries} entries`
+    );
   }
 
   /**

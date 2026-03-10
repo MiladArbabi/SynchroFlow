@@ -168,6 +168,22 @@ export async function up(knex: Knex): Promise<void> {
         .notNullable()
         .defaultTo(0);
 
+      /**
+       * PARTIAL FULFILLMENT OPPORTUNITY
+       * --------------------------------
+       * Orders containing both:
+       * - available inventory
+       * - out-of-stock items
+       *
+       * Enables warehouse to ship available items
+       * while backordering remaining SKUs.
+       *
+       * Computed deterministically by reconciliation worker.
+       */
+      table.integer('partial_fulfillment_opportunity')
+        .notNullable()
+        .defaultTo(0);
+
       table.timestamp('evaluated_at')
         .notNullable()
         .defaultTo(knex.fn.now());

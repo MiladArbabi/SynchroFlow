@@ -1206,6 +1206,26 @@ export async function reconcileOrderFulfillment(
         .first();
 
       /**
+       * PARTIAL FULFILLMENT OPPORTUNITY
+       * -------------------------------
+       * Orders containing both:
+       * - available inventory
+       * - blocked inventory items
+       *
+       * These orders can ship partially while
+       * backordering unavailable SKUs.
+       *
+       * Deterministic rule:
+       * inventory_block_type = 'partial'
+       */
+      const partialFulfillmentOpportunity = await trx('order_fulfillment_status as ofs')
+        .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .where('o.shop_id', order.shop_id)
+        .andWhere('ofs.inventory_block_type', 'partial')
+        .count<{ count: string }>('ofs.lasyncro_order_id as count')
+        .first();
+
+      /**
        * REVENUE LEAKAGE (DETERMINISTIC)
        * --------------------------------
        * Leakage is defined as net revenue attached to
@@ -1299,6 +1319,13 @@ export async function reconcileOrderFulfillment(
           queue_awaiting_inventory: Number(queueAwaitingInventory?.count ?? 0),
           queue_ready_to_ship: Number(queueReadyToShip?.count ?? 0),
           queue_awaiting_customer: Number(queueAwaitingCustomer?.count ?? 0),
+
+          /**
+           * Partial fulfillment opportunity
+           */
+          partial_fulfillment_opportunity: Number(
+            partialFulfillmentOpportunity?.count ?? 0
+          ),
 
           evaluated_at: new Date(eventAnchor),
         })

@@ -64,20 +64,6 @@ export async function getOrderNexusFt2StateSnapshot(
   // Refunds (lifetime)
   const refundsFacts = await extractRefundsFacts(shopId);
 
-    // Constrained orders (lifetime, state-based)
-  const constrainedRow = await db('order_fulfillment_status as ofs')
-    .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
-    .where('o.shop_id', shopId)
-    .where('ofs.status', '!=', 'fulfilled')
-    .whereNotNull('ofs.inventory_block_type')
-    .countDistinct<{ count: string }>('ofs.lasyncro_order_id as count')
-    .first();
-
-  const constrained =
-    constrainedRow?.count != null
-      ? Number(constrainedRow.count)
-      : 0;
-
     // Freshness (state-based)
   const freshnessRow = await db('orders')
     .where('shop_id', shopId)
@@ -137,6 +123,41 @@ export async function getOrderNexusFt2StateSnapshot(
       { column: 'aggregate_version', order: 'desc' },
     ])
     .first();
+
+  /**
+   * CONSTRAINED ORDERS (PROJECTION SOURCE)
+   * --------------------------------------
+   * Must originate from reconciliation projection.
+   *
+   * DO NOT compute inside resolver.
+   *
+   * Source:
+   *   orders_operational_control_snapshot.constrained_orders
+   *
+   * Reason:
+   * - maintain deterministic replay
+   * - prevent resolver-side aggregation drift
+   */
+  const constrained =
+    Number(operationalControlRow?.constrained_orders ?? 0);
+
+  /**
+   * SNAPSHOT INTEGRITY GUARD
+   * ------------------------
+   * Resolver must not operate without a projection row.
+   * If this occurs it indicates:
+   *
+   * - reconciliation pipeline failure
+   * - projection rebuild lag
+   *
+   * We surface explicit operational error instead of
+   * silently degrading UI metrics.
+   */
+  if (!operationalControlRow) {
+    throw new Error(
+      '[ORDER_NEXUS_FT2_SNAPSHOT_MISSING] orders_operational_control_snapshot row not found'
+    );
+  }
 
   /**
    * OPERATIONAL DECISION BRIEF
@@ -262,6 +283,17 @@ export async function getOrderNexusFt2StateSnapshot(
         queue_awaiting_inventory: operationalControlRow.queue_awaiting_inventory,
         queue_ready_to_ship: operationalControlRow.queue_ready_to_ship,
         queue_awaiting_customer: operationalControlRow.queue_awaiting_customer,
+
+        /**
+         * PARTIAL FULFILLMENT OPPORTUNITY
+         * --------------------------------
+         * Orders that can ship partially because
+         * only some items are inventory-blocked.
+         *
+         * Derived deterministically by reconciliation projection.
+         */
+        partial_fulfillment_opportunity:
+          operationalControlRow.partial_fulfillment_opportunity,
       }
     : null,
 

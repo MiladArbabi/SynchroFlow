@@ -58,25 +58,28 @@ function handleOperationsAction(
   });
 
   /**
-   * Action routing
-   * --------------
-   * Explicit switch ensures every actionType
-   * is intentionally handled.
+   * ACTION ROUTER
+   * -------------
+   * Explicit action registry for Operations Queue.
    *
-   * Unknown actions produce a hard diagnostic.
-   * 
-   * Lifecycle integrity rule
-   * ------------------------
-   * Signals transition to IN_PROGRESS only when
-   * the action is validated and accepted.
+   * Rules:
+   * - Every actionType emitted by the signal mapper
+   *   MUST be registered here.
+   * - Unknown actions trigger a hard error.
    *
-   * Unknown actions MUST NOT mutate lifecycle state.
+   * This ensures the UI never exposes
+   * non-functional operational controls.
    */
   switch (actionType) {
 
     case 'open_inventory_blocked_orders':
     case 'open_sla_risk_orders':
     case 'open_manual_review_orders':
+    case 'investigate_orders':
+    case 'inspect_exception_orders':
+    case 'investigate_aging_orders':
+    case 'inspect_partial_orders':
+    case 'review_payment_orders':
       updateSignalLifecycle(signal.id, 'IN_PROGRESS');
         console.info('[OrdersModuleFT2] navigation action requested', {
           actionType,
@@ -89,6 +92,18 @@ function handleOperationsAction(
     case 'print_shipping_labels':
     case 'contact_customer':
     case 'start_fulfillment_batch':
+    case 'contact_warehouse':
+    case 'contact_customer_payment':
+    case 'split_shipments':
+    /**
+     * WAREHOUSE EXECUTION WORKFLOWS
+     * -----------------------------
+     * Actions that initiate fulfillment pipeline operations.
+     *
+     * generate_pick_list
+     *   → creates picking session for warehouse execution
+     */
+    case 'generate_pick_list':
       updateSignalLifecycle(signal.id, 'IN_PROGRESS');
         console.info('[OrdersModuleFT2] workflow action requested', {
           actionType,
@@ -181,6 +196,18 @@ export interface OrdersModuleFT2DataProps {
     queue_awaiting_inventory: number;
     queue_ready_to_ship: number;
     queue_awaiting_customer: number;
+
+    /**
+     * PARTIAL FULFILLMENT OPPORTUNITY
+     * --------------------------------
+     * Orders containing both:
+     * - available inventory
+     * - out-of-stock items
+     *
+     * Allows warehouse to ship partial orders.
+     * Derived by reconciliation projection.
+     */
+    partial_fulfillment_opportunity: number;
   };
 
   returns?: {
@@ -233,19 +260,17 @@ export default function OrdersModuleFT2(
     } = props;
 
     /**
-     * Operational signals
+     * SIGNAL ENGINE INPUT
      * -------------------
-     * Derived from operational control snapshot.
-     * This decouples UI components from raw snapshot fields.
+     * Pass projection snapshot directly to the signal mapper.
+     *
+     * This prevents schema drift between:
+     * resolver → UI → mapper.
+     *
+     * Any future projection field additions will automatically
+     * propagate to the signal engine.
      */
-    const operationalSignals = mapOperationalSignals({
-      queue_manual_review: operationalControl.queue_manual_review,
-      queue_awaiting_inventory: operationalControl.queue_awaiting_inventory,
-      queue_ready_to_ship: operationalControl.queue_ready_to_ship,
-      queue_awaiting_customer: operationalControl.queue_awaiting_customer,
-      orders_at_sla_risk: operationalControl.orders_at_sla_risk,
-      pending_fulfillment: operationalControl.pending_fulfillment,
-    });
+    const operationalSignals = mapOperationalSignals(operationalControl);
 
   return (
     <FT2Layout>
