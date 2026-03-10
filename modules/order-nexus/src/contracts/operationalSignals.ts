@@ -33,6 +33,22 @@ export type OperationalSignalSeverity =
   | 'warning'
   | 'info';
 
+/**
+ * Operational lifecycle state
+ *
+ * Enables queue management and prevents
+ * signals from accumulating indefinitely.
+ *
+ * Lifecycle flow:
+ *
+ * NEW → ACKNOWLEDGED → IN_PROGRESS → RESOLVED
+ */
+export type OperationalSignalLifecycle =
+  | 'NEW'
+  | 'ACKNOWLEDGED'
+  | 'IN_PROGRESS'
+  | 'RESOLVED';
+
 export type OperationalSignalAction = {
   id: string;
 
@@ -52,6 +68,29 @@ export type OperationalSignal = {
    * Unique signal identifier
    */
   id: string;
+
+  /**
+   * Lifecycle state for operational queue management.
+   *
+   * Required for:
+   * - queue pruning
+   * - acknowledgement workflows
+   * - operational tracking
+   */
+  lifecycle: OperationalSignalLifecycle;
+
+  /**
+   * Timestamp when the signal was detected.
+   *
+   * Enables:
+   * - operational duration tracking
+   * - aging alerts
+   * - SLA breach warnings
+   *
+   * Stored as ISO timestamp to maintain
+   * transport safety across API boundaries.
+   */
+  detectedAt: string;
 
   /**
    * Severity determines icon and color.

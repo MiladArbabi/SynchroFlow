@@ -24,15 +24,34 @@ export function PanelActions({ children }: PanelActionsProps) {
     <Box
       data-ft2-panel-actions
       sx={{
-        display: 'flex',
+        /**
+         * Grid layout for proportional action buttons.
+         *
+         * Buttons occupy 90% of panel width and
+         * distribute evenly based on count.
+         */
+        display: 'grid',
         width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        flexWrap: 'wrap',
+        justifyContent: 'center',
+
+        gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))',
+
+        /**
+         * Consistent spacing between actions
+         */
         gap: 1,
 
+        /**
+         * Constrain actions to 90% width of panel
+         */
+        maxWidth: '95%',
+        margin: '0 auto',
+        
+        /**
+         * Buttons expand to fill their grid cell.
+         */
         '& > *': {
-          flex: '0 0 auto',
+          width: '100%',
         },
 
         /**

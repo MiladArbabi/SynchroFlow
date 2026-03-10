@@ -1,5 +1,6 @@
-import { FT2Panel, PanelRow, PanelFooter, PanelActions, PanelBlock } from '@lasyncro/ui-ft2';import type { OperationalSignal } from '../../contracts/operationalSignals.js';
-import { getSignalIcon, getSeverityPriority } from '../helpers/signalSeverity.js';
+import { FT2Panel, PanelRow, PanelFooter, PanelActions, PanelBlock } from '@lasyncro/ui-ft2';
+import type { OperationalSignal } from '../../contracts/operationalSignals.js';
+import { getSignalIcon } from '../helpers/signalSeverity.js';
 import { Button } from '@mui/material';
 
 /**
@@ -42,25 +43,111 @@ export function OperationsQueueSection({
 }: OperationsQueueSectionProps) {
 
   /**
-   * Severity-based ordering
-   * -----------------------
-   * Ensures operational triage always surfaces
-   * the most critical signals first.
+   * Computes human-readable signal age.
+   *
+   * NOTE
+   * ----
+   * This is a pure formatting helper.
+   * It does NOT change signal ordering or logic.
    */
-  const orderedSignals = [...signals].sort(
-    (a, b) =>
-      getSeverityPriority(a.severity) -
-      getSeverityPriority(b.severity)
-  );
+  function formatSignalAge(detectedAt: string): string {
+    const now = Date.now();
+    const detected = new Date(detectedAt).getTime();
+    const diffMinutes = Math.floor((now - detected) / 60000);
+
+    if (diffMinutes < 1) return 'just now';
+    if (diffMinutes === 1) return '1 min ago';
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+
+    if (diffHours === 1) return '1 hour ago';
+    return `${diffHours} hours ago`;
+  }
+
+  /**
+   * Signals must arrive pre-sorted by the upstream resolver.
+   *
+   * Rationale
+   * ---------
+   * Rendering surfaces must not implement operational logic.
+   * Ordering belongs to the resolver / mapping layer so the
+   * UI remains a pure rendering surface.
+   *
+   * If ordering is incorrect, investigate:
+   *   mapOperationalSignals()
+   *   FT2 resolver layer
+   */
+  const orderedSignals = signals;
+
+  /**
+   * EMPTY STATE
+   * -----------
+   * When no operational signals are detected,
+   * the queue must render an explicit system state.
+   *
+   * This prevents operators from misinterpreting
+   * an empty panel as a rendering failure.
+   */
+  const isEmpty = orderedSignals.length === 0;
 
   return (
    <FT2Panel title="Operations Queue">
+      {isEmpty && (
+        <PanelBlock>
+          <PanelRow
+            label="No operational signals detected"
+            value="All monitored operational queues are currently clear"
+          />
+        </PanelBlock>
+      )}
+      
+      {/*
+        * Render operational signals only when queue is non-empty.
+        * Empty-state block above provides the canonical zero-state surface.
+        */ }
+      {!isEmpty && orderedSignals.map((signal) => (
+        <PanelBlock
+          key={signal.id}
+          sx={{
+            position: 'relative',
+            paddingLeft: '12px',
+          }}
+        >
+          {/* Severity stripe */}
+          <span
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 6,
+              bottom: 6,
+              width: 4,
+              borderRadius: 2,
+              background:
+                signal.severity === 'critical'
+                  ? '#dc2626' // red
+                  : signal.severity === 'warning'
+                  ? '#f59e0b' // amber
+                  : '#9ca3af', // neutral,
+            }}
+          />
 
-      {orderedSignals.map((signal) => (
-        <PanelBlock key={signal.id}>
+          {/** SIGNAL ROW 1
+          * ------------
+          * Primary signal identity.
+          * Displays the operational issue and lifecycle state.*/ }
           <PanelRow
             label={`${getSignalIcon(signal.severity)} ${signal.title}`}
-            value={signal.impact}
+            value={`[${signal.lifecycle}]`}
+          />
+
+          {/** SIGNAL ROW 2
+          * ------------
+          * Operational context.
+          * Shows scale of impact and signal age. */}
+          <PanelRow
+            label={signal.impact}
+            value={formatSignalAge(signal.detectedAt)}
           />
 
           {((signal.actions && signal.actions.length > 0) ||
@@ -74,6 +161,10 @@ export function OperationsQueueSection({
                   variant="outlined"
                   sx={{ width: 'auto', whiteSpace: 'nowrap' }}
                   onClick={() => {
+                    /**
+                     * UI emits intent only.
+                     * Lifecycle transitions handled by signal engine / orchestration layer.
+                     */
                     if (onAction) {
                       onAction(action.actionType, signal);
                     } else {
@@ -96,6 +187,9 @@ export function OperationsQueueSection({
                   sx={{ width: 'auto', whiteSpace: 'nowrap' }}
                   color="primary"
                   onClick={() => {
+                    /**
+                     * Lifecycle transitions must occur outside the rendering surface.
+                     */
                     if (onAction) {
                       onAction(action.actionType, signal);
                     } else {

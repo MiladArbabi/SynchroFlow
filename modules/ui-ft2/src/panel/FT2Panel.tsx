@@ -56,6 +56,13 @@ export function FT2Panel({
     <Paper
       elevation={0}
       data-ft2-panel
+      /**
+       * Span signal consumed by FT2Row layout engine.
+       *
+       * Row engine reads this attribute to determine
+       * how many columns the panel occupies.
+       */
+      data-ft2-panel-span={span}
       data-ft2-trust={trustTone ?? 'unknown'}
       sx={{
         width: '100%',

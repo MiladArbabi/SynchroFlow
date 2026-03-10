@@ -36,15 +36,15 @@ export function PanelFooter({ line1, line2 }: PanelFooterProps) {
 const FooterContainer = styled('div')({
   padding: '8px 14px',
 
-  background: 'var(--ft2-infoblock-footer-bg)',
+  background: 'var(--ft2-surface-bg)',
 
-  borderTop: '1px solid var(--ft2-infoblock-border)',
+  borderTop: '1px solid var(--ft2-surface-divider)',
 
   fontFamily: '"IBM Plex Mono", monospace',
   fontSize: 10,
   lineHeight: '14px',
 
-  color: 'var(--ft2-infoblock-footer-text)',
+  color: 'var(--ft2-text-muted)',
 
   display: 'flex',
   flexDirection: 'column',

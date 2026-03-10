@@ -230,7 +230,14 @@ export function FT2Row({ children, intent }: FT2RowProps) {
                * FT2Row remains deterministic.
                */
               flexShrink: 0,
-              flexGrow: 0,
+              /**
+               * Allow panels to expand when fewer panels
+               * exist on a wrapped row.
+               *
+               * This ensures remaining panels stretch
+               * to occupy available horizontal space.
+               */
+              flexGrow: 0.75,
 
               /**
                * Gap-aware width
@@ -241,7 +248,19 @@ export function FT2Row({ children, intent }: FT2RowProps) {
               flexBasis: `calc(${widthPercent}% - ${gapPx}px)`,
               width: `calc(${widthPercent}% - ${gapPx}px)`,
 
-              minWidth: 0,
+              /**
+               * Minimum surface width
+               * ---------------------
+               * Prevent panels from collapsing to unreadable sizes
+               * when viewport width decreases.
+               *
+               * When the minimum width cannot be satisfied,
+               * the row will wrap surfaces to the next line.
+               *
+               * This preserves readability and prevents
+               * text/button overlap.
+               */
+              minWidth: '320px',
             }}
           >
             {child}

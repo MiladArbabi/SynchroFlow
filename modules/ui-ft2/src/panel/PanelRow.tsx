@@ -82,8 +82,7 @@ const RowContainer = styled('div', {
   fontFamily: '"IBM Plex Mono", monospace',
   fontSize: 12,
 
-  borderBottom: '1px solid var(--ft2-infoblock-border)',
-
+  borderBottom: 'none',
   whiteSpace: 'nowrap',
 }));
 
@@ -101,13 +100,13 @@ const Value = styled('div')({
 const Diff = styled('div')({
   textAlign: 'right',
   fontWeight: 700,
-  color: 'var(--ft2-infoblock-diff-neutral)',
+  color: 'var(--ft2-text-muted)',
 
   '&[data-diff-tone="up"]': {
-    color: 'var(--ft2-infoblock-diff-up)',
+    color: 'var(--ft2-signal-positive)',
   },
 
   '&[data-diff-tone="down"]': {
-    color: 'var(--ft2-infoblock-diff-down)',
+    color: 'var(--ft2-signal-negative)',
   },
 });
