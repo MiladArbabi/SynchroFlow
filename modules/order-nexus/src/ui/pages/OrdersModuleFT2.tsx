@@ -20,7 +20,8 @@ import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlo
 import { OrderHealthInfoBlock } from '../components/OrderHealthInfoBlock.js';
 
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
-import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
+import { mapOperationalSignals, updateSignalLifecycle } from '../mappers/mapOperationalSignals.js';
+import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 
 /**
  * OPERATIONS QUEUE
@@ -34,29 +35,75 @@ import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
 import { OperationsQueueSection } from '../components/OperationsQueueSection.js';
 
 /**
- * Operational action dispatcher
- * -----------------------------
- * Central orchestration point for Operations Queue actions.
+ * Operations Queue action handler
  *
- * Design rules:
- * - UI emits intent
- * - Module layer decides execution
- * - Enables analytics and audit instrumentation
+ * Responsibilities:
+ * - emit operational intent
+ * - trigger lifecycle progression
+ * - provide observable instrumentation
+ *
+ * NOTE
+ * ----
+ * Real orchestration will later be delegated to
+ * the Action Orchestrator layer.
  */
-function handleOperationsAction(actionType: string, signal: any) {
+function handleOperationsAction(
+  actionType: string,
+  signal: OperationalSignal
+) {
+
   console.info('[OrdersModuleFT2] Operational action received', {
     actionType,
-    signalId: signal?.id,
+    signalId: signal.id,
   });
 
   /**
-   * Placeholder orchestration layer.
+   * Action routing
+   * --------------
+   * Explicit switch ensures every actionType
+   * is intentionally handled.
    *
-   * Future integration points:
-   * - router navigation
-   * - order execution APIs
-   * - batch workflows
+   * Unknown actions produce a hard diagnostic.
+   * 
+   * Lifecycle integrity rule
+   * ------------------------
+   * Signals transition to IN_PROGRESS only when
+   * the action is validated and accepted.
+   *
+   * Unknown actions MUST NOT mutate lifecycle state.
    */
+  switch (actionType) {
+
+    case 'open_inventory_blocked_orders':
+    case 'open_sla_risk_orders':
+    case 'open_manual_review_orders':
+      updateSignalLifecycle(signal.id, 'IN_PROGRESS');
+        console.info('[OrdersModuleFT2] navigation action requested', {
+          actionType,
+          signalId: signal.id
+        });
+      break;
+
+    case 'notify_inventory_supplier':
+    case 'prioritize_orders':
+    case 'print_shipping_labels':
+    case 'contact_customer':
+    case 'start_fulfillment_batch':
+      updateSignalLifecycle(signal.id, 'IN_PROGRESS');
+        console.info('[OrdersModuleFT2] workflow action requested', {
+          actionType,
+          signalId: signal.id
+        });
+      break;
+
+    default:
+      console.error(
+        '[OrdersModuleFT2] Unknown OperationsQueue actionType',
+        { actionType, signalId: signal.id }
+      );
+
+  }
+
 }
 
 /**

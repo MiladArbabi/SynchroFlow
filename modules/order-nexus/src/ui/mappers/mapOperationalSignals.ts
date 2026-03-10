@@ -119,20 +119,42 @@ export function mapOperationalSignals(
   const MAX_WARNING_REGISTRY_SIZE = 100;
 
   /**
-   * Emits a warning once per unique key.
-   * Registry size is bounded to prevent memory growth.
+   * warnOnce()
+   * ----------
+   * Emits diagnostics for malformed snapshot metrics.
+   *
+   * Behavior:
+   * - First occurrence → full warning emitted.
+   * - Subsequent occurrences → suppression notice emitted.
+   *
+   * This prevents log spam while preserving observability
+   * of repeated upstream data corruption.
    */
   function warnOnce(key: string, message: string, payload: unknown) {
 
-    if (metricWarningRegistry.has(key)) return;
+    const alreadySeen = metricWarningRegistry.has(key);
+    if (!alreadySeen) {
+      if (metricWarningRegistry.size >= MAX_WARNING_REGISTRY_SIZE) {
+        console.warn(
+          '[OperationalSignals] metricWarningRegistry capacity reached — registry cleared'
+        );
+        metricWarningRegistry.clear();
+      }
 
-    if (metricWarningRegistry.size >= MAX_WARNING_REGISTRY_SIZE) {
-      metricWarningRegistry.clear();
+      metricWarningRegistry.add(key);
+      console.warn(message, payload);
+
+    } else {
+      /**
+       * Explicit suppression signal
+       * ---------------------------
+       * Avoids silent diagnostic suppression.
+       */
+      console.debug(
+        '[OperationalSignals] duplicate metric warning suppressed',
+        { key }
+      );
     }
-
-    metricWarningRegistry.add(key);
-
-    console.warn(message, payload);
   }
 
   /**
