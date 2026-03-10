@@ -202,29 +202,38 @@ export default function OrdersModuleFT2(
 
   return (
     <FT2Layout>
-      <FT2Row intent="kpi">
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '360px repeat(auto-fit, minmax(320px, 1fr))',
+          gridAutoRows: 'min-content',
+          gap: '16px',
+          alignItems: 'start'
+        }}
+      >
 
+        {/* Queue spans vertically */}
+        <div
+          style={{
+            gridRow: 'span 2'
+          }}
+        >
           <OperationsQueueSection
             signals={operationalSignals}
             onAction={handleOperationsAction}
           />
+        </div>
 
-          <OrdersOverviewInfoBlock
-            orders={orders}
-          />
+        <OrdersOverviewInfoBlock orders={orders} />
 
-          <RevenueOverviewInfoBlock
-            revenue={{
-              totalSales: revenue.totalSales,
-              earned: revenue.earned,
-              pending: revenue.pending,
-              blocked: revenue.blocked,
-            }}
-          />
-
-      </FT2Row>
-
-      <FT2Row intent="kpi">
+        <RevenueOverviewInfoBlock
+          revenue={{
+            totalSales: revenue.totalSales,
+            earned: revenue.earned,
+            pending: revenue.pending,
+            blocked: revenue.blocked
+          }}
+        />
 
         <OrdersDecisionBrief {...decision.brief} />
 
@@ -233,20 +242,12 @@ export default function OrdersModuleFT2(
           at_risk_revenue={operationalControl.at_risk_revenue}
           blocked_revenue={operationalControl.blocked_revenue}
           revenue_leakage={operationalControl.revenue_leakage}
-          avg_contribution_margin_pct={operationalControl.avg_contribution_margin_pct}
+          avg_contribution_margin_pct={
+            operationalControl.avg_contribution_margin_pct
+          }
         />
 
-        <OrderHealthInfoBlock
-          orders_at_sla_risk={operationalControl.orders_at_sla_risk}
-          aging_24h={operationalControl.aging_24h}
-          aging_48h={operationalControl.aging_48h}
-          aging_72h_plus={operationalControl.aging_72h_plus}
-          pending_fulfillment={operationalControl.pending_fulfillment}
-          pending_payment={operationalControl.pending_payment}
-          exception_orders={operationalControl.exception_orders}
-        />
-
-      </FT2Row>
+      </div>
     </FT2Layout>
   );
 }
