@@ -1,0 +1,58 @@
+/**
+ * Snapshot Normalization
+ * ----------------------
+ *
+ * Ensures snapshot metrics are:
+ * - numeric
+ * - non-negative
+ * - within operational bounds
+ *
+ * Prevents malformed resolver input from
+ * corrupting the operational signal engine.
+ */
+
+import type { OperationalControlSnapshot } from '../types/operationalControlSnapshot.js';
+import { safeMetric, warnOnce } from './signalUtils.js';
+
+/**
+ * Metric warning registry
+ * -----------------------
+ * Tracks previously emitted metric anomalies so we
+ * avoid repeating identical warnings across snapshot
+ * refresh cycles.
+ *
+ * Module-scope by design.
+ */
+const metricWarningRegistry = new Set<string>();
+
+/**
+ * Warning adapter
+ * ---------------
+ * Bridges mapper-local warning registry with
+ * shared warnOnce utility.
+ */
+const warn = (key: string, message: string, payload: unknown) => {
+  warnOnce(metricWarningRegistry, key, message, payload);
+};
+
+export function normalizeOperationalSnapshot(
+  snapshot: OperationalControlSnapshot
+): OperationalControlSnapshot {
+
+  return {
+    queue_manual_review: safeMetric(snapshot.queue_manual_review, warn),
+    queue_awaiting_inventory: safeMetric(snapshot.queue_awaiting_inventory, warn),
+    queue_ready_to_ship: safeMetric(snapshot.queue_ready_to_ship, warn),
+    queue_awaiting_customer: safeMetric(snapshot.queue_awaiting_customer, warn),
+    orders_at_sla_risk: safeMetric(snapshot.orders_at_sla_risk, warn),
+    pending_fulfillment: safeMetric(snapshot.pending_fulfillment, warn),
+    
+    aging_24h: safeMetric(snapshot.aging_24h, warn),
+    aging_48h: safeMetric(snapshot.aging_48h, warn),
+    aging_72h_plus: safeMetric(snapshot.aging_72h_plus, warn),
+    exception_orders: safeMetric(snapshot.exception_orders, warn),
+    constrained_orders: safeMetric(snapshot.constrained_orders, warn),
+    pending_payment: safeMetric(snapshot.pending_payment, warn),
+    partial_fulfillment_opportunity: safeMetric(snapshot.partial_fulfillment_opportunity, warn)
+  };
+}

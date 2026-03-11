@@ -20,7 +20,7 @@ import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlo
 import { OrderHealthInfoBlock } from '../components/OrderHealthInfoBlock.js';
 
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
-import { mapOperationalSignals, updateSignalLifecycle } from '../mappers/mapOperationalSignals.js';
+import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
 import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 
 /**
@@ -33,6 +33,7 @@ import type { OperationalSignal } from '../../contracts/operationalSignals.js';
  * order_risk_snapshot ranking.
  */
 import { OperationsQueueSection } from '../components/OperationsQueueSection.js';
+import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
 
 /**
  * Operations Queue action handler

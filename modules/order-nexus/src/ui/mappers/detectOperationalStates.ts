@@ -18,7 +18,7 @@
  * state clusters instead of individual metrics.
  */
 
-import type { OperationalControlSnapshot } from './mapOperationalSignals.js';
+import type { OperationalControlSnapshot } from './types/operationalControlSnapshot.js';
 
 export type OperationalStates = {
 
@@ -26,6 +26,18 @@ export type OperationalStates = {
    * Inventory blocking order fulfillment
    */
   inventoryShortage: boolean;
+
+  /**
+   * Inventory constraint cluster
+   *
+   * Represents inventory-driven fulfillment blockage.
+   *
+   * Derived from:
+   * - queue_awaiting_inventory
+   * - constrained_orders
+   * - partial_fulfillment_opportunity
+   */
+  inventoryConstraintCluster: boolean;
 
   /**
    * Orders approaching SLA breach
@@ -76,12 +88,18 @@ export type OperationalStates = {
  */
 export function detectOperationalStates(
   snapshot: OperationalControlSnapshot
+  
 ): OperationalStates {
 
   return {
 
     inventoryShortage:
       snapshot.queue_awaiting_inventory > 0,
+
+    inventoryConstraintCluster:
+      snapshot.queue_awaiting_inventory > 0 ||
+      snapshot.constrained_orders > 0 ||
+      snapshot.partial_fulfillment_opportunity > 0,
 
     slaRisk:
       snapshot.orders_at_sla_risk > 0,
