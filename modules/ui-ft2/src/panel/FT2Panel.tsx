@@ -67,6 +67,13 @@ export function FT2Panel({
       sx={{
         width: '100%',
         height: '100%',
+        /**
+         * Panels must not shrink below the
+         * minimum width required by action buttons.
+         *
+         * This prevents UI corruption when
+         * the viewport becomes too small.
+         */
         minWidth: 0,
 
         display: 'flex',

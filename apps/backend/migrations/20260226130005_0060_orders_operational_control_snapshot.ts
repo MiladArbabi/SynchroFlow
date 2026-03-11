@@ -197,6 +197,12 @@ export async function up(knex: Knex): Promise<void> {
    * -------------------------------------
    * Aggregated revenue fields must never be negative.
    * Leakage remains constrained >= 0 by definition.
+   *
+   * NOTE
+   * ----
+   * A stray comment terminator previously existed here
+   * which caused TypeScript compilation failure in the
+   * migration execution pipeline.
    */
   await knex.raw(`
     ALTER TABLE orders_operational_control_snapshot

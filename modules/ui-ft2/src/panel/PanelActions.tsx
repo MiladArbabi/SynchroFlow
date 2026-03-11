@@ -33,8 +33,15 @@ export function PanelActions({ children }: PanelActionsProps) {
         display: 'grid',
         width: '100%',
         justifyContent: 'center',
-
-        gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))',
+        /**
+         * Prevent action buttons from shrinking
+         * below readable width.
+         *
+         * When viewport shrinks and the grid
+         * cannot maintain this width, the parent
+         * panel will stop shrinking.
+         */
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
 
         /**
          * Consistent spacing between actions
@@ -48,10 +55,14 @@ export function PanelActions({ children }: PanelActionsProps) {
         margin: '0 auto',
         
         /**
-         * Buttons expand to fill their grid cell.
+         * Buttons must fill their grid cell
+         * while preventing text overflow.
          */
         '& > *': {
           width: '100%',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         },
 
         /**

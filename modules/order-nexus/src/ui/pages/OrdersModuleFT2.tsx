@@ -277,7 +277,18 @@ export default function OrdersModuleFT2(
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '360px repeat(auto-fit, minmax(320px, 1fr))',
+          /**
+           * Responsive dashboard grid
+           * -------------------------
+           * All panels (including Operations Queue) must
+           * participate in the same responsive column rule.
+           *
+           * minmax(320px, 1fr) guarantees:
+           * - panels never shrink below readable width
+           * - panels expand evenly across viewport
+           * - queue remains visually dominant without fixed width
+           */
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
           gridAutoRows: 'min-content',
           gap: '16px',
           alignItems: 'start'
@@ -286,9 +297,7 @@ export default function OrdersModuleFT2(
 
         {/* Queue spans vertically */}
         <div
-          style={{
-            gridRow: 'span 2'
-          }}
+          style={{}}
         >
           <OperationsQueueSection
             signals={operationalSignals}

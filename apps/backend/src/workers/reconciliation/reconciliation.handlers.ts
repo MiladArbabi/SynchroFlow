@@ -1221,7 +1221,7 @@ export async function reconcileOrderFulfillment(
       const partialFulfillmentOpportunity = await trx('order_fulfillment_status as ofs')
         .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
         .where('o.shop_id', order.shop_id)
-        .andWhere('ofs.inventory_block_type', 'partial')
+        .whereNotNull('ofs.inventory_block_type')
         .count<{ count: string }>('ofs.lasyncro_order_id as count')
         .first();
 

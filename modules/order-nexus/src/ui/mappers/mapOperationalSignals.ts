@@ -26,6 +26,25 @@ import type {
 } from '../../contracts/operationalSignals.js';
 
 /**
+ * Operational state detection layer
+ * ---------------------------------
+ * Converts snapshot metrics into deterministic
+ * operational states used by the signal engine.
+ *
+ * This allows the mapper to evolve from
+ * metric→signal logic toward state→signal logic.
+ */
+import { detectOperationalStates } from './detectOperationalStates.js';
+import { createEarlyAgingSignal, createAgingOrdersSignal } from './signals/createAgingSignals.js';
+import { createAwaitingCustomerSignal } from './signals/createAwaitingCustomerSignal.js';
+import { createFulfillmentConstraintSignal } from './signals/createFulfillmentConstraintSignal.js';
+import { createInventoryShortageSignal } from './signals/createInventoryShortageSignal.js';
+import { createOperationalExceptionSignal } from './signals/createOperationalExceptionSignal.js';
+import { createPaymentProblemSignal } from './signals/createPaymentProblemSignal.js';
+import { createPaymentReviewSignal } from './signals/createPaymentReviewSignal.js';
+import { createSlaRiskSignal } from './signals/createSlaRiskSignal.js';
+
+/**
  * SIGNAL IDENTIFIERS
  * ------------------
  * Central registry for operational signal identifiers.
@@ -394,6 +413,18 @@ export function mapOperationalSignals(
   };
 
   /**
+   * OPERATIONAL STATE DETECTION
+   * ---------------------------
+   * Convert normalized snapshot metrics into
+   * high-level operational states.
+   *
+   * This prepares the signal engine for the
+   * state-cluster architecture while preserving
+   * existing signal logic during transition.
+   */
+  const states = detectOperationalStates(safeSnapshot);
+
+  /**
    * SNAPSHOT COVERAGE VALIDATION
    * ----------------------------
    * Detect projection fields that are not declared
@@ -507,11 +538,16 @@ function escalateSeverity(
 }
 
   /**
-   * Critical incident
-   * -----------------
-   * Inventory blocking order fulfillment.
+   * STATE-DRIVEN SIGNAL
+   * -------------------
+   * Inventory shortage is now emitted from the
+   * operational state layer rather than directly
+   * from snapshot metrics.
+   *
+   * This is the first migration step toward the
+   * state-cluster signal architecture.
    */
-  if (safeSnapshot.queue_awaiting_inventory > 0) {
+  if (states.inventoryShortage) {
     const detectedAt = getDetectedAt(SIGNAL_IDS.INVENTORY_SHORTAGE);
       /**
        * Emit signal only on first registration.
@@ -519,354 +555,109 @@ function escalateSeverity(
        * type has not yet been emitted during this snapshot cycle.
        */
       if (registerSignalType(SIGNAL_IDS.INVENTORY_SHORTAGE)) {
-        signals.push({
-        id: signalId(SIGNAL_IDS.INVENTORY_SHORTAGE),
-        severity: escalateSeverity('critical', detectedAt),
-        detectedAt,
-        lifecycle: getLifecycle('inventory-shortage'),
-        title: 'Inventory shortage',
-        impact:
-          safeSnapshot.queue_awaiting_inventory === 1
-            ? '1 order affected'
-            : `${safeSnapshot.queue_awaiting_inventory} orders affected`,
-
-        /**
-         * Metadata enables progressive disclosure inside the
-         * Operations Queue surface.
-         */
-        metadata: {
-          queue: 'awaiting_inventory',
-          affectedOrders: safeSnapshot.queue_awaiting_inventory,
-        },
-
-        /**
-         * Inline actions operate on a single signal cluster.
-         */
-        actions: [
-          {
-            id: 'inspect_inventory_block',
-            label: 'Inspect Orders',
-            actionType: 'open_inventory_blocked_orders',
-          },
-        ],
-
-        /**
-         * Batch actions operate on multiple underlying orders.
-         */
-        batchActions: [
-          {
-            id: 'notify_supplier',
-            label: 'Notify Supplier',
-            actionType: 'notify_inventory_supplier',
-          },
-          {
-            id: 'split_shipments',
-            label: 'Split shipments',
-            actionType: 'split_shipments',
-          },
-        ],
-      });
+        signals.push(
+        createInventoryShortageSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.INVENTORY_SHORTAGE),
+          escalateSeverity('critical', detectedAt),
+          signalId(SIGNAL_IDS.INVENTORY_SHORTAGE)
+        )
+      );
     }
   }
 
   /**
-   * Operational bottleneck
-   * ----------------------
-   * Orders approaching SLA breach.
+   * STATE-DRIVEN SIGNAL
+   * -------------------
+   * SLA risk is emitted from the operational
+   * state detection layer rather than directly
+   * from snapshot metrics.
+   *
+   * This continues the transition from
+   * metric-driven signals to state-cluster signals.
    */
-  if (safeSnapshot.orders_at_sla_risk > 0) {
+  if (states.slaRisk) {
     const detectedAt = getDetectedAt(SIGNAL_IDS.SLA_RISK);
     if (registerSignalType(SIGNAL_IDS.SLA_RISK)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.SLA_RISK),
-        severity: escalateSeverity('warning', detectedAt),
-        detectedAt,
-        lifecycle: getLifecycle('sla-risk'),
-        title: 'SLA risk',
-        impact:
-          safeSnapshot.orders_at_sla_risk === 1
-            ? '1 order nearing deadline'
-            : `${safeSnapshot.orders_at_sla_risk} orders nearing deadline`,
-
-        metadata: {
-          queue: 'sla_risk',
-          affectedOrders: safeSnapshot.orders_at_sla_risk,
-        },
-
-        actions: [
-          {
-            id: 'inspect_sla_orders',
-            label: 'Review orders',
-            actionType: 'open_sla_risk_orders',
-          },
-        ],
-
-        batchActions: [
-          {
-            id: 'prioritize_orders',
-            label: 'Prioritize fulfillment',
-            actionType: 'prioritize_stuck_orders',
-          },
-        ],
-      });
+      signals.push(
+        createSlaRiskSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.SLA_RISK),
+          escalateSeverity('critical', detectedAt),
+          signalId(SIGNAL_IDS.SLA_RISK)
+        )
+      );
     }
   }
 
   /**
    * Payment / fraud review queue
    */
-  if (safeSnapshot.queue_manual_review > 0) {
+  if (states.paymentReview) {
     const detectedAt = getDetectedAt(SIGNAL_IDS.PAYMENT_REVIEW);
     if (registerSignalType(SIGNAL_IDS.PAYMENT_REVIEW)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.PAYMENT_REVIEW),
-        severity: escalateSeverity('warning', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.PAYMENT_REVIEW),
-        detectedAt,
-        title: 'Payment review',
-        /**
-         * Grammar guard
-         * -------------
-         * Ensures correct singular/plural operator messaging.
-         */
-        impact:
-          safeSnapshot.queue_manual_review === 1
-            ? '1 order awaiting verification'
-            : `${safeSnapshot.queue_manual_review} orders awaiting verification`,
-
-        metadata: {
-          queue: 'manual_review',
-          affectedOrders: safeSnapshot.queue_manual_review,
-        },
-
-        actions: [
-          {
-            id: 'review_payments',
-            label: 'Review orders',
-            actionType: 'open_manual_review_orders',
-          },
-        ],
-      });
+      signals.push(
+        createPaymentReviewSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.PAYMENT_REVIEW),
+          escalateSeverity('warning', detectedAt),
+          signalId(SIGNAL_IDS.PAYMENT_REVIEW)
+        )
+      );
     }
   };
-
-    /**
-   * Payment pending queue
-   * ---------------------
-   * Orders awaiting payment capture or confirmation.
-   *
-   * Projection source:
-   * orders_operational_control_snapshot.pending_payment
-   *
-   * NOTE
-   * ----
-   * This signal exists to ensure all snapshot metrics
-   * emitted by reconciliation are represented in the
-   * operational signal engine.
-   */
-  if (safeSnapshot.pending_payment > 0) {
-    const detectedAt = getDetectedAt(SIGNAL_IDS.PENDING_FULFILLMENT);
-     if (registerSignalType(SIGNAL_IDS.PENDING_FULFILLMENT)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.PENDING_PAYMENTS),
-        severity: escalateSeverity('warning', detectedAt),
-        lifecycle: getLifecycle('pending-payment'),
-        detectedAt,
-
-        title: 'Payment pending',
-
-        /**
-         * Grammar guard
-         * -------------
-         * Ensures correct singular/plural operator messaging.
-         */
-        impact:
-          safeSnapshot.pending_payment === 1
-            ? '1 order awaiting payment'
-            : `${safeSnapshot.pending_payment} orders awaiting payment`,
-
-        metadata: {
-          queue: 'pending_payment',
-          affectedOrders: safeSnapshot.pending_payment,
-        },
-
-        actions: [
-          {
-            id: 'inspect_pending_payments',
-            label: 'Inspect orders',
-            actionType: 'open_pending_payment_orders',
-          },
-        ],
-      });
-    }
-  }
-
-  /**
-   * Work queue
-   * ----------
-   * Orders ready for fulfillment.
-   */
-  if (safeSnapshot.queue_ready_to_ship > 0) {
-    const detectedAt = getDetectedAt(SIGNAL_IDS.READY_TO_SHIP);
-    if (registerSignalType(SIGNAL_IDS.READY_TO_SHIP)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.READY_TO_SHIP),
-        severity: escalateSeverity('info', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.READY_TO_SHIP),
-        detectedAt,
-        title: 'Ready for fulfillment',
-        impact:
-          safeSnapshot.queue_ready_to_ship === 1
-            ? '1 order awaiting fulfillment'
-            : `${safeSnapshot.queue_ready_to_ship} orders awaiting fulfillment`,
-
-        metadata: {
-          queue: 'ready_to_ship',
-          affectedOrders: safeSnapshot.queue_ready_to_ship,
-        },
-
-        batchActions: [
-          /**
-           * Generate pick list
-           * ------------------
-           * Warehouse picking must occur BEFORE
-           * label generation to prevent shipment mix-ups.
-           */
-          {
-            id: 'generate_pick_list',
-            label: 'Generate pick list',
-            actionType: 'generate_pick_list',
-          },
-        ],
-      });
-    }
-  }
 
   /**
    * Customer dependency
    */
-  if (safeSnapshot.queue_awaiting_customer > 0) {
+  if (states.awaitingCustomer) {
     const detectedAt = getDetectedAt(SIGNAL_IDS.AWAITING_CUSTOMER);
     if (registerSignalType(SIGNAL_IDS.AWAITING_CUSTOMER)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.AWAITING_CUSTOMER),
-        severity: escalateSeverity('info', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.AWAITING_CUSTOMER),
-        detectedAt,
-        title: 'Awaiting customer response',
-        impact:
-          safeSnapshot.queue_awaiting_customer === 1
-            ? '1 order blocked'
-            : `${safeSnapshot.queue_awaiting_customer} orders blocked`,
-
-        metadata: {
-          queue: 'awaiting_customer',
-          affectedOrders: safeSnapshot.queue_awaiting_customer,
-        },
-
-        actions: [
-          {
-            id: 'contact_customer',
-            label: 'Contact customer',
-            actionType: 'contact_customer',
-          },
-        ],
-      });
+      signals.push(
+        createAwaitingCustomerSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.AWAITING_CUSTOMER),
+          escalateSeverity('info', detectedAt),
+          signalId(SIGNAL_IDS.AWAITING_CUSTOMER)
+        )
+      );
     }
   }
 
   /**
-   * Fulfillment backlog
+   * STATE-DRIVEN SIGNAL
+   * -------------------
+   * Early aging detection now originates from the
+   * operational state layer rather than raw metrics.
    */
-  if (safeSnapshot.pending_fulfillment > 0) {
-    const detectedAt = getDetectedAt(SIGNAL_IDS.PENDING_PAYMENTS);
-    if (registerSignalType(SIGNAL_IDS.PENDING_PAYMENTS)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.PENDING_FULFILLMENT),
-        severity: escalateSeverity('info', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.PENDING_FULFILLMENT),
-        detectedAt,
-        title: 'Fulfillment backlog',
-        impact:
-          safeSnapshot.pending_fulfillment === 1
-            ? '1 order pending'
-            : `${safeSnapshot.pending_fulfillment} orders pending`,
-
-        metadata: {
-          queue: 'pending_fulfillment',
-          affectedOrders: safeSnapshot.pending_fulfillment,
-        },
-
-        batchActions: [
-          {
-            id: 'start_fulfillment',
-            label: 'Fulfill',
-            actionType: 'start_fulfillment_batch',
-          },
-        ],
-      });
-    }
-  };
-
-  /**
-   * Early aging signal
-   * ------------------
-   * Orders entering early delay window.
-   *
-   * Projection source:
-   * orders_operational_control_snapshot.aging_24h
-   *
-   * This signal provides early operator awareness
-   * before orders escalate into SLA risk.
-   */
-  if (safeSnapshot.aging_24h > 0) {
+  if (states.earlyAging) {
     const detectedAt = getDetectedAt(SIGNAL_IDS.AGING_24H);
 
     if (registerSignalType(SIGNAL_IDS.AGING_24H)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.AGING_24H),
-        severity: escalateSeverity('info', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.AGING_24H),
-        detectedAt,
-
-        title: 'Orders aging beyond 24h',
-
-        /**
-         * Grammar guard
-         */
-        impact:
-          safeSnapshot.aging_24h === 1
-            ? '1 order aging beyond 24 hours'
-            : `${safeSnapshot.aging_24h} orders aging beyond 24 hours`,
-
-        metadata: {
-          queue: 'aging_24h',
-          affectedOrders: safeSnapshot.aging_24h,
-        },
-
-        actions: [
-          {
-            id: 'inspect_aging_orders',
-            label: 'Inspect orders',
-            actionType: 'investigate_aging_orders',
-          },
-        ],
-      });
+      signals.push(
+        createEarlyAgingSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.AGING_24H),
+          escalateSeverity('info', detectedAt),
+          signalId(SIGNAL_IDS.AGING_24H)
+        )
+      );
     }
   };
 
   /**
-   * AGING UNFULFILLED ORDERS
-   * ------------------------
-   * Orders aging beyond normal operational window.
-   *
-   * Trigger:
-   * aging_48h OR aging_72h_plus > 0
-   *
-   * These orders are likely blocked by
-   * operational, warehouse, or system issues.
+   * STATE-DRIVEN SIGNAL
+   * -------------------
+   * Aging orders are emitted from the operational
+   * state detection layer to ensure consistent
+   * state-cluster signal generation.
    */
-  if (safeSnapshot.aging_48h > 0 || safeSnapshot.aging_72h_plus > 0) {
+  if (states.agingOrders) {
 
     const affected =
       safeSnapshot.aging_48h + safeSnapshot.aging_72h_plus;
@@ -875,40 +666,15 @@ function escalateSeverity(
 
     if (registerSignalType(SIGNAL_IDS.AGING_ORDERS)) {
 
-      signals.push({
-        id: signalId(SIGNAL_IDS.AGING_ORDERS),
-        severity: escalateSeverity('critical', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.AGING_ORDERS),
-        detectedAt,
-
-        title: '1 order unfulfilled > 48 hours',
-
-        impact:
-          affected === 1
-            ? '1 order unfulfilled > 48 hours'
-            : `${affected} orders unfulfilled > 48 hours`,
-
-        metadata: {
-          aging_48h: safeSnapshot.aging_48h,
-          aging_72h_plus: safeSnapshot.aging_72h_plus,
-        },
-
-        actions: [
-          {
-            id: 'investigate_orders',
-            label: 'Investigate orders',
-            actionType: 'investigate_orders',
-          },
-        ],
-
-        batchActions: [
-          {
-            id: 'prioritize_orders',
-            label: 'Prioritize fulfillment',
-            actionType: 'investigate_aging_orders',
-          },
-        ],
-      });
+      signals.push(
+        createAgingOrdersSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.AGING_ORDERS),
+          escalateSeverity('critical', detectedAt),
+          signalId(SIGNAL_IDS.AGING_ORDERS)
+        )
+      );
     }
   }
 
@@ -920,51 +686,21 @@ function escalateSeverity(
    *
    * Derived from snapshot exception_orders.
    */
-  if (safeSnapshot.exception_orders > 0) {
+  if (states.operationalException) {
 
     const detectedAt = getDetectedAt(SIGNAL_IDS.OPERATIONAL_EXCEPTION);
 
     if (registerSignalType(SIGNAL_IDS.OPERATIONAL_EXCEPTION)) {
 
-      signals.push({
-        id: signalId(SIGNAL_IDS.OPERATIONAL_EXCEPTION),
-        severity: escalateSeverity('critical', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.OPERATIONAL_EXCEPTION),
-        detectedAt,
-
-        title: 'Operational exception detected',
-
-        /**
-         * Grammar normalization
-         * ---------------------
-         * Aligns wording with other operational queue signals
-         * using consistent "orders needing action" phrasing.
-         */
-        impact:
-          safeSnapshot.exception_orders === 1
-            ? '1 order needs intervention'
-            : `${safeSnapshot.exception_orders} orders need intervention`,
-
-        metadata: {
-          exception_orders: safeSnapshot.exception_orders,
-        },
-
-        actions: [
-          {
-            id: 'inspect_exception_orders',
-            label: 'Inspect orders',
-            actionType: 'inspect_exception_orders',
-          },
-        ],
-
-        batchActions: [
-          {
-            id: 'contact_warehouse',
-            label: 'Contact warehouse',
-            actionType: 'contact_warehouse',
-          },
-        ],
-      });
+      signals.push(
+        createOperationalExceptionSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.OPERATIONAL_EXCEPTION),
+          escalateSeverity('critical', detectedAt),
+          signalId(SIGNAL_IDS.OPERATIONAL_EXCEPTION)
+        )
+      );
     }
   }
 
@@ -978,108 +714,68 @@ function escalateSeverity(
    * Projection source:
    * orders_operational_control_snapshot.constrained_orders
    */
-  if (safeSnapshot.constrained_orders > 0) {
+  if (states.fulfillmentConstraint) {
     const detectedAt = getDetectedAt(SIGNAL_IDS.CONSTRAINED_ORDERS);
 
     if (registerSignalType(SIGNAL_IDS.CONSTRAINED_ORDERS)) {
-      signals.push({
-        id: signalId(SIGNAL_IDS.CONSTRAINED_ORDERS),
-        severity: escalateSeverity('warning', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.CONSTRAINED_ORDERS),
-        detectedAt,
-
-        title: 'Orders blocked by constraints',
-
-        /**
-         * Grammar guard
-         */
-        impact:
-          safeSnapshot.constrained_orders === 1
-            ? '1 order blocked by operational constraints'
-            : `${safeSnapshot.constrained_orders} orders blocked by operational constraints`,
-
-        metadata: {
-          queue: 'constrained_orders',
-          affectedOrders: safeSnapshot.constrained_orders,
-        },
-
-        actions: [
-          {
-            id: 'inspect_constrained_orders',
-            label: 'Inspect orders',
-            actionType: 'inspect_constrained_orders',
-          },
-        ],
-      });
+      signals.push(
+        createFulfillmentConstraintSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.CONSTRAINED_ORDERS),
+          escalateSeverity('warning', detectedAt),
+          signalId(SIGNAL_IDS.CONSTRAINED_ORDERS)
+        )
+      );
     }
   }
 
   /**
-   * PAYMENT RETRY REQUIRED
-   * ----------------------
-   * Orders blocked due to failed or incomplete payment.
+   * PAYMENT SIGNAL CONSOLIDATION
+   * ----------------------------
+   * Payment lifecycle signals must be unified into a
+   * single operational signal cluster.
    *
-   * Trigger:
-   * pending_payment > 0
+   * The "Payment retry required" signal represents the
+   * actionable operational state.
+   *
+   * The previous "Payment pending" signal caused duplicate
+   * signals from the same metric (pending_payment).
+   *
+   * This block is intentionally disabled to preserve code
+   * history while preventing duplicate payment signals.
    */
-  if (safeSnapshot.pending_payment > 0) {
+  if (states.paymentProblem) {
 
     const detectedAt = getDetectedAt(SIGNAL_IDS.PAYMENT_RETRY);
 
     if (registerSignalType(SIGNAL_IDS.PAYMENT_RETRY)) {
 
-      signals.push({
-        id: signalId(SIGNAL_IDS.PAYMENT_RETRY),
-        severity: escalateSeverity('critical', detectedAt),
-        lifecycle: getLifecycle(SIGNAL_IDS.PAYMENT_RETRY),
-        detectedAt,
-
-        title: 'Payment retry required',
-
-        /**
-         * Grammar guard
-         * -------------
-         * Ensures correct singular/plural rendering in UI.
-         */
-        impact:
-          safeSnapshot.pending_payment === 1
-            ? '1 order requires payment retry'
-            : `${safeSnapshot.pending_payment} orders require payment retry`,
-
-        metadata: {
-          pending_payment: safeSnapshot.pending_payment,
-        },
-
-        actions: [
-          {
-            id: 'review_payment_orders',
-            label: 'Review orders',
-            actionType: 'review_payment_orders',
-          },
-        ],
-
-        batchActions: [
-          {
-            id: 'contact_customer_payment',
-            label: 'Contact customer',
-            actionType: 'contact_customer_payment',
-          },
-        ],
-      });
+      signals.push(
+        createPaymentProblemSignal(
+          safeSnapshot,
+          detectedAt,
+          getLifecycle(SIGNAL_IDS.PAYMENT_RETRY),
+          escalateSeverity('critical', detectedAt),
+          signalId(SIGNAL_IDS.PAYMENT_RETRY)
+        )
+      );
     }
   }
 
 /**
- * PARTIAL FULFILLMENT OPPORTUNITY
- * --------------------------------
- * Orders contain both:
- * - in-stock items
- * - out-of-stock items
+ * FULFILLMENT CONSTRAINT CLUSTERING
+ * ---------------------------------
+ * Partial fulfillment opportunity belongs to the same
+ * operational constraint cluster as "Orders blocked by constraints".
  *
- * Allows warehouse to ship available items
- * while backordering remaining SKUs.
+ * Emitting both as independent signals increases operator
+ * cognitive load and fragments the fulfillment constraint state.
+ *
+ * This block is temporarily disabled until the constraint
+ * cluster signal is fully implemented.
  */
-if (safeSnapshot.partial_fulfillment_opportunity > 0) {
+if (false && safeSnapshot.partial_fulfillment_opportunity > 0) {
 
   const detectedAt = getDetectedAt(SIGNAL_IDS.PARTIAL_FULFILLMENT);
 
@@ -1121,6 +817,138 @@ if (safeSnapshot.partial_fulfillment_opportunity > 0) {
     });
   }
 }
+
+
+  /**
+   * QUEUE VS SIGNAL SEPARATION
+   * --------------------------
+   * Fulfillment backlog represents operational workload,
+   * not a system alert.
+   *
+   * This queue will be rendered in the future Work Queue
+   * surface rather than the Operational Signals surface.
+   */
+  if (false && safeSnapshot.pending_fulfillment > 0) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.PENDING_FULFILLMENT);
+    if (registerSignalType(SIGNAL_IDS.PENDING_FULFILLMENT)) {
+      signals.push({
+        id: signalId(SIGNAL_IDS.PENDING_FULFILLMENT),
+        severity: escalateSeverity('info', detectedAt),
+        lifecycle: getLifecycle(SIGNAL_IDS.PENDING_FULFILLMENT),
+        detectedAt,
+        title: 'Fulfillment backlog',
+        impact:
+          safeSnapshot.pending_fulfillment === 1
+            ? '1 order pending'
+            : `${safeSnapshot.pending_fulfillment} orders pending`,
+
+        metadata: {
+          queue: 'pending_fulfillment',
+          affectedOrders: safeSnapshot.pending_fulfillment,
+        },
+
+        batchActions: [
+          {
+            id: 'start_fulfillment',
+            label: 'Fulfill',
+            actionType: 'start_fulfillment_batch',
+          },
+        ],
+      });
+    }
+  };
+
+      /**
+   * Payment pending queue
+   * ---------------------
+   * Orders awaiting payment capture or confirmation.
+   *
+   * Projection source:
+   * orders_operational_control_snapshot.pending_payment
+   *
+   * NOTE
+   * ----
+   * This signal exists to ensure all snapshot metrics
+   * emitted by reconciliation are represented in the
+   * operational signal engine.
+   */
+  if (false && safeSnapshot.pending_payment > 0) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.PENDING_PAYMENTS);
+     if (registerSignalType(SIGNAL_IDS.PENDING_PAYMENTS)) {
+      signals.push({
+        id: signalId(SIGNAL_IDS.PENDING_PAYMENTS),
+        severity: escalateSeverity('warning', detectedAt),
+        lifecycle: getLifecycle('pending-payment'),
+        detectedAt,
+
+        title: 'Payment pending',
+
+        /**
+         * Grammar guard
+         * -------------
+         * Ensures correct singular/plural operator messaging.
+         */
+        impact:
+          safeSnapshot.pending_payment === 1
+            ? '1 order awaiting payment'
+            : `${safeSnapshot.pending_payment} orders awaiting payment`,
+
+        metadata: {
+          queue: 'pending_payment',
+          affectedOrders: safeSnapshot.pending_payment,
+        },
+
+        actions: [
+          {
+            id: 'inspect_pending_payments',
+            label: 'Inspect orders',
+            actionType: 'open_pending_payment_orders',
+          },
+        ],
+      });
+    }
+  }
+
+  /**
+   * Work queue
+   * ----------
+   * Orders ready for fulfillment.
+   */
+  if (false && safeSnapshot.queue_ready_to_ship > 0) {
+    const detectedAt = getDetectedAt(SIGNAL_IDS.READY_TO_SHIP);
+    if (registerSignalType(SIGNAL_IDS.READY_TO_SHIP)) {
+      signals.push({
+        id: signalId(SIGNAL_IDS.READY_TO_SHIP),
+        severity: escalateSeverity('info', detectedAt),
+        lifecycle: getLifecycle(SIGNAL_IDS.READY_TO_SHIP),
+        detectedAt,
+        title: 'Ready for fulfillment',
+        impact:
+          safeSnapshot.queue_ready_to_ship === 1
+            ? '1 order awaiting fulfillment'
+            : `${safeSnapshot.queue_ready_to_ship} orders awaiting fulfillment`,
+
+        metadata: {
+          queue: 'ready_to_ship',
+          affectedOrders: safeSnapshot.queue_ready_to_ship,
+        },
+
+        batchActions: [
+          /**
+           * Generate pick list
+           * ------------------
+           * Warehouse picking must occur BEFORE
+           * label generation to prevent shipment mix-ups.
+           */
+          {
+            id: 'generate_pick_list',
+            label: 'Generate pick list',
+            actionType: 'generate_pick_list',
+          },
+        ],
+      });
+    }
+  }
 
   /**
    * Resolve signals that disappeared from snapshot
