@@ -43,16 +43,28 @@ export function OperationsQueueSection({
 }: OperationsQueueSectionProps) {
 
   /**
-   * Computes human-readable signal age.
+   * Formats signal detection age.
    *
-   * NOTE
-   * ----
-   * This is a pure formatting helper.
-   * It does NOT change signal ordering or logic.
+   * Guardrails:
+   * - Prevents invalid timestamps from producing
+   *   multi-decade time deltas.
+   * - Ensures UI never displays corrupted operational age.
    */
   function formatSignalAge(detectedAt: string): string {
-    const now = Date.now();
+    if (!detectedAt) {
+      return 'unknown';
+    }
+
     const detected = new Date(detectedAt).getTime();
+
+    /**
+     * Invalid timestamp guard
+     */
+    if (Number.isNaN(detected) || detected <= 0) {
+      return 'unknown';
+    }
+
+    const now = Date.now();
     const diffMinutes = Math.floor((now - detected) / 60000);
 
     if (diffMinutes < 1) return 'just now';
@@ -62,6 +74,16 @@ export function OperationsQueueSection({
     const diffHours = Math.floor(diffMinutes / 60);
 
     if (diffHours === 1) return '1 hour ago';
+
+    /**
+     * Prevent unrealistic operational age
+     * (signals older than 30 days indicate upstream issue)
+     */
+    if (diffHours > 720) {
+      console.warn('[OperationsQueue] Invalid signal timestamp', detectedAt);
+      return 'timestamp error';
+    }
+
     return `${diffHours} hours ago`;
   }
 
@@ -79,6 +101,23 @@ export function OperationsQueueSection({
    *   FT2 resolver layer
    */
   const orderedSignals = signals;
+
+  /**
+   * DEBUG SIGNAL EXPOSURE
+   * ---------------------
+   * Provides runtime visibility into the operational
+   * signal payload for audit and diagnostics.
+   *
+   * This is intentionally attached to the window object
+   * so engineers can inspect the exact signal payload
+   * the UI receives.
+   *
+   * Example:
+   *   window.__LAST_OPERATIONAL_SIGNALS__
+   */
+  if (typeof window !== 'undefined') {
+    (window as any).__LAST_OPERATIONAL_SIGNALS__ = orderedSignals;
+  }
 
   /**
    * EMPTY STATE
@@ -144,10 +183,30 @@ export function OperationsQueueSection({
           {/** SIGNAL ROW 2
           * ------------
           * Operational context.
-          * Shows scale of impact and signal age. */}
+          * 🚨 Operational exception detected
+              [NEW]
+              8 orders need intervention
+              $742 revenue at risk
+          */}
           <PanelRow
             label={signal.impact}
-            value={formatSignalAge(signal.detectedAt)}
+            value={
+              signal.impactDetail ??
+              (
+                /**
+                 * Operational aging fallback
+                 * --------------------------
+                 * Must NOT rely on truthiness because `0` is a valid
+                 * deterministic output from the signal builder.
+                 *
+                 * Explicit null/undefined guard ensures metadata
+                 * visibility during debugging and prevents silent UI gaps.
+                 */
+                signal.metadata?.oldest_waiting_hours !== undefined
+                  ? `Oldest order waiting: ${signal.metadata.oldest_waiting_hours}h`
+                  : ''
+              )
+            }
           />
 
           {((signal.actions && signal.actions.length > 0) ||

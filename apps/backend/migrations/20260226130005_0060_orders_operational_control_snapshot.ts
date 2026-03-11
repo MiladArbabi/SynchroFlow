@@ -102,6 +102,16 @@ export async function up(knex: Knex): Promise<void> {
         .notNullable()
         .defaultTo(0);
 
+      /**
+       * AGING UNDER 24H
+       * ----------------
+       * Newly created backlog orders that have not yet
+       * crossed the 24h operational aging threshold.
+       */
+      table.integer('aging_under_24h')
+        .notNullable()
+        .defaultTo(0);
+
       table.integer('aging_24h')
         .notNullable()
         .defaultTo(0);

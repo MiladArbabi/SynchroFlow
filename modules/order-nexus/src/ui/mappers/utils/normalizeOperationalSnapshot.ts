@@ -50,9 +50,14 @@ export function normalizeOperationalSnapshot(
     aging_24h: safeMetric(snapshot.aging_24h, warn),
     aging_48h: safeMetric(snapshot.aging_48h, warn),
     aging_72h_plus: safeMetric(snapshot.aging_72h_plus, warn),
+
     exception_orders: safeMetric(snapshot.exception_orders, warn),
     constrained_orders: safeMetric(snapshot.constrained_orders, warn),
     pending_payment: safeMetric(snapshot.pending_payment, warn),
-    partial_fulfillment_opportunity: safeMetric(snapshot.partial_fulfillment_opportunity, warn)
+    partial_fulfillment_opportunity: safeMetric(snapshot.partial_fulfillment_opportunity, warn),
+
+    revenue_blocked_inventory: safeMetric(snapshot.revenue_blocked_inventory, warn),
+    revenue_blocked_customer: safeMetric(snapshot.revenue_blocked_customer, warn),
+    revenue_blocked_operational: safeMetric(snapshot.revenue_blocked_operational, warn)
   };
 }

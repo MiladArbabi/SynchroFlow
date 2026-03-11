@@ -149,5 +149,4 @@ export const signalRegistry: SignalRegistryEntry[] = [
         signalId('aging-orders')
       )
   }
-
 ];

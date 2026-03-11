@@ -17,7 +17,13 @@ import type {
 } from '../../../contracts/operationalSignals.js';
 
 export function createOperationalExceptionSignal(
-  snapshot: { exception_orders: number },
+  snapshot: {
+    exception_orders: number
+    revenue_blocked_operational: number, 
+    aging_24h: number;
+    aging_48h: number;
+    aging_72h_plus: number;
+  },
   detectedAt: string,
   lifecycle: OperationalSignalLifecycle,
   severity: OperationalSignalSeverity,
@@ -37,8 +43,48 @@ export function createOperationalExceptionSignal(
         ? '1 order needs intervention'
         : `${snapshot.exception_orders} orders need intervention`,
 
+    /**
+     * Financial exposure
+     * ------------------
+     * Only emit impactDetail when revenue is actually at risk.
+     *
+     * If revenue = 0 we intentionally omit the field so the UI
+     * falls back to operational aging context (oldest_waiting_hours).
+     */
+    impactDetail:
+      snapshot.revenue_blocked_operational > 0
+        ? `$${snapshot.revenue_blocked_operational.toLocaleString()} revenue at risk`
+        : undefined,
+
     metadata: {
       exception_orders: snapshot.exception_orders,
+
+      /**
+       * Oldest waiting order age
+       * ------------------------
+       * Derives urgency context from aging buckets.
+       *
+       * IMPORTANT
+       * If exception orders exist but none fall into
+       * aging buckets, the snapshot is inconsistent.
+       *
+       * We surface 24h as a deterministic lower bound
+       * and emit a console warning to prevent silent
+       * operational blindness.
+       */
+      oldest_waiting_hours:
+        snapshot.aging_72h_plus > 0
+          ? 72
+          : snapshot.aging_48h > 0
+          ? 48
+          : snapshot.aging_24h > 0
+          ? 24
+          : snapshot.exception_orders > 0
+          ? (console.warn(
+              '[OperationalSignals] Exception orders detected without aging bucket coverage',
+              snapshot
+            ), 24)
+          : 0
     },
 
     actions: [

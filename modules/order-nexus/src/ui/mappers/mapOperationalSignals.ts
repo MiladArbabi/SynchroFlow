@@ -109,12 +109,7 @@ const SIGNAL_IDS = {
  * This prevents projection → UI drift.
  */
 const SNAPSHOT_FIELD_COVERAGE: Record<string, 'signal' | 'ignored'> = {
-  queue_manual_review: 'signal',
-  queue_awaiting_inventory: 'signal',
-  queue_ready_to_ship: 'signal',
-  queue_awaiting_customer: 'signal',
   orders_at_sla_risk: 'signal',
-  pending_fulfillment: 'signal',
   pending_payment: 'signal',
   aging_24h: 'signal',
   aging_48h: 'signal',
@@ -122,6 +117,25 @@ const SNAPSHOT_FIELD_COVERAGE: Record<string, 'signal' | 'ignored'> = {
   exception_orders: 'signal',
   constrained_orders: 'signal',
   partial_fulfillment_opportunity: 'signal'
+
+  /**
+   * Work Queue metrics
+   *
+   * These metrics represent operational workload and MUST NOT
+   * be processed by the signal engine.
+   *
+   * They are consumed exclusively by the Work Queue mapper
+   * (`mapWorkQueues.ts`) and rendered via `WorkQueueSection`.
+   *
+   * Architectural rule:
+   *   Signals → problems
+   *   Queues  → workload
+   */
+  // queue_manual_review
+  // queue_awaiting_inventory
+  // queue_ready_to_ship
+  // queue_awaiting_customer
+  // pending_fulfillment
 };
 
 
@@ -133,19 +147,19 @@ export function mapOperationalSignals(
     normalizeOperationalSnapshot(snapshot);
 
   /**
-   * Deterministic evaluation timestamp
-   * ----------------------------------
-   * Must originate from the reconciliation projection.
+   * Snapshot evaluation timestamp
+   * -----------------------------
    *
-   * The signal engine must never rely on wall-clock time
-   * because the Control Tower architecture requires
-   * deterministic rebuilds from projection state.
+   * OperationalControlSnapshot does not contain
+   * a timestamp field.
    *
-   * If projection time is unavailable we fallback to 0
-   * to preserve deterministic behavior during testing.
+   * Therefore the signal engine uses the evaluation
+   * cycle time as the detection baseline.
+   *
+   * This timestamp is passed into the lifecycle engine
+   * to generate signal detection timestamps.
    */
-  const evaluationTime =
-    (safeSnapshot as any).__projection_evaluated_at ?? 0;
+  const evaluationTime = Date.now();
 
   /**
    * Runtime invariant guard

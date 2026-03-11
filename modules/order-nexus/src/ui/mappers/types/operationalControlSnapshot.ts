@@ -16,11 +16,18 @@ export type OperationalControlSnapshot = {
   queue_awaiting_customer: number;
   orders_at_sla_risk: number;
   pending_fulfillment: number;
+  
   aging_24h: number;
   aging_48h: number;
   aging_72h_plus: number;
+
   exception_orders: number;
   pending_payment: number;
   constrained_orders: number;
   partial_fulfillment_opportunity: number;
+
+  /* revenue exposure */
+  revenue_blocked_inventory: number
+  revenue_blocked_customer: number
+  revenue_blocked_operational: number
 };

@@ -29,38 +29,6 @@ export async function getOrderNexusFt2StateSnapshot(
   const fulfillmentIntelligence =
     deriveOrderFulfillmentIntelligence(fulfillmentFacts);
 
-  /**
-   * ECONOMIC PROJECTION SOURCE
-   * --------------------------
-   * Revenue metrics are NOT derived here.
-   *
-   * Canonical revenue projections are materialized by
-   * the reconciliation engine into:
-   *
-   *   orders_operational_control_snapshot
-   *
-   * This resolver must only read those projections to
-   * guarantee deterministic rebuild equivalence.
-   */
-
-  /**
-   * REVENUE SOURCE OF TRUTH
-   * -----------------------
-   * Revenue must NEVER be recomputed inside resolvers.
-   *
-   * Canonical economic projections are produced by the
-   * reconciliation engine and materialized into:
-   *
-   *   orders_operational_control_snapshot
-   *
-   * This resolver must only READ those projections.
-   *
-   * Reason:
-   * - Prevent projection drift
-   * - Ensure deterministic rebuild equivalence
-   * - Keep UI metrics aligned with reconciliation layer
-   */
-
   // Refunds (lifetime)
   const refundsFacts = await extractRefundsFacts(shopId);
 

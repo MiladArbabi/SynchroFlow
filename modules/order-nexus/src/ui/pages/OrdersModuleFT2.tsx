@@ -23,6 +23,9 @@ import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
 import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
 import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 
+import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
+import { WorkQueueSection } from '../components/WorkQueueSection.js';
+
 /**
  * OPERATIONS QUEUE
  * ----------------
@@ -273,6 +276,17 @@ export default function OrdersModuleFT2(
      */
     const operationalSignals = mapOperationalSignals(operationalControl);
 
+    /**
+     * Workload queue mapping
+     *
+     * Converts projection metrics into
+     * operational workload queues.
+     *
+     * Source:
+     * orders_operational_control_snapshot
+     */
+    const workQueues = mapWorkQueues(operationalControl);
+
   return (
     <FT2Layout>
       <div
@@ -297,14 +311,28 @@ export default function OrdersModuleFT2(
       >
 
         {/* Queue spans vertically */}
-        <div
-          style={{}}
-        >
+        <div>
           <OperationsQueueSection
             signals={operationalSignals}
             onAction={handleOperationsAction}
           />
         </div>
+
+          {/* ---------------------------------------------------------
+             WORK QUEUE SURFACE
+             ---------------------------------------------------------
+             Displays operational workload derived directly
+             from reconciliation projection.
+          
+             Architectural separation:
+             Signals → problems
+             Queues  → workload
+          --------------------------------------------------------- */}
+          <div>
+          <WorkQueueSection
+            queues={workQueues}
+          />
+          </div>
 
         <OrdersOverviewInfoBlock orders={orders} />
 

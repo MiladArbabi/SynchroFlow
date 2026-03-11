@@ -17,7 +17,10 @@ import type {
 } from '../../../contracts/operationalSignals.js';
 
 export function createPaymentProblemSignal(
-  snapshot: { pending_payment: number },
+  snapshot: {
+    pending_payment: number
+    revenue_blocked_customer: number
+  },
   detectedAt: string,
   lifecycle: OperationalSignalLifecycle,
   severity: OperationalSignalSeverity,
@@ -36,6 +39,15 @@ export function createPaymentProblemSignal(
       snapshot.pending_payment === 1
         ? '1 order requires payment retry'
         : `${snapshot.pending_payment} orders require payment retry`,
+
+    /**
+     * Financial exposure
+     * ------------------
+     * Always emit impactDetail to prevent UI fallback
+     * to metadata counts.
+     */
+    impactDetail:
+      `$${snapshot.revenue_blocked_customer.toLocaleString()} revenue at risk`,
 
     metadata: {
       pending_payment: snapshot.pending_payment,

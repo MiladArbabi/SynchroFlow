@@ -2,6 +2,7 @@
 import db from '@lasyncro/backend-core/db.js';
 import { getQueueChannel } from '../../queue.js';
 import { reconcileOrderFulfillment } from './reconciliation.handlers.js';
+import { computeShopOperationalSnapshot } from '../projections/shopOperationalSnapshot.worker.js';
 
 const QUEUE = 'fulfillment.reconciliation';
 
@@ -128,6 +129,27 @@ export function startReconciliationConsumer() {
         aggregateVersion,
         normalizedObserved
       );
+
+      /**
+       * SHOP SNAPSHOT RECOMPUTATION
+       * ---------------------------
+       * Executed after reconciliation completes.
+       *
+       * This guarantees:
+       * - Full shop state evaluation
+       * - No partial-state snapshots
+       * - Deterministic rebuild compatibility
+       */
+      const shopRow = await db('orders')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .select('shop_id')
+        .first();
+
+      if (!shopRow?.shop_id) {
+        throw new Error('[SNAPSHOT_INVARIANT] shop_id missing for order');
+      }
+
+      await computeShopOperationalSnapshot(shopRow.shop_id);
 
       ch.ack(msg);
       
