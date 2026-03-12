@@ -27,6 +27,16 @@ export type ProjectionHandler = (params: {
   trx: Knex.Transaction;
 }) => Promise<void>;
 
+/**
+ * EVENT NORMALIZATION
+ * -------------------
+ * Shopify historical ingestion produces `orders/sync`
+ * while live webhooks produce `orders/create`.
+ *
+ * Both represent the same semantic event and must
+ * be projected through the same handler to preserve
+ * deterministic rebuild guarantees.
+ */
 export const projectionRegistry: Record<string, ProjectionHandler> = {
   'orders/create': handleOrdersCreate,
   'orders/sync': handleOrdersCreate,

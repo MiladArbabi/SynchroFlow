@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import crypto from 'crypto';
+import { v5 as uuidv5 } from 'uuid';
 
 /**
  * ORDER CONSTRAINT PROJECTION
@@ -14,6 +14,10 @@ import crypto from 'crypto';
  * - append-only lifecycle
  * - event-time anchored
  */
+
+const CONSTRAINT_EVENT_NAMESPACE =
+  'a9b7c6d4-4f8a-4c1b-b7b6-1c9a2e5d7f91';
+
 export async function projectOrderConstraints(
   trx: Knex.Transaction,
   orderId: string,
@@ -48,11 +52,10 @@ export async function projectOrderConstraints(
 
     if (isActive && !activeEvent) {
 
-      const constraintEventId = crypto
-        .createHash('sha256')
-        .update(`inventory:${orderId}:${aggregateVersion}`)
-        .digest('hex')
-        .slice(0, 32);
+      const constraintEventId = uuidv5(
+        `${type}:${orderId}:${aggregateVersion}`,
+        CONSTRAINT_EVENT_NAMESPACE
+      );
 
       await trx('order_constraint_events').insert({
         constraint_event_id: constraintEventId,

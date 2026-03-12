@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 
 import { runSchemaGuard } from '../utils/schemaGuard.js';
 import { reconcileOrderFulfillment } from '../workers/reconciliation/reconciliation.handlers.js';
+import { computeShopOperationalSnapshot } from '../workers/projections/shopOperationalSnapshot.worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -312,12 +313,65 @@ async function main() {
   await replayEvents();
 
   /**
+   * REBUILD INTENT REGENERATION
+   * ---------------------------
+   * Projection replay creates orders but reconciliation
+   * normally depends on runtime intent generation.
+   *
+   * During deterministic rebuild the intent table was
+   * truncated earlier, so we regenerate intents directly
+   * from the orders table.
+   *
+   * Guarantees:
+   * - reconciliation runs for every order
+   * - deterministic rebuild reproducibility
+   * - projection handlers remain side-effect free
+   */
+  console.log('[REBUILD] Regenerating reconciliation intents...');
+
+  await db.raw(`
+    INSERT INTO order_reconciliation_intents (
+      lasyncro_order_id,
+      aggregate_version,
+      created_at
+    )
+    SELECT
+      lasyncro_order_id,
+      aggregate_version,
+      order_created_at
+    FROM orders
+    ON CONFLICT (lasyncro_order_id, aggregate_version) DO NOTHING
+  `);
+
+  /**
    * RECONCILIATION PHASE
    * --------------------
    * Required for deterministic rebuild because
    * runtime reconciliation normally occurs via worker.
    */
   await executeReconciliationIntents();
+
+  /**
+   * REBUILD SNAPSHOT RECONSTRUCTION
+   * --------------------------------
+   * Runtime system computes shop operational snapshots
+   * inside the reconciliation worker.
+   *
+   * Rebuild bypasses the queue layer, therefore snapshots
+   * must be recomputed explicitly here.
+   *
+   * Guarantees:
+   * - deterministic reconstruction of operational control state
+   * - parity with runtime worker pipeline
+   */
+  console.log('[REBUILD] Recomputing shop operational snapshots...');
+
+  const shops = await db('orders')
+    .distinct('shop_id');
+
+  for (const row of shops) {
+    await computeShopOperationalSnapshot(row.shop_id);
+  }
 
   /**
    * REBUILD PURITY RULE

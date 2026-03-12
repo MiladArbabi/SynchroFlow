@@ -74,7 +74,15 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
         .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
         .where('o.shop_id', shopId)
-        .andWhereNot('o.order_status', 'fulfilled')
+        /**
+         * PENDING REVENUE FILTER
+         * ----------------------
+         * Orders table does not contain order_status.
+         * Fulfillment state is represented in
+         * order_fulfillment_status.status.
+         */
+        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+        .andWhereNot('ofs.status', 'fulfilled')
         .sum<{ sum: string }>('runet.net_revenue as sum')
         .first();
 
@@ -110,7 +118,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
         .where('o.shop_id', shopId)
         .select(
-            trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds < 86400) as aging_24h`),
+            trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds < 86400) as aging_under_24h`),
             trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds >= 86400 AND age_since_paid_seconds < 172800) as aging_48h`),
             trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds >= 172800) as aging_72h_plus`)
         )
@@ -133,6 +141,20 @@ export async function computeShopOperationalSnapshot(shopId: string) {
             `)
         )
         .first();
+    
+    /**
+     * BLOCKED REVENUE TOTAL
+     * ---------------------
+     * The snapshot schema requires a unified blocked_revenue field.
+     * It represents the sum of all constraint categories.
+     *
+     * This must be computed deterministically from the
+     * per-constraint revenue already calculated above.
+     */
+    const blockedRevenueTotal =
+    Number((blockedRevenueRows as any)?.inventory_blocked ?? 0) +
+    Number((blockedRevenueRows as any)?.customer_blocked ?? 0) +
+    Number((blockedRevenueRows as any)?.operational_blocked ?? 0);
 
     /**
      * SHOP OPERATIONAL METRICS
@@ -145,8 +167,9 @@ export async function computeShopOperationalSnapshot(shopId: string) {
 
     const pendingFulfillmentRow = await trx('orders')
         .where({ shop_id: shopId })
-        .andWhereNot('order_status', 'fulfilled')
-        .count<{ count: string }>('lasyncro_order_id as count')
+        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'orders.lasyncro_order_id')
+        .andWhereNot('ofs.status', 'fulfilled')
+        .count<{ count: string }>('orders.lasyncro_order_id as count')
         .first();
 
     const exceptionOrdersRow = await trx('order_constraint_events')
@@ -170,12 +193,26 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .andWhere('oas.age_since_paid_seconds', '>', 86400)
         .count<{ count: string }>('oas.lasyncro_order_id as count')
         .first();
+    
+    /**
+     * MATERIALIZE SLA RISK COUNT
+     * --------------------------
+     * Snapshot schema requires a concrete integer value.
+     * Avoid passing raw DB row structures into snapshot writes.
+     */
+    const ordersAtSlaRisk = Number(ordersAtSlaRiskRow?.count ?? 0);
 
+    /**
+     * PAYMENT STATE SOURCE OF TRUTH
+     * -----------------------------
+     * Orders table does not contain `financial_status`.
+     * Canonical column is `payment_state` derived during ingestion.
+     */
     const pendingPaymentRow = await trx('orders')
-        .where({ shop_id: shopId })
-        .andWhere('financial_status', 'pending')
-        .count<{ count: string }>('lasyncro_order_id as count')
-        .first();
+    .where({ shop_id: shopId })
+    .andWhere('payment_state', 'unpaid')
+    .count<{ count: string }>('orders.lasyncro_order_id as count')
+    .first();
 
     /**
      * QUEUE METRICS
@@ -197,8 +234,9 @@ export async function computeShopOperationalSnapshot(shopId: string) {
 
     const queueReadyToShip = await trx('orders')
         .where({ shop_id: shopId })
-        .andWhere('order_status', 'pending')
-        .count<{ count: string }>('lasyncro_order_id as count')
+        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'orders.lasyncro_order_id')
+        .andWhere('ofs.status', 'pending')
+        .count<{ count: string }>('orders.lasyncro_order_id as count')
         .first();
     
     /**
@@ -224,6 +262,16 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .andWhere('oce.is_active', true)
         .max('oas.age_since_paid_seconds as max')
         .first();
+    
+    /**
+     * REVENUE LEAKAGE
+     * ---------------
+     * Placeholder deterministic computation until
+     * a dedicated leakage model is introduced.
+     *
+     * Uses at-risk revenue as conservative signal.
+     */
+    const revenueLeakage = Number(atRiskRevenueRow?.sum ?? 0);
 
     /**
      * SNAPSHOT WRITE
@@ -246,7 +294,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
              * Derived from order_age_snapshot projection.
              * These buckets expose SLA risk and fulfillment backlog.
              */
-            aging_24h: Number((agingBuckets as any)?.aging_24h ?? 0),
+            aging_under_24h: Number((agingBuckets as any)?.aging_under_24h ?? 0),
             aging_48h: Number((agingBuckets as any)?.aging_48h ?? 0),
             aging_72h_plus: Number((agingBuckets as any)?.aging_72h_plus ?? 0),
 
@@ -259,12 +307,27 @@ export async function computeShopOperationalSnapshot(shopId: string) {
             revenue_blocked_customer: Number((blockedRevenueRows as any)?.customer_blocked ?? 0),
             revenue_blocked_operational: Number((blockedRevenueRows as any)?.operational_blocked ?? 0),
 
+            /**
+             * UNIFIED BLOCKED REVENUE
+             * -----------------------
+             * Required by schema contract.
+             * Represents the total constrained revenue across all block types.
+             */
+            blocked_revenue: blockedRevenueTotal,
+
+            revenue_leakage: revenueLeakage,
+
             pending_fulfillment: Number(pendingFulfillmentRow?.count ?? 0),
             pending_payment: Number(pendingPaymentRow?.count ?? 0),
 
             exception_orders: Number(exceptionOrdersRow?.count ?? 0),
 
-            orders_at_sla_risk: Number(ordersAtSlaRiskRow?.count ?? 0),
+            /**
+             * MATERIALIZED SLA RISK COUNT
+             * ---------------------------
+             * Uses precomputed value to avoid inline DB row coupling.
+             */
+            orders_at_sla_risk: ordersAtSlaRisk,
             constrained_orders: Number(constrainedOrdersRow?.count ?? 0),
             partial_fulfillment_opportunity: Number(partialFulfillmentOpportunity?.count ?? 0),
             oldest_exception_order_age_hours: Number((oldestExceptionAgeRow?.max ?? 0) / 3600),
