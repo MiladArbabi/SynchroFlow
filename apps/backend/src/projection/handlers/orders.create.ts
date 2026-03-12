@@ -170,7 +170,14 @@ export async function handleOrdersCreate({
         })
         .first();
 
-      if (!variantIdentity) continue;
+      if (!variantIdentity) {
+        console.warn('[ORDER_LINE_ITEM_VARIANT_IDENTITY_MISSING]', {
+          shopId: domainEvent.shop_id,
+          externalOrderId,
+          variantId,
+        });
+        continue;
+      }
 
       const variantRow = await trx('variants')
         .where({
@@ -178,7 +185,14 @@ export async function handleOrdersCreate({
         })
         .first();
 
-      if (!variantRow) continue;
+      if (!variantRow) {
+        console.warn('[ORDER_LINE_ITEM_VARIANT_ROW_MISSING]', {
+          shopId: domainEvent.shop_id,
+          externalOrderId,
+          variantId,
+        });
+        continue;
+      }
 
       const quantity = li.quantity ?? 0;
 

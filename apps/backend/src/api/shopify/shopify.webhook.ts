@@ -96,10 +96,26 @@ WebhookRouter.register({
   handle: handleInventoryLevelUpdate,
 });
 
+/**
+ * INVENTORY ITEM METADATA UPDATE
+ * -------------------------------
+ * Shopify emits this when SKU metadata changes
+ * (cost, weight, tracking flags, etc).
+ *
+ * Quantity changes are handled by inventory_levels/update.
+ *
+ * We intentionally do NOT reuse the quantity handler.
+ * This preserves semantic correctness.
+ */
 WebhookRouter.register({
   integration: 'shopify',
   eventType: 'inventory_items/update',
-  handle: handleInventoryLevelUpdate,
+  handle: async (envelope) => {
+    console.info('[SHOPIFY_INVENTORY_ITEM_METADATA_EVENT]', {
+      shopDomain: envelope.shopDomain,
+      eventId: envelope.eventId
+    });
+  },
 });
 
 export async function shopifyWebhookHandler(

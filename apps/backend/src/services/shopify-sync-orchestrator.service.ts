@@ -1,5 +1,23 @@
 // apps/backend/src/services/shopify-sync-orchestrator.service.ts
 
+/**
+ * TELEMETRY TIMESTAMP RULE
+ * ------------------------
+ * This service writes operational telemetry to Specter.
+ *
+ * These timestamps intentionally use wall-clock time
+ * because they represent operator activity signals
+ * rather than deterministic domain state.
+ *
+ * IMPORTANT:
+ * These values MUST NEVER enter:
+ * - domain_events
+ * - projections
+ * - reconciliation state
+ *
+ * They are explicitly excluded from rebuild determinism.
+ */
+
 import { appendEvent, recordShopSession } from "@lasyncro/specter/store/session-store";
 import { performNonPCDSync } from "./shopify-fallback.service.js";
 import { performInitialSync } from "./shopify.service.js";

@@ -71,12 +71,41 @@ export async function enqueueWebhookEnvelope(
     await db.transaction(async trx => {
       const externalEventId = `webhook:${job.integration}:${job.eventId}`;
 
+      /**
+       * CANONICAL EVENT TIME DERIVATION
+       * --------------------------------
+       * Domain events must never use wall-clock timestamps.
+       *
+       * Priority order:
+       * 1. Shopify payload timestamps (created_at / updated_at)
+       * 2. Adapter-derived envelope timestamp
+       *
+       * If none exist → structural ingestion violation.
+       */
+      const payload: any = job.rawPayload;
+
+      const canonicalEventTime =
+        payload?.created_at ??
+        payload?.updated_at ??
+        envelope?.receivedAt ??
+        null;
+
+      if (!canonicalEventTime) {
+        console.error('[WEBHOOK_EVENT_TIME_VIOLATION]', {
+          integration: job.integration,
+          eventType: job.eventType,
+          eventId: job.eventId,
+        });
+
+        throw new Error('[EVENT_TIME_VIOLATION] webhook missing canonical event time');
+      }
+
       const [event] = await trx('domain_events')
         .insert({
           shop_id: envelope.shopId,
           event_type: `webhook/${job.eventType}`,
           event_payload: job,
-          event_time: trx.fn.now(),
+          event_time: new Date(canonicalEventTime),
           event_version: 1,
           external_event_id: externalEventId,
         })

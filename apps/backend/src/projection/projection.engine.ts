@@ -235,6 +235,22 @@ export async function projectDomainEventFromMessage(
       const handler = projectionRegistry[domainEvent.event_type];
 
       /**
+       * HANDLER EXISTENCE GUARD
+       * -----------------------
+       * Domain events without projection handlers must never
+       * fail silently.
+       *
+       * Cursor advancement is still allowed to preserve
+       * forward compatibility and deterministic rebuilds.
+       */
+      if (!handler) {
+        console.warn('[PROJECTION_HANDLER_MISSING]', {
+          event_type: domainEvent.event_type,
+          domain_event_id,
+        });
+      }
+
+      /**
        * HANDLER EXECUTION
        * -----------------
        * Handlers must execute inside the projection transaction.

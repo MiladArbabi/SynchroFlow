@@ -44,6 +44,26 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
   'orders/paid': handleOrdersPaid,
   'orders/fulfilled': handleOrdersFulfilled,
   'refunds/create': handleRefundsCreate,
+  /**
+   * INVENTORY LEVEL UPDATES
+   * -----------------------
+   * Shopify inventory webhooks enter the domain event log
+   * but inventory truth is currently derived from
+   * reconciliation + inventory projection rebuild.
+   *
+   * This handler intentionally performs no mutation.
+   *
+   * Purpose:
+   * - prevent silent projection drop
+   * - provide operational visibility
+   * - preserve deterministic replay behavior
+   */
+  'inventory_levels/update': async ({ domainEvent }) => {
+    console.info('[PROJECTION_INVENTORY_EVENT_OBSERVED]', {
+      shopId: domainEvent.shop_id,
+      eventId: domainEvent.id,
+    });
+  },
   'lifecycle/ft0_completed': handleLifecycleFT0Completed,
   'lifecycle/ft2_confirmed': handleLifecycleFT2Confirmed,
   'lifecycle/first_insight_delivered': handleLifecycleFirstInsightDelivered,

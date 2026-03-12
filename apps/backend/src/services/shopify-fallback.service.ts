@@ -84,6 +84,33 @@ const NON_PCD_QUERIES = {
 export const performNonPCDSync = async (accessToken: string, platformShopName: string, shopId: number, integrationId: number) => {
   console.log(`[ShopifyFallback] Starting non-PCD sync for shopId: ${shopId}`);
 
+  /**
+   * ARCHITECTURE GUARD
+   * ------------------
+   * Fallback sync previously wrote directly to relational tables,
+   * bypassing the domain event log and breaking deterministic rebuilds.
+   *
+   * Until product + inventory domain projections exist,
+   * fallback sync is intentionally disabled.
+   *
+   * We update integration state to provide operator visibility
+   * but DO NOT mutate product/inventory tables.
+   */
+  console.error('[SHOPIFY_FALLBACK_SYNC_DISABLED_ARCHITECTURE_GUARD]', {
+    shopId,
+    integrationId
+  });
+
+  await db('integrations')
+    .where({ id: integrationId })
+    .update({
+      sync_status: 'DISABLED_ARCHITECTURE_GUARD',
+      sync_last_error:
+        'Fallback sync disabled — products/inventory must enter via domain events'
+    });
+
+  return;
+
   const session = new Session({
     id: `session-fallback-${shopId}`,
     shop: platformShopName,
