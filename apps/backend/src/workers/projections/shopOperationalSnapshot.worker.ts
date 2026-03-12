@@ -43,16 +43,20 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     }
 
     /**
-     * SHOP AGGREGATE VERSION
-     * ----------------------
-     * Deterministic version representing shop state.
+     * SHOP SNAPSHOT VERSION SOURCE
+     * ----------------------------
+     * Shop operational snapshot must derive its version
+     * from projection progress rather than order aggregates.
+     *
+     * projection_cursors represents the canonical replay
+     * position of the projection engine.
      */
-    const versionRow = await trx('orders')
-      .where({ shop_id: shopId })
-      .max('aggregate_version as version')
-      .first();
+    const cursorRow = await trx('projection_cursors')
+    .where({ projection_name: 'orders_projection' })
+    .select('last_processed_event_id')
+    .first();
 
-    const aggregateVersion = Number(versionRow?.version ?? 0);
+    const aggregateVersion = Number(cursorRow?.last_processed_event_id ?? 0);
 
     /**
      * REALIZED REVENUE

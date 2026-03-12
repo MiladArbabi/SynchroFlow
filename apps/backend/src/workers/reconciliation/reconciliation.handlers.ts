@@ -220,8 +220,18 @@ export async function reconcileOrderFulfillment(
      * No mutation occurs here.
      */
 
+    /**
+     * DETERMINISTIC REFUND EXECUTION ORDER
+     * ------------------------------------
+     * Refund executions must be replayed in canonical order
+     * to guarantee deterministic rebuild behavior.
+     *
+     * We use created_at because it originates from the
+     * canonical refund domain event.
+     */
     const refundExecutions = await trx('refund_executions')
-      .where({ lasyncro_order_id: lasyncroOrderId });
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .orderBy('created_at', 'asc');
 
     for (const execution of refundExecutions) {
       await resolveRefundExecution(
