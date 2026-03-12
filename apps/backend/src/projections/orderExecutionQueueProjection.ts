@@ -23,19 +23,19 @@ export async function projectExecutionQueues(
 
   const queueManualReview = await trx('order_risk_snapshot')
     .where({ shop_id: shopId })
-    .andWhere('customer_blocked', true)
+    .andWhere('is_customer_blocked', true)
     .count<{ count: string }>('lasyncro_order_id as count')
     .first();
 
   const queueAwaitingInventory = await trx('order_risk_snapshot')
     .where({ shop_id: shopId })
-    .andWhere('inventory_blocked', true)
+    .andWhere('is_inventory_blocked', true)
     .count<{ count: string }>('lasyncro_order_id as count')
     .first();
 
   const queueAwaitingCustomer = await trx('order_risk_snapshot')
     .where({ shop_id: shopId })
-    .andWhere('customer_blocked', true)
+    .andWhere('is_customer_blocked', true)
     .count<{ count: string }>('lasyncro_order_id as count')
     .first();
 

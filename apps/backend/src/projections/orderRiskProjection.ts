@@ -16,6 +16,8 @@ import { Knex } from 'knex';
 export async function projectOrderRisk(
   trx: Knex.Transaction,
   orderId: string,
+  shopId: string,
+  aggregateVersion: number,
   eventAnchor: Date
 ) {
 
@@ -42,10 +44,17 @@ export async function projectOrderRisk(
   await trx('order_risk_snapshot')
     .insert({
       lasyncro_order_id: orderId,
-      inventory_blocked: isInventoryBlocked,
-      customer_blocked: isCustomerBlocked,
-      operational_blocked: isOperationalBlocked,
-      health_score: healthScore,
+      shop_id: shopId,
+      aggregate_version: aggregateVersion,
+
+      is_inventory_blocked: isInventoryBlocked,
+      is_customer_blocked: isCustomerBlocked,
+      is_operational_blocked: isOperationalBlocked,
+
+      is_at_risk: isInventoryBlocked || isCustomerBlocked || isOperationalBlocked,
+
+      order_health_score: Math.round(healthScore * 100),
+
       evaluated_at: eventAnchor
     })
     .onConflict('lasyncro_order_id')

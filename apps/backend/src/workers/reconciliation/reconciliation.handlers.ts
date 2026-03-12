@@ -1,5 +1,7 @@
 // apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
 import db from '@lasyncro/backend-core/db.js';
+import crypto from 'crypto';
+
 import { ReconciliationResult } from './reconciliation.types.js';
 import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { projectOrderAge } from '../../projections/orderAgeProjection.js';
@@ -17,7 +19,39 @@ import { projectReconciliationCheckpoint } from '../../projections/reconciliatio
 import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
 import { computeObligationFlagsForOrders } from '../../services/order-execution-intelligence/obligationFlags.worker.js';
-import crypto from 'crypto';
+
+/**
+ * PROJECTION RUNTIME INSTRUMENTATION
+ * ----------------------------------
+ * Lightweight execution timing for projections.
+ *
+ * Purpose:
+ * - detect slow projections
+ * - observe reconciliation runtime composition
+ * - enable operational debugging
+ *
+ * Implementation intentionally minimal:
+ * - no external dependencies
+ * - structured log output
+ *
+ * Future upgrade path:
+ * metrics exporter → Prometheus / OpenTelemetry
+ */
+async function instrumentProjection(
+  name: string,
+  fn: () => Promise<void>
+) {
+  const start = Date.now();
+
+  await fn();
+
+  const durationMs = Date.now() - start;
+
+  console.info('[projection.runtime]', {
+    projection: name,
+    duration_ms: durationMs
+  });
+}
 
 /**
  * DETERMINISTIC ID GENERATOR
@@ -231,11 +265,13 @@ export async function reconcileOrderFulfillment(
      * The reconciliation handler must never
      * mutate the revenue ledger directly.
      */
-    await projectOrderFulfillment(
-      trx,
-      lasyncroOrderId,
-      aggregateVersion,
-      eventAnchor
+    await instrumentProjection('orderFulfillmentProjection', async () =>
+      projectOrderFulfillment(
+        trx,
+        lasyncroOrderId,
+        aggregateVersion,
+        eventAnchor
+      )
     );
 
     await computeObligationFlagsForOrders(
@@ -262,12 +298,14 @@ export async function reconcileOrderFulfillment(
      * ---------------------------
      * Delegated to deterministic projection module.
      */
-    await projectOrderConstraints(
-      trx,
-      lasyncroOrderId,
-      order.shop_id,
-      aggregateVersion,
-      eventAnchor
+    await instrumentProjection('orderConstraintProjection', async () =>
+      projectOrderConstraints(
+        trx,
+        lasyncroOrderId,
+        order.shop_id,
+        aggregateVersion,
+        eventAnchor
+      )
     );
 
     /**
@@ -275,10 +313,14 @@ export async function reconcileOrderFulfillment(
      * -----------------------
      * Delegated to deterministic projection module.
      */
-    await projectOrderMargin(
-      trx, 
-      lasyncroOrderId, 
-      eventAnchor
+    await instrumentProjection('orderMarginProjection', async () =>
+      projectOrderMargin(
+        trx,
+        lasyncroOrderId,
+        order.shop_id,
+        aggregateVersion,
+        eventAnchor
+      )
     );
 
     /**
@@ -319,10 +361,14 @@ export async function reconcileOrderFulfillment(
      * The reconciliation handler must not compute
      * any risk logic directly.
      */
-    await projectOrderRisk(
-      trx, 
-      lasyncroOrderId, 
-      eventAnchor
+    await instrumentProjection('orderRiskProjection', async () =>
+      projectOrderRisk(
+        trx,
+        lasyncroOrderId,
+        order.shop_id,
+        aggregateVersion,
+        eventAnchor
+      )
     );
 
     /**
@@ -330,7 +376,15 @@ export async function reconcileOrderFulfillment(
      * --------------------
      * Delegated to deterministic projection module.
      */
-    await projectOrderAge(trx, lasyncroOrderId, eventAnchor);
+    await instrumentProjection('orderAgeProjection', async () =>
+      projectOrderAge(
+        trx,
+        lasyncroOrderId,
+        order.shop_id,
+        aggregateVersion,
+        eventAnchor
+      )
+    );
 
     /**
      * DAILY REVENUE PROJECTION MATERIALIZATION
@@ -358,7 +412,11 @@ export async function reconcileOrderFulfillment(
        * The reconciliation handler must never
        * write to the table directly.
        */
-      await projectRevenueDaily(trx, order.shop_id);
+      await projectRevenueDaily(
+        trx, 
+        order.shop_id,
+        aggregateVersion,
+      );
     };
 
     await projectExecutionQueues(
@@ -386,7 +444,8 @@ export async function reconcileOrderFulfillment(
      */
     await projectDailyOperationalBrief(
       trx,
-      order.shop_id
+      order.shop_id,
+      aggregateVersion,
     );
 
     await projectReconciliationAudit(

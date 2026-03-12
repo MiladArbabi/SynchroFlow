@@ -16,6 +16,8 @@ import { Knex } from 'knex';
 export async function projectOrderMargin(
   trx: Knex.Transaction,
   orderId: string,
+  shopId: string,
+  aggregateVersion: number,
   eventAnchor: Date
 ) {
 
@@ -66,6 +68,8 @@ export async function projectOrderMargin(
   await trx('order_margin_snapshot')
     .insert({
       lasyncro_order_id: orderId,
+      shop_id: shopId,
+      aggregate_version: aggregateVersion,
       gross_revenue: grossRevenue,
       estimated_cost: estimatedCost,
       gross_margin: grossMargin,

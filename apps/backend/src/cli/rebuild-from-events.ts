@@ -8,6 +8,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
+import { runSchemaGuard } from '../utils/schemaGuard.js';
 import { reconcileOrderFulfillment } from '../workers/reconciliation/reconciliation.handlers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -285,6 +286,10 @@ async function main() {
       '[REBUILD_FATAL] domain_events table missing. Run migrations or verify DB connection.'
     );
   };
+
+  console.log('[REBUILD] Verifying projection schema...');
+  await runSchemaGuard();
+  console.log('[REBUILD] Schema verification passed');
   
   /**
    * QUEUE INITIALIZATION

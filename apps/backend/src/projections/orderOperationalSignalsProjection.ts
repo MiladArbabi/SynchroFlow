@@ -23,7 +23,7 @@ export async function projectOperationalSignals(
 
   const criticalOrders = await trx('order_risk_snapshot')
     .where({ shop_id: shopId })
-    .andWhere('health_score', '<', 0.5)
+    .andWhere('order_health_score', '<', 50)
     .count<{ count: string }>('lasyncro_order_id as count')
     .first();
 
@@ -43,7 +43,7 @@ export async function projectOperationalSignals(
 
   const topPriorityOrders = await trx('order_risk_snapshot')
     .where({ shop_id: shopId })
-    .orderBy('health_score', 'asc')
+    .orderBy('order_health_score', 'asc')
     .limit(10)
     .select('lasyncro_order_id');
 

@@ -16,37 +16,67 @@ import { Knex } from 'knex';
 export async function projectOrderAge(
   trx: Knex.Transaction,
   orderId: string,
+  shopId: string,
+  aggregateVersion: number,
   eventAnchor: Date
 ) {
 
-  const ofs = await trx('order_fulfillment_status')
-    .where({ lasyncro_order_id: orderId })
+  const row = await trx('orders as o')
+    .leftJoin(
+      'order_fulfillment_status as ofs',
+      'ofs.lasyncro_order_id',
+      'o.lasyncro_order_id'
+    )
+    .where('o.lasyncro_order_id', orderId)
+    .select(
+      'o.order_created_at',
+      'o.paid_at',
+      'o.captured_at',
+      'o.order_processed_at',
+      'ofs.fulfilled_at'
+    )
     .first();
 
-  if (!ofs) {
+  if (!row) {
     throw new Error('[AGE_PROJECTION_INVARIANT] fulfillment status missing');
   }
 
+  const createdAt = new Date(row.order_created_at);
+
+  const paidAt =
+    row.paid_at ??
+    row.captured_at ??
+    row.order_processed_at ??
+    null;
+
+  const fulfilledAt = row.fulfilled_at ?? null;
+
   const ageSinceCreation =
-    Math.floor((eventAnchor.getTime() - new Date(ofs.created_at).getTime()) / 1000);
+    Math.floor((eventAnchor.getTime() - new Date(createdAt).getTime()) / 1000);
 
   const ageSincePaid =
-    ofs.paid_at
-      ? Math.floor((eventAnchor.getTime() - new Date(ofs.paid_at).getTime()) / 1000)
+    paidAt
+      ? Math.floor((eventAnchor.getTime() - new Date(paidAt).getTime()) / 1000)
       : null;
 
   const ageSinceFulfillment =
-    ofs.fulfilled_at
-      ? Math.floor((eventAnchor.getTime() - new Date(ofs.fulfilled_at).getTime()) / 1000)
+    fulfilledAt
+      ? Math.floor((eventAnchor.getTime() - new Date(fulfilledAt).getTime()) / 1000)
       : null;
 
   await trx('order_age_snapshot')
     .insert({
       lasyncro_order_id: orderId,
+      aggregate_version: aggregateVersion,
+
       age_since_creation_seconds: ageSinceCreation,
       age_since_paid_seconds: ageSincePaid,
       age_since_fulfillment_seconds: ageSinceFulfillment,
-      evaluated_at: eventAnchor
+
+      is_shipping_sla_breached: false,
+      is_delivery_sla_breached: false,
+
+      snapshot_generated_at: eventAnchor
     })
     .onConflict('lasyncro_order_id')
     .merge();

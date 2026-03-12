@@ -15,15 +15,26 @@ import { Knex } from 'knex';
  */
 export async function projectRevenueDaily(
   trx: Knex.Transaction,
-  shopId: string
+  shopId: string,
+  aggregateVersion: number,
 ) {
 
   const dailyRows = await trx('order_revenue_units_net as runet')
     .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
+    .leftJoin('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .select(
       trx.raw('DATE(runet.created_at) as revenue_date'),
-      trx.raw('SUM(runet.net_revenue) as revenue_sum')
+      trx.raw('SUM(runet.net_revenue) as gross_revenue'),
+      trx.raw('COUNT(DISTINCT o.lasyncro_order_id) as order_count'),
+      trx.raw(`
+        SUM(
+          CASE WHEN ors.is_at_risk = true
+          THEN runet.net_revenue
+          ELSE 0
+          END
+        ) as at_risk_revenue
+      `)
     )
     .groupByRaw('DATE(runet.created_at)');
 
@@ -33,7 +44,10 @@ export async function projectRevenueDaily(
       .insert({
         shop_id: shopId,
         revenue_date: row.revenue_date,
-        revenue_sum: Number(row.revenue_sum ?? 0)
+        gross_revenue: Number(row.gross_revenue ?? 0),
+        order_count: Number(row.order_count ?? 0),
+        at_risk_revenue: Number(row.at_risk_revenue ?? 0),
+        evaluated_at: trx.fn.now()
       })
       .onConflict(['shop_id', 'revenue_date'])
       .merge();
