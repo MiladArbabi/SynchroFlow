@@ -32,7 +32,7 @@ export const projectionDependencies: ProjectionDependency[] = [
   },
 
   {
-    projection: 'revenueDailyProjection',
+    projection: 'orderRevenueDailyProjection',
     dependsOn: ['orderMarginProjection']
   },
 
@@ -40,7 +40,7 @@ export const projectionDependencies: ProjectionDependency[] = [
     projection: 'dailyOperationalBriefProjection',
     dependsOn: [
       'orderRiskProjection',
-      'revenueDailyProjection'
+      'orderRevenueDailyProjection'
     ]
   }
 

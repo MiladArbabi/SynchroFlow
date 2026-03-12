@@ -1,22 +1,25 @@
 import { Knex } from 'knex';
 
 /**
- * ORDER OPERATIONAL SIGNALS PROJECTION
- * ------------------------------------
- * Computes operational intelligence signals used for
- * prioritization dashboards.
+ * ORDER OPERATIONAL SIGNALS RESOLVER
+ * ==================================
  *
- * Derived from:
+ * NOT A PROJECTION.
+ *
+ * Computes operational intelligence signals dynamically
+ * from projection state.
+ *
+ * Reads from:
  * - order_risk_snapshot
  * - order_margin_snapshot
  * - order_age_snapshot
  *
- * Guarantees:
- * - deterministic rebuild
- * - no execution-time influence
+ * This module intentionally does NOT write a snapshot table
+ * and therefore must NOT be registered in the projection
+ * safety system.
  */
 
-export async function projectOperationalSignals(
+export async function resolveOperationalSignals(
   trx: Knex.Transaction,
   shopId: string
 ) {

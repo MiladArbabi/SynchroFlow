@@ -25,8 +25,11 @@ export const projectionContracts: ProjectionContract[] = [
     requiredColumns: [
       'lasyncro_order_id',
       'aggregate_version',
-      'contribution_margin',
-      'margin_percent',
+      'shop_id',
+      'gross_revenue',
+      'estimated_cost',
+      'gross_margin',
+      'margin_pct',
       'evaluated_at'
     ]
   },
@@ -49,7 +52,7 @@ export const projectionContracts: ProjectionContract[] = [
   },
 
   {
-    projection: 'revenueDailyProjection',
+    projection: 'orderRevenueDailyProjection',
     table: 'revenue_projection_daily',
     requiredColumns: [
       'shop_id',

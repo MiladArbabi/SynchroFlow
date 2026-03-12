@@ -72,9 +72,9 @@ export async function computeShopOperationalSnapshot(shopId: string) {
 
     const pendingRevenueRow = await trx('order_revenue_units_net as runet')
         .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
         .where('o.shop_id', shopId)
-        .andWhereNot('ofs.status', 'fulfilled')
+        .andWhereNot('o.order_status', 'fulfilled')
         .sum<{ sum: string }>('runet.net_revenue as sum')
         .first();
 
@@ -123,12 +123,14 @@ export async function computeShopOperationalSnapshot(shopId: string) {
      */
     const blockedRevenueRows = await trx('order_revenue_units_net as runet')
         .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
         .where('o.shop_id', shopId)
         .select(
-            trx.raw(`SUM(CASE WHEN ofs.inventory_block_type IS NOT NULL THEN runet.net_revenue ELSE 0 END) as inventory_blocked`),
-            trx.raw(`SUM(CASE WHEN ofs.customer_block_type IS NOT NULL THEN runet.net_revenue ELSE 0 END) as customer_blocked`),
-            trx.raw(`SUM(CASE WHEN ofs.operational_block_type IS NOT NULL THEN runet.net_revenue ELSE 0 END) as operational_blocked`)
+            trx.raw(`
+                SUM(CASE WHEN ors.is_inventory_blocked THEN runet.net_revenue ELSE 0 END) as inventory_blocked,
+                SUM(CASE WHEN ors.is_customer_blocked THEN runet.net_revenue ELSE 0 END) as customer_blocked,
+                SUM(CASE WHEN ors.is_operational_blocked THEN runet.net_revenue ELSE 0 END) as operational_blocked
+            `)
         )
         .first();
 
@@ -141,11 +143,10 @@ export async function computeShopOperationalSnapshot(shopId: string) {
      * This preserves replay rebuild guarantees.
      */
 
-    const pendingFulfillmentRow = await trx('order_fulfillment_status as ofs')
-        .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhereNot('ofs.status', 'fulfilled')
-        .count<{ count: string }>('ofs.lasyncro_order_id as count')
+    const pendingFulfillmentRow = await trx('orders')
+        .where({ shop_id: shopId })
+        .andWhereNot('order_status', 'fulfilled')
+        .count<{ count: string }>('lasyncro_order_id as count')
         .first();
 
     const exceptionOrdersRow = await trx('order_constraint_events')
@@ -159,8 +160,8 @@ export async function computeShopOperationalSnapshot(shopId: string) {
      * Derived from constraint events and order age projection.
      */
     const constrainedOrdersRow = await trx('order_constraint_events')
-        .where({ shop_id: shopId, is_active: true })
-        .count<{ count: string }>('constraint_event_id as count')
+        .where({ shop_id: shopId })
+        .countDistinct<{ count: string }>('lasyncro_order_id as count')
         .first();
 
     const ordersAtSlaRiskRow = await trx('order_age_snapshot as oas')
@@ -180,7 +181,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
      * QUEUE METRICS
      */
     const queueManualReview = await trx('order_constraint_events')
-        .where({ shop_id: shopId, constraint_type: 'customer', is_active: true })
+        .where({ shop_id: shopId, constraint_type: 'operational', is_active: true })
         .count<{ count: string }>('constraint_event_id as count')
         .first();
 
@@ -194,11 +195,10 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .count<{ count: string }>('constraint_event_id as count')
         .first();
 
-    const queueReadyToShip = await trx('order_fulfillment_status as ofs')
-        .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('ofs.status', 'pending')
-        .count<{ count: string }>('ofs.lasyncro_order_id as count')
+    const queueReadyToShip = await trx('orders')
+        .where({ shop_id: shopId })
+        .andWhere('order_status', 'pending')
+        .count<{ count: string }>('lasyncro_order_id as count')
         .first();
     
     /**

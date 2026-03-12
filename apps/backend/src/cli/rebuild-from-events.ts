@@ -4,9 +4,11 @@
  * CLI must explicitly load .env.
  */
 import dotenv from 'dotenv';
-import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+
+    import fs from 'fs';
+    import path from 'path';
 
 import { runSchemaGuard } from '../utils/schemaGuard.js';
 import { reconcileOrderFulfillment } from '../workers/reconciliation/reconciliation.handlers.js';
@@ -27,6 +29,7 @@ dotenv.config({
 
 import { projectDomainEvent } from '../projection/projection.engine.js';
 import db from '@lasyncro/backend-core/db.js';
+import knex from 'knex';
 
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');
@@ -232,20 +235,29 @@ async function computeStateHash(): Promise<string> {
 
   for (const table of tables) {
     /**
-     * DETERMINISTIC COLUMN ORDER
-     * --------------------------
-     * Object.keys() enumeration order is not guaranteed stable
-     * across executions.
-     * We must sort column names lexicographically before using
-     * them for ORDER BY.
+     * DETERMINISTIC ROW ORDER
+     * -----------------------
+     * Hash ordering must use primary key columns only.
+     * Ordering by all columns is unsafe because equal
+     * column values allow PostgreSQL to return rows in
+     * arbitrary physical order.
      */
-    const columns = Object
-      .keys(await db(table).columnInfo())
-      .sort();
+
+    const pkRows = await db.raw(`
+      SELECT kcu.column_name
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_name = kcu.constraint_name
+      WHERE tc.table_name = ?
+        AND tc.constraint_type = 'PRIMARY KEY'
+      ORDER BY kcu.ordinal_position
+    `, [table]);
+
+    const pkColumns = pkRows.rows.map((r: any) => r.column_name);
 
     const rows = await db(table)
       .select('*')
-      .orderBy(columns);
+      .orderBy(pkColumns);
 
     const tableHash = crypto
       .createHash('sha256')

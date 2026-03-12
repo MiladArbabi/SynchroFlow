@@ -1,22 +1,25 @@
 import { Knex } from 'knex';
 
 /**
- * ORDER EXECUTION QUEUE PROJECTION
- * --------------------------------
- * Computes operational execution queues used by
- * operational intelligence dashboards.
+ * ORDER EXECUTION QUEUE RESOLVER
+ * ==============================
  *
- * Derived from:
- * - order_risk_snapshot
- * - order_fulfillment_status
- * - order_revenue_units
+ * NOT A PROJECTION.
  *
- * Guarantees:
- * - deterministic rebuild
- * - no wall clock influence
+ * This module derives operational execution queues
+ * dynamically from projection state.
+ *
+ * It intentionally does NOT write to a snapshot table
+ * and therefore must NOT be registered in:
+ *
+ * - projectionContracts.ts
+ * - projectionDependencies.ts
+ * - projectionExecutionOrder.ts
+ *
+ * This prevents projection safety-layer violations.
  */
 
-export async function projectExecutionQueues(
+export async function resolveExecutionQueues(
   trx: Knex.Transaction,
   shopId: string
 ) {

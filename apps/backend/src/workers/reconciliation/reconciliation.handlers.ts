@@ -10,11 +10,13 @@ import { projectOrderMargin } from '../../projections/orderMarginProjection.js';
 import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
 import { projectOrderFulfillment } from '../../projections/orderFulfillmentProjection.js';
 import { projectRevenueDaily } from '../../projections/orderRevenueDailyProjection.js';
-import { projectExecutionQueues } from '../../projections/orderExecutionQueueProjection.js';
-import { projectOperationalSignals } from '../../projections/orderOperationalSignalsProjection.js';
 import { projectDailyOperationalBrief } from '../../projections/dailyOperationalBriefProjection.js';
-import { projectReconciliationAudit } from '../../projections/reconciliationAuditProjection.js';
-import { projectReconciliationCheckpoint } from '../../projections/reconciliationCheckpointProjection.js';
+
+import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
+import { resolveOperationalSignals } from '../../services/order-execution-intelligence/orderOperationalSignalsResolver.js'
+
+import { writeReconciliationAudit } from './reconciliationAuditWriter.js';
+import { writeReconciliationCheckpoint } from './reconciliationCheckpointWriter.js';
 
 import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
@@ -419,7 +421,7 @@ export async function reconcileOrderFulfillment(
       );
     };
 
-    await projectExecutionQueues(
+    await resolveExecutionQueues(
       trx,
       order.shop_id
     );
@@ -432,7 +434,7 @@ export async function reconcileOrderFulfillment(
      * Return values are intentionally ignored because
      * reconciliation only triggers the projection side-effect.
      */
-    await projectOperationalSignals(
+    await resolveOperationalSignals(
       trx,
       order.shop_id
     );
@@ -448,7 +450,7 @@ export async function reconcileOrderFulfillment(
       aggregateVersion,
     );
 
-    await projectReconciliationAudit(
+    await writeReconciliationAudit(
       trx,
       lasyncroOrderId,
       order.aggregate_version
@@ -468,7 +470,7 @@ export async function reconcileOrderFulfillment(
      * - strict monotonic projection progress
      * - replay-safe checkpointing
      */
-    await projectReconciliationCheckpoint(
+    await writeReconciliationCheckpoint(
       trx,
       lasyncroOrderId,
       aggregateVersion

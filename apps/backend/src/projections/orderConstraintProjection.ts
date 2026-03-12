@@ -1,4 +1,5 @@
 import { Knex } from 'knex';
+import crypto from 'crypto';
 
 /**
  * ORDER CONSTRAINT PROJECTION
@@ -47,8 +48,14 @@ export async function projectOrderConstraints(
 
     if (isActive && !activeEvent) {
 
+      const constraintEventId = crypto
+        .createHash('sha256')
+        .update(`inventory:${orderId}:${aggregateVersion}`)
+        .digest('hex')
+        .slice(0, 32);
+
       await trx('order_constraint_events').insert({
-        constraint_event_id: `${type}:${orderId}:${aggregateVersion}`,
+        constraint_event_id: constraintEventId,
         lasyncro_order_id: orderId,
         shop_id: shopId,
         constraint_type: type,

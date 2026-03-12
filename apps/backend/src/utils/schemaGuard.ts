@@ -8,6 +8,9 @@ import {
 
 import { projectionExecutionOrder } from '../projections/contracts/projectionExecutionOrder.js';
 
+import fs from 'fs';
+import path from 'path';
+
 /**
  * SCHEMA GUARD
  * ============
@@ -40,6 +43,41 @@ function fail(message: string) {
     throw new Error(message);
   }
   console.error(message);
+}
+
+/**
+ * PROJECTION COVERAGE GUARD
+ * -------------------------
+ * Ensures every projection implementation file
+ * is registered in the projection safety system.
+ *
+ * Prevents silent projection drift.
+ */
+function assertProjectionCoverage() {
+
+  const projectionDir = path.resolve(
+    path.dirname(new URL(import.meta.url).pathname),
+    '../projections'
+  );
+
+  const files = fs
+    .readdirSync(projectionDir)
+    .filter(f => f.endsWith('Projection.ts'));
+
+  const registered = new Set(projectionExecutionOrder);
+
+  for (const file of files) {
+
+    const name = file.replace('.ts', '');
+
+    if (!registered.has(name)) {
+      fail(
+        `[SchemaGuard] projection not registered in execution order: ${name}`
+      );
+    }
+  }
+
+  console.debug('[SchemaGuard] Projection coverage verified');
 }
 
 /**
@@ -269,7 +307,7 @@ export async function runSchemaGuard() {
 
   validateProjectionDependencyGraph();
   validateExecutionOrder(projectionExecutionOrder);
-
+  assertProjectionCoverage();
 
   /**
    * LAYER 5
