@@ -206,7 +206,21 @@ export async function getOrderNexusFt2StateSnapshot(
      */
     revenue: operationalControlRow
       ? {
-          totalSales: realizedRevenue + atRiskRevenue,
+          /**
+           * TOTAL SALES (GMV)
+           * -----------------
+           * Total gross merchandise value across all orders.
+           *
+           * Must include:
+           * - realized revenue (fulfilled)
+           * - pending revenue (paid but unfulfilled)
+           * - at-risk revenue (unpaid)
+           *
+           * Excludes blocked and leakage values because those
+           * represent operational constraints or loss states,
+           * not primary order value.
+           */
+          totalSales: realizedRevenue + pendingRevenue + atRiskRevenue,
           earned: realizedRevenue,
           pending: pendingRevenue,
           blocked: blockedRevenue,

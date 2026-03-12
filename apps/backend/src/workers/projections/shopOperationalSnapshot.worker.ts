@@ -74,29 +74,45 @@ export async function computeShopOperationalSnapshot(shopId: string) {
      * These represent operational revenue exposure.
      */
 
-    const pendingRevenueRow = await trx('order_revenue_units_net as runet')
-        .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        /**
-         * PENDING REVENUE FILTER
-         * ----------------------
-         * Orders table does not contain order_status.
-         * Fulfillment state is represented in
-         * order_fulfillment_status.status.
-         */
-        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
-        .andWhereNot('ofs.status', 'fulfilled')
-        .sum<{ sum: string }>('runet.net_revenue as sum')
-        .first();
+    /**
+     * PENDING REVENUE
+     * ----------------
+     * Revenue for orders that have been successfully paid
+     * but have not yet been fulfilled.
+     *
+     * IMPORTANT
+     * Revenue must be sourced from the orders table
+     * rather than revenue units to avoid duplication
+     * from multi-line orders.
+     */
+    const pendingRevenueRow = await trx('orders as o')
+    .join(
+        'order_fulfillment_status as ofs',
+        'ofs.lasyncro_order_id',
+        'o.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .andWhere('o.payment_state', 'paid')
+    .andWhereNot('ofs.status', 'fulfilled')
+    .sum<{ sum: string }>('o.total_price as sum')
+    .first();
 
-    const atRiskRevenueRow = await trx('order_revenue_units_net as runet')
-        .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'o.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('oas.age_since_paid_seconds', '>', 86400)
-        .sum<{ sum: string }>('runet.net_revenue as sum')
-        .first();
+    /**
+     * AT-RISK REVENUE (PAYMENT EXPOSURE)
+     * ----------------------------------
+     * Revenue that was expected but has not been captured.
+     *
+     * Unpaid orders represent real revenue exposure even
+     * before revenue units are materialized.
+     *
+     * Therefore we derive at_risk_revenue from canonical
+     * order price rather than revenue units.
+     */
+    const atRiskRevenueRow = await trx('orders')
+    .where({ shop_id: shopId })
+    .andWhere('payment_state', 'unpaid')
+    .sum<{ sum: string }>('total_price as sum')
+    .first();
 
     /**
      * CONTRIBUTION MARGIN
@@ -236,23 +252,69 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .count<{ count: string }>('constraint_event_id as count')
         .first();
 
-    const queueReadyToShip = await trx('orders')
-        .where({ shop_id: shopId })
-        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'orders.lasyncro_order_id')
-        .andWhere('ofs.status', 'pending')
-        .count<{ count: string }>('orders.lasyncro_order_id as count')
-        .first();
+    /**
+     * READY TO SHIP QUEUE
+     * -------------------
+     * Orders executable by warehouse immediately.
+     *
+     * Conditions:
+     * - payment captured
+     * - fulfillment pending
+     * - no active operational constraints
+     */
+    const queueReadyToShip = await trx('orders as o')
+    .join(
+        'order_fulfillment_status as ofs',
+        'ofs.lasyncro_order_id',
+        'o.lasyncro_order_id'
+    )
+    .leftJoin(
+        'order_constraint_events as oce',
+        function () {
+        this.on('oce.lasyncro_order_id', '=', 'o.lasyncro_order_id')
+            .andOn('oce.is_active', '=', trx.raw('true'));
+        }
+    )
+    .where('o.shop_id', shopId)
+    .andWhere('o.payment_state', 'paid')
+    .andWhere('ofs.status', 'pending')
+    .whereNull('oce.constraint_event_id')
+    .count<{ count: string }>('o.lasyncro_order_id as count')
+    .first();
     
     /**
      * PARTIAL FULFILLMENT OPPORTUNITY
-     * -------------------------------
-     * Orders with mixed availability across line items.
+     * --------------------------------
+     * Orders blocked by inventory constraints that contain
+     * multiple revenue units.
+     *
+     * Rationale:
+     * - inventory_projection table does not exist
+     * - deterministic inventory availability is not materialized
+     *
+     * Until a dedicated inventory projection is introduced,
+     * we approximate partial fulfillment opportunity as:
+     *
+     *   inventory-blocked orders
+     *   with more than one revenue unit
+     *
+     * This indicates orders where warehouse may ship
+     * partial quantities instead of blocking fully.
      */
-    const partialFulfillmentOpportunity = await trx('order_revenue_units')
-        .join('orders as o', 'o.lasyncro_order_id', 'order_revenue_units.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .countDistinct<{ count: string }>('order_revenue_units.lasyncro_order_id as count')
-        .first();
+    const partialFulfillmentOpportunity = await trx('order_revenue_units as oru')
+    .join(
+        'order_constraint_events as oce',
+        'oce.lasyncro_order_id',
+        'oru.lasyncro_order_id'
+    )
+    .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('oce.constraint_type', 'inventory')
+    .andWhere('oce.is_active', true)
+    .groupBy('oru.lasyncro_order_id')
+    .havingRaw('COUNT(oru.lasyncro_variant_id) > 1')
+    .count<{ count: string }>('oru.lasyncro_order_id as count')
+    .first();
 
     /**
      * OLDEST EXCEPTION ORDER AGE
@@ -269,13 +331,19 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     
     /**
      * REVENUE LEAKAGE
-     * ---------------
-     * Placeholder deterministic computation until
-     * a dedicated leakage model is introduced.
+     * ----------------
+     * Leakage represents revenue permanently lost
+     * due to refunds or irreversible economic events.
      *
-     * Uses at-risk revenue as conservative signal.
+     * Unpaid orders are NOT leakage — they are exposure.
      */
-    const revenueLeakage = Number(atRiskRevenueRow?.sum ?? 0);
+    const revenueLeakageRow = await trx('refund_executions')
+    .join('orders as o', 'o.lasyncro_order_id', 'refund_executions.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .sum<{ sum: string }>('refund_executions.total_refund_amount as sum')
+    .first();
+
+    const revenueLeakage = Number(revenueLeakageRow?.sum ?? 0);
 
     /**
      * SNAPSHOT WRITE
@@ -322,8 +390,6 @@ export async function computeShopOperationalSnapshot(shopId: string) {
             revenue_leakage: revenueLeakage,
 
             pending_fulfillment: Number(pendingFulfillmentRow?.count ?? 0),
-            pending_payment: Number(pendingPaymentRow?.count ?? 0),
-
             exception_orders: Number(exceptionOrdersRow?.count ?? 0),
 
             /**

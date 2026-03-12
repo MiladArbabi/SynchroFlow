@@ -19,6 +19,7 @@ import type {
 export function createPaymentProblemSignal(
   snapshot: {
     pending_payment: number
+    at_risk_revenue: number
     revenue_blocked_customer: number
   },
   detectedAt: string,
@@ -43,11 +44,12 @@ export function createPaymentProblemSignal(
     /**
      * Financial exposure
      * ------------------
-     * Always emit impactDetail to prevent UI fallback
-     * to metadata counts.
+     * Revenue at risk from unpaid orders.
      */
     impactDetail:
-      `$${snapshot.revenue_blocked_customer.toLocaleString()} revenue at risk`,
+      snapshot.at_risk_revenue > 0
+        ? `$${snapshot.at_risk_revenue.toLocaleString()} revenue at risk`
+        : undefined,
 
     metadata: {
       pending_payment: snapshot.pending_payment,
