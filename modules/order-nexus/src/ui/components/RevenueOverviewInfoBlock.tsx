@@ -21,25 +21,48 @@ export function RevenueOverviewInfoBlock({
   revenue,
 }: RevenueOverviewInfoBlockProps) {
 
+  /**
+   * REVENUE EXPOSURE PANEL
+   * ----------------------
+   * Displays operational revenue exposure derived from
+   * orders_operational_control_snapshot.
+   *
+   * Metric semantics:
+   *
+   * total_gmv
+   *   *   Total sales across all orders (Gross Merchandise Value).
+   *
+   * realized_revenue
+   *   Revenue from fully fulfilled orders.
+   *
+   * pending_revenue
+   *   Paid orders not yet fulfilled.
+   *
+   * blocked_revenue
+   *   Revenue currently constrained by operational issues
+   *   (inventory, customer action, or operational review).
+   *
+   * No calculations are allowed inside the UI layer.
+   */
   return (
-    <FT2Panel title="Revenue Sync">
+    <FT2Panel title="Revenue Exposure">
       <PanelRow
         label="Total sales"
         value={revenue.totalSales}
       />
 
       <PanelRow
-        label="Earned revenue"
+        label="Fulfilled sales"
         value={revenue.earned}
       />
 
       <PanelRow
-        label="Pending revenue"
+        label="Orders to ship"
         value={revenue.pending}
       />
 
       <PanelRow
-        label="Blocked revenue"
+        label="Orders with problems"
         value={revenue.blocked}
       />
       <PanelFooter

@@ -72,9 +72,42 @@ export async function up(knex: Knex): Promise<void> {
 
     table.text('status_reason');
 
+    /**
+     * INVENTORY BLOCK
+     * ----------------
+     * Indicates physical stock constraints.
+     *
+     * Values:
+     * - stockout
+     * - oversell
+     */
     table
       .specificType('inventory_block_type', 'inventory_block_type')
       .nullable();
+
+    /**
+     * CUSTOMER BLOCK
+     * ----------------
+     * Indicates the order cannot proceed
+     * until customer action occurs.
+     *
+     * Examples:
+     * - invalid_address
+     * - awaiting_customer_response
+     */
+    table.text('customer_block_type').nullable();
+
+    /**
+     * OPERATIONAL BLOCK
+     * ------------------
+     * Internal operational constraint
+     * preventing fulfillment execution.
+     *
+     * Examples:
+     * - fraud_review
+     * - warehouse_delay
+     */
+    table.text('operational_block_type').nullable();
 
     table.timestamp('created_at', { useTz: true })
       .notNullable()

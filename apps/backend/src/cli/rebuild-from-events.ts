@@ -13,6 +13,8 @@ import { fileURLToPath } from 'url';
 import { runSchemaGuard } from '../utils/schemaGuard.js';
 import { reconcileOrderFulfillment } from '../workers/reconciliation/reconciliation.handlers.js';
 import { computeShopOperationalSnapshot } from '../workers/projections/shopOperationalSnapshot.worker.js';
+import { computeObligationFlagsForOrders } 
+from '../services/order-execution-intelligence/obligationFlags.worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -350,6 +352,24 @@ async function main() {
    * runtime reconciliation normally occurs via worker.
    */
   await executeReconciliationIntents();
+
+  async function recomputeObligations() {
+    console.log('[REBUILD] Recomputing obligation flags...');
+
+    const orders = await db('orders')
+      .select('lasyncro_order_id');
+
+    for (const o of orders) {
+      await db.transaction(async trx => {
+        await computeObligationFlagsForOrders(
+          [o.lasyncro_order_id],
+          trx
+        );
+      });
+    }
+  }
+
+  await recomputeObligations();
 
   /**
    * REBUILD SNAPSHOT RECONSTRUCTION

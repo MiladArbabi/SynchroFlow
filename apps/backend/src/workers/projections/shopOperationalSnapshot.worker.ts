@@ -77,24 +77,31 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     /**
      * PENDING REVENUE
      * ----------------
-     * Revenue for orders that have been successfully paid
-     * but have not yet been fulfilled.
+     * Revenue from orders that are:
+     * - payment captured
+     * - not yet fulfilled
      *
-     * IMPORTANT
-     * Revenue must be sourced from the orders table
-     * rather than revenue units to avoid duplication
-     * from multi-line orders.
+     * IMPORTANT ARCHITECTURAL RULE
+     * ----------------------------
+     * All economic accounting must originate from
+     * revenue units to preserve deterministic GMV
+     * and avoid order-level duplication errors.
+     *
+     * Therefore pending revenue must use
+     * order_revenue_units_net instead of
+     * orders.total_price.
      */
-    const pendingRevenueRow = await trx('orders as o')
+    const pendingRevenueRow = await trx('order_revenue_units_net as runet')
+    .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
     .join(
-        'order_fulfillment_status as ofs',
-        'ofs.lasyncro_order_id',
-        'o.lasyncro_order_id'
+    'order_fulfillment_status as ofs',
+    'ofs.lasyncro_order_id',
+    'o.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
     .andWhere('o.payment_state', 'paid')
     .andWhereNot('ofs.status', 'fulfilled')
-    .sum<{ sum: string }>('o.total_price as sum')
+    .sum<{ sum: string }>('runet.net_revenue as sum')
     .first();
 
     /**
@@ -281,39 +288,38 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     .whereNull('oce.constraint_event_id')
     .count<{ count: string }>('o.lasyncro_order_id as count')
     .first();
-    
+
     /**
-     * PARTIAL FULFILLMENT OPPORTUNITY
-     * --------------------------------
-     * Orders blocked by inventory constraints that contain
-     * multiple revenue units.
+     * READY TO SHIP REVENUE
+     * ---------------------
+     * Economic value of orders that warehouse can ship immediately.
      *
-     * Rationale:
-     * - inventory_projection table does not exist
-     * - deterministic inventory availability is not materialized
+     * Conditions identical to queue_ready_to_ship:
+     * - payment captured
+     * - fulfillment pending
+     * - no active operational constraints
      *
-     * Until a dedicated inventory projection is introduced,
-     * we approximate partial fulfillment opportunity as:
-     *
-     *   inventory-blocked orders
-     *   with more than one revenue unit
-     *
-     * This indicates orders where warehouse may ship
-     * partial quantities instead of blocking fully.
+     * Uses revenue units to ensure deterministic economic accounting.
      */
-    const partialFulfillmentOpportunity = await trx('order_revenue_units as oru')
-    .join(
-        'order_constraint_events as oce',
-        'oce.lasyncro_order_id',
-        'oru.lasyncro_order_id'
-    )
+    const readyToShipRevenue = await trx('order_revenue_units as oru')
     .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+    .join(
+        'order_fulfillment_status as ofs',
+        'ofs.lasyncro_order_id',
+        'o.lasyncro_order_id'
+    )
+    .leftJoin(
+        'order_constraint_events as oce',
+        function () {
+        this.on('oce.lasyncro_order_id', '=', 'o.lasyncro_order_id')
+            .andOn('oce.is_active', '=', trx.raw('true'));
+        }
+    )
     .where('o.shop_id', shopId)
-    .andWhere('oce.constraint_type', 'inventory')
-    .andWhere('oce.is_active', true)
-    .groupBy('oru.lasyncro_order_id')
-    .havingRaw('COUNT(oru.lasyncro_variant_id) > 1')
-    .count<{ count: string }>('oru.lasyncro_order_id as count')
+    .andWhere('o.payment_state', 'paid')
+    .andWhere('ofs.status', 'pending')
+    .whereNull('oce.constraint_event_id')
+    .sum<{ sum: string }>('oru.line_total as sum')
     .first();
 
     /**
@@ -346,6 +352,24 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     const revenueLeakage = Number(revenueLeakageRow?.sum ?? 0);
 
     /**
+     * TOTAL GMV
+     * ---------
+     * Canonical Gross Merchandise Value.
+     *
+     * Invariant:
+     * realized_revenue
+     * + pending_revenue
+     * + at_risk_revenue
+     *
+     * Stored in projection snapshot so the resolver
+     * never recomputes economic invariants.
+     */
+    const totalGMV =
+    Number(realizedRevenueRow?.sum ?? 0) +
+    Number(pendingRevenueRow?.sum ?? 0) +
+    Number(atRiskRevenueRow?.sum ?? 0);
+
+    /**
      * SNAPSHOT WRITE
      */
     await trx('orders_operational_control_snapshot')
@@ -355,9 +379,14 @@ export async function computeShopOperationalSnapshot(shopId: string) {
             aggregate_version: aggregateVersion,
 
             realized_revenue: Number(realizedRevenueRow?.sum ?? 0),
-
             pending_revenue: Number(pendingRevenueRow?.sum ?? 0),
             at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),
+
+            /**
+             * Canonical GMV (projection authority)
+             */
+            total_gmv: totalGMV,
+
             avg_contribution_margin_pct: Number(avgMarginRow?.avg ?? 0),
 
             /**
@@ -399,12 +428,12 @@ export async function computeShopOperationalSnapshot(shopId: string) {
              */
             orders_at_sla_risk: ordersAtSlaRisk,
             constrained_orders: Number(constrainedOrdersRow?.count ?? 0),
-            partial_fulfillment_opportunity: Number(partialFulfillmentOpportunity?.count ?? 0),
             oldest_exception_order_age_hours: Number((oldestExceptionAgeRow?.max ?? 0) / 3600),
 
             queue_manual_review: Number(queueManualReview?.count ?? 0),
             queue_awaiting_inventory: Number(queueAwaitingInventory?.count ?? 0),
-            queue_ready_to_ship: Number(queueReadyToShip?.count ?? 0),
+            ready_to_ship_revenue: Number(readyToShipRevenue?.sum ?? 0),
+            
             queue_awaiting_customer: Number(queueAwaitingCustomer?.count ?? 0),
 
             evaluated_at: snapshotDate

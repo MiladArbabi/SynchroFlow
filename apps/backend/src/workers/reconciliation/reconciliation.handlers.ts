@@ -21,6 +21,7 @@ import { writeReconciliationCheckpoint } from './reconciliationCheckpointWriter.
 import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
 import { computeObligationFlagsForOrders } from '../../services/order-execution-intelligence/obligationFlags.worker.js';
+import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
 
 /**
  * PROJECTION RUNTIME INSTRUMENTATION
@@ -306,17 +307,24 @@ export async function reconcileOrderFulfillment(
     const isOperationalBlocked = !!ofs?.operational_block_type;
 
     /**
-     * ORDER CONSTRAINT PROJECTION
-     * ---------------------------
-     * Delegated to deterministic projection module.
+     * Constraint Evaluation
+     * ----------------------
+     * All constraint signals must be derived before projection.
      */
+    const constraintEvaluations = await evaluateOrderConstraints(
+      trx,
+      lasyncroOrderId,
+      order.shop_id
+    );
+
     await instrumentProjection('orderConstraintProjection', async () =>
       projectOrderConstraints(
         trx,
         lasyncroOrderId,
         order.shop_id,
         aggregateVersion,
-        eventAnchor
+        eventAnchor,
+        constraintEvaluations
       )
     );
 

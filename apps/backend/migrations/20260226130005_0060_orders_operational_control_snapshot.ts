@@ -85,6 +85,24 @@ export async function up(knex: Knex): Promise<void> {
         .notNullable()
         .defaultTo(0);
 
+      /**
+       * TOTAL GMV
+       * ---------
+       * Canonical Gross Merchandise Value across all orders.
+       *
+       * Invariant:
+       * realized_revenue
+       * + pending_revenue
+       * + at_risk_revenue
+       *
+       * Stored directly in the projection snapshot so that
+       * resolver and UI surfaces never recompute economic
+       * invariants.
+       */
+      table.decimal('total_gmv', 14, 2)
+        .notNullable()
+        .defaultTo(0);
+
       table.decimal('revenue_leakage', 14, 2)
         .notNullable()
         .defaultTo(0);
@@ -158,6 +176,21 @@ export async function up(knex: Knex): Promise<void> {
         .defaultTo(0);
 
       /**
+       * READY TO SHIP REVENUE
+       * ---------------------
+       * Revenue value of orders that can be executed
+       * immediately by warehouse operations.
+       *
+       * Derived deterministically from:
+       * - paid orders
+       * - pending fulfillment
+       * - no active constraints
+       */
+      table.decimal('ready_to_ship_revenue', 14, 2)
+        .notNullable()
+        .defaultTo(0);
+
+      /**
        * ─────────────────────────────────────────
        * WORK QUEUES
        * ─────────────────────────────────────────
@@ -224,6 +257,8 @@ export async function up(knex: Knex): Promise<void> {
       CHECK (blocked_revenue >= 0),
     ADD CONSTRAINT oocs_pending_revenue_non_negative
       CHECK (pending_revenue >= 0),
+    ADD CONSTRAINT oocs_total_gmv_non_negative
+      CHECK (total_gmv >= 0),
     ADD CONSTRAINT oocs_revenue_leakage_non_negative
       CHECK (revenue_leakage >= 0),
     ADD CONSTRAINT oocs_inventory_blocked_revenue_non_negative
@@ -232,6 +267,8 @@ export async function up(knex: Knex): Promise<void> {
       CHECK (revenue_blocked_customer >= 0),
     ADD CONSTRAINT oocs_operational_blocked_revenue_non_negative
       CHECK (revenue_blocked_operational >= 0),
+    ADD CONSTRAINT oocs_ready_to_ship_revenue_non_negative
+      CHECK (ready_to_ship_revenue >= 0),
     ADD CONSTRAINT oocs_aggregate_version_positive
       CHECK (aggregate_version > 0)
   `);

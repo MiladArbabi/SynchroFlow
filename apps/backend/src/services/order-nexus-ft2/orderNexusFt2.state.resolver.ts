@@ -209,7 +209,10 @@ export async function getOrderNexusFt2StateSnapshot(
           /**
            * TOTAL SALES (GMV)
            * -----------------
-           * Total gross merchandise value across all orders.
+           * TOTAL GMV
+           * ----------
+           * Canonical GMV from projection snapshot.
+           * Resolver must never recompute economic metrics.
            *
            * Must include:
            * - realized revenue (fulfilled)
@@ -220,7 +223,7 @@ export async function getOrderNexusFt2StateSnapshot(
            * represent operational constraints or loss states,
            * not primary order value.
            */
-          totalSales: realizedRevenue + pendingRevenue + atRiskRevenue,
+          totalSales: Number(operationalControlRow?.total_gmv ?? 0),
           earned: realizedRevenue,
           pending: pendingRevenue,
           blocked: blockedRevenue,

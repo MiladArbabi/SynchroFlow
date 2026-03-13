@@ -101,7 +101,23 @@ export const performInitialSync = async (
       }
     }
 
-    orders(first: 50) {
+    shop {
+      id
+      name
+      email
+      currencyCode
+      timezoneOffset
+    }
+  }
+`;
+
+const ordersQuery = `
+  query getOrders($cursor: String) {
+    orders(
+      first: 50
+      after: $cursor
+      sortKey: CREATED_AT
+    ) {
       edges {
         node {
           id
@@ -134,19 +150,17 @@ export const performInitialSync = async (
                 id
                 quantity
                 sku
-                product {
-                  id
-                }
-                variant {
-                  id
-                  sku
-                }
+                product { id }
+                variant { id sku }
+
                 originalUnitPriceSet {
                   shopMoney { amount }
                 }
+
                 discountedUnitPriceSet {
                   shopMoney { amount }
                 }
+
                 originalTotalSet {
                   shopMoney { amount }
                 }
@@ -155,14 +169,11 @@ export const performInitialSync = async (
           }
         }
       }
-    }
 
-    shop {
-      id
-      name
-      email
-      currencyCode
-      timezoneOffset
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
     }
   }
 `;
@@ -182,11 +193,8 @@ export const performInitialSync = async (
     console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data));
 
     const totalProducts = data.products?.edges.length || 0;
-    const totalOrders = data.orders?.edges.length || 0;
-
-    const totalLineItems = (data.orders?.edges || []).reduce((acc: number, { node }: any) => {
-      return acc + (node.lineItems?.edges.length || 0);
-    }, 0);
+    const totalOrders = 0;
+    const totalLineItems = 0;
 
     const totalProgress = totalProducts + totalOrders + totalLineItems;
     // --- 1. Report: STARTING (Products) ---
@@ -244,71 +252,73 @@ export const performInitialSync = async (
       }
 
       /**
-       * ORDER STAGING — CANONICAL INGESTION ENTRY POINT
-       * ----------------------------------------------
-       * Orders MUST be staged before canonical ingestion.
+       * ORDER PAGINATION LOOP
+       * ---------------------
+       * Shopify GraphQL returns orders in pages.
+       * The initial query fetches only the first 50.
        *
-       * Guarantees:
-       * - Durable fact preservation
-       * - Replayability via staged_events
-       * - Explicit execution proof for FT2
-       *
-       * No inference. No defaults. No execution.
+       * This loop ensures full historical ingestion.
        */
-      if (data.orders?.edges?.length) {
-        for (const { node } of data.orders.edges) {
-          /**
-           * IMMUTABLE DOMAIN EVENT INSERT (SYNC PATH)
-           * ------------------------------------------
-           * Sync ingestion must follow identical contract as webhook ingestion.
-           *
-           * Canonical boundary:
-           * - Append-only
-           * - DB-enforced idempotency (shop_id, external_event_id)
-           * - Deterministic replay source
-           */
-          let domainEventId: number | null = null;
+      let ordersCursor: string | null = null;
+      let hasNextPage = true;
 
-          try {
-            const [inserted] = await trx('domain_events')
-              .insert({
-                shop_id: shopId,
-                event_type: 'orders/sync',
-                event_payload: node,
-                event_time: new Date(node.createdAt),
-                event_version: 1,
-                external_event_id: String(node.id),
-              })
-              .returning<{ id: number }[]>('id');
+      while (hasNextPage) {
 
-            domainEventId = inserted.id;
+        const response = await client.request(ordersQuery, {
+          variables: { cursor: ordersCursor }
+        });
 
-          } catch (err: any) {
-            if (err?.code === '23505') {
-              // Duplicate sync event — safe to ignore (idempotent)
-              console.warn('[SYNC_DUPLICATE_DOMAIN_EVENT]', {
-                shopId,
-                externalEventId: node.id,
-              });
-              continue;
+        const page = response.data as any;
+
+        console.log(
+          '[SHOPIFY_PAGINATION]',
+          page.orders.pageInfo.hasNextPage,
+          page.orders.pageInfo.endCursor
+        );
+        
+        const orderEdges = page.orders.edges;
+
+        if (orderEdges?.length) {
+          for (const { node } of orderEdges) {
+
+            let domainEventId: number | null = null;
+
+            try {
+              const [inserted] = await trx('domain_events')
+                .insert({
+                  shop_id: shopId,
+                  event_type: 'orders/sync',
+                  event_payload: node,
+                  event_time: new Date(node.createdAt),
+                  event_version: 1,
+                  external_event_id: String(node.id),
+                })
+                .returning<{ id: number }[]>('id');
+
+              domainEventId = inserted.id;
+
+            } catch (err: any) {
+              if (err?.code === '23505') {
+                console.warn('[SYNC_DUPLICATE_DOMAIN_EVENT]', {
+                  shopId,
+                  externalEventId: node.id,
+                });
+                continue;
+              }
+
+              throw err;
             }
-
-            throw err;
           }
 
-          /**
-           * OUTBOX OWNERSHIP (DB-ENFORCED)
-           * -------------------------------
-           * domain_event_outbox is now created automatically
-           * via AFTER INSERT trigger on domain_events.
-           *
-           * Manual inserts are forbidden.
-           *
-           * Invariant:
-           * Every domain_event has exactly one outbox row,
-           * enforced at database level.
-           */
-        }
+        /**
+         * PAGINATION ADVANCE
+         * ------------------
+         * Must execute regardless of edge count
+         * to prevent infinite loops.
+         */
+        hasNextPage = page.orders.pageInfo.hasNextPage;
+        ordersCursor = page.orders.pageInfo.endCursor;
+    }
       
       /**
        * ❗ ORDER MATERIALIZATION REMOVED

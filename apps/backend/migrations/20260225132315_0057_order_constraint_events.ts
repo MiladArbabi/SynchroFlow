@@ -51,6 +51,21 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['shop_id', 'constraint_type'], 'oce_shop_type_idx');
     table.index(['lasyncro_order_id', 'is_active'], 'oce_order_active_idx');
   });
+
+  /**
+   * Active constraint uniqueness
+   * ----------------------------
+   * Prevents duplicate active constraints
+   * for the same order and constraint type.
+   *
+   * Uses partial index to allow historical
+   * resolved rows to remain in the table.
+   */
+  await knex.raw(`
+    CREATE UNIQUE INDEX oce_unique_active_constraint
+    ON order_constraint_events (lasyncro_order_id, constraint_type)
+    WHERE is_active = true
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

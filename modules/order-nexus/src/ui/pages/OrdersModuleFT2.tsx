@@ -196,6 +196,20 @@ export interface OrdersModuleFT2DataProps {
     revenue_blocked_customer: number;
     revenue_blocked_operational: number;
 
+    /**
+     * WORK QUEUE METRICS
+     * ------------------
+     * Derived from orders_operational_control_snapshot.
+     *
+     * These values represent operational workload queues
+     * produced by the reconciliation projection.
+     *
+     * IMPORTANT:
+     * Each queue must appear exactly once in this interface.
+     * Duplicate fields create silent TypeScript structural
+     * shadowing and can mask schema drift between backend
+     * projections and FT2 UI contracts.
+     */
     queue_manual_review: number;
     queue_awaiting_inventory: number;
     queue_ready_to_ship: number;
