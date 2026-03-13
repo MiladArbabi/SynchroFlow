@@ -23,6 +23,7 @@ export type OperationalControlSnapshot = {
 
   exception_orders: number;
   pending_payment: number;
+  at_risk_revenue: number;
   constrained_orders: number;
   partial_fulfillment_opportunity: number;
 

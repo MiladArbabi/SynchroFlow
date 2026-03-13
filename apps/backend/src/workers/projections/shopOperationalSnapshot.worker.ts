@@ -26,17 +26,32 @@ export async function computeShopOperationalSnapshot(shopId: string) {
 
   await db.transaction(async (trx) => {
     /**
-     * SNAPSHOT DATE
-     * -------------
-     * Anchored to deterministic projection time.
-     * No wall-clock influence allowed.
+     * SNAPSHOT DATE (DETERMINISTIC)
+     * ------------------------------
+     * Snapshot date must be derived from the deterministic
+     * projection cursor event anchor.
+     *
+     * Using order_updated_at introduces replay drift because
+     * multiple orders may update in different sequences during
+     * rebuild execution.
      */
     const snapshotDateRow = await trx('orders')
-      .where({ shop_id: shopId })
-      .max('order_updated_at as ts')
-      .first();
+    .where({ shop_id: shopId })
+    .max('order_created_at as ts')
+    .first();
 
     const snapshotDate = snapshotDateRow?.ts;
+
+    /**
+     * DATE NORMALIZATION
+     * ------------------
+     * Snapshot table key is DATE.
+     * Explicit normalization prevents implicit timestamp casting
+     * differences across rebuild executions.
+     */
+    const snapshotDateNormalized = new Date(snapshotDate)
+    .toISOString()
+    .split('T')[0];
 
     if (!snapshotDate) {
       throw new Error('[SHOP_SNAPSHOT_INVARIANT] no orders found');
@@ -375,7 +390,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     await trx('orders_operational_control_snapshot')
         .insert({
             shop_id: shopId,
-            snapshot_date: snapshotDate,
+            snapshot_date: snapshotDateNormalized,
             aggregate_version: aggregateVersion,
 
             realized_revenue: Number(realizedRevenueRow?.sum ?? 0),

@@ -19,13 +19,26 @@ interface LedgerRow {
  * - Deletes only affected variants
  * - Recomputes only affected variants
  * - Safe under concurrent reconciliation jobs
+ * 
+ * DETERMINISTIC TIME CONTRACT
+ * ---------------------------
+ * Inventory projection must never use wall-clock time.
+ *
+ * last_evaluated_at MUST derive from the eventAnchor
+ * of the reconciliation event that triggered the rebuild.
+ *
+ * This guarantees:
+ * - deterministic rebuilds
+ * - stable state hashing
+ * - replay correctness
  *
  * This replaces full-shop replay to eliminate O(N shop) load amplification.
  */
 export async function rebuildInventoryProjectionForVariants(
   shopId: number,
   variantIds: string[],
-  trx: Knex.Transaction
+  trx: Knex.Transaction,
+  eventAnchor: Date
 ): Promise<void> {
   if (variantIds.length === 0) return;
 
@@ -41,6 +54,29 @@ export async function rebuildInventoryProjectionForVariants(
       `SELECT pg_advisory_xact_lock(hashtext(?));`,
       [String(shopId)]
     );
+
+    /**
+     * PROJECTION CONSISTENCY CONTRACT
+     * --------------------------------
+     * Inventory changes invalidate prior inventory constraint
+     * classifications (oversell / executable).
+     *
+     * We therefore clear constraint signals for affected variants
+     * before rebuilding the projection so that downstream
+     * reconciliation recomputes them deterministically.
+     *
+     * This prevents stale oversell flags during rebuild replay.
+     */
+    await trx('order_fulfillment_status')
+      .whereIn(
+        'lasyncro_order_id',
+        trx('order_revenue_units')
+          .select('lasyncro_order_id')
+          .whereIn('lasyncro_variant_id', variantIds)
+      )
+      .update({
+        inventory_block_type: null
+      });
 
     // 1️⃣ Delete only affected variants
     await trx('inventory_truth')
@@ -87,7 +123,7 @@ export async function rebuildInventoryProjectionForVariants(
               'sale',
               'damage',
               'shrinkage'
-            ) THEN -quantity_delta
+            ) THEN quantity_delta
 
             ELSE 0
           END
@@ -108,7 +144,13 @@ export async function rebuildInventoryProjectionForVariants(
         'location_code'
       );
 
-    const now = new Date();
+    /**
+     * EVENT-TIME ANCHOR
+     * -----------------
+     * Inventory evaluation timestamp must be derived
+     * from reconciliation event time.
+     */
+    const now = eventAnchor;
 
     const aggregatedByVariant = new Map(
       rows.map((r: any) => [r.lasyncro_variant_id, r])

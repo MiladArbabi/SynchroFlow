@@ -67,7 +67,20 @@ const response = await client.request(`
       const shopifyVariantId = v.node.id;
       const rawQty = v.node.inventoryQuantity ?? 0;
 
-      const qty = rawQty ?? 0;
+      /**
+       * OPENING BALANCE INVARIANT
+       * -------------------------
+       * Shopify inventoryQuantity may be negative when
+       * the platform allows overselling.
+       *
+       * Opening balances must never be negative because
+       * they represent initial stock, not adjustments.
+       *
+       * Negative values are normalized to zero and
+       * inventory deficit will be represented by
+       * subsequent sale movements.
+       */
+      const qty = Math.max(0, rawQty ?? 0);
 
       const mapping = await trx('external_product_identity_map')
         .where({

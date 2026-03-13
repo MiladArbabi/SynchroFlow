@@ -54,6 +54,7 @@ export function normalizeOperationalSnapshot(
     exception_orders: safeMetric(snapshot.exception_orders, warn),
     constrained_orders: safeMetric(snapshot.constrained_orders, warn),
     pending_payment: safeMetric(snapshot.pending_payment, warn),
+    at_risk_revenue: safeMetric(snapshot.at_risk_revenue, warn),
     partial_fulfillment_opportunity: safeMetric(snapshot.partial_fulfillment_opportunity, warn),
 
     revenue_blocked_inventory: safeMetric(snapshot.revenue_blocked_inventory, warn),

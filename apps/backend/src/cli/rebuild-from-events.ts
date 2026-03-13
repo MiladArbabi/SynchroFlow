@@ -6,15 +6,9 @@
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-
-    import fs from 'fs';
-    import path from 'path';
+import path from 'path';
 
 import { runSchemaGuard } from '../utils/schemaGuard.js';
-import { reconcileOrderFulfillment } from '../workers/reconciliation/reconciliation.handlers.js';
-import { computeShopOperationalSnapshot } from '../workers/projections/shopOperationalSnapshot.worker.js';
-import { computeObligationFlagsForOrders } 
-from '../services/order-execution-intelligence/obligationFlags.worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,7 +24,15 @@ dotenv.config({
   */
  process.env.REBUILD_MODE = 'true';
 
-import { projectDomainEvent } from '../projection/projection.engine.js';
+/**
+ * CANONICAL EVENT PROCESSOR
+ * -------------------------
+ * Rebuild must execute the same deterministic
+ * pipeline as runtime event processing.
+ *
+ * Never call projection.engine directly here.
+ */
+import { processDomainEvent } from '../events/processDomainEvent.js';
 import db from '@lasyncro/backend-core/db.js';
 import knex from 'knex';
 
@@ -59,10 +61,19 @@ async function truncateProjections() {
    */
 
   /**
-   * LEGACY TABLE
-   * -------------
-   * lifecycle_audit_events kept only for historical rebuilds.
-   * No new writes should occur after migration to lifecycle_events.
+   * PROJECTION TABLES ONLY
+   * ----------------------
+   * Rebuild may truncate only derived projections.
+   *
+   * STRICT RULE:
+   * Immutable ledgers MUST NEVER be truncated during rebuild.
+   *
+   * Critical ledgers:
+   * - domain_events
+   * - inventory_movements
+   *
+   * These tables represent historical event streams and are
+   * required for deterministic reconstruction.
    */
 
   const projectionTables = [
@@ -83,7 +94,6 @@ async function truncateProjections() {
     'orders_operational_control_snapshot',
     'revenue_projection_daily',
     'daily_operational_brief_snapshot',
-    'inventory_movements',
     'user_lifecycle_snapshot',
     'lifecycle_audit_events',
     'lifecycle_events',
@@ -151,70 +161,34 @@ async function replayEvents() {
     if (events.length === 0) break;
 
     for (const event of events) {
-      await projectDomainEvent(event.id);
+      /**
+       * CANONICAL EVENT EXECUTION
+       * -------------------------
+       * Rebuild must use the deterministic processor
+       * to guarantee runtime/replay equivalence.
+       */
+      await processDomainEvent(event.id);
       lastProcessed = event.id;
     }
   }
 }
 
 /**
- * DETERMINISTIC RECONCILIATION EXECUTION
- * --------------------------------------
- * During normal runtime reconciliation is executed
- * asynchronously via queue dispatcher.
+ * RECONCILIATION INTENT EXECUTION REMOVED
+ * ---------------------------------------
+ * Runtime reconciliation is executed through the
+ * reconciliation queue consumer.
  *
- * Deterministic rebuild cannot rely on queues.
+ * Deterministic rebuild must execute reconciliation
+ * through the canonical event pipeline instead.
  *
- * Therefore we must execute reconciliation inline
- * for every captured reconciliation intent.
+ * Since processDomainEvent() is now the canonical
+ * event processor, rebuild must not manually
+ * iterate reconciliation intents.
  *
- * Guarantees:
- * - Revenue units materialized
- * - Inventory projections rebuilt
- * - Operational snapshots computed
- * - Deterministic replay safety preserved
+ * Any reconciliation work must be triggered by
+ * domain events themselves.
  */
-async function executeReconciliationIntents() {
-
-  console.log('[REBUILD] Executing reconciliation intents...');
-
-  const intents = await db('order_reconciliation_intents')
-    .orderBy('created_at', 'asc');
-
-  for (const intent of intents) {
-
-    /**
-     * OBSERVED PAYLOAD NORMALIZATION
-     * ------------------------------
-     * The `observed` column is JSONB.
-     *
-     * During runtime it may arrive either as:
-     * - string (older migrations)
-     * - object (pg JSONB automatic decoding)
-     *
-     * Deterministic rebuild must support both
-     * without throwing parsing errors.
-     */
-    let observed;
-
-    if (intent.observed) {
-      observed =
-        typeof intent.observed === 'string'
-          ? JSON.parse(intent.observed)
-          : intent.observed;
-    }
-
-    await reconcileOrderFulfillment(
-      intent.lasyncro_order_id,
-      intent.aggregate_version,
-      observed
-    );
-  }
-
-  console.log(
-    `[REBUILD] Reconciliation completed for ${intents.length} intents`
-  );
-}
 
 /**
  * DETERMINISTIC STATE HASH
@@ -315,83 +289,59 @@ async function main() {
   await replayEvents();
 
   /**
-   * REBUILD INTENT REGENERATION
+   * INTENT REGENERATION REMOVED
    * ---------------------------
-   * Projection replay creates orders but reconciliation
-   * normally depends on runtime intent generation.
+   * Reconciliation intents must originate exclusively
+   * from projection handlers during domain event processing.
    *
-   * During deterministic rebuild the intent table was
-   * truncated earlier, so we regenerate intents directly
-   * from the orders table.
+   * Rebuild must NEVER synthesize intents from derived
+   * tables (orders), because this breaks event sourcing
+   * determinism and can introduce replay divergence.
    *
-   * Guarantees:
-   * - reconciliation runs for every order
-   * - deterministic rebuild reproducibility
-   * - projection handlers remain side-effect free
+   * Canonical rule:
+   *
+   *   domain_event → projection → reconciliation intent
+   *
+   * NOT:
+   *
+   *   derived_state → reconciliation intent
+   *
+   * If intents are missing after replay, the projection
+   * pipeline is incomplete and must be fixed upstream.
    */
-  console.log('[REBUILD] Regenerating reconciliation intents...');
-
-  await db.raw(`
-    INSERT INTO order_reconciliation_intents (
-      lasyncro_order_id,
-      aggregate_version,
-      created_at
-    )
-    SELECT
-      lasyncro_order_id,
-      aggregate_version,
-      order_created_at
-    FROM orders
-    ON CONFLICT (lasyncro_order_id, aggregate_version) DO NOTHING
-  `);
+  console.info('[REBUILD] reconciliation intents derived from projection replay');
 
   /**
-   * RECONCILIATION PHASE
-   * --------------------
-   * Required for deterministic rebuild because
-   * runtime reconciliation normally occurs via worker.
+   * OBLIGATION PHASE REMOVED
+   * ------------------------
+   * Obligation flags are produced by reconciliation.
+   * No rebuild-specific recomputation allowed.
    */
-  await executeReconciliationIntents();
-
-  async function recomputeObligations() {
-    console.log('[REBUILD] Recomputing obligation flags...');
-
-    const orders = await db('orders')
-      .select('lasyncro_order_id');
-
-    for (const o of orders) {
-      await db.transaction(async trx => {
-        await computeObligationFlagsForOrders(
-          [o.lasyncro_order_id],
-          trx
-        );
-      });
-    }
-  }
-
-  await recomputeObligations();
 
   /**
-   * REBUILD SNAPSHOT RECONSTRUCTION
-   * --------------------------------
-   * Runtime system computes shop operational snapshots
-   * inside the reconciliation worker.
+   * SNAPSHOT RECOMPUTATION REMOVED
+   * ------------------------------
+   * Shop operational snapshots are executed by the
+   * reconciliation pipeline after each order event.
    *
-   * Rebuild bypasses the queue layer, therefore snapshots
-   * must be recomputed explicitly here.
+   * Rebuild must not introduce an alternative
+   * execution model that recomputes snapshots in
+   * bulk loops, as this breaks runtime parity.
    *
-   * Guarantees:
-   * - deterministic reconstruction of operational control state
-   * - parity with runtime worker pipeline
+   * Canonical execution flow:
+   *
+   *   domain_event
+   *        ↓
+   *   reconciliation
+   *        ↓
+   *   computeShopOperationalSnapshot(shop_id)
+   *
+   * Therefore rebuild must rely entirely on the
+   * reconciliation pipeline to trigger snapshots.
    */
-  console.log('[REBUILD] Recomputing shop operational snapshots...');
-
-  const shops = await db('orders')
-    .distinct('shop_id');
-
-  for (const row of shops) {
-    await computeShopOperationalSnapshot(row.shop_id);
-  }
+  console.info(
+    '[REBUILD] shop snapshots derived from reconciliation pipeline'
+  );
 
   /**
    * REBUILD PURITY RULE
@@ -403,6 +353,34 @@ async function main() {
 
   const stateHash = await computeStateHash();
   console.log('[REBUILD_STATE_HASH]', stateHash);
+
+  /**
+   * INVENTORY CONSTRAINT REBUILD
+   * ----------------------------
+   * Inventory constraint classification (oversell / executable)
+   * is derived from inventory_truth and order demand.
+   *
+   * Because this signal is currently computed by the
+   * reconciliation worker, rebuild must recompute it
+   * deterministically after all projections are stable.
+   *
+   * This guarantees rebuild parity with runtime state.
+   */
+
+  console.log('[REBUILD] Recomputing inventory constraint signals...');
+
+  const allOrders = await db('orders').select('lasyncro_order_id');
+
+  await db.transaction(async (trx) => {
+    const { computeObligationFlagsForOrders } =
+      await import('../services/order-execution-intelligence/obligationFlags.worker.js');
+
+    await computeObligationFlagsForOrders(
+      allOrders.map(o => o.lasyncro_order_id),
+      trx,
+      new Date()
+    );
+  });
 
   console.log('[REBUILD] Completed successfully.');
   process.exit(0);

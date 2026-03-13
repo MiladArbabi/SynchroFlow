@@ -262,7 +262,8 @@ export async function reconcileOrderFulfillment(
       await rebuildInventoryProjectionForVariants(
         order.shop_id,
         affectedVariantIds,
-        trx
+        trx,
+        eventAnchor
       );
     };
 
@@ -287,9 +288,22 @@ export async function reconcileOrderFulfillment(
       )
     );
 
+    /**
+     * INVENTORY CONSTRAINT RE-EVALUATION
+     * ----------------------------------
+     * Inventory changes affect the entire variant demand queue.
+     *
+     * Therefore all orders containing the affected variants must
+     * be re-evaluated for oversell allocation.
+     */
+    const affectedOrders = await trx('order_revenue_units')
+      .distinct('lasyncro_order_id')
+      .whereIn('lasyncro_variant_id', affectedVariantIds);
+
     await computeObligationFlagsForOrders(
-      [lasyncroOrderId],
-      trx
+      affectedOrders.map(o => o.lasyncro_order_id),
+      trx,
+      eventAnchor
     );
 
     /**
@@ -436,6 +450,7 @@ export async function reconcileOrderFulfillment(
         trx, 
         order.shop_id,
         aggregateVersion,
+        eventAnchor
       );
     };
 
@@ -466,6 +481,7 @@ export async function reconcileOrderFulfillment(
       trx,
       order.shop_id,
       aggregateVersion,
+      eventAnchor
     );
 
     await writeReconciliationAudit(

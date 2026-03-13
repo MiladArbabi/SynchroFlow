@@ -20,6 +20,7 @@ export async function projectDailyOperationalBrief(
   trx: Knex.Transaction,
   shopId: string,
   aggregateVersion: number,
+  eventAnchor: Date
 ) {
 
   const inventoryBlockedRevenue = await trx('order_revenue_units_net as runet')
@@ -62,7 +63,10 @@ export async function projectDailyOperationalBrief(
         topPriorityOrders.map(o => o.lasyncro_order_id)
       ),
 
-      evaluated_at: trx.fn.now()
+      /**
+       * DETERMINISTIC TIMESTAMP RULE
+       */
+      evaluated_at: eventAnchor
     })
     .onConflict(['shop_id','brief_date'])
     .merge();

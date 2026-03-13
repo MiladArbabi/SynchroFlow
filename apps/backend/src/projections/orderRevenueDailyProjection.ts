@@ -17,6 +17,7 @@ export async function projectRevenueDaily(
   trx: Knex.Transaction,
   shopId: string,
   aggregateVersion: number,
+  eventAnchor: Date
 ) {
 
   const dailyRows = await trx('order_revenue_units_net as runet')
@@ -47,7 +48,15 @@ export async function projectRevenueDaily(
         gross_revenue: Number(row.gross_revenue ?? 0),
         order_count: Number(row.order_count ?? 0),
         at_risk_revenue: Number(row.at_risk_revenue ?? 0),
-        evaluated_at: trx.fn.now()
+        /**
+         * DETERMINISTIC TIMESTAMP RULE
+         * ----------------------------
+         * Projection timestamps must derive from
+         * canonical domain event time.
+         *
+         * Wall-clock timestamps break deterministic rebuilds.
+         */
+        evaluated_at: eventAnchor
       })
       .onConflict(['shop_id', 'revenue_date'])
       .merge();
