@@ -61,28 +61,23 @@ async function truncateProjections() {
    */
 
   /**
-   * PROJECTION TABLES ONLY
-   * ----------------------
-   * Rebuild may truncate only derived projections.
+   * PROJECTION TABLE REGISTRY
+   * -------------------------
+   * Only derived projections may be truncated during rebuild.
    *
-   * STRICT RULE:
-   * Immutable ledgers MUST NEVER be truncated during rebuild.
+   * Canonical state tables MUST NEVER appear here because they are
+   * deterministically reconstructed via domain event replay.
    *
-   * Critical ledgers:
-   * - domain_events
+   * Forbidden examples:
+   * - orders
+   * - order_line_items
+   * - order_revenue_units
    * - inventory_movements
    *
-   * These tables represent historical event streams and are
-   * required for deterministic reconstruction.
+   * If a canonical table is added here, rebuild correctness is broken.
    */
-
   const projectionTables = [
     'domain_event_outbox',
-    'orders',
-    'order_line_items',
-    'order_revenue_units',
-    'refund_executions',
-    'refund_execution_line_items',
     'order_fulfillment_status',
     'order_fulfillment_history',
     'order_constraint_events',

@@ -3,7 +3,6 @@ import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 
 import { ReconciliationResult } from './reconciliation.types.js';
-import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { projectOrderAge } from '../../projections/orderAgeProjection.js';
 import { projectOrderRisk } from '../../projections/orderRiskProjection.js';
 import { projectOrderMargin } from '../../projections/orderMarginProjection.js';
@@ -12,12 +11,14 @@ import { projectOrderFulfillment } from '../../projections/orderFulfillmentProje
 import { projectRevenueDaily } from '../../projections/orderRevenueDailyProjection.js';
 import { projectDailyOperationalBrief } from '../../projections/dailyOperationalBriefProjection.js';
 import { projectOrderInventoryConstraints } from '../../projections/orderInventoryConstraintProjection.js';
+import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
 
 import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
 import { resolveOperationalSignals } from '../../services/order-execution-intelligence/orderOperationalSignalsResolver.js'
 
 import { writeReconciliationAudit } from './reconciliationAuditWriter.js';
 import { writeReconciliationCheckpoint } from './reconciliationCheckpointWriter.js';
+import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 
 import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
@@ -267,6 +268,8 @@ export async function reconcileOrderFulfillment(
       );
     };
 
+    assertProjectionRegistered('orderFulfillmentProjection');
+
     /**
      * ORDER FULFILLMENT PROJECTION
      * ----------------------------
@@ -303,15 +306,16 @@ export async function reconcileOrderFulfillment(
     /**
      * INVENTORY CONSTRAINT PROJECTION
      * --------------------------------
-     * Oversell classification is now a deterministic projection
-     * derived from order demand and inventory_truth.
+     * Oversell classification projection.
      *
-     * This replaces the runtime worker previously used to
-     * mutate inventory_block_type.
+     * Wrapped with instrumentation so projection latency
+     * becomes visible in reconciliation runtime telemetry.
      */
-    await projectOrderInventoryConstraints(
-      trx,
-      affectedOrders.map(o => o.lasyncro_order_id)
+    await instrumentProjection('orderInventoryConstraintProjection', async () =>
+      projectOrderInventoryConstraints(
+        trx,
+        affectedOrders.map(o => o.lasyncro_order_id)
+      )
     );
 
     /**

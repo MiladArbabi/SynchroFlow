@@ -12,6 +12,29 @@ import fs from 'fs';
 import path from 'path';
 
 /**
+ * PROJECTION PIPELINE ORDER GUARD
+ * -------------------------------
+ * Ensures the runtime reconciliation pipeline still matches
+ * the canonical projection execution registry.
+ *
+ * If a projection is added to the runtime pipeline but not
+ * registered in projectionExecutionOrder, the system fails fast.
+ *
+ * This prevents silent divergence between:
+ *
+ * - runtime reconciliation pipeline
+ * - rebuild pipeline
+ * - projection registry
+ */
+export function assertProjectionRegistered(name: string) {
+  if (!projectionExecutionOrder.includes(name)) {
+    fail(
+      `[SchemaGuard] projection used in runtime pipeline but missing from projectionExecutionOrder: ${name}`
+    );
+  }
+}
+
+/**
  * SCHEMA GUARD
  * ============
  *

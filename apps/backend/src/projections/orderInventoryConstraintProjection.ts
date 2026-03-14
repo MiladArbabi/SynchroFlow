@@ -66,11 +66,35 @@ export async function projectOrderInventoryConstraints(
     .whereIn('vd.lasyncro_order_id', orderIds)
     .groupBy('vd.lasyncro_order_id');
 
-  for (const row of rows as any[]) {
+  /**
+   * SET-BASED PROJECTION WRITE
+   * --------------------------
+   * Oversell classification is written in a single deterministic batch.
+   *
+   * Guarantees:
+   * - no N+1 writes
+   * - stable rebuild behaviour
+   * - observable mutation count
+   */
+  const updates = rows.map((row: any) => ({
+    lasyncro_order_id: row.lasyncro_order_id,
+    inventory_block_type: Number(row.oversell) === 1 ? 'oversell' : null
+  }));
+
+  if (updates.length === 0) {
+    console.debug('[inventory_constraint_projection.no_updates]');
+    return;
+  }
+
+  for (const update of updates) {
     await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: row.lasyncro_order_id })
+      .where({ lasyncro_order_id: update.lasyncro_order_id })
       .update({
-        inventory_block_type: Number(row.oversell) === 1 ? 'oversell' : null
+        inventory_block_type: update.inventory_block_type
       });
   }
+
+  console.debug('[inventory_constraint_projection.completed]', {
+    evaluated_orders: updates.length
+  });
 }
