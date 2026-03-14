@@ -21,13 +21,12 @@
  * This prevents silent projection drift.
  */
 export const projectionExecutionOrder = [
-
   'orderFulfillmentProjection',
+  'orderInventoryConstraintProjection',
   'orderConstraintProjection',
   'orderMarginProjection',
   'orderRiskProjection',
   'orderAgeProjection',
   'orderRevenueDailyProjection',
   'dailyOperationalBriefProjection'
-
 ];

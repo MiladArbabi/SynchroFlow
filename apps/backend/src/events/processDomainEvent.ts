@@ -22,8 +22,9 @@
  * MUST NOT embed business logic.
  */
 
-import { projectDomainEvent } from '../projection/projection.engine.js';
 import db from '@lasyncro/backend-core/db.js';
+import { projectDomainEvent } from '../projection/projection.engine.js';
+import { projectOrderInventoryConstraints } from '../projections/orderInventoryConstraintProjection.js';
 
 /**
  * RECONCILIATION PIPELINE OWNERSHIP

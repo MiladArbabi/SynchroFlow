@@ -91,6 +91,28 @@ const response = await client.request(`
 
       if (!mapping) continue;
 
+      /**
+       * LEDGER INVARIANT VIOLATION GUARD
+       * --------------------------------
+       * inventory_movements enforces quantity_delta ≠ 0.
+       *
+       * Shopify may return variants with inventoryQuantity = 0.
+       * Such states represent absence of stock rather than a movement.
+       *
+       * Therefore we skip insertion but emit a debug signal so that
+       * ingestion anomalies remain observable during sync operations.
+       */
+      if (qty === 0) {
+
+        console.debug('[INVENTORY_OPENING_BALANCE_SKIPPED_ZERO]', {
+          shopId,
+          shopifyVariantId,
+          lasyncroVariantId: mapping?.lasyncro_variant_id
+        });
+
+        continue;
+      }
+
       await trx('inventory_movements')
         .insert({
           lasyncro_inventory_movement_id: crypto.randomUUID(),

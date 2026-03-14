@@ -354,34 +354,6 @@ async function main() {
   const stateHash = await computeStateHash();
   console.log('[REBUILD_STATE_HASH]', stateHash);
 
-  /**
-   * INVENTORY CONSTRAINT REBUILD
-   * ----------------------------
-   * Inventory constraint classification (oversell / executable)
-   * is derived from inventory_truth and order demand.
-   *
-   * Because this signal is currently computed by the
-   * reconciliation worker, rebuild must recompute it
-   * deterministically after all projections are stable.
-   *
-   * This guarantees rebuild parity with runtime state.
-   */
-
-  console.log('[REBUILD] Recomputing inventory constraint signals...');
-
-  const allOrders = await db('orders').select('lasyncro_order_id');
-
-  await db.transaction(async (trx) => {
-    const { computeObligationFlagsForOrders } =
-      await import('../services/order-execution-intelligence/obligationFlags.worker.js');
-
-    await computeObligationFlagsForOrders(
-      allOrders.map(o => o.lasyncro_order_id),
-      trx,
-      new Date()
-    );
-  });
-
   console.log('[REBUILD] Completed successfully.');
   process.exit(0);
 }

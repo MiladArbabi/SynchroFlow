@@ -11,6 +11,7 @@ import { projectOrderConstraints } from '../../projections/orderConstraintProjec
 import { projectOrderFulfillment } from '../../projections/orderFulfillmentProjection.js';
 import { projectRevenueDaily } from '../../projections/orderRevenueDailyProjection.js';
 import { projectDailyOperationalBrief } from '../../projections/dailyOperationalBriefProjection.js';
+import { projectOrderInventoryConstraints } from '../../projections/orderInventoryConstraintProjection.js';
 
 import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
 import { resolveOperationalSignals } from '../../services/order-execution-intelligence/orderOperationalSignalsResolver.js'
@@ -20,7 +21,6 @@ import { writeReconciliationCheckpoint } from './reconciliationCheckpointWriter.
 
 import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
-import { computeObligationFlagsForOrders } from '../../services/order-execution-intelligence/obligationFlags.worker.js';
 import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
 
 /**
@@ -300,10 +300,18 @@ export async function reconcileOrderFulfillment(
       .distinct('lasyncro_order_id')
       .whereIn('lasyncro_variant_id', affectedVariantIds);
 
-    await computeObligationFlagsForOrders(
-      affectedOrders.map(o => o.lasyncro_order_id),
+    /**
+     * INVENTORY CONSTRAINT PROJECTION
+     * --------------------------------
+     * Oversell classification is now a deterministic projection
+     * derived from order demand and inventory_truth.
+     *
+     * This replaces the runtime worker previously used to
+     * mutate inventory_block_type.
+     */
+    await projectOrderInventoryConstraints(
       trx,
-      eventAnchor
+      affectedOrders.map(o => o.lasyncro_order_id)
     );
 
     /**
