@@ -53,7 +53,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createInventoryConstraintClusterSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('inventory-constraint-cluster'),
+        getLifecycle(),
         'critical',
         signalId('inventory-constraint-cluster')
       )
@@ -66,7 +66,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createSlaRiskSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('sla-risk'),
+        getLifecycle(),
         'critical',
         signalId('sla-risk')
       )
@@ -79,7 +79,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createPaymentReviewSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('payment-review'),
+        getLifecycle(),
         'warning',
         signalId('payment-review')
       )
@@ -92,7 +92,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createAwaitingCustomerSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('awaiting-customer'),
+        getLifecycle(),
         'info',
         signalId('awaiting-customer')
       )
@@ -105,7 +105,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createOperationalExceptionSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('operational-exception'),
+        getLifecycle(),
         'critical',
         signalId('operational-exception')
       )
@@ -118,7 +118,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createPaymentProblemSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('payment-retry'),
+        getLifecycle(),
         'critical',
         signalId('payment-retry')
       )
@@ -131,7 +131,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createEarlyAgingSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('aging-24h'),
+        getLifecycle(),
         'info',
         signalId('aging-24h')
       )
@@ -144,7 +144,7 @@ export const signalRegistry: SignalRegistryEntry[] = [
       createAgingOrdersSignal(
         ctx.snapshot,
         detectedAt,
-        getLifecycle('aging-orders'),
+        getLifecycle(),
         'critical',
         signalId('aging-orders')
       )

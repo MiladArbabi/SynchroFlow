@@ -21,12 +21,6 @@ import type { OperationalSignalLifecycle } from '../../../contracts/operationalS
 const signalDetectionRegistry = new Map<string, string>();
 
 /**
- * Lifecycle state registry
- */
-const signalLifecycleRegistry =
-  new Map<string, OperationalSignalLifecycle>();
-
-/**
  * Resolution registry
  */
 const signalResolvedAtRegistry =
@@ -74,83 +68,38 @@ export function getDetectedAt(
 }
 
 /**
- * Retrieve lifecycle state.
+ * Deterministic lifecycle state
+ *
+ * Lifecycle must derive exclusively from
+ * projection snapshot presence.
+ *
+ * If the signal exists in the snapshot,
+ * it is considered NEW.
  */
-export function getLifecycle(
-  key: string
-): OperationalSignalLifecycle {
-
-  if (!signalLifecycleRegistry.has(key)) {
-    signalLifecycleRegistry.set(key, 'NEW');
-  }
-
-  return signalLifecycleRegistry.get(key)!;
-}
+export function getLifecycle(): OperationalSignalLifecycle {
+  return 'NEW';
+};
 
 /**
- * Update lifecycle state.
+ * Lifecycle transition instrumentation
+ * -----------------------------------
+ * Lifecycle is no longer stored in UI memory.
+ *
+ * This function exists only to provide
+ * operational instrumentation when actions
+ * are triggered from the Control Tower.
+ *
+ * Real lifecycle progression must originate
+ * from backend projections.
  */
 export function updateSignalLifecycle(
-  key: string,
-  lifecycle: OperationalSignalLifecycle
+  signalId: string,
+  lifecycle: string
 ) {
-
-  const current =
-    signalLifecycleRegistry.get(key);
-
-  const order = {
-    NEW: 1,
-    ACKNOWLEDGED: 2,
-    IN_PROGRESS: 3,
-    RESOLVED: 4,
-  };
-
-  if (!current || order[lifecycle] >= order[current]) {
-    signalLifecycleRegistry.set(key, lifecycle);
+  if (typeof window !== 'undefined') {
+    console.info('[OperationalSignals] lifecycle transition requested', {
+      signalId,
+      lifecycle,
+    });
   }
-}
-
-/**
- * Resolve signals that disappeared from snapshot.
- */
-export function resolveInactiveSignals(
-  activeSignalTypes: Set<string>,
-  evaluationTime: number
-) {
-
-  for (const key of signalDetectionRegistry.keys()) {
-
-    if (!activeSignalTypes.has(key)) {
-
-      signalLifecycleRegistry.set(key, 'RESOLVED');
-      signalResolvedAtRegistry.set(key, evaluationTime);
-
-      signalDetectionRegistry.delete(key);
-    }
-  }
-}
-
-/**
- * Cleanup resolved signals after retention window.
- */
-export function pruneResolvedSignals(
-  evaluationTime: number,
-  retentionMs: number
-): number {
-
-  let pruned = 0;
-
-  for (const [key, resolvedAt] of signalResolvedAtRegistry.entries()) {
-
-    if (evaluationTime - resolvedAt > retentionMs) {
-
-      signalResolvedAtRegistry.delete(key);
-      signalLifecycleRegistry.delete(key);
-
-      pruned++;
-    }
-
-  }
-
-  return pruned;
 }

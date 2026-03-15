@@ -8,34 +8,16 @@
  * metric→signal logic toward state→signal logic.
  */
 import { detectOperationalStates } from './detectOperationalStates.js';
-import { createEarlyAgingSignal, createAgingOrdersSignal } from './signals/createAgingSignals.js';
-import { createAwaitingCustomerSignal } from './signals/createAwaitingCustomerSignal.js';
-import { createFulfillmentConstraintSignal } from './signals/createFulfillmentConstraintSignal.js';
-import { createInventoryShortageSignal } from './signals/createInventoryShortageSignal.js';
-import { createOperationalExceptionSignal } from './signals/createOperationalExceptionSignal.js';
-import { createPaymentProblemSignal } from './signals/createPaymentProblemSignal.js';
-import { createPaymentReviewSignal } from './signals/createPaymentReviewSignal.js';
-import { createSlaRiskSignal } from './signals/createSlaRiskSignal.js';
 import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { validateSnapshotCoverage } from './utils/validateSnapshotCoverage.js';
 import type { OperationalControlSnapshot } from './types/operationalControlSnapshot.js';
 import { signalRegistry } from './signals/signalRegistry.js';
 
-import { createInventoryConstraintClusterSignal }
-from './signals/createInventoryConstraintClusterSignal.js';
-
 import {
   registerSignalType,
   getDetectedAt,
-  getLifecycle,
-  resolveInactiveSignals,
-  pruneResolvedSignals
+  getLifecycle
 } from './lifecycle/signalLifecycleEngine.js';
-
-import {
-  signalId,
-  escalateSeverity
-} from './utils/signalUtils.js';
 import { normalizeOperationalSnapshot } from './utils/normalizeOperationalSnapshot.js';
 import { sortOperationalSignals } from './utils/sortOperationalSignals.js';
 
@@ -147,19 +129,20 @@ export function mapOperationalSignals(
     normalizeOperationalSnapshot(snapshot);
 
   /**
-   * Snapshot evaluation timestamp
-   * -----------------------------
+   * Deterministic snapshot evaluation time
    *
-   * OperationalControlSnapshot does not contain
-   * a timestamp field.
-   *
-   * Therefore the signal engine uses the evaluation
-   * cycle time as the detection baseline.
-   *
-   * This timestamp is passed into the lifecycle engine
-   * to generate signal detection timestamps.
+   * Signals must be derived from projection state,
+   * never wall-clock runtime.
    */
-  const evaluationTime = Date.now();
+  const evaluationTime =
+    new Date(snapshot.snapshot_date).getTime();
+
+  if (Number.isNaN(evaluationTime)) {
+    console.error(
+      '[OperationalSignals] Invalid snapshot_date in operational snapshot',
+      snapshot.snapshot_date
+    );
+  }
 
   /**
    * Runtime invariant guard
@@ -255,37 +238,7 @@ export function mapOperationalSignals(
       );
 
     }
-  }
-
-  /**
-   * Resolve signals that disappeared from snapshot
-   */
-  resolveInactiveSignals(
-    activeSignalTypes,
-    evaluationTime
-  );
-
-  /**
-   * Prune resolved lifecycle entries after 10 minutes
-   * to prevent unbounded registry growth.
-   */
-  const RESOLUTION_RETENTION_MS = 10 * 60 * 1000;
-
-  const prunedEntries =
-    pruneResolvedSignals(
-      evaluationTime,
-      RESOLUTION_RETENTION_MS
-    );
-
-  /**
-   * Emit pruning telemetry only when work occurred
-   * to avoid console noise during normal operation.
-   */
-  if (prunedEntries > 0) {
-    console.info(
-      `[OperationalSignals] lifecycle cleanup pruned ${prunedEntries} entries`
-    );
-  }
+  };
 
   sortOperationalSignals(signals);
 

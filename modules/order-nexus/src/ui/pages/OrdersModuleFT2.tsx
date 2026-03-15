@@ -25,7 +25,6 @@ import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
 import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
 import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
 import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlock.js';
-import { OrderHealthInfoBlock } from '../components/OrderHealthInfoBlock.js';
 
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
 import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
@@ -263,11 +262,10 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
    */
   decision: {
     brief: {
-      critical_orders_count: number;
-      negative_margin_orders_count: number;
-      sla_breached_count: number;
+      ready_to_ship: number;
+      awaiting_customer: number;
       inventory_blocked_revenue: string | number;
-      refund_exposure: string | number;
+      manual_review: string | number;
     };
   };
 };
@@ -291,43 +289,19 @@ export default function OrdersModuleFT2(
      * OPERATIONAL HEALTH CLASSIFIER
      * -----------------------------
      * Computes high-level operational state from snapshot metrics.
-     *
-     * Purpose:
-     * - provide single-glance system state
-     * - allow escalation banner rendering
+     * Provides global operational state only.
+     * 
+     * Design rule:
+     * - System Health must never duplicate incident signals.
+     * - Actionable issues belong exclusively to Operations Queue.
      *
      * This logic MUST remain presentation-only.
      * No operational decisions may occur here.
      */
-    const blockedRevenue = operationalControl?.blocked_revenue ?? 0;
-    const revenueBlockedInventory =
-      operationalControl?.revenue_blocked_inventory ?? 0;
-
-    const revenueBlockedCustomer =
-      operationalControl?.revenue_blocked_customer ?? 0;
-
-    const revenueBlockedOperational =
-      operationalControl?.revenue_blocked_operational ?? 0;
     const exceptionOrders = operationalControl?.exception_orders ?? 0;
     const constrainedOrders = operationalControl?.constrained_orders ?? 0;
 
-    const aging24h = operationalControl?.aging_24h ?? 0;
-    const aging48h = operationalControl?.aging_48h ?? 0;
-    const aging72h = operationalControl?.aging_72h_plus ?? 0;
-
     let operationalHealth: 'healthy' | 'warning' | 'critical' = 'healthy';
-
-    /**
-     * HEALTH CLASSIFICATION
-     * ---------------------
-     * Critical → revenue blocked or inventory constraints
-     * Warning  → operational exceptions or aging pressure
-     */
-    if (blockedRevenue > 0 || constrainedOrders > 0) {
-      operationalHealth = 'critical';
-    } else if (exceptionOrders > 0 || aging24h > 0 || aging48h > 0 || aging72h > 0) {
-      operationalHealth = 'warning';
-    }
 
     /**
      * SIGNAL ENGINE INPUT
@@ -355,151 +329,152 @@ export default function OrdersModuleFT2(
 
   return (
     <FT2Layout>
-      <div
-        style={{
-          display: 'grid',
-          /**
-           * Responsive dashboard grid
-           * -------------------------
-           * All panels (including Operations Queue) must
-           * participate in the same responsive column rule.
-           *
-           * minmax(320px, 1fr) guarantees:
-           * - panels never shrink below readable width
-           * - panels expand evenly across viewport
-           * - queue remains visually dominant without fixed width
-           */
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gridAutoRows: 'min-content',
-          gap: '16px',
-          alignItems: 'start'
-        }}
-      >
 
-        {/* OPERATIONAL HEALTH BANNER
-            -------------------------
-            Provides immediate system state awareness
-            before operators inspect detailed queues.
-        */}
-        {operationalHealth !== 'healthy' && (
-          <FT2Panel title="System Health">
+      {/* -----------------------------------------------------
+        SYSTEM HEALTH ROW
+        -----------------------------------------------------
+        Full-width escalation banner.
+        Span=4 guarantees Control Tower priority visibility.
+      ----------------------------------------------------- */}
+      {operationalHealth !== 'healthy' && (
+        <FT2Row intent="support">
 
-          <PanelRow
-            label={
-              operationalHealth === 'critical'
-                ? '🚨 Critical operational state'
-                : '⚠️ Operational pressure detected'
-            }
-            value={
-              operationalHealth === 'critical'
-                ? `${constrainedOrders} constrained orders • $${revenueBlockedInventory.toLocaleString()} blocked by inventory`
-                : `${exceptionOrders} operational exceptions • ${aging24h + aging48h + aging72h} aging orders`
-            }
-          />
+          <FT2Panel
+            id="system-health"
+            title="System Health"
+            span={4}
+          >
+            <PanelRow
+              label={
+                operationalHealth === 'critical'
+                  ? '🚨 Critical operational state'
+                  : '⚠️ Operational pressure detected'
+              }
+              value={
+                operationalHealth === 'critical'
+                  ? `${constrainedOrders} constrained orders • operational intervention required`
+                  : `${exceptionOrders} operational exceptions detected`
+              }
+            />
 
-          {operationalHealth === 'critical' && (
-            <PanelActions>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={() => {
-                  console.info('[OrdersModuleFT2] banner action', {
-                    intent: 'orders.queue.awaiting_inventory'
-                  });
-
-                  const queuePanel = document.getElementById('work-queue');
-
-                  if (queuePanel) {
-                    queuePanel.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'start'
+            {operationalHealth === 'critical' && (
+              <PanelActions>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => {
+                    console.info('[OrdersModuleFT2] banner action', {
+                      intent: 'orders.queue.awaiting_inventory'
                     });
-                  }
 
-                  /**
-                   * Highlight the operational source queue.
-                   *
-                   * The current critical state is caused by
-                   * inventory constraints, therefore the
-                   * Awaiting Inventory queue is emphasized.
-                   */
-                  const queueRow = document.getElementById('queue-awaiting-inventory');
+                    const queuePanel = document.getElementById('work-queue');
 
-                  if (queueRow) {
+                    if (queuePanel) {
+                      queuePanel.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                      });
+                    }
 
-                    queueRow.style.transition = 'background-color 0.4s ease';
-                    queueRow.style.backgroundColor = 'rgba(245,158,11,0.18)';
+                    const queueRow = document.getElementById('queue-awaiting-inventory');
 
-                    setTimeout(() => {
-                      queueRow.style.backgroundColor = '';
-                    }, 1800);
-                  }
-                }}
-              >
-                View Inventory-Blocked Orders
-              </Button>
-            </PanelActions>
-          )}
+                    if (queueRow) {
+                      queueRow.style.transition = 'background-color 0.4s ease';
+                      queueRow.style.backgroundColor = 'rgba(245,158,11,0.18)';
 
-          <PanelFooter
-            line1="> SYSTEM STATE SUMMARY"
-            line2="> SOURCE: orders_operational_control_snapshot"
-          />
+                      setTimeout(() => {
+                        queueRow.style.backgroundColor = '';
+                      }, 1800);
+                    }
+                  }}
+                >
+                  View Inventory-Blocked Orders
+                </Button>
+              </PanelActions>
+            )}
 
+            <PanelFooter
+              line1="> SYSTEM STATE SUMMARY"
+              line2="> SOURCE: orders_operational_control_snapshot"
+            />
+
+          </FT2Panel>
+
+        </FT2Row>
+      )}
+
+      {/* -----------------------------------------------------
+        CORE OPERATIONS ROW
+        -----------------------------------------------------
+        Control Tower scanning layout.
+
+        Chart (2) | Operations (1) | WorkQueue (1)
+
+        FT2Row span engine ensures deterministic
+        proportional layout regardless of viewport.
+      ----------------------------------------------------- */}
+      <FT2Row intent="analysis">
+
+        {/* Operational Pressure Timeline */}
+        <FT2Panel span={2} title="Operational Pressure">
+          {timeseries}
         </FT2Panel>
-        )}
 
-        {/* Queue spans vertically */}
-        <div>
-          <OperationsQueueSection
-            signals={operationalSignals}
-            onAction={handleOperationsAction}
-          />
-        </div>
+        {/* Operations Queue (already renders FT2Panel internally) */}
+        <OperationsQueueSection
+          span={1}
+          signals={operationalSignals}
+          onAction={handleOperationsAction}
+        />
 
-          {/* ---------------------------------------------------------
-             WORK QUEUE SURFACE
-             ---------------------------------------------------------
-             Displays operational workload derived directly
-             from reconciliation projection.
-          
-             Architectural separation:
-             Signals → problems
-             Queues  → workload
-          --------------------------------------------------------- */}
-          <div>
-          <WorkQueueSection
-            queues={workQueues}
-          />
-          </div>
+        {/* Work Queue (already renders FT2Panel internally) */}
+        <WorkQueueSection
+          span={1}
+          queues={workQueues}
+        />
 
-        <OrdersOverviewInfoBlock orders={orders} />
+      </FT2Row>
+
+      {/* -----------------------------------------------------
+        BUSINESS CONTEXT ROW
+        -----------------------------------------------------
+        Informational surfaces supporting operator decisions.
+        Each panel span=1 to maintain visual parity.
+      ----------------------------------------------------- */}
+      <FT2Row intent="analysis">
+
+        <OrdersOverviewInfoBlock
+          span={1}
+          orders={orders}
+        />
 
         <RevenueOverviewInfoBlock
+          span={1}
           revenue={{
             totalSales: revenue.totalSales,
             earned: revenue.earned,
             pending: revenue.pending,
-            blocked: revenue.blocked
           }}
         />
 
-        <OrdersDecisionBrief {...decision.brief} />
+        <OrdersDecisionBrief
+          span={1}
+          {...decision.brief}
+        />
 
         <RevenueIntegrityInfoBlock
-          realized_revenue={operationalControl.realized_revenue}
           at_risk_revenue={operationalControl.at_risk_revenue}
-          blocked_revenue={operationalControl.blocked_revenue}
           revenue_leakage={operationalControl.revenue_leakage}
           avg_contribution_margin_pct={
             operationalControl.avg_contribution_margin_pct
           }
         />
 
-        {timeseries}
-        {distribution}
+      </FT2Row>
 
-      </div>
+      {/* Optional analytical surfaces */}
+      {distribution}
+
     </FT2Layout>
   );
 }

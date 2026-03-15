@@ -7,37 +7,32 @@
 import { FT2Panel, PanelRow,PanelFooter } from '@lasyncro/ui-ft2';
 
 export interface RevenueIntegrityInfoBlockProps {
-  realized_revenue: number;
+  /**
+   * FT2Row layout participation.
+   * Allows this panel to participate in
+   * the Control Tower span layout engine.
+   */
+  span?: number;
   at_risk_revenue: number;
-  blocked_revenue: number;
   revenue_leakage: number;
   avg_contribution_margin_pct: number;
 }
 
-export function RevenueIntegrityInfoBlock(
-  props: RevenueIntegrityInfoBlockProps
-) {
-  const {
-    realized_revenue,
-    at_risk_revenue,
-    blocked_revenue,
-    revenue_leakage,
-    avg_contribution_margin_pct,
-  } = props;
+export function RevenueIntegrityInfoBlock({
+  span = 1,
+  at_risk_revenue,
+  revenue_leakage,
+  avg_contribution_margin_pct,
+}: RevenueIntegrityInfoBlockProps) {
 
   return (
-    <FT2Panel title="Revenue Integrity">
-      <PanelRow
-        label="Realized Revenue"
-        value={realized_revenue}
-      />
+    <FT2Panel
+        title="Financial Integrity"
+        span={span}
+      >
       <PanelRow
         label="At-Risk Revenue"
         value={at_risk_revenue}
-      />
-      <PanelRow
-        label="Blocked Revenue"
-        value={blocked_revenue}
       />
       <PanelRow
         label="Revenue Leakage"

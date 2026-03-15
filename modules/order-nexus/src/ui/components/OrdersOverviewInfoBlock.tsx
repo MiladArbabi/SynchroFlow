@@ -1,6 +1,7 @@
 import { FT2Panel, PanelRow, PanelFooter } from '@lasyncro/ui-ft2';
 
 type OrdersOverviewInfoBlockProps = {
+  span?: number;
   orders: {
     total: number | null;
     fulfilled: number | null;
@@ -10,6 +11,7 @@ type OrdersOverviewInfoBlockProps = {
 };
 
 export function OrdersOverviewInfoBlock({
+  span = 1,
   orders,
 }: OrdersOverviewInfoBlockProps) {
   /**
@@ -19,19 +21,19 @@ export function OrdersOverviewInfoBlock({
    * This component now renders rows only.
    */
   return (
-    <FT2Panel title="Orders Sync">
+    <FT2Panel title="Operational Metrics" span={span}>
       <PanelRow
         label="Total orders"
         value={orders.total}
       />
 
       <PanelRow
-        label="Fulfilled orders"
+        label="Fulfilled"
         value={orders.fulfilled}
       />
 
       <PanelRow
-        label="Unfulfilled orders"
+        label="Unfulfilled"
         value={orders.unfulfilled}
       />
 

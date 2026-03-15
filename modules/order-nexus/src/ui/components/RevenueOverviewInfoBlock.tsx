@@ -9,15 +9,16 @@ import { FT2Panel, PanelRow,PanelFooter } from '@lasyncro/ui-ft2';
  * - Component performs NO conditional logic
  */
 type RevenueOverviewInfoBlockProps = {
+  span?: number;
   revenue: {
     totalSales: number | null;
     earned: number | null;
-    blocked: number | null;
     pending: number | null;
   };
 };
 
 export function RevenueOverviewInfoBlock({
+  span = 1,
   revenue,
 }: RevenueOverviewInfoBlockProps) {
 
@@ -45,7 +46,7 @@ export function RevenueOverviewInfoBlock({
    * No calculations are allowed inside the UI layer.
    */
   return (
-    <FT2Panel title="Revenue Exposure">
+    <FT2Panel title="Revenue Exposure" span={span}>
       <PanelRow
         label="Total sales"
         value={revenue.totalSales}
@@ -59,11 +60,6 @@ export function RevenueOverviewInfoBlock({
       <PanelRow
         label="Orders to ship"
         value={revenue.pending}
-      />
-
-      <PanelRow
-        label="Orders with problems"
-        value={revenue.blocked}
       />
       <PanelFooter
         line1="> VALUES SHOWN — EPISTEMIC STATE"

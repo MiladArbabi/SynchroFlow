@@ -10,6 +10,16 @@
  */
 
 export type OperationalControlSnapshot = {
+  /**
+   * Projection snapshot timestamp
+   *
+   * Deterministic evaluation anchor for
+   * operational signal lifecycle.
+   *
+   * MUST originate from the reconciliation projection.
+   */
+  snapshot_date: string;
+
   queue_manual_review: number;
   queue_awaiting_inventory: number;
   queue_ready_to_ship: number;

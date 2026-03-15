@@ -22,6 +22,7 @@ import { Button } from '@mui/material';
  */
 
 export interface WorkQueueSectionProps {
+  span?: number;
   /**
    * Deterministic workload queues derived
    * from reconciliation projection.
@@ -39,6 +40,7 @@ export interface WorkQueueSectionProps {
 }
 
 export function WorkQueueSection({
+  span = 1,
   queues,
   onAction,
 }: WorkQueueSectionProps) {
@@ -57,7 +59,7 @@ export function WorkQueueSection({
   const isEmpty = orderedQueues.length === 0;
 
   return (
-    <FT2Panel title="Work Queue" id="work-queue">
+    <FT2Panel title="Work Queue" id="work-queue" span={span}>
 
       {isEmpty && (
         <PanelBlock>

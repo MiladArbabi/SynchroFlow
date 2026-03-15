@@ -40,6 +40,8 @@ export function normalizeOperationalSnapshot(
 ): OperationalControlSnapshot {
 
   return {
+    snapshot_date: snapshot.snapshot_date,
+    
     queue_manual_review: safeMetric(snapshot.queue_manual_review, warn),
     queue_awaiting_inventory: safeMetric(snapshot.queue_awaiting_inventory, warn),
     queue_ready_to_ship: safeMetric(snapshot.queue_ready_to_ship, warn),

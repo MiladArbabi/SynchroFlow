@@ -20,6 +20,14 @@ import { Button } from '@mui/material';
 
 export interface OperationsQueueSectionProps {
   /**
+   * FT2Row layout participation.
+   *
+   * Allows this surface to participate in the
+   * Control Tower span layout engine.
+   */
+  span?: number;
+
+  /**
    * Operational signals derived from snapshot data.
    */
   signals: OperationalSignal[];
@@ -38,6 +46,7 @@ export interface OperationsQueueSectionProps {
 }
 
 export function OperationsQueueSection({
+  span = 1,
   signals,
   onAction,
 }: OperationsQueueSectionProps) {
@@ -161,7 +170,10 @@ export function OperationsQueueSection({
   const isEmpty = orderedSignals.length === 0;
 
   return (
-   <FT2Panel title="Operations Queue">
+   <FT2Panel
+      title="Operations Queue"
+      span={span}
+    >
       {isEmpty && (
         <PanelBlock>
           <PanelRow

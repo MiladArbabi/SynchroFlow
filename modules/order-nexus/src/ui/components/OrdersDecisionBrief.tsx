@@ -12,46 +12,41 @@ import { FT2Panel, PanelRow,PanelFooter } from '@lasyncro/ui-ft2';
  * - Backend remains authoritative.
  */
 export interface OrdersDecisionBriefProps {
-  critical_orders_count: number;
-  negative_margin_orders_count: number;
-  sla_breached_count: number;
+  span?: number;
+  ready_to_ship: number;
+  awaiting_customer: number;
   inventory_blocked_revenue: string | number;
-  refund_exposure: string | number;
+  manual_review: string | number;
 }
 
 export function OrdersDecisionBrief({
-  critical_orders_count,
-  negative_margin_orders_count,
-  sla_breached_count,
+  span = 1,
+  ready_to_ship,
   inventory_blocked_revenue,
-  refund_exposure,
+  awaiting_customer,
+  manual_review,
 }: OrdersDecisionBriefProps) {
   return (
-    <FT2Panel title="Decisions Sync">
+    <FT2Panel title="Execution Pipline" span={span}>
 
       <PanelRow
-        label="Critical orders"
-        value={critical_orders_count}
+        label="Ready to Ship"
+        value={ready_to_ship}
       />
 
       <PanelRow
-        label="Negative margin orders"
-        value={negative_margin_orders_count}
-      />
-
-      <PanelRow
-        label="SLA breached orders"
-        value={sla_breached_count}
-      />
-
-      <PanelRow
-        label="Inventory blocked revenue"
+        label="Blocked by Inventory"
         value={inventory_blocked_revenue}
       />
 
       <PanelRow
-        label="Refund exposure"
-        value={refund_exposure}
+        label="Awaiting Customer "
+        value={awaiting_customer}
+      />
+
+      <PanelRow
+        label="Manual Review "
+        value={manual_review}
       />
 
       <PanelFooter
