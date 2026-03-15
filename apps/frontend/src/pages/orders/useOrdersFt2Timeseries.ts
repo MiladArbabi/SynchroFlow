@@ -4,10 +4,26 @@ import { FT2DateRange } from '@lasyncro/ui-ft2';
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
+/**
+ * OrdersFt2TimeseriesPoint
+ * ------------------------
+ * Direct representation of backend projection row.
+ *
+ * Source:
+ * orders_operational_control_snapshot
+ *
+ * Rules:
+ * - exact schema match with backend
+ * - no frontend renaming
+ * - deterministic passthrough
+ */
 export type OrdersFt2TimeseriesPoint = {
-  date: string;
-  ordersObserved: number;
-  revenueTotal: number;
+  snapshot_date: string;
+  constrained_orders: number;
+  queue_awaiting_inventory: number;
+  queue_manual_review: number;
+  orders_at_sla_risk: number;
+  revenue_blocked_inventory: number;
 };
 
 export type OrdersFt2TimeseriesSnapshot = {
@@ -15,6 +31,12 @@ export type OrdersFt2TimeseriesSnapshot = {
     from: string;
     to: string;
   };
+  
+  /**
+   * Raw projection rows.
+   * Do NOT reshape in this layer.
+   * Adapters handle UI mapping.
+   */
   series: OrdersFt2TimeseriesPoint[];
 };
 

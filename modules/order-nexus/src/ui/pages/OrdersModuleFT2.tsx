@@ -1,6 +1,4 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
-import { FT2Layout, FT2Row, FT2Panel } from '@lasyncro/ui-ft2';
-
 /**
  * FT2 LAYOUT CONTRACT
  * -------------------
@@ -13,6 +11,16 @@ import { FT2Layout, FT2Row, FT2Panel } from '@lasyncro/ui-ft2';
  *   FT2Surface was previously used but has been
  *   superseded by the unified FT2Panel primitive.
  */
+import { 
+  FT2Layout, 
+  FT2Row, 
+  FT2Panel, 
+  PanelFooter, 
+  PanelRow, 
+  PanelActions 
+} from '@lasyncro/ui-ft2';
+import { Button } from '@mui/material';
+import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
 
 import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
 import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
@@ -147,7 +155,7 @@ function handleOperationsAction(
  * STRICT data contract.
  * This component performs NO data derivation.
  */
-export interface OrdersModuleFT2DataProps {
+export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
   orders: {
     total: number | null;
@@ -274,8 +282,52 @@ export default function OrdersModuleFT2(
       returns,
       obligations,
       decision,
-      operationalControl
+      operationalControl,
+      timeseries,
+      distribution
     } = props;
+
+    /**
+     * OPERATIONAL HEALTH CLASSIFIER
+     * -----------------------------
+     * Computes high-level operational state from snapshot metrics.
+     *
+     * Purpose:
+     * - provide single-glance system state
+     * - allow escalation banner rendering
+     *
+     * This logic MUST remain presentation-only.
+     * No operational decisions may occur here.
+     */
+    const blockedRevenue = operationalControl?.blocked_revenue ?? 0;
+    const revenueBlockedInventory =
+      operationalControl?.revenue_blocked_inventory ?? 0;
+
+    const revenueBlockedCustomer =
+      operationalControl?.revenue_blocked_customer ?? 0;
+
+    const revenueBlockedOperational =
+      operationalControl?.revenue_blocked_operational ?? 0;
+    const exceptionOrders = operationalControl?.exception_orders ?? 0;
+    const constrainedOrders = operationalControl?.constrained_orders ?? 0;
+
+    const aging24h = operationalControl?.aging_24h ?? 0;
+    const aging48h = operationalControl?.aging_48h ?? 0;
+    const aging72h = operationalControl?.aging_72h_plus ?? 0;
+
+    let operationalHealth: 'healthy' | 'warning' | 'critical' = 'healthy';
+
+    /**
+     * HEALTH CLASSIFICATION
+     * ---------------------
+     * Critical → revenue blocked or inventory constraints
+     * Warning  → operational exceptions or aging pressure
+     */
+    if (blockedRevenue > 0 || constrainedOrders > 0) {
+      operationalHealth = 'critical';
+    } else if (exceptionOrders > 0 || aging24h > 0 || aging48h > 0 || aging72h > 0) {
+      operationalHealth = 'warning';
+    }
 
     /**
      * SIGNAL ENGINE INPUT
@@ -324,6 +376,79 @@ export default function OrdersModuleFT2(
         }}
       >
 
+        {/* OPERATIONAL HEALTH BANNER
+            -------------------------
+            Provides immediate system state awareness
+            before operators inspect detailed queues.
+        */}
+        {operationalHealth !== 'healthy' && (
+          <FT2Panel title="System Health">
+
+          <PanelRow
+            label={
+              operationalHealth === 'critical'
+                ? '🚨 Critical operational state'
+                : '⚠️ Operational pressure detected'
+            }
+            value={
+              operationalHealth === 'critical'
+                ? `${constrainedOrders} constrained orders • $${revenueBlockedInventory.toLocaleString()} blocked by inventory`
+                : `${exceptionOrders} operational exceptions • ${aging24h + aging48h + aging72h} aging orders`
+            }
+          />
+
+          {operationalHealth === 'critical' && (
+            <PanelActions>
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => {
+                  console.info('[OrdersModuleFT2] banner action', {
+                    intent: 'orders.queue.awaiting_inventory'
+                  });
+
+                  const queuePanel = document.getElementById('work-queue');
+
+                  if (queuePanel) {
+                    queuePanel.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start'
+                    });
+                  }
+
+                  /**
+                   * Highlight the operational source queue.
+                   *
+                   * The current critical state is caused by
+                   * inventory constraints, therefore the
+                   * Awaiting Inventory queue is emphasized.
+                   */
+                  const queueRow = document.getElementById('queue-awaiting-inventory');
+
+                  if (queueRow) {
+
+                    queueRow.style.transition = 'background-color 0.4s ease';
+                    queueRow.style.backgroundColor = 'rgba(245,158,11,0.18)';
+
+                    setTimeout(() => {
+                      queueRow.style.backgroundColor = '';
+                    }, 1800);
+                  }
+                }}
+              >
+                View Inventory-Blocked Orders
+              </Button>
+            </PanelActions>
+          )}
+
+          <PanelFooter
+            line1="> SYSTEM STATE SUMMARY"
+            line2="> SOURCE: orders_operational_control_snapshot"
+          />
+
+        </FT2Panel>
+        )}
+
         {/* Queue spans vertically */}
         <div>
           <OperationsQueueSection
@@ -370,6 +495,9 @@ export default function OrdersModuleFT2(
             operationalControl.avg_contribution_margin_pct
           }
         />
+
+        {timeseries}
+        {distribution}
 
       </div>
     </FT2Layout>

@@ -57,7 +57,7 @@ export function WorkQueueSection({
   const isEmpty = orderedQueues.length === 0;
 
   return (
-    <FT2Panel title="Work Queue">
+    <FT2Panel title="Work Queue" id="work-queue">
 
       {isEmpty && (
         <PanelBlock>
@@ -71,6 +71,7 @@ export function WorkQueueSection({
       {!isEmpty && orderedQueues.map((queue) => (
         <PanelBlock
           key={queue.id}
+          id={`queue-${queue.id}`}
           sx={{
             position: 'relative',
             paddingLeft: '12px',

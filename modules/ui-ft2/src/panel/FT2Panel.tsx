@@ -31,6 +31,7 @@ import { FT2_TOKENS } from '../layout/ft2.tokens.js';
 import { PanelHeader } from './PanelHeader.js';
 
 export type FT2PanelProps = {
+  id?: string;
   title?: string;
   children?: ReactNode;
 
@@ -46,6 +47,7 @@ export type FT2PanelProps = {
 };
 
 export function FT2Panel({
+  id,
   title,
   children,
   span = 1,
@@ -54,6 +56,7 @@ export function FT2Panel({
 
   return (
     <Paper
+      id={id}
       elevation={0}
       data-ft2-panel
       /**

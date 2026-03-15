@@ -20,18 +20,24 @@ export type PanelBlockProps = {
   children: ReactNode;
 
   /**
-   * Optional style overrides.
+   * Optional DOM anchor.
    *
-   * Allows signal surfaces and other panel consumers
-   * to add contextual styling (severity stripes, emphasis)
-   * without modifying PanelBlock internals.
+   * Allows operational surfaces to attach
+   * navigation targets without leaking DOM
+   * manipulation logic into the layout system.
+   */
+  id?: string;
+
+  /**
+   * Optional style overrides.
    */
   sx?: SxProps<Theme>;
 };
 
-export function PanelBlock({ children, sx }: PanelBlockProps) {
+export function PanelBlock({ children, id, sx }: PanelBlockProps) {
   return (
     <Box
+      id={id}
       data-ft2-panel-block
       sx={{
         display: 'flex',

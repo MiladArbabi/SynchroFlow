@@ -27,6 +27,23 @@ export function mapOrdersFt2Props(
 ): OrdersModuleFT2DataProps {
 
   return {
+    /**
+     * FT2 structural context
+     * ----------------------
+     * Orders module currently has no explicit context surface.
+     * Reserved for future cross-module state coordination.
+     */
+    context: null,
+
+    /**
+     * Temporal visualization slots
+     * ----------------------------
+     * These are injected by the page layer.
+     * Adapter must not populate them.
+     */
+    timeseries: null,
+    distribution: null,
+
     decision,
     orders: {
       total:

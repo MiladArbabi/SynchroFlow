@@ -103,6 +103,25 @@ export function OperationsQueueSection({
   const orderedSignals = signals;
 
   /**
+   * CRITICAL SIGNAL EXTRACTION
+   * --------------------------
+   * Separate critical operational failures so they
+   * appear first and receive visual escalation.
+   *
+   * This preserves deterministic ordering while
+   * ensuring operators immediately see system failures.
+   */
+  const criticalSignals = orderedSignals.filter(
+    (s) => s.severity === 'critical'
+  );
+
+  const nonCriticalSignals = orderedSignals.filter(
+    (s) => s.severity !== 'critical'
+  );
+
+  const displaySignals = [...criticalSignals, ...nonCriticalSignals];
+
+  /**
    * DEBUG SIGNAL EXPOSURE
    * ---------------------
    * Provides runtime visibility into the operational
@@ -117,6 +136,17 @@ export function OperationsQueueSection({
    */
   if (typeof window !== 'undefined') {
     (window as any).__LAST_OPERATIONAL_SIGNALS__ = orderedSignals;
+    /**
+     * CRITICAL SIGNAL DIAGNOSTICS
+     * ---------------------------
+     * Exposes only critical signals so engineers can quickly
+     * inspect whether the escalation pipeline is functioning.
+     *
+     * Usage:
+     *   window.__CRITICAL_OPERATIONAL_SIGNALS__
+     */
+    (window as any).__CRITICAL_OPERATIONAL_SIGNALS__ =
+      orderedSignals.filter((s) => s.severity === 'critical');
   }
 
   /**
@@ -145,7 +175,7 @@ export function OperationsQueueSection({
         * Render operational signals only when queue is non-empty.
         * Empty-state block above provides the canonical zero-state surface.
         */ }
-      {!isEmpty && orderedSignals.map((signal) => (
+      {!isEmpty && displaySignals.map((signal) => (
         <PanelBlock
           key={signal.id}
           sx={{

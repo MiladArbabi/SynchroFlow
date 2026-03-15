@@ -26,6 +26,44 @@ export function mapOrdersFt2TimeseriesProps(
     return { series: null };
   }
 
+  /**
+   * PROJECTION INTEGRITY CHECK
+   * --------------------------
+   * Ensures backend projection schema is intact.
+   * Prevents silent UI corruption if API changes.
+   */
+  if (snapshot?.series?.length) {
+    const row = snapshot.series[0];
+
+    const requiredFields = [
+      'snapshot_date',
+      'constrained_orders',
+      'queue_awaiting_inventory',
+      'orders_at_sla_risk',
+      'revenue_blocked_inventory',
+    ];
+
+    const missing = requiredFields.filter((f) => !(f in row));
+
+    if (missing.length > 0) {
+      console.error('[FT2][OrdersTimeseriesAdapter] Projection schema mismatch', {
+        missing,
+        row,
+      });
+
+      return { series: null };
+    }
+  }
+
+  /**
+   * Adapter instrumentation
+   * -----------------------
+   * Provides visibility into timeseries ingestion.
+   */
+  if (import.meta.env.DEV) {
+    console.debug('[FT2][OrdersTimeseriesAdapter] series rows', snapshot.series.length);
+  }
+
   return {
     series: snapshot.series ?? null,
   };
