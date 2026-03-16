@@ -98,11 +98,22 @@ export async function up(knex: Knex): Promise<void> {
    * Snapshot must reference exact (id, version)
    * in canonical orders table.
    */
+
+    /**
+     * SNAPSHOT ORDER ID FK
+     * --------------------
+     * Snapshots must remain valid across aggregate mutations.
+     *
+     * aggregate_version is stored purely for replay verification
+     * and MUST NOT participate in referential integrity.
+     *
+     * Only the immutable order identity is referenced.
+     */
   await knex.raw(`
     ALTER TABLE order_risk_snapshot
-    ADD CONSTRAINT order_risk_snapshot_projection_fk
-    FOREIGN KEY (lasyncro_order_id, aggregate_version)
-    REFERENCES orders (lasyncro_order_id, aggregate_version)
+    ADD CONSTRAINT order_risk_snapshot_order_fk
+    FOREIGN KEY (lasyncro_order_id)
+    REFERENCES orders (lasyncro_order_id)
     ON DELETE CASCADE
   `);
 

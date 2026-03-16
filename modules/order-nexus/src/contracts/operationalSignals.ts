@@ -25,7 +25,7 @@
  * ↓
  * OperationalSignal[]
  * ↓
- * OperationsQueueSection
+ * OperationalSignalsSection
  */
 
 export type OperationalSignalSeverity =

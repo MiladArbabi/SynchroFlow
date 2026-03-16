@@ -176,16 +176,27 @@ export async function processDomainEvent(
     .select('aggregate_version', 'last_projected_version')
     .first();
 
+  /**
+   * STRICT VERSION VALIDATION
+   * -------------------------
+   * Intent must match the current order aggregate version.
+   *
+   * We intentionally DO NOT gate on last_projected_version
+   * because projection may update it before reconciliation
+   * during deterministic rebuild execution.
+   *
+   * Blocking reconciliation on <= last_projected_version
+   * can permanently prevent reconciliation and snapshot
+   * generation (observed production incident).
+   */
   if (
     !orderRow ||
-    intent.aggregate_version !== orderRow.aggregate_version ||
-    intent.aggregate_version <= orderRow.last_projected_version
+    intent.aggregate_version !== orderRow.aggregate_version
   ) {
-    console.warn('[PROCESS_DOMAIN_EVENT_VERSION_GATE_BLOCKED]', {
+    console.warn('[PROCESS_DOMAIN_EVENT_VERSION_MISMATCH]', {
       order: intent.lasyncro_order_id,
-      version: intent.aggregate_version,
-      current: orderRow?.aggregate_version,
-      projected: orderRow?.last_projected_version
+      intent_version: intent.aggregate_version,
+      order_version: orderRow?.aggregate_version
     });
     continue;
   }
@@ -229,8 +240,52 @@ export async function processDomainEvent(
     .first();
 
   if (shopRow?.shop_id) {
-    await computeShopOperationalSnapshot(shopRow.shop_id);
+    /**
+     * SNAPSHOT SCHEDULING
+     * -------------------
+     * Snapshot computation must run in the worker layer,
+     * not inside the event processor.
+     *
+     * This schedules a snapshot recompute instead of
+     * executing it inline, preventing reconciliation
+     * latency amplification.
+     *
+     * Worker entrypoint will pick up pending jobs.
+     */
+    await db('shop_snapshot_jobs')
+      .insert({
+        shop_id: shopRow.shop_id,
+        scheduled_at: new Date()
+      })
+      .onConflict(['shop_id'])
+      .ignore();
   }
+}
+
+/**
+ * INTENT BACKLOG WATCHDOG
+ * -----------------------
+ * Detect reconciliation pipeline stalls.
+ *
+ * If intents remain in the table after the processor
+ * finishes handling the current event, the runtime
+ * reconciliation dispatcher may be stalled.
+ *
+ * Signal:
+ * ORDER_RECONCILIATION_INTENT_BACKLOG
+ */
+const remainingIntentsRow = await db('order_reconciliation_intents')
+  .count<{ count: string }>('reconciliation_intent_id as count')
+  .first();
+
+const remainingIntents = Number(remainingIntentsRow?.count ?? 0);
+
+if (remainingIntents > 0) {
+
+  console.warn('[ORDER_RECONCILIATION_INTENT_BACKLOG]', {
+    remaining_intents: remainingIntents
+  });
+
 }
   /**
    * FUTURE STAGES

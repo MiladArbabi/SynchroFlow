@@ -30,6 +30,7 @@ import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.
  * Without this worker the Orders UI shows zeros.
  */
 import { startReconciliationIntentDispatcher } from './workers/reconciliation/reconciliation.intent.dispatcher.js';
+import { startShopSnapshotJobDispatcher } from './workers/projections/shopSnapshotJob.dispatcher.js';
 
 async function start() {
 
@@ -88,6 +89,7 @@ async function start() {
 
   startDomainEventOutboxDispatcher();
   startReconciliationIntentDispatcher(); // executes reconciliation intents
+  startShopSnapshotJobDispatcher();
 
  console.log('[worker-entry] All workers started');
 

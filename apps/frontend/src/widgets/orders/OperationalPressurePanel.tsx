@@ -12,7 +12,15 @@
  * - deterministic projection passthrough
  */
 import Chart from 'react-apexcharts'
-import { FT2Panel } from '@lasyncro/ui-ft2';
+/**
+ * IMPORTANT — HEADLESS VISUALIZATION COMPONENT
+ * -------------------------------------------
+ * This widget must NOT render FT2Panel surfaces.
+ * The parent module (OrdersModuleFT2) owns the surface container.
+ *
+ * Rendering a panel here causes nested surfaces
+ * which produce the frame-in-frame visual defect.
+ */
 
 /**
  * Operational severity classification
@@ -52,11 +60,11 @@ export function OperationalPressurePanel({
    */
   if (!series || series.length < 2) {
     return (
-      <FT2Panel id="operational-pressure" span={12} trustTone="constrained">
+      <>
         <div style={{ padding: 16 }}>
           Operational timeline unavailable — snapshots not yet accumulated.
         </div>
-      </FT2Panel>
+      </>
     );
   }
 
@@ -240,7 +248,7 @@ if (latest.revenue_blocked_inventory > 10000) {
       intersect: false,
     },
     legend: {
-      position: 'top',
+      position: 'bottom',
     },
   };
 
@@ -267,7 +275,7 @@ if (latest.revenue_blocked_inventory > 10000) {
   }
 
   return (
-    <FT2Panel id="operational-pressure" span={12} trustTone="constrained">
+    <>
 
       {/* Operational Incident Banner */}
       {incidents.length > 0 && (
@@ -285,7 +293,15 @@ if (latest.revenue_blocked_inventory > 10000) {
           ))}
         </div>
       )}
-      {/* Pressure Summary Strip */}
+
+      <Chart
+        type="line"
+        height={320}
+        options={options}
+        series={chartSeries}
+      />
+
+            {/* Pressure Summary Strip */}
       <div
         style={{
           display: 'grid',
@@ -299,6 +315,8 @@ if (latest.revenue_blocked_inventory > 10000) {
        <div
         style={{
           color: severityColor(severity.inventory),
+          fontSize: 12,
+          fontFamily: 'arial',
           display: 'flex',
           alignItems: 'center',
           gap: 8
@@ -315,6 +333,8 @@ if (latest.revenue_blocked_inventory > 10000) {
         <div
           style={{
           color: severityColor(severity.sla),
+          fontSize: 12,
+          fontFamily: 'arial',
           display: 'flex',
           alignItems: 'center',
           gap: 8
@@ -331,6 +351,8 @@ if (latest.revenue_blocked_inventory > 10000) {
         <div
           style={{
           color: severityColor(severity.revenue),
+          fontSize: 12,
+          fontFamily: 'arial',
           display: 'flex',
           alignItems: 'center',
           gap: 8
@@ -345,13 +367,6 @@ if (latest.revenue_blocked_inventory > 10000) {
         </div>
       </div>
 
-      <Chart
-        type="line"
-        height={320}
-        options={options}
-        series={chartSeries}
-      />
-
-    </FT2Panel>
+    </>
   );
 }

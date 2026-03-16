@@ -10,7 +10,17 @@ export function FT2Layout({ children }: FT2LayoutProps) {
     <Box
       data-ft2-layout
       sx={{
-        maxWidth: FT2_TOKENS.layoutMaxWidth,
+        /**
+         * CONTROL TOWER FRAME
+         * -------------------
+         * FT2 dashboards operate inside a deterministic
+         * application frame independent of navigation width.
+         *
+         * This prevents sidenav expansion from altering
+         * the Control Tower layout geometry.
+         */
+        width: FT2_TOKENS.layoutMaxWidth,
+        maxWidth: '100%',
         mx: 'auto',
 
         // 🔒 Global padding – symmetric and deterministic

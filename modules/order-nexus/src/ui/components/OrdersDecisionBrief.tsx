@@ -27,7 +27,16 @@ export function OrdersDecisionBrief({
   manual_review,
 }: OrdersDecisionBriefProps) {
   return (
-    <FT2Panel title="Execution Pipline" span={span}>
+   /**
+      * Panel Title
+      * -----------
+      * Execution Pipeline represents the operational execution layer
+      * for order fulfillment workflows surfaced in the Control Tower.
+      *
+      * Naming must remain stable because panel titles are used by
+      * operators and screenshots in operational runbooks.
+      */
+     <FT2Panel title="Execution Pipeline" span={span}>
 
       <PanelRow
         label="Ready to Ship"

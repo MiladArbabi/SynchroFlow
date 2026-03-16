@@ -81,7 +81,6 @@ async function truncateProjections() {
     'order_fulfillment_status',
     'order_fulfillment_history',
     'order_constraint_events',
-    'order_projection_audit_log',
     'order_reconciliation_intents',
     'order_age_snapshot',
     'order_margin_snapshot',

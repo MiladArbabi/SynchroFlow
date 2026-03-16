@@ -112,19 +112,24 @@ export async function getOrderNexusFt2StateSnapshot(
   /**
    * SNAPSHOT INTEGRITY GUARD
    * ------------------------
-   * Resolver must not operate without a projection row.
-   * If this occurs it indicates:
+   * Snapshot absence indicates a projection pipeline problem.
    *
-   * - reconciliation pipeline failure
-   * - projection rebuild lag
+   * Instead of crashing the resolver we surface a degraded
+   * operational state so the Control Tower can render a
+   * system banner and preserve operator visibility.
    *
-   * We surface explicit operational error instead of
-   * silently degrading UI metrics.
+   * Operational signal:
+   * ORDER_NEXUS_FT2_SNAPSHOT_DEGRADED
    */
   if (!operationalControlRow) {
-    throw new Error(
-      '[ORDER_NEXUS_FT2_SNAPSHOT_MISSING] orders_operational_control_snapshot row not found'
+
+    console.error(
+      '[ORDER_NEXUS_FT2_SNAPSHOT_DEGRADED]',
+      'orders_operational_control_snapshot row not found for shop',
+      shopId
     );
+
+    return null;
   }
 
   /**
@@ -285,11 +290,10 @@ export async function getOrderNexusFt2StateSnapshot(
     decision: {
       brief: decisionBriefRow
         ? {
-            critical_orders_count: decisionBriefRow.critical_orders_count,
-            negative_margin_orders_count: decisionBriefRow.negative_margin_orders_count,
-            sla_breached_count: decisionBriefRow.sla_breached_count,
+            ready_to_ship: decisionBriefRow.ready_to_ship,
+            awaiting_customer: decisionBriefRow.awaiting_customer,
             inventory_blocked_revenue: decisionBriefRow.inventory_blocked_revenue,
-            refund_exposure: decisionBriefRow.refund_exposure,
+            manual_review: decisionBriefRow.manual_review,
           }
         : null,
 

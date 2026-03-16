@@ -107,7 +107,7 @@ const SNAPSHOT_FIELD_COVERAGE: Record<string, 'signal' | 'ignored'> = {
    * be processed by the signal engine.
    *
    * They are consumed exclusively by the Work Queue mapper
-   * (`mapWorkQueues.ts`) and rendered via `WorkQueueSection`.
+   * (`mapWorkQueues.ts`) and rendered via `OperationalSignalsSection`.
    *
    * Architectural rule:
    *   Signals → problems

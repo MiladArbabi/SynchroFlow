@@ -111,8 +111,22 @@ export function FT2Panel({
         sx={{
           flex: 1,
           minHeight: 0,
+
+          /**
+           * CONTROL TOWER CONTENT RULE
+           * --------------------------
+           * Panel content must never expand the panel height.
+           *
+           * When content exceeds available space inside a
+           * deterministic FT2 row, scrolling must occur
+           * within the panel body instead of stretching
+           * the layout.
+           */
+          overflowY: 'auto',
+
           px: FT2_TOKENS.surfacePadding.standard / 8,
           pb: FT2_TOKENS.surfacePadding.standard / 8,
+
           display: 'flex',
           flexDirection: 'column',
         }}

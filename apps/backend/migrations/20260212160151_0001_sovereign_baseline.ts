@@ -217,11 +217,26 @@ export async function up(knex: Knex): Promise<void> {
   /**
    * Projection binding guarantee.
    */
+    /**
+     * AUDIT ORDER ID FK
+     * ------------------
+     * Audit entries must remain valid across aggregate_version mutations.
+     *
+     * Therefore audit rows reference ONLY the immutable
+     * order identity (lasyncro_order_id).
+     *
+     * aggregate_version is stored purely as an observation
+     * of projection execution state and must never participate
+     * in referential integrity.
+     *
+     * This prevents FK violations during rebuild replay when
+     * orders.aggregate_version increments.
+     */
   await knex.raw(`
     ALTER TABLE order_projection_audit_log
-    ADD CONSTRAINT order_projection_audit_fk
-    FOREIGN KEY (lasyncro_order_id, aggregate_version)
-    REFERENCES orders (lasyncro_order_id, aggregate_version)
+    ADD CONSTRAINT order_projection_audit_order_fk
+    FOREIGN KEY (lasyncro_order_id)
+    REFERENCES orders (lasyncro_order_id)
     ON DELETE CASCADE
   `);
 

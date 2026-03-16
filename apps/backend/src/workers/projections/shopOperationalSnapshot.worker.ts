@@ -462,6 +462,42 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     });
 
     /**
+     * SNAPSHOT HEALTH MONITOR
+     * -----------------------
+     * Detect stale Control Tower snapshots.
+     *
+     * If the latest snapshot is older than 24h the
+     * Control Tower may display outdated operational
+     * metrics. This signal allows infrastructure
+     * monitoring to detect projection pipeline stalls.
+     *
+     * Signal:
+     * ORDER_CONTROL_SNAPSHOT_STALE
+     */
+    const latestSnapshot = await db('orders_operational_control_snapshot')
+        .where({ shop_id: shopId })
+        .max('snapshot_date as last')
+        .first();
+
+        if (latestSnapshot?.last) {
+
+        const snapshotAgeMs =
+            Date.now() - new Date(latestSnapshot.last as string).getTime();
+
+        const SNAPSHOT_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+
+        if (snapshotAgeMs > SNAPSHOT_STALE_THRESHOLD_MS) {
+
+            console.warn('[ORDER_CONTROL_SNAPSHOT_STALE]', {
+            shopId,
+            snapshot_date: latestSnapshot.last,
+            age_hours: Math.floor(snapshotAgeMs / 3600000)
+            });
+
+        }
+    }
+
+    /**
      * SUCCESS TERMINATION
      * -------------------
      * Explicit return ensures function resolves only

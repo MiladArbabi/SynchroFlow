@@ -63,6 +63,17 @@ export type FT2RowProps = {
 
 export function FT2Row({ children, intent }: FT2RowProps) {
   const rowConfig = FT2_TOKENS.row[intent];
+  /**
+   * ROW HEIGHT ENFORCEMENT
+   * ----------------------
+   * Control Tower rows must obey the deterministic
+   * height defined in FT2 layout tokens.
+   *
+   * This creates vertical rhythm across panels and
+   * prevents analytical surfaces (charts) from
+   * stretching rows unevenly.
+   */
+  const rowHeight = rowConfig?.height ?? undefined;
 
   const items = Array.isArray(children) ? children : [children];
 
@@ -159,15 +170,14 @@ export function FT2Row({ children, intent }: FT2RowProps) {
   const unitSize = 12 / totalSpan;
 
   /**
-   * Gap-aware span engine
-   * ---------------------
-   * Flexbox gaps add physical width to the row.
-   * If we ignore them the sum of surface widths exceeds 100%,
-   * which causes premature wrapping and overlap.
-   *
-   * We subtract the total gap width before computing surface width.
+   * GAP WIDTH
+   * ---------
+   * Flex gap must be distributed across surfaces,
+   * otherwise each surface subtracts the full gap
+   * which causes cumulative width overflow.
    */
   const gapPx = FT2_TOKENS.surfaceGap / 8;
+  const gapPerSurface = gapPx / items.length;
   const gapCount = items.length > 0 ? items.length - 1 : 0;
   const totalGapWidth = gapPx * gapCount;
 
@@ -181,11 +191,29 @@ export function FT2Row({ children, intent }: FT2RowProps) {
         flexDirection: 'row',
 
         /**
-         * Allow surfaces to respect computed span widths.
-         * Horizontal scrolling previously masked layout errors
-         * when span logic was inactive.
+         * ROW HEIGHT POLICY
+         * -----------------
+         * Analytical rows must expand vertically to accommodate
+         * stacked signal banners and variable chart content.
+         *
+         * Fixed heights caused vertical clipping and scrollbars
+         * when signal stacks grow.
          */
-        flexWrap: 'wrap',
+        minHeight: rowHeight,
+
+        /**
+         * CONTROL TOWER LAYOUT RULE
+         * -------------------------
+         * Panels inside an FT2Row must NEVER wrap horizontally.
+         *
+         * Wrapping creates layout instability when navigation
+         * width changes (e.g., sidenav expansion).
+         *
+         * If the viewport becomes too narrow, the host layout
+         * must stack rows vertically instead of allowing panels
+         * inside the row to reflow.
+         */
+        flexWrap: 'nowrap',
 
         overflowX: 'hidden',
         overflowY: 'visible',
@@ -240,27 +268,24 @@ export function FT2Row({ children, intent }: FT2RowProps) {
               flexGrow: 0.75,
 
               /**
-               * Gap-aware width
-               *
-               * calc() ensures the flex item width accounts
-               * for horizontal gaps between surfaces.
+               * GAP-DISTRIBUTED WIDTH
+               * ---------------------
+               * Each surface subtracts only its share of the gap
+               * to prevent cumulative overflow.
                */
-              flexBasis: `calc(${widthPercent}% - ${gapPx}px)`,
-              width: `calc(${widthPercent}% - ${gapPx}px)`,
+              flexBasis: `calc(${widthPercent}% - ${gapPerSurface}px)`,
+              width: `calc(${widthPercent}% - ${gapPerSurface}px)`,
 
               /**
-               * Minimum surface width
-               * ---------------------
-               * Prevent panels from collapsing to unreadable sizes
-               * when viewport width decreases.
+               * CONTROL TOWER SURFACE RULE
+               * --------------------------
+               * Panel width must be controlled exclusively by the
+               * FT2 span engine. Hard minimum widths cause panels
+               * to wrap prematurely when container width changes.
                *
-               * When the minimum width cannot be satisfied,
-               * the row will wrap surfaces to the next line.
-               *
-               * This preserves readability and prevents
-               * text/button overlap.
+               * Setting to 0 allows flexbox to respect span math.
                */
-              minWidth: '320px',
+              minWidth: 0,
             }}
           >
             {child}

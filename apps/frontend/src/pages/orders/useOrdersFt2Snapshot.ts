@@ -48,11 +48,10 @@ export type OrdersFt2Snapshot = {
    */
   decision?: {
     brief: {
-      critical_orders_count: number;
-      negative_margin_orders_count: number;
-      sla_breached_count: number;
-      inventory_blocked_revenue: number | string;
-      refund_exposure: number | string;
+      ready_to_ship: number;
+      awaiting_customer: number;
+      inventory_blocked_revenue: number;
+      manual_review: number | string;
     } | null;
   };
 

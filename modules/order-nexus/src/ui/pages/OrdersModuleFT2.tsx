@@ -29,9 +29,7 @@ import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlo
 import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
 import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
 import type { OperationalSignal } from '../../contracts/operationalSignals.js';
-
 import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
-import { WorkQueueSection } from '../components/WorkQueueSection.js';
 
 /**
  * OPERATIONS QUEUE
@@ -42,8 +40,8 @@ import { WorkQueueSection } from '../components/WorkQueueSection.js';
  * orders_operational_control_snapshot instead of
  * order_risk_snapshot ranking.
  */
-import { OperationsQueueSection } from '../components/OperationsQueueSection.js';
 import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
+import { OperationalSignalsSection } from '../components/OperationalSignalsSection.js';
 
 /**
  * Operations Queue action handler
@@ -415,25 +413,24 @@ export default function OrdersModuleFT2(
       ----------------------------------------------------- */}
       <FT2Row intent="analysis">
 
-        {/* Operational Pressure Timeline */}
-        <FT2Panel span={2} title="Operational Pressure">
-          {timeseries}
-        </FT2Panel>
+      {/* /** CHART SURFACE
+      * -------------
+      * ApexCharts already manages its own internal container.
+      * Rendering an additional wrapper caused frame-in-frame visuals. */}
+      <FT2Panel span={2} title="Operational Pressure">
+        {timeseries}
+      </FT2Panel>
 
-        {/* Operations Queue (already renders FT2Panel internally) */}
-        <OperationsQueueSection
-          span={1}
+      {/* Signals Surface */}
+      <FT2Panel span={2} title="Operational Signals">
+
+        <OperationalSignalsSection
           signals={operationalSignals}
-          onAction={handleOperationsAction}
-        />
-
-        {/* Work Queue (already renders FT2Panel internally) */}
-        <WorkQueueSection
-          span={1}
           queues={workQueues}
+          onSignalAction={handleOperationsAction}
         />
-
-      </FT2Row>
+      </FT2Panel>
+    </FT2Row>
 
       {/* -----------------------------------------------------
         BUSINESS CONTEXT ROW
@@ -462,11 +459,20 @@ export default function OrdersModuleFT2(
           {...decision.brief}
         />
 
+      {/**
+        * DEGRADED SNAPSHOT SAFETY
+        * ------------------------
+        * Resolver may return null when the operational snapshot
+        * is unavailable (projection rebuild or pipeline failure).
+        *
+        * UI must tolerate null and surface degraded system state
+        * rather than crashing the Control Tower.
+        */}
         <RevenueIntegrityInfoBlock
-          at_risk_revenue={operationalControl.at_risk_revenue}
-          revenue_leakage={operationalControl.revenue_leakage}
+          at_risk_revenue={operationalControl?.at_risk_revenue ?? null}
+          revenue_leakage={operationalControl?.revenue_leakage ?? null}
           avg_contribution_margin_pct={
-            operationalControl.avg_contribution_margin_pct
+            operationalControl?.avg_contribution_margin_pct ?? null
           }
         />
 
