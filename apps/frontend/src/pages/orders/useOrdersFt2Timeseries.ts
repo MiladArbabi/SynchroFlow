@@ -5,23 +5,12 @@ import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
 /**
- * OrdersFt2TimeseriesPoint
- * ------------------------
- * Direct representation of backend projection row.
- *
- * Source:
- * orders_operational_control_snapshot
- *
- * Rules:
- * - exact schema match with backend
- * - no frontend renaming
- * - deterministic passthrough
+ * Contract aligned with backend /orders/operational-pressure
+ * Only fields guaranteed by API are included.
  */
 export type OrdersFt2TimeseriesPoint = {
   snapshot_date: string;
-  constrained_orders: number;
   queue_awaiting_inventory: number;
-  queue_manual_review: number;
   orders_at_sla_risk: number;
   revenue_blocked_inventory: number;
 };
@@ -31,6 +20,11 @@ export type OrdersFt2TimeseriesSnapshot = {
     from: string;
     to: string;
   };
+  /**
+   * Freshness signals from backend
+   */
+  lastSnapshotDate: string | null;
+  isStale: boolean;
   
   /**
    * Raw projection rows.
@@ -54,21 +48,27 @@ export type OrdersFt2TimeseriesSnapshot = {
 export function useOrdersFt2Timeseries(range: FT2DateRange) {
   return useQuery<OrdersFt2TimeseriesSnapshot>({
     queryKey: ['order-nexus', 'ft2', 'timeseries', range.preset],
-    queryFn: async () => {
-      const { data } = await axiosInstance.get(
-        '/api/v1/modules/order-nexus/ft2/facts/timeseries',{
-        params:
-          range.preset === 'custom'
-            ? {
-                preset: 'custom',
-                from: range.from,
-                to: range.to,
-              }
-            : {
-                preset: range.preset,
-            },
-        });
-      return data;
+      queryFn: async () => {
+        /**
+         * ⚠️ Switched to authoritative Operational Pressure contract
+         * Removes dependency on generic FT2 timeseries
+         */
+        const { data } = await axiosInstance.get(
+          '/api/v1/orders/operational-pressure'
+        );
+
+      /**
+      * Normalize to expected structure
+      */
+      return {
+        period: {
+          from: '',
+          to: '',
+        },
+        series: data.series ?? [],
+        lastSnapshotDate: data.lastSnapshotDate ?? null,
+        isStale: data.isStale ?? true,
+      };
     },
   });
 }

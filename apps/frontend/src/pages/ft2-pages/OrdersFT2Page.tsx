@@ -93,9 +93,14 @@ export default function OrdersFT2Page() {
         {...headerProps}
         operationalControl={operationalControl}
         timeseries={
-          <OperationalPressurePanel
-            series={timeseries.series}
-          />
+         /**
+         *  Freshness comes from raw query (adapter strips it)
+         */
+        <OperationalPressurePanel
+          series={timeseries?.series ?? null}
+          isStale={timeseriesQuery.data?.isStale}
+          lastSnapshotDate={timeseriesQuery.data?.lastSnapshotDate}
+        />
         }
       />
     </>

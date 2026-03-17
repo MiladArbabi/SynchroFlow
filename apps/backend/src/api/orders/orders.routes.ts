@@ -6,6 +6,8 @@ import { httpGetPriorityStack } from './orders.priority.controller.js';
 import { httpGetOperationalControl } 
   from './orders.operational-control.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { httpGetOperationalPressure } 
+  from './orders.operational-pressure.controller.js';
 
 const router = Router();
 
@@ -23,6 +25,15 @@ router.get(
   '/operational-control',
   authenticateToken,
   httpGetOperationalControl
+);
+
+/**
+ * Operational Pressure (v0 contract)
+ */
+router.get(
+  '/operational-pressure',
+  authenticateToken,
+  httpGetOperationalPressure
 );
 
 /**

@@ -19,10 +19,9 @@ import { ORDERS_FT2_TIMESERIES } from 'charts/ft2ChartRegistry';
  */
 export type OrdersTimeseriesPoint = {
   snapshot_date: string;
-  constrained_orders: number | null;
-  queue_awaiting_inventory: number | null;
-  orders_at_sla_risk: number | null;
-  revenue_blocked_inventory: number | null;
+  queue_awaiting_inventory: number;
+  orders_at_sla_risk: number;
+  revenue_blocked_inventory: number;
 };
 
 export interface OrdersTimeseriesWidgetProps {
@@ -59,10 +58,6 @@ export default function OrdersTimeseriesWidget({
          * Multi-line visualization of operational constraints.
          */
         series={[
-          {
-            name: 'Inventory Constraints',
-            data: series.map((p) => p.constrained_orders ?? 0),
-          },
           {
             name: 'Awaiting Inventory',
             data: series.map((p) => p.queue_awaiting_inventory ?? 0),

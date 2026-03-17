@@ -81,7 +81,8 @@ export async function backfillShopOperationalSnapshots(shopId: number) {
 
     await computeShopOperationalSnapshot(
       String(shopId),
-      new Date(cursor)
+      new Date(cursor),
+      { allowMutation: true }
     );
 
     cursor.setUTCDate(cursor.getUTCDate() + 1);

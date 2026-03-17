@@ -10,12 +10,25 @@ import db from '@lasyncro/backend-core/db.js';
  */
 export async function computeShopOperationalSnapshot(
   shopId: string,
-  snapshotDateOverride?: Date
+  snapshotDateOverride?: Date,
+  options?: { allowMutation?: boolean }
 ) {
 
   try {
 
   await db.transaction(async (trx) => {
+
+    /**
+     * CONTROLLED MUTATION (EXPLICIT ONLY)
+     * ----------------------------------
+     * Enabled ONLY when caller explicitly requests it.
+     * Never environment-driven.
+     */
+    if (options?.allowMutation === true) {
+    await trx.raw(`SET app.allow_snapshot_mutation = 'true'`);
+    console.warn('[SNAPSHOT_MUTATION_BYPASS_EXPLICIT]', { shopId });
+    }
+    
     /**
      * SNAPSHOT DATE RESOLUTION
      * ------------------------
@@ -420,6 +433,30 @@ export async function computeShopOperationalSnapshot(
     Number(pendingRevenueRow?.sum ?? 0) +
     Number(atRiskRevenueRow?.sum ?? 0);
 
+
+
+    /**
+     * IDEMPOTENCY GUARD (APP LAYER)
+     * ----------------------------
+     * Avoid hitting DB with duplicate snapshot writes.
+     * DB remains source of truth, but we short-circuit early.
+     */
+    const existingSnapshot = await trx('orders_operational_control_snapshot')
+        .where({
+            shop_id: shopId,
+            snapshot_date: snapshotDateNormalized,
+        })
+        .first();
+
+        if (existingSnapshot) {
+        console.info('[SNAPSHOT_SKIPPED_EXISTS]', {
+            shopId,
+            snapshotDate: snapshotDateNormalized,
+        });
+
+        return;
+    }
+
     /**
      * SNAPSHOT WRITE
      */
@@ -489,8 +526,27 @@ export async function computeShopOperationalSnapshot(
 
             evaluated_at: snapshotDate
         })
-      .onConflict(['shop_id', 'snapshot_date'])
-      .merge();
+        /**
+         * APPEND-ONLY GUARANTEE
+         * ---------------------
+         * Snapshot table is immutable.
+         * Duplicate (shop_id, snapshot_date) must NOT overwrite history.
+         *
+         * We explicitly drop UPDATE path and surface duplicates.
+         */
+        .onConflict(['shop_id', 'snapshot_date'])
+        .ignore()
+
+        /**
+         * VISIBILITY: detect suppressed writes
+         */
+        if ((await trx.raw('SELECT 1')).rowCount === 0) {
+        console.warn('[SNAPSHOT_WRITE_NOOP]', {
+            shopId,
+            snapshotDate: snapshotDateNormalized,
+            reason: 'duplicate snapshot prevented (append-only)',
+        });
+        }
     });
 
     /**

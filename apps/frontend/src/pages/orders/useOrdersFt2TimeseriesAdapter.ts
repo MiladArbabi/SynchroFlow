@@ -22,6 +22,7 @@ import type {
 export function mapOrdersFt2TimeseriesProps(
   snapshot: OrdersFt2TimeseriesSnapshot | undefined
 ): OrdersTimeseriesWidgetProps {
+  
   if (!snapshot || snapshot.series === undefined) {
     return { series: null };
   }
@@ -35,9 +36,11 @@ export function mapOrdersFt2TimeseriesProps(
   if (snapshot?.series?.length) {
     const row = snapshot.series[0];
 
+    /**
+     * Mathcing the Operational Pressure contract
+     */
     const requiredFields = [
       'snapshot_date',
-      'constrained_orders',
       'queue_awaiting_inventory',
       'orders_at_sla_risk',
       'revenue_blocked_inventory',
