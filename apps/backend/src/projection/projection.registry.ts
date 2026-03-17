@@ -67,4 +67,22 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
   'lifecycle/ft0_completed': handleLifecycleFT0Completed,
   'lifecycle/ft2_confirmed': handleLifecycleFT2Confirmed,
   'lifecycle/first_insight_delivered': handleLifecycleFirstInsightDelivered,
+  /**
+   * PRODUCT SYNC EVENTS (CRITICAL)
+   * ------------------------------
+   * Ensures product ingestion events are not silently dropped.
+   *
+   * Current behavior:
+   * - Events are emitted by ingestion worker
+   * - No projection handler → system blindness
+   *
+   * This handler is intentionally no-op until
+   * product projection layer is defined.
+   */
+  'catalog/product_sync_received': async ({ domainEvent }) => {
+    console.info('[PROJECTION_PRODUCT_SYNC_OBSERVED]', {
+      shopId: domainEvent.shop_id,
+      eventId: domainEvent.id,
+    });
+  },
 };

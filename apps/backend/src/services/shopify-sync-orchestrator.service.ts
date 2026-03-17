@@ -36,6 +36,12 @@ export const performSmartSync = async (
   shopId: number,
   integrationId: number
 ): Promise<void> => {
+
+  console.info('[SHOPIFY_SMART_SYNC_STARTED]', {
+    shopId,
+    integrationId,
+  });
+  
   try {
     console.log(`[ShopifySyncOrchestrator] Attempting full sync for shopId: ${shopId}`);
     await performInitialSync(accessToken, platformShopName, shopId, integrationId);

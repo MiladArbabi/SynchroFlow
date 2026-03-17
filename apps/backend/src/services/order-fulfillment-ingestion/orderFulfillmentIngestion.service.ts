@@ -102,6 +102,8 @@ export class OrderFulfillmentIngestionService {
       );
     }
 
+    let totalFulfillmentRows = lasyncroOrderId.length
+
     console.log('[INGEST]', lasyncroOrderId, status);
 
     // Fetch existing state (transaction-safe)

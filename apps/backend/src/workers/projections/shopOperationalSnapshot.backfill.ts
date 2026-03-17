@@ -74,10 +74,10 @@ export async function backfillShopOperationalSnapshots(shopId: number) {
   let days = 0;
 
   while (cursor <= end) {
-    console.info('[shop-snapshot-backfill] iteration', {
+    /* console.info('[shop-snapshot-backfill] iteration', {
       shopId,
       snapshot_date: cursor.toISOString().split('T')[0]
-    });
+    }); */
 
     await computeShopOperationalSnapshot(
       String(shopId),
