@@ -5,11 +5,20 @@ import '@shopify/shopify-api/adapters/node';
 import { Knex } from 'knex';
 import crypto from 'crypto';
 import db from '@lasyncro/backend-core/db.js';
-import { getQueueChannel } from '../queue.js';
 import { seedShopifyOpeningBalances } from './inventory/seedShopifyOpeningBalances.js';
 import { enqueueProductForIngestion } from './product-ingestion.service.js';
-import OrderFulfillmentIngestionService from './order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 import { resolveExternalOrderId } from './identity/resolveExternalOrder.service.js';
+import OrderFulfillmentIngestionService from './order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
+
+/**
+ * HISTORICAL SNAPSHOT BACKFILL
+ * ----------------------------
+ * Generates operational timeline immediately after
+ * initial Shopify ingestion completes.
+ */
+import { backfillShopOperationalSnapshots } from '../workers/projections/shopOperationalSnapshot.backfill.js';
+import { backfillFulfillmentEvent } from './fulfillment/fulfillmentBackfill.service.js';
+
 
 type DbExecutor = Knex | Knex.Transaction;
 
@@ -190,7 +199,7 @@ const ordersQuery = `
       );
     } */
 
-    console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data));
+    /* console.log(`[ShopifyService] GraphQL response received, data keys:`, Object.keys(data)); */
 
     const totalProducts = data.products?.edges.length || 0;
     const totalOrders = 0;
@@ -373,6 +382,32 @@ const ordersQuery = `
     });
 
     console.log(`[ShopifyService] Sync COMPLETED for shopId: ${shopId}`);
+
+    /**
+     * RESOLVE SHOP DOMAIN FOR WEBHOOK REGISTRATION
+     * --------------------------------------------
+     * Required because shopDomain is not in scope here.
+     */
+    const installationRow = await db('shopify_app_installations')
+      .where({ shop_id: shopId })
+      .select('shop_domain', 'access_token')
+      .first();
+
+    if (!installationRow?.shop_domain || !installationRow?.access_token) {
+      throw new Error('[WEBHOOK_REGISTRATION_FAILED] Missing shop domain or token');
+    }
+
+    try {
+      await registerShopifyWebhooks(
+        installationRow.shop_domain,
+        installationRow.access_token
+      );
+    } catch (err) {
+      console.error('[WEBHOOK_REGISTRATION_FAILED_NON_FATAL]', {
+        shopId,
+        error: (err as Error).message,
+      });
+    }
   } catch (error: any) {
     console.error(`[ShopifyService] FAILED to sync shopId: ${shopId}`, error);
     console.error(`[ShopifyService] Error details:`, error.response?.errors || error.message);
@@ -748,5 +783,39 @@ async function syncOrderLineItems(
     };
 
     if (!sovereignOrder) continue;
+  }
+}
+
+/**
+ * REGISTER REQUIRED SHOPIFY WEBHOOKS
+ * ----------------------------------
+ * Ensures system receives execution events.
+ */
+async function registerShopifyWebhooks(
+  shopDomain: string,
+  accessToken: string
+) {
+  const topics = [
+    'fulfillments/create',
+    'fulfillments/update',
+  ];
+
+  for (const topic of topics) {
+    await fetch(`https://${shopDomain}/admin/api/2024-01/webhooks.json`, {
+      method: 'POST',
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        webhook: {
+          topic,
+          address: `${process.env.APP_BASE_URL}/api/shopify/webhook`,
+          format: 'json',
+        },
+      }),
+    });
+
+    console.info('[SHOPIFY_WEBHOOK_REGISTERED]', { topic });
   }
 }

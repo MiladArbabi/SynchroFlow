@@ -94,7 +94,7 @@ export async function projectOrderInventoryConstraints(
       });
   }
 
-  console.debug('[inventory_constraint_projection.completed]', {
+  /* console.debug('[inventory_constraint_projection.completed]', {
     evaluated_orders: updates.length
-  });
+  }); */
 }

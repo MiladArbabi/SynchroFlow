@@ -49,12 +49,12 @@ async function instrumentProjection(
 
   await fn();
 
-  const durationMs = Date.now() - start;
+  /* const durationMs = Date.now() - start; */
 
-  console.info('[projection.runtime]', {
+  /* console.info('[projection.runtime]', {
     projection: name,
     duration_ms: durationMs
-  });
+  }); */
 }
 
 /**

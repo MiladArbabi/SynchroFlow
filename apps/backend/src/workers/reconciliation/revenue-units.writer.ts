@@ -82,10 +82,10 @@ export async function writeOrderRevenueUnits(
         );
       }
 
-      console.info('[REVENUE_UNITS_REUSED]', {
+      /* console.info('[REVENUE_UNITS_REUSED]', {
         orderId: lasyncroOrderId,
         existingUnits
-      });
+      }); */
 
       return;
     }
@@ -168,10 +168,10 @@ export async function writeOrderRevenueUnits(
      * Absence of this log historically made reconciliation debugging opaque.
      */
 
-    console.info('[REVENUE_UNITS_WRITE]', {
+    /* console.info('[REVENUE_UNITS_WRITE]', {
       orderId: lasyncroOrderId,
       variantCount: rows.length
-    });
+    }); */
 
     const revenueUnits = rows
       .map((r) => ({

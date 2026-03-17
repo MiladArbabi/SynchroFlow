@@ -1,61 +1,59 @@
 import db from '@lasyncro/backend-core/db.js';
 
 /**
- * SHOP OPERATIONAL SNAPSHOT WORKER
- * --------------------------------
- * Computes deterministic shop-level operational metrics.
+ * SHOP OPERATIONAL SNAPSHOT COMPUTATION
+ * -------------------------------------
+ * Optional snapshotDateOverride allows deterministic
+ * historical reconstruction during onboarding or replay.
  *
- * Architectural rule:
- * - Must run OUTSIDE per-order reconciliation
- * - Must evaluate full shop state
- *
- * Trigger model (initial):
- * - Safe to run periodically
- * - Deterministic recomputation
- *
- * Future improvements:
- * - queue-driven shop snapshot trigger
+ * Runtime calls MUST omit this argument.
  */
-export async function computeShopOperationalSnapshot(shopId: string) {
-
-  console.info('[shop-snapshot] recompute started', {
-    shopId
-  });
+export async function computeShopOperationalSnapshot(
+  shopId: string,
+  snapshotDateOverride?: Date
+) {
 
   try {
 
   await db.transaction(async (trx) => {
     /**
-     * SNAPSHOT DATE (DETERMINISTIC)
-     * ------------------------------
-     * Snapshot date must be derived from the deterministic
-     * projection cursor event anchor.
+     * SNAPSHOT DATE RESOLUTION
+     * ------------------------
+     * Default: wall-clock time (runtime operations)
      *
-     * Using order_updated_at introduces replay drift because
-     * multiple orders may update in different sequences during
-     * rebuild execution.
+     * Historical mode:
+     * snapshotDateOverride allows deterministic
+     * reconstruction of historical operational states
+     * (used during onboarding backfill).
      */
-    const snapshotDateRow = await trx('orders')
-    .where({ shop_id: shopId })
-    .max('order_created_at as ts')
-    .first();
+    const snapshotDate = snapshotDateOverride ?? new Date();
 
-    const snapshotDate = snapshotDateRow?.ts;
+
+    if (!snapshotDate) {
+        throw new Error('[SHOP_SNAPSHOT_INVARIANT] no orders found');
+    }
 
     /**
-     * DATE NORMALIZATION
-     * ------------------
-     * Snapshot table key is DATE.
-     * Explicit normalization prevents implicit timestamp casting
-     * differences across rebuild executions.
+     * Normalize to DATE for table PK
      */
-    const snapshotDateNormalized = new Date(snapshotDate)
+    const snapshotDateNormalized = snapshotDate
     .toISOString()
     .split('T')[0];
 
-    if (!snapshotDate) {
-      throw new Error('[SHOP_SNAPSHOT_INVARIANT] no orders found');
-    }
+    /**
+     * HISTORICAL CUTOFF INVARIANT
+     * ---------------------------
+     * All snapshot queries MUST represent the shop state
+     * as it existed at snapshotDate.
+     *
+     * Therefore every query referencing orders MUST apply:
+     *
+     *   o.order_created_at <= snapshotCutoff
+     *
+     * This guarantees historical reconstruction during
+     * onboarding backfill and deterministic replay.
+     */
+    const snapshotCutoff = snapshotDate;
 
     /**
      * SHOP SNAPSHOT VERSION SOURCE
@@ -71,7 +69,24 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     .select('last_processed_event_id')
     .first();
 
-    const aggregateVersion = Number(cursorRow?.last_processed_event_id ?? 0);
+    /**
+      * AGGREGATE VERSION RESOLUTION
+      * ----------------------------
+      * Backfill may execute before the projection cursor exists.
+      *
+      * Snapshot table enforces:
+      *   CHECK (aggregate_version > 0)
+      *
+      * Therefore a safe fallback is required to prevent
+      * transaction rollback during historical reconstruction.
+      *
+      * Version semantics:
+      * - Runtime snapshots use projection cursor version.
+      * - Backfill snapshots fall back to version 1 when
+      *   projection cursor is not yet initialized.
+      */
+     const aggregateVersion =
+       Number(cursorRow?.last_processed_event_id ?? 1);
 
     /**
      * REALIZED REVENUE
@@ -79,6 +94,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     const realizedRevenueRow = await trx('order_revenue_units_net as runet')
       .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
       .where('o.shop_id', shopId)
+      .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical state boundary
       .sum<{ sum: string }>('runet.net_revenue as sum')
       .first();
 
@@ -114,27 +130,26 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     'o.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
     .andWhere('o.payment_state', 'paid')
     .andWhereNot('ofs.status', 'fulfilled')
     .sum<{ sum: string }>('runet.net_revenue as sum')
     .first();
 
     /**
-     * AT-RISK REVENUE (PAYMENT EXPOSURE)
-     * ----------------------------------
-     * Revenue that was expected but has not been captured.
+     * AT-RISK REVENUE (HISTORICAL SAFE)
+     * ---------------------------------
+     * Snapshot must reflect state at snapshotDate.
      *
-     * Unpaid orders represent real revenue exposure even
-     * before revenue units are materialized.
-     *
-     * Therefore we derive at_risk_revenue from canonical
-     * order price rather than revenue units.
+     * Therefore orders created after snapshotCutoff
+     * must not be included.
      */
     const atRiskRevenueRow = await trx('orders')
-    .where({ shop_id: shopId })
-    .andWhere('payment_state', 'unpaid')
-    .sum<{ sum: string }>('total_price as sum')
-    .first();
+        .where({ shop_id: shopId })
+        .andWhere('payment_state', 'unpaid')
+        .andWhere('order_created_at', '<=', snapshotCutoff)
+        .sum<{ sum: string }>('total_price as sum')
+        .first();
 
     /**
      * CONTRIBUTION MARGIN
@@ -145,6 +160,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .join('order_revenue_units as ru', 'ru.lasyncro_revenue_unit_id', 'runet.lasyncro_revenue_unit_id')
         .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
         .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff) 
         .avg<{ avg: string }>(
             trx.raw('(runet.net_revenue - ru.estimated_unit_cost) / NULLIF(runet.net_revenue,0)')
         )
@@ -159,6 +175,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     const agingBuckets = await trx('order_age_snapshot as oas')
         .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
         .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
         .select(
             trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds < 86400) as aging_under_24h`),
             trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds >= 86400 AND age_since_paid_seconds < 172800) as aging_48h`),
@@ -175,6 +192,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
         .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
         .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff)
         .select(
             trx.raw(`
                 SUM(CASE WHEN ors.is_inventory_blocked THEN runet.net_revenue ELSE 0 END) as inventory_blocked,
@@ -209,29 +227,44 @@ export async function computeShopOperationalSnapshot(shopId: string) {
 
     const pendingFulfillmentRow = await trx('orders')
         .where({ shop_id: shopId })
+        .andWhere('orders.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
         .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'orders.lasyncro_order_id')
         .andWhereNot('ofs.status', 'fulfilled')
         .count<{ count: string }>('orders.lasyncro_order_id as count')
         .first();
 
-    const exceptionOrdersRow = await trx('order_constraint_events')
-        .where({ shop_id: shopId, is_active: true })
-        .count<{ count: string }>('constraint_event_id as count')
+    /**
+     * EXCEPTION ORDERS (HISTORICAL SAFE)
+     * ----------------------------------
+     * Constraint events must respect snapshot boundary.
+     * Orders created after snapshotCutoff must not appear
+     * in historical snapshots.
+     */
+    const exceptionOrdersRow = await trx('order_constraint_events as oce')
+        .join('orders as o', 'o.lasyncro_order_id', 'oce.lasyncro_order_id')
+        .where('oce.shop_id', shopId)
+        .andWhere('oce.is_active', true)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff)
+        .count<{ count: string }>('oce.constraint_event_id as count')
         .first();
 
     /**
-     * CONSTRAINT + SLA RISK METRICS
-     * -----------------------------
-     * Derived from constraint events and order age projection.
+     * CONSTRAINED ORDERS (HISTORICAL SAFE)
+     * ------------------------------------
+     * Ensure historical snapshots only include orders
+     * that existed at snapshotCutoff.
      */
-    const constrainedOrdersRow = await trx('order_constraint_events')
-        .where({ shop_id: shopId })
-        .countDistinct<{ count: string }>('lasyncro_order_id as count')
-        .first();
+    const constrainedOrdersRow = await trx('order_constraint_events as oce')
+    .join('orders as o', 'o.lasyncro_order_id', 'oce.lasyncro_order_id')
+    .where('oce.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .countDistinct<{ count: string }>('oce.lasyncro_order_id as count')
+    .first();
 
     const ordersAtSlaRiskRow = await trx('order_age_snapshot as oas')
         .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
         .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff) 
         .andWhere('oas.age_since_paid_seconds', '>', 86400)
         .count<{ count: string }>('oas.lasyncro_order_id as count')
         .first();
@@ -331,6 +364,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         }
     )
     .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff) 
     .andWhere('o.payment_state', 'paid')
     .andWhere('ofs.status', 'pending')
     .whereNull('oce.constraint_event_id')
@@ -346,6 +380,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
         .join('order_constraint_events as oce', 'oce.lasyncro_order_id', 'oas.lasyncro_order_id')
         .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
         .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff)
         .andWhere('oce.is_active', true)
         .max('oas.age_since_paid_seconds as max')
         .first();
@@ -361,6 +396,7 @@ export async function computeShopOperationalSnapshot(shopId: string) {
     const revenueLeakageRow = await trx('refund_executions')
     .join('orders as o', 'o.lasyncro_order_id', 'refund_executions.lasyncro_order_id')
     .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
     .sum<{ sum: string }>('refund_executions.total_refund_amount as sum')
     .first();
 
@@ -373,8 +409,8 @@ export async function computeShopOperationalSnapshot(shopId: string) {
      *
      * Invariant:
      * realized_revenue
-     * + pending_revenue
-     * + at_risk_revenue
+     * pending_revenue
+     * at_risk_revenue
      *
      * Stored in projection snapshot so the resolver
      * never recomputes economic invariants.
@@ -457,9 +493,29 @@ export async function computeShopOperationalSnapshot(shopId: string) {
       .merge();
     });
 
-    console.info('[shop-snapshot] recompute completed', {
-        shopId
-    });
+    /**
+     * HISTORICAL SNAPSHOT BOOTSTRAP
+     * -----------------------------
+     * If only a single snapshot exists, this indicates
+     * historical backfill has not yet executed.
+     *
+     * Trigger backfill once orders exist and the
+     * projection pipeline has produced its first snapshot.
+     */
+
+    const snapshotCount = await db('orders_operational_control_snapshot')
+        .where({ shop_id: shopId })
+        .count('* as count')
+        .first();
+
+        if (Number(snapshotCount?.count ?? 0) === 1 && !snapshotDateOverride) {
+        console.info('[shop-snapshot] triggering historical backfill', { shopId });
+
+        const { backfillShopOperationalSnapshots } =
+            await import('./shopOperationalSnapshot.backfill.js');
+
+        await backfillShopOperationalSnapshots(Number(shopId));
+    }
 
     /**
      * SNAPSHOT HEALTH MONITOR

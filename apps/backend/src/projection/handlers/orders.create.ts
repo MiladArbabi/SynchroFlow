@@ -33,9 +33,9 @@ export async function handleOrdersCreate({
   trx: Knex.Transaction;
 }) {
 
-  console.log('[ORDERS_SYNC][FT0_CHECK_TRIGGER]', {
+  /* console.log('[ORDERS_SYNC][FT0_CHECK_TRIGGER]', {
     shopId: domainEvent.shop_id,
-  });
+  }); */
 
   const payload = domainEvent.event_payload as any;
 
@@ -109,40 +109,6 @@ export async function handleOrdersCreate({
       })
       .onConflict(['shop_id', 'platform', 'external_order_id'])
       .ignore();
-
-    let baselineStatus:
-      | 'pending'
-      | 'processing'
-      | 'fulfilled'
-      | 'partially_fulfilled'
-      | 'cancelled'
-      | 'failed' = 'pending';
-
-      const snapshotStatus = payload.displayFulfillmentStatus;
-
-    switch (snapshotStatus) {
-      case 'FULFILLED':
-        baselineStatus = 'fulfilled';
-        break;
-      case 'PARTIALLY_FULFILLED':
-        baselineStatus = 'partially_fulfilled';
-        break;
-      case 'UNFULFILLED':
-        baselineStatus = 'pending';
-        break;
-      case 'CANCELLED':
-        baselineStatus = 'cancelled';
-        break;
-    }
-
-    await OrderFulfillmentIngestionService.ingestStatus(
-      {
-        lasyncroOrderId,
-        status: baselineStatus,
-        canonicalEventTime: new Date(domainEvent.event_time),
-      },
-      trx
-    );
 
     const lineEdges =
       payload.lineItems?.edges ??
@@ -233,6 +199,67 @@ export async function handleOrdersCreate({
         .ignore();
     }
   }
+
+    let baselineStatus:
+      | 'pending'
+      | 'processing'
+      | 'fulfilled'
+      | 'partially_fulfilled'
+      | 'cancelled'
+      | 'failed' = 'pending';
+
+    /**
+     * FULFILLMENT SOURCE NORMALIZATION
+     * --------------------------------
+     * Shopify GraphQL + REST mismatch:
+     *
+     * Possible fields:
+     * - displayFulfillmentStatus (GraphQL)
+     * - fulfillment_status (REST)
+     * - fulfillmentStatus (GraphQL alt)
+     */
+    const snapshotStatus =
+      payload.displayFulfillmentStatus ??
+      payload.fulfillmentStatus ??
+      payload.fulfillment_status ??
+      null;
+
+    const normalizedStatus =
+      typeof snapshotStatus === 'string'
+        ? snapshotStatus.toLowerCase()
+        : null;
+
+    switch (normalizedStatus) {
+      case 'fulfilled':
+        baselineStatus = 'fulfilled';
+        break;
+
+      case 'partial':
+      case 'partially_fulfilled':
+        baselineStatus = 'partially_fulfilled';
+        break;
+
+      case 'unfulfilled':
+      case 'null':
+        baselineStatus = 'pending';
+        break;
+
+      case 'cancelled':
+        baselineStatus = 'cancelled';
+        break;
+
+      default:
+        baselineStatus = 'pending';
+    }
+
+    await OrderFulfillmentIngestionService.ingestStatus(
+      {
+        lasyncroOrderId,
+        status: baselineStatus,
+        canonicalEventTime: new Date(domainEvent.event_time),
+      },
+      trx
+    );
 
   /**
    * ECONOMIC MATERIALIZATION STEP

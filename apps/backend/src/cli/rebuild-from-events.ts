@@ -85,7 +85,6 @@ async function truncateProjections() {
     'order_age_snapshot',
     'order_margin_snapshot',
     'order_risk_snapshot',
-    'orders_operational_control_snapshot',
     'revenue_projection_daily',
     'daily_operational_brief_snapshot',
     'user_lifecycle_snapshot',

@@ -118,7 +118,15 @@ export async function handleOrderFulfillment(
     const result = await db('domain_events')
       .insert({
         shop_id: shopId,
-        event_type: 'orders/fulfilled',
+        /**
+         * DOMAIN EVENT TYPE ALIGNMENT
+         * ---------------------------
+         * Must match projection handler:
+         *   handleOrdersFulfilled → 'orders.fulfilled'
+         *
+         * Mismatch breaks rebuild determinism.
+         */
+        event_type: 'orders.fulfilled',
         event_payload: rawPayload,
         event_time: new Date(eventTime),
         event_version: 1,
