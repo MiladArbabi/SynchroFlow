@@ -41,7 +41,6 @@ import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
  * order_risk_snapshot ranking.
  */
 import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
-import { OperationalSignalsSection } from '../components/OperationalSignalsSection.js';
 
 /**
  * Operations Queue action handler
@@ -184,6 +183,16 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
     realized_revenue: number;
     at_risk_revenue: number;
+    /**
+     * COMMAND CENTER — PRIMARY METRICS
+     * --------------------------------
+     * Backend-computed decision drivers.
+     * Must remain in sync with snapshot + resolver.
+     */
+    total_at_risk_revenue: number;
+    sla_breach_24h_revenue: number;
+    top_blocking_type: string;
+
     blocked_revenue: number;
     revenue_leakage: number;
     avg_contribution_margin_pct: number;
@@ -279,7 +288,6 @@ export default function OrdersModuleFT2(
       obligations,
       decision,
       operationalControl,
-      timeseries,
       distribution
     } = props;
 
@@ -411,25 +419,44 @@ export default function OrdersModuleFT2(
         FT2Row span engine ensures deterministic
         proportional layout regardless of viewport.
       ----------------------------------------------------- */}
+
+      {/* /**
+        * ARCHITECTURAL GUARDRAIL — OPERATIONAL COMMAND CENTER
+        * ---------------------------------------------------
+        * This row is NO LONGER a visualization surface.
+        *
+        * STRICT RULES:
+        * - NO charts
+        * - NO timeseries
+        * - NO metric exploration UI
+        *
+        * ONLY:
+        * - decision surfaces
+        * - prioritized drivers
+        * - actionable breakdowns
+        *
+        * Any violation = architectural regression.
+        */ }
       <FT2Row intent="analysis">
 
-      {/* /** CHART SURFACE
-      * -------------
-      * ApexCharts already manages its own internal container.
-      * Rendering an additional wrapper caused frame-in-frame visuals. */}
-      <FT2Panel span={2} title="Operational Pressure">
-        {timeseries}
+      {/** COMMAND CENTER (PLACEHOLDER)
+      * -----------------------------
+      * Timeseries removed from primary surface.
+      * Will be replaced by OperationalCommandCenter.
+      *
+      * DO NOT reintroduce charts here. */ }
+      <FT2Panel span={2} title="Operational Command Center">
+        {/* TODO: mount <OperationalCommandCenter /> */}
       </FT2Panel>
 
       {/* Signals Surface */}
-      <FT2Panel span={2} title="Operational Signals">
-
-        <OperationalSignalsSection
-          signals={operationalSignals}
-          queues={workQueues}
-          onSignalAction={handleOperationsAction}
-        />
-      </FT2Panel>
+      {/* /**
+      * SIGNAL SURFACE REMOVED
+      * ----------------------
+      * Signals are now part of the Operational Command Center.
+      *
+      * DO NOT render signals as a separate panel.
+      */}
     </FT2Row>
 
       {/* -----------------------------------------------------

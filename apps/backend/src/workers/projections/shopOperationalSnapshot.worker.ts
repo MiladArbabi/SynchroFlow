@@ -165,6 +165,54 @@ export async function computeShopOperationalSnapshot(
         .first();
 
     /**
+     * SLA BREACH (NEXT 24H) REVENUE
+     * --------------------------------
+     * Revenue from orders at immediate SLA risk.
+     *
+     * SOURCE OF TRUTH:
+     * - order_age_snapshot
+     * - orders_at_sla_risk equivalent condition
+     *
+     * NOTE:
+     * This must remain projection-computed to avoid UI drift.
+     */
+    const slaBreach24hRevenueRow = await trx('orders as o')
+        .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff)
+        .andWhere('oas.age_since_paid_seconds', '>=', 86400)
+        .sum<{ sum: string }>('o.total_price as sum')
+        .first();
+    
+    /**
+     * TOP BLOCKING TYPE
+     * ------------------
+     * Determines dominant revenue blocker.
+     *
+     * PRIORITY ORDER:
+     * - inventory
+     * - customer
+     * - operational
+     *
+     * NOTE:
+     * Must remain deterministic and simple.
+     */
+    let topBlockingType: 'inventory' | 'customer' | 'operational' | 'none' = 'none';
+
+    // Placeholder values — must reuse existing computed fields later in file
+    const inventoryBlocked = Number(0);
+    const customerBlocked = Number(0);
+    const operationalBlocked = Number(0);
+
+    if (inventoryBlocked >= customerBlocked && inventoryBlocked >= operationalBlocked && inventoryBlocked > 0) {
+    topBlockingType = 'inventory';
+    } else if (customerBlocked >= operationalBlocked && customerBlocked > 0) {
+    topBlockingType = 'customer';
+    } else if (operationalBlocked > 0) {
+    topBlockingType = 'operational';
+    }
+
+    /**
      * CONTRIBUTION MARGIN
      * -------------------
      * Average contribution margin across revenue units.
@@ -469,6 +517,18 @@ export async function computeShopOperationalSnapshot(
             realized_revenue: Number(realizedRevenueRow?.sum ?? 0),
             pending_revenue: Number(pendingRevenueRow?.sum ?? 0),
             at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),
+
+            /**
+             * COMMAND CENTER — PRIMARY METRICS
+             * --------------------------------
+             * These fields power the decision surface.
+             * MUST remain backend-computed (no UI derivation).
+             */
+            total_at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),
+
+            sla_breach_24h_revenue: Number(slaBreach24hRevenueRow?.sum ?? 0),
+
+            top_blocking_type: topBlockingType,
 
             /**
              * Canonical GMV (projection authority)

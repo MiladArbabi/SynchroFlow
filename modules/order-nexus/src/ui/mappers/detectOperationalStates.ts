@@ -112,6 +112,6 @@ export function detectOperationalStates(
       * (normalized at projection layer)
       */
     earlyAging:
-      snapshot.aging_under_24h > 0
+      snapshot.aging_24h > 0
   };
 }

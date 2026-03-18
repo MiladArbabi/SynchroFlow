@@ -49,7 +49,7 @@ export function normalizeOperationalSnapshot(
     orders_at_sla_risk: safeMetric(snapshot.orders_at_sla_risk, warn),
     pending_fulfillment: safeMetric(snapshot.pending_fulfillment, warn),
     
-    aging_under_24h: safeMetric(snapshot.aging_under_24h, warn),
+    aging_24h: safeMetric(snapshot.aging_24h, warn),
     aging_48h: safeMetric(snapshot.aging_48h, warn),
     aging_72h_plus: safeMetric(snapshot.aging_72h_plus, warn),
 
@@ -57,6 +57,20 @@ export function normalizeOperationalSnapshot(
     constrained_orders: safeMetric(snapshot.constrained_orders, warn),
     pending_payment: safeMetric(snapshot.pending_payment, warn),
     at_risk_revenue: safeMetric(snapshot.at_risk_revenue, warn),
+
+    /**
+     * COMMAND CENTER — PRIMARY METRICS
+     * --------------------------------
+     * Must remain aligned with backend snapshot contract.
+     * Prevents silent field drift between BE and UI.
+     */
+    total_at_risk_revenue: safeMetric(snapshot.total_at_risk_revenue, warn),
+
+    sla_breach_24h_revenue: safeMetric(snapshot.sla_breach_24h_revenue, warn),
+
+    // categorical → no numeric normalization
+    top_blocking_type: snapshot.top_blocking_type ?? 'none',
+
     partial_fulfillment_opportunity: safeMetric(snapshot.partial_fulfillment_opportunity, warn),
 
     revenue_blocked_inventory: safeMetric(snapshot.revenue_blocked_inventory, warn),

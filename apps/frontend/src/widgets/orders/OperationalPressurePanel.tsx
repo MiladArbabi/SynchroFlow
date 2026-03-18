@@ -13,6 +13,19 @@
  */
 import Chart from 'react-apexcharts'
 
+/**
+ * ARCHITECTURAL CONSTRAINT — DRILL-DOWN ONLY
+ * ------------------------------------------
+ * This component is NOT part of the primary FT2 surface.
+ *
+ * RULES:
+ * - MUST NOT be mounted in OrdersModuleFT2
+ * - MUST NOT be used as a primary decision surface
+ * - ONLY allowed in drill-down / historical analysis contexts
+ *
+ * Violation = reintroduction of observability paradigm.
+ */
+
 export interface OperationalPressurePoint {
   snapshot_date: string;
   queue_awaiting_inventory: number;

@@ -61,6 +61,28 @@ export async function up(knex: Knex): Promise<void> {
         .notNullable()
         .defaultTo(0);
 
+      /**
+       * COMMAND CENTER — PRIMARY METRICS
+       * --------------------------------
+       * These fields power the Operational Command Center.
+       *
+       * RULES:
+       * - Computed ONLY in projection layer
+       * - NEVER recomputed in resolver or UI
+       * - Must stay in sync with snapshot worker
+       */
+      table.decimal('total_at_risk_revenue', 14, 2)
+        .notNullable()
+        .defaultTo(0);
+
+      table.decimal('sla_breach_24h_revenue', 14, 2)
+        .notNullable()
+        .defaultTo(0);
+
+      table.string('top_blocking_type')
+        .notNullable()
+        .defaultTo('none');
+
       table.decimal('blocked_revenue', 14, 2)
         .notNullable()
         .defaultTo(0);

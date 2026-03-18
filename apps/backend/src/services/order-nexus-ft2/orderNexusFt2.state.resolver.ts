@@ -267,6 +267,16 @@ export async function getOrderNexusFt2StateSnapshot(
 
         realized_revenue: operationalControlRow.realized_revenue,
         at_risk_revenue: operationalControlRow.at_risk_revenue,
+        /**
+         * COMMAND CENTER — PRIMARY METRICS
+         * --------------------------------
+         * Direct passthrough from snapshot.
+         * DO NOT recompute in resolver.
+         */
+        total_at_risk_revenue: operationalControlRow.total_at_risk_revenue,
+        sla_breach_24h_revenue: operationalControlRow.sla_breach_24h_revenue,
+        top_blocking_type: operationalControlRow.top_blocking_type,
+
         blocked_revenue: operationalControlRow.blocked_revenue,
         revenue_leakage: operationalControlRow.revenue_leakage,
         avg_contribution_margin_pct: operationalControlRow.avg_contribution_margin_pct,

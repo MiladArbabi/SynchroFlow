@@ -27,13 +27,27 @@ export type OperationalControlSnapshot = {
   orders_at_sla_risk: number;
   pending_fulfillment: number;
   
-  aging_under_24h: number;
+  /**
+   * AGING BUCKETS
+   * -------------
+   * Must align with signal engine expectations.
+   */
+  aging_24h: number;
   aging_48h: number;
   aging_72h_plus: number;
 
   exception_orders: number;
   pending_payment: number;
   at_risk_revenue: number;
+
+  /**
+   * COMMAND CENTER — PRIMARY METRICS
+   * --------------------------------
+   * Backend-computed. Source of truth.
+   */
+  total_at_risk_revenue: number;
+  sla_breach_24h_revenue: number;
+  top_blocking_type: string;
   constrained_orders: number;
   partial_fulfillment_opportunity: number;
 
