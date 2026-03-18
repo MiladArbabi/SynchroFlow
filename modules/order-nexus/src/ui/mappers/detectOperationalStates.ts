@@ -21,12 +21,6 @@
 import type { OperationalControlSnapshot } from './types/operationalControlSnapshot.js';
 
 export type OperationalStates = {
-
-  /**
-   * Inventory blocking order fulfillment
-   */
-  inventoryShortage: boolean;
-
   /**
    * Inventory constraint cluster
    *
@@ -53,11 +47,6 @@ export type OperationalStates = {
    * Failed payment requiring retry
    */
   paymentProblem: boolean;
-
-  /**
-   * Orders blocked by operational constraints
-   */
-  fulfillmentConstraint: boolean;
 
   /**
    * Orders stuck beyond normal fulfillment window
@@ -93,9 +82,6 @@ export function detectOperationalStates(
 
   return {
 
-    inventoryShortage:
-      snapshot.queue_awaiting_inventory > 0,
-
     inventoryConstraintCluster:
       snapshot.queue_awaiting_inventory > 0 ||
       snapshot.constrained_orders > 0 ||
@@ -110,9 +96,6 @@ export function detectOperationalStates(
     paymentProblem:
       snapshot.pending_payment > 0,
 
-    fulfillmentConstraint:
-      snapshot.constrained_orders > 0,
-
     agingOrders:
       snapshot.aging_48h > 0 ||
       snapshot.aging_72h_plus > 0,
@@ -123,7 +106,12 @@ export function detectOperationalStates(
     awaitingCustomer:
       snapshot.queue_awaiting_customer > 0,
 
+    /**
+      * NOTE:
+      * Snapshot field is `aging_under_24h`
+      * (normalized at projection layer)
+      */
     earlyAging:
-      snapshot.aging_24h > 0
+      snapshot.aging_under_24h > 0
   };
 }

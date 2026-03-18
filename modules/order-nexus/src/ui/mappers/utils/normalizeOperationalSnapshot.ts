@@ -49,7 +49,7 @@ export function normalizeOperationalSnapshot(
     orders_at_sla_risk: safeMetric(snapshot.orders_at_sla_risk, warn),
     pending_fulfillment: safeMetric(snapshot.pending_fulfillment, warn),
     
-    aging_24h: safeMetric(snapshot.aging_24h, warn),
+    aging_under_24h: safeMetric(snapshot.aging_under_24h, warn),
     aging_48h: safeMetric(snapshot.aging_48h, warn),
     aging_72h_plus: safeMetric(snapshot.aging_72h_plus, warn),
 

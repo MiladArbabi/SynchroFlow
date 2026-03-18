@@ -14,8 +14,6 @@ import { projectOrderInventoryConstraints } from '../../projections/orderInvento
 import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
 
 import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
-import { resolveOperationalSignals } from '../../services/order-execution-intelligence/orderOperationalSignalsResolver.js'
-
 import { writeReconciliationAudit } from './reconciliationAuditWriter.js';
 import { writeReconciliationCheckpoint } from './reconciliationCheckpointWriter.js';
 import { writeOrderRevenueUnits } from './revenue-units.writer.js';
@@ -467,19 +465,6 @@ export async function reconcileOrderFulfillment(
     };
 
     await resolveExecutionQueues(
-      trx,
-      order.shop_id
-    );
-
-    /**
-     * OPERATIONAL SIGNALS PROJECTION
-     * ------------------------------
-     * Produces shop-level operational intelligence signals.
-     *
-     * Return values are intentionally ignored because
-     * reconciliation only triggers the projection side-effect.
-     */
-    await resolveOperationalSignals(
       trx,
       order.shop_id
     );

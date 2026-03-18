@@ -27,7 +27,7 @@ export type OperationalControlSnapshot = {
   orders_at_sla_risk: number;
   pending_fulfillment: number;
   
-  aging_24h: number;
+  aging_under_24h: number;
   aging_48h: number;
   aging_72h_plus: number;
 

@@ -157,8 +157,23 @@ export async function getOrderNexusFt2StateSnapshot(
    *
    * Replaced by Operations Queue architecture.
    *
-   * Operational signals now originate from:
-   * orders_operational_control_snapshot
+   * OPERATIONAL SIGNAL SOURCE OF TRUTH
+   * ----------------------------------
+   * All operational signals MUST originate from:
+   *   orders_operational_control_snapshot
+   *
+   * Rationale:
+   * - Ensures deterministic rebuilds
+   * - Prevents per-order recomputation drift
+   * - Guarantees projection consistency across environments
+   *
+   * DO NOT:
+   * - Introduce dynamic signal resolvers
+   * - Query order_* tables for signal derivation
+   *
+   * Any signal logic must be encoded in:
+   * - Projection layer OR
+   * - Snapshot-to-signal mapper (frontend)
    *
    * Query intentionally disabled to prevent
    * accidental reintroduction of the ranking surface.
