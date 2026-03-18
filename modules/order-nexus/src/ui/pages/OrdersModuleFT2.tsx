@@ -22,6 +22,7 @@ import {
 import { Button } from '@mui/material';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
 
+import { OperationalCommandCenter } from '../components/OperationalCommandCenter.js';
 import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
 import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
 import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlock.js';
@@ -41,6 +42,7 @@ import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
  * order_risk_snapshot ranking.
  */
 import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
+import { OperationalSignalsSection } from '../components/OperationalSignalsSection.js';
 
 /**
  * Operations Queue action handler
@@ -310,17 +312,58 @@ export default function OrdersModuleFT2(
     let operationalHealth: 'healthy' | 'warning' | 'critical' = 'healthy';
 
     /**
-     * SIGNAL ENGINE INPUT
-     * -------------------
-     * Pass projection snapshot directly to the signal mapper.
+     * SNAPSHOT INTEGRITY GUARD (UI BOUNDARY)
+     * --------------------------------------
+     * operationalControl may be undefined if:
+     * - resolver returned null
+     * - API response not yet loaded
      *
-     * This prevents schema drift between:
-     * resolver → UI → mapper.
+     * Signal engine REQUIRES a valid snapshot.
      *
-     * Any future projection field additions will automatically
-     * propagate to the signal engine.
+     * We fail loudly AND provide deterministic fallback
+     * to prevent runtime crashes.
      */
-    const operationalSignals = mapOperationalSignals(operationalControl);
+    const safeOperationalControl = operationalControl ?? {
+      snapshot_date: new Date().toISOString(),
+      aggregate_version: 0,
+
+      realized_revenue: 0,
+      at_risk_revenue: 0,
+      total_at_risk_revenue: 0,
+      sla_breach_24h_revenue: 0,
+      top_blocking_type: 'none',
+
+      blocked_revenue: 0,
+      revenue_leakage: 0,
+      avg_contribution_margin_pct: 0,
+
+      orders_at_sla_risk: 0,
+      aging_24h: 0,
+      aging_48h: 0,
+      aging_72h_plus: 0,
+
+      pending_fulfillment: 0,
+      pending_payment: 0,
+      exception_orders: 0,
+      constrained_orders: 0,
+
+      revenue_blocked_inventory: 0,
+      revenue_blocked_customer: 0,
+      revenue_blocked_operational: 0,
+
+      queue_manual_review: 0,
+      queue_awaiting_inventory: 0,
+      queue_ready_to_ship: 0,
+      queue_awaiting_customer: 0,
+
+      partial_fulfillment_opportunity: 0
+    };
+
+    if (!operationalControl) {
+      console.error('[OrdersModuleFT2] operationalControl missing → using fallback');
+    }
+
+    const operationalSignals = mapOperationalSignals(safeOperationalControl);
 
     /**
      * Workload queue mapping
@@ -331,7 +374,7 @@ export default function OrdersModuleFT2(
      * Source:
      * orders_operational_control_snapshot
      */
-    const workQueues = mapWorkQueues(operationalControl);
+    const workQueues = mapWorkQueues(safeOperationalControl);
 
   return (
     <FT2Layout>
@@ -419,44 +462,23 @@ export default function OrdersModuleFT2(
         FT2Row span engine ensures deterministic
         proportional layout regardless of viewport.
       ----------------------------------------------------- */}
-
-      {/* /**
-        * ARCHITECTURAL GUARDRAIL — OPERATIONAL COMMAND CENTER
-        * ---------------------------------------------------
-        * This row is NO LONGER a visualization surface.
-        *
-        * STRICT RULES:
-        * - NO charts
-        * - NO timeseries
-        * - NO metric exploration UI
-        *
-        * ONLY:
-        * - decision surfaces
-        * - prioritized drivers
-        * - actionable breakdowns
-        *
-        * Any violation = architectural regression.
-        */ }
       <FT2Row intent="analysis">
 
-      {/** COMMAND CENTER (PLACEHOLDER)
-      * -----------------------------
-      * Timeseries removed from primary surface.
-      * Will be replaced by OperationalCommandCenter.
-      *
-      * DO NOT reintroduce charts here. */ }
       <FT2Panel span={2} title="Operational Command Center">
-        {/* TODO: mount <OperationalCommandCenter /> */}
+        <OperationalCommandCenter
+          operationalControl={safeOperationalControl}
+        />
       </FT2Panel>
 
       {/* Signals Surface */}
-      {/* /**
-      * SIGNAL SURFACE REMOVED
-      * ----------------------
-      * Signals are now part of the Operational Command Center.
-      *
-      * DO NOT render signals as a separate panel.
-      */}
+      <FT2Panel span={2} title="Operational Signals">
+
+        <OperationalSignalsSection
+          signals={operationalSignals}
+          queues={workQueues}
+          onSignalAction={handleOperationsAction}
+        />
+      </FT2Panel>
     </FT2Row>
 
       {/* -----------------------------------------------------

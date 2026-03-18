@@ -22,11 +22,32 @@
  */
 export const projectionExecutionOrder = [
   'orderFulfillmentProjection',
+
   'orderInventoryConstraintProjection',
+
   'orderConstraintProjection',
+
   'orderMarginProjection',
+
   'orderRiskProjection',
+
+  /**
+   * AGE MUST COME BEFORE OPERATIONAL
+   * --------------------------------
+   * Provides age_since_paid_seconds required for SLA evaluation
+   */
   'orderAgeProjection',
+
+  /**
+   * OPERATIONAL CONSTRAINT PROJECTION
+   * ---------------------------------
+   * Depends on:
+   * - fulfillment
+   * - age
+   */
+  'orderOperationalConstraintProjection',
+
   'orderRevenueDailyProjection',
+
   'dailyOperationalBriefProjection'
 ];

@@ -165,86 +165,6 @@ export async function computeShopOperationalSnapshot(
         .first();
 
     /**
-     * SLA BREACH (NEXT 24H) REVENUE
-     * --------------------------------
-     * Revenue from orders at immediate SLA risk.
-     *
-     * SOURCE OF TRUTH:
-     * - order_age_snapshot
-     * - orders_at_sla_risk equivalent condition
-     *
-     * NOTE:
-     * This must remain projection-computed to avoid UI drift.
-     */
-    const slaBreach24hRevenueRow = await trx('orders as o')
-        .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'o.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff)
-        .andWhere('oas.age_since_paid_seconds', '>=', 86400)
-        .sum<{ sum: string }>('o.total_price as sum')
-        .first();
-    
-    /**
-     * TOP BLOCKING TYPE
-     * ------------------
-     * Determines dominant revenue blocker.
-     *
-     * PRIORITY ORDER:
-     * - inventory
-     * - customer
-     * - operational
-     *
-     * NOTE:
-     * Must remain deterministic and simple.
-     */
-    let topBlockingType: 'inventory' | 'customer' | 'operational' | 'none' = 'none';
-
-    // Placeholder values — must reuse existing computed fields later in file
-    const inventoryBlocked = Number(0);
-    const customerBlocked = Number(0);
-    const operationalBlocked = Number(0);
-
-    if (inventoryBlocked >= customerBlocked && inventoryBlocked >= operationalBlocked && inventoryBlocked > 0) {
-    topBlockingType = 'inventory';
-    } else if (customerBlocked >= operationalBlocked && customerBlocked > 0) {
-    topBlockingType = 'customer';
-    } else if (operationalBlocked > 0) {
-    topBlockingType = 'operational';
-    }
-
-    /**
-     * CONTRIBUTION MARGIN
-     * -------------------
-     * Average contribution margin across revenue units.
-     */
-    const avgMarginRow = await trx('order_revenue_units_net as runet')
-        .join('order_revenue_units as ru', 'ru.lasyncro_revenue_unit_id', 'runet.lasyncro_revenue_unit_id')
-        .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff) 
-        .avg<{ avg: string }>(
-            trx.raw('(runet.net_revenue - ru.estimated_unit_cost) / NULLIF(runet.net_revenue,0)')
-        )
-        .first();
-
-    /**
-     * ORDER AGING BUCKETS
-     * -------------------
-     * Deterministic aging derived from order_age_snapshot.
-     * These buckets drive operational SLA visibility.
-     */
-    const agingBuckets = await trx('order_age_snapshot as oas')
-        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
-        .select(
-            trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds < 86400) as aging_under_24h`),
-            trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds >= 86400 AND age_since_paid_seconds < 172800) as aging_48h`),
-            trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds >= 172800) as aging_72h_plus`)
-        )
-        .first();
-
-    /**
      * BLOCKED REVENUE
      * ----------------
      * Revenue attached to orders blocked by operational constraints.
@@ -260,6 +180,49 @@ export async function computeShopOperationalSnapshot(
                 SUM(CASE WHEN ors.is_customer_blocked THEN runet.net_revenue ELSE 0 END) as customer_blocked,
                 SUM(CASE WHEN ors.is_operational_blocked THEN runet.net_revenue ELSE 0 END) as operational_blocked
             `)
+        )
+        .first();
+    
+    /**
+     * TOP BLOCKING TYPE (REAL COMPUTATION)
+     * ------------------------------------
+     * Must reflect actual blocked revenue values.
+     */
+    const inventoryBlocked = Number((blockedRevenueRows as any)?.inventory_blocked ?? 0);
+    const customerBlocked = Number((blockedRevenueRows as any)?.customer_blocked ?? 0);
+    const operationalBlocked = Number((blockedRevenueRows as any)?.operational_blocked ?? 0);
+
+    /**
+     * TOP BLOCKING TYPE — GUARANTEED
+     * --------------------------------
+     * System must always produce a dominant driver.
+     * "none" is forbidden — it destroys operator trust.
+     */
+    let topBlockingType: 'inventory' | 'customer' | 'operational' = 'inventory';
+
+    /**
+     * Always select highest value — even if all are 0
+     */
+    if (customerBlocked >= inventoryBlocked && customerBlocked >= operationalBlocked) {
+        topBlockingType = 'customer';
+    } else if (operationalBlocked >= inventoryBlocked) {
+        topBlockingType = 'operational';
+    } else {
+        topBlockingType = 'inventory';
+    }
+
+    /**
+     * CONTRIBUTION MARGIN
+     * -------------------
+     * Average contribution margin across revenue units.
+     */
+    const avgMarginRow = await trx('order_revenue_units_net as runet')
+        .join('order_revenue_units as ru', 'ru.lasyncro_revenue_unit_id', 'runet.lasyncro_revenue_unit_id')
+        .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff) 
+        .avg<{ avg: string }>(
+            trx.raw('(runet.net_revenue - ru.estimated_unit_cost) / NULLIF(runet.net_revenue,0)')
         )
         .first();
     
@@ -316,18 +279,82 @@ export async function computeShopOperationalSnapshot(
      * that existed at snapshotCutoff.
      */
     const constrainedOrdersRow = await trx('order_constraint_events as oce')
-    .join('orders as o', 'o.lasyncro_order_id', 'oce.lasyncro_order_id')
-    .where('oce.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .countDistinct<{ count: string }>('oce.lasyncro_order_id as count')
-    .first();
+        .join('orders as o', 'o.lasyncro_order_id', 'oce.lasyncro_order_id')
+        .where('oce.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff)
+        .countDistinct<{ count: string }>('oce.lasyncro_order_id as count')
+        .first();
+
+    /**
+     * LOAD SHOP SLA
+     * ----------------
+     * Single source-of-truth for operational timing expectations.
+     */
+    const shopSettings = await trx('shop_operational_settings')
+      .where({ shop_id: shopId })
+      .first();
+
+    const fulfillmentSlaHours = shopSettings?.fulfillment_sla_hours ?? 24;
+    const fulfillmentSlaSeconds = fulfillmentSlaHours * 3600;
+
+        /**
+     * ORDER AGING BUCKETS
+     * -------------------
+     * Deterministic aging derived from order_age_snapshot.
+     * These buckets drive operational SLA visibility.
+     */
+    const agingBuckets = await trx('order_age_snapshot as oas')
+        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
+        .select(
+            /**
+             * SLA-AWARE AGING BUCKETS
+             * ------------------------
+             * fulfillmentSlaSeconds MUST be injected as a bound value.
+             * Never interpolated as identifier (prevents SQL runtime failure).
+             */
+            trx.raw(
+            `COUNT(*) FILTER (WHERE age_since_paid_seconds < ?) as aging_under_24h`,
+            [fulfillmentSlaSeconds]
+            ),
+            trx.raw(
+            `COUNT(*) FILTER (
+                WHERE age_since_paid_seconds >= ?
+                AND age_since_paid_seconds < 172800
+            ) as aging_48h`,
+            [fulfillmentSlaSeconds]
+            ),
+            trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds >= 172800) as aging_72h_plus`)
+        )
+        .first();
 
     const ordersAtSlaRiskRow = await trx('order_age_snapshot as oas')
         .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
         .where('o.shop_id', shopId)
         .andWhere('o.order_created_at', '<=', snapshotCutoff) 
-        .andWhere('oas.age_since_paid_seconds', '>', 86400)
+        .andWhere('oas.age_since_paid_seconds', '>', fulfillmentSlaSeconds)
         .count<{ count: string }>('oas.lasyncro_order_id as count')
+        .first();
+
+    /**
+     * SLA BREACH (NEXT 24H) REVENUE
+     * --------------------------------
+     * Revenue from orders at immediate SLA risk.
+     *
+     * SOURCE OF TRUTH:
+     * - order_age_snapshot
+     * - orders_at_sla_risk equivalent condition
+     *
+     * NOTE:
+     * This must remain projection-computed to avoid UI drift.
+     */
+    const slaBreach24hRevenueRow = await trx('orders as o')
+        .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .andWhere('o.order_created_at', '<=', snapshotCutoff)
+        .andWhere('oas.age_since_paid_seconds', '>=', fulfillmentSlaSeconds)
+        .sum<{ sum: string }>('o.total_price as sum')
         .first();
     
     /**

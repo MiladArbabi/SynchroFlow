@@ -30,8 +30,44 @@ export async function projectOrderRisk(
   }
 
   const isInventoryBlocked = !!ofs.inventory_block_type;
-  const isCustomerBlocked = !!ofs.customer_block_type;
-  const isOperationalBlocked = !!ofs.operational_block_type;
+  /**
+   * CUSTOMER BLOCK
+   * ----------------
+   * Derived from active customer constraints OR unpaid state.
+   */
+  const customerConstraint = await trx('order_constraint_events')
+    .where({
+      lasyncro_order_id: orderId,
+      constraint_type: 'customer',
+      is_active: true
+    })
+    .first();
+
+  /**
+   * CUSTOMER BLOCK
+   * ----------------
+   * Single source-of-truth:
+   * Active customer constraint events only.
+   *
+   * All upstream logic (e.g. unpaid orders) must be encoded
+   * in the constraint engine — NOT duplicated here.
+   */
+  const isCustomerBlocked = !!customerConstraint;
+  
+  /**
+   * OPERATIONAL BLOCK
+   * ------------------
+   * Derived from active operational constraints.
+   */
+  const operationalConstraint = await trx('order_constraint_events')
+    .where({
+      lasyncro_order_id: orderId,
+      constraint_type: 'operational',
+      is_active: true
+    })
+    .first();
+
+  const isOperationalBlocked = !!operationalConstraint;
 
   let healthScore = 1;
 

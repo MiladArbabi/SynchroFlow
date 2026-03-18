@@ -2,7 +2,10 @@
 import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 
-import { ReconciliationResult } from './reconciliation.types.js';
+import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
+import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
+import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
+
 import { projectOrderAge } from '../../projections/orderAgeProjection.js';
 import { projectOrderRisk } from '../../projections/orderRiskProjection.js';
 import { projectOrderMargin } from '../../projections/orderMarginProjection.js';
@@ -11,16 +14,16 @@ import { projectOrderFulfillment } from '../../projections/orderFulfillmentProje
 import { projectRevenueDaily } from '../../projections/orderRevenueDailyProjection.js';
 import { projectDailyOperationalBrief } from '../../projections/dailyOperationalBriefProjection.js';
 import { projectOrderInventoryConstraints } from '../../projections/orderInventoryConstraintProjection.js';
-import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
+import { projectOrderOperationalConstraints } from '../../projections/orderOperationalConstraintProjection.js';
 
-import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
+import { ReconciliationResult } from './reconciliation.types.js';
 import { writeReconciliationAudit } from './reconciliationAuditWriter.js';
 import { writeReconciliationCheckpoint } from './reconciliationCheckpointWriter.js';
-import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 
+import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { resolveRefundExecution } from '../refundResolution.worker.js';
-import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
-import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
+
+import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
 
 /**
  * PROJECTION RUNTIME INSTRUMENTATION
@@ -313,6 +316,19 @@ export async function reconcileOrderFulfillment(
       projectOrderInventoryConstraints(
         trx,
         affectedOrders.map(o => o.lasyncro_order_id)
+      )
+    );
+
+    /**
+     * OPERATIONAL CONSTRAINT PROJECTION
+     * ---------------------------------
+     * Detects SLA breaches after inventory/customer constraints resolved.
+     */
+    await instrumentProjection('orderOperationalConstraintProjection', async () =>
+      projectOrderOperationalConstraints(
+        trx,
+        affectedOrders.map(o => o.lasyncro_order_id),
+        order.shop_id
       )
     );
 

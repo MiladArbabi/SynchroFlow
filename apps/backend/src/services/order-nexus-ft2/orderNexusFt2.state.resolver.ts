@@ -22,7 +22,6 @@ export async function getOrderNexusFt2StateSnapshot(
 
   // Fulfillment state
   const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId);
-  const fulfillmentStatusFacts = await extractOrderFulfillmentStatusFacts(shopId);
   const fulfilledOrders = await extractFulfilledOrdersCount(shopId);
   const activeOrders = await extractActiveOrdersCount(shopId);
 
@@ -123,14 +122,69 @@ export async function getOrderNexusFt2StateSnapshot(
    */
   if (!operationalControlRow) {
 
-    console.error(
-      '[ORDER_NEXUS_FT2_SNAPSHOT_DEGRADED]',
-      'orders_operational_control_snapshot row not found for shop',
-      shopId
-    );
+  console.error(
+    '[ORDER_NEXUS_FT2_SNAPSHOT_DEGRADED]',
+    'orders_operational_control_snapshot row not found for shop',
+    shopId
+  );
 
-    return null;
+  /**
+   * FAIL-SAFE SNAPSHOT
+   * -------------------
+   * Never return null → UI contract requires object.
+   *
+   * This preserves:
+   * - rendering
+   * - operator visibility
+   * - system debuggability
+   */
+  return {
+  /**
+   * OPERATIONAL CONTROL SNAPSHOT (EMPTY STATE)
+   * ------------------------------------------
+   * Must satisfy full UI contract.
+   * Prevents runtime crashes in normalization layer.
+   */
+  snapshot: {
+    snapshot_date: new Date().toISOString(),
+
+    queue_manual_review: 0,
+    queue_awaiting_inventory: 0,
+    queue_ready_to_ship: 0,
+    queue_awaiting_customer: 0,
+    orders_at_sla_risk: 0,
+    pending_fulfillment: 0,
+
+    aging_24h: 0,
+    aging_48h: 0,
+    aging_72h_plus: 0,
+
+    exception_orders: 0,
+    constrained_orders: 0,
+    pending_payment: 0,
+    at_risk_revenue: 0,
+
+    total_at_risk_revenue: 0,
+    sla_breach_24h_revenue: 0,
+
+    top_blocking_type: 'none',
+
+    partial_fulfillment_opportunity: 0,
+
+    revenue_blocked_inventory: 0,
+    revenue_blocked_customer: 0,
+    revenue_blocked_operational: 0
+  },
+
+  decision: {
+    brief: null
+  },
+
+  meta: {
+    degraded: true
   }
+} as unknown as OrderNexusFT2Snapshot;
+}
 
   /**
    * OPERATIONAL DECISION BRIEF
@@ -148,37 +202,6 @@ export async function getOrderNexusFt2StateSnapshot(
     .where({ shop_id: shopId })
     .orderBy('brief_date', 'desc')
     .first();
-
-  /**
-   * LEGACY PRIORITY STACK
-   * ---------------------
-   * Previously exposed ranked orders based on
-   * order_risk_snapshot.order_health_score.
-   *
-   * Replaced by Operations Queue architecture.
-   *
-   * OPERATIONAL SIGNAL SOURCE OF TRUTH
-   * ----------------------------------
-   * All operational signals MUST originate from:
-   *   orders_operational_control_snapshot
-   *
-   * Rationale:
-   * - Ensures deterministic rebuilds
-   * - Prevents per-order recomputation drift
-   * - Guarantees projection consistency across environments
-   *
-   * DO NOT:
-   * - Introduce dynamic signal resolvers
-   * - Query order_* tables for signal derivation
-   *
-   * Any signal logic must be encoded in:
-   * - Projection layer OR
-   * - Snapshot-to-signal mapper (frontend)
-   *
-   * Query intentionally disabled to prevent
-   * accidental reintroduction of the ranking surface.
-   */
-  const priorityStackRows = [];
   
   /**
    * NUMERIC NORMALIZATION
@@ -192,7 +215,6 @@ export async function getOrderNexusFt2StateSnapshot(
    * - epistemic type violations
    */
   const realizedRevenue = Number(operationalControlRow?.realized_revenue ?? 0);
-  const atRiskRevenue = Number(operationalControlRow?.at_risk_revenue ?? 0);
   const blockedRevenue = Number(operationalControlRow?.blocked_revenue ?? 0);
 
   /**

@@ -10,6 +10,19 @@ export const projectionDependencies: ProjectionDependency[] = [
   },
 
   {
+    /**
+     * OPERATIONAL CONSTRAINT PROJECTION
+     * ---------------------------------
+     * Depends on fulfillment + age snapshot inputs.
+     *
+     * NOTE:
+     * - orderAgeProjection is required for SLA computation
+     */
+    projection: 'orderOperationalConstraintProjection',
+    dependsOn: ['orderFulfillmentProjection', 'orderAgeProjection']
+  },
+
+  {
     projection: 'orderConstraintProjection'
   },
 

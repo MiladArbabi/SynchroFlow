@@ -52,6 +52,24 @@ export const projectionContracts: ProjectionContract[] = [
   },
 
   {
+    /**
+     * OPERATIONAL CONSTRAINT PROJECTION
+     * ---------------------------------
+     * Ensures operational_block_type exists and is maintained.
+     *
+     * NOTE:
+     * This projection mutates order_fulfillment_status,
+     * so contract ensures column integrity.
+     */
+    projection: 'orderOperationalConstraintProjection',
+    table: 'order_fulfillment_status',
+    requiredColumns: [
+      'lasyncro_order_id',
+      'operational_block_type'
+    ]
+  },
+
+  {
     projection: 'orderRevenueDailyProjection',
     table: 'revenue_projection_daily',
     requiredColumns: [
