@@ -524,10 +524,10 @@ export async function computeShopOperationalSnapshot(
         .first();
 
         if (existingSnapshot) {
-        console.info('[SNAPSHOT_SKIPPED_EXISTS]', {
+        /* console.info('[SNAPSHOT_SKIPPED_EXISTS]', {
             shopId,
             snapshotDate: snapshotDateNormalized,
-        });
+        }); */
 
         return;
     }

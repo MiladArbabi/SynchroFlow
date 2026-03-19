@@ -78,11 +78,42 @@ export async function projectOrderOperationalConstraints(
       ? 'sla_breach'
       : null;
 
+    /**
+     * BLOCK LIFECYCLE TRACKING
+     * ------------------------
+     * Mirrors customer constraint lifecycle.
+     *
+     * Guarantees:
+     * - unified observability across constraint types
+     * - enables duration + SLA analytics
+     */
+    const existing = await trx('order_fulfillment_status')
+      .where({ lasyncro_order_id: orderId })
+      .first();
+
+    const prevBlockType = existing?.operational_block_type ?? null;
+
+    const isTransitionToBlocked = !prevBlockType && blockType;
+    const isTransitionToUnblocked = prevBlockType && !blockType;
+
     await trx('order_fulfillment_status')
       .where({ lasyncro_order_id: orderId })
       .update({
-        operational_block_type: blockType
+        operational_block_type: blockType,
+        ...(isTransitionToBlocked && { block_started_at: trx.fn.now() }),
+        ...(isTransitionToUnblocked && { block_resolved_at: trx.fn.now() })
       });
+
+    /**
+     * LIFECYCLE INSTRUMENTATION
+     */
+    if (isTransitionToBlocked) {
+      console.debug('[OPERATIONAL_BLOCK_STARTED]', { orderId, blockType });
+    }
+
+    if (isTransitionToUnblocked) {
+      console.debug('[OPERATIONAL_BLOCK_RESOLVED]', { orderId, previous: prevBlockType });
+    }
   }
 
   /**

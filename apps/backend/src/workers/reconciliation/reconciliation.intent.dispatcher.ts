@@ -104,18 +104,19 @@ export async function startReconciliationIntentDispatcher() {
        * Prevent concurrent dispatchers from double-processing.
        */
       const intents = await db.transaction(async (trx) => {
+
         /**
-         * PRIORITY-BASED DISPATCH
-         * ------------------------
-         * Orders with active operational constraints (SLA breach)
-         * must be processed first.
+         * PRIORITY-BASED DISPATCH (PARTIAL)
+         * ---------------------------------
+         * Current limitation:
+         * - Locking cannot include joins (Postgres constraint)
+         * - Therefore, we select a FIFO window first, then prioritize
          *
-         * Priority:
-         * 1. SLA breach (operational_block_type = 'sla_breach')
-         * 2. Others (FIFO fallback)
+         * Mitigation:
+         * - Expanded selection window (50) reduces priority starvation
          *
-         * NOTE:
-         * This is the first step toward a constraint-driven execution engine.
+         * Future:
+         * - Move to fully constraint-driven selection at DB level
          */
         const rows = await trx('order_reconciliation_intents as ori')
           .innerJoin('orders as o', 'o.lasyncro_order_id', 'ori.lasyncro_order_id')
@@ -126,9 +127,27 @@ export async function startReconciliationIntentDispatcher() {
            * Projection may advance last_projected_version before reconciliation.
            */
           .whereRaw('ori.aggregate_version >= o.last_projected_version')
+          /**
+           * 🚨 HARD INVARIANT — DO NOT TOUCH 🚨
+           *
+           * This query MUST NOT reference any table except `ori` and `o`.
+           * - No joins to order_fulfillment_status
+           * - No ofs.*
+           *
+           * Reason:
+           * FOR UPDATE SKIP LOCKED requires a single locking target.
+           * Violating this WILL crash the dispatcher (Postgres 42P01).
+           */
           .select('ori.*')
-          .orderBy('ori.created_at', 'asc') // temporary (no priority yet)
-          .limit(10)
+          /**
+           * PRIORITY-AWARE SELECTION (PRE-LOCK)
+           * -----------------------------------
+           * NOTE:
+           * We intentionally still lock first without join,
+           * but expand selection window to allow meaningful prioritization later.
+           */
+          .orderBy('ori.created_at', 'asc')
+          .limit(50) // expanded window to avoid priority starvation
           .forUpdate()
           .skipLocked();
 
@@ -155,13 +174,80 @@ export async function startReconciliationIntentDispatcher() {
         .orderByRaw(`
           CASE 
             WHEN ofs.operational_block_type = 'sla_breach' THEN 0
-            ELSE 1
+            WHEN ofs.inventory_block_type IS NOT NULL THEN 1
+            WHEN ofs.customer_block_type IS NOT NULL THEN 2
+            ELSE 3
           END
         `)
         .orderBy('ori.created_at', 'asc');
 
+      if (intents.length === 10) {
+        console.warn('[PRIORITY_WINDOW_LIMIT]', {
+          message: 'Selection window may be too small for true prioritization'
+        });
+      }
+
       if (prioritized.length > 0) {
+        /**
+         * PRIORITY INVARIANT CHECK
+         * ------------------------
+         * Ensures ordering respects:
+         * SLA → Inventory → Customer → Others
+         */
+        for (let i = 1; i < prioritized.length; i++) {
+          const prev = prioritized[i - 1];
+          const curr = prioritized[i];
+
+          const prevRank =
+            prev.operational_block_type === 'sla_breach' ? 0 :
+            prev.inventory_block_type ? 1 :
+            prev.customer_block_type ? 2 : 3;
+
+          const currRank =
+            curr.operational_block_type === 'sla_breach' ? 0 :
+            curr.inventory_block_type ? 1 :
+            curr.customer_block_type ? 2 : 3;
+
+          if (currRank < prevRank) {
+            console.error('[PRIORITY_ORDER_VIOLATION]', {
+              prev: prev.lasyncro_order_id,
+              curr: curr.lasyncro_order_id,
+              prevRank,
+              currRank
+            });
+          }
+        }
         console.debug('[PRIORITY_ORDER]', prioritized.map(p => p.lasyncro_order_id));
+
+        const enriched = await db('order_reconciliation_intents as ori')
+        .leftJoin(
+          'order_fulfillment_status as ofs',
+          'ofs.lasyncro_order_id',
+          'ori.lasyncro_order_id'
+        )
+        .whereIn(
+          'ori.reconciliation_intent_id',
+          prioritized.map(p => p.reconciliation_intent_id)
+        )
+        .select(
+          'ori.lasyncro_order_id',
+          'ofs.operational_block_type',
+          'ofs.customer_block_type'
+        );
+
+        console.debug('[PRIORITY_BREAKDOWN]', enriched.map(e => ({
+          order: e.lasyncro_order_id,
+          operational: e.operational_block_type,
+          customer: e.customer_block_type
+        })));
+
+        for (const e of enriched) {
+          if (!e.operational_block_type && !e.customer_block_type) {
+            console.warn('[PRIORITY_NO_CONSTRAINT]', {
+              order: e.lasyncro_order_id
+            });
+          }
+        }
       }
 
       for (const intent of prioritized) {

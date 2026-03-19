@@ -34,124 +34,82 @@ export async function evaluateOrderConstraints(
 
   const results: ConstraintEvaluationResult[] = [];
 
-  try {
+  /**
+   * INDEPENDENT EVALUATOR EXECUTION
+   * --------------------------------
+   * Each constraint must be isolated.
+   * Failure in one MUST NOT affect others.
+   */
 
+  /**
+   * DESIGN INVARIANT:
+   * -----------------
+   * Constraint evaluators must be:
+   * - independent
+   * - failure-isolated
+   *
+   * Never nest evaluators.
+   * Never allow one constraint to suppress another.
+   */
+
+  //
+  // INVENTORY
+  //
+  try {
     const inventory = await evaluateInventoryConstraint(
       trx,
       orderId,
       shopId
     );
-
     results.push(inventory);
-
-    /**
-     * CUSTOMER CONSTRAINT EVALUATION
-     * --------------------------------
-     * Source-of-truth must NOT be constraint events.
-     * Current implementation is transitional and will be replaced.
-     *
-     * Instrumentation:
-     * Logs execution to ensure evaluator is not silently skipped.
-     */
-    try {
-
-      const customer = await evaluateCustomerConstraint(
-        trx,
-        orderId,
-        shopId
-      );
-
-      /* console.debug('[CONSTRAINT_ENGINE] customer_evaluated', {
-        orderId,
-        shopId,
-        isActive: customer.isActive
-      }); */
-
-      results.push(customer);
-
-          /**
-     * OPERATIONAL CONSTRAINT EVALUATION
-     * --------------------------------
-     * Currently guarded (no source-of-truth).
-     *
-     * Instrumentation ensures visibility until real signal is implemented.
-     */
-    try {
-
-      const operational = await evaluateOperationalConstraint(
-        trx,
-        orderId,
-        shopId
-      );
-
-      /* console.debug('[CONSTRAINT_ENGINE] operational_evaluated', {
-        orderId,
-        shopId,
-        isActive: operational.isActive
-      }); */
-
-      results.push(operational);
-
-    } catch (error) {
-
-      console.error(
-        '[CONSTRAINT_ENGINE_EVALUATOR_FAILURE]',
-        {
-          orderId,
-          shopId,
-          evaluator: 'operational',
-          error
-        }
-      );
-
-      results.push({
-        type: 'operational',
-        isActive: false
-      });
-
-    }
-
-    } catch (error) {
-
-      console.error(
-        '[CONSTRAINT_ENGINE_EVALUATOR_FAILURE]',
-        {
-          orderId,
-          shopId,
-          evaluator: 'customer',
-          error
-        }
-      );
-
-      results.push({
-        type: 'customer',
-        isActive: false
-      });
-
-    }
-
   } catch (error) {
-
-    console.error(
-      '[CONSTRAINT_ENGINE_EVALUATOR_FAILURE]',
-      {
-        orderId,
-        shopId,
-        evaluator: 'inventory',
-        error
-      }
-    );
-
-    /**
-     * Fail-safe behavior:
-     * Treat evaluator failure as no constraint.
-     */
-
-    results.push({
-      type: 'inventory',
-      isActive: false
+    console.error('[CONSTRAINT_ENGINE_EVALUATOR_FAILURE]', {
+      orderId,
+      shopId,
+      evaluator: 'inventory',
+      error
     });
+    results.push({ type: 'inventory', isActive: false });
+  }
 
+  //
+  // CUSTOMER
+  //
+  try {
+    const customer = await evaluateCustomerConstraint(
+      trx,
+      orderId,
+      shopId
+    );
+    results.push(customer);
+  } catch (error) {
+    console.error('[CONSTRAINT_ENGINE_EVALUATOR_FAILURE]', {
+      orderId,
+      shopId,
+      evaluator: 'customer',
+      error
+    });
+    results.push({ type: 'customer', isActive: false });
+  }
+
+  //
+  // OPERATIONAL
+  //
+  try {
+    const operational = await evaluateOperationalConstraint(
+      trx,
+      orderId,
+      shopId
+    );
+    results.push(operational);
+  } catch (error) {
+    console.error('[CONSTRAINT_ENGINE_EVALUATOR_FAILURE]', {
+      orderId,
+      shopId,
+      evaluator: 'operational',
+      error
+    });
+    results.push({ type: 'operational', isActive: false });
   }
 
   /**

@@ -9,7 +9,11 @@
  * order_fulfillment_status.inventory_block_type
  *
  * This field is produced by:
- * services/order-execution-intelligence/obligationFlags.worker.ts
+ * orderInventoryConstraintProjection (projection layer)
+ *
+ * IMPORTANT:
+ * Inventory constraint must ONLY be written by projections.
+ * Any reference to runtime workers is deprecated and invalid.
  *
  * The constraint engine must NOT recompute inventory math
  * from the inventory projection layer. Doing so would duplicate logic and
@@ -35,7 +39,7 @@ export async function evaluateInventoryConstraint(
    * Source of truth is fulfillment obligation evaluation.
    *
    * inventory_block_type is set by:
-   * order-execution-intelligence/obligationFlags.worker
+   * orderInventoryConstraintProjection
    */
 
   const fulfillment = await trx('order_fulfillment_status')

@@ -189,11 +189,11 @@ export async function reconcileOrderFulfillment(
 
     const eventAnchor = new Date(domainEventRow.event_time);
 
-    console.debug('[EVENT_ANCHOR_RESOLVED]', {
+    /* console.debug('[EVENT_ANCHOR_RESOLVED]', {
       orderId: lasyncroOrderId,
       externalOrderId: externalIdentity.external_order_id,
       eventTime: eventAnchor
-    });
+    }); */
 
     if (!eventAnchor) {
       throw new Error(

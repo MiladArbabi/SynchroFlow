@@ -23,6 +23,7 @@ export async function projectOrderInventoryConstraints(
 ): Promise<void> {
 
   if (orderIds.length === 0) return;
+  let blockedCount = 0;
 
   const rows = await trx
     .with('variant_demand', (qb) => {
@@ -76,10 +77,16 @@ export async function projectOrderInventoryConstraints(
    * - stable rebuild behaviour
    * - observable mutation count
    */
-  const updates = rows.map((row: any) => ({
-    lasyncro_order_id: row.lasyncro_order_id,
-    inventory_block_type: Number(row.oversell) === 1 ? 'oversell' : null
-  }));
+  const updates = rows.map((row: any) => {
+    const blockType = Number(row.oversell) === 1 ? 'oversell' : null;
+
+    if (blockType) blockedCount++;
+
+    return {
+      lasyncro_order_id: row.lasyncro_order_id,
+      inventory_block_type: blockType
+    };
+  });
 
   if (updates.length === 0) {
     console.debug('[inventory_constraint_projection.no_updates]');
@@ -87,14 +94,45 @@ export async function projectOrderInventoryConstraints(
   }
 
   for (const update of updates) {
+
+    const existing = await trx('order_fulfillment_status')
+      .where({ lasyncro_order_id: update.lasyncro_order_id })
+      .first();
+
+    const prevBlockType = existing?.inventory_block_type ?? null;
+    const nextBlockType = update.inventory_block_type;
+
+    const isTransitionToBlocked = !prevBlockType && nextBlockType;
+    const isTransitionToUnblocked = prevBlockType && !nextBlockType;
+
     await trx('order_fulfillment_status')
       .where({ lasyncro_order_id: update.lasyncro_order_id })
       .update({
-        inventory_block_type: update.inventory_block_type
+        inventory_block_type: nextBlockType,
+        ...(isTransitionToBlocked && { block_started_at: trx.fn.now() }),
+        ...(isTransitionToUnblocked && { block_resolved_at: trx.fn.now() })
       });
+
+    /**
+     * LIFECYCLE INSTRUMENTATION
+     */
+    if (isTransitionToBlocked) {
+      console.debug('[INVENTORY_BLOCK_STARTED]', {
+        orderId: update.lasyncro_order_id,
+        blockType: nextBlockType
+      });
+    }
+
+    if (isTransitionToUnblocked) {
+      console.debug('[INVENTORY_BLOCK_RESOLVED]', {
+        orderId: update.lasyncro_order_id,
+        previous: prevBlockType
+      });
+    }
   }
 
-  /* console.debug('[inventory_constraint_projection.completed]', {
-    evaluated_orders: updates.length
-  }); */
+  console.debug('[inventory_constraint_projection.completed]', {
+    evaluated_orders: updates.length,
+    blocked: blockedCount
+  });
 }

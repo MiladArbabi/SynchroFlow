@@ -39,11 +39,11 @@ export async function evaluateCustomerConstraint(
 
   const isBlocked = !!fulfillment?.customer_block_type;
 
-  console.debug('[CUSTOMER_CONSTRAINT_EVALUATED]', {
+  /* console.debug('[CUSTOMER_CONSTRAINT_EVALUATED]', {
     orderId,
     shopId,
     isBlocked
-  });
+  }); */
 
   return {
     type: 'customer',
