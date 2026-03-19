@@ -86,6 +86,24 @@ export async function up(knex: Knex): Promise<void> {
      */
   });
 
+  /**
+   * CANONICAL ID INVARIANT (NO GID ALLOWED)
+   * ----------------------------------------
+   * Prevents ingestion of non-normalized Shopify IDs.
+   *
+   * This guarantees:
+   * - deterministic identity resolution
+   * - replay safety
+   * - zero GID leakage system-wide
+   */
+  await knex.raw(`
+    ALTER TABLE domain_events
+    ADD CONSTRAINT domain_events_no_gid_check
+    CHECK (
+      NOT (event_payload->>'id' LIKE 'gid://%')
+    );
+  `);
+
   await knex.raw(`
     CREATE UNIQUE INDEX domain_events_shop_external_event_unique
     ON domain_events (shop_id, external_event_id)
@@ -135,6 +153,7 @@ export async function up(knex: Knex): Promise<void> {
     BEFORE DELETE ON domain_events
     FOR EACH ROW EXECUTE FUNCTION prevent_domain_event_mutation();
   `);
+  
 }
 
 export async function down(knex: Knex): Promise<void> {

@@ -122,14 +122,21 @@ export async function handleOrderCreated(
 
     domainEventId = result[0].id ?? result[0];
 
-    /**
-     * PAYMENT STATE DETECTION
-     * -----------------------
-     * Shopify may send orders already paid at creation.
-     * In that case we must emit a deterministic orders/paid
-     * domain event so projections can update payment_state.
-     */
-    const financialStatus = raw.financial_status?.toLowerCase();
+   /**
+   * PAYMENT STATE NORMALIZATION
+   * ----------------------------
+   * Supports both REST and GraphQL payloads.
+   * Uses safe access to avoid type violations.
+   */
+  const financialStatus =
+    raw.financial_status?.toLowerCase() ??
+    (raw as any).displayFinancialStatus?.toLowerCase();
+
+  console.debug('[PAYMENT_STATE_DETECTED]', {
+    financialStatus,
+    hasFinancialStatus: !!raw.financial_status,
+    hasDisplayFinancialStatus: !!(raw as any).displayFinancialStatus
+  });
 
     if (financialStatus === 'paid') {
 

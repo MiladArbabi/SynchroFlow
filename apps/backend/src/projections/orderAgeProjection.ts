@@ -43,11 +43,20 @@ export async function projectOrderAge(
 
   const createdAt = new Date(row.order_created_at);
 
+  /**
+   * PAID TIMESTAMP RESOLUTION
+   * --------------------------
+   * Shopify does not provide reliable paid timestamps.
+   *
+   * Fallback to order_created_at to ensure:
+   * - deterministic aging
+   * - no null propagation
+   */
   const paidAt =
     row.paid_at ??
     row.captured_at ??
     row.order_processed_at ??
-    null;
+    row.order_created_at;
 
   const fulfilledAt = row.fulfilled_at ?? null;
 

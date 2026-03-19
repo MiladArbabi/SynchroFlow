@@ -29,18 +29,35 @@ export async function projectOrderOperationalConstraints(
   const slaHours = shopSettings?.fulfillment_sla_hours ?? 24;
   const slaSeconds = slaHours * 3600;
 
+  /**
+   * SOURCE OF TRUTH ALIGNMENT
+   * -------------------------
+   * Projection MUST NOT re-implement constraint logic.
+   *
+   * Instead, it derives block type ONLY from
+   * deterministic state already computed:
+   * - age_since_paid_seconds
+   * - fulfillment status
+   *
+   * This keeps projection aligned with evaluator logic.
+   */
   const rows = await trx('order_fulfillment_status as ofs')
-    .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
     .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'ofs.lasyncro_order_id')
-    .select('ofs.lasyncro_order_id')
-    .whereIn('ofs.lasyncro_order_id', orderIds)
-    .andWhere('o.payment_state', 'paid')
-    .whereNull('ofs.fulfilled_at')
-    .whereNull('ofs.inventory_block_type')
-    .whereNull('ofs.customer_block_type')
-    .andWhere('oas.age_since_paid_seconds', '>=', slaSeconds);
+    .select(
+      'ofs.lasyncro_order_id',
+      'ofs.status',
+      'oas.age_since_paid_seconds'
+    )
+    .whereIn('ofs.lasyncro_order_id', orderIds);
 
-  const blockedIds = new Set(rows.map(r => r.lasyncro_order_id));
+  const blockedIds = new Set(
+    rows
+      .filter(r =>
+        r.status === 'pending' &&
+        Number(r.age_since_paid_seconds ?? 0) >= slaSeconds
+      )
+      .map(r => r.lasyncro_order_id)
+  );
 
   for (const orderId of orderIds) {
     const blockType = blockedIds.has(orderId)

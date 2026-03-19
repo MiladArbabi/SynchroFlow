@@ -88,7 +88,21 @@ await channel.consume(
     await db('domain_events').insert({
       shop_id: parsed.shopId,
       event_type: 'catalog/product_sync_received',
-      event_payload: parsed.rawProduct,
+      /**
+       * CANONICAL PRODUCT PAYLOAD
+       * --------------------------
+       * Enforces normalized identity at ingestion boundary.
+       *
+       * CRITICAL:
+       * - Prevents GID leakage into domain events
+       * - Guarantees deterministic replay
+       */
+      event_payload: {
+        ...parsed.rawProduct,
+        id: String(parsed.rawProduct?.id).startsWith('gid://')
+          ? String(parsed.rawProduct.id).split('/').pop()
+          : parsed.rawProduct?.id,
+      },
       event_time: new Date(),
       event_version: 1,
       external_event_id: `catalog_sync:${parsed.shopId}:${parsed.rawProduct?.id}`,

@@ -30,11 +30,47 @@ export async function syncShopifyOrders({
 
   for (const { node } of orderEdges) {
 
+      /**
+       * ORDER ID NORMALIZATION
+       * -----------------------
+       * Must match identity map format (numeric ID)
+       */
+      let externalOrderId = String(node.id);
+
+      if (externalOrderId.startsWith('gid://')) {
+        const parts = externalOrderId.split('/');
+        externalOrderId = parts[parts.length - 1];
+      }
+
+      /**
+       * INVARIANT ENFORCEMENT — NO GID ALLOWED
+       * --------------------------------------
+       * Domain events MUST NEVER contain Shopify GIDs.
+       * If this triggers, ingestion is broken.
+       */
+      if (String(node.id).startsWith('gid://') && externalOrderId === node.id) {
+        throw new Error(
+          '[INGESTION_INVARIANT_VIOLATION] Failed to normalize Shopify Order ID'
+        );
+      }
+
       const inserted = await trx('domain_events')
         .insert({
             shop_id: shopId,
             event_type: 'orders/sync',
-            event_payload: node,
+            /**
+             * CANONICAL ORDER PAYLOAD
+             * ------------------------
+             * Enforces normalized identity at ingestion boundary.
+             *
+             * CRITICAL:
+             * - Prevents GID leakage into domain events
+             * - Guarantees deterministic replay
+             */
+            event_payload: {
+              ...node,
+              id: externalOrderId,
+            },
             event_time: new Date(node.createdAt),
             event_version: 1,
             external_event_id: String(node.id),
@@ -49,6 +85,39 @@ export async function syncShopifyOrders({
         createdCount++;
          } else {
         duplicateCount++;
+      }
+
+      /**
+       * PAYMENT EVENT EMISSION (INGESTION LAYER)
+       * -----------------------------------------
+       * MUST happen here (not projection) to preserve:
+       * - deterministic replay
+       * - projection purity
+       */
+      const financialStatus =
+        node.financial_status?.toLowerCase() ??
+        node.displayFinancialStatus?.toLowerCase();
+
+      if (financialStatus === 'paid') {
+        await trx('domain_events')
+          .insert({
+            shop_id: shopId,
+            event_type: 'orders/paid',
+            event_payload: {
+              id: externalOrderId,
+            },
+            event_time: new Date(node.createdAt),
+            event_version: 1,
+            external_event_id: `${node.id}:paid`,
+          })
+          .onConflict(
+            db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
+          )
+          .ignore();
+
+        console.debug('[ORDER_SYNC_EMITTED_PAID]', {
+          orderId: node.id,
+        });
       }
   }
 

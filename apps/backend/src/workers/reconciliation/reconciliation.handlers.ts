@@ -293,6 +293,27 @@ export async function reconcileOrderFulfillment(
     );
 
     /**
+     * ORDER AGE PROJECTION
+     * --------------------
+     * MUST run early because:
+     * - operational constraints depend on age_since_paid_seconds
+     * - constraint evaluators require age snapshot
+     *
+     * If moved below, system will:
+     * - throw invariant violations
+     * - produce zero SLA blocks
+     */
+    await instrumentProjection('orderAgeProjection', async () =>
+      projectOrderAge(
+        trx,
+        lasyncroOrderId,
+        order.shop_id,
+        aggregateVersion,
+        eventAnchor
+      )
+    );
+
+    /**
      * INVENTORY CONSTRAINT RE-EVALUATION
      * ----------------------------------
      * Inventory changes affect the entire variant demand queue.
@@ -423,21 +444,6 @@ export async function reconcileOrderFulfillment(
      */
     await instrumentProjection('orderRiskProjection', async () =>
       projectOrderRisk(
-        trx,
-        lasyncroOrderId,
-        order.shop_id,
-        aggregateVersion,
-        eventAnchor
-      )
-    );
-
-    /**
-     * ORDER AGE PROJECTION
-     * --------------------
-     * Delegated to deterministic projection module.
-     */
-    await instrumentProjection('orderAgeProjection', async () =>
-      projectOrderAge(
         trx,
         lasyncroOrderId,
         order.shop_id,
