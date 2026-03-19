@@ -39,11 +39,17 @@ export async function publishReconciliationJob(
   );
 
   /**
-   * CRITICAL DURABILITY GUARD
-   * --------------------------
-   * Await broker acceptance.
-   * If publish fails, throw.
-   * Upstream worker must not ack original event.
+   * DURABILITY LIMITATION (IMPORTANT)
+   * ---------------------------------
+   * sendToQueue() boolean ONLY indicates buffer acceptance,
+   * NOT broker persistence or replication.
+   *
+   * This system currently operates in:
+   * - at-least-once delivery (best effort)
+   * - NOT guaranteed durability (no confirm channel)
+   *
+   * Future requirement:
+   * - migrate to confirm channel OR transactional outbox relay
    */
   const result = await ch.sendToQueue(
     RECONCILIATION_QUEUE,
@@ -52,6 +58,12 @@ export async function publishReconciliationJob(
   );
 
   if (!result) {
+
+    console.error('[QUEUE_BACKPRESSURE]', {
+      queue: RECONCILIATION_QUEUE,
+      order: lasyncroOrderId
+    });
+    
     throw new Error(
       `[reconciliation.queue] Failed to publish reconciliation job for ${lasyncroOrderId}`
     );

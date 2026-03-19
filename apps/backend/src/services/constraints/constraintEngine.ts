@@ -61,11 +61,11 @@ export async function evaluateOrderConstraints(
         shopId
       );
 
-      console.debug('[CONSTRAINT_ENGINE] customer_evaluated', {
+      /* console.debug('[CONSTRAINT_ENGINE] customer_evaluated', {
         orderId,
         shopId,
         isActive: customer.isActive
-      });
+      }); */
 
       results.push(customer);
 
@@ -84,11 +84,11 @@ export async function evaluateOrderConstraints(
         shopId
       );
 
-      console.debug('[CONSTRAINT_ENGINE] operational_evaluated', {
+      /* console.debug('[CONSTRAINT_ENGINE] operational_evaluated', {
         orderId,
         shopId,
         isActive: operational.isActive
-      });
+      }); */
 
       results.push(operational);
 

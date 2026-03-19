@@ -231,7 +231,23 @@ async function computeStateHash(): Promise<string> {
 
     const tableHash = crypto
       .createHash('sha256')
-      .update(JSON.stringify(rows))
+      .update(
+        JSON.stringify(
+          table === 'orders'
+            ? rows.map((r: any) => {
+                const { last_reconciled_at, ...deterministic } = r;
+
+                /**
+                 * NON-DETERMINISTIC FIELD EXCLUSION
+                 * --------------------------------
+                 * last_reconciled_at uses NOW() (runtime clock)
+                 * and must NOT affect rebuild determinism.
+                 */
+                return deterministic;
+              })
+            : rows
+        )
+      )
       .digest('hex');
 
     console.log(`[REBUILD_TABLE_HASH] ${table} ${tableHash}`);

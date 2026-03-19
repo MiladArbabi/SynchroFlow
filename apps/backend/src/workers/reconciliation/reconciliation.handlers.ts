@@ -398,12 +398,12 @@ export async function reconcileOrderFulfillment(
     const isCustomerBlocked = constraintMap['customer'] === true;
     const isOperationalBlocked = constraintMap['operational'] === true;
 
-    console.debug('[RECONCILIATION_CONSTRAINT_STATE]', {
+    /* console.debug('[RECONCILIATION_CONSTRAINT_STATE]', {
       orderId: lasyncroOrderId,
       inventory: isInventoryBlocked,
       customer: isCustomerBlocked,
       operational: isOperationalBlocked
-    });
+    }); */
 
     await instrumentProjection('orderConstraintProjection', async () =>
       projectOrderConstraints(
@@ -415,6 +415,21 @@ export async function reconcileOrderFulfillment(
         constraintEvaluations
       )
     );
+
+    /**
+     * CONTROL LOOP STABILIZATION
+     * ---------------------------
+     * Marks reconciliation completion time.
+     * Required to prevent infinite time-driven re-enqueue.
+     */
+    await trx('orders')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .update({
+        // CONTROL LOOP CLOCK: MUST use real-time, not event time
+        // eventAnchor is historical → breaks scheduling invariants
+        // last_reconciled_at drives dispatcher throttling (NOW() based)
+        last_reconciled_at: trx.fn.now()
+      });
 
     /**
      * ORDER MARGIN PROJECTION

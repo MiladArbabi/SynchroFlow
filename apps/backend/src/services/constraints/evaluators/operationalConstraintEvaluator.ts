@@ -52,13 +52,13 @@ export async function evaluateOperationalConstraint(
    */
   const blockType = isBlocked ? 'sla_breach' : null;
 
-  console.debug('[OPERATIONAL_CONSTRAINT_EVALUATED]', {
+  /* console.debug('[OPERATIONAL_CONSTRAINT_EVALUATED]', {
     orderId,
     isBlocked,
     blockType,
     age: ageRow.age_since_paid_seconds,
     slaSeconds
-  });
+  }); */
 
   return {
     type: 'operational',
