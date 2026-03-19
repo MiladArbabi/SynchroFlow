@@ -15,6 +15,7 @@ import { projectRevenueDaily } from '../../projections/orderRevenueDailyProjecti
 import { projectDailyOperationalBrief } from '../../projections/dailyOperationalBriefProjection.js';
 import { projectOrderInventoryConstraints } from '../../projections/orderInventoryConstraintProjection.js';
 import { projectOrderOperationalConstraints } from '../../projections/orderOperationalConstraintProjection.js';
+import { projectOrderCustomerConstraints } from '../../projections/orderCustomerConstraintProjection.js';
 
 import { ReconciliationResult } from './reconciliation.types.js';
 import { writeReconciliationAudit } from './reconciliationAuditWriter.js';
@@ -340,6 +341,13 @@ export async function reconcileOrderFulfillment(
       )
     );
 
+    await instrumentProjection('orderCustomerConstraintProjection', async () =>
+      projectOrderCustomerConstraints(
+        trx,
+        affectedOrders.map(o => o.lasyncro_order_id)
+      )
+    );
+
     /**
      * OPERATIONAL CONSTRAINT PROJECTION
      * ---------------------------------
@@ -353,19 +361,9 @@ export async function reconcileOrderFulfillment(
       )
     );
 
-    /**
-     * ORDER RISK SNAPSHOT MATERIALIZATION
-     * ------------------------------------
-     * Replace-on-reconcile.
-     * Deterministic.
-     */
-    const ofs = await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .first();
-
-    const isInventoryBlocked = !!ofs?.inventory_block_type;
-    const isCustomerBlocked = !!ofs?.customer_block_type;
-    const isOperationalBlocked = !!ofs?.operational_block_type;
+    // REMOVED: direct fulfillment_status read
+    // Constraint state MUST be derived exclusively from constraint engine
+    // to prevent divergence between projections and evaluation layer
 
     /**
      * Constraint Evaluation
@@ -377,6 +375,23 @@ export async function reconcileOrderFulfillment(
       lasyncroOrderId,
       order.shop_id
     );
+
+    // MUST derive from constraint engine (single source-of-truth)
+    // prevents drift between DB flags and actual constraint state
+    const constraintMap = Object.fromEntries(
+      constraintEvaluations.map(c => [c.type, c.isActive])
+    );
+
+    const isInventoryBlocked = constraintMap['inventory'] === true;
+    const isCustomerBlocked = constraintMap['customer'] === true;
+    const isOperationalBlocked = constraintMap['operational'] === true;
+
+    console.debug('[RECONCILIATION_CONSTRAINT_STATE]', {
+      orderId: lasyncroOrderId,
+      inventory: isInventoryBlocked,
+      customer: isCustomerBlocked,
+      operational: isOperationalBlocked
+    });
 
     await instrumentProjection('orderConstraintProjection', async () =>
       projectOrderConstraints(

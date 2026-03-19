@@ -11,6 +11,16 @@ export const projectionDependencies: ProjectionDependency[] = [
 
   {
     /**
+     * CUSTOMER CONSTRAINT PROJECTION
+     * --------------------------------
+     * Depends on fulfillment baseline state
+     */
+    projection: 'orderCustomerConstraintProjection',
+    dependsOn: ['orderFulfillmentProjection']
+  },
+
+  {
+    /**
      * OPERATIONAL CONSTRAINT PROJECTION
      * ---------------------------------
      * Depends on fulfillment + age snapshot inputs.

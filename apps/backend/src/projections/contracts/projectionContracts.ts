@@ -69,6 +69,24 @@ export const projectionContracts: ProjectionContract[] = [
     ]
   },
 
+  /**
+   * CUSTOMER CONSTRAINT PROJECTION
+   * --------------------------------
+   * Ensures customer_block_type exists and is maintained.
+   *
+   * NOTE:
+   * This projection mutates order_fulfillment_status,
+   * so contract ensures column integrity.
+   */
+  {
+    projection: 'orderCustomerConstraintProjection',
+    table: 'order_fulfillment_status',
+    requiredColumns: [
+      'lasyncro_order_id',
+      'customer_block_type'
+    ]
+  },
+
   {
     projection: 'orderRevenueDailyProjection',
     table: 'revenue_projection_daily',

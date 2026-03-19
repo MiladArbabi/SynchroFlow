@@ -25,6 +25,13 @@ export const projectionExecutionOrder = [
 
   'orderInventoryConstraintProjection',
 
+  /**
+   * CUSTOMER CONSTRAINT PROJECTION
+   * ------------------------------
+   * Must run after fulfillment + inventory baseline
+   */
+  'orderCustomerConstraintProjection',
+
   'orderConstraintProjection',
 
   'orderMarginProjection',
