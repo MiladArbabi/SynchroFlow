@@ -58,19 +58,49 @@ export async function projectOrderAge(
     row.order_processed_at ??
     row.order_created_at;
 
-  const fulfilledAt = row.fulfilled_at ?? null;
+  /**
+ * AGE CALCULATION (INVARIANT-SAFE)
+ * --------------------------------
+ * Event time can precede materialized timestamps due to:
+ * - ingestion ordering
+ * - replay timing
+ *
+ * We clamp to zero to preserve:
+ * - DB constraints
+ * - deterministic rebuilds
+ *
+ * This is NOT business logic — it is temporal normalization.
+ */
+  const ageSinceCreationRaw =
+    (eventAnchor.getTime() - new Date(createdAt).getTime()) / 1000;
 
-  const ageSinceCreation =
-    Math.floor((eventAnchor.getTime() - new Date(createdAt).getTime()) / 1000);
+  const ageSinceCreation = Math.max(0, Math.floor(ageSinceCreationRaw));
 
   const ageSincePaid =
     paidAt
-      ? Math.floor((eventAnchor.getTime() - new Date(paidAt).getTime()) / 1000)
+      ? Math.max(
+          0,
+          Math.floor(
+            (eventAnchor.getTime() - new Date(paidAt).getTime()) / 1000
+          )
+        )
       : null;
-
+    
+  /**
+   * FULFILLMENT AGE (INVARIANT-SAFE)
+   * --------------------------------
+   * Same reasoning as creation/paid:
+   * fulfillment timestamp may be ahead of eventAnchor during replay.
+   */
+  const fulfilledAt = row.fulfilled_at ?? null;
   const ageSinceFulfillment =
     fulfilledAt
-      ? Math.floor((eventAnchor.getTime() - new Date(fulfilledAt).getTime()) / 1000)
+      ? Math.max(
+          0,
+          Math.floor(
+            (eventAnchor.getTime() - new Date(fulfilledAt).getTime()) / 1000
+          )
+        )
       : null;
 
   await trx('order_age_snapshot')

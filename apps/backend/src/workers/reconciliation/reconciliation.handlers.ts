@@ -91,7 +91,8 @@ export async function reconcileOrderFulfillment(
     status: 'fulfilled';
     observedAt: Date;
     source: 'shopify_sync';
-  }
+  },
+  eventTime?: Date
 ): Promise<{
   result: ReconciliationResult;
   affectedVariantIds: string[];
@@ -160,37 +161,39 @@ export async function reconcileOrderFulfillment(
     }
 
     /**
-     * SNAPSHOT DATE (Event-Time Anchored)
-     * -----------------------------------
-     * Must be derived from deterministic domain event-time.
-     *
-     * Anchor Rule:
-     * - Use max(order_updated_at, order_created_at)
-     * - Never use wall-clock.
+     * EVENT ANCHOR RESOLUTION (STRICT DOMAIN SOURCE)
+     * ----------------------------------------------
+     * MUST resolve event time from domain_events using external identity mapping.
      *
      * Guarantees:
-     * - Replay determinism
-     * - Cross-node consistency
-     * - No execution-time drift
+     * - Temporal alignment with ingestion timeline
+     * - No cross-entity time drift
+     * - Deterministic replay correctness
      */
+    const externalIdentity = await trx('external_order_identity_map')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first();
 
-    /**
-     * EVENT-TIME MATERIALIZATION RULE
-     * --------------------------------
-     * All projection timestamps MUST derive from eventAnchor.
-     *
-     * Forbidden inside reconciliation:
-     * - trx.fn.now()
-     * - Date.now()
-     * - new Date() without anchor
-     *
-     * This preserves:
-     * - Deterministic rebuilds
-     * - Stable state hashing
-     */
-    const eventAnchor =
-      order.order_updated_at ??
-      order.order_created_at;
+    if (!externalIdentity) {
+      throw new Error('[EVENT_ANCHOR_INVARIANT] missing external identity mapping');
+    }
+
+    const domainEventRow = await trx('domain_events')
+      .whereRaw("event_payload->>'id' = ?", [externalIdentity.external_order_id])
+      .orderBy('event_time', 'desc')
+      .first();
+
+    if (!domainEventRow?.event_time) {
+      throw new Error('[EVENT_ANCHOR_INVARIANT] missing domain event for order');
+    }
+
+    const eventAnchor = new Date(domainEventRow.event_time);
+
+    console.debug('[EVENT_ANCHOR_RESOLVED]', {
+      orderId: lasyncroOrderId,
+      externalOrderId: externalIdentity.external_order_id,
+      eventTime: eventAnchor
+    });
 
     if (!eventAnchor) {
       throw new Error(
@@ -294,27 +297,6 @@ export async function reconcileOrderFulfillment(
     );
 
     /**
-     * ORDER AGE PROJECTION
-     * --------------------
-     * MUST run early because:
-     * - operational constraints depend on age_since_paid_seconds
-     * - constraint evaluators require age snapshot
-     *
-     * If moved below, system will:
-     * - throw invariant violations
-     * - produce zero SLA blocks
-     */
-    await instrumentProjection('orderAgeProjection', async () =>
-      projectOrderAge(
-        trx,
-        lasyncroOrderId,
-        order.shop_id,
-        aggregateVersion,
-        eventAnchor
-      )
-    );
-
-    /**
      * INVENTORY CONSTRAINT RE-EVALUATION
      * ----------------------------------
      * Inventory changes affect the entire variant demand queue.
@@ -325,6 +307,36 @@ export async function reconcileOrderFulfillment(
     const affectedOrders = await trx('order_revenue_units')
       .distinct('lasyncro_order_id')
       .whereIn('lasyncro_variant_id', affectedVariantIds);
+
+    /**
+     * ORDER AGE PROJECTION
+     * --------------------
+     * MUST run early because:
+     * - operational constraints depend on age_since_paid_seconds
+     * - constraint evaluators require age snapshot
+     *
+     * If moved below, system will:
+     * - throw invariant violations
+     * - produce zero SLA blocks
+     */
+    await instrumentProjection('orderAgeProjection', async () => {
+    const orderIds = [
+      lasyncroOrderId,
+      ...affectedOrders.map(o => o.lasyncro_order_id)
+    ];
+
+    const uniqueOrderIds = [...new Set(orderIds)];
+
+      for (const orderId of uniqueOrderIds) {
+        await projectOrderAge(
+          trx,
+          orderId,
+          order.shop_id,
+          aggregateVersion,
+          eventAnchor
+        );
+      }
+    });
 
     /**
      * INVENTORY CONSTRAINT PROJECTION

@@ -201,6 +201,15 @@ export async function processDomainEvent(
     continue;
   }
 
+  const domainEventRow = await db('domain_events')
+  .where({ id: domainEventId })
+  .select('event_time')
+  .first();
+
+  if (!domainEventRow?.event_time) {
+    throw new Error('[EVENT_TIME_INVARIANT] Missing domain event time');
+  }
+
   /**
    * DETERMINISTIC RECONCILIATION EXECUTION
    * --------------------------------------
@@ -214,7 +223,8 @@ export async function processDomainEvent(
     await reconcileOrderFulfillment(
       intent.lasyncro_order_id,
       intent.aggregate_version,
-      observed
+      observed,
+      new Date(domainEventRow.event_time) // CANONICAL EVENT TIME
     );
   });
 

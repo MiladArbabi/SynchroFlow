@@ -22,7 +22,36 @@ export function startReconciliationIntentDispatcher() {
   console.log('[reconciliation-intent-dispatcher] started');
 
   setInterval(async () => {
+
     try {
+      // TIME-DRIVEN RECONCILIATION (SLA SUPPORT)
+      // ----------------------------------------
+      // Re-enqueue pending, unfulfilled orders to allow
+      // time-based constraints (e.g. SLA) to evolve
+
+      const staleOrders = await db('order_fulfillment_status as ofs')
+        .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .where('ofs.status', 'pending')
+        .whereNull('ofs.fulfilled_at')
+        .select('ofs.lasyncro_order_id', 'o.aggregate_version')
+        .limit(50);
+
+      for (const row of staleOrders) {
+        await db('order_reconciliation_intents')
+          .insert({
+            lasyncro_order_id: row.lasyncro_order_id,
+            aggregate_version: row.aggregate_version,
+            observed: null,
+            created_at: new Date()
+          })
+          .onConflict(['lasyncro_order_id', 'aggregate_version'])
+          .ignore();
+      }
+
+      console.debug('[TIME_DRIVEN_RECONCILIATION_ENQUEUED]', {
+        count: staleOrders.length
+      });
+      
       /**
        * LOCK INTENT ROWS
        * -----------------
