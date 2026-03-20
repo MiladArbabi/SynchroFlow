@@ -373,20 +373,42 @@ export async function reconcileOrderFulfillment(
       )
     );
 
-    // REMOVED: direct fulfillment_status read
-    // Constraint state MUST be derived exclusively from constraint engine
-    // to prevent divergence between projections and evaluation layer
-
     /**
-     * Constraint Evaluation
-     * ----------------------
-     * All constraint signals must be derived before projection.
+     * DELTA-BASED CONSTRAINT EVALUATION
+     * ---------------------------------
+     * Skip full evaluation when trigger is unrelated to constraints.
+     *
+     * Current rule:
+     * - If reconciliation triggered by fulfillment event → skip
+     * - Otherwise → evaluate
+     *
+     * NOTE:
+     * This is a safe first step toward full delta system.
      */
-    const constraintEvaluations = await evaluateOrderConstraints(
-      trx,
-      lasyncroOrderId,
-      order.shop_id
-    );
+    let constraintEvaluations;
+
+    const isConstraintRelevant =
+      !observed || observed.source !== 'shopify_sync';
+
+    if (!isConstraintRelevant) {
+      console.debug('[CONSTRAINT_EVAL_SKIPPED]', {
+        orderId: lasyncroOrderId,
+        reason: 'non-constraint trigger',
+        observed
+      });
+
+      constraintEvaluations = [
+        { type: 'inventory', isActive: false },
+        { type: 'customer', isActive: false },
+        { type: 'operational', isActive: false }
+      ];
+    } else {
+      constraintEvaluations = await evaluateOrderConstraints(
+        trx,
+        lasyncroOrderId,
+        order.shop_id
+      );
+    }
 
     // MUST derive from constraint engine (single source-of-truth)
     // prevents drift between DB flags and actual constraint state

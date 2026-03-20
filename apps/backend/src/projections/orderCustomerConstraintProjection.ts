@@ -1,20 +1,8 @@
 import { Knex } from 'knex';
+import { v5 as uuidv5 } from 'uuid';
 
-/**
- * ORDER CUSTOMER CONSTRAINT PROJECTION
- * ------------------------------------
- * Source of truth writer for customer_block_type.
- *
- * Current deterministic rule (baseline):
- * - No active signal → NULL (not blocked)
- *
- * This projection exists to:
- * - establish canonical write path
- * - prevent evaluator dead state
- *
- * Future:
- * - plug real customer signals here (address issues, confirmations, etc.)
- */
+const CONSTRAINT_NAMESPACE = 'a9b7c6d4-4f8a-4c1b-b7b6-1c9a2e5d7f91';
+
 export async function projectOrderCustomerConstraints(
   trx: Knex.Transaction,
   orderIds: string[]
@@ -59,6 +47,45 @@ export async function projectOrderCustomerConstraints(
       blockType = 'awaiting_payment';
     }
 
+    const constraintId = uuidv5(
+      `customer:${orderId}`,
+      CONSTRAINT_NAMESPACE
+    );
+
+    // 1. update
+    const updated = await trx('order_constraints')
+      .where({
+        lasyncro_order_id: orderId,
+        constraint_type: 'customer'
+      })
+      .update({
+        block_type: blockType,
+        is_active: !!blockType,
+        resolved_at: blockType ? null : new Date()
+      });
+
+    // 2. insert if missing
+    if (updated === 0) {
+      await trx('order_constraints').insert({
+        constraint_id: constraintId,
+        lasyncro_order_id: orderId,
+        constraint_type: 'customer',
+        block_type: blockType,
+        started_at: blockType ? new Date() : null,
+        resolved_at: blockType ? null : new Date(),
+        is_active: !!blockType,
+        created_at: new Date()
+      });
+    }
+
+    // logging
+    if (blockType) {
+      console.debug('[CUSTOMER_BLOCK_ACTIVE]', {
+        orderId,
+        blockType
+      });
+    }
+
     // Derived state
     const isBlocked = blockType !== null;
 
@@ -76,35 +103,7 @@ export async function projectOrderCustomerConstraints(
         orderId,
         reason: 'awaiting_payment'
       });
-    }
-
-    const existing = await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: orderId })
-      .first();
-
-    const prevBlockType = existing?.customer_block_type ?? null;
-
-    const isTransitionToBlocked = !prevBlockType && blockType;
-    const isTransitionToUnblocked = prevBlockType && !blockType;
-
-    await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: orderId })
-      .update({
-        customer_block_type: blockType,
-        ...(isTransitionToBlocked && { block_started_at: trx.fn.now() }),
-        ...(isTransitionToUnblocked && { block_resolved_at: trx.fn.now() })
-      });
-
-    /**
-     * LIFECYCLE INSTRUMENTATION
-     */
-    if (isTransitionToBlocked) {
-      console.debug('[CUSTOMER_BLOCK_STARTED]', { orderId, blockType });
-    }
-
-    if (isTransitionToUnblocked) {
-      console.debug('[CUSTOMER_BLOCK_RESOLVED]', { orderId, previous: prevBlockType });
-    }
+    };
 
       // TODO (lifecycle):
       // - set block_started_at when transitioning NULL → blocked

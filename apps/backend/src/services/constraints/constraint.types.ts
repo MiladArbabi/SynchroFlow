@@ -16,4 +16,5 @@ export type ConstraintType =
 export interface ConstraintEvaluationResult {
   type: ConstraintType;
   isActive: boolean;
+  meta?: Record<string, unknown>;
 }

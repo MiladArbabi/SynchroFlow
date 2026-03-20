@@ -1,6 +1,6 @@
 import { Knex } from 'knex';
 import { evaluateOperationalConstraint } from '../services/constraints/evaluators/operationalConstraintEvaluator.js';
-
+import { v5 as uuidv5 } from 'uuid';
 /**
  * ORDER OPERATIONAL CONSTRAINT PROJECTION
  * ---------------------------------------
@@ -18,6 +18,9 @@ import { evaluateOperationalConstraint } from '../services/constraints/evaluator
  * - evaluator-aligned
  * - no logic drift
  */
+
+const CONSTRAINT_NAMESPACE = 'a9b7c6d4-4f8a-4c1b-b7b6-1c9a2e5d7f91';
+
 export async function projectOrderOperationalConstraints(
   trx: Knex.Transaction,
   orderIds: string[],
@@ -78,41 +81,43 @@ export async function projectOrderOperationalConstraints(
       ? 'sla_breach'
       : null;
 
-    /**
-     * BLOCK LIFECYCLE TRACKING
-     * ------------------------
-     * Mirrors customer constraint lifecycle.
-     *
-     * Guarantees:
-     * - unified observability across constraint types
-     * - enables duration + SLA analytics
-     */
-    const existing = await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: orderId })
-      .first();
+    const constraintId = uuidv5(
+      `operational:${orderId}`,
+      CONSTRAINT_NAMESPACE
+    );
 
-    const prevBlockType = existing?.operational_block_type ?? null;
-
-    const isTransitionToBlocked = !prevBlockType && blockType;
-    const isTransitionToUnblocked = prevBlockType && !blockType;
-
-    await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: orderId })
+    // update
+    const updated = await trx('order_constraints')
+      .where({
+        lasyncro_order_id: orderId,
+        constraint_type: 'operational'
+      })
       .update({
-        operational_block_type: blockType,
-        ...(isTransitionToBlocked && { block_started_at: trx.fn.now() }),
-        ...(isTransitionToUnblocked && { block_resolved_at: trx.fn.now() })
+        block_type: blockType,
+        is_active: !!blockType,
+        resolved_at: blockType ? null : new Date()
       });
 
-    /**
-     * LIFECYCLE INSTRUMENTATION
-     */
-    if (isTransitionToBlocked) {
-      console.debug('[OPERATIONAL_BLOCK_STARTED]', { orderId, blockType });
+    // insert if missing
+    if (updated === 0) {
+      await trx('order_constraints').insert({
+        constraint_id: constraintId,
+        lasyncro_order_id: orderId,
+        constraint_type: 'operational',
+        block_type: blockType,
+        started_at: blockType ? new Date() : null,
+        resolved_at: blockType ? null : new Date(),
+        is_active: !!blockType,
+        created_at: new Date()
+      });
     }
 
-    if (isTransitionToUnblocked) {
-      console.debug('[OPERATIONAL_BLOCK_RESOLVED]', { orderId, previous: prevBlockType });
+    // logging
+    if (blockType) {
+      console.debug('[OPERATIONAL_BLOCK_ACTIVE]', {
+        orderId,
+        blockType
+      });
     }
   }
 

@@ -1,4 +1,5 @@
 import { Knex } from 'knex';
+import { v5 as uuidv5 } from 'uuid';
 
 /**
  * ORDER INVENTORY CONSTRAINT PROJECTION
@@ -17,6 +18,9 @@ import { Knex } from 'knex';
  * - replay-safe
  * - no side effects
  */
+
+const CONSTRAINT_NAMESPACE = 'a9b7c6d4-4f8a-4c1b-b7b6-1c9a2e5d7f91';
+
 export async function projectOrderInventoryConstraints(
   trx: Knex.Transaction,
   orderIds: string[]
@@ -78,13 +82,42 @@ export async function projectOrderInventoryConstraints(
    * - observable mutation count
    */
   const updates = rows.map((row: any) => {
-    const blockType = Number(row.oversell) === 1 ? 'oversell' : null;
+
+  /**
+   * INVENTORY SIGNAL EVALUATION
+   * ---------------------------
+   * Centralized inventory constraint classification.
+   *
+   * Current:
+   * - oversell → demand exceeds stock
+   *
+   * Future (extend here):
+   * - reserved_conflict
+   * - warehouse_unavailable
+   * - allocation_pending
+   *
+   * RULE:
+   * - Only ONE active block type at a time (priority order)
+   */
+  let blockType: string | null = null;
+
+  if (blockType && typeof blockType !== 'string') {
+    console.error('[INVENTORY_BLOCK_INVALID_TYPE]', {
+      orderId: row.lasyncro_order_id,
+      blockType
+    });
+  }
+
+  // SIGNAL: oversell
+  if (Number(row.oversell) === 1) {
+    blockType = 'oversell';
+  }
 
     if (blockType) blockedCount++;
 
     return {
       lasyncro_order_id: row.lasyncro_order_id,
-      inventory_block_type: blockType
+      inventory_block_type: blockType ?? null // explicit for JSON → SQL casting
     };
   });
 
@@ -94,39 +127,43 @@ export async function projectOrderInventoryConstraints(
   }
 
   for (const update of updates) {
+    const next = update.inventory_block_type;
 
-    const existing = await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: update.lasyncro_order_id })
-      .first();
+    const constraintId = uuidv5(
+      `inventory:${update.lasyncro_order_id}`,
+      CONSTRAINT_NAMESPACE
+    );
 
-    const prevBlockType = existing?.inventory_block_type ?? null;
-    const nextBlockType = update.inventory_block_type;
-
-    const isTransitionToBlocked = !prevBlockType && nextBlockType;
-    const isTransitionToUnblocked = prevBlockType && !nextBlockType;
-
-    await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: update.lasyncro_order_id })
+    // 1. try update existing constraint
+    const updated = await trx('order_constraints')
+      .where({
+        lasyncro_order_id: update.lasyncro_order_id,
+        constraint_type: 'inventory'
+      })
       .update({
-        inventory_block_type: nextBlockType,
-        ...(isTransitionToBlocked && { block_started_at: trx.fn.now() }),
-        ...(isTransitionToUnblocked && { block_resolved_at: trx.fn.now() })
+        block_type: next,
+        is_active: !!next,
+        resolved_at: next ? null : new Date()
       });
 
-    /**
-     * LIFECYCLE INSTRUMENTATION
-     */
-    if (isTransitionToBlocked) {
-      console.debug('[INVENTORY_BLOCK_STARTED]', {
-        orderId: update.lasyncro_order_id,
-        blockType: nextBlockType
+    // 2. insert only if missing
+    if (updated === 0) {
+      await trx('order_constraints').insert({
+        constraint_id: constraintId,
+        lasyncro_order_id: update.lasyncro_order_id,
+        constraint_type: 'inventory',
+        block_type: next,
+        started_at: next ? new Date() : null,
+        resolved_at: next ? null : new Date(),
+        is_active: !!next,
+        created_at: new Date()
       });
     }
 
-    if (isTransitionToUnblocked) {
-      console.debug('[INVENTORY_BLOCK_RESOLVED]', {
+    if (next) {
+      console.debug('[INVENTORY_BLOCK_ACTIVE]', {
         orderId: update.lasyncro_order_id,
-        previous: prevBlockType
+        blockType: next
       });
     }
   }

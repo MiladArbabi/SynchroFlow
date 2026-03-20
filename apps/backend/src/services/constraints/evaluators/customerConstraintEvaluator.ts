@@ -39,6 +39,14 @@ export async function evaluateCustomerConstraint(
 
   const isBlocked = !!fulfillment?.customer_block_type;
 
+  const constraint = await trx('order_constraints')
+  .where({
+    lasyncro_order_id: orderId,
+    constraint_type: 'customer',
+    is_active: true
+  })
+  .first();
+
   /* console.debug('[CUSTOMER_CONSTRAINT_EVALUATED]', {
     orderId,
     shopId,
@@ -47,6 +55,9 @@ export async function evaluateCustomerConstraint(
 
   return {
     type: 'customer',
-    isActive: isBlocked
+    isActive: !!constraint,
+    meta: {
+      blockType: constraint?.block_type ?? null
+    }
   };
 }

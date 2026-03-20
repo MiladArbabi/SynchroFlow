@@ -1,29 +1,3 @@
-/**
- * Inventory Constraint Evaluator
- * -------------------------------
- *
- * Emits the inventory constraint signal used by the
- * Constraint Emission Layer.
- *
- * Source of truth:
- * order_fulfillment_status.inventory_block_type
- *
- * This field is produced by:
- * orderInventoryConstraintProjection (projection layer)
- *
- * IMPORTANT:
- * Inventory constraint must ONLY be written by projections.
- * Any reference to runtime workers is deprecated and invalid.
- *
- * The constraint engine must NOT recompute inventory math
- * from the inventory projection layer. Doing so would duplicate logic and
- * create multiple sources of truth.
- *
- * Deterministic:
- * - read-only
- * - side-effect free
- */
-
 import { Knex } from 'knex';
 import { ConstraintEvaluationResult } from '../constraint.types.js';
 
@@ -42,14 +16,19 @@ export async function evaluateInventoryConstraint(
    * orderInventoryConstraintProjection
    */
 
-  const fulfillment = await trx('order_fulfillment_status')
-    .where({ lasyncro_order_id: orderId })
+  const constraint = await trx('order_constraints')
+    .where({
+      lasyncro_order_id: orderId,
+      constraint_type: 'inventory',
+      is_active: true
+    })
     .first();
-
-  const isBlocked = !!fulfillment?.inventory_block_type;
 
   return {
     type: 'inventory',
-    isActive: isBlocked
+    isActive: !!constraint,
+    meta: {
+      blockType: constraint?.block_type ?? null
+    }
   };
 }

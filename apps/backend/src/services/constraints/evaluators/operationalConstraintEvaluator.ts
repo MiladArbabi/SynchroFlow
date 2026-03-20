@@ -63,5 +63,13 @@ export async function evaluateOperationalConstraint(
   return {
     type: 'operational',
     isActive: isBlocked,
+    meta: {
+      /**
+       * STANDARDIZED META CONTRACT
+       * --------------------------
+       * All evaluators MUST expose blockType for downstream decisions.
+       */
+      blockType
+    }
   };
 }

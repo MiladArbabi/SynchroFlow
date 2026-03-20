@@ -29,7 +29,15 @@ export async function projectOrderRisk(
     throw new Error('[RISK_PROJECTION_INVARIANT] fulfillment status missing');
   }
 
-  const isInventoryBlocked = !!ofs.inventory_block_type;
+  const inventoryConstraint = await trx('order_constraints')
+    .where({
+      lasyncro_order_id: orderId,
+      constraint_type: 'inventory',
+      is_active: true
+    })
+    .first();
+
+  const isInventoryBlocked = !!inventoryConstraint;
   /**
    * CUSTOMER BLOCK
    * ----------------

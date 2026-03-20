@@ -1,6 +1,5 @@
 import db from '@lasyncro/backend-core/db.js';
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
-import { v4 as uuidv4 } from 'uuid';
 
 /**
  * RECONCILIATION INTENT DISPATCHER
@@ -17,12 +16,12 @@ import { v4 as uuidv4 } from 'uuid';
  */
 
 /**
- * CONTROL LOOP THROTTLE
+ * CONTROL LOOP STRATEGY
  * ---------------------
- * 1s polling causes burst re-enqueue even with DB guards.
- * Increase interval to align with SLA granularity.
+ * - Fast polling during cold start (no reconciled orders)
+ * - Slow polling after system becomes active
  */
-const POLL_INTERVAL_MS = 10000; // 10s
+let POLL_INTERVAL_MS = 1000; // fast bootstrap (1s)
 
 /**
  * DISPATCH LOOP GUARD
@@ -45,11 +44,16 @@ export async function startReconciliationIntentDispatcher() {
 
   console.log('[reconciliation-intent-dispatcher] started (lock acquired)');
 
-  setInterval(async () => {
+  /**
+   * DYNAMIC CONTROL LOOP
+   * --------------------
+   * Allows runtime interval adjustment.
+   */
+  async function loop() {
 
     if (isRunning) {
       console.warn('[reconciliation-intent-dispatcher] skipped overlapping tick');
-      return;
+      return; // DO NOT reschedule here
     }
 
     isRunning = true;
@@ -95,6 +99,20 @@ export async function startReconciliationIntentDispatcher() {
         console.debug('[TIME_DRIVEN_RECONCILIATION_ENQUEUED]', {
           inserted: insertedCount
         });
+      }
+
+      /**
+       * SWITCH TO STEADY STATE
+       * ----------------------
+       * Once system starts processing real work,
+       * reduce polling pressure.
+       */
+      if (insertedCount > 0 && POLL_INTERVAL_MS !== 60000) {
+        console.info('[DISPATCHER_MODE_SWITCH]', {
+          from: 'bootstrap',
+          to: 'steady-state'
+        });
+        POLL_INTERVAL_MS = 60000;
       }
         
       
@@ -155,31 +173,51 @@ export async function startReconciliationIntentDispatcher() {
       });
 
       /**
-       * APPLY PRIORITY AFTER LOCK (SAFE)
-       * --------------------------------
-       * We must NOT mix joins with FOR UPDATE.
-       * Priority is derived after rows are locked.
+       * EMPTY INTENT GUARD
+       * -------------------
+       * Prevent invalid WHERE IN () query.
        */
-      const prioritized = await db('order_reconciliation_intents as ori')
-        .leftJoin(
-          'order_fulfillment_status as ofs',
-          'ofs.lasyncro_order_id',
-          'ori.lasyncro_order_id'
-        )
+      if (intents.length === 0) {
+        return; // let finally handle scheduling + state reset
+      }
+
+      const ranked = db({ ori: 'order_reconciliation_intents' })
+        .leftJoin('order_constraints as oc', function () {
+          this.on('oc.lasyncro_order_id', '=', 'ori.lasyncro_order_id')
+            .andOn('oc.is_active', '=', db.raw('true'));
+        })
         .whereIn(
           'ori.reconciliation_intent_id',
           intents.map(i => i.reconciliation_intent_id)
         )
-        .select('ori.*')
-        .orderByRaw(`
-          CASE 
-            WHEN ofs.operational_block_type = 'sla_breach' THEN 0
-            WHEN ofs.inventory_block_type IS NOT NULL THEN 1
-            WHEN ofs.customer_block_type IS NOT NULL THEN 2
-            ELSE 3
-          END
-        `)
-        .orderBy('ori.created_at', 'asc');
+        .groupBy(
+          'ori.reconciliation_intent_id',
+          'ori.lasyncro_order_id',
+          'ori.aggregate_version',
+          'ori.created_at'
+        )
+        .select(
+          'ori.reconciliation_intent_id',
+          'ori.lasyncro_order_id',
+          'ori.aggregate_version',
+          'ori.created_at',
+          db.raw(`
+            MIN(
+              CASE
+                WHEN oc.constraint_type = 'operational' AND oc.block_type = 'sla_breach' THEN 0
+                WHEN oc.constraint_type = 'inventory' AND oc.block_type = 'oversell' THEN 1
+                WHEN oc.constraint_type = 'customer' AND oc.block_type = 'awaiting_payment' THEN 2
+                WHEN oc.constraint_type = 'inventory' AND oc.block_type = 'allocation_pending' THEN 3
+                ELSE 99
+              END
+            ) as priority_rank
+          `)
+        );
+
+      const prioritized = await db
+        .from(ranked.as('ranked'))
+        .orderBy('priority_rank', 'asc')
+        .orderBy('created_at', 'asc');
 
       if (intents.length === 10) {
         console.warn('[PRIORITY_WINDOW_LIMIT]', {
@@ -198,20 +236,13 @@ export async function startReconciliationIntentDispatcher() {
           const prev = prioritized[i - 1];
           const curr = prioritized[i];
 
-          const prevRank =
-            prev.operational_block_type === 'sla_breach' ? 0 :
-            prev.inventory_block_type ? 1 :
-            prev.customer_block_type ? 2 : 3;
-
-          const currRank =
-            curr.operational_block_type === 'sla_breach' ? 0 :
-            curr.inventory_block_type ? 1 :
-            curr.customer_block_type ? 2 : 3;
+          const prevRank = prev.priority_rank;
+          const currRank = curr.priority_rank;
 
           if (currRank < prevRank) {
-            console.error('[PRIORITY_ORDER_VIOLATION]', {
-              prev: prev.lasyncro_order_id,
-              curr: curr.lasyncro_order_id,
+            console.error('[PRIORITY_INVARIANT_VIOLATION]', {
+              prev,
+              curr,
               prevRank,
               currRank
             });
@@ -219,35 +250,24 @@ export async function startReconciliationIntentDispatcher() {
         }
         console.debug('[PRIORITY_ORDER]', prioritized.map(p => p.lasyncro_order_id));
 
-        const enriched = await db('order_reconciliation_intents as ori')
-        .leftJoin(
-          'order_fulfillment_status as ofs',
-          'ofs.lasyncro_order_id',
-          'ori.lasyncro_order_id'
-        )
-        .whereIn(
-          'ori.reconciliation_intent_id',
-          prioritized.map(p => p.reconciliation_intent_id)
-        )
-        .select(
-          'ori.lasyncro_order_id',
-          'ofs.operational_block_type',
-          'ofs.customer_block_type'
-        );
+        /**
+         * PRIORITY BREAKDOWN (SOURCE-OF-TRUTH)
+         * ------------------------------------
+         * Uses unified constraint model instead of legacy columns.
+         */
+        const breakdown = await db('order_constraints')
+          .whereIn(
+            'lasyncro_order_id',
+            prioritized.map(p => p.lasyncro_order_id)
+          )
+          .andWhere('is_active', true)
+          .select(
+            'lasyncro_order_id',
+            'constraint_type',
+            'block_type'
+          );
 
-        console.debug('[PRIORITY_BREAKDOWN]', enriched.map(e => ({
-          order: e.lasyncro_order_id,
-          operational: e.operational_block_type,
-          customer: e.customer_block_type
-        })));
-
-        for (const e of enriched) {
-          if (!e.operational_block_type && !e.customer_block_type) {
-            console.warn('[PRIORITY_NO_CONSTRAINT]', {
-              order: e.lasyncro_order_id
-            });
-          }
-        }
+        console.debug('[PRIORITY_BREAKDOWN]', breakdown);
       }
 
       for (const intent of prioritized) {
@@ -286,6 +306,14 @@ export async function startReconciliationIntentDispatcher() {
       );
     } finally {
       isRunning = false;
+      setTimeout(loop, POLL_INTERVAL_MS);
     }
-  }, POLL_INTERVAL_MS);
+  }
+
+  /**
+   * START CONTROL LOOP
+   * ------------------
+   * Required to activate dispatcher.
+   */
+  loop();
 }
