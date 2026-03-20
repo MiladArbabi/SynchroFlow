@@ -37,13 +37,24 @@ export async function handleOrdersCreate({
     shopId: domainEvent.shop_id,
   }); */
 
-  const payload = domainEvent.event_payload as any;
+  /**
+   * CANONICAL PAYLOAD SWITCH
+   * ------------------------
+   * Prefer canonical payload when available.
+   * Fallback to raw for backward compatibility.
+   */
+  const payload =
+    (domainEvent as any).canonical_payload ??
+    domainEvent.event_payload;
 
-  const paymentState =
-    payload.financial_status?.toLowerCase() === 'paid' ||
-    payload.displayFinancialStatus?.toLowerCase() === 'paid'
-      ? 'paid'
-      : 'unpaid';
+  /**
+   * PAYMENT STATE (SOURCE OF TRUTH FIX)
+   * -----------------------------------
+   * orders/create MUST NOT infer payment.
+   * Payment truth is established ONLY via:
+   * - orders/paid event
+   */
+  const paymentState = 'unpaid';
 
   let externalOrderId = String(payload.id);
 
@@ -76,20 +87,44 @@ export async function handleOrdersCreate({
 
   if (!existingOrder) {
 
+    /**
+     * MONETARY FIELD RESOLUTION (CANONICAL-FIRST)
+     * -------------------------------------------
+     * If canonical payload exists, NEVER fallback to raw fields.
+     */
+    const isCanonical = !!(domainEvent as any).canonical_payload;
+
+    const totalPrice =
+      isCanonical
+        ? payload.totalPrice ?? null
+        : payload.totalPriceSet?.shopMoney?.amount != null
+          ? Number(payload.totalPriceSet.shopMoney.amount)
+          : payload.total_price ?? null;
+
     await trx('orders').insert({
       lasyncro_order_id: lasyncroOrderId,
       shop_id: domainEvent.shop_id,
-      currency: payload.currencyCode ?? payload.currency ?? null,
-      total_price:
-        payload.totalPriceSet?.shopMoney?.amount != null
-          ? Number(payload.totalPriceSet.shopMoney.amount)
-          : payload.total_price ?? null,
-      subtotal_price:
-        payload.subtotalPriceSet?.shopMoney?.amount != null
+      /**
+       * CURRENCY RESOLUTION (CANONICAL-FIRST)
+       */
+      currency: isCanonical
+        ? payload.currency ?? null
+        : payload.currencyCode ?? payload.currency ?? null,
+      total_price: totalPrice,
+      /**
+       * SUBTOTAL RESOLUTION (CANONICAL-FIRST)
+       */
+      subtotal_price: isCanonical
+        ? payload.subtotalPrice ?? null
+        : payload.subtotalPriceSet?.shopMoney?.amount != null
           ? Number(payload.subtotalPriceSet.shopMoney.amount)
           : payload.subtotal_price ?? null,
-      total_tax:
-        payload.totalTaxSet?.shopMoney?.amount != null
+      /**
+       * TAX RESOLUTION (CANONICAL-FIRST)
+       */
+      total_tax: isCanonical
+        ? payload.totalTax ?? null
+        : payload.totalTaxSet?.shopMoney?.amount != null
           ? Number(payload.totalTaxSet.shopMoney.amount)
           : payload.total_tax ?? null,
       order_created_at: canonicalEventTime,

@@ -114,6 +114,37 @@ export async function projectDomainEventFromMessage(
     }
 
     /**
+     * CANONICAL NORMALIZATION LAYER (CRITICAL)
+     * ----------------------------------------
+     * Ensures projections NEVER consume raw platform payloads.
+     *
+     * Current scope:
+     * - Shopify orders normalization
+     *
+     * Future:
+     * - Extend per event_type
+     */
+    let canonicalPayload = domainEvent.event_payload;
+
+    if (domainEvent.event_type === 'orders/create') {
+      try {
+        const { mapShopifyOrderNodeToCanonical } = await import(
+          '../services/mappers/shopify-to-canonical-order.js'
+        );
+
+        canonicalPayload = mapShopifyOrderNodeToCanonical(
+          domainEvent.event_payload,
+          domainEvent.shop_id
+        );
+      } catch (err) {
+        console.error('[CANONICAL_NORMALIZATION_FAILED]', {
+          eventId: domainEvent.id,
+          error: err,
+        });
+      }
+    }
+
+    /**
      * PROJECTION STREAM RESOLUTION
      * ----------------------------
      * Must resolve AFTER event fetch.
@@ -259,7 +290,10 @@ export async function projectDomainEventFromMessage(
        */
       if (handler) {
         await handler({
-          domainEvent,
+          domainEvent: {
+            ...domainEvent,
+            canonical_payload: canonicalPayload, // ← attach here safely
+          },
           domain_event_id,
           canonicalEventTime,
           trx,

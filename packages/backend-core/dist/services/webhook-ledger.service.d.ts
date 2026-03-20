@@ -1,6 +1,7 @@
 export type WebhookProcessingStatus = 'received' | 'ignored' | 'processed' | 'failed';
 export declare class WebhookLedgerService {
     static recordReceived(params: {
+        shopId?: number | null;
         integration: string;
         externalEventId: string;
         eventType: string;

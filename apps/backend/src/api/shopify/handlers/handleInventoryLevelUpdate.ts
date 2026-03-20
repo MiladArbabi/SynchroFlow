@@ -74,16 +74,28 @@ export async function handleInventoryLevelUpdate(
     payload == null ||
     typeof payload.available !== 'number'
   ) {
-    /**
-     * INGESTION GUARD — PAYLOAD SHAPE
-     * -------------------------------
-     * Inventory webhook missing canonical available quantity.
-     * Must emit explicit operational signal.
-     */
     console.error('[INVENTORY_UPDATE_PAYLOAD_GUARD_FAILED]', {
       eventId: envelope.eventId,
       hasAvailable: typeof payload?.available === 'number',
     });
+
+    /**
+     * INGESTION FAILURE PERSISTENCE
+     * ------------------------------
+     * Even invalid payloads MUST be persisted for:
+     * - auditability
+     * - replay
+     * - debugging real-world Shopify inconsistencies
+     */
+    await db('domain_events').insert({
+      shop_id: shopId,
+      event_type: 'inventory_levels/update.invalid_payload',
+      event_payload: envelope.rawPayload,
+      event_time: new Date(),
+      event_version: 1,
+      external_event_id: `${envelope.eventId}:invalid_payload`,
+    });
+
     return;
   }
 
@@ -97,26 +109,58 @@ export async function handleInventoryLevelUpdate(
   }
 
   if (!externalInventoryItemGid) {
-    /**
-     * INGESTION GUARD — INVENTORY ITEM ID
-     * -----------------------------------
-     * Inventory webhook missing canonical item identity.
-     * Event must be observable to prevent silent desync.
-     */
     console.error('[INVENTORY_UPDATE_IDENTITY_GUARD_FAILED]', {
       eventId: envelope.eventId,
       payload,
     });
+
+    /**
+     * INGESTION FAILURE PERSISTENCE
+     * ------------------------------
+     * Prevent silent desync by persisting invalid identity events.
+     */
+    await db('domain_events').insert({
+      shop_id: shopId,
+      event_type: 'inventory_levels/update.invalid_identity',
+      event_payload: envelope.rawPayload,
+      event_time: new Date(),
+      event_version: 1,
+      external_event_id: `${envelope.eventId}:invalid_identity`,
+    });
+
     return;
   }
 
   /**
-   * INGESTION EVENT-TIME ENFORCEMENT
+   * EVENT TIME NORMALIZATION (FAIL-SAFE)
+   * ------------------------------------
+   * Shopify timestamps are not guaranteed.
+   * We MUST:
+   * - never fail ingestion
+   * - preserve original signal
+   * - fallback deterministically
    */
-  if (!payload.updated_at) {
-    throw new Error(
-      '[EVENT_TIME_VIOLATION] Inventory missing event_time at ingestion'
-    );
+  let eventTime: Date;
+
+  if (payload.updated_at) {
+    const parsed = new Date(payload.updated_at);
+
+    if (isNaN(parsed.getTime())) {
+      console.error('[EVENT_TIME_INVALID_FORMAT]', {
+        eventId: envelope.eventId,
+        rawValue: payload.updated_at,
+      });
+
+      eventTime = new Date(); // fallback
+    } else {
+      eventTime = parsed;
+    }
+  } else {
+    console.error('[EVENT_TIME_MISSING]', {
+      eventId: envelope.eventId,
+    });
+
+    eventTime = new Date(); // fallback
   }
 
   let domainEventId: number;
@@ -128,7 +172,7 @@ export async function handleInventoryLevelUpdate(
         shop_id: shopId,
         event_type: 'inventory_levels/update',
         event_payload: envelope.rawPayload,
-        event_time: new Date(payload.updated_at),
+        event_time: eventTime,
         event_version: 1,
         external_event_id: envelope.eventId,
       })

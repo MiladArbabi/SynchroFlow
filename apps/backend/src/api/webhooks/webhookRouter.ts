@@ -19,6 +19,7 @@ import { WebhookEnvelope } from './types.js';
 import { WebhookLedgerService } from '@lasyncro/backend-core/services/webhook-ledger.service.js';
 import { getWebhookDispatchMode } from './dispatchMode.js';
 import { enqueueWebhookEnvelope } from './dispatchQueue.js';
+import db from '@lasyncro/backend-core/db.js';
 
 type WebhookHandler = (envelope: WebhookEnvelope) => Promise<void>;
 
@@ -101,7 +102,33 @@ export class WebhookRouter {
      * Refund idempotency at execution layer remains additive.
      */
     if (!(envelope as any).__fromQueue) {
+      /**
+       * SHOP RESOLUTION (CRITICAL LINKAGE)
+       * ----------------------------------
+       * Required to ensure:
+       * - webhook ledger ↔ domain_events joinability
+       * - full ingestion traceability
+       */
+      let shopId: number | null = null;
+
+      if (envelope.shopDomain) {
+        const installation = await db('shopify_app_installations')
+          .where({ shop_domain: envelope.shopDomain })
+          .select('shop_id')
+          .first();
+
+        if (installation) {
+          shopId = installation.shop_id;
+        } else {
+          console.error('[WEBHOOK_SHOP_RESOLUTION_FAILED]', {
+            eventId: envelope.eventId,
+            shopDomain: envelope.shopDomain,
+          });
+        }
+      }
+
       await WebhookLedgerService.recordReceived({
+        shopId,
         integration: envelope.integration,
         externalEventId: envelope.eventId,
         eventType: normalizedEventType,
@@ -188,6 +215,46 @@ export class WebhookRouter {
         envelope.eventId,
         'unsupported_event'
       );
+
+      /**
+       * INGESTION GAP FIX
+       * ------------------
+       * Unsupported events MUST still be persisted
+       * into domain_events for:
+       * - full audit trail
+       * - future backfills
+       * - replay when handlers are introduced
+       */
+      try {
+        const installation = envelope.shopDomain
+          ? await db('shopify_app_installations')
+              .where({ shop_domain: envelope.shopDomain })
+              .select('shop_id')
+              .first()
+          : null;
+
+        if (installation) {
+          await db('domain_events').insert({
+            shop_id: installation.shop_id,
+            event_type: `${envelope.eventType}.unsupported`,
+            event_payload: envelope.rawPayload,
+            event_time: new Date(),
+            event_version: 1,
+            external_event_id: `${envelope.eventId}:unsupported`,
+          });
+        } else {
+          console.error('[UNSUPPORTED_EVENT_NO_SHOP]', {
+            eventId: envelope.eventId,
+            shopDomain: envelope.shopDomain,
+          });
+        }
+      } catch (err) {
+        console.error('[UNSUPPORTED_EVENT_PERSIST_FAILED]', {
+          eventId: envelope.eventId,
+          error: err,
+        });
+      }
+
       return;
     }
 
