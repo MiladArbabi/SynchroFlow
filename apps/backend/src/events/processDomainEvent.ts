@@ -140,10 +140,10 @@ export async function processDomainEvent(
     });
 
   for (const intent of intents) {
-  console.info('[PROCESS_DOMAIN_EVENT_RECONCILE]', {
+  /* console.info('[PROCESS_DOMAIN_EVENT_RECONCILE]', {
     order: intent.lasyncro_order_id,
     version: intent.aggregate_version
-  });
+  }); */
 
   /**
    * OBSERVED PAYLOAD NORMALIZATION
@@ -261,6 +261,43 @@ export async function processDomainEvent(
     })
     .delete();
 
+  /**
+   * REBUILD SNAPSHOT DEFERRED EXECUTION (DEADLOCK SAFE)
+   * --------------------------------------------------
+   * Snapshot MUST NOT run inside reconciliation transaction.
+   *
+   * We defer execution to next tick to release all DB locks.
+   */
+  if (process.env.REBUILD_MODE === 'true') {
+    const { computeShopOperationalSnapshot } = await import(
+      '../workers/projections/shopOperationalSnapshot.worker.js'
+    );
+
+    const shopRow = await db('orders')
+      .where({ lasyncro_order_id: intent.lasyncro_order_id })
+      .select('shop_id')
+      .first();
+
+    if (shopRow?.shop_id) {
+      setImmediate(async () => {
+        try {
+          await computeShopOperationalSnapshot(
+            shopRow.shop_id,
+            new Date(domainEventRow.event_time)
+          );
+
+          console.debug('[REBUILD][SNAPSHOT_EXECUTED]', {
+            shopId: shopRow.shop_id,
+            orderId: intent.lasyncro_order_id,
+            mode: 'deferred'
+          });
+        } catch (err) {
+          console.error('[REBUILD][SNAPSHOT_FAILED]', err);
+        }
+      });
+    }
+  }
+
   const shopRow = await db('orders')
     .where({ lasyncro_order_id: intent.lasyncro_order_id })
     .select('shop_id')
@@ -308,23 +345,28 @@ const remainingIntentsRow = await db('order_reconciliation_intents')
 const remainingIntents = Number(remainingIntentsRow?.count ?? 0);
 
 /**
- * BACKLOG INVARIANT
- * -----------------
- * In deterministic rebuild mode, backlog MUST be zero.
- * Any remaining intents indicate pipeline inconsistency.
+ * BACKLOG VIOLATION GUARD (REBUILD-SAFE)
+ * --------------------------------------
+ * During full rebuild:
+ * - dispatcher is NOT running
+ * - intents accumulate temporarily
+ *
+ * Therefore:
+ * - enforce strictly in runtime
+ * - log only during rebuild
  */
-if (remainingIntents > 0) {
+const isRebuild = process.env.REBUILD_MODE === 'true';
 
-  if (process.env.REBUILD_MODE === 'true') {
+if (remainingIntents > 0) {
+  if (isRebuild) {
+    console.warn('[REBUILD][INTENT_BACKLOG_DETECTED]', {
+      remaining_intents: remainingIntents
+    });
+  } else {
     throw new Error(
       `[RECONCILIATION_BACKLOG_VIOLATION] remaining_intents=${remainingIntents}`
     );
   }
-
-  console.warn('[ORDER_RECONCILIATION_INTENT_BACKLOG]', {
-    remaining_intents: remainingIntents
-  });
-
 }
   /**
    * FUTURE STAGES

@@ -79,12 +79,12 @@ export async function projectOrderCustomerConstraints(
     }
 
     // logging
-    if (blockType) {
+    /* if (blockType) {
       console.debug('[CUSTOMER_BLOCK_ACTIVE]', {
         orderId,
         blockType
       });
-    }
+    } */
 
     // Derived state
     const isBlocked = blockType !== null;
@@ -99,10 +99,10 @@ export async function projectOrderCustomerConstraints(
     if (isBlocked) {
       blockedCount++;
 
-      console.debug('[CUSTOMER_CONSTRAINT_DETECTED]', {
+      /* console.debug('[CUSTOMER_CONSTRAINT_DETECTED]', {
         orderId,
         reason: 'awaiting_payment'
-      });
+      }); */
     };
 
       // TODO (lifecycle):

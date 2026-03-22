@@ -30,11 +30,31 @@ export async function resolveExecutionQueues(
     .count<{ count: string }>('lasyncro_order_id as count')
     .first();
 
-  const queueAwaitingInventory = await trx('order_risk_snapshot')
-    .where({ shop_id: shopId })
-    .andWhere('is_inventory_blocked', true)
-    .count<{ count: string }>('lasyncro_order_id as count')
+  /**
+   * INVENTORY QUEUE (CANONICAL)
+   * ---------------------------
+   * MUST derive from order_constraints (variant-scoped)
+   * NOT from order_risk_snapshot boolean
+   */
+  const queueAwaitingInventory = await trx('orders as o')
+    .where({ 'o.shop_id': shopId })
+    .whereExists(function () {
+      this.select(1)
+        .from('order_constraints as oc')
+        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('oc.constraint_type', 'inventory')
+        .andWhere('oc.is_active', true);
+    })
+    .count<{ count: string }>('o.lasyncro_order_id as count')
     .first();
+
+  /**
+   * DEBUG SIGNAL
+   */
+  console.debug('[QUEUE][AWAITING_INVENTORY]', {
+    shopId,
+    count: Number(queueAwaitingInventory?.count ?? 0)
+  });
 
   const queueAwaitingCustomer = await trx('order_risk_snapshot')
     .where({ shop_id: shopId })

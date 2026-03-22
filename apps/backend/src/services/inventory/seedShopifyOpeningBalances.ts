@@ -62,6 +62,8 @@ const response = await client.request(`
 
   console.log(JSON.stringify(response.data.products.edges[0].node.variants.edges[0].node.id));
 
+  let missingMappings = 0;
+
   for (const p of response.data.products.edges) {
     for (const v of p.node.variants.edges) {
       const shopifyVariantId = v.node.id;
@@ -89,26 +91,65 @@ const response = await client.request(`
         })
         .first();
 
-      if (!mapping) continue;
-
-      /**
-       * LEDGER INVARIANT VIOLATION GUARD
-       * --------------------------------
-       * inventory_movements enforces quantity_delta ≠ 0.
-       *
-       * Shopify may return variants with inventoryQuantity = 0.
-       * Such states represent absence of stock rather than a movement.
-       *
-       * Therefore we skip insertion but emit a debug signal so that
-       * ingestion anomalies remain observable during sync operations.
-       */
-      if (qty === 0) {
-
-        console.debug('[INVENTORY_OPENING_BALANCE_SKIPPED_ZERO]', {
+      if (!mapping) {
+        missingMappings++;
+        console.error('[INVENTORY_OPENING_BALANCE_MAPPING_MISSING]', {
           shopId,
           shopifyVariantId,
-          lasyncroVariantId: mapping?.lasyncro_variant_id
         });
+
+        /**
+         * CRITICAL INVARIANT VIOLATION
+         * ----------------------------
+         * Opening balance cannot be seeded without identity mapping.
+         * This indicates ingestion ordering or data integrity failure.
+         *
+         * We DO NOT silently skip — this must be visible.
+         */
+        continue;
+      }
+
+      if (missingMappings > 0) {
+        console.error('[INVENTORY_OPENING_BALANCE_SUMMARY]', {
+          shopId,
+          missingMappings,
+        });
+      }
+
+      /**
+       * ZERO BASELINE HANDLING
+       * ----------------------
+       * Zero inventory is a VALID initial state.
+       * We must explicitly represent it to avoid:
+       * - missing variants in projection
+       * - implicit "unknown" state
+       */
+      if (qty === 0) {
+        console.info('[INVENTORY_OPENING_BALANCE_ZERO_RECORDED]', {
+          shopId,
+          shopifyVariantId,
+          lasyncroVariantId: mapping.lasyncro_variant_id
+        });
+
+        await trx('inventory_movements')
+          .insert({
+            lasyncro_inventory_movement_id: crypto.randomUUID(),
+            device_event_id: uuidv5(
+              `${shopId}:${mapping.lasyncro_variant_id}:opening_balance_zero`,
+              OPENING_BALANCE_NAMESPACE
+            ),
+            shop_id: shopId,
+            lasyncro_variant_id: mapping.lasyncro_variant_id,
+            movement_type: 'opening_balance',
+            quantity_delta: 0,
+            reference_type: 'opening_balance',
+            reference_id: crypto.randomUUID(),
+            platform: 'shopify',
+            location_code: `WH-${shopId}-ROOT`,
+            occurred_at: new Date(),
+          })
+          .onConflict(['device_event_id'])
+          .ignore();
 
         continue;
       }

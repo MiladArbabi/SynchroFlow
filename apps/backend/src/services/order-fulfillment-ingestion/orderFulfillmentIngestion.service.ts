@@ -4,6 +4,8 @@ import db from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
 import crypto from 'crypto';
 
+import { evaluateOrderConstraints } from '../constraints/constraintEngine.js';
+
 /**
  * Sovereign Fulfillment Ingestion Service
  * =======================================
@@ -70,6 +72,7 @@ export class OrderFulfillmentIngestionService {
   async ingestStatus(
     input: {
       lasyncroOrderId: string;
+      shopId: number;
       status:
         | 'pending'
         | 'processing'
@@ -82,11 +85,17 @@ export class OrderFulfillmentIngestionService {
     executor: Knex | Knex.Transaction = db
   ): Promise<void> {
 
-    const { lasyncroOrderId, status, canonicalEventTime } = input;
+    const { lasyncroOrderId, shopId, status, canonicalEventTime } = input;
 
     if (!lasyncroOrderId) {
       throw new Error(
         '[OrderFulfillmentIngestionService] lasyncro_order_id is required.'
+      );
+    }
+
+    if (!shopId) {
+      throw new Error(
+        '[OrderFulfillmentIngestionService] shopId is required for constraint evaluation.'
       );
     }
 
@@ -100,11 +109,45 @@ export class OrderFulfillmentIngestionService {
       throw new Error(
         '[OrderFulfillmentIngestionService] canonicalEventTime is required.'
       );
+    };
+
+    /**
+     * CONSTRAINT ENFORCEMENT REMOVED (ARCHITECTURAL FIX)
+     * -------------------------------------------------
+     * Constraint evaluation MUST NOT occur during ingestion.
+     *
+     * Reasons:
+     * - Ingestion runs before system state is stable
+     * - Causes invariant violations during rebuild
+     * - Breaks deterministic replay
+     *
+     * Enforcement is handled in:
+     * → reconciliation.handlers.ts (single source of truth)
+     */
+
+    /* console.log('[INGEST]', lasyncroOrderId, status); */
+
+    /**
+     * REBUILD SAFETY GUARD
+     * --------------------
+     * During projection replay, constraint engine may be invoked
+     * before fulfillment baseline is fully materialized.
+     *
+     * This guard prevents invariant violations by skipping
+     * constraint evaluation until baseline exists.
+     */
+    const baselineExists = await executor('order_fulfillment_status')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first();
+
+    if (!baselineExists) {
+      /* console.warn('[CONSTRAINT_ENGINE_SKIPPED_NO_BASELINE]', {
+        lasyncroOrderId,
+        status
+      }); */
+
+      return;
     }
-
-    let totalFulfillmentRows = lasyncroOrderId.length
-
-    console.log('[INGEST]', lasyncroOrderId, status);
 
     // Fetch existing state (transaction-safe)
     const existing = await executor('order_fulfillment_status')

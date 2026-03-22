@@ -19,6 +19,21 @@ export function mapShopifyOrderNodeToCanonical(
 ): FT0CanonicalOrder {
   const orderId = node.id; // gid://shopify/Order/...
 
+  const currency = node.currencyCode;
+
+  if (!currency) {
+    console.error('[CANONICAL_ORDER][CURRENCY_MISSING]', {
+      shopifyOrderId: node.id,
+      raw: node,
+    });
+
+    throw new Error('[CANONICAL_ORDER] currencyCode is required');
+  }
+
+  if (node.totalPriceSet?.shopMoney?.amount == null) {
+    throw new Error('[CANONICAL_ORDER] totalPrice missing');
+  }
+
   return {
     id: orderId,
     shopId,
@@ -29,7 +44,7 @@ export function mapShopifyOrderNodeToCanonical(
     processedAt: node.processedAt ?? null,
 
     // ── Currency ────────────────────────────────────
-    currency: node.currencyCode ?? null,
+    currency,
 
     // ── Monetary completeness (NO inference) ─────────
     totalPrice:

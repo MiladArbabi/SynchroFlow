@@ -1,5 +1,4 @@
 import { Knex } from 'knex';
-import { seedShopifyOpeningBalances } from '../inventory/seedShopifyOpeningBalances.js';
 import { enqueueProductForIngestion } from '../product-ingestion.service.js';
 import { syncProducts } from './shopifyProducts.core.js';
 
@@ -36,13 +35,6 @@ export const syncShopifyProducts = async ({
 
   // Existing logic preserved
   await syncProducts(trx, shopId, products);
-
-  await seedShopifyOpeningBalances(
-    trx,
-    accessToken,
-    platformShopName,
-    shopId
-  );
 
   for (const { node } of products) {
     enqueueProductForIngestion({

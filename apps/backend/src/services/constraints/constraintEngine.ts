@@ -56,12 +56,18 @@ export async function evaluateOrderConstraints(
   // INVENTORY
   //
   try {
-    const inventory = await evaluateInventoryConstraint(
+    const inventoryResults = await evaluateInventoryConstraint(
       trx,
       orderId,
       shopId
     );
-    results.push(inventory);
+
+    /**
+     * SUPPORT MULTI-RESULT EVALUATORS
+     * -------------------------------
+     * Inventory constraints are variant-scoped.
+     */
+    results.push(...inventoryResults);
   } catch (error) {
     console.error('[CONSTRAINT_ENGINE_EVALUATOR_FAILURE]', {
       orderId,
@@ -69,6 +75,10 @@ export async function evaluateOrderConstraints(
       evaluator: 'inventory',
       error
     });
+    /**
+     * Fallback must still emit a single inactive placeholder
+     * to preserve deterministic coverage.
+     */
     results.push({ type: 'inventory', isActive: false });
   }
 
@@ -127,16 +137,40 @@ export async function evaluateOrderConstraints(
 
   for (const type of requiredTypes) {
 
+    if (type === 'inventory') {
+      console.error('[CONSTRAINT_ENGINE_SCOPE_VIOLATION]', {
+        orderId,
+        type,
+        reason: 'attempted to synthesize inventory constraint without targetId'
+      });
+      
+      continue;
+    }
+
     if (!results.find(r => r.type === type)) {
 
       results.push({
         type,
         isActive: false
       });
-
     }
-
   }
+
+  /**
+   * CONSTRAINT ENGINE TRACE
+   * -----------------------
+   * Emits full evaluation snapshot.
+   *
+   * Required for:
+   * - debugging fragmented persistence
+   * - validating projection alignment
+   * - future consolidation into single write path
+   */
+  /* console.info('[CONSTRAINT_ENGINE_RESULT]', {
+    orderId,
+    shopId,
+    results
+  }); */
 
   return results;
 }

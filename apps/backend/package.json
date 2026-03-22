@@ -13,7 +13,7 @@
     "migrate": "mkdir -p dist && rm -rf dist/migrations dist/seeds && npx tsc --project tsconfig.migrations.json && node dist/scripts/runMigrationsWithChecksum.js",
     "migrate:rollback": "rm -rf dist/migrations && npx tsc --project tsconfig.migrations.json && DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make",
-    "rebuild": "node --loader ts-node/esm src/cli/rebuild-from-events.ts"
+    "rebuild": "REBUILD_MODE=true node --loader ts-node/esm src/cli/rebuild-from-events.ts"
   },
   "dependencies": {
     "@lasyncro/shared": "1.0.0",

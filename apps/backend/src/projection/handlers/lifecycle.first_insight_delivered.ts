@@ -1,10 +1,6 @@
 // apps/backend/src/projection/handlers/lifecycle.first_insight_delivered.ts
-
-import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { Knex } from 'knex';
-import { advanceCursor } from '../projection.engine.js';
-
 /**
  * PROJECTION STREAM
  * -----------------
@@ -29,7 +25,6 @@ const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 export async function handleLifecycleFirstInsightDelivered({
   domainEvent,
   domain_event_id,
-  canonicalEventTime,
   trx,
 }: {
   domainEvent: any;

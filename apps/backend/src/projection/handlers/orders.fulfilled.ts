@@ -23,7 +23,6 @@ import { Knex } from 'knex';
 
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
 import OrderFulfillmentIngestionService from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
-import { advanceCursor } from '../projection.engine.js';
 
 const ORDERS_PROJECTION = 'orders_projection';
 
@@ -128,6 +127,15 @@ export async function handleOrdersFulfilled({
     await OrderFulfillmentIngestionService.ingestStatus(
       {
         lasyncroOrderId,
+
+        /**
+         * SOURCE OF TRUTH
+         * ----------------
+         * shopId must come from domain event.
+         * Required for constraint enforcement.
+         */
+        shopId: domainEvent.shop_id,
+
         status,
         canonicalEventTime: new Date(domainEvent.event_time),
       },

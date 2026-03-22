@@ -29,15 +29,61 @@ export async function projectOrderRisk(
     throw new Error('[RISK_PROJECTION_INVARIANT] fulfillment status missing');
   }
 
-  const inventoryConstraint = await trx('order_constraints')
+  /**
+   * INVENTORY CONSTRAINT AGGREGATION (VARIANT-SCOPED)
+   * ------------------------------------------------
+   * MUST aggregate across ALL active variant-level constraints.
+   *
+   * DO NOT use `.first()` — that collapses variant scope into order-level boolean.
+   * This is the root cause of UI misrepresentation (Issue #1).
+   */
+  const inventoryConstraints = await trx('order_constraints')
     .where({
       lasyncro_order_id: orderId,
       constraint_type: 'inventory',
       is_active: true
-    })
-    .first();
+    });
 
-  const isInventoryBlocked = !!inventoryConstraint;
+  const isInventoryBlocked = inventoryConstraints.length > 0;
+
+  /**
+   * BLOCKED REVENUE (VARIANT-SCOPED)
+   * --------------------------------
+   * Computes revenue ONLY from constrained variants.
+   *
+   * JOIN:
+   * - order_constraints.target_id → order_revenue_units.lasyncro_variant_id
+   *
+   * CRITICAL:
+   * - ensures financial impact reflects true constraint scope
+   * - prevents order-level overcounting
+   */
+  const blockedRevenueRows = await trx('order_constraints as oc')
+    .join('order_revenue_units as ru', function () {
+      this.on('ru.lasyncro_order_id', '=', 'oc.lasyncro_order_id')
+          .andOn('ru.lasyncro_variant_id', '=', 'oc.target_id');
+    })
+    .where({
+      'oc.lasyncro_order_id': orderId,
+      'oc.constraint_type': 'inventory',
+      'oc.is_active': true
+    })
+    .sum({
+      blocked_revenue: trx.raw('ru.quantity * ru.unit_price')
+    });
+
+  const inventoryBlockedRevenue = Number(blockedRevenueRows?.[0]?.blocked_revenue ?? 0);
+
+  /**
+   * OPERATIONAL SIGNAL
+   * ------------------
+   * Explicit debug signal for observability
+   */
+  console.debug('[RISK_PROJECTION][INVENTORY_BLOCKED_REVENUE]', {
+    orderId,
+    blockedRevenue: inventoryBlockedRevenue
+  });
+
   /**
    * CUSTOMER BLOCK
    * ----------------
@@ -86,12 +132,25 @@ export async function projectOrderRisk(
   if (healthScore < 0) healthScore = 0;
 
   await trx('order_risk_snapshot')
+    /**
+     * NOTE:
+     * inventory_blocked_revenue MUST be derived from variant-scoped constraints.
+     *
+     * DO NOT:
+     * - derive from order-level booleans
+     * - reuse legacy aggregation paths
+     *
+     * Source of truth:
+     * order_constraints.target_id
+     */
     .insert({
       lasyncro_order_id: orderId,
       shop_id: shopId,
       aggregate_version: aggregateVersion,
 
       is_inventory_blocked: isInventoryBlocked,
+      inventory_blocked_revenue: inventoryBlockedRevenue,
+
       is_customer_blocked: isCustomerBlocked,
       is_operational_blocked: isOperationalBlocked,
 

@@ -16,5 +16,13 @@ export type ConstraintType =
 export interface ConstraintEvaluationResult {
   type: ConstraintType;
   isActive: boolean;
+
+  /**
+   * TARGET SCOPE
+   * ------------
+   * For inventory: must include variant-level granularity
+   */
+  targetId?: string; // e.g. variant_id
+
   meta?: Record<string, unknown>;
 }

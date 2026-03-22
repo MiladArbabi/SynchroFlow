@@ -72,6 +72,27 @@ export const performInitialSync = async (
       }
     });
 
+    /**
+     * OPENING BALANCE SEEDING (POST-PRODUCT-SYNC)
+     * -------------------------------------------
+     * MUST run after product + identity mappings are committed.
+     * Runs outside transaction to:
+     * - guarantee visibility of committed mappings
+     * - avoid rollback coupling with product ingestion
+     */
+    await db.transaction(async (trx) => {
+      const { seedShopifyOpeningBalances } = await import(
+        './inventory/seedShopifyOpeningBalances.js'
+      );
+
+      await seedShopifyOpeningBalances(
+        trx,
+        accessToken,
+        platformShopName,
+        shopId
+      );
+    });
+
     await updateIntegrationStatus({
       integrationId,
       status: 'SYNCING_ORDERS',

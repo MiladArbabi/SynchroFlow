@@ -23,13 +23,36 @@ export async function projectDailyOperationalBrief(
   eventAnchor: Date
 ) {
 
-  const inventoryBlockedRevenue = await trx('order_revenue_units_net as runet')
-    .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-    .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
+  /**
+   * INVENTORY BLOCKED REVENUE (VARIANT-SCOPED)
+   * -----------------------------------------
+   * MUST derive from order_constraints.target_id
+   *
+   * DO NOT use:
+   * - order_risk_snapshot.is_inventory_blocked
+   *
+   * Reason:
+   * That is an order-level boolean and loses variant granularity.
+   */
+  const inventoryBlockedRevenue = await trx('order_constraints as oc')
+    .join('order_revenue_units_net as runet', function () {
+      this.on('runet.lasyncro_order_id', '=', 'oc.lasyncro_order_id')
+          .andOn('runet.lasyncro_variant_id', '=', 'oc.target_id');
+    })
+    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
     .where('o.shop_id', shopId)
-    .andWhere('ors.is_inventory_blocked', true)
+    .andWhere('oc.constraint_type', 'inventory')
+    .andWhere('oc.is_active', true)
     .sum<{ sum: string }>('runet.net_revenue as sum')
     .first();
+
+  /**
+   * DEBUG SIGNAL
+   */
+  console.debug('[DAILY_BRIEF][INVENTORY_BLOCKED_REVENUE]', {
+    shopId,
+    value: Number(inventoryBlockedRevenue?.sum ?? 0)
+  });
 
   const cashToday = await trx('orders')
     .where({ shop_id: shopId })

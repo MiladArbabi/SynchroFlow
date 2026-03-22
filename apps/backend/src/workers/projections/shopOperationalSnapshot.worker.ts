@@ -47,11 +47,14 @@ export async function computeShopOperationalSnapshot(
     }
 
     /**
-     * Normalize to DATE for table PK
+     * SNAPSHOT IDENTITY (REBUILD SAFE)
+     * --------------------------------
+     * Using DATE collapses multiple events into one row.
+     * This breaks deterministic rebuild.
+     *
+     * We MUST use full timestamp to preserve event ordering.
      */
-    const snapshotDateNormalized = snapshotDate
-    .toISOString()
-    .split('T')[0];
+    const snapshotDateNormalized = snapshotDate.toISOString();
 
     /**
      * HISTORICAL CUTOFF INVARIANT
@@ -165,23 +168,39 @@ export async function computeShopOperationalSnapshot(
         .first();
 
     /**
-     * BLOCKED REVENUE
-     * ----------------
-     * Revenue attached to orders blocked by operational constraints.
+     * BLOCKED REVENUE (CANONICAL — VARIANT-SCOPED)
+     * --------------------------------------------
+     * MUST derive from order_constraints
+     * DO NOT use order_risk_snapshot booleans
      */
     const blockedRevenueRows = await trx('order_revenue_units_net as runet')
         .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .join('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
+        .leftJoin('order_constraints as oc', function () {
+            this.on('oc.lasyncro_order_id', '=', 'runet.lasyncro_order_id')
+                .andOn('oc.target_id', '=', 'runet.lasyncro_variant_id')
+                .andOn('oc.is_active', '=', trx.raw('true'));
+        })
         .where('o.shop_id', shopId)
         .andWhere('o.order_created_at', '<=', snapshotCutoff)
         .select(
             trx.raw(`
-                SUM(CASE WHEN ors.is_inventory_blocked THEN runet.net_revenue ELSE 0 END) as inventory_blocked,
-                SUM(CASE WHEN ors.is_customer_blocked THEN runet.net_revenue ELSE 0 END) as customer_blocked,
-                SUM(CASE WHEN ors.is_operational_blocked THEN runet.net_revenue ELSE 0 END) as operational_blocked
+                SUM(CASE WHEN oc.constraint_type = 'inventory' THEN runet.net_revenue ELSE 0 END) as inventory_blocked,
+                SUM(CASE WHEN oc.constraint_type = 'customer' THEN runet.net_revenue ELSE 0 END) as customer_blocked,
+                SUM(CASE WHEN oc.constraint_type = 'operational' THEN runet.net_revenue ELSE 0 END) as operational_blocked
             `)
         )
         .first();
+
+    /**
+     * DEBUG SIGNAL
+     */
+    console.debug('[SNAPSHOT][BLOCKED_REVENUE]', {
+        shopId,
+        snapshotCutoff,
+        inventory: Number((blockedRevenueRows as any)?.inventory_blocked ?? 0),
+        customer: Number((blockedRevenueRows as any)?.customer_blocked ?? 0),
+        operational: Number((blockedRevenueRows as any)?.operational_blocked ?? 0)
+    });
     
     /**
      * TOP BLOCKING TYPE (REAL COMPUTATION)
@@ -273,17 +292,42 @@ export async function computeShopOperationalSnapshot(
         .first();
 
     /**
-     * CONSTRAINED ORDERS (HISTORICAL SAFE)
-     * ------------------------------------
-     * Ensure historical snapshots only include orders
-     * that existed at snapshotCutoff.
+     * CONSTRAINED ORDERS (CANONICAL)
+     * -------------------------------
+     * Source of truth:
+     *   order_constraints (NOT events)
+     *
+     * MUST:
+     * - use is_active = true
+     * - respect snapshotCutoff
+     * - count DISTINCT orders
+     *
+     * This metric drives Control Tower.
      */
-    const constrainedOrdersRow = await trx('order_constraint_events as oce')
-        .join('orders as o', 'o.lasyncro_order_id', 'oce.lasyncro_order_id')
-        .where('oce.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff)
-        .countDistinct<{ count: string }>('oce.lasyncro_order_id as count')
-        .first();
+    const constrainedOrdersRow = await trx('order_constraints as oc')
+    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('oc.is_active', true)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .countDistinct<{ count: string }>('oc.lasyncro_order_id as count')
+    .first();
+
+    /**
+     * VISIBILITY — CRITICAL METRIC TRACE
+     */
+    console.debug('[SNAPSHOT][CONSTRAINED_ORDERS]', {
+    shopId,
+    snapshotCutoff,
+    count: Number(constrainedOrdersRow?.count ?? 0)
+    });
+
+    /**
+     * DEBUG SIGNAL
+     */
+    console.debug('[SNAPSHOT][CONSTRAINED_ORDERS]', {
+        shopId,
+        count: Number(constrainedOrdersRow?.count ?? 0)
+    });
 
     /**
      * LOAD SHOP SLA
@@ -524,19 +568,29 @@ export async function computeShopOperationalSnapshot(
         .first();
 
         if (existingSnapshot) {
-        /* console.info('[SNAPSHOT_SKIPPED_EXISTS]', {
-            shopId,
-            snapshotDate: snapshotDateNormalized,
-        }); */
+            console.warn('[SNAPSHOT_SKIPPED_EXISTS]', {
+                shopId,
+                snapshotDate: snapshotDateNormalized,
+                reason: 'append-only snapshot prevented overwrite'
+            });
 
-        return;
-    }
+            return;
+        }
+
+        if (existingSnapshot) {
+            console.warn('[SNAPSHOT_SKIPPED_EXISTS]', {
+                shopId,
+                snapshotDate: snapshotDateNormalized,
+                reason: 'append-only snapshot prevented overwrite'
+            });
+
+            return;
+        }
 
     /**
      * SNAPSHOT WRITE
      */
-    await trx('orders_operational_control_snapshot')
-        .insert({
+    const snapshotPayload = {
             shop_id: shopId,
             snapshot_date: snapshotDateNormalized,
             aggregate_version: aggregateVersion,
@@ -602,7 +656,13 @@ export async function computeShopOperationalSnapshot(
              * Uses precomputed value to avoid inline DB row coupling.
              */
             orders_at_sla_risk: ordersAtSlaRisk,
-            constrained_orders: Number(constrainedOrdersRow?.count ?? 0),
+            /**
+             * HARD TYPE CAST — PREVENT BOOLEAN COERCION
+             * -----------------------------------------
+             * Postgres driver may coerce improperly if value is string/undefined.
+             * Must force strict integer.
+             */
+            constrained_orders: parseInt(String(constrainedOrdersRow?.count ?? '0'), 10),
             oldest_exception_order_age_hours: Number((oldestExceptionAgeRow?.max ?? 0) / 3600),
 
             queue_manual_review: Number(queueManualReview?.count ?? 0),
@@ -612,27 +672,22 @@ export async function computeShopOperationalSnapshot(
             queue_awaiting_customer: Number(queueAwaitingCustomer?.count ?? 0),
 
             evaluated_at: snapshotDate
-        })
-        /**
-         * APPEND-ONLY GUARANTEE
-         * ---------------------
-         * Snapshot table is immutable.
-         * Duplicate (shop_id, snapshot_date) must NOT overwrite history.
-         *
-         * We explicitly drop UPDATE path and surface duplicates.
-         */
-        .onConflict(['shop_id', 'snapshot_date'])
-        .ignore()
+        }
+
+        console.debug('[SNAPSHOT][PAYLOAD]', snapshotPayload);
+
+        await trx('orders_operational_control_snapshot')
+            .insert(snapshotPayload);
 
         /**
          * VISIBILITY: detect suppressed writes
          */
         if ((await trx.raw('SELECT 1')).rowCount === 0) {
-        console.warn('[SNAPSHOT_WRITE_NOOP]', {
-            shopId,
-            snapshotDate: snapshotDateNormalized,
-            reason: 'duplicate snapshot prevented (append-only)',
-        });
+            console.warn('[SNAPSHOT_WRITE_NOOP]', {
+                shopId,
+                snapshotDate: snapshotDateNormalized,
+                reason: 'duplicate snapshot prevented (append-only)',
+            });
         }
     });
 

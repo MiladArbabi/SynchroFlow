@@ -57,6 +57,17 @@ export async function aggregateBlockedRevenue(
    * - Aging, delays, likelihoods
    */
 
+  /**
+   * MIGRATION NOTE:
+   * ---------------
+   * Replaces:
+   * - ofs.has_inventory_block
+   * - ofs.has_customer_block
+   * - ofs.has_operational_block
+   *
+   * With:
+   * - order_constraints (canonical, scoped)
+   */
   const row = await db('order_fulfillment_status as ofs')
     .join(
       'order_revenue_units as ru',
@@ -69,10 +80,34 @@ export async function aggregateBlockedRevenue(
       'ofs.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
+    /**
+     * CONSTRAINT CHECK (SOURCE OF TRUTH)
+     * ---------------------------------
+     * MUST use order_constraints (variant-scoped)
+     * DO NOT use fulfillment flags (legacy + incorrect)
+     */
     .andWhere(function () {
-      this.where('ofs.has_inventory_block', true)
-        .orWhere('ofs.has_customer_block', true)
-        .orWhere('ofs.has_operational_block', true);
+      this.whereExists(function () {
+        this.select(1)
+          .from('order_constraints as oc')
+          .whereRaw('oc.lasyncro_order_id = ofs.lasyncro_order_id')
+          .andWhere('oc.constraint_type', 'inventory')
+          .andWhere('oc.is_active', true);
+      })
+      .orWhereExists(function () {
+        this.select(1)
+          .from('order_constraints as oc')
+          .whereRaw('oc.lasyncro_order_id = ofs.lasyncro_order_id')
+          .andWhere('oc.constraint_type', 'customer')
+          .andWhere('oc.is_active', true);
+      })
+      .orWhereExists(function () {
+        this.select(1)
+          .from('order_constraints as oc')
+          .whereRaw('oc.lasyncro_order_id = ofs.lasyncro_order_id')
+          .andWhere('oc.constraint_type', 'operational')
+          .andWhere('oc.is_active', true);
+      });
     })
     .sum<{ sum: string | null }>(
       db.raw('ru.quantity * ru.unit_price')
@@ -112,6 +147,16 @@ export async function aggregatePendingRevenue(
    * Revenue units are the only stable economic primitive.
    */
 
+  /**
+   * MIGRATION NOTE:
+   * ---------------
+   * Replaces all `has_*_block` flags with constraint existence check.
+   *
+   * Guarantees:
+   * - No legacy leakage
+   * - Fully aligned with constraint engine
+   */
+
   const row = await db('order_fulfillment_status as ofs')
     .join(
       'order_revenue_units as ru',
@@ -125,17 +170,16 @@ export async function aggregatePendingRevenue(
     )
     .where('o.shop_id', shopId)
     .andWhere('ofs.status', '!=', 'fulfilled')
-    .andWhere(function () {
-      this.whereNull('ofs.has_inventory_block')
-        .orWhere('ofs.has_inventory_block', false);
-    })
-    .andWhere(function () {
-      this.whereNull('ofs.has_customer_block')
-        .orWhere('ofs.has_customer_block', false);
-    })
-    .andWhere(function () {
-      this.whereNull('ofs.has_operational_block')
-        .orWhere('ofs.has_operational_block', false);
+    /**
+     * UNCONSTRAINED FILTER (SOURCE OF TRUTH)
+     * -------------------------------------
+     * Order MUST have NO active constraints of ANY type.
+     */
+    .whereNotExists(function () {
+      this.select(1)
+        .from('order_constraints as oc')
+        .whereRaw('oc.lasyncro_order_id = ofs.lasyncro_order_id')
+        .andWhere('oc.is_active', true);
     })
     .sum<{ sum: string | null }>(
       db.raw('ru.quantity * ru.unit_price')

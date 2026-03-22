@@ -5,6 +5,20 @@ import { ConstraintType } from '../services/constraints/constraint.types.js';
 import { ConstraintEvaluationResult } from '../services/constraints/constraint.types.js';
 
 /**
+ * ARCHITECTURE CHANGE (EVENT SYSTEM REMOVED)
+ * ------------------------------------------
+ * order_constraint_events has been deprecated.
+ *
+ * Reason:
+ * - Order-level event model incompatible with variant-scoped constraints
+ * - Caused loss of constraints due to uniqueness conflicts
+ *
+ * New model:
+ * - order_constraints is the single source of truth
+ * - lifecycle managed directly via started_at / resolved_at
+ */
+
+/**
  * ORDER CONSTRAINT PROJECTION
  * ---------------------------
  * Maintains lifecycle of constraint events.
@@ -56,7 +70,14 @@ export async function projectOrderConstraints(
     throw new Error('[CONSTRAINT_PROJECTION_INVARIANT] fulfillment status missing');
   }
 
-  const constraintMap: Record<string, boolean> = {};
+  /**
+   * VARIANT-SCOPED CONSTRAINT MAP
+   * -----------------------------
+   * Keyed by: constraint_type + targetId
+   *
+   * Prevents collapsing variant-level signals into order-level false positives.
+   */
+  const constraintMap: Record<string, ConstraintEvaluationResult[]> = {};
 
   /**
    * Canonical constraint type list
@@ -72,20 +93,25 @@ export async function projectOrderConstraints(
   ];
 
   for (const result of evaluations) {
-    constraintMap[result.type] = result.isActive;
+
+    if (!constraintMap[result.type]) {
+      constraintMap[result.type] = [];
+    }
+
+    constraintMap[result.type].push(result);
 
     /**
      * META VISIBILITY (NON-BREAKING)
      * ------------------------------
      * Surface constraint metadata without affecting control logic.
      */
-    if (result.meta) {
+    /* if (result.meta) {
       console.debug('[CONSTRAINT_META]', {
         orderId,
         type: result.type,
         meta: result.meta
       });
-    }
+    } */
   }
 
   /**
@@ -95,17 +121,22 @@ export async function projectOrderConstraints(
    * We restore ConstraintType typing to guarantee
    * projection only emits valid constraint types.
    */
-  for (const type of constraintTypes) {
+  for (const result of evaluations) {
+    const type = result.type;
+    const targetId = result.targetId ?? null;
 
-  const isActive = constraintMap[type];
+    if (!targetId && type === 'inventory') {
+      console.error('[CONSTRAINT_SCOPE_VIOLATION][LOOP]', {
+        orderId,
+        type,
+        reason: 'evaluation missing targetId'
+      });
+    }
 
-    const activeEvent = await trx('order_constraint_events')
-      .where({
-        lasyncro_order_id: orderId,
-        constraint_type: type,
-        is_active: true,
-      })
-      .first();
+    /**
+     * A constraint type is active ONLY if ANY scoped result is active
+     */
+    const isActive = result.isActive === true;
 
     /**
      * Runtime constraint type guard
@@ -119,41 +150,37 @@ export async function projectOrderConstraints(
       );
     }
 
-    if (isActive && !activeEvent) {
+    if (isActive) {
 
       /**
-       * STATE-DRIVEN RECONCILIATION TRIGGER
-       * -----------------------------------
-       * Enqueue reconciliation immediately on constraint activation.
-       * Eliminates dependency on time-based polling.
+       * MULTI-WRITER DETECTION
+       * ----------------------
+       * Detects if multiple projections attempt to write same constraint.
        */
-      await trx('order_reconciliation_intents')
-        .insert({
+      const conflicting = await trx('order_constraints')
+        .where({
           lasyncro_order_id: orderId,
-          aggregate_version: aggregateVersion,
-          observed: JSON.stringify({
-            type: 'constraint_started',
-            at: new Date().toISOString()
-          }),
-          created_at: new Date()
-        })
-        .onConflict(['lasyncro_order_id', 'aggregate_version'])
-        .ignore();
+          constraint_type: type,
+          target_id: targetId,
+          is_active: true
+        });
 
-      const constraintEventId = uuidv5(
-        `${type}:${orderId}:${aggregateVersion}`,
-        CONSTRAINT_EVENT_NAMESPACE
-      );
+      if (conflicting.length > 1) {
+        console.error('[CONSTRAINT_MULTI_WRITER_DETECTED]', {
+          orderId,
+          type,
+          count: conflicting.length,
+          sources: conflicting.map(c => c.write_source)
+        });
+      }
 
-      await trx('order_constraint_events').insert({
-        constraint_event_id: constraintEventId,
-        lasyncro_order_id: orderId,
-        shop_id: shopId,
-        constraint_type: type,
-        started_at: eventAnchor,
-        resolved_at: null,
-        is_active: true,
-      });
+      if (!targetId && type === 'inventory') {
+        console.error('[CONSTRAINT_SCOPE_VIOLATION][QUERY]', {
+          orderId,
+          type,
+          reason: 'query executed without targetId'
+        });
+      }
 
       /**
        * SAFE UPSERT (PARTIAL INDEX COMPATIBLE)
@@ -165,19 +192,46 @@ export async function projectOrderConstraints(
         .where({
           lasyncro_order_id: orderId,
           constraint_type: type,
+          target_id: targetId,
           is_active: true
         })
         .first();
 
       if (!existingConstraint) {
         await trx('order_constraints').insert({
+          /**
+           * SCOPE INVARIANT
+           * ----------------
+           * target_id MUST be persisted to maintain variant-level constraint integrity.
+           * Without this, system collapses to order-level blocking.
+           */
+          target_id: targetId,
+          /**
+           * WRITE ORIGIN TRACE
+           * -------------------
+           * Identifies which projection wrote this row.
+           */
+          write_source: 'orderConstraintProjection',
           constraint_id: uuidv5(
-            `constraint:${type}:${orderId}:${aggregateVersion}`,
+            /**
+             * IDENTITY INVARIANT
+             * ------------------
+             * constraint_id must represent a stable constraint scope:
+             * (order_id + type + target_id)
+             *
+             * MUST NOT include aggregateVersion.
+             *
+             * Including version causes:
+             * - duplicate rows
+             * - broken upsert logic
+             * - unbounded growth
+             */
+            `constraint:${type}:${orderId}:${targetId}`,
             CONSTRAINT_EVENT_NAMESPACE
           ),
           lasyncro_order_id: orderId,
           constraint_type: type,
-          block_type: evaluations.find(e => e.type === type)?.meta?.blockType ?? null,
+          block_type: result.meta?.blockType ?? null,
           started_at: eventAnchor,
           resolved_at: null,
           is_active: true,
@@ -187,25 +241,35 @@ export async function projectOrderConstraints(
         await trx('order_constraints')
           .where({ constraint_id: existingConstraint.constraint_id })
           .update({
-            block_type: evaluations.find(e => e.type === type)?.meta?.blockType ?? null,
+            /**
+             * SCOPE INVARIANT (WRITE-THROUGH)
+             * --------------------------------
+             * target_id must always be persisted on update to avoid scope drift.
+             */
+            target_id: targetId,
+            block_type: result.meta?.blockType ?? null,
             started_at: eventAnchor,
             resolved_at: null,
-            is_active: true
+            is_active: true,
+
+            /**
+             * WRITE ORIGIN TRACE
+             */
+            write_source: 'orderConstraintProjection'
           });
       }
 
     }
 
-    if (!isActive && activeEvent) {
+    if (!isActive) {
 
-      await trx('order_constraint_events')
-        .where({
-          constraint_event_id: activeEvent.constraint_event_id
-        })
-        .update({
-          resolved_at: eventAnchor,
-          is_active: false,
+      if (!targetId && type === 'inventory') {
+        console.error('[CONSTRAINT_SCOPE_VIOLATION][RESOLUTION]', {
+          orderId,
+          type,
+          reason: 'missing targetId during resolution'
         });
+      }
 
       /**
        * UNIFIED CONSTRAINT MODEL WRITE (RESOLUTION)
@@ -215,31 +279,28 @@ export async function projectOrderConstraints(
         .where({
           lasyncro_order_id: orderId,
           constraint_type: type,
+          target_id: targetId,
           is_active: true
         })
         .update({
           resolved_at: eventAnchor,
-          is_active: false
+          is_active: false,
+
+          /**
+           * WRITE ORIGIN TRACE
+           */
+          write_source: 'orderConstraintProjection'
         });
 
-      /**
-       * STATE-DRIVEN RECONCILIATION TRIGGER
-       * -----------------------------------
-       * Re-evaluate order immediately when constraint resolves.
-       */
-      await trx('order_reconciliation_intents')
-        .insert({
-          lasyncro_order_id: orderId,
-          aggregate_version: aggregateVersion,
-          observed: JSON.stringify({
-            type: 'constraint_resolved',
-            at: new Date().toISOString()
-          }),
-          created_at: new Date()
-        })
-        .onConflict(['lasyncro_order_id', 'aggregate_version'])
-        .ignore();
-
+        /**
+         * ARCHITECTURE RULE
+         * ------------------
+         * Projections must NEVER enqueue reconciliation intents.
+         *
+         * Control flow is strictly event-driven.
+         * Allowing projections to enqueue intents creates feedback loops
+         * and breaks rebuild determinism.
+         */
     }
   }
 }

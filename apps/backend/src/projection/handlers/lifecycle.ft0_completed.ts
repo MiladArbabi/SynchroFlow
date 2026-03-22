@@ -10,17 +10,14 @@
  * Dynamic import preserved.
  */
 
-import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { Knex } from 'knex';
-import { advanceCursor } from '../projection.engine.js';
 
 const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 
 export async function handleLifecycleFT0Completed({
   domainEvent,
   domain_event_id,
-  canonicalEventTime,
   trx,
 }: {
   domainEvent: any;

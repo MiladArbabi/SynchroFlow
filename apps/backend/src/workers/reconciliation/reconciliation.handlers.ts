@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
 import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
 import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
+import { ConstraintEvaluationResult } from '../../services/constraints/constraint.types.js';
 
 import { projectOrderAge } from '../../projections/orderAgeProjection.js';
 import { projectOrderRisk } from '../../projections/orderRiskProjection.js';
@@ -154,10 +155,10 @@ export async function reconcileOrderFulfillment(
      * This guarantees rebuild correctness.
      */
     if (syntheticMode) {
-      console.debug('[RECONCILIATION_SYNTHETIC_MODE]', {
+      /* console.debug('[RECONCILIATION_SYNTHETIC_MODE]', {
         order: lasyncroOrderId,
         aggregateVersion,
-      });
+      }); */
     }
 
     /**
@@ -273,6 +274,48 @@ export async function reconcileOrderFulfillment(
       );
     };
 
+    /**
+     * INVENTORY FAN-OUT RECONCILIATION
+     * --------------------------------
+     * Inventory changes affect ALL orders sharing the variant.
+     *
+     * We must enqueue reconciliation for those orders to:
+     * - resolve stale constraints
+     * - maintain correctness of allocation
+     *
+     * This is the ONLY valid place to trigger reconciliation
+     * from state change (inventory domain event).
+     */
+    const impactedOrders = await trx('order_revenue_units')
+      .distinct('lasyncro_order_id')
+      .whereIn('lasyncro_variant_id', affectedVariantIds);
+
+    /**
+     * REBUILD SAFETY GUARD
+     * --------------------
+     * During rebuild:
+     * - intents MUST NOT be created
+     * - processor requires zero backlog
+     *
+     * Fan-out reconciliation is ONLY valid in runtime mode.
+     */
+    if (process.env.REBUILD_MODE !== 'true') {
+      for (const row of impactedOrders) {
+        await trx('order_reconciliation_intents')
+          .insert({
+            lasyncro_order_id: row.lasyncro_order_id,
+            aggregate_version: aggregateVersion,
+            observed: JSON.stringify({
+              type: 'inventory_changed',
+              at: new Date().toISOString()
+            }),
+            created_at: new Date()
+          })
+          .onConflict(['lasyncro_order_id', 'aggregate_version'])
+          .ignore();
+      }
+    }
+
     assertProjectionRegistered('orderFulfillmentProjection');
 
     /**
@@ -338,21 +381,6 @@ export async function reconcileOrderFulfillment(
       }
     });
 
-    /**
-     * INVENTORY CONSTRAINT PROJECTION
-     * --------------------------------
-     * Oversell classification projection.
-     *
-     * Wrapped with instrumentation so projection latency
-     * becomes visible in reconciliation runtime telemetry.
-     */
-    await instrumentProjection('orderInventoryConstraintProjection', async () =>
-      projectOrderInventoryConstraints(
-        trx,
-        affectedOrders.map(o => o.lasyncro_order_id)
-      )
-    );
-
     await instrumentProjection('orderCustomerConstraintProjection', async () =>
       projectOrderCustomerConstraints(
         trx,
@@ -385,40 +413,50 @@ export async function reconcileOrderFulfillment(
      * NOTE:
      * This is a safe first step toward full delta system.
      */
-    let constraintEvaluations;
+    let constraintEvaluations: ConstraintEvaluationResult[];
 
-    const isConstraintRelevant =
-      !observed || observed.source !== 'shopify_sync';
-
-    if (!isConstraintRelevant) {
-      console.debug('[CONSTRAINT_EVAL_SKIPPED]', {
-        orderId: lasyncroOrderId,
-        reason: 'non-constraint trigger',
-        observed
-      });
-
-      constraintEvaluations = [
-        { type: 'inventory', isActive: false },
-        { type: 'customer', isActive: false },
-        { type: 'operational', isActive: false }
-      ];
-    } else {
-      constraintEvaluations = await evaluateOrderConstraints(
-        trx,
-        lasyncroOrderId,
-        order.shop_id
-      );
-    }
-
-    // MUST derive from constraint engine (single source-of-truth)
-    // prevents drift between DB flags and actual constraint state
-    const constraintMap = Object.fromEntries(
-      constraintEvaluations.map(c => [c.type, c.isActive])
+    /**
+     * CONSTRAINT EVALUATION (STRICT)
+     * ------------------------------
+     * Constraint engine must ALWAYS run.
+     *
+     * Delta-skipping breaks:
+     * - variant-level correctness
+     * - constraint persistence
+     * - reconciliation integrity
+     */
+    constraintEvaluations = await evaluateOrderConstraints(
+      trx,
+      lasyncroOrderId,
+      order.shop_id
+    );
+    /**
+     * SCOPED CONSTRAINT MODEL
+     * ------------------------
+     * Preserve variant-level constraint visibility.
+     */
+    const inventoryConstraints = constraintEvaluations.filter(
+      c => c.type === 'inventory' && c.isActive === true
     );
 
-    const isInventoryBlocked = constraintMap['inventory'] === true;
-    const isCustomerBlocked = constraintMap['customer'] === true;
-    const isOperationalBlocked = constraintMap['operational'] === true;
+    const customerConstraints = constraintEvaluations.filter(
+      c => c.type === 'customer' && c.isActive === true
+    );
+
+    const operationalConstraints = constraintEvaluations.filter(
+      c => c.type === 'operational' && c.isActive === true
+    );
+
+    const isInventoryBlocked = inventoryConstraints.length > 0;
+    const isCustomerBlocked = customerConstraints.length > 0;
+    const isOperationalBlocked = operationalConstraints.length > 0;
+
+    console.debug('[RECONCILIATION_CONSTRAINT_STATE_SCOPED]', {
+      orderId: lasyncroOrderId,
+      inventory: inventoryConstraints.map(c => c.targetId),
+      customer: customerConstraints.length,
+      operational: operationalConstraints.length
+    });
 
     /* console.debug('[RECONCILIATION_CONSTRAINT_STATE]', {
       orderId: lasyncroOrderId,
@@ -427,6 +465,16 @@ export async function reconcileOrderFulfillment(
       operational: isOperationalBlocked
     }); */
 
+    /**
+     * CONSTRAINT PERSISTENCE (CRITICAL ORDER)
+     * ---------------------------------------
+     * Constraints MUST be written BEFORE enforcement.
+     *
+     * Otherwise:
+     * - system blocks execution
+     * - but never records WHY
+     * - leading to empty constraint table
+     */
     await instrumentProjection('orderConstraintProjection', async () =>
       projectOrderConstraints(
         trx,
@@ -437,6 +485,37 @@ export async function reconcileOrderFulfillment(
         constraintEvaluations
       )
     );
+
+    /**
+     * HARD CONSTRAINT ENFORCEMENT GATE
+     * --------------------------------
+     * Reconciliation MUST NOT proceed when any constraint is active.
+     *
+     * This is the system's control boundary.
+     *
+     * Without this:
+     * - constraints are informational only
+     * - system becomes non-deterministic
+     */
+    if (isInventoryBlocked || isCustomerBlocked || isOperationalBlocked) {
+      console.warn('[RECONCILIATION_BLOCKED_BY_CONSTRAINTS]', {
+        orderId: lasyncroOrderId,
+        inventory: isInventoryBlocked,
+        customer: isCustomerBlocked,
+        operational: isOperationalBlocked
+      });
+
+      /**
+       * HARD STOP (TYPE-SAFE)
+       * ---------------------
+       * Reconciliation halted due to active constraints.
+       * Returns neutral result to preserve contract.
+       */
+      return {
+        result: 'synthetic', // indicates no real execution occurred
+        affectedVariantIds: []
+      };
+    };
 
     /**
      * CONTROL LOOP STABILIZATION

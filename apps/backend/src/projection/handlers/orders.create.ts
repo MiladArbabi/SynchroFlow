@@ -88,18 +88,27 @@ export async function handleOrdersCreate({
   if (!existingOrder) {
 
     /**
-     * MONETARY FIELD RESOLUTION (CANONICAL-FIRST)
-     * -------------------------------------------
-     * If canonical payload exists, NEVER fallback to raw fields.
+     * CURRENCY INVARIANT ENFORCEMENT
+     * ------------------------------
+     * Currency is a non-null domain invariant.
+     * Must be resolved BEFORE persistence.
      */
-    const isCanonical = !!(domainEvent as any).canonical_payload;
+    const currency =
+      payload.currency ?? payload.currencyCode;
+
+    if (!currency) {
+      throw new Error('[ORDERS_CREATE] Currency missing from both canonical and raw');
+    }
 
     const totalPrice =
-      isCanonical
-        ? payload.totalPrice ?? null
-        : payload.totalPriceSet?.shopMoney?.amount != null
-          ? Number(payload.totalPriceSet.shopMoney.amount)
-          : payload.total_price ?? null;
+      payload.totalPrice ??
+      (payload.totalPriceSet?.shopMoney?.amount != null
+        ? Number(payload.totalPriceSet.shopMoney.amount)
+        : payload.total_price);
+
+    if (totalPrice == null) {
+      throw new Error('[ORDERS_CREATE] total_price is required');
+    }
 
     await trx('orders').insert({
       lasyncro_order_id: lasyncroOrderId,
@@ -107,26 +116,23 @@ export async function handleOrdersCreate({
       /**
        * CURRENCY RESOLUTION (CANONICAL-FIRST)
        */
-      currency: isCanonical
-        ? payload.currency ?? null
-        : payload.currencyCode ?? payload.currency ?? null,
+      currency,
       total_price: totalPrice,
       /**
        * SUBTOTAL RESOLUTION (CANONICAL-FIRST)
        */
-      subtotal_price: isCanonical
-        ? payload.subtotalPrice ?? null
-        : payload.subtotalPriceSet?.shopMoney?.amount != null
+      subtotal_price:
+        payload.subtotalPrice ??
+        (payload.subtotalPriceSet?.shopMoney?.amount != null
           ? Number(payload.subtotalPriceSet.shopMoney.amount)
-          : payload.subtotal_price ?? null,
-      /**
-       * TAX RESOLUTION (CANONICAL-FIRST)
-       */
-      total_tax: isCanonical
-        ? payload.totalTax ?? null
-        : payload.totalTaxSet?.shopMoney?.amount != null
+          : null),
+
+      total_tax:
+        payload.totalTax ??
+        (payload.totalTaxSet?.shopMoney?.amount != null
           ? Number(payload.totalTaxSet.shopMoney.amount)
-          : payload.total_tax ?? null,
+          : null),
+
       order_created_at: canonicalEventTime,
       order_updated_at: canonicalEventTime,
       payment_state: paymentState,
@@ -290,6 +296,15 @@ export async function handleOrdersCreate({
     await OrderFulfillmentIngestionService.ingestStatus(
       {
         lasyncroOrderId,
+
+        /**
+         * SOURCE OF TRUTH
+         * ----------------
+         * shopId must come from domain event.
+         * Projections must not invent context.
+         */
+        shopId: domainEvent.shop_id,
+
         status: baselineStatus,
         canonicalEventTime: new Date(domainEvent.event_time),
       },

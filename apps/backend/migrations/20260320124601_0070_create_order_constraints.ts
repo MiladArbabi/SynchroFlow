@@ -25,6 +25,16 @@ export async function up(knex: Knex): Promise<void> {
       .onDelete('CASCADE');
 
     /**
+     * TARGET SCOPE
+     * ------------
+     * Optional entity this constraint applies to.
+     * Example: variant_id for inventory constraints.
+     *
+     * REQUIRED to prevent order-level false positives.
+     */
+    table.uuid('target_id').nullable();
+
+    /**
      * Constraint category
      * -------------------
      * inventory | customer | operational
@@ -46,6 +56,18 @@ export async function up(knex: Knex): Promise<void> {
 
     table.boolean('is_active').notNullable().defaultTo(true);
 
+    /**
+     * WRITE ORIGIN TRACE
+     * -------------------
+     * Identifies which projection/service wrote the constraint.
+     *
+     * REQUIRED for:
+     * - multi-writer detection
+     * - debugging race conditions
+     * - auditability of constraint lifecycle
+     */
+    table.text('write_source').nullable();
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
@@ -55,14 +77,15 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['is_active']);
   });
 
-    /**
-     * PARTIAL UNIQUE INDEX (POSTGRES)
-     * ------------------------------
-     * Must be created AFTER table exists.
-     */
+/**
+ * SCOPE-AWARE UNIQUENESS
+ * ----------------------
+ * Allows multiple constraints per order per type
+ * as long as they apply to different targets.
+ */
   await knex.raw(`
-    CREATE UNIQUE INDEX uniq_active_constraint_per_type
-    ON order_constraints (lasyncro_order_id, constraint_type)
+    CREATE UNIQUE INDEX uniq_active_constraint_per_scope
+    ON order_constraints (lasyncro_order_id, constraint_type, target_id)
     WHERE is_active = true;
   `);
 }

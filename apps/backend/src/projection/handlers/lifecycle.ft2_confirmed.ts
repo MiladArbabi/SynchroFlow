@@ -1,9 +1,5 @@
 // apps/backend/src/projection/handlers/lifecycle.ft2_confirmed.ts
-
-import db from '@lasyncro/backend-core/db.js';
-import crypto from 'crypto';
 import { Knex } from 'knex';
-import { advanceCursor } from '../projection.engine.js';
 
 /**
  * PROJECTION STREAM

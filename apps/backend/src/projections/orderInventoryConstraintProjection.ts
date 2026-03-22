@@ -21,10 +21,47 @@ import { v5 as uuidv5 } from 'uuid';
 
 const CONSTRAINT_NAMESPACE = 'a9b7c6d4-4f8a-4c1b-b7b6-1c9a2e5d7f91';
 
+
+
 export async function projectOrderInventoryConstraints(
   trx: Knex.Transaction,
   orderIds: string[]
 ): Promise<void> {
+
+    /**
+   * CRITICAL: DISABLED (SCHEMA MIGRATION)
+   * -------------------------------------
+   * This projection is order-level and incompatible with
+   * variant-scoped constraint system (target_id).
+   *
+   * It WILL corrupt constraint table by overwriting scoped rows.
+   *
+   * Replaced by:
+   * - constraintEngine (evaluation)
+   * - orderConstraintProjection (scoped persistence)
+   */
+  console.error('[PROJECTION_DISABLED][orderInventoryConstraintProjection]', {
+    orderIds,
+    reason: 'order-level projection incompatible with scoped constraints'
+  });
+
+  /**
+   * HARD GUARD — DO NOT REMOVE
+   * --------------------------
+   * This file contains legacy order-level constraint logic.
+   *
+   * It MUST NEVER:
+   * - write to order_constraints
+   * - be re-enabled
+   *
+   * Reason:
+   * Violates variant-scoped constraint model (target_id)
+   *
+   * If triggered → system corruption risk.
+   */
+  throw new Error('[FATAL][LEGACY_PROJECTION_EXECUTION_ATTEMPT]');
+  
+  return;
 
   if (orderIds.length === 0) return;
   let blockedCount = 0;
@@ -160,12 +197,12 @@ export async function projectOrderInventoryConstraints(
       });
     }
 
-    if (next) {
+    /* if (next) {
       console.debug('[INVENTORY_BLOCK_ACTIVE]', {
         orderId: update.lasyncro_order_id,
         blockType: next
       });
-    }
+    } */
   }
 
   console.debug('[inventory_constraint_projection.completed]', {

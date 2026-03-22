@@ -45,6 +45,23 @@ export async function up(knex: Knex): Promise<void> {
     table.boolean('is_at_risk').notNullable();
 
     /**
+     * INVENTORY BLOCKED REVENUE (VARIANT-SCOPED)
+     * ------------------------------------------
+     * Total revenue tied ONLY to constrained variants.
+     *
+     * Source:
+     * - order_constraints.target_id
+     * - joined with order_revenue_units
+     *
+     * REQUIRED:
+     * - Enables correct financial impact visibility
+     * - Replaces legacy boolean-only interpretation
+     */
+    table.decimal('inventory_blocked_revenue', 14, 2)
+      .notNullable()
+      .defaultTo(0);
+
+    /**
      * PREDICTIVE RISK LAYER
      * ---------------------
      * Model-driven probabilistic fields.

@@ -117,10 +117,24 @@ export async function up(knex: Knex): Promise<void> {
     );
   });
 
+  /**
+   * INVENTORY QUANTITY CONSTRAINT
+   * ----------------------------
+   * Zero quantity is ONLY valid for opening_balance.
+   *
+   * Rationale:
+   * - Required to explicitly represent zero-stock baseline
+   * - Prevents "missing variant" ambiguity in projection
+   * - Preserves invariant:
+   *     inventory_truth = SUM(inventory_movements)
+   */
   await knex.schema.raw(`
     ALTER TABLE inventory_movements
     ADD CONSTRAINT inventory_quantity_nonzero_check
-    CHECK (quantity_delta <> 0);
+    CHECK (
+      quantity_delta <> 0
+      OR movement_type = 'opening_balance'
+    );
   `);
 
     await knex.schema.raw(`

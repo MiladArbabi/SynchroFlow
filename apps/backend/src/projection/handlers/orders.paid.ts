@@ -1,7 +1,5 @@
-import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
-import { advanceCursor } from '../projection.engine.js';
 
 const ORDERS_PROJECTION = 'orders_projection';
 

@@ -45,9 +45,9 @@ export async function projectOrderOperationalConstraints(
       .first();
 
     if (!exists) {
-      console.warn('[OPERATIONAL_PROJECTION_SKIPPED_NO_FULFILLMENT]', {
+      /* console.warn('[OPERATIONAL_PROJECTION_SKIPPED_NO_FULFILLMENT]', {
         orderId
-      });
+      }); */
       continue;
     }
 
@@ -68,12 +68,12 @@ export async function projectOrderOperationalConstraints(
   for (const orderId of orderIds) {
 
     // EXPLICIT VISIBILITY: skipped write due to missing evaluation
-    if (!results.has(orderId)) {
+    /* if (!results.has(orderId)) {
       console.warn('[OPERATIONAL_PROJECTION_WRITE_SKIPPED_NO_EVALUATION]', {
         orderId
       });
       continue;
-    }
+    } */
 
     const isBlocked = results.get(orderId) === true;
 
@@ -113,12 +113,12 @@ export async function projectOrderOperationalConstraints(
     }
 
     // logging
-    if (blockType) {
+    /* if (blockType) {
       console.debug('[OPERATIONAL_BLOCK_ACTIVE]', {
         orderId,
         blockType
       });
-    }
+    } */
   }
 
   /**
