@@ -166,11 +166,19 @@ export async function up(knex: Knex): Promise<void> {
         .notNullable()
         .defaultTo(0);
 
+      table.integer('aging_72h')
+        .notNullable()
+        .defaultTo(0);
+
       table.integer('aging_72h_plus')
         .notNullable()
         .defaultTo(0);
 
       table.integer('pending_fulfillment')
+        .notNullable()
+        .defaultTo(0);
+
+      table.integer('fulfilled_orders')
         .notNullable()
         .defaultTo(0);
 

@@ -20,7 +20,7 @@ export type SnapshotMetrics = {
   exceptionOrders: number;
   constrainedOrders: number;
 
-  agingUnder24h: number;
+  aging24h: number;
   aging48h: number;
   aging72hPlus: number;
 
@@ -33,6 +33,8 @@ export type SnapshotMetrics = {
   queueReadyToShip: number;
 
   readyToShipRevenue: number;
+
+  fulfilledOrders: number;
 
   oldestExceptionOrderAgeHours: number;
   revenueLeakage: number;

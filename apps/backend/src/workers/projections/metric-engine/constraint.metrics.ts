@@ -65,11 +65,20 @@ export async function computeConstraintMetrics(
     revenueBlockedCustomer +
     revenueBlockedOperational;
 
-  const constrainedOrdersRow = await trx('order_constraints as oc')
-    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+  /**
+   * CRITICAL: derive constrained orders at ORDER level
+   * Prevents duplication from multiple constraint rows per order
+   */
+  const constrainedOrdersRow = await trx('orders as o')
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .countDistinct('oc.lasyncro_order_id as count')
+    .whereExists(
+      trx('order_constraints as oc')
+        .select(1)
+        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('oc.is_active', true)
+    )
+    .count('o.lasyncro_order_id as count')
     .first();
 
   const constrainedOrders = Number(

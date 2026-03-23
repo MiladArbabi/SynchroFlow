@@ -10,17 +10,25 @@ export async function computeSlaMetrics(
   shopId: string,
   snapshotCutoff: Date
 ) {
+  
+  /**
+   * CRITICAL DESIGN:
+   * SLA metrics must NOT filter by order_created_at.
+   * order_age_snapshot already encodes time-relative state.
+   * Filtering by creation time corrupts aging distributions.
+   */
+
   const agingBuckets = await trx('order_age_snapshot as oas')
     .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
     .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
     /**
      * DB CONTRACT: replace raw aggregation with explicit typed select
      * Ensures schema visibility and future type inference compatibility
      */
     .select([
-      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds < 86400) as aging_under_24h'),
-      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds BETWEEN 86400 AND 172800) as aging_48h'),
+      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds < 86400) as aging_24h'),
+      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds >= 86400 AND oas.age_since_creation_seconds < 172800) as aging_48h'),
+      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds >= 172800 AND oas.age_since_creation_seconds < 259200) as aging_72h'),
       trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds >= 259200) as aging_72h_plus'),
     ])
     .first();
@@ -30,8 +38,9 @@ export async function computeSlaMetrics(
    * Prevents silent runtime failures from unknown structures
    */
   type AgingBucketsRow = {
-    aging_under_24h: number | string | null;
+    aging_24h: number | string | null;
     aging_48h: number | string | null;
+    aging_72h: number | string | null;
     aging_72h_plus: number | string | null;
   };
 
@@ -41,14 +50,14 @@ export async function computeSlaMetrics(
     throw new Error('[sla.metrics] Missing agingBuckets row — DB contract violation');
   }
 
-  const agingUnder24h = Number(buckets.aging_under_24h ?? 0);
+  const aging24h = Number(buckets.aging_24h ?? 0);
   const aging48h = Number(buckets.aging_48h ?? 0);
+  const aging72h = Number(buckets.aging_72h ?? 0);
   const aging72hPlus = Number(buckets.aging_72h_plus ?? 0);
 
   const ordersAtSlaRiskRow = await trx('order_age_snapshot as oas')
     .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
     .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
     .andWhere('oas.age_since_creation_seconds', '>=', 86400)
     .count('* as count')
     .first();
@@ -65,7 +74,6 @@ export async function computeSlaMetrics(
 
   const slaBreach24hRevenueRow = await trx('orders as o')
     .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
     .andWhere('o.payment_state', 'paid')
     .whereNotExists(
       trx('order_fulfillment_status as ofs')
@@ -87,8 +95,9 @@ export async function computeSlaMetrics(
   const slaBreach24hRevenue = Number(breachRow.sum ?? 0);
 
   return {
-    agingUnder24h,
+    aging24h,
     aging48h,
+    aging72h,
     aging72hPlus,
     ordersAtSlaRisk,
     slaBreach24hRevenue,

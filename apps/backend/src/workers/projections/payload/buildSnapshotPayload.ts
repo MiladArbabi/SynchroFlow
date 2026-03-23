@@ -32,7 +32,7 @@ export function buildSnapshotPayload(
     pendingFulfillment,
     exceptionOrders,
     constrainedOrders,
-    agingUnder24h,
+    aging24h,
     aging48h,
     aging72hPlus,
     ordersAtSlaRisk,
@@ -44,6 +44,7 @@ export function buildSnapshotPayload(
     oldestExceptionOrderAgeHours,
     revenueLeakage,
     aggregateVersion,
+    fulfilledOrders,
   } = metrics;
 
   const totalGMV =
@@ -75,7 +76,7 @@ export function buildSnapshotPayload(
     total_gmv: totalGMV,
     avg_contribution_margin_pct: avgContributionMarginPct,
 
-    aging_under_24h: agingUnder24h,
+    aging_24h: aging24h,
     aging_48h: aging48h,
     aging_72h_plus: aging72hPlus,
 
@@ -86,6 +87,7 @@ export function buildSnapshotPayload(
 
     revenue_leakage: revenueLeakage,
 
+    fulfilled_orders: fulfilledOrders,
     pending_fulfillment: pendingFulfillment,
     exception_orders: exceptionOrders,
 

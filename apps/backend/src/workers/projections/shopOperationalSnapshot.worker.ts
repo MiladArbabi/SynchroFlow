@@ -133,24 +133,14 @@ export async function computeShopOperationalSnapshot(
     };
 
     /**
-     * METRIC ORCHESTRATION — PARALLELIZED
-     * -----------------------------------
-     * All metric modules are independent.
-     * Execute in parallel for latency reduction.
+     * CRITICAL: sequential execution to prevent advisory lock deadlocks
+     * Parallel execution caused lock contention inside shared transaction
      */
-    const [
-      revenueMetrics,
-      constraintMetrics,
-      slaMetrics,
-      queueMetrics,
-      miscMetrics,
-    ] = await Promise.all([
-      computeRevenueMetrics(trx, shopId, snapshotContext.snapshotCutoff),
-      computeConstraintMetrics(trx, shopId, snapshotContext.snapshotCutoff),
-      computeSlaMetrics(trx, shopId, snapshotContext.snapshotCutoff),
-      computeQueueMetrics(trx, shopId, snapshotContext.snapshotCutoff),
-      computeMiscMetrics(trx, shopId, snapshotContext.snapshotCutoff),
-    ]);
+    const revenueMetrics = await computeRevenueMetrics(trx, shopId, snapshotContext.snapshotCutoff);
+    const constraintMetrics = await computeConstraintMetrics(trx, shopId, snapshotContext.snapshotCutoff);
+    const slaMetrics = await computeSlaMetrics(trx, shopId, snapshotContext.snapshotCutoff);
+    const queueMetrics = await computeQueueMetrics(trx, shopId, snapshotContext.snapshotCutoff);
+    const miscMetrics = await computeMiscMetrics(trx, shopId, snapshotContext.snapshotCutoff);
 
     const {
       realizedRevenue,
@@ -167,7 +157,7 @@ export async function computeShopOperationalSnapshot(
     } = constraintMetrics;
 
     const {
-      agingUnder24h,
+      aging24h,
       aging48h,
       aging72hPlus,
       ordersAtSlaRisk,
@@ -180,6 +170,7 @@ export async function computeShopOperationalSnapshot(
       queueAwaitingCustomer,
       queueReadyToShip,
       readyToShipRevenue,
+      fulfilledOrders
     } = queueMetrics;
 
     const {
@@ -222,7 +213,7 @@ export async function computeShopOperationalSnapshot(
             pendingFulfillment,
             exceptionOrders,
             constrainedOrders,
-            agingUnder24h,
+            aging24h,
             aging48h,
             aging72hPlus,
             ordersAtSlaRisk,
@@ -235,8 +226,8 @@ export async function computeShopOperationalSnapshot(
             oldestExceptionOrderAgeHours,
             revenueLeakage,
             aggregateVersion,
-        }
-        );
+            fulfilledOrders,
+        });
 
         log.debug('SNAPSHOT_PAYLOAD', { shopId });
 

@@ -111,44 +111,6 @@ export class OrderFulfillmentIngestionService {
       );
     };
 
-    /**
-     * CONSTRAINT ENFORCEMENT REMOVED (ARCHITECTURAL FIX)
-     * -------------------------------------------------
-     * Constraint evaluation MUST NOT occur during ingestion.
-     *
-     * Reasons:
-     * - Ingestion runs before system state is stable
-     * - Causes invariant violations during rebuild
-     * - Breaks deterministic replay
-     *
-     * Enforcement is handled in:
-     * → reconciliation.handlers.ts (single source of truth)
-     */
-
-    /* console.log('[INGEST]', lasyncroOrderId, status); */
-
-    /**
-     * REBUILD SAFETY GUARD
-     * --------------------
-     * During projection replay, constraint engine may be invoked
-     * before fulfillment baseline is fully materialized.
-     *
-     * This guard prevents invariant violations by skipping
-     * constraint evaluation until baseline exists.
-     */
-    const baselineExists = await executor('order_fulfillment_status')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .first();
-
-    if (!baselineExists) {
-      /* console.warn('[CONSTRAINT_ENGINE_SKIPPED_NO_BASELINE]', {
-        lasyncroOrderId,
-        status
-      }); */
-
-      return;
-    }
-
     // Fetch existing state (transaction-safe)
     const existing = await executor('order_fulfillment_status')
       .where({ lasyncro_order_id: lasyncroOrderId })

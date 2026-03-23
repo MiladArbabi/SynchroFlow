@@ -20,15 +20,21 @@ export async function backfillFulfillmentEvent({
   eventTime: Date;
 }) {
 
-  if (fulfillmentStatus !== 'fulfilled') return;
+  /**
+   * CRITICAL: always emit fulfillment state
+   * ---------------------------------------
+   * Event sourcing requires full state reconstruction.
+   * Missing events = corrupted projections.
+   */
+  if (!fulfillmentStatus) return;
 
   await db('domain_events')
     .insert({
       shop_id: shopId,
-      event_type: 'orders.fulfilled',
+      event_type: 'orders.fulfillment_status_updated',
       event_payload: {
         order_id: orderId,
-        status: 'fulfilled',
+        status: fulfillmentStatus,
       },
       event_time: eventTime,
       event_version: 1,

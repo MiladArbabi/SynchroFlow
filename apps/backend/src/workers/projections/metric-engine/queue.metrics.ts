@@ -76,11 +76,32 @@ export async function computeQueueMetrics(
     requireRow(readyToShipRevenueRow as SumRow | undefined, 'readyToShipRevenueRow').sum ?? 0
   );
 
+  /**
+   * CRITICAL: explicit fulfilled orders metric
+   * Avoids reliance on inverse logic (total - pending)
+   */
+  const fulfilledOrdersRow = await trx('orders as o')
+    .where({ shop_id: shopId })
+    .andWhere('order_created_at', '<=', snapshotCutoff)
+    .whereExists(
+      trx('order_fulfillment_status as ofs')
+        .select(1)
+        .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('ofs.status', 'fulfilled')
+    )
+    .count('o.lasyncro_order_id as count')
+    .first();
+
+  const fulfilledOrders = Number(
+    (fulfilledOrdersRow as { count: number | string | null })?.count ?? 0
+  );
+
   return {
     queueManualReview,
     queueAwaitingInventory,
     queueAwaitingCustomer,
     queueReadyToShip,
     readyToShipRevenue,
+    fulfilledOrders,
   };
 }

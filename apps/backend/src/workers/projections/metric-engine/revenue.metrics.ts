@@ -37,15 +37,19 @@ export async function computeRevenueMetrics(
 
   const pendingRevenueRow = await trx('order_revenue_units_net as runet')
     .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-    .join(
-      'order_fulfillment_status as ofs',
-      'ofs.lasyncro_order_id',
-      'o.lasyncro_order_id'
-    )
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '<=', snapshotCutoff)
     .andWhere('o.payment_state', 'paid')
-    .andWhereNot('ofs.status', 'fulfilled')
+    /**
+     * CRITICAL: enforce single fulfillment truth via NOT EXISTS
+     * Prevents row multiplication from multiple fulfillment records
+     */
+    .whereNotExists(
+      trx('order_fulfillment_status as ofs')
+        .select(1)
+        .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('ofs.status', 'fulfilled')
+    )
     .sum('runet.net_revenue as sum')
     .first();
 

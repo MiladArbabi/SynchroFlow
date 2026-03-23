@@ -33,11 +33,10 @@ export async function computeMiscMetrics(
 
   const aggregateVersion = Number(cursorRow?.last_processed_event_id ?? 1);
 
-  const avgMarginRow = await trx('order_revenue_units_net as runet')
-    .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
+  const avgMarginRow = await trx('order_margin_snapshot as oms')
+    .join('orders as o', 'o.lasyncro_order_id', 'oms.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .join('order_margin_snapshot as oms', 'oms.lasyncro_order_id', 'runet.lasyncro_order_id')
     .avg('oms.margin_pct as avg')
     .first();
 
@@ -89,8 +88,19 @@ export async function computeMiscMetrics(
     ) / 3600
   );
 
+    /**
+     * CRITICAL: enforce ownership join integrity
+     * refund_executions has NO shop_id → MUST always join via orders
+     * This guard prevents silent cross-shop leakage if join breaks
+     */
+    if (!shopId) {
+      throw new Error('[misc.metrics] shopId missing for refund_executions join');
+    }
+
   const revenueLeakageRow = await trx('refund_executions as re')
-    .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
+    .join('orders as o', function () {
+      this.on('o.lasyncro_order_id', '=', 're.lasyncro_order_id');
+    })
     /**
      * DB CONTRACT:
      * refund_executions has NO shop_id
@@ -104,6 +114,13 @@ export async function computeMiscMetrics(
   const revenueLeakage = Number(
     requireRow(revenueLeakageRow as SumRow | undefined, 'revenueLeakageRow').sum ?? 0
   );
+
+  /**
+   * DEBUG SIGNAL: detect unexpected null/NaN leakage
+   */
+  if (Number.isNaN(revenueLeakage)) {
+    throw new Error('[misc.metrics] revenueLeakage NaN — possible join or schema break');
+  }
 
   return {
     aggregateVersion,
