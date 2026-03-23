@@ -261,43 +261,6 @@ export async function processDomainEvent(
     })
     .delete();
 
-  /**
-   * REBUILD SNAPSHOT DEFERRED EXECUTION (DEADLOCK SAFE)
-   * --------------------------------------------------
-   * Snapshot MUST NOT run inside reconciliation transaction.
-   *
-   * We defer execution to next tick to release all DB locks.
-   */
-  if (process.env.REBUILD_MODE === 'true') {
-    const { computeShopOperationalSnapshot } = await import(
-      '../workers/projections/shopOperationalSnapshot.worker.js'
-    );
-
-    const shopRow = await db('orders')
-      .where({ lasyncro_order_id: intent.lasyncro_order_id })
-      .select('shop_id')
-      .first();
-
-    if (shopRow?.shop_id) {
-      setImmediate(async () => {
-        try {
-          await computeShopOperationalSnapshot(
-            shopRow.shop_id,
-            new Date(domainEventRow.event_time)
-          );
-
-          console.debug('[REBUILD][SNAPSHOT_EXECUTED]', {
-            shopId: shopRow.shop_id,
-            orderId: intent.lasyncro_order_id,
-            mode: 'deferred'
-          });
-        } catch (err) {
-          console.error('[REBUILD][SNAPSHOT_FAILED]', err);
-        }
-      });
-    }
-  }
-
   const shopRow = await db('orders')
     .where({ lasyncro_order_id: intent.lasyncro_order_id })
     .select('shop_id')
@@ -316,13 +279,40 @@ export async function processDomainEvent(
      *
      * Worker entrypoint will pick up pending jobs.
      */
+
+    /**
+     * UNIFIED SNAPSHOT EXECUTION MODEL
+     * --------------------------------
+     * ALL snapshot computation (runtime + rebuild)
+     * MUST go through job queue.
+     *
+     * No inline execution allowed.
+     * Guarantees:
+     * - deterministic behavior
+     * - identical runtime/rebuild semantics
+     * - no transaction leakage or deadlocks
+     */
     await db('shop_snapshot_jobs')
       .insert({
         shop_id: shopRow.shop_id,
         scheduled_at: new Date()
       })
       .onConflict(['shop_id'])
-      .ignore();
+        .merge()
+        .returning('*')
+        .then(() => {
+          console.debug('[SNAPSHOT_JOB_ENQUEUED]', {
+            shopId: shopRow.shop_id,
+            mode: process.env.REBUILD_MODE === 'true' ? 'rebuild' : 'runtime'
+          });
+        })
+        .catch((err) => {
+          console.error('[SNAPSHOT_JOB_ENQUEUE_FAILED]', {
+            shopId: shopRow.shop_id,
+            error: err.message
+          });
+          throw err;
+        });
   }
 }
 

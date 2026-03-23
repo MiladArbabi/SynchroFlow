@@ -33,7 +33,13 @@ export async function up(knex: Knex): Promise<void> {
         .inTable('shops')
         .onDelete('CASCADE');
 
-      table.date('snapshot_date').notNullable();
+      table.timestamp('snapshot_date', { useTz: true }).notNullable();
+
+      /**
+       * INVARIANT:
+       * snapshot_date MUST preserve full timestamp.
+       * DATE causes event collapse → breaks deterministic replay.
+       */
 
       /**
        * PROJECTION VERSION (HARD GUARANTEE)

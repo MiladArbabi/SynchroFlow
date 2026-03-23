@@ -1,4 +1,49 @@
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
+
+import { computeRevenueMetrics } from './metric-engine/revenue.metrics.js';
+import { computeConstraintMetrics } from './metric-engine/constraint.metrics.js';
+import { computeSlaMetrics } from './metric-engine/sla.metrics.js';
+import { computeQueueMetrics } from './metric-engine/queue.metrics.js';
+import { computeMiscMetrics } from './metric-engine/misc.metrics.js';
+
+import { persistSnapshot } from './persistence/persistSnapshot.js';
+import { buildSnapshotPayload } from './payload/buildSnapshotPayload.js';
+
+const log = {
+  info: (event: string, data?: unknown) =>
+    console.info(JSON.stringify({ level: 'info', event, data })),
+
+  warn: (event: string, data?: unknown) =>
+    console.warn(JSON.stringify({ level: 'warn', event, data })),
+
+  error: (event: string, data?: unknown) =>
+    console.error(JSON.stringify({ level: 'error', event, data })),
+
+  debug: (event: string, data?: unknown) => {
+    if (process.env.DEBUG_SNAPSHOT === 'true') {
+      console.debug(JSON.stringify({ level: 'debug', event, data }));
+    }
+  },
+};
+
+/**
+ * TYPE CONTRACTS — SNAPSHOT SYSTEM
+ * --------------------------------
+ * Minimal explicit typing to eliminate `any` leakage.
+ * These types MUST evolve with schema changes.
+ */
+
+type SnapshotContext = {
+  shopId: string;
+  snapshotDate: Date;
+  snapshotDateNormalized: string;
+  snapshotCutoff: Date;
+};
+
+type MetricsResult = {
+  [key: string]: number;
+};
 
 /**
  * SHOP OPERATIONAL SNAPSHOT COMPUTATION
@@ -19,14 +64,17 @@ export async function computeShopOperationalSnapshot(
   await db.transaction(async (trx) => {
 
     /**
-     * CONTROLLED MUTATION (EXPLICIT ONLY)
-     * ----------------------------------
-     * Enabled ONLY when caller explicitly requests it.
-     * Never environment-driven.
+     * MUTATION BYPASS — FORBIDDEN IN RUNTIME
+     * --------------------------------------
+     * Snapshot immutability MUST be enforced at DB level only.
+     * Any runtime bypass introduces non-deterministic state.
+     *
+     * This path is intentionally blocked.
      */
     if (options?.allowMutation === true) {
-    await trx.raw(`SET app.allow_snapshot_mutation = 'true'`);
-    console.warn('[SNAPSHOT_MUTATION_BYPASS_EXPLICIT]', { shopId });
+    log.error('SNAPSHOT_MUTATION_BYPASS_BLOCKED', { shopId });
+
+    throw new Error('[SNAPSHOT_MUTATION_BYPASS_FORBIDDEN]');
     }
     
     /**
@@ -64,7 +112,7 @@ export async function computeShopOperationalSnapshot(
      *
      * Therefore every query referencing orders MUST apply:
      *
-     *   o.order_created_at <= snapshotCutoff
+     *   o.order_created_at <= snapshotContext.snapshotCutoff
      *
      * This guarantees historical reconstruction during
      * onboarding backfill and deterministic replay.
@@ -72,618 +120,138 @@ export async function computeShopOperationalSnapshot(
     const snapshotCutoff = snapshotDate;
 
     /**
-     * SHOP SNAPSHOT VERSION SOURCE
-     * ----------------------------
-     * Shop operational snapshot must derive its version
-     * from projection progress rather than order aggregates.
-     *
-     * projection_cursors represents the canonical replay
-     * position of the projection engine.
+     * SNAPSHOT CONTEXT (SINGLE SOURCE OF TRUTH)
+     * -----------------------------------------
+     * All downstream queries MUST consume from this object.
+     * Prevents drift and guarantees deterministic replay.
      */
-    const cursorRow = await trx('projection_cursors')
-    .where({ projection_name: 'orders_projection' })
-    .select('last_processed_event_id')
-    .first();
-
-    /**
-      * AGGREGATE VERSION RESOLUTION
-      * ----------------------------
-      * Backfill may execute before the projection cursor exists.
-      *
-      * Snapshot table enforces:
-      *   CHECK (aggregate_version > 0)
-      *
-      * Therefore a safe fallback is required to prevent
-      * transaction rollback during historical reconstruction.
-      *
-      * Version semantics:
-      * - Runtime snapshots use projection cursor version.
-      * - Backfill snapshots fall back to version 1 when
-      *   projection cursor is not yet initialized.
-      */
-     const aggregateVersion =
-       Number(cursorRow?.last_processed_event_id ?? 1);
-
-    /**
-     * REALIZED REVENUE
-     */
-    const realizedRevenueRow = await trx('order_revenue_units_net as runet')
-      .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-      .where('o.shop_id', shopId)
-      .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical state boundary
-      .sum<{ sum: string }>('runet.net_revenue as sum')
-      .first();
-
-    /**
-     * REVENUE STATE METRICS
-     * ---------------------
-     * Derived from revenue units and fulfillment status.
-     * These represent operational revenue exposure.
-     */
-
-    /**
-     * PENDING REVENUE
-     * ----------------
-     * Revenue from orders that are:
-     * - payment captured
-     * - not yet fulfilled
-     *
-     * IMPORTANT ARCHITECTURAL RULE
-     * ----------------------------
-     * All economic accounting must originate from
-     * revenue units to preserve deterministic GMV
-     * and avoid order-level duplication errors.
-     *
-     * Therefore pending revenue must use
-     * order_revenue_units_net instead of
-     * orders.total_price.
-     */
-    const pendingRevenueRow = await trx('order_revenue_units_net as runet')
-    .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-    .join(
-    'order_fulfillment_status as ofs',
-    'ofs.lasyncro_order_id',
-    'o.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
-    .andWhere('o.payment_state', 'paid')
-    .andWhereNot('ofs.status', 'fulfilled')
-    .sum<{ sum: string }>('runet.net_revenue as sum')
-    .first();
-
-    /**
-     * AT-RISK REVENUE (HISTORICAL SAFE)
-     * ---------------------------------
-     * Snapshot must reflect state at snapshotDate.
-     *
-     * Therefore orders created after snapshotCutoff
-     * must not be included.
-     */
-    const atRiskRevenueRow = await trx('orders')
-        .where({ shop_id: shopId })
-        .andWhere('payment_state', 'unpaid')
-        .andWhere('order_created_at', '<=', snapshotCutoff)
-        .sum<{ sum: string }>('total_price as sum')
-        .first();
-
-    /**
-     * BLOCKED REVENUE (CANONICAL — VARIANT-SCOPED)
-     * --------------------------------------------
-     * MUST derive from order_constraints
-     * DO NOT use order_risk_snapshot booleans
-     */
-    const blockedRevenueRows = await trx('order_revenue_units_net as runet')
-        .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .leftJoin('order_constraints as oc', function () {
-            this.on('oc.lasyncro_order_id', '=', 'runet.lasyncro_order_id')
-                .andOn('oc.target_id', '=', 'runet.lasyncro_variant_id')
-                .andOn('oc.is_active', '=', trx.raw('true'));
-        })
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff)
-        .select(
-            trx.raw(`
-                SUM(CASE WHEN oc.constraint_type = 'inventory' THEN runet.net_revenue ELSE 0 END) as inventory_blocked,
-                SUM(CASE WHEN oc.constraint_type = 'customer' THEN runet.net_revenue ELSE 0 END) as customer_blocked,
-                SUM(CASE WHEN oc.constraint_type = 'operational' THEN runet.net_revenue ELSE 0 END) as operational_blocked
-            `)
-        )
-        .first();
-
-    /**
-     * DEBUG SIGNAL
-     */
-    console.debug('[SNAPSHOT][BLOCKED_REVENUE]', {
+    const snapshotContext = {
         shopId,
+        snapshotDate,
+        snapshotDateNormalized,
         snapshotCutoff,
-        inventory: Number((blockedRevenueRows as any)?.inventory_blocked ?? 0),
-        customer: Number((blockedRevenueRows as any)?.customer_blocked ?? 0),
-        operational: Number((blockedRevenueRows as any)?.operational_blocked ?? 0)
-    });
-    
-    /**
-     * TOP BLOCKING TYPE (REAL COMPUTATION)
-     * ------------------------------------
-     * Must reflect actual blocked revenue values.
-     */
-    const inventoryBlocked = Number((blockedRevenueRows as any)?.inventory_blocked ?? 0);
-    const customerBlocked = Number((blockedRevenueRows as any)?.customer_blocked ?? 0);
-    const operationalBlocked = Number((blockedRevenueRows as any)?.operational_blocked ?? 0);
+    };
 
     /**
-     * TOP BLOCKING TYPE — GUARANTEED
+     * METRIC ORCHESTRATION — PARALLELIZED
+     * -----------------------------------
+     * All metric modules are independent.
+     * Execute in parallel for latency reduction.
+     */
+    const [
+      revenueMetrics,
+      constraintMetrics,
+      slaMetrics,
+      queueMetrics,
+      miscMetrics,
+    ] = await Promise.all([
+      computeRevenueMetrics(trx, shopId, snapshotContext.snapshotCutoff),
+      computeConstraintMetrics(trx, shopId, snapshotContext.snapshotCutoff),
+      computeSlaMetrics(trx, shopId, snapshotContext.snapshotCutoff),
+      computeQueueMetrics(trx, shopId, snapshotContext.snapshotCutoff),
+      computeMiscMetrics(trx, shopId, snapshotContext.snapshotCutoff),
+    ]);
+
+    const {
+      realizedRevenue,
+      pendingRevenue,
+      atRiskRevenue,
+    } = revenueMetrics;
+
+    const {
+      revenueBlockedInventory,
+      revenueBlockedCustomer,
+      revenueBlockedOperational,
+      blockedRevenueTotal,
+      constrainedOrders,
+    } = constraintMetrics;
+
+    const {
+      agingUnder24h,
+      aging48h,
+      aging72hPlus,
+      ordersAtSlaRisk,
+      slaBreach24hRevenue,
+    } = slaMetrics;
+
+    const {
+      queueManualReview,
+      queueAwaitingInventory,
+      queueAwaitingCustomer,
+      queueReadyToShip,
+      readyToShipRevenue,
+    } = queueMetrics;
+
+    const {
+      aggregateVersion,
+      avgContributionMarginPct,
+      pendingFulfillment,
+      exceptionOrders,
+      oldestExceptionOrderAgeHours,
+      revenueLeakage,
+    } = miscMetrics;
+
+    /**
+     * ORCHESTRATOR BOUNDARY ENFORCEMENT
+     * ---------------------------------
+     * NO business logic allowed beyond this point.
+     * - Metrics → metric-engine modules (direct invocation)
+     * - Payload shaping → buildSnapshotPayload
+     * - Orchestrator → coordination ONLY
+     */
+
+    /**
+     * IDEMPOTENCY — DB ENFORCED ONLY
      * --------------------------------
-     * System must always produce a dominant driver.
-     * "none" is forbidden — it destroys operator trust.
-     */
-    let topBlockingType: 'inventory' | 'customer' | 'operational' = 'inventory';
-
-    /**
-     * Always select highest value — even if all are 0
-     */
-    if (customerBlocked >= inventoryBlocked && customerBlocked >= operationalBlocked) {
-        topBlockingType = 'customer';
-    } else if (operationalBlocked >= inventoryBlocked) {
-        topBlockingType = 'operational';
-    } else {
-        topBlockingType = 'inventory';
-    }
-
-    /**
-     * CONTRIBUTION MARGIN
-     * -------------------
-     * Average contribution margin across revenue units.
-     */
-    const avgMarginRow = await trx('order_revenue_units_net as runet')
-        .join('order_revenue_units as ru', 'ru.lasyncro_revenue_unit_id', 'runet.lasyncro_revenue_unit_id')
-        .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff) 
-        .avg<{ avg: string }>(
-            trx.raw('(runet.net_revenue - ru.estimated_unit_cost) / NULLIF(runet.net_revenue,0)')
-        )
-        .first();
-    
-    /**
-     * BLOCKED REVENUE TOTAL
-     * ---------------------
-     * The snapshot schema requires a unified blocked_revenue field.
-     * It represents the sum of all constraint categories.
-     *
-     * This must be computed deterministically from the
-     * per-constraint revenue already calculated above.
-     */
-    const blockedRevenueTotal =
-    Number((blockedRevenueRows as any)?.inventory_blocked ?? 0) +
-    Number((blockedRevenueRows as any)?.customer_blocked ?? 0) +
-    Number((blockedRevenueRows as any)?.operational_blocked ?? 0);
-
-    /**
-     * SHOP OPERATIONAL METRICS
-     * ------------------------
-     * All metrics must be recomputed deterministically
-     * from current shop state. No incremental mutation.
-     *
-     * This preserves replay rebuild guarantees.
+     * Application-layer guards removed.
+     * DB constraint (shop_id, snapshot_date) is authoritative.
+     * Any violation must surface as a conflict.
      */
 
-    const pendingFulfillmentRow = await trx('orders')
-        .where({ shop_id: shopId })
-        .andWhere('orders.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
-        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'orders.lasyncro_order_id')
-        .andWhereNot('ofs.status', 'fulfilled')
-        .count<{ count: string }>('orders.lasyncro_order_id as count')
-        .first();
-
-    /**
-     * EXCEPTION ORDERS (HISTORICAL SAFE)
-     * ----------------------------------
-     * Constraint events must respect snapshot boundary.
-     * Orders created after snapshotCutoff must not appear
-     * in historical snapshots.
-     */
-    const exceptionOrdersRow = await trx('order_constraint_events as oce')
-        .join('orders as o', 'o.lasyncro_order_id', 'oce.lasyncro_order_id')
-        .where('oce.shop_id', shopId)
-        .andWhere('oce.is_active', true)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff)
-        .count<{ count: string }>('oce.constraint_event_id as count')
-        .first();
-
-    /**
-     * CONSTRAINED ORDERS (CANONICAL)
-     * -------------------------------
-     * Source of truth:
-     *   order_constraints (NOT events)
-     *
-     * MUST:
-     * - use is_active = true
-     * - respect snapshotCutoff
-     * - count DISTINCT orders
-     *
-     * This metric drives Control Tower.
-     */
-    const constrainedOrdersRow = await trx('order_constraints as oc')
-    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
-    .where('o.shop_id', shopId)
-    .andWhere('oc.is_active', true)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .countDistinct<{ count: string }>('oc.lasyncro_order_id as count')
-    .first();
-
-    /**
-     * VISIBILITY — CRITICAL METRIC TRACE
-     */
-    console.debug('[SNAPSHOT][CONSTRAINED_ORDERS]', {
-    shopId,
-    snapshotCutoff,
-    count: Number(constrainedOrdersRow?.count ?? 0)
-    });
-
-    /**
-     * DEBUG SIGNAL
-     */
-    console.debug('[SNAPSHOT][CONSTRAINED_ORDERS]', {
-        shopId,
-        count: Number(constrainedOrdersRow?.count ?? 0)
-    });
-
-    /**
-     * LOAD SHOP SLA
-     * ----------------
-     * Single source-of-truth for operational timing expectations.
-     */
-    const shopSettings = await trx('shop_operational_settings')
-      .where({ shop_id: shopId })
-      .first();
-
-    const fulfillmentSlaHours = shopSettings?.fulfillment_sla_hours ?? 24;
-    const fulfillmentSlaSeconds = fulfillmentSlaHours * 3600;
-
-        /**
-     * ORDER AGING BUCKETS
-     * -------------------
-     * Deterministic aging derived from order_age_snapshot.
-     * These buckets drive operational SLA visibility.
-     */
-    const agingBuckets = await trx('order_age_snapshot as oas')
-        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff) // historical snapshot boundary
-        .select(
-            /**
-             * SLA-AWARE AGING BUCKETS
-             * ------------------------
-             * fulfillmentSlaSeconds MUST be injected as a bound value.
-             * Never interpolated as identifier (prevents SQL runtime failure).
-             */
-            trx.raw(
-            `COUNT(*) FILTER (WHERE age_since_paid_seconds < ?) as aging_under_24h`,
-            [fulfillmentSlaSeconds]
-            ),
-            trx.raw(
-            `COUNT(*) FILTER (
-                WHERE age_since_paid_seconds >= ?
-                AND age_since_paid_seconds < 172800
-            ) as aging_48h`,
-            [fulfillmentSlaSeconds]
-            ),
-            trx.raw(`COUNT(*) FILTER (WHERE age_since_paid_seconds >= 172800) as aging_72h_plus`)
-        )
-        .first();
-
-    const ordersAtSlaRiskRow = await trx('order_age_snapshot as oas')
-        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff) 
-        .andWhere('oas.age_since_paid_seconds', '>', fulfillmentSlaSeconds)
-        .count<{ count: string }>('oas.lasyncro_order_id as count')
-        .first();
-
-    /**
-     * SLA BREACH (NEXT 24H) REVENUE
-     * --------------------------------
-     * Revenue from orders at immediate SLA risk.
-     *
-     * SOURCE OF TRUTH:
-     * - order_age_snapshot
-     * - orders_at_sla_risk equivalent condition
-     *
-     * NOTE:
-     * This must remain projection-computed to avoid UI drift.
-     */
-    const slaBreach24hRevenueRow = await trx('orders as o')
-        .join('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'o.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff)
-        .andWhere('oas.age_since_paid_seconds', '>=', fulfillmentSlaSeconds)
-        .sum<{ sum: string }>('o.total_price as sum')
-        .first();
-    
-    /**
-     * MATERIALIZE SLA RISK COUNT
-     * --------------------------
-     * Snapshot schema requires a concrete integer value.
-     * Avoid passing raw DB row structures into snapshot writes.
-     */
-    const ordersAtSlaRisk = Number(ordersAtSlaRiskRow?.count ?? 0);
-
-    /**
-     * PAYMENT STATE SOURCE OF TRUTH
-     * -----------------------------
-     * Orders table does not contain `financial_status`.
-     * Canonical column is `payment_state` derived during ingestion.
-     */
-    const pendingPaymentRow = await trx('orders')
-    .where({ shop_id: shopId })
-    .andWhere('payment_state', 'unpaid')
-    .count<{ count: string }>('orders.lasyncro_order_id as count')
-    .first();
-
-    /**
-     * QUEUE METRICS
-     */
-    const queueManualReview = await trx('order_constraint_events')
-        .where({ shop_id: shopId, constraint_type: 'operational', is_active: true })
-        .count<{ count: string }>('constraint_event_id as count')
-        .first();
-
-    const queueAwaitingInventory = await trx('order_constraint_events')
-        .where({ shop_id: shopId, constraint_type: 'inventory', is_active: true })
-        .count<{ count: string }>('constraint_event_id as count')
-        .first();
-
-    const queueAwaitingCustomer = await trx('order_constraint_events')
-        .where({ shop_id: shopId, constraint_type: 'customer', is_active: true })
-        .count<{ count: string }>('constraint_event_id as count')
-        .first();
-
-    /**
-     * READY TO SHIP QUEUE
-     * -------------------
-     * Orders executable by warehouse immediately.
-     *
-     * Conditions:
-     * - payment captured
-     * - fulfillment pending
-     * - no active operational constraints
-     */
-    const queueReadyToShip = await trx('orders as o')
-    .join(
-        'order_fulfillment_status as ofs',
-        'ofs.lasyncro_order_id',
-        'o.lasyncro_order_id'
-    )
-    .leftJoin(
-        'order_constraint_events as oce',
-        function () {
-        this.on('oce.lasyncro_order_id', '=', 'o.lasyncro_order_id')
-            .andOn('oce.is_active', '=', trx.raw('true'));
+    const snapshotPayload = buildSnapshotPayload(
+        snapshotContext,
+        {
+            realizedRevenue,
+            pendingRevenue,
+            atRiskRevenue,
+            revenueBlockedInventory,
+            revenueBlockedCustomer,
+            revenueBlockedOperational,
+            blockedRevenueTotal,
+            avgContributionMarginPct,
+            pendingFulfillment,
+            exceptionOrders,
+            constrainedOrders,
+            agingUnder24h,
+            aging48h,
+            aging72hPlus,
+            ordersAtSlaRisk,
+            slaBreach24hRevenue,
+            queueManualReview,
+            queueAwaitingInventory,
+            queueAwaitingCustomer,
+            queueReadyToShip,
+            readyToShipRevenue,
+            oldestExceptionOrderAgeHours,
+            revenueLeakage,
+            aggregateVersion,
         }
-    )
-    .where('o.shop_id', shopId)
-    .andWhere('o.payment_state', 'paid')
-    .andWhere('ofs.status', 'pending')
-    .whereNull('oce.constraint_event_id')
-    .count<{ count: string }>('o.lasyncro_order_id as count')
-    .first();
+        );
 
-    /**
-     * READY TO SHIP REVENUE
-     * ---------------------
-     * Economic value of orders that warehouse can ship immediately.
-     *
-     * Conditions identical to queue_ready_to_ship:
-     * - payment captured
-     * - fulfillment pending
-     * - no active operational constraints
-     *
-     * Uses revenue units to ensure deterministic economic accounting.
-     */
-    const readyToShipRevenue = await trx('order_revenue_units as oru')
-    .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
-    .join(
-        'order_fulfillment_status as ofs',
-        'ofs.lasyncro_order_id',
-        'o.lasyncro_order_id'
-    )
-    .leftJoin(
-        'order_constraint_events as oce',
-        function () {
-        this.on('oce.lasyncro_order_id', '=', 'o.lasyncro_order_id')
-            .andOn('oce.is_active', '=', trx.raw('true'));
-        }
-    )
-    .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff) 
-    .andWhere('o.payment_state', 'paid')
-    .andWhere('ofs.status', 'pending')
-    .whereNull('oce.constraint_event_id')
-    .sum<{ sum: string }>('oru.line_total as sum')
-    .first();
+        log.debug('SNAPSHOT_PAYLOAD', { shopId });
 
-    /**
-     * OLDEST EXCEPTION ORDER AGE
-     * --------------------------
-     * Identifies the longest unresolved operational exception.
-     */
-    const oldestExceptionAgeRow = await trx('order_age_snapshot as oas')
-        .join('order_constraint_events as oce', 'oce.lasyncro_order_id', 'oas.lasyncro_order_id')
-        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('o.order_created_at', '<=', snapshotCutoff)
-        .andWhere('oce.is_active', true)
-        .max('oas.age_since_paid_seconds as max')
-        .first();
-    
-    /**
-     * REVENUE LEAKAGE
-     * ----------------
-     * Leakage represents revenue permanently lost
-     * due to refunds or irreversible economic events.
-     *
-     * Unpaid orders are NOT leakage — they are exposure.
-     */
-    const revenueLeakageRow = await trx('refund_executions')
-    .join('orders as o', 'o.lasyncro_order_id', 'refund_executions.lasyncro_order_id')
-    .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .sum<{ sum: string }>('refund_executions.total_refund_amount as sum')
-    .first();
-
-    const revenueLeakage = Number(revenueLeakageRow?.sum ?? 0);
-
-    /**
-     * TOTAL GMV
-     * ---------
-     * Canonical Gross Merchandise Value.
-     *
-     * Invariant:
-     * realized_revenue
-     * pending_revenue
-     * at_risk_revenue
-     *
-     * Stored in projection snapshot so the resolver
-     * never recomputes economic invariants.
-     */
-    const totalGMV =
-    Number(realizedRevenueRow?.sum ?? 0) +
-    Number(pendingRevenueRow?.sum ?? 0) +
-    Number(atRiskRevenueRow?.sum ?? 0);
-
-
-
-    /**
-     * IDEMPOTENCY GUARD (APP LAYER)
-     * ----------------------------
-     * Avoid hitting DB with duplicate snapshot writes.
-     * DB remains source of truth, but we short-circuit early.
-     */
-    const existingSnapshot = await trx('orders_operational_control_snapshot')
-        .where({
-            shop_id: shopId,
-            snapshot_date: snapshotDateNormalized,
-        })
-        .first();
-
-        if (existingSnapshot) {
-            console.warn('[SNAPSHOT_SKIPPED_EXISTS]', {
-                shopId,
-                snapshotDate: snapshotDateNormalized,
-                reason: 'append-only snapshot prevented overwrite'
-            });
-
-            return;
-        }
-
-        if (existingSnapshot) {
-            console.warn('[SNAPSHOT_SKIPPED_EXISTS]', {
-                shopId,
-                snapshotDate: snapshotDateNormalized,
-                reason: 'append-only snapshot prevented overwrite'
-            });
-
-            return;
-        }
-
-    /**
-     * SNAPSHOT WRITE
-     */
-    const snapshotPayload = {
-            shop_id: shopId,
-            snapshot_date: snapshotDateNormalized,
-            aggregate_version: aggregateVersion,
-
-            realized_revenue: Number(realizedRevenueRow?.sum ?? 0),
-            pending_revenue: Number(pendingRevenueRow?.sum ?? 0),
-            at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),
-
-            /**
-             * COMMAND CENTER — PRIMARY METRICS
-             * --------------------------------
-             * These fields power the decision surface.
-             * MUST remain backend-computed (no UI derivation).
-             */
-            total_at_risk_revenue: Number(atRiskRevenueRow?.sum ?? 0),
-
-            sla_breach_24h_revenue: Number(slaBreach24hRevenueRow?.sum ?? 0),
-
-            top_blocking_type: topBlockingType,
-
-            /**
-             * Canonical GMV (projection authority)
-             */
-            total_gmv: totalGMV,
-
-            avg_contribution_margin_pct: Number(avgMarginRow?.avg ?? 0),
-
-            /**
-             * ORDER AGING METRICS
-             * -------------------
-             * Derived from order_age_snapshot projection.
-             * These buckets expose SLA risk and fulfillment backlog.
-             */
-            aging_under_24h: Number((agingBuckets as any)?.aging_under_24h ?? 0),
-            aging_48h: Number((agingBuckets as any)?.aging_48h ?? 0),
-            aging_72h_plus: Number((agingBuckets as any)?.aging_72h_plus ?? 0),
-
-            /**
-             * BLOCKED REVENUE METRICS
-             * -----------------------
-             * Revenue currently constrained by operational blocks.
-             */
-            revenue_blocked_inventory: Number((blockedRevenueRows as any)?.inventory_blocked ?? 0),
-            revenue_blocked_customer: Number((blockedRevenueRows as any)?.customer_blocked ?? 0),
-            revenue_blocked_operational: Number((blockedRevenueRows as any)?.operational_blocked ?? 0),
-
-            /**
-             * UNIFIED BLOCKED REVENUE
-             * -----------------------
-             * Required by schema contract.
-             * Represents the total constrained revenue across all block types.
-             */
-            blocked_revenue: blockedRevenueTotal,
-
-            revenue_leakage: revenueLeakage,
-
-            pending_fulfillment: Number(pendingFulfillmentRow?.count ?? 0),
-            exception_orders: Number(exceptionOrdersRow?.count ?? 0),
-
-            /**
-             * MATERIALIZED SLA RISK COUNT
-             * ---------------------------
-             * Uses precomputed value to avoid inline DB row coupling.
-             */
-            orders_at_sla_risk: ordersAtSlaRisk,
-            /**
-             * HARD TYPE CAST — PREVENT BOOLEAN COERCION
-             * -----------------------------------------
-             * Postgres driver may coerce improperly if value is string/undefined.
-             * Must force strict integer.
-             */
-            constrained_orders: parseInt(String(constrainedOrdersRow?.count ?? '0'), 10),
-            oldest_exception_order_age_hours: Number((oldestExceptionAgeRow?.max ?? 0) / 3600),
-
-            queue_manual_review: Number(queueManualReview?.count ?? 0),
-            queue_awaiting_inventory: Number(queueAwaitingInventory?.count ?? 0),
-            ready_to_ship_revenue: Number(readyToShipRevenue?.sum ?? 0),
-            
-            queue_awaiting_customer: Number(queueAwaitingCustomer?.count ?? 0),
-
-            evaluated_at: snapshotDate
-        }
-
-        console.debug('[SNAPSHOT][PAYLOAD]', snapshotPayload);
-
-        await trx('orders_operational_control_snapshot')
-            .insert(snapshotPayload);
+        await persistSnapshot(
+            trx,
+            snapshotPayload,
+            shopId,
+            snapshotDateNormalized
+        );
 
         /**
          * VISIBILITY: detect suppressed writes
          */
         if ((await trx.raw('SELECT 1')).rowCount === 0) {
-            console.warn('[SNAPSHOT_WRITE_NOOP]', {
+            log.warn('SNAPSHOT_WRITE_NOOP', {
                 shopId,
                 snapshotDate: snapshotDateNormalized,
                 reason: 'duplicate snapshot prevented (append-only)',
@@ -707,7 +275,7 @@ export async function computeShopOperationalSnapshot(
         .first();
 
         if (Number(snapshotCount?.count ?? 0) === 1 && !snapshotDateOverride) {
-        console.info('[shop-snapshot] triggering historical backfill', { shopId });
+        log.info('SNAPSHOT_BACKFILL_TRIGGERED', { shopId });
 
         const { backfillShopOperationalSnapshots } =
             await import('./shopOperationalSnapshot.backfill.js');
@@ -728,26 +296,39 @@ export async function computeShopOperationalSnapshot(
      * Signal:
      * ORDER_CONTROL_SNAPSHOT_STALE
      */
-    const latestSnapshot = await db('orders_operational_control_snapshot')
-        .where({ shop_id: shopId })
-        .max('snapshot_date as last')
-        .first();
+    /**
+ * HEALTH CHECK — OPTIONAL (NON-CRITICAL PATH)
+ * -------------------------------------------
+ * Explicit signaling for ALL paths (no silent skips).
+ */
+if (process.env.SNAPSHOT_HEALTH_CHECK !== 'true') {
+    log.debug('SNAPSHOT_HEALTH_CHECK_SKIPPED', { shopId });
+        } else {
+        const latestSnapshot = await db('orders_operational_control_snapshot')
+            .where({ shop_id: shopId })
+            .max('snapshot_date as last')
+            .first();
 
-        if (latestSnapshot?.last) {
-
-        const snapshotAgeMs =
+        if (!latestSnapshot?.last) {
+            log.warn('SNAPSHOT_HEALTH_NO_DATA', { shopId });
+        } else {
+            const snapshotAgeMs =
             Date.now() - new Date(latestSnapshot.last as string).getTime();
 
-        const SNAPSHOT_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+            const SNAPSHOT_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-        if (snapshotAgeMs > SNAPSHOT_STALE_THRESHOLD_MS) {
-
-            console.warn('[ORDER_CONTROL_SNAPSHOT_STALE]', {
-            shopId,
-            snapshot_date: latestSnapshot.last,
-            age_hours: Math.floor(snapshotAgeMs / 3600000)
+            if (snapshotAgeMs > SNAPSHOT_STALE_THRESHOLD_MS) {
+            log.warn('ORDER_CONTROL_SNAPSHOT_STALE', {
+                shopId,
+                snapshot_date: latestSnapshot.last,
+                age_hours: Math.floor(snapshotAgeMs / 3600000),
             });
-
+            } else {
+            log.debug('SNAPSHOT_HEALTH_OK', {
+                shopId,
+                age_hours: Math.floor(snapshotAgeMs / 3600000),
+            });
+          }
         }
     }
 
@@ -761,7 +342,7 @@ export async function computeShopOperationalSnapshot(
 
     } catch (err) {
 
-    console.error('[shop-snapshot] recompute failed', {
+    log.error('SNAPSHOT_RECOMPUTE_FAILED', {
         shopId,
         error: err instanceof Error ? err.message : err
     });
