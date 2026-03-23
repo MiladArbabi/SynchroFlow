@@ -11,6 +11,19 @@ export async function computeRevenueMetrics(
   shopId: string,
   snapshotCutoff: Date
 ) {
+
+  /**
+   * SAFE ACCESS: enforce DB row contracts for revenue metrics
+   */
+  type SumRow = { sum: number | string | null };
+
+  function requireRow<T>(row: T | undefined, label: string): T {
+    if (!row) {
+      throw new Error(`[revenue.metrics] Missing ${label} — DB contract violation`);
+    }
+    return row;
+  }
+
   const realizedRevenueRow = await trx('order_revenue_units_net as runet')
     .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
     .where('o.shop_id', shopId)
@@ -18,7 +31,9 @@ export async function computeRevenueMetrics(
     .sum('runet.net_revenue as sum')
     .first();
 
-  const realizedRevenue = Number((realizedRevenueRow as any)?.sum ?? 0);
+  const realizedRevenue = Number(
+    requireRow(realizedRevenueRow as SumRow | undefined, 'realizedRevenueRow').sum ?? 0
+  );
 
   const pendingRevenueRow = await trx('order_revenue_units_net as runet')
     .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
@@ -34,7 +49,9 @@ export async function computeRevenueMetrics(
     .sum('runet.net_revenue as sum')
     .first();
 
-  const pendingRevenue = Number((pendingRevenueRow as any)?.sum ?? 0);
+  const pendingRevenue = Number(
+    requireRow(pendingRevenueRow as SumRow | undefined, 'pendingRevenueRow').sum ?? 0
+  );
 
   const atRiskRevenueRow = await trx('orders')
     .where({ shop_id: shopId })
@@ -43,7 +60,9 @@ export async function computeRevenueMetrics(
     .sum('total_price as sum')
     .first();
 
-  const atRiskRevenue = Number((atRiskRevenueRow as any)?.sum ?? 0);
+  const atRiskRevenue = Number(
+    requireRow(atRiskRevenueRow as SumRow | undefined, 'atRiskRevenueRow').sum ?? 0
+  );
 
   return {
     realizedRevenue,

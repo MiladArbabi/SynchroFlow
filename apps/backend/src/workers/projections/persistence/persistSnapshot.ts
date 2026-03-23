@@ -24,13 +24,15 @@ export async function persistSnapshot(
     .onConflict(['shop_id', 'snapshot_date'])
     .ignore();
 
-  if ((result as any)?.rowCount === 0) {
-    console.warn(
-      JSON.stringify({
-        level: 'warn',
-        event: 'SNAPSHOT_WRITE_SKIPPED_DUPLICATE',
-        data: { shopId, snapshotDate: snapshotDateNormalized },
-      })
-    );
+  /**
+   * SAFE ACCESS: enforce DB result contract
+   * Prevent silent insert failures
+   */
+  type InsertResult = { rowCount?: number };
+
+  const insertResult = result as InsertResult;
+
+  if (insertResult.rowCount === 0) {
+    throw new Error('[persistSnapshot] Insert failed — no rows affected');
   }
 }

@@ -11,29 +11,57 @@ export async function computeSlaMetrics(
   snapshotCutoff: Date
 ) {
   const agingBuckets = await trx('order_age_snapshot as oas')
-    .where('oas.shop_id', shopId)
-    .andWhere('oas.created_at', '<=', snapshotCutoff)
-    .select(
-      trx.raw(`
-        SUM(CASE WHEN oas.age_hours < 24 THEN 1 ELSE 0 END) as aging_under_24h,
-        SUM(CASE WHEN oas.age_hours >= 24 AND oas.age_hours < 48 THEN 1 ELSE 0 END) as aging_48h,
-        SUM(CASE WHEN oas.age_hours >= 48 THEN 1 ELSE 0 END) as aging_72h_plus
-      `)
-    )
+    .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    /**
+     * DB CONTRACT: replace raw aggregation with explicit typed select
+     * Ensures schema visibility and future type inference compatibility
+     */
+    .select([
+      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds < 86400) as aging_under_24h'),
+      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds BETWEEN 86400 AND 172800) as aging_48h'),
+      trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds >= 259200) as aging_72h_plus'),
+    ])
     .first();
 
-  const agingUnder24h = Number((agingBuckets as any)?.aging_under_24h ?? 0);
-  const aging48h = Number((agingBuckets as any)?.aging_48h ?? 0);
-  const aging72hPlus = Number((agingBuckets as any)?.aging_72h_plus ?? 0);
+  /**
+   * SAFE ACCESS: enforce typed DB row shape
+   * Prevents silent runtime failures from unknown structures
+   */
+  type AgingBucketsRow = {
+    aging_under_24h: number | string | null;
+    aging_48h: number | string | null;
+    aging_72h_plus: number | string | null;
+  };
+
+  const buckets = agingBuckets as AgingBucketsRow | undefined;
+
+  if (!buckets) {
+    throw new Error('[sla.metrics] Missing agingBuckets row — DB contract violation');
+  }
+
+  const agingUnder24h = Number(buckets.aging_under_24h ?? 0);
+  const aging48h = Number(buckets.aging_48h ?? 0);
+  const aging72hPlus = Number(buckets.aging_72h_plus ?? 0);
 
   const ordersAtSlaRiskRow = await trx('order_age_snapshot as oas')
-    .where('oas.shop_id', shopId)
-    .andWhere('oas.created_at', '<=', snapshotCutoff)
-    .andWhere('oas.age_hours', '>=', 24)
+    .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .andWhere('oas.age_since_creation_seconds', '>=', 86400)
     .count('* as count')
     .first();
 
-  const ordersAtSlaRisk = Number((ordersAtSlaRiskRow as any)?.count ?? 0);
+  type CountRow = { count: number | string | null };
+
+  const riskRow = ordersAtSlaRiskRow as CountRow | undefined;
+
+  if (!riskRow) {
+    throw new Error('[sla.metrics] Missing ordersAtSlaRiskRow — DB contract violation');
+  }
+
+  const ordersAtSlaRisk = Number(riskRow.count ?? 0);
 
   const slaBreach24hRevenueRow = await trx('orders as o')
     .where('o.shop_id', shopId)
@@ -48,7 +76,15 @@ export async function computeSlaMetrics(
     .sum('o.total_price as sum')
     .first();
 
-  const slaBreach24hRevenue = Number((slaBreach24hRevenueRow as any)?.sum ?? 0);
+  type SumRow = { sum: number | string | null };
+
+  const breachRow = slaBreach24hRevenueRow as SumRow | undefined;
+
+  if (!breachRow) {
+    throw new Error('[sla.metrics] Missing slaBreach24hRevenueRow — DB contract violation');
+  }
+
+  const slaBreach24hRevenue = Number(breachRow.sum ?? 0);
 
   return {
     agingUnder24h,

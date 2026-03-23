@@ -26,8 +26,12 @@ export async function backfillShopOperationalSnapshots(shopId: number) {
   const bounds = await db('orders')
     .where({ shop_id: shopId })
     .select(
-      db.raw('MIN(order_created_at) as min'),
-      db.raw('MAX(order_created_at) as max')
+      /**
+       * DB CONTRACT: replace raw aggregation with knex helpers
+       * Ensures safer query composition + future typing support
+       */
+      db.min('order_created_at as min'),
+      db.max('order_created_at as max')
     )
     .first();
 

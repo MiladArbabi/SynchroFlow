@@ -14,7 +14,23 @@ import { computeShopOperationalSnapshot } from './shopOperationalSnapshot.worker
  */
 export async function startShopSnapshotJobDispatcher() {
 
-  console.log('[snapshot-dispatcher] started');
+  /**
+   * LOGGING: structured + centralized-ready
+   * Replaceable with real logger without changing call sites
+   */
+  const log = (message: string, meta?: Record<string, unknown>) => {
+    process.stdout.write(
+      JSON.stringify({
+        level: 'info',
+        context: 'snapshot-dispatcher',
+        message,
+        ...(meta ?? {}),
+        timestamp: new Date().toISOString(),
+      }) + '\n'
+    );
+  };
+
+  log('started');
 
   setInterval(async () => {
 

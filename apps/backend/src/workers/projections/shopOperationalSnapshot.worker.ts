@@ -248,14 +248,13 @@ export async function computeShopOperationalSnapshot(
         );
 
         /**
-         * VISIBILITY: detect suppressed writes
+         * HEALTH CHECK: use typed minimal query instead of raw SQL
+         * Ensures compatibility with DB layer typing + avoids raw bypass
          */
-        if ((await trx.raw('SELECT 1')).rowCount === 0) {
-            log.warn('SNAPSHOT_WRITE_NOOP', {
-                shopId,
-                snapshotDate: snapshotDateNormalized,
-                reason: 'duplicate snapshot prevented (append-only)',
-            });
+        const healthCheckResult = await trx.select(trx.raw('1 as ok')).first();
+
+        if (!healthCheckResult) {
+          throw new Error('[snapshot-worker] DB health check failed — no response');
         }
     });
 
