@@ -110,8 +110,8 @@ export async function projectOrderCustomerConstraints(
       // - set block_resolved_at when transitioning blocked → NULL
   }
 
-  console.debug('[customer_constraint_projection.completed]', {
+  /* console.debug('[customer_constraint_projection.completed]', {
     evaluated_orders: orderIds.length,
     blocked: blockedCount
-  });
+  }); */
 }

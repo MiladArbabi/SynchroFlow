@@ -22,7 +22,6 @@ import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
 
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
-import OrderFulfillmentIngestionService from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 
 const ORDERS_PROJECTION = 'orders_projection';
 
@@ -39,6 +38,12 @@ export async function handleOrdersFulfilled({
 }) {
 
   const payload = domainEvent.event_payload as any;
+
+  /* console.info('[FULFILLMENT_EVENT_PAYLOAD]', {
+    eventId: domain_event_id,
+    payload,
+  }); */
+  
   const externalOrderId = String(payload.order_id);
 
   const lasyncroOrderId = await resolveExternalOrderId(
@@ -55,32 +60,43 @@ export async function handleOrdersFulfilled({
    */
   if (!lasyncroOrderId) {
 
-    await db('domain_events').insert({
-      shop_id: domainEvent.shop_id,
-      event_type: 'orders/missing_detected',
-      event_payload: {
-        external_order_id: externalOrderId,
-        source_event_id: domain_event_id,
-        reason: 'fulfillment_before_aggregate'
-      },
-      event_time: domainEvent.event_time
-    });
-
-    console.warn('[MISSING_ORDER_DETECTED]', {
+    /**
+     * PROJECTION VIOLATION REMOVED
+     * ----------------------------
+     * Projections MUST be side-effect free.
+     * Emitting domain events here breaks:
+     * - determinism
+     * - replay correctness
+     *
+     * Instead, log and exit.
+     * Missing aggregate handling must occur in ingestion layer.
+     */
+    /* console.error('[PROJECTION_INVARIANT_VIOLATION][MISSING_ORDER]', {
+      shopId: domainEvent.shop_id,
       externalOrderId,
-      sourceEventId: domain_event_id
-    });
+      sourceEventId: domain_event_id,
+    }); */
 
     return;
   }
 
   /**
-   * FULFILLMENT STATUS RESOLUTION
+   * STATUS RESOLUTION (STRICT — NO FALLBACKS)
+   * -----------------------------------------
+   * Event payload is the ONLY source of truth.
+   * Invalid or missing status must be rejected.
+   *
+   * Silent fallback causes state corruption.
    */
-  const status =
-    payload.status === 'cancelled'
-      ? 'cancelled'
-      : 'fulfilled';
+  if (!payload.status) {
+    console.error('[FULFILLMENT_STATUS_MISSING]', {
+      eventId: domain_event_id,
+      payload,
+    });
+    return;
+  }
+
+  const status = payload.status;
 
   const fulfillmentTimestamp = canonicalEventTime;
 
@@ -101,46 +117,88 @@ export async function handleOrdersFulfilled({
       }
     | undefined;
 
-  /**
-   * TRANSACTION CONTRACT
-   * --------------------
-   * Projection engine owns the transaction boundary.
-   * Handler must reuse the provided trx.
-   *
-   * Nested transactions break deterministic replay
-   * and can cause deadlocks.
-   */
-
     /**
-     * CURSOR ENFORCEMENT MOVED
-     * ------------------------
-     * Projection ordering is now enforced centrally
-     * in projection.engine.ts.
+     * MONOTONIC GUARD (CRITICAL)
+     * ---------------------------
+     * Prevents regression:
+     * e.g. fulfilled → pending
      *
-     * Handlers must remain pure projection logic
-     * without queue or cursor coordination.
+     * Without this:
+     * - last event wins
+     * - fulfillment collapses to pending
      */
+    const precedence: Record<string, number> = {
+      pending: 0,
+      processing: 1,
+      partially_fulfilled: 2,
+      fulfilled: 3,
+      cancelled: 4,
+      failed: 5,
+    };
+
+    const existing = await trx('order_fulfillment_status')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first<{ status: string }>();
+
+    if (existing) {
+      const currentPrecedence = precedence[existing.status] ?? 0;
+      const newPrecedence = precedence[status] ?? 0;
+
+      const allowUpdate =
+        status === 'cancelled' ||
+        newPrecedence >= currentPrecedence;
+
+      if (!allowUpdate) {
+        console.warn('[FULFILLMENT_REGRESSION_BLOCKED]', {
+          lasyncroOrderId,
+          from: existing.status,
+          to: status,
+        });
+        return;
+      }
+    };
 
     /**
-     * FULFILLMENT INGESTION
+     * DIRECT PROJECTION WRITE (EVENT-SOURCED)
+     * ---------------------------------------
+     * Replaces ingestion service call.
+     *
+     * PROJECTION RULE:
+     * - Must derive state strictly from domain event
+     * - Must NOT call external services
      */
-    await OrderFulfillmentIngestionService.ingestStatus(
-      {
-        lasyncroOrderId,
-
-        /**
-         * SOURCE OF TRUTH
-         * ----------------
-         * shopId must come from domain event.
-         * Required for constraint enforcement.
-         */
-        shopId: domainEvent.shop_id,
-
+    await trx('order_fulfillment_status')
+      .insert({
+        lasyncro_fulfillment_id: crypto.randomUUID(),
+        lasyncro_order_id: lasyncroOrderId,
         status,
-        canonicalEventTime: new Date(domainEvent.event_time),
-      },
-      trx
-    );
+        status_updated_at: new Date(domainEvent.event_time),
+        fulfilled_at:
+          status === 'fulfilled'
+            ? new Date(domainEvent.event_time)
+            : null,
+      })
+      .onConflict('lasyncro_order_id')
+      .merge({
+        status,
+        status_updated_at: new Date(domainEvent.event_time),
+        fulfilled_at:
+          status === 'fulfilled'
+            ? trx.raw(
+                'COALESCE(order_fulfillment_status.fulfilled_at, ?)',
+                [new Date(domainEvent.event_time)]
+              )
+            : trx.raw('order_fulfillment_status.fulfilled_at'),
+      });
+
+      /**
+       * PROJECTION TRACE
+       */
+      console.debug('[FULFILLMENT_PROJECTED]', {
+        lasyncroOrderId,
+        status,
+        eventTime: domainEvent.event_time,
+      });
 
     /**
      * AGGREGATE MUTATION

@@ -17,7 +17,31 @@ export function mapShopifyOrderNodeToCanonical(
   node: any,
   shopId: number
 ): FT0CanonicalOrder {
-  const orderId = node.id; // gid://shopify/Order/...
+  const rawId = node.id ?? node.order_id;
+
+    if (!rawId) {
+      console.error('[CANONICAL_ORDER_ID_MISSING]', {
+        shopId,
+        node,
+      });
+      throw new Error('[CANONICAL_ORDER_ID_MISSING]');
+    }
+
+    let orderId = String(rawId);
+
+    if (orderId.startsWith('gid://')) {
+      const parts = orderId.split('/');
+      orderId = parts[parts.length - 1];
+    }
+
+    /**
+     * CRITICAL INVARIANT
+     * ------------------
+     * Canonical layer MUST emit normalized numeric ID.
+     */
+    if (!/^\d+$/.test(orderId)) {
+      throw new Error('[CANONICAL_ORDER_INVALID_ID]');
+    }
 
   const currency = node.currencyCode;
 

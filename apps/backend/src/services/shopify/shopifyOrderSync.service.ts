@@ -1,5 +1,7 @@
 import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
+import { backfillFulfillmentEvent }
+  from '../fulfillment/fulfillmentBackfill.service.js';
 
 /**
  * SHOPIFY ORDER SYNC SERVICE
@@ -88,6 +90,27 @@ export async function syncShopifyOrders({
       }
 
       /**
+       * FULFILLMENT BACKFILL (IDEMPOTENT GUARD)
+       * ----------------------------------------
+       * Only emit if fulfillment status exists AND
+       * no prior fulfillment event has been recorded.
+       */
+      if (
+        node.fulfillmentStatus ||
+        node.displayFulfillmentStatus
+      ) {
+        await backfillFulfillmentEvent({
+          shopId,
+          orderId: externalOrderId,
+          fulfillmentStatus:
+            node.fulfillmentStatus ??
+            node.displayFulfillmentStatus ??
+            null,
+          eventTime: new Date(node.updatedAt ?? node.createdAt),
+        });
+      }
+
+      /**
        * PAYMENT EVENT EMISSION (INGESTION LAYER)
        * -----------------------------------------
        * MUST happen here (not projection) to preserve:
@@ -115,9 +138,9 @@ export async function syncShopifyOrders({
           )
           .ignore();
 
-        console.debug('[ORDER_SYNC_EMITTED_PAID]', {
+        /* console.debug('[ORDER_SYNC_EMITTED_PAID]', {
           orderId: node.id,
-        });
+        }); */
       }
   }
 

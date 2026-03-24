@@ -34,7 +34,6 @@ dotenv.config({
  */
 import { processDomainEvent } from '../events/processDomainEvent.js';
 import db from '@lasyncro/backend-core/db.js';
-import knex from 'knex';
 
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');
@@ -154,6 +153,30 @@ async function replayEvents() {
     if (events.length === 0) break;
 
     for (const event of events) {
+
+      /**
+       * REBUILD SAFETY (READ-ONLY)
+       * ---------------------------
+       * Rebuild MUST NOT mutate domain_events.
+       *
+       * If fulfillment events are missing,
+       * system is invalid and must be fixed at ingestion layer.
+       */
+      if (event.event_type === 'orders/sync') {
+        const payload = event.event_payload as any;
+
+        if (
+          payload.fulfillmentStatus ||
+          payload.displayFulfillmentStatus
+        ) {
+          console.warn('[REBUILD_INCOMPLETE_EVENT_STREAM]', {
+            shopId: event.shop_id,
+            orderId: payload.id,
+            reason: 'Missing fulfillment event in domain_events',
+          });
+        }
+      }
+
       /**
        * CANONICAL EVENT EXECUTION
        * -------------------------

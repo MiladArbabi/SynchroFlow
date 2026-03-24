@@ -79,10 +79,10 @@ export async function projectOrderRisk(
    * ------------------
    * Explicit debug signal for observability
    */
-  console.debug('[RISK_PROJECTION][INVENTORY_BLOCKED_REVENUE]', {
+  /* console.debug('[RISK_PROJECTION][INVENTORY_BLOCKED_REVENUE]', {
     orderId,
     blockedRevenue: inventoryBlockedRevenue
-  });
+  }); */
 
   /**
    * CUSTOMER BLOCK

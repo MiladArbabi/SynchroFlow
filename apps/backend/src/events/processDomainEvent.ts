@@ -301,10 +301,10 @@ export async function processDomainEvent(
         .merge()
         .returning('*')
         .then(() => {
-          console.debug('[SNAPSHOT_JOB_ENQUEUED]', {
+          /* console.debug('[SNAPSHOT_JOB_ENQUEUED]', {
             shopId: shopRow.shop_id,
             mode: process.env.REBUILD_MODE === 'true' ? 'rebuild' : 'runtime'
-          });
+          }); */
         })
         .catch((err) => {
           console.error('[SNAPSHOT_JOB_ENQUEUE_FAILED]', {

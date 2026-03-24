@@ -49,10 +49,10 @@ export async function projectDailyOperationalBrief(
   /**
    * DEBUG SIGNAL
    */
-  console.debug('[DAILY_BRIEF][INVENTORY_BLOCKED_REVENUE]', {
+  /* console.debug('[DAILY_BRIEF][INVENTORY_BLOCKED_REVENUE]', {
     shopId,
     value: Number(inventoryBlockedRevenue?.sum ?? 0)
-  });
+  }); */
 
   const cashToday = await trx('orders')
     .where({ shop_id: shopId })

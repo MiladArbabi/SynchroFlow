@@ -248,7 +248,7 @@ export async function startReconciliationIntentDispatcher() {
             });
           }
         }
-        console.debug('[PRIORITY_ORDER]', prioritized.map(p => p.lasyncro_order_id));
+        /* console.debug('[PRIORITY_ORDER]', prioritized.map(p => p.lasyncro_order_id)); */
 
         /**
          * PRIORITY BREAKDOWN (SOURCE-OF-TRUTH)
@@ -267,7 +267,7 @@ export async function startReconciliationIntentDispatcher() {
             'block_type'
           );
 
-        console.debug('[PRIORITY_BREAKDOWN]', breakdown);
+        /* console.debug('[PRIORITY_BREAKDOWN]', breakdown); */
       }
 
       for (const intent of prioritized) {
@@ -278,9 +278,9 @@ export async function startReconciliationIntentDispatcher() {
             intent.observed ?? undefined
           );
 
-          console.debug('[DISPATCH_ORDER]', {
+          /* console.debug('[DISPATCH_ORDER]', {
             order: intent.lasyncro_order_id
-          });
+          }); */
 
           /**
            * DELETE ONLY AFTER SUCCESSFUL PUBLISH

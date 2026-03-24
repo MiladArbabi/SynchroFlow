@@ -43,6 +43,12 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
   'integration/sync_requested': handleIntegrationSyncRequested,
   'orders/paid': handleOrdersPaid,
   'orders/fulfilled': handleOrdersFulfilled,
+  /**
+   * FULFILLMENT STATE UPDATES (PARTIAL / PENDING)
+   * ---------------------------------------------
+   * Shares same handler to ensure consistent projection logic.
+   */
+  'orders/fulfillment_updated': handleOrdersFulfilled,
   'refunds/create': handleRefundsCreate,
   /**
    * INVENTORY LEVEL UPDATES

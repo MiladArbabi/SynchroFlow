@@ -20,7 +20,17 @@ function getEventChannel() {
 
 async function processMessage(msg: { content: Buffer } | null) {
   try {
-    await projectDomainEventFromMessage(msg);
+    /**
+     * PROJECTION DISABLED IN QUEUE WORKER (MIGRATION STEP)
+     * ---------------------------------------------------
+     * DB-driven worker is now the single source of truth.
+     *
+     * Queue still receives events for observability,
+     * but MUST NOT mutate projection state.
+     */
+    console.warn('[QUEUE_PROJECTION_DISABLED]', {
+      raw: msg?.content?.toString(),
+    });
 
     if (msg && 'fields' in (msg as any)) {
       getEventChannel().ack(msg as any);
@@ -28,7 +38,33 @@ async function processMessage(msg: { content: Buffer } | null) {
   } catch (error) {
     if (msg && 'fields' in (msg as any)) {
       try {
-        getEventChannel().nack(msg as any, false, false);
+        
+        const errMsg = String((error as any)?.message ?? error);
+
+          if (errMsg.includes('[PROJECTION_STATE_CORRUPTED]')) {
+            console.error('[WORKER_DLQ_PROJECTION_CORRUPTION]', {
+              error: errMsg,
+            });
+
+            /**
+             * CRITICAL FIX — DEAD LETTER CORRUPTED EVENTS
+             * --------------------------------------------
+             * Prevent infinite crash loop.
+             *
+             * Behavior:
+             * - Send message to DLQ
+             * - Allow system to continue processing other events
+             *
+             * Operator must:
+             * - reset projection
+             * - replay from scratch
+             */
+            getEventChannel().nack(msg as any, false, false); // send to DLQ
+            return;
+          }
+
+          getEventChannel().nack(msg as any, false, false);
+
       } catch (nackError) {
         console.error(
           '[worker] Failed to nack message after processing error:',
@@ -43,6 +79,18 @@ async function processMessage(msg: { content: Buffer } | null) {
 
 export function startWorker() {
   console.log('[worker] Starting unified canonical worker...');
+  /**
+   * DB PROJECTION WORKER (AUTHORITATIVE ORDERING)
+   * ---------------------------------------------
+   * Runs in parallel with queue worker during migration phase.
+   */
+  import('./workers/projection.db.worker.js')
+    .then(({ startDbProjectionWorker }) => {
+      startDbProjectionWorker();
+    })
+    .catch((err) => {
+      console.error('[worker] Failed to start DB projection worker', err);
+    });
 
   const channel = getEventChannel();
 
@@ -54,7 +102,17 @@ export function startWorker() {
       durable: true,
       arguments: {
         'x-dead-letter-exchange': 'events.dlx',
-        'x-dead-letter-routing-key': 'dead'
+        'x-dead-letter-routing-key': 'dead',
+        /**
+         * CRITICAL FIX — SINGLE ACTIVE CONSUMER
+         * -------------------------------------
+         * Ensures only ONE worker processes messages.
+         *
+         * Without this:
+         * - multiple consumers → out-of-order execution
+         * - breaks projection determinism (observed issue)
+         */
+        'x-single-active-consumer': true
       }
     });
 
@@ -63,7 +121,26 @@ export function startWorker() {
 
     await ch.prefetch(1);
 
-    await ch.consume('events', processMessage, { noAck: false });
+    /**
+     * CRITICAL SAFETY GUARD — QUEUE STATE VISIBILITY
+     * ----------------------------------------------
+     * Detects if queue contains residual events during startup.
+     *
+     * If queue is non-empty on cold start:
+     * → system may replay out-of-order
+     * → must be explicitly acknowledged by operator
+     */
+    const q = await ch.checkQueue('events');
+
+    if (q.messageCount > 0) {
+      console.error('[WORKER_QUEUE_NOT_EMPTY_ON_START]', {
+        queue: 'events',
+        messageCount: q.messageCount,
+        action: 'Purge queue before rebuild to ensure deterministic replay',
+      });
+    }
+
+   console.warn('[QUEUE_CONSUMER_DISABLED]');
 
   });
 

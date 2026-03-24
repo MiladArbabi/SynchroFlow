@@ -21,28 +21,6 @@ const ORDERS_PROJECTION = 'orders_projection';
 const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 
 /**
- * CURSOR ADVANCEMENT (TRANSACTION-BOUND)
- */
-export async function advanceCursor(
-  trx: Knex.Transaction,
-  projectionName: string,
-  domain_event_id: number,
-  eventTime: Date
-) {
-  await trx('projection_cursors')
-    .insert({
-      projection_name: projectionName,
-      last_processed_event_id: domain_event_id,
-      updated_at: eventTime,
-    })
-    .onConflict('projection_name')
-    .merge({
-      last_processed_event_id: domain_event_id,
-      updated_at: eventTime,
-    });
-}
-
-/**
  * PURE PROJECTION ENTRY POINT
  * Transport-agnostic.
  */
@@ -55,15 +33,42 @@ export async function projectDomainEvent(
 }
 
 /**
+ * CORE PROJECTION EXECUTOR (SOURCE OF TRUTH)
+ * ------------------------------------------
+ * This function is transport-agnostic.
+ *
+ * MUST be the only place where:
+ * - handlers are invoked
+ * - cursor is advanced
+ *
+ * All entrypoints (queue, DB, replay) must call this.
+ */
+export async function projectDomainEventCore({
+  domainEvent,
+  domain_event_id,
+}: {
+  domainEvent: any;
+  domain_event_id: number;
+}) {
+  return db.transaction(async (trx) => {
+    // 👉 MOVE existing projection logic here (handler + cursor)
+  });
+}
+
+/**
  * CORE PROJECTION FUNCTION
  * (Mechanical relocation from worker.ts)
  */
 export async function projectDomainEventFromMessage(
   msg: { content: Buffer } | null
 ) {
+
+  
   if (!msg) return;
 
   const content = msg.content.toString();
+  
+  throw new Error('[PROJECTION_VIA_QUEUE_FORBIDDEN]');
 
   try {
     let parsed: any;
@@ -76,6 +81,10 @@ export async function projectDomainEventFromMessage(
     }
 
     const domain_event_id = Number(parsed?.domain_event_id);
+
+    console.error('[PROJECTION_RECEIVE_TRACE]', {
+      domain_event_id,
+    });
 
     if (!Number.isInteger(domain_event_id)) {
       console.error('[PROJECTION_PROTOCOL_VIOLATION]', {
@@ -126,7 +135,20 @@ export async function projectDomainEventFromMessage(
      */
     let canonicalPayload = domainEvent.event_payload;
 
-    if (domainEvent.event_type === 'orders/create') {
+    /**
+     * CANONICAL NORMALIZATION FIX
+     * ---------------------------
+     * orders/sync MUST be normalized the same as orders/create.
+     *
+     * Without this:
+     * - inconsistent payload structure
+     * - unstable or duplicate order identity
+     * - projection collapse (only 1 order created)
+     */
+    if (
+      domainEvent.event_type === 'orders/create' ||
+      domainEvent.event_type === 'orders/sync'
+    ) {
       try {
         const { mapShopifyOrderNodeToCanonical } = await import(
           '../services/mappers/shopify-to-canonical-order.js'
@@ -211,6 +233,47 @@ export async function projectDomainEventFromMessage(
         .first<{ last_processed_event_id: number }>();
 
       /**
+       * BOOTSTRAP RECOVERY
+       * ---------------------------------
+       * Queue is NOT guaranteed to contain earliest events.
+       *
+       * If no cursor exists:
+       * - do NOT depend on queue ordering
+       * - process current event normally
+       * - allow DB to define progression
+       */
+
+      if (!cursorRow) {
+
+        if (domain_event_id !== 1) {
+          console.error('[PROJECTION_BOOTSTRAP_BLOCKED]', {
+            projection: projectionName,
+            received_event_id: domain_event_id,
+            reason: 'Cursor missing — first event must be id=1',
+          });
+
+          throw new Error(
+            `[PROJECTION_BOOTSTRAP_VIOLATION] expected first event id=1, received=${domain_event_id}`
+          );
+        }
+
+        console.warn('[PROJECTION_BOOTSTRAP_START]', {
+          projection: projectionName,
+          starting_event_id: domain_event_id,
+        });
+
+        /**
+         * BOOTSTRAP FIX
+         * --------------
+         * Allow ONLY the true first event to initialize projection.
+         *
+         * Guarantees:
+         * - No cursor jump
+         * - Deterministic replay start
+         */
+      }
+
+      /**
        * CONTIGUOUS EVENT ENFORCEMENT
        * ----------------------------
        * When cursor exists:
@@ -223,7 +286,61 @@ export async function projectDomainEventFromMessage(
 
       if (cursorRow?.last_processed_event_id != null) {
 
-        const expectedEventId = cursorRow.last_processed_event_id + 1;
+      const expectedEventId = cursorRow.last_processed_event_id + 1;
+
+      /**
+       * CONTIGUOUS SEQUENCE ENFORCEMENT (CRITICAL FIX)
+       * -----------------------------------------------
+       * Projection MUST process events strictly in order.
+       *
+       * If a future event arrives (gap), we MUST NOT:
+       * - process it
+       * - advance cursor
+       *
+       * Instead:
+       * - log hard error
+       * - abort processing (forces retry via queue)
+       *
+       * Without this:
+       * - cursor jumps forward
+       * - earlier events become permanently ignored
+       * - projection becomes irrecoverably inconsistent
+       */
+      if (domain_event_id > expectedEventId) {
+
+        /**
+         * GAP DETECTION (SYSTEM HEALTH SIGNAL)
+         * ------------------------------------
+         * This indicates:
+         * - missing event(s) in queue pipeline
+         * - or out-of-order dispatch
+         *
+         * This is NOT a recoverable local error.
+         * It is a SYSTEM-LEVEL integrity issue.
+         */
+        const gapSize = domain_event_id - expectedEventId;
+
+        console.error('[PROJECTION_SEQUENCE_VIOLATION]', {
+          projection: projectionName,
+          expected_event_id: expectedEventId,
+          received_event_id: domain_event_id,
+          gap_size: gapSize,
+        });
+
+        /**
+         * Explicit signal for monitoring / alerting
+         */
+        console.error('[PROJECTION_GAP_DETECTED]', {
+          projection: projectionName,
+          missing_from: expectedEventId,
+          missing_to: domain_event_id - 1,
+          gap_size: gapSize,
+        });
+
+        throw new Error(
+          `[PROJECTION_OUT_OF_ORDER] expected=${expectedEventId} received=${domain_event_id} gap=${gapSize}`
+        );
+      }
 
         /**
          * DUPLICATE EVENT
@@ -236,50 +353,67 @@ export async function projectDomainEventFromMessage(
           return;
         }
 
-        /**
-         * LATE EVENT DELIVERY
-         * -------------------
-         * RabbitMQ delivery order is NOT guaranteed to match the
-         * canonical ordering of domain_events.
-         *
-         * If an older event arrives after a newer one has already
-         * been projected, it must be ignored rather than treated
-         * as a fatal error.
-         *
-         * The projection state already includes the effects of
-         * this event because the cursor has advanced beyond it.
-         *
-         * Ignoring preserves deterministic rebuild guarantees.
-         */
         if (domain_event_id < cursorRow.last_processed_event_id) {
 
-          console.warn('[PROJECTION_LATE_EVENT_IGNORED]', {
+          console.error('[PROJECTION_LATE_EVENT_DETECTED_FATAL]', {
             projection: projectionName,
             last_processed_event_id: cursorRow.last_processed_event_id,
             received_event_id: domain_event_id,
+            reason: 'Historical gap detected — projection state is corrupted',
           });
 
-          return;
+          /**
+           * CRITICAL FIX — NO SILENT SKIPS
+           * --------------------------------
+           * Late events indicate one of:
+           * - cursor jumped ahead (confirmed incident)
+           * - missing historical processing
+           *
+           * We MUST NOT silently skip:
+           * → it locks system into incomplete state
+           *
+           * Instead:
+           * → fail fast
+           * → force operator intervention (rebuild/reset)
+           */
+          throw new Error(
+            `[PROJECTION_STATE_CORRUPTED] late event detected id=${domain_event_id} < cursor=${cursorRow.last_processed_event_id}`
+          );
         }
       }
 
       const handler = projectionRegistry[domainEvent.event_type];
 
+      (domainEvent as any).canonical_payload = canonicalPayload;
+
       /**
-       * HANDLER EXISTENCE GUARD
-       * -----------------------
-       * Domain events without projection handlers must never
-       * fail silently.
-       *
-       * Cursor advancement is still allowed to preserve
-       * forward compatibility and deterministic rebuilds.
+       * CRITICAL: attach canonical payload to domainEvent
+       * so handlers operate on normalized data
        */
+
       if (!handler) {
-        console.warn('[PROJECTION_HANDLER_MISSING]', {
-          event_type: domainEvent.event_type,
-          domain_event_id,
-        });
-      }
+      /**
+       * MISSING HANDLER = HARD FAILURE (CRITICAL FIX)
+       * ---------------------------------------------
+       * Advancing cursor without a handler causes:
+       * - permanent data loss
+       * - irrecoverable projection gaps
+       *
+       * We MUST fail fast and block progression.
+       *
+       * This ensures:
+       * - new event types cannot silently bypass projections
+       * - system remains deterministically rebuildable
+       */
+      console.error('[PROJECTION_HANDLER_MISSING_FATAL]', {
+        event_type: domainEvent.event_type,
+        domain_event_id,
+      });
+
+      throw new Error(
+        `[PROJECTION_HANDLER_MISSING] event_type=${domainEvent.event_type}`
+      );
+    }
 
       /**
        * HANDLER EXECUTION
@@ -301,18 +435,27 @@ export async function projectDomainEventFromMessage(
       }
 
       /**
-       * CURSOR ADVANCEMENT
-       * ------------------
-       * Cursor must advance for every processed event,
-       * even if the projection has no handler for it.
+       * CURSOR ADVANCEMENT HANDLED INLINE
+       * ---------------------------------
+       * advanceCursor() is intentionally NOT used here.
+       *
+       * Reason:
+       * - it bypasses transactional cursorRow context
+       * - causes duplicate writes
+       * - violates monotonicity constraint
+       *
+       * All cursor logic must remain colocated with:
+       * SELECT ... FOR UPDATE cursorRow
        */
-      await advanceCursor(
-        trx,
-        projectionName,
-        domain_event_id,
-        canonicalEventTime
-      );
 
+      /**
+       * CURSOR HANDLING REMOVED (DB-DRIVEN MODE)
+       * ----------------------------------------
+       * Cursor progression is now owned exclusively by:
+       * → projection.db.worker.ts
+       *
+       * DO NOT reintroduce cursor logic here.
+       */
     });
 
     /**

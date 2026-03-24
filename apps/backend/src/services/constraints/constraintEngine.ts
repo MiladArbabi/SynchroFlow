@@ -138,11 +138,11 @@ export async function evaluateOrderConstraints(
   for (const type of requiredTypes) {
 
     if (type === 'inventory') {
-      console.error('[CONSTRAINT_ENGINE_SCOPE_VIOLATION]', {
+      /* console.error('[CONSTRAINT_ENGINE_SCOPE_VIOLATION]', {
         orderId,
         type,
         reason: 'attempted to synthesize inventory constraint without targetId'
-      });
+      }); */
       
       continue;
     }

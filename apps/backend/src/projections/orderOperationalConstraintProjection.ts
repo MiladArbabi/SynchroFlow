@@ -128,9 +128,9 @@ export async function projectOrderOperationalConstraints(
    */
   const blockedCount = Array.from(results.values()).filter(Boolean).length;
 
-  console.debug('[operational_constraint_projection.completed]', {
+  /* console.debug('[operational_constraint_projection.completed]', {
     evaluated_orders: orderIds.length,
     blocked: blockedCount,
     source: 'constraint_engine'
-  });
+  }); */
 }

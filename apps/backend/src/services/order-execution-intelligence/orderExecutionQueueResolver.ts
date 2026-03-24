@@ -51,10 +51,10 @@ export async function resolveExecutionQueues(
   /**
    * DEBUG SIGNAL
    */
-  console.debug('[QUEUE][AWAITING_INVENTORY]', {
+  /* console.debug('[QUEUE][AWAITING_INVENTORY]', {
     shopId,
     count: Number(queueAwaitingInventory?.count ?? 0)
-  });
+  }); */
 
   const queueAwaitingCustomer = await trx('order_risk_snapshot')
     .where({ shop_id: shopId })

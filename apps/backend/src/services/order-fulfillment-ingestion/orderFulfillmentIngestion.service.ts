@@ -175,28 +175,53 @@ export class OrderFulfillmentIngestionService {
       status === 'cancelled' ||
       newPrecedence >= currentPrecedence;
 
+    console.info('[FULFILLMENT_PRECEDENCE_CHECK]', {
+      lasyncroOrderId,
+      incomingStatus: status,
+      existingStatus: existing.status,
+      newPrecedence,
+      currentPrecedence,
+      allowUpdate,
+    });
+
     if (!allowUpdate) {
       // Silent block to preserve deterministic state
       return;
     }
 
-    await executor('order_fulfillment_status')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .update({
+    /**
+     * UPSERT (RAW — FIXES KNEX AMBIGUITY BUG)
+     * ----------------------------------------
+     * Replaces .update() which generates invalid ON CONFLICT SQL.
+     */
+    await executor.raw(
+      `
+      INSERT INTO order_fulfillment_status (
+        lasyncro_fulfillment_id,
+        lasyncro_order_id,
         status,
-        status_updated_at: canonicalEventTime,
-
-        /**
-         * EXECUTION COMPLETION COMMIT (IDEMPOTENT)
-         * ----------------------------------------
-         * Only set fulfilled_at if transitioning into fulfilled
-         * and not already set.
-         */
-        fulfilled_at:
-          status === 'fulfilled'
-            ? executor.raw('COALESCE(fulfilled_at, ?)', [canonicalEventTime])
-            : executor.raw('fulfilled_at'),
-      });
+        status_updated_at,
+        fulfilled_at
+      )
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (lasyncro_order_id)
+      DO UPDATE SET
+        status = EXCLUDED.status,
+        status_updated_at = EXCLUDED.status_updated_at,
+        fulfilled_at = CASE
+          WHEN EXCLUDED.status = 'fulfilled'
+          THEN COALESCE(order_fulfillment_status.fulfilled_at, EXCLUDED.status_updated_at)
+          ELSE order_fulfillment_status.fulfilled_at
+        END
+      `,
+      [
+        crypto.randomUUID(),
+        lasyncroOrderId,
+        status,
+        canonicalEventTime,
+        status === 'fulfilled' ? canonicalEventTime : null,
+      ]
+    );
 
       /**
        * FULFILLMENT HISTORY APPEND (TRANSITION)

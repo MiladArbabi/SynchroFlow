@@ -28,13 +28,50 @@ export async function backfillFulfillmentEvent({
    */
   if (!fulfillmentStatus) return;
 
+  /**
+   * NORMALIZE INPUT (CRITICAL)
+   * --------------------------
+   * Shopify sends UPPERCASE statuses.
+   * All comparisons must be lowercase.
+   */
+  const normalizedInput = fulfillmentStatus.toLowerCase();
+
+  /**
+   * STATUS NORMALIZATION (CANONICAL ENUM)
+   * -------------------------------------
+   * MUST match OrderFulfillmentIngestionService.precedence keys exactly.
+   *
+   * Invalid enums silently collapse to lowest precedence (pending),
+   * corrupting fulfillment state.
+   */
+  const normalizedStatus =
+    normalizedInput === 'partially_fulfilled'
+      ? 'partially_fulfilled'
+      : normalizedInput === 'fulfilled'
+        ? 'fulfilled'
+        : 'pending';
+
   await db('domain_events')
     .insert({
       shop_id: shopId,
-      event_type: 'orders.fulfillment_status_updated',
+      /**
+       * EVENT TYPE (CANONICAL — SLASH FORMAT)
+       * --------------------------------------
+       * SYSTEM INVARIANT:
+       * All domain events MUST use slash notation.
+       *
+       * Prevents:
+       * - projection handler misses
+       * - rebuild divergence
+       * - dual event namespaces
+       */
+      event_type:
+        normalizedInput === 'fulfilled'
+          ? 'orders/fulfilled'
+          : 'orders/fulfillment_updated',
       event_payload: {
         order_id: orderId,
-        status: fulfillmentStatus,
+        status: normalizedStatus,
       },
       event_time: eventTime,
       event_version: 1,
@@ -44,12 +81,12 @@ export async function backfillFulfillmentEvent({
      * -----------------
      * Prevent duplicate emission during retries.
      */
-    .onConflict(['shop_id', 'event_type', 'event_time'])
+    .onConflict()
     .ignore();
 
-  console.info('[FULFILLMENT_EVENT_BACKFILLED]', {
+  /* console.info('[FULFILLMENT_EVENT_BACKFILLED]', {
     shopId,
     orderId,
     eventTime,
-  });
+  }); */
 }

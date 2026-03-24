@@ -21,19 +21,26 @@ export async function backfillShopOperationalSnapshots(shopId: number) {
   console.info('[shop-snapshot-backfill] started', { shopId });
 
   /**
-   * Determine historical bounds
+   * AGGREGATION FIX (CRITICAL)
+   * --------------------------
+   * Use knex aggregation helpers correctly.
+   *
+   * db.min/db.max MUST NOT be passed into select()
+   * as they produce nested query builders → invalid SQL.
+   *
+   * Correct usage:
+   * - chain .min() / .max() directly on query builder
    */
   const bounds = await db('orders')
     .where({ shop_id: shopId })
-    .select(
-      /**
-       * DB CONTRACT: replace raw aggregation with knex helpers
-       * Ensures safer query composition + future typing support
-       */
-      db.min('order_created_at as min'),
-      db.max('order_created_at as max')
-    )
+    .min('order_created_at as min')
+    .max('order_created_at as max')
     .first();
+
+  console.debug('[SNAPSHOT_BACKFILL_BOUNDS_QUERY_RESULT]', {
+    shopId,
+    bounds,
+  });
 
   if (!bounds?.min || !bounds?.max) {
     console.warn('[shop-snapshot-backfill] skipped — no orders', { shopId });

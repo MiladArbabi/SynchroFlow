@@ -451,12 +451,12 @@ export async function reconcileOrderFulfillment(
     const isCustomerBlocked = customerConstraints.length > 0;
     const isOperationalBlocked = operationalConstraints.length > 0;
 
-    console.debug('[RECONCILIATION_CONSTRAINT_STATE_SCOPED]', {
+    /* console.debug('[RECONCILIATION_CONSTRAINT_STATE_SCOPED]', {
       orderId: lasyncroOrderId,
       inventory: inventoryConstraints.map(c => c.targetId),
       customer: customerConstraints.length,
       operational: operationalConstraints.length
-    });
+    }); */
 
     /* console.debug('[RECONCILIATION_CONSTRAINT_STATE]', {
       orderId: lasyncroOrderId,
@@ -498,12 +498,12 @@ export async function reconcileOrderFulfillment(
      * - system becomes non-deterministic
      */
     if (isInventoryBlocked || isCustomerBlocked || isOperationalBlocked) {
-      console.warn('[RECONCILIATION_BLOCKED_BY_CONSTRAINTS]', {
+      /* console.warn('[RECONCILIATION_BLOCKED_BY_CONSTRAINTS]', {
         orderId: lasyncroOrderId,
         inventory: isInventoryBlocked,
         customer: isCustomerBlocked,
         operational: isOperationalBlocked
-      });
+      }); */
 
       /**
        * HARD STOP (TYPE-SAFE)

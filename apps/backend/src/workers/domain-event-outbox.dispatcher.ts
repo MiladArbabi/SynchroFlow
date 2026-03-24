@@ -7,6 +7,7 @@ const BATCH_SIZE = 20;
 const RETRY_CEILING = 10;
 
 let running = false;
+let isLeader = false;
 
 export async function startDomainEventOutboxDispatcher() {
   if (running) return;
@@ -17,6 +18,25 @@ export async function startDomainEventOutboxDispatcher() {
   const channel = getQueueChannel(QUEUE);
 
   while (running) {
+
+    const lock = await db.raw('SELECT pg_try_advisory_lock(987654321) as locked');
+
+      if (!lock.rows[0].locked) {
+
+        if (isLeader) {
+/*           console.warn('[OUTBOX_DISPATCH_LOST_LEADERSHIP]');
+ */          isLeader = false;
+        }
+
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        continue;
+      }
+
+      if (!isLeader) {
+        /* console.log('[OUTBOX_DISPATCH_BECAME_LEADER]'); */
+        isLeader = true;
+      }
+
     try {
       await db.transaction(async (trx) => {
 
@@ -24,22 +44,40 @@ export async function startDomainEventOutboxDispatcher() {
           .whereNull('published_at')
           .orderBy('id', 'asc')
           .limit(BATCH_SIZE)
-          .forUpdate()
-          .skipLocked();
+          .forUpdate();
+
+        /**
+         * STRICT ORDERING GUARANTEE (CRITICAL FIX)
+         * ----------------------------------------
+         * Removed skipLocked to enforce:
+         * - no gaps in dispatch
+         * - strict sequential publishing
+         *
+         * Tradeoff:
+         * - lower concurrency
+         * - but guarantees deterministic projection
+         */
 
         for (const row of rows) {
-          try {
-            const ok = channel.sendToQueue(
-              QUEUE,
-              Buffer.from(JSON.stringify({
-                domain_event_id: row.domain_event_id,
-              })),
-              { persistent: true }
-            );
 
-            if (!ok) {
-              throw new Error('Broker backpressure');
-            }
+          console.debug('[OUTBOX_DISPATCH_TRACE]', {
+            outbox_id: row.id,
+            domain_event_id: row.domain_event_id,
+          });
+
+          const ok = channel.sendToQueue(
+            QUEUE,
+            Buffer.from(JSON.stringify({
+              domain_event_id: row.domain_event_id,
+            })),
+            { persistent: true }
+          );
+
+          if (!ok) {
+            throw new Error('Broker backpressure');
+          }
+
+          try {
 
             await trx('domain_event_outbox')
               .where({ id: row.id })
@@ -50,6 +88,13 @@ export async function startDomainEventOutboxDispatcher() {
 
           } catch (err: any) {
 
+            /**
+             * RETRY TRACKING (RESTORED — SAFE)
+             * --------------------------------
+             * Still FAIL-FAST:
+             * - we rethrow → stops batch
+             * But we record state for debugging + observability
+             */
             await trx('domain_event_outbox')
               .where({ id: row.id })
               .update({
@@ -57,13 +102,15 @@ export async function startDomainEventOutboxDispatcher() {
                 last_error: String(err?.message ?? err),
               });
 
-            if (row.retry_count + 1 >= RETRY_CEILING) {
-              console.error('[domain-event-outbox][terminal]', {
-                id: row.id,
-                domain_event_id: row.domain_event_id,
-              });
-            }
+            console.error('[OUTBOX_DISPATCH_FAILED]', {
+              outbox_id: row.id,
+              domain_event_id: row.domain_event_id,
+              error: err?.message ?? err,
+            });
+
+            throw err; // CRITICAL: stop batch (preserve ordering)
           }
+
         }
       });
 

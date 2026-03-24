@@ -100,9 +100,9 @@ export function startReconciliationConsumer() {
         aggregateVersion !== order.aggregate_version ||
         aggregateVersion <= order.last_projected_version
       ) {
-        console.warn(
+        /* console.warn(
           `[reconciliation] version gate blocked: order=${lasyncroOrderId} eventVersion=${aggregateVersion} current=${order.aggregate_version} projected=${order.last_projected_version}`
-        );
+        ); */
         ch.ack(msg);
         return;
       }

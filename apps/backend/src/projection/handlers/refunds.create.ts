@@ -9,13 +9,10 @@
  * No cleanup.
  * Determinism issues intentionally preserved.
  */
-
-import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { Knex } from 'knex';
 
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
-import { advanceCursor } from '../projection.engine.js';
 
 const ORDER_UUID_NAMESPACE =
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
