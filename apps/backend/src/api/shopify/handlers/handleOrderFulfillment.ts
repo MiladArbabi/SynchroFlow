@@ -113,6 +113,22 @@ export async function handleOrderFulfillment(
   );
 
   let domainEventId: number;
+  /**
+   * DOMAIN EVENT PAYLOAD NORMALIZATION (ID ONLY)
+   * --------------------------------------------
+   * DB constraint enforces:
+   *   event_payload.id MUST NOT be gid://
+   *
+   * This is the ONLY enforced invariant.
+   */
+  const normalizedPayload = { ...(envelope.rawPayload as any) };
+
+  if (
+    typeof normalizedPayload.id === 'string' &&
+    normalizedPayload.id.startsWith('gid://')
+  ) {
+    normalizedPayload.id = normalizedPayload.id.split('/').pop();
+  }
 
   try {
     const result = await db('domain_events')
@@ -127,10 +143,26 @@ export async function handleOrderFulfillment(
          * Mismatch breaks rebuild determinism.
          */
         event_type: 'orders.fulfilled',
-        event_payload: rawPayload,
+        event_payload: normalizedPayload,
         event_time: new Date(eventTime),
         event_version: 1,
-        external_event_id: envelope.eventId,
+        /**
+         * EXTERNAL EVENT ID NORMALIZATION (CRITICAL)
+         * ------------------------------------------
+         * DB constraint: external_event_id must NOT contain gid://
+         *
+         * Shopify sends GIDs → must normalize before persistence
+         * to prevent hard DB failures and ingestion loss.
+         */
+        external_event_id: (() => {
+          let id = String(envelope.eventId);
+
+          if (id.startsWith('gid://')) {
+            id = id.split('/').pop()!;
+          }
+
+          return id;
+        })(),
       })
       .returning('id');
 

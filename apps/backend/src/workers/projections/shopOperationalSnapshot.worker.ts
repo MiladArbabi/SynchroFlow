@@ -72,7 +72,23 @@ export async function computeShopOperationalSnapshot(
      * This path is intentionally blocked.
      */
     if (options?.allowMutation === true) {
-    log.error('SNAPSHOT_MUTATION_BYPASS_BLOCKED', { shopId });
+      log.error('SNAPSHOT_MUTATION_BYPASS_BLOCKED', { shopId });
+
+      /**
+       * TEMPORARY HARD BLOCK (ARCHITECTURE ENFORCEMENT)
+       * ----------------------------------------------
+       * Snapshot recompute must NOT run outside projection.
+       *
+       * This worker is disabled until:
+       * - snapshot projection event is introduced
+       * - or projection handler owns recompute
+       *
+       * Prevents:
+       * - state divergence
+       * - replay inconsistency
+       */
+      console.warn('[SNAPSHOT_WORKER_DISABLED]');
+      return;
 
     throw new Error('[SNAPSHOT_MUTATION_BYPASS_FORBIDDEN]');
     }

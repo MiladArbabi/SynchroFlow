@@ -46,343 +46,88 @@ export async function projectDomainEvent(
 export async function projectDomainEventCore({
   domainEvent,
   domain_event_id,
+  trx,
 }: {
   domainEvent: any;
   domain_event_id: number;
+  trx: Knex.Transaction;
 }) {
-  return db.transaction(async (trx) => {
-    // 👉 MOVE existing projection logic here (handler + cursor)
-  });
-}
-
-/**
- * CORE PROJECTION FUNCTION
- * (Mechanical relocation from worker.ts)
- */
-export async function projectDomainEventFromMessage(
-  msg: { content: Buffer } | null
-) {
-
   
-  if (!msg) return;
-
-  const content = msg.content.toString();
-  
-  throw new Error('[PROJECTION_VIA_QUEUE_FORBIDDEN]');
-
-  try {
-    let parsed: any;
-
-    try {
-      parsed = JSON.parse(content);
-    } catch (err) {
-      console.error('[PROJECTION_INVALID_JSON]', { raw: content });
-      throw err;
+    if (!trx) {
+      throw new Error('[PROJECTION_TRX_MISSING]');
     }
-
-    const domain_event_id = Number(parsed?.domain_event_id);
-
-    console.error('[PROJECTION_RECEIVE_TRACE]', {
-      domain_event_id,
-    });
-
-    if (!Number.isInteger(domain_event_id)) {
-      console.error('[PROJECTION_PROTOCOL_VIOLATION]', {
-        expected: '{ domain_event_id: number }',
-        received: parsed,
-      });
-      throw new Error('[DOMAIN_EVENT_ID_INVALID_TYPE]');
-    }
-
-    if (!domain_event_id) {
-      if ('fields' in (msg as any)) {
-        throw Error;
-      }
-      return;
-    }
-
-    /**
-     * DOMAIN EVENT FETCH
-     * ------------------
-     * Immutable source of truth.
-     */
-    const domainEvent = await db('domain_events')
-      .where({ id: domain_event_id })
-      .first<{
-        id: number;
-        shop_id: number;
-        event_type: string;
-        event_payload: Record<string, any>;
-        event_time: Date;
-      }>();
-
-    if (!domainEvent) {
-      throw new Error(
-        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`
-      );
-    }
-
-    /**
-     * CANONICAL NORMALIZATION LAYER (CRITICAL)
-     * ----------------------------------------
-     * Ensures projections NEVER consume raw platform payloads.
-     *
-     * Current scope:
-     * - Shopify orders normalization
-     *
-     * Future:
-     * - Extend per event_type
-     */
-    let canonicalPayload = domainEvent.event_payload;
-
-    /**
-     * CANONICAL NORMALIZATION FIX
-     * ---------------------------
-     * orders/sync MUST be normalized the same as orders/create.
-     *
-     * Without this:
-     * - inconsistent payload structure
-     * - unstable or duplicate order identity
-     * - projection collapse (only 1 order created)
-     */
-    if (
-      domainEvent.event_type === 'orders/create' ||
-      domainEvent.event_type === 'orders/sync'
-    ) {
-      try {
-        const { mapShopifyOrderNodeToCanonical } = await import(
-          '../services/mappers/shopify-to-canonical-order.js'
-        );
-
-        canonicalPayload = mapShopifyOrderNodeToCanonical(
-          domainEvent.event_payload,
-          domainEvent.shop_id
-        );
-      } catch (err) {
-        console.error('[CANONICAL_NORMALIZATION_FAILED]', {
-          eventId: domainEvent.id,
-          error: err,
-        });
-      }
-    }
-
-    /**
-     * PROJECTION STREAM RESOLUTION
-     * ----------------------------
-     * Must resolve AFTER event fetch.
-     */
-    const projectionName =
-      domainEvent.event_type.startsWith('lifecycle/')
-        ? LIFECYCLE_PROJECTION
-        : ORDERS_PROJECTION;
-
-   /**
-     * TRANSACTIONAL CURSOR ENFORCEMENT ONLY
-     * --------------------------------------
-     * Strict monotonic + contiguous invariants
-     * must be enforced inside the projection transaction
-     * using SELECT ... FOR UPDATE.
-     *
-     * Queue delivery order is NOT a replay guarantee.
-     * The database is the canonical ordering authority.
-     *
-     * Therefore, no pre-transaction cursor checks are allowed here.
-     */
-
-    /**
-     * ORDER ENFORCEMENT NOTE
-     * ----------------------
-     * Projection ordering must ONLY be enforced inside the
-     * transaction using SELECT ... FOR UPDATE.
-     *
-     * Pre-transaction checks are forbidden because:
-     * - they race with concurrent workers
-     * - they violate deterministic replay
-     * - they duplicate cursor logic
-     */
-
-    /**
-     * CANONICAL EVENT TIME CHECK
-     */
-    if (!domainEvent.event_time) {
-      throw new Error(
-        '[EVENT_TIME_VIOLATION] missing canonical event_time'
-      );
-    }
-
-    const canonicalEventTime = new Date(domainEvent.event_time);
-
-    /**
-     * CENTRALIZED PROJECTION CURSOR ENFORCEMENT
-     * -----------------------------------------
-     * All projection ordering invariants are enforced here.
-     *
-     * Guarantees:
-     * - contiguous event processing
-     * - duplicate suppression
-     * - deterministic replay
-     *
-     * Handlers must NOT implement cursor logic.
-     */
-
-    await db.transaction(async (trx: Knex.Transaction) => {
-
-      const cursorRow = await trx('projection_cursors')
-        .where({ projection_name: projectionName })
-        .forUpdate()
-        .first<{ last_processed_event_id: number }>();
+       /**
+         * PROJECTION STREAM RESOLUTION
+         * ----------------------------
+         * Must resolve AFTER event fetch.
+         */
+        const projectionName =
+          domainEvent.event_type.startsWith('lifecycle/')
+            ? LIFECYCLE_PROJECTION
+            : ORDERS_PROJECTION;
 
       /**
-       * BOOTSTRAP RECOVERY
+       * ENGINE IS STATELESS (CRITICAL)
+       * ------------------------------
+       * Cursor state is owned by projection worker.
+       * Engine MUST NOT:
+       * - read cursor
+       * - validate sequence
+       * - enforce ordering
+       *
+       * This prevents:
+       * - lock contention
+       * - duplicate responsibility
+       * - hidden transaction stalls
+       */
+
+      let canonicalPayload = domainEvent.event_payload;
+      
+      /**
+       * CANONICAL NORMALIZATION (ENABLED)
        * ---------------------------------
-       * Queue is NOT guaranteed to contain earliest events.
+       * CRITICAL:
+       * - Orders MUST be normalized before reaching handler
+       * - Raw payloads are NOT safe for projection logic
        *
-       * If no cursor exists:
-       * - do NOT depend on queue ordering
-       * - process current event normally
-       * - allow DB to define progression
+       * This was previously disabled → caused handler failures
        */
-
-      if (!cursorRow) {
-
-        if (domain_event_id !== 1) {
-          console.error('[PROJECTION_BOOTSTRAP_BLOCKED]', {
-            projection: projectionName,
-            received_event_id: domain_event_id,
-            reason: 'Cursor missing — first event must be id=1',
-          });
-
-          throw new Error(
-            `[PROJECTION_BOOTSTRAP_VIOLATION] expected first event id=1, received=${domain_event_id}`
+      if (
+        domainEvent.event_type === 'orders/create' ||
+        domainEvent.event_type === 'orders/sync'
+      ) {
+        try {
+          const { mapShopifyOrderNodeToCanonical } = await import(
+            '../services/mappers/shopify-to-canonical-order.js'
           );
-        }
 
-        console.warn('[PROJECTION_BOOTSTRAP_START]', {
-          projection: projectionName,
-          starting_event_id: domain_event_id,
-        });
+          canonicalPayload = mapShopifyOrderNodeToCanonical(
+            domainEvent.event_payload,
+            domainEvent.shop_id
+          );
 
-        /**
-         * BOOTSTRAP FIX
-         * --------------
-         * Allow ONLY the true first event to initialize projection.
-         *
-         * Guarantees:
-         * - No cursor jump
-         * - Deterministic replay start
-         */
-      }
-
-      /**
-       * CONTIGUOUS EVENT ENFORCEMENT
-       * ----------------------------
-       * When cursor exists:
-       *   enforce strict sequential processing.
-       *
-       * When cursor does NOT exist:
-       *   this is the first event for the projection
-       *   and must be processed normally.
-       */
-
-      if (cursorRow?.last_processed_event_id != null) {
-
-      const expectedEventId = cursorRow.last_processed_event_id + 1;
-
-      /**
-       * CONTIGUOUS SEQUENCE ENFORCEMENT (CRITICAL FIX)
-       * -----------------------------------------------
-       * Projection MUST process events strictly in order.
-       *
-       * If a future event arrives (gap), we MUST NOT:
-       * - process it
-       * - advance cursor
-       *
-       * Instead:
-       * - log hard error
-       * - abort processing (forces retry via queue)
-       *
-       * Without this:
-       * - cursor jumps forward
-       * - earlier events become permanently ignored
-       * - projection becomes irrecoverably inconsistent
-       */
-      if (domain_event_id > expectedEventId) {
-
-        /**
-         * GAP DETECTION (SYSTEM HEALTH SIGNAL)
-         * ------------------------------------
-         * This indicates:
-         * - missing event(s) in queue pipeline
-         * - or out-of-order dispatch
-         *
-         * This is NOT a recoverable local error.
-         * It is a SYSTEM-LEVEL integrity issue.
-         */
-        const gapSize = domain_event_id - expectedEventId;
-
-        console.error('[PROJECTION_SEQUENCE_VIOLATION]', {
-          projection: projectionName,
-          expected_event_id: expectedEventId,
-          received_event_id: domain_event_id,
-          gap_size: gapSize,
-        });
-
-        /**
-         * Explicit signal for monitoring / alerting
-         */
-        console.error('[PROJECTION_GAP_DETECTED]', {
-          projection: projectionName,
-          missing_from: expectedEventId,
-          missing_to: domain_event_id - 1,
-          gap_size: gapSize,
-        });
-
-        throw new Error(
-          `[PROJECTION_OUT_OF_ORDER] expected=${expectedEventId} received=${domain_event_id} gap=${gapSize}`
-        );
-      }
-
-        /**
-         * DUPLICATE EVENT
-         */
-        if (domain_event_id === cursorRow.last_processed_event_id) {
-          console.warn('[PROJECTION_DUPLICATE_EVENT_IGNORED]', {
-            projection: projectionName,
-            event: domain_event_id,
+          console.debug('[CANONICAL_NORMALIZATION_APPLIED]', {
+            eventId: domain_event_id,
+            eventType: domainEvent.event_type,
           });
-          return;
-        }
 
-        if (domain_event_id < cursorRow.last_processed_event_id) {
-
-          console.error('[PROJECTION_LATE_EVENT_DETECTED_FATAL]', {
-            projection: projectionName,
-            last_processed_event_id: cursorRow.last_processed_event_id,
-            received_event_id: domain_event_id,
-            reason: 'Historical gap detected — projection state is corrupted',
+        } catch (err) {
+          console.error('[CANONICAL_NORMALIZATION_FAILED_FATAL]', {
+            eventId: domain_event_id,
+            error: err,
           });
 
           /**
-           * CRITICAL FIX — NO SILENT SKIPS
-           * --------------------------------
-           * Late events indicate one of:
-           * - cursor jumped ahead (confirmed incident)
-           * - missing historical processing
-           *
-           * We MUST NOT silently skip:
-           * → it locks system into incomplete state
-           *
-           * Instead:
-           * → fail fast
-           * → force operator intervention (rebuild/reset)
+           * FAIL FAST — do NOT allow raw payload fallback
+           * This guarantees deterministic projection behavior
            */
-          throw new Error(
-            `[PROJECTION_STATE_CORRUPTED] late event detected id=${domain_event_id} < cursor=${cursorRow.last_processed_event_id}`
-          );
+          throw err;
         }
       }
+      const canonicalEventTime = new Date(domainEvent.event_time);
 
       const handler = projectionRegistry[domainEvent.event_type];
+
 
       (domainEvent as any).canonical_payload = canonicalPayload;
 
@@ -456,7 +201,135 @@ export async function projectDomainEventFromMessage(
        *
        * DO NOT reintroduce cursor logic here.
        */
+    };
+
+/**
+ * CORE PROJECTION FUNCTION
+ * (Mechanical relocation from worker.ts)
+ */
+export async function projectDomainEventFromMessage(
+  msg: { content: Buffer } | null
+) {
+
+  
+  if (!msg) return;
+
+  const content = msg.content.toString();
+  
+  throw new Error('[PROJECTION_VIA_QUEUE_FORBIDDEN]');
+
+  try {
+    let parsed: any;
+
+    try {
+      parsed = JSON.parse(content);
+    } catch (err) {
+      console.error('[PROJECTION_INVALID_JSON]', { raw: content });
+      throw err;
+    }
+
+    const domain_event_id = Number(parsed?.domain_event_id);
+
+    console.error('[PROJECTION_RECEIVE_TRACE]', {
+      domain_event_id,
     });
+
+    if (!Number.isInteger(domain_event_id)) {
+      console.error('[PROJECTION_PROTOCOL_VIOLATION]', {
+        expected: '{ domain_event_id: number }',
+        received: parsed,
+      });
+      throw new Error('[DOMAIN_EVENT_ID_INVALID_TYPE]');
+    }
+
+    if (!domain_event_id) {
+      if ('fields' in (msg as any)) {
+        throw Error;
+      }
+      return;
+    }
+
+    /**
+     * DOMAIN EVENT FETCH
+     * ------------------
+     * Immutable source of truth.
+     */
+    const domainEvent = await db('domain_events')
+      .where({ id: domain_event_id })
+      .first<{
+        id: number;
+        shop_id: number;
+        event_type: string;
+        event_payload: Record<string, any>;
+        event_time: Date;
+      }>();
+
+    if (!domainEvent) {
+      throw new Error(
+        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`
+      );
+    }
+
+    /**
+     * CANONICAL NORMALIZATION FIX
+     * ---------------------------
+     * orders/sync MUST be normalized the same as orders/create.
+     *
+     * Without this:
+     * - inconsistent payload structure
+     * - unstable or duplicate order identity
+     * - projection collapse (only 1 order created)
+     */
+    if (
+      domainEvent.event_type === 'orders/create' ||
+      domainEvent.event_type === 'orders/sync'
+    ) {
+      try {
+        const { mapShopifyOrderNodeToCanonical } = await import(
+          '../services/mappers/shopify-to-canonical-order.js'
+        );
+
+      } catch (err) {
+        console.error('[CANONICAL_NORMALIZATION_FAILED]', {
+          eventId: domainEvent.id,
+          error: err,
+        });
+      }
+    }
+
+   /**
+     * TRANSACTIONAL CURSOR ENFORCEMENT ONLY
+     * --------------------------------------
+     * Strict monotonic + contiguous invariants
+     * must be enforced inside the projection transaction
+     * using SELECT ... FOR UPDATE.
+     *
+     * Queue delivery order is NOT a replay guarantee.
+     * The database is the canonical ordering authority.
+     *
+     * Therefore, no pre-transaction cursor checks are allowed here.
+     */
+
+    /**
+     * ORDER ENFORCEMENT NOTE
+     * ----------------------
+     * Projection ordering must ONLY be enforced inside the
+     * transaction using SELECT ... FOR UPDATE.
+     *
+     * Pre-transaction checks are forbidden because:
+     * - they race with concurrent workers
+     * - they violate deterministic replay
+     * - they duplicate cursor logic
+     */
+
+    /**
+     * CANONICAL EVENT TIME CHECK
+     */
+    if (!domainEvent.event_time) {
+      throw new Error(
+        '[EVENT_TIME_VIOLATION] missing canonical event_time'
+      );
+    }
 
     /**
      * CANONICAL EVENT DISPATCHER

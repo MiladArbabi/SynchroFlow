@@ -117,7 +117,23 @@ export async function handleOrderPaid(
         event_payload: rawPayload,
         event_time: new Date(eventTime),
         event_version: 1,
-        external_event_id: envelope.eventId,
+        /**
+         * EXTERNAL EVENT ID NORMALIZATION (CRITICAL)
+         * ------------------------------------------
+         * DB constraint: external_event_id must NOT contain gid://
+         *
+         * Shopify sends GIDs → must normalize before persistence
+         * to prevent hard DB failures and ingestion loss.
+         */
+        external_event_id: (() => {
+          let id = String(envelope.eventId);
+
+          if (id.startsWith('gid://')) {
+            id = id.split('/').pop()!;
+          }
+
+          return id;
+        })(),
       })
       .returning('id');
 

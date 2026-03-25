@@ -37,6 +37,10 @@ export async function handleOrdersFulfilled({
   trx: Knex.Transaction;
 }) {
 
+  console.debug('[FULFILLMENT_HANDLER_START]', {
+    eventId: domain_event_id,
+  });
+
   const payload = domainEvent.event_payload as any;
 
   /* console.info('[FULFILLMENT_EVENT_PAYLOAD]', {
@@ -46,11 +50,45 @@ export async function handleOrdersFulfilled({
   
   const externalOrderId = String(payload.order_id);
 
+  console.debug('[FULFILLMENT_BEFORE_ID_RESOLUTION]', {
+    eventId: domain_event_id,
+  });
+
+  /**
+   * CRITICAL: enforce single-connection transactional consistency
+   * -------------------------------------------------------------
+   * MUST pass trx to avoid:
+   * - connection pool split
+   * - hidden locks
+   * - non-repeatable reads inside projection
+   */
   const lasyncroOrderId = await resolveExternalOrderId(
     domainEvent.shop_id,
     'shopify',
-    externalOrderId
+    externalOrderId,
+    trx
   );
+
+  /**
+   * LOCK ORDER ROW FIRST (DEADLOCK PREVENTION)
+   * ------------------------------------------
+   * Global invariant:
+   * ALL projections must lock orders table FIRST.
+   * Prevents cyclic deadlocks across handlers.
+   */
+  const { aggregate_version } = await trx('orders')
+    .where({ lasyncro_order_id: lasyncroOrderId })
+    .select('aggregate_version')
+    .first();
+
+  console.debug('[ORDER_ROW_LOCKED]', {
+    lasyncroOrderId,
+  });
+
+  console.debug('[FULFILLMENT_AFTER_ID_RESOLUTION]', {
+    eventId: domain_event_id,
+    lasyncroOrderId,
+  });
 
   /**
    * MISSING AGGREGATE DETECTED
@@ -158,6 +196,10 @@ export async function handleOrdersFulfilled({
       }
     };
 
+    console.debug('[FULFILLMENT_BEFORE_DB_WRITE]', {
+      eventId: domain_event_id,
+    });
+
     /**
      * DIRECT PROJECTION WRITE (EVENT-SOURCED)
      * ---------------------------------------
@@ -191,6 +233,10 @@ export async function handleOrdersFulfilled({
             : trx.raw('order_fulfillment_status.fulfilled_at'),
       });
 
+      console.debug('[FULFILLMENT_AFTER_DB_WRITE]', {
+        eventId: domain_event_id,
+      });
+
       /**
        * PROJECTION TRACE
        */
@@ -209,14 +255,6 @@ export async function handleOrdersFulfilled({
         order_updated_at: fulfillmentTimestamp,
         aggregate_version: trx.raw('aggregate_version + 1'),
       });
-
-    /**
-     * FETCH CURRENT AGGREGATE VERSION
-     */
-    const { aggregate_version } = await trx('orders')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .select('aggregate_version')
-      .first();
 
     /**
      * CAPTURE RECONCILIATION INTENT
@@ -240,13 +278,33 @@ export async function handleOrdersFulfilled({
    * Queue publishing handled by dispatcher.
    */
   if (reconciliationIntent) {
-    await db('order_reconciliation_intents').insert({
-      lasyncro_order_id: reconciliationIntent.lasyncroOrderId,
-      aggregate_version: reconciliationIntent.aggregateVersion,
-      observed: reconciliationIntent.observed
-        ? JSON.stringify(reconciliationIntent.observed)
-        : null,
-      created_at: new Date(), // preserved (non-deterministic)
+    /**
+     * IDEMPOTENT RECONCILIATION INTENT WRITE
+     * --------------------------------------
+     * Prevents duplicate key crashes during:
+     * - replays
+     * - retries
+     * - partial commits
+     */
+    await trx('order_reconciliation_intents')
+      .insert({
+        lasyncro_order_id: reconciliationIntent.lasyncroOrderId,
+        aggregate_version: reconciliationIntent.aggregateVersion,
+        observed: reconciliationIntent.observed
+          ? JSON.stringify(reconciliationIntent.observed)
+          : null,
+        created_at: new Date(),
+      })
+      .onConflict(['lasyncro_order_id', 'aggregate_version'])
+      .ignore();
+
+    console.debug('[RECONCILIATION_INTENT_WRITTEN_OR_SKIPPED]', {
+      lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
+      aggregateVersion: reconciliationIntent.aggregateVersion,
+    });
+
+    console.debug('[RECONCILIATION_INTENT_WRITTEN]', {
+      lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
     });
   }
 

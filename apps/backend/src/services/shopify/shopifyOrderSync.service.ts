@@ -16,7 +16,7 @@ import { backfillFulfillmentEvent }
 export async function syncShopifyOrders({
   trx,
   shopId,
-  orderEdges,
+  orderEdges
 }: {
   trx: Knex.Transaction;
   shopId: number;
@@ -75,7 +75,18 @@ export async function syncShopifyOrders({
             },
             event_time: new Date(node.createdAt),
             event_version: 1,
-            external_event_id: String(node.id),
+            /**
+             * EXTERNAL EVENT ID NORMALIZATION (GID → NUMERIC)
+             */
+            external_event_id: (() => {
+              let id = String(node.id);
+
+              if (id.startsWith('gid://')) {
+                id = id.split('/').pop()!;
+              }
+
+              return id;
+            })(),
         })
         .onConflict(
             db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
@@ -131,7 +142,15 @@ export async function syncShopifyOrders({
             },
             event_time: new Date(node.createdAt),
             event_version: 1,
-            external_event_id: `${node.id}:paid`,
+            external_event_id: (() => {
+              let id = String(node.id);
+
+              if (id.startsWith('gid://')) {
+                id = id.split('/').pop()!;
+              }
+
+              return `${id}:paid`;
+            })(),
           })
           .onConflict(
             db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')

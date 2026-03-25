@@ -62,9 +62,9 @@ export async function startDbProjectionWorker() {
             raw_received: event.id, // instrumentation for type issues
         });
 
-        throw new Error(
-            `[DB_PROJECTION_OUT_OF_ORDER] expected=${expectedId} received=${eventId}`
-        );
+          throw new Error(
+              `[DB_PROJECTION_OUT_OF_ORDER] expected=${expectedId} received=${eventId}`
+          );
         }
 
           console.debug('[DB_PROJECTION_PROCESSING]', {
@@ -86,10 +86,21 @@ export async function startDbProjectionWorker() {
             throw new Error(`[DB_PROJECTION_EVENT_MISSING] id=${eventId}`);
         }
 
-        await projectDomainEventCore({
+        try {
+          await projectDomainEventCore({
             domainEvent,
             domain_event_id: eventId,
-        });
+            trx
+          });
+        } catch (err) {
+          console.error('[PROJECTION_EVENT_FAILURE]', {
+            eventId,
+            eventType: domainEvent.event_type,
+            payload: domainEvent.event_payload,
+            error: err,
+          });
+          throw err;
+        }
 
         /**
          * STRICT CURSOR ADVANCEMENT (DB-DRIVEN SOURCE OF TRUTH)
@@ -124,7 +135,22 @@ export async function startDbProjectionWorker() {
       });
 
     } catch (err) {
-      console.error('[projection-db-worker] error', err);
+      console.error('[projection-db-worker][FATAL]', err);
+
+      /**
+       * FAIL FAST (CRITICAL)
+       * --------------------
+       * Projection errors must NEVER be swallowed.
+       *
+       * If we continue:
+       * - events are skipped
+       * - system enters inconsistent state
+       *
+       * Strategy:
+       * - crash worker
+       * - force restart / operator visibility
+       */
+      throw err;
     }
 
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));

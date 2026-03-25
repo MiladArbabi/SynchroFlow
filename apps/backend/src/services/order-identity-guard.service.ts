@@ -106,10 +106,40 @@ export async function ensureOrderIdentityExists(
     await db('domain_events').insert({
       shop_id: shopId,
       event_type: 'orders/sync',
-      event_payload: node,
+      /**
+       * CANONICAL ORDER PAYLOAD (IDENTITY GUARD)
+       * ----------------------------------------
+       * Must normalize Shopify GID → numeric ID.
+       *
+       * CRITICAL:
+       * - Prevents violation of domain_events_no_gid_check
+       * - Keeps ingestion consistent with sync service
+       * - Ensures deterministic replay
+       */
+      event_payload: {
+        ...node,
+        id: (() => {
+          let id = String(node.id);
+          if (id.startsWith('gid://')) {
+            id = id.split('/').pop()!;
+          }
+          return id;
+        })(),
+      },
       event_time: new Date(node.createdAt),
       event_version: 1,
-      external_event_id: String(node.id),
+      /**
+       * EXTERNAL EVENT ID NORMALIZATION (GID → NUMERIC)
+       */
+      external_event_id: (() => {
+        let id = String(node.id);
+
+        if (id.startsWith('gid://')) {
+          id = id.split('/').pop()!;
+        }
+
+        return id;
+      })(),
     });
   } catch (err: any) {
     if (err?.code === '23505') {

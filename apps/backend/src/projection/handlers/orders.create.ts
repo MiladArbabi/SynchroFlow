@@ -32,6 +32,11 @@ export async function handleOrdersCreate({
   trx: Knex.Transaction;
 }) {
 
+  console.log('[ORDER_HANDLER_ENTER]', {
+    eventId: domain_event_id,
+    eventType: domainEvent.event_type,
+  });
+
   /* console.log('[ORDERS_SYNC][FT0_CHECK_TRIGGER]', {
     shopId: domainEvent.shop_id,
   }); */
