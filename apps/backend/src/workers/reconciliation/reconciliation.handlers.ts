@@ -117,17 +117,23 @@ export async function reconcileOrderFulfillment(
       .forUpdate()
       .first();
 
-    if (!order) {
-      /**
-       * RECONCILIATION SAFETY GUARD
-       * ----------------------------
-       * Order missing under projection is a structural violation.
-       * Fail fast to avoid silent data divergence.
-       */
-      throw new Error(
-        `[RECONCILIATION_INVARIANT_VIOLATION] Order not found: ${lasyncroOrderId}`
-      );
-    }
+    /**
+     * RECONCILIATION CLAIM (CRITICAL FIX)
+     * -----------------------------------
+     * Marks order as "being reconciled" immediately after lock.
+     *
+     * Prevents dispatcher from re-enqueueing same order
+     * while current reconciliation is in-flight.
+     */
+    await trx('orders')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .update({
+        last_reconciled_at: trx.fn.now()
+      });
+
+    console.debug('[RECONCILIATION_CLAIMED]', {
+      lasyncroOrderId
+    });
 
     /**
      * RECONCILIATION MODE DETECTION
@@ -142,6 +148,33 @@ export async function reconcileOrderFulfillment(
     const syntheticMode =
       aggregateVersion !== order.aggregate_version ||
       aggregateVersion <= order.last_projected_version;
+
+    /**
+     * IDEMPOTENCY GUARD (CRITICAL)
+     * -----------------------------
+     * Prevents duplicate reconciliation execution.
+     *
+     * If:
+     * - aggregate version already processed
+     * - or projection already ahead
+     *
+     * Then:
+     * → skip heavy computation
+     * → return synthetic result
+     */
+    if (syntheticMode) {
+      console.debug('[RECONCILIATION_SKIPPED_IDEMPOTENT]', {
+        lasyncroOrderId,
+        aggregateVersion,
+        orderAggregateVersion: order.aggregate_version,
+        lastProjectedVersion: order.last_projected_version,
+      });
+
+      return {
+        result: 'synthetic',
+        affectedVariantIds: []
+      };
+    }
 
     await writeOrderRevenueUnits(lasyncroOrderId, trx);
 
@@ -451,20 +484,6 @@ export async function reconcileOrderFulfillment(
     const isCustomerBlocked = customerConstraints.length > 0;
     const isOperationalBlocked = operationalConstraints.length > 0;
 
-    /* console.debug('[RECONCILIATION_CONSTRAINT_STATE_SCOPED]', {
-      orderId: lasyncroOrderId,
-      inventory: inventoryConstraints.map(c => c.targetId),
-      customer: customerConstraints.length,
-      operational: operationalConstraints.length
-    }); */
-
-    /* console.debug('[RECONCILIATION_CONSTRAINT_STATE]', {
-      orderId: lasyncroOrderId,
-      inventory: isInventoryBlocked,
-      customer: isCustomerBlocked,
-      operational: isOperationalBlocked
-    }); */
-
     /**
      * CONSTRAINT PERSISTENCE (CRITICAL ORDER)
      * ---------------------------------------
@@ -516,21 +535,6 @@ export async function reconcileOrderFulfillment(
         affectedVariantIds: []
       };
     };
-
-    /**
-     * CONTROL LOOP STABILIZATION
-     * ---------------------------
-     * Marks reconciliation completion time.
-     * Required to prevent infinite time-driven re-enqueue.
-     */
-    await trx('orders')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .update({
-        // CONTROL LOOP CLOCK: MUST use real-time, not event time
-        // eventAnchor is historical → breaks scheduling invariants
-        // last_reconciled_at drives dispatcher throttling (NOW() based)
-        last_reconciled_at: trx.fn.now()
-      });
 
     /**
      * ORDER MARGIN PROJECTION
@@ -596,21 +600,16 @@ export async function reconcileOrderFulfillment(
     );
 
     /**
-     * DAILY REVENUE PROJECTION MATERIALIZATION
-     * -----------------------------------------
-     * Replace per (shop_id, revenue_date).
-     * Derived from net revenue + risk snapshot.
+     * ORDER DATE SOURCE (LOCKED ROW REUSE)
+     * -------------------------------------
+     * NEVER re-query orders inside same transaction.
+     * Use already locked row to avoid deadlocks.
      */
-
-    const orderDateRow = await trx('orders')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .select('order_created_at')
-      .first();
+    const orderDateRow = {
+      order_created_at: order.order_created_at
+    };
 
     if (orderDateRow?.order_created_at) {
-      const revenueDate = new Date(orderDateRow.order_created_at)
-        .toISOString()
-        .split('T')[0];
 
       /**
        * DAILY REVENUE PROJECTION

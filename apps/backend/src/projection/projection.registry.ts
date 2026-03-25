@@ -9,6 +9,7 @@ import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.
 import { handleLifecycleFT2Confirmed } from './handlers/lifecycle.ft2_confirmed.js';
 import { handleLifecycleFirstInsightDelivered } from './handlers/lifecycle.first_insight_delivered.js';
 import { handleIntegrationSyncRequested } from './handlers/integration.sync_requested.js';
+import { handleReconciliationIntentCaptured } from './handlers/reconciliation.intentCaptured.js';
 
 /**
  * PROJECTION HANDLER CONTRACT
@@ -91,4 +92,5 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
       eventId: domainEvent.id,
     });
   },
+  'reconciliation/intent_captured': handleReconciliationIntentCaptured,
 };

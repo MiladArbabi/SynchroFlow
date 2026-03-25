@@ -274,22 +274,30 @@ export async function handleOrdersFulfilled({
           : undefined,
     };
 
-  /**
-   * SIDE-EFFECT DEFERRED (CRITICAL)
-   * -------------------------------
-   * Projection must remain:
-   * - pure
-   * - deterministic
-   * - DB-state only
-   *
-   * Reconciliation intent emission must be handled:
-   * - outside projection transaction
-   * - via outbox / post-commit worker
-   */
   if (reconciliationIntent) {
-    console.debug('[RECONCILIATION_INTENT_DEFERRED]', {
+    /**
+     * DOMAIN EVENT EMISSION (CORRECT PATTERN)
+     * ----------------------------------------
+     * MUST emit domain_event → trigger → outbox
+     * Never write outbox directly.
+     */
+    const [emittedEvent] = await trx('domain_events')
+      .insert({
+        event_type: 'reconciliation/intent_captured',
+        event_payload: {
+          lasyncro_order_id: reconciliationIntent.lasyncroOrderId,
+          aggregate_version: reconciliationIntent.aggregateVersion,
+          observed: reconciliationIntent.observed ?? null,
+        },
+        shop_id: domainEvent.shop_id,
+        event_time: domainEvent.event_time,
+      })
+      .returning(['id']);
+
+    console.debug('[RECONCILIATION_DOMAIN_EVENT_EMITTED]', {
       lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
       aggregateVersion: reconciliationIntent.aggregateVersion,
+      domainEventId: emittedEvent?.id,
     });
   }
 

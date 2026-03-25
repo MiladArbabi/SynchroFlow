@@ -31,6 +31,20 @@ let POLL_INTERVAL_MS = 1000; // fast bootstrap (1s)
  */
 let isRunning = false;
 
+/**
+ * RECONCILIATION THROTTLING (SYSTEM STABILITY)
+ * ---------------------------------------------
+ * Hard cap per dispatcher cycle.
+ *
+ * Prevents:
+ * - event storms
+ * - DB overload
+ * - worker starvation
+ */
+const MAX_RECONCILIATION_BATCH = 25;
+let idleCycles = 0;
+let lastObservedState: 'idle' | 'active' | null = null;
+
 export async function startReconciliationIntentDispatcher() {
 
   console.log('[reconciliation-intent-dispatcher] starting...');
@@ -75,8 +89,29 @@ export async function startReconciliationIntentDispatcher() {
             OR o.last_reconciled_at < NOW() - INTERVAL '5 minutes'
           )
         `)
+        /**
+         * CRITICAL FIX — PREVENT INFINITE RE-ENQUEUE
+         * ------------------------------------------
+         * Do NOT enqueue if an intent already exists
+         * for the same (order, version)
+         */
+        .whereNotExists(
+          db('order_reconciliation_intents as ori')
+            .whereRaw('ori.lasyncro_order_id = o.lasyncro_order_id')
+            .whereRaw('ori.aggregate_version = o.aggregate_version')
+        )
         .select('o.lasyncro_order_id', 'o.aggregate_version')
-        .limit(50);
+        .limit(MAX_RECONCILIATION_BATCH);
+
+      const currentState = staleOrders.length > 0 ? 'active' : 'idle';
+
+      if (currentState !== lastObservedState) {
+        console.debug('[RECONCILIATION_STATE_CHANGE]', {
+          state: currentState,
+          staleCount: staleOrders.length
+        });
+        lastObservedState = currentState;
+      }
 
       let insertedCount = 0;
 
@@ -165,9 +200,16 @@ export async function startReconciliationIntentDispatcher() {
            * but expand selection window to allow meaningful prioritization later.
            */
           .orderBy('ori.created_at', 'asc')
-          .limit(50) // expanded window to avoid priority starvation
+          .limit(MAX_RECONCILIATION_BATCH) // expanded window to avoid priority starvation
           .forUpdate()
           .skipLocked();
+
+          if (rows.length > 0) {
+            console.debug('[RECONCILIATION_BATCH_SELECTED]', {
+              selected: rows.length,
+              limit: MAX_RECONCILIATION_BATCH
+            });
+          }
 
         return rows;
       });
@@ -178,7 +220,46 @@ export async function startReconciliationIntentDispatcher() {
        * Prevent invalid WHERE IN () query.
        */
       if (intents.length === 0) {
-        return; // let finally handle scheduling + state reset
+        idleCycles++;
+
+        /**
+         * DYNAMIC BACKOFF (IDLE SYSTEM)
+         * ------------------------------
+         * Gradually slow polling when no work is present.
+         */
+        if (idleCycles >= 5) {
+          POLL_INTERVAL_MS = Math.min(POLL_INTERVAL_MS * 2, 60000);
+
+          /**
+           * BACKOFF OBSERVABILITY (THRESHOLDED)
+           * -----------------------------------
+           * Avoid log spam during idle exponential backoff.
+           * Only log at meaningful thresholds.
+           */
+          if (POLL_INTERVAL_MS >= 10000) {
+            console.info('[RECONCILIATION_BACKOFF_STABLE]', {
+              idleCycles,
+              interval: POLL_INTERVAL_MS
+            });
+          }
+
+          idleCycles = 0;
+        }
+
+        return;
+      }
+
+      /**
+       * WORK DETECTED → RESET BACKOFF
+       */
+      idleCycles = 0;
+
+      if (POLL_INTERVAL_MS !== 200) {
+        console.debug('[RECONCILIATION_BACKOFF_RESET]', {
+          from: POLL_INTERVAL_MS,
+          to: 200
+        });
+        POLL_INTERVAL_MS = 200;
       }
 
       const ranked = db({ ori: 'order_reconciliation_intents' })
