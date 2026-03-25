@@ -26,66 +26,79 @@ export async function startDbProjectionWorker() {
 
   while (running) {
     try {
-      await db.transaction(async (trx) => {
+      /**
+ * STEP 1 — READ CURSOR (NO LOCK)
+ * --------------------------------
+ * Lightweight read to determine next event.
+ */
+const cursorRow = await db('projection_cursors')
+  .where({ projection_name: 'orders_projection' })
+  .first<{ last_processed_event_id: number }>();
+
+const lastProcessed = Number(cursorRow?.last_processed_event_id ?? 0);
+
+/**
+ * STEP 2 — FETCH NEXT EVENT (NO LOCK)
+ */
+const nextEvents = await db('domain_events')
+  .where('id', '>', lastProcessed)
+  .orderBy('id', 'asc')
+  .limit(BATCH_SIZE);
+
+if (nextEvents.length === 0) {
+  continue;
+}
+
+/**
+ * STEP 3 — PROCESS EACH EVENT IN ITS OWN TRANSACTION
+ */
+for (const event of nextEvents) {
+
+    await db.transaction(async (trx) => {
 
         /**
-         * LOCK CURSOR ROW
+         * LOCK CURSOR ROW (CRITICAL — INSIDE PER-EVENT TX)
          */
-        const cursorRow = await trx('projection_cursors')
+        const lockedCursor = await trx('projection_cursors')
           .where({ projection_name: 'orders_projection' })
           .forUpdate()
           .first<{ last_processed_event_id: number }>();
 
-        const lastProcessed = Number(cursorRow?.last_processed_event_id ?? 0);
+        const currentLastProcessed = Number(lockedCursor?.last_processed_event_id ?? 0);
 
-        /**
-         * FETCH NEXT EVENT (STRICT ORDER)
-         */
-        const nextEvents = await trx('domain_events')
-          .where('id', '>', lastProcessed)
-          .orderBy('id', 'asc')
-          .limit(BATCH_SIZE);
-
-        if (nextEvents.length === 0) {
-          return;
-        }
-
-        for (const event of nextEvents) {
-
-          const eventId = Number(event.id);
-          const expectedId = lastProcessed + 1;
+        const eventId = Number(event.id);
+        const expectedId = currentLastProcessed + 1;
 
         if (eventId !== expectedId) {
-        console.error('[DB_PROJECTION_GAP_DETECTED]', {
+          console.error('[DB_PROJECTION_GAP_DETECTED]', {
             expected: expectedId,
             received: eventId,
-            raw_received: event.id, // instrumentation for type issues
-        });
-
-          throw new Error(
-              `[DB_PROJECTION_OUT_OF_ORDER] expected=${expectedId} received=${eventId}`
-          );
-        }
-
-          console.debug('[DB_PROJECTION_PROCESSING]', {
-            domain_event_id: event.id,
+            raw_received: event.id,
           });
 
-          /**
-           * CALL EXISTING ENGINE (REUSE LOGIC)
-           */
-          const { projectDomainEvent } = await import(
-            '../projection/projection.engine.js'
+          throw new Error(
+            `[DB_PROJECTION_OUT_OF_ORDER] expected=${expectedId} received=${eventId}`
           );
-
-          const domainEvent = await db('domain_events')
-            .where({ id: eventId })
-            .first();
-
-        if (!domainEvent) {
-            throw new Error(`[DB_PROJECTION_EVENT_MISSING] id=${eventId}`);
         }
 
+        console.debug('[DB_PROJECTION_PROCESSING]', {
+          domain_event_id: event.id,
+        });
+
+        /**
+         * FETCH DOMAIN EVENT (CONSISTENT READ)
+         */
+        const domainEvent = await trx('domain_events')
+          .where({ id: eventId })
+          .first();
+
+        if (!domainEvent) {
+          throw new Error(`[DB_PROJECTION_EVENT_MISSING] id=${eventId}`);
+        }
+
+        /**
+         * EXECUTE PROJECTION
+         */
         try {
           await projectDomainEventCore({
             domainEvent,
@@ -103,37 +116,29 @@ export async function startDbProjectionWorker() {
         }
 
         /**
-         * STRICT CURSOR ADVANCEMENT (DB-DRIVEN SOURCE OF TRUTH)
-         * -----------------------------------------------------
-         * MUST use same trx to guarantee:
-         * - atomicity (projection + cursor)
-         * - no replay inconsistencies
+         * ADVANCE CURSOR (ATOMIC WITH PROJECTION)
          */
         await trx('projection_cursors')
-            .insert({
-                projection_name: 'orders_projection',
-                last_processed_event_id: eventId,
-                updated_at: trx.fn.now(),
-            })
-            .onConflict('projection_name')
-            .merge({
-                last_processed_event_id: eventId,
-                updated_at: trx.fn.now(),
-            });
+          .insert({
+            projection_name: 'orders_projection',
+            last_processed_event_id: eventId,
+            updated_at: trx.fn.now(),
+          })
+          .onConflict('projection_name')
+          .merge({
+            last_processed_event_id: eventId,
+            updated_at: trx.fn.now(),
+          });
 
         console.debug('[DB_CURSOR_ADVANCED]', {
-            to: eventId,
+          to: eventId,
         });
 
-        /**
-         * PROJECTION SUCCESS TRACE
-         */
         console.debug('[DB_PROJECTION_EXECUTED]', {
-            domain_event_id: eventId,
+          domain_event_id: eventId,
         });
-          }
       });
-
+    }
     } catch (err) {
       console.error('[projection-db-worker][FATAL]', err);
 

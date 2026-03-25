@@ -70,18 +70,20 @@ export async function handleOrdersFulfilled({
   );
 
   /**
-   * LOCK ORDER ROW FIRST (DEADLOCK PREVENTION)
-   * ------------------------------------------
-   * Global invariant:
-   * ALL projections must lock orders table FIRST.
-   * Prevents cyclic deadlocks across handlers.
+   * LOCK ORDER ROW (HARD LOCK — DEADLOCK PREVENTION)
+   * -----------------------------------------------
+   * MUST acquire row-level lock immediately.
+   * Prevents:
+   * - deferred locking
+   * - lock inversion vs other handlers
    */
   const { aggregate_version } = await trx('orders')
     .where({ lasyncro_order_id: lasyncroOrderId })
+    .forUpdate()
     .select('aggregate_version')
     .first();
 
-  console.debug('[ORDER_ROW_LOCKED]', {
+  console.debug('[ORDER_ROW_LOCKED_FOR_UPDATE]', {
     lasyncroOrderId,
   });
 
@@ -273,38 +275,21 @@ export async function handleOrdersFulfilled({
     };
 
   /**
-   * RECONCILIATION INTENT PERSISTENCE
-   * ----------------------------------
-   * Queue publishing handled by dispatcher.
+   * SIDE-EFFECT DEFERRED (CRITICAL)
+   * -------------------------------
+   * Projection must remain:
+   * - pure
+   * - deterministic
+   * - DB-state only
+   *
+   * Reconciliation intent emission must be handled:
+   * - outside projection transaction
+   * - via outbox / post-commit worker
    */
   if (reconciliationIntent) {
-    /**
-     * IDEMPOTENT RECONCILIATION INTENT WRITE
-     * --------------------------------------
-     * Prevents duplicate key crashes during:
-     * - replays
-     * - retries
-     * - partial commits
-     */
-    await trx('order_reconciliation_intents')
-      .insert({
-        lasyncro_order_id: reconciliationIntent.lasyncroOrderId,
-        aggregate_version: reconciliationIntent.aggregateVersion,
-        observed: reconciliationIntent.observed
-          ? JSON.stringify(reconciliationIntent.observed)
-          : null,
-        created_at: new Date(),
-      })
-      .onConflict(['lasyncro_order_id', 'aggregate_version'])
-      .ignore();
-
-    console.debug('[RECONCILIATION_INTENT_WRITTEN_OR_SKIPPED]', {
+    console.debug('[RECONCILIATION_INTENT_DEFERRED]', {
       lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
       aggregateVersion: reconciliationIntent.aggregateVersion,
-    });
-
-    console.debug('[RECONCILIATION_INTENT_WRITTEN]', {
-      lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
     });
   }
 
