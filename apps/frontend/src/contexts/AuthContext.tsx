@@ -36,11 +36,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     accessToken: null,
   });
 
-  // --- [START POSTHOG HOOK] ---
-  /* const posthog = usePostHog(); */
-
   // Re-hydrate session from localStorage on app load
   React.useEffect(() => {
+
+    // 🔐 OAUTH HANDOFF (URL → AUTH STATE)
+    const params = new URLSearchParams(window.location.search);
+    const tokenFromUrl = params.get('token');
+    const connectSuccess = params.get('connect');
+
+    if (connectSuccess === 'success' && tokenFromUrl) {
+      console.info('[AUTH][OAUTH_HANDOFF] token detected in URL');
+
+      // Store token immediately
+      setToken(tokenFromUrl);
+
+      // ⚠️ User must be fetched OR decoded (depending on your system)
+      // TEMP: mark as logged in without user hydration
+      setAuthState({
+        isLoggedIn: true,
+        isLoading: false,
+        user: null, // ← will explain below
+        accessToken: tokenFromUrl,
+      });
+
+      // Clean URL (critical)
+      window.history.replaceState({}, document.title, '/');
+
+      return;
+    }
     /* console.log("AuthContext: Initializing..."); */
     try {
       // Playwright's storageState will inject these values
@@ -68,6 +91,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setAuthState(prev => ({ ...prev, isLoading: false, isLoggedIn: false, user: null, accessToken: null }));
     }
   }, []);
+
+
 
   const login = useCallback((user: PublicUser, accessToken: string) => {
   setAuthState({

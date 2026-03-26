@@ -25,6 +25,25 @@ export const performInitialSync = async (
 
   console.log(`[ShopifyService] Starting initial sync for shopId: ${shopId}`);
 
+  /**
+   * HARD GUARD — Prevent illegal re-sync
+   *
+   * Once COMPLETED, sync must not restart.
+   * DB enforces this invariant — we mirror it here.
+   */
+  const integration = await db('integrations')
+    .where({ id: integrationId })
+    .first();
+
+  if (integration?.sync_status === 'COMPLETED') {
+    console.warn('[SHOPIFY_SYNC_SKIPPED_ALREADY_COMPLETED]', {
+      shopId,
+      integrationId,
+    });
+
+    return;
+  }
+
   const client = createShopifyGraphQLClient({
     accessToken,
     platformShopName,

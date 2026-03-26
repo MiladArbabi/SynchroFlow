@@ -8,8 +8,26 @@ export async function getLifecycle() {
 }
 
 export async function evaluateFt2() {
+  /**
+   * ⚠️ DEBUG ONLY — DO NOT USE IN PRODUCTION
+   *
+   * This endpoint exposes full eligibility logic and MUST NOT be used
+   * for UI readiness or gating.
+   *
+   * Use getFt2Readiness() instead.
+   */
   const { data } = await axiosInstance.get('/api/v1/lifecycle/ft2/evaluate');
   return data;
+}
+
+/**
+ * FT2 Readiness — PRODUCTION CONTRACT
+ * -----------------------------------
+ * Must be used for UI gating instead of evaluateFt2.
+ */
+export async function getFt2Readiness() {
+  const { data } = await axiosInstance.get('/api/v1/lifecycle/ft2/readiness');
+  return data; // { ready, progress }
 }
 
 export async function confirmFt2() {

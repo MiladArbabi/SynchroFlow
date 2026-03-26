@@ -143,10 +143,10 @@ export async function startReconciliationIntentDispatcher() {
        * reduce polling pressure.
        */
       if (insertedCount > 0 && POLL_INTERVAL_MS !== 60000) {
-        console.info('[DISPATCHER_MODE_SWITCH]', {
+        /* console.info('[DISPATCHER_MODE_SWITCH]', {
           from: 'bootstrap',
           to: 'steady-state'
-        });
+        }); */
         POLL_INTERVAL_MS = 60000;
       }
         
@@ -205,10 +205,10 @@ export async function startReconciliationIntentDispatcher() {
           .skipLocked();
 
           if (rows.length > 0) {
-            console.debug('[RECONCILIATION_BATCH_SELECTED]', {
+            /* console.debug('[RECONCILIATION_BATCH_SELECTED]', {
               selected: rows.length,
               limit: MAX_RECONCILIATION_BATCH
-            });
+            }); */
           }
 
         return rows;
@@ -255,10 +255,10 @@ export async function startReconciliationIntentDispatcher() {
       idleCycles = 0;
 
       if (POLL_INTERVAL_MS !== 200) {
-        console.debug('[RECONCILIATION_BACKOFF_RESET]', {
+        /* console.debug('[RECONCILIATION_BACKOFF_RESET]', {
           from: POLL_INTERVAL_MS,
           to: 200
-        });
+        }); */
         POLL_INTERVAL_MS = 200;
       }
 

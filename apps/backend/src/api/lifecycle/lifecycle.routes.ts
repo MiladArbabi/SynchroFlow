@@ -1,6 +1,11 @@
 //apps/backend/src/api/lifecycle/lifecycle.routes.ts
 import { Express } from 'express';
-import { getLifecycle, confirmFt2, evaluateFt2 } from './lifecycle.controller.js';
+import { 
+  getLifecycle, 
+  confirmFt2, 
+  evaluateFt2, 
+  getFt2Readiness
+  } from './lifecycle.controller.js';
 import { getLifecycleHistory } from './lifecycle-history.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
@@ -12,6 +17,11 @@ export function registerLifecycleRoutes(app: Express) {
    * DEBUG ONLY — FT2 Readiness Evaluation (READ-ONLY)
    */
    app.get('/api/v1/lifecycle/ft2/evaluate', authenticateToken, evaluateFt2);
+
+  /**
+  * FT2 Readiness — PRODUCTION
+  */
+  app.get('/api/v1/lifecycle/ft2/readiness', authenticateToken, getFt2Readiness);
 
   /**
    * FT2 Explicit Promotion (user-confirmed)

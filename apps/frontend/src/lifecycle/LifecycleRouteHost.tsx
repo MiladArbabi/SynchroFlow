@@ -42,45 +42,45 @@ import OverviewFT2Page from 'pages/ft2-pages/OverviewFT2Page';
 export function LifecycleRouteHost() {
   const { phase } = useShopLifecycle();
 
-  // ─────────────────────────────────────────────
-  // PRE-FT1 — NO ROUTES MAY EXIST
-  // ─────────────────────────────────────────────
-  // Activation, syncing, and preparation phases
-  // must not mount any application routes.
-   if (
+  /**
+   * ✅ FT0 — SYSTEM SYNC / PREPARATION PHASE
+   *
+   * MUST render visible UI.
+   * Blank screen here = critical UX failure.
+   */
+  if (
     phase === 'FT_MINUS_ONE' ||
     phase === 'FT0_PREPARING' ||
     phase === 'FT0_SYNCING'
   ) {
-    /**
-     * FT_MINUS_ONE / FT0:
-     * - Routes MUST exist so ShopLifecycleGate can resolve moduleId
-     * - Pages MUST NOT render
-     * - ActivationSurface owns rendering
-     */
     return (
-      <Routes>
-        <Route path="/trust/*" element={null} />
-        <Route path="*" element={null} />
-      </Routes>
+      <div style={{ padding: 24 }}>
+        <h3>Setting up your workspace…</h3>
+
+        {phase === 'FT0_SYNCING' && (
+          <p>Syncing your data from Shopify…</p>
+        )}
+
+        {phase === 'FT0_PREPARING' && (
+          <p>Finalizing your data…</p>
+        )}
+
+        {phase === 'FT_MINUS_ONE' && (
+          <p>Waiting for activation…</p>
+        )}
+
+        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.6 }}>
+          <strong>Phase:</strong> {phase}
+        </div>
+      </div>
     );
   }
 
-  // ─────────────────────────────────────────────
-  // FT1 — DIAGNOSTIC / ONBOARDING PHASE
-  // ─────────────────────────────────────────────
-  // These pages:
-  // - Render FT1 modules only
-  // - May show onboarding CTAs
-  // - Must never render FT2 observability 
-  // 
-  // NOTE:
-  // We reuse OverviewFT2Page here intentionally:
-  // It is read-only
-  // It does not depend on FT2-only data
-  // Trust/orders will naturally render as — in FT1
-  // This avoids duplicating an “OverviewFT1Page”
-  if (phase === 'FT1_READY') {
+  /**
+   * ✅ FT1 lifecycle phase (no readiness required)
+   * UI must render immediately when lifecycle = FT1
+   */
+  if (phase === 'FT1' || phase === 'FT1_READY') {
   return (
     <Routes>
       {/* Root → canonical Overview */}

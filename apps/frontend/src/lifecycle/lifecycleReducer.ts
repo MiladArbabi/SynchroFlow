@@ -16,6 +16,17 @@ export function lifecycleReducer(
     return state;
   }
 
+  /**
+   * 🚫 ARCHITECTURE RULE — NO SYNC-DRIVEN LIFECYCLE
+   * ----------------------------------------------
+   * FT0 must come from backend lifecycle only.
+   *
+   * Removed events:
+   * - SYNC_STARTED
+   * - SYNC_COMPLETED
+   *
+   * If FT0 is needed → implement in backend lifecycle projection.
+   */
 
   switch (event.type) {
     /* -------------------------------------------------- */
@@ -57,36 +68,7 @@ export function lifecycleReducer(
       };
       break;
 
-    /* -------------------------------------------------- */
-    /* Sync lifecycle                                     */
-    /* -------------------------------------------------- */
-
-    case 'SYNC_STARTED': {
-      if (state.hasSeenFT0) return state; // no regression allowed
-
-      if (!state.bootResolved || !state.integrationExists) {
-        return state;
-      }
-
-      nextState = {
-        ...state,
-        phase: 'FT0_SYNCING',
-      };
-      break;
-    }
-
-    case 'SYNC_COMPLETED': {
-      if (!state.bootResolved || !state.integrationExists) {
-        return state;
-      }
-
-      nextState = {
-        ...state,
-        phase: 'FT0_PREPARING',
-        hasSeenFT0: true,
-      };
-      break;
-    }
+    
 
     /* -------------------------------------------------- */
     /* FT0 dwell                                          */
@@ -100,14 +82,19 @@ export function lifecycleReducer(
     };
   }
 
-    /* -------------------------------------------------- */
-    /* FT1 promotion                                      */
-    /* -------------------------------------------------- */
-    case 'FT1_BACKEND_COMPLETE': {
-    // Backend-confirmed lifecycle only
+  /**
+  * ✅ Lifecycle authority (backend-driven)
+  *
+  * FT1 means:
+  * - Lifecycle progressed
+  * - NOT necessarily ready for FT2
+  *
+  * Readiness MUST NOT be encoded here.
+  */
+  case 'FT1_BACKEND_COMPLETE': {
     return {
       ...state,
-      phase: 'FT1_READY',
+      phase: 'FT1', // ← pure lifecycle phase
       hasLatchedFT1: true,
     };
   }

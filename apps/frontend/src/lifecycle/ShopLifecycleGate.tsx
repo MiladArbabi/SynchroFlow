@@ -61,6 +61,11 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
     case 'FT0_PREPARING':
       return <EmptyDashboardState />;
 
+    /**
+     * ✅ FT1 lifecycle (no readiness required)
+     * Must render FT1 surfaces immediately
+     */
+    case 'FT1':
     case 'FT1_READY':
       return <>{children}</>;
 
@@ -69,12 +74,18 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
 
 
     default: {
-      if (import.meta.env.DEV) {
-        throw new Error(
-          `[Lifecycle Violation] Unhandled UILifecyclePhase in ShopLifecycleGate: ${phase}`
-        );
-      }
-      return null;
+      console.error('[LIFECYCLE][UNHANDLED_PHASE]', { phase });
+
+      /**
+       * 🚨 HARD GUARD
+       * Prevent silent blank screen
+       */
+      return (
+        <div style={{ padding: 24 }}>
+          <h3>UI rendering error</h3>
+          <pre>{String(phase)}</pre>
+        </div>
+      );
     }
   }
 }

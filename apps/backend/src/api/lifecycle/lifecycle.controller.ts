@@ -44,7 +44,25 @@ export async function getLifecycle(req: Request, res: Response) {
    * Must NOT write ft2_state or affect lifecycle.
    */
   export async function evaluateFt2(req, res) {
-      if (!req.user || req.user.userId == null) {
+    /**
+     * ⚠️ WARNING — DEBUG ONLY ENDPOINT
+     *
+     * This endpoint exposes full eligibility logic.
+     *
+     * MUST NOT be used for:
+     * - UI readiness
+     * - UX gating
+     * - lifecycle transitions
+     *
+     * Use /api/v1/lifecycle/ft2/readiness instead.
+     *
+     * Violations will reintroduce:
+     * - premature FT2 access
+     * - double-click bugs
+     * - UX inconsistency
+     */
+
+    if (!req.user || req.user.userId == null) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
   
@@ -61,6 +79,82 @@ export async function getLifecycle(req: Request, res: Response) {
     const result = await FT2EvaluatorService.evaluate(shopId);
 
     return res.json(result);
+}
+
+/**
+ * FT2 Readiness — PRODUCTION CONTRACT
+ * -----------------------------------
+ * Explicit readiness signal for UI.
+ *
+ * Guarantees:
+ * - No lifecycle mutation
+ * - No eligibility leakage
+ * - Stable contract for UX gating
+ *
+ * NOTE:
+ * This endpoint MUST remain lightweight and deterministic.
+ */
+export async function getFt2Readiness(req: Request, res: Response) {
+  try {
+    if (!req.user || req.user.userId == null) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user.userId;
+    const { shopId } = await requireShopContextForUser(userId);
+
+    if (!shopId) {
+      return res.status(400).json({ error: 'integration_missing' });
+    }
+
+    /**
+     * SOURCE OF TRUTH — system_readiness_state
+     *
+     * Presence = ready
+     * Absence = not ready
+     */
+    const readiness = await db('system_readiness_state')
+      .where({ shop_id: shopId })
+      .first();
+
+    /**
+     * Observability — readiness signal
+     *
+     * Allows tracing readiness decisions in logs.
+     */
+    console.info('[FT2_READINESS_CHECK]', {
+      shopId,
+      ready: !!readiness,
+      source: 'system_readiness_state',
+    });
+
+    /**
+     * PROGRESS SIGNAL (v0)
+     * -------------------
+     * Currently minimal.
+     * Future: bind to projection cursor / ingestion metrics.
+     */
+    return res.json({
+      ready: !!readiness,
+      progress: {
+        currentCursor: null,
+        targetCursor: null,
+      },
+
+      /**
+       * DEBUG SIGNAL (safe for frontend)
+       * --------------------------------
+       * Helps diagnose readiness issues without extra calls.
+       */
+      meta: {
+        source: 'system_readiness_state',
+        checkedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('[lifecycle][ft2-readiness] failed', err);
+    return res.status(500).json({ error: 'Failed to resolve readiness' });
+  }
 }
 
 /**

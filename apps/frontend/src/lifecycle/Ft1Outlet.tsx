@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { confirmFt2 } from 'api/lifecycle';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { Ft1ChecklistSurface } from 'ui/src/ui/ft1-checklist/Ft1ChecklistSurface';
+import { getFt2Readiness } from 'api/lifecycle';
 
 /**
  * FT1 Promotion Surface (Snapshot-Driven)
@@ -13,40 +15,112 @@ import { Ft1ChecklistSurface } from 'ui/src/ui/ft1-checklist/Ft1ChecklistSurface
 
 export function Ft1Outlet() {
   const { phase } = useShopLifecycle();
-  const isFt1 = phase === 'FT1_READY';
+  /**
+   * FT1 must render from lifecycle alone.
+   * Readiness only affects inner UI (not mount).
+   */
+  const isFt1 = phase === 'FT1' || phase === 'FT1_READY';
 
   const [confirming, setConfirming] = React.useState(false);
+  const [readiness, setReadiness] = React.useState<null | any>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadReadiness() {
+      console.info('[FT2_READINESS_FETCH_START]');
+
+      try {
+        const res = await getFt2Readiness();
+
+        console.info('[FT2_READINESS_FETCH_SUCCESS]', res);
+
+        if (!cancelled) {
+          setReadiness(res);
+        }
+      } catch (err) {
+        console.error('[FT2_READINESS_FETCH_FAILED]', err);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadReadiness();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!isFt1) {
     return null;
   }
+
+  if (loading) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h3>Preparing your data…</h3>
+        <p>This may take a few moments.</p>
+      </div>
+    );
+  }
+
+  const isReady = readiness?.ready === true;
 
   return (
     <>
       <Ft1ChecklistSurface />
 
       <div style={{ padding: 24 }}>
-        <p>When ready, unlock your insights below.</p>
+        {!isReady && (
+          <>
+            <h3>Processing your data…</h3>
+            <p>Your data is still syncing. This can take a minute.</p>
 
-        <button
-          disabled={confirming}
-          onClick={async () => {
-            setConfirming(true);
+            <pre style={{ fontSize: 12, opacity: 0.6 }}>
+              {JSON.stringify(readiness?.progress ?? {}, null, 2)}
+            </pre>
+          </>
+        )}
 
-            try {
-              await confirmFt2();
+        {isReady && (
+          <>
+            <p>When ready, unlock your insights below.</p>
 
-              window.dispatchEvent(
-                new CustomEvent('lifecycle:ft2-confirmed')
-              );
-            } catch (err) {
-              console.error('[FT2][CONFIRM][FAILED]', err);
-              setConfirming(false);
-            }
-          }}
-        >
-          Unlock insights
-        </button>
+            <button
+              disabled={confirming}
+              onClick={async () => {
+                setConfirming(true);
+
+                try {
+                  const readiness = await getFt2Readiness();
+
+                  if (!readiness.ready) {
+                    console.warn('[FT2_BLOCKED_NOT_READY]', {
+                      readiness,
+                    });
+                    setConfirming(false);
+                    return;
+                  }
+
+                  await confirmFt2();
+
+                  window.dispatchEvent(
+                    new CustomEvent('lifecycle:ft2-confirmed')
+                  );
+                } catch (err) {
+                  console.error('[FT2][CONFIRM][FAILED]', err);
+                  setConfirming(false);
+                }
+              }}
+            >
+              Unlock insights
+            </button>
+          </>
+        )}
       </div>
     </>
   );
