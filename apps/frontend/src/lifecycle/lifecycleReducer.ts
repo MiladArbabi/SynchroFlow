@@ -22,8 +22,7 @@ export function lifecycleReducer(
    * FT0 must come from backend lifecycle only.
    *
    * Removed events:
-   * - SYNC_STARTED
-   * - SYNC_COMPLETED
+   * (Previously removed: sync-driven lifecycle events)
    *
    * If FT0 is needed → implement in backend lifecycle projection.
    */

@@ -30,7 +30,23 @@ export async function getLifecycle(req: Request, res: Response) {
     const userId = req.user.userId;
     const phase = await LifecycleService.resolveForUser(userId);
 
-    return res.status(200).json({ phase });
+    /**
+     * 🚨 LIFECYCLE CONTRACT (v2)
+     * -------------------------
+     * MUST always return:
+     * - phase
+     * - subphase (nullable)
+     * - progress (nullable)
+     *
+     * Prevents frontend branching + schema drift.
+     */
+    const response = {
+      phase,
+      subphase: phase === 'FT0' ? 'PREPARING' : null,
+      progress: null,
+    };
+
+    return res.status(200).json(response);
   } catch (err) {
     console.error('[lifecycle] failed to resolve lifecycle', err);
     return res.status(500).json({ error: 'Failed to resolve lifecycle' });

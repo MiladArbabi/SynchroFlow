@@ -380,6 +380,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
      */
     await db.transaction(async trx => {
       const externalEventId = `internal:integration/sync_requested:${result.integration.id}:${Date.now()}`;
+      const traceId = `sync:${result.integration.id}:${Date.now()}`;
 
       const [event] = await trx('domain_events')
         .insert({
@@ -387,6 +388,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           event_type: 'integration/sync_requested',
           event_payload: {
             integration_id: result.integration.id,
+            trace_id: traceId,
           },
           event_time: trx.fn.now(),
           event_version: 1,

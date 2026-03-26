@@ -62,8 +62,15 @@ export function Ft1Outlet() {
   if (loading) {
     return (
       <div style={{ padding: 24 }}>
-        <h3>Preparing your data…</h3>
-        <p>This may take a few moments.</p>
+        <h3>Connecting your store…</h3>
+
+        <p style={{ opacity: 0.7 }}>
+          We’ve started syncing your data. This usually takes under a minute.
+        </p>
+
+        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.5 }}>
+          Establishing connection → Fetching orders → Preparing insights
+        </div>
       </div>
     );
   }

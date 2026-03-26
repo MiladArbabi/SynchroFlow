@@ -71,7 +71,16 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
       eventId: domainEvent.id,
     });
   },
-  'lifecycle/ft0_completed': handleLifecycleFT0Completed,
+  /**
+   * FT0 COMPLETION (v2)
+   * -------------------
+   * Domain event renamed from lifecycle/ft0_completed → ft0.completed
+   *
+   * Reason:
+   * - lifecycle namespace is reserved for projection outputs only
+   * - services emit domain events only
+   */
+  'ft0.completed': handleLifecycleFT0Completed,
   'lifecycle/ft2_confirmed': handleLifecycleFT2Confirmed,
   'lifecycle/first_insight_delivered': handleLifecycleFirstInsightDelivered,
   /**

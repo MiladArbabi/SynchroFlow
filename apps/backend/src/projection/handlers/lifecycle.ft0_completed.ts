@@ -92,14 +92,28 @@ export async function handleLifecycleFT0Completed({
         '../../services/lifecycle-transition.service.js'
       );
 
-      await LifecycleTransitionService.auditIfTransitioned(
-        {
-          userId,
-          shopId,
-          currentPhase: 'FT0',
-        },
-        trx
-      );
+      /**
+       * 🛡️ FT0 IDEMPOTENCY GUARD (v2 FIX)
+       * ----------------------------------
+       * FT0 may already be entered earlier (forced entry).
+       * Prevent duplicate FT0 → FT0 transition crash.
+       */
+      const snapshot = await trx('user_lifecycle_snapshot')
+        .where({ shop_id: shopId })
+        .first('phase');
+
+      if (snapshot?.phase !== 'FT0') {
+        await LifecycleTransitionService.auditIfTransitioned(
+          {
+            userId,
+            shopId,
+            currentPhase: 'FT0',
+          },
+          trx
+        );
+      } else {
+        console.info('[FT0_ALREADY_SET_SKIP]', { shopId });
+      }
 
       await LifecycleTransitionService.auditIfTransitioned(
         {

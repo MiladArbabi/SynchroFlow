@@ -18,8 +18,6 @@ import { writeOrderRevenueUnits } from '../../workers/reconciliation/revenue-uni
 const ORDER_UUID_NAMESPACE =
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
-const ORDERS_PROJECTION = 'orders_projection';
-
 export async function handleOrdersCreate({
   domainEvent,
   domain_event_id,
@@ -32,14 +30,51 @@ export async function handleOrdersCreate({
   trx: Knex.Transaction;
 }) {
 
+  const traceId = domainEvent.event_payload?.trace_id;
+
+  console.debug('[ORDER_INGESTION_TRACE]', {
+    eventId: domain_event_id,
+    shopId: domainEvent.shop_id,
+    traceId,
+  });
+
   console.log('[ORDER_HANDLER_ENTER]', {
     eventId: domain_event_id,
     eventType: domainEvent.event_type,
   });
 
-  /* console.log('[ORDERS_SYNC][FT0_CHECK_TRIGGER]', {
-    shopId: domainEvent.shop_id,
-  }); */
+  /**
+   * 🚀 FT0 ENTRY — INGESTION-DRIVEN (CANONICAL)
+   * -------------------------------------------
+   * First real data ingestion marks FT0.
+   *
+   * Guarantees:
+   * - deterministic (domain event driven)
+   * - replay safe
+   * - single authority (no integration coupling)
+   */
+  const shopId = domainEvent.shop_id;
+
+  const existingSnapshot = await trx('user_lifecycle_snapshot')
+    .where({ shop_id: shopId })
+    .first('phase');
+
+  if (!existingSnapshot) {
+    const { LifecycleTransitionService } = await import(
+      '../../services/lifecycle-transition.service.js'
+    );
+
+    await LifecycleTransitionService.auditIfTransitioned(
+      {
+        userId: domainEvent.user_id ?? 1,
+        shopId,
+        currentPhase: 'FT0',
+      },
+      trx
+    );
+
+    console.info('[FT0_ENTRY_FROM_INGESTION]', { shopId });
+  }
 
   /**
    * CANONICAL PAYLOAD SWITCH

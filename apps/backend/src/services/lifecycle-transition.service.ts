@@ -72,6 +72,70 @@ export class LifecycleTransitionService {
     const { userId, shopId, currentPhase } = input;
 
     /**
+     * SUBPHASE DERIVATION (v2)
+     * ------------------------
+     * Only FT0 has subphases.
+     * Derived strictly from system state (NOT passed from caller).
+     *
+     * Prevents:
+     * - frontend sync leakage
+     * - invalid lifecycle writes
+     */
+    let subphase: string | null = null;
+
+    if (currentPhase === 'FT0') {
+      const integration = await trx('integrations')
+        .where({ shop_id: shopId })
+        .first('sync_status');
+
+      /**
+       * 🧭 SUBPHASE NORMALIZATION (v2 FIX)
+       * ----------------------------------
+       * NEVER expose raw integration.sync_status.
+       * Map to lifecycle-safe subphases.
+       *
+       * Prevents:
+       * - UI coupling to integration layer
+       * - invalid FT0 states like "COMPLETED"
+       */
+      const rawStatus = integration?.sync_status;
+
+      switch (rawStatus) {
+        case 'SYNCING_PRODUCTS':
+        case 'SYNCING_INVENTORY':
+        case 'SYNCING_SHOP':
+          subphase = 'SYNCING';
+          break;
+
+        case 'COMPLETING':
+          subphase = 'FINALIZING';
+          break;
+
+        case 'COMPLETED':
+          subphase = 'PREPARING'; // still FT0 until FT1 transition
+          break;
+
+        case 'FAILED':
+          subphase = 'ERROR';
+          break;
+
+        default:
+          subphase = 'PREPARING';
+      }
+
+      console.info('[LIFECYCLE][SUBPHASE_NORMALIZED]', {
+        shopId,
+        rawStatus,
+        subphase,
+      });
+
+      console.info('[LIFECYCLE][SUBPHASE_DERIVED]', {
+        shopId,
+        subphase,
+      });
+    }
+
+    /**
      * SHOP-SCOPED LIFECYCLE:
      * Snapshot uniqueness boundary = shop_id
      */
@@ -146,6 +210,7 @@ export class LifecycleTransitionService {
         user_id: userId,
         shop_id: shopId,
         phase: currentPhase,
+        subphase,
         since: occurredAt,
         last_event_id: eventId,
         updated_at: trx.fn.now(),
@@ -153,6 +218,7 @@ export class LifecycleTransitionService {
       .onConflict('shop_id')
       .merge({
         phase: currentPhase,
+        subphase,
         since: occurredAt,
         last_event_id: eventId,
         updated_at: trx.fn.now(),

@@ -1,12 +1,6 @@
 // apps/backend/src/projection/handlers/lifecycle.first_insight_delivered.ts
 import crypto from 'crypto';
 import { Knex } from 'knex';
-/**
- * PROJECTION STREAM
- * -----------------
- * Lifecycle events MUST use independent cursor.
- */
-const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 
 /**
  * HANDLE: lifecycle/first_insight_delivered
@@ -37,28 +31,6 @@ export async function handleLifecycleFirstInsightDelivered({
     value: string;
     orderCount: number;
   };
-    
-    /**
-     * CURSOR ENFORCEMENT MOVED
-     * ------------------------
-     * Projection ordering is now enforced centrally
-     * in projection.engine.ts.
-     *
-     * Handlers must remain pure projection logic
-     * without queue or cursor coordination.
-     */
-
-    /**
-     * PROJECTION CONTRACT
-     * -------------------
-     * Handler must be:
-     * - deterministic
-     * - side-effect free outside trx
-     * - transaction-neutral
-     *
-     * The projection engine guarantees ordering
-     * and atomic commit across handlers.
-     */
 
     /**
      * Canonical event-time anchor
@@ -97,32 +69,4 @@ export async function handleLifecycleFirstInsightDelivered({
         payload,
       });
     }
-
-    /**
-     * FT0 EVALUATION TRIGGER
-     * ----------------------
-     * Lifecycle transitions must NOT occur in this handler.
-     */
-
-    /**
-     * FT0 COMPLETION EVALUATION
-     * -------------------------
-     * First insight delivery is the final FT0 precondition.
-     *
-     * Evaluate FT0 readiness here.
-     * If conditions are satisfied, the service will emit:
-     *
-     *   lifecycle/ft0_completed
-     *
-     * which is later projected by lifecycle.ft0_completed.ts.
-     *
-     * IMPORTANT:
-     * This does NOT mutate lifecycle state directly.
-     * It only emits a domain event if readiness criteria pass.
-     */
-    const { FT0CompletionService } = await import(
-      '../../services/ft0-completion.service.js'
-    );
-
-    await FT0CompletionService.evaluateAndComplete(shopId);
   };

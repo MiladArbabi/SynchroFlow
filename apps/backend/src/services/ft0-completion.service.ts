@@ -1,49 +1,4 @@
 // apps/backend/src/services/ft0-completion.service.ts
-/**
- * ============================================================
- * FT0 COMPLETION
- * ============================================================
- *
- * FT0 represents *system readiness*, NOT customer success.
- * It answers exactly one question:
- *
- *   “Has the commerce → insight pipeline proven it works end-to-end?”
- *
- * -------------------------
- * FT0 COMPLETES WHEN (ALL):
- * -------------------------
- * 1. A platform integration exists for the shop (e.g. Shopify)
- * 2. At least one  order exists (orders > 0)
- * 3. First insight has been successfully delivered
- *
- * -------------------------
- * EXPLICITLY NOT REQUIRED:
- * -------------------------
- * - Product count
- * - Store visitors / sessions
- * - SDK installation
- * - Traffic volume
- * - Conversion signals
- *
- * These belong to FT1+ and MUST NOT gate FT0.
- *
- * -------------------------
- * GUARANTEES:
- * -------------------------
- * - FT0 completion is idempotent
- * - ft0_state is written exactly once per shop
- * - Completion is authoritative and irreversible
- *
- * -------------------------
- * WARNING:
- * -------------------------
- * Do NOT add new conditions here without updating the
- * activation contract and frontend expectations.
- *
- * Silent FT0 blocking = broken onboarding.
- *
- * ============================================================
- */
 
 /**
  * DEBUGGING NOTE (2026-03):
@@ -61,18 +16,17 @@ export class FT0CompletionService {
   ): Promise<{ completed: boolean; alreadyCompleted?: boolean }> {
 
     /**
-     * CANONICAL COMPLETION GUARD
-     * --------------------------
-     * Rebuild replays may re-trigger evaluation multiple times.
-     * Domain event log is source-of-truth.
+     * CANONICAL EVENT TYPE (v2 FIX)
+     * -----------------------------
+     * Lifecycle events are no longer emitted directly.
+     * Must check domain event: ft0.completed
      *
-     * If lifecycle/ft0_completed already exists,
-     * skip evaluation immediately.
+     * Using old lifecycle/* would break idempotency.
      */
     const existingEvent = await db('domain_events')
       .where({
         shop_id: shopId,
-        event_type: 'lifecycle/ft0_completed',
+        event_type: 'ft0.completed',
       })
       .first('id');
 
@@ -169,32 +123,50 @@ export class FT0CompletionService {
     return await db.transaction(async trx => {
       const externalEventId = `internal:lifecycle/ft0_completed:${shopId}`;
 
+      /**
+       * ✅ DOMAIN EVENT EMISSION (CORRECT ARCHITECTURE)
+       * ----------------------------------------------
+       * Service emits DOMAIN event only.
+       * Projection layer owns lifecycle transitions.
+       *
+       * Event flow:
+       * first_insight_delivered
+       * → FT0CompletionService
+       * → emits domain event: ft0.completed
+       * → projection handler decides lifecycle transitions
+       */
+
       const [event] = await trx('domain_events')
         .insert({
           shop_id: shopId,
-          event_type: 'lifecycle/ft0_completed',
-          event_payload: {
-            orders: orderCount,
-            firstInsightDelivered: true,
-          },
-          event_time: trx.fn.now(),
-          event_version: 1,
+          event_type: 'ft0.completed', // ✅ NOT lifecycle/*
           /**
-           * INTERNAL EVENT IDENTITY
-           * -----------------------
-           * Required by domain_events schema.
-           * Must be deterministic and unique per emission.
-           *
-           * Format:
-           * internal:<event_type>:<shop_id>:<epoch_ms>
+           * TRACE PROPAGATION (v1)
+           * ----------------------
+           * FT0 completion must carry forward causal trace if available.
+           * Currently best-effort (no upstream guarantee yet).
            */
+          event_payload: {
+            trace_id: null, // TODO: wire from upstream ingestion chain
+          },
           external_event_id: externalEventId,
-        })
-        .returning(['id']);
 
-      console.info('[OUTBOX_TRIGGER_EXPECTED]', {
-        domainEventId: event.id,
-        eventType: 'lifecycle/ft0_completed',
+          /**
+           * 🔴 CRITICAL FIX — EVENT TIME REQUIRED
+           * ------------------------------------
+           * domain_events.event_time is NOT NULL.
+           * Missing this crashes projection worker.
+           *
+           * MUST always be explicitly set.
+           */
+          event_time: trx.fn.now(),
+        })
+        .returning('*');
+
+      console.info('[FT0_COMPLETED_EVENT_EMITTED]', {
+        shopId,
+        eventId: event.id,
+        traceId: null,
       });
 
       /**

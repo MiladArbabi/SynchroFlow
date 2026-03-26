@@ -30,6 +30,18 @@ export async function up(knex: Knex): Promise<void> {
       .string('phase', 32)
       .notNullable();
 
+    /**
+     * 🟡 LIFECYCLE SUBPHASE (v2)
+     * --------------------------
+     * - Only meaningful for FT0
+     * - Written ONLY by projection layer
+     * - NEVER used for transitions
+     * - Prevents sync_status leaking into frontend
+     */
+    table
+      .string('subphase', 32)
+      .nullable();
+
     table
       .timestamp('since', { useTz: true })
       .notNullable();
