@@ -4,6 +4,7 @@ import { confirmFt2 } from 'api/lifecycle';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { Ft1ChecklistSurface } from 'ui/src/ui/ft1-checklist/Ft1ChecklistSurface';
 import { getFt2Readiness } from 'api/lifecycle';
+import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 
 /**
  * FT1 Promotion Surface (Snapshot-Driven)
@@ -15,6 +16,8 @@ import { getFt2Readiness } from 'api/lifecycle';
 
 export function Ft1Outlet() {
   const { phase } = useShopLifecycle();
+  console.log('[FT1_OUTLET_RENDER]', { phase });
+
   /**
    * FT1 must render from lifecycle alone.
    * Readiness only affects inner UI (not mount).
@@ -26,72 +29,48 @@ export function Ft1Outlet() {
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    let cancelled = false;
+  let cancelled = false;
 
-    async function loadReadiness() {
-      console.info('[FT2_READINESS_FETCH_START]');
+  async function load() {
+  const res = await getFt2Readiness();
 
-      try {
-        const res = await getFt2Readiness();
-
-        console.info('[FT2_READINESS_FETCH_SUCCESS]', res);
-
-        if (!cancelled) {
-          setReadiness(res);
-        }
-      } catch (err) {
-        console.error('[FT2_READINESS_FETCH_FAILED]', err);
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+  if (!cancelled) {
+      setReadiness(res);
+      setLoading(false);
     }
-
-    loadReadiness();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!isFt1) {
-    return null;
   }
 
-  if (loading) {
-    return (
-      <div style={{ padding: 24 }}>
-        <h3>Connecting your store…</h3>
+  load();
+  const i = setInterval(load, 3000);
 
-        <p style={{ opacity: 0.7 }}>
-          We’ve started syncing your data. This usually takes under a minute.
-        </p>
+  return () => {
+    cancelled = true;
+    clearInterval(i);
+  };
+}, []);
 
-        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.5 }}>
-          Establishing connection → Fetching orders → Preparing insights
-        </div>
-      </div>
-    );
-  }
+  if (!isFt1) return null;
 
   const isReady = readiness?.ready === true;
+
+  /**
+   * 🔥 UNIFIED LOADING SURFACE
+   * --------------------------
+   * Covers:
+   * - initial fetch
+   * - readiness false
+   *
+   * Prevents blank UI
+   */
+  if (loading || !isReady) {
+    return <EmptyDashboardState />;
+  }
 
   return (
     <>
       <Ft1ChecklistSurface />
 
       <div style={{ padding: 24 }}>
-        {!isReady && (
-          <>
-            <h3>Processing your data…</h3>
-            <p>Your data is still syncing. This can take a minute.</p>
-
-            <pre style={{ fontSize: 12, opacity: 0.6 }}>
-              {JSON.stringify(readiness?.progress ?? {}, null, 2)}
-            </pre>
-          </>
-        )}
 
         {isReady && (
           <>

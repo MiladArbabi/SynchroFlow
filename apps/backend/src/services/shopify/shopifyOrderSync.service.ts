@@ -96,7 +96,60 @@ export async function syncShopifyOrders({
 
       if (inserted.length > 0) {
         createdCount++;
-         } else {
+
+        /**
+         * INGESTION SIGNAL — FIRST ORDER SYNC
+         * -----------------------------------
+         * Uses canonical ingestion schema:
+         * - module_id = 'orders'
+         * - event     = 'sync_started'
+         *
+         * This avoids schema drift and preserves
+         * compatibility with existing ingestion model.
+         */
+        await trx('shop_ingestion_events')
+          .insert({
+            shop_id: shopId,
+            module_id: 'orders',
+            event: 'sync_started',
+            created_at: trx.fn.now(),
+          })
+          .onConflict(['shop_id', 'module_id', 'event'])
+          .ignore();
+
+        console.info('[INGESTION_SIGNAL_EMITTED]', {
+          shopId,
+          module: 'orders',
+          event: 'sync_started',
+        });
+
+                /**
+         * DOMAIN EVENT — INGESTION STARTED
+         * --------------------------------
+         * This is the ONLY valid bridge to lifecycle.
+         *
+         * Lifecycle must NEVER read tables directly.
+         */
+        await trx('domain_events')
+          .insert({
+            shop_id: shopId,
+            event_type: 'orders/sync_started',
+            event_payload: {},
+            event_time: trx.fn.now(),
+            event_version: 1,
+            external_event_id: `orders_sync_started:${shopId}`,
+          })
+          .onConflict(
+            db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
+          )
+          .ignore();
+
+        console.info('[INGESTION_DOMAIN_EVENT_EMITTED]', {
+          shopId,
+          event: 'orders/sync_started',
+        });
+        
+        } else {
         duplicateCount++;
       }
 

@@ -7,6 +7,7 @@
  */
 export type UILifecyclePhase =
   | 'FT_MINUS_ONE'        // CTA required (connect / activate)
+  | 'FT0'
   | 'FT0_SYNCING'         // blocking sync modal
   | 'FT0_PREPARING'       // activated but not ready
   | 'FT1'                // lifecycle only (no readiness assumption)

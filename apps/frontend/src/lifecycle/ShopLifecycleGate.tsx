@@ -57,6 +57,7 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
     );
   }
 
+    case 'FT0':
     case 'FT0_SYNCING':
     case 'FT0_PREPARING':
       return <EmptyDashboardState />;

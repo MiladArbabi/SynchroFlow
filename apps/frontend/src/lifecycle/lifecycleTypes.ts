@@ -31,4 +31,5 @@ export type LifecycleEvent =
   | { type: 'INTEGRATION_DELETED' }
   | { type: 'FT0_DWELL_ELAPSED' }
   | { type: 'FT1_BACKEND_COMPLETE' }
-  | { type: 'FT2_BACKEND_COMPLETE' };
+  | { type: 'FT2_BACKEND_COMPLETE' }
+  | { type: 'BACKEND_PHASE_SYNC'; phase: UILifecyclePhase }

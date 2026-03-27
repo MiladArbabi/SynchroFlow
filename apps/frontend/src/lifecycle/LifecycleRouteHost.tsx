@@ -50,9 +50,15 @@ export function LifecycleRouteHost() {
    */
   if (
     phase === 'FT_MINUS_ONE' ||
+    phase === 'FT0' ||
     phase === 'FT0_PREPARING' ||
     phase === 'FT0_SYNCING'
   ) {
+
+    console.info('[LIFECYCLE_ROUTE_FT0_RENDER]', {
+      phase,
+      ts: performance.now(),
+    });
     return (
       <div style={{ padding: 24 }}>
         <h3>Setting up your workspace…</h3>
@@ -86,8 +92,14 @@ export function LifecycleRouteHost() {
       {/* Root → canonical Overview */}
       <Route path="/" element={<Navigate to="/overview" replace />} />
 
-      {/* RO — Reality Overview (FT1 surface) */}
-      <Route path="/overview/*" element={<OverviewFT2Page />} />
+      /**
+        * FT1 MUST NEVER RENDER FT2 PAGES
+        * --------------------------------
+        * Using FT2 pages here causes:
+        * - crashes (missing FT2 contracts)
+        * - mixed lifecycle UI
+        */
+        <Route path="/overview/*" element={<OrdersPage />} />
 
       {/* ORDERS */}
       <Route path="/orders/*" element={<OrdersPage />} />

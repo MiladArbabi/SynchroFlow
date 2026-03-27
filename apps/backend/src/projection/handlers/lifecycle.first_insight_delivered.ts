@@ -68,5 +68,12 @@ export async function handleLifecycleFirstInsightDelivered({
         occurred_at: eventTime,
         payload,
       });
+
+      // CRITICAL: trigger FT0 completion
+      const { FT0CompletionService } = await import(
+        '../../services/ft0-completion.service.js'
+      );
+
+      await FT0CompletionService.evaluateAndComplete(shopId)
     }
   };

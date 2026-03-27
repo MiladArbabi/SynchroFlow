@@ -122,6 +122,13 @@ export function LifecycleProvider({
       return;
     }
 
+    console.info('[LIFECYCLE][FETCH_TRIGGER]', {
+      shopId: user?.shop_id,
+      authLoading,
+      hasUser: !!user,
+      ts: performance.now(),
+    });
+
     let cancelled = false;
 
       async function fetchLifecycle() {
@@ -131,22 +138,16 @@ export function LifecycleProvider({
         const res = await axiosInstance.get('/api/v1/lifecycle');
         const backendPhase = res?.data?.phase;
 
-        // 🔒 BACKEND → REDUCER AUTHORITY BRIDGE (THE MISSING LINK)
-        if (backendPhase === 'FT2') {
-          dispatch({ type: 'FT2_BACKEND_COMPLETE' });
-        } else if (backendPhase === 'FT1') {
-          /**
-           * Backend lifecycle authority
-           *
-           * FT1 means:
-           * - lifecycle progressed
-           * - BUT not necessarily ready for FT2
-           *
-           * We allow FT1_READY state,
-           * but FT2 is still gated by readiness API.
-           */
-          dispatch({ type: 'FT1_BACKEND_COMPLETE' });
-        }
+        console.info('[LIFECYCLE][BACKEND_PHASE_RECEIVED]', {
+          backendPhase,
+          ts: performance.now(),
+        });
+
+        dispatch({
+          type: 'BACKEND_PHASE_SYNC',
+          phase: backendPhase,
+        });
+        
       } catch (err) {
         if (err?.response?.status === 401) {
           console.error('[LIFECYCLE][AUTH_MISSING_TOKEN]', {
@@ -171,9 +172,9 @@ export function LifecycleProvider({
     return () => {
       cancelled = true;
     };
-  }, [authLoading]);
+  }, [authLoading, user?.shop_id]);
 
-    useEffect(() => {
+  useEffect(() => {
     function onFt2Confirmed() {
       console.info('[LIFECYCLE][FT2][EVENT_RECEIVED]');
       dispatch({ type: 'FT2_BACKEND_COMPLETE' });
@@ -182,6 +183,47 @@ export function LifecycleProvider({
     window.addEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
     return () => {
       window.removeEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
+    };
+  }, []);
+
+  useEffect(() => {
+    async function refetchLifecycle() {
+      console.info('[LIFECYCLE][MANUAL_REFRESH_TRIGGERED]', {
+        ts: performance.now(),
+      });
+
+      try {
+        const res = await axiosInstance.get('/api/v1/lifecycle');
+        const backendPhase = res?.data?.phase;
+
+        console.info('[LIFECYCLE][MANUAL_REFRESH_RESULT]', {
+          backendPhase,
+        });
+
+        dispatch({
+          type: 'BACKEND_PHASE_SYNC',
+          phase: backendPhase,
+        });
+      } catch (err) {
+        console.error('[LIFECYCLE][MANUAL_REFRESH_FAILED]', err);
+      }
+    }
+
+    function handleLifecycleRefresh() {
+      refetchLifecycle();
+    }
+
+    /**
+     * 🔗 GLOBAL LIFECYCLE INVALIDATION EVENTS
+     *
+     * Add more events here when needed:
+     * - OAuth complete
+     * - Integration connected
+     */
+    window.addEventListener('lifecycle:refresh', handleLifecycleRefresh);
+
+    return () => {
+      window.removeEventListener('lifecycle:refresh', handleLifecycleRefresh);
     };
   }, []);
 
@@ -268,13 +310,6 @@ export function LifecycleProvider({
 
   useEffect(() => {
     if (isHydratedTerminal) return;
-
-    /* console.log('[FT2_RESTORE_EFFECT_ENTER]', {
-      shopId,
-      hasFT2Seal,
-      bootResolved: integration.bootResolved,
-      hasIntegration: integration.hasIntegration,
-    }); */
     
     if (hasFT2Seal && integration.hasIntegration) {
       console.log('[FT2_RESTORE_FROM_LOCALSTORAGE]');

@@ -20,6 +20,15 @@ export async function up(knex: Knex): Promise<void> {
          .defaultTo(knex.fn.now());
 
     table.index(['shop_id', 'module_id']);
+    /**
+     * IDEMPOTENCY CONSTRAINT
+     * ----------------------
+     * Prevent duplicate ingestion signals.
+     *
+     * Guarantees:
+     * - One signal per (shop, module, event)
+     */
+    table.unique(['shop_id', 'module_id', 'event']);
   });
 }
 

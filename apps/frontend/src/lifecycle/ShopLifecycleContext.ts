@@ -24,14 +24,5 @@ export function useShopLifecycle(): ShopLifecycleContextValue {
     );
   }
 
-  /* console.log('[useShopLifecycle] hook called');
-
-  if (import.meta.env.DEV) {
-    console.log('[UI_LIFECYCLE_RENDER]', {
-      phase: ctx.phase,
-      ts: performance.now(),
-    });
-  } */
-
   return ctx;
 }

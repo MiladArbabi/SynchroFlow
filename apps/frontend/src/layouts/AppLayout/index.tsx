@@ -7,7 +7,6 @@ import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
 
 import { ToastProvider } from "contexts/ToastContext";
-import { Ft1Outlet } from "lifecycle/Ft1Outlet";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
 
 interface AppLayoutProps {
@@ -108,7 +107,6 @@ const AppLayout = (props: AppLayoutProps) => {
               position: "relative"
             }}
           >
-            <Ft1Outlet />
             {props.children}
           </Box>
         </Box>

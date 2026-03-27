@@ -65,8 +65,24 @@ export function lifecycleReducer(
         ...initialLifecycleState,
         bootResolved: state.bootResolved,
       };
-      break;
+    
+    break;
 
+    /* -------------------------------------------------- */
+    /* Backend authoritative phase sync                   */
+    /* -------------------------------------------------- */
+
+    case 'BACKEND_PHASE_SYNC': {
+      /**
+       * 🔒 SINGLE SOURCE OF TRUTH
+       * Backend defines lifecycle phase.
+       * Frontend MUST mirror it exactly.
+       */
+      return {
+        ...state,
+        phase: event.phase,
+      };
+    }
     
 
     /* -------------------------------------------------- */
