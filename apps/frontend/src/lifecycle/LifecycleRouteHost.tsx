@@ -41,7 +41,7 @@ import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState'
 // - Never reuse FT1 pages for FT2
 
 export function LifecycleRouteHost() {
-  const { phase, readiness } = useShopLifecycle();
+  const { phase, readiness, isBooting } = useShopLifecycle();
 
   console.log('[ROUTE_HOST_RENDER]', { phase, readiness });
 
@@ -58,6 +58,17 @@ export function LifecycleRouteHost() {
    */
   
   /**
+   * ⏳ BOOT LOADER (pre-lifecycle resolution)
+   * ----------------------------------------
+   * Prevents blank screen while waiting for first backend sync.
+   */
+  if (isBooting) {
+    console.info('[LIFECYCLE_ROUTE_BOOTING]');
+    return <EmptyDashboardState />;
+  }
+
+
+  /**
    * 🚧 ACTIVATION PHASE
    * -------------------
    * Pre-integration state.
@@ -67,7 +78,7 @@ export function LifecycleRouteHost() {
     console.info('[LIFECYCLE_ROUTE_ACTIVATION]', { phase });
 
     return null; // or activation UI later
-  }
+  };
 
   /**
    * ✅ FT0 (initialization phase)

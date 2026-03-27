@@ -53,7 +53,7 @@ export const EmptyDashboardState: React.FC = () => {
           </Typography>
 
           <LinearProgress
-            variant="determinate"
+            variant="indeterminate"
             value={progress}
             sx={{
               height: 6,
