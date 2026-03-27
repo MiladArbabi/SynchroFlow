@@ -53,67 +53,51 @@ export function LifecycleProvider({
   const [state, dispatch] = useReducer(lifecycleReducer, initialState);
   const [isResolved, setIsResolved] = React.useState(false);
 
+  console.log('[PROVIDER_PHASE]', state.phase);
+
   const integration = useIntegration();
   const [ft2RestoreResolved, setFt2RestoreResolved] = React.useState(false);
+  // 🔥 GLOBAL READINESS STATE (single source of truth)
+  const [readiness, setReadiness] = React.useState<null | { ready: boolean }>(null);
 
   const hasFT2Seal =
     shopId != null &&
     localStorage.getItem(`shop:${shopId}:ft2-seen`) === 'true';
 
   /**
-   * 🔗 INTEGRATION → LIFECYCLE BRIDGE
-   * --------------------------------
-   * Lifecycle must react to integration existence.
+   * ❌ REMOVED: Integration-driven lifecycle mutation
+   * -----------------------------------------------
+   * Integration state must NOT control lifecycle phase.
+   * Backend lifecycle projection is the ONLY authority.
    *
-   * Without this:
-   * - system stays in FT_MINUS_ONE
-   * - FT0 never appears
+   * Retained for observability only.
    */
   useEffect(() => {
     if (!integration.bootResolved) return;
 
     if (integration.hasIntegration) {
-      console.info('[LIFECYCLE][INTEGRATION_EXISTS]');
-
-      dispatch({ type: 'BOOT_RESOLVED' });
-      dispatch({ type: 'INTEGRATION_CREATED' });
+      console.info('[INTEGRATION_SIGNAL_OBSERVED]', {
+        hasIntegration: integration.hasIntegration,
+      });
     }
   }, [integration.bootResolved, integration.hasIntegration]);
 
   /**
-   * 🚫 ARCHITECTURE ENFORCEMENT — DO NOT REINTRODUCE
-   * -----------------------------------------------
-   * Lifecycle MUST NOT be derived from integration.syncStatus.
+   * ❌ REMOVED: One-time lifecycle fetch
+   * -----------------------------------
+   * Lifecycle must be driven ONLY by polling.
    *
-   * Reason:
-   * - sync_status is an EARLY signal (ingestion)
-   * - lifecycle is a LATE signal (post-projection truth)
+   * Having both:
+   * - initial fetch
+   * - polling
    *
-   * Using syncStatus creates:
+   * creates:
    * - race conditions
-   * - blank UI gaps
-   * - dual authority violation
+   * - duplicate dispatch
    *
-   * Lifecycle is ONLY allowed to come from:
-   *   GET /api/v1/lifecycle
-   *
-   * If FT0 is missing → FIX BACKEND (projection), NOT frontend.
+   * Polling is the single source of truth.
    */
-  
   useEffect(() => {
-
-    /**
-     * 🔒 AUTH GATE (CRITICAL)
-     * ----------------------
-     * Lifecycle MUST NOT be fetched until:
-     * - auth fully resolved
-     * - user exists (token guaranteed)
-     *
-     * Otherwise:
-     * - 401 from backend
-     * - lifecycle never updates
-     * - UI stuck in FT_MINUS_ONE
-     */
     if (authLoading || !user) {
       console.info('[LIFECYCLE][BLOCKED_NO_AUTH]', {
         authLoading,
@@ -122,62 +106,27 @@ export function LifecycleProvider({
       return;
     }
 
-    console.info('[LIFECYCLE][FETCH_TRIGGER]', {
+    console.info('[LIFECYCLE][POLLING_WILL_HANDLE_FETCH]', {
       shopId: user?.shop_id,
-      authLoading,
-      hasUser: !!user,
-      ts: performance.now(),
     });
 
-    let cancelled = false;
-
-      async function fetchLifecycle() {
-      const startedAt = performance.now();
-
-      try {
-        const res = await axiosInstance.get('/api/v1/lifecycle');
-        const backendPhase = res?.data?.phase;
-
-        console.info('[LIFECYCLE][BACKEND_PHASE_RECEIVED]', {
-          backendPhase,
-          ts: performance.now(),
-        });
-
-        dispatch({
-          type: 'BACKEND_PHASE_SYNC',
-          phase: backendPhase,
-        });
-        
-      } catch (err) {
-        if (err?.response?.status === 401) {
-          console.error('[LIFECYCLE][AUTH_MISSING_TOKEN]', {
-            error: err,
-          });
-        } else {
-          console.error('[LIFECYCLE][SYNC][FAILED]', {
-            source: 'backend',
-            durationMs: Math.round(performance.now() - startedAt),
-            error: err,
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setIsResolved(true);
-        }
-      }
-    }
-
-    fetchLifecycle();
-
-    return () => {
-      cancelled = true;
-    };
+    setIsResolved(true);
   }, [authLoading, user?.shop_id]);
 
+  /**
+   * ❌ REMOVED: Event-driven lifecycle mutation
+   * ------------------------------------------
+   * Lifecycle phase must ONLY come from backend polling.
+   * Events must NOT mutate lifecycle state.
+   *
+   * Retained as NO-OP for observability.
+   */
   useEffect(() => {
     function onFt2Confirmed() {
-      console.info('[LIFECYCLE][FT2][EVENT_RECEIVED]');
-      dispatch({ type: 'FT2_BACKEND_COMPLETE' });
+      console.warn('[LIFECYCLE_EVENT_IGNORED]', {
+        event: 'ft2-confirmed',
+        reason: 'backend is sole authority',
+      });
     }
 
     window.addEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
@@ -186,140 +135,124 @@ export function LifecycleProvider({
     };
   }, []);
 
-  useEffect(() => {
-    async function refetchLifecycle() {
-      console.info('[LIFECYCLE][MANUAL_REFRESH_TRIGGERED]', {
-        ts: performance.now(),
-      });
+  const isHydratedTerminal =
+    state.phase === 'FT1_READY' || state.phase === 'FT2_READY';
 
+  useEffect(() => {
+    if (!shopId) return;
+
+    let cancelled = false;
+
+    async function loadReadiness() {
+      try {
+        const res = await getFt2Readiness();
+
+        /**
+         * ⚠️ REMOVED: lifecycle fetch from readiness effect
+         * ------------------------------------------------
+         * Readiness must NOT fetch lifecycle.
+         * Lifecycle polling is the ONLY source.
+         */
+        console.log('[AUDIT][READINESS_ONLY]', {
+          readiness: res,
+          ts: performance.now(),
+        });
+
+        console.info('[LIFECYCLE][READINESS_SYNC]', {
+          ready: res?.ready,
+          ts: performance.now(),
+        });
+
+        if (!cancelled) {
+          setReadiness(res);
+        }
+      } catch (err) {
+        console.error('[LIFECYCLE][READINESS_FAILED]', err);
+      }
+    }
+
+    loadReadiness();
+    const i = setInterval(loadReadiness, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(i);
+    };
+  }, [shopId]);
+
+  /**
+   * 🔥 LIFECYCLE POLLING (SOURCE OF TRUTH)
+   * -------------------------------------
+   * Continuously sync lifecycle from backend.
+   *
+   * REQUIRED because:
+   * - lifecycle progresses asynchronously
+   * - frontend must stay reactive
+   *
+   * This replaces ALL readiness-based triggering.
+   */
+  useEffect(() => {
+    if (!shopId) return;
+
+    /**
+     * ⚠️ DO NOT GATE LIFECYCLE POLLING
+     * --------------------------------
+     * Backend lifecycle must be polled regardless of integration state.
+     *
+     * Gating causes:
+     * - missed transitions (FT_MINUS_ONE → FT0 → FT1)
+     * - UI stuck until refresh
+     */
+
+    let cancelled = false;
+
+    async function pollLifecycle() {
       try {
         const res = await axiosInstance.get('/api/v1/lifecycle');
         const backendPhase = res?.data?.phase;
 
-        console.info('[LIFECYCLE][MANUAL_REFRESH_RESULT]', {
-          backendPhase,
-        });
-
-        dispatch({
-          type: 'BACKEND_PHASE_SYNC',
-          phase: backendPhase,
-        });
-      } catch (err) {
-        console.error('[LIFECYCLE][MANUAL_REFRESH_FAILED]', err);
-      }
-    }
-
-    function handleLifecycleRefresh() {
-      refetchLifecycle();
-    }
-
-    /**
-     * 🔗 GLOBAL LIFECYCLE INVALIDATION EVENTS
-     *
-     * Add more events here when needed:
-     * - OAuth complete
-     * - Integration connected
-     */
-    window.addEventListener('lifecycle:refresh', handleLifecycleRefresh);
-
-    return () => {
-      window.removeEventListener('lifecycle:refresh', handleLifecycleRefresh);
-    };
-  }, []);
-
-
-  const isHydratedTerminal =
-    state.phase === 'FT1_READY' || state.phase === 'FT2_READY';
-
-  /**
-   * FT1 Readiness Bridge (Backend Authority)
-   * ----------------------------------------
-   * Promotes FT1 → FT1_READY ONLY when backend signals readiness.
-   */
-  useEffect(() => {
-    if (state.hasLatchedFT1) return;
-    if (state.hasLatchedFT2) return;
-    if (!state.integrationExists) return;
-
-    let cancelled = false;
-
-    async function checkReadiness() {
-      try {
-        const readiness = await getFt2Readiness();
-        /**
-         * 🚫 ARCHITECTURE GUARD
-         * ---------------------
-         * Readiness MUST NOT mutate lifecycle.
-         *
-         * Lifecycle is sourced exclusively from:
-         *   GET /api/v1/lifecycle
-         *
-         * Readiness is ONLY used for:
-         *   - FT2 eligibility
-         *   - Progress UI
-         *
-         * Violating this causes:
-         *   - Blank screens
-         *   - Delayed FT1 rendering
-         *   - Lifecycle/readiness coupling
-         */
-        if (readiness.ready && !cancelled) {
-          console.info('[READINESS_READY_NO_LIFECYCLE_MUTATION]', {
-            readiness,
+        if (!cancelled) {
+          dispatch({
+            type: 'BACKEND_PHASE_SYNC',
+            phase: backendPhase,
           });
 
-          // ❌ DO NOT dispatch lifecycle events here
+          console.info('[LIFECYCLE_POLL_SYNC]', {
+            backendPhase,
+            ts: performance.now(),
+          });
         }
       } catch (err) {
-        console.error('[FT1_READINESS_CHECK_FAILED]', err);
+        console.error('[LIFECYCLE_POLL_FAILED]', err);
       }
     }
 
-    checkReadiness();
-
-    /**
-     * Polling retained ONLY for UI-level readiness awareness.
-     * Must NOT influence lifecycle state.
-     */
-    const interval = setInterval(checkReadiness, 3000);
+    pollLifecycle();
+    const interval = setInterval(pollLifecycle, 3000);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [
-    state.hasLatchedFT1,
-    state.hasLatchedFT2,
-    state.integrationExists,
-  ]);
-
-  useEffect(() => {
-    /**
-     * ⚠️ DISABLED — FRONTEND READINESS DERIVATION
-     *
-     * FT1 readiness must NOT be inferred from onboarding signals.
-     * Backend lifecycle + readiness API must be the only authority.
-     *
-     * This previously caused:
-     * - Premature FT1_READY
-     * - FT2 button enabled before system readiness
-     */
-  }, []);
+  }, [shopId, state.integrationExists]);
 
   /* ---------------- FT2 restore ---------------- */
 
   useEffect(() => {
     if (isHydratedTerminal) return;
     
+    /**
+     * ❌ REMOVED: Frontend-driven FT2 restore
+     * --------------------------------------
+     * FT2 must ONLY come from backend lifecycle.
+     * LocalStorage cannot mutate lifecycle phase.
+     *
+     * Retained ONLY for audit visibility.
+     */
     if (hasFT2Seal && integration.hasIntegration) {
-      console.log('[FT2_RESTORE_FROM_LOCALSTORAGE]');
-
-      // Allow boot + integration to resolve first
-      dispatch({ type: 'BOOT_RESOLVED' });
-      dispatch({ type: 'INTEGRATION_CREATED' });
-
-      // Then force FT2
-      dispatch({ type: 'FT2_BACKEND_COMPLETE' });
+      console.warn('[FT2_RESTORE_IGNORED_FRONTEND]', {
+        reason: 'frontend cannot set lifecycle phase',
+      });
 
       setFt2RestoreResolved(true);
       return;
@@ -370,17 +303,27 @@ export function LifecycleProvider({
 
   if (!state.phase) return null;
 
-  if (!isResolved) {
-    return (
-      //TODO: Replace by a loader/spinner
-      <div style={{ padding: 24 }}>
-        <h3>Initializing workspace…</h3>
-      </div>
-    );
+  const isBooting = !isResolved;
+
+  if (!state.phase) {
+    console.log('[PROVIDER_BLOCKED_NO_PHASE]');
+    return null;
   }
 
+  console.log('[LIFECYCLE_PROVIDER_RENDER]', {
+    phase: state.phase,
+    readiness,
+    isResolved,
+  });
+
   return (
-    <ShopLifecycleContext.Provider value={{ phase: state.phase }}>
+    <ShopLifecycleContext.Provider 
+      value={{
+        ...state,
+        readiness, // expose globally
+        isBooting,
+      }}
+    >
       {children}
     </ShopLifecycleContext.Provider>
   );

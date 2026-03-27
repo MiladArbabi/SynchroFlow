@@ -11,11 +11,6 @@ export function lifecycleReducer(
 ): LifecycleState {
   let nextState: LifecycleState;
 
-  // FT2 is terminal — no further transitions allowed
-  if (state.hasLatchedFT2) {
-    return state;
-  }
-
   /**
    * 🚫 ARCHITECTURE RULE — NO SYNC-DRIVEN LIFECYCLE
    * ----------------------------------------------
@@ -32,57 +27,59 @@ export function lifecycleReducer(
     /* Boot resolution                                    */
     /* -------------------------------------------------- */
 
+    /**
+     * ❌ REMOVED: boot cannot mutate lifecycle state
+     */
     case 'BOOT_RESOLVED':
-      nextState = {
-        ...state,
-        bootResolved: true,
-      };
-      break;
+      console.warn('[IGNORED_EVENT]', { type: 'BOOT_RESOLVED' });
+      return state;
 
+    /**
+     * ❌ REMOVED: state reset via BOOT_UNRESOLVED
+     * -----------------------------------------
+     * Lifecycle must not be reset from frontend.
+     */
     case 'BOOT_UNRESOLVED':
-      // BOOT_UNRESOLVED is only valid before FT1 is latched
-      if (state.hasLatchedFT1) {
-        return state;
-      }
-      nextState = initialLifecycleState;
-      break;
+      console.warn('[IGNORED_EVENT]', { type: 'BOOT_UNRESOLVED' });
+      return state;
 
     /* -------------------------------------------------- */
     /* Integration lifecycle                              */
     /* -------------------------------------------------- */
 
+    /**
+     * ❌ REMOVED: integration cannot mutate lifecycle
+     */
     case 'INTEGRATION_CREATED': {
-      // Integration existence is NOT lifecycle authority
-      // Lifecycle phase must come from backend only
-      return {
-        ...state,
-        integrationExists: true,
-      };
+      console.warn('[IGNORED_EVENT]', { type: 'INTEGRATION_CREATED' });
+      return state;
     }
 
+    /**
+     * ❌ REMOVED: state reset via INTEGRATION_DELETED
+     * ----------------------------------------------
+     * Lifecycle must remain backend-controlled.
+     */
     case 'INTEGRATION_DELETED':
-      nextState = {
-        ...initialLifecycleState,
-        bootResolved: state.bootResolved,
-      };
-    
-    break;
+      console.warn('[IGNORED_EVENT]', { type: 'INTEGRATION_DELETED' });
+      return state;
 
     /* -------------------------------------------------- */
     /* Backend authoritative phase sync                   */
     /* -------------------------------------------------- */
 
     case 'BACKEND_PHASE_SYNC': {
-      /**
-       * 🔒 SINGLE SOURCE OF TRUTH
-       * Backend defines lifecycle phase.
-       * Frontend MUST mirror it exactly.
-       */
-      return {
-        ...state,
-        phase: event.phase,
-      };
-    }
+    /**
+     * 🔁 FORCE STATE CHANGE FOR REACT
+     * --------------------------------
+     * Even if phase is identical, we must return a NEW object
+     * to guarantee re-render propagation through context.
+     */
+    return {
+      ...state,
+      phase: event.phase,
+    };
+  }
     
 
     /* -------------------------------------------------- */
@@ -98,33 +95,27 @@ export function lifecycleReducer(
   }
 
   /**
-  * ✅ Lifecycle authority (backend-driven)
-  *
-  * FT1 means:
-  * - Lifecycle progressed
-  * - NOT necessarily ready for FT2
-  *
-  * Readiness MUST NOT be encoded here.
-  */
+   * ❌ REMOVED: frontend lifecycle mutation (FT1)
+   * -------------------------------------------
+   * FT1 must come ONLY from backend phase sync.
+   */
   case 'FT1_BACKEND_COMPLETE': {
-    return {
-      ...state,
-      phase: 'FT1', // ← pure lifecycle phase
-      hasLatchedFT1: true,
-    };
+    console.warn('[IGNORED_EVENT]', { type: 'FT1_BACKEND_COMPLETE' });
+    return state;
   }
 
   /* -------------------------------------------------- */
     /* FT2 restore / promotion                            */
     /* -------------------------------------------------- */
 
+    /**
+     * ❌ REMOVED: frontend lifecycle mutation (FT2)
+     * -------------------------------------------
+     * FT2 must come ONLY from backend phase sync.
+     */
     case 'FT2_BACKEND_COMPLETE': {
-      // FT2 is authoritative and terminal — no guards
-      return {
-        ...state,
-        phase: 'FT2_READY',
-        hasLatchedFT2: true,
-      };
+      console.warn('[IGNORED_EVENT]', { type: 'FT2_BACKEND_COMPLETE' });
+      return state;
     }
 
     /* -------------------------------------------------- */

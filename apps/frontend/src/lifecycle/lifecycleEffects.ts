@@ -33,7 +33,17 @@ export function useLifecycleEffects({
       state.phase === 'FT0_PREPARING' &&
       !state.ft0DwellCompleted
     ) {
-      dispatch({ type: 'FT0_DWELL_ELAPSED' });
+
+      /**
+       * ❌ REMOVED: UI-driven lifecycle mutation (FT0 dwell)
+       * ---------------------------------------------------
+       * Dwell timing must NOT affect lifecycle state.
+       * Backend is sole authority.
+       */
+      console.warn('[FT0_DWELL_IGNORED_IMMEDIATE]', {
+        phase: state.phase,
+      });
+
       return;
     }
 
@@ -43,7 +53,16 @@ export function useLifecycleEffects({
     if (ft0TimerRef.current != null) return;
 
     ft0TimerRef.current = window.setTimeout(() => {
-      dispatch({ type: 'FT0_DWELL_ELAPSED' });
+
+     /**
+     * ❌ REMOVED: UI-driven lifecycle mutation (FT0 dwell)
+     * ---------------------------------------------------
+     * Timer no longer mutates lifecycle.
+     */
+    console.warn('[FT0_DWELL_IGNORED_TIMER]', {
+      delayMs: FT0_MIN_DWELL_MS,
+    });
+    
       ft0TimerRef.current = null;
     }, FT0_MIN_DWELL_MS);
 

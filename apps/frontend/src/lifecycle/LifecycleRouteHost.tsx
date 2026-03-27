@@ -35,51 +35,48 @@ import CustomersFT2Page from 'pages/ft2-pages/CustomersFT2Page';
 import ProductsFT2Page from 'pages/ft2-pages/ProductsFT2Page';
 import FinancesFT2Page from 'pages/ft2-pages/FinancesFT2Page';
 import OverviewFT2Page from 'pages/ft2-pages/OverviewFT2Page';
+import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 
 // NOTE:
 // - Never reuse FT1 pages for FT2
 
 export function LifecycleRouteHost() {
-  const { phase } = useShopLifecycle();
+  const { phase, readiness } = useShopLifecycle();
+
+  console.log('[ROUTE_HOST_RENDER]', { phase, readiness });
 
   /**
-   * ✅ FT0 — SYSTEM SYNC / PREPARATION PHASE
+   * 🔥 UI LIFECYCLE MODEL (FINAL)
+   * ----------------------------
+   * FT_MINUS_ONE → activation
+   * FT1 + !ready → loader
+   * FT1 + ready → FT1 UI
+   * FT2 → FT2 UI
    *
-   * MUST render visible UI.
-   * Blank screen here = critical UX failure.
+   * NOTE:
+   * FT0 is backend-only and NOT observable in UI timeline.
    */
-  if (
-    phase === 'FT_MINUS_ONE' ||
-    phase === 'FT0' ||
-    phase === 'FT0_PREPARING' ||
-    phase === 'FT0_SYNCING'
-  ) {
+  
+  /**
+   * 🚧 ACTIVATION PHASE
+   * -------------------
+   * Pre-integration state.
+   * Must NEVER show loader.
+   */
+  if (phase === 'FT_MINUS_ONE') {
+    console.info('[LIFECYCLE_ROUTE_ACTIVATION]', { phase });
 
-    console.info('[LIFECYCLE_ROUTE_FT0_RENDER]', {
-      phase,
-      ts: performance.now(),
-    });
-    return (
-      <div style={{ padding: 24 }}>
-        <h3>Setting up your workspace…</h3>
+    return null; // or activation UI later
+  }
 
-        {phase === 'FT0_SYNCING' && (
-          <p>Syncing your data from Shopify…</p>
-        )}
-
-        {phase === 'FT0_PREPARING' && (
-          <p>Finalizing your data…</p>
-        )}
-
-        {phase === 'FT_MINUS_ONE' && (
-          <p>Waiting for activation…</p>
-        )}
-
-        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.6 }}>
-          <strong>Phase:</strong> {phase}
-        </div>
-      </div>
-    );
+  /**
+   * ✅ FT0 (initialization phase)
+   * ----------------------------
+   * Explicit loader while backend prepares system.
+   */
+  if (phase === 'FT0' || phase === 'FT0_PREPARING') {
+    console.info('[LIFECYCLE_ROUTE_FT0]', { phase });
+    return <EmptyDashboardState />;
   }
 
   /**
@@ -87,6 +84,13 @@ export function LifecycleRouteHost() {
    * UI must render immediately when lifecycle = FT1
    */
   if (phase === 'FT1' || phase === 'FT1_READY') {
+
+    console.info('[LIFECYCLE_ROUTE_FT1_READY_RENDER]', {
+      phase,
+      readiness,
+      ts: performance.now(),
+    });
+
   return (
     <Routes>
       {/* Root → canonical Overview */}

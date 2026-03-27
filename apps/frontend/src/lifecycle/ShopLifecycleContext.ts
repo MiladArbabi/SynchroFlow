@@ -4,6 +4,28 @@ import { UILifecyclePhase } from './types';
 
 export interface ShopLifecycleContextValue {
   phase: UILifecyclePhase;
+  /**
+   * GLOBAL READINESS (FT2 eligibility)
+   * -----------------------------------
+   * Source: LifecycleProvider
+   * Contract:
+   * - null → not yet resolved
+   * - { ready: false } → FT1 NOT READY
+   * - { ready: true } → FT1 READY
+   *
+   * MUST NOT be re-fetched outside lifecycle layer.
+   */
+  readiness: null | { ready: boolean };
+
+  /**
+   * BOOT STATE (Lifecycle initialization)
+   * ---------------------------------------
+   * true  → lifecycle snapshot not yet resolved
+   * false → lifecycle fully resolved
+   *
+   * Used ONLY for gating initial render.
+   */
+  isBooting: boolean;
 }
 
 export const ShopLifecycleContext =
