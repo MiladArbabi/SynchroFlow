@@ -28,7 +28,19 @@ export async function getLifecycle(req: Request, res: Response) {
     }
 
     const userId = req.user.userId;
-    const phase = await LifecycleService.resolveForUser(userId);
+    const rawPhase = await LifecycleService.resolveForUser(userId);
+
+    /**
+     * Normalize lifecycle phase (backend → frontend contract)
+     * FT2 is legacy → must NEVER leave backend boundary
+     */
+    const phase = rawPhase === 'FT2' ? 'FT2_READY' : rawPhase;
+
+    if (rawPhase === 'FT2') {
+      console.error('[LIFECYCLE][LEGACY_FT2_NORMALIZED_AT_SOURCE]', {
+        rawPhase,
+      });
+    }
 
     /**
      * 🚨 LIFECYCLE CONTRACT (v2)
@@ -221,13 +233,24 @@ export async function confirmFt2(req: Request, res: Response) {
       .first<{ phase: string; shop_id: number }>();
 
     if (snapshot?.phase === 'FT2') {
-      return res.status(200).json({ phase: 'FT2' });
+      /**
+       * Normalize lifecycle phase to canonical frontend contract.
+       * FT2 is legacy → map to FT2_READY.
+       */
+      return res.status(200).json({ phase: 'FT2_READY' });
     }
 
     if (!snapshot || snapshot.phase !== 'FT1') {
       return res.status(409).json({
         error: 'ft1_not_confirmed',
-        phase: snapshot?.phase ?? null,
+       /**
+       * Normalize lifecycle phase for frontend contract.
+       * FT2 is legacy → must NEVER leak.
+       */
+      phase:
+        snapshot?.phase === 'FT2'
+          ? 'FT2_READY'
+          : snapshot?.phase ?? null,
       });
     }
 
@@ -291,7 +314,12 @@ export async function confirmFt2(req: Request, res: Response) {
 
     });
 
-    return res.status(200).json({ phase: 'FT2' });
+      /**
+       * FT2 confirmation returns canonical phase.
+       * Frontend must ONLY consume FT2_READY.
+       */
+      return res.status(200).json({ phase: 'FT2_READY' });
+
     } catch (err) {
     if (
       err instanceof Error &&

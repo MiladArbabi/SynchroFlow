@@ -73,7 +73,6 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
     case 'FT2_READY':
       return <>{children}</>;
 
-
     default: {
       console.error('[LIFECYCLE][UNHANDLED_PHASE]', { phase });
 

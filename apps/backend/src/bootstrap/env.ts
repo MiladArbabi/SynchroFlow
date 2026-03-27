@@ -6,6 +6,19 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+if (process.env.NODE_ENV !== 'test') {
+  /**
+   * HARD ENFORCEMENT — override console globally at bootstrap time
+   * -------------------------------------------------------------
+   * Must execute BEFORE any module logs.
+   */
+  const forbidden = (method: string) => () => {
+    throw new Error(
+      `[OBSERVABILITY_VIOLATION] console.${method} is forbidden. Use logEvent()`
+    );
+  };
+}
+
 function resolveEnvPath(): string {
   let dir = __dirname;
 
@@ -23,4 +36,4 @@ function resolveEnvPath(): string {
 const envPath = resolveEnvPath();
 dotenv.config({ path: envPath });
 
-console.log('[ENV] Loaded from:', envPath);
+process.stdout.write(`[ENV] Loaded from: ${envPath}\n`);

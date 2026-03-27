@@ -302,8 +302,8 @@ export class ShopifyAppService {
             console.log(`✅ Specter SDK (${moduleTier} tier) installed for ${shopDomain}`);
         }
         catch (error) {
-            console.error('[ShopifyAppService] Specter SDK install failed (non-fatal):', error);
-            return;
+            /*       console.error('[ShopifyAppService] Specter SDK install failed (non-fatal):', error);
+             */ return;
         }
     }
     /**

@@ -114,26 +114,11 @@ export function LifecycleProvider({
   }, [authLoading, user?.shop_id]);
 
   /**
-   * ❌ REMOVED: Event-driven lifecycle mutation
-   * ------------------------------------------
-   * Lifecycle phase must ONLY come from backend polling.
-   * Events must NOT mutate lifecycle state.
-   *
-   * Retained as NO-OP for observability.
+   * ❌ NO FRONTEND LIFECYCLE EVENTS
+   * ------------------------------
+   * Lifecycle transitions must NEVER be triggered via window events.
+   * Backend polling is the ONLY source of truth.
    */
-  useEffect(() => {
-    function onFt2Confirmed() {
-      console.warn('[LIFECYCLE_EVENT_IGNORED]', {
-        event: 'ft2-confirmed',
-        reason: 'backend is sole authority',
-      });
-    }
-
-    window.addEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
-    return () => {
-      window.removeEventListener('lifecycle:ft2-confirmed', onFt2Confirmed);
-    };
-  }, []);
 
   const isHydratedTerminal =
     state.phase === 'FT1_READY' || state.phase === 'FT2_READY';

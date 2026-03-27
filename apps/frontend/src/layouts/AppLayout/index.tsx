@@ -5,6 +5,7 @@ import { Box } from "@mui/material";
 import SidenavContent from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
+import { useShopLifecycle } from "lifecycle/ShopLifecycleContext";
 
 import { ToastProvider } from "contexts/ToastContext";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
@@ -21,9 +22,27 @@ const SIDENAV_WIDTH_EXPANDED = 180;
 const SIDENAV_WIDTH_COMPACT = 75;
 const SIDENAV_WIDTH_CLOSED = 0;
 
+
 const AppLayout = (props: AppLayoutProps) => {
+
+  const { phase } = useShopLifecycle();
+
   const [isConnected, setIsConnected] = useState(false);
-  const [sidenavState, setSidenavState] = useState<SidenavState>('EXPANDED');
+  const [sidenavState, setSidenavState] = useState<SidenavState>('CLOSED'); // default safe state
+  /**
+   * LIFECYCLE → SIDENAV VISIBILITY CONTRACT
+   * - FT_MINUS_ONE, FT0, FT1 → sidenav must NOT exist
+   * - FT2 → sidenav allowed
+  */
+ const isSidenavAllowed = phase === 'FT2_READY';
+
+  // Enforce lifecycle constraints (never trust UI state)
+  useEffect(() => {
+    if (!isSidenavAllowed && sidenavState !== 'CLOSED') {
+      console.debug('[SIDENAV][FORCE_CLOSE]', { phase });
+      setSidenavState('CLOSED');
+    }
+  }, [isSidenavAllowed, phase, sidenavState]);
 
   const sidenavWidth =
   sidenavState === 'EXPANDED'
@@ -51,6 +70,7 @@ const AppLayout = (props: AppLayoutProps) => {
       <Box sx={{ width: "100vw", height: "100vh", display: "flex" }}>
         
         {/* SIDENAV */}
+        {isSidenavAllowed && (
         <Box
           sx={{
             width: `${sidenavWidth}px`,
@@ -71,6 +91,7 @@ const AppLayout = (props: AppLayoutProps) => {
             isConnected={isConnected}
           />
         </Box>
+      )}
 
         {/* MAIN AREA */}
         <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
@@ -83,19 +104,26 @@ const AppLayout = (props: AppLayoutProps) => {
               borderBottom: "1px solid #e0e0e0"
             }}
           >
+            {/* TOPNAVBAR (toggle disabled outside FT2_READY) */}
             <TopnavbarContent
               isEditing={false}
               onEditToggle={() => {}}
               onAddWidget={() => {}}
-              onToggleSidenav={() => {
-                setSidenavState(prev =>
-                  prev === 'EXPANDED'
-                    ? 'COMPACT'
-                    : prev === 'COMPACT'
-                    ? 'CLOSED'
-                    : 'EXPANDED'
-                );
-              }}
+              onToggleSidenav={
+                isSidenavAllowed
+                  ? () => {
+                      setSidenavState(prev =>
+                        prev === 'EXPANDED'
+                          ? 'COMPACT'
+                          : prev === 'COMPACT'
+                          ? 'CLOSED'
+                          : 'EXPANDED'
+                      );
+                    }
+                  : () => {
+                      console.warn('[SIDENAV][BLOCKED_TOGGLE]', { phase });
+                    }
+              }
             />
           </Box>
 

@@ -59,9 +59,12 @@ export function Ft1Outlet() {
 
                   await confirmFt2();
 
-                  window.dispatchEvent(
-                    new CustomEvent('lifecycle:ft2-confirmed')
-                  );
+                  /**
+                   * Lifecycle transition is backend-driven.
+                   * UI must wait for polling to reflect FT2_READY.
+                   */
+                  console.info('[FT2_CONFIRM_REQUESTED_WAITING_FOR_POLL]');
+                  
                 } catch (err) {
                   console.error('[FT2][CONFIRM][FAILED]', err);
                   setConfirming(false);
