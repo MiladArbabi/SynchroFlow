@@ -26,7 +26,6 @@ const SIDENAV_WIDTH_CLOSED = 0;
 const AppLayout = (props: AppLayoutProps) => {
 
   const { phase } = useShopLifecycle();
-
   const [isConnected, setIsConnected] = useState(false);
   const [sidenavState, setSidenavState] = useState<SidenavState>('CLOSED'); // default safe state
   /**
@@ -36,11 +35,26 @@ const AppLayout = (props: AppLayoutProps) => {
   */
  const isSidenavAllowed = phase === 'FT2_READY';
 
-  // Enforce lifecycle constraints (never trust UI state)
+  /**
+   * LIFECYCLE-DRIVEN SIDENAV STATE
+   * ------------------------------
+   * FT2_READY => always expanded
+   * all other phases => always closed
+   *
+   * Single source of truth = lifecycle phase
+   */
   useEffect(() => {
-    if (!isSidenavAllowed && sidenavState !== 'CLOSED') {
-      console.debug('[SIDENAV][FORCE_CLOSE]', { phase });
-      setSidenavState('CLOSED');
+    const targetState: SidenavState =
+      isSidenavAllowed ? 'EXPANDED' : 'CLOSED';
+
+    if (sidenavState !== targetState) {
+      console.info('[SIDENAV][LIFECYCLE_SYNC]', {
+        phase,
+        from: sidenavState,
+        to: targetState,
+      });
+
+      setSidenavState(targetState);
     }
   }, [isSidenavAllowed, phase, sidenavState]);
 
@@ -64,6 +78,13 @@ const AppLayout = (props: AppLayoutProps) => {
 
     fetchLayout();
   }, []);
+
+/*   console.log('[APP_LAYOUT_RENDER]', {
+    phase,
+    isSidenavAllowed,
+    sidenavState,
+    sidenavWidth,
+  }); */
 
   return (
     <ToastProvider>
