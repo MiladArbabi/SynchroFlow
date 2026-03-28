@@ -74,7 +74,6 @@ export function FT2Row({ children, intent }: FT2RowProps) {
    * stretching rows unevenly.
    */
   const rowHeight = rowConfig?.height ?? undefined;
-
   const items = Array.isArray(children) ? children : [children];
 
     /**
@@ -202,18 +201,15 @@ export function FT2Row({ children, intent }: FT2RowProps) {
         minHeight: rowHeight,
 
         /**
-         * CONTROL TOWER LAYOUT RULE
-         * -------------------------
-         * Panels inside an FT2Row must NEVER wrap horizontally.
+         * VIEWPORT SAFETY RULE
+         * --------------------
+         * Allow row panels to wrap before horizontal overflow
+         * can widen the application frame and push topnav controls
+         * outside the viewport.
          *
-         * Wrapping creates layout instability when navigation
-         * width changes (e.g., sidenav expansion).
-         *
-         * If the viewport becomes too narrow, the host layout
-         * must stack rows vertically instead of allowing panels
-         * inside the row to reflow.
+         * Preserves visibility of global navigation controls.
          */
-        flexWrap: 'nowrap',
+        flexWrap: 'wrap',
 
         overflowX: 'hidden',
         overflowY: 'visible',

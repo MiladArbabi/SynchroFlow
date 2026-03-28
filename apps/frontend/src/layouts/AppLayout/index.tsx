@@ -79,7 +79,7 @@ const AppLayout = (props: AppLayoutProps) => {
     fetchLayout();
   }, []);
 
-/*   console.log('[APP_LAYOUT_RENDER]', {
+/* console.log('[APP_LAYOUT_RENDER]', {
     phase,
     isSidenavAllowed,
     sidenavState,
@@ -148,11 +148,16 @@ const AppLayout = (props: AppLayoutProps) => {
             />
           </Box>
 
+          {/* LAYOUT GUARD: prevent module surfaces from widening viewport */}
           {/* CONTENT AREA */}
           <Box
             sx={{
               flexGrow: 1,
+              minWidth: 0,
+              width: "100%",
+              maxWidth: "100%",
               overflowY: "auto",
+              overflowX: "hidden",
               position: "relative"
             }}
           >

@@ -11,17 +11,24 @@ export function FT2Layout({ children }: FT2LayoutProps) {
       data-ft2-layout
       sx={{
         /**
-         * CONTROL TOWER FRAME
-         * -------------------
-         * FT2 dashboards operate inside a deterministic
-         * application frame independent of navigation width.
+         * VIEWPORT-SAFE WIDTH CONTRACT
+         * ----------------------------
+         * Never force the FT2 surface wider than the available
+         * application content frame (especially with sidenav open).
          *
-         * This prevents sidenav expansion from altering
-         * the Control Tower layout geometry.
+         * maxWidth preserves the design cap.
+         * width: '100%' guarantees viewport containment.
          */
-        width: FT2_TOKENS.layoutMaxWidth,
-        maxWidth: '100%',
+        width: '100%',
+        maxWidth: FT2_TOKENS.layoutMaxWidth,
         mx: 'auto',
+
+        /**
+         * AUDIT SIGNAL
+         * ------------
+         * Prevent hidden horizontal expansion.
+         */
+        overflowX: 'hidden',
 
         // 🔒 Global padding – symmetric and deterministic
         px: {

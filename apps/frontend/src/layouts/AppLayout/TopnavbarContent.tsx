@@ -48,12 +48,28 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
       }}
     >
       {/* LEFT SIDE */}
-      <Box sx={{ display: "flex", alignItems: "center" }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          minWidth: 0,
+          flex: "1 1 auto",
+          overflow: "hidden"
+        }}
+      >
         <IconButton onClick={onToggleSidenav} size="small" disableRipple>
           <IconComponent name="PanelLeft" size="medium" color="inherit" />
         </IconButton>
 
-        <MuiBreadcrumbs aria-label="breadcrumb">
+        <MuiBreadcrumbs
+          aria-label="breadcrumb"
+          sx={{
+            minWidth: 0,
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis"
+          }}
+        >
           <Link
             component={RouterLink}
             underline="hover"
@@ -86,10 +102,19 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         </MuiBreadcrumbs>
       </Box>
 
-      <Box sx={{ flexGrow: 1 }} />
+     <Box sx={{ flex: "0 0 16px" }} />
 
       {/* RIGHT SIDE */}
-      <Box display="flex" alignItems="center" gap={1}>
+      <Box
+        display="flex"
+        alignItems="center"
+        gap={1}
+        sx={{
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+          ml: "auto"
+        }}
+      >
         <Tooltip title="Light mode">
           <IconButton
             size="small"
