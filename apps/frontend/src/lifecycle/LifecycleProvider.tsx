@@ -117,6 +117,67 @@ export function LifecycleProvider({
 
   }, [authLoading, user?.shop_id]);
 
+    /**
+   * 🔥 IMMEDIATE LIFECYCLE SYNC (CRITICAL FIX)
+   * -----------------------------------------
+   * Ensures lifecycle is fetched immediately on mount,
+   * removing dependency on polling interval.
+   *
+   * This is SAFE because:
+   * - Does NOT replace polling
+   * - Does NOT create race (same endpoint, idempotent dispatch)
+   * - Only accelerates first detection
+   *
+   * Without this:
+   * - FT_MINUS_ONE → FT0 waits up to 3s+
+   */
+  useEffect(() => {
+    if (!shopId || authLoading) return;
+
+    console.info('[LIFECYCLE_IMMEDIATE_SYNC_TRIGGER]', {
+      shopId,
+      authLoading,
+      ts: performance.now(),
+    });
+
+    let cancelled = false;
+
+    async function immediateFetch() {
+      try {
+        const res = await axiosInstance.get('/api/v1/lifecycle');
+        const backendPhase = res?.data?.phase;
+
+        if (!cancelled) {
+          dispatch({
+            type: 'BACKEND_PHASE_SYNC',
+            phase: backendPhase,
+          });
+
+          /**
+           * 🔥 BOOT RESOLUTION (SOURCE OF TRUTH)
+           * -----------------------------------
+           * Any successful lifecycle sync MUST resolve boot.
+           * Prevents UI lock when polling is bypassed.
+           */
+          setIsResolved(true);
+
+          console.info('[LIFECYCLE_RESOLVE_ON_IMMEDIATE]', {
+            backendPhase,
+            ts: performance.now(),
+          });
+        }
+      } catch (err) {
+        console.error('[LIFECYCLE_IMMEDIATE_SYNC_FAILED]', err);
+      }
+    }
+
+    immediateFetch();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shopId, authLoading]);
+
   /**
    * ❌ NO FRONTEND LIFECYCLE EVENTS
    * ------------------------------
@@ -206,7 +267,9 @@ export function LifecycleProvider({
             phase: backendPhase,
           });
 
-          console.info('[LIFECYCLE_POLL_SYNC]', {
+          setIsResolved(true);
+
+          console.info('[LIFECYCLE_RESOLVE_ON_POLL]', {
             backendPhase,
             ts: performance.now(),
           });
@@ -228,6 +291,65 @@ export function LifecycleProvider({
     }
 
     pollAndResolve();
+        /**
+     * 🔥 TRANSITION-TRIGGERED SYNC (CRITICAL)
+     * --------------------------------------
+     * If we are in FT_MINUS_ONE, aggressively re-check lifecycle
+     * to eliminate polling delay window.
+     *
+     * This creates a short-lived fast-sync loop ONLY during activation.
+     */
+    if (state.phase === 'FT_MINUS_ONE') {
+      console.warn('[LIFECYCLE_FAST_SYNC_ARMED]', {
+        phase: state.phase,
+      });
+
+      let cancelled = false;
+
+      const fastLoop = async () => {
+        if (cancelled) return;
+
+        try {
+          const res = await axiosInstance.get('/api/v1/lifecycle');
+          const backendPhase = res?.data?.phase;
+
+          console.info('[LIFECYCLE_FAST_SYNC_TICK]', {
+            backendPhase,
+            ts: performance.now(),
+          });
+
+          if (backendPhase !== 'FT_MINUS_ONE') {
+            dispatch({
+              type: 'BACKEND_PHASE_SYNC',
+              phase: backendPhase,
+            });
+
+            setIsResolved(true);
+
+            console.info('[LIFECYCLE_RESOLVE_ON_FAST_SYNC]', {
+              backendPhase,
+              ts: performance.now(),
+            });
+
+            return; // stop loop immediately
+          }
+
+          // 🔥 immediate retry (no interval delay)
+          fastLoop();
+        } catch (err) {
+          console.error('[LIFECYCLE_FAST_SYNC_FAILED]', err);
+          fastLoop(); // retry on failure
+        }
+      };
+
+      fastLoop();
+
+      // cleanup hook
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const interval = setInterval(pollLifecycle, 3000);
 
     return () => {
@@ -323,24 +445,6 @@ export function LifecycleProvider({
     readiness,
     isResolved,
   });
-
-  /**
-   * FIRST-PAINT HARD GUARD
-   * ----------------------
-   * Prevent any lifecycle consumer from rendering
-   * until first authoritative backend snapshot resolves.
-   *
-   * This blocks transient initialLifecycleState
-   * (e.g. FT_MINUS_ONE) from ever reaching paint.
-   */
-  if (!isResolved) {
-    console.info('[LIFECYCLE_PROVIDER_BOOT_BLOCK]', {
-      phase: state.phase,
-      ts: performance.now(),
-    });
-
-    return null;
-  }
 
   return (
     <ShopLifecycleContext.Provider 

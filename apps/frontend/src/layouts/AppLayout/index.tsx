@@ -27,7 +27,13 @@ const AppLayout = (props: AppLayoutProps) => {
 
   const { phase } = useShopLifecycle();
   const [isConnected, setIsConnected] = useState(false);
-  const [sidenavState, setSidenavState] = useState<SidenavState>('CLOSED'); // default safe state
+  const [sidenavState, setSidenavState] = useState<SidenavState>(() => {
+    const saved = localStorage.getItem('sidenavState') as SidenavState | null;
+
+    console.info('[SIDENAV][INIT_FROM_STORAGE]', { saved });
+
+    return saved ?? 'CLOSED';
+  });
   /**
    * LIFECYCLE → SIDENAV VISIBILITY CONTRACT
    * - FT_MINUS_ONE, FT0, FT1 → sidenav must NOT exist
@@ -55,10 +61,13 @@ const AppLayout = (props: AppLayoutProps) => {
       setSidenavState('CLOSED');
     }
 
+    const saved = localStorage.getItem('sidenavState');
+
     if (
       isSidenavAllowed &&
       sidenavState === 'CLOSED' &&
-      !hasAutoOpenedRef.current
+      !hasAutoOpenedRef.current &&
+      saved === null // only auto-open if no prior user preference
     ) {
       console.info('[SIDENAV][AUTO_OPEN_ON_FT2_ENTRY]', {
         phase,
@@ -68,6 +77,17 @@ const AppLayout = (props: AppLayoutProps) => {
       setSidenavState('EXPANDED');
     }
   }, [isSidenavAllowed, phase, sidenavState]);
+
+  /**
+   * SIDENAV STATE PERSISTENCE
+   * -------------------------
+   * Ensures user preference survives refresh.
+   */
+  useEffect(() => {
+    localStorage.setItem('sidenavState', sidenavState);
+
+    console.info('[SIDENAV][PERSIST]', { sidenavState });
+  }, [sidenavState]);
 
   const sidenavWidth =
   sidenavState === 'EXPANDED'

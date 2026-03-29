@@ -26,6 +26,14 @@ export interface ShopLifecycleContextValue {
    * Used ONLY for gating initial render.
    */
   isBooting: boolean;
+
+  /**
+   * 🔥 INTEGRATION SIGNAL (CRITICAL)
+   * --------------------------------
+   * Comes from backend lifecycle state.
+   * True only after integration exists.
+   */
+  integrationExists: boolean;
 }
 
 export const ShopLifecycleContext =

@@ -43,7 +43,19 @@ import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState'
 export function LifecycleRouteHost() {
   const { phase, readiness, isBooting } = useShopLifecycle();
 
-  console.log('[ROUTE_HOST_RENDER]', { phase, readiness });
+  console.log('[ROUTE_HOST_RENDER]', {
+    phase,
+    readiness,
+    ts: performance.now(),
+  });
+
+  if (phase === 'FT_MINUS_ONE') {
+    console.warn('[TRACE_PHASE_FT_MINUS_ONE]', { ts: performance.now() });
+  }
+
+  if (phase === 'FT0' || phase === 'FT0_PREPARING') {
+    console.warn('[TRACE_PHASE_FT0]', { ts: performance.now() });
+  }
 
   /**
    * 🔥 UI LIFECYCLE MODEL (FINAL)
@@ -67,17 +79,28 @@ export function LifecycleRouteHost() {
     return <EmptyDashboardState />;
   }
 
-
-  /**
-   * 🚧 ACTIVATION PHASE
-   * -------------------
-   * Pre-integration state.
-   * Must NEVER show loader.
-   */
   if (phase === 'FT_MINUS_ONE') {
-    console.info('[LIFECYCLE_ROUTE_ACTIVATION]', { phase });
+    console.info('[LIFECYCLE_ROUTE_ACTIVATION]', { phase, readiness });
 
-    return null; // or activation UI later
+    /**
+     * 🔥 PRE-FT0 LOADER (UX FIX)
+     * --------------------------
+     * Backend FT0 is ingestion-driven and delayed.
+     * We must show loader immediately once integration exists.
+     *
+     * Signal used:
+     * - readiness !== null → system has begun backend interaction
+     */
+    if (readiness !== null) {
+      console.warn('[LOADER_MOUNT_PRE_FT0]', {
+        phase,
+        ts: performance.now(),
+      });
+
+      return <EmptyDashboardState />;
+    }
+
+    return null;
   };
 
   /**
@@ -86,7 +109,16 @@ export function LifecycleRouteHost() {
    * Explicit loader while backend prepares system.
    */
   if (phase === 'FT0' || phase === 'FT0_PREPARING') {
-    console.info('[LIFECYCLE_ROUTE_FT0]', { phase });
+    console.info('[LIFECYCLE_ROUTE_FT0]', {
+      phase,
+      ts: performance.now(),
+    });
+
+    console.warn('[LOADER_MOUNT]', {
+      phase,
+      ts: performance.now(),
+    });
+
     return <EmptyDashboardState />;
   }
 

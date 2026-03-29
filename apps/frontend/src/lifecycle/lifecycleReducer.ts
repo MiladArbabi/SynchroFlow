@@ -69,17 +69,25 @@ export function lifecycleReducer(
     /* -------------------------------------------------- */
 
     case 'BACKEND_PHASE_SYNC': {
-    /**
-     * 🔁 FORCE STATE CHANGE FOR REACT
-     * --------------------------------
-     * Even if phase is identical, we must return a NEW object
-     * to guarantee re-render propagation through context.
-     */
-    return {
-      ...state,
-      phase: event.phase,
-    };
-  }
+      /**
+       * 🔥 DERIVE INTEGRATION EXISTENCE FROM BACKEND PHASE
+       * --------------------------------------------------
+       * integrationExists MUST reflect real lifecycle progression.
+       *
+       * Rule:
+       * - FT_MINUS_ONE → no integration
+       * - ANY other phase → integration exists
+       *
+       * This replaces broken frontend assumptions.
+       */
+      const integrationExists = event.phase !== 'FT_MINUS_ONE';
+
+      return {
+        ...state,
+        phase: event.phase,
+        integrationExists,
+      };
+    }
     
 
     /* -------------------------------------------------- */

@@ -16,8 +16,8 @@ type Props = {
 };
 
 export function ShopLifecycleGate({ children, onActivation }: Props) {
-  
-  const { phase, isBooting } = useShopLifecycle();
+
+  const { phase, isBooting, integrationExists } = useShopLifecycle();
   const location = useLocation();
 
   /**
@@ -53,23 +53,37 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
         location.pathname,
         moduleId
       );
-    const activationConfig = resolveActivationConfig(moduleId);
 
-    if (!activationConfig) {
       /**
-       * Defensive fallback:
-       * FT_MINUS_ONE must never infer or redirect.
+       * 🔥 PRE-FT0 LOADER (CORRECT LAYER)
+       * --------------------------------
+       * Backend FT0 is delayed (ingestion-driven).
+       * Show loader immediately once system interaction begins.
+       *
+       * Signal:
+       * - integration exists → lifecycle has started progressing
        */
-      return null;
-    }
+      if (integrationExists) {
+        console.warn('[LOADER_MOUNT_PRE_FT0]', {
+          ts: performance.now(),
+        });
 
-    return (
-      <ActivationSurfaceAdapter
-        surface={activationConfig}
-        onAction={onActivation}
-      />
-    );
-  }
+        return <EmptyDashboardState />;
+      }
+
+      const activationConfig = resolveActivationConfig(moduleId);
+
+      if (!activationConfig) {
+        return null;
+      }
+
+      return (
+        <ActivationSurfaceAdapter
+          surface={activationConfig}
+          onAction={onActivation}
+        />
+      );
+    }
 
     case 'FT0':
     case 'FT0_SYNCING':
