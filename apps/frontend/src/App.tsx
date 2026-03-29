@@ -22,6 +22,7 @@ import { ShopLifecycleShell } from 'lifecycle/ShopLifecycleShell';
 import { ShopLifecycleGate } from 'lifecycle/ShopLifecycleGate';
 import { LifecycleProvider } from 'lifecycle/LifecycleProvider';
 import { LifecycleRouteHost } from 'lifecycle/LifecycleRouteHost';
+import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 
 import AppLayout from 'layouts/AppLayout';
 import { EntitlementBoundary } from 'runtime/EntitlementBoundary';
@@ -79,6 +80,51 @@ function PublicAppShell() {
   );
 }
 
+function LifecycleGuardedApp({
+  isConnectModalOpen,
+  onCloseConnectModal,
+  onActivation,
+}: {
+  isConnectModalOpen: boolean;
+  onCloseConnectModal: () => void;
+  onActivation: (actionId: string) => void;
+}) {
+  const { isBooting, phase } = useShopLifecycle();
+
+  /**
+   * CRITICAL:
+   * Block ALL rendering only during true lifecycle boot.
+   * This prevents pre-lifecycle flash (FT_MINUS_ONE → FT0 → FT1).
+   *
+   * DO NOT block FT_MINUS_ONE or FT0 here.
+   * They must render inside AppLayout via ShopLifecycleGate.
+   */
+  if (isBooting) {
+    console.warn('[LIFECYCLE_GUARD][BOOT_BLOCK]', {
+      phase,
+      ts: performance.now(),
+    });
+
+    return null;
+  }
+
+  return (
+    <AppLayout
+      isConnectModalOpen={isConnectModalOpen}
+      onCloseConnectModal={onCloseConnectModal}
+    >
+      <ShopLifecycleGate onActivation={onActivation}>
+        <>
+          <EntitlementBoundary>
+            <LifecycleRouteHost />
+            <Ft1Outlet />
+          </EntitlementBoundary>
+        </>
+      </ShopLifecycleGate>
+    </AppLayout>
+  );
+}
+
 /* ─────────────────────────────
    AUTHENTICATED APP SHELL
    (ALWAYS mounts AppLayout)
@@ -87,7 +133,27 @@ function AuthenticatedAppShell() {
   const { isLoading, isLoggedIn } = useAuth();
   const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
 
+  /**
+   * CRITICAL: FIRST-PAINT BLOCK (must be before any return)
+   */
+  const [hasMounted, setHasMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  /**
+   * BLOCK 1: auth not ready
+   */
   if (isLoading || !isLoggedIn) return null;
+
+  /**
+   * BLOCK 2: prevent first paint before effects run
+   */
+  if (!hasMounted) {
+    console.warn('[APP_SHELL_PREVENT_FIRST_PAINT]');
+    return null;
+  }
 
   const handleActivation = (actionId: string) => {
     if (actionId === 'connect-store') {
@@ -107,19 +173,11 @@ function AuthenticatedAppShell() {
                   <IntlErrorBoundary>
                     <LifecycleProvider>
                       <ShopLifecycleShell>
-                        <AppLayout
+                        <LifecycleGuardedApp
                           isConnectModalOpen={isConnectModalOpen}
                           onCloseConnectModal={() => setIsConnectModalOpen(false)}
-                        >
-                          <ShopLifecycleGate onActivation={handleActivation}>
-                          <>
-                            <EntitlementBoundary>
-                              <LifecycleRouteHost />
-                                <Ft1Outlet />
-                            </EntitlementBoundary>
-                          </>
-                        </ShopLifecycleGate>
-                        </AppLayout>
+                          onActivation={handleActivation}
+                        />
                       </ShopLifecycleShell>
                     </LifecycleProvider>
                   </IntlErrorBoundary>

@@ -130,11 +130,11 @@ export async function startReconciliationIntentDispatcher() {
         if (result.length > 0) insertedCount++;
       }
 
-      if (insertedCount > 0) {
+      /* if (insertedCount > 0) {
         console.debug('[TIME_DRIVEN_RECONCILIATION_ENQUEUED]', {
           inserted: insertedCount
         });
-      }
+      } */
 
       /**
        * SWITCH TO STEADY STATE

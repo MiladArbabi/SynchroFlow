@@ -13,11 +13,12 @@ export function validateSnapshotCoverage(
   snapshot: Record<string, unknown>,
   coverage: Record<string, 'signal' | 'ignored'>
 ) {
-  Object.keys(snapshot).forEach((key) => {
+  return;
+ /*  Object.keys(snapshot).forEach((key) => {
     if (!(key in coverage)) {
       console.warn(
         `[OperationalSignals] Snapshot field "${key}" is not registered in SNAPSHOT_FIELD_COVERAGE`
       );
     }
-  });
+  }); */
 }

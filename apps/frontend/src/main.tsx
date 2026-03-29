@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/main.tsx
-import React, { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.tsx';
 
 // --- OUR CONTEXTS ---
 import { UserProvider } from './contexts/UserContext.tsx';
-import { AuthProvider } from "./contexts/AuthContext.tsx";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // --- TanStack Query Imports ---
@@ -16,9 +14,6 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 // --- BERRY THEME IMPORTS ---
 import { ConfigProvider } from './contexts/ConfigContext.tsx';
-
-/* // --- [START POSTHOG IMPORT] ---
-import { PostHogProvider } from 'posthog-js/react'; */
 
 // --- REACT-INTL IMPORT ---
 import { IntlProvider } from 'react-intl';
@@ -63,6 +58,17 @@ if (!window._lasyncroNavigate) {
 
 // --- Create React Query Client ---
 const container = document.getElementById("root");
+
+/**
+ * CRITICAL: HARD DOM RESET BEFORE REACT BOOT
+ * -----------------------------------------
+ * Prevents browser from reusing previous frame DOM (FT_MINUS_ONE flash).
+ */
+if (container) {
+  container.innerHTML = '';
+  console.warn('[ROOT_DOM_CLEARED_BEFORE_BOOT]');
+}
+
 if (!container) throw new Error("Failed to find the root element");
 const root = createRoot(container);
 
@@ -99,18 +105,12 @@ const queryClient = new QueryClient({
 });
 
 root.render(
-  <StrictMode>
+  <>
     {/* 1. PostHog (Analytics) */}
-    {/* <PostHogProvider
-      apiKey={posthogKey}
-      options={options}
-    > */}
       {/* 2. ConfigProvider (Berry Theme) */}
       <ConfigProvider>
         {/* 3. React Query (Data Fetching) */}
         <QueryClientProvider client={queryClient}>
-          {/* 4. AuthProvider (Our Auth + User state) */}
-          <AuthProvider>
             <UserProvider>
             {/* 5. React Router */}
             <BrowserRouter>
@@ -133,14 +133,12 @@ root.render(
               </IntlProvider>
             </BrowserRouter>
            </UserProvider>
-          </AuthProvider>
           
           {/* React Query DevTools */}
           <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
       </ConfigProvider>
-    {/* </PostHogProvider> */}
-  </StrictMode>
+    </>
 );
 
 (window as any)._lasyncroHost = {

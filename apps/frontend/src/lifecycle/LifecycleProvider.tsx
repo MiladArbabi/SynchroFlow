@@ -53,8 +53,6 @@ export function LifecycleProvider({
   const [state, dispatch] = useReducer(lifecycleReducer, initialState);
   const [isResolved, setIsResolved] = React.useState(false);
 
-  console.log('[PROVIDER_PHASE]', state.phase);
-
   const integration = useIntegration();
   const [ft2RestoreResolved, setFt2RestoreResolved] = React.useState(false);
   // 🔥 GLOBAL READINESS STATE (single source of truth)
@@ -110,7 +108,13 @@ export function LifecycleProvider({
       shopId: user?.shop_id,
     });
 
-    setIsResolved(true);
+    /**
+     * INTENTIONALLY NO-OP
+     * -------------------
+     * Boot resolution now occurs only after the first
+     * successful lifecycle poll response.
+     */
+
   }, [authLoading, user?.shop_id]);
 
   /**
@@ -212,7 +216,18 @@ export function LifecycleProvider({
       }
     }
 
-    pollLifecycle();
+    /**
+     * FIRST-PAINT FLASH FIX
+     * ---------------------
+     * Resolve boot only after first authoritative
+     * lifecycle snapshot returns from backend.
+     */
+    async function pollAndResolve() {
+      await pollLifecycle();
+      setIsResolved(true);
+    }
+
+    pollAndResolve();
     const interval = setInterval(pollLifecycle, 3000);
 
     return () => {
@@ -286,20 +301,46 @@ export function LifecycleProvider({
     shopId,
   });
 
-  if (!state.phase) return null;
+  /**
+   * CRITICAL: HARD PRE-RENDER GUARD
+   * --------------------------------
+   * Prevent ANY render (even logging) before lifecycle is resolved.
+   * This eliminates first-frame FT_MINUS_ONE leakage.
+   */
+  if (!isResolved) {
+    console.info('[LIFECYCLE_PROVIDER_BOOT_BLOCK]', {
+      phase: state.phase,
+      ts: performance.now(),
+    });
 
-  const isBooting = !isResolved;
-
-  if (!state.phase) {
-    console.log('[PROVIDER_BLOCKED_NO_PHASE]');
     return null;
   }
+
+  const isBooting = false;
 
   console.log('[LIFECYCLE_PROVIDER_RENDER]', {
     phase: state.phase,
     readiness,
     isResolved,
   });
+
+  /**
+   * FIRST-PAINT HARD GUARD
+   * ----------------------
+   * Prevent any lifecycle consumer from rendering
+   * until first authoritative backend snapshot resolves.
+   *
+   * This blocks transient initialLifecycleState
+   * (e.g. FT_MINUS_ONE) from ever reaching paint.
+   */
+  if (!isResolved) {
+    console.info('[LIFECYCLE_PROVIDER_BOOT_BLOCK]', {
+      phase: state.phase,
+      ts: performance.now(),
+    });
+
+    return null;
+  }
 
   return (
     <ShopLifecycleContext.Provider 

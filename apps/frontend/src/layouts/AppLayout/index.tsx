@@ -33,28 +33,39 @@ const AppLayout = (props: AppLayoutProps) => {
    * - FT_MINUS_ONE, FT0, FT1 → sidenav must NOT exist
    * - FT2 → sidenav allowed
   */
- const isSidenavAllowed = phase === 'FT2_READY';
+  const isSidenavAllowed = phase === 'FT2_READY';
+  const hasAutoOpenedRef = React.useRef(false); // audit: prevent re-open after manual close
 
   /**
-   * LIFECYCLE-DRIVEN SIDENAV STATE
-   * ------------------------------
-   * FT2_READY => always expanded
-   * all other phases => always closed
+   * LIFECYCLE VISIBILITY GUARD
+   * -------------------------
+   * Lifecycle controls whether sidenav may exist.
+   * User controls expanded / compact / closed while FT2 is active.
    *
-   * Single source of truth = lifecycle phase
+   * This prevents lifecycle from overriding toggle actions.
    */
   useEffect(() => {
-    const targetState: SidenavState =
-      isSidenavAllowed ? 'EXPANDED' : 'CLOSED';
-
-    if (sidenavState !== targetState) {
-      console.info('[SIDENAV][LIFECYCLE_SYNC]', {
+    if (!isSidenavAllowed && sidenavState !== 'CLOSED') {
+      console.info('[SIDENAV][FORCE_CLOSE_OUTSIDE_FT2]', {
         phase,
         from: sidenavState,
-        to: targetState,
+        to: 'CLOSED',
       });
 
-      setSidenavState(targetState);
+      setSidenavState('CLOSED');
+    }
+
+    if (
+      isSidenavAllowed &&
+      sidenavState === 'CLOSED' &&
+      !hasAutoOpenedRef.current
+    ) {
+      console.info('[SIDENAV][AUTO_OPEN_ON_FT2_ENTRY]', {
+        phase,
+      });
+
+      hasAutoOpenedRef.current = true;
+      setSidenavState('EXPANDED');
     }
   }, [isSidenavAllowed, phase, sidenavState]);
 

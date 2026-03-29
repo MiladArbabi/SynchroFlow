@@ -16,9 +16,23 @@ type Props = {
 };
 
 export function ShopLifecycleGate({ children, onActivation }: Props) {
-  const { phase } = useShopLifecycle();
-
+  
+  const { phase, isBooting } = useShopLifecycle();
   const location = useLocation();
+
+  /**
+   * REFRESH FLASH HARD GUARD
+   * ------------------------
+   * Prevent activation surfaces from rendering
+   * during lifecycle bootstrap.
+   *
+   * Without this, FT_MINUS_ONE activation UI
+   * can flash for module routes before FT2 sync.
+   */
+  if (isBooting) {
+    return null;
+  }
+
 
   const rawSegment = location.pathname.split('/')[1];
 
