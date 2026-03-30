@@ -1,3 +1,8 @@
+/**
+ * @rls-exempt
+ * Infrastructure table: global projection state (no tenant data, no shop_id)
+ */
+
 import type { Knex } from 'knex';
 
 /**

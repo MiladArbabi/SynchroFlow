@@ -24,8 +24,24 @@ export async function up(knex: Knex): Promise<void> {
 
     table.timestamp('updated_at').notNullable().defaultTo(knex.fn.now());
   });
+
+  // --- RLS: enforce tenant isolation (per-shop configuration) ---
+  await knex.raw(`
+    ALTER TABLE shop_operational_settings ENABLE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY shop_operational_settings_tenant_isolation
+    ON shop_operational_settings
+    USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  // --- RLS cleanup ---
+  await knex.raw(`
+    DROP POLICY IF EXISTS shop_operational_settings_tenant_isolation ON shop_operational_settings;
+  `);
+  
   await knex.schema.dropTableIfExists('shop_operational_settings');
 }

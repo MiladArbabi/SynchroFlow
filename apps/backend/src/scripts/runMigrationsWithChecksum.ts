@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import knexConfig from '../../knexfile.cjs';
 import knex from 'knex';
+import { execSync } from 'child_process';
 
 /**
  * MIGRATION RUNNER WITH CHECKSUM ENFORCEMENT
@@ -14,7 +15,11 @@ import knex from 'knex';
 
 const db = knex(knexConfig.development);
 
-const MIGRATIONS_DIR = path.join(process.cwd(), 'dist/migrations');
+// Resolve dist/migrations relative to compiled script location (context-independent)
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const MIGRATIONS_DIR = path.join(SCRIPT_DIR, '../migrations');
+
+console.info('[migration-runner] resolved MIGRATIONS_DIR=', MIGRATIONS_DIR);
 
 function hashFile(filePath: string): string {
   const content = fs.readFileSync(filePath);
@@ -23,6 +28,31 @@ function hashFile(filePath: string): string {
 
 async function main() {
   console.info('[migration-runner] start');
+
+  /**
+   * RLS ENFORCEMENT (NON-BYPASSABLE)
+   * --------------------------------
+   * MUST run before any migration or DB state interaction.
+   * Prevents schema drift without RLS guarantees.
+   */
+  try {
+    console.info('[migration-runner] running RLS check...');
+    
+    // Resolve relative to this script (same strategy as migrations)
+    const rlsScriptPath = path.join(SCRIPT_DIR, '../../scripts/check_rls.sh');
+
+    console.info('[migration-runner] resolved RLS script path=', rlsScriptPath);
+
+    if (!fs.existsSync(rlsScriptPath)) {
+      console.error('[migration-runner] RLS script not found at:', rlsScriptPath);
+      process.exit(1);
+    }
+
+    execSync(`bash ${rlsScriptPath}`, { stdio: 'inherit' });
+  } catch (err) {
+    console.error('[migration-runner] RLS CHECK FAILED — aborting');
+    process.exit(1);
+  }
 
   const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.js'));
 

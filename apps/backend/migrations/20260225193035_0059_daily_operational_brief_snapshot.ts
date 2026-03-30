@@ -61,11 +61,27 @@ export async function up(knex: Knex): Promise<void> {
     table.primary(['shop_id', 'brief_date']);
   });
 
+  // --- RLS: enforce tenant isolation (snapshot is tenant-scoped via shop_id) ---
+  await knex.raw(`
+    ALTER TABLE daily_operational_brief_snapshot ENABLE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY daily_operational_brief_snapshot_tenant_isolation
+    ON daily_operational_brief_snapshot
+    USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
+
   await knex.schema.alterTable('daily_operational_brief_snapshot', (table) => {
     table.index(['shop_id']);
   });
 }
 
 export async function down(knex: Knex): Promise<void> {
+  // --- RLS cleanup ---
+  await knex.raw(`
+    DROP POLICY IF EXISTS daily_operational_brief_snapshot_tenant_isolation ON daily_operational_brief_snapshot;
+  `);
+  
   await knex.schema.dropTableIfExists('daily_operational_brief_snapshot');
 }

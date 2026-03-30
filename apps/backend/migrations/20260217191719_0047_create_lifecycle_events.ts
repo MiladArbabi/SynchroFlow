@@ -41,6 +41,17 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['user_id'], 'lifecycle_events_user_idx');
     table.index(['layer'], 'lifecycle_events_layer_idx');
   });
+
+  // --- RLS: enforce tenant isolation (REQUIRED: table has shop_id) ---
+  await knex.raw(`
+    ALTER TABLE lifecycle_events ENABLE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY lifecycle_events_tenant_isolation
+    ON lifecycle_events
+    USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
 }
 
 /**
@@ -49,5 +60,9 @@ export async function up(knex: Knex): Promise<void> {
  * Supports multi-layer v2 state model.
  */
 export async function down(knex: Knex): Promise<void> {
+  // --- RLS cleanup ---
+  await knex.raw(`
+    DROP POLICY IF EXISTS lifecycle_events_tenant_isolation ON lifecycle_events;
+  `);
   await knex.schema.dropTableIfExists('lifecycle_events');
 }

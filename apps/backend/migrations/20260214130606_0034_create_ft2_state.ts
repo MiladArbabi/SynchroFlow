@@ -1,3 +1,8 @@
+/**
+ * @rls-exempt
+ * System state table (non-tenant scoped)
+ */
+
 import type { Knex } from "knex";
 
 export async function up(knex: Knex): Promise<void> {

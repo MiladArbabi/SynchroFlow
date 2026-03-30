@@ -22,6 +22,17 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['became_ready_at'], 'system_readiness_ready_at_idx');
   });
+
+  // --- RLS: enforce tenant isolation (REQUIRED: table has shop_id) ---
+  await knex.raw(`
+    ALTER TABLE system_readiness_state ENABLE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY system_readiness_state_tenant_isolation
+    ON system_readiness_state
+    USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
 }
 
 /**
@@ -31,5 +42,10 @@ export async function up(knex: Knex): Promise<void> {
  * READY is irreversible.
  */
 export async function down(knex: Knex): Promise<void> {
+  // --- RLS cleanup ---
+  await knex.raw(`
+    DROP POLICY IF EXISTS system_readiness_state_tenant_isolation ON system_readiness_state;
+  `);
+  
   await knex.schema.dropTableIfExists('system_readiness_state');
 }

@@ -1,3 +1,8 @@
+/**
+ * @rls-exempt
+ * Infrastructure restoration (no tenant-owned data)
+ */
+
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

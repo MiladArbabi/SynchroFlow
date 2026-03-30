@@ -271,6 +271,18 @@ export async function up(knex: Knex): Promise<void> {
     }
   );
 
+  // --- RLS: enforce tenant isolation (snapshot is tenant-scoped via shop_id) ---
+  await knex.raw(`
+    ALTER TABLE orders_operational_control_snapshot ENABLE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY orders_operational_control_snapshot_tenant_isolation
+    ON orders_operational_control_snapshot
+    USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
+
+
   /**
    * FINANCIAL INVARIANTS (HARD GUARANTEE)
    * -------------------------------------
@@ -318,6 +330,11 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
+  // --- RLS cleanup ---
+  await knex.raw(`
+    DROP POLICY IF EXISTS orders_operational_control_snapshot_tenant_isolation ON orders_operational_control_snapshot;
+  `);
+  
   await knex.schema.dropTableIfExists(
     'orders_operational_control_snapshot'
   );

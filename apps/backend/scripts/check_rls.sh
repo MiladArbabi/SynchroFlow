@@ -5,7 +5,13 @@ set -e
 echo "[RLS CHECK] scanning migrations..."
 
 # SAFETY: ensure migrations directory exists and is not empty
-if [ ! -d "migrations" ] || [ -z "$(ls migrations/*.ts 2>/dev/null)" ]; then
+# Resolve migrations directory relative to script location (context-independent)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MIGRATIONS_DIR="$SCRIPT_DIR/../migrations"
+
+echo "[RLS CHECK] resolved MIGRATIONS_DIR=$MIGRATIONS_DIR"
+
+if [ ! -d "$MIGRATIONS_DIR" ] || [ -z "$(ls $MIGRATIONS_DIR/*.ts 2>/dev/null)" ]; then
   echo "❌ RLS CHECK FAILED: migrations directory missing or empty"
   exit 1
 fi
@@ -16,7 +22,22 @@ RLS_EXEMPT_MIGRATIONS=(
 )
 
 # Step 1: find migrations that create tables
-table_migrations=$(grep -l "createTable" migrations/*.ts | grep -v ".d.ts" || true)
+# Detect ONLY migrations that explicitly create tables via knex.schema.createTable
+# Avoid false positives from comments, helper code, or non-table migrations
+table_migrations=$(grep -lE "knex\.schema\.createTable\(" $MIGRATIONS_DIR/*.ts | grep -v ".d.ts" || true)
+
+# FILTER: exclude migrations explicitly annotated as RLS-exempt at file level
+# Rule: annotation must exist INSIDE the migration file (not filename)
+filtered_migrations=""
+for file in $table_migrations; do
+  if grep -q "@rls-exempt" "$file"; then
+    echo "[RLS CHECK] skipping (annotated exempt): $file"
+  else
+    filtered_migrations="$filtered_migrations $file"
+  fi
+done
+
+table_migrations="$filtered_migrations"
 
 if [ -z "$table_migrations" ]; then
   echo "❌ RLS CHECK FAILED: no createTable migrations found"
@@ -29,6 +50,10 @@ violations=$(grep -L "ENABLE ROW LEVEL SECURITY" $table_migrations || true)
 for exempt in "${RLS_EXEMPT_MIGRATIONS[@]}"; do
   violations=$(echo "$violations" | grep -v "$exempt" || true)
 done
+
+# DEBUG: print candidate violations BEFORE enforcement (observability)
+echo "[RLS CHECK] candidate violations (pre-exemption filter):"
+echo "$violations"
 
 echo "[RLS CHECK] table migrations detected:"
 echo "$table_migrations"

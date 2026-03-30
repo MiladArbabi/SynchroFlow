@@ -77,6 +77,23 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['is_active']);
   });
 
+  // --- RLS: relational tenant isolation via orders ---
+  await knex.raw(`
+    ALTER TABLE order_constraints ENABLE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_constraints_tenant_isolation
+    ON order_constraints
+    USING (
+      EXISTS (
+        SELECT 1 FROM orders
+        WHERE orders.lasyncro_order_id = order_constraints.lasyncro_order_id
+        AND orders.shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
 /**
  * SCOPE-AWARE UNIQUENESS
  * ----------------------
@@ -91,5 +108,10 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
+  // --- RLS cleanup ---
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_constraints_tenant_isolation ON order_constraints;
+  `);
+  
   await knex.schema.dropTableIfExists('order_constraints');
 }

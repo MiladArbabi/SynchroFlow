@@ -1,3 +1,8 @@
+/**
+ * @rls-exempt
+ * Schema fix migration (no new tenant table)
+ */
+
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {

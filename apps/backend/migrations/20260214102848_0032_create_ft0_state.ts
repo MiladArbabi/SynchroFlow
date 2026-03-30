@@ -1,3 +1,8 @@
+/**
+ * @rls-exempt
+ * System state table (non-tenant scoped)
+ */
+
 import { Knex } from 'knex';
 
 /**

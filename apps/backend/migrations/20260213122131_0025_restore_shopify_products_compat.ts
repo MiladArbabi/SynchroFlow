@@ -48,8 +48,24 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['shop_id'], 'shopify_products_shop_id_index');
   });
+
+    // --- RLS: enforce tenant isolation ---
+    await knex.raw(`
+      ALTER TABLE shopify_products ENABLE ROW LEVEL SECURITY;
+    `);
+
+    await knex.raw(`
+      CREATE POLICY shopify_products_tenant_isolation
+      ON shopify_products
+      USING (shop_id = current_setting('app.current_tenant')::int);
+    `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  // --- RLS cleanup ---
+  await knex.raw(`
+    DROP POLICY IF EXISTS shopify_products_tenant_isolation ON shopify_products;
+  `);
+  
   await knex.schema.dropTableIfExists('shopify_products');
 }
