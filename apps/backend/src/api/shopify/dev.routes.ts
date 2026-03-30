@@ -3,16 +3,14 @@
 import { Router, Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { performSmartSync } from '../../services/shopify-sync-orchestrator.service.js';
-import CryptoJS from 'crypto-js';
+import { decrypt } from '../../security/encryption.service.js';
 
 const router = Router();
 
+// CENTRALIZED DECRYPTION
+// NOTE: Delegates to encryption.service (single source of truth)
 const decryptToken = (encryptedToken: string): string => {
-  const secret = process.env.ENCRYPTION_KEY;
-  if (!secret) {
-    throw new Error('ENCRYPTION_KEY is not set in environment.');
-  }
-  return CryptoJS.AES.decrypt(encryptedToken, secret).toString(CryptoJS.enc.Utf8);
+  return decrypt(encryptedToken, 'shopify.dev');
 };
 
 /**
@@ -39,6 +37,11 @@ router.post('/dev/trigger-sync', async (_req: Request, res: Response) => {
 
     if (!access_token_encrypted || !platform_shop_name || !shop_id) {
       return res.status(400).json({ error: 'Integration is missing required fields' });
+    }
+
+    // SECURITY GUARD: Prevent token decryption outside safe environments
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[SECURITY] Token decryption via dev route is blocked in production');
     }
 
     const accessToken = decryptToken(access_token_encrypted);

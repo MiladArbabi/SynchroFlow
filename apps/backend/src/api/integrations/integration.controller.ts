@@ -15,7 +15,8 @@
 // apps/backend/src/api/integrations/integration.controller.ts
 import { Request, Response } from 'express';
 import crypto from 'crypto';
-import CryptoJS from 'crypto-js';
+import { encrypt } from '../../security/encryption.service.js';
+
 import db from '@lasyncro/backend-core/db.js';
 import axios from 'axios';
 import { issueAuthTokens } from '../../api/auth/token.service.js';
@@ -28,13 +29,10 @@ import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { getQueueChannel, connection } from '../../queue.js';
 
-// --- Helper function for encryption ---
+// CENTRALIZED ENCRYPTION
+// NOTE: Delegates to encryption.service (single source of truth)
 const encryptToken = (token: string): string => {
-  const secret = process.env.ENCRYPTION_KEY;
-  if (!secret) {
-    throw new Error('ENCRYPTION_KEY is not set in environment.');
-  }
-  return CryptoJS.AES.encrypt(token, secret).toString();
+  return encrypt(token);
 };
 
 /**

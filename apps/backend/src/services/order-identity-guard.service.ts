@@ -2,16 +2,12 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import { createShopifyGraphQLClient } from './shopify-client.factory.js';
-import CryptoJS from 'crypto-js';
+import { decrypt } from '../security/encryption.service.js';
 
+// CENTRALIZED DECRYPTION
+// NOTE: Delegates to encryption.service (single source of truth)
 function decryptToken(encrypted: string): string {
-  const secret = process.env.ENCRYPTION_KEY;
-  if (!secret) {
-    throw new Error('[TOKEN_DECRYPTION_FAILED] ENCRYPTION_KEY missing');
-  }
-
-  return CryptoJS.AES.decrypt(encrypted, secret)
-    .toString(CryptoJS.enc.Utf8);
+  return decrypt(encrypted, 'order-identity-guard');
 }
 
 /**

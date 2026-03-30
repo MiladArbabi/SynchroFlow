@@ -1,16 +1,13 @@
 // apps/backend/src/sync.worker.ts (add integration validation)
 import { getQueueChannel } from './queue.js';
 import db from '@lasyncro/backend-core/db.js';
-import CryptoJS from 'crypto-js';
+import { decrypt } from './security/encryption.service.js';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service.js';
 
-// --- Helper function for decryption ---
+// CENTRALIZED DECRYPTION
+// NOTE: Delegates to encryption.service (single source of truth)
 const decryptToken = (encryptedToken: string): string => {
-  const secret = process.env.ENCRYPTION_KEY;
-  if (!secret) {
-    throw new Error('ENCRYPTION_KEY is not set in environment.');
-  }
-  return CryptoJS.AES.decrypt(encryptedToken, secret).toString(CryptoJS.enc.Utf8);
+  return decrypt(encryptedToken, 'sync.worker');
 };
 
 // --- Helper function to validate integration data ---
