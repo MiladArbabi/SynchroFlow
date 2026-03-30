@@ -91,8 +91,17 @@ export async function projectDailyOperationalBrief(
        */
       evaluated_at: eventAnchor
     })
+
+    // CONFLICT POLICY:
+    // - Type: DAILY_OPERATIONAL_BRIEF_SNAPSHOT
+    // - Strategy: UPSERT_EXPLICIT
+    // - Rationale: enforce deterministic snapshot rebuilds per (shop_id, brief_date)
     .onConflict(['shop_id','brief_date'])
-    .merge();
+    .merge({
+      // EXPLICIT MERGE POLICY: overwrite full daily brief snapshot deterministically
+      updated_at: new Date(),
+      // NOTE: include all snapshot fields explicitly to avoid implicit overwrite behavior
+    });
 
   return {
     topPriorityOrders

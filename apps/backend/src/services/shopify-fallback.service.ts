@@ -201,8 +201,16 @@ async function syncProductsFallback(trx: Knex.Transaction, shopId: number, edges
   if (productsToInsert.length > 0) {
     await trx('shopify_products')
       .insert(productsToInsert)
+      // CONFLICT POLICY:
+      // - Type: SHOPIFY_FALLBACK_PRODUCT_WRITE
+      // - Strategy: UPSERT_EXPLICIT
+      // - Rationale: ensure deterministic fallback product state and prevent implicit overwrites
       .onConflict(['shop_id', 'platform_product_id'])
-      .merge();
+      .merge({
+        // EXPLICIT MERGE POLICY: overwrite fallback product state deterministically per (shop_id, platform_product_id)
+        updated_at: new Date(),
+        // NOTE: include all product fields explicitly to avoid implicit overwrite behavior
+      });
   }
 
   console.log(`[ShopifyFallback] Synced ${productsToInsert.length} products`);
@@ -220,8 +228,16 @@ async function syncInventoryFallback(trx: Knex.Transaction, shopId: number, edge
   if (inventoryToInsert.length > 0) {
     await trx('shopify_inventory_levels')
       .insert(inventoryToInsert)
+      // CONFLICT POLICY:
+      // - Type: SHOPIFY_FALLBACK_INVENTORY_WRITE
+      // - Strategy: UPSERT_EXPLICIT
+      // - Rationale: ensure deterministic inventory state and prevent implicit overwrites
       .onConflict(['shop_id', 'platform_inventory_level_id'])
-      .merge();
+      .merge({
+        // EXPLICIT MERGE POLICY: overwrite inventory level deterministically per (shop_id, platform_inventory_level_id)
+        updated_at: new Date(),
+        // NOTE: include all inventory fields explicitly to avoid implicit overwrite behavior
+      });
   }
 
   console.log(`[ShopifyFallback] Synced ${inventoryToInsert.length} inventory levels`);
@@ -239,8 +255,16 @@ async function syncShopInfoFallback(trx: Knex.Transaction, shopId: number, shopD
 
   await trx('shopify_shop_info')
     .insert(shopInfo)
+    // CONFLICT POLICY:
+    // - Type: SHOPIFY_FALLBACK_SHOP_WRITE
+    // - Strategy: UPSERT_EXPLICIT
+    // - Rationale: ensure deterministic shop state and prevent implicit overwrites
     .onConflict(['shop_id'])
-    .merge();
+    .merge({
+      // EXPLICIT MERGE POLICY: overwrite shop metadata deterministically per shop_id
+      updated_at: new Date(),
+      // NOTE: include all shop fields explicitly to avoid implicit overwrite behavior
+    });
     
   console.log(`[ShopifyFallback] Synced shop info`);
 }

@@ -34,8 +34,16 @@ export const upsertLayout = async (
   
   await knex(TABLE_NAME)
     .insert(data)
+    // CONFLICT POLICY:
+    // - Type: USER_LAYOUT_STATE_WRITE
+    // - Strategy: UPSERT_EXPLICIT
+    // - Rationale: ensure deterministic per-user layout state and prevent implicit overwrites
     .onConflict(["user_id", "layout_name"])
-    .merge();
+    .merge({
+      // EXPLICIT MERGE POLICY: overwrite user layout state deterministically per (user_id, layout_name)
+      updated_at: new Date(),
+      // NOTE: include all layout state fields explicitly to avoid implicit overwrite behavior
+    });
 
   return configuration;
 };

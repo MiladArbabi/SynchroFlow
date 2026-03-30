@@ -2,6 +2,9 @@
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 
+import { logConflictIgnored } from '../../conflict-resolution/conflict.logger.js';
+import { ConflictTypes, ResolutionStrategies } from '../../conflict-resolution/conflict.types.js';
+
 /**
  * Revenue Unit Writer (Variant-Aggregated Model)
  * ----------------------------------------------
@@ -207,6 +210,12 @@ export async function writeOrderRevenueUnits(
         (a.sku ?? '').localeCompare(b.sku ?? '')
       );
 
+    // CONFLICT POLICY (EXPLICIT)
+    // Type: DUPLICATE_EVENT (same revenue unit)
+    // Strategy: IGNORE (economic snapshot immutability)
+    const conflictType = ConflictTypes.DUPLICATE_EVENT;
+    const resolutionStrategy = ResolutionStrategies.IGNORE;
+
     /**
      * ECONOMIC SNAPSHOT GUARANTEE
      * ---------------------------
@@ -225,8 +234,15 @@ export async function writeOrderRevenueUnits(
       await trx('order_revenue_units')
         .insert(ru)
         .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
-        .ignore();
-
+        .ignore()
+        .then(() => {
+          logConflictIgnored({
+            entity: 'order_revenue_units',
+            conflictKey: ['lasyncro_order_id', 'lasyncro_variant_id'],
+            note: 'Duplicate revenue unit ignored (immutability enforced)'
+          });
+        });
+        
     }
 
     await trx('inventory_movements')

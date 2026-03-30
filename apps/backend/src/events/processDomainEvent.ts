@@ -26,6 +26,9 @@ import db from '@lasyncro/backend-core/db.js';
 import { projectDomainEvent } from '../projection/projection.engine.js';
 import { projectOrderInventoryConstraints } from '../projections/orderInventoryConstraintProjection.js';
 
+import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
+import { logConflictResolved } from '../conflict-resolution/conflict.logger.js';
+
 /**
  * RECONCILIATION PIPELINE OWNERSHIP
  * ---------------------------------
@@ -280,6 +283,12 @@ export async function processDomainEvent(
      * Worker entrypoint will pick up pending jobs.
      */
 
+    // CONFLICT CLASSIFICATION SIGNAL (PHASE 1 - NON-BREAKING)
+    // Type: UPSERT (idempotent by shop_id)
+    // Expected conflict: duplicate scheduling → safe merge
+    const conflictType = ConflictTypes.DUPLICATE_EVENT;
+    const resolutionStrategy = ResolutionStrategies.MERGE;
+
     /**
      * UNIFIED SNAPSHOT EXECUTION MODEL
      * --------------------------------
@@ -297,14 +306,21 @@ export async function processDomainEvent(
         shop_id: shopRow.shop_id,
         scheduled_at: new Date()
       })
+      // EXPLICIT MERGE POLICY
+      // Type: DUPLICATE_EVENT → latest schedule overwrites previous
       .onConflict(['shop_id'])
-        .merge()
-        .returning('*')
+        .merge({
+          shop_id: shopRow.shop_id,
+          scheduled_at: new Date()
+        })
         .then(() => {
-          /* console.debug('[SNAPSHOT_JOB_ENQUEUED]', {
-            shopId: shopRow.shop_id,
-            mode: process.env.REBUILD_MODE === 'true' ? 'rebuild' : 'runtime'
-          }); */
+          logConflictResolved({
+            entity: 'shop_snapshot_jobs',
+            conflictKey: ['shop_id'],
+            conflictType,
+            resolutionStrategy,
+            note: 'Duplicate snapshot scheduling merged'
+          });
         })
         .catch((err) => {
           console.error('[SNAPSHOT_JOB_ENQUEUE_FAILED]', {

@@ -4,6 +4,8 @@ import { getQueueChannel } from '../../queue.js';
 import { reconcileOrderFulfillment } from './reconciliation.handlers.js';
 import { computeShopOperationalSnapshot } from '../projections/shopOperationalSnapshot.worker.js';
 
+import { ConflictTypes } from '../../conflict-resolution/conflict.types.js';
+
 const QUEUE = 'fulfillment.reconciliation';
 
 export function startReconciliationConsumer() {
@@ -157,13 +159,38 @@ export function startReconciliationConsumer() {
       console.error('[reconciliation] failed', err);
 
       const headers = msg.properties.headers || {};
+
+      // Conflict-aware retry metadata (TEMP: classification placeholder until central system exists)
       const retryCount = Number(headers['x-retry-count'] || 0);
 
+      // CLASSIFIED RETRY REASON (fallback = unknown conflict type)
+      const retryReason =
+        headers['x-retry-reason'] ||
+        ConflictTypes.CONSTRAINT_VIOLATION;
+
+      if (!Object.values(ConflictTypes).includes(retryReason)) {
+        console.error('[INVALID_RETRY_REASON]', {
+          retryReason,
+          note: 'Non-canonical conflict type detected'
+        });
+      }
+
+      // HARD STOP: retries must not be blind — log and surface reason
       if (retryCount >= 3) {
+        console.error('[RETRY_ABORTED]', {
+          retryCount,
+          retryReason,
+          note: 'Retry limit reached without conflict classification'
+        });
+        
         console.error('[reconciliation] permanently failed after 3 retries');
         ch.nack(msg, false, false); // drop after bounded retries
         return;
       }
+
+      // RETRY BACKOFF (EXPONENTIAL)
+      // Prevents hot-loop retries under persistent failure
+      const retryDelayMs = Math.min(1000 * Math.pow(2, retryCount), 30000); // cap at 30s
 
       // Requeue with incremented retry count
       ch.sendToQueue(
@@ -174,12 +201,13 @@ export function startReconciliationConsumer() {
           headers: {
             ...headers,
             'x-retry-count': retryCount + 1,
+            'x-retry-reason': retryReason,
           },
+          expiration: String(retryDelayMs) // delay before reprocessing
         }
       );
 
       ch.ack(msg); // acknowledge original
     }
-
   });
 }

@@ -5,6 +5,9 @@ import { LifecycleService } from '../services/lifecycle.service.js';
 import { OnboardingReadinessService } from '../onboarding/readiness.service.js';
 import { OnboardingReadinessSnapshot } from '@lasyncro/shared';
 
+import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
+import { logConflictResolved } from '../conflict-resolution/conflict.logger.js';
+
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
 export type OrdersPerMonthSegment =
@@ -249,15 +252,35 @@ export class UserStateService {
       });
   }
 
+
+
   /**
    * Record a milestone for a user
    */
   static async recordMilestone(userId: number, milestone: string) {
-    await db<UserMilestone>('user_milestones').insert({
+    // CONFLICT POLICY (EXPLICIT)
+    // Type: DUPLICATE_EVENT (same milestone for user)
+    // Strategy: IGNORE (idempotent write, no overwrite)
+    const conflictType = ConflictTypes.DUPLICATE_EVENT;
+    const resolutionStrategy = ResolutionStrategies.IGNORE;
+
+    await db<UserMilestone>('user_milestones')
+    .insert({
       user_id: userId,
       milestone,
       achieved_at: db.fn.now(),
-    }).onConflict(['user_id', 'milestone']).ignore(); // Don't duplicate milestones
+    })
+    .onConflict(['user_id', 'milestone'])
+    .ignore()
+    .then(() => {
+      logConflictResolved({
+        entity: 'user_milestones',
+        conflictKey: ['user_id', 'milestone'],
+        conflictType,
+        resolutionStrategy,
+        note: 'Duplicate milestone ignored (idempotent)'
+      });
+    });
   }
 
   /**

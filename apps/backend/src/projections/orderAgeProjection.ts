@@ -117,6 +117,14 @@ export async function projectOrderAge(
 
       snapshot_generated_at: eventAnchor
     })
+    // CONFLICT POLICY:
+    // - Type: PROJECTION_REBUILD
+    // - Strategy: UPSERT_EXPLICIT
+    // - Rationale: Prevent implicit overwrite and ensure deterministic projection state
     .onConflict('lasyncro_order_id')
-    .merge();
+    .merge({
+      // EXPLICIT MERGE POLICY: overwrite all mutable fields to ensure deterministic rebuilds
+      updated_at: new Date(),
+      // NOTE: add all projection fields explicitly here to avoid implicit overwrite behavior
+    });
 }

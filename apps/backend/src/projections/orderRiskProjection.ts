@@ -1,5 +1,8 @@
 import { Knex } from 'knex';
 
+import { logConflictResolved, logIdempotentSkip } from '../conflict-resolution/conflict.logger.js';
+import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
+
 /**
  * ORDER RISK PROJECTION
  * ---------------------
@@ -131,6 +134,29 @@ export async function projectOrderRisk(
 
   if (healthScore < 0) healthScore = 0;
 
+  // IDEMPOTENCY GUARD (EXECUTION-LAYER)
+  // Prevent stale or duplicate projection writes
+  const existing = await trx('order_risk_snapshot')
+    .where({ lasyncro_order_id: orderId })
+    .select('aggregate_version')
+    .first();
+
+  if (existing && existing.aggregate_version >= aggregateVersion) {
+    logIdempotentSkip({
+      entity: 'order_risk_snapshot',
+      id: orderId,
+      incomingVersion: aggregateVersion,
+      existingVersion: existing.aggregate_version
+    });
+    return;
+  }
+
+  // CONFLICT POLICY (EXPLICIT)
+  // Type: DUPLICATE_EVENT (same order snapshot)
+  // Strategy: MERGE (latest projection overwrites previous)
+  const conflictType = ConflictTypes.DUPLICATE_EVENT;
+  const resolutionStrategy = ResolutionStrategies.MERGE;
+
   await trx('order_risk_snapshot')
     /**
      * NOTE:
@@ -160,6 +186,26 @@ export async function projectOrderRisk(
 
       evaluated_at: eventAnchor
     })
+    // EXPLICIT MERGE POLICY: overwrite full snapshot deterministically
     .onConflict('lasyncro_order_id')
-    .merge();
+    .merge({
+      shop_id: shopId,
+      aggregate_version: aggregateVersion,
+      is_inventory_blocked: isInventoryBlocked,
+      inventory_blocked_revenue: inventoryBlockedRevenue,
+      is_customer_blocked: isCustomerBlocked,
+      is_operational_blocked: isOperationalBlocked,
+      is_at_risk: isInventoryBlocked || isCustomerBlocked || isOperationalBlocked,
+      order_health_score: Math.round(healthScore * 100),
+      evaluated_at: eventAnchor
+    })
+    .then(() => {
+      logConflictResolved({
+        entity: 'order_risk_snapshot',
+        conflictKey: 'lasyncro_order_id',
+        conflictType,
+        resolutionStrategy,
+        note: 'Projection snapshot merged (deterministic overwrite)'
+      });
+    });
 }

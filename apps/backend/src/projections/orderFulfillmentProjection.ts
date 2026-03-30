@@ -1,5 +1,6 @@
 import { Knex } from 'knex';
 import crypto from 'crypto';
+import { logConflictIgnored } from '../conflict-resolution/conflict.logger.js';
 
 /**
  * ORDER FULFILLMENT PROJECTION
@@ -30,6 +31,13 @@ export async function projectOrderFulfillment(
   aggregateVersion: number,
   eventAnchor: Date
 ) {
+
+  // OBSERVABILITY: log intent before conflict-ignore write
+  logConflictIgnored({
+    entity: 'order_fulfillment_status',
+    conflictKey: 'lasyncro_order_id',
+    note: 'Insert with ignore() — potential silent drop'
+  });
 
   await trx('order_fulfillment_status')
     .insert({

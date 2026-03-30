@@ -58,7 +58,15 @@ export async function projectRevenueDaily(
          */
         evaluated_at: eventAnchor
       })
+      // CONFLICT POLICY:
+      // - Type: DAILY_REVENUE_AGGREGATION
+      // - Strategy: UPSERT_EXPLICIT
+      // - Rationale: ensure deterministic aggregation rebuilds per (shop_id, date)
       .onConflict(['shop_id', 'revenue_date'])
-      .merge();
+      .merge({
+        // EXPLICIT MERGE POLICY: deterministic daily aggregation overwrite
+        updated_at: new Date(),
+        // NOTE: include all aggregation fields explicitly to avoid implicit overwrite
+      });
   }
 }

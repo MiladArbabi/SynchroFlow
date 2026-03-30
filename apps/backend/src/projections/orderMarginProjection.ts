@@ -1,4 +1,6 @@
 import { Knex } from 'knex';
+import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
+import { logConflictResolved, logIdempotentSkip } from '../conflict-resolution/conflict.logger.js';
 
 /**
  * ORDER MARGIN PROJECTION
@@ -65,6 +67,29 @@ export async function projectOrderMargin(
   const marginPct =
     grossRevenue > 0 ? grossMargin / grossRevenue : 0;
 
+  // IDEMPOTENCY GUARD (EXECUTION-LAYER)
+  // Prevent redundant writes for same aggregate_version
+  const existing = await trx('order_margin_snapshot')
+    .where({ lasyncro_order_id: orderId })
+    .select('aggregate_version')
+    .first();
+
+  if (existing && existing.aggregate_version >= aggregateVersion) {
+    logIdempotentSkip({
+      entity: 'order_margin_snapshot',
+      id: orderId,
+      incomingVersion: aggregateVersion,
+      existingVersion: existing.aggregate_version
+    });
+    return;
+  }
+
+  // CONFLICT POLICY (EXPLICIT)
+  // Type: DUPLICATE_EVENT (same order snapshot)
+  // Strategy: MERGE (latest projection overwrites previous)
+  const conflictType = ConflictTypes.DUPLICATE_EVENT;
+  const resolutionStrategy = ResolutionStrategies.MERGE;
+
   await trx('order_margin_snapshot')
     .insert({
       lasyncro_order_id: orderId,
@@ -76,6 +101,25 @@ export async function projectOrderMargin(
       margin_pct: marginPct,
       evaluated_at: eventAnchor
     })
+    // EXPLICIT MERGE POLICY: overwrite full snapshot deterministically
+    // Rationale: projection is pure function of event → safe to fully replace
     .onConflict('lasyncro_order_id')
-    .merge();
+    .merge({
+      shop_id: shopId,
+      aggregate_version: aggregateVersion,
+      gross_revenue: grossRevenue,
+      estimated_cost: estimatedCost,
+      gross_margin: grossMargin,
+      margin_pct: marginPct,
+      evaluated_at: eventAnchor
+    })
+    .then(() => {
+      logConflictResolved({
+        entity: 'order_margin_snapshot',
+        conflictKey: 'lasyncro_order_id',
+        conflictType,
+        resolutionStrategy,
+        note: 'Projection snapshot merged (deterministic overwrite)'
+      });
+    });
 }

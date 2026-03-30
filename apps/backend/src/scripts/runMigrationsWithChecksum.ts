@@ -102,8 +102,16 @@ for (const { name: file } of appliedMigrations) {
 
   await db('migration_checksums')
     .insert({ name: file, checksum })
+    // CONFLICT POLICY:
+    // - Type: MIGRATION_CHECKSUM_REGISTRATION
+    // - Strategy: UPSERT_EXPLICIT
+    // - Rationale: ensure checksum consistency and prevent silent migration drift
     .onConflict('name')
-    .merge();
+    .merge({
+      // EXPLICIT MERGE POLICY: migration checksum must be deterministic per migration name
+      checksum: checksum,
+      executed_at: new Date(),
+    });
 }
 
   console.info('[migration-runner] checksum sync complete');

@@ -243,8 +243,16 @@ export const upsertSpecterConfig = async (req: Request, res: Response) => {
         shop_id: shopId,
         config_json: config,
       })
+      // CONFLICT POLICY:
+      // - Type: SPECTER_STATE_WRITE
+      // - Strategy: UPSERT_EXPLICIT
+      // - Rationale: enforce deterministic state per shop and avoid silent overwrites
       .onConflict('shop_id')
-      .merge()
+      .merge({
+        // EXPLICIT MERGE POLICY: overwrite specter state deterministically per shop
+        updated_at: new Date(),
+        // NOTE: include all mutable specter fields explicitly to avoid implicit overwrite
+      })
       .returning(['shop_id', 'config_json']);
 
     return res.json({

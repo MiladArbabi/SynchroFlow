@@ -4,6 +4,9 @@ import { v5 as uuidv5 } from 'uuid';
 import { ConstraintType } from '../services/constraints/constraint.types.js';
 import { ConstraintEvaluationResult } from '../services/constraints/constraint.types.js';
 
+import { logConflictResolved } from '../conflict-resolution/conflict.logger.js';
+import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
+
 /**
  * ARCHITECTURE CHANGE (EVENT SYSTEM REMOVED)
  * ------------------------------------------
@@ -166,6 +169,17 @@ export async function projectOrderConstraints(
         });
 
       if (conflicting.length > 1) {
+        const conflictType = ConflictTypes.DATA_RACE;
+        const resolutionStrategy = ResolutionStrategies.FAIL;
+
+        logConflictResolved({
+          entity: 'order_constraints',
+          conflictKey: ['lasyncro_order_id', 'constraint_type', 'target_id'],
+          conflictType,
+          resolutionStrategy,
+          note: `Multi-writer detected: ${conflicting.length} active constraints`
+        });
+
         console.error('[CONSTRAINT_MULTI_WRITER_DETECTED]', {
           orderId,
           type,

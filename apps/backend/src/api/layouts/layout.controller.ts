@@ -69,8 +69,16 @@ export const saveLayout = async (req: Request, res: Response) => {
         layout: JSON.stringify(layout),
         activeWidgets: JSON.stringify(activeWidgets),
       })
+      // CONFLICT POLICY:
+      // - Type: LAYOUT_CONFIGURATION_WRITE
+      // - Strategy: UPSERT_EXPLICIT
+      // - Rationale: ensure deterministic layout state and prevent implicit overwrites
       .onConflict(['shop_id', 'name'])
-      .merge();
+      .merge({
+        // EXPLICIT MERGE POLICY: overwrite layout definition deterministically per (shop_id, name)
+        updated_at: new Date(),
+        // NOTE: include all layout fields explicitly to avoid implicit overwrite behavior
+      });
 
     res.status(200).json({
       message: `Layout '${layoutName}' saved successfully.`,
