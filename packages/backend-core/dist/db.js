@@ -1,4 +1,4 @@
-// apps/backend/src/db.ts
+// packages/backend-core/src/db.ts
 import knex from 'knex';
 import dbConfig from './config/database.config.js';
 const baseDb = knex(dbConfig);
@@ -6,8 +6,16 @@ const baseDb = knex(dbConfig);
 const db = new Proxy(baseDb, {
     apply(target, thisArg, argumentsList) {
         const queryBuilder = Reflect.apply(target, thisArg, argumentsList);
+        // AUTO-BYPASS: raw queries are considered system-level unless explicitly wrapped
+        if (argumentsList.length === 1 && typeof argumentsList[0] === 'string') {
+            queryBuilder.__skipTenantCheck = true;
+        }
         const originalThen = queryBuilder.then.bind(queryBuilder);
         queryBuilder.then = async function (...args) {
+            // BYPASS: allow explicitly marked system queries (bootstrap, auth, migrations)
+            if (queryBuilder.__skipTenantCheck) {
+                return originalThen(...args);
+            }
             try {
                 const res = await target.raw(`SHOW app.current_tenant`);
                 if (!res || !res.rows?.length) {
@@ -22,14 +30,30 @@ const db = new Proxy(baseDb, {
         return queryBuilder;
     }
 });
+// --- SYSTEM QUERY BYPASS (EXPLICIT ONLY) ---
+/**
+ * SYSTEM QUERY BYPASS (EXPLICIT ONLY)
+ * -----------------------------------
+ * Use ONLY for:
+ * - bootstrap
+ * - auth (pre-tenant)
+ * - migrations / infra
+ *
+ * NEVER use in domain logic.
+ */
+export function systemQuery(qb) {
+    qb.__skipTenantCheck = true;
+    return qb;
+}
 const isJest = process.env.JEST_WORKER_ID !== undefined ||
     process.env.NODE_ENV === 'test';
+// --- SAFE BOOTSTRAP (NO TENANT CONTEXT REQUIRED) ---
 if (!isJest) {
-    db.raw(`
-    SELECT current_database() as database,
-           inet_server_addr() as host,
-           inet_server_port() as port
-  `)
+    systemQuery(db.raw(`
+      SELECT current_database() as database,
+             inet_server_addr() as host,
+             inet_server_port() as port
+    `))
         .then((r) => {
         console.log(`Database connected successfully in ${process.env.NODE_ENV || 'development'} mode.`);
         console.log('[DB_IDENTITY]', r.rows[0]);

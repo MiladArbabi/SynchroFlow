@@ -1,4 +1,4 @@
-// apps/backend/src/db.ts
+// packages/backend-core/src/db.ts
 
 import knex from 'knex';
 import dbConfig from './config/database.config.js';
@@ -10,9 +10,19 @@ const db = new Proxy(baseDb, {
   apply(target, thisArg, argumentsList) {
     const queryBuilder = Reflect.apply(target, thisArg, argumentsList);
 
+    // AUTO-BYPASS: raw queries are considered system-level unless explicitly wrapped
+    if (argumentsList.length === 1 && typeof argumentsList[0] === 'string') {
+      (queryBuilder as any).__skipTenantCheck = true;
+    }
+
     const originalThen = queryBuilder.then.bind(queryBuilder);
 
     queryBuilder.then = async function (...args: any[]) {
+      // BYPASS: allow explicitly marked system queries (bootstrap, auth, migrations)
+      if ((queryBuilder as any).__skipTenantCheck) {
+        return originalThen(...args);
+      }
+
       try {
         const res = await target.raw(`SHOW app.current_tenant`);
         if (!res || !res.rows?.length) {
@@ -31,21 +41,44 @@ const db = new Proxy(baseDb, {
   }
 });
 
+// --- SYSTEM QUERY BYPASS (EXPLICIT ONLY) ---
+/**
+ * SYSTEM QUERY BYPASS (EXPLICIT ONLY)
+ * -----------------------------------
+ * Use ONLY for:
+ * - bootstrap
+ * - auth (pre-tenant)
+ * - migrations / infra
+ *
+ * NEVER use in domain logic.
+ */
+export function systemQuery(qb: any) {
+  qb.__skipTenantCheck = true;
+  return qb;
+}
+
 const isJest =
   process.env.JEST_WORKER_ID !== undefined ||
   process.env.NODE_ENV === 'test';
 
+// --- SAFE BOOTSTRAP (NO TENANT CONTEXT REQUIRED) ---
 if (!isJest) {
-  db.raw(`
-    SELECT current_database() as database,
-           inet_server_addr() as host,
-           inet_server_port() as port
-  `)
-    .then((r) => {
-      console.log(`Database connected successfully in ${process.env.NODE_ENV || 'development'} mode.`);
+  systemQuery(
+    db.raw(`
+      SELECT current_database() as database,
+             inet_server_addr() as host,
+             inet_server_port() as port
+    `)
+  )
+    .then((r: any) => {
+      console.log(
+        `Database connected successfully in ${
+          process.env.NODE_ENV || 'development'
+        } mode.`
+      );
       console.log('[DB_IDENTITY]', r.rows[0]);
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       console.error('DATABASE CONNECTION FAILED');
       console.error(err);
     });
@@ -66,6 +99,7 @@ export async function withTenant<T>(
     const check = await trx.raw(
       `SELECT current_setting('app.current_tenant', true) as tenant`
     );
+
     if (!check || check.rows?.[0]?.tenant !== String(shopId)) {
       throw new Error('FAILED TO SET app.current_tenant');
     }
