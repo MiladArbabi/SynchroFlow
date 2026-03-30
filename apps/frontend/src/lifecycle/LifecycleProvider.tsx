@@ -161,10 +161,10 @@ export function LifecycleProvider({
            */
           setIsResolved(true);
 
-          console.info('[LIFECYCLE_RESOLVE_ON_IMMEDIATE]', {
+          /* console.info('[LIFECYCLE_RESOLVE_ON_IMMEDIATE]', {
             backendPhase,
             ts: performance.now(),
-          });
+          }); */
         }
       } catch (err) {
         console.error('[LIFECYCLE_IMMEDIATE_SYNC_FAILED]', err);
@@ -269,10 +269,10 @@ export function LifecycleProvider({
 
           setIsResolved(true);
 
-          console.info('[LIFECYCLE_RESOLVE_ON_POLL]', {
+          /* console.info('[LIFECYCLE_RESOLVE_ON_POLL]', {
             backendPhase,
             ts: performance.now(),
-          });
+          }); */
         }
       } catch (err) {
         console.error('[LIFECYCLE_POLL_FAILED]', err);
@@ -313,10 +313,10 @@ export function LifecycleProvider({
           const res = await axiosInstance.get('/api/v1/lifecycle');
           const backendPhase = res?.data?.phase;
 
-          console.info('[LIFECYCLE_FAST_SYNC_TICK]', {
+          /* console.info('[LIFECYCLE_FAST_SYNC_TICK]', {
             backendPhase,
             ts: performance.now(),
-          });
+          }); */
 
           if (backendPhase !== 'FT_MINUS_ONE') {
             dispatch({
