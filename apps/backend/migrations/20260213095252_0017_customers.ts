@@ -28,6 +28,28 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['shop_id']);
     table.index(['email']);
   });
+
+  // --- RLS: Enforce tenant isolation (direct) ---
+  await knex.raw(`
+    ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE customers FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS customers_tenant_isolation_policy ON customers;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY customers_tenant_isolation_policy
+    ON customers
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
+  // NOTE:
+  // Direct tenant column → simplest and safest enforcement
+  // Protects PII (email, identity) from cross-tenant access
 }
 
 export async function down(knex: Knex): Promise<void> {

@@ -10,6 +10,7 @@
     "dev:worker": "nodemon --watch src --ext ts --exec \"npm run build && node dist/worker-entry.js\"",
     "start:worker": "node dist/apps/backend/src/worker-entry.js",
     "seed": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs seed:run --specific=dev_seed.js",
+    "check:rls": "bash scripts/check_rls.sh",
     "migrate": "mkdir -p dist && rm -rf dist/migrations dist/seeds && npx tsc --project tsconfig.migrations.json && node dist/scripts/runMigrationsWithChecksum.js",
     "migrate:rollback": "rm -rf dist/migrations && npx tsc --project tsconfig.migrations.json && DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make",

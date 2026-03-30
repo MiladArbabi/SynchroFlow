@@ -47,6 +47,42 @@ export async function up(knex: Knex): Promise<void> {
       .defaultTo(knex.fn.now());
   });
 
+  /**
+   * RLS INVARIANT
+   * -------------
+   * order_constraint_events represents tenant-scoped operational control signals.
+   *
+   * Contains:
+   * - constraint violations
+   * - enforcement triggers
+   * - operational decision inputs
+   *
+   * Cross-tenant visibility exposes:
+   * - internal failures
+   * - operational weaknesses
+   * - system behavior signals
+   *
+   * shop_id is authoritative tenant boundary.
+   * No relational enforcement allowed.
+   */
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE order_constraint_events ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_constraint_events FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_constraint_events_tenant_isolation_policy ON order_constraint_events;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_constraint_events_tenant_isolation_policy
+    ON order_constraint_events
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
   await knex.schema.alterTable('order_constraint_events', (table) => {
     table.index(['shop_id', 'constraint_type'], 'oce_shop_type_idx');
     table.index(['lasyncro_order_id', 'is_active'], 'oce_order_active_idx');

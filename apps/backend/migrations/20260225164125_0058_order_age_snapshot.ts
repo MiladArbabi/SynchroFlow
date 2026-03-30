@@ -96,6 +96,52 @@ export async function up(knex: Knex): Promise<void> {
   });
 
   /**
+   * RLS INVARIANT
+   * -------------
+   * order_age_snapshot is tenant-scoped operational timing data.
+   *
+   * Contains:
+   * - order age
+   * - delay exposure
+   * - SLA pressure indicators
+   *
+   * Cross-tenant access reveals:
+   * - fulfillment speed
+   * - backlog severity
+   * - operational inefficiencies
+   *
+   * Tenant isolation is enforced via orders relation.
+   * order_age_snapshot does NOT store shop_id directly.
+   *
+   * This ensures:
+   * - no duplication of tenant key
+   * - strict alignment with canonical order ownership
+   *
+   * DO NOT introduce shop_id here without full migration rewrite.
+   */
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE order_age_snapshot ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_age_snapshot FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_age_snapshot_tenant_isolation_policy ON order_age_snapshot;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_age_snapshot_tenant_isolation_policy
+    ON order_age_snapshot
+    USING (
+      lasyncro_order_id IN (
+        SELECT o.lasyncro_order_id
+        FROM orders o
+        WHERE o.shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  /**
    * PROJECTION CONSISTENCY ENFORCEMENT
    * -----------------------------------
    * Snapshot must reference exact (id, version)

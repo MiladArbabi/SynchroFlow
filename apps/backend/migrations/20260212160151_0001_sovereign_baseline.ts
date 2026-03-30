@@ -23,6 +23,27 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamps(true, true);
   });
 
+  // --- RLS: Enforce tenant isolation ---
+  // CRITICAL:
+  // shops is the root tenant boundary
+  // Misconfiguration here breaks entire system isolation
+  await knex.raw(`
+    ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE shops FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS shops_tenant_isolation_policy ON shops;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY shops_tenant_isolation_policy
+    ON shops
+    USING (
+      id = current_setting('app.current_tenant')::int
+    );
+  `);
+
   // ============================
   // ORDERS (Sovereign Identity)
   // ============================
@@ -138,6 +159,27 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['shop_id', 'order_created_at']);
     table.index(['shop_id', 'customer_hashed_id']);
   });
+
+  // --- RLS: Enforce tenant isolation at DB level (MANDATORY) ---
+  await knex.raw(`
+    ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE orders FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS orders_tenant_isolation_policy ON orders;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY orders_tenant_isolation_policy
+    ON orders
+    USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
+
+  // NOTE:
+  // FORCE ROW LEVEL SECURITY ensures even table owner cannot bypass RLS.
+  // DROP POLICY ensures idempotency for re-runs.
+  // This guarantees strict tenant isolation at DB level.
 
   /**
    * PROJECTION CONSISTENCY ANCHOR

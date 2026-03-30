@@ -55,6 +55,38 @@ export async function up(knex: Knex): Promise<void> {
       'refresh_tokens_user_session_idx'
     );
   });
+
+  // --- TENANT INVARIANT ENFORCEMENT ---
+  // refresh tokens must always belong to a tenant
+  await knex.raw(`
+    ALTER TABLE refresh_tokens
+    ALTER COLUMN shop_id SET NOT NULL;
+  `);
+
+  // --- RLS: Enforce tenant isolation (via users) ---
+  await knex.raw(`
+    ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE refresh_tokens FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS refresh_tokens_tenant_isolation_policy ON refresh_tokens;
+  `);
+
+  /* -- 🔒 Direct tenant enforcement (authoritative)
+  -- shop_id is NOT NULL → must be used as primary isolation boundary */
+  await knex.raw(`
+    CREATE POLICY refresh_tokens_tenant_isolation_policy
+    ON refresh_tokens
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
+  // NOTE:
+  // shop_id is enforced NOT NULL → authoritative tenant anchor
+  // Direct RLS avoids unnecessary joins and eliminates ambiguity
+  // Ensures strict, consistent tenant isolation at DB level
 }
 
 export async function down(knex: Knex): Promise<void> {

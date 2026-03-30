@@ -34,6 +34,32 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['lasyncro_order_id']);
   });
 
+  // --- RLS: Enforce tenant isolation (via orders) ---
+  await knex.raw(`
+    ALTER TABLE customer_blocking_events ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE customer_blocking_events FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS customer_blocking_events_tenant_isolation_policy ON customer_blocking_events;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY customer_blocking_events_tenant_isolation_policy
+    ON customer_blocking_events
+    USING (
+      lasyncro_order_id IN (
+        SELECT lasyncro_order_id
+        FROM orders
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  /**
+   * NOTE:
+   * No shop_id → enforced via orders (authoritative tenant anchor)
+   */
 
   // -------------------------------------------------------
   // 2️⃣ Operational blocking events
@@ -66,6 +92,33 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['lasyncro_order_id']);
   });
+
+  // --- RLS: Enforce tenant isolation (via orders) ---
+  await knex.raw(`
+    ALTER TABLE operational_blocking_events ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE operational_blocking_events FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS operational_blocking_events_tenant_isolation_policy ON operational_blocking_events;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY operational_blocking_events_tenant_isolation_policy
+    ON operational_blocking_events
+    USING (
+      lasyncro_order_id IN (
+        SELECT lasyncro_order_id
+        FROM orders
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  /**
+   * NOTE:
+   * No shop_id → enforced via orders (authoritative tenant anchor)
+   */
 
 }
 

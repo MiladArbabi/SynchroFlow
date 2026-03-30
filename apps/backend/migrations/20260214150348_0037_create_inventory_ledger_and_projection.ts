@@ -102,6 +102,18 @@ export async function up(knex: Knex): Promise<void> {
     table.string('platform', 255).nullable();
     table.string('location_code', 255).notNullable();
 
+    // --- TENANT ANCHOR (MANDATORY) ---
+    // Required for direct RLS enforcement.
+    // Do NOT rely on variant join for tenant isolation.
+    table
+      .integer('shop_id')
+      .notNullable()
+      .references('id')
+      .inTable('shops')
+      .onDelete('CASCADE');
+
+    table.index(['shop_id'], 'inventory_movements_shop_id_index');
+
     table.timestamp('occurred_at', { useTz: true }).notNullable();
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
 
@@ -190,6 +202,31 @@ export async function up(knex: Knex): Promise<void> {
     EXECUTE FUNCTION prevent_inventory_movements_mutation();
   `);
 
+  // --- RLS: Enforce tenant isolation (direct) ---
+  // shop_id is authoritative tenant anchor.
+  // NEVER use relational enforcement when direct column exists.
+  // Ledger is a high-risk cross-tenant surface.
+  await knex.raw(`
+    ALTER TABLE inventory_movements ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE inventory_movements FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS inventory_movements_tenant_isolation_policy ON inventory_movements;
+  `);
+
+  // IMPORTANT:
+  // shop_id exists → MUST use direct enforcement
+  // Never fallback to relational enforcement when direct column is present
+  // Ensures consistency, performance, and invariant clarity
+  await knex.raw(`
+    CREATE POLICY inventory_movements_tenant_isolation_policy
+    ON inventory_movements
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
   // ─────────────────────────────────────────
   // 3️⃣ inventory_truth (Deterministic Projection)
   // ─────────────────────────────────────────
@@ -232,6 +269,26 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).defaultTo(knex.fn.now());
   });
+
+  // --- RLS: Enforce tenant isolation (direct) ---
+  // inventory_truth is a projection but still tenant-bound.
+  // MUST enforce isolation to prevent cross-tenant reads.
+  await knex.raw(`
+    ALTER TABLE inventory_truth ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE inventory_truth FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS inventory_truth_tenant_isolation_policy ON inventory_truth;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY inventory_truth_tenant_isolation_policy
+    ON inventory_truth
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 
   // 4️⃣ order_reconciliation_intents (Versioned Publish Barrier)
   await knex.schema.createTable('order_reconciliation_intents', (table) => {

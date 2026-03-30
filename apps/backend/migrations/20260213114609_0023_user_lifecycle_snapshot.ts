@@ -70,6 +70,25 @@ export async function up(knex: Knex): Promise<void> {
     ADD CONSTRAINT lifecycle_phase_valid
     CHECK (phase IN ('FT_MINUS_ONE', 'FT0', 'FT1', 'FT2'))
   `);
+
+  // --- RLS: Enforce tenant isolation (direct via shop_id) ---
+  // shop_id is PRIMARY KEY and canonical tenant boundary → safe direct enforcement
+  await knex.raw(`
+    ALTER TABLE user_lifecycle_snapshot ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE user_lifecycle_snapshot FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS user_lifecycle_snapshot_tenant_isolation_policy ON user_lifecycle_snapshot;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY user_lifecycle_snapshot_tenant_isolation_policy
+    ON user_lifecycle_snapshot
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 }
 
 

@@ -43,6 +43,31 @@ export async function up(knex: Knex): Promise<void> {
       'external_inventory_item_id'
     ], 'external_inventory_item_unique');
   });
+
+  // --- RLS: Enforce tenant isolation (direct) ---
+  // shop_id is NOT NULL → authoritative tenant anchor
+  await knex.raw(`
+    ALTER TABLE external_product_identity_map ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE external_product_identity_map FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS external_product_identity_map_tenant_isolation_policy ON external_product_identity_map;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY external_product_identity_map_tenant_isolation_policy
+    ON external_product_identity_map
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
+  /**
+   * NOTE:
+   * Direct enforcement via shop_id
+   * Aligns with global invariant: IF shop_id exists → MUST be used
+   */
 }
 
 export async function down(knex: Knex): Promise<void> {

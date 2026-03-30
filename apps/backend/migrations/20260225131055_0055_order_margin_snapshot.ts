@@ -51,6 +51,39 @@ export async function up(knex: Knex): Promise<void> {
   });
 
   /**
+   * RLS INVARIANT
+   * -------------
+   * order_margin_snapshot is tenant-scoped financial projection data.
+   *
+   * Contains:
+   * - revenue
+   * - cost
+   * - margin metrics
+   *
+   * Cross-tenant exposure = financial data breach.
+   *
+   * shop_id is authoritative tenant boundary.
+   * No relational fallback allowed.
+   */
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE order_margin_snapshot ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_margin_snapshot FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_margin_snapshot_tenant_isolation_policy ON order_margin_snapshot;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_margin_snapshot_tenant_isolation_policy
+    ON order_margin_snapshot
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
+  /**
    * PROJECTION CONSISTENCY ENFORCEMENT
    * -----------------------------------
    * Snapshot must reference exact (id, version)

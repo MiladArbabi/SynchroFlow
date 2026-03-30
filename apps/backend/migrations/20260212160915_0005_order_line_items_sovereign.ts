@@ -61,6 +61,35 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['lasyncro_product_id']);
     table.index(['sku']);
   });
+
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE order_line_items ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_line_items FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_line_items_tenant_isolation_policy ON order_line_items;
+  `);
+
+  // NOTE:
+  // order_line_items does NOT have shop_id.
+  // Tenant isolation enforced via parent orders table.
+  // This ensures correct multi-tenant boundary enforcement.
+  await knex.raw(`
+    CREATE POLICY order_line_items_tenant_isolation_policy
+    ON order_line_items
+    USING (
+      lasyncro_order_id IN (
+        SELECT lasyncro_order_id
+        FROM orders
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  // NOTE:
+  // Required for strict tenant isolation across all dependent order data.
 }
 
 export async function down(knex: Knex): Promise<void> {

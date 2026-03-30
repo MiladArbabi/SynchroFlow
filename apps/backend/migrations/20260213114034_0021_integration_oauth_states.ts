@@ -32,6 +32,36 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['user_id', 'platform']);
     table.index(['expires_at']);
   });
+
+  // --- RLS: Enforce tenant isolation (via users) ---
+  // No shop_id column → enforce via users relation
+  // Critical: OAuth state must never leak across tenants
+  await knex.raw(`
+    ALTER TABLE integration_oauth_states ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE integration_oauth_states FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS integration_oauth_states_tenant_isolation_policy ON integration_oauth_states;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY integration_oauth_states_tenant_isolation_policy
+    ON integration_oauth_states
+    USING (
+      user_id IN (
+        SELECT id
+        FROM users
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  /**
+   * NOTE:
+   * No direct shop_id → enforced via users
+   * Guarantees OAuth flows are tenant-scoped
+   */
 }
 
 export async function down(knex: Knex): Promise<void> {

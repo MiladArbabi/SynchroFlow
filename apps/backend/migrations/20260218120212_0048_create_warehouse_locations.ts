@@ -66,6 +66,39 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['shop_id', 'external_location_id'], 'warehouse_external_location_unique');
     table.index(['shop_id']);
   });
+
+  /**
+   * RLS INVARIANT
+   * -------------
+   * warehouse_locations is strictly tenant-scoped via shop_id.
+   *
+   * This table participates in composite FK:
+   *   inventory_movements (shop_id, location_code)
+   *
+   * Any cross-tenant leakage here corrupts:
+   * - inventory allocation
+   * - fulfillment routing
+   *
+   * DO NOT weaken this policy.
+   */
+
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE warehouse_locations ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE warehouse_locations FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS warehouse_locations_tenant_isolation_policy ON warehouse_locations;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY warehouse_locations_tenant_isolation_policy
+    ON warehouse_locations
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

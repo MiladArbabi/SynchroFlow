@@ -29,6 +29,25 @@ export async function up(knex: Knex): Promise<void> {
       indexName: 'integrations_shop_platform_unique',
     });
   });
+
+  // --- RLS: Enforce tenant isolation ---
+  // CRITICAL: integrations contain external access tokens
+  await knex.raw(`
+    ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE integrations FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS integrations_tenant_isolation_policy ON integrations;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY integrations_tenant_isolation_policy
+    ON integrations
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

@@ -45,6 +45,30 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['external_refund_id']);
   });
 
+  // --- RLS: Enforce tenant isolation (via orders) ---
+  await knex.raw(`
+    ALTER TABLE refund_executions ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE refund_executions FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS refund_executions_tenant_isolation_policy ON refund_executions;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY refund_executions_tenant_isolation_policy
+    ON refund_executions
+    USING (
+      lasyncro_order_id IN (
+        SELECT lasyncro_order_id
+        FROM orders
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  // NOTE:
+  // No direct shop_id → enforce via orders
 
   // -------------------------------------------------------
   // 2️⃣ Refund execution line items (granular mapping)
@@ -86,6 +110,33 @@ export async function up(knex: Knex): Promise<void> {
     );
   });
 
+  // --- RLS: Enforce tenant isolation (via revenue_units → orders) ---
+  await knex.raw(`
+    ALTER TABLE refund_execution_line_items ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE refund_execution_line_items FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS refund_execution_line_items_tenant_isolation_policy ON refund_execution_line_items;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY refund_execution_line_items_tenant_isolation_policy
+    ON refund_execution_line_items
+    USING (
+      lasyncro_revenue_unit_id IN (
+        SELECT ru.lasyncro_revenue_unit_id
+        FROM order_revenue_units ru
+        JOIN orders o ON o.lasyncro_order_id = ru.lasyncro_order_id
+        WHERE o.shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  // NOTE:
+  // 2-hop enforcement:
+  // refund_execution_line_items → order_revenue_units → orders → shop_id
+  // Prevents indirect cross-tenant financial leakage
 
   // -------------------------------------------------------
   // 3️⃣ Safety constraint

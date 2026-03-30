@@ -63,6 +63,35 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['shop_id']);
     table.index(['integration']);
   });
+
+  // CRITICAL:
+  // Nullable shop_id breaks tenant isolation guarantees.
+  // All webhook ingestion MUST resolve tenant before insert.
+  // --- TENANT INVARIANT ENFORCEMENT ---
+  // shop_id must NEVER be null (required for RLS correctness)
+  await knex.raw(`
+    ALTER TABLE integration_webhook_events
+    ALTER COLUMN shop_id SET NOT NULL;
+  `);
+
+  // --- RLS: Enforce tenant isolation ---
+  // CRITICAL: webhook payloads are attacker-controlled surface
+  await knex.raw(`
+    ALTER TABLE integration_webhook_events ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE integration_webhook_events FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS integration_webhook_events_tenant_isolation_policy ON integration_webhook_events;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY integration_webhook_events_tenant_isolation_policy
+    ON integration_webhook_events
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

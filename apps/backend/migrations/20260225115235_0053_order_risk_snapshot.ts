@@ -109,6 +109,26 @@ export async function up(knex: Knex): Promise<void> {
       .defaultTo(knex.fn.now());
   });
 
+  // --- RLS: Enforce tenant isolation (direct) ---
+  // Snapshot table → high-risk read surface.
+  // MUST use direct shop_id enforcement.
+  await knex.raw(`
+    ALTER TABLE order_risk_snapshot ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_risk_snapshot FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_risk_snapshot_tenant_isolation_policy ON order_risk_snapshot;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_risk_snapshot_tenant_isolation_policy
+    ON order_risk_snapshot
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
   /**
    * PROJECTION CONSISTENCY ENFORCEMENT
    * -----------------------------------

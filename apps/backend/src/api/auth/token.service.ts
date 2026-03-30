@@ -48,8 +48,11 @@ export interface IssueAuthTokensParams {
   // 🔒 HARD INVARIANT
   userId: number;
 
-  // ── Optional, context-dependent ──
-  shopId?: number;
+  /**
+   * REQUIRED for all persisted tokens.
+   * DB enforces NOT NULL → contract must match persistence layer.
+   */
+  shopId: number;
   actorType?: 'shop_user' | 'system_service' | 'support_admin';
   authProvider?: 'password' | 'shopify' | 'sso' | 'service';
 
@@ -66,7 +69,11 @@ export interface IssueAuthTokensParams {
 // ─────────────────────────────────────────────────────────────
 export async function persistRefreshToken(record: {
   user_id: number;
-  shop_id?: number;
+  /**
+   * MUST always be present.
+   * Mirrors DB invariant: refresh_tokens.shop_id NOT NULL
+   */
+  shop_id: number;
   session_id: string;
   token_version?: number;
   token_hash: string;
@@ -115,6 +122,15 @@ export async function issueAuthTokens(
 
   if (!Number.isInteger(userId)) {
     throw new Error('AUTH_INVARIANT_VIOLATION: invalid userId');
+  }
+
+  /**
+   * 🔒 CRITICAL: Persistence invariant
+   * DB requires shop_id NOT NULL for ALL tokens.
+   * No token may be issued without tenant ownership.
+   */
+  if (!Number.isInteger(shopId)) {
+    throw new Error('AUTH_INVARIANT_VIOLATION: shopId required for token persistence');
   }
 
   if (!actorType) {

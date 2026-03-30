@@ -120,6 +120,31 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['lasyncro_order_id']);
   });
 
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE order_fulfillment_status ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_fulfillment_status FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_fulfillment_status_tenant_isolation_policy ON order_fulfillment_status;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_fulfillment_status_tenant_isolation_policy
+    ON order_fulfillment_status
+    USING (
+      lasyncro_order_id IN (
+        SELECT lasyncro_order_id
+        FROM orders
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  // NOTE:
+  // Enforced via orders → no direct shop_id
+
   // 3️⃣ Monotonic enforcement trigger
   await knex.raw(`
     CREATE OR REPLACE FUNCTION enforce_fulfillment_status_monotonic()
@@ -216,6 +241,31 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['lasyncro_order_id']);
   });
+
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE order_fulfillment_history ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_fulfillment_history FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_fulfillment_history_tenant_isolation_policy ON order_fulfillment_history;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_fulfillment_history_tenant_isolation_policy
+    ON order_fulfillment_history
+    USING (
+      lasyncro_order_id IN (
+        SELECT lasyncro_order_id
+        FROM orders
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  // NOTE:
+  // Enforced via orders → no direct shop_id
 }
 
 export async function down(knex: Knex): Promise<void> {

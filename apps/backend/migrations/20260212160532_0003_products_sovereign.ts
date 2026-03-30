@@ -31,6 +31,24 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['shop_id', 'sku']);
     table.index(['shop_id']);
   });
+
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE products FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS products_tenant_isolation_policy ON products;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY products_tenant_isolation_policy
+    ON products
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

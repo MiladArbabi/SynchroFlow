@@ -46,6 +46,31 @@ export async function up(knex: Knex): Promise<void> {
 
     table.unique(['shop_id', 'module_key', 'flag_key']);
   });
+
+  // --- RLS: Enforce tenant isolation (direct via shop_id) ---
+  // Entitlements control feature access → cross-tenant leakage = privilege escalation risk
+  await knex.raw(`
+    ALTER TABLE shop_module_entitlements ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE shop_module_entitlements FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS shop_module_entitlements_tenant_isolation_policy ON shop_module_entitlements;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY shop_module_entitlements_tenant_isolation_policy
+    ON shop_module_entitlements
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
+  /**
+   * NOTE:
+   * Direct enforcement via shop_id
+   * Prevents cross-tenant entitlement leakage
+   */
 }
 
 export async function down(knex: Knex): Promise<void> {

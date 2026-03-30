@@ -42,6 +42,8 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['domain_event_id'], 'domain_event_outbox_domain_event_unique');
   });
 
+
+
   /**
    * DOMAIN EVENT → OUTBOX ENFORCEMENT
    * ----------------------------------
@@ -75,6 +77,30 @@ export async function up(knex: Knex): Promise<void> {
     AFTER INSERT ON domain_events
     FOR EACH ROW
     EXECUTE FUNCTION auto_create_domain_event_outbox();
+  `);
+
+ // --- RLS: Enforce tenant isolation (via domain_events) ---
+  // No direct shop_id → must enforce via domain_events relation.
+  // CRITICAL: outbox is cross-boundary delivery surface.
+  await knex.raw(`
+    ALTER TABLE domain_event_outbox ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE domain_event_outbox FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS domain_event_outbox_tenant_isolation_policy ON domain_event_outbox;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY domain_event_outbox_tenant_isolation_policy
+    ON domain_event_outbox
+    USING (
+      domain_event_id IN (
+        SELECT id
+        FROM domain_events
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
   `);
 }
 

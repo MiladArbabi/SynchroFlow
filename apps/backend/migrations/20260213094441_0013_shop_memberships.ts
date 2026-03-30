@@ -27,6 +27,31 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['user_id']);
     table.index(['shop_id']);
   });
+
+  // --- RLS: Enforce tenant isolation (direct) ---
+// shop_id is NOT NULL → authoritative tenant anchor
+await knex.raw(`
+  ALTER TABLE shop_memberships ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE shop_memberships FORCE ROW LEVEL SECURITY;
+`);
+
+await knex.raw(`
+  DROP POLICY IF EXISTS shop_memberships_tenant_isolation_policy ON shop_memberships;
+`);
+
+await knex.raw(`
+  CREATE POLICY shop_memberships_tenant_isolation_policy
+  ON shop_memberships
+  USING (
+    shop_id = current_setting('app.current_tenant')::int
+  );
+`);
+
+/**
+ * NOTE:
+ * Direct enforcement via shop_id
+ * Memberships must never be visible across tenants
+ */
 }
 
 export async function down(knex: Knex): Promise<void> {

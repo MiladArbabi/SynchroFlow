@@ -43,6 +43,29 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['shop_id', 'sku']);
     table.index(['shop_id']);
   });
+
+  // --- RLS: Enforce tenant isolation ---
+  // NOTE:
+  // variants does NOT have shop_id → enforce via products relation
+  await knex.raw(`
+    ALTER TABLE variants ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE variants FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS variants_tenant_isolation_policy ON variants;
+  `);
+
+  // NOTE:
+  // variants has direct shop_id → do NOT use product join
+  // This avoids unnecessary subquery scans and ensures index usage
+  await knex.raw(`
+    CREATE POLICY variants_tenant_isolation_policy
+    ON variants
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

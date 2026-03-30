@@ -75,6 +75,31 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['lasyncro_product_id']);
     table.index(['sku']);
   });
+
+  // --- RLS: Enforce tenant isolation ---
+  await knex.raw(`
+    ALTER TABLE order_revenue_units ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_revenue_units FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_revenue_units_tenant_isolation_policy ON order_revenue_units;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY order_revenue_units_tenant_isolation_policy
+    ON order_revenue_units
+    USING (
+      lasyncro_order_id IN (
+        SELECT lasyncro_order_id
+        FROM orders
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
+  // NOTE:
+  // No direct shop_id → enforce via orders relation
 }
 
 export async function down(knex: Knex): Promise<void> {

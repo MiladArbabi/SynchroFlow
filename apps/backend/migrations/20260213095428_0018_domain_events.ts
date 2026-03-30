@@ -86,6 +86,31 @@ export async function up(knex: Knex): Promise<void> {
      */
   });
 
+  // --- RLS: Enforce tenant isolation (direct) ---
+  // shop_id is NOT NULL → authoritative tenant anchor
+  await knex.raw(`
+    ALTER TABLE domain_events ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE domain_events FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS domain_events_tenant_isolation_policy ON domain_events;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY domain_events_tenant_isolation_policy
+    ON domain_events
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
+  /**
+   * NOTE:
+   * Domain events are global log but MUST be tenant-scoped at read level
+   * Prevents cross-tenant replay or data leakage
+   */
+
   /**
    * CANONICAL ID INVARIANT (NO GID ALLOWED)
    * ----------------------------------------
