@@ -48,6 +48,22 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('evaluated_at')
       .notNullable()
       .defaultTo(knex.fn.now());
+
+    /**
+     * SYSTEM TIMESTAMPS (MANDATORY FOR SNAPSHOT CONSISTENCY)
+     * -----------------------------------------------------
+     * Required for:
+     * - reconciliation overwrite tracking
+     * - ON CONFLICT DO UPDATE compatibility
+     * - debugging + audit
+     */
+    table.timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.timestamp('updated_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
   });
 
   /**
@@ -134,6 +150,28 @@ export async function up(knex: Knex): Promise<void> {
     BEFORE INSERT OR UPDATE ON order_margin_snapshot
     FOR EACH ROW
     EXECUTE FUNCTION enforce_reconciliation_guard();
+  `);
+
+  /**
+   * AUTO-UPDATE TRIGGER
+   * -------------------
+   * Ensures updated_at reflects reconciliation overwrite.
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION set_order_margin_snapshot_updated_at()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER trg_set_order_margin_snapshot_updated_at
+    BEFORE UPDATE ON order_margin_snapshot
+    FOR EACH ROW
+    EXECUTE FUNCTION set_order_margin_snapshot_updated_at();
   `);
 
   await knex.schema.alterTable('order_margin_snapshot', (table) => {

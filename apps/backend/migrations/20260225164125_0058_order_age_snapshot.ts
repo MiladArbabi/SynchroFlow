@@ -67,6 +67,24 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('snapshot_generated_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
+
+    /**
+     * SYSTEM TIMESTAMPS (REQUIRED FOR ALL SNAPSHOTS)
+     * ---------------------------------------------
+     * Enables:
+     * - deterministic overwrite tracking
+     * - conflict resolution consistency
+     * - debugging + observability
+     *
+     * REQUIRED because reconciliation uses ON CONFLICT DO UPDATE.
+     */
+    table.timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.timestamp('updated_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
     
     /**
      * AGE INVARIANT (>= 0)
@@ -139,6 +157,29 @@ export async function up(knex: Knex): Promise<void> {
         WHERE o.shop_id = current_setting('app.current_tenant')::int
       )
     );
+  `);
+
+  /**
+   * AUTO-UPDATE TRIGGER
+   * -------------------
+   * Ensures updated_at reflects last reconciliation overwrite.
+   * REQUIRED for all mutable snapshots.
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION set_order_age_snapshot_updated_at()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER trg_set_order_age_snapshot_updated_at
+    BEFORE UPDATE ON order_age_snapshot
+    FOR EACH ROW
+    EXECUTE FUNCTION set_order_age_snapshot_updated_at();
   `);
 
   /**

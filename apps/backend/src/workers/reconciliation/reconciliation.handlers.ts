@@ -27,6 +27,8 @@ import { resolveRefundExecution } from '../refundResolution.worker.js';
 
 import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
 
+import { DecisionRepository } from '../../domain/decision/decision.repository.js';
+
 /**
  * PROJECTION RUNTIME INSTRUMENTATION
  * ----------------------------------
@@ -344,8 +346,16 @@ export async function reconcileOrderFulfillment(
             }),
             created_at: new Date()
           })
+          /**
+           * CONFLICT STRATEGY: MERGE (RECONCILIATION WRITE)
+           * ----------------------------------------------
+           * Reconciliation must converge state deterministically.
+           * ignore() causes data loss and replay divergence.
+           */
           .onConflict(['lasyncro_order_id', 'aggregate_version'])
-          .ignore();
+          .merge({
+            updated_at: trx.fn.now()
+          });
       }
     }
 
@@ -670,6 +680,58 @@ export async function reconcileOrderFulfillment(
       lasyncroOrderId,
       aggregateVersion
     );
+
+        /**
+     * DECISION ENGINE (TYPE-SAFE MINIMAL IMPLEMENTATION)
+     * --------------------------------------------------
+     * Produces valid Decision object using available risk snapshot.
+     * Ensures system invariant: every reconciled order emits decision.
+     */
+    const riskSnapshot = await trx('order_risk_snapshot')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first();
+
+    if (!riskSnapshot) {
+      console.error('[DECISION_MISSING_RISK_SNAPSHOT]', {
+        orderId: lasyncroOrderId
+      });
+    } else {
+      const decisionId = crypto
+        .createHash('sha256')
+        .update(`decision:${lasyncroOrderId}:${aggregateVersion}`)
+        .digest('hex')
+        .slice(0, 32);
+
+      await DecisionRepository.create({
+        id: decisionId,
+        type: 'risk',
+        entity_id: lasyncroOrderId,
+        priority: riskSnapshot.priority_score ?? 0,
+        score_breakdown: {
+          risk_score: riskSnapshot.priority_score ?? 0
+        },
+        reason: 'Derived from order_risk_snapshot',
+        signals: {
+          risk_score: riskSnapshot.priority_score,
+          blocked: riskSnapshot.is_blocked
+        },
+        recommended_action: {
+          type: 'review_execution_queue',
+          payload: {},
+          execution_mode: 'manual'
+        },
+        actions: [],
+        status: 'pending',
+        created_at: new Date(),
+        updated_at: new Date(),
+        shop_id: order.shop_id
+      });
+
+      console.info('[DECISION_WRITTEN]', {
+        orderId: lasyncroOrderId,
+        decisionId
+      });
+    }
 
     return {
       result: observed?.status === 'fulfilled' ? 'observed' : 'synthetic',

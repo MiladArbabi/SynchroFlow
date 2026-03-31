@@ -234,7 +234,10 @@ export async function writeOrderRevenueUnits(
       await trx('order_revenue_units')
         .insert(ru)
         .onConflict(['lasyncro_order_id', 'lasyncro_variant_id'])
-        .ignore()
+        .merge({
+          quantity: ru.quantity,
+          updated_at: trx.fn.now()
+        })
         .then(() => {
           logConflictIgnored({
             entity: 'order_revenue_units',

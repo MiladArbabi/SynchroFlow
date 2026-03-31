@@ -92,7 +92,16 @@ export async function syncShopifyOrders({
             db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
         )
         .ignore()
-        .returning<{ id: number }[]>('id');
+        .returning<{ id: number }[]>('id')
+        .then((res) => {
+          if (res.length === 0) {
+            console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+              entity: 'shopify_order_event',
+              reason: 'external_event_id dedup'
+            });
+          }
+          return res;
+        });
 
       if (inserted.length > 0) {
         createdCount++;
@@ -115,7 +124,17 @@ export async function syncShopifyOrders({
             created_at: trx.fn.now(),
           })
           .onConflict(['shop_id', 'module_id', 'event'])
-          .ignore();
+          .ignore()
+          .returning<{ id: number }[]>('id')
+          .then((res) => {
+            if (res.length === 0) {
+              console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+                entity: 'shopify_order_event',
+                reason: 'external_event_id dedup'
+              });
+            }
+            return res;
+          });
 
         console.info('[INGESTION_SIGNAL_EMITTED]', {
           shopId,
@@ -142,7 +161,17 @@ export async function syncShopifyOrders({
           .onConflict(
             db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
           )
-          .ignore();
+          .ignore()
+          .returning<{ id: number }[]>('id')
+          .then((res) => {
+            if (res.length === 0) {
+              console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+                entity: 'shopify_order_event',
+                reason: 'external_event_id dedup'
+              });
+            }
+            return res;
+          });
 
         console.info('[INGESTION_DOMAIN_EVENT_EMITTED]', {
           shopId,
@@ -208,7 +237,17 @@ export async function syncShopifyOrders({
           .onConflict(
             db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
           )
-          .ignore();
+          .ignore()
+          .returning<{ id: number }[]>('id')
+          .then((res) => {
+            if (res.length === 0) {
+              console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+                entity: 'shopify_order_event',
+                reason: 'external_event_id dedup'
+              });
+            }
+            return res;
+          });
 
         /* console.debug('[ORDER_SYNC_EMITTED_PAID]', {
           orderId: node.id,

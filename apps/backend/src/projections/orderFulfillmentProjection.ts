@@ -1,6 +1,7 @@
 import { Knex } from 'knex';
 import crypto from 'crypto';
 import { logConflictIgnored } from '../conflict-resolution/conflict.logger.js';
+import { ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
 
 /**
  * ORDER FULFILLMENT PROJECTION
@@ -32,14 +33,22 @@ export async function projectOrderFulfillment(
   eventAnchor: Date
 ) {
 
-  // OBSERVABILITY: log intent before conflict-ignore write
-  logConflictIgnored({
+  console.log('[CONFLICT_STRATEGY]', {
     entity: 'order_fulfillment_status',
-    conflictKey: 'lasyncro_order_id',
-    note: 'Insert with ignore() — potential silent drop'
+    strategy: ResolutionStrategies.MERGE
   });
 
   await trx('order_fulfillment_status')
+  /**
+   * CONFLICT STRATEGY: MERGE (DETERMINISTIC)
+   * ---------------------------------------
+   * This projection uses ON CONFLICT DO UPDATE.
+   *
+   * Guarantees:
+   * - no silent drops
+   * - idempotent replay
+   * - last-write-wins based on event order
+   */
     .insert({
       lasyncro_fulfillment_id: deterministicId(
         'order_fulfillment_status',
@@ -53,5 +62,22 @@ export async function projectOrderFulfillment(
       updated_at: eventAnchor
     })
     .onConflict('lasyncro_order_id')
-    .ignore();
+    /**
+     * CONFLICT RESOLUTION: DETERMINISTIC OVERWRITE
+     * -------------------------------------------
+     * ignore() is forbidden in projections because it:
+     * - silently drops events
+     * - breaks replay determinism
+     * - causes state divergence
+     *
+     * merge() ensures:
+     * - last-write-wins (event-ordered)
+     * - idempotent replay
+     * - full state convergence
+     */
+    .merge({
+      status: 'pending',
+      status_updated_at: eventAnchor,
+      updated_at: eventAnchor
+    });
 }

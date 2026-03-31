@@ -58,6 +58,22 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo(knex.fn.now());
 
+    /**
+     * SYSTEM TIMESTAMPS (REQUIRED FOR SNAPSHOT CONSISTENCY)
+     * ----------------------------------------------------
+     * Required for:
+     * - ON CONFLICT DO UPDATE compatibility
+     * - deterministic reconciliation overwrite tracking
+     * - observability and audit
+     */
+    table.timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.timestamp('updated_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
     table.primary(['shop_id', 'brief_date']);
   });
 
@@ -70,6 +86,28 @@ export async function up(knex: Knex): Promise<void> {
     CREATE POLICY daily_operational_brief_snapshot_tenant_isolation
     ON daily_operational_brief_snapshot
     USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
+
+  /**
+   * AUTO-UPDATE TRIGGER
+   * -------------------
+   * Ensures updated_at reflects reconciliation overwrite.
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION set_daily_operational_brief_updated_at()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER trg_set_daily_operational_brief_updated_at
+    BEFORE UPDATE ON daily_operational_brief_snapshot
+    FOR EACH ROW
+    EXECUTE FUNCTION set_daily_operational_brief_updated_at();
   `);
 
   await knex.schema.alterTable('daily_operational_brief_snapshot', (table) => {

@@ -250,8 +250,16 @@ export async function handleOrdersCreate({
         platform: 'shopify',
         external_order_id: externalOrderId,
       })
+      /**
+       * CONFLICT STRATEGY: MERGE (ORDER IDENTITY)
+       * ----------------------------------------
+       * Prevents silent drop on duplicate external order.
+       * Ensures deterministic replay and idempotent ingestion.
+       */
       .onConflict(['shop_id', 'platform', 'external_order_id'])
-      .ignore();
+      .merge({
+        updated_at: trx.fn.now()
+      });
 
     const lineEdges =
       payload.lineItems?.edges ??
@@ -338,8 +346,16 @@ export async function handleOrdersCreate({
           created_at: canonicalEventTime,
           updated_at: canonicalEventTime,
         })
+        /**
+         * CONFLICT STRATEGY: MERGE (LINE ITEM IDENTITY)
+         * --------------------------------------------
+         * Ensures deterministic projection of line items.
+         * Prevents silent drops during replay or duplicate ingestion.
+         */
         .onConflict(['platform', 'external_line_item_id'])
-        .ignore();
+        .merge({
+          updated_at: trx.fn.now()
+        });
     }
   }
 
@@ -409,8 +425,16 @@ export async function handleOrdersCreate({
         status_updated_at: new Date(domainEvent.event_time),
         fulfilled_at: null,
       })
+      /**
+       * CONFLICT STRATEGY: MERGE (CANONICAL ORDER)
+       * -----------------------------------------
+       * Ensures order row is always up-to-date.
+       * Prevents silent drops and guarantees deterministic replay.
+       */
       .onConflict('lasyncro_order_id')
-      .ignore();
+      .merge({
+        updated_at: trx.fn.now()
+      });
 
     /**
      * PROJECTION TRACE
@@ -473,8 +497,16 @@ export async function handleOrdersCreate({
       }),
       created_at: domainEvent.event_time
     })
+    /**
+     * CONFLICT STRATEGY: MERGE (EVENT VERSIONING)
+     * ------------------------------------------
+     * Prevents loss of versioned order events.
+     * Ensures idempotent replay and consistent event history.
+     */
     .onConflict(['lasyncro_order_id', 'aggregate_version'])
-    .ignore();
+    .merge({
+      updated_at: trx.fn.now()
+    });
 
   const countRow = await trx('orders')
     .where({ shop_id: domainEvent.shop_id })

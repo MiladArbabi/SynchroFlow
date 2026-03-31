@@ -6,7 +6,7 @@ import { OnboardingReadinessService } from '../onboarding/readiness.service.js';
 import { OnboardingReadinessSnapshot } from '@lasyncro/shared';
 
 import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
-import { logConflictResolved } from '../conflict-resolution/conflict.logger.js';
+import { logConflictIgnored, logConflictResolved } from '../conflict-resolution/conflict.logger.js';
 
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
@@ -273,12 +273,10 @@ export class UserStateService {
     .onConflict(['user_id', 'milestone'])
     .ignore()
     .then(() => {
-      logConflictResolved({
+      logConflictIgnored({
         entity: 'user_milestones',
         conflictKey: ['user_id', 'milestone'],
-        conflictType,
-        resolutionStrategy,
-        note: 'Duplicate milestone ignored (idempotent)'
+        note: 'Duplicate milestone ignored (idempotent insert)'
       });
     });
   }

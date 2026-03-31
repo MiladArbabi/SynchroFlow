@@ -36,6 +36,22 @@ export async function up(knex: Knex): Promise<void> {
       table.timestamp('snapshot_date', { useTz: true }).notNullable();
 
       /**
+       * SYSTEM TIMESTAMPS (MANDATORY FOR SNAPSHOT CONSISTENCY)
+       * -----------------------------------------------------
+       * Required for:
+       * - reconciliation overwrite tracking
+       * - ON CONFLICT DO UPDATE compatibility
+       * - debugging + audit
+       */
+      table.timestamp('created_at', { useTz: true })
+        .notNullable()
+        .defaultTo(knex.fn.now());
+
+      table.timestamp('updated_at', { useTz: true })
+        .notNullable()
+        .defaultTo(knex.fn.now());
+
+      /**
        * INVARIANT:
        * snapshot_date MUST preserve full timestamp.
        * DATE causes event collapse → breaks deterministic replay.
@@ -282,7 +298,6 @@ export async function up(knex: Knex): Promise<void> {
     USING (shop_id = current_setting('app.current_tenant')::int);
   `);
 
-
   /**
    * FINANCIAL INVARIANTS (HARD GUARANTEE)
    * -------------------------------------
@@ -319,6 +334,28 @@ export async function up(knex: Knex): Promise<void> {
       CHECK (ready_to_ship_revenue >= 0),
     ADD CONSTRAINT oocs_aggregate_version_positive
       CHECK (aggregate_version > 0)
+  `);
+
+  /**
+   * AUTO-UPDATE TRIGGER
+   * -------------------
+   * Ensures updated_at reflects reconciliation overwrite.
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION set_orders_operational_control_snapshot_updated_at()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER trg_set_orders_operational_control_snapshot_updated_at
+    BEFORE UPDATE ON orders_operational_control_snapshot
+    FOR EACH ROW
+    EXECUTE FUNCTION set_orders_operational_control_snapshot_updated_at();
   `);
 
   await knex.schema.alterTable(

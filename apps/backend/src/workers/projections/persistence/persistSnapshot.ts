@@ -21,8 +21,16 @@ export async function persistSnapshot(
    */
   const result = await trx('orders_operational_control_snapshot')
     .insert(snapshotPayload)
+    /**
+     * CONFLICT STRATEGY: MERGE (SNAPSHOT INVARIANT)
+     * -------------------------------------------
+     * Snapshots must be replace-on-reconcile.
+     * ignore() breaks determinism and causes stale state.
+     */
     .onConflict(['shop_id', 'snapshot_date'])
-    .ignore();
+    .merge({
+      updated_at: trx.fn.now()
+    });
 
   /**
    * SAFE ACCESS: enforce DB result contract

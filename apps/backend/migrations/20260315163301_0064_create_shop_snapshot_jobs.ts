@@ -29,6 +29,21 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .comment('Time snapshot recompute was requested');
 
+    /**
+     * SYSTEM TIMESTAMPS (QUEUE OBSERVABILITY)
+     * --------------------------------------
+     * Required for:
+     * - tracking job lifecycle
+     * - detecting stuck or stale jobs
+     * - debugging orchestration issues
+     */
+    table.timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.timestamp('updated_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
   });
 
    // --- RLS: enforce tenant isolation (queue is per-shop) ---
@@ -40,6 +55,28 @@ export async function up(knex: Knex): Promise<void> {
     CREATE POLICY shop_snapshot_jobs_tenant_isolation
     ON shop_snapshot_jobs
     USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
+
+  /**
+   * AUTO-UPDATE TRIGGER
+   * -------------------
+   * Ensures updated_at reflects rescheduling or overwrite.
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION set_shop_snapshot_jobs_updated_at()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER trg_set_shop_snapshot_jobs_updated_at
+    BEFORE UPDATE ON shop_snapshot_jobs
+    FOR EACH ROW
+    EXECUTE FUNCTION set_shop_snapshot_jobs_updated_at();
   `);
 
 }

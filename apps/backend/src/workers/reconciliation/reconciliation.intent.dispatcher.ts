@@ -123,11 +123,31 @@ export async function startReconciliationIntentDispatcher() {
             observed: null,
             created_at: new Date()
           })
+          /**
+           * CONFLICT STRATEGY: IGNORE (INTENT DEDUP)
+           * ----------------------------------------
+           * This is NOT a projection.
+           *
+           * Purpose:
+           * - ensure only one intent per (order, version)
+           * - prevent duplicate reconciliation work
+           *
+           * Safe because:
+           * - guarded by whereNotExists
+           * - queue semantics tolerate duplicates prevention
+           */
           .onConflict(['lasyncro_order_id', 'aggregate_version'])
           .ignore()
           .returning('reconciliation_intent_id');
 
-        if (result.length > 0) insertedCount++;
+        if (result.length > 0) {
+          insertedCount++;
+        } else {
+          console.debug('[INTENT_DUPLICATE_SKIPPED]', {
+            lasyncroOrderId: row.lasyncro_order_id,
+            aggregateVersion: row.aggregate_version
+          });
+        }
       }
 
       /* if (insertedCount > 0) {
@@ -148,8 +168,7 @@ export async function startReconciliationIntentDispatcher() {
           to: 'steady-state'
         }); */
         POLL_INTERVAL_MS = 60000;
-      }
-        
+      };
       
       /**
        * LOCK INTENT ROWS

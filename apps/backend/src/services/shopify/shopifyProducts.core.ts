@@ -29,7 +29,16 @@ export async function syncProducts(
         status: node.status?.toLowerCase() || 'active',
       })
       .onConflict('lasyncro_product_id')
-      .ignore();
+      .ignore()
+      .then((res) => {
+        if (!res || res.length === 0) {
+          console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+            entity: 'product',
+            conflictKey: 'lasyncro_product_id'
+          });
+        }
+        return res;
+      });
 
     const variantEdges = node.variants?.edges || [];
 
@@ -72,7 +81,16 @@ export async function syncProducts(
           status: 'active',
         })
         .onConflict('lasyncro_variant_id')
-        .ignore();
+        .ignore()
+        .then((res) => {
+          if (!res || res.length === 0) {
+            console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+              entity: 'variant',
+              conflictKey: 'lasyncro_variant_id'
+            });
+          }
+          return res;
+        });
 
       // 3. Insert external identity mapping (variant-level)
       await trx('external_product_identity_map')
@@ -92,7 +110,16 @@ export async function syncProducts(
           'external_product_id',
           'external_variant_id',
         ])
-        .ignore();
+        .ignore()
+        .then((res) => {
+          if (!res || res.length === 0) {
+            console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+              entity: 'external_product_identity_map',
+              conflictKey: ['shop_id', 'platform', 'external_product_id', 'external_variant_id']
+            });
+          }
+          return res;
+        });
     }
   }
 

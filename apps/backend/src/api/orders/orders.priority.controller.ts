@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
+import { DecisionRepository } from '../../domain/decision/decision.repository.js';
 
 /**
  * GET /api/v1/orders/decision/priority-stack
@@ -38,45 +38,33 @@ export const httpGetPriorityStack = async (
       shopId,
     });
 
-    const rows = await db('order_risk_snapshot as ors')
     /**
-     * PRIORITY STACK DATA
-     * -------------------
-     * Only expose fields required by the FT2 priority stack UI.
+     * DECISION-DRIVEN PRIORITY (NEW SYSTEM)
+     * -------------------------------------
+     * Replaces projection-based priority.
      *
-     * Ranking is already encoded in order_health_score
-     * by the reconciliation projection.
+     * Source of truth: decisions table
      */
-    .select(
-      'ors.lasyncro_order_id as order_id',
-      'ors.order_health_score',
-      'ors.evaluated_at'
-    )
-    .where('ors.shop_id', shopId)
-
-    /**
-     * PRIORITY ORDERING
-     * -----------------
-     * Ordering must match the canonical ranking defined
-     * inside the reconciliation projection.
-     *
-     * API layer must never introduce independent ranking logic.
-     *
-     * Current implementation relies solely on the
-     * projected order_health_score which already encodes
-     * the reconciliation priority model.
-     */
-
-    .orderBy([
-      { column: 'ors.order_health_score', order: 'desc' },
-      { column: 'ors.lasyncro_order_id', order: 'asc' },
-    ]);
+    const rows = await DecisionRepository.getByShop(shopId);
 
     console.debug('[Decision][PriorityStack] Rows', {
       count: rows.length,
     });
 
+    /**
+     * SAFETY CHECK
+     * ------------
+     * If no decisions exist, system is not yet producing decisions.
+     * This prevents silent fallback to broken behavior.
+     */
+    if (!rows || rows.length === 0) {
+      return res.status(503).json({
+        error: 'Decision engine not initialized: no decisions available',
+      });
+    }
+
     res.status(200).json(rows);
+    
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown error';

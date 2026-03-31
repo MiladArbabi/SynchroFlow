@@ -10,7 +10,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('migration_checksums', (table) => {
     table.string('name').primary();
     table.string('checksum').notNullable();
-    table.timestamp('applied_at').defaultTo(knex.fn.now());
+    table.timestamp('executed_at').notNullable().defaultTo(knex.fn.now());
   });
 }
 
