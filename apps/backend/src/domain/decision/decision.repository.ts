@@ -19,21 +19,25 @@ export class DecisionRepository {
    * Insert new decision
    */
   static async create(decision: Decision & { shop_id: number }): Promise<void> {
-    await db('decisions').insert({
-      id: decision.id,
-      type: decision.type,
-      entity_id: decision.entity_id,
-      priority: decision.priority,
-      score_breakdown: decision.score_breakdown,
-      reason: decision.reason,
-      signals: decision.signals,
-      recommended_action: decision.recommended_action,
-      actions: decision.actions,
-      status: decision.status,
-      created_at: decision.created_at,
-      updated_at: decision.updated_at,
-      shop_id: decision.shop_id,
-    });
+    
+    console.debug('[DECISION_REPO_PAYLOAD]', decision);
+    
+    await db('decisions')
+      .insert({
+        id: decision.id,
+        type: decision.type,
+        entity_id: decision.entity_id,
+        priority: decision.priority,
+        recommended_action: db.raw('?::jsonb', [JSON.stringify(decision.recommended_action)]),
+        actions: db.raw('?::jsonb', [JSON.stringify(decision.actions)]),
+        score_breakdown: db.raw('?::jsonb', [JSON.stringify(decision.score_breakdown)]),
+        signals: db.raw('?::jsonb', [JSON.stringify(decision.signals)]),
+        reason: decision.reason,
+        status: decision.status,
+        created_at: decision.created_at,
+        updated_at: decision.updated_at,
+        shop_id: decision.shop_id,
+      });
   }
 
   /**

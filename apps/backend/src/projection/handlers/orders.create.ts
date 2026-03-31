@@ -243,6 +243,12 @@ export async function handleOrdersCreate({
 
     console.log('[ORDER_INSERTED]', { lasyncroOrderId });
 
+    const tenantCheck = await trx.raw(
+      `SELECT current_setting('app.current_tenant', true) as tenant`
+    );
+
+    console.debug('[RLS_TENANT_CHECK]', tenantCheck.rows[0]);
+
     await trx('external_order_identity_map')
       .insert({
         lasyncro_order_id: lasyncroOrderId,
@@ -261,16 +267,43 @@ export async function handleOrdersCreate({
         updated_at: trx.fn.now()
       });
 
-    const lineEdges =
-      payload.lineItems?.edges ??
-      payload.line_items ??
-      [];
+    /**
+     * LINE ITEM NORMALIZATION (CRITICAL FIX)
+     * --------------------------------------
+     * Supports multiple ingestion shapes:
+     * - Shopify GraphQL: { lineItems: { edges: [...] } }
+     * - Canonical normalized: { lineItems: [...] }
+     * - Legacy REST: { line_items: [...] }
+     *
+     * Without this:
+     * - line items silently drop
+     * - revenue units never created
+     * - entire system operates on empty state
+     */
+    const lineEdges = Array.isArray(payload.lineItems)
+      ? payload.lineItems
+      : payload.lineItems?.edges
+      ?? payload.line_items
+      ?? [];
+
+    console.debug('[ORDER_LINE_ITEMS_SHAPE]', {
+      raw: payload.lineItems,
+      keys: payload.lineItems ? Object.keys(payload.lineItems) : null,
+    });
 
       for (const edge of lineEdges) {
 
       const li = edge.node ?? edge;
 
-      let variantGid = li.variant?.id ?? li.variant_id ?? null;
+      console.debug('[LINE_ITEM_PROCESSING]', {
+        variantId: li.variant?.id ?? li.variant_id,
+      });
+
+      let variantGid =
+        li.variant?.id ??
+        li.variantId ??
+        li.variant_id ??
+        null;
       if (!variantGid) continue;
 
       variantGid = String(variantGid);
@@ -287,13 +320,29 @@ export async function handleOrdersCreate({
         })
         .first();
 
+      console.debug('[VARIANT_IDENTITY_LOOKUP]', {
+        variantId,
+        found: !!variantIdentity
+      });
+
       if (!variantIdentity) {
-        console.warn('[ORDER_LINE_ITEM_VARIANT_IDENTITY_MISSING]', {
-          shopId: domainEvent.shop_id,
-          externalOrderId,
-          variantId,
-        });
-        continue;
+        /**
+         * HARD INVARIANT VIOLATION
+         * ------------------------
+         * Orders referencing unknown variants indicates:
+         * - product sync lag
+         * - broken ingestion ordering
+         *
+         * Silent skip causes:
+         * - empty order_line_items
+         * - broken revenue units
+         * - invalid constraints + decisions
+         *
+         * MUST fail fast to preserve system integrity.
+         */
+        throw new Error(
+          `[ORDER_LINE_ITEM_VARIANT_IDENTITY_MISSING] shopId=${domainEvent.shop_id} order=${externalOrderId} variant=${variantId}`
+        );
       }
 
       const variantRow = await trx('variants')
@@ -301,6 +350,11 @@ export async function handleOrdersCreate({
           lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
         })
         .first();
+
+      console.debug('[VARIANT_ROW_LOOKUP]', {
+        lasyncro_variant_id: variantIdentity?.lasyncro_variant_id,
+        found: !!variantRow
+      });
 
       if (!variantRow) {
         console.warn('[ORDER_LINE_ITEM_VARIANT_ROW_MISSING]', {
@@ -319,6 +373,11 @@ export async function handleOrdersCreate({
           : li.price != null
             ? Number(li.price)
             : 0;
+
+      console.debug('[ORDER_LINE_ITEM_INSERT_ATTEMPT]', {
+        variantId,
+        lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
+      });
 
       await trx('order_line_items')
         .insert({
@@ -352,9 +411,13 @@ export async function handleOrdersCreate({
          * Ensures deterministic projection of line items.
          * Prevents silent drops during replay or duplicate ingestion.
          */
-        .onConflict(['platform', 'external_line_item_id'])
+        .onConflict('lasyncro_line_item_id')
         .merge({
           updated_at: trx.fn.now()
+        });
+
+        console.debug('[ORDER_LINE_ITEM_INSERT_SUCCESS]', {
+          variantId,
         });
     }
   }

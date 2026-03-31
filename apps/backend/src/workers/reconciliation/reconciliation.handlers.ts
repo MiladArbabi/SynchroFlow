@@ -701,26 +701,52 @@ export async function reconcileOrderFulfillment(
         .update(`decision:${lasyncroOrderId}:${aggregateVersion}`)
         .digest('hex')
         .slice(0, 32);
+      
+      console.debug('[DECISION_PAYLOAD]', JSON.stringify({
+        recommended_action: {
+          type: 'review_execution_queue',
+          payload: {},
+          execution_mode: 'manual'
+        },
+        actions: [
+          {
+            type: 'review_execution_queue',
+            payload: {},
+            execution_mode: 'manual'
+          }
+        ]
+      }, null, 2));
 
       await DecisionRepository.create({
         id: decisionId,
         type: 'risk',
         entity_id: lasyncroOrderId,
-        priority: riskSnapshot.priority_score ?? 0,
+        priority: 100 - riskSnapshot.order_health_score,
         score_breakdown: {
-          risk_score: riskSnapshot.priority_score ?? 0
+          health: riskSnapshot.order_health_score,
+          aging: riskSnapshot.aging_risk_component,
+          sla: riskSnapshot.sla_risk_component,
+          inventory: riskSnapshot.inventory_risk_component,
+          customer: riskSnapshot.customer_risk_component,
+          operational: riskSnapshot.operational_risk_component
         },
         reason: 'Derived from order_risk_snapshot',
         signals: {
-          risk_score: riskSnapshot.priority_score,
-          blocked: riskSnapshot.is_blocked
+          risk_score: riskSnapshot.priority_score ?? null,
+          blocked: riskSnapshot.is_blocked ?? null
         },
         recommended_action: {
           type: 'review_execution_queue',
           payload: {},
           execution_mode: 'manual'
         },
-        actions: [],
+        actions: [
+          {
+            type: 'review_execution_queue',
+            payload: {},
+            execution_mode: 'manual'
+          }
+        ],
         status: 'pending',
         created_at: new Date(),
         updated_at: new Date(),

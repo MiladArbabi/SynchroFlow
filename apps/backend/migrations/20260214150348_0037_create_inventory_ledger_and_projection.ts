@@ -117,6 +117,16 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('occurred_at', { useTz: true }).notNullable();
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
 
+    /**
+     * MUTATION TRACKING (REQUIRED)
+     * ----------------------------
+     * Required for ON CONFLICT DO UPDATE in reconciliation writes.
+     */
+    table
+      .timestamp('updated_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
     table.index('lasyncro_variant_id');
     table.index('occurred_at');
     table.index(['lasyncro_variant_id', 'occurred_at']);
@@ -325,6 +335,16 @@ export async function up(knex: Knex): Promise<void> {
 
     table
       .timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    /**
+     * MUTATION TRACKING (REQUIRED)
+     * ----------------------------
+     * Required for ON CONFLICT DO UPDATE in reconciliation writes.
+     */
+    table
+      .timestamp('updated_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
 

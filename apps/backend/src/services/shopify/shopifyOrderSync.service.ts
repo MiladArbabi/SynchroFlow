@@ -32,6 +32,12 @@ export async function syncShopifyOrders({
 
   for (const { node } of orderEdges) {
 
+    console.debug('[SHOPIFY_ORDER_RAW]', {
+      orderId: node.id,
+      lineItemsCount: node.lineItems?.edges?.length ?? null,
+      hasLineItems: !!node.lineItems
+    });
+
       /**
        * ORDER ID NORMALIZATION
        * -----------------------

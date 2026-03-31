@@ -306,17 +306,24 @@ export function LifecycleProvider({
 
       let cancelled = false;
 
-      const fastLoop = async () => {
+      /**
+       * 🔒 CONTROLLED FAST SYNC (SAFE)
+       * --------------------------------
+       * Replaces recursive loop with bounded interval.
+       *
+       * Guarantees:
+       * - No request storm
+       * - Deterministic cleanup
+       * - Observable behavior
+       */
+      const FAST_SYNC_INTERVAL_MS = 500; // short-lived aggressive polling
+
+      const fastInterval = setInterval(async () => {
         if (cancelled) return;
 
         try {
           const res = await axiosInstance.get('/api/v1/lifecycle');
           const backendPhase = res?.data?.phase;
-
-          /* console.info('[LIFECYCLE_FAST_SYNC_TICK]', {
-            backendPhase,
-            ts: performance.now(),
-          }); */
 
           if (backendPhase !== 'FT_MINUS_ONE') {
             dispatch({
@@ -326,27 +333,22 @@ export function LifecycleProvider({
 
             setIsResolved(true);
 
-            console.info('[LIFECYCLE_RESOLVE_ON_FAST_SYNC]', {
+            console.info('[LIFECYCLE_FAST_SYNC_RESOLVED]', {
               backendPhase,
               ts: performance.now(),
             });
 
-            return; // stop loop immediately
+            clearInterval(fastInterval); // ✅ stop immediately on success
           }
-
-          // 🔥 immediate retry (no interval delay)
-          fastLoop();
         } catch (err) {
           console.error('[LIFECYCLE_FAST_SYNC_FAILED]', err);
-          fastLoop(); // retry on failure
         }
-      };
-
-      fastLoop();
+      }, FAST_SYNC_INTERVAL_MS);
 
       // cleanup hook
       return () => {
         cancelled = true;
+        clearInterval(fastInterval); // 🔒 prevent orphan interval
       };
     }
 

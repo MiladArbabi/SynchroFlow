@@ -57,6 +57,11 @@ for (const event of nextEvents) {
     await db.transaction(async (trx) => {
 
         /**
+         * TENANT INSERTION (CRITICAL)
+         */
+        await trx.raw(`SET LOCAL app.current_tenant = '${event.shop_id}'`);
+
+        /**
          * LOCK CURSOR ROW (CRITICAL — INSIDE PER-EVENT TX)
          */
         const lockedCursor = await trx('projection_cursors')
