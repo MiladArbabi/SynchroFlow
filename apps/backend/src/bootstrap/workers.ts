@@ -89,6 +89,36 @@ export async function startWorkers(): Promise<void> {
 
           console.log('[bootstrap/workers] Reconciliation consumer started');
         }
+
+        /**
+         * EXECUTION WORKER
+         * ----------------
+         * Consumes execution.jobs.v1 queue and executes decisions.
+         *
+         * Guarantees:
+         * - decision → action pipeline
+         * - lifecycle tracking
+         * - durable execution via queue
+         *
+         * Without this worker:
+         * - execution queue accumulates
+         * - decisions remain unexecuted
+         */
+        try {
+          const execution = await import('../workers/execution.worker.js');
+
+          if (typeof execution.startExecutionWorker === 'function') {
+            execution.startExecutionWorker();
+
+            console.log('[bootstrap/workers] Execution worker started');
+          }
+        } catch (err) {
+          console.warn(
+            '[bootstrap/workers] Execution worker not available:',
+            err && (err as Error).message ? (err as Error).message : err
+          );
+        }
+
       } catch (err) {
         console.warn(
           '[bootstrap/workers] Reconciliation consumer not available:',

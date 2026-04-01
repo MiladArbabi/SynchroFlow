@@ -123,3 +123,27 @@ export interface Decision {
   created_at: Date;
   updated_at: Date;
 }
+
+/**
+ * ExecutionJob — canonical contract for dispatching decision execution.
+ *
+ * WHY:
+ * - Enforces deterministic execution payload
+ * - Prevents implicit coupling between decision + execution layers
+ * - Required for queue transport + idempotency guarantees
+ *
+ * INVARIANTS:
+ * - decision_id is the idempotency key
+ * - aggregate_version binds execution to deterministic state
+ * - action_type must map to execution registry (no dynamic resolution)
+ */
+export interface ExecutionJob {
+  decision_id: string;
+  entity_id: string;
+  aggregate_version: number;
+
+  action_type: string;
+  payload: Record<string, unknown>;
+
+  execution_mode: 'manual' | 'automated';
+}

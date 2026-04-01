@@ -28,6 +28,8 @@ import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
 
 import { DecisionRepository } from '../../domain/decision/decision.repository.js';
+import { executeJob } from '../execution.worker.js';
+import { enqueueExecutionJob } from '../../queues/execution.queue.js';
 import { generateDecisions } from '../../domain/decision/decision.engine.js';
 
 /**
@@ -102,7 +104,9 @@ export async function reconcileOrderFulfillment(
   affectedVariantIds: string[];
 }> {
 
-  return db.transaction(async (trx) => {
+  const executionBuffer: any[] = [];
+
+  const txResult = await db.transaction(async (trx) => {
 
     /**
      * RECONCILIATION SNAPSHOT WRITE FLAG
@@ -182,10 +186,18 @@ export async function reconcileOrderFulfillment(
        * - observability
        * - queue diagnostics
        * - decision traceability
+       * 
+       * TYPE ENFORCEMENT — RECONCILIATION RESULT
+       * ----------------------------------------
+       * Prevents TypeScript from inferring:
+       * - result as string
+       * - affectedVariantIds as never[]
+       *
+       * REQUIRED for consistent return contract across all branches
        */
       return {
-        result: 'blocked',
-        affectedVariantIds: []
+        result: 'blocked' as ReconciliationResult,
+        affectedVariantIds: [] as string[]
       };
     }
 
@@ -618,8 +630,8 @@ export async function reconcileOrderFulfillment(
     ) {
 
       return {
-        result: 'synthetic',
-        affectedVariantIds: []
+        result: 'synthetic' as ReconciliationResult,
+       affectedVariantIds: [] as string[]
       };
     }
 
@@ -656,13 +668,13 @@ export async function reconcileOrderFulfillment(
         throw new Error(
           `[RECONCILIATION_FAILED] No decisions generated for order=${lasyncroOrderId} version=${aggregateVersion}`
         );
-      }
+      };
 
       /**
        * PERSISTENCE
        */
       for (const decision of decisions) {
-        await DecisionRepository.create({
+        const persisted = await DecisionRepository.create({
           ...decision,
 
           /**
@@ -679,6 +691,8 @@ export async function reconcileOrderFulfillment(
 
           shop_id: order.shop_id
         });
+
+        executionBuffer.push(persisted);
       }
     }
 
@@ -706,10 +720,15 @@ export async function reconcileOrderFulfillment(
        * ---------------------
        * Reconciliation halted due to active constraints.
        * Returns neutral result to preserve contract.
+       * 
+       * TYPE ENFORCEMENT — CONSTRAINT BLOCK RETURN
+       * ------------------------------------------
+       * Ensures consistent return type with ReconciliationResult contract.
+       * Prevents union type pollution (string | ReconciliationResult).
        */
       return {
-        result: 'synthetic', // indicates no real execution occurred
-        affectedVariantIds: []
+        result: 'synthetic' as ReconciliationResult,
+        affectedVariantIds: [] as string[]
       };
     };
 
@@ -825,8 +844,33 @@ export async function reconcileOrderFulfillment(
     );
 
     return {
-      result: observed?.status === 'fulfilled' ? 'observed' : 'synthetic',
-      affectedVariantIds,
+      result: (observed?.status === 'fulfilled'
+        ? 'observed'
+        : 'synthetic') as ReconciliationResult,
+      affectedVariantIds: affectedVariantIds as string[]
     };
   });
+
+  /**
+   * QUEUE-BASED EXECUTION DISPATCH
+   * ------------------------------
+   * Replaces inline execution with durable queue.
+   *
+   * Guarantees:
+   * - retry capability (RabbitMQ)
+   * - no execution inside reconciliation
+   * - backpressure visibility
+   */
+  for (const d of executionBuffer) {
+    await enqueueExecutionJob({
+      decision_id: d.id,
+      entity_id: d.entity_id,
+      aggregate_version: d.aggregate_version,
+      action_type: d.recommended_action.type,
+      payload: d.recommended_action.payload,
+      execution_mode: d.recommended_action.execution_mode
+    });
+  }
+
+  return txResult;
 }

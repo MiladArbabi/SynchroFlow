@@ -15,6 +15,82 @@ import { Decision } from './Decision.js';
  */
 
 export class DecisionRepository {
+
+  /**
+   * DECISION LIFECYCLE MANAGEMENT
+   * -----------------------------
+   * Explicit lifecycle transitions for execution tracking.
+   *
+   * WHY:
+   * - Enables observability into execution state
+   * - Prevents silent execution failures
+   * - Required for retry + audit
+   */
+  async markStarted(trx: any, decisionId: string): Promise<void> {
+    await trx('decisions')
+      .where({ id: decisionId })
+      .update({
+        status: 'in_progress',
+        lifecycle: trx.raw(`
+          jsonb_set(
+            coalesce(lifecycle, '{}'::jsonb),
+            '{started_at}',
+            to_jsonb(now())
+          )
+        `),
+        updated_at: trx.fn.now()
+      });
+
+    console.info('[DECISION_STARTED]', { decision_id: decisionId });
+  }
+
+  async markSuccess(trx: any, decisionId: string): Promise<void> {
+    await trx('decisions')
+      .where({ id: decisionId })
+      .update({
+        status: 'resolved',
+        lifecycle: trx.raw(`
+          jsonb_set(
+            jsonb_set(
+              coalesce(lifecycle, '{}'::jsonb),
+              '{resolved_at}',
+              to_jsonb(now())
+            ),
+            '{outcome}',
+            '"success"'::jsonb
+          )
+        `),
+        updated_at: trx.fn.now()
+      });
+
+    console.info('[DECISION_SUCCESS]', { decision_id: decisionId });
+  }
+
+  async markFailure(trx: any, decisionId: string, error: string): Promise<void> {
+    await trx('decisions')
+      .where({ id: decisionId })
+      .update({
+        status: 'pending',
+        lifecycle: trx.raw(`
+          jsonb_set(
+            jsonb_set(
+              coalesce(lifecycle, '{}'::jsonb),
+              '{resolved_at}',
+              to_jsonb(now())
+            ),
+            '{outcome}',
+            '"failure"'::jsonb
+          )
+        `),
+        updated_at: trx.fn.now()
+      });
+
+    console.error('[DECISION_FAILURE]', {
+      decision_id: decisionId,
+      error
+    });
+  }
+
   /**
    * Insert new decision
    */
@@ -139,6 +215,33 @@ export class DecisionRepository {
      * - queue dispatch
      * - workflow engine trigger
      */
+
+    /**
+     * EXECUTION DISPATCH (PHASE 1 - INLINE SIGNAL)
+     *
+     * WHY:
+     * - Ensures every persisted decision produces an execution signal
+     * - Temporary inline dispatch until queue-based dispatcher is introduced
+     *
+     * GUARANTEES:
+     * - Runs AFTER successful persistence
+     * - No execution performed here (signal only)
+     * - Safe for replay (idempotency handled downstream via decision_id)
+     *
+     * TODO:
+     * - Replace with async queue publish (Execution Dispatcher)
+     */
+    console.info('[DECISION_EXECUTION_SIGNAL]', {
+      decision_id: decision.id,
+      entity_id: decision.entity_id,
+      aggregate_version: decision.aggregate_version,
+      // NOTE: DecisionAction uses `type` (canonical action identifier)
+      // mapped here to `action_type` for execution contract consistency
+      action_type: decision.recommended_action?.type,
+      execution_mode: decision.recommended_action?.execution_mode
+    });
+
+
     if (decision.recommended_action.execution_mode === 'automated') {
       console.info('[DECISION_AUTOMATION_CANDIDATE]', {
         decisionId: decision.id,
@@ -223,3 +326,4 @@ export class DecisionRepository {
     }
   }
 }
+
