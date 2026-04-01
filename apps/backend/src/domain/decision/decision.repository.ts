@@ -264,6 +264,15 @@ export class DecisionRepository {
         id: decision.id,
         type: decision.type,
         entity_id: decision.entity_id,
+        /**
+         * AGGREGATE VERSION (CRITICAL)
+         * ----------------------------
+         * Required for:
+         * - deterministic replay
+         * - execution correlation
+         * - DB constraint integrity
+         */
+        aggregate_version: decision.aggregate_version,
         priority: decision.priority,
         recommended_action: db.raw('?::jsonb', [JSON.stringify(decision.recommended_action)]),
         actions: db.raw('?::jsonb', [JSON.stringify(decision.actions)]),

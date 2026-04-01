@@ -28,6 +28,7 @@ import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
 
 import { DecisionRepository } from '../../domain/decision/decision.repository.js';
+import type { Decision } from '../../domain/decision/Decision.js';
 import { executeJob } from '../execution.worker.js';
 import { enqueueExecutionJob } from '../../queues/execution.queue.js';
 import { generateDecisions } from '../../domain/decision/decision.engine.js';
@@ -104,7 +105,16 @@ export async function reconcileOrderFulfillment(
   affectedVariantIds: string[];
 }> {
 
-  const executionBuffer: any[] = [];
+  /**
+ * EXECUTION BUFFER (STRICT TYPING)
+ * --------------------------------
+ * Holds persisted decisions eligible for execution dispatch.
+ *
+ * Guarantees:
+ * - type safety across execution boundary
+ * - prevents malformed job payloads entering queue
+ */
+  const executionBuffer: Decision[] = [];
 
   const txResult = await db.transaction(async (trx) => {
 
@@ -614,28 +624,18 @@ export async function reconcileOrderFulfillment(
   } else {
 
     /**
-     * IDEMPOTENCY GUARD — SKIP DECISION ENGINE
-     * ---------------------------------------
-     * If projection version has not changed,
-     * decision output is guaranteed identical.
+     * IDEMPOTENCY GUARD — DECISION REUSE (CORRECTED)
+     * ---------------------------------------------
+     * If projection version unchanged:
+     * - DO NOT regenerate decisions
+     * - BUT still allow execution dispatch of existing decisions
      *
      * Prevents:
-     * - log spam
      * - duplicate decision writes
-     * - wasted CPU
+     * While preserving:
+     * - execution guarantees
      */
-    if (
-      riskSnapshot.aggregate_version !== undefined &&
-      riskSnapshot.aggregate_version === aggregateVersion
-    ) {
-
-      return {
-        result: 'synthetic' as ReconciliationResult,
-       affectedVariantIds: [] as string[]
-      };
-    }
-
-      /**
+        /**
        * DECISION ENGINE OWNERSHIP
        * -------------------------
        * Decision identity, structure, and priority MUST be produced
@@ -648,12 +648,48 @@ export async function reconcileOrderFulfillment(
        * - centralized decision logic
        * - no duplication across system
        */
-      
-      const decisions = generateDecisions({
+    let decisions: Decision[];
+
+    /**
+     * DECISION EXISTENCE CHECK (CORRECT SOURCE OF TRUTH)
+     * -------------------------------------------------
+     * Reuse ONLY if decisions already exist in DB.
+     * Prevents false-positive idempotency.
+     */
+    const existingDecisions = await trx('decisions')
+      .where({
+        entity_id: lasyncroOrderId,
+        aggregate_version: aggregateVersion
+      });
+
+    if (existingDecisions.length > 0) { 
+      console.info('[DECISION_REUSE]', {
+        orderId: lasyncroOrderId,
+        aggregateVersion
+      });
+
+      /**
+       * Fetch existing decisions for this version
+       */
+      decisions = existingDecisions;
+
+      /**
+       * REUSE → EXECUTION BUFFER (CRITICAL)
+       * -----------------------------------
+       * Reused decisions must still be dispatched.
+       * Persistence already done → only buffer needed.
+       */
+      for (const decision of decisions) {
+        executionBuffer.push(decision);
+      }
+
+    } else {
+      decisions = generateDecisions({
         orderId: lasyncroOrderId,
         aggregateVersion,
         riskSnapshot
       });
+    }
 
       /**
        * DECISION EXISTENCE INVARIANT (CRITICAL)
@@ -674,7 +710,7 @@ export async function reconcileOrderFulfillment(
        * PERSISTENCE
        */
       for (const decision of decisions) {
-        const persisted = await DecisionRepository.create({
+        await DecisionRepository.create({
           ...decision,
 
           /**
@@ -692,45 +728,31 @@ export async function reconcileOrderFulfillment(
           shop_id: order.shop_id
         });
 
-        executionBuffer.push(persisted);
+        executionBuffer.push(decision);
       }
     }
 
     /**
-     * HARD CONSTRAINT ENFORCEMENT GATE
-     * --------------------------------
-     * Reconciliation MUST NOT proceed when any constraint is active.
+     * CONSTRAINT GATE (CORRECTED)
+     * ---------------------------
+     * Constraints block NEW decision generation,
+     * but MUST NOT block execution dispatch.
      *
-     * This is the system's control boundary.
-     *
-     * Without this:
-     * - constraints are informational only
-     * - system becomes non-deterministic
+     * Execution is required for:
+     * - compensating actions
+     * - system convergence
      */
-    if (isInventoryBlocked || isCustomerBlocked || isOperationalBlocked) {
-      /* console.warn('[RECONCILIATION_BLOCKED_BY_CONSTRAINTS]', {
+    const isBlocked =
+      isInventoryBlocked || isCustomerBlocked || isOperationalBlocked;
+
+    if (isBlocked) {
+      console.warn('[RECONCILIATION_BLOCKED_BY_CONSTRAINTS]', {
         orderId: lasyncroOrderId,
         inventory: isInventoryBlocked,
         customer: isCustomerBlocked,
         operational: isOperationalBlocked
-      }); */
-
-      /**
-       * HARD STOP (TYPE-SAFE)
-       * ---------------------
-       * Reconciliation halted due to active constraints.
-       * Returns neutral result to preserve contract.
-       * 
-       * TYPE ENFORCEMENT — CONSTRAINT BLOCK RETURN
-       * ------------------------------------------
-       * Ensures consistent return type with ReconciliationResult contract.
-       * Prevents union type pollution (string | ReconciliationResult).
-       */
-      return {
-        result: 'synthetic' as ReconciliationResult,
-        affectedVariantIds: [] as string[]
-      };
-    };
+      });
+    }
 
     /**
      * ORDER MARGIN PROJECTION

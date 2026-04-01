@@ -34,7 +34,7 @@ export async function writeReconciliationCheckpoint(
   // 1. Validate snapshot exists
   const snapshot = await trx('order_risk_snapshot')
     .where({
-      order_id: orderId,
+      lasyncro_order_id: orderId,
       aggregate_version: aggregateVersion
     })
     .first();

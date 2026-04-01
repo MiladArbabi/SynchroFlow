@@ -105,6 +105,78 @@ export async function startWorkers(): Promise<void> {
          * - decisions remain unexecuted
          */
         try {
+          /**
+           * EXECUTION HANDLER REGISTRATION (CRITICAL)
+           * -----------------------------------------
+           * Must run BEFORE execution worker starts.
+           *
+           * Guarantees:
+           * - All action_types resolve to handlers
+           * - Prevents runtime execution failure
+           */
+          const { registerExecutionHandler, listExecutionHandlers } =
+            await import('../execution/execution.registry.js');
+
+          const {
+            proceedFulfillmentHandler
+          } = await import('../execution/handlers/proceed_fulfillment.handler.js');
+
+          registerExecutionHandler('proceed_fulfillment', proceedFulfillmentHandler);
+
+          const {
+            resolveOperationalBlockHandler
+          } = await import('../execution/handlers/resolve_operational_block.handler.js');
+
+          registerExecutionHandler('resolve_operational_block', resolveOperationalBlockHandler);
+
+          const {
+            resolveInventoryBlockHandler
+          } = await import('../execution/handlers/resolve_inventory_block.handler.js');
+
+          registerExecutionHandler('resolve_inventory_block', resolveInventoryBlockHandler);
+
+          const {
+            resolveCustomerBlockHandler
+          } = await import('../execution/handlers/resolve_customer_block.handler.js');
+
+          registerExecutionHandler('resolve_customer_block', resolveCustomerBlockHandler);
+
+          /**
+           * STARTUP VISIBILITY (CRITICAL)
+           */
+          console.info('[EXECUTION_HANDLERS_REGISTERED]', {
+            handlers: listExecutionHandlers()
+          });
+
+          /**
+           * HANDLER COVERAGE VALIDATION (CRITICAL)
+           * --------------------------------------
+           * Ensures all emitted action_types are registered.
+           *
+           * Prevents:
+           * - silent production failures
+           * - missing handler regressions
+           */
+          const REQUIRED_ACTIONS = [
+            'proceed_fulfillment',
+            'resolve_operational_block',
+            'resolve_inventory_block',
+            'resolve_customer_block'
+          ];
+
+          const registered = listExecutionHandlers();
+
+          const missing = REQUIRED_ACTIONS.filter(a => !registered.includes(a));
+
+          if (missing.length > 0) {
+            console.error('[EXECUTION_HANDLER_COVERAGE_GAP]', {
+              missing,
+              registered
+            });
+
+            throw new Error('[FATAL] Missing execution handlers');
+          }
+
           const execution = await import('../workers/execution.worker.js');
 
           if (typeof execution.startExecutionWorker === 'function') {

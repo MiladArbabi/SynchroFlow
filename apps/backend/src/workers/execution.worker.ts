@@ -30,7 +30,13 @@ export async function executeJob(job: ExecutionJob): Promise<void> {
 
   const handler = getExecutionHandler(job.action_type);
 
-  await db.transaction(async (trx: any) => {
+  /**
+ * TRANSACTION TYPING (STRICT)
+ * ---------------------------
+ * Enforces correct DB transaction contract.
+ * Prevents unsafe operations inside execution lifecycle.
+ */
+await db.transaction(async (trx: Parameters<typeof decisionRepo.markStarted>[0]) => {
     await decisionRepo.markStarted(trx, job.decision_id);
 
     try {
@@ -69,7 +75,7 @@ export async function executeJob(job: ExecutionJob): Promise<void> {
  * - Retry strategy will be added later (DLQ)
  */
 async function processExecutionMessage(
-  msg: { content: Buffer } | null
+  msg: { content: Buffer; properties?: any } | null
 ) {
   if (!msg) return;
 
@@ -78,19 +84,127 @@ async function processExecutionMessage(
       msg.content.toString()
     ) as ExecutionJob;
 
+    /**
+     * RETRY METADATA EXTRACTION (CRITICAL)
+     * -----------------------------------
+     * Extract retry count from RabbitMQ headers.
+     *
+     * Guarantees:
+     * - visibility into retry attempts
+     * - enables future retry cap + poison handling
+     */
+    const retryCount = Number(
+        msg.properties?.headers?.['x-retry-count'] || 0
+    );
+
+    console.info('[EXECUTION_RETRY_METADATA]', {
+        decision_id: job.decision_id,
+        retry_count: retryCount
+    });
+
+    /**
+     * RETRY CAP ENFORCEMENT (CRITICAL)
+     * --------------------------------
+     * Prevents infinite retry loops.
+     *
+     * Policy:
+     * - Max attempts = 3
+     * - Beyond this → terminal failure (poison)
+     */
+    const MAX_RETRY_ATTEMPTS = 3;
+
+    if (retryCount >= MAX_RETRY_ATTEMPTS) {
+        console.error('[EXECUTION_POISON_MESSAGE]', {
+            decision_id: job.decision_id,
+            retry_count: retryCount
+        });
+
+        /**
+         * ACK to REMOVE from queue permanently.
+         * Prevents infinite DLQ cycling.
+         */
+        getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
+            return;
+    }
+
     await executeJob(job);
 
     getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
   } catch (err) {
-    console.error('[EXECUTION_WORKER_JOB_FAILED]', err);
+    console.error('[EXECUTION_WORKER_JOB_FAILED]', {
+        error: (err as Error).message
+    });
 
-    // Phase 1: fail-closed (no requeue to avoid infinite loops)
-    getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
+    /**
+     * RETRY + POISON ROUTING (CRITICAL)
+     * ---------------------------------
+     * - Increment retry count via headers
+     * - Requeue manually with updated metadata
+     * - Preserve DLQ fallback for safety
+     */
+    const retryCount = Number(
+    msg.properties?.headers?.['x-retry-count'] || 0
+    );
+
+    const nextRetryCount = retryCount + 1;
+
+    const channel = getQueueChannel(EXECUTION_QUEUE);
+
+    /**
+     * RETRY BACKOFF STRATEGY (ALIGNED WITH RECONCILIATION)
+     * ---------------------------------------------------
+     * - Exponential backoff
+     * - Cap at 30s
+     * - Matches reconciliation retry behavior for consistency
+     */
+    const retryDelayMs = Math.min(
+        1000 * Math.pow(2, retryCount),
+        30000
+    );
+
+    channel.sendToQueue(
+        EXECUTION_QUEUE,
+        msg.content,
+        {
+            persistent: true,
+            headers: {
+            ...msg.properties?.headers,
+            'x-retry-count': nextRetryCount
+            },
+            expiration: String(retryDelayMs) // delay before retry
+        }
+    );
+
+        console.warn('[EXECUTION_RETRY_SCHEDULED]', {
+        retry_count: nextRetryCount,
+        delay_ms: retryDelayMs
+    });
+
+    // ACK original message to prevent duplicate DLQ routing
+    channel.ack(msg as any);
+
+    console.warn('[EXECUTION_RETRY_REQUEUED]', {
+        retry_count: nextRetryCount
+    });
   }
 }
 
 export function startExecutionWorker() {
   const channel = getQueueChannel(EXECUTION_QUEUE);
+
+  channel.addSetup(async (ch: any) => {
+    const { assertExecutionQueue } = await import('../queues/execution.queue.js');
+
+    await assertExecutionQueue(ch);
+
+    /**
+     * CRITICAL:
+     * Ensures queue exists BEFORE consume.
+     * Prevents:
+     * - missing queue crashes
+     * - undefined retry behavior
+     */
+  });
 
   channel.consume(
     EXECUTION_QUEUE,

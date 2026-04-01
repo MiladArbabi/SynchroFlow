@@ -15,7 +15,13 @@ export async function startDomainEventOutboxDispatcher() {
 
   console.log('[domain-event-outbox] Dispatcher started');
 
-  const channel = getQueueChannel(QUEUE);
+  /**
+   * RMQ CHANNEL REMOVED (ARCHITECTURE LOCK)
+   * ---------------------------------------
+   * This service no longer depends on RabbitMQ.
+   * Prevents accidental reintroduction of queue publishing.
+   */
+  const channel = null as any;
 
   while (running) {
 
@@ -65,17 +71,24 @@ export async function startDomainEventOutboxDispatcher() {
             domain_event_id: row.domain_event_id,
           });
 
-          const ok = channel.sendToQueue(
-            QUEUE,
-            Buffer.from(JSON.stringify({
-              domain_event_id: row.domain_event_id,
-            })),
-            { persistent: true }
-          );
-
-          if (!ok) {
-            throw new Error('Broker backpressure');
-          }
+          /**
+           * RMQ DISPATCH DISABLED (ARCHITECTURE ALIGNMENT)
+           * ----------------------------------------------
+           * System uses DB-driven projection as source of truth.
+           *
+           * Outbox → RabbitMQ dispatch is intentionally disabled to prevent:
+           * - dual transport paths
+           * - orphaned queues (events)
+           * - non-deterministic behavior
+           *
+           * To re-enable:
+           * - restore sendToQueue block
+           * - ensure consumer exists for 'events'
+           */
+          console.debug('[OUTBOX_DISPATCH_SKIPPED_RMQ]', {
+            outbox_id: row.id,
+            domain_event_id: row.domain_event_id,
+          });
 
           try {
 
