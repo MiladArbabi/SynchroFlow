@@ -251,6 +251,46 @@ export async function projectOrderConstraints(
           is_active: true,
           created_at: new Date()
         });
+
+        /**
+         * TEMP BRIDGE: WRITE TO order_constraint_events (ACTIVE)
+         * ------------------------------------------------------
+         * Required because downstream systems still depend on this table.
+         */
+        await trx('order_constraint_events')
+          .insert({
+            /**
+             * PRIMARY KEY (REQUIRED)
+             */
+            constraint_event_id: uuidv5(
+              `constraint-event:${type}:${orderId}:${targetId}`,
+              CONSTRAINT_EVENT_NAMESPACE
+            ),
+
+            /**
+             * TENANT BOUNDARY (REQUIRED)
+             */
+            shop_id: shopId,
+
+            lasyncro_order_id: orderId,
+            constraint_type: type,
+            target_id: targetId,
+
+            is_active: true,
+            started_at: eventAnchor,
+            evaluated_at: eventAnchor,
+            aggregate_version: aggregateVersion,
+
+            created_at: trx.fn.now(),
+            updated_at: trx.fn.now()
+          })
+
+          console.warn('[CONSTRAINT_EVENT_INSERTED]', {
+            orderId,
+            type,
+            targetId
+          });
+
       } else {
         await trx('order_constraints')
           .where({ constraint_id: existingConstraint.constraint_id })
@@ -271,7 +311,33 @@ export async function projectOrderConstraints(
              */
             write_source: 'orderConstraintProjection'
           });
+
+      /**
+       * TEMP BRIDGE: WRITE TO order_constraint_events (RESOLVED)
+       * --------------------------------------------------------
+       * Keeps legacy consumers in sync until full migration.
+       */
+      await trx('order_constraint_events')
+        .where({
+          lasyncro_order_id: orderId,
+          constraint_type: type,
+          target_id: targetId
+        })
+        .update({
+          is_active: false,
+          evaluated_at: eventAnchor,
+          aggregate_version: aggregateVersion,
+          updated_at: trx.fn.now()
+        });
+
+      /* console.warn('[CONSTRAINT_DUAL_WRITE_RESOLVED]', {
+        orderId,
+        type,
+        targetId
+      }); */
       }
+
+
 
     }
 

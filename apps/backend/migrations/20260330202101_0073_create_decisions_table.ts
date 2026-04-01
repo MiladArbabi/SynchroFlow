@@ -18,6 +18,8 @@ export async function up(knex: Knex): Promise<void> {
     table.string('type').notNullable();
     table.string('entity_id').notNullable();
 
+    table.integer('aggregate_version').notNullable();
+
     /**
      * GLOBAL PRIORITY
      * Higher = more important
@@ -56,6 +58,18 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo('pending');
 
+    /**
+     * DECISION LIFECYCLE (STRUCTURED)
+     * -------------------------------
+     * Tracks execution + outcome over time.
+     *
+     * Stored as JSONB for flexibility:
+     * - started_at
+     * - resolved_at
+     * - outcome
+     */
+    table.jsonb('lifecycle').notNullable().defaultTo('{}');
+
     table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at').notNullable().defaultTo(knex.fn.now());
 
@@ -73,7 +87,7 @@ export async function up(knex: Knex): Promise<void> {
      * Indexes for performance
      */
     table.index(['shop_id', 'priority'], 'idx_decisions_shop_priority');
-    table.index(['entity_id'], 'idx_decisions_entity');
+    table.index(['entity_id', 'aggregate_version'], 'idx_decisions_entity_version');
   });
 
   /**
@@ -126,6 +140,28 @@ await knex.raw(`
   CHECK (jsonb_typeof(actions) = 'array');
 `);
 
+await knex.raw(`
+  ALTER TABLE decisions
+  ADD CONSTRAINT decisions_lifecycle_is_object
+  CHECK (jsonb_typeof(lifecycle) = 'object');
+`);
+
+/**
+ * AGGREGATE VERSION BINDING (CRITICAL)
+ * -----------------------------------
+ * Links decision to exact reconciliation version.
+ *
+ * Required for:
+ * - deterministic replay
+ * - checkpoint validation
+ * - eliminating JSON-based version lookup
+ */
+await knex.raw(`
+  ALTER TABLE decisions
+  ADD CONSTRAINT decisions_aggregate_version_positive
+  CHECK (aggregate_version > 0);
+`);
+
 /**
  * UPDATED_AT TRIGGER (MANDATORY)
  * ------------------------------
@@ -147,7 +183,7 @@ await knex.raw(`
   FOR EACH ROW
   EXECUTE FUNCTION set_decisions_updated_at();
 `);
-  
+
 }
 
 export async function down(knex: Knex): Promise<void> {

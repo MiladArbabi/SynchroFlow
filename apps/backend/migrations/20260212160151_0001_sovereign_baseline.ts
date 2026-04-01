@@ -304,6 +304,44 @@ export async function up(knex: Knex): Promise<void> {
     ADD CONSTRAINT orders_projection_not_ahead_of_aggregate
       CHECK (last_projected_version <= aggregate_version)
   `);
+
+  /**
+   * CHECKPOINT MONOTONICITY ENFORCEMENT (CRITICAL)
+   * ---------------------------------------------
+   * Prevents last_projected_version from decreasing.
+   *
+   * This enforces:
+   * - no regression under race conditions
+   * - no manual corruption
+   *
+   * MUST be trigger-based (CHECK cannot access OLD row)
+   */
+  await knex.raw(`
+    CREATE OR REPLACE FUNCTION enforce_checkpoint_monotonicity()
+    RETURNS trigger AS $$
+    BEGIN
+      IF NEW.last_projected_version < OLD.last_projected_version THEN
+        RAISE EXCEPTION
+          'CHECKPOINT_REGRESSION: attempted to set last_projected_version from % to %',
+          OLD.last_projected_version,
+          NEW.last_projected_version;
+      END IF;
+
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await knex.raw(`
+    DROP TRIGGER IF EXISTS trg_enforce_checkpoint_monotonicity ON orders;
+  `);
+
+  await knex.raw(`
+    CREATE TRIGGER trg_enforce_checkpoint_monotonicity
+    BEFORE UPDATE ON orders
+    FOR EACH ROW
+    EXECUTE FUNCTION enforce_checkpoint_monotonicity();
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

@@ -3,4 +3,5 @@
 export type ReconciliationResult =
   | 'observed'
   | 'synthetic'
-  | 'noop';
+  | 'noop'
+  | 'blocked';

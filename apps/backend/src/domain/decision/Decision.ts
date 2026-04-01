@@ -9,6 +9,9 @@
  * - Must be used by Decision Engine (future)
  * - Must NOT be redefined in services/controllers
  * - All prioritization must resolve into `priority`
+ * 
+ * INVARIANT:
+ * - Every decision MUST be tied to an aggregate_version
  *
  * If multiple "decision-like" objects exist → system is broken
  */
@@ -58,6 +61,18 @@ export interface Decision {
   entity_id: string;
 
   /**
+   * AGGREGATE VERSION (CRITICAL)
+   * ---------------------------
+   * Binds decision to exact reconciliation version.
+   *
+   * Required for:
+   * - deterministic replay
+   * - checkpoint validation
+   * - DB integrity alignment
+   */
+  aggregate_version: number;
+
+  /**
    * GLOBAL PRIORITY
    * ---------------
    * Must be normalized across ALL domains.
@@ -95,6 +110,15 @@ export interface Decision {
    * Lifecycle status
    */
   status: DecisionStatus;
+
+  /**
+   * Decision lifecycle tracking
+   */
+  lifecycle?: {
+    started_at: Date | null;
+    resolved_at: Date | null;
+    outcome: 'success' | 'failure' | null;
+  };
 
   created_at: Date;
   updated_at: Date;

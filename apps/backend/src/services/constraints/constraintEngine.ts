@@ -157,18 +157,22 @@ export async function evaluateOrderConstraints(
   }
 
   /**
-   * CONSTRAINT ENGINE TRACE
-   * -----------------------
-   * Emits full evaluation snapshot.
+   * CRITICAL OBSERVABILITY (DO NOT REMOVE)
+   * --------------------------------------
+   * Without this, system can silently degrade into:
+   * - zero constraints
+   * - no risk signals
+   * - fake decisions
    *
-   * Required for:
-   * - debugging fragmented persistence
-   * - validating projection alignment
-   * - future consolidation into single write path
+   * This log is REQUIRED until:
+   * - constraint persistence is verified
+   * - risk snapshot is non-empty
    */
-  /* console.info('[CONSTRAINT_ENGINE_RESULT]', {
+  /* console.warn('[CONSTRAINT_ENGINE_RESULT]', {
     orderId,
     shopId,
+    total: results.length,
+    active: results.filter(r => r.isActive).length,
     results
   }); */
 

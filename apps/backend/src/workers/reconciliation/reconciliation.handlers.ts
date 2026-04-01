@@ -28,6 +28,7 @@ import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
 
 import { DecisionRepository } from '../../domain/decision/decision.repository.js';
+import { generateDecisions } from '../../domain/decision/decision.engine.js';
 
 /**
  * PROJECTION RUNTIME INSTRUMENTATION
@@ -133,9 +134,9 @@ export async function reconcileOrderFulfillment(
         last_reconciled_at: trx.fn.now()
       });
 
-    console.debug('[RECONCILIATION_CLAIMED]', {
+    /* console.debug('[RECONCILIATION_CLAIMED]', {
       lasyncroOrderId
-    });
+    }); */
 
     /**
      * RECONCILIATION MODE DETECTION
@@ -172,8 +173,18 @@ export async function reconcileOrderFulfillment(
         lastProjectedVersion: order.last_projected_version,
       });
 
+      /**
+       * BLOCKED EXECUTION RESULT
+       * ------------------------
+       * Distinct from synthetic (idempotent skip).
+       *
+       * Required for:
+       * - observability
+       * - queue diagnostics
+       * - decision traceability
+       */
       return {
-        result: 'synthetic',
+        result: 'blocked',
         affectedVariantIds: []
       };
     }
@@ -336,6 +347,38 @@ export async function reconcileOrderFulfillment(
      */
     if (process.env.REBUILD_MODE !== 'true') {
       for (const row of impactedOrders) {
+
+        /**
+         * LOOP PREVENTION (CRITICAL)
+         * --------------------------
+         * Do NOT enqueue reconciliation for the same order
+         * currently being processed.
+         *
+         * Otherwise:
+         * → infinite reconciliation loop
+         * → log spam
+         * → CPU exhaustion
+         */
+        if (row.lasyncro_order_id === lasyncroOrderId) {
+          continue;
+        }
+
+        /**
+         * IDEMPOTENT INTENT GUARD
+         * ------------------------
+         * Prevent duplicate enqueue for same version.
+         */
+        const exists = await trx('order_reconciliation_intents')
+          .where({
+            lasyncro_order_id: row.lasyncro_order_id,
+            aggregate_version: aggregateVersion
+          })
+          .first();
+
+        if (exists) {
+          continue;
+        }
+
         await trx('order_reconciliation_intents')
           .insert({
             lasyncro_order_id: row.lasyncro_order_id,
@@ -515,6 +558,130 @@ export async function reconcileOrderFulfillment(
       )
     );
 
+    await instrumentProjection('orderRiskProjection', async () =>
+      projectOrderRisk(
+        trx,
+        lasyncroOrderId,
+        order.shop_id,
+        aggregateVersion,
+        eventAnchor
+      )
+    );
+
+
+    /**
+     * DECISION ENGINE (TYPE-SAFE MINIMAL IMPLEMENTATION)
+     * --------------------------------------------------
+     * Produces valid Decision object using available risk snapshot.
+     * Ensures system invariant: every reconciled order emits decision.
+     */
+    const riskSnapshot = await trx('order_risk_snapshot')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first();
+
+    if (!riskSnapshot) {
+    /**
+     * HARD FAILURE — DECISION SYSTEM INVARIANT VIOLATION
+     * -------------------------------------------------
+     * A missing risk snapshot means:
+     * - projections are broken or lagging
+     * - decision engine cannot operate
+     *
+     * This MUST stop reconciliation to prevent:
+     * - silent decision gaps
+     * - inconsistent system state
+     */
+    console.error('[DECISION_MISSING_RISK_SNAPSHOT_FATAL]', {
+      orderId: lasyncroOrderId,
+      aggregateVersion
+    });
+
+    throw new Error(
+      `[DECISION_INVARIANT_BREACH] Missing risk snapshot for order ${lasyncroOrderId}`
+    );
+  } else {
+
+    /**
+     * IDEMPOTENCY GUARD — SKIP DECISION ENGINE
+     * ---------------------------------------
+     * If projection version has not changed,
+     * decision output is guaranteed identical.
+     *
+     * Prevents:
+     * - log spam
+     * - duplicate decision writes
+     * - wasted CPU
+     */
+    if (
+      riskSnapshot.aggregate_version !== undefined &&
+      riskSnapshot.aggregate_version === aggregateVersion
+    ) {
+
+      return {
+        result: 'synthetic',
+        affectedVariantIds: []
+      };
+    }
+
+      /**
+       * DECISION ENGINE OWNERSHIP
+       * -------------------------
+       * Decision identity, structure, and priority MUST be produced
+       * exclusively by the Decision Engine.
+       *
+       * Reconciliation is orchestration only.
+       *
+       * This guarantees:
+       * - deterministic ID generation
+       * - centralized decision logic
+       * - no duplication across system
+       */
+      
+      const decisions = generateDecisions({
+        orderId: lasyncroOrderId,
+        aggregateVersion,
+        riskSnapshot
+      });
+
+      /**
+       * DECISION EXISTENCE INVARIANT (CRITICAL)
+       * --------------------------------------
+       * Every (order, aggregateVersion) MUST produce ≥1 decision.
+       *
+       * Prevents:
+       * - silent no-op reconciliations
+       * - checkpoint advancing without decisions
+       */
+      if (!decisions || decisions.length === 0) {
+        throw new Error(
+          `[RECONCILIATION_FAILED] No decisions generated for order=${lasyncroOrderId} version=${aggregateVersion}`
+        );
+      }
+
+      /**
+       * PERSISTENCE
+       */
+      for (const decision of decisions) {
+        await DecisionRepository.create({
+          ...decision,
+
+          /**
+           * AGGREGATE VERSION BINDING (CRITICAL)
+           * -----------------------------------
+           * Explicitly binds decision to reconciliation version.
+           *
+           * Required for:
+           * - checkpoint validation
+           * - deterministic replay
+           * - DB-level integrity
+           */
+          aggregate_version: aggregateVersion,
+
+          shop_id: order.shop_id
+        });
+      }
+    }
+
     /**
      * HARD CONSTRAINT ENFORCEMENT GATE
      * --------------------------------
@@ -584,30 +751,6 @@ export async function reconcileOrderFulfillment(
        '[AGE_INVARIANT_VIOLATION] order_updated_at missing during reconciliation'
      );
    }
-
-    /**
-     * ORDER RISK PROJECTION
-     * ---------------------
-     * All risk scoring logic lives inside the projection module.
-     *
-     * This includes:
-     * - health score computation
-     * - SLA escalation
-     * - blocker contributions
-     * - aging risk
-     *
-     * The reconciliation handler must not compute
-     * any risk logic directly.
-     */
-    await instrumentProjection('orderRiskProjection', async () =>
-      projectOrderRisk(
-        trx,
-        lasyncroOrderId,
-        order.shop_id,
-        aggregateVersion,
-        eventAnchor
-      )
-    );
 
     /**
      * ORDER DATE SOURCE (LOCKED ROW REUSE)
@@ -680,84 +823,6 @@ export async function reconcileOrderFulfillment(
       lasyncroOrderId,
       aggregateVersion
     );
-
-        /**
-     * DECISION ENGINE (TYPE-SAFE MINIMAL IMPLEMENTATION)
-     * --------------------------------------------------
-     * Produces valid Decision object using available risk snapshot.
-     * Ensures system invariant: every reconciled order emits decision.
-     */
-    const riskSnapshot = await trx('order_risk_snapshot')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .first();
-
-    if (!riskSnapshot) {
-      console.error('[DECISION_MISSING_RISK_SNAPSHOT]', {
-        orderId: lasyncroOrderId
-      });
-    } else {
-      const decisionId = crypto
-        .createHash('sha256')
-        .update(`decision:${lasyncroOrderId}:${aggregateVersion}`)
-        .digest('hex')
-        .slice(0, 32);
-      
-      console.debug('[DECISION_PAYLOAD]', JSON.stringify({
-        recommended_action: {
-          type: 'review_execution_queue',
-          payload: {},
-          execution_mode: 'manual'
-        },
-        actions: [
-          {
-            type: 'review_execution_queue',
-            payload: {},
-            execution_mode: 'manual'
-          }
-        ]
-      }, null, 2));
-
-      await DecisionRepository.create({
-        id: decisionId,
-        type: 'risk',
-        entity_id: lasyncroOrderId,
-        priority: 100 - riskSnapshot.order_health_score,
-        score_breakdown: {
-          health: riskSnapshot.order_health_score,
-          aging: riskSnapshot.aging_risk_component,
-          sla: riskSnapshot.sla_risk_component,
-          inventory: riskSnapshot.inventory_risk_component,
-          customer: riskSnapshot.customer_risk_component,
-          operational: riskSnapshot.operational_risk_component
-        },
-        reason: 'Derived from order_risk_snapshot',
-        signals: {
-          risk_score: riskSnapshot.priority_score ?? null,
-          blocked: riskSnapshot.is_blocked ?? null
-        },
-        recommended_action: {
-          type: 'review_execution_queue',
-          payload: {},
-          execution_mode: 'manual'
-        },
-        actions: [
-          {
-            type: 'review_execution_queue',
-            payload: {},
-            execution_mode: 'manual'
-          }
-        ],
-        status: 'pending',
-        created_at: new Date(),
-        updated_at: new Date(),
-        shop_id: order.shop_id
-      });
-
-      console.info('[DECISION_WRITTEN]', {
-        orderId: lasyncroOrderId,
-        decisionId
-      });
-    }
 
     return {
       result: observed?.status === 'fulfilled' ? 'observed' : 'synthetic',

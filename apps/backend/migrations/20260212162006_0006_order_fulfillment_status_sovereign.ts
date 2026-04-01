@@ -182,7 +182,22 @@ export async function up(knex: Knex): Promise<void> {
 
       -- Prevent regression
       IF new_rank < old_rank THEN
-        RAISE EXCEPTION 'Fulfillment status cannot regress';
+        /**
+         * IDEMPOTENCY GUARD (REPLAY-SAFE)
+         * --------------------------------
+         * During event replay or out-of-order ingestion,
+         * older states may arrive after newer ones.
+         *
+         * Instead of crashing:
+         * - ignore regression
+         * - preserve current (NEW := OLD)
+         *
+         * Guarantees:
+         * - monotonic state
+         * - replay safety
+         * - no worker crashes
+         */
+        RETURN OLD;
       END IF;
 
       RETURN NEW;

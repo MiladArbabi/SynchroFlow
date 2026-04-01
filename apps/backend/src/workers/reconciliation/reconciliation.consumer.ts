@@ -85,28 +85,24 @@ export function startReconciliationConsumer() {
         console.error('[reconciliation] invalid aggregateVersion type');
         ch.ack(msg);
         return;
-      }
+      };
 
       /**
-       * STRICT VERSION GATE (Queue Boundary)
-       * -------------------------------------
-       * Prevents:
-       * - Stale event execution
-       * - Duplicate projection
-       * - Projection ahead of aggregate
+       * RECONCILIATION INVARIANT (CRITICAL)
+       * ----------------------------------
+       * Version-based gating is INVALID and must NOT block execution.
        *
-       * Structural invariants are DB-enforced,
-       * but we fail fast here for operational clarity.
+       * Behavior:
+       * - NEVER ack + return due to version mismatch
+       * - ALWAYS allow handler to run
+       *
+       * NOTE:
+       * - Ack must ONLY happen after successful processing
        */
-      if (
-        aggregateVersion !== order.aggregate_version ||
-        aggregateVersion <= order.last_projected_version
-      ) {
-        /* console.warn(
-          `[reconciliation] version gate blocked: order=${lasyncroOrderId} eventVersion=${aggregateVersion} current=${order.aggregate_version} projected=${order.last_projected_version}`
-        ); */
-        ch.ack(msg);
-        return;
+      if (aggregateVersion !== order.aggregate_version) {
+        console.warn(
+          `[reconciliation][VERSION_MISMATCH_BYPASSED] order=${lasyncroOrderId} eventVersion=${aggregateVersion} current=${order.aggregate_version}`
+        );
       }
 
       /**

@@ -30,6 +30,19 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo(knex.fn.now());
 
+    /**
+     * SYSTEM INVARIANT (UPSERT SUPPORT)
+     * ---------------------------------
+     * Required for ON CONFLICT DO UPDATE.
+     *
+     * Without this:
+     * - reconciliation crashes
+     * - projections cannot merge deterministically
+     */
+    table.timestamp('updated_at')
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
     table.primary(['shop_id', 'revenue_date']);
   });
 

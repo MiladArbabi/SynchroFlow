@@ -33,10 +33,49 @@ export async function projectOrderFulfillment(
   eventAnchor: Date
 ) {
 
-  console.log('[CONFLICT_STRATEGY]', {
+  /* console.log('[CONFLICT_STRATEGY]', {
     entity: 'order_fulfillment_status',
     strategy: ResolutionStrategies.MERGE
-  });
+  }); */
+
+  /**
+   * FULFILLMENT STATUS RESOLUTION (MONOTONIC)
+   * -----------------------------------------
+   * Determines next valid status based on existing state.
+   */
+  const existing = await trx('order_fulfillment_status')
+    .where({ lasyncro_order_id: orderId })
+    .first();
+
+  const statusRank = {
+    pending: 0,
+    fulfilled: 1
+  };
+
+  /**
+   * CURRENT IMPLEMENTATION LIMITATION:
+   * - No fulfillment event input yet
+   * - Default remains 'pending'
+   */
+  const incomingStatus = 'pending';
+
+  let finalStatus = incomingStatus;
+
+  if (existing) {
+    const currentRank = statusRank[existing.status] ?? -1;
+    const incomingRank = statusRank[incomingStatus] ?? -1;
+
+    if (incomingRank < currentRank) {
+      finalStatus = existing.status;
+
+      /* console.warn('[FULFILLMENT_MONOTONIC_OVERRIDE]', {
+        orderId,
+        current: existing.status,
+        attempted: incomingStatus,
+        resolved: finalStatus
+      }); */
+    }
+  }
 
   await trx('order_fulfillment_status')
   /**
@@ -56,7 +95,7 @@ export async function projectOrderFulfillment(
         aggregateVersion
       ),
       lasyncro_order_id: orderId,
-      status: 'pending',
+      status: finalStatus,
       status_updated_at: eventAnchor,
       created_at: eventAnchor,
       updated_at: eventAnchor
@@ -76,7 +115,7 @@ export async function projectOrderFulfillment(
      * - full state convergence
      */
     .merge({
-      status: 'pending',
+      status: finalStatus,
       status_updated_at: eventAnchor,
       updated_at: eventAnchor
     });
