@@ -28,7 +28,17 @@ export async function up(knex: Knex): Promise<void> {
 
     table.text('error').nullable();
 
-    table.timestamp('executed_at').notNullable().defaultTo(knex.fn.now());
+    table.timestamp('executed_at').nullable();
+
+    /**
+     * EXECUTION TIMESTAMP (CRITICAL)
+     * ------------------------------
+     * Must be set ONLY after external side-effect succeeds.
+     *
+     * Prevents:
+     * - false audit signals
+     * - incorrect execution ordering
+     */
 
     table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
   });

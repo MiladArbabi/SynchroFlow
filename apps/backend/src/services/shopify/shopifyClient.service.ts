@@ -19,6 +19,17 @@ const REQUIRED_SCOPES = [
   'read_products',
   'read_inventory',
   'read_fulfillments',
+
+  /**
+   * REQUIRED FOR EXECUTION (CRITICAL)
+   * ---------------------------------
+   * Enables:
+   * - fulfillmentCreate mutation
+   *
+   * Without this:
+   * - Shopify returns authorization error
+   */
+  'write_fulfillments',
 ];
 
 const shopify = shopifyApi({
