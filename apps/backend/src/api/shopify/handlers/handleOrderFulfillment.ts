@@ -123,6 +123,66 @@ export async function handleOrderFulfillment(
    */
   const normalizedPayload = { ...(envelope.rawPayload as any) };
 
+  /**
+   * FULFILLMENT STATUS RESOLUTION (CRITICAL)
+   * ----------------------------------------
+   * Shopify provides:
+   * - status → execution result ("success")
+   * - fulfillment_status → order-level fulfillment state
+   *
+   * RULE:
+   * - Prefer fulfillment_status if present
+   * - Fallback to status ONLY if missing
+   *
+   * This ensures:
+   * - correct semantic mapping
+   * - stable downstream projection
+   */
+  const resolvedStatus =
+    normalizedPayload.fulfillment_status ??
+    normalizedPayload.status;
+
+  if (!resolvedStatus) {
+    console.error('[FULFILLMENT_STATUS_MISSING_INGESTION]', {
+      eventId: envelope.eventId,
+      payload: normalizedPayload,
+    });
+
+    throw new Error('[FULFILLMENT_STATUS_MISSING]');
+  }
+
+  /**
+   * Normalize into single canonical field
+   */
+  normalizedPayload.status = resolvedStatus;
+
+  /**
+   * PAYLOAD SCHEMA ENFORCEMENT (MINIMAL CONTRACT)
+   * ---------------------------------------------
+   * Ensures required fields exist before entering domain_events.
+   *
+   * Prevents:
+   * - invalid projection assumptions
+   * - replay-time failures
+   */
+  if (!normalizedPayload.order_id) {
+    console.error('[FULFILLMENT_SCHEMA_VIOLATION][MISSING_ORDER_ID]', {
+      eventId: envelope.eventId,
+      payload: normalizedPayload,
+    });
+
+    throw new Error('[FULFILLMENT_SCHEMA_INVALID]');
+  }
+
+  if (!normalizedPayload.id) {
+    console.error('[FULFILLMENT_SCHEMA_VIOLATION][MISSING_FULFILLMENT_ID]', {
+      eventId: envelope.eventId,
+      payload: normalizedPayload,
+    });
+
+    throw new Error('[FULFILLMENT_SCHEMA_INVALID]');
+  }
+
   if (
     typeof normalizedPayload.id === 'string' &&
     normalizedPayload.id.startsWith('gid://')

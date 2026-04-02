@@ -46,12 +46,29 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
   'integration/sync_requested': handleIntegrationSyncRequested,
   'orders/paid': handleOrdersPaid,
   'orders/fulfilled': handleOrdersFulfilled,
+  'orders/fulfillment_updated': async (params) => {
   /**
-   * FULFILLMENT STATE UPDATES (PARTIAL / PENDING)
-   * ---------------------------------------------
-   * Shares same handler to ensure consistent projection logic.
+   * HANDLER CONTRACT GUARD (CRITICAL)
+   * ---------------------------------
+   * Ensures fulfillment events always arrive normalized.
+   *
+   * Prevents:
+   * - raw payload leakage
+   * - schema drift across event variants
    */
-  'orders/fulfillment_updated': handleOrdersFulfilled,
+    if (!(params.domainEvent as any).canonical_payload) {
+      console.error('[PROJECTION_CONTRACT_VIOLATION][MISSING_CANONICAL]', {
+        eventType: params.domainEvent.event_type,
+        eventId: params.domain_event_id,
+      });
+
+      throw new Error(
+        '[PROJECTION_CONTRACT_VIOLATION] canonical_payload missing'
+      );
+    }
+
+    return handleOrdersFulfilled(params);
+  },
   'refunds/create': handleRefundsCreate,
   /**
    * INVENTORY LEVEL UPDATES
@@ -82,7 +99,7 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
    * - lifecycle namespace is reserved for projection outputs only
    * - services emit domain events only
    */
-  'ft0.completed': handleLifecycleFT0Completed,
+  'ft0/completed': handleLifecycleFT0Completed,
   'lifecycle/ft2_confirmed': handleLifecycleFT2Confirmed,
   'lifecycle/first_insight_delivered': handleLifecycleFirstInsightDelivered,
   /**

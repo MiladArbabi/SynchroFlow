@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import 'dotenv/config';
 
 const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET;
 if (!SHOPIFY_SECRET) {

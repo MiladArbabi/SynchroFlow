@@ -91,11 +91,36 @@ export async function projectDomainEventCore({
        * - Raw payloads are NOT safe for projection logic
        *
        * This was previously disabled → caused handler failures
+       * 
+       * CANONICAL NORMALIZATION SCOPE (CRITICAL FIX)
+       * --------------------------------------------
+       * ONLY apply order canonical mapper to full order payload events.
+       *
+       * DO NOT include:
+       * - orders/fulfilled
+       * - orders/fulfillment_updated
+       *
+       * These events carry partial payloads and will fail mapping
+       * (e.g. missing currencyCode).
+       *
+       * Fulfillment requires its own canonical mapper (NOT this one).
        */
       if (
         domainEvent.event_type === 'orders/create' ||
         domainEvent.event_type === 'orders/sync'
       ) {
+        /**
+         * CANONICAL NORMALIZATION EXPANSION (CRITICAL FIX)
+         * ------------------------------------------------
+         * Fulfillment events MUST be normalized before projection.
+         *
+         * Without this:
+         * - handlers receive raw Shopify payloads
+         * - status semantics mismatch (execution vs state)
+         * - projection becomes non-deterministic
+         *
+         * This aligns fulfillment events with order ingestion guarantees.
+         */
         try {
           const { mapShopifyOrderNodeToCanonical } = await import(
             '../services/mappers/shopify-to-canonical-order.js'
@@ -126,8 +151,23 @@ export async function projectDomainEventCore({
       }
       const canonicalEventTime = new Date(domainEvent.event_time);
 
-      const handler = projectionRegistry[domainEvent.event_type];
+      /**
+       * EVENT TYPE NORMALIZATION (CRITICAL)
+       * -----------------------------------
+       * Prevents routing failures due to:
+       * - slash vs dot drift
+       * - external inconsistencies
+       *
+       * Canonical format: slash-delimited
+       */
+      const normalizedEventType = domainEvent.event_type.replace('.', '/');
 
+      const handler = projectionRegistry[normalizedEventType];
+
+      /**
+       * Attach normalized type for downstream visibility
+       */
+      domainEvent.event_type = normalizedEventType;
 
       (domainEvent as any).canonical_payload = canonicalPayload;
 

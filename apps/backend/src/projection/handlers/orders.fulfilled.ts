@@ -41,12 +41,47 @@ export async function handleOrdersFulfilled({
     eventId: domain_event_id,
   });
 
-  const payload = domainEvent.event_payload as any;
+  const payload = (domainEvent as any).canonical_payload ?? domainEvent.event_payload;
 
-  /* console.info('[FULFILLMENT_EVENT_PAYLOAD]', {
-    eventId: domain_event_id,
-    payload,
-  }); */
+  /**
+   * FULFILLMENT DATA COVERAGE CHECK (CRITICAL OBSERVABILITY)
+   * -------------------------------------------------------
+   * We currently DO NOT compute:
+   * - partially_fulfilled
+   * - fulfilled (accurately)
+   *
+   * Because required data is missing or unused:
+   * - line_items
+   * - fulfillment quantities
+   *
+   * This logs presence of required fields WITHOUT changing behavior.
+   * Enables safe transition to derived fulfillment state.
+   */
+  if (!payload.line_items) {
+    console.warn('[FULFILLMENT_DATA_MISSING_LINE_ITEMS]', {
+      eventId: domain_event_id,
+    });
+  }
+
+  if (payload.line_items && !Array.isArray(payload.line_items)) {
+    console.error('[FULFILLMENT_DATA_INVALID_LINE_ITEMS]', {
+      eventId: domain_event_id,
+      type: typeof payload.line_items,
+    });
+  }
+
+  /**
+   * PAYLOAD SOURCE GUARANTEE
+   * ------------------------
+   * Prefer canonical_payload when available.
+   *
+   * Ensures:
+   * - normalized structure
+   * - deterministic projection
+   * - safe handler assumptions
+   *
+   * Fallback ONLY for legacy events.
+   */
   
   const externalOrderId = String(payload.order_id);
 
@@ -129,14 +164,76 @@ export async function handleOrdersFulfilled({
    * Silent fallback causes state corruption.
    */
   if (!payload.status) {
+
     console.error('[FULFILLMENT_STATUS_MISSING]', {
       eventId: domain_event_id,
       payload,
     });
+
     return;
+  };
+
+  /**
+   * STATUS NORMALIZATION (HYBRID — EXTERNAL + INTERNAL)
+   * ---------------------------------------------------
+   * Accepts:
+   * - external execution states (Shopify)
+   * - internal domain states (already normalized)
+   */
+  const statusMap: Record<string, string> = {
+    success: 'fulfilled',
+    failure: 'failed',
+  };
+
+  const allowedStatuses = new Set([
+    'pending',
+    'processing',
+    'partially_fulfilled',
+    'fulfilled',
+    'cancelled',
+    'failed',
+  ]);
+
+  let normalizedStatus = statusMap[payload.status] ?? payload.status;
+
+  /**
+   * FINAL VALIDATION
+   */
+  if (!allowedStatuses.has(normalizedStatus)) {
+    console.error('[FULFILLMENT_STATUS_UNMAPPED_FATAL]', {
+      eventId: domain_event_id,
+      externalStatus: payload.status,
+      normalizedStatus,
+    });
+
+    throw new Error(
+      `[FULFILLMENT_STATUS_UNMAPPED] status=${payload.status}`
+    );
   }
 
-  const status = payload.status;
+  const status = normalizedStatus;
+
+  /**
+   * DOMAIN STATE FLAGS (CRITICAL)
+   * -----------------------------
+   * Prevents coupling logic to raw string comparisons.
+   *
+   * Ensures:
+   * - consistent semantics
+   * - safe future expansion (partial fulfillment, etc.)
+   */
+  const isFulfilled = status === 'fulfilled';
+
+  if (!allowedStatuses.has(status)) {
+    console.error('[FULFILLMENT_STATUS_ENUM_VIOLATION]', {
+      eventId: domain_event_id,
+      status,
+    });
+
+    throw new Error(
+      `[FULFILLMENT_STATUS_ENUM_INVALID] status=${status}`
+    );
+  }
 
   const fulfillmentTimestamp = canonicalEventTime;
 
@@ -218,7 +315,7 @@ export async function handleOrdersFulfilled({
         status,
         status_updated_at: new Date(domainEvent.event_time),
         fulfilled_at:
-          status === 'fulfilled'
+          isFulfilled
             ? new Date(domainEvent.event_time)
             : null,
       })
@@ -227,7 +324,7 @@ export async function handleOrdersFulfilled({
         status,
         status_updated_at: new Date(domainEvent.event_time),
         fulfilled_at:
-          status === 'fulfilled'
+          isFulfilled
             ? trx.raw(
                 'COALESCE(order_fulfillment_status.fulfilled_at, ?)',
                 [new Date(domainEvent.event_time)]
@@ -265,7 +362,7 @@ export async function handleOrdersFulfilled({
       lasyncroOrderId,
       aggregateVersion: aggregate_version,
       observed:
-        status === 'fulfilled'
+        isFulfilled
           ? {
               status: 'fulfilled',
               observedAt: new Date(domainEvent.event_time),
