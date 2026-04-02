@@ -346,21 +346,44 @@ export async function handleOrdersFulfilled({
       });
 
     /**
-     * AGGREGATE MUTATION
+     * AGGREGATE MUTATION (RETURNING VERSION — CRITICAL FIX)
+     * ----------------------------------------------------
+     * MUST return the incremented version to avoid stale reads.
+     *
+     * Prevents:
+     * - reconciliation using outdated aggregate_version
+     * - version drift between projection and reconciliation
      */
-    await trx('orders')
+    const [updatedOrder] = await trx('orders')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .update({
         order_updated_at: fulfillmentTimestamp,
         aggregate_version: trx.raw('aggregate_version + 1'),
+      })
+      .returning(['aggregate_version']);
+
+    if (!updatedOrder?.aggregate_version) {
+      console.error('[AGGREGATE_VERSION_UPDATE_FAILED_FATAL]', {
+        lasyncroOrderId,
+        eventId: domain_event_id,
       });
+
+      throw new Error(
+        `[AGGREGATE_VERSION_MISSING] order=${lasyncroOrderId}`
+      );
+    }
 
     /**
      * CAPTURE RECONCILIATION INTENT
      */
     reconciliationIntent = {
       lasyncroOrderId,
-      aggregateVersion: aggregate_version,
+      /**
+       * VERSION SOURCE OF TRUTH (CRITICAL)
+       * ---------------------------------
+       * MUST use DB-returned version, NOT stale pre-update variable.
+       */
+      aggregateVersion: updatedOrder.aggregate_version,
       observed:
         isFulfilled
           ? {

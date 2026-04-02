@@ -1,22 +1,9 @@
 // apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
 import db from '@lasyncro/backend-core/db.js';
-import crypto from 'crypto';
 
-import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
 import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
 import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
 import { ConstraintEvaluationResult } from '../../services/constraints/constraint.types.js';
-
-import { projectOrderAge } from '../../projections/orderAgeProjection.js';
-import { projectOrderRisk } from '../../projections/orderRiskProjection.js';
-import { projectOrderMargin } from '../../projections/orderMarginProjection.js';
-import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
-import { projectOrderFulfillment } from '../../projections/orderFulfillmentProjection.js';
-import { projectRevenueDaily } from '../../projections/orderRevenueDailyProjection.js';
-import { projectDailyOperationalBrief } from '../../projections/dailyOperationalBriefProjection.js';
-import { projectOrderInventoryConstraints } from '../../projections/orderInventoryConstraintProjection.js';
-import { projectOrderOperationalConstraints } from '../../projections/orderOperationalConstraintProjection.js';
-import { projectOrderCustomerConstraints } from '../../projections/orderCustomerConstraintProjection.js';
 
 import { ReconciliationResult } from './reconciliation.types.js';
 import { writeReconciliationAudit } from './reconciliationAuditWriter.js';
@@ -24,9 +11,6 @@ import { writeReconciliationCheckpoint } from './reconciliationCheckpointWriter.
 
 import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { resolveRefundExecution } from '../refundResolution.worker.js';
-
-import { assertProjectionRegistered } from '../../utils/schemaGuard.js';
-
 import { DecisionRepository } from '../../domain/decision/decision.repository.js';
 import type { Decision } from '../../domain/decision/Decision.js';
 import { executeJob } from '../execution.worker.js';
@@ -34,62 +18,21 @@ import { enqueueExecutionJob } from '../../queues/execution.queue.js';
 import { generateDecisions } from '../../domain/decision/decision.engine.js';
 
 /**
- * PROJECTION RUNTIME INSTRUMENTATION
- * ----------------------------------
- * Lightweight execution timing for projections.
+ * ARCHITECTURAL GUARD — PROJECTION IS SINGLE-WRITER
+ * -------------------------------------------------
+ * Reconciliation MUST NOT import or execute any projection logic.
  *
- * Purpose:
- * - detect slow projections
- * - observe reconciliation runtime composition
- * - enable operational debugging
+ * All projection writes are owned exclusively by:
+ *   → projection.engine
  *
- * Implementation intentionally minimal:
- * - no external dependencies
- * - structured log output
+ * If you need new state:
+ *   → add projection handler (NOT here)
  *
- * Future upgrade path:
- * metrics exporter → Prometheus / OpenTelemetry
+ * Violating this breaks:
+ * - determinism
+ * - replayability
+ * - cursor integrity
  */
-async function instrumentProjection(
-  name: string,
-  fn: () => Promise<void>
-) {
-  const start = Date.now();
-
-  await fn();
-
-  /* const durationMs = Date.now() - start; */
-
-  /* console.info('[projection.runtime]', {
-    projection: name,
-    duration_ms: durationMs
-  }); */
-}
-
-/**
- * DETERMINISTIC ID GENERATOR
- * --------------------------
- * Stable SHA256-based identifier derived from:
- * - entity type
- * - order id
- * - aggregate version
- *
- * Guarantees:
- * - Replay determinism
- * - Cross-node consistency
- * - No wall-clock influence
- */
-function deterministicId(
-  entity: string,
-  orderId: string,
-  aggregateVersion: number
-): string {
-  return crypto
-    .createHash('sha256')
-    .update(`${entity}:${orderId}:${aggregateVersion}`)
-    .digest('hex')
-    .slice(0, 32);
-}
 
 export async function reconcileOrderFulfillment(
   lasyncroOrderId: string,
@@ -133,6 +76,30 @@ export async function reconcileOrderFulfillment(
       .where({ lasyncro_order_id: lasyncroOrderId })
       .forUpdate()
       .first();
+
+    /**
+     * PROJECTION FRESHNESS GUARD (CRITICAL)
+     * -------------------------------------
+     * Ensures reconciliation only runs on fully projected state.
+     *
+     * Prevents:
+     * - reading stale projections
+     * - making decisions on incomplete data
+     *
+     * Invariant:
+     *   last_projected_version >= aggregateVersion
+     */
+    if (order.last_projected_version < aggregateVersion) {
+      console.error('[PROJECTION_LAG_DETECTED_FATAL]', {
+        orderId: lasyncroOrderId,
+        aggregateVersion,
+        lastProjectedVersion: order.last_projected_version
+      });
+
+      throw new Error(
+        `[PROJECTION_LAG] order=${lasyncroOrderId} projected=${order.last_projected_version} expected=${aggregateVersion}`
+      );
+    }
 
     /**
      * RECONCILIATION CLAIM (CRITICAL FIX)
@@ -333,15 +300,6 @@ export async function reconcileOrderFulfillment(
 
     const affectedVariantIds = variantRows.map(r => r.lasyncro_variant_id);
 
-    if (affectedVariantIds.length > 0) {
-      await rebuildInventoryProjectionForVariants(
-        order.shop_id,
-        affectedVariantIds,
-        trx,
-        eventAnchor
-      );
-    };
-
     /**
      * INVENTORY FAN-OUT RECONCILIATION
      * --------------------------------
@@ -384,130 +342,8 @@ export async function reconcileOrderFulfillment(
         if (row.lasyncro_order_id === lasyncroOrderId) {
           continue;
         }
-
-        /**
-         * IDEMPOTENT INTENT GUARD
-         * ------------------------
-         * Prevent duplicate enqueue for same version.
-         */
-        const exists = await trx('order_reconciliation_intents')
-          .where({
-            lasyncro_order_id: row.lasyncro_order_id,
-            aggregate_version: aggregateVersion
-          })
-          .first();
-
-        if (exists) {
-          continue;
-        }
-
-        await trx('order_reconciliation_intents')
-          .insert({
-            lasyncro_order_id: row.lasyncro_order_id,
-            aggregate_version: aggregateVersion,
-            observed: JSON.stringify({
-              type: 'inventory_changed',
-              at: new Date().toISOString()
-            }),
-            created_at: new Date()
-          })
-          /**
-           * CONFLICT STRATEGY: MERGE (RECONCILIATION WRITE)
-           * ----------------------------------------------
-           * Reconciliation must converge state deterministically.
-           * ignore() causes data loss and replay divergence.
-           */
-          .onConflict(['lasyncro_order_id', 'aggregate_version'])
-          .merge({
-            updated_at: trx.fn.now()
-          });
       }
     }
-
-    assertProjectionRegistered('orderFulfillmentProjection');
-
-    /**
-     * ORDER FULFILLMENT PROJECTION
-     * ----------------------------
-     * This projection is the single owner of:
-     *
-     * - order_fulfillment_status
-     * - economic fulfillment propagation
-     *   (fulfilled_quantity in order_revenue_units)
-     *
-     * The reconciliation handler must never
-     * mutate the revenue ledger directly.
-     */
-    await instrumentProjection('orderFulfillmentProjection', async () =>
-      projectOrderFulfillment(
-        trx,
-        lasyncroOrderId,
-        aggregateVersion,
-        eventAnchor
-      )
-    );
-
-    /**
-     * INVENTORY CONSTRAINT RE-EVALUATION
-     * ----------------------------------
-     * Inventory changes affect the entire variant demand queue.
-     *
-     * Therefore all orders containing the affected variants must
-     * be re-evaluated for oversell allocation.
-     */
-    const affectedOrders = await trx('order_revenue_units')
-      .distinct('lasyncro_order_id')
-      .whereIn('lasyncro_variant_id', affectedVariantIds);
-
-    /**
-     * ORDER AGE PROJECTION
-     * --------------------
-     * MUST run early because:
-     * - operational constraints depend on age_since_paid_seconds
-     * - constraint evaluators require age snapshot
-     *
-     * If moved below, system will:
-     * - throw invariant violations
-     * - produce zero SLA blocks
-     */
-    await instrumentProjection('orderAgeProjection', async () => {
-    const orderIds = [
-      lasyncroOrderId,
-      ...affectedOrders.map(o => o.lasyncro_order_id)
-    ];
-
-    const uniqueOrderIds = [...new Set(orderIds)];
-
-      for (const orderId of uniqueOrderIds) {
-        await projectOrderAge(
-          trx,
-          orderId,
-          order.shop_id,
-          aggregateVersion,
-          eventAnchor
-        );
-      }
-    });
-
-    await instrumentProjection('orderCustomerConstraintProjection', async () =>
-      projectOrderCustomerConstraints(
-        trx,
-        affectedOrders.map(o => o.lasyncro_order_id)
-      )
-    );
-
-    /**
-     * OPERATIONAL CONSTRAINT PROJECTION
-     * ---------------------------------
-     * Detects SLA breaches after inventory/customer constraints resolved.
-     */
-    await instrumentProjection('orderOperationalConstraintProjection', async () =>
-      projectOrderOperationalConstraints(
-        trx,
-        affectedOrders.map(o => o.lasyncro_order_id),
-        order.shop_id
-      )
-    );
 
     /**
      * DELTA-BASED CONSTRAINT EVALUATION
@@ -560,67 +396,32 @@ export async function reconcileOrderFulfillment(
     const isOperationalBlocked = operationalConstraints.length > 0;
 
     /**
-     * CONSTRAINT PERSISTENCE (CRITICAL ORDER)
-     * ---------------------------------------
-     * Constraints MUST be written BEFORE enforcement.
+     * PROJECTION READ — GUARDED (CRITICAL)
+     * -----------------------------------
+     * Reconciliation reads projection state ONLY.
      *
-     * Otherwise:
-     * - system blocks execution
-     * - but never records WHY
-     * - leading to empty constraint table
-     */
-    await instrumentProjection('orderConstraintProjection', async () =>
-      projectOrderConstraints(
-        trx,
-        lasyncroOrderId,
-        order.shop_id,
-        aggregateVersion,
-        eventAnchor,
-        constraintEvaluations
-      )
-    );
-
-    await instrumentProjection('orderRiskProjection', async () =>
-      projectOrderRisk(
-        trx,
-        lasyncroOrderId,
-        order.shop_id,
-        aggregateVersion,
-        eventAnchor
-      )
-    );
-
-
-    /**
-     * DECISION ENGINE (TYPE-SAFE MINIMAL IMPLEMENTATION)
-     * --------------------------------------------------
-     * Produces valid Decision object using available risk snapshot.
-     * Ensures system invariant: every reconciled order emits decision.
+     * Guard ensures:
+     * - projection must be complete before reconciliation
+     * - prevents silent divergence if projection lags
+     *
+     * If this fails:
+     * → projection system is broken upstream
+     * → reconciliation must stop
      */
     const riskSnapshot = await trx('order_risk_snapshot')
       .where({ lasyncro_order_id: lasyncroOrderId })
       .first();
 
     if (!riskSnapshot) {
-    /**
-     * HARD FAILURE — DECISION SYSTEM INVARIANT VIOLATION
-     * -------------------------------------------------
-     * A missing risk snapshot means:
-     * - projections are broken or lagging
-     * - decision engine cannot operate
-     *
-     * This MUST stop reconciliation to prevent:
-     * - silent decision gaps
-     * - inconsistent system state
-     */
-    console.error('[DECISION_MISSING_RISK_SNAPSHOT_FATAL]', {
-      orderId: lasyncroOrderId,
-      aggregateVersion
-    });
+      console.error('[PROJECTION_STATE_MISSING_FATAL]', {
+        table: 'order_risk_snapshot',
+        orderId: lasyncroOrderId,
+        aggregateVersion
+      });
 
-    throw new Error(
-      `[DECISION_INVARIANT_BREACH] Missing risk snapshot for order ${lasyncroOrderId}`
-    );
+      throw new Error(
+        `[PROJECTION_STATE_MISSING] order_risk_snapshot missing for order=${lasyncroOrderId}`
+      );
   } else {
 
     /**
@@ -753,33 +554,7 @@ export async function reconcileOrderFulfillment(
         customer: isCustomerBlocked,
         operational: isOperationalBlocked
       });
-    }
-
-    /**
-     * ORDER MARGIN PROJECTION
-     * -----------------------
-     * Delegated to deterministic projection module.
-     */
-    await instrumentProjection('orderMarginProjection', async () =>
-      projectOrderMargin(
-        trx,
-        lasyncroOrderId,
-        order.shop_id,
-        aggregateVersion,
-        eventAnchor
-      )
-    );
-
-    /**
-     * ORDER AGE SNAPSHOT MATERIALIZATION
-     * -----------------------------------
-     * Replace-on-reconcile.
-     * Fully derived from canonical state.
-     */
-    const ofsAge = await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .select('fulfilled_at')
-      .first();
+    };
 
     /**
     * AGE CALCULATION CLOCK (Aggregate-State Anchored)
@@ -794,50 +569,9 @@ export async function reconcileOrderFulfillment(
      );
    }
 
-    /**
-     * ORDER DATE SOURCE (LOCKED ROW REUSE)
-     * -------------------------------------
-     * NEVER re-query orders inside same transaction.
-     * Use already locked row to avoid deadlocks.
-     */
-    const orderDateRow = {
-      order_created_at: order.order_created_at
-    };
-
-    if (orderDateRow?.order_created_at) {
-
-      /**
-       * DAILY REVENUE PROJECTION
-       * ------------------------
-       * Projection module is the single owner of
-       * revenue_projection_daily writes.
-       *
-       * The reconciliation handler must never
-       * write to the table directly.
-       */
-      await projectRevenueDaily(
-        trx, 
-        order.shop_id,
-        aggregateVersion,
-        eventAnchor
-      );
-    };
-
     await resolveExecutionQueues(
       trx,
       order.shop_id
-    );
-
-    /**
-     * DAILY OPERATIONAL BRIEF PROJECTION
-     * ----------------------------------
-     * Delegated to projection module.
-     */
-    await projectDailyOperationalBrief(
-      trx,
-      order.shop_id,
-      aggregateVersion,
-      eventAnchor
     );
 
     await writeReconciliationAudit(

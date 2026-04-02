@@ -14,11 +14,34 @@
  * - Integrate with fulfillment service
  */
 import db from '@lasyncro/backend-core/db.js';
+import crypto from 'crypto';
 import { ExecutionHandler } from '../execution.registry.js';
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
 import { createShopifyGraphQLClient } from '../../services/shopify/shopifyClient.service.js';
+import { decrypt } from '../../security/encryption.service.js';
 
-export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
+/**
+ * NOTE:
+ * - Required to decrypt Shopify access tokens before use
+ * - Aligns with existing patterns (order-identity-guard, sync.worker)
+ */
+
+export const proceedFulfillmentHandler: ExecutionHandler = async (job, trx) => {
+
+/**
+ * NOTE:
+ * - trx injected from execution worker
+ * - MUST be used for all DB operations to preserve atomicity
+ */
+const dbx = (trx ?? db) as typeof db;
+
+/**
+ * NOTE:
+ * - trx and db share same runtime API (Knex)
+ * - explicit cast required for TypeScript to resolve overloads
+ * - safe because both support identical query interface
+ */
+
   console.info('[HANDLER_EXECUTION_START]', {
     action: 'proceed_fulfillment',
     decision_id: job.decision_id,
@@ -34,7 +57,7 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
      * - decision_id is unique key
      * - if exists → skip execution
      */
-    const existing = await db('fulfillment_executions')
+    const existing = await dbx('fulfillment_executions')
       .where({ decision_id: job.decision_id })
       .first();
 
@@ -51,7 +74,7 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
    * Created BEFORE external call.
    * Ensures visibility even if process crashes.
    */
-  await db('fulfillment_executions').insert({
+  await dbx('fulfillment_executions').insert({
     id: crypto.randomUUID(),
     decision_id: job.decision_id,
     lasyncro_order_id: job.entity_id,
@@ -76,10 +99,38 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
    */
   if (!job.shop_id) {
     throw new Error('[FULFILLMENT_MISSING_SHOP_ID]');
+  };
+
+  /**
+   * STEP 3 — PRE-FLIGHT VALIDATION (PER ORDER) (CRITICAL)
+   * -----------------------------------------------------
+   * Ensures this specific order is not already fulfilled.
+   *
+   * Source of truth:
+   * - order_fulfillment_status (projection)
+   */
+  const existingFulfillment = await dbx('order_fulfillment_status')
+    .where({ lasyncro_order_id: job.entity_id })
+    .first();
+
+  if (existingFulfillment?.status === 'fulfilled') {
+    console.warn('[FULFILLMENT_SKIPPED_ALREADY_FULFILLED]', {
+      decision_id: job.decision_id,
+      entity_id: job.entity_id
+    });
+
+    await dbx('fulfillment_executions')
+      .where({ decision_id: job.decision_id })
+      .update({
+        status: 'failure',
+        error: '[ALREADY_FULFILLED_BLOCKED]'
+      });
+
+    return;
   }
 
   /**
-   * STEP 3 — RESOLVE EXTERNAL ORDER ID (CRITICAL)
+   * RESOLVE EXTERNAL ORDER ID (CRITICAL)
    * ---------------------------------------------
    * Guarantees:
    * - correct mapping internal → Shopify order
@@ -102,7 +153,7 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
       shop_id: job.shop_id
     });
 
-    await db('fulfillment_executions')
+    await dbx('fulfillment_executions')
       .where({ decision_id: job.decision_id })
       .update({
         status: 'failure',
@@ -115,7 +166,7 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
   /**
    * Persist resolved external ID
    */
-  await db('fulfillment_executions')
+  await dbx('fulfillment_executions')
     .where({ decision_id: job.decision_id })
     .update({
       external_order_id: externalOrderId
@@ -125,7 +176,7 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
    * STEP 4 — LOAD SHOPIFY INSTALLATION (CRITICAL)
    * ---------------------------------------------
    */
-  const installation = await db('shopify_app_installations')
+  const installation = await dbx('shopify_app_installations')
     .where({ shop_id: job.shop_id })
     .first();
 
@@ -136,13 +187,31 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
   let executionError: string | null = null;
   let fulfillmentOrderId: string | null = null;
 
+  /**
+   * SHARED STATE (CRITICAL)
+   * -----------------------
+   * Needed outside try/catch for logging.
+   */
+  let fulfillmentOrders: any[] = [];
+
   try {
 
+    const accessToken = decrypt(
+      installation.access_token,
+      'proceed_fulfillment.handler'
+    );
+
     const client = createShopifyGraphQLClient({
-      accessToken: installation.access_token,
+      accessToken,
       platformShopName: installation.shop_domain,
       shopId: Number(job.shop_id)
     });
+
+    /**
+     * NOTE:
+     * - Decrypt token before API usage (security invariant)
+     * - Context string ensures traceability + access control
+     */
   
     /**
      * STEP 5 — FETCH FULFILLMENT ORDER ID
@@ -157,7 +226,17 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
             order(id: $orderId) {
               fulfillmentOrders(first: 10) {
                 edges {
-                  node { id }
+                  node {
+                    id
+                    status
+                    lineItems(first: 10) {
+                      edges {
+                        node {
+                          remainingQuantity
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -167,20 +246,59 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
       }
     });
   
-    fulfillmentOrderId =
     /**
      * TYPE NOTE (CRITICAL)
      * --------------------
      * Shopify GraphQL client is untyped → returns unknown shape.
-     *
-     * We explicitly cast to `any` to:
-     * - avoid false `never` inference
-     * - allow safe access to `.body.data`
-     *
-     * Future:
-     * - replace with typed GraphQL response contract
-     */
+    *
+    * We explicitly cast to `any` to:
+    * - avoid false `never` inference
+    * - allow safe access to `.body.data`
+    *
+    * Future:
+    * - replace with typed GraphQL response contract
+    */
+    fulfillmentOrderId =
       fulfillmentOrdersResponse?.body?.data?.order?.fulfillmentOrders?.edges?.[0]?.node?.id;
+
+    /**
+     * DUPLICATE FULFILLMENT GUARD (CRITICAL)
+     * --------------------------------------
+     * Prevents executing fulfillment if already fully fulfilled in Shopify.
+     *
+     * Source of truth:
+     * - Shopify fulfillmentOrders.remainingQuantity
+     */
+    fulfillmentOrders =
+      fulfillmentOrdersResponse?.body?.data?.order?.fulfillmentOrders?.edges ?? [];
+
+    /**
+     * AGGREGATE REMAINING QUANTITY (CRITICAL)
+     * ---------------------------------------
+     * Must evaluate ALL fulfillment orders (multi-location safe).
+     */
+    const totalRemaining = fulfillmentOrders.reduce((sum: number, edge: any) => {
+      const quantities =
+        edge.node?.lineItems?.edges?.map((e: any) => e.node.remainingQuantity) ?? [];
+
+      return sum + quantities.reduce((s: number, q: number) => s + q, 0);
+    }, 0);
+
+    if (totalRemaining === 0) {
+      console.warn('[FULFILLMENT_SKIPPED_ALREADY_FULFILLED_SHOPIFY]', {
+        decision_id: job.decision_id,
+        external_order_id: externalOrderId
+      });
+
+      await dbx('fulfillment_executions')
+        .where({ decision_id: job.decision_id })
+        .update({
+          status: 'failure',
+          error: '[SHOPIFY_ALREADY_FULFILLED]'
+        });
+
+      return;
+    }
   
     /**
      * SAFETY CHECK (POST-EXECUTION)
@@ -207,9 +325,9 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
         `,
         variables: {
           input: {
-            lineItemsByFulfillmentOrder: [
-              { fulfillmentOrderId }
-            ]
+            lineItemsByFulfillmentOrder: fulfillmentOrders.map((edge: any) => ({
+              fulfillmentOrderId: edge.node.id
+          }))
           }
         }
       }
@@ -227,7 +345,7 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
     /**
      * STEP 7 — MARK SUCCESS
      */
-    await db('fulfillment_executions')
+    await dbx('fulfillment_executions')
       .where({ decision_id: job.decision_id })
       .update({
         status: 'success',
@@ -242,7 +360,7 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
         error: executionError
       });
 
-      await db('fulfillment_executions')
+      await dbx('fulfillment_executions')
         .where({ decision_id: job.decision_id })
         .update({
           status: 'failure',
@@ -255,6 +373,6 @@ export const proceedFulfillmentHandler: ExecutionHandler = async (job) => {
   console.info('[FULFILLMENT_EXECUTED]', {
     decision_id: job.decision_id,
     external_order_id: externalOrderId,
-    fulfillment_order_id: fulfillmentOrderId
+    fulfillment_order_ids: fulfillmentOrders.map((e: any) => e.node.id)
   });
 };

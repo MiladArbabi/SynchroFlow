@@ -441,11 +441,34 @@ if (signals.is_operational_blocked) {
 }
 
 /**
- * FALLBACK DECISION
- * -----------------
- * Only when no blockers exist
+ * SAFE FULFILLMENT GATE (CRITICAL)
+ * --------------------------------
+ * Prevents blind auto-fulfillment.
+ *
+ * REQUIREMENTS:
+ * - No blockers
+ * - Explicit readiness signal (future: inventory/payment/etc.)
+ *
+ * CURRENT:
+ * - Only allow fulfillment if order_health_score is high
  */
 if (decisions.length === 0) {
+
+  const isSafeToFulfill =
+    signals.order_health_score >= 80 &&
+    !signals.is_inventory_blocked &&
+    !signals.is_customer_blocked &&
+    !signals.is_operational_blocked;
+
+  if (!isSafeToFulfill) {
+    console.warn('[FULFILLMENT_BLOCKED_UNSAFE_DEFAULT]', {
+      orderId,
+      signals
+    });
+
+    return decisions;
+  }
+
   const decision = buildDecision({
     orderId,
     shopId,
@@ -454,30 +477,36 @@ if (decisions.length === 0) {
     action: {
       type: 'proceed_fulfillment',
       payload: {},
-      execution_mode: 'automated'
+      /**
+       * EXECUTION MODE (PHASE 1 — MANUAL)
+       * ---------------------------------
+       * System produces decisions only.
+       * Execution must be explicitly triggered by user.
+       */
+      execution_mode: 'manual'
     }
   });
 
   if (!isReplay) {
-            console.info('[DECISION_CREATED]', {
-                orderId,
-                decisionId: decision.id,
-                type: decision.type,
-                action: decision.recommended_action.type,
-                priority: decision.priority,
-                source: 'fallback',
-            });
-        }
+    console.info('[DECISION_CREATED]', {
+      orderId,
+      decisionId: decision.id,
+      type: decision.type,
+      action: decision.recommended_action.type,
+      priority: decision.priority,
+      source: 'safe_fallback'
+    });
+  }
 
   decisions.push(decision);
 }
 
-  if (!isReplay) {
-        console.info('[DECISION_ENGINE_RESULT]', {
-            orderId,
-            decisionCount: decisions.length
-        });
-    }
+if (!isReplay) {
+  console.info('[DECISION_ENGINE_RESULT]', {
+    orderId,
+    decisionCount: decisions.length
+  });
+}
 
   return decisions;
 }

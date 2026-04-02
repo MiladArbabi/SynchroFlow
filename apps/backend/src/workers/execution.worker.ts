@@ -22,7 +22,11 @@ import { EXECUTION_QUEUE } from '../queues/execution.queue.js';
 
 const decisionRepo = new DecisionRepository();
 
-export async function executeJob(job: ExecutionJob): Promise<void> {
+export async function executeJob(
+  job: ExecutionJob,
+  trx?: Parameters<typeof db.transaction>[0]
+): Promise<void> {
+
   console.info('[EXECUTION_WORKER_START]', {
     decision_id: job.decision_id,
     action_type: job.action_type
@@ -31,16 +35,22 @@ export async function executeJob(job: ExecutionJob): Promise<void> {
   const handler = getExecutionHandler(job.action_type);
 
   /**
- * TRANSACTION TYPING (STRICT)
- * ---------------------------
- * Enforces correct DB transaction contract.
- * Prevents unsafe operations inside execution lifecycle.
- */
-await db.transaction(async (trx: Parameters<typeof decisionRepo.markStarted>[0]) => {
+   * TRANSACTION HANDLING (CRITICAL)
+   * -------------------------------
+   * - If trx provided → reuse it (manual execution path)
+   * - Else → create new transaction (worker path)
+   */
+  if (trx) {
     await decisionRepo.markStarted(trx, job.decision_id);
 
     try {
-      await handler(job);
+      await handler(job, trx);
+
+      /**
+       * NOTE:
+       * - Pass trx to handler for atomic execution
+       * - Ensures handler DB writes are part of same transaction
+       */
 
       await decisionRepo.markSuccess(trx, job.decision_id);
 
@@ -61,7 +71,40 @@ await db.transaction(async (trx: Parameters<typeof decisionRepo.markStarted>[0])
 
       throw error;
     }
-  });
+  } else {
+    await db.transaction(async (trx: Parameters<typeof decisionRepo.markStarted>[0]) => {
+      await decisionRepo.markStarted(trx, job.decision_id);
+
+      try {
+        await handler(job, trx);
+
+        /**
+         * NOTE:
+         * - Same guarantee for worker-managed transactions
+         * - Prevents partial commits across boundaries
+         */
+
+        await decisionRepo.markSuccess(trx, job.decision_id);
+
+        console.info('[EXECUTION_WORKER_SUCCESS]', {
+          decision_id: job.decision_id
+        });
+      } catch (error) {
+        await decisionRepo.markFailure(
+          trx,
+          job.decision_id,
+          (error as Error).message
+        );
+
+        console.error('[EXECUTION_WORKER_FAILURE]', {
+          decision_id: job.decision_id,
+          error: (error as Error).message
+        });
+
+        throw error;
+      }
+    });
+  }
 }
 
 /**
@@ -127,12 +170,59 @@ async function processExecutionMessage(
             return;
     }
 
-    await executeJob(job);
+    /**
+     * EXECUTION MODE GATE (CRITICAL)
+     * ------------------------------
+     * Prevents automatic execution of manual decisions.
+     *
+     * Manual mode:
+     * - job stays in system
+     * - requires explicit trigger (API/UI)
+     */
+    if (job.execution_mode === 'manual') {
+      console.info('[EXECUTION_SKIPPED_MANUAL_MODE]', {
+        decision_id: job.decision_id
+      });
 
-    getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
+      /**
+       * IDEMPOTENT INSERT (CRITICAL)
+       * ----------------------------
+       * Prevents duplicate queue entries under retries.
+       *
+       * Strategy:
+       * - ON CONFLICT DO NOTHING
+       * - decision_id is UNIQUE
+       */
+      await db('decision_execution_queue')
+        .insert({
+          decision_id: job.decision_id,
+          shop_id: job.shop_id,
+          status: 'pending',
+          created_at: db.fn.now()
+        })
+        .onConflict('decision_id')
+        .ignore();
+
+      getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
+
+      return;
+    }
   } catch (err) {
     console.error('[EXECUTION_WORKER_JOB_FAILED]', {
-        error: (err as Error).message
+      decision_id: (() => {
+        try {
+          return JSON.parse(msg.content.toString())?.decision_id;
+        } catch {
+          return 'UNKNOWN_DECISION_ID';
+        }
+      })(),
+      error_message: (err as Error).message,
+      /**
+       * NOTE:
+       * - Fixes duplicate key bug (previously overwrote error)
+       * - Adds decision_id for observability + traceability
+       * - Safe parsing prevents secondary failure during logging
+       */
     });
 
     /**

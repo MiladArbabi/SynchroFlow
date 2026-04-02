@@ -45,7 +45,13 @@ export const httpGetPriorityStack = async (
      *
      * Source of truth: decisions table
      */
-    const rows = await DecisionRepository.getByShop(shopId);
+    const rows = await DecisionRepository.getByShop(String(shopId));
+
+    /**
+     * NOTE:
+     * - shop_id is stored as string (DB + RLS invariant)
+     * - Explicit cast prevents type mismatch and query inconsistency
+     */
 
     console.debug('[Decision][PriorityStack] Rows', {
       count: rows.length,

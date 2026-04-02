@@ -56,15 +56,17 @@ export async function projectDomainEventCore({
     if (!trx) {
       throw new Error('[PROJECTION_TRX_MISSING]');
     }
-       /**
-         * PROJECTION STREAM RESOLUTION
-         * ----------------------------
-         * Must resolve AFTER event fetch.
-         */
-        const projectionName =
-          domainEvent.event_type.startsWith('lifecycle/')
-            ? LIFECYCLE_PROJECTION
-            : ORDERS_PROJECTION;
+
+    /**
+     * PROJECTION WRITE CONTEXT (CRITICAL)
+     * -----------------------------------
+     * Enables DB-level write access to projection tables.
+     *
+     * Required because:
+     * - DB enforces single-writer invariant
+     * - prevents non-engine writes
+     */
+    await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
 
       /**
        * ENGINE IS STATELESS (CRITICAL)
@@ -162,7 +164,45 @@ export async function projectDomainEventCore({
        */
       const normalizedEventType = domainEvent.event_type.replace('.', '/');
 
+      /**
+       * PROJECTION COVERAGE GUARD (CRITICAL)
+       * -----------------------------------
+       * Ensures every domain_event.event_type has a registered handler.
+       *
+       * Prevents:
+       * - silent event drops
+       * - incomplete projections
+       * - non-replayable system state
+       *
+       * This is the SINGLE source of truth for projection completeness.
+       */
       const handler = projectionRegistry[normalizedEventType];
+
+      /**
+       * ORDER PROJECTION TARGET (DEFERRED RESOLUTION)
+       * ---------------------------------------------
+       * Order ID must be resolved by handler via identity map.
+       *
+       * Engine MUST NOT:
+       * - assume payload contains internal ID
+       * - attempt external → internal resolution
+       *
+       * Resolution happens AFTER handler execution.
+       */
+      let projectionTargetOrderId: string | null = null;
+
+
+      if (!handler) {
+        console.error('[PROJECTION_HANDLER_MISSING_FATAL]', {
+          event_type: normalizedEventType,
+          domain_event_id,
+          knownHandlers: Object.keys(projectionRegistry)
+        });
+
+        throw new Error(
+          `[PROJECTION_HANDLER_MISSING] event_type=${normalizedEventType}`
+        );
+      }
 
       /**
        * Attach normalized type for downstream visibility
@@ -175,30 +215,6 @@ export async function projectDomainEventCore({
        * CRITICAL: attach canonical payload to domainEvent
        * so handlers operate on normalized data
        */
-
-      if (!handler) {
-      /**
-       * MISSING HANDLER = HARD FAILURE (CRITICAL FIX)
-       * ---------------------------------------------
-       * Advancing cursor without a handler causes:
-       * - permanent data loss
-       * - irrecoverable projection gaps
-       *
-       * We MUST fail fast and block progression.
-       *
-       * This ensures:
-       * - new event types cannot silently bypass projections
-       * - system remains deterministically rebuildable
-       */
-      console.error('[PROJECTION_HANDLER_MISSING_FATAL]', {
-        event_type: domainEvent.event_type,
-        domain_event_id,
-      });
-
-      throw new Error(
-        `[PROJECTION_HANDLER_MISSING] event_type=${domainEvent.event_type}`
-      );
-    }
 
       /**
        * HANDLER EXECUTION
@@ -216,6 +232,85 @@ export async function projectDomainEventCore({
           domain_event_id,
           canonicalEventTime,
           trx,
+        });
+      }
+
+      /**
+       * ORDER-ENTITY EVENTS ONLY (STRICT FILTER)
+       * ---------------------------------------
+       * Only events that operate on a specific order
+       * require identity resolution.
+       *
+       * Excludes:
+       * - orders/sync_started (no order context)
+       */
+      const isOrderEntityEvent = [
+        'orders/create',
+        'orders/sync',
+        'orders/paid',
+        'orders/fulfilled',
+        'orders/fulfillment_updated'
+      ].includes(normalizedEventType);
+
+      if (isOrderEntityEvent) {
+        const payload = canonicalPayload || domainEvent.event_payload;
+
+        const externalId =
+          payload?.id ??
+          payload?.order_id ??
+          null;
+
+        if (!externalId) {
+          console.error('[ORDER_EXTERNAL_ID_MISSING_FATAL]', {
+            eventId: domain_event_id,
+            eventType: normalizedEventType,
+          });
+
+          throw new Error(
+            `[ORDER_EXTERNAL_ID_MISSING] event ${domain_event_id}`
+          );
+        }
+
+        const mapping = await trx('external_order_identity_map')
+          .where({
+            shop_id: domainEvent.shop_id,
+            platform: 'shopify',
+            external_order_id: String(externalId),
+          })
+          .first();
+
+        if (!mapping?.lasyncro_order_id) {
+          console.error('[ORDER_IDENTITY_RESOLUTION_FAILED_FATAL]', {
+            eventId: domain_event_id,
+            externalId,
+          });
+
+          throw new Error(
+            `[ORDER_IDENTITY_RESOLUTION_FAILED] externalId=${externalId}`
+          );
+        }
+
+        projectionTargetOrderId = mapping.lasyncro_order_id;
+      }
+
+      /**
+       * PROJECTION COMPLETION WRITE (CRITICAL)
+       * --------------------------------------
+       * Marks projection as complete for this aggregate version.
+       *
+       * MUST run AFTER handler succeeds.
+       */
+      if (projectionTargetOrderId) {
+        await trx('orders')
+          .where({ lasyncro_order_id: projectionTargetOrderId })
+          .update({
+            last_projected_version: trx.raw('aggregate_version'),
+            updated_at: trx.fn.now(),
+          });
+
+        console.debug('[PROJECTION_COMPLETED]', {
+          orderId: projectionTargetOrderId,
+          domain_event_id,
         });
       }
 

@@ -207,8 +207,8 @@ export class DecisionRepository {
       };
 
       const serialized = JSON.stringify(test);
+      console.debug('[FINAL_DB_SERIALIZATION]', serialized);
 
-      /* console.debug('[FINAL_DB_SERIALIZATION]', serialized); */
     } catch (err) {
       throw new Error('[FINAL_DB_SERIALIZATION_FAILED]');
     }
@@ -323,10 +323,17 @@ export class DecisionRepository {
   /**
    * Fetch decisions for tenant (priority-ordered)
    */
-  static async getByShop(shopId: number): Promise<Decision[]> {
-    return db('decisions')
-      .where({ shop_id: shopId })
-      .orderBy('priority', 'desc');
+  static async getByShop(shopId: string): Promise<Decision[]> {
+  return db('decisions')
+    .where({ shop_id: shopId })
+    .orderBy('priority', 'desc');
+
+    /**
+     * NOTE:
+     * - shop_id is stored as string (DB + RLS invariant)
+     * - Using number caused silent mismatches in queries
+     * - Enforces type consistency across repository boundary
+     */
   }
 
   /**

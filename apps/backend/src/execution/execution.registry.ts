@@ -16,7 +16,17 @@
 
 import { ExecutionJob } from '../domain/decision/Decision.js';
 
-export type ExecutionHandler = (job: ExecutionJob) => Promise<void>;
+export type ExecutionHandler = (
+  job: ExecutionJob,
+  trx?: Parameters<typeof import('@lasyncro/backend-core/db.js').default.transaction>[0]
+) => Promise<void>;
+
+/**
+ * NOTE:
+ * - Added trx support for atomic execution
+ * - Enables handlers to participate in same DB transaction as worker
+ * - Required for correctness in manual execution path
+ */
 
 const registry: Record<string, ExecutionHandler> = {};
 

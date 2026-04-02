@@ -38,6 +38,36 @@ const cursorRow = await db('projection_cursors')
 const lastProcessed = Number(cursorRow?.last_processed_event_id ?? 0);
 
 /**
+ * CURSOR INVARIANT GUARD (CRITICAL)
+ * ---------------------------------
+ * Ensures projection cursor never exceeds available domain events.
+ *
+ * Prevents:
+ * - phantom progress
+ * - skipped projections
+ * - unrecoverable state divergence
+ *
+ * Invariant:
+ *   cursor <= MAX(domain_events.id)
+ */
+const maxEventRow = await db('domain_events')
+  .max<{ max: number }>('id as max')
+  .first();
+
+const maxEventId = Number(maxEventRow?.max ?? 0);
+
+if (lastProcessed > maxEventId) {
+  console.error('[PROJECTION_CURSOR_CORRUPTION_FATAL]', {
+    lastProcessed,
+    maxEventId
+  });
+
+  throw new Error(
+    `[PROJECTION_CURSOR_INVALID] cursor=${lastProcessed} max_event_id=${maxEventId}`
+  );
+}
+
+/**
  * STEP 2 — FETCH NEXT EVENT (NO LOCK)
  */
 const nextEvents = await db('domain_events')
