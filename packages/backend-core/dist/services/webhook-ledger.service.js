@@ -9,14 +9,15 @@ export class WebhookLedgerService {
          * - no NULL window in ledger
          */
         if (!params.shopId) {
-            console.warn('[WEBHOOK_LEDGER_NO_SHOP_ID]', {
+            console.error('[WEBHOOK_LEDGER_SHOP_ID_REQUIRED]', {
                 externalEventId: params.externalEventId,
                 integration: params.integration,
                 eventType: params.eventType,
             });
+            throw new Error('[WEBHOOK_LEDGER_SHOP_ID_REQUIRED]');
         }
         await db('integration_webhook_events').insert({
-            shop_id: params.shopId ?? null,
+            shop_id: params.shopId,
             integration: params.integration,
             external_event_id: params.externalEventId,
             event_type: params.eventType,
@@ -27,29 +28,44 @@ export class WebhookLedgerService {
         });
     }
     static async markProcessed(externalEventId, shopId) {
+        if (shopId === undefined) {
+            console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
+                externalEventId
+            });
+        }
         await db('integration_webhook_events')
             .where({ external_event_id: externalEventId })
             .update({
             processing_status: 'processed',
-            shop_id: shopId ?? null,
+            ...(shopId !== undefined ? { shop_id: shopId } : {}),
         });
     }
     static async markIgnored(externalEventId, reason, shopId) {
+        if (shopId === undefined) {
+            console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
+                externalEventId
+            });
+        }
         await db('integration_webhook_events')
             .where({ external_event_id: externalEventId })
             .update({
             processing_status: 'ignored',
             processing_error: reason,
-            shop_id: shopId ?? null,
+            ...(shopId !== undefined ? { shop_id: shopId } : {}),
         });
     }
     static async markFailed(externalEventId, error, shopId) {
+        if (shopId === undefined) {
+            console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
+                externalEventId
+            });
+        }
         await db('integration_webhook_events')
             .where({ external_event_id: externalEventId })
             .update({
             processing_status: 'failed',
             processing_error: error,
-            shop_id: shopId ?? null,
+            ...(shopId !== undefined ? { shop_id: shopId } : {}),
         });
     }
 }

@@ -93,6 +93,15 @@ export class WebhookRouter {
       refundPayload?.admin_graphql_api_id ??
       null;
 
+      /**
+       * SHOP RESOLUTION (CRITICAL LINKAGE)
+       * ----------------------------------
+       * Required to ensure:
+       * - webhook ledger ↔ domain_events joinability
+       * - full ingestion traceability
+       */
+      let shopId: number | null = null;
+
     /**
      * LEDGER INGESTION (UNIFIED)
      * --------------------------
@@ -102,14 +111,6 @@ export class WebhookRouter {
      * Refund idempotency at execution layer remains additive.
      */
     if (!(envelope as any).__fromQueue) {
-      /**
-       * SHOP RESOLUTION (CRITICAL LINKAGE)
-       * ----------------------------------
-       * Required to ensure:
-       * - webhook ledger ↔ domain_events joinability
-       * - full ingestion traceability
-       */
-      let shopId: number | null = null;
 
       if (envelope.shopDomain) {
         const installation = await db('shopify_app_installations')
@@ -124,7 +125,23 @@ export class WebhookRouter {
             eventId: envelope.eventId,
             shopDomain: envelope.shopDomain,
           });
+
+          /**
+           * HARD FAIL (CRITICAL)
+           * --------------------
+           * shop_id is REQUIRED for:
+           * - RLS
+           * - ledger integrity
+           * - downstream processing
+           *
+           * Continuing causes DB constraint violation and crashes.
+           */
+          throw new Error('[WEBHOOK_SHOP_RESOLUTION_HARD_FAIL]');
         }
+      }
+
+      if (!shopId) {
+        throw new Error('[WEBHOOK_MISSING_SHOP_ID]');
       }
 
       await WebhookLedgerService.recordReceived({
@@ -213,7 +230,8 @@ export class WebhookRouter {
     if (!handler) {
       await WebhookLedgerService.markIgnored(
         envelope.eventId,
-        'unsupported_event'
+        'unsupported_event',
+        shopId ?? undefined
       );
 
       /**
@@ -260,13 +278,19 @@ export class WebhookRouter {
 
     try {
       await handler(envelope);
-      await WebhookLedgerService.markProcessed(envelope.eventId);
+
+      await WebhookLedgerService.markProcessed(
+        envelope.eventId,
+        shopId ?? undefined
+      );
+
     } catch (err: any) {
       console.error('[WEBHOOK HANDLER ERROR]', err);
       
       await WebhookLedgerService.markFailed(
         envelope.eventId,
-        err?.message ?? 'handler_error'
+        err?.message ?? 'handler_error',
+        shopId ?? undefined
       );
     }
   }

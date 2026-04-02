@@ -686,6 +686,7 @@ export async function reconcileOrderFulfillment(
     } else {
       decisions = generateDecisions({
         orderId: lasyncroOrderId,
+        shopId: order.shop_id,
         aggregateVersion,
         riskSnapshot
       });
@@ -890,7 +891,16 @@ export async function reconcileOrderFulfillment(
       aggregate_version: d.aggregate_version,
       action_type: d.recommended_action.type,
       payload: d.recommended_action.payload,
-      execution_mode: d.recommended_action.execution_mode
+      execution_mode: d.recommended_action.execution_mode,
+
+      /**
+       * TENANT CONTEXT (CRITICAL)
+       * -------------------------
+       * Required downstream for:
+       * - RLS
+       * - Shopify API access
+       */
+      shop_id: d.shop_id
     });
   }
 

@@ -43,7 +43,13 @@ export function mapShopifyOrderNodeToCanonical(
       throw new Error('[CANONICAL_ORDER_INVALID_ID]');
     }
 
-  const currency = node.currencyCode;
+  const currency =
+    node.currencyCode ??
+    node.currency ??
+    node.presentment_currency ??
+    node.total_price_set?.shop_money?.currency_code ??
+    node.current_total_price_set?.shop_money?.currency_code ??
+    null;
 
   if (!currency) {
     console.error('[CANONICAL_ORDER][CURRENCY_MISSING]', {
@@ -54,9 +60,47 @@ export function mapShopifyOrderNodeToCanonical(
     throw new Error('[CANONICAL_ORDER] currencyCode is required');
   }
 
-  if (node.totalPriceSet?.shopMoney?.amount == null) {
+  const totalPriceRaw =
+    node.totalPriceSet?.shopMoney?.amount ??
+    node.total_price_set?.shop_money?.amount ??
+    node.current_total_price_set?.shop_money?.amount ??
+    node.total_price ??
+    node.current_total_price ??
+    null;
+
+  if (totalPriceRaw == null) {
     throw new Error('[CANONICAL_ORDER] totalPrice missing');
   }
+
+  const totalPrice = Number(totalPriceRaw);
+
+  const subtotalRaw =
+    node.subtotalPriceSet?.shopMoney?.amount ??
+    node.subtotal_price_set?.shop_money?.amount ??
+    node.current_subtotal_price_set?.shop_money?.amount ??
+    node.subtotal_price ??
+    node.current_subtotal_price ??
+    null;
+
+  if (subtotalRaw == null) {
+    throw new Error('[CANONICAL_ORDER] subtotalPrice missing');
+  }
+
+  const subtotalPrice = Number(subtotalRaw);
+
+  const totalTaxRaw =
+    node.totalTaxSet?.shopMoney?.amount ??
+    node.total_tax_set?.shop_money?.amount ??
+    node.current_total_tax_set?.shop_money?.amount ??
+    node.total_tax ??
+    node.current_total_tax ??
+    null;
+
+  if (totalTaxRaw == null) {
+    throw new Error('[CANONICAL_ORDER] totalTax missing');
+  }
+
+  const totalTax = Number(totalTaxRaw);
 
   return {
     id: orderId,
@@ -71,20 +115,10 @@ export function mapShopifyOrderNodeToCanonical(
     currency,
 
     // ── Monetary completeness (NO inference) ─────────
-    totalPrice:
-      node.totalPriceSet?.shopMoney?.amount != null
-        ? Number(node.totalPriceSet.shopMoney.amount)
-        : null,
+    totalPrice,
 
-    subtotalPrice:
-      node.subtotalPriceSet?.shopMoney?.amount != null
-        ? Number(node.subtotalPriceSet.shopMoney.amount)
-        : null,
-
-    totalTax:
-      node.totalTaxSet?.shopMoney?.amount != null
-        ? Number(node.totalTaxSet.shopMoney.amount)
-        : null,
+    subtotalPrice,
+    totalTax,
 
     // ── Line items (structural only) ─────────────────
     lineItems: (node.lineItems?.edges ?? []).map((edge: any) => {

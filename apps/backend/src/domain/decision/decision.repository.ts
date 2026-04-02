@@ -93,8 +93,18 @@ export class DecisionRepository {
 
   /**
    * Insert new decision
+   * 
+   * TYPE INVARIANT:
+   * ---------------
+   * shop_id MUST be string.
+   *
+   * Source of truth:
+   * - DB schema (varchar)
+   * - RLS context (text)
+   *
+   * NEVER use number here.
    */
-  static async create(decision: Decision & { shop_id: number }): Promise<void> {
+  static async create(decision: Decision & { shop_id: string }): Promise<void> {
 
     /**
      * CALL SITE ENFORCEMENT (CRITICAL)

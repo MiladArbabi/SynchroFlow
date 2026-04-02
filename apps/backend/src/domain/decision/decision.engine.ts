@@ -181,11 +181,13 @@ function assertNoStringifiedJson(obj: unknown, path = 'root') {
  */
 function buildDecision({
   orderId,
+  shopId,
   aggregateVersion,
   signals,
   action
 }: {
   orderId: string;
+  shopId: string;
   aggregateVersion: number;
   signals: DecisionSignals;
   action: any;
@@ -234,6 +236,7 @@ function buildDecision({
     id: decisionId,
     type: deriveDecisionType(signals),
     entity_id: orderId,
+    shop_id: shopId,
     aggregate_version: aggregateVersion,
     priority: calculateDecisionPriority(signals),
 
@@ -320,10 +323,12 @@ function mapToDecisionSignals(input: any): DecisionSignals {
  */
 export function generateDecisions({
   orderId,
+  shopId,
   aggregateVersion,
   riskSnapshot
 }: {
   orderId: string;
+  shopId: string,
   aggregateVersion: number;
   riskSnapshot: DecisionSignals;
 }): Decision[] {
@@ -349,6 +354,7 @@ if (!isReplay) {
   if (signals.is_inventory_blocked) {
     const decision = buildDecision({
         orderId,
+        shopId,
         aggregateVersion,
         signals,
         action: {
@@ -380,6 +386,7 @@ if (!isReplay) {
 if (signals.is_customer_blocked) {
   const decision = buildDecision({
     orderId,
+    shopId,
     aggregateVersion,
     signals,
     action: {
@@ -409,6 +416,7 @@ if (signals.is_customer_blocked) {
 if (signals.is_operational_blocked) {
   const decision = buildDecision({
     orderId,
+    shopId,
     aggregateVersion,
     signals,
     action: {
@@ -440,6 +448,7 @@ if (signals.is_operational_blocked) {
 if (decisions.length === 0) {
   const decision = buildDecision({
     orderId,
+    shopId,
     aggregateVersion,
     signals,
     action: {

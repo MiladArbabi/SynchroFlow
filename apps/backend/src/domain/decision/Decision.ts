@@ -61,6 +61,18 @@ export interface Decision {
   entity_id: string;
 
   /**
+   * TENANT CONTEXT (CRITICAL)
+   * -------------------------
+   * Required for:
+   * - RLS enforcement
+   * - execution routing
+   * - external integrations (Shopify)
+   *
+   * MUST be present on ALL decisions
+   */
+  shop_id: string;
+
+  /**
    * AGGREGATE VERSION (CRITICAL)
    * ---------------------------
    * Binds decision to exact reconciliation version.
@@ -140,6 +152,18 @@ export interface Decision {
 export interface ExecutionJob {
   decision_id: string;
   entity_id: string;
+
+  /**
+   * TENANT CONTEXT (CRITICAL)
+   * -------------------------
+   * Required for:
+   * - RLS enforcement
+   * - external API resolution (Shopify)
+   *
+   * MUST be propagated from decision layer
+   */
+  shop_id: string;
+
   aggregate_version: number;
 
   action_type: string;

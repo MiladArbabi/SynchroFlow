@@ -138,11 +138,11 @@ export async function handleOrderFulfillment(
          * DOMAIN EVENT TYPE ALIGNMENT
          * ---------------------------
          * Must match projection handler:
-         *   handleOrdersFulfilled → 'orders.fulfilled'
+         *   handleOrdersFulfilled → 'orders/fulfilled'
          *
          * Mismatch breaks rebuild determinism.
          */
-        event_type: 'orders.fulfilled',
+        event_type: 'orders/fulfilled',
         event_payload: normalizedPayload,
         event_time: new Date(eventTime),
         event_version: 1,
