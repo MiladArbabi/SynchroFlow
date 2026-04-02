@@ -314,6 +314,13 @@ export async function projectDomainEventCore({
         });
       }
 
+      if (!projectionTargetOrderId) {
+        console.warn('[PROJECTION_NO_ORDER_TARGET]', {
+          eventType: normalizedEventType,
+          domain_event_id
+        });
+      }
+
       /**
        * CURSOR ADVANCEMENT HANDLED INLINE
        * ---------------------------------

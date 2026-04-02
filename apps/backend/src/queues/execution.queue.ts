@@ -68,23 +68,45 @@ export async function enqueueExecutionJob(job: ExecutionJob): Promise<void> {
   const payload = Buffer.from(JSON.stringify(job));
 
   /**
- * RETRY METADATA (CRITICAL)
- * -------------------------
- * - Initializes retry tracking at enqueue time
- * - Enables DLQ + worker visibility into retry lifecycle
- *
- * Headers:
- * - x-retry-count: number of attempts (starts at 0)
- *
- * Future:
- * - can extend with retry reason / trace id
- */
-const ok = channel.sendToQueue(EXECUTION_QUEUE, payload, {
-  persistent: true,
-  headers: {
-    'x-retry-count': 0
+   * ENQUEUE IDEMPOTENCY GUARD (CRITICAL)
+   * ------------------------------------
+   * Prevents duplicate jobs entering queue.
+   *
+   * Uses decision_execution_queue as source of truth.
+   */
+  const existing = await import('@lasyncro/backend-core/db.js')
+    .then(m => m.default('decision_execution_queue')
+      .where({ decision_id: job.decision_id })
+      .first()
+    );
+
+  if (existing) {
+    console.warn('[EXECUTION_ENQUEUE_SKIPPED_DUPLICATE]', {
+      decision_id: job.decision_id,
+      status: existing.status
+    });
+
+    return;
   }
-});
+
+  /**
+   * RETRY METADATA (CRITICAL)
+   * -------------------------
+   * - Initializes retry tracking at enqueue time
+   * - Enables DLQ + worker visibility into retry lifecycle
+   *
+   * Headers:
+   * - x-retry-count: number of attempts (starts at 0)
+   *
+   * Future:
+   * - can extend with retry reason / trace id
+   */
+  const ok = channel.sendToQueue(EXECUTION_QUEUE, payload, {
+    persistent: true,
+    headers: {
+      'x-retry-count': 0
+    }
+  });
 
   if (!ok) {
     console.error('[EXECUTION_ENQUEUE_FAILED]', {

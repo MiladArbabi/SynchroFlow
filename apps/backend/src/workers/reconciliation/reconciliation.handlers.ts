@@ -78,27 +78,44 @@ export async function reconcileOrderFulfillment(
       .first();
 
     /**
-     * PROJECTION FRESHNESS GUARD (CRITICAL)
-     * -------------------------------------
-     * Ensures reconciliation only runs on fully projected state.
+     * PROJECTION LAG HANDLING (RETRYABLE — CRITICAL FIX)
+     * -------------------------------------------------
+     * Projection and reconciliation are asynchronous.
      *
-     * Prevents:
-     * - reading stale projections
-     * - making decisions on incomplete data
+     * A small lag is EXPECTED and must NOT crash reconciliation.
      *
-     * Invariant:
-     *   last_projected_version >= aggregateVersion
+     * Strategy:
+     * - signal retry
+     * - DO NOT treat as fatal
      */
     if (order.last_projected_version < aggregateVersion) {
-      console.error('[PROJECTION_LAG_DETECTED_FATAL]', {
+      /**
+       * PROJECTION NOT READY — SAFE SKIP (CRITICAL)
+       * ------------------------------------------
+       * This is NOT a failure.
+       *
+       * It indicates projection has not yet caught up.
+       * Reconciliation must NOT run yet.
+       *
+       * Throwing here causes:
+       * - retry storms
+       * - log noise
+       * - system instability
+       *
+       * Correct behavior:
+       * → exit gracefully
+       * → allow dispatcher to retry later
+       */
+      console.info('[RECONCILIATION_SKIPPED_PROJECTION_NOT_READY]', {
         orderId: lasyncroOrderId,
         aggregateVersion,
         lastProjectedVersion: order.last_projected_version
       });
 
-      throw new Error(
-        `[PROJECTION_LAG] order=${lasyncroOrderId} projected=${order.last_projected_version} expected=${aggregateVersion}`
-      );
+      return {
+        result: 'noop' as ReconciliationResult,
+        affectedVariantIds: [] as string[]
+      };
     }
 
     /**

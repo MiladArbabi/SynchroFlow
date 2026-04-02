@@ -18,7 +18,12 @@ import { ExecutionJob } from '../domain/decision/Decision.js';
 
 export type ExecutionHandler = (
   job: ExecutionJob,
-  trx?: Parameters<typeof import('@lasyncro/backend-core/db.js').default.transaction>[0]
+  /**
+   * NOTE:
+   * - Knex transaction type is not reliably inferred here
+   * - Using `any` to match runtime behavior (callable trx)
+   */
+  trx?: any
 ) => Promise<void>;
 
 /**

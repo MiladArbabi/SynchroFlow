@@ -24,7 +24,7 @@ const decisionRepo = new DecisionRepository();
 
 export async function executeJob(
   job: ExecutionJob,
-  trx?: Parameters<typeof db.transaction>[0]
+  trx?: any
 ): Promise<void> {
 
   console.info('[EXECUTION_WORKER_START]', {
@@ -42,6 +42,26 @@ export async function executeJob(
    */
   if (trx) {
     await decisionRepo.markStarted(trx, job.decision_id);
+
+    const queueRow = await (trx as any)('decision_execution_queue')
+      .where({ decision_id: job.decision_id })
+      .first();
+
+    if (queueRow) {
+      if (queueRow.status === 'success') {
+        console.warn('[EXECUTION_ABORT_ALREADY_SUCCESS]', {
+          decision_id: job.decision_id
+        });
+        return;
+      }
+
+      if (queueRow.status === 'failed') {
+        console.warn('[EXECUTION_ABORT_FAILED_STATE]', {
+          decision_id: job.decision_id
+        });
+        return;
+      }
+    }
 
     try {
       await handler(job, trx);
@@ -72,8 +92,28 @@ export async function executeJob(
       throw error;
     }
   } else {
-    await db.transaction(async (trx: Parameters<typeof decisionRepo.markStarted>[0]) => {
+    await db.transaction(async (trx) => {
       await decisionRepo.markStarted(trx, job.decision_id);
+
+      const queueRow = await (trx as any)('decision_execution_queue')
+        .where({ decision_id: job.decision_id })
+        .first();
+
+      if (queueRow) {
+        if (queueRow.status === 'success') {
+          console.warn('[EXECUTION_ABORT_ALREADY_SUCCESS]', {
+            decision_id: job.decision_id
+          });
+          return;
+        }
+
+        if (queueRow.status === 'failed') {
+          console.warn('[EXECUTION_ABORT_FAILED_STATE]', {
+            decision_id: job.decision_id
+          });
+          return;
+        }
+      }
 
       try {
         await handler(job, trx);
@@ -126,6 +166,36 @@ async function processExecutionMessage(
     const job = JSON.parse(
       msg.content.toString()
     ) as ExecutionJob;
+
+    /**
+     * EXECUTION IDEMPOTENCY GUARD (CRITICAL)
+     * -------------------------------------
+     * Prevents duplicate execution across retries / race conditions.
+     *
+     * Policy:
+     * - If already executed → skip
+     * - If already started → skip (in-flight protection)
+     */
+    const existing = await db('decision_execution_queue')
+      .where({ decision_id: job.decision_id })
+      .first();
+
+    if (existing) {
+      /**
+       * TERMINAL STATES:
+       * - success → already executed
+       * - pending → already scheduled (manual)
+       */
+      if (existing.status === 'success' || existing.status === 'pending') {
+        console.warn('[EXECUTION_SKIPPED_ALREADY_PROCESSED]', {
+          decision_id: job.decision_id,
+          status: existing.status
+        });
+
+        getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
+        return;
+      }
+    }
 
     /**
      * RETRY METADATA EXTRACTION (CRITICAL)
@@ -185,23 +255,32 @@ async function processExecutionMessage(
       });
 
       /**
-       * IDEMPOTENT INSERT (CRITICAL)
-       * ----------------------------
-       * Prevents duplicate queue entries under retries.
-       *
-       * Strategy:
-       * - ON CONFLICT DO NOTHING
-       * - decision_id is UNIQUE
+       * IDEMPOTENT INSERT (SAFE + OBSERVABLE)
+       * -------------------------------------
+       * - Uses UNIQUE(decision_id)
+       * - Detects duplicates via error handling (no schema change required)
        */
-      await db('decision_execution_queue')
-        .insert({
+      try {
+        await db('decision_execution_queue').insert({
           decision_id: job.decision_id,
           shop_id: job.shop_id,
           status: 'pending',
           created_at: db.fn.now()
-        })
-        .onConflict('decision_id')
-        .ignore();
+        });
+      } catch (err: any) {
+        /**
+         * DUPLICATE DETECTION (CRITICAL)
+         * ------------------------------
+         * Postgres unique violation = 23505
+         */
+        if (err.code === '23505') {
+          console.warn('[EXECUTION_DUPLICATE_DETECTED]', {
+            decision_id: job.decision_id
+          });
+        } else {
+          throw err;
+        }
+      }
 
       getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
 
@@ -252,26 +331,52 @@ async function processExecutionMessage(
         30000
     );
 
-    channel.sendToQueue(
-        EXECUTION_QUEUE,
-        msg.content,
-        {
-            persistent: true,
-            headers: {
-            ...msg.properties?.headers,
-            'x-retry-count': nextRetryCount
-            },
-            expiration: String(retryDelayMs) // delay before retry
-        }
-    );
+  /**
+   * SAFE RETRY ENQUEUE (CRITICAL)
+   * -----------------------------
+   * - Must confirm enqueue BEFORE ack
+   * - Prevents message loss on failure
+   */
+  const enqueueOk = channel.sendToQueue(
+    EXECUTION_QUEUE,
+    msg.content,
+    {
+      persistent: true,
+      headers: {
+        ...msg.properties?.headers,
+        'x-retry-count': nextRetryCount
+      },
+      expiration: String(retryDelayMs)
+    }
+  );
 
-        console.warn('[EXECUTION_RETRY_SCHEDULED]', {
-        retry_count: nextRetryCount,
-        delay_ms: retryDelayMs
+  if (!enqueueOk) {
+    /**
+     * DO NOT ACK → message will be redelivered
+     */
+    console.error('[EXECUTION_RETRY_ENQUEUE_FAILED]', {
+      decision_id: (() => {
+        try {
+          return JSON.parse(msg.content.toString())?.decision_id;
+        } catch {
+          return 'UNKNOWN_DECISION_ID';
+        }
+      })(),
+      retry_count: nextRetryCount
     });
 
-    // ACK original message to prevent duplicate DLQ routing
-    channel.ack(msg as any);
+    return;
+  }
+
+  console.warn('[EXECUTION_RETRY_SCHEDULED]', {
+    retry_count: nextRetryCount,
+    delay_ms: retryDelayMs
+  });
+
+  /**
+   * ACK ONLY AFTER SUCCESSFUL ENQUEUE
+   */
+  channel.ack(msg as any);
 
     console.warn('[EXECUTION_RETRY_REQUEUED]', {
         retry_count: nextRetryCount
