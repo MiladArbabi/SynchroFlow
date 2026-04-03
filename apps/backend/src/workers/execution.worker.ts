@@ -19,6 +19,7 @@ import { getExecutionHandler } from '../execution/execution.registry.js';
 import { DecisionRepository } from '../domain/decision/decision.repository.js';
 import { getQueueChannel } from '../queue.js';
 import { EXECUTION_QUEUE } from '../queues/execution.queue.js';
+import { validateExecution } from '../execution/execution.guard.js';
 
 const decisionRepo = new DecisionRepository();
 
@@ -43,27 +44,8 @@ export async function executeJob(
   if (trx) {
     await decisionRepo.markStarted(trx, job.decision_id);
 
-    const queueRow = await (trx as any)('decision_execution_queue')
-      .where({ decision_id: job.decision_id })
-      .first();
-
-    if (queueRow) {
-      if (queueRow.status === 'success') {
-        console.warn('[EXECUTION_ABORT_ALREADY_SUCCESS]', {
-          decision_id: job.decision_id
-        });
-        return;
-      }
-
-      if (queueRow.status === 'failed') {
-        console.warn('[EXECUTION_ABORT_FAILED_STATE]', {
-          decision_id: job.decision_id
-        });
-        return;
-      }
-    }
-
     try {
+      await validateExecution(job, trx);
       await handler(job, trx);
 
       /**
@@ -95,27 +77,8 @@ export async function executeJob(
     await db.transaction(async (trx) => {
       await decisionRepo.markStarted(trx, job.decision_id);
 
-      const queueRow = await (trx as any)('decision_execution_queue')
-        .where({ decision_id: job.decision_id })
-        .first();
-
-      if (queueRow) {
-        if (queueRow.status === 'success') {
-          console.warn('[EXECUTION_ABORT_ALREADY_SUCCESS]', {
-            decision_id: job.decision_id
-          });
-          return;
-        }
-
-        if (queueRow.status === 'failed') {
-          console.warn('[EXECUTION_ABORT_FAILED_STATE]', {
-            decision_id: job.decision_id
-          });
-          return;
-        }
-      }
-
       try {
+        await validateExecution(job, trx);
         await handler(job, trx);
 
         /**

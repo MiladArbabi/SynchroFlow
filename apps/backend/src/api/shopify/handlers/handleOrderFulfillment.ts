@@ -30,6 +30,8 @@ export async function handleOrderFulfillment(
 
   const rawPayload = envelope.rawPayload;
 
+  console.log('[FULFILLMENT_RAW]', JSON.stringify(rawPayload));
+
   /**
    * INGESTION TRACE
    * ----------------

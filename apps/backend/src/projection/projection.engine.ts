@@ -3,6 +3,7 @@ import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
 
 import { projectionRegistry } from './projection.registry.js';
+import { extractExternalOrderId } from './projection.utils.js';
 
 /**
  * PROJECTION ENGINE
@@ -224,15 +225,26 @@ export async function projectDomainEventCore({
        * and deterministic rebuild behavior.
        */
       if (handler) {
-        await handler({
-          domainEvent: {
-            ...domainEvent,
-            canonical_payload: canonicalPayload, // ← attach here safely
-          },
-          domain_event_id,
-          canonicalEventTime,
-          trx,
-        });
+        try {
+          await handler({
+            domainEvent: {
+              ...domainEvent,
+              canonical_payload: canonicalPayload,
+            },
+            domain_event_id,
+            canonicalEventTime,
+            trx,
+          });
+        } catch (err: any) {
+          console.error('[PROJECTION_HANDLER_ERROR]', {
+            eventId: domain_event_id,
+            eventType: normalizedEventType,
+            error: err?.message,
+          });
+
+          // DO NOT crash worker
+          return;
+        }
       }
 
       /**
@@ -253,29 +265,34 @@ export async function projectDomainEventCore({
       ].includes(normalizedEventType);
 
       if (isOrderEntityEvent) {
-        const payload = canonicalPayload || domainEvent.event_payload;
+        const payload = canonicalPayload ?? domainEvent.event_payload;
 
-        const externalId =
-          payload?.id ??
-          payload?.order_id ??
-          null;
+        if (!payload) {
+          throw new Error(`[MISSING_PAYLOAD] event ${domain_event_id}`);
+        }
 
-        if (!externalId) {
-          console.error('[ORDER_EXTERNAL_ID_MISSING_FATAL]', {
+        const externalId = extractExternalOrderId(
+          normalizedEventType,
+          payload
+        );
+
+        if (externalId === null || externalId === undefined) {
+          console.error('[ORDER_EXTERNAL_ID_INVALID_FATAL]', {
             eventId: domain_event_id,
             eventType: normalizedEventType,
-          });
+            payload
+          }); 
 
-          throw new Error(
-            `[ORDER_EXTERNAL_ID_MISSING] event ${domain_event_id}`
-          );
+          throw new Error(`[ORDER_EXTERNAL_ID_INVALID] event ${domain_event_id}`);
         }
+
+        const externalIdStr = String(externalId);
 
         const mapping = await trx('external_order_identity_map')
           .where({
             shop_id: domainEvent.shop_id,
             platform: 'shopify',
-            external_order_id: String(externalId),
+            external_order_id: externalIdStr,
           })
           .first();
 

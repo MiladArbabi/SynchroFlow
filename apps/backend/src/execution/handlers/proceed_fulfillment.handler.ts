@@ -271,34 +271,6 @@ const dbx = (trx ?? db) as typeof db;
      */
     fulfillmentOrders =
       fulfillmentOrdersResponse?.body?.data?.order?.fulfillmentOrders?.edges ?? [];
-
-    /**
-     * AGGREGATE REMAINING QUANTITY (CRITICAL)
-     * ---------------------------------------
-     * Must evaluate ALL fulfillment orders (multi-location safe).
-     */
-    const totalRemaining = fulfillmentOrders.reduce((sum: number, edge: any) => {
-      const quantities =
-        edge.node?.lineItems?.edges?.map((e: any) => e.node.remainingQuantity) ?? [];
-
-      return sum + quantities.reduce((s: number, q: number) => s + q, 0);
-    }, 0);
-
-    if (totalRemaining === 0) {
-      console.warn('[FULFILLMENT_SKIPPED_ALREADY_FULFILLED_SHOPIFY]', {
-        decision_id: job.decision_id,
-        external_order_id: externalOrderId
-      });
-
-      await dbx('fulfillment_executions')
-        .where({ decision_id: job.decision_id })
-        .update({
-          status: 'failure',
-          error: '[SHOPIFY_ALREADY_FULFILLED]'
-        });
-
-      return;
-    }
   
     /**
      * SAFETY CHECK (POST-EXECUTION)

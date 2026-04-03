@@ -336,6 +336,18 @@ export async function handleOrdersFulfilled({
         eventId: domain_event_id,
       });
 
+      await trx('order_fulfillment_history')
+        .insert({
+          lasyncro_fulfillment_event_id: crypto.randomUUID(),
+          lasyncro_order_id: lasyncroOrderId,
+          status,
+          event_occurred_at: canonicalEventTime,
+        })
+        .onConflict(
+          ['lasyncro_order_id', 'status', 'event_occurred_at']
+        )
+        .ignore();
+
       /**
        * PROJECTION TRACE
        */

@@ -22,7 +22,18 @@ const router = Router();
  */
 router.use(
   '/webhooks',
-  verifyShopifySignature,
+  (req, res, next) => {
+    const bypass =
+      process.env.NODE_ENV === 'development' &&
+      req.headers['x-dev-bypass-signature'] === 'true';
+
+    if (bypass) {
+      console.warn('[WEBHOOK_SIGNATURE_BYPASSED_DEV]');
+      return next();
+    }
+
+    return verifyShopifySignature(req, res, next);
+  },
   webhookRouter
 );
 

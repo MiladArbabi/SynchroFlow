@@ -16,7 +16,8 @@ export class WebhookLedgerService {
             });
             throw new Error('[WEBHOOK_LEDGER_SHOP_ID_REQUIRED]');
         }
-        await db('integration_webhook_events').insert({
+        const result = await db('integration_webhook_events')
+            .insert({
             shop_id: params.shopId,
             integration: params.integration,
             external_event_id: params.externalEventId,
@@ -25,7 +26,15 @@ export class WebhookLedgerService {
             idempotency_key: params.idempotencyKey,
             processing_status: 'received',
             verified: true,
-        });
+        })
+            .onConflict(['integration', 'external_event_id'])
+            .ignore();
+        if (Array.isArray(result) && result.length === 0) {
+            console.warn('[WEBHOOK_DUPLICATE_IGNORED]', {
+                integration: params.integration,
+                externalEventId: params.externalEventId,
+            });
+        }
     }
     static async markProcessed(externalEventId, shopId) {
         if (shopId === undefined) {
