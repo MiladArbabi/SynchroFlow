@@ -21,8 +21,6 @@ import { v5 as uuidv5 } from 'uuid';
 
 const CONSTRAINT_NAMESPACE = 'a9b7c6d4-4f8a-4c1b-b7b6-1c9a2e5d7f91';
 
-
-
 export async function projectOrderInventoryConstraints(
   trx: Knex.Transaction,
   orderIds: string[]

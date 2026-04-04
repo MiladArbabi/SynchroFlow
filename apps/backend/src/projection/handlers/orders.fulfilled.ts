@@ -24,7 +24,6 @@ import { resolveExternalOrderId } from '../../services/identity/resolveExternalO
 import orderFulfillmentIngestionService 
   from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
-import { projectOrderRisk } from '../../projections/orderRiskProjection.js';
 
 
 const ORDERS_PROJECTION = 'orders_projection';
@@ -338,29 +337,24 @@ export async function handleOrdersFulfilled({
       );
     };
 
-    try {
-      await projectOrderRisk(
-        trx,
-        lasyncroOrderId,
-        domainEvent.shop_id,
-        updatedOrder.aggregate_version,
-        new Date(domainEvent.event_time)
-      );
-
-      console.info('[RISK_PROJECTION_EXECUTED]', {
-        orderId: lasyncroOrderId,
-        aggregateVersion: updatedOrder.aggregate_version,
-      });
-
-    } catch (err) {
-      console.error('[RISK_PROJECTION_FAILED]', {
-        orderId: lasyncroOrderId,
-        aggregateVersion: updatedOrder.aggregate_version,
-        error: (err as Error).message,
-      });
-
-      throw err; // DO NOT SWALLOW
-    }
+    /**
+     * PROJECTION ORCHESTRATION GUARD (CRITICAL FIX)
+     * --------------------------------------------
+     * Risk projection MUST NOT be invoked from handlers.
+     *
+     * Reason:
+     * - breaks projection determinism
+     * - bypasses projection engine
+     * - causes partial projection execution
+     *
+     * Expected:
+     * - risk projection executed by projection engine orchestration layer
+     */
+    console.warn('[PROJECTION_ORCHESTRATION_VIOLATION_PREVENTED]', {
+      handler: 'orders.fulfilled',
+      projection: 'orderRiskProjection',
+      eventId: domain_event_id
+    });
 
     /**
      * CAPTURE RECONCILIATION INTENT

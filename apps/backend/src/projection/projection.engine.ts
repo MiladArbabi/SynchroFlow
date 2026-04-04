@@ -3,6 +3,12 @@ import { Knex } from 'knex';
 import { projectionRegistry } from './projection.registry.js';
 import { extractExternalOrderId } from './projection.utils.js';
 
+import { projectOrderAge } from '../projections/orderAgeProjection.js';
+import { projectOrderConstraints } from '../projections/orderConstraintProjection.js';
+import { projectOrderInventoryConstraints } from '../projections/orderInventoryConstraintProjection.js';
+import { projectOrderRisk } from '../projections/orderRiskProjection.js';
+import { evaluateOrderConstraints } from '../services/constraints/constraintEngine.js';
+
 /**
  * PROJECTION ENGINE
  * -----------------
@@ -20,14 +26,53 @@ const ORDERS_PROJECTION = 'orders_projection';
 const LIFECYCLE_PROJECTION = 'lifecycle_projection';
 
 /**
- * PURE PROJECTION ENTRY POINT
- * Transport-agnostic.
+ * RUNTIME ENTRYPOINT (FIXED)
+ * ---------------------------
+ * This function must execute the SAME core path as DB worker.
+ *
+ * Previously:
+ * - routed to queue-only path → always threw
+ * - caused projection to NEVER execute in canonical processor
+ *
+ * Now:
+ * - loads domain event
+ * - executes projectDomainEventCore inside transaction
+ *
+ * Guarantees:
+ * - single execution path
+ * - parity with DB worker
+ * - deterministic behavior
  */
 export async function projectDomainEvent(
   domain_event_id: number
 ) {
-  await projectDomainEventFromMessage({
-    content: Buffer.from(JSON.stringify({ domain_event_id })),
+  const db = (await import('@lasyncro/backend-core/db.js')).default;
+
+  await db.transaction(async (trx) => {
+
+    const domainEvent = await trx('domain_events')
+      .where({ id: domain_event_id })
+      .first();
+
+    if (!domainEvent) {
+      console.error('[PROJECTION_EVENT_NOT_FOUND_FATAL]', {
+        domain_event_id
+      });
+
+      throw new Error(
+        `[PROJECTION_EVENT_NOT_FOUND] id=${domain_event_id}`
+      );
+    }
+
+    await projectDomainEventCore({
+      domainEvent,
+      domain_event_id,
+      trx
+    });
+
+    console.debug('[PROJECTION_EXECUTED_VIA_RUNTIME]', {
+      domain_event_id
+    });
   });
 }
 
@@ -254,7 +299,7 @@ export async function projectDomainEventCore({
            */
           throw err;
         }
-      }
+      };
 
       /**
        * ORDER-ENTITY EVENTS ONLY (STRICT FILTER)
@@ -345,6 +390,126 @@ export async function projectDomainEventCore({
         console.debug('[PROJECTION_COMPLETED]', {
           orderId: projectionTargetOrderId,
           domain_event_id,
+        });
+      }
+
+      /**
+       * PROJECTION ORCHESTRATION (ARGUMENT-CORRECT)
+       * ------------------------------------------
+       * Executes dependent projections with verified signatures.
+       *
+       * Constraints:
+       * - inventory projection is DISABLED → MUST NOT call
+       * - constraint projection requires evaluations → currently unavailable
+       *
+       * Therefore:
+       * - execute ONLY safe projections
+       */
+      if (projectionTargetOrderId && isOrderEntityEvent) {
+
+        const shopId = domainEvent.shop_id;
+        const eventAnchor = canonicalEventTime;
+
+        /**
+         * AGGREGATE VERSION RESOLUTION (SOURCE OF TRUTH)
+         * ---------------------------------------------
+         * aggregate_version is NOT part of domain event.
+         *
+         * Must be read from orders table to ensure:
+         * - correctness
+         * - consistency with handlers
+         * - deterministic projections
+         */
+        const orderRow = await trx('orders')
+          .where({ lasyncro_order_id: projectionTargetOrderId })
+          .select('aggregate_version')
+          .first();
+
+        if (!orderRow?.aggregate_version) {
+          console.error('[PROJECTION_ORCHESTRATION_MISSING_AGGREGATE_VERSION_FATAL]', {
+            orderId: projectionTargetOrderId,
+            domain_event_id
+          });
+
+          throw new Error('[PROJECTION_INVALID_AGGREGATE_VERSION]');
+        }
+
+        const aggregateVersion = orderRow.aggregate_version;
+
+        if (!aggregateVersion) {
+          console.error('[PROJECTION_ORCHESTRATION_MISSING_VERSION_FATAL]', {
+            domain_event_id
+          });
+          throw new Error('[PROJECTION_ORCHESTRATION_INVALID_STATE]');
+        }
+
+        console.debug('[PROJECTION_ORCHESTRATION_START]', {
+          orderId: projectionTargetOrderId,
+          domain_event_id
+        });
+
+        /**
+         * AGE PROJECTION (MUST COMPLETE FIRST)
+         */
+        await projectOrderAge(
+          trx,
+          projectionTargetOrderId,
+          shopId,
+          aggregateVersion,
+          eventAnchor
+        );
+
+        /**
+         * HARD READ GUARANTEE — AGE SNAPSHOT MUST EXIST
+         */
+        const ageSnapshot = await trx('order_age_snapshot')
+          .where({
+            lasyncro_order_id: projectionTargetOrderId,
+            aggregate_version: aggregateVersion
+          })
+          .first();
+
+        if (!ageSnapshot) {
+          console.error('[PROJECTION_ORDERING_VIOLATION_FATAL]', {
+            orderId: projectionTargetOrderId,
+            aggregateVersion
+          });
+
+          throw new Error('[AGE_PROJECTION_NOT_MATERIALIZED]');
+        }
+
+        /**
+         * CONSTRAINT EVALUATION (NOW SAFE)
+         */
+        const evaluations = await evaluateOrderConstraints(
+          trx,
+          projectionTargetOrderId,
+          shopId
+        );
+
+        await projectOrderConstraints(
+          trx,
+          projectionTargetOrderId,
+          shopId,
+          aggregateVersion,
+          eventAnchor,
+          evaluations
+        );
+
+        /**
+         * RISK PROJECTION (LAST)
+         */
+        await projectOrderRisk(
+          trx,
+          projectionTargetOrderId,
+          shopId,
+          aggregateVersion,
+          eventAnchor
+        );
+
+        console.debug('[PROJECTION_ORCHESTRATION_COMPLETED]', {
+          orderId: projectionTargetOrderId,
+          domain_event_id
         });
       }
 

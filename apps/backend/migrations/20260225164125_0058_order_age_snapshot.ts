@@ -22,7 +22,6 @@ export async function up(knex: Knex): Promise<void> {
 
     table
       .uuid('lasyncro_order_id')
-      .primary()
       .references('lasyncro_order_id')
       .inTable('orders')
       .onDelete('CASCADE');
@@ -38,6 +37,20 @@ export async function up(knex: Knex): Promise<void> {
     table.integer('aggregate_version')
       .notNullable()
       .comment('Projection version used to compute this snapshot');
+
+    /**
+     * PRIMARY KEY (CRITICAL FIX)
+     * --------------------------
+     * Versioned projection storage:
+     * - multiple rows per order
+     * - one row per (order_id, aggregate_version)
+     *
+     * Prevents:
+     * - overwrite of historical projections
+     * - reconciliation drift
+     * - non-deterministic rebuilds
+     */
+    table.primary(['lasyncro_order_id', 'aggregate_version']);
 
     /**
      * AGE INVARIANT (HARD GUARANTEE)
@@ -180,28 +193,6 @@ export async function up(knex: Knex): Promise<void> {
     BEFORE UPDATE ON order_age_snapshot
     FOR EACH ROW
     EXECUTE FUNCTION set_order_age_snapshot_updated_at();
-  `);
-
-  /**
-   * PROJECTION CONSISTENCY ENFORCEMENT
-   * -----------------------------------
-   * Snapshot must reference exact (id, version)
-   * in canonical orders table.
-   */
-
-  /**
-   * SNAPSHOT ORDER ID FK
-   * --------------------
-   * Snapshot validity must not depend on mutable aggregate_version.
-   *
-   * Version column retained for deterministic rebuild validation only.
-   */
-  await knex.raw(`
-    ALTER TABLE order_age_snapshot
-    ADD CONSTRAINT order_age_snapshot_order_fk
-    FOREIGN KEY (lasyncro_order_id)
-    REFERENCES orders (lasyncro_order_id)
-    ON DELETE CASCADE
   `);
 }
 

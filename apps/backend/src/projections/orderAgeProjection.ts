@@ -117,13 +117,26 @@ export async function projectOrderAge(
 
       snapshot_generated_at: eventAnchor
     })
-    // CONFLICT POLICY:
-    // - Type: PROJECTION_REBUILD
-    // - Strategy: UPSERT_EXPLICIT
-    // - Rationale: Prevent implicit overwrite and ensure deterministic projection state
-    .onConflict('lasyncro_order_id')
+    /**
+     * CONFLICT KEY FIX (CRITICAL)
+     * ---------------------------
+     * Projection must version snapshots by:
+     * (order_id, aggregate_version)
+     *
+     * Previous implementation overwrote snapshots,
+     * breaking deterministic projection chain.
+     */
+    .onConflict(['lasyncro_order_id', 'aggregate_version'])
     .merge({
-      // EXPLICIT MERGE POLICY: overwrite all mutable fields to ensure deterministic rebuilds
+      /**
+       * MERGE POLICY
+       * ------------
+       * Only applies to exact same (order_id, aggregate_version).
+       *
+       * Guarantees:
+       * - idempotent replay
+       * - no cross-version overwrite
+       */
       updated_at: new Date(),
       // NOTE: add all projection fields explicitly here to avoid implicit overwrite behavior
     });
