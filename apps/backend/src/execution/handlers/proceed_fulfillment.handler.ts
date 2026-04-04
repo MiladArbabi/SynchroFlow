@@ -321,7 +321,14 @@ const dbx = (trx ?? db) as typeof db;
       .where({ decision_id: job.decision_id })
       .update({
         status: 'success',
-        executed_at: db.fn.now() // explicit execution timestamp (audit correctness)
+        /**
+         * DO NOT set executed_at here.
+         * --------------------------------
+         * Execution timestamp is owned exclusively by execution.worker.
+         *
+         * Handlers must remain pure execution logic and MUST NOT
+         * mutate lifecycle tracking fields.
+         */
       });
 
     } catch (err) {

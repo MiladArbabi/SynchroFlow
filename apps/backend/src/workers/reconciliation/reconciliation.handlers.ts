@@ -13,9 +13,25 @@ import { writeOrderRevenueUnits } from './revenue-units.writer.js';
 import { resolveRefundExecution } from '../refundResolution.worker.js';
 import { DecisionRepository } from '../../domain/decision/decision.repository.js';
 import type { Decision } from '../../domain/decision/Decision.js';
-import { executeJob } from '../execution.worker.js';
-import { enqueueExecutionJob } from '../../queues/execution.queue.js';
-import { generateDecisions } from '../../domain/decision/decision.engine.js';
+// Command Bus (single decision authority)
+// CRITICAL: Reconciliation must not create decisions directly
+import { dispatchCommand } from '../../domain/command/command.bus.js';
+
+/**
+ * ARCHITECTURAL RULE — DECISION AUTHORITY
+ * ---------------------------------------
+ * Reconciliation MUST NOT:
+ * - import decision.engine
+ * - call generateDecisions
+ * - persist decisions directly
+ *
+ * All decision creation MUST go through Command Bus.
+ *
+ * Guarantees:
+ * - determinism
+ * - replay safety
+ * - single decision authority
+ */
 
 /**
  * ARCHITECTURAL GUARD — PROJECTION IS SINGLE-WRITER
@@ -78,47 +94,6 @@ export async function reconcileOrderFulfillment(
       .first();
 
     /**
-     * PROJECTION LAG HANDLING (RETRYABLE — CRITICAL FIX)
-     * -------------------------------------------------
-     * Projection and reconciliation are asynchronous.
-     *
-     * A small lag is EXPECTED and must NOT crash reconciliation.
-     *
-     * Strategy:
-     * - signal retry
-     * - DO NOT treat as fatal
-     */
-    if (order.last_projected_version < aggregateVersion) {
-      /**
-       * PROJECTION NOT READY — SAFE SKIP (CRITICAL)
-       * ------------------------------------------
-       * This is NOT a failure.
-       *
-       * It indicates projection has not yet caught up.
-       * Reconciliation must NOT run yet.
-       *
-       * Throwing here causes:
-       * - retry storms
-       * - log noise
-       * - system instability
-       *
-       * Correct behavior:
-       * → exit gracefully
-       * → allow dispatcher to retry later
-       */
-      console.info('[RECONCILIATION_SKIPPED_PROJECTION_NOT_READY]', {
-        orderId: lasyncroOrderId,
-        aggregateVersion,
-        lastProjectedVersion: order.last_projected_version
-      });
-
-      return {
-        result: 'noop' as ReconciliationResult,
-        affectedVariantIds: [] as string[]
-      };
-    }
-
-    /**
      * RECONCILIATION CLAIM (CRITICAL FIX)
      * -----------------------------------
      * Marks order as "being reconciled" immediately after lock.
@@ -137,17 +112,15 @@ export async function reconcileOrderFulfillment(
     }); */
 
     /**
-     * RECONCILIATION MODE DETECTION
-     * -----------------------------
-     * Synthetic reconciliation occurs when projection has already
-     * processed this aggregate version.
+     * SYNTHETIC MODE (STRICT)
+     * ------------------------
+     * Only skip if we are strictly behind projection.
      *
-     * IMPORTANT:
-     * Operational snapshots MUST still be recomputed during rebuild
-     * to guarantee deterministic reconstruction of operational state.
+     * DO NOT block on aggregate version mismatch:
+     * - consumer already allows mismatch
+     * - blocking here breaks reconciliation entirely
      */
     const syntheticMode =
-      aggregateVersion !== order.aggregate_version ||
       aggregateVersion <= order.last_projected_version;
 
     /**
@@ -164,7 +137,8 @@ export async function reconcileOrderFulfillment(
      * → return synthetic result
      */
     if (syntheticMode) {
-      console.debug('[RECONCILIATION_SKIPPED_IDEMPOTENT]', {
+      console.warn('[RECONCILIATION_SKIPPED_IDEMPOTENT]', {
+        reason: 'projection_already_applied',
         lasyncroOrderId,
         aggregateVersion,
         orderAggregateVersion: order.aggregate_version,
@@ -377,6 +351,30 @@ export async function reconcileOrderFulfillment(
     let constraintEvaluations: ConstraintEvaluationResult[];
 
     /**
+     * PROJECTION READINESS GUARD (STRICT)
+     * ----------------------------------
+     * Reconciliation MUST wait until required projections exist.
+     */
+    const riskSnapshotExists = await trx('order_risk_snapshot')
+      .where({
+        lasyncro_order_id: lasyncroOrderId,
+        aggregate_version: aggregateVersion
+      })
+      .first();
+
+    if (!riskSnapshotExists) {
+      console.warn('[RECONCILIATION_WAITING_FOR_PROJECTION]', {
+        orderId: lasyncroOrderId,
+        aggregateVersion,
+      });
+
+      return {
+        result: 'synthetic' as ReconciliationResult,
+        affectedVariantIds: []
+      };
+    }
+
+    /**
      * CONSTRAINT EVALUATION (STRICT)
      * ------------------------------
      * Constraint engine must ALWAYS run.
@@ -441,32 +439,8 @@ export async function reconcileOrderFulfillment(
       );
   } else {
 
-    /**
-     * IDEMPOTENCY GUARD — DECISION REUSE (CORRECTED)
-     * ---------------------------------------------
-     * If projection version unchanged:
-     * - DO NOT regenerate decisions
-     * - BUT still allow execution dispatch of existing decisions
-     *
-     * Prevents:
-     * - duplicate decision writes
-     * While preserving:
-     * - execution guarantees
-     */
-        /**
-       * DECISION ENGINE OWNERSHIP
-       * -------------------------
-       * Decision identity, structure, and priority MUST be produced
-       * exclusively by the Decision Engine.
-       *
-       * Reconciliation is orchestration only.
-       *
-       * This guarantees:
-       * - deterministic ID generation
-       * - centralized decision logic
-       * - no duplication across system
-       */
-    let decisions: Decision[];
+    // Holds reused decisions ONLY (new decisions are created via Command Bus)
+    let decisions: Decision[] | undefined;
 
     /**
      * DECISION EXISTENCE CHECK (CORRECT SOURCE OF TRUTH)
@@ -479,6 +453,12 @@ export async function reconcileOrderFulfillment(
         entity_id: lasyncroOrderId,
         aggregate_version: aggregateVersion
       });
+
+    console.info('[RECONCILIATION_DECISION_CHECK]', {
+      orderId: lasyncroOrderId,
+      aggregateVersion,
+      existingCount: existingDecisions.length
+    });
 
     if (existingDecisions.length > 0) { 
       console.info('[DECISION_REUSE]', {
@@ -502,12 +482,60 @@ export async function reconcileOrderFulfillment(
       }
 
     } else {
-      decisions = generateDecisions({
+
+      console.info('[RECONCILIATION_DISPATCH_COMMAND]', {
+        orderId: lasyncroOrderId,
+        aggregateVersion
+      });
+      
+      /**
+       * CRITICAL:
+       * Reconciliation MUST dispatch commands instead of generating decisions.
+       * Ensures:
+       * - determinism
+       * - replay safety
+       * - single decision authority
+       * 
+       * Command payload must be encapsulated under `payload`.
+       * Ensures strict command contract + forward compatibility.
+       */
+     await dispatchCommand({
+      type: 'RECONCILIATION_RUN',
+      payload: {
         orderId: lasyncroOrderId,
         shopId: order.shop_id,
         aggregateVersion,
         riskSnapshot
-      });
+      },
+      /**
+       * Deterministic idempotency key (CRITICAL for replay safety)
+       */
+      idempotencyKey: `reconciliation-${lasyncroOrderId}-${aggregateVersion}`
+    });
+
+    /**
+     * STOP EXECUTION (CRITICAL)
+     * ------------------------
+     * Command Bus will asynchronously create decisions.
+     * Reconciliation must NOT proceed assuming decisions exist.
+     *
+     * Prevents:
+     * - false invariant violations
+     * - undefined decision usage
+     * 
+     * EARLY EXIT RETURN (TYPE-SAFE)
+     * ----------------------------
+     * No decisions created in this path.
+     * Execution will be handled asynchronously via Command Bus.
+     *
+     * Ensures:
+     * - type safety
+     * - no invalid undefined returns
+     */
+    return {
+      result: 'synthetic' as ReconciliationResult,
+      affectedVariantIds: []
+    };
     }
 
       /**
@@ -529,6 +557,26 @@ export async function reconcileOrderFulfillment(
        * PERSISTENCE
        */
       for (const decision of decisions) {
+        /**
+         * DEBUG — STRUCTURAL INTEGRITY CHECK (CRITICAL)
+         * --------------------------------------------
+         * This reveals hidden mutation before persistence.
+         */
+        console.error('[DEBUG_DECISION_BEFORE_PERSIST]', {
+          id: decision.id,
+          recommended_action: decision.recommended_action,
+          typeof_recommended_action: typeof decision.recommended_action,
+
+          payload: decision.recommended_action?.payload,
+          typeof_payload: typeof decision.recommended_action?.payload,
+
+          actions: decision.actions,
+          typeof_actions: typeof decision.actions,
+
+          first_action_payload: decision.actions?.[0]?.payload,
+          typeof_first_action_payload: typeof decision.actions?.[0]?.payload,
+        });
+
         await DecisionRepository.create({
           ...decision,
 
@@ -636,22 +684,48 @@ export async function reconcileOrderFulfillment(
    * - backpressure visibility
    */
   for (const d of executionBuffer) {
-    await enqueueExecutionJob({
-      decision_id: d.id,
-      entity_id: d.entity_id,
-      aggregate_version: d.aggregate_version,
-      action_type: d.recommended_action.type,
-      payload: d.recommended_action.payload,
-      execution_mode: d.recommended_action.execution_mode,
+    /**
+     * EXECUTION INTENT (UNIFIED PATH)
+     * -------------------------------
+     * Reconciliation MUST NOT enqueue directly.
+     *
+     * Instead:
+     * → write to decision_execution_queue
+     * → dispatcher handles enqueue
+     *
+     * Guarantees:
+     * - single execution path
+     * - idempotency via DB constraint
+     * - full observability
+     * 
+     * EXECUTION INTENT (IDEMPOTENT + GUARDED)
+     * ---------------------------------------
+     * Multi-writer safe:
+     * - enforced by UNIQUE(decision_id)
+     * - ON CONFLICT prevents duplicates
+     *
+     * CRITICAL:
+     * - log when duplicate occurs → observability of race conditions
+     */
+    const inserted = await db('decision_execution_queue')
+      .insert({
+        decision_id: d.id,
+        shop_id: d.shop_id,
+        status: 'pending',
+        created_at: db.fn.now(),
+      })
+      .onConflict('decision_id')
+      .ignore()
+      .returning('decision_id');
 
-      /**
-       * TENANT CONTEXT (CRITICAL)
-       * -------------------------
-       * Required downstream for:
-       * - RLS
-       * - Shopify API access
-       */
-      shop_id: d.shop_id
+    if (!inserted.length) {
+      console.warn('[EXECUTION_INTENT_DUPLICATE_SKIPPED]', {
+        decision_id: d.id,
+      });
+    }
+
+    console.info('[EXECUTION_INTENT_EMITTED_RECONCILIATION]', {
+      decision_id: d.id,
     });
   }
 

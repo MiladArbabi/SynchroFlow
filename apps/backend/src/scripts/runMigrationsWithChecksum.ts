@@ -110,7 +110,12 @@ for (const { name: file } of appliedMigrations) {
     .merge({
       // EXPLICIT MERGE POLICY: migration checksum must be deterministic per migration name
       checksum: checksum,
-      executed_at: new Date(),
+      /**
+       * DO NOT set executed_at in migrations.
+       * -------------------------------------
+       * executed_at represents runtime execution lifecycle,
+       * NOT schema or migration events.
+       */
     });
 }
 

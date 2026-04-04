@@ -55,6 +55,10 @@ export function startReconciliationConsumer() {
   ch.consume(QUEUE, async (msg) => {
     if (!msg) return;
 
+    console.info('[RECONCILIATION_CONSUMER_RECEIVED]', {
+      payload: msg.content.toString(),
+    });
+
     try {
       const { lasyncroOrderId, aggregateVersion, observed } = JSON.parse(
         msg.content.toString()
@@ -122,11 +126,21 @@ export function startReconciliationConsumer() {
           }
         : undefined;
 
+        console.info('[RECONCILIATION_CALLING_HANDLER]', {
+          lasyncroOrderId,
+          aggregateVersion,
+        });
+
       await reconcileOrderFulfillment(
         lasyncroOrderId,
         aggregateVersion,
         normalizedObserved
       );
+
+      console.info('[RECONCILIATION_HANDLER_COMPLETED]', {
+        lasyncroOrderId,
+        aggregateVersion,
+      });
 
       /**
        * SHOP SNAPSHOT RECOMPUTATION
@@ -146,6 +160,10 @@ export function startReconciliationConsumer() {
       if (!shopRow?.shop_id) {
         throw new Error('[SNAPSHOT_INVARIANT] shop_id missing for order');
       }
+
+      console.info('[RECONCILIATION_SNAPSHOT_TRIGGER]', {
+        shopId: shopRow.shop_id,
+      });
 
       await computeShopOperationalSnapshot(shopRow.shop_id);
 

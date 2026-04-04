@@ -30,24 +30,6 @@ async function start() {
   await initQueue();
   await startWorkers();
 
-  /**
-   * TEMPORARY TEST TRIGGER (REMOVE AFTER VALIDATION)
-   * -----------------------------------------------
-   * Executes one manual decision inside bootstrapped runtime.
-   */
-  try {
-    const { executeManualDecision } = await import('./services/execution/manualExecution.service.js');
-
-    const TEST_DECISION_ID = 'fb5740f8-c69a-5cf2-f469-96cbb039862e';
-
-    console.info('[TEST_EXECUTION_TRIGGER]', { decision_id: TEST_DECISION_ID });
-
-    await executeManualDecision(TEST_DECISION_ID);
-
-  } catch (err) {
-    console.error('[TEST_EXECUTION_FAILED]', (err as Error).message);
-  }
-
   server = app.listen(port, HOST, () => {
     console.log(`Server is listening on http://${HOST}:${port}`);
   });

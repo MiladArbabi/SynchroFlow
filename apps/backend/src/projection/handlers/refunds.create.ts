@@ -58,7 +58,19 @@ export async function handleRefundsCreate({
       trx
     );
 
-    if (!lasyncroOrderId) return;
+    if (!lasyncroOrderId) {
+      /**
+       * CRITICAL DATA LOSS GUARD
+       * ------------------------
+       * Refund event without order reference.
+       * Silent drop would permanently lose financial event.
+       */
+      console.error('[PROJECTION_REFUND_MISSING_ORDER_ID]', {
+        reason: 'Missing lasyncroOrderId in refund event payload'
+      });
+
+      return;
+    }
 
     const refundExecutedAt = canonicalEventTime;
     const externalRefundId = String(payload.id);
@@ -90,7 +102,12 @@ export async function handleRefundsCreate({
         platform: 'shopify',
         external_refund_id: externalRefundId,
         total_refund_amount: 0,
-        executed_at: refundExecutedAt,
+        /**
+         * DO NOT set executed_at in projection layer.
+         * -------------------------------------------
+         * Projection is state reflection only.
+         * Execution timestamps are owned exclusively by execution.worker.
+         */
       });
 
       execution = {

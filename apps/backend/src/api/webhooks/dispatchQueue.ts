@@ -17,6 +17,7 @@
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from './types.js';
 import { WebhookDispatchJob } from './types.dispatchJob.js';
+import { buildExternalEventId } from './buildExternalEventId.js';
 
 const QUEUE_NAME = 'webhook.dispatch.v1';
 
@@ -69,7 +70,12 @@ export async function enqueueWebhookEnvelope(
      * No direct broker publishing allowed.
      */
     await db.transaction(async trx => {
-      const externalEventId = `webhook:${job.integration}:${job.eventId}`;
+
+      const externalEventId = buildExternalEventId({
+        source: 'webhook',
+        integration: job.integration,
+        eventId: job.eventId,
+      });
 
       /**
        * CANONICAL EVENT TIME DERIVATION
@@ -100,7 +106,7 @@ export async function enqueueWebhookEnvelope(
         throw new Error('[EVENT_TIME_VIOLATION] webhook missing canonical event time');
       }
 
-      const [event] = await trx('domain_events')
+      const result = await trx('domain_events')
         .insert({
           shop_id: envelope.shopId,
           event_type: `webhook/${job.eventType}`,
@@ -109,7 +115,28 @@ export async function enqueueWebhookEnvelope(
           event_version: 1,
           external_event_id: externalEventId,
         })
+        .onConflict(['shop_id', 'external_event_id'])
+        .ignore()
         .returning(['id']);
+
+      /**
+       * DOMAIN EVENT IDEMPOTENCY GUARD (CRITICAL)
+       * ----------------------------------------
+       * Guarantees:
+       * - exactly one domain_event per external event
+       * - replay-safe ingestion
+       * - prevents duplicate projections
+       */
+      if (!result || result.length === 0) {
+        console.warn('[DOMAIN_EVENT_DUPLICATE_IGNORED]', {
+          shopId: envelope.shopId,
+          externalEventId,
+          eventType: job.eventType,
+        });
+        return;
+      }
+
+      const [event] = result;
 
         console.info('[OUTBOX_TRIGGER_EXPECTED]', {
           domainEventId: event.id,

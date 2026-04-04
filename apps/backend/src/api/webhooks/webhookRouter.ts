@@ -14,12 +14,12 @@
 // - Domain logic
 // - Payload parsing
 //
-
+import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from './types.js';
 import { WebhookLedgerService } from '@lasyncro/backend-core/services/webhook-ledger.service.js';
 import { getWebhookDispatchMode } from './dispatchMode.js';
 import { enqueueWebhookEnvelope } from './dispatchQueue.js';
-import db from '@lasyncro/backend-core/db.js';
+import { buildExternalEventId } from './buildExternalEventId.js';
 
 type WebhookHandler = (envelope: WebhookEnvelope) => Promise<void>;
 
@@ -144,7 +144,7 @@ export class WebhookRouter {
         throw new Error('[WEBHOOK_MISSING_SHOP_ID]');
       }
 
-      await WebhookLedgerService.recordReceived({
+      const isFirstSeen = await WebhookLedgerService.recordReceived({
         shopId,
         integration: envelope.integration,
         externalEventId: envelope.eventId,
@@ -152,6 +152,24 @@ export class WebhookRouter {
         payload: envelope.rawPayload,
         idempotencyKey: `${envelope.integration}:${envelope.eventId}`,
       });
+
+      /**
+       * HARD IDEMPOTENCY GUARD (CRITICAL)
+       * ---------------------------------
+       * Prevents:
+       * - duplicate handler execution
+       * - duplicate domain events
+       * - projection inconsistencies
+       *
+       * Ledger is source of truth.
+       */
+      if (!isFirstSeen) {
+        console.warn('[WEBHOOK_DUPLICATE_STOPPED_AT_ROUTER]', {
+          eventId: envelope.eventId,
+          integration: envelope.integration,
+        });
+        return;
+      }
     }
 
     /**
@@ -258,7 +276,12 @@ export class WebhookRouter {
             event_payload: envelope.rawPayload,
             event_time: new Date(),
             event_version: 1,
-            external_event_id: `${envelope.eventId}:unsupported`,
+            external_event_id: buildExternalEventId({
+              source: 'webhook',
+              integration: envelope.integration,
+              eventId: envelope.eventId,
+              suffix: 'unsupported',
+            }),
           });
         } else {
           console.error('[UNSUPPORTED_EVENT_NO_SHOP]', {

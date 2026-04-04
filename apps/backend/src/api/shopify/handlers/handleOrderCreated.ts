@@ -1,6 +1,7 @@
 // apps/backend/src/api/shopify/handlers/handleOrderCreated.ts
-import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
+import { WebhookEnvelope } from '../../../api/webhooks/types.js';
+import { buildExternalEventId } from '../../webhooks/buildExternalEventId.js';
 
 type ShopifyOrderCreatePayload = {
   id: number | string;
@@ -131,7 +132,11 @@ export async function handleOrderCreated(
             id = id.split('/').pop()!;
           }
 
-          return id;
+          return buildExternalEventId({
+            source: 'webhook',
+            integration: 'shopify',
+            eventId: envelope.eventId,
+          });
         })(),
       })
       .returning('id');
@@ -165,7 +170,12 @@ export async function handleOrderCreated(
           },
           event_time: new Date(eventTime),
           event_version: 1,
-          external_event_id: `${envelope.eventId}:paid`,
+          external_event_id: buildExternalEventId({
+            source: 'webhook',
+            integration: 'shopify',
+            eventId: envelope.eventId,
+            suffix: 'paid',
+          }),
         })
         .returning('id');
 

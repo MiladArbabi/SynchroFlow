@@ -14,7 +14,7 @@ export class WebhookLedgerService {
     eventType: string;
     payload: unknown;
     idempotencyKey: string;
-  }): Promise<void> {
+  }): Promise<boolean> {
     /**
      * INGESTION TRACEABILITY 
      * ---------------------------
@@ -44,14 +44,32 @@ export class WebhookLedgerService {
         verified: true,
       })
       .onConflict(['integration', 'external_event_id'])
-      .ignore();
+      .ignore()
+      .returning(['external_event_id']);
 
-    if (Array.isArray(result) && result.length === 0) {
+    /**
+     * RELIABLE INSERT DETECTION (CRITICAL)
+     * -----------------------------------
+     * Postgres returns:
+     * - [row] → insert happened
+     * - []    → conflict (duplicate)
+     */
+    const isDuplicate = !result || result.length === 0;
+
+      if (isDuplicate) {
         console.warn('[WEBHOOK_DUPLICATE_IGNORED]', {
           integration: params.integration,
           externalEventId: params.externalEventId,
         });
       }
+
+      /**
+       * EXPLICIT IDEMPOTENCY SIGNAL (CRITICAL)
+       * --------------------------------------
+       * TRUE  → event inserted (first-seen)
+       * FALSE → duplicate (must STOP execution upstream)
+       */
+      return !isDuplicate;
     }
 
   static async markProcessed(

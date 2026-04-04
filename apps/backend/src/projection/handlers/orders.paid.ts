@@ -24,7 +24,19 @@ export async function handleOrdersPaid({
     externalOrderId
   );
 
-  if (!lasyncroOrderId) return;
+  if (!lasyncroOrderId) {
+    /**
+     * CRITICAL DATA LOSS GUARD
+     * ------------------------
+     * Payment event without order reference.
+     * Breaks revenue + fulfillment linkage.
+     */
+    console.error('[PROJECTION_ORDER_PAID_MISSING_ORDER_ID]', {
+      reason: 'Missing lasyncroOrderId in paid event payload'
+    });
+
+    return;
+  }
 
   /**
    * TRANSACTION CONTRACT

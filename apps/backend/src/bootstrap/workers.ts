@@ -178,11 +178,25 @@ export async function startWorkers(): Promise<void> {
           }
 
           const execution = await import('../workers/execution.worker.js');
+          const dispatcher = await import('../workers/execution.dispatcher.worker.js');
 
           if (typeof execution.startExecutionWorker === 'function') {
             execution.startExecutionWorker();
 
             console.log('[bootstrap/workers] Execution worker started');
+          }
+
+          /**
+           * EXECUTION DISPATCHER (CRITICAL BRIDGE)
+           * --------------------------------------
+           * Connects DB → RabbitMQ
+           *
+           * Must start AFTER execution worker is ready.
+           */
+          if (typeof dispatcher.startExecutionDispatcher === 'function') {
+            dispatcher.startExecutionDispatcher();
+
+            console.log('[bootstrap/workers] Execution dispatcher started');
           }
         } catch (err) {
           console.warn(

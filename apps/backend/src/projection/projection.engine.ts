@@ -1,7 +1,5 @@
 // apps/backend/src/projection/projection.engine.ts
-import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
-
 import { projectionRegistry } from './projection.registry.js';
 import { extractExternalOrderId } from './projection.utils.js';
 
@@ -235,15 +233,26 @@ export async function projectDomainEventCore({
             canonicalEventTime,
             trx,
           });
-        } catch (err: any) {
-          console.error('[PROJECTION_HANDLER_ERROR]', {
+         } catch (err: any) {
+          console.error('[PROJECTION_HANDLER_ERROR_FATAL]', {
             eventId: domain_event_id,
             eventType: normalizedEventType,
             error: err?.message,
           });
 
-          // DO NOT crash worker
-          return;
+          /**
+           * FAIL FAST (CRITICAL)
+           * --------------------
+           * Projection must NEVER:
+           * - swallow errors
+           * - advance cursor on failure
+           *
+           * Throwing ensures:
+           * - transaction rollback
+           * - cursor NOT advanced
+           * - event retried deterministically
+           */
+          throw err;
         }
       }
 
@@ -321,7 +330,15 @@ export async function projectDomainEventCore({
         await trx('orders')
           .where({ lasyncro_order_id: projectionTargetOrderId })
           .update({
-            last_projected_version: trx.raw('aggregate_version'),
+            /**
+             * DO NOT set last_projected_version in projection.
+             * ------------------------------------------------
+             * Owned exclusively by reconciliation layer.
+             *
+             * Setting it here causes:
+             * - reconciliation to skip
+             * - commands to never dispatch
+             */
             updated_at: trx.fn.now(),
           });
 
@@ -337,29 +354,6 @@ export async function projectDomainEventCore({
           domain_event_id
         });
       }
-
-      /**
-       * CURSOR ADVANCEMENT HANDLED INLINE
-       * ---------------------------------
-       * advanceCursor() is intentionally NOT used here.
-       *
-       * Reason:
-       * - it bypasses transactional cursorRow context
-       * - causes duplicate writes
-       * - violates monotonicity constraint
-       *
-       * All cursor logic must remain colocated with:
-       * SELECT ... FOR UPDATE cursorRow
-       */
-
-      /**
-       * CURSOR HANDLING REMOVED (DB-DRIVEN MODE)
-       * ----------------------------------------
-       * Cursor progression is now owned exclusively by:
-       * → projection.db.worker.ts
-       *
-       * DO NOT reintroduce cursor logic here.
-       */
     };
 
 /**
@@ -369,162 +363,19 @@ export async function projectDomainEventCore({
 export async function projectDomainEventFromMessage(
   msg: { content: Buffer } | null
 ) {
-
   
-  if (!msg) return;
-
-  const content = msg.content.toString();
+  if (!msg) {
+  /**
+     * CRITICAL: Silent drop guard removed
+     * ----------------------------------
+     * Null message indicates queue/consumer anomaly.
+     * Must be observable for debugging and system integrity.
+     */
+    console.error('[PROJECTION_ENGINE_NULL_MESSAGE]', {
+      reason: 'Received null message from queue'
+    });
+    return;
+  }
   
   throw new Error('[PROJECTION_VIA_QUEUE_FORBIDDEN]');
-
-  try {
-    let parsed: any;
-
-    try {
-      parsed = JSON.parse(content);
-    } catch (err) {
-      console.error('[PROJECTION_INVALID_JSON]', { raw: content });
-      throw err;
-    }
-
-    const domain_event_id = Number(parsed?.domain_event_id);
-
-    console.error('[PROJECTION_RECEIVE_TRACE]', {
-      domain_event_id,
-    });
-
-    if (!Number.isInteger(domain_event_id)) {
-      console.error('[PROJECTION_PROTOCOL_VIOLATION]', {
-        expected: '{ domain_event_id: number }',
-        received: parsed,
-      });
-      throw new Error('[DOMAIN_EVENT_ID_INVALID_TYPE]');
-    }
-
-    if (!domain_event_id) {
-      if ('fields' in (msg as any)) {
-        throw Error;
-      }
-      return;
-    }
-
-    /**
-     * DOMAIN EVENT FETCH
-     * ------------------
-     * Immutable source of truth.
-     */
-    const domainEvent = await db('domain_events')
-      .where({ id: domain_event_id })
-      .first<{
-        id: number;
-        shop_id: number;
-        event_type: string;
-        event_payload: Record<string, any>;
-        event_time: Date;
-      }>();
-
-    if (!domainEvent) {
-      throw new Error(
-        `[DOMAIN_EVENT_NOT_FOUND] id=${domain_event_id}`
-      );
-    }
-
-    /**
-     * CANONICAL NORMALIZATION FIX
-     * ---------------------------
-     * orders/sync MUST be normalized the same as orders/create.
-     *
-     * Without this:
-     * - inconsistent payload structure
-     * - unstable or duplicate order identity
-     * - projection collapse (only 1 order created)
-     */
-    if (
-      domainEvent.event_type === 'orders/create' ||
-      domainEvent.event_type === 'orders/sync'
-    ) {
-      try {
-        const { mapShopifyOrderNodeToCanonical } = await import(
-          '../services/mappers/shopify-to-canonical-order.js'
-        );
-
-      } catch (err) {
-        console.error('[CANONICAL_NORMALIZATION_FAILED]', {
-          eventId: domainEvent.id,
-          error: err,
-        });
-      }
-    }
-
-   /**
-     * TRANSACTIONAL CURSOR ENFORCEMENT ONLY
-     * --------------------------------------
-     * Strict monotonic + contiguous invariants
-     * must be enforced inside the projection transaction
-     * using SELECT ... FOR UPDATE.
-     *
-     * Queue delivery order is NOT a replay guarantee.
-     * The database is the canonical ordering authority.
-     *
-     * Therefore, no pre-transaction cursor checks are allowed here.
-     */
-
-    /**
-     * ORDER ENFORCEMENT NOTE
-     * ----------------------
-     * Projection ordering must ONLY be enforced inside the
-     * transaction using SELECT ... FOR UPDATE.
-     *
-     * Pre-transaction checks are forbidden because:
-     * - they race with concurrent workers
-     * - they violate deterministic replay
-     * - they duplicate cursor logic
-     */
-
-    /**
-     * CANONICAL EVENT TIME CHECK
-     */
-    if (!domainEvent.event_time) {
-      throw new Error(
-        '[EVENT_TIME_VIOLATION] missing canonical event_time'
-      );
-    }
-
-    /**
-     * CANONICAL EVENT DISPATCHER
-     * ---------------------------
-     * All external signals must be materialized
-     * exclusively through this boundary.
-     */
-    switch (domainEvent.event_type) {
-  
-      default:
-        break;
-    }
-
-      return;
-    } catch (error) {
-
-    /**
-     * PROJECTION ERRORS MUST NOT BE SWALLOWED
-     * ----------------------------------------
-     * - Worker transport may nack.
-     * - CLI replay must fail immediately.
-     *
-     * Deterministic rebuild requires hard failure.
-     */
-
-    if (msg && 'fields' in (msg as any)) {
-      try {
-        throw error;
-      } catch (nackError) {
-        console.error(
-          '[worker] Failed to nack message after processing error:',
-          nackError
-        );
-      }
-    }
-
-    throw error; // CRITICAL: propagate failure
-  }
 };

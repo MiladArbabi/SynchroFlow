@@ -106,6 +106,10 @@ export class DecisionRepository {
    */
   static async create(decision: Decision & { shop_id: string }): Promise<void> {
 
+    console.error('[DECISION_REPO_ENTER]', {
+      id: decision?.id
+    });
+
     /**
      * CALL SITE ENFORCEMENT (CRITICAL)
      * --------------------------------
@@ -260,6 +264,28 @@ export class DecisionRepository {
       });
     }
 
+    console.debug('[DECISION_DB_PAYLOAD]', {
+      decision_id: decision.id,
+      recommended_action_type: typeof decision.recommended_action,
+      actions_type: typeof decision.actions
+    });
+
+    /**
+     * DEBUG — DB BOUNDARY PAYLOAD (CRITICAL)
+     * --------------------------------------
+     * Shows EXACT object sent into knex.
+     * This is the final truth before serialization.
+     */
+    console.error('[DEBUG_DB_INSERT_INPUT]', {
+      recommended_action: decision.recommended_action,
+      actions: decision.actions,
+
+      typeof_recommended_action: typeof decision.recommended_action,
+      typeof_actions: typeof decision.actions,
+
+      raw: decision
+    });
+
     /**
      * IDEMPOTENCY WITH VERIFICATION (CRITICAL)
      * ---------------------------------------
@@ -284,6 +310,18 @@ export class DecisionRepository {
          */
         aggregate_version: decision.aggregate_version,
         priority: decision.priority,
+        /**
+         * JSONB SERIALIZATION (CRITICAL)
+         * ------------------------------
+         * MUST use explicit JSON.stringify + ::jsonb casting.
+         *
+         * Reason:
+         * - Knex does NOT reliably serialize nested JSON objects
+         * - Can result in double-encoded strings (22P02 error)
+         * - This guarantees exact payload sent to Postgres
+         *
+         * DO NOT replace with plain object assignment.
+         */
         recommended_action: db.raw('?::jsonb', [JSON.stringify(decision.recommended_action)]),
         actions: db.raw('?::jsonb', [JSON.stringify(decision.actions)]),
         score_breakdown: db.raw('?::jsonb', [JSON.stringify(decision.score_breakdown)]),

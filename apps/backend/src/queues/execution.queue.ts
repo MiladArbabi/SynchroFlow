@@ -68,11 +68,20 @@ export async function enqueueExecutionJob(job: ExecutionJob): Promise<void> {
   const payload = Buffer.from(JSON.stringify(job));
 
   /**
-   * ENQUEUE IDEMPOTENCY GUARD (CRITICAL)
-   * ------------------------------------
-   * Prevents duplicate jobs entering queue.
+   * ENQUEUE IDEMPOTENCY (REVISED — SOURCE OF TRUTH FIX)
+   * ---------------------------------------------------
+   * decision_execution_queue is ALREADY the source of truth.
    *
-   * Uses decision_execution_queue as source of truth.
+   * Correct model:
+   * - DB insert happens BEFORE enqueue (ingestion layer)
+   * - Queue MUST NOT block on existence
+   *
+   * Duplicate protection responsibility:
+   * - DB uniqueness (decision_id)
+   * - Worker idempotency guard
+   *
+   * This check previously caused:
+   * → ALL jobs to be skipped (system deadlock)
    */
   const existing = await import('@lasyncro/backend-core/db.js')
     .then(m => m.default('decision_execution_queue')
@@ -80,13 +89,12 @@ export async function enqueueExecutionJob(job: ExecutionJob): Promise<void> {
       .first()
     );
 
-  if (existing) {
-    console.warn('[EXECUTION_ENQUEUE_SKIPPED_DUPLICATE]', {
-      decision_id: job.decision_id,
-      status: existing.status
+  if (!existing) {
+    console.error('[EXECUTION_ENQUEUE_BLOCKED_NO_DB_ROW]', {
+      decision_id: job.decision_id
     });
 
-    return;
+    throw new Error('[EXECUTION_QUEUE_DESYNC]');
   }
 
   /**

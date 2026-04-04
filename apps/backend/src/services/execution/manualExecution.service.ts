@@ -15,6 +15,22 @@ import { withTenant } from '@lasyncro/backend-core/db.js';
  */
 export async function executeManualDecision(decisionId: string) {
 
+  /**
+ * 🚫 HARD DISABLE — MANUAL EXECUTION FORBIDDEN
+ * -------------------------------------------
+ * This path bypasses Command Bus and breaks:
+ * - determinism
+ * - replay safety
+ * - single execution authority
+ *
+ * All execution MUST originate from:
+ * Command → Decision → Dispatcher → Execution Worker
+ *
+ * This function is intentionally disabled until reintroduced
+ * through Command Bus as a proper command.
+ */
+throw new Error('[MANUAL_EXECUTION_DISABLED]');
+
 /**
  * TENANT RESOLUTION (SECURE)
  * --------------------------
@@ -126,7 +142,13 @@ try {
     .where({ decision_id: decisionId })
     .update({
       status: 'executed',
-      executed_at: db.fn.now()
+      /**
+       * DO NOT set executed_at here.
+       * --------------------------------
+       * Execution lifecycle timestamps are owned by execution.worker only.
+       *
+       * Manual execution must follow same lifecycle guarantees as async execution.
+       */
     });
 
     } catch (err) {

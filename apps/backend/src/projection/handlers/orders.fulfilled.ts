@@ -20,8 +20,12 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
-
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
+import orderFulfillmentIngestionService 
+  from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
+import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
+import { projectOrderRisk } from '../../projections/orderRiskProjection.js';
+
 
 const ORDERS_PROJECTION = 'orders_projection';
 
@@ -136,21 +140,16 @@ export async function handleOrdersFulfilled({
   if (!lasyncroOrderId) {
 
     /**
-     * PROJECTION VIOLATION REMOVED
-     * ----------------------------
-     * Projections MUST be side-effect free.
-     * Emitting domain events here breaks:
-     * - determinism
-     * - replay correctness
+     * INVALID STATE (CRITICAL)
+     * ------------------------
+     * Silent return removed.
+     * This indicates malformed or incomplete event payload.
      *
-     * Instead, log and exit.
-     * Missing aggregate handling must occur in ingestion layer.
+     * MUST be observable to prevent hidden state corruption.
      */
-    /* console.error('[PROJECTION_INVARIANT_VIOLATION][MISSING_ORDER]', {
-      shopId: domainEvent.shop_id,
-      externalOrderId,
-      sourceEventId: domain_event_id,
-    }); */
+    console.error('[PROJECTION_ORDERS_FULFILLED_INVALID_STATE]', {
+      reason: 'Guard condition triggered → invalid payload or missing data'
+    });
 
     return;
   }
@@ -165,9 +164,16 @@ export async function handleOrdersFulfilled({
    */
   if (!payload.status) {
 
-    console.error('[FULFILLMENT_STATUS_MISSING]', {
-      eventId: domain_event_id,
-      payload,
+    /**
+     * INVALID STATE (CRITICAL)
+     * ------------------------
+     * Silent return removed.
+     * This indicates malformed or incomplete event payload.
+     *
+     * MUST be observable to prevent hidden state corruption.
+     */
+    console.error('[PROJECTION_ORDERS_FULFILLED_INVALID_STATE]', {
+      reason: 'Guard condition triggered → invalid payload or missing data'
     });
 
     return;
@@ -211,8 +217,13 @@ export async function handleOrdersFulfilled({
     );
   }
 
-  const status = normalizedStatus;
-
+   const status = normalizedStatus as
+    | 'pending'
+    | 'processing'
+    | 'partially_fulfilled'
+    | 'fulfilled'
+    | 'cancelled'
+    | 'failed';
   /**
    * DOMAIN STATE FLAGS (CRITICAL)
    * -----------------------------
@@ -273,89 +284,31 @@ export async function handleOrdersFulfilled({
       failed: 5,
     };
 
-    const existing = await trx('order_fulfillment_status')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .first<{ status: string }>();
-
-    if (existing) {
-      const currentPrecedence = precedence[existing.status] ?? 0;
-      const newPrecedence = precedence[status] ?? 0;
-
-      const allowUpdate =
-        status === 'cancelled' ||
-        newPrecedence >= currentPrecedence;
-
-      if (!allowUpdate) {
-        console.warn('[FULFILLMENT_REGRESSION_BLOCKED]', {
-          lasyncroOrderId,
-          from: existing.status,
-          to: status,
-        });
-        return;
-      }
-    };
-
-    console.debug('[FULFILLMENT_BEFORE_DB_WRITE]', {
-      eventId: domain_event_id,
-    });
-
     /**
-     * DIRECT PROJECTION WRITE (EVENT-SOURCED)
+     * FULFILLMENT INGESTION (SOURCE OF TRUTH)
      * ---------------------------------------
-     * Replaces ingestion service call.
+     * Replaces all direct projection writes.
      *
-     * PROJECTION RULE:
-     * - Must derive state strictly from domain event
-     * - Must NOT call external services
+     * Guarantees:
+     * - monotonic enforcement
+     * - history consistency
+     * - execution trigger emission
      */
-    await trx('order_fulfillment_status')
-      .insert({
-        lasyncro_fulfillment_id: crypto.randomUUID(),
-        lasyncro_order_id: lasyncroOrderId,
-        status,
-        status_updated_at: new Date(domainEvent.event_time),
-        fulfilled_at:
-          isFulfilled
-            ? new Date(domainEvent.event_time)
-            : null,
-      })
-      .onConflict('lasyncro_order_id')
-      .merge({
-        status,
-        status_updated_at: new Date(domainEvent.event_time),
-        fulfilled_at:
-          isFulfilled
-            ? trx.raw(
-                'COALESCE(order_fulfillment_status.fulfilled_at, ?)',
-                [new Date(domainEvent.event_time)]
-              )
-            : trx.raw('order_fulfillment_status.fulfilled_at'),
-      });
-
-      console.debug('[FULFILLMENT_AFTER_DB_WRITE]', {
-        eventId: domain_event_id,
-      });
-
-      await trx('order_fulfillment_history')
-        .insert({
-          lasyncro_fulfillment_event_id: crypto.randomUUID(),
-          lasyncro_order_id: lasyncroOrderId,
-          status,
-          event_occurred_at: canonicalEventTime,
-        })
-        .onConflict(
-          ['lasyncro_order_id', 'status', 'event_occurred_at']
-        )
-        .ignore();
-
-      /**
-       * PROJECTION TRACE
-       */
-      console.debug('[FULFILLMENT_PROJECTED]', {
+    await orderFulfillmentIngestionService.ingestStatus(
+      {
         lasyncroOrderId,
+        shopId: domainEvent.shop_id,
         status,
-        eventTime: domainEvent.event_time,
-      });
+        canonicalEventTime,
+      },
+      trx
+    );
+
+    console.debug('[FULFILLMENT_INGESTION_COMPLETED]', {
+      lasyncroOrderId,
+      status,
+      eventTime: canonicalEventTime,
+    });
 
     /**
      * AGGREGATE MUTATION (RETURNING VERSION — CRITICAL FIX)
@@ -383,6 +336,30 @@ export async function handleOrdersFulfilled({
       throw new Error(
         `[AGGREGATE_VERSION_MISSING] order=${lasyncroOrderId}`
       );
+    };
+
+    try {
+      await projectOrderRisk(
+        trx,
+        lasyncroOrderId,
+        domainEvent.shop_id,
+        updatedOrder.aggregate_version,
+        new Date(domainEvent.event_time)
+      );
+
+      console.info('[RISK_PROJECTION_EXECUTED]', {
+        orderId: lasyncroOrderId,
+        aggregateVersion: updatedOrder.aggregate_version,
+      });
+
+    } catch (err) {
+      console.error('[RISK_PROJECTION_FAILED]', {
+        orderId: lasyncroOrderId,
+        aggregateVersion: updatedOrder.aggregate_version,
+        error: (err as Error).message,
+      });
+
+      throw err; // DO NOT SWALLOW
     }
 
     /**
@@ -430,6 +407,40 @@ export async function handleOrdersFulfilled({
       lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
       aggregateVersion: reconciliationIntent.aggregateVersion,
       domainEventId: emittedEvent?.id,
+    });
+
+    if (
+      reconciliationIntent.observed &&
+      reconciliationIntent.observed.source !== 'shopify_sync'
+    ) {
+      console.error('[OBSERVED_SOURCE_MISMATCH]', {
+        received: reconciliationIntent.observed.source,
+      });
+    }
+
+    /**
+     * NORMALIZE OBSERVED (DEFENSIVE — CRITICAL)
+     * -----------------------------------------
+     * Protects queue contract from upstream inconsistencies.
+     * DLQ evidence shows invalid values entering system.
+     */
+    const normalizedObserved = reconciliationIntent.observed
+      ? {
+          status: 'fulfilled' as const,
+          observedAt: new Date(reconciliationIntent.observed.observedAt),
+          source: 'shopify_sync' as const,
+        }
+      : undefined;
+
+    await publishReconciliationJob(
+      reconciliationIntent.lasyncroOrderId,
+      reconciliationIntent.aggregateVersion,
+      normalizedObserved
+    );
+
+    console.info('[RECONCILIATION_JOB_PUBLISHED_DIRECT]', {
+      lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
+      aggregateVersion: reconciliationIntent.aggregateVersion,
     });
   }
 

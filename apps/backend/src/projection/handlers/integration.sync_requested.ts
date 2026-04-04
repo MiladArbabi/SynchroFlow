@@ -90,6 +90,17 @@ export async function handleIntegrationSyncRequested({
           shopId: domainEvent.shop_id,
           action: 'SYNC_NOT_PRODUCING_EVENTS',
         });
+        
+        /**
+         * INVALID STATE (CRITICAL)
+         * ------------------------
+         * Silent return removed.
+         * Indicates malformed integration sync request.
+         */
+        console.error('[PROJECTION_INTEGRATION_SYNC_INVALID_STATE]', {
+          reason: 'Guard condition triggered → invalid or incomplete sync payload'
+        });
+
         return;
       }
 
@@ -99,6 +110,16 @@ export async function handleIntegrationSyncRequested({
           count: count2,
           action: 'PIPELINE_HALTED_AFTER_START',
         });
+        /**
+         * INVALID STATE (CRITICAL)
+         * ------------------------
+         * Silent return removed.
+         * Indicates malformed integration sync request.
+         */
+        console.error('[PROJECTION_INTEGRATION_SYNC_INVALID_STATE]', {
+          reason: 'Guard condition triggered → invalid or incomplete sync payload'
+        });
+
         return;
       }
 

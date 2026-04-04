@@ -53,8 +53,19 @@ export async function executeJob(
        * - Pass trx to handler for atomic execution
        * - Ensures handler DB writes are part of same transaction
        */
-
       await decisionRepo.markSuccess(trx, job.decision_id);
+
+      /**
+       * EXECUTION COMPLETION TIMESTAMP (CRITICAL)
+       * -----------------------------------------
+       * executed_at must reflect actual execution completion.
+       */
+      await trx('decision_execution_queue')
+        .where({ decision_id: job.decision_id })
+        .update({
+          status: 'success',
+          executed_at: trx.fn.now(),
+        });
 
       console.info('[EXECUTION_WORKER_SUCCESS]', {
         decision_id: job.decision_id
@@ -65,6 +76,19 @@ export async function executeJob(
         job.decision_id,
         (error as Error).message
       );
+
+      /**
+       * FAILURE TIMESTAMP (CRITICAL)
+       * ----------------------------
+       * Ensures lifecycle closes even on failure.
+       */
+      await trx('decision_execution_queue')
+        .where({ decision_id: job.decision_id })
+        .update({
+          status: 'failure',
+          executed_at: trx.fn.now(),
+          error: (error as Error).message,
+        });
 
       console.error('[EXECUTION_WORKER_FAILURE]', {
         decision_id: job.decision_id,
@@ -86,8 +110,19 @@ export async function executeJob(
          * - Same guarantee for worker-managed transactions
          * - Prevents partial commits across boundaries
          */
-
         await decisionRepo.markSuccess(trx, job.decision_id);
+
+        /**
+         * EXECUTION COMPLETION TIMESTAMP (CRITICAL)
+         * -----------------------------------------
+         * executed_at must reflect actual execution completion.
+         */
+        await trx('decision_execution_queue')
+          .where({ decision_id: job.decision_id })
+          .update({
+            status: 'success',
+            executed_at: trx.fn.now(),
+          });
 
         console.info('[EXECUTION_WORKER_SUCCESS]', {
           decision_id: job.decision_id
@@ -98,6 +133,19 @@ export async function executeJob(
           job.decision_id,
           (error as Error).message
         );
+
+        /**
+         * FAILURE TIMESTAMP (CRITICAL)
+         * ----------------------------
+         * Ensures lifecycle closes even on failure.
+         */
+        await trx('decision_execution_queue')
+          .where({ decision_id: job.decision_id })
+          .update({
+            status: 'failure',
+            executed_at: trx.fn.now(),
+            error: (error as Error).message,
+          });
 
         console.error('[EXECUTION_WORKER_FAILURE]', {
           decision_id: job.decision_id,
@@ -145,11 +193,15 @@ async function processExecutionMessage(
 
     if (existing) {
       /**
-       * TERMINAL STATES:
-       * - success → already executed
-       * - pending → already scheduled (manual)
+       * EXECUTION IDEMPOTENCY GUARD (CORRECTED)
+       * ---------------------------------------
+       * - success → already executed → skip
+       * - in_progress → already being executed → skip
+       *
+       * IMPORTANT:
+       * - pending MUST be executed (it is the entry state)
        */
-      if (existing.status === 'success' || existing.status === 'pending') {
+      if (existing.status === 'success' || existing.status === 'in_progress') {
         console.warn('[EXECUTION_SKIPPED_ALREADY_PROCESSED]', {
           decision_id: job.decision_id,
           status: existing.status
@@ -173,10 +225,10 @@ async function processExecutionMessage(
         msg.properties?.headers?.['x-retry-count'] || 0
     );
 
-    console.info('[EXECUTION_RETRY_METADATA]', {
+    /* console.info('[EXECUTION_RETRY_METADATA]', {
         decision_id: job.decision_id,
         retry_count: retryCount
-    });
+    }); */
 
     /**
      * RETRY CAP ENFORCEMENT (CRITICAL)
@@ -196,11 +248,33 @@ async function processExecutionMessage(
         });
 
         /**
+         * TERMINAL FAILURE (CRITICAL)
+         * ---------------------------
+         * Retry cap reached → must mark decision as failure.
+         * Prevents stuck "pending/in_progress" decisions.
+         */
+        await db.transaction(async (trx) => {
+          await decisionRepo.markFailure(
+            trx,
+            job.decision_id,
+            'Max retry attempts exceeded'
+          );
+
+          await trx('decision_execution_queue')
+            .where({ decision_id: job.decision_id })
+            .update({
+              status: 'failure',
+              executed_at: trx.fn.now(),
+              error: 'Max retry attempts exceeded',
+            });
+        });
+
+        /**
          * ACK to REMOVE from queue permanently.
          * Prevents infinite DLQ cycling.
          */
         getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
-            return;
+        return;
     }
 
     /**

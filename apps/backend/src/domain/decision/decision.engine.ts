@@ -425,7 +425,7 @@ if (signals.is_operational_blocked) {
       execution_mode: 'manual'
     }
   });
-
+  
         if (!isReplay) {
             console.info('[DECISION_CREATED]', {
                 orderId,
