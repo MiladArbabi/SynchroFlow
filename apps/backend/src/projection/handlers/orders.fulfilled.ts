@@ -17,8 +17,6 @@
  * - Wall-clock timestamp usage
  * - REBUILD_MODE branch
  */
-
-import db from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
 import orderFulfillmentIngestionService 
@@ -47,20 +45,16 @@ export async function handleOrdersFulfilled({
   const payload = (domainEvent as any).canonical_payload ?? domainEvent.event_payload;
 
   /**
-   * FULFILLMENT DATA COVERAGE CHECK (CRITICAL OBSERVABILITY)
-   * -------------------------------------------------------
-   * We currently DO NOT compute:
-   * - partially_fulfilled
-   * - fulfilled (accurately)
+   * LINE ITEMS COVERAGE CHECK
+   * --------------------------
+   * Backfill events (external_event_id ending in ':backfill') never
+   * carry line_items by design — they are synthetic events emitted
+   * during historical sync with only order_id and status.
    *
-   * Because required data is missing or unused:
-   * - line_items
-   * - fulfillment quantities
-   *
-   * This logs presence of required fields WITHOUT changing behavior.
-   * Enables safe transition to derived fulfillment state.
+   * Only warn for real webhook events where line_items is expected.
    */
-  if (!payload.line_items) {
+  const isBackfillEvent = String(domainEvent.external_event_id ?? '').endsWith(':backfill');
+  if (!payload.line_items && !isBackfillEvent) {
     console.warn('[FULFILLMENT_DATA_MISSING_LINE_ITEMS]', {
       eventId: domain_event_id,
     });
@@ -92,14 +86,6 @@ export async function handleOrdersFulfilled({
     eventId: domain_event_id,
   });
 
-  /**
-   * CRITICAL: enforce single-connection transactional consistency
-   * -------------------------------------------------------------
-   * MUST pass trx to avoid:
-   * - connection pool split
-   * - hidden locks
-   * - non-repeatable reads inside projection
-   */
   const lasyncroOrderId = await resolveExternalOrderId(
     domainEvent.shop_id,
     'shopify',
@@ -108,12 +94,25 @@ export async function handleOrdersFulfilled({
   );
 
   /**
+   * IDENTITY GUARD (MUST precede any DB operations on this order)
+   * -------------------------------------------------------------
+   * If identity resolution fails, no lock or query should proceed.
+   * Placing this after forUpdate() would crash on null orderId.
+   */
+  if (!lasyncroOrderId) {
+    console.error('[PROJECTION_ORDERS_FULFILLED_INVALID_STATE]', {
+      reason: 'Identity resolution returned null — unknown external order',
+      externalOrderId,
+      eventId: domain_event_id,
+    });
+    return;
+  }
+
+  /**
    * LOCK ORDER ROW (HARD LOCK — DEADLOCK PREVENTION)
    * -----------------------------------------------
-   * MUST acquire row-level lock immediately.
-   * Prevents:
-   * - deferred locking
-   * - lock inversion vs other handlers
+   * Acquired AFTER identity guard to avoid locking on null orderId.
+   * Prevents lock inversion vs other concurrent handlers.
    */
   const { aggregate_version } = await trx('orders')
     .where({ lasyncro_order_id: lasyncroOrderId })
@@ -121,37 +120,8 @@ export async function handleOrdersFulfilled({
     .select('aggregate_version')
     .first();
 
-  console.debug('[ORDER_ROW_LOCKED_FOR_UPDATE]', {
-    lasyncroOrderId,
-  });
-
-  console.debug('[FULFILLMENT_AFTER_ID_RESOLUTION]', {
-    eventId: domain_event_id,
-    lasyncroOrderId,
-  });
-
-  /**
-   * MISSING AGGREGATE DETECTED
-   * --------------------------
-   * Emits deterministic signal for orchestration.
-   * (Preserved exactly as original implementation.)
-   */
-  if (!lasyncroOrderId) {
-
-    /**
-     * INVALID STATE (CRITICAL)
-     * ------------------------
-     * Silent return removed.
-     * This indicates malformed or incomplete event payload.
-     *
-     * MUST be observable to prevent hidden state corruption.
-     */
-    console.error('[PROJECTION_ORDERS_FULFILLED_INVALID_STATE]', {
-      reason: 'Guard condition triggered → invalid payload or missing data'
-    });
-
-    return;
-  }
+  console.debug('[ORDER_ROW_LOCKED_FOR_UPDATE]', { lasyncroOrderId });
+  console.debug('[FULFILLMENT_AFTER_ID_RESOLUTION]', { eventId: domain_event_id, lasyncroOrderId });
 
   /**
    * STATUS RESOLUTION (STRICT — NO FALLBACKS)
@@ -377,32 +347,7 @@ export async function handleOrdersFulfilled({
           : undefined,
     };
 
-  if (reconciliationIntent) {
-    /**
-     * DOMAIN EVENT EMISSION (CORRECT PATTERN)
-     * ----------------------------------------
-     * MUST emit domain_event → trigger → outbox
-     * Never write outbox directly.
-     */
-    const [emittedEvent] = await trx('domain_events')
-      .insert({
-        event_type: 'reconciliation/intent_captured',
-        event_payload: {
-          lasyncro_order_id: reconciliationIntent.lasyncroOrderId,
-          aggregate_version: reconciliationIntent.aggregateVersion,
-          observed: reconciliationIntent.observed ?? null,
-        },
-        shop_id: domainEvent.shop_id,
-        event_time: domainEvent.event_time,
-      })
-      .returning(['id']);
-
-    console.debug('[RECONCILIATION_DOMAIN_EVENT_EMITTED]', {
-      lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
-      aggregateVersion: reconciliationIntent.aggregateVersion,
-      domainEventId: emittedEvent?.id,
-    });
-
+    if (reconciliationIntent) {
     if (
       reconciliationIntent.observed &&
       reconciliationIntent.observed.source !== 'shopify_sync'
@@ -412,12 +357,6 @@ export async function handleOrdersFulfilled({
       });
     }
 
-    /**
-     * NORMALIZE OBSERVED (DEFENSIVE — CRITICAL)
-     * -----------------------------------------
-     * Protects queue contract from upstream inconsistencies.
-     * DLQ evidence shows invalid values entering system.
-     */
     const normalizedObserved = reconciliationIntent.observed
       ? {
           status: 'fulfilled' as const,
@@ -426,25 +365,46 @@ export async function handleOrdersFulfilled({
         }
       : undefined;
 
-    await publishReconciliationJob(
-      reconciliationIntent.lasyncroOrderId,
-      reconciliationIntent.aggregateVersion,
-      normalizedObserved
-    );
-
-    console.info('[RECONCILIATION_JOB_PUBLISHED_DIRECT]', {
-      lasyncroOrderId: reconciliationIntent.lasyncroOrderId,
-      aggregateVersion: reconciliationIntent.aggregateVersion,
-    });
-  }
-
-  /**
-   * REBUILD MODE GUARD
-   */
-  if (reconciliationIntent && process.env.REBUILD_MODE === 'true') {
-    console.log(
-      '[REBUILD_MODE] reconciliation publish skipped',
-      reconciliationIntent.lasyncroOrderId
-    );
+    if (process.env.REBUILD_MODE === 'true') {
+      console.log(
+        '[REBUILD_MODE] reconciliation publish skipped',
+        reconciliationIntent.lasyncroOrderId
+      );
+    } else {
+      /**
+       * POST-COMMIT PUBLISH (CRITICAL)
+       * ------------------------------
+       * publishReconciliationJob MUST fire only after the projection
+       * transaction commits. Publishing inside the transaction risks
+       * ghost jobs: the queue message is delivered but the DB write
+       * rolls back, leaving reconciliation referencing a non-existent
+       * aggregate version.
+       *
+       * trx.executionPromise resolves on commit, rejects on rollback.
+       * The publish is chained onto commit — never fires on rollback.
+       */
+      const intentSnapshot = reconciliationIntent;
+      trx.executionPromise.then(async () => {
+        try {
+          await publishReconciliationJob(
+            intentSnapshot.lasyncroOrderId,
+            intentSnapshot.aggregateVersion,
+            normalizedObserved
+          );
+          console.info('[RECONCILIATION_JOB_PUBLISHED_POST_COMMIT]', {
+            lasyncroOrderId: intentSnapshot.lasyncroOrderId,
+            aggregateVersion: intentSnapshot.aggregateVersion,
+          });
+        } catch (err) {
+          // Non-fatal: projection is already committed.
+          // Reconciliation will be retried via its own recovery path.
+          console.error('[RECONCILIATION_JOB_PUBLISH_FAILED_POST_COMMIT]', {
+            lasyncroOrderId: intentSnapshot.lasyncroOrderId,
+            aggregateVersion: intentSnapshot.aggregateVersion,
+            error: err,
+          });
+        }
+      });
+    }
   }
 }

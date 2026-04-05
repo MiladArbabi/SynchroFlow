@@ -13,7 +13,8 @@
   },
   "include": [
     "migrations/**/*.ts",
-    "seeds/**/*.ts"
+    "seeds/**/*.ts",
+    "src/scripts/**/*.ts"
   ],
   "exclude": [
     "node_modules",

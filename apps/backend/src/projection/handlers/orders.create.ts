@@ -357,12 +357,26 @@ export async function handleOrdersCreate({
       });
 
       if (!variantRow) {
-        console.warn('[ORDER_LINE_ITEM_VARIANT_ROW_MISSING]', {
+        /**
+         * INVARIANT VIOLATION (FATAL)
+         * ---------------------------
+         * variantIdentity exists but variantRow does not — identity map
+         * references a variant that was never persisted. This indicates
+         * a broken product sync, not a transient condition.
+         *
+         * Silent continue here produces empty order_line_items and
+         * broken revenue units — identical consequence to missing
+         * variantIdentity, which already throws. Policy must be consistent.
+         */
+        console.error('[ORDER_LINE_ITEM_VARIANT_ROW_MISSING_FATAL]', {
           shopId: domainEvent.shop_id,
           externalOrderId,
           variantId,
+          lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
         });
-        continue;
+        throw new Error(
+          `[ORDER_LINE_ITEM_VARIANT_ROW_MISSING] shopId=${domainEvent.shop_id} order=${externalOrderId} variant=${variantId}`
+        );
       }
 
       const quantity = li.quantity ?? 0;
@@ -529,22 +543,20 @@ export async function handleOrdersCreate({
 
   if (!orderRow) {
     /**
-     * NON-FATAL INVARIANT VIOLATION (CRITICAL FIX)
-     * --------------------------------------------
-     * Throwing here causes:
-     * - full transaction rollback
-     * - order disappears despite successful insert
+     * INVARIANT VIOLATION (FATAL)
+     * ---------------------------
+     * Order row must exist after insert.
+     * Silent continuation here causes an immediate null dereference
+     * on orderRow.aggregate_version below — crash is guaranteed.
      *
-     * We downgrade to error log to preserve data.
+     * Throwing surfaces the real failure and preserves transaction
+     * rollback semantics (event will be retried deterministically).
      */
-    console.error('[ORDER_VERSION_MISSING_AFTER_CREATE]', {
+    console.error('[ORDER_VERSION_MISSING_AFTER_CREATE_FATAL]', {
       lasyncroOrderId,
       shopId: domainEvent.shop_id,
     });
-
-    /**
-     * DO NOT THROW — preserve projection state
-     */
+    throw new Error(`[ORDER_VERSION_MISSING_AFTER_CREATE] order=${lasyncroOrderId}`);
   }
 
   /**
@@ -579,6 +591,31 @@ export async function handleOrdersCreate({
   const currentCount = Number(countRow?.count ?? 0);
 
   if (currentCount >= 1) {
-    await FirstInsightService.computeAndPersist(domainEvent.shop_id);
+    /**
+     * POST-COMMIT SIDE EFFECT (CRITICAL)
+     * -----------------------------------
+     * FirstInsightService.computeAndPersist uses its own DB connection
+     * and cannot participate in the projection transaction.
+     *
+     * Calling it inside the transaction risks:
+     * - reading uncommitted order data (sees 0 orders)
+     * - firing on a transaction that later rolls back
+     *
+     * Chaining onto trx.executionPromise ensures:
+     * - fires only after commit
+     * - order row is visible to the service's own DB read
+     */
+    const shopIdSnapshot = domainEvent.shop_id;
+    trx.executionPromise.then(async () => {
+      try {
+        await FirstInsightService.computeAndPersist(shopIdSnapshot);
+      } catch (err) {
+        // Non-fatal: insight delivery can be retried independently.
+        console.error('[FIRST_INSIGHT_POST_COMMIT_FAILED]', {
+          shopId: shopIdSnapshot,
+          error: err,
+        });
+      }
+    });
   }
 }

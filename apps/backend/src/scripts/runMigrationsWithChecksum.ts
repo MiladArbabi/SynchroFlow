@@ -1,7 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import knexConfig from '../../knexfile.cjs';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const knexConfig = (await import(
+  path.resolve(__dirname, '../../../knexfile.cjs')
+)).default;
+
 import knex from 'knex';
 import { execSync } from 'child_process';
 
@@ -17,7 +24,7 @@ const db = knex(knexConfig.development);
 
 // Resolve dist/migrations relative to compiled script location (context-independent)
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
-const MIGRATIONS_DIR = path.join(SCRIPT_DIR, '../migrations');
+const MIGRATIONS_DIR = path.resolve(__dirname, '../../migrations');
 
 console.info('[migration-runner] resolved MIGRATIONS_DIR=', MIGRATIONS_DIR);
 
@@ -39,7 +46,7 @@ async function main() {
     console.info('[migration-runner] running RLS check...');
     
     // Resolve relative to this script (same strategy as migrations)
-    const rlsScriptPath = path.join(SCRIPT_DIR, '../../scripts/check_rls.sh');
+    const rlsScriptPath = path.resolve(__dirname, '../../../scripts/check_rls.sh');
 
     console.info('[migration-runner] resolved RLS script path=', rlsScriptPath);
 

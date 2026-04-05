@@ -21,7 +21,8 @@ export async function handleOrdersPaid({
   const lasyncroOrderId = await resolveExternalOrderId(
     domainEvent.shop_id,
     'shopify',
-    externalOrderId
+    externalOrderId,
+    trx // CRITICAL: must use projection transaction for consistent read
   );
 
   if (!lasyncroOrderId) {
@@ -63,6 +64,8 @@ export async function handleOrdersPaid({
         paid_at: trx.raw('COALESCE(paid_at, ?)', [paymentTimestamp]),
         order_updated_at: paymentTimestamp,
         updated_at: paymentTimestamp,
+
+        aggregate_version: trx.raw('aggregate_version + 1'),
       });
 
       /**

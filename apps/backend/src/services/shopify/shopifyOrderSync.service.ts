@@ -113,158 +113,161 @@ export async function syncShopifyOrders({
         createdCount++;
 
         /**
-         * INGESTION SIGNAL — FIRST ORDER SYNC
-         * -----------------------------------
-         * Uses canonical ingestion schema:
-         * - module_id = 'orders'
-         * - event     = 'sync_started'
+         * SYNC STARTED SIGNAL (ONCE PER SHOP — DB-CHECKED)
+         * -------------------------------------------------
+         * createdCount resets per page call — cannot be used
+         * as a global once-per-sync guard across paginated calls.
          *
-         * This avoids schema drift and preserves
-         * compatibility with existing ingestion model.
+         * Use DB existence check instead: only emit if the signal
+         * does not already exist for this shop, preventing sequence
+         * ID consumption on conflict across pagination pages.
          */
-        await trx('shop_ingestion_events')
-          .insert({
+        const syncStartedExists = await trx('domain_events')
+          .where({
             shop_id: shopId,
-            module_id: 'orders',
-            event: 'sync_started',
-            created_at: trx.fn.now(),
-          })
-          .onConflict(['shop_id', 'module_id', 'event'])
-          .ignore()
-          .returning<{ id: number }[]>('id')
-          .then((res) => {
-            if (res.length === 0) {
-              console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
-                entity: 'shopify_order_event',
-                reason: 'external_event_id dedup'
-              });
-            }
-            return res;
-          });
-
-        console.info('[INGESTION_SIGNAL_EMITTED]', {
-          shopId,
-          module: 'orders',
-          event: 'sync_started',
-        });
-
-                /**
-         * DOMAIN EVENT — INGESTION STARTED
-         * --------------------------------
-         * This is the ONLY valid bridge to lifecycle.
-         *
-         * Lifecycle must NEVER read tables directly.
-         */
-        await trx('domain_events')
-          .insert({
-            shop_id: shopId,
-            event_type: 'orders/sync_started',
-            event_payload: {},
-            event_time: trx.fn.now(),
-            event_version: 1,
             external_event_id: `orders_sync_started:${shopId}`,
           })
-          .onConflict(
-            db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
-          )
-          .ignore()
-          .returning<{ id: number }[]>('id')
-          .then((res) => {
-            if (res.length === 0) {
-              console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
-                entity: 'shopify_order_event',
-                reason: 'external_event_id dedup'
-              });
-            }
-            return res;
-          });
+          .first();
 
-        console.info('[INGESTION_DOMAIN_EVENT_EMITTED]', {
-          shopId,
-          event: 'orders/sync_started',
-        });
-        
-        } else {
-        duplicateCount++;
-      }
-
-      /**
-       * FULFILLMENT BACKFILL (IDEMPOTENT GUARD)
-       * ----------------------------------------
-       * Only emit if fulfillment status exists AND
-       * no prior fulfillment event has been recorded.
-       */
-      if (
-        node.fulfillmentStatus ||
-        node.displayFulfillmentStatus
-      ) {
-        await backfillFulfillmentEvent({
-          shopId,
-          orderId: externalOrderId,
-          fulfillmentStatus:
-            node.fulfillmentStatus ??
-            node.displayFulfillmentStatus ??
-            null,
-          eventTime: new Date(node.updatedAt ?? node.createdAt),
-        });
-      }
-
-      /**
-       * PAYMENT EVENT EMISSION (INGESTION LAYER)
-       * -----------------------------------------
-       * MUST happen here (not projection) to preserve:
-       * - deterministic replay
-       * - projection purity
-       */
-      const financialStatus =
-        node.financial_status?.toLowerCase() ??
-        node.displayFinancialStatus?.toLowerCase();
-
-      if (financialStatus === 'paid') {
-        await trx('domain_events')
-          .insert({
-            shop_id: shopId,
-            event_type: 'orders/paid',
-            event_payload: {
-              id: externalOrderId,
-            },
-            event_time: new Date(node.createdAt),
-            event_version: 1,
-            external_event_id: (() => {
-              let id = String(node.id);
-
-              if (id.startsWith('gid://')) {
-                id = id.split('/').pop()!;
+        if (!syncStartedExists) {
+          await trx('shop_ingestion_events')
+            .insert({
+              shop_id: shopId,
+              module_id: 'orders',
+              event: 'sync_started',
+              created_at: trx.fn.now(),
+            })
+            .onConflict(['shop_id', 'module_id', 'event'])
+            .ignore()
+            .returning<{ id: number }[]>('id')
+            .then((res) => {
+              if (res.length === 0) {
+                console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+                  entity: 'shopify_order_event',
+                  reason: 'external_event_id dedup'
+                });
               }
+              return res;
+            });
 
-              return `${id}:paid`;
-            })(),
-          })
-          .onConflict(
-            db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
-          )
-          .ignore()
-          .returning<{ id: number }[]>('id')
-          .then((res) => {
-            if (res.length === 0) {
-              console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
-                entity: 'shopify_order_event',
-                reason: 'external_event_id dedup'
-              });
-            }
-            return res;
+          console.info('[INGESTION_SIGNAL_EMITTED]', {
+            shopId,
+            module: 'orders',
+            event: 'sync_started',
           });
 
-        /* console.debug('[ORDER_SYNC_EMITTED_PAID]', {
-          orderId: node.id,
-        }); */
-      }
-  }
+          await trx('domain_events')
+            .insert({
+              shop_id: shopId,
+              event_type: 'orders/sync_started',
+              event_payload: {},
+              event_time: trx.fn.now(),
+              event_version: 1,
+              external_event_id: `orders_sync_started:${shopId}`,
+            })
+            .onConflict(
+              db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
+            )
+            .ignore()
+            .returning<{ id: number }[]>('id')
+            .then((res) => {
+              if (res.length === 0) {
+                console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+                  entity: 'shopify_order_event',
+                  reason: 'external_event_id dedup'
+                });
+              }
+              return res;
+            });
 
-  console.info('[ORDER_SYNC_BATCH_SUMMARY]', {
-    shopId,
-    created: createdCount,
-    duplicates: duplicateCount,
-    total: orderEdges.length,
-  });
+          console.info('[INGESTION_DOMAIN_EVENT_EMITTED]', {
+            shopId,
+            event: 'orders/sync_started',
+          });
+          
+          } else {
+          duplicateCount++;
+        }
+
+        /**
+         * FULFILLMENT BACKFILL (IDEMPOTENT GUARD)
+         * ----------------------------------------
+         * Only emit if fulfillment status exists AND
+         * no prior fulfillment event has been recorded.
+         */
+        if (
+          node.fulfillmentStatus ||
+          node.displayFulfillmentStatus
+        ) {
+          await backfillFulfillmentEvent({
+            shopId,
+            orderId: externalOrderId,
+            fulfillmentStatus:
+              node.fulfillmentStatus ??
+              node.displayFulfillmentStatus ??
+              null,
+            eventTime: new Date(node.updatedAt ?? node.createdAt),
+            trx, // CRITICAL: must stay inside sync transaction
+          });
+        }
+
+        /**
+         * PAYMENT EVENT EMISSION (INGESTION LAYER)
+         * -----------------------------------------
+         * MUST happen here (not projection) to preserve:
+         * - deterministic replay
+         * - projection purity
+         */
+        const financialStatus =
+          node.financial_status?.toLowerCase() ??
+          node.displayFinancialStatus?.toLowerCase();
+
+        if (financialStatus === 'paid') {
+          await trx('domain_events')
+            .insert({
+              shop_id: shopId,
+              event_type: 'orders/paid',
+              event_payload: {
+                id: externalOrderId,
+              },
+              event_time: new Date(node.createdAt),
+              event_version: 1,
+              external_event_id: (() => {
+                let id = String(node.id);
+
+                if (id.startsWith('gid://')) {
+                  id = id.split('/').pop()!;
+                }
+
+                return `${id}:paid`;
+              })(),
+            })
+            .onConflict(
+              db.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
+            )
+            .ignore()
+            .returning<{ id: number }[]>('id')
+            .then((res) => {
+              if (res.length === 0) {
+                console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
+                  entity: 'shopify_order_event',
+                  reason: 'external_event_id dedup'
+                });
+              }
+              return res;
+            });
+
+          /* console.debug('[ORDER_SYNC_EMITTED_PAID]', {
+            orderId: node.id,
+          }); */
+        }
+    }
+
+    console.info('[ORDER_SYNC_BATCH_SUMMARY]', {
+      shopId,
+      created: createdCount,
+      duplicates: duplicateCount,
+      total: orderEdges.length,
+    });
+  }
 }

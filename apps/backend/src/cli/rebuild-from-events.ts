@@ -1,39 +1,41 @@
-/**
- * ENVIRONMENT BOOTSTRAP
- * ---------------------
- * CLI must explicitly load .env.
- */
+// AFTER
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-import { runSchemaGuard } from '../utils/schemaGuard.js';
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * ENV BOOTSTRAP (must happen before any DB import)
+ * -------------------------------------------------
+ * Static ESM imports are hoisted and evaluated before
+ * the module body runs. Any import that touches
+ * database.config.ts will throw if PGUSER/PGDATABASE
+ * are not already set.
+ *
+ * Therefore: dotenv.config() MUST run here, before
+ * any dynamic imports below. Do NOT move it down or
+ * convert it to a lazy call.
+ *
+ * Path: 2 levels up from src/cli/ → repo root .env
+ */
 dotenv.config({
+  // 4 levels up: src/cli/ → src/ → apps/backend/ → apps/ → repo root
   path: path.resolve(__dirname, '../../../../.env'),
 });
 
- /**
-  * REBUILD MODE FLAG
-  * ------------------
-  * Explicitly disables all queue side-effects during replay.
-  * Worker must check this flag.
-  */
- process.env.REBUILD_MODE = 'true';
+process.env.REBUILD_MODE = 'true';
 
 /**
- * CANONICAL EVENT PROCESSOR
- * -------------------------
- * Rebuild must execute the same deterministic
- * pipeline as runtime event processing.
- *
- * Never call projection.engine directly here.
+ * DYNAMIC IMPORTS (DB-dependent modules)
+ * ---------------------------------------
+ * These must be dynamic to prevent ESM hoisting from
+ * executing database.config.ts before dotenv is loaded.
  */
-import { processDomainEvent } from '../events/processDomainEvent.js';
-import db from '@lasyncro/backend-core/db.js';
+const { runSchemaGuard } = await import('../utils/schemaGuard.js');
+const { processDomainEvent } = await import('../events/processDomainEvent.js');
+const { default: db } = await import('@lasyncro/backend-core/db.js');
 
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');
@@ -80,6 +82,7 @@ async function truncateProjections() {
     'order_fulfillment_status',
     'order_fulfillment_history',
     'order_constraint_events',
+    'order_constraints',
     'order_reconciliation_intents',
     'order_age_snapshot',
     'order_margin_snapshot',

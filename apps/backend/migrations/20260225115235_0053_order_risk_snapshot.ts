@@ -14,11 +14,24 @@ import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('order_risk_snapshot', (table) => {
+    /**
+     * VERSIONED PRIMARY KEY (CRITICAL)
+     * --------------------------------
+     * Risk snapshot MUST be versioned to align with:
+     * - order_age_snapshot
+     * - deterministic replay model
+     *
+     * Prevents:
+     * - temporal overwrite
+     * - loss of historical state
+     */
     table.uuid('lasyncro_order_id')
-      .primary()
+      .notNullable()
       .references('lasyncro_order_id')
       .inTable('orders')
       .onDelete('CASCADE');
+
+    table.primary(['lasyncro_order_id', 'aggregate_version']);
 
     /**
      * PROJECTION VERSION (HARD GUARANTEE)
@@ -70,6 +83,11 @@ export async function up(knex: Knex): Promise<void> {
      */
     table.decimal('fraud_score', 5, 4).nullable();        // 0.0000 – 1.0000
     table.decimal('return_probability', 5, 4).nullable(); // 0.0000 – 1.0000
+
+    table.index(
+      ['lasyncro_order_id', 'aggregate_version'],
+      'order_risk_snapshot_lookup_idx'
+    );
 
     /**
      * OPERATIONAL HEALTH SCORE

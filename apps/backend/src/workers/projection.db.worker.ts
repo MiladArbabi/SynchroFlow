@@ -17,6 +17,8 @@ const BATCH_SIZE = 1; // strict ordering (do NOT increase yet)
 const POLL_INTERVAL_MS = 200;
 
 let running = false;
+const MAX_TRANSIENT_GAP_RETRIES = 50; // ~10 seconds at 200ms poll interval
+let transientGapRetries = 0;
 
 export async function startDbProjectionWorker() {
   if (running) return;
@@ -76,6 +78,14 @@ const nextEvents = await db('domain_events')
   .limit(BATCH_SIZE);
 
 if (nextEvents.length === 0) {
+  /**
+   * IDLE BACKOFF (CRITICAL)
+   * -----------------------
+   * `continue` skips the sleep at the bottom of the loop,
+   * causing a tight busy-loop against the DB when the queue is empty.
+   * Always wait POLL_INTERVAL_MS before re-polling.
+   */
+  await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   continue;
 }
 
@@ -105,19 +115,9 @@ for (const event of nextEvents) {
         const expectedId = currentLastProcessed + 1;
 
         /**
-         * RELAXED ORDERING — COMMIT-AWARE PROCESSING
-         * ------------------------------------------
-         * Postgres does NOT guarantee commit order == id order.
-         *
-         * Therefore:
-         * - Gaps are allowed temporarily
-         * - We only process strictly increasing IDs
-         * - Missing IDs will be picked up in next poll
-         *
-         * This preserves:
-         * - determinism
-         * - no skipping
-         * - no crashes
+         * DUPLICATE / STALE GUARD
+         * -----------------------
+         * Event already processed — skip silently.
          */
         if (eventId <= currentLastProcessed) {
           console.warn('[DB_PROJECTION_DUPLICATE_OR_STALE]', {
@@ -127,9 +127,112 @@ for (const event of nextEvents) {
           return;
         }
 
+        /**
+         * GAP DETECTION (CRITICAL)
+         * ------------------------
+         * expectedId = currentLastProcessed + 1
+         *
+         * gap == 1 (eventId === expectedId): normal — process.
+         *
+         * gap == 1 but eventId > expectedId by exactly 1:
+         *   Postgres non-sequential commit artifact — the missing
+         *   event is in-flight. Return without advancing cursor;
+         *   it will be picked up on next poll.
+         *
+         * gap > 1 (eventId > expectedId + 1):
+         *   Genuine missing events — IDs were skipped or deleted.
+         *   Continuing would permanently skip those events.
+         *   HALT: operator must investigate and reset cursor.
+         *
+         * To recover from HALT:
+         *   UPDATE projection_cursors
+         *   SET last_processed_event_id = <last_known_good_id>
+         *   WHERE projection_name = 'orders_projection';
+         */
+        const gapSize = eventId - expectedId;
+
+        if (gapSize === 0) {
+          // Normal case — fall through to processing
+        } else if (gapSize === 1) {
+          /**
+           * TRANSIENT GAP ESCALATION (CRITICAL)
+           * -------------------------------------
+           * Single-ID gaps are expected from Postgres commit ordering.
+           * However if the gap persists beyond MAX_TRANSIENT_GAP_RETRIES,
+           * the missing event is permanently absent — not in-flight.
+           *
+           * Escalate to FATAL to prevent indefinite pipeline stall.
+           * Operator must investigate event ID and reset cursor if needed.
+           */
+          transientGapRetries++;
+
+          console.warn('[DB_PROJECTION_GAP_TRANSIENT]', {
+            eventId,
+            expectedId,
+            attempt: transientGapRetries,
+            maxAttempts: MAX_TRANSIENT_GAP_RETRIES,
+            action: 'wait_and_retry',
+          });
+
+          if (transientGapRetries >= MAX_TRANSIENT_GAP_RETRIES) {
+            /**
+             * SEQUENCE GAP SKIP (CRITICAL)
+             * ----------------------------
+             * After MAX_TRANSIENT_GAP_RETRIES, the missing ID is
+             * permanently absent — caused by a rolled-back transaction
+             * that consumed a sequence value without committing.
+             *
+             * Postgres SERIAL sequences do not roll back — gaps are
+             * permanent and unrecoverable. Halting here would stall
+             * the pipeline forever on every upstream rollback.
+             *
+             * Strategy: advance cursor to currentLastProcessed so the
+             * next poll picks up eventId (the next visible event).
+             * Log at ERROR for full operator visibility.
+             */
+            console.error('[DB_PROJECTION_GAP_SKIPPED]', {
+              skippedEventId: expectedId,
+              nextEventId: eventId,
+              attempts: transientGapRetries,
+              reason: 'Postgres sequence gap — transaction rolled back',
+              action: 'advancing cursor past gap',
+            });
+
+            await trx('projection_cursors')
+              .where({ projection_name: 'orders_projection' })
+              .update({
+                last_processed_event_id: expectedId, // skip the missing sequence gap
+                updated_at: trx.fn.now(),
+              });
+
+            transientGapRetries = 0;
+            return;
+          }
+          return;
+
+        } else {
+          /**
+           * MULTI-ID GAP — genuine missing events.
+           * Halting to prevent silent permanent skip.
+           */
+          console.error('[DB_PROJECTION_GAP_FATAL]', {
+            eventId,
+            expectedId,
+            missingIds: `${expectedId}..${eventId - 1}`,
+            missingCount: gapSize,
+            action: 'HALTED — operator intervention required',
+            recovery: `UPDATE projection_cursors SET last_processed_event_id = ${currentLastProcessed} WHERE projection_name = 'orders_projection'`,
+          });
+          throw new Error(
+            `[PROJECTION_GAP_FATAL] missing events ${expectedId}..${eventId - 1} (count=${gapSize})`
+          );
+        }
+
         console.debug('[DB_PROJECTION_PROCESSING]', {
           domain_event_id: event.id,
         });
+
+        transientGapRetries = 0; // reset on successful event acquisition
 
         /**
          * FETCH DOMAIN EVENT (CONSISTENT READ)

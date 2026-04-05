@@ -1,4 +1,5 @@
 import db from '@lasyncro/backend-core/db.js';
+import { Knex } from 'knex';
 
 /**
  * FULFILLMENT EVENT BACKFILL SERVICE
@@ -13,11 +14,13 @@ export async function backfillFulfillmentEvent({
   orderId,
   fulfillmentStatus,
   eventTime,
+  trx,
 }: {
   shopId: number;
   orderId: string;
   fulfillmentStatus?: string | null;
   eventTime: Date;
+  trx: Knex.Transaction;
 }) {
 
   /**
@@ -51,20 +54,21 @@ export async function backfillFulfillmentEvent({
         ? 'fulfilled'
         : 'pending';
 
-  await db('domain_events')
+  /**
+   * TRANSACTIONAL INSERT (CRITICAL FIX)
+   * ------------------------------------
+   * Must use trx (not db) to stay inside the sync transaction.
+   * Using db directly causes:
+   * - sequence gaps when parent transaction rolls back
+   * - out-of-transaction writes that survive rollback
+   *
+   * external_event_id enables conflict detection WITHOUT
+   * sequence consumption — onConflict().ignore() on a partial
+   * index does not allocate a sequence ID when the row exists.
+   */
+  await trx('domain_events')
     .insert({
       shop_id: shopId,
-      /**
-       * EVENT TYPE (CANONICAL — SLASH FORMAT)
-       * --------------------------------------
-       * SYSTEM INVARIANT:
-       * All domain events MUST use slash notation.
-       *
-       * Prevents:
-       * - projection handler misses
-       * - rebuild divergence
-       * - dual event namespaces
-       */
       event_type:
         normalizedInput === 'fulfilled'
           ? 'orders/fulfilled'
@@ -75,13 +79,11 @@ export async function backfillFulfillmentEvent({
       },
       event_time: eventTime,
       event_version: 1,
+      external_event_id: `${orderId}:${normalizedStatus}:backfill`,
     })
-    /**
-     * IDEMPOTENCY GUARD
-     * -----------------
-     * Prevent duplicate emission during retries.
-     */
-    .onConflict()
+    .onConflict(
+      trx.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
+    )
     .ignore();
 
   /* console.info('[FULFILLMENT_EVENT_BACKFILLED]', {

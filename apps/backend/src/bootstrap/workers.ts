@@ -84,10 +84,22 @@ export async function startWorkers(): Promise<void> {
       try {
         const reconciliation = await import('../workers/reconciliation/reconciliation.consumer.js');
 
+        /**
+         * DISABLED — RECONCILIATION CONSUMER (CRITICAL)
+         * ---------------------------------------------
+         * Reconciliation MUST execute synchronously inside:
+         * processDomainEvent → projection → reconciliation
+         *
+         * Async consumer causes:
+         * - race with projection
+         * - AGE_PROJECTION_NOT_MATERIALIZED
+         * - non-deterministic rebuilds
+         *
+         * This is permanently disabled.
+         */
         if (typeof reconciliation.startReconciliationConsumer === 'function') {
-          await Promise.resolve(reconciliation.startReconciliationConsumer());
-
-          console.log('[bootstrap/workers] Reconciliation consumer started');
+          console.warn('[RECONCILIATION_CONSUMER_DISABLED]');
+          // DO NOT START
         }
 
         /**
@@ -228,4 +240,4 @@ export async function stopWorkers(): Promise<void> {
   workerStopFns = [];
   started = false;
   console.log('[bootstrap/workers] Workers stopped');
-}
+};

@@ -88,11 +88,14 @@ export async function projectOrderRisk(
   }); */
 
   /**
-   * CUSTOMER BLOCK
-   * ----------------
-   * Derived from active customer constraints OR unpaid state.
+   * SOURCE OF TRUTH: order_constraints (migration 0070)
+   * -----------------------------------------------------
+   * order_constraint_events was the legacy table — now deprecated.
+   * All constraint writers (customer, operational, inventory) write
+   * exclusively to order_constraints. Reading from order_constraint_events
+   * misses all data written by current projection layer.
    */
-  const customerConstraint = await trx('order_constraint_events')
+  const customerConstraint = await trx('order_constraints')
     .where({
       lasyncro_order_id: orderId,
       constraint_type: 'customer',
@@ -112,11 +115,11 @@ export async function projectOrderRisk(
   const isCustomerBlocked = !!customerConstraint;
   
   /**
-   * OPERATIONAL BLOCK
-   * ------------------
-   * Derived from active operational constraints.
+   * SOURCE OF TRUTH: order_constraints (migration 0070)
+   * -----------------------------------------------------
+   * Same reasoning as customer constraint above.
    */
-  const operationalConstraint = await trx('order_constraint_events')
+  const operationalConstraint = await trx('order_constraints')
     .where({
       lasyncro_order_id: orderId,
       constraint_type: 'operational',
@@ -134,11 +137,17 @@ export async function projectOrderRisk(
 
   if (healthScore < 0) healthScore = 0;
 
-  // IDEMPOTENCY GUARD (EXECUTION-LAYER)
-  // Prevent stale or duplicate projection writes
+  /**
+   * IDEMPOTENCY READ (WITH ROW LOCK)
+   * ---------------------------------
+   * forUpdate() prevents two concurrent transactions from both
+   * passing the version guard and writing duplicate snapshots.
+   * Without it, the guard is a non-atomic check-then-act — TOCTOU race.
+   */
   const existing = await trx('order_risk_snapshot')
     .where({ lasyncro_order_id: orderId })
     .select('aggregate_version')
+    .forUpdate()
     .first();
 
   if (existing && existing.aggregate_version >= aggregateVersion) {
@@ -186,15 +195,24 @@ export async function projectOrderRisk(
 
       evaluated_at: eventAnchor
     })
-    // EXPLICIT MERGE POLICY: overwrite full snapshot deterministically
-    .onConflict('lasyncro_order_id')
+    /**
+     * VERSIONED CONFLICT TARGET (CRITICAL)
+     * -----------------------------------
+     * Must match composite PK:
+     * (lasyncro_order_id, aggregate_version)
+     *
+     * Prevents:
+     * - cross-version overwrite
+     * - loss of historical risk state
+     */
+    .onConflict(['lasyncro_order_id', 'aggregate_version'])
     .merge({
       shop_id: shopId,
       aggregate_version: aggregateVersion,
       is_inventory_blocked: isInventoryBlocked,
-      inventory_blocked_revenue: inventoryBlockedRevenue,
       is_customer_blocked: isCustomerBlocked,
       is_operational_blocked: isOperationalBlocked,
+      inventory_blocked_revenue: inventoryBlockedRevenue,
       is_at_risk: isInventoryBlocked || isCustomerBlocked || isOperationalBlocked,
       order_health_score: Math.round(healthScore * 100),
       evaluated_at: eventAnchor

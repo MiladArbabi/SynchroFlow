@@ -59,21 +59,27 @@ export async function projectOrderAge(
     row.order_created_at;
 
   /**
- * AGE CALCULATION (INVARIANT-SAFE)
- * --------------------------------
- * Event time can precede materialized timestamps due to:
- * - ingestion ordering
- * - replay timing
- *
- * We clamp to zero to preserve:
- * - DB constraints
- * - deterministic rebuilds
- *
- * This is NOT business logic — it is temporal normalization.
- */
-  const ageSinceCreationRaw =
-    (eventAnchor.getTime() - new Date(createdAt).getTime()) / 1000;
+   * AGE REFERENCE POINT (CRITICAL FIX)
+   * ------------------------------------
+   * eventAnchor = domain event's event_time, which is causally unreliable.
+   * Measured worst-case disorder: -37 days (events arriving out of order).
+   *
+   * Using eventAnchor as the "now" reference produces factually wrong ages:
+   * - a 10-day-old order processed by a late event appears 0 seconds old
+   * - SLA breaches are missed or fabricated
+   *
+   * Fix: use DB transaction time (NOW()) as the age reference.
+   * This is the actual wall clock at projection execution time —
+   * stable, monotonic, and accurate regardless of event ordering.
+   *
+   * eventAnchor is still used for snapshot_generated_at and updated_at
+   * to preserve deterministic replay identity.
+   */
+  const nowResult = await trx.raw<{ rows: [{ now: Date }] }>('SELECT NOW() as now');
+  const now = new Date(nowResult.rows[0].now);
 
+  const ageSinceCreationRaw =
+    (now.getTime() - new Date(createdAt).getTime()) / 1000;
   const ageSinceCreation = Math.max(0, Math.floor(ageSinceCreationRaw));
 
   const ageSincePaid =
@@ -81,24 +87,18 @@ export async function projectOrderAge(
       ? Math.max(
           0,
           Math.floor(
-            (eventAnchor.getTime() - new Date(paidAt).getTime()) / 1000
+            (now.getTime() - new Date(paidAt).getTime()) / 1000
           )
         )
       : null;
-    
-  /**
-   * FULFILLMENT AGE (INVARIANT-SAFE)
-   * --------------------------------
-   * Same reasoning as creation/paid:
-   * fulfillment timestamp may be ahead of eventAnchor during replay.
-   */
+
   const fulfilledAt = row.fulfilled_at ?? null;
   const ageSinceFulfillment =
     fulfilledAt
       ? Math.max(
           0,
           Math.floor(
-            (eventAnchor.getTime() - new Date(fulfilledAt).getTime()) / 1000
+            (now.getTime() - new Date(fulfilledAt).getTime()) / 1000
           )
         )
       : null;
@@ -128,16 +128,19 @@ export async function projectOrderAge(
      */
     .onConflict(['lasyncro_order_id', 'aggregate_version'])
     .merge({
+      age_since_creation_seconds: ageSinceCreation,
+      age_since_paid_seconds: ageSincePaid,
+      age_since_fulfillment_seconds: ageSinceFulfillment,
+      is_shipping_sla_breached: false,
+      is_delivery_sla_breached: false,
+      snapshot_generated_at: eventAnchor,
       /**
-       * MERGE POLICY
-       * ------------
-       * Only applies to exact same (order_id, aggregate_version).
-       *
-       * Guarantees:
-       * - idempotent replay
-       * - no cross-version overwrite
+       * DETERMINISTIC TIMESTAMP (CRITICAL)
+       * -----------------------------------
+       * Must use eventAnchor, NOT wall clock (new Date()).
+       * Wall clock breaks replay determinism: same event replayed
+       * at different times produces different updated_at values.
        */
-      updated_at: new Date(),
-      // NOTE: add all projection fields explicitly here to avoid implicit overwrite behavior
-    });
+      updated_at: eventAnchor,
+    })
 }

@@ -164,7 +164,7 @@ async function validateTable(contract: TableContract) {
 export async function assertDecisionSchema() {
   await validateTable({
     table: 'order_risk_snapshot',
-    primaryKey: ['lasyncro_order_id'],
+    primaryKey: ['lasyncro_order_id', 'aggregate_version'],
     required: [
       'lasyncro_order_id',
       'aggregate_version',

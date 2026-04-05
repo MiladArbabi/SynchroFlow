@@ -39,6 +39,17 @@ export async function registerShopifyWebhooks(
     'app/uninstalled',
   ];
 
+  /**
+   * APP_BASE_URL GUARD (CRITICAL)
+   * ------------------------------
+   * Without this, webhook address becomes "undefined/api/v1/..."
+   * causing Shopify to reject all registrations silently.
+   */
+  if (!process.env.APP_BASE_URL) {
+    console.error('[SHOPIFY_WEBHOOK_REGISTRATION_FATAL] APP_BASE_URL is not set — webhooks will not be registered');
+    throw new Error('[SHOPIFY_WEBHOOK_REGISTRATION_FATAL] APP_BASE_URL missing');
+  }
+
   for (const topic of topics) {
     await fetch(`https://${shopDomain}/admin/api/2024-01/webhooks.json`, {
       method: 'POST',

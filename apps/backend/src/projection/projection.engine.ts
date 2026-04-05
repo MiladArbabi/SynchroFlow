@@ -128,6 +128,30 @@ export async function projectDomainEventCore({
        */
 
       let canonicalPayload = domainEvent.event_payload;
+
+      /**
+       * FULFILLMENT CANONICAL PASSTHROUGH (CRITICAL)
+       * ---------------------------------------------
+       * orders/fulfilled and orders/fulfillment_updated carry partial
+       * Shopify payloads — no canonical mapper exists for them.
+       *
+       * The registry guard for orders/fulfillment_updated requires
+       * canonical_payload to be set or it throws CONTRACT_VIOLATION.
+       *
+       * Since the handler only reads raw field names (order_id, status,
+       * line_items), passing the raw payload as canonical_payload is
+       * correct and safe until a fulfillment mapper is built.
+       */
+      if (
+        domainEvent.event_type === 'orders/fulfilled' ||
+        domainEvent.event_type === 'orders/fulfillment_updated'
+      ) {
+        canonicalPayload = domainEvent.event_payload;
+        console.debug('[CANONICAL_FULFILLMENT_PASSTHROUGH]', {
+          eventId: domain_event_id,
+          eventType: domainEvent.event_type,
+        });
+      }
       
       /**
        * CANONICAL NORMALIZATION (ENABLED)
@@ -198,15 +222,13 @@ export async function projectDomainEventCore({
       const canonicalEventTime = new Date(domainEvent.event_time);
 
       /**
-       * EVENT TYPE NORMALIZATION (CRITICAL)
-       * -----------------------------------
-       * Prevents routing failures due to:
-       * - slash vs dot drift
-       * - external inconsistencies
-       *
-       * Canonical format: slash-delimited
+       * EVENT TYPE NORMALIZATION (GLOBAL REPLACE)
+       * ------------------------------------------
+       * Uses regex with /g flag to replace ALL dots, not just the first.
+       * e.g. "orders.line_items.update" → "orders/line_items/update"
+       * Single .replace('.', '/') only catches the first dot — silent misroute.
        */
-      const normalizedEventType = domainEvent.event_type.replace('.', '/');
+      const normalizedEventType = domainEvent.event_type.replace(/\./g, '/');
 
       /**
        * PROJECTION COVERAGE GUARD (CRITICAL)
@@ -477,6 +499,21 @@ export async function projectDomainEventCore({
 
           throw new Error('[AGE_PROJECTION_NOT_MATERIALIZED]');
         }
+
+          /**
+           * PROJECTION ORDERING VERIFIED (CRITICAL OBSERVABILITY)
+           * ----------------------------------------------------
+           * Confirms that:
+           * - age projection write is visible inside same transaction
+           * - versioned snapshot exists
+           *
+           * Without this log, silent projection failures are undetectable.
+           */
+          console.debug('[AGE_PROJECTION_VERIFIED]', {
+            orderId: projectionTargetOrderId,
+            aggregateVersion
+          });
+
 
         /**
          * CONSTRAINT EVALUATION (NOW SAFE)

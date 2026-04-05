@@ -11,7 +11,7 @@
     "start:worker": "node dist/apps/backend/src/worker-entry.js",
     "seed": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs seed:run --specific=dev_seed.js",
     "check:rls": "bash scripts/check_rls.sh",
-    "migrate": "bash ../../scripts/check-conflict-usage.sh && mkdir -p dist && rm -rf dist/migrations dist/seeds && npx tsc --project tsconfig.migrations.json && node dist/scripts/runMigrationsWithChecksum.js",
+    "migrate": "bash ../../scripts/check-conflict-usage.sh && mkdir -p dist && rm -rf dist/migrations dist/seeds && npx tsc --project tsconfig.migrations.json && node dist/src/scripts/runMigrationsWithChecksum.js",
     "migrate:rollback": "rm -rf dist/migrations && npx tsc --project tsconfig.migrations.json && DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make",
     "rebuild": "REBUILD_MODE=true node --loader ts-node/esm src/cli/rebuild-from-events.ts"

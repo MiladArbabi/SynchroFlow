@@ -15,21 +15,6 @@ import { startWorkers } from './bootstrap/workers.js';
 import './bootstrap/workers.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
-
-/**
- * ORDER RECONCILIATION DISPATCHER
- * --------------------------------
- * Consumes order_reconciliation_intents and
- * materializes analytical snapshots:
- *
- * - order_margin_snapshot
- * - order_risk_snapshot
- * - order_age_snapshot
- * - orders_operational_control_snapshot
- *
- * Without this worker the Orders UI shows zeros.
- */
-import { startReconciliationIntentDispatcher } from './workers/reconciliation/reconciliation.intent.dispatcher.js';
 import { startShopSnapshotJobDispatcher } from './workers/projections/shopSnapshotJob.dispatcher.js';
 
 async function start() {
@@ -88,7 +73,23 @@ async function start() {
   await startWorkers();
 
   startDomainEventOutboxDispatcher();
-  startReconciliationIntentDispatcher(); // executes reconciliation intents
+
+  /**
+   * DISABLED — RECONCILIATION EXECUTION (CRITICAL FIX)
+   * --------------------------------------------------
+   * Reconciliation MUST run strictly AFTER projection completes
+   * inside the canonical event processing pipeline.
+   *
+   * Async dispatcher causes:
+   * - race condition with projection
+   * - AGE_PROJECTION_NOT_MATERIALIZED failures
+   * - non-deterministic rebuilds
+   *
+   * Source of truth:
+   * processDomainEvent → projection → reconciliation
+   */
+  console.warn('[RECONCILIATION_DISPATCHER_DISABLED]');
+
   startShopSnapshotJobDispatcher();
 
  console.log('[worker-entry] All workers started');
