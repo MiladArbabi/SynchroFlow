@@ -24,9 +24,11 @@ export async function computeQueueMetrics(
     return row;
   }
 
-  const queueManualReviewRow = await trx('order_constraint_events')
-    .where({ shop_id: shopId })
-    .andWhere('constraint_type', 'manual_review')
+ const queueManualReviewRow = await trx('order_constraints as oc')
+    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('oc.constraint_type', 'manual_review')
+    .andWhere('oc.is_active', true)
     .count('* as count')
     .first();
 
@@ -34,9 +36,11 @@ export async function computeQueueMetrics(
     requireRow(queueManualReviewRow as CountRow | undefined, 'queueManualReviewRow').count ?? 0
   );
 
-  const queueAwaitingInventoryRow = await trx('order_constraint_events')
-    .where({ shop_id: shopId })
-    .andWhere('constraint_type', 'inventory')
+  const queueAwaitingInventoryRow = await trx('order_constraints as oc')
+    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('oc.constraint_type', 'inventory')
+    .andWhere('oc.is_active', true)
     .count('* as count')
     .first();
 
@@ -44,9 +48,11 @@ export async function computeQueueMetrics(
     requireRow(queueAwaitingInventoryRow as CountRow | undefined, 'queueAwaitingInventoryRow').count ?? 0
   );
 
-  const queueAwaitingCustomerRow = await trx('order_constraint_events')
-    .where({ shop_id: shopId })
-    .andWhere('constraint_type', 'customer')
+  const queueAwaitingCustomerRow = await trx('order_constraints as oc')
+    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('oc.constraint_type', 'customer')
+    .andWhere('oc.is_active', true)
     .count('* as count')
     .first();
 

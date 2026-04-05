@@ -64,6 +64,15 @@ export async function computeShopOperationalSnapshot(
   await db.transaction(async (trx) => {
 
     /**
+     * TENANT CONTEXT (RLS REQUIRED)
+     * ------------------------------
+     * RLS policies on snapshot tables require app.current_tenant.
+     * Must be set at the start of every transaction that writes
+     * to tenant-scoped tables.
+     */
+    await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+
+    /**
      * MUTATION BYPASS — FORBIDDEN IN RUNTIME
      * --------------------------------------
      * Snapshot immutability MUST be enforced at DB level only.
@@ -280,13 +289,34 @@ export async function computeShopOperationalSnapshot(
         .count('* as count')
         .first();
 
-        if (Number(snapshotCount?.count ?? 0) === 1 && !snapshotDateOverride) {
+    /**
+     * PROJECTION CATCHUP GUARD (CRITICAL)
+     * ------------------------------------
+     * Backfill must NOT run while projection is still processing.
+     * If the cursor has not caught up to the latest domain event,
+     * the snapshot will reflect partial state — inflated constrained
+     * orders and incorrect revenue figures.
+     *
+     * Only trigger backfill when projection is fully caught up.
+     */
+    if (Number(snapshotCount?.count ?? 0) === 1 && !snapshotDateOverride) {
+      const cursorRow = await db('projection_cursors')
+        .select('last_processed_event_id')
+        .first();
+      const latestEventRow = await db('domain_events')
+        .where({ shop_id: shopId })
+        .max('id as max_id')
+        .first();
+      const cursorId = Number(cursorRow?.last_processed_event_id ?? 0);
+      const latestId = Number(latestEventRow?.max_id ?? 0);
+      if (cursorId < latestId) {
+        log.info('SNAPSHOT_BACKFILL_DEFERRED', { shopId, cursorId, latestId });
+      } else {
         log.info('SNAPSHOT_BACKFILL_TRIGGERED', { shopId });
-
         const { backfillShopOperationalSnapshots } =
-            await import('./shopOperationalSnapshot.backfill.js');
-
+          await import('./shopOperationalSnapshot.backfill.js');
         await backfillShopOperationalSnapshots(Number(shopId));
+      }
     }
 
     /**

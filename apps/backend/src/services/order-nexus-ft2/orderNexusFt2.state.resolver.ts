@@ -335,12 +335,21 @@ export async function getOrderNexusFt2StateSnapshot(
     : null,
 
     decision: {
-      brief: decisionBriefRow
+      /**
+       * DECISION BRIEF SOURCE (CRITICAL FIX)
+       * -------------------------------------
+       * ready_to_ship, awaiting_customer, manual_review do NOT exist
+       * in daily_operational_brief_snapshot — they live in
+       * orders_operational_control_snapshot as queue_* fields.
+       *
+       * Source corrected to operationalControlRow.
+       */
+      brief: operationalControlRow
         ? {
-            ready_to_ship: decisionBriefRow.ready_to_ship,
-            awaiting_customer: decisionBriefRow.awaiting_customer,
-            inventory_blocked_revenue: decisionBriefRow.inventory_blocked_revenue,
-            manual_review: decisionBriefRow.manual_review,
+            ready_to_ship: operationalControlRow.queue_ready_to_ship,
+            awaiting_customer: operationalControlRow.queue_awaiting_customer,
+            inventory_blocked_revenue: operationalControlRow.revenue_blocked_inventory,
+            manual_review: operationalControlRow.queue_manual_review,
           }
         : null,
 

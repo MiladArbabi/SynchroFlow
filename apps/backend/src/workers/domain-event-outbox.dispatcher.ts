@@ -66,30 +66,6 @@ export async function startDomainEventOutboxDispatcher() {
 
         for (const row of rows) {
 
-          console.debug('[OUTBOX_DISPATCH_TRACE]', {
-            outbox_id: row.id,
-            domain_event_id: row.domain_event_id,
-          });
-
-          /**
-           * RMQ DISPATCH DISABLED (ARCHITECTURE ALIGNMENT)
-           * ----------------------------------------------
-           * System uses DB-driven projection as source of truth.
-           *
-           * Outbox → RabbitMQ dispatch is intentionally disabled to prevent:
-           * - dual transport paths
-           * - orphaned queues (events)
-           * - non-deterministic behavior
-           *
-           * To re-enable:
-           * - restore sendToQueue block
-           * - ensure consumer exists for 'events'
-           */
-          console.debug('[OUTBOX_DISPATCH_SKIPPED_RMQ]', {
-            outbox_id: row.id,
-            domain_event_id: row.domain_event_id,
-          });
-
           try {
 
             await trx('domain_event_outbox')

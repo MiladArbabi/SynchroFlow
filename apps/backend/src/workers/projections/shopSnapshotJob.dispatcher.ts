@@ -34,8 +34,20 @@ export async function startShopSnapshotJobDispatcher() {
 
   setInterval(async () => {
 
+    /**
+     * PROJECTION CATCHUP DELAY (CRITICAL)
+     * -------------------------------------
+     * Snapshot jobs are scheduled during projection processing.
+     * If consumed immediately, the snapshot captures partial state
+     * (e.g. orders not yet paid/fulfilled) producing inflated
+     * constrained_orders and incorrect revenue figures.
+     *
+     * Wait 10 seconds after scheduling before processing,
+     * giving the projection worker time to catch up.
+     */
     const jobs = await db('shop_snapshot_jobs')
       .select('shop_id')
+      .where('scheduled_at', '<=', db.raw(`NOW() - INTERVAL '10 seconds'`))
       .limit(20);
 
     for (const job of jobs) {

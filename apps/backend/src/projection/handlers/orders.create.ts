@@ -381,12 +381,27 @@ export async function handleOrdersCreate({
 
       const quantity = li.quantity ?? 0;
 
+      /**
+       * UNIT PRICE RESOLUTION (CANONICAL-FIRST)
+       * ----------------------------------------
+       * Canonical payload maps originalUnitPriceSet → unitPrice (flat number).
+       * Raw Shopify GraphQL payload uses originalUnitPriceSet.shopMoney.amount.
+       * Raw Shopify REST payload uses price.
+       *
+       * Priority:
+       * 1. li.unitPrice     — canonical mapper output
+       * 2. li.originalUnitPriceSet.shopMoney.amount — raw GraphQL
+       * 3. li.price         — raw REST
+       * 4. 0                — fallback (should never reach)
+       */
       const unitPrice =
-        li.originalUnitPriceSet?.shopMoney?.amount != null
-          ? Number(li.originalUnitPriceSet.shopMoney.amount)
-          : li.price != null
-            ? Number(li.price)
-            : 0;
+        li.unitPrice != null
+          ? Number(li.unitPrice)
+          : li.originalUnitPriceSet?.shopMoney?.amount != null
+            ? Number(li.originalUnitPriceSet.shopMoney.amount)
+            : li.price != null
+              ? Number(li.price)
+              : 0;
 
       console.debug('[ORDER_LINE_ITEM_INSERT_ATTEMPT]', {
         variantId,

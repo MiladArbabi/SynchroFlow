@@ -548,6 +548,26 @@ export async function projectDomainEventCore({
           orderId: projectionTargetOrderId,
           domain_event_id
         });
+
+        /**
+         * SNAPSHOT JOB SCHEDULING (POST-PROJECTION)
+         * ------------------------------------------
+         * Reconciliation consumer is permanently disabled.
+         * Snapshot jobs must be scheduled directly from the
+         * projection engine after each order event completes.
+         *
+         * Uses onConflict merge to deduplicate — only one
+         * pending job per shop at any time.
+         */
+        await trx('shop_snapshot_jobs')
+          .insert({
+            shop_id: shopId,
+            scheduled_at: trx.fn.now(),
+          })
+          .onConflict(['shop_id'])
+          .merge({
+            scheduled_at: trx.fn.now(),
+          });
       }
 
       if (!projectionTargetOrderId) {
