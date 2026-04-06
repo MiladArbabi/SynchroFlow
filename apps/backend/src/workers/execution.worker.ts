@@ -13,7 +13,7 @@
  * - Queue integration will replace direct invocation
  */
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { ExecutionJob } from '../domain/decision/Decision.js';
 import { getExecutionHandler } from '../execution/execution.registry.js';
 import { DecisionRepository } from '../domain/decision/decision.repository.js';
@@ -96,7 +96,11 @@ export async function executeJob(
       throw error;
     }
   } else {
-    await db.transaction(async (trx) => {
+    /**
+     * withTenant: sets app.current_tenant for RLS on decisions
+     * and decision_execution_queue tables within this transaction.
+     */
+    await withTenant(job.shop_id, async (trx) => {
       await DecisionRepository.markStarted(trx, job.decision_id);
 
       try {
@@ -186,9 +190,14 @@ async function processExecutionMessage(
      * - If already executed → skip
      * - If already started → skip (in-flight protection)
      */
-    const existing = await db('decision_execution_queue')
-      .where({ decision_id: job.decision_id })
-      .first();
+    /**
+     * SYSTEM QUERY — infrastructure idempotency check, no tenant context required.
+     */
+    const existing = await systemQuery(
+      db('decision_execution_queue')
+        .where({ decision_id: job.decision_id })
+        .first()
+    );
 
     if (existing) {
       /**
@@ -246,19 +255,17 @@ async function processExecutionMessage(
             retry_count: retryCount
         });
 
+        // AFTER
         /**
-         * TERMINAL FAILURE (CRITICAL)
-         * ---------------------------
-         * Retry cap reached → must mark decision as failure.
-         * Prevents stuck "pending/in_progress" decisions.
+         * withTenant: sets app.current_tenant for RLS on decisions
+         * and decision_execution_queue tables.
          */
-        await db.transaction(async (trx) => {
+        await withTenant(job.shop_id, async (trx) => {
           await DecisionRepository.markFailure(
             trx,
             job.decision_id,
             'Max retry attempts exceeded'
           );
-
           await trx('decision_execution_queue')
             .where({ decision_id: job.decision_id })
             .update({
@@ -297,12 +304,17 @@ async function processExecutionMessage(
        * - Detects duplicates via error handling (no schema change required)
        */
       try {
-        await db('decision_execution_queue').insert({
-          decision_id: job.decision_id,
-          shop_id: job.shop_id,
-          status: 'pending',
-          created_at: db.fn.now()
-        });
+        /**
+         * SYSTEM QUERY — manual mode queue insert, no tenant context required.
+         */
+        await systemQuery(
+          db('decision_execution_queue').insert({
+            decision_id: job.decision_id,
+            shop_id: job.shop_id,
+            status: 'pending',
+            created_at: db.fn.now()
+          })
+        );
       } catch (err: any) {
         /**
          * DUPLICATE DETECTION (CRITICAL)

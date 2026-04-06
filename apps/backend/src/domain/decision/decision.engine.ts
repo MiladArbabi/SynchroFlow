@@ -187,7 +187,7 @@ function buildDecision({
   action
 }: {
   orderId: string;
-  shopId: string;
+  shopId: number;
   aggregateVersion: number;
   signals: DecisionSignals;
   action: any;
@@ -328,7 +328,7 @@ export function generateDecisions({
   riskSnapshot
 }: {
   orderId: string;
-  shopId: string,
+  shopId: number,
   aggregateVersion: number;
   riskSnapshot: DecisionSignals;
 }): Decision[] {

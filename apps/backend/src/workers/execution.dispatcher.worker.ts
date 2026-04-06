@@ -15,7 +15,7 @@
  * - Can be replaced with LISTEN/NOTIFY later
  */
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import { enqueueExecutionJob } from '../queues/execution.queue.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -25,9 +25,15 @@ export async function startExecutionDispatcher() {
 
   while (true) {
     try {
-      const pending = await db('decision_execution_queue')
-        .where({ status: 'pending' })
-        .limit(50);
+        /**
+         * SYSTEM QUERY — no tenant context required.
+         * Dispatcher reads across all shops; RLS bypassed intentionally.
+         */
+        const pending = await systemQuery(
+          db('decision_execution_queue')
+            .where({ status: 'pending' })
+            .limit(50)
+        );
 
       for (const row of pending) {
         try {
@@ -37,9 +43,11 @@ export async function startExecutionDispatcher() {
          * decision_execution_queue is NOT sufficient to build ExecutionJob.
          * Must hydrate from decisions table (same as manual execution).
          */
-        const decision = await db('decisions')
-        .where({ id: row.decision_id })
-        .first();
+          const decision = await systemQuery(
+            db('decisions')
+              .where({ id: row.decision_id })
+              .first()
+          );
 
         if (!decision) {
         console.error('[EXECUTION_DISPATCH_DECISION_NOT_FOUND]', {
@@ -82,8 +90,9 @@ export async function startExecutionDispatcher() {
           /**
            * MARK AS DISPATCHED
            */
-          await db('decision_execution_queue')
-            .where({ decision_id: row.decision_id })
+          await systemQuery(
+            db('decision_execution_queue')
+              .where({ decision_id: row.decision_id })
             /**
              * DISPATCH STATE TRANSITION
              * -------------------------
@@ -109,7 +118,7 @@ export async function startExecutionDispatcher() {
                *
                * executed_at is ONLY set by execution.worker on success/failure.
                */
-            });
+            }));
 
           console.info('[EXECUTION_DISPATCHED]', {
             decision_id: row.decision_id,

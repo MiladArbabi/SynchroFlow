@@ -45,7 +45,7 @@ export const httpGetPriorityStack = async (
      *
      * Source of truth: decisions table
      */
-    const rows = await DecisionRepository.getByShop(String(shopId));
+    const rows = await DecisionRepository.getByShop(shopId);
 
     /**
      * NOTE:
