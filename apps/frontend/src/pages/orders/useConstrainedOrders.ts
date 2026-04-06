@@ -77,5 +77,21 @@ export function useConstrainedOrders(options?: {
       );
       return data;
     },
+    /**
+     * LIVE QUEUE
+     * -----------------
+     * Refetch every 10s to keep the queue live without manual refresh.
+     * Operators act on this data — it must stay current.
+     *
+     * 10s balances freshness vs server load.
+     * After execution, invalidateQueries triggers an immediate refetch
+     * on top of this interval.
+     */
+    refetchInterval: 10_000,
+    /**
+     * Keep previous data visible while refetching.
+     * Prevents queue flickering on background refresh.
+     */
+    placeholderData: (prev) => prev,
   });
 }

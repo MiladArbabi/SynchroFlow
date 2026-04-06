@@ -367,7 +367,6 @@ export async function getOrderNexusFt2StateSnapshot(
 
     refunds: refundsFacts,
     alignment,
-    // AFTER
     freshness: {
       status: freshnessStatus,
       /**

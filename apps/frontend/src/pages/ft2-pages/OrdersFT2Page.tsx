@@ -12,7 +12,6 @@
 
 // apps/frontend/src/pages/OrdersFT2Page.tsx
 
-// AFTER
 import { useState } from 'react';
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';

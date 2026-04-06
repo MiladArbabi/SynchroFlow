@@ -1,12 +1,18 @@
+// apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useOverviewModulesFt2Snapshot } from '../overview/useOverviewModulesFt2Snapshot';
 import { useTrustFt2Snapshot } from '../trust/useTrustFt2Snapshot';
+import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { OverviewModuleFT2 } from '@lasyncro/overview';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
+import { FirstInsightBanner } from '../overview/FirstInsightBanner';
 
 export default function OverviewPageFT2() {
+  const navigate = useNavigate();
+
   const [range, setRange] = useState<FT2DateRange>({
     preset: 'past_30_days',
     from: null,
@@ -15,6 +21,16 @@ export default function OverviewPageFT2() {
 
   const overviewModules = useOverviewModulesFt2Snapshot(range);
   const trust = useTrustFt2Snapshot();
+
+  /**
+   * PULSE + FIRST INSIGHT DATA SOURCE (B-05, B-06)
+   * -----------------------------------------------
+   * Reuses existing FT2 snapshot — no new API calls.
+   * operationalControl powers both the Pulse zone and
+   * the FirstInsightBanner.
+   */
+  const ft2Snapshot = useOrdersFt2Snapshot();
+  const operationalControl = ft2Snapshot.data?.operationalControl;
 
   if (!overviewModules.isSuccess) return null;
 
@@ -30,8 +46,29 @@ export default function OverviewPageFT2() {
         onChange={setRange}
       />
 
-      <OverviewModuleFT2 {...overviewProps} />
+      {/**
+       * FIRST INSIGHT BANNER (B-06)
+       * ---------------------------
+       * Shown when constrained orders exist.
+       * Dismissed per session via sessionStorage.
+       * Navigates operator directly to Fulfillment Queue.
+       */}
+      <FirstInsightBanner
+        constrainedCount={operationalControl?.constrained_orders ?? null}
+        atRiskRevenue={operationalControl?.at_risk_revenue ?? null}
+        onNavigateToQueue={() => navigate('/fulfillment')}
+      />
+
+      <OverviewModuleFT2
+        {...overviewProps}
+        pulse={operationalControl ? {
+          readyToShip: operationalControl.queue_ready_to_ship ?? null,
+          constrained: operationalControl.constrained_orders ?? null,
+          atRiskRevenue: operationalControl.at_risk_revenue ?? null,
+          oldestExceptionHours: operationalControl.aging_72h_plus ?? null,
+          pendingFulfillment: operationalControl.pending_fulfillment ?? null,
+        } : null}
+      />
     </>
   );
 }
-

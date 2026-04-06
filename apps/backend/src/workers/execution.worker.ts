@@ -130,7 +130,7 @@ export async function executeJob(
           decision_id: job.decision_id
         });
       } catch (error) {
-        // AFTER
+
         await DecisionRepository.markFailure(
           trx,
           job.decision_id,
@@ -255,7 +255,6 @@ async function processExecutionMessage(
             retry_count: retryCount
         });
 
-        // AFTER
         /**
          * withTenant: sets app.current_tenant for RLS on decisions
          * and decision_execution_queue tables.

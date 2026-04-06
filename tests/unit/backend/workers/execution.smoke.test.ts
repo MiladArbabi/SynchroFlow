@@ -21,7 +21,6 @@ const ORDER_ID = randomUUID();
 const DECISION_ID = randomUUID();
 const CONSTRAINT_ID = randomUUID();
 
-// AFTER
 async function seedShop() {
   await systemQuery(db('shops').insert({
     id: SHOP_ID,
@@ -75,7 +74,6 @@ async function seedDecisionExecutionQueue() {
   }));
 }
 
-// AFTER
 async function seedConstraint() {
   /**
    * order_constraints is projection-write-guarded.

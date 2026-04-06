@@ -119,7 +119,6 @@ export function useExecuteOrderDecision() {
       return { previous };
     },
 
-    // AFTER
     onError: (_err, _orderId, context: { previous: ConstrainedOrdersResponse | undefined } | undefined) => {
       /**
        * ROLLBACK on failure — restore previous cache state.
@@ -131,11 +130,24 @@ export function useExecuteOrderDecision() {
 
     onSettled: () => {
       /**
-       * Always re-fetch after settle to reconcile with real snapshot.
-       * This catches any discrepancy between optimistic and actual state.
+       * IMMEDIATE invalidation — catches fast execution paths.
        */
       queryClient.invalidateQueries({ queryKey: ['orders', 'constrained'] });
       queryClient.invalidateQueries({ queryKey: ['order-nexus', 'ft2'] });
+
+      /**
+       * DELAYED invalidation (C-03)
+       * ---------------------------
+       * The snapshot dispatcher has a 2s delay guard before recomputing.
+       * A second invalidation at 4s catches the recomputed snapshot,
+       * ensuring the UI reflects post-execution state accurately.
+       *
+       * This eliminates the need for manual refresh after execution.
+       */
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['orders', 'constrained'] });
+        queryClient.invalidateQueries({ queryKey: ['order-nexus', 'ft2'] });
+      }, 4000);
     },
   });
 }

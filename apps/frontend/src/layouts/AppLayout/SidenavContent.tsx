@@ -10,6 +10,7 @@ import {
   ListItemText,
   Typography
 } from '@mui/material';
+import { useModuleHealth } from 'runtime/useModuleHealth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import SimpleBar from 'ui-component/third-party/SimpleBar';
 import { useResolvedNavigation } from 'runtime/useResolvedNavigation';
@@ -34,6 +35,8 @@ const SidenavContent: React.FC<SidenavProps> = ({
   const { pathname } = useLocation();
   const { groups } = useResolvedNavigation();
   const { snapshot } = useEntitlements();
+  const moduleHealth = useModuleHealth();
+
   const isExpanded = sidenavState === 'EXPANDED';
   const isCompact = sidenavState === 'COMPACT';
 
@@ -70,7 +73,6 @@ const SidenavContent: React.FC<SidenavProps> = ({
         <Box sx={{ flexGrow: 1 }}>
           <List sx={{ px: isExpanded ? 1 : 0.5 }}>
             {groups.flatMap(group => group.items).map((item) => (
-
                 <ListItemButton
                   key={item.id}
                   sx={{
@@ -86,10 +88,33 @@ const SidenavContent: React.FC<SidenavProps> = ({
                   sx={{
                     minWidth: 0,
                     mr: isExpanded ? 1.5 : 0,
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    position: 'relative'
                   }}
                 >
                   {item.icon ? React.createElement(item.icon, { size: iconSize }) : null}
+                  {/**
+                   * MODULE HEALTH DOT (B-07)
+                   * ------------------------
+                   * Calm ambient signal — not a badge count.
+                   * Appears when module has items needing attention.
+                   * Position: top-right of icon, small filled circle.
+                   */}
+                  {moduleHealth.has(item.id) && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        top: -2,
+                        right: -2,
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        bgcolor: 'warning.main',
+                        border: '1.5px solid',
+                        borderColor: 'background.paper',
+                      }}
+                    />
+                  )}
                 </ListItemIcon>
                 {isExpanded && (
                   <ListItemText

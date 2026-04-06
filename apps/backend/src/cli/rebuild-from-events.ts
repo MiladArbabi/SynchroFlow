@@ -1,4 +1,3 @@
-// AFTER
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
