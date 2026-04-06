@@ -21,7 +21,13 @@ router.use('/shops', shopRoutes);
 router.use('/integrations', integrationRoutes);
 router.use('/users', userRoutes);
 router.use('/feedback', feedbackRoutes);
-router.use('/orders', ordersRoutes);
+
+/**
+ * Orders API — versioned at /api/v1/orders
+ * Must match frontend call sites: /api/v1/orders/*
+ */
+router.use('/v1/orders', ordersRoutes);
+
 router.use('/products', productsRoutes);
 router.use('/customers', customersRoutes);
 router.use('/user-state', userStateRoutes); 

@@ -3,11 +3,17 @@ import { Router } from 'express';
 import * as ordersController from './orders.controller.js';
 import { httpGetDailyOperationalBrief } from './orders.decision.controller.js';
 import { httpGetPriorityStack } from './orders.priority.controller.js';
-import { httpGetOperationalControl } 
+import { httpGetOperationalControl }
   from './orders.operational-control.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
-import { httpGetOperationalPressure } 
+import { httpGetOperationalPressure }
   from './orders.operational-pressure.controller.js';
+import { httpGetConstrainedOrders }
+  from './orders.constrained.controller.js';
+import { httpGetOrderDecision }
+  from './orders.decision-by-order.controller.js';
+import { httpExecuteOrderDecision }
+  from './orders.execute.controller.js';
 
 const router = Router();
 
@@ -57,6 +63,46 @@ router.get(
   '/decision/priority-stack',
   authenticateToken,
   httpGetPriorityStack
+);
+
+/**
+ * FULFILLMENT QUEUE ENDPOINTS
+ * ---------------------------
+ * Power the Fulfillment Queue UI control surface.
+ * All routes authenticated + tenant-scoped.
+ */
+
+/**
+ * @route   GET /api/v1/orders/constrained
+ * @desc    Paginated list of constrained orders grouped by type.
+ * @access  Private
+ */
+router.get(
+  '/constrained',
+  authenticateToken,
+  httpGetConstrainedOrders
+);
+
+/**
+ * @route   POST /api/v1/orders/:orderId/execute
+ * @desc    Queue execution of recommended decision action for an order.
+ * @access  Private
+ */
+router.post(
+  '/:orderId/execute',
+  authenticateToken,
+  httpExecuteOrderDecision
+);
+
+/**
+ * @route   GET /api/v1/orders/:orderId/decision
+ * @desc    Current decision state for a single order.
+ * @access  Private
+ */
+router.get(
+  '/:orderId/decision',
+  authenticateToken,
+  httpGetOrderDecision
 );
 
 /**
