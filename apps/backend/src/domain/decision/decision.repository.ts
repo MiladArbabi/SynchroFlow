@@ -26,7 +26,7 @@ export class DecisionRepository {
    * - Prevents silent execution failures
    * - Required for retry + audit
    */
-  async markStarted(trx: any, decisionId: string): Promise<void> {
+  static async markStarted(trx: any, decisionId: string): Promise<void> {
     await trx('decisions')
       .where({ id: decisionId })
       .update({
@@ -44,7 +44,7 @@ export class DecisionRepository {
     console.info('[DECISION_STARTED]', { decision_id: decisionId });
   }
 
-  async markSuccess(trx: any, decisionId: string): Promise<void> {
+  static async markSuccess(trx: any, decisionId: string): Promise<void> {
     await trx('decisions')
       .where({ id: decisionId })
       .update({
@@ -66,7 +66,7 @@ export class DecisionRepository {
     console.info('[DECISION_SUCCESS]', { decision_id: decisionId });
   }
 
-  async markFailure(trx: any, decisionId: string, error: string): Promise<void> {
+  static async markFailure(trx: any, decisionId: string, error: string): Promise<void> {
     await trx('decisions')
       .where({ id: decisionId })
       .update({
@@ -96,17 +96,17 @@ export class DecisionRepository {
    * 
    * TYPE INVARIANT:
    * ---------------
-   * shop_id MUST be string.
+   * shop_id MUST be number (integer).
    *
    * Source of truth:
-   * - DB schema (varchar)
-   * - RLS context (text)
+   * - DB schema (integer)
+   * - RLS context: app.current_tenant::int
    *
-   * NEVER use number here.
+   * NEVER pass string here — RLS will silently mismatch.
    */
-  static async create(decision: Decision & { shop_id: string }): Promise<void> {
+  static async create(decision: Decision & { shop_id: number }): Promise<void> {
 
-    console.error('[DECISION_REPO_ENTER]', {
+    console.debug('[DECISION_REPO_ENTER]', {
       id: decision?.id
     });
 
@@ -276,7 +276,7 @@ export class DecisionRepository {
      * Shows EXACT object sent into knex.
      * This is the final truth before serialization.
      */
-    console.error('[DEBUG_DB_INSERT_INPUT]', {
+    console.debug('[DEBUG_DB_INSERT_INPUT]', {
       recommended_action: decision.recommended_action,
       actions: decision.actions,
 
@@ -360,18 +360,13 @@ export class DecisionRepository {
 
   /**
    * Fetch decisions for tenant (priority-ordered)
+   * 
+   * shop_id MUST be number — matches DB integer column + app.current_tenant::int RLS.
    */
-  static async getByShop(shopId: string): Promise<Decision[]> {
-  return db('decisions')
-    .where({ shop_id: shopId })
-    .orderBy('priority', 'desc');
-
-    /**
-     * NOTE:
-     * - shop_id is stored as string (DB + RLS invariant)
-     * - Using number caused silent mismatches in queries
-     * - Enforces type consistency across repository boundary
-     */
+  static async getByShop(shopId: number): Promise<Decision[]> {
+    return db('decisions')
+      .where({ shop_id: shopId })
+      .orderBy('priority', 'desc');
   }
 
   /**
@@ -389,5 +384,4 @@ export class DecisionRepository {
       throw new Error(`[DecisionRepository] Decision not found: ${id}`);
     }
   }
-}
-
+};

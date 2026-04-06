@@ -18,15 +18,15 @@ export async function up(knex: Knex): Promise<void> {
     table.uuid('id').primary();
 
     table.string('decision_id').notNullable().unique(); // idempotency key
-
     table.string('lasyncro_order_id').notNullable();
     table.string('external_order_id').notNullable();
-    table.string('shop_id').notNullable();
-    table.index(['shop_id'], 'idx_fulfillment_executions_shop_id');
-
-    table.string('status').notNullable(); // 'pending' | 'success' | 'failure'
-
+    table.string('status').notNullable(); // 'pending' | 'dispatched' | 'in_progress' | 'success' | 'failure'
+    
+    table.integer('shop_id').notNullable();
+    
     table.text('error').nullable();
+    
+    table.index(['shop_id'], 'idx_fulfillment_executions_shop_id');
 
     table.timestamp('executed_at').nullable();
 
@@ -46,7 +46,7 @@ export async function up(knex: Knex): Promise<void> {
   /**
  * SECURITY INVARIANT:
  * - All access MUST be scoped by shop_id
- * - Enforced via app.current_shop_id
+ * - Enforced via app.current_tenant (canonical RLS variable — MUST match all other tables)
  */
 
   /**
@@ -61,8 +61,8 @@ export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
     CREATE POLICY fulfillment_executions_isolation
     ON fulfillment_executions
-    USING (shop_id = current_setting('app.current_shop_id')::text)
-    WITH CHECK (shop_id = current_setting('app.current_shop_id')::text);
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
   `);
 }
 

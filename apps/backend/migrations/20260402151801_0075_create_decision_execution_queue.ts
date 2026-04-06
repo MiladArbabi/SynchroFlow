@@ -9,7 +9,7 @@ import { Knex } from 'knex';
  *
  * INVARIANTS:
  * - decision_id is unique (1 decision = 1 pending execution)
- * - status tracks lifecycle: pending → executed → failed
+ * - status tracks lifecycle: pending → dispatched → in_progress → success | failure
  */
 
 export async function up(knex: Knex): Promise<void> {
@@ -23,15 +23,17 @@ export async function up(knex: Knex): Promise<void> {
      * Prevents duplicate manual execution.
      */
     table.string('decision_id').notNullable().unique();
-    table.string('shop_id').notNullable();
+    table.string('status').notNullable(); // 'pending' | 'dispatched' | 'in_progress' | 'success' | 'failure'
+
+    table.integer('shop_id').notNullable();
+
     table.index(['shop_id'], 'idx_decision_execution_queue_shop_id');
 
-    table.string('status').notNullable(); // 'pending' | 'executed' | 'failed'
+    table.text('error').nullable();
 
     table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
     table.timestamp('executed_at').nullable();
 
-    table.text('error').nullable();
   });
 
   /**
@@ -44,8 +46,8 @@ export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
     CREATE POLICY decision_execution_queue_isolation
     ON decision_execution_queue
-    USING (shop_id = current_setting('app.current_shop_id')::text)
-    WITH CHECK (shop_id = current_setting('app.current_shop_id')::text);
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
   `);
 }
 

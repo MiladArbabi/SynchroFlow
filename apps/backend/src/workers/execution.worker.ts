@@ -21,8 +21,6 @@ import { getQueueChannel } from '../queue.js';
 import { EXECUTION_QUEUE } from '../queues/execution.queue.js';
 import { validateExecution } from '../execution/execution.guard.js';
 
-const decisionRepo = new DecisionRepository();
-
 export async function executeJob(
   job: ExecutionJob,
   trx?: any
@@ -42,7 +40,7 @@ export async function executeJob(
    * - Else → create new transaction (worker path)
    */
   if (trx) {
-    await decisionRepo.markStarted(trx, job.decision_id);
+    await DecisionRepository.markStarted(trx, job.decision_id);
 
     try {
       await validateExecution(job, trx);
@@ -53,7 +51,7 @@ export async function executeJob(
        * - Pass trx to handler for atomic execution
        * - Ensures handler DB writes are part of same transaction
        */
-      await decisionRepo.markSuccess(trx, job.decision_id);
+      await DecisionRepository.markSuccess(trx, job.decision_id);
 
       /**
        * EXECUTION COMPLETION TIMESTAMP (CRITICAL)
@@ -71,7 +69,7 @@ export async function executeJob(
         decision_id: job.decision_id
       });
     } catch (error) {
-      await decisionRepo.markFailure(
+      await DecisionRepository.markFailure(
         trx,
         job.decision_id,
         (error as Error).message
@@ -99,7 +97,7 @@ export async function executeJob(
     }
   } else {
     await db.transaction(async (trx) => {
-      await decisionRepo.markStarted(trx, job.decision_id);
+      await DecisionRepository.markStarted(trx, job.decision_id);
 
       try {
         await validateExecution(job, trx);
@@ -110,7 +108,7 @@ export async function executeJob(
          * - Same guarantee for worker-managed transactions
          * - Prevents partial commits across boundaries
          */
-        await decisionRepo.markSuccess(trx, job.decision_id);
+        await DecisionRepository.markSuccess(trx, job.decision_id);
 
         /**
          * EXECUTION COMPLETION TIMESTAMP (CRITICAL)
@@ -128,7 +126,8 @@ export async function executeJob(
           decision_id: job.decision_id
         });
       } catch (error) {
-        await decisionRepo.markFailure(
+        // AFTER
+        await DecisionRepository.markFailure(
           trx,
           job.decision_id,
           (error as Error).message
@@ -254,7 +253,7 @@ async function processExecutionMessage(
          * Prevents stuck "pending/in_progress" decisions.
          */
         await db.transaction(async (trx) => {
-          await decisionRepo.markFailure(
+          await DecisionRepository.markFailure(
             trx,
             job.decision_id,
             'Max retry attempts exceeded'
@@ -323,6 +322,25 @@ async function processExecutionMessage(
 
       return;
     }
+
+    /**
+     * AUTOMATED EXECUTION PATH
+     * ------------------------
+     * Reached only when execution_mode !== 'manual'.
+     * Delegates to executeJob which owns the full transaction,
+     * lifecycle tracking, and handler dispatch.
+     *
+     * ACK only after successful execution to preserve at-least-once guarantee.
+     */
+    console.info('[EXECUTION_WORKER_AUTOMATED]', {
+      decision_id: job.decision_id,
+      action_type: job.action_type
+    });
+
+    await executeJob(job);
+
+    getQueueChannel(EXECUTION_QUEUE).ack(msg as any);
+
   } catch (err) {
     console.error('[EXECUTION_WORKER_JOB_FAILED]', {
       decision_id: (() => {

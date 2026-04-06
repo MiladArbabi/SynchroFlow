@@ -38,7 +38,7 @@ export async function validateExecution(
       throw new Error('EXECUTION_ALREADY_SUCCESS');
     }
 
-    if (row.status === 'failed') {
+    if (row.status === 'failure') {
       console.warn('[EXECUTION_GUARD_BLOCK_FAILED]', {
         decision_id: job.decision_id
       });
@@ -84,10 +84,15 @@ const accessToken = decrypt(installation.access_token, 'execution.guard');
 const client = createShopifyGraphQLClient({
   accessToken,
   platformShopName: installation.shop_domain,
-  shopId: Number(job.shop_id)
+  shopId: job.shop_id
 });
 
-  const externalOrderId = await resolveExternalOrderId(q, job.decision_id, job.shop_id);
+  /**
+   * SIGNATURE: resolveExternalOrderId(shopId, platform, lasyncroOrderId, trx?)
+   * - job.entity_id is the lasyncro_order_id (internal order UUID)
+   * - job.shop_id is number (integer) — matches DB + RLS
+   */
+  const externalOrderId = await resolveExternalOrderId(job.shop_id, 'shopify', job.entity_id, trx);
     if (!externalOrderId) {
     console.warn('[EXECUTION_GUARD_BLOCK_NO_EXTERNAL_ID]', {
         decision_id: job.decision_id

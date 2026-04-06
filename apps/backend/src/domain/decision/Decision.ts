@@ -70,7 +70,7 @@ export interface Decision {
    *
    * MUST be present on ALL decisions
    */
-  shop_id: string;
+  shop_id: number;
 
   /**
    * AGGREGATE VERSION (CRITICAL)
@@ -162,7 +162,7 @@ export interface ExecutionJob {
    *
    * MUST be propagated from decision layer
    */
-  shop_id: string;
+  shop_id: number;
 
   aggregate_version: number;
 
