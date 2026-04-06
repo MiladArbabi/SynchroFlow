@@ -103,13 +103,52 @@ export const performInitialSync = async (
       const { seedShopifyOpeningBalances } = await import(
         './inventory/seedShopifyOpeningBalances.js'
       );
-
       await seedShopifyOpeningBalances(
         trx,
         accessToken,
         platformShopName,
         shopId
       );
+
+      /**
+       * INVENTORY TRUTH REBUILD (C-05)
+       * ------------------------------
+       * After opening balances are seeded into inventory_movements,
+       * immediately rebuild inventory_truth for all shop variants.
+       *
+       * This ensures:
+       * - inventory_truth is populated on first sync
+       * - inventoryConstraintEvaluator has data to work with
+       * - Out of Stock swimlane in Fulfillment Queue renders correctly
+       * - WMS-lite physical execution layer has accurate stock state
+       *
+       * eventAnchor = now() for initial sync (no reconciliation event)
+       */
+      const { rebuildInventoryProjectionForVariants } = await import(
+        './inventory/rebuildInventoryProjection.js'
+      );
+
+      const variantRows = await trx('variants')
+        .where({ shop_id: shopId })
+        .select('lasyncro_variant_id');
+
+      const variantIds = variantRows.map((r: { lasyncro_variant_id: string }) =>
+        r.lasyncro_variant_id
+      );
+
+      if (variantIds.length > 0) {
+        await rebuildInventoryProjectionForVariants(
+          shopId,
+          variantIds,
+          trx,
+          new Date()
+        );
+
+        console.info('[INVENTORY_TRUTH_SEEDED]', {
+          shopId,
+          variantCount: variantIds.length,
+        });
+      }
     });
 
     await updateIntegrationStatus({
