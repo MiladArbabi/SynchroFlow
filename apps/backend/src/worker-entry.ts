@@ -16,6 +16,7 @@ import './bootstrap/workers.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
 import { startShopSnapshotJobDispatcher } from './workers/projections/shopSnapshotJob.dispatcher.js';
+import { startProjectionHealthWorker } from './workers/projection.health.worker.js';
 
 async function start() {
 
@@ -92,7 +93,15 @@ async function start() {
 
   startShopSnapshotJobDispatcher();
 
- console.log('[worker-entry] All workers started');
+  /**
+   * PROJECTION HEALTH WORKER
+   * --------------------------------
+   * Monitors cursor lag and emits structured health signals.
+   * Detects stalled projections before operators notice stale UI.
+   */
+  await startProjectionHealthWorker();
+
+  console.log('[worker-entry] All workers started');
 
  return;
 }

@@ -14,6 +14,7 @@ import specterRouter from '../api/specter/specter.routes.js';
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
 import overviewRoutes from './overview.js';
 import financesRoutes from '../api/finances/index.js';
+import systemRoutes from '../api/system/system.routes.js';
 
 const router = Router();
 
@@ -39,5 +40,11 @@ router.use('/v1/modules/overview', overviewRoutes);
 
 // Mount under /api/v1/specter -> final path: GET /api/v1/specter/:shopId/state
 router.use('/v1/specter', specterRouter);
+
+/**
+ * System Health API
+ * GET /api/v1/system/health
+ */
+router.use('/v1/system', systemRoutes);
 
 export default router;

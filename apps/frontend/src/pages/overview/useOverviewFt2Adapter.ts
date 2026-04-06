@@ -69,6 +69,7 @@ export function mapOverviewFt2Props(
       customers: null,
     },
 
+    pulse: null,
     alignment: null,
   };
 }

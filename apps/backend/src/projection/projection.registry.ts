@@ -11,6 +11,7 @@ import { handleLifecycleFirstInsightDelivered } from './handlers/lifecycle.first
 import { handleIntegrationSyncRequested } from './handlers/integration.sync_requested.js';
 import { handleReconciliationIntentCaptured } from './handlers/reconciliation.intentCaptured.js';
 import { handleOrdersSyncStarted } from './handlers/orders.sync_started.js';
+import { rebuildInventoryProjectionForVariants } from '../services/inventory/rebuildInventoryProjection.js';
 
 /**
  * PROJECTION HANDLER CONTRACT
@@ -84,12 +85,96 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
    * - provide operational visibility
    * - preserve deterministic replay behavior
    */
-  'inventory_levels/update': async ({ domainEvent }) => {
+  'inventory_levels/update': async ({ domainEvent, trx, canonicalEventTime }) => {
     console.info('[PROJECTION_INVENTORY_EVENT_OBSERVED]', {
       shopId: domainEvent.shop_id,
       eventId: domainEvent.id,
     });
+
+    /**
+     * INVENTORY TRUTH REBUILD ON WEBHOOK (C-05)
+     * ------------------------------------------
+     * Resolves Shopify inventory_item_id → lasyncro_variant_id
+     * via external_product_identity_map, then rebuilds
+     * inventory_truth for the affected variant only.
+     *
+     * This keeps inventory_truth current after initial sync
+     * without requiring a full shop rebuild.
+     *
+     * Identity path:
+     * event_payload.inventory_item_id
+     *   → external_product_identity_map.external_inventory_item_id
+     *   → external_variant_id
+     *   → variants.lasyncro_variant_id
+     */
+    const payload = domainEvent.event_payload as {
+      inventory_item_id?: number;
+      admin_graphql_api_id?: string;
+    };
+
+    const externalInventoryItemGid =
+      payload?.admin_graphql_api_id ??
+      (payload?.inventory_item_id
+        ? `gid://shopify/InventoryItem/${payload.inventory_item_id}`
+        : null);
+
+    if (!externalInventoryItemGid) {
+      console.warn('[INVENTORY_PROJECTION_SKIP_NO_IDENTITY]', {
+        eventId: domainEvent.id,
+      });
+      return;
+    }
+
+    /**
+     * Resolve external inventory item → internal variant
+     */
+    const identityRow = await trx('external_product_identity_map')
+      .where({
+        shop_id: domainEvent.shop_id,
+        external_inventory_item_id: externalInventoryItemGid,
+      })
+      .select('external_variant_id')
+      .first();
+
+    if (!identityRow?.external_variant_id) {
+      console.warn('[INVENTORY_PROJECTION_SKIP_NO_VARIANT]', {
+        eventId: domainEvent.id,
+        externalInventoryItemGid,
+      });
+      return;
+    }
+
+    /**
+     * DIRECT RESOLUTION (CANONICAL)
+     * ------------------------------
+     * lasyncro_variant_id lives directly on external_product_identity_map.
+     * No join to variants table required.
+     *
+     * Identity path confirmed:
+     * external_inventory_item_id → lasyncro_variant_id (single row lookup)
+     */
+    if (!identityRow?.lasyncro_variant_id) {
+      console.warn('[INVENTORY_PROJECTION_SKIP_NO_LASYNCRO_VARIANT]', {
+        eventId: domainEvent.id,
+        externalInventoryItemGid,
+      });
+      return;
+    }
+
+    await rebuildInventoryProjectionForVariants(
+      domainEvent.shop_id,
+      [identityRow.lasyncro_variant_id],
+      trx,
+      canonicalEventTime
+    );
+
+    console.info('[INVENTORY_TRUTH_REBUILT]', {
+      shopId: domainEvent.shop_id,
+      variantId: identityRow.lasyncro_variant_id,
+      eventId: domainEvent.id,
+    });
   },
+
   /**
    * FT0 COMPLETION (v2)
    * -------------------

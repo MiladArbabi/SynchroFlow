@@ -13,6 +13,8 @@
  */
 
 import { FC } from 'react';
+import { useTheme } from '@mui/material/styles';
+
 
 type Props = {
   operationalControl: {
@@ -41,6 +43,7 @@ export const OperationalCommandCenter: FC<Props> = ({
   onBreakdownClick,
   onUrgencyClick,
 }) => {
+    const theme = useTheme();
 
   /**
    * PRIMARY METRICS
@@ -135,7 +138,7 @@ export const OperationalCommandCenter: FC<Props> = ({
         style={{
         marginTop: 12,
         padding: 8,
-        background: '#ffe5e5',
+        background: `${theme.palette.primary.main}!important`,
         border: '1px solid red',
         cursor: 'pointer'
         }}

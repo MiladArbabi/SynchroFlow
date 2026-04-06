@@ -10,6 +10,9 @@ import { useShopLifecycle } from "lifecycle/ShopLifecycleContext";
 import { ToastProvider } from "contexts/ToastContext";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
 
+import { useSystemHealth } from 'hooks/useSystemHealth';
+import { SystemHealthBanner } from 'components/SystemHealthBanner';
+
 interface AppLayoutProps {
   children?: ReactNode;
   isConnectModalOpen: boolean;
@@ -41,6 +44,14 @@ const AppLayout = (props: AppLayoutProps) => {
   */
   const isSidenavAllowed = phase === 'FT2_READY';
   const hasAutoOpenedRef = React.useRef(false); // audit: prevent re-open after manual close
+
+  /**
+   * SYSTEM HEALTH
+   * --------------------
+   * Only poll during FT2 — no health surface needed in earlier phases.
+   * Passes isSidenavAllowed as the enabled gate (FT2 === sidenav allowed).
+   */
+  const { data: systemHealth } = useSystemHealth(isSidenavAllowed);
 
   /**
    * LIFECYCLE VISIBILITY GUARD
@@ -179,7 +190,14 @@ const AppLayout = (props: AppLayoutProps) => {
             />
           </Box>
 
-          {/* LAYOUT GUARD: prevent module surfaces from widening viewport */}
+          {/* SYSTEM HEALTH BANNER (H-01) — FT2 only */}
+          {isSidenavAllowed && systemHealth && (
+            <SystemHealthBanner
+              status={systemHealth.status}
+              lagSeconds={systemHealth.snapshot?.lag_seconds}
+            />
+          )}
+
           {/* CONTENT AREA */}
           <Box
             sx={{

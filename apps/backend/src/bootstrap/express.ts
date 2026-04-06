@@ -21,6 +21,8 @@ import productsFt2Routes from '../api/products/products.ft2.routes.js';
 import overviewFt2Routes from '../api/overview/index.js';
 import trustFt2Routes from '../api/trust/index.js';
 import financesRoutes from '../api/finances/finances.routes.js';
+import systemRoutes from '../api/system/system.routes.js';
+
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook.js';
 import { verifyStripeSignature } from '../api/billing/stripe.verify.middleware.js';
@@ -77,7 +79,8 @@ export function createApp(): Express {
   app.use('/api/v1/modules/finances', financesRoutes);
   app.use('/api/v1/modules/overview', overviewFt2Routes);
   app.use('/api/v1/modules/trust', trustFt2Routes);
-  
+  app.use('/api/v1/system', systemRoutes);
+
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);
 
