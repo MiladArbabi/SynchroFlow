@@ -40,6 +40,7 @@ export function buildSnapshotPayload(
     queueManualReview,
     queueAwaitingInventory,
     queueAwaitingCustomer,
+    queueReadyToShip,
     readyToShipRevenue,
     oldestExceptionOrderAgeHours,
     revenueLeakage,
@@ -98,6 +99,7 @@ export function buildSnapshotPayload(
     queue_manual_review: queueManualReview,
     queue_awaiting_inventory: queueAwaitingInventory,
     queue_awaiting_customer: queueAwaitingCustomer,
+    queue_ready_to_ship: queueReadyToShip,
     ready_to_ship_revenue: readyToShipRevenue,
 
     evaluated_at: snapshotDate

@@ -81,7 +81,7 @@ export async function computeShopOperationalSnapshot(
      * This path is intentionally blocked.
      */
     if (options?.allowMutation === true) {
-      log.error('SNAPSHOT_MUTATION_BYPASS_BLOCKED', { shopId });
+      /* log.error('SNAPSHOT_MUTATION_BYPASS_BLOCKED', { shopId }); */
 
       /**
        * TEMPORARY HARD BLOCK (ARCHITECTURE ENFORCEMENT)
@@ -254,7 +254,7 @@ export async function computeShopOperationalSnapshot(
             fulfilledOrders,
         });
 
-        log.debug('SNAPSHOT_PAYLOAD', { shopId });
+        log.info('SNAPSHOT_PAYLOAD', { shopId, queueReadyToShip, queueAwaitingInventory, constrainedOrders });
 
         await persistSnapshot(
             trx,

@@ -45,7 +45,7 @@ export async function evaluateOperationalConstraint(
 
   const isBlocked =
     ofs.status === 'pending' &&
-    Number(ageRow.age_since_paid_seconds ?? 0) > slaSeconds;
+    Number(ageRow.age_since_paid_seconds ?? 0) >= slaSeconds;
 
   /**
    * Deterministic classification

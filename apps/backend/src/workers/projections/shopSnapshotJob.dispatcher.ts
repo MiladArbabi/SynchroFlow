@@ -47,7 +47,7 @@ export async function startShopSnapshotJobDispatcher() {
      */
     const jobs = await db('shop_snapshot_jobs')
       .select('shop_id')
-      .where('scheduled_at', '<=', db.raw(`NOW() - INTERVAL '10 seconds'`))
+      .where('scheduled_at', '<=', db.raw(`NOW() - INTERVAL '2 seconds'`))
       .limit(20);
 
     for (const job of jobs) {

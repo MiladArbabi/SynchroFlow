@@ -60,23 +60,68 @@ export async function computeQueueMetrics(
     requireRow(queueAwaitingCustomerRow as CountRow | undefined, 'queueAwaitingCustomerRow').count ?? 0
   );
 
-  const queueReadyToShipRow = await trx('orders as o')
-    .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .andWhere('o.payment_state', 'paid')
-    .count('* as count')
-    .first();
+  /**
+ * QUEUE: READY TO SHIP
+ * --------------------
+ * Criteria (all must hold):
+ * - paid
+ * - not fulfilled
+ * - no active constraint (inventory, customer, operational)
+ *
+ * Excludes constrained and fulfilled orders to prevent
+ * inflated queue counts surfaced in the UI.
+ */
+const queueReadyToShipRow = await trx('orders as o')
+  .where('o.shop_id', shopId)
+  .andWhere('o.order_created_at', '<=', snapshotCutoff)
+  .andWhere('o.payment_state', 'paid')
+  .whereNotExists(
+    trx('order_fulfillment_status as ofs')
+      .select(1)
+      .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
+      .andWhere('ofs.status', 'fulfilled')
+  )
+  .whereNotExists(
+    trx('order_constraints as oc')
+      .select(1)
+      .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+      .andWhere('oc.is_active', true)
+  )
+  .count('* as count')
+  .first();
 
   const queueReadyToShip = Number(
     requireRow(queueReadyToShipRow as CountRow | undefined, 'queueReadyToShipRow').count ?? 0
   );
 
-  const readyToShipRevenueRow = await trx('order_revenue_units_net as oru')
-    .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
-    .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .sum('oru.net_revenue as sum')
-    .first();
+  /**
+ * REVENUE: READY TO SHIP
+ * ----------------------
+ * Mirrors queueReadyToShip exclusion criteria exactly:
+ * - paid, not fulfilled, no active constraint.
+ *
+ * Must stay in sync with queueReadyToShipRow filters
+ * to prevent count/revenue mismatch in the UI.
+ */
+const readyToShipRevenueRow = await trx('order_revenue_units_net as oru')
+  .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+  .where('o.shop_id', shopId)
+  .andWhere('o.order_created_at', '<=', snapshotCutoff)
+  .andWhere('o.payment_state', 'paid')
+  .whereNotExists(
+    trx('order_fulfillment_status as ofs')
+      .select(1)
+      .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
+      .andWhere('ofs.status', 'fulfilled')
+  )
+  .whereNotExists(
+    trx('order_constraints as oc')
+      .select(1)
+      .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+      .andWhere('oc.is_active', true)
+  )
+  .sum('oru.net_revenue as sum')
+  .first();
 
   const readyToShipRevenue = Number(
     requireRow(readyToShipRevenueRow as SumRow | undefined, 'readyToShipRevenueRow').sum ?? 0
