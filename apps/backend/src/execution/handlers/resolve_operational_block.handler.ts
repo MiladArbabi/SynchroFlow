@@ -24,6 +24,15 @@ export const resolveOperationalBlockHandler: ExecutionHandler = async (job, trx)
     entity_id: job.entity_id,
     shop_id: job.shop_id,
   });
+  /**
+  * PROJECTION WRITE GATE (REQUIRED)
+   * ---------------------------------
+   * order_constraints is projection-write-guarded.
+   * Execution handlers performing sanctioned constraint lifecycle
+   * mutations must set synchroflow.projection = 'true'.
+   * This is not a bypass — it is an authorised constraint resolution.
+   */
+  await dbx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
 
   /**
    * STEP 1 — DEACTIVATE OPERATIONAL CONSTRAINT

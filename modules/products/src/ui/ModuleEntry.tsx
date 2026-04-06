@@ -12,7 +12,7 @@ const descriptor = {
       title: 'Products',
       path: '/products',
       group: 'operations',
-      order: 30,
+      order: 25,
       icon: Package,
       requiredModuleId: 'products'
     }

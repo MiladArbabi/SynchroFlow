@@ -50,6 +50,14 @@ module.exports = {
 
         // integration-service source alias
         '^integration-src/(.*)$': '<rootDir>/apps/integration-service/src/$1',
+        /**
+         * ESM .js extension resolver (CRITICAL for Jest + TypeScript)
+         * -----------------------------------------------------------
+         * TypeScript ESM source imports use .js extensions at compile time.
+         * Jest resolves from source (.ts) — strip .js so it finds the TS file.
+         */
+        '^(api-src/.*)\.js$': '$1',
+        '^(\\.{1,2}/.*)\.js$': '$1',
 
         // Shared modules alias (so imports like '@lasyncro/shared/...' resolve in tests)
         '^@lasyncro/shared/(.*)$': '<rootDir>/modules/shared/src/$1',

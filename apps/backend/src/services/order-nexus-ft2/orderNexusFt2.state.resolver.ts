@@ -367,8 +367,23 @@ export async function getOrderNexusFt2StateSnapshot(
 
     refunds: refundsFacts,
     alignment,
+    // AFTER
     freshness: {
       status: freshnessStatus,
+      /**
+       * SNAPSHOT HEALTH (C-02)
+       * ----------------------
+       * Derived from operationalControlRow.updated_at (last write timestamp).
+       * projection_lag_seconds enables UI to surface a stale-snapshot banner.
+       */
+      last_snapshot_at: operationalControlRow?.updated_at
+        ? new Date(operationalControlRow.updated_at).toISOString()
+        : null,
+      projection_lag_seconds: operationalControlRow?.updated_at
+        ? Math.floor(
+            (Date.now() - new Date(operationalControlRow.updated_at).getTime()) / 1000
+          )
+        : null,
     },
   } as any;
 

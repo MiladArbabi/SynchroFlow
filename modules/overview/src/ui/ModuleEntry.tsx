@@ -12,7 +12,7 @@ const descriptor: ModuleDescriptor = {
       id: 'overview-ft2',
       path: '/overview',
       requiredModuleId: 'overview',
-      order: 20,
+      order: 10,
     },
   ],
 
@@ -22,7 +22,7 @@ const descriptor: ModuleDescriptor = {
       title: 'Overview',
       path: '/overview',
       group: 'operations',
-      order: 20,
+      order: 10,
       icon: IconShieldCheck, 
       requiredModuleId: 'overview',
     },

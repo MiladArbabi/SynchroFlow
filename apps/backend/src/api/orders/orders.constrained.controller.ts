@@ -45,13 +45,22 @@ export const httpGetConstrainedOrders = async (
        * ----------------------
        * Must be SET LOCAL inside transaction before any RLS-protected table access.
        * Canonical variable: app.current_tenant (integer)
+       * 
+       * NOTE:
+       * SET LOCAL does not support parameter binding in PostgreSQL.
+       * shopId is a verified integer from req.user — safe to inline.
+       * Pattern matches withTenant() in packages/backend-core/src/db.ts.
        */
-      await trx.raw(`SET LOCAL "app.current_tenant" = ?`, [shopId]);
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       const query = trx('order_constraints as oc')
         .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
         .leftJoin('decisions as d', function () {
-          this.on('d.entity_id', '=', 'oc.lasyncro_order_id')
+          /**
+           * decisions.entity_id is varchar; order_constraints.lasyncro_order_id is uuid.
+           * Must cast entity_id to uuid for the join to resolve.
+           */
+          this.on(trx.raw('"d"."entity_id"::uuid = "oc"."lasyncro_order_id"'))
             .andOn('d.shop_id', '=', trx.raw('?', [shopId]));
         })
         .where('oc.is_active', true)

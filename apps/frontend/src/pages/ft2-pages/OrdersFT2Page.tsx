@@ -12,13 +12,23 @@
 
 // apps/frontend/src/pages/OrdersFT2Page.tsx
 
+// AFTER
+import { useState } from 'react';
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
+import { OrderDetailPanel } from '../../pages/orders/OrderDetailPanel';
 
 const __DEV__ = import.meta.env.DEV;
 
 export default function OrdersFT2Page() {
+  /**
+   * SELECTED ORDER STATE
+   * --------------------
+   * Controls the OrderDetailPanel drawer.
+   * null = panel closed. orderId = panel open for that order.
+   */
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   const snapshotQuery = useOrdersFt2Snapshot();
 
@@ -68,6 +78,19 @@ export default function OrdersFT2Page() {
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}
+      />
+
+      {/**
+       * ORDER DETAIL PANEL (B-02, B-03)
+       * --------------------------------
+       * Right-side drawer — mounts at page level to overlay
+       * the full FT2 surface without navigation.
+       * onOrderSelect wired to OperationalSignalsSection
+       * in a future pass once signal cards expose order IDs.
+       */}
+      <OrderDetailPanel
+        orderId={selectedOrderId}
+        onClose={() => setSelectedOrderId(null)}
       />
     </>
   );

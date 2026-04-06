@@ -15,7 +15,7 @@ export default {
       title: 'Orders',
       path: '/orders',
       group: 'operations',
-      order: 10,
+      order: 15,
       icon: ShoppingCart,
       requiredModuleId: 'order-nexus'
     }

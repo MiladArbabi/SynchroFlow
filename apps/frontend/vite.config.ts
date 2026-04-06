@@ -69,6 +69,10 @@ export default defineConfig({
         __dirname,
         '../../modules/customers/dist/index.js'
       ),
+      '@lasyncro/fulfillment': path.resolve(
+        __dirname,
+        '../../modules/fulfillment/src/ui/index.ts'
+      ),
     }
   },
 });

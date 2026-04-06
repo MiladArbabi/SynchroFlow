@@ -277,6 +277,14 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
       manual_review: string | number;
     };
   };
+  /**
+   * ORDER SELECT HANDLER (B-02)
+   * ---------------------------
+   * Called when an operator selects an order to view detail.
+   * Parent (OrdersFT2Page) owns the panel state.
+   * Optional — panel is not rendered if not provided.
+   */
+  onOrderSelect?: (orderId: string) => void;
 };
 
 
@@ -290,7 +298,8 @@ export default function OrdersModuleFT2(
       obligations,
       decision,
       operationalControl,
-      distribution
+      distribution,
+      onOrderSelect
     } = props;
 
     /**

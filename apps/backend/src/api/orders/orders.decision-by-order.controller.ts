@@ -41,8 +41,12 @@ export const httpGetOrderDecision = async (
        * ----------------------
        * Must be SET LOCAL inside transaction before any RLS-protected table access.
        * Canonical variable: app.current_tenant (integer)
+       * 
+       * NOTE:
+       * SET LOCAL does not support parameter binding in PostgreSQL.
+       * shopId is a verified integer from req.user — safe to inline.
        */
-      await trx.raw(`SET LOCAL "app.current_tenant" = ?`, [shopId]);
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       const decision = await trx('decisions')
         .where({ entity_id: orderId, shop_id: shopId })

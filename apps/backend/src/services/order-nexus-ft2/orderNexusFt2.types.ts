@@ -110,6 +110,17 @@ export type OrderNexusFT2Snapshot =
 
   freshness: {
     status: 'recent' | 'stale' | 'unknown';
+    /**
+     * SNAPSHOT HEALTH SURFACE (C-02)
+     * ------------------------------
+     * last_snapshot_at: UTC timestamp of last successful snapshot write
+     * projection_lag_seconds: seconds since last snapshot recomputation
+     *
+     * UI must show a degraded banner if projection_lag_seconds > threshold.
+     * null = no snapshot exists yet (degraded state).
+     */
+    last_snapshot_at: string | null;
+    projection_lag_seconds: number | null;
   } | null;
 
   revenueContinuity:
