@@ -9,6 +9,7 @@ import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
 import { resolveActivationConfig } from 'activation/resolveActivationConfig';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { useLocation } from 'react-router-dom';
+import { useIntegration } from 'contexts/integration';
 
 type Props = {
   children: React.ReactNode;
@@ -19,20 +20,40 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
 
   const { phase, isBooting, integrationExists } = useShopLifecycle();
   const location = useLocation();
+  const integration = useIntegration();
 
   /**
    * REFRESH FLASH HARD GUARD
    * ------------------------
    * Prevent activation surfaces from rendering
    * during lifecycle bootstrap.
-   *
-   * Without this, FT_MINUS_ONE activation UI
-   * can flash for module routes before FT2 sync.
    */
   if (isBooting) {
     return null;
   }
 
+  /**
+   * F-01 FIX — IMMEDIATE LOADER ON INTEGRATION PRESENT
+   * ---------------------------------------------------
+   * integration.hasIntegration is resolved from IntegrationProvider
+   * which polls independently of lifecycle — it resolves faster.
+   *
+   * When OAuth has completed (hasIntegration = true) but lifecycle
+   * poll has not yet returned FT0, show the loader immediately.
+   *
+   * This eliminates the 3-5s blank screen between OAuth success
+   * and the first FT0 lifecycle poll response.
+   *
+   * Gate: only apply during FT_MINUS_ONE — other phases have
+   * their own explicit rendering paths.
+   */
+  if (
+    phase === 'FT_MINUS_ONE' &&
+    integration.bootResolved &&
+    integration.hasIntegration
+  ) {
+    return <EmptyDashboardState />;
+  }
 
   const rawSegment = location.pathname.split('/')[1];
 

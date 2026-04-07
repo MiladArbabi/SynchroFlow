@@ -101,7 +101,17 @@ export function LifecycleRouteHost() {
       return <EmptyDashboardState />;
     }
 
-    return null;
+    /**
+     * F-01 FIX — NO BLANK SCREEN
+     * ---------------------------
+     * readiness === null means lifecycle has not yet resolved.
+     * Previously returned null → blank screen for events 1-24.
+     *
+     * Fix: show EmptyDashboardState immediately.
+     * This covers the gap between OAuth success and first
+     * readiness signal arriving from the backend.
+     */
+    return <EmptyDashboardState />;
   };
 
   /**
@@ -209,5 +219,11 @@ export function LifecycleRouteHost() {
   );
 }
 
-  return null;
+  /**
+   * F-01 FALLTHROUGH GUARD
+   * ----------------------
+   * Any unhandled phase during transition must show the loader.
+   * Never return null — blank screen destroys operator trust.
+   */
+  return <EmptyDashboardState />;
 }
