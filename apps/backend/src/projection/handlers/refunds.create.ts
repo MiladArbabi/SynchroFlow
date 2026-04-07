@@ -103,11 +103,12 @@ export async function handleRefundsCreate({
         external_refund_id: externalRefundId,
         total_refund_amount: 0,
         /**
-         * DO NOT set executed_at in projection layer.
-         * -------------------------------------------
-         * Projection is state reflection only.
-         * Execution timestamps are owned exclusively by execution.worker.
+         * executed_at is derived from domain event time.
+         * The NOT NULL constraint requires it at insert time.
+         * Event time is the authoritative execution timestamp
+         * for refunds received via webhook.
          */
+        executed_at: canonicalEventTime,
       });
 
       execution = {
