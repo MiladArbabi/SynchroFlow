@@ -1,16 +1,11 @@
-// apps/frontend/src/pages/FinancesFT2Page.tsx
-//
-// FinancesFT2Page
-// ---------------
-// FT2-only Finances observability surface.
-
+// apps/frontend/src/pages/ft2-pages/FinancesFT2Page.tsx
 import { useState } from 'react';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
-
 import { FinancesModuleFT2 } from '@lasyncro/finances';
 import { useFinancesFt2Snapshot } from '../finances/useFinancesFt2Snapshot';
 import { mapFinancesFt2Props } from '../finances/useFinancesFt2Adapter';
+import { useMargin } from '../finances/useMargin';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -22,28 +17,24 @@ export default function FinancesFT2Page() {
   });
 
   const snapshotQuery = useFinancesFt2Snapshot(range);
+  const marginQuery = useMargin();
 
   if (!snapshotQuery.isSuccess) {
-    if (__DEV__) {
-      console.debug('[FinancesFT2Page] awaiting FT2 snapshot');
-    }
+    if (__DEV__) console.debug('[FinancesFT2Page] awaiting FT2 snapshot');
     return <div>Loading finance insights…</div>;
   }
 
   const props = mapFinancesFt2Props(snapshotQuery.data);
 
-  if (__DEV__) {
-    console.debug('[FinancesFT2Page] rendering FinancesModuleFT2', props);
-  }
+  if (__DEV__) console.debug('[FinancesFT2Page] rendering FinancesModuleFT2', props);
 
   return (
     <>
-      <FT2DateRangeBar
-        value={range}
-        onChange={setRange}
+      <FT2DateRangeBar value={range} onChange={setRange} />
+      <FinancesModuleFT2
+        {...props}
+        margin={marginQuery.data ?? null}
       />
-
-      <FinancesModuleFT2 {...props} />
     </>
   );
 }
