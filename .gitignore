@@ -109,3 +109,6 @@ pnpm-debug.log*
 # IDE
 *.sublime-project
 *.sublime-workspace
+
+#claude
+.claude/worktrees/

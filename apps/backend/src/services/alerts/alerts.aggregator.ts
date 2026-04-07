@@ -37,6 +37,61 @@ type AlertUpsert = {
   is_active: boolean;
 };
 
+/**
+ * MISSING COGS ALERT (AL-06)
+ * --------------------------
+ * Surfaces when orders have line items with no estimated_unit_cost.
+ * Without cost data, margin figures are incomplete and unreliable.
+ */
+async function aggregateMissingCogsAlerts(
+  trx: Knex.Transaction,
+  shopId: number
+): Promise<AlertUpsert[]> {
+  const row = await trx('order_revenue_units as oru')
+    .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'oru.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .where(function () {
+      this.whereNull('oru.estimated_unit_cost')
+        .orWhere('oru.estimated_unit_cost', '<=', 0);
+    })
+    .where('ofs.status', '!=', 'fulfilled')
+    .countDistinct('oru.lasyncro_variant_id as variant_count')
+    .countDistinct('oru.lasyncro_order_id as order_count')
+    .first();
+
+  const variantCount = Number(row?.variant_count ?? 0);
+  const orderCount = Number(row?.order_count ?? 0);
+
+  if (variantCount === 0) {
+    return [{
+      shop_id: shopId,
+      alert_key: `cogs:shop-${shopId}:missing_cost`,
+      source: 'snapshot',
+      alert_type: 'missing_cogs',
+      severity: 'warning',
+      title: 'All products have cost data',
+      message: 'Margin figures are complete across all active orders.',
+      entity_type: 'shop',
+      is_active: false,
+    }];
+  }
+
+  return [{
+    shop_id: shopId,
+    alert_key: `cogs:shop-${shopId}:missing_cost`,
+    source: 'snapshot',
+    alert_type: 'missing_cogs',
+    severity: 'warning',
+    title: `${variantCount} product${variantCount > 1 ? 's' : ''} missing cost data`,
+    message: `${orderCount} active order${orderCount > 1 ? 's have' : ' has'} ${variantCount} product${variantCount > 1 ? 's' : ''} without cost data. Margin figures for these orders are incomplete.`,
+    entity_id: null,
+    entity_type: 'shop',
+    revenue_impact: null,
+    is_active: true,
+  }];
+}
+
 async function upsertAlerts(
   trx: Knex.Transaction,
   alerts: AlertUpsert[]
@@ -254,16 +309,18 @@ export async function aggregateAlertsForShop(
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const [constraintAlerts, slaAlerts, revenueAlerts] = await Promise.all([
+    const [constraintAlerts, slaAlerts, revenueAlerts, missingCogsAlerts] = await Promise.all([
       aggregateConstraintAlerts(trx, shopId),
       aggregateSlaAlerts(trx, shopId),
       aggregateRevenueAlerts(trx, shopId),
+      aggregateMissingCogsAlerts(trx, shopId),
     ]);
 
     const allAlerts = [
       ...constraintAlerts,
       ...slaAlerts,
       ...revenueAlerts,
+      ...missingCogsAlerts,
     ];
 
     await upsertAlerts(trx, allAlerts);
