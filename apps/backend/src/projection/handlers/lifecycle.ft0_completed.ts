@@ -102,7 +102,17 @@ export async function handleLifecycleFT0Completed({
         .where({ shop_id: shopId })
         .first('phase');
 
-      if (snapshot?.phase !== 'FT0') {
+      /**
+       * REPLAY IDEMPOTENCY GUARD (CRITICAL)
+       * ------------------------------------
+       * During projection replay, the shop may already be in FT1 or FT2.
+       * Attempting FT0 transition from a later phase crashes the worker.
+       *
+       * Guard: only attempt FT0 transition if shop is still in FT_MINUS_ONE.
+       * Any phase at or past FT0 means this event was already processed.
+       */
+      const phasesBeforeFT0 = ['FT_MINUS_ONE'];
+      if (phasesBeforeFT0.includes(snapshot?.phase)) {
         await LifecycleTransitionService.auditIfTransitioned(
           {
             userId,
@@ -112,17 +122,38 @@ export async function handleLifecycleFT0Completed({
           trx
         );
       } else {
-        console.info('[FT0_ALREADY_SET_SKIP]', { shopId });
+        console.info('[FT0_TRANSITION_SKIP_ALREADY_PAST]', {
+          shopId,
+          currentPhase: snapshot?.phase,
+        });
       }
 
-      await LifecycleTransitionService.auditIfTransitioned(
-        {
-          userId,
+      // AFTER
+      /**
+       * REPLAY IDEMPOTENCY GUARD — FT1
+       * --------------------------------
+       * Only attempt FT1 transition if shop is in FT0.
+       * FT1 or FT2 means this event was already processed.
+       */
+      const currentSnapshot = await trx('user_lifecycle_snapshot')
+        .where({ shop_id: shopId })
+        .first('phase');
+      const phasesBeforeFT1 = ['FT_MINUS_ONE', 'FT0'];
+      if (phasesBeforeFT1.includes(currentSnapshot?.phase)) {
+        await LifecycleTransitionService.auditIfTransitioned(
+          {
+            userId,
+            shopId,
+            currentPhase: 'FT1',
+          },
+          trx
+        );
+      } else {
+        console.info('[FT1_TRANSITION_SKIP_ALREADY_PAST]', {
           shopId,
-          currentPhase: 'FT1',
-        },
-        trx
-      );
+          currentPhase: currentSnapshot?.phase,
+        });
+      };
     }
 
     /**

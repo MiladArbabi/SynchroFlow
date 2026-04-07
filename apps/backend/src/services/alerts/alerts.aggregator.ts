@@ -72,7 +72,7 @@ async function upsertAlerts(
          * persists through the next snapshot cycle, the alert returns.
          * Operators must resolve the underlying issue to silence alerts.
          */
-        dismissed_at: alert.is_active ? null : trx.raw('dismissed_at'),
+        dismissed_at: alert.is_active ? null : trx.raw('"alerts"."dismissed_at"'),
         updated_at: trx.fn.now(),
       });
   }

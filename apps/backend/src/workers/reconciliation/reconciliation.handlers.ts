@@ -487,6 +487,26 @@ export async function reconcileOrderFulfillment(
         orderId: lasyncroOrderId,
         aggregateVersion
       });
+
+      /**
+       * MARGIN COMPUTATION (MG-01)
+       * --------------------------
+       * Compute and persist per-order margin into order_margin_snapshot.
+       * Runs after constraint evaluation — uses same transaction.
+       * Silent skip if no cost data available for this order.
+       */
+      try {
+        const { computeOrderMargin } = await import(
+          '../../services/margin/computeOrderMargin.service.js'
+        );
+        await computeOrderMargin(trx, lasyncroOrderId, order.shop_id, aggregateVersion);
+      } catch (err) {
+        console.error('[MARGIN_COMPUTATION_FAILED]', {
+          orderId: lasyncroOrderId,
+          error: (err as Error).message,
+        });
+        // Non-fatal — margin failure must not block reconciliation
+      }
       
       /**
        * CRITICAL:

@@ -8,6 +8,7 @@ import { projectOrderConstraints } from '../projections/orderConstraintProjectio
 import { projectOrderInventoryConstraints } from '../projections/orderInventoryConstraintProjection.js';
 import { projectOrderRisk } from '../projections/orderRiskProjection.js';
 import { evaluateOrderConstraints } from '../services/constraints/constraintEngine.js';
+import { computeOrderMargin } from '../services/margin/computeOrderMargin.service.js';
 
 /**
  * PROJECTION ENGINE
@@ -543,6 +544,29 @@ export async function projectDomainEventCore({
           aggregateVersion,
           eventAnchor
         );
+
+        /**
+         * Set reconciliation flag BEFORE savepoint.
+         * SET LOCAL inside a savepoint is rolled back on ROLLBACK TO SAVEPOINT.
+         * Must be set at transaction level to persist through savepoint boundaries.
+         */
+        await trx.raw(`SET LOCAL "synchroflow.reconciliation" = 'true'`);
+        try {
+          await trx.raw('SAVEPOINT margin_computation');
+          await computeOrderMargin(
+              trx,
+              projectionTargetOrderId,
+              shopId,
+              aggregateVersion
+            );
+            await trx.raw('RELEASE SAVEPOINT margin_computation');
+        } catch (err) {
+            await trx.raw('ROLLBACK TO SAVEPOINT margin_computation');
+            console.error('[MARGIN_COMPUTATION_FAILED]', {
+              orderId: projectionTargetOrderId,
+              error: (err as Error).message,
+            });
+        }
 
         console.debug('[PROJECTION_ORCHESTRATION_COMPLETED]', {
           orderId: projectionTargetOrderId,

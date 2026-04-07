@@ -146,7 +146,41 @@ export class LifecycleTransitionService {
     const previousPhase: UserLifecyclePhase =
       snapshot?.phase ?? 'FT_MINUS_ONE';
 
+    // AFTER
     const transitionKey = `${previousPhase}->${currentPhase}`;
+
+    /**
+     * REPLAY IDEMPOTENCY GUARD (CRITICAL)
+     * ------------------------------------
+     * During projection replay, lifecycle events are re-processed
+     * against an already-advanced snapshot. Two safe cases:
+     *
+     * 1. Same phase (e.g. FT2->FT2) — already applied, skip silently
+     * 2. Backwards transition (e.g. FT2->FT0) — replay artefact, skip
+     *
+     * Only throw for genuinely invalid forward transitions that
+     * are not in AUDITABLE_TRANSITIONS and are not replay artefacts.
+     */
+    const PHASE_ORDER: Record<string, number> = {
+      'FT_MINUS_ONE': 0,
+      'FT0': 1,
+      'FT1': 2,
+      'FT2': 3,
+    };
+
+    const previousOrder = PHASE_ORDER[previousPhase] ?? -1;
+    const currentOrder = PHASE_ORDER[currentPhase] ?? -1;
+
+    if (previousOrder >= currentOrder) {
+      console.info('[LIFECYCLE][TRANSITION_SKIP_REPLAY]', {
+        userId,
+        shopId,
+        previousPhase,
+        attemptedPhase: currentPhase,
+        transitionKey,
+      });
+      return;
+    }
 
     if (!AUDITABLE_TRANSITIONS.has(transitionKey)) {
       console.log('[LIFECYCLE][INVALID_TRANSITION]', {
@@ -156,7 +190,6 @@ export class LifecycleTransitionService {
         attemptedPhase: currentPhase,
         transitionKey,
       });
-
       throw new Error(
         `Invalid lifecycle transition: ${transitionKey}`
       );
