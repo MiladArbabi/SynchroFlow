@@ -73,6 +73,10 @@ export default defineConfig({
         __dirname,
         '../../modules/fulfillment/src/ui/index.ts'
       ),
+      '@lasyncro/alerts': path.resolve(
+        __dirname,
+        '../../modules/alerts/src/ui/index.ts'
+      ),
     }
   },
 });

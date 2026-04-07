@@ -51,6 +51,7 @@ async function upsertAlerts(
         updated_at: trx.fn.now(),
       })
       .onConflict(['shop_id', 'alert_key'])
+      // AFTER
       .merge({
         severity: alert.severity,
         title: alert.title,
@@ -58,6 +59,20 @@ async function upsertAlerts(
         is_active: alert.is_active,
         revenue_impact: alert.revenue_impact ?? null,
         resolved_at: alert.is_active ? null : trx.fn.now(),
+        /**
+         * DISMISS RESET ON REACTIVATION
+         * ------------------------------
+         * When a signal re-fires (is_active = true), clear dismissed_at
+         * so the operator sees the alert again in their inbox.
+         *
+         * When a signal clears (is_active = false), preserve dismissed_at
+         * for audit purposes.
+         *
+         * This means: dismissing is temporary — if the problem
+         * persists through the next snapshot cycle, the alert returns.
+         * Operators must resolve the underlying issue to silence alerts.
+         */
+        dismissed_at: alert.is_active ? null : trx.raw('dismissed_at'),
         updated_at: trx.fn.now(),
       });
   }

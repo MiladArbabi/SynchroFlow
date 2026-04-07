@@ -36,6 +36,7 @@ import ProductsFT2Page from 'pages/ft2-pages/ProductsFT2Page';
 import FinancesFT2Page from 'pages/ft2-pages/FinancesFT2Page';
 import OverviewFT2Page from 'pages/ft2-pages/OverviewFT2Page';
 import FulfillmentQueuePage from 'pages/ft2-pages/FulfillmentQueuePage';
+import AlertsPage from 'pages/ft2-pages/AlertsPage';
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 
 // NOTE:
@@ -215,6 +216,9 @@ export function LifecycleRouteHost() {
 
       {/* Catch-all → Overview */}
       <Route path="*" element={<Navigate to="/overview" replace />} />
+
+      {/* ALERTS */}
+      <Route path="/alerts/*" element={<AlertsPage />} />
     </Routes>
   );
 }
