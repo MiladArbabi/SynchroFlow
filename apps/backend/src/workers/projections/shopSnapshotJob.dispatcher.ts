@@ -1,5 +1,6 @@
 import db from '@lasyncro/backend-core/db.js';
 import { computeShopOperationalSnapshot } from './shopOperationalSnapshot.worker.js';
+import { aggregateAlertsForShop } from '../../services/alerts/alerts.aggregator.js';
 
 /**
  * SHOP SNAPSHOT JOB DISPATCHER
@@ -56,6 +57,15 @@ export async function startShopSnapshotJobDispatcher() {
 
         await computeShopOperationalSnapshot(job.shop_id);
 
+        /**
+         * ALERTS AGGREGATION
+         * --------------------------
+         * Runs after every snapshot recomputation.
+         * Upserts ranked operator alerts from constraint,
+         * SLA, and revenue signals.
+         */
+        await aggregateAlertsForShop(job.shop_id);
+
         await db('shop_snapshot_jobs')
           .where({ shop_id: job.shop_id })
           .delete();
@@ -70,11 +80,8 @@ export async function startShopSnapshotJobDispatcher() {
           shopId: job.shop_id,
           error: err instanceof Error ? err.message : err
         });
-
       }
-
     }
-
   }, 2000); // poll every 2 seconds
 
 }

@@ -92,7 +92,7 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
     });
 
     /**
-     * INVENTORY TRUTH REBUILD ON WEBHOOK (C-05)
+     * INVENTORY TRUTH REBUILD ON WEBHOOK
      * ------------------------------------------
      * Resolves Shopify inventory_item_id → lasyncro_variant_id
      * via external_product_identity_map, then rebuilds
@@ -112,11 +112,31 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
       admin_graphql_api_id?: string;
     };
 
-    const externalInventoryItemGid =
-      payload?.admin_graphql_api_id ??
-      (payload?.inventory_item_id
-        ? `gid://shopify/InventoryItem/${payload.inventory_item_id}`
-        : null);
+    /**
+     * GID RESOLUTION (CRITICAL FIX — IN-02)
+     * --------------------------------------
+     * Shopify inventory_levels/update webhook sends:
+     *   admin_graphql_api_id: "gid://shopify/InventoryLevel/xxx?inventory_item_id=yyy"
+     *
+     * external_product_identity_map stores clean InventoryItem GIDs:
+     *   "gid://shopify/InventoryItem/yyy"
+     *
+     * Must extract inventory_item_id from query string and reconstruct.
+     * Fallback to payload.inventory_item_id if present.
+     */
+    let externalInventoryItemGid: string | null = null;
+
+    if (payload?.admin_graphql_api_id) {
+      const url = new URL(payload.admin_graphql_api_id.replace('gid://', 'https://gid/'));
+      const inventoryItemId = url.searchParams.get('inventory_item_id');
+      if (inventoryItemId) {
+        externalInventoryItemGid = `gid://shopify/InventoryItem/${inventoryItemId}`;
+      }
+    }
+
+    if (!externalInventoryItemGid && payload?.inventory_item_id) {
+      externalInventoryItemGid = `gid://shopify/InventoryItem/${payload.inventory_item_id}`;
+    }
 
     if (!externalInventoryItemGid) {
       console.warn('[INVENTORY_PROJECTION_SKIP_NO_IDENTITY]', {
@@ -133,7 +153,7 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
         shop_id: domainEvent.shop_id,
         external_inventory_item_id: externalInventoryItemGid,
       })
-      .select('external_variant_id')
+      .select('external_variant_id', 'lasyncro_variant_id')
       .first();
 
     if (!identityRow?.external_variant_id) {

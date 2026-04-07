@@ -99,13 +99,27 @@ export async function handleInventoryLevelUpdate(
     return;
   }
 
+  /**
+   * GID RESOLUTION (CRITICAL)
+   * --------------------------------------
+   * Shopify inventory_levels/update sends:
+   *   admin_graphql_api_id: "gid://shopify/InventoryLevel/xxx?inventory_item_id=yyy"
+   *
+   * Must extract inventory_item_id from query string and construct
+   * a clean InventoryItem GID to match external_product_identity_map.
+   */
   let externalInventoryItemGid: string | null = null;
 
   if (payload.admin_graphql_api_id) {
-    externalInventoryItemGid = payload.admin_graphql_api_id;
-  } else if (payload.inventory_item_id) {
-    externalInventoryItemGid =
-      `gid://shopify/InventoryItem/${payload.inventory_item_id}`;
+    const url = new URL(payload.admin_graphql_api_id.replace('gid://', 'https://gid/'));
+    const inventoryItemId = url.searchParams.get('inventory_item_id');
+    if (inventoryItemId) {
+      externalInventoryItemGid = `gid://shopify/InventoryItem/${inventoryItemId}`;
+    }
+  }
+
+  if (!externalInventoryItemGid && payload.inventory_item_id) {
+    externalInventoryItemGid = `gid://shopify/InventoryItem/${payload.inventory_item_id}`;
   }
 
   if (!externalInventoryItemGid) {
@@ -163,10 +177,75 @@ export async function handleInventoryLevelUpdate(
     eventTime = new Date(); // fallback
   }
 
+  /**
+   * INVENTORY MOVEMENT — RECONCILIATION CORRECTION (IN-02)
+   * -------------------------------------------------------
+   * MUST run BEFORE domain event insert.
+   * The projection worker rebuilds inventory_truth after the domain
+   * event is processed — movement must already be in the ledger.
+   */
+  if (externalInventoryItemGid && typeof payload.available === 'number') {
+    try {
+      const identityRow = await db('external_product_identity_map')
+        .where({
+          shop_id: shopId,
+          external_inventory_item_id: externalInventoryItemGid,
+        })
+        .select('lasyncro_variant_id')
+        .first();
+
+      if (identityRow?.lasyncro_variant_id) {
+        const locationCode = `WH-${shopId}-ROOT`;
+        const currentTruth = await db('inventory_truth')
+          .where({
+            shop_id: shopId,
+            lasyncro_variant_id: identityRow.lasyncro_variant_id,
+            location_code: locationCode,
+          })
+          .select('on_hand_quantity')
+          .first();
+
+        const currentOnHand = Number(currentTruth?.on_hand_quantity ?? 0);
+        const shopifyAvailable = Number(payload.available);
+        const delta = shopifyAvailable - currentOnHand;
+
+        if (delta !== 0) {
+          const { randomUUID } = await import('crypto');
+          await db('inventory_movements')
+            .insert({
+              lasyncro_inventory_movement_id: randomUUID(),
+              lasyncro_variant_id: identityRow.lasyncro_variant_id,
+              shop_id: shopId,
+              movement_type: 'reconciliation_correction',
+              quantity_delta: delta,
+              location_code: locationCode,
+              reference_type: 'inventory_levels_update',
+              reference_id: randomUUID(),
+              occurred_at: eventTime,
+              device_event_id: null,
+            })
+            .onConflict(['device_event_id'])
+            .ignore();
+
+          console.info('[INVENTORY_MOVEMENT_WRITTEN]', {
+            lasyncro_variant_id: identityRow.lasyncro_variant_id,
+            delta,
+            currentOnHand,
+            shopifyAvailable,
+            eventId: envelope.eventId,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[INVENTORY_MOVEMENT_WRITE_FAILED]', {
+        error: (err as Error).message,
+        eventId: envelope.eventId,
+      });
+    }
+  }
+
   let domainEventId: number;
-
   try {
-
     const result = await db('domain_events')
       .insert({
         shop_id: shopId,
@@ -179,9 +258,7 @@ export async function handleInventoryLevelUpdate(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
-
   } catch (error: any) {
-
     /**
      * DUPLICATE DELIVERY HANDLING
      * ---------------------------
@@ -189,16 +266,13 @@ export async function handleInventoryLevelUpdate(
      * (shop_id, external_event_id)
      */
     if (error?.code === '23505') {
-
       console.warn('[DOMAIN_EVENT_DUPLICATE]', {
         shopId,
         externalEventId: envelope.eventId,
         eventType: 'inventory_levels/update',
       });
-
       return; // Do NOT enqueue duplicate
     }
-
     throw error;
   }
 }
