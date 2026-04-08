@@ -47,6 +47,64 @@ export const httpGetBatches = async (req: Request, res: Response) => {
   }
 };
 
+// ─────────────────────────────────────────
+// GET /api/v1/wms/batch/:batchId/line-items
+// ─────────────────────────────────────────
+export const httpGetBatchLineItems = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { batchId } = req.params;
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+
+  try {
+    const lineItems = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      /**
+       * LINE ITEMS FOR PICK SESSION
+       * ----------------------------
+       * Joins order_line_items → pick_batch_orders to scope to batch.
+       * Pre-sorted by location_code ASC for optimal pick route
+       * (operator walks A → B → C, not C → B → A).
+       *
+       * location_code sourced from inventory_truth if available,
+       * falls back to WH-{shopId}-ROOT default.
+       */
+      return trx('order_line_items as oli')
+        .join('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'oli.lasyncro_order_id')
+        .leftJoin('inventory_truth as it', (join) => {
+          join
+            .on('it.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+            .andOn('it.shop_id', trx.raw('?', [shopId]));
+        })
+        .leftJoin('pick_scan_log as psl', (join) => {
+          join
+            .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
+            .andOnVal('psl.status', 'confirmed');
+        })
+        .where('pbo.pick_batch_id', batchId)
+        .whereNull('psl.scan_id') // exclude already scanned line items
+        .orderBy('it.location_code', 'asc') // optimal pick route
+        .select(
+          'oli.lasyncro_line_item_id',
+          'oli.lasyncro_variant_id',
+          'oli.lasyncro_order_id',
+          'oli.sku',
+          'oli.title',
+          'oli.quantity',
+          trx.raw(`COALESCE(it.location_code, 'WH-${shopId}-ROOT') as location_code`)
+        );
+    });
+
+    return res.status(200).json({ line_items: lineItems });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_BATCH_LINE_ITEMS_FAILED]', { shopId, batchId, error: message });
+    return res.status(500).json({ error: `Failed to fetch line items: ${message}` });
+  }
+};
+
 /**
  * WMS CONTROLLER (WM-03)
  * -----------------------

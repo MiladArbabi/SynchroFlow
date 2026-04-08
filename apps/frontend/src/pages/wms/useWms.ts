@@ -10,7 +10,7 @@ import { axiosInstance } from 'api/axiosConfig';
  */
 
 export function useWms() {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['wms', 'batches'],
     queryFn: () =>
       axiosInstance.get('/api/v1/wms/batches').then((r) => r.data),
@@ -21,5 +21,6 @@ export function useWms() {
     data,
     isLoading,
     isError,
+    refetch,
   };
 }

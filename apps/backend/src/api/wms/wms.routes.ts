@@ -5,6 +5,7 @@ import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { requireRole } from '../../middleware/require-role.middleware.js';
 import {
   httpGetBatches,
+  httpGetBatchLineItems,
   httpReleaseBatch,
   httpClaimBatch,
   httpCompletePick,
@@ -31,6 +32,14 @@ router.get(
   requireFt2,
   requireRole(['operator', 'owner', 'admin']),
   httpGetBatches
+);
+
+router.get(
+  '/batch/:batchId/line-items',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpGetBatchLineItems
 );
 
 router.post(

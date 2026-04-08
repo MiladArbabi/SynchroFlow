@@ -133,6 +133,44 @@ export async function releaseBatch(
     total_units: runningUnits,
   });
 
+  // 6. Initialize warehouse status for all selected orders
+  await trx('order_warehouse_status').insert(
+    selectedOrderIds.map((orderId) => ({
+      lasyncro_order_id: orderId,
+      status: 'awaiting_pick',
+      pick_batch_id: pickBatchId,
+      status_updated_at: new Date(),
+    }))
+  ).onConflict(['lasyncro_order_id']).merge({
+    status: 'awaiting_pick',
+    pick_batch_id: pickBatchId,
+    status_updated_at: new Date(),
+    updated_at: new Date(),
+  });
+
+  // 7. Initialize line item warehouse status for all selected orders
+  for (const orderId of selectedOrderIds) {
+    const lineItems = await trx('order_line_items')
+      .where({ lasyncro_order_id: orderId })
+      .select('lasyncro_line_item_id', 'lasyncro_order_id');
+
+    if (lineItems.length === 0) continue;
+
+    await trx('order_line_item_warehouse_status').insert(
+      lineItems.map((li) => ({
+        lasyncro_line_item_id: li.lasyncro_line_item_id,
+        lasyncro_order_id: li.lasyncro_order_id,
+        shop_id: shopId,
+        status: 'awaiting_pick',
+        status_updated_at: new Date(),
+      }))
+    ).onConflict(['lasyncro_line_item_id']).merge({
+      status: 'awaiting_pick',
+      status_updated_at: new Date(),
+      updated_at: new Date(),
+    });
+  }
+
   return {
     pick_batch_id: pickBatchId,
     order_count: selectedOrderIds.length,

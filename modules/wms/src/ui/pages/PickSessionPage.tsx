@@ -2,6 +2,7 @@
 import { useState, useCallback } from 'react';
 import {
   Box,
+  Paper,
   Typography,
   Button,
   LinearProgress,
@@ -46,8 +47,8 @@ import { BarcodeScanSurface } from '../components/BarcodeScanSurface.js';
  * - All items scanned (or excepted) → pick complete prompt
  * - Operator acknowledges → POST pick-complete
  *
- * API calls are injected via props — module stays decoupled
- * from apps/frontend HTTP layer.
+ * Theme-aware: Paper, theme.palette tokens, no hardcoded colors.
+ * API calls injected via props — module decoupled from frontend HTTP layer.
  */
 
 export interface LineItem {
@@ -135,7 +136,7 @@ export default function PickSessionPage({
     setShortPickQuantity('');
 
     if (isLastItem) {
-      handlePickComplete();
+      void handlePickComplete();
     } else {
       setCurrentIndex((i) => i + 1);
     }
@@ -212,7 +213,6 @@ export default function PickSessionPage({
         quantity_found: quantityFound,
       });
     } catch {
-      // Exception reporting failure must not block pick flow
       console.error('[PICK_SESSION] Exception report failed', { type });
     } finally {
       setExceptionDialog(false);
@@ -238,12 +238,12 @@ export default function PickSessionPage({
         <LinearProgress variant="determinate" value={progress} sx={{ borderRadius: 1 }} />
       </Box>
 
-      {/* DESTINATION */}
-      <Box
+      {/* DESTINATION CARD */}
+      <Paper
+        variant="outlined"
         sx={{
           p: 2,
           mb: 2,
-          bgcolor: 'action.hover',
           borderRadius: 2,
           display: 'flex',
           alignItems: 'center',
@@ -263,10 +263,13 @@ export default function PickSessionPage({
             {currentItem.quantity}
           </Typography>
         </Box>
-      </Box>
+      </Paper>
 
       {/* PRODUCT INFO */}
-      <Box sx={{ mb: 2 }}>
+      <Paper
+        variant="outlined"
+        sx={{ p: 2, mb: 2, borderRadius: 2 }}
+      >
         <Typography variant="body2" fontWeight={600} noWrap>
           {currentItem.title}
         </Typography>
@@ -275,7 +278,7 @@ export default function PickSessionPage({
             SKU: {currentItem.sku}
           </Typography>
         )}
-      </Box>
+      </Paper>
 
       {/* SCAN SURFACE */}
       {scanState === 'scanning' && (
@@ -288,7 +291,7 @@ export default function PickSessionPage({
 
       {/* WRONG ITEM SIGNAL */}
       {scanState === 'wrong_item' && (
-        <Box
+        <Paper
           sx={{
             aspectRatio: '4/3',
             borderRadius: 3,
@@ -300,19 +303,19 @@ export default function PickSessionPage({
             gap: 1,
           }}
         >
-          <XCircle size={48} color="white" />
-          <Typography variant="h6" sx={{ color: 'white', fontWeight: 700 }}>
+          <XCircle size={48} color={theme.palette.error.contrastText} />
+          <Typography variant="h6" sx={{ color: theme.palette.error.contrastText, fontWeight: 700 }}>
             Wrong Item
           </Typography>
-          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+          <Typography variant="caption" sx={{ color: theme.palette.error.contrastText, opacity: 0.8 }}>
             Scan the correct product barcode
           </Typography>
-        </Box>
+        </Paper>
       )}
 
       {/* ACCEPTED SIGNAL */}
       {scanState === 'accepted' && (
-        <Box
+        <Paper
           sx={{
             aspectRatio: '4/3',
             borderRadius: 3,
@@ -324,16 +327,16 @@ export default function PickSessionPage({
             gap: 1,
           }}
         >
-          <CheckCircle size={48} color="white" />
-          <Typography variant="h6" sx={{ color: 'white', fontWeight: 700 }}>
+          <CheckCircle size={48} color={theme.palette.success.contrastText} />
+          <Typography variant="h6" sx={{ color: theme.palette.success.contrastText, fontWeight: 700 }}>
             Confirmed
           </Typography>
-        </Box>
+        </Paper>
       )}
 
       {/* QUANTITY CONFIRMATION */}
       {(scanState === 'confirming_quantity' || scanState === 'submitting') && (
-        <Box sx={{ mt: 1 }}>
+        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mt: 1 }}>
           <Alert severity="success" sx={{ mb: 2 }}>
             Correct item scanned — confirm quantity
           </Alert>
@@ -361,16 +364,16 @@ export default function PickSessionPage({
             size="large"
             onClick={handleQuantityConfirm}
             disabled={scanState === 'submitting'}
-            sx={{ borderRadius: 2, fontWeight: 700, mb: 1 }}
+            sx={{ borderRadius: 2, fontWeight: 700 }}
           >
             {scanState === 'submitting' ? 'Confirming...' : 'Confirm Pick'}
           </Button>
-        </Box>
+        </Paper>
       )}
 
       {/* EXCEPTION ACTIONS */}
       {scanState === 'scanning' && (
-        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+        <Box sx={{ mt: 2 }}>
           <Button
             variant="outlined"
             color="warning"
@@ -394,7 +397,7 @@ export default function PickSessionPage({
               color="error"
               fullWidth
               startIcon={<PackageX size={16} />}
-              onClick={() => handleReportException('item_missing', 0)}
+              onClick={() => void handleReportException('item_missing', 0)}
             >
               Item Not Found
             </Button>
