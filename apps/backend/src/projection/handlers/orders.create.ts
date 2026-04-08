@@ -237,11 +237,43 @@ export async function handleOrdersCreate({
       order_updated_at: canonicalEventTime,
       payment_state: paymentState,
       aggregate_version: 1,
+      /**
+       * CUSTOMER IDENTITY (CL-INF-01 FIX)
+       * -----------------------------------
+       * Populated from canonical payload customer.hashedId.
+       * Null for guest checkouts — expected and allowed.
+       */
+      customer_hashed_id: payload.customer?.hashedId ?? null,
       created_at: canonicalEventTime,
       updated_at: canonicalEventTime,
     });
 
     console.log('[ORDER_INSERTED]', { lasyncroOrderId });
+
+    /**
+     * CUSTOMER UPSERT
+     * ---------------------------------
+     * When a registered customer order arrives, upsert a customer record.
+     * Uses external_customer_id = hashed Shopify customer ID.
+     * Idempotent — safe on replay.
+     * Guest checkouts (no customer) are silently skipped.
+     */
+    if (payload.customer?.hashedId) {
+      await trx('customers')
+        .insert({
+          shop_id: domainEvent.shop_id,
+          external_customer_id: payload.customer.hashedId,
+          created_at: canonicalEventTime,
+          updated_at: canonicalEventTime,
+        })
+        .onConflict(['shop_id', 'external_customer_id'])
+        .ignore();
+
+      console.debug('[CUSTOMER_UPSERTED]', {
+        hashedId: payload.customer.hashedId,
+        orderId: lasyncroOrderId,
+      });
+    }
 
     const tenantCheck = await trx.raw(
       `SELECT current_setting('app.current_tenant', true) as tenant`

@@ -27,6 +27,7 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['shop_id']);
     table.index(['email']);
+    table.unique(['shop_id', 'external_customer_id'], 'customers_shop_external_customer_unique');
   });
 
   // --- RLS: Enforce tenant isolation (direct) ---

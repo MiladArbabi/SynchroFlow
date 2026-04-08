@@ -1,5 +1,5 @@
 //apps/backend/src/services/mappers/shopify-to-canonical-order.ts
-
+import { createHash } from 'crypto';
 import type { FT0CanonicalOrder } 
   from '@lasyncro/shared/contracts/ft0-canonical-order';
 
@@ -162,10 +162,27 @@ export function mapShopifyOrderNodeToCanonical(
       };
     }),
 
-
     // ── Optional / absent signals ───────────────────
     shippingLines: [],
-    customer: undefined,
+    /**
+     * CUSTOMER IDENTITY
+     * -----------------------------------
+     * Extract Shopify customer GID and hash it deterministically.
+     * SHA256(shopId:customerId) — anonymous, non-reversible.
+     * Null for guest checkouts (no customer attached to order).
+     *
+     * Uses synchronous createHash — safe in mapper context.
+     */
+    customer: (() => {
+      const customerId = node.customer?.id;
+      if (!customerId) return undefined;
+      // createHash imported at top of file
+      const raw = String(customerId).replace('gid://shopify/Customer/', '');
+      const hashed = createHash('sha256')
+        .update(`${shopId}:${raw}`)
+        .digest('hex');
+      return { hashedId: hashed, customerType: 'registered' as const };
+    })(),
     source: node.sourceName ?? null,
     referrerMedium: null,
 

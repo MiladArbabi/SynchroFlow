@@ -76,6 +76,9 @@ query getOrders($cursor: String) {
         sourceName
         displayFulfillmentStatus
         displayFinancialStatus
+        customer {
+          id
+        }
         lineItems(first: 20) {
           edges {
             node {
