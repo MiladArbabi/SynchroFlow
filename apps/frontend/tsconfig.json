@@ -39,7 +39,8 @@
       "@lasyncro/alerts": ["../../../modules/alerts/src/ui/index.ts"],
       "@lasyncro/cashflow": ["../../../modules/cashflow/src/ui/index.ts"],
       "@lasyncro/fulfillment": ["../../../modules/fulfillment/src/ui/index.ts"],
-      "@lasyncro/returns": ["../../../modules/returns/src/ui/index.ts"]
+      "@lasyncro/returns": ["../../../modules/returns/src/ui/index.ts"],
+      "@lasyncro/demand": ["../../../modules/demand/src/ui/index.ts"]
     }
   },
   "include": [

@@ -85,6 +85,10 @@ export default defineConfig({
         __dirname,
         '../../modules/cashflow/src/ui/index.ts'
       ),
+      '@lasyncro/demand': path.resolve(
+        __dirname,
+        '../../modules/demand/src/ui/index.ts'
+      ),
     }
   },
 });

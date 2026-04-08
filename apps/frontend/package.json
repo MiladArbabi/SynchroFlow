@@ -25,6 +25,7 @@
     "@lasyncro/fulfillment": "0.1.0",
     "@lasyncro/order-nexus": "0.1.0",
     "@lasyncro/products": "0.1.0",
+    "@lasyncro/demand": "0.1.0",
     "@lasyncro/returns": "0.1.0",
     "@lasyncro/specter": "0.1.0",
     "@mui/icons-material": "^7.3.4",

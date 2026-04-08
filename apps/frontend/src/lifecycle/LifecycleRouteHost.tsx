@@ -39,6 +39,7 @@ import FulfillmentQueuePage from 'pages/ft2-pages/FulfillmentQueuePage';
 import AlertsPage from 'pages/ft2-pages/AlertsPage';
 import ReturnsPage from 'pages/ft2-pages/ReturnsPage';
 import CashFlowPage from 'pages/ft2-pages/CashFlowPage';
+import DemandPage from 'pages/ft2-pages/DemandPage';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 
@@ -228,6 +229,9 @@ export function LifecycleRouteHost() {
 
       {/* CASH FLOW */}
       <Route path="/cashflow/*" element={<CashFlowPage />} />
+
+      {/* DEMAND */}
+      <Route path="/demand/*" element={<DemandPage />} />
     </Routes>
   );
 }
