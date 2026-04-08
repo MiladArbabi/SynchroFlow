@@ -35,8 +35,11 @@
       "@lasyncro/order-nexus": ["../../../modules/order-nexus/src/ui/index.ts"],
       "@lasyncro/specter": ["../../../modules/specter/src/ui/index.ts"],
       "@lasyncro/finances": ["../../../modules/finances/src/ui/index.ts"],
-      "@lasyncro/customers": ["../../../modules/customers/src/ui/index.ts"]
-
+      "@lasyncro/customers": ["../../../modules/customers/src/ui/index.ts"],
+      "@lasyncro/alerts": ["../../../modules/alerts/src/ui/index.ts"],
+      "@lasyncro/cashflow": ["../../../modules/cashflow/src/ui/index.ts"],
+      "@lasyncro/fulfillment": ["../../../modules/fulfillment/src/ui/index.ts"],
+      "@lasyncro/returns": ["../../../modules/returns/src/ui/index.ts"]
     }
   },
   "include": [

@@ -24,6 +24,7 @@ import financesRoutes from '../api/finances/finances.routes.js';
 import systemRoutes from '../api/system/system.routes.js';
 import alertsRoutes from '../api/alerts/alerts.routes.js';
 import returnsRoutes from '../api/returns/returns.routes.js';
+import cashflowRoutes from '../api/cashflow/cashflow.routes.js';
 
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook.js';
@@ -84,6 +85,7 @@ export function createApp(): Express {
   app.use('/api/v1/system', systemRoutes);
   app.use('/api/v1/alerts', alertsRoutes);
   app.use('/api/v1/modules/returns', returnsRoutes);
+  app.use('/api/v1/modules/cashflow', cashflowRoutes);
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

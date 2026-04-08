@@ -74,6 +74,7 @@ export function mapFinancesFt2Props(
       snapshot.financialConsistency === undefined
         ? null
         : snapshot.financialConsistency,
+    margin: null,
   };
 
   /**
