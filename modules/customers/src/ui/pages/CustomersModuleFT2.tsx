@@ -1,128 +1,257 @@
 // modules/customers/src/ui/pages/CustomersModuleFT2.tsx
 
+import { Box, Typography, CircularProgress, Alert, useTheme, Chip } from '@mui/material';
+import { Users, TrendingUp, AlertTriangle, Star } from 'lucide-react';
 
-import {
-  FT2Layout,
-  FT2Row,
-  FT2Panel,
-  PanelRow
-} from '@lasyncro/ui-ft2';
+/**
+ * LOCAL TYPES
+ * -----------
+ * Mirror CustomerLtvResponse from frontend hook.
+ * Defined locally to avoid cross-rootDir import.
+ */
+export type CustomerLtvRecord = {
+  customer_hashed_id: string;
+  total_orders: number;
+  total_revenue: number;
+  avg_order_value: number;
+  first_order_at: string | null;
+  last_order_at: string | null;
+  days_since_last_order: number | null;
+  total_refunds: number;
+  net_revenue: number;
+  churn_risk: 'low' | 'medium' | 'high';
+  customer_tier: 'VIP' | 'CORE' | 'AT_RISK' | 'LOST' | 'NEW';
+};
 
-/* =========================
-   Public Props (FT2 Shape)
-   ========================= */
+export type CustomerLtvSummary = {
+  total_customers: number;
+  avg_ltv: number;
+  avg_order_frequency: number;
+  avg_days_between_orders: number | null;
+  vip_count: number;
+  at_risk_count: number;
+  lost_count: number;
+};
 
+export type CustomerLtvData = {
+  summary: CustomerLtvSummary;
+  customers: CustomerLtvRecord[];
+  computed_at: string;
+} | null;
+
+/**
+ * CUSTOMERS MODULE FT2 PROPS
+ * --------------------------
+ * Rebuilt from scratch — LTV-first design.
+ * Previous snapshot-based props discarded.
+ */
 export interface CustomersModuleFT2Props {
-  // ── Domain 1 & 2 Context ──────────
-  sessionsPresent: boolean | null;
-
-  // ── Domain 3 Context ───────────────
-  multiStepSessionsPresent: boolean | null;
-  averageSessionDepthPresent: boolean | null;
-
-  // ── Domain 4, 5 & 6 Context ──────────
-  surfaceBreadthPresent: boolean | null;
-  returningSessionsPresent: boolean | null;
-  exitWithoutInteractionPresent: boolean | null;
-
-  // ── Domain 7 Context ───────────────
-  funnelsDetected: boolean | null;
-
-  /**
-   * Direction is NOT available in Customers FT2.
-   * Always null by contract.
-   */
-  activityDirection: null;
-
-  // Structural signals
-  exitIntentDetected: boolean | null;
-
-
-  // ── Coverage (not yet exposed) ─────────
-  dataCoverage: 'complete' | 'partial' | 'insufficient' | null;
+  ltv: CustomerLtvData;
 }
 
-/* =========================
-   Small Render Helpers
-   ========================= */
+const TIER_COLORS: Record<string, string> = {
+  VIP: '#7C3AED',
+  CORE: '#2563EB',
+  NEW: '#16A34A',
+  AT_RISK: '#CA8A04',
+  LOST: '#DC2626',
+};
 
-// Boolean existence → human-safe, non-explanatory labels
-function renderDetected(value: boolean | null): string {
-  if (value === true) return 'Detected';
-  if (value === false) return '—';
-  return 'Unknown';
+const CHURN_LABELS: Record<string, string> = {
+  low: 'Low risk',
+  medium: 'Medium risk',
+  high: 'High risk',
+};
+
+function StatBox({
+  label,
+  value,
+  icon,
+  color,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  color?: string;
+}) {
+  return (
+    <Box
+      sx={{
+        flex: 1,
+        p: 2.5,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 2,
+        minWidth: 140,
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, color: color ?? 'text.secondary' }}>
+        {icon}
+        <Typography variant="caption" color="inherit">{label}</Typography>
+      </Box>
+      <Typography variant="h5" fontWeight={700} sx={{ color: color ?? 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+        {value}
+      </Typography>
+    </Box>
+  );
 }
 
-// Direction → arrow-only, no magnitude, no explanation
-function renderDirection(
-  value: 'up' | 'down' | 'flat' | 'unknown' | null
-): string {
-  switch (value) {
-    case 'up':
-      return '↑';
-    case 'down':
-      return '↓';
-    case 'flat':
-      return '→';
-    case 'unknown':
-    default:
-      return '—';
-  }
-}
+function CustomerRow({ customer }: { customer: CustomerLtvRecord }) {
+  const theme = useTheme();
+  const fmt = (n: number) =>
+    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-// Coverage → calibrated trust labels
-function renderCoverage(
-  value: 'complete' | 'partial' | 'insufficient' | null
-): string {
-  if (value === 'complete') return 'Complete';
-  if (value === 'partial') return 'Partial';
-  if (value === 'insufficient') return 'Insufficient';
-  return 'Unknown';
-}
+  const churnColor =
+    customer.churn_risk === 'low'
+      ? theme.palette.success.main
+      : customer.churn_risk === 'medium'
+      ? theme.palette.warning.main
+      : theme.palette.error.main;
 
-/* =========================
-   Component
-   ========================= */
-
-export default function CustomersModuleFT2(
-  props: CustomersModuleFT2Props
-) {
-  const {
-    sessionsPresent,
-    activityDirection,
-    exitIntentDetected,
-    multiStepSessionsPresent,
-    surfaceBreadthPresent,
-    returningSessionsPresent,
-    averageSessionDepthPresent,
-    exitWithoutInteractionPresent,
-    dataCoverage,
-  } = props;
+  const shortId = customer.customer_hashed_id.slice(0, 8).toUpperCase();
 
   return (
-    <FT2Layout>
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1fr 1fr',
+        px: 2,
+        py: 1.5,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+        alignItems: 'center',
+        '&:hover': { bgcolor: 'action.hover' },
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Chip
+          label={customer.customer_tier}
+          size="small"
+          sx={{
+            bgcolor: TIER_COLORS[customer.customer_tier] ?? theme.palette.primary.main,
+            color: '#fff',
+            fontWeight: 700,
+            fontSize: 10,
+            height: 20,
+          }}
+        />
+        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 11 }}>
+          {shortId}
+        </Typography>
+      </Box>
+      <Typography variant="body2">{customer.total_orders}</Typography>
+      <Typography variant="body2" fontWeight={600}>{fmt(customer.total_revenue)}</Typography>
+      <Typography variant="body2">{fmt(customer.avg_order_value)}</Typography>
+      <Typography variant="body2">
+        {customer.days_since_last_order != null
+          ? `${customer.days_since_last_order}d ago`
+          : '—'}
+      </Typography>
+      <Typography variant="caption" sx={{ color: churnColor, fontWeight: 600 }}>
+        {CHURN_LABELS[customer.churn_risk]}
+      </Typography>
+    </Box>
+  );
+}
 
-      {/* =========================
-          Row 1 — System Overview (KPI)
-          OpsConsole + Core Signals
-        ========================= */}
-      <FT2Row intent="kpi">
+export default function CustomersModuleFT2({ ltv }: CustomersModuleFT2Props) {
+  const theme = useTheme();
+  const fmt = (n: number) =>
+    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-      <FT2Panel span={1} title="Customers System Status">
+  const summary = ltv?.summary;
+  const customers = ltv?.customers ?? [];
 
-        {/* Temporary operational placeholder
-          Ensures runtime JSX emission until
-          full Customers FT2 panel implementation.
-        */}
+  return (
+    <Box sx={{ p: 3 }}>
 
-        <PanelRow label="Signal ingestion" value="Active" />
-        <PanelRow label="Data coverage" value="Nominal" />
-        <PanelRow label="Blocking anomalies" value="None detected" />
+      {/* HEADER */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" fontWeight={700}>Customers</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          Lifetime value, order frequency, and churn intelligence — anonymous, PII-free.
+        </Typography>
+      </Box>
 
-      </FT2Panel>
+      {!ltv && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
+          <CircularProgress size={24} />
+        </Box>
+      )}
 
-    </FT2Row>
+      {summary && (
+        <>
+          {/* ZONE 1 — LTV PULSE */}
+          <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <StatBox
+              label="Total Customers"
+              value={String(summary.total_customers)}
+              icon={<Users size={14} />}
+            />
+            <StatBox
+              label="Avg Lifetime Value"
+              value={fmt(summary.avg_ltv)}
+              icon={<TrendingUp size={14} />}
+              color={theme.palette.primary.main}
+            />
+            <StatBox
+              label="Avg Order Frequency"
+              value={`${summary.avg_order_frequency} orders`}
+              icon={<TrendingUp size={14} />}
+            />
+            <StatBox
+              label="VIP Customers"
+              value={String(summary.vip_count)}
+              icon={<Star size={14} />}
+              color="#7C3AED"
+            />
+            <StatBox
+              label="At Risk"
+              value={String(summary.at_risk_count)}
+              icon={<AlertTriangle size={14} />}
+              color={theme.palette.warning.main}
+            />
+          </Box>
 
-    </FT2Layout>
+          {/* ZONE 2 — CUSTOMER TABLE */}
+          {customers.length > 0 && (
+            <Box>
+              <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
+                Customer Intelligence — ranked by lifetime value
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1fr 1fr',
+                  px: 2,
+                  py: 1,
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                {['Customer', 'Orders', 'LTV', 'Avg Order', 'Last Order', 'Churn Risk'].map(h => (
+                  <Typography key={h} variant="caption" color="text.secondary" fontWeight={600}>
+                    {h}
+                  </Typography>
+                ))}
+              </Box>
+
+              {customers.map(c => (
+                <CustomerRow key={c.customer_hashed_id} customer={c} />
+              ))}
+            </Box>
+          )}
+
+          {customers.length === 0 && (
+            <Box sx={{ py: 4, textAlign: 'center', border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                No registered customer orders found. Guest checkouts are excluded by design.
+              </Typography>
+            </Box>
+          )}
+        </>
+      )}
+    </Box>
   );
 }
