@@ -134,6 +134,53 @@ export const httpClaimBatch = async (req: Request, res: Response) => {
           updated_at: now,
         });
 
+      // Transition all orders in batch → picking
+      const batchOrders = await trx('pick_batch_orders')
+        .where({ pick_batch_id: batchId })
+        .select('lasyncro_order_id');
+
+      for (const order of batchOrders) {
+        await trx('order_warehouse_status')
+          .insert({
+            lasyncro_order_id: order.lasyncro_order_id,
+            status: 'picking',
+            pick_batch_id: batchId,
+            status_updated_at: now,
+            picked_at: null,
+            packed_at: null,
+            shipped_at: null,
+          })
+          .onConflict(['lasyncro_order_id'])
+          .merge({
+            status: 'picking',
+            pick_batch_id: batchId,
+            status_updated_at: now,
+            updated_at: now,
+          });
+
+        // Transition all line items for this order → picking
+        const lineItems = await trx('order_line_items')
+          .where({ lasyncro_order_id: order.lasyncro_order_id })
+          .select('lasyncro_line_item_id', 'lasyncro_order_id');
+
+        for (const li of lineItems) {
+          await trx('order_line_item_warehouse_status')
+            .insert({
+              lasyncro_line_item_id: li.lasyncro_line_item_id,
+              lasyncro_order_id: li.lasyncro_order_id,
+              shop_id: shopId,
+              status: 'picking',
+              status_updated_at: now,
+            })
+            .onConflict(['lasyncro_line_item_id'])
+            .merge({
+              status: 'picking',
+              status_updated_at: now,
+              updated_at: now,
+            });
+        }
+      }
+
       console.info('[WMS_BATCH_CLAIMED]', {
         pick_batch_id: batchId,
         claimed_by: userId,

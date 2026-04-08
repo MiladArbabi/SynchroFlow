@@ -186,6 +186,49 @@ export async function confirmPickScan(
     shopId,
   });
 
+  // 9. Transition line item warehouse status → picked
+  await trx('order_line_item_warehouse_status')
+    .insert({
+      lasyncro_line_item_id: lasyncroLineItemId,
+      lasyncro_order_id: lineItem.lasyncro_order_id,
+      shop_id: shopId,
+      status: 'picked',
+      status_updated_at: scannedAt,
+      created_at: scannedAt,
+      updated_at: scannedAt,
+    })
+    .onConflict(['lasyncro_line_item_id'])
+    .merge({
+      status: 'picked',
+      status_updated_at: scannedAt,
+      updated_at: scannedAt,
+    });
+
+  // 10. Transition inventory unit status → picked
+  await trx('inventory_unit_status')
+    .insert({
+      shop_id: shopId,
+      lasyncro_variant_id: lasyncroVariantId,
+      location_code: locationCode,
+      status: 'picked',
+      status_updated_at: scannedAt,
+      created_at: scannedAt,
+      updated_at: scannedAt,
+    })
+    .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
+    .merge({
+      status: 'picked',
+      status_updated_at: scannedAt,
+      updated_at: scannedAt,
+    });
+
+  console.info('[WAREHOUSE_STATUS_UPDATED]', {
+    lasyncro_line_item_id: lasyncroLineItemId,
+    lasyncro_variant_id: lasyncroVariantId,
+    status: 'picked',
+    shopId,
+  });
+
   return {
     scan_id: scanId,
     inventory_movement_id: inventoryMovementId,
