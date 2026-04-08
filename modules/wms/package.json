@@ -1,0 +1,18 @@
+{
+  "name": "@lasyncro/wms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "rm -f tsconfig.tsbuildinfo && rm -rf dist && tsc -b tsconfig.json"
+  },
+  "dependencies": {
+    "@lasyncro/ui-ft2": "0.1.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/ui/index.d.ts",
+      "default": "./dist/ui/index.js"
+    }
+  }
+}

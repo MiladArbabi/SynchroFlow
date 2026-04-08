@@ -27,6 +27,7 @@ import returnsRoutes from '../api/returns/returns.routes.js';
 import cashflowRoutes from '../api/cashflow/cashflow.routes.js';
 import customersLtvRoutes from '../api/customers/customers.ltv.routes.js';
 import demandRoutes from '../api/demand/demand.routes.js';
+import wmsRoutes from '../api/wms/wms.routes.js';
 
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook.js';
@@ -90,6 +91,7 @@ export function createApp(): Express {
   app.use('/api/v1/modules/cashflow', cashflowRoutes);
   app.use('/api/v1/modules/customers', customersLtvRoutes);
   app.use('/api/v1/modules/demand', demandRoutes);
+  app.use('/api/v1/wms', wmsRoutes);
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

@@ -23,6 +23,7 @@
     "@lasyncro/cashflow": "0.1.0",
     "@lasyncro/finances": "0.1.0",
     "@lasyncro/fulfillment": "0.1.0",
+    "@lasyncro/wms": "0.1.0",
     "@lasyncro/order-nexus": "0.1.0",
     "@lasyncro/products": "0.1.0",
     "@lasyncro/demand": "0.1.0",

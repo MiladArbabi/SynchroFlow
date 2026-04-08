@@ -31,6 +31,20 @@ export async function up(knex: Knex): Promise<void> {
     table.string('last_name');
 
     /**
+     * USER ROLE
+     * ---------
+     * Determines view access and permitted actions.
+     *
+     * owner    — full sidenav, all modules, settings, batch release
+     * admin    — same as owner, multi-user management
+     * operator — WMS-only mobile view (pick, pack, stow)
+     *
+     * Drives sidenav filtering and route guards on frontend.
+     * Will be superseded by action-level entitlements (WM-19).
+     */
+    table.enum('role', ['owner', 'admin', 'operator']).notNullable().defaultTo('owner');
+
+    /**
      * User state tracking (baked-in baseline)
      * ----------------------------------------
      * These existed in legacy migrations and are

@@ -230,6 +230,23 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
+
+  // start WMS batch auto-release worker
+  try {
+    const wmsAutoRelease = await import('../workers/wms.batch.auto-release.worker.js');
+    if (typeof wmsAutoRelease.startWmsBatchAutoReleaseWorker === 'function') {
+      await Promise.resolve(wmsAutoRelease.startWmsBatchAutoReleaseWorker());
+      if (typeof wmsAutoRelease.stopWmsBatchAutoReleaseWorker === 'function') {
+        workerStopFns.push(async () => await wmsAutoRelease.stopWmsBatchAutoReleaseWorker());
+      }
+      console.log('[bootstrap/workers] WMS batch auto-release worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] WMS auto-release worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
 }
 
 export async function stopWorkers(): Promise<void> {

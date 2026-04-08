@@ -41,6 +41,8 @@ import ReturnsPage from 'pages/ft2-pages/ReturnsPage';
 import CashFlowPage from 'pages/ft2-pages/CashFlowPage';
 import DemandPage from 'pages/ft2-pages/DemandPage';
 
+import WmsPage from 'pages/ft2-pages/WmsPage';
+
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 
 // NOTE:
@@ -232,6 +234,9 @@ export function LifecycleRouteHost() {
 
       {/* DEMAND */}
       <Route path="/demand/*" element={<DemandPage />} />
+
+      {/* WMS */}
+      <Route path="/wms/*" element={<WmsPage />} />
     </Routes>
   );
 }

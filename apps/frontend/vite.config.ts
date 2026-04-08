@@ -89,6 +89,10 @@ export default defineConfig({
         __dirname,
         '../../modules/demand/src/ui/index.ts'
       ),
+      '@lasyncro/wms': path.resolve(
+        __dirname,
+        '../../modules/wms/src/ui/index.ts'
+      ),
     }
   },
 });

@@ -25,6 +25,7 @@ export async function up(knex: Knex): Promise<void> {
     table.string('external_variant_id');                // optional variant id
     table.string('external_inventory_item_id');        // platform inventory item id (required for inventory webhook reconciliation)
     table.string('external_sku');                       // raw platform SKU
+    table.string('barcode', 255).nullable(); // Primary physical scan resolution key. Priority: barcode → external_sku → external_variant_id
 
     table.timestamp('created_at', { useTz: true })
          .notNullable()
@@ -63,6 +64,12 @@ export async function up(knex: Knex): Promise<void> {
     );
   `);
 
+  await knex.raw(`
+    CREATE INDEX external_product_identity_map_barcode_idx
+    ON external_product_identity_map (shop_id, barcode)
+    WHERE barcode IS NOT NULL;
+  `);
+
   /**
    * NOTE:
    * Direct enforcement via shop_id
@@ -71,5 +78,6 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.raw(`DROP INDEX IF EXISTS external_product_identity_map_barcode_idx;`);
   await knex.schema.dropTableIfExists('external_product_identity_map');
 }
