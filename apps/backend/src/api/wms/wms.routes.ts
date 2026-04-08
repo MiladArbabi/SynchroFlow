@@ -12,6 +12,10 @@ import {
   httpReportPickException,
   httpResolveBarcode,
   httpConfirmPickScan,
+  httpClaimPack,
+  httpGetBatchOrders,
+  httpConfirmPackScan,
+  httpCompletePack,
 } from './wms.controller.js';
 
 /**
@@ -64,6 +68,38 @@ router.post(
   requireFt2,
   requireRole(['operator', 'owner', 'admin']),
   httpCompletePick
+);
+
+router.post(
+  '/batch/:batchId/pack/claim',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpClaimPack
+);
+
+router.get(
+  '/batch/:batchId/orders',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpGetBatchOrders
+);
+
+router.post(
+  '/pack/scan',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpConfirmPackScan
+);
+
+router.post(
+  '/batch/:batchId/pack-complete',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpCompletePack
 );
 
 router.post(

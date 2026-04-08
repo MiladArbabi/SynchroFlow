@@ -3,7 +3,12 @@ import { useCallback } from 'react';
 import { WmsModuleFT2 } from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
 import { axiosInstance } from 'api/axiosConfig';
-import type { ConfirmScanParams, ReportExceptionParams, LineItem } from '@lasyncro/wms';
+import type {
+  ConfirmScanParams,
+  ReportExceptionParams,
+  LineItem,
+  PackOrder,
+} from '@lasyncro/wms';
 
 /**
  * WMS GATE PAGE
@@ -17,6 +22,7 @@ import type { ConfirmScanParams, ReportExceptionParams, LineItem } from '@lasync
 export default function WmsPage() {
   const { data, isLoading, isError, refetch } = useWms();
 
+  // ── PICK CALLBACKS ──────────────────────────────────────
   const handleClaimBatch = useCallback(async (batchId: string) => {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/claim`);
   }, []);
@@ -55,6 +61,54 @@ export default function WmsPage() {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pick-complete`);
   }, []);
 
+  // ── PACK CALLBACKS ──────────────────────────────────────
+  const handleClaimPack = useCallback(async (batchId: string) => {
+    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pack/claim`);
+  }, []);
+
+  const handleFetchPackOrders = useCallback(async (batchId: string): Promise<PackOrder[]> => {
+    const { data } = await axiosInstance.get(`/api/v1/wms/batch/${batchId}/orders`);
+    return data.orders;
+  }, []);
+
+  const handleConfirmPackScan = useCallback(async (
+    batchId: string,
+    params: {
+      lasyncro_order_id: string;
+      lasyncro_line_item_id: string;
+      lasyncro_variant_id: string;
+      quantity_confirmed: number;
+    }
+  ) => {
+    const { data } = await axiosInstance.post('/api/v1/wms/pack/scan', {
+      pick_batch_id: batchId,
+      ...params,
+    });
+    return data;
+  }, []);
+
+  const handleReportPackException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
+    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
+      ...params,
+      stage: 'pack',
+    });
+  }, []);
+
+  const handlePrintLabel = useCallback(async (orderId: string) => {
+    /**
+     * PRINT LABEL
+     * -----------
+     * Triggers server-side label generation.
+     * Currently a stub — label printing integration (thermal printer
+     * or PDF download) to be implemented in shipping sprint.
+     */
+    console.info('[WMS] Print label requested for order:', orderId);
+  }, []);
+
+  const handlePackComplete = useCallback(async (batchId: string) => {
+    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pack-complete`);
+  }, []);
+
   return (
     <WmsModuleFT2
       data={data ?? null}
@@ -66,6 +120,12 @@ export default function WmsPage() {
       onConfirmScan={handleConfirmScan}
       onReportException={handleReportException}
       onPickComplete={handlePickComplete}
+      onClaimPack={handleClaimPack}
+      onFetchPackOrders={handleFetchPackOrders}
+      onConfirmPackScan={handleConfirmPackScan}
+      onReportPackException={handleReportPackException}
+      onPrintLabel={handlePrintLabel}
+      onPackComplete={handlePackComplete}
       onRefresh={refetch}
     />
   );

@@ -17,6 +17,9 @@ import PickSessionPage, {
   type ConfirmScanParams,
   type ReportExceptionParams,
 } from './PickSessionPage.js';
+import PackSessionPage, {
+  type PackOrder,
+} from './PackSessionPage.js';
 
 /**
  * WMS MODULE — FT2 SURFACE
@@ -24,14 +27,15 @@ import PickSessionPage, {
  * Mobile-optimized pick/pack operator interface.
  *
  * Zones:
- * - Active batch (if claimed) → scan surface via PickSessionPage
- * - Available batches → claim button
+ * - Active pick session → PickSessionPage
+ * - Active pack session → PackSessionPage
+ * - Available/pick_complete batches → action buttons
  * - Empty state → no batches released
  *
  * All API callbacks injected via props — module stays decoupled
  * from apps/frontend HTTP layer.
  *
- * Theme-aware: uses Paper, theme.palette tokens, no hardcoded colors.
+ * Theme-aware: Paper, theme.palette tokens, no hardcoded colors.
  */
 
 export type WmsBatch = {
@@ -40,7 +44,9 @@ export type WmsBatch = {
   total_line_items: number;
   total_units: number;
   units_picked: number;
+  units_packed: number;
   picked_by: number | null;
+  packed_by: number | null;
   released_at: string;
 };
 
@@ -58,6 +64,17 @@ export type WmsModuleFT2Props = {
   onConfirmScan: (batchId: string, params: ConfirmScanParams) => Promise<void>;
   onReportException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
   onPickComplete: (batchId: string) => Promise<void>;
+  onClaimPack: (batchId: string) => Promise<void>;
+  onFetchPackOrders: (batchId: string) => Promise<PackOrder[]>;
+  onConfirmPackScan: (batchId: string, params: {
+    lasyncro_order_id: string;
+    lasyncro_line_item_id: string;
+    lasyncro_variant_id: string;
+    quantity_confirmed: number;
+  }) => Promise<{ order_complete: boolean }>;
+  onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
+  onPrintLabel: (orderId: string) => Promise<void>;
+  onPackComplete: (batchId: string) => Promise<void>;
   onRefresh: () => void;
 };
 
@@ -67,7 +84,7 @@ const STATUS_LABELS: Record<string, {
 }> = {
   pending:       { label: 'Available',   color: 'primary' },
   picking:       { label: 'In Progress', color: 'warning' },
-  pick_complete: { label: 'Pick Done',   color: 'success' },
+  pick_complete: { label: 'Ready to Pack', color: 'success' },
   packing:       { label: 'Packing',     color: 'warning' },
   pack_complete: { label: 'Complete',    color: 'success' },
   cancelled:     { label: 'Cancelled',   color: 'error'   },
@@ -76,28 +93,31 @@ const STATUS_LABELS: Record<string, {
 function BatchCard({
   batch,
   onClaim,
-  onContinue,
+  onContinuePick,
+  onClaimPack,
+  onContinuePack,
 }: {
   batch: WmsBatch;
   onClaim: (batchId: string) => void;
-  onContinue: (batchId: string) => void;
+  onContinuePick: (batchId: string) => void;
+  onClaimPack: (batchId: string) => void;
+  onContinuePack: (batchId: string) => void;
 }) {
   const theme = useTheme();
   const status = STATUS_LABELS[batch.status] ?? { label: batch.status, color: 'default' as const };
   const releasedAt = new Date(batch.released_at).toLocaleTimeString();
+
   const pickProgress = batch.total_units > 0
     ? Math.round((batch.units_picked / batch.total_units) * 100)
     : 0;
 
+  const packProgress = batch.total_units > 0
+    ? Math.round((batch.units_packed / batch.total_units) * 100)
+    : 0;
+
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        p: 2.5,
-        mb: 2,
-        borderRadius: 2,
-      }}
-    >
+    <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 2 }}>
+
       {/* BATCH HEADER */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
         <Typography
@@ -121,7 +141,7 @@ function BatchCard({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <ScanBarcode size={14} color={theme.palette.text.secondary} />
           <Typography variant="caption" color="text.secondary">
-            {batch.units_picked}/{batch.total_units} units
+            {batch.units_picked}/{batch.total_units} picked
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -136,16 +156,24 @@ function BatchCard({
       {batch.status === 'picking' && (
         <Box sx={{ mb: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">
-              Pick progress
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {pickProgress}%
-            </Typography>
+            <Typography variant="caption" color="text.secondary">Pick progress</Typography>
+            <Typography variant="caption" color="text.secondary">{pickProgress}%</Typography>
+          </Box>
+          <LinearProgress variant="determinate" value={pickProgress} sx={{ borderRadius: 1, height: 6 }} />
+        </Box>
+      )}
+
+      {/* PACK PROGRESS */}
+      {batch.status === 'packing' && (
+        <Box sx={{ mb: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">Pack progress</Typography>
+            <Typography variant="caption" color="text.secondary">{packProgress}%</Typography>
           </Box>
           <LinearProgress
             variant="determinate"
-            value={pickProgress}
+            value={packProgress}
+            color="success"
             sx={{ borderRadius: 1, height: 6 }}
           />
         </Box>
@@ -170,14 +198,45 @@ function BatchCard({
           fullWidth
           size="large"
           sx={{ borderRadius: 2, fontWeight: 700 }}
-          onClick={() => onContinue(batch.pick_batch_id)}
+          onClick={() => onContinuePick(batch.pick_batch_id)}
         >
           Continue Picking
+        </Button>
+      )}
+
+      {batch.status === 'pick_complete' && (
+        <Button
+          variant="contained"
+          color="success"
+          fullWidth
+          size="large"
+          sx={{ borderRadius: 2, fontWeight: 700 }}
+          onClick={() => onClaimPack(batch.pick_batch_id)}
+        >
+          Claim & Start Packing
+        </Button>
+      )}
+
+      {batch.status === 'packing' && (
+        <Button
+          variant="outlined"
+          color="success"
+          fullWidth
+          size="large"
+          sx={{ borderRadius: 2, fontWeight: 700 }}
+          onClick={() => onContinuePack(batch.pick_batch_id)}
+        >
+          Continue Packing
         </Button>
       )}
     </Paper>
   );
 }
+
+type ActiveSession =
+  | { type: 'pick'; batchId: string; lineItems: LineItem[] }
+  | { type: 'pack'; batchId: string; orders: PackOrder[] }
+  | null;
 
 export default function WmsModuleFT2({
   data,
@@ -189,10 +248,15 @@ export default function WmsModuleFT2({
   onConfirmScan,
   onReportException,
   onPickComplete,
+  onClaimPack,
+  onFetchPackOrders,
+  onConfirmPackScan,
+  onReportPackException,
+  onPrintLabel,
+  onPackComplete,
   onRefresh,
 }: WmsModuleFT2Props) {
-  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [activeSession, setActiveSession] = useState<ActiveSession>(null);
   const [loadingSession, setLoadingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
@@ -204,8 +268,7 @@ export default function WmsModuleFT2({
     try {
       if (claim) await onClaimBatch(batchId);
       const items = await onFetchLineItems(batchId);
-      setLineItems(items);
-      setActiveBatchId(batchId);
+      setActiveSession({ type: 'pick', batchId, lineItems: items });
     } catch (err: any) {
       setSessionError(err?.message ?? 'Failed to start pick session.');
     } finally {
@@ -213,21 +276,52 @@ export default function WmsModuleFT2({
     }
   };
 
-  // Active pick session view
-  if (activeBatchId && lineItems.length > 0) {
+  const enterPackSession = async (batchId: string, claim: boolean) => {
+    setLoadingSession(true);
+    setSessionError(null);
+    try {
+      if (claim) await onClaimPack(batchId);
+      const orders = await onFetchPackOrders(batchId);
+      setActiveSession({ type: 'pack', batchId, orders });
+    } catch (err: any) {
+      setSessionError(err?.message ?? 'Failed to start pack session.');
+    } finally {
+      setLoadingSession(false);
+    }
+  };
+
+  const exitSession = () => {
+    setActiveSession(null);
+    onRefresh();
+  };
+
+  // Active pick session
+  if (activeSession?.type === 'pick') {
     return (
       <PickSessionPage
-        pickBatchId={activeBatchId}
-        lineItems={lineItems}
-        onComplete={() => {
-          setActiveBatchId(null);
-          setLineItems([]);
-          onRefresh();
-        }}
+        pickBatchId={activeSession.batchId}
+        lineItems={activeSession.lineItems}
+        onComplete={exitSession}
         onResolveBarcode={onResolveBarcode}
-        onConfirmScan={(params) => onConfirmScan(activeBatchId, params)}
-        onReportException={(params) => onReportException(activeBatchId, params)}
-        onPickComplete={() => onPickComplete(activeBatchId)}
+        onConfirmScan={(params) => onConfirmScan(activeSession.batchId, params)}
+        onReportException={(params) => onReportException(activeSession.batchId, params)}
+        onPickComplete={() => onPickComplete(activeSession.batchId)}
+      />
+    );
+  }
+
+  // Active pack session
+  if (activeSession?.type === 'pack') {
+    return (
+      <PackSessionPage
+        pickBatchId={activeSession.batchId}
+        orders={activeSession.orders}
+        onComplete={exitSession}
+        onResolveBarcode={onResolveBarcode}
+        onConfirmPackScan={(params) => onConfirmPackScan(activeSession.batchId, params)}
+        onReportException={(params) => onReportPackException(activeSession.batchId, params)}
+        onPrintLabel={onPrintLabel}
+        onPackComplete={() => onPackComplete(activeSession.batchId)}
       />
     );
   }
@@ -281,7 +375,9 @@ export default function WmsModuleFT2({
           key={batch.pick_batch_id}
           batch={batch}
           onClaim={(id) => void enterPickSession(id, true)}
-          onContinue={(id) => void enterPickSession(id, false)}
+          onContinuePick={(id) => void enterPickSession(id, false)}
+          onClaimPack={(id) => void enterPackSession(id, true)}
+          onContinuePack={(id) => void enterPackSession(id, false)}
         />
       ))}
     </Box>

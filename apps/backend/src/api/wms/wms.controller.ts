@@ -4,6 +4,7 @@ import db from '@lasyncro/backend-core/db.js';
 import { releaseBatch } from '../../services/wms/pickBatch.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { confirmPickScan } from '../../services/wms/pickScan.service.js';
+import { confirmPackScan } from '../../services/wms/packScan.service.js';
 
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
@@ -352,6 +353,233 @@ export const httpCompletePick = async (req: Request, res: Response) => {
 
     console.error('[WMS_PICK_COMPLETE_FAILED]', { shopId, userId, batchId, error: message });
     return res.status(500).json({ error: `Pick complete failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/batch/:batchId/pack/claim
+// ─────────────────────────────────────────
+export const httpClaimPack = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { batchId } = req.params;
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const batch = await trx('pick_batches')
+        .where({ pick_batch_id: batchId, shop_id: shopId })
+        .select('status', 'packed_by')
+        .first();
+
+      if (!batch) throw new Error('BATCH_NOT_FOUND');
+      if (batch.status !== 'pick_complete') throw new Error(`BATCH_NOT_CLAIMABLE:${batch.status}`);
+      if (batch.packed_by !== null) throw new Error('BATCH_ALREADY_CLAIMED');
+
+      const now = new Date();
+
+      await trx('pick_batches')
+        .where({ pick_batch_id: batchId })
+        .update({
+          status: 'packing',
+          packed_by: userId,
+          pack_claimed_at: now,
+          pack_last_activity_at: now,
+          updated_at: now,
+        });
+
+      // Transition all orders in batch → packing
+      const batchOrders = await trx('pick_batch_orders')
+        .where({ pick_batch_id: batchId })
+        .select('lasyncro_order_id');
+
+      for (const order of batchOrders) {
+        await trx('order_warehouse_status')
+          .where({ lasyncro_order_id: order.lasyncro_order_id })
+          .update({
+            status: 'packing',
+            status_updated_at: now,
+            updated_at: now,
+          });
+      }
+
+      console.info('[WMS_PACK_CLAIMED]', { pick_batch_id: batchId, packed_by: userId, shopId });
+    });
+
+    return res.status(200).json({ pick_batch_id: batchId, status: 'packing' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message === 'BATCH_NOT_FOUND') return res.status(404).json({ error: 'Batch not found' });
+    if (message === 'BATCH_ALREADY_CLAIMED') return res.status(409).json({ error: 'Batch already claimed by another packer' });
+    if (message.startsWith('BATCH_NOT_CLAIMABLE')) return res.status(409).json({ error: `Batch is not in pick_complete status: ${message.split(':')[1]}` });
+    console.error('[WMS_PACK_CLAIM_FAILED]', { shopId, userId, batchId, error: message });
+    return res.status(500).json({ error: `Pack claim failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/batch/:batchId/orders
+// ─────────────────────────────────────────
+export const httpGetBatchOrders = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { batchId } = req.params;
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+
+  try {
+    const orders = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Get all orders in batch with their external order id for invoice
+      const batchOrders = await trx('pick_batch_orders as pbo')
+        .join('orders as o', 'o.lasyncro_order_id', 'pbo.lasyncro_order_id')
+        .join('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .leftJoin('order_warehouse_status as ows', 'ows.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where('pbo.pick_batch_id', batchId)
+        .select(
+          'o.lasyncro_order_id',
+          'eoim.external_order_id',
+          'o.total_price',
+          'o.currency',
+          'ows.status as warehouse_status',
+        );
+
+      // Get line items per order
+      const orderIds = batchOrders.map((o: any) => o.lasyncro_order_id);
+      const lineItems = await trx('order_line_items as oli')
+        .leftJoin('pack_scan_log as psl', (join) => {
+          join
+            .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
+            .andOnVal('psl.status', 'confirmed');
+        })
+        .whereIn('oli.lasyncro_order_id', orderIds)
+        .select(
+          'oli.lasyncro_line_item_id',
+          'oli.lasyncro_order_id',
+          'oli.lasyncro_variant_id',
+          'oli.sku',
+          'oli.title',
+          'oli.quantity',
+          trx.raw('CASE WHEN psl.scan_id IS NOT NULL THEN true ELSE false END as pack_scanned')
+        );
+
+      // Group line items by order
+      return batchOrders.map((order: any) => ({
+        ...order,
+        line_items: lineItems.filter((li: any) => li.lasyncro_order_id === order.lasyncro_order_id),
+      }));
+    });
+
+    return res.status(200).json({ orders });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_BATCH_ORDERS_FAILED]', { shopId, batchId, error: message });
+    return res.status(500).json({ error: `Failed to fetch batch orders: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/pack/scan
+// ─────────────────────────────────────────
+export const httpConfirmPackScan = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const {
+    pick_batch_id,
+    lasyncro_order_id,
+    lasyncro_line_item_id,
+    lasyncro_variant_id,
+    quantity_confirmed,
+  } = req.body;
+
+  if (
+    !pick_batch_id ||
+    !lasyncro_order_id ||
+    !lasyncro_line_item_id ||
+    !lasyncro_variant_id ||
+    typeof quantity_confirmed !== 'number' ||
+    quantity_confirmed <= 0
+  ) {
+    return res.status(400).json({ error: 'Missing or invalid required fields' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return confirmPackScan(trx, {
+        pickBatchId: pick_batch_id,
+        lasyncroOrderId: lasyncro_order_id,
+        lasyncroLineItemId: lasyncro_line_item_id,
+        lasyncroVariantId: lasyncro_variant_id,
+        quantityConfirmed: quantity_confirmed,
+        scannedBy: userId,
+        shopId,
+      });
+    });
+
+    return res.status(201).json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_PACK_SCAN_FAILED]', { shopId, userId, error: message });
+    return res.status(500).json({ error: `Pack scan failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/batch/:batchId/pack-complete
+// ─────────────────────────────────────────
+export const httpCompletePack = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { batchId } = req.params;
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const batch = await trx('pick_batches')
+        .where({ pick_batch_id: batchId, shop_id: shopId })
+        .select('status', 'packed_by', 'total_units')
+        .first();
+
+      if (!batch) throw new Error('BATCH_NOT_FOUND');
+      if (batch.status !== 'packing') throw new Error(`BATCH_NOT_IN_PACKING:${batch.status}`);
+      if (batch.packed_by !== userId) throw new Error('BATCH_NOT_OWNED_BY_PACKER');
+
+      const now = new Date();
+
+      await trx('pick_batches')
+        .where({ pick_batch_id: batchId })
+        .update({
+          status: 'pack_complete',
+          pack_completed_at: now,
+          updated_at: now,
+        });
+
+      console.info('[WMS_PACK_COMPLETED]', { pick_batch_id: batchId, packed_by: userId, shopId });
+    });
+
+    return res.status(200).json({ pick_batch_id: batchId, status: 'pack_complete' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message === 'BATCH_NOT_FOUND') return res.status(404).json({ error: 'Batch not found' });
+    if (message === 'BATCH_NOT_OWNED_BY_PACKER') return res.status(403).json({ error: 'Batch not owned by this packer' });
+    if (message.startsWith('BATCH_NOT_IN_PACKING')) return res.status(409).json({ error: `Batch is not in packing status: ${message.split(':')[1]}` });
+    console.error('[WMS_PACK_COMPLETE_FAILED]', { shopId, userId, batchId, error: message });
+    return res.status(500).json({ error: `Pack complete failed: ${message}` });
   }
 };
 
