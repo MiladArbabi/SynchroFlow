@@ -93,6 +93,10 @@ export default defineConfig({
         __dirname,
         '../../modules/wms/src/ui/index.ts'
       ),
+      '@lasyncro/sku-gaps': path.resolve(
+        __dirname,
+        '../../modules/sku-gaps/src/ui/index.ts'
+      ),
     }
   },
 });

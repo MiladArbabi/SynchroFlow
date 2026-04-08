@@ -780,3 +780,106 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     return res.status(500).json({ error: `Pick scan failed: ${message}` });
   }
 };
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/sku-gaps
+// ─────────────────────────────────────────
+export const httpGetSkuGaps = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const exceptions = await trx('pick_exceptions as pe')
+        .leftJoin('order_line_items as oli', 'oli.lasyncro_line_item_id', 'pe.lasyncro_line_item_id')
+        .where('pe.shop_id', shopId)
+        .orderBy('pe.raised_at', 'desc')
+        .select(
+          'pe.pick_exception_id',
+          'pe.pick_batch_id',
+          'pe.lasyncro_line_item_id',
+          'pe.lasyncro_variant_id',
+          'pe.exception_type',
+          'pe.stage',
+          'pe.quantity_required',
+          'pe.quantity_found',
+          'pe.raised_by',
+          'pe.raised_at',
+          'pe.resolved',
+          'pe.resolved_by',
+          'pe.resolved_at',
+          'pe.resolution_note',
+          'oli.title as variant_title',
+          'oli.sku',
+          trx.raw(`upper(substring(pe.pick_batch_id::text, 1, 8)) as batch_short_id`)
+        );
+
+      const totalUnresolved = exceptions.filter((e: any) => !e.resolved).length;
+
+      return { exceptions, total_unresolved: totalUnresolved };
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_SKU_GAPS_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Failed to fetch SKU gaps: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/sku-gaps/:exceptionId/resolve
+// ─────────────────────────────────────────
+export const httpResolveException = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { exceptionId } = req.params;
+  const { resolution_note } = req.body;
+
+  if (!exceptionId) return res.status(400).json({ error: 'exceptionId is required' });
+  if (!resolution_note || typeof resolution_note !== 'string' || !resolution_note.trim()) {
+    return res.status(400).json({ error: 'resolution_note is required' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const exception = await trx('pick_exceptions')
+        .where({ pick_exception_id: exceptionId, shop_id: shopId })
+        .select('resolved')
+        .first();
+
+      if (!exception) throw new Error('EXCEPTION_NOT_FOUND');
+      if (exception.resolved) throw new Error('EXCEPTION_ALREADY_RESOLVED');
+
+      await trx('pick_exceptions')
+        .where({ pick_exception_id: exceptionId })
+        .update({
+          resolved: true,
+          resolved_by: userId,
+          resolved_at: new Date(),
+          resolution_note: resolution_note.trim(),
+          updated_at: new Date(),
+        });
+
+      console.info('[WMS_EXCEPTION_RESOLVED]', {
+        pick_exception_id: exceptionId,
+        resolved_by: userId,
+        shopId,
+      });
+    });
+
+    return res.status(200).json({ pick_exception_id: exceptionId, resolved: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message === 'EXCEPTION_NOT_FOUND') return res.status(404).json({ error: 'Exception not found' });
+    if (message === 'EXCEPTION_ALREADY_RESOLVED') return res.status(409).json({ error: 'Exception already resolved' });
+    console.error('[WMS_EXCEPTION_RESOLVE_FAILED]', { shopId, userId, exceptionId, error: message });
+    return res.status(500).json({ error: `Failed to resolve exception: ${message}` });
+  }
+};

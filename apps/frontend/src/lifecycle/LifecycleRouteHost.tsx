@@ -42,6 +42,7 @@ import CashFlowPage from 'pages/ft2-pages/CashFlowPage';
 import DemandPage from 'pages/ft2-pages/DemandPage';
 
 import WmsPage from 'pages/ft2-pages/WmsPage';
+import SkuGapsPage from 'pages/ft2-pages/SkuGapsPage';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 
@@ -237,6 +238,9 @@ export function LifecycleRouteHost() {
 
       {/* WMS */}
       <Route path="/wms/*" element={<WmsPage />} />
+
+      {/* SKU-GAPS */}
+      <Route path="/sku-gaps/*" element={<SkuGapsPage />} />
     </Routes>
   );
 }

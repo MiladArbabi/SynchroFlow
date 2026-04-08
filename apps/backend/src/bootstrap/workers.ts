@@ -247,6 +247,23 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
+
+  // start WMS idle alert worker
+  try {
+    const wmsIdleAlert = await import('../workers/wms.idle.alert.worker.js');
+    if (typeof wmsIdleAlert.startWmsIdleAlertWorker === 'function') {
+      await Promise.resolve(wmsIdleAlert.startWmsIdleAlertWorker());
+      if (typeof wmsIdleAlert.stopWmsIdleAlertWorker === 'function') {
+        workerStopFns.push(async () => wmsIdleAlert.stopWmsIdleAlertWorker());
+      }
+      console.log('[bootstrap/workers] WMS idle alert worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] WMS idle alert worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
 }
 
 export async function stopWorkers(): Promise<void> {

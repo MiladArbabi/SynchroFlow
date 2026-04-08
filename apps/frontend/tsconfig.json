@@ -40,6 +40,7 @@
       "@lasyncro/cashflow": ["../../../modules/cashflow/src/ui/index.ts"],
       "@lasyncro/fulfillment": ["../../../modules/fulfillment/src/ui/index.ts"],
       "@lasyncro/wms": ["../../../modules/wms/src/ui/index.ts"],
+      "@lasyncro/sku-gaps": ["../../../modules/sku-gaps/src/ui/index.ts"],
       "@lasyncro/returns": ["../../../modules/returns/src/ui/index.ts"],
       "@lasyncro/demand": ["../../../modules/demand/src/ui/index.ts"]
     }

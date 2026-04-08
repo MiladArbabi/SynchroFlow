@@ -16,8 +16,9 @@ import {
   httpGetBatchOrders,
   httpConfirmPackScan,
   httpCompletePack,
+  httpGetSkuGaps,
+  httpResolveException,
 } from './wms.controller.js';
-
 /**
  * WMS ROUTES (WM-03)
  * -------------------
@@ -86,6 +87,14 @@ router.get(
   httpGetBatchOrders
 );
 
+router.get(
+  '/sku-gaps',
+  authenticateToken,
+  requireFt2,
+  requireRole(['owner', 'admin']),
+  httpGetSkuGaps
+);
+
 router.post(
   '/pack/scan',
   authenticateToken,
@@ -124,6 +133,14 @@ router.post(
   requireFt2,
   requireRole(['operator', 'owner', 'admin']),
   httpConfirmPickScan
+);
+
+router.post(
+  '/sku-gaps/:exceptionId/resolve',
+  authenticateToken,
+  requireFt2,
+  requireRole(['owner', 'admin']),
+  httpResolveException
 );
 
 export default router;
