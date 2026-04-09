@@ -88,6 +88,7 @@ export interface PackSessionPageProps {
   }) => Promise<void>;
   onPrintLabel: (orderId: string) => Promise<void>;
   onPackComplete: () => Promise<void>;
+  onConfirmShipment: (orderId: string, partial?: boolean) => Promise<void>;
 }
 
 type ScanState = 'scanning' | 'wrong_item' | 'accepted' | 'processing';
@@ -101,6 +102,7 @@ export default function PackSessionPage({
   onReportException,
   onPrintLabel,
   onPackComplete,
+  onConfirmShipment
 }: PackSessionPageProps) {
   const theme = useTheme();
   const [currentOrderIndex, setCurrentOrderIndex] = useState(0);
@@ -214,6 +216,16 @@ export default function PackSessionPage({
     }
   }, [currentOrder, onPrintLabel, advanceToNextOrder]);
 
+  const handleShipAndAdvance = useCallback(async (partial = false) => {
+    try {
+      await onConfirmShipment(currentOrder.lasyncro_order_id, partial);
+    } catch {
+      console.error('[PACK_SESSION] Ship confirmation failed');
+    } finally {
+      advanceToNextOrder();
+    }
+  }, [currentOrder, onConfirmShipment, advanceToNextOrder]);
+
   if (!currentOrder) return null;
 
   // Order complete — show print prompt
@@ -249,12 +261,34 @@ export default function PackSessionPage({
           </Button>
 
           <Button
+            variant="contained"
+            color="success"
+            fullWidth
+            size="large"
+            onClick={() => void handleShipAndAdvance(false)}
+            sx={{ borderRadius: 2, fontWeight: 700, mb: 1.5 }}
+          >
+            Confirm Shipped
+          </Button>
+
+          <Button
+            variant="outlined"
+            color="warning"
+            fullWidth
+            size="small"
+            onClick={() => void handleShipAndAdvance(true)}
+            sx={{ borderRadius: 2, mb: 1 }}
+          >
+            Partial Shipment
+          </Button>
+
+          <Button
             variant="text"
             fullWidth
             onClick={advanceToNextOrder}
             sx={{ color: 'text.secondary' }}
           >
-            Skip Print
+            Skip
           </Button>
         </Paper>
       </Box>

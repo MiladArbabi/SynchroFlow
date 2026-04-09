@@ -75,6 +75,7 @@ export type WmsModuleFT2Props = {
   onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
   onPrintLabel: (orderId: string) => Promise<void>;
   onPackComplete: (batchId: string) => Promise<void>;
+  onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
   onRefresh: () => void;
 };
 
@@ -254,6 +255,7 @@ export default function WmsModuleFT2({
   onReportPackException,
   onPrintLabel,
   onPackComplete,
+  onConfirmShipment,
   onRefresh,
 }: WmsModuleFT2Props) {
   const [activeSession, setActiveSession] = useState<ActiveSession>(null);
@@ -321,6 +323,7 @@ export default function WmsModuleFT2({
         onConfirmPackScan={(params) => onConfirmPackScan(activeSession.batchId, params)}
         onReportException={(params) => onReportPackException(activeSession.batchId, params)}
         onPrintLabel={onPrintLabel}
+        onConfirmShipment={(orderId, partial) => onConfirmShipment(activeSession.batchId, orderId, partial)}
         onPackComplete={() => onPackComplete(activeSession.batchId)}
       />
     );

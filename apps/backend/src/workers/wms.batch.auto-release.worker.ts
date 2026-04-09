@@ -32,6 +32,10 @@ export async function startWmsBatchAutoReleaseWorker() {
 
   console.info('[wms-auto-release-worker] started');
 
+  // Wait one full interval before first cycle — prevents immediate
+  // release on server boot. Operators should trigger manually first.
+  await sleep(POLL_INTERVAL_MS);
+
   while (running) {
     try {
       await runAutoReleaseCycle();

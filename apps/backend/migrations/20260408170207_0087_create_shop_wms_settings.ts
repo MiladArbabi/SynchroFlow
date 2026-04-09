@@ -40,7 +40,7 @@ export async function up(knex: Knex): Promise<void> {
     table
       .boolean('auto_release_enabled')
       .notNullable()
-      .defaultTo(true);
+      .defaultTo(false);
 
     /**
      * How often the auto-release worker checks the order pool.

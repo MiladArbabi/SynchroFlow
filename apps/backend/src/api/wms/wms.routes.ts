@@ -18,6 +18,11 @@ import {
   httpCompletePack,
   httpGetSkuGaps,
   httpResolveException,
+  httpConfirmShipment,
+  httpGetStowTasks,
+  httpClaimStowTask,
+  httpConfirmStow,
+  httpCreateStowTask,
 } from './wms.controller.js';
 /**
  * WMS ROUTES (WM-03)
@@ -95,6 +100,14 @@ router.get(
   httpGetSkuGaps
 );
 
+router.get(
+  '/stow-tasks',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpGetStowTasks
+);
+
 router.post(
   '/pack/scan',
   authenticateToken,
@@ -141,6 +154,38 @@ router.post(
   requireFt2,
   requireRole(['owner', 'admin']),
   httpResolveException
+);
+
+router.post(
+  '/batch/:batchId/ship',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpConfirmShipment
+);
+
+router.post(
+  '/stow-tasks',
+  authenticateToken,
+  requireFt2,
+  requireRole(['owner', 'admin']),
+  httpCreateStowTask
+);
+
+router.post(
+  '/stow-tasks/:taskId/claim',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpClaimStowTask
+);
+
+router.post(
+  '/stow-tasks/:taskId/confirm',
+  authenticateToken,
+  requireFt2,
+  requireRole(['operator', 'owner', 'admin']),
+  httpConfirmStow
 );
 
 export default router;

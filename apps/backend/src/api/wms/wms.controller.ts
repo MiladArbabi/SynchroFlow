@@ -5,6 +5,8 @@ import { releaseBatch } from '../../services/wms/pickBatch.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { confirmPickScan } from '../../services/wms/pickScan.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
+import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
+import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
 
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
@@ -580,6 +582,203 @@ export const httpCompletePack = async (req: Request, res: Response) => {
     if (message.startsWith('BATCH_NOT_IN_PACKING')) return res.status(409).json({ error: `Batch is not in packing status: ${message.split(':')[1]}` });
     console.error('[WMS_PACK_COMPLETE_FAILED]', { shopId, userId, batchId, error: message });
     return res.status(500).json({ error: `Pack complete failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/batch/:batchId/ship
+// ─────────────────────────────────────────
+export const httpConfirmShipment = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { batchId } = req.params;
+  const { lasyncro_order_id, partial_shipment } = req.body;
+
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+  if (!lasyncro_order_id) return res.status(400).json({ error: 'lasyncro_order_id is required' });
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+      // Verify order belongs to this batch
+      const batchOrder = await trx('pick_batch_orders')
+        .where({
+          pick_batch_id: batchId,
+          lasyncro_order_id,
+        })
+        .first();
+
+      if (!batchOrder) {
+        throw new Error('ORDER_NOT_IN_BATCH');
+      }
+
+      await confirmShipment(trx, {
+        lasyncroOrderId: lasyncro_order_id,
+        shopId,
+        partialShipment: partial_shipment === true,
+        shippedAt: new Date(),
+      });
+
+      console.info('[WMS_SHIPMENT_CONFIRMED]', {
+        batchId,
+        lasyncro_order_id,
+        shopId,
+        confirmedBy: userId,
+        partial_shipment,
+      });
+    });
+
+    return res.status(200).json({
+      lasyncro_order_id,
+      status: partial_shipment ? 'partially_shipped' : 'shipped',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message === 'ORDER_NOT_IN_BATCH') {
+      return res.status(404).json({ error: 'Order not found in this batch' });
+    }
+    console.error('[WMS_SHIPMENT_CONFIRM_FAILED]', { shopId, userId, batchId, error: message });
+    return res.status(500).json({ error: `Shipment confirmation failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/stow-tasks
+// ─────────────────────────────────────────
+export const httpGetStowTasks = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const tasks = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return trx('stow_tasks as st')
+        .leftJoin('variants as v', 'v.lasyncro_variant_id', 'st.lasyncro_variant_id')
+        .where('st.shop_id', shopId)
+        .whereIn('st.status', ['pending', 'in_progress'])
+        .orderBy('st.created_at', 'asc')
+        .select(
+          'st.stow_task_id',
+          'st.lasyncro_variant_id',
+          'st.quantity',
+          'st.location_code',
+          'st.status',
+          'st.trigger',
+          'st.pick_batch_id',
+          'st.claimed_by',
+          'st.claimed_at',
+          'st.created_at',
+          'v.title as variant_title',
+          'v.sku',
+        );
+    });
+
+    return res.status(200).json({ stow_tasks: tasks });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_STOW_TASKS_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Failed to fetch stow tasks: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/stow-tasks
+// ─────────────────────────────────────────
+export const httpCreateStowTask = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { lasyncro_variant_id, quantity, location_code } = req.body;
+
+  if (!lasyncro_variant_id || typeof quantity !== 'number' || quantity <= 0 || !location_code) {
+    return res.status(400).json({ error: 'Missing or invalid required fields' });
+  }
+
+  try {
+    const stowTaskId = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return createStowTask(trx, {
+        shopId,
+        lasyncroVariantId: lasyncro_variant_id,
+        quantity,
+        locationCode: location_code,
+        trigger: 'inbound_stock',
+      });
+    });
+
+    return res.status(201).json({ stow_task_id: stowTaskId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_STOW_TASK_CREATE_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Failed to create stow task: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/stow-tasks/:taskId/claim
+// ─────────────────────────────────────────
+export const httpClaimStowTask = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const taskId = String(req.params.taskId);
+  if (!taskId) return res.status(400).json({ error: 'taskId is required' });
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await claimStowTask(trx, taskId, shopId, userId);
+    });
+
+    return res.status(200).json({ stow_task_id: taskId, status: 'in_progress' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
+    if (message.includes('already claimed')) return res.status(409).json({ error: 'Stow task already claimed' });
+    if (message.includes('not claimable')) return res.status(409).json({ error: `Stow task not claimable: ${message}` });
+    console.error('[WMS_STOW_CLAIM_FAILED]', { shopId, userId, taskId, error: message });
+    return res.status(500).json({ error: `Stow claim failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/stow-tasks/:taskId/confirm
+// ─────────────────────────────────────────
+export const httpConfirmStow = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const taskId = String(req.params.taskId);
+  if (!taskId) return res.status(400).json({ error: 'taskId is required' });
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      await confirmStow(trx, {
+        stowTaskId: taskId,
+        shopId,
+        claimedBy: userId,
+      });
+    });
+
+    return res.status(200).json({ stow_task_id: taskId, status: 'completed' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
+    if (message.includes('not in progress')) return res.status(409).json({ error: 'Stow task not in progress' });
+    if (message.includes('different operator')) return res.status(403).json({ error: 'Stow task owned by different operator' });
+    console.error('[WMS_STOW_CONFIRM_FAILED]', { shopId, userId, taskId, error: message });
+    return res.status(500).json({ error: `Stow confirmation failed: ${message}` });
   }
 };
 

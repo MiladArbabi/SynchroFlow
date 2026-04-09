@@ -109,6 +109,17 @@ export default function WmsPage() {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pack-complete`);
   }, []);
 
+  const handleConfirmShipment = useCallback(async (
+    batchId: string,
+    orderId: string,
+    partial = false
+  ) => {
+    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/ship`, {
+      lasyncro_order_id: orderId,
+      partial_shipment: partial,
+    });
+  }, []);
+
   return (
     <WmsModuleFT2
       data={data ?? null}
@@ -126,6 +137,7 @@ export default function WmsPage() {
       onReportPackException={handleReportPackException}
       onPrintLabel={handlePrintLabel}
       onPackComplete={handlePackComplete}
+      onConfirmShipment={handleConfirmShipment}
       onRefresh={refetch}
     />
   );
