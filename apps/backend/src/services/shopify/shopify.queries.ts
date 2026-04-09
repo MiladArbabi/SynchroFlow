@@ -25,6 +25,7 @@ query {
             node {
               id
               sku
+              barcode
               title
               price
               compareAtPrice

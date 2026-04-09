@@ -103,6 +103,7 @@ export async function syncProducts(
           external_variant_id: variant.id,
           external_inventory_item_id: variant.inventoryItem?.id || null,
           external_sku: variant.sku || null,
+          barcode: variant.barcode || null,
         })
         .onConflict([
           'shop_id',
@@ -110,15 +111,20 @@ export async function syncProducts(
           'external_product_id',
           'external_variant_id',
         ])
-        .ignore()
-        .then((res) => {
-          if (!res || res.length === 0) {
-            console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
-              entity: 'external_product_identity_map',
-              conflictKey: ['shop_id', 'platform', 'external_product_id', 'external_variant_id']
-            });
-          }
-          return res;
+        .merge({
+          /**
+           * RESYNC UPDATE POLICY
+           * --------------------
+           * These fields may change in Shopify after initial sync:
+           * - barcode: merchant adds/updates barcode on variant
+           * - external_sku: merchant updates SKU
+           * - external_inventory_item_id: platform internal update
+           *
+           * lasyncro_variant_id is NOT merged — it is immutable once assigned.
+           */
+          barcode: variant.barcode || null,
+          external_sku: variant.sku || null,
+          external_inventory_item_id: variant.inventoryItem?.id || null,
         });
     }
   }
