@@ -2,6 +2,7 @@
 import { Knex } from 'knex';
 import orderFulfillmentIngestionService
   from '../order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
+import { writeShopifyFulfillment } from './shopifyFulfillmentWriteback.service.js';
 
 /**
  * SHIP CONFIRMATION SERVICE
@@ -107,6 +108,18 @@ export async function confirmShipment(
     },
     trx
   );
+
+  // 6. Shopify fulfillment writeback (WM-20)
+  // Non-fatal: internal state is already committed. Log and continue on failure.
+  try {
+    await writeShopifyFulfillment(trx, { lasyncroOrderId, shopId });
+  } catch (err) {
+    console.error('[SHIP_CONFIRMATION_WRITEBACK_FAILED]', {
+      lasyncroOrderId,
+      shopId,
+      error: (err as Error).message,
+    });
+  }
 
   console.info('[SHIP_CONFIRMATION_COMPLETE]', {
     lasyncroOrderId,

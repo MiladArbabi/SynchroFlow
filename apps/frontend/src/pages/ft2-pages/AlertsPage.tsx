@@ -1,9 +1,9 @@
 // apps/frontend/src/pages/ft2-pages/AlertsPage.tsx
-
 import { Box, Typography, Chip, IconButton, Divider, CircularProgress, Alert as MuiAlert } from '@mui/material';
-import { X, AlertTriangle, AlertCircle, Info } from 'lucide-react';
+import { X, AlertTriangle, AlertCircle, Info, ArrowRight } from 'lucide-react';
 import { useAlerts, useDismissAlert, type Alert } from '../alerts/useAlerts';
 import { useTheme } from '@mui/material/styles';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * ALERTS INBOX PAGE (AL-04)
@@ -33,6 +33,18 @@ function SeverityIcon({ severity }: { severity: Alert['severity'] }) {
 
 function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string) => void }) {
   const theme = useTheme();
+  const navigate = useNavigate();
+
+  const ALERT_TYPE_ROUTES: Record<string, string> = {
+    wms_pick_exception: '/sku-gaps',
+    wms_pack_exception: '/sku-gaps',
+    wms_stow_pending: '/wms',
+    wms_batch_ready_to_pack: '/wms',
+    wms_batch_ready_to_ship: '/wms',
+    wms_operator_idle: '/wms',
+  };
+
+  const deepLinkRoute = ALERT_TYPE_ROUTES[alert.alert_type];
 
   const borderColor =
     alert.severity === 'critical'
@@ -81,6 +93,28 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
         <Typography variant="caption" color="text.secondary">
           {alert.message}
         </Typography>
+
+        {/* DEEP LINK */}
+        {deepLinkRoute && (
+          <Box sx={{ mt: 1 }}>
+            <Typography
+              variant="caption"
+              color="primary"
+              sx={{
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                fontWeight: 600,
+                '&:hover': { textDecoration: 'underline' },
+              }}
+              onClick={() => navigate(deepLinkRoute)}
+            >
+              Go to {deepLinkRoute === '/sku-gaps' ? 'SKU Gaps' : 'Warehouse'}
+              <ArrowRight size={12} />
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       {/* DISMISS */}

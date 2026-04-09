@@ -334,7 +334,7 @@ export const refreshToken = async (req: Request, res: Response) => {
           shopId: shopContext.shopId,
           actorType: 'shop_user',
           authProvider: 'password',
-          shopRoles: [],
+          shopRoles: [shopContext.role],
           scopes: [],
           tokenVersion: token_version ?? 1,
         });
@@ -423,20 +423,26 @@ export const getDevToken = async (req: Request, res: Response) => {
   }
 
   try {
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      return res.status(500).json({ error: 'JWT_SECRET not configured' });
-    }
-
-    // Create a token for a default user (user ID 1)
-    const token = jwt.sign({ userId: 1 }, jwtSecret, { expiresIn: '24h' });
-    
-    res.json({ 
-      token,
-      message: 'Dev token generated for user ID 1. Use in Authorization header as: Bearer <token>'
+    // Dev token: resolve real shop context for user 1 so shop_roles claim is present.
+    // Without shop_roles, requireRole middleware returns 401 on all WMS routes.
+    const shopContext = await requireShopContextForUser(1);
+    const { accessToken } = await issueAuthTokens({
+      userId: 1,
+      shopId: shopContext.shopId,
+      actorType: 'shop_user',
+      authProvider: 'password',
+      shopRoles: [shopContext.role],
+      scopes: [],
+      tokenVersion: 1,
+    });
+    res.json({
+      token: accessToken,
+      shopId: shopContext.shopId,
+      role: shopContext.role,
+      message: 'Dev token for user 1. Use as: Authorization: Bearer <token>',
     });
   } catch (error) {
-    console.error('[AuthController] Error generating dev token:', error);
-    res.status(500).json({ error: 'Failed to generate token' });
+    console.error('[AuthController] getDevToken failed:', error);
+    res.status(500).json({ error: 'Failed to generate dev token' });
   }
 };

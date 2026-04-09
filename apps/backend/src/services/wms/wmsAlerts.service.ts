@@ -97,7 +97,7 @@ export async function firePickExceptionAlert(
   await upsertWmsAlert(trx, {
     shopId,
     alertKey: `wms:exception:${stage}:${batchId}`,
-    alertType: 'wms_pick_exception',
+    alertType: stage === 'pick' ? 'wms_pick_exception' : 'wms_pack_exception',
     severity: 'warning',
     title: `${stageLabel} exception — ${typeLabel}`,
     message: `${stageLabel} exception reported on batch ${batchShort}${variantTitle ? ` for ${variantTitle}` : ''}. Review in SKU Gaps.`,

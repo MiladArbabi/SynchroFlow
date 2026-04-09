@@ -111,6 +111,14 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('packed_at', { useTz: true }).nullable();
     table.timestamp('picked_at', { useTz: true }).nullable();
 
+    /**
+     * SHOPIFY FULFILLMENT WRITEBACK (WM-20)
+     * --------------------------------------
+     * Populated by shipConfirmation.service.ts after successful
+     * fulfillmentCreate mutation. Nullable for pre-WM-20 shipped rows.
+     */
+    table.string('shopify_fulfillment_id').nullable().defaultTo(null);
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
