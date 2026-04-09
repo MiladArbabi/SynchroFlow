@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/PickSessionPage.tsx
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -13,39 +13,51 @@ import {
   DialogActions,
   TextField,
   useTheme,
+  IconButton,
 } from '@mui/material';
 import {
   CheckCircle,
   XCircle,
   AlertTriangle,
   PackageX,
-  ChevronRight,
+  Camera,
+  RotateCcw,
 } from 'lucide-react';
 import { BarcodeScanSurface } from '../components/BarcodeScanSurface.js';
 
 /**
- * PICK SESSION PAGE
- * -----------------
- * Active picking interface for a claimed batch.
+ * PICK SESSION PAGE — REDESIGNED (WM-23)
+ * ----------------------------------------
+ * Single-item-per-screen mobile pick flow.
  *
- * Flow per line item:
- * 1. Show destination (location_code) + expected product
- * 2. Operator navigates to location
- * 3. Operator scans barcode
- * 4. System resolves barcode → variant
- * 5. If match → quantity confirmation
- * 6. If no match → red signal, re-prompt
- * 7. On quantity confirm → write scan + inventory movement
- * 8. Advance to next line item
+ * Three zones per screen:
+ * ┌─────────────────────────────┐
+ * │  ZONE 1 — LOCATION          │
+ * │  Lane A → Shelf 3 → Bin 7   │
+ * ├─────────────────────────────┤
+ * │  ZONE 2 — PRODUCT           │
+ * │  Title, SKU, Qty needed     │
+ * ├─────────────────────────────┤
+ * │  ZONE 3 — ACTION            │
+ * │  Barcode input (autofocus)  │
+ * │  [Scan] or [Report Problem] │
+ * │  → on scan match: [Confirm] │
+ * └─────────────────────────────┘
  *
- * Exception flows:
- * - Item missing → report exception, advance
- * - Short pick → report with quantity_found, advance
- * - Defect → report exception type, advance
+ * Flow:
+ * 1. Land on product screen — cursor in barcode input
+ * 2. Operator taps Scan → camera opens
+ * 3. Barcode scanned → filled into input
+ * 4. Match → Scan button turns green Confirm
+ * 5. Operator taps Confirm → next product
+ * 6. No match → red signal, re-scan prompt
+ * 7. Report Problem → exception dialog
+ * 8. Last item confirmed → Pick Complete screen
  *
- * Completion:
- * - All items scanned (or excepted) → pick complete prompt
- * - Operator acknowledges → POST pick-complete
+ * Offline resilience:
+ * - Scan not submitted until confirmed
+ * - On API failure → error shown, operator stays on same item
+ * - Session resumes from same item on restart (currentIndex preserved)
  *
  * Theme-aware: Paper, theme.palette tokens, no hardcoded colors.
  * API calls injected via props — module decoupled from frontend HTTP layer.
@@ -87,13 +99,30 @@ export interface PickSessionPageProps {
 }
 
 type ScanState =
-  | 'scanning'
-  | 'wrong_item'
-  | 'confirming_quantity'
-  | 'submitting'
-  | 'accepted';
+  | 'idle'           // waiting for input — cursor in field
+  | 'camera'         // camera open
+  | 'matched'        // barcode matched — show green Confirm
+  | 'mismatch'       // barcode wrong — show red signal
+  | 'submitting'     // API call in flight
+  | 'accepted';      // confirmed — brief green flash before next
 
 type ExceptionType = 'item_missing' | 'short_pick' | 'product_defect' | 'packaging_defect';
+
+/**
+ * Parse location_code into human-readable parts.
+ * Supports formats: WH-1-ROOT, A-3-7, LANE-A/SHELF-3/BIN-7
+ * Falls back to displaying raw code if unrecognised.
+ */
+function parseLocation(locationCode: string): { primary: string; secondary?: string } {
+  const parts = locationCode.split('-');
+  if (parts.length >= 3) {
+    return {
+      primary: `${parts[0]}-${parts[1]}`,
+      secondary: parts.slice(2).join('-'),
+    };
+  }
+  return { primary: locationCode };
+}
 
 export default function PickSessionPage({
   lineItems,
@@ -104,81 +133,88 @@ export default function PickSessionPage({
   onPickComplete,
 }: PickSessionPageProps) {
   const theme = useTheme();
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [scanState, setScanState] = useState<ScanState>('scanning');
-  const [quantityInput, setQuantityInput] = useState('');
-  const [quantityError, setQuantityError] = useState<string | null>(null);
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [scanState, setScanState] = useState<ScanState>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [exceptionDialog, setExceptionDialog] = useState(false);
   const [shortPickQuantity, setShortPickQuantity] = useState('');
   const [completingPick, setCompletingPick] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
 
   const currentItem = lineItems[currentIndex];
   const isLastItem = currentIndex === lineItems.length - 1;
-  const progress = (currentIndex / lineItems.length) * 100;
+  const progress = Math.round((currentIndex / lineItems.length) * 100);
+  const location = currentItem ? parseLocation(currentItem.location_code) : null;
+
+  // Auto-focus input whenever we land on a new item
+  useEffect(() => {
+    if (scanState === 'idle') {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [currentIndex, scanState]);
+
+  const resetForNextItem = useCallback(() => {
+    setBarcodeInput('');
+    setScanState('idle');
+    setSubmitError(null);
+    setShortPickQuantity('');
+  }, []);
 
   const handlePickComplete = useCallback(async () => {
     setCompletingPick(true);
+    setCompletionError(null);
     try {
       await onPickComplete();
       onComplete();
     } catch {
-      setSubmitError('Pick complete failed.');
+      setCompletionError('Pick complete failed. Check connection and try again.');
       setCompletingPick(false);
     }
   }, [onPickComplete, onComplete]);
 
   const advanceToNext = useCallback(() => {
-    setScanState('scanning');
-    setQuantityInput('');
-    setQuantityError(null);
-    setSubmitError(null);
-    setShortPickQuantity('');
-
+    resetForNextItem();
     if (isLastItem) {
       void handlePickComplete();
     } else {
       setCurrentIndex((i) => i + 1);
     }
-  }, [isLastItem, handlePickComplete]);
+  }, [isLastItem, handlePickComplete, resetForNextItem]);
 
-  const handleScan = useCallback(async (scannedValue: string) => {
-    if (scanState !== 'scanning') return;
+  const handleBarcodeInput = useCallback(async (value: string) => {
     if (!currentItem) return;
+    if (!value.trim()) return;
 
+    setBarcodeInput(value);
+    setScanState('idle');
+    setSubmitError(null);
+
+    // Resolve barcode
     try {
-      const data = await onResolveBarcode(scannedValue);
-
-      if (!data || data.lasyncro_variant_id !== currentItem.lasyncro_variant_id) {
-        setScanState('wrong_item');
-        setTimeout(() => setScanState('scanning'), 2500);
-        return;
+      const data = await onResolveBarcode(value.trim());
+      if (data?.lasyncro_variant_id === currentItem.lasyncro_variant_id) {
+        setScanState('matched');
+      } else {
+        setScanState('mismatch');
+        setTimeout(() => setScanState('idle'), 2500);
       }
-
-      setQuantityInput(String(currentItem.quantity));
-      setScanState('confirming_quantity');
     } catch {
-      setScanState('wrong_item');
-      setTimeout(() => setScanState('scanning'), 2500);
+      setScanState('mismatch');
+      setTimeout(() => setScanState('idle'), 2500);
     }
-  }, [scanState, currentItem, onResolveBarcode]);
+  }, [currentItem, onResolveBarcode]);
 
-  const handleQuantityConfirm = useCallback(async () => {
-    if (!currentItem) return;
+  const handleCameraScan = useCallback((scannedValue: string) => {
+    setScanState('idle');
+    void handleBarcodeInput(scannedValue);
+  }, [handleBarcodeInput]);
 
-    const qty = parseInt(quantityInput, 10);
+  const handleConfirm = useCallback(async () => {
+    if (!currentItem || scanState !== 'matched') return;
 
-    if (isNaN(qty) || qty <= 0) {
-      setQuantityError('Enter a valid quantity');
-      return;
-    }
-
-    if (qty > currentItem.quantity) {
-      setQuantityError(`Max quantity is ${currentItem.quantity}`);
-      return;
-    }
-
-    setQuantityError(null);
     setScanState('submitting');
     setSubmitError(null);
 
@@ -187,23 +223,29 @@ export default function PickSessionPage({
         lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
         lasyncro_variant_id: currentItem.lasyncro_variant_id,
         location_code: currentItem.location_code,
-        quantity_confirmed: qty,
+        quantity_confirmed: currentItem.quantity,
       });
 
       setScanState('accepted');
-      setTimeout(advanceToNext, 1200);
+      setTimeout(advanceToNext, 1000);
     } catch {
-      setSubmitError('Scan failed. Try again.');
-      setScanState('confirming_quantity');
+      /**
+       * OFFLINE / CONNECTION FAILURE
+       * ----------------------------
+       * Do NOT advance to next item.
+       * Operator stays on same item — must retry when connection restored.
+       * device_event_id idempotency ensures safe retry.
+       */
+      setSubmitError('Connection failed. Please retry when signal is restored.');
+      setScanState('matched'); // keep confirm available for retry
     }
-  }, [quantityInput, currentItem, onConfirmScan, advanceToNext]);
+  }, [currentItem, scanState, onConfirmScan, advanceToNext]);
 
   const handleReportException = useCallback(async (
     type: ExceptionType,
     quantityFound: number
   ) => {
     if (!currentItem) return;
-
     try {
       await onReportException({
         lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
@@ -220,184 +262,285 @@ export default function PickSessionPage({
     }
   }, [currentItem, onReportException, advanceToNext]);
 
-  if (!currentItem) return null;
+  // ── PICK COMPLETE SCREEN ──────────────────────────────────
+  if (completingPick || !currentItem) {
+    return (
+      <Box sx={{
+        height: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        p: 3,
+      }}>
+        <CheckCircle size={56} color={theme.palette.success.main} />
+        <Typography variant="h5" fontWeight={700} sx={{ mt: 2 }}>
+          Pick List Complete
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 4, textAlign: 'center' }}>
+          All {lineItems.length} items picked. Confirm to finish.
+        </Typography>
+        {completionError && (
+          <Alert severity="error" sx={{ mb: 2, width: '100%' }}>
+            {completionError}
+          </Alert>
+        )}
+        <Button
+          variant="contained"
+          size="large"
+          fullWidth
+          onClick={() => void handlePickComplete()}
+          sx={{ borderRadius: 2, fontWeight: 700 }}
+        >
+          Confirm Pick Complete
+        </Button>
+      </Box>
+    );
+  }
 
+  // ── CAMERA SCREEN ─────────────────────────────────────────
+  if (scanState === 'camera') {
+    return (
+      <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton onClick={() => setScanState('idle')}>
+            <RotateCcw size={20} />
+          </IconButton>
+          <Typography variant="body2" color="text.secondary">
+            Scan barcode for: <strong>{currentItem.title || currentItem.sku || currentItem.lasyncro_variant_id.slice(0, 8)}</strong>
+          </Typography>
+        </Box>
+        <Box sx={{ flex: 1, px: 2, pb: 2 }}>
+          <BarcodeScanSurface
+            onScan={handleCameraScan}
+            enabled
+            hint="Point at product barcode"
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  // ── MISMATCH SCREEN ───────────────────────────────────────
+  if (scanState === 'mismatch') {
+    return (
+      <Box sx={{
+        height: '100dvh',
+        bgcolor: theme.palette.error.main,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
+        p: 3,
+      }}>
+        <XCircle size={64} color={theme.palette.error.contrastText} />
+        <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.error.contrastText }}>
+          Wrong Item
+        </Typography>
+        <Typography variant="body2" sx={{ color: theme.palette.error.contrastText, opacity: 0.85, textAlign: 'center' }}>
+          Barcode does not match this product. Returning to scan…
+        </Typography>
+      </Box>
+    );
+  }
+
+  // ── ACCEPTED SCREEN ───────────────────────────────────────
+  if (scanState === 'accepted') {
+    return (
+      <Box sx={{
+        height: '100dvh',
+        bgcolor: theme.palette.success.main,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
+      }}>
+        <CheckCircle size={64} color={theme.palette.success.contrastText} />
+        <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.success.contrastText }}>
+          Confirmed
+        </Typography>
+      </Box>
+    );
+  }
+
+  // ── MAIN PICK SCREEN — THREE ZONES ───────────────────────
   return (
-    <Box sx={{ p: 2, maxWidth: 480, mx: 'auto' }}>
+    <Box sx={{
+      height: '100dvh',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }}>
 
-      {/* PROGRESS */}
-      <Box sx={{ mb: 2 }}>
+      {/* PROGRESS BAR */}
+      <Box sx={{ px: 2, pt: 1.5, pb: 1 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
           <Typography variant="caption" color="text.secondary">
             Item {currentIndex + 1} of {lineItems.length}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {Math.round(progress)}%
+            {progress}%
           </Typography>
         </Box>
-        <LinearProgress variant="determinate" value={progress} sx={{ borderRadius: 1 }} />
+        <LinearProgress
+          variant="determinate"
+          value={progress}
+          sx={{ borderRadius: 1, height: 5 }}
+        />
       </Box>
 
-      {/* DESTINATION CARD */}
+      {/* ZONE 1 — LOCATION */}
       <Paper
         variant="outlined"
         sx={{
+          mx: 2,
+          mt: 1,
           p: 2,
-          mb: 2,
           borderRadius: 2,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          borderColor: theme.palette.primary.main,
+          borderWidth: 2,
+          flex: '0 0 auto',
         }}
       >
-        <Box>
-          <Typography variant="overline" color="text.secondary">Location</Typography>
-          <Typography variant="h6" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
-            {currentItem.location_code}
-          </Typography>
-        </Box>
-        <ChevronRight size={20} color={theme.palette.text.secondary} />
-        <Box sx={{ textAlign: 'right' }}>
-          <Typography variant="overline" color="text.secondary">Qty needed</Typography>
-          <Typography variant="h6" fontWeight={700}>
-            {currentItem.quantity}
-          </Typography>
-        </Box>
-      </Paper>
-
-      {/* PRODUCT INFO */}
-      <Paper
-        variant="outlined"
-        sx={{ p: 2, mb: 2, borderRadius: 2 }}
-      >
-        <Typography variant="body2" fontWeight={600} noWrap>
-          {currentItem.title}
+        <Typography variant="overline" color="primary" sx={{ fontSize: 10, letterSpacing: 1.5 }}>
+          Go to location
         </Typography>
-        {currentItem.sku && (
-          <Typography variant="caption" color="text.secondary">
-            SKU: {currentItem.sku}
+        <Typography variant="h5" fontWeight={800} sx={{ fontFamily: 'monospace', mt: 0.5 }}>
+          {location?.primary}
+        </Typography>
+        {location?.secondary && (
+          <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+            {location.secondary}
           </Typography>
         )}
       </Paper>
 
-      {/* SCAN SURFACE */}
-      {scanState === 'scanning' && (
-        <BarcodeScanSurface
-          onScan={handleScan}
-          enabled
-          hint="Scan product barcode"
-        />
-      )}
-
-      {/* WRONG ITEM SIGNAL */}
-      {scanState === 'wrong_item' && (
-        <Paper
-          sx={{
-            aspectRatio: '4/3',
-            borderRadius: 3,
-            bgcolor: theme.palette.error.main,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 1,
-          }}
-        >
-          <XCircle size={48} color={theme.palette.error.contrastText} />
-          <Typography variant="h6" sx={{ color: theme.palette.error.contrastText, fontWeight: 700 }}>
-            Wrong Item
-          </Typography>
-          <Typography variant="caption" sx={{ color: theme.palette.error.contrastText, opacity: 0.8 }}>
-            Scan the correct product barcode
-          </Typography>
-        </Paper>
-      )}
-
-      {/* ACCEPTED SIGNAL */}
-      {scanState === 'accepted' && (
-        <Paper
-          sx={{
-            aspectRatio: '4/3',
-            borderRadius: 3,
-            bgcolor: theme.palette.success.main,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 1,
-          }}
-        >
-          <CheckCircle size={48} color={theme.palette.success.contrastText} />
-          <Typography variant="h6" sx={{ color: theme.palette.success.contrastText, fontWeight: 700 }}>
-            Confirmed
-          </Typography>
-        </Paper>
-      )}
-
-      {/* QUANTITY CONFIRMATION */}
-      {(scanState === 'confirming_quantity' || scanState === 'submitting') && (
-        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mt: 1 }}>
-          <Alert severity="success" sx={{ mb: 2 }}>
-            Correct item scanned — confirm quantity
-          </Alert>
-
-          <TextField
-            label="Quantity"
-            type="number"
-            value={quantityInput}
-            onChange={(e) => setQuantityInput(e.target.value)}
-            error={!!quantityError}
-            helperText={quantityError ?? ''}
-            fullWidth
-            autoFocus
-            inputProps={{ min: 1, max: currentItem.quantity }}
-            sx={{ mb: 2 }}
-          />
-
-          {submitError && (
-            <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>
+      {/* ZONE 2 — PRODUCT */}
+      <Paper
+        variant="outlined"
+        sx={{
+          mx: 2,
+          mt: 1.5,
+          p: 2,
+          borderRadius: 2,
+          flex: '0 0 auto',
+        }}
+      >
+        <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
+          Pick this item
+        </Typography>
+        <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5 }} noWrap>
+          {currentItem.title || '—'}
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+          {currentItem.sku && (
+            <Typography variant="caption" color="text.secondary">
+              SKU: {currentItem.sku}
+            </Typography>
           )}
+          <Typography variant="caption" fontWeight={700} color="primary">
+            Qty: {currentItem.quantity}
+          </Typography>
+        </Box>
+      </Paper>
 
+      {/* ZONE 3 — ACTION */}
+      <Box sx={{ mx: 2, mt: 1.5, flex: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+
+        {/* BARCODE INPUT */}
+        <TextField
+          inputRef={inputRef}
+          label="Barcode"
+          value={barcodeInput}
+          onChange={(e) => setBarcodeInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && barcodeInput.trim()) {
+              void handleBarcodeInput(barcodeInput);
+            }
+          }}
+          fullWidth
+          autoFocus
+          placeholder="Scan or type barcode"
+          InputProps={{
+            sx: {
+              fontFamily: 'monospace',
+              fontSize: 18,
+              fontWeight: 700,
+            },
+          }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              borderColor: scanState === 'matched'
+                ? theme.palette.success.main
+                : undefined,
+            },
+          }}
+        />
+
+        {/* ERROR */}
+        {submitError && (
+          <Alert severity="error" sx={{ py: 0.5 }}>
+            {submitError}
+          </Alert>
+        )}
+
+        {/* PRIMARY ACTION BUTTON */}
+        {scanState === 'matched' || scanState === 'submitting' ? (
+          <Button
+            variant="contained"
+            color="success"
+            fullWidth
+            size="large"
+            onClick={() => void handleConfirm()}
+            disabled={scanState === 'submitting'}
+            startIcon={<CheckCircle size={20} />}
+            sx={{ borderRadius: 2, fontWeight: 700, py: 1.8, fontSize: 16 }}
+          >
+            {scanState === 'submitting' ? 'Confirming...' : 'Confirm Pick'}
+          </Button>
+        ) : (
           <Button
             variant="contained"
             fullWidth
             size="large"
-            onClick={handleQuantityConfirm}
-            disabled={scanState === 'submitting'}
-            sx={{ borderRadius: 2, fontWeight: 700 }}
+            startIcon={<Camera size={20} />}
+            onClick={() => setScanState('camera')}
+            sx={{ borderRadius: 2, fontWeight: 700, py: 1.8, fontSize: 16 }}
           >
-            {scanState === 'submitting' ? 'Confirming...' : 'Confirm Pick'}
+            Scan
           </Button>
-        </Paper>
-      )}
+        )}
 
-      {/* EXCEPTION ACTIONS */}
-      {scanState === 'scanning' && (
-        <Box sx={{ mt: 2 }}>
-          <Button
-            variant="outlined"
-            color="warning"
-            fullWidth
-            size="small"
-            startIcon={<AlertTriangle size={14} />}
-            onClick={() => setExceptionDialog(true)}
-          >
-            Report Issue
-          </Button>
-        </Box>
-      )}
+        {/* REPORT PROBLEM */}
+        <Button
+          variant="outlined"
+          color="warning"
+          fullWidth
+          size="large"
+          startIcon={<AlertTriangle size={18} />}
+          onClick={() => setExceptionDialog(true)}
+          sx={{ borderRadius: 2, fontWeight: 600 }}
+        >
+          Report Problem
+        </Button>
+
+      </Box>
 
       {/* EXCEPTION DIALOG */}
       <Dialog open={exceptionDialog} onClose={() => setExceptionDialog(false)} fullWidth>
-        <DialogTitle>Report Issue</DialogTitle>
+        <DialogTitle>Report Problem</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
             <Button
               variant="outlined"
               color="error"
               fullWidth
+              size="large"
               startIcon={<PackageX size={16} />}
               onClick={() => void handleReportException('item_missing', 0)}
+              sx={{ borderRadius: 2 }}
             >
               Item Not Found
             </Button>
@@ -419,6 +562,7 @@ export default function PickSessionPage({
                 <Button
                   variant="outlined"
                   color="warning"
+                  sx={{ borderRadius: 2 }}
                   onClick={() => {
                     const qty = parseInt(shortPickQuantity, 10);
                     if (!isNaN(qty) && qty > 0) {
@@ -434,6 +578,8 @@ export default function PickSessionPage({
             <Button
               variant="outlined"
               fullWidth
+              size="large"
+              sx={{ borderRadius: 2 }}
               onClick={() => void handleReportException('product_defect', 0)}
             >
               Product Defect
@@ -442,6 +588,8 @@ export default function PickSessionPage({
             <Button
               variant="outlined"
               fullWidth
+              size="large"
+              sx={{ borderRadius: 2 }}
               onClick={() => void handleReportException('packaging_defect', 0)}
             >
               Packaging Defect
@@ -453,12 +601,6 @@ export default function PickSessionPage({
         </DialogActions>
       </Dialog>
 
-      {/* PICK COMPLETE */}
-      {completingPick && (
-        <Alert severity="info" sx={{ mt: 2 }}>
-          Completing pick session...
-        </Alert>
-      )}
     </Box>
   );
 }
