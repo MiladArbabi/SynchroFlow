@@ -7,6 +7,12 @@ import { confirmPickScan } from '../../services/wms/pickScan.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
 import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
+import {
+  firePickExceptionAlert,
+  fireStowTaskAlert,
+  fireBatchReadyToPackAlert,
+  fireBatchReadyToShipAlert,
+} from '../../services/wms/wmsAlerts.service.js';
 
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
@@ -277,8 +283,8 @@ export const httpCompletePick = async (req: Request, res: Response) => {
 
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { batchId } = req.params;
-
+  
+  const batchId = String(req.params.batchId);
   if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
   try {
@@ -322,6 +328,9 @@ export const httpCompletePick = async (req: Request, res: Response) => {
           pick_completed_at: now,
           updated_at: now,
         });
+
+      // Alert supervisors — batch ready for packer
+      await fireBatchReadyToPackAlert(trx, { shopId, batchId, isActive: true });
 
       console.info('[WMS_PICK_COMPLETED]', {
         pick_batch_id: batchId,
@@ -545,7 +554,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
 
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { batchId } = req.params;
+  const batchId = String(req.params.batchId);
   if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
   try {
@@ -570,6 +579,9 @@ export const httpCompletePack = async (req: Request, res: Response) => {
           pack_completed_at: now,
           updated_at: now,
         });
+
+      // Alert supervisors — batch ready to ship
+      await fireBatchReadyToShipAlert(trx, { shopId, batchId, isActive: true });
 
       console.info('[WMS_PACK_COMPLETED]', { pick_batch_id: batchId, packed_by: userId, shopId });
     });
@@ -702,15 +714,27 @@ export const httpCreateStowTask = async (req: Request, res: Response) => {
   }
 
   try {
+
     const stowTaskId = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return createStowTask(trx, {
+
+      const newStowTaskId = await createStowTask(trx, {
         shopId,
         lasyncroVariantId: lasyncro_variant_id,
         quantity,
         locationCode: location_code,
         trigger: 'inbound_stock',
       });
+
+      // Alert supervisors — stow task needs attention
+      await fireStowTaskAlert(trx, {
+        shopId,
+        stowTaskId: newStowTaskId,
+        isActive: true,
+        trigger: 'inbound_stock',
+      });
+
+      return newStowTaskId;
     });
 
     return res.status(201).json({ stow_task_id: stowTaskId });
@@ -769,6 +793,13 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         shopId,
         claimedBy: userId,
       });
+      // Auto-resolve stow alert
+      await fireStowTaskAlert(trx, {
+        shopId,
+        stowTaskId: taskId,
+        isActive: false,
+        trigger: 'inbound_stock',
+      });
     });
 
     return res.status(200).json({ stow_task_id: taskId, status: 'completed' });
@@ -791,7 +822,7 @@ export const httpReportPickException = async (req: Request, res: Response) => {
 
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { batchId } = req.params;
+ const batchId = String(req.params.batchId);
 
   const {
     lasyncro_line_item_id,
@@ -866,6 +897,14 @@ export const httpReportPickException = async (req: Request, res: Response) => {
         raised_by: userId,
         raised_at: new Date(),
         resolved: false,
+      });
+
+      // Fire proactive alert to supervisor
+      await firePickExceptionAlert(trx, {
+        shopId,
+        batchId,
+        stage,
+        exceptionType: exception_type,
       });
 
       console.info('[WMS_EXCEPTION_REPORTED]', {
