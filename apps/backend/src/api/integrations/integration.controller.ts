@@ -117,7 +117,9 @@ export const initiateOAuth = async (req: Request, res: Response) => {
       'read_inventory',
       'read_payouts',
       'read_fulfillments',
-      'write_script_tags',
+      'write_fulfillments',
+      'read_merchant_managed_fulfillment_orders',
+      'write_merchant_managed_fulfillment_orders',
       'read_script_tags',
     ].join(',');
 
@@ -326,7 +328,8 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           shop_id: shopId,
           shop_domain: oauthContext.shopDomain,
           access_token: encryptedToken,
-          scopes: 'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_script_tags',
+          scopes: 
+          'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,write_script_tags',
           installed_at: new Date(),
         })
          .onConflict(['shop_domain'])

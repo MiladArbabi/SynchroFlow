@@ -22,7 +22,7 @@ import { createShopifyGraphQLClient } from '../shopify/shopifyClient.service.js'
  * - shopify_fulfillment_id remains null if this throws — safe to retry
  *
  * Idempotency:
- * - Shopify fulfillmentCreate is idempotent if fulfillmentOrder already fulfilled
+ * - Shopify fulfillmentCreateV2 is idempotent if fulfillmentOrder already fulfilled
  * - shopify_fulfillment_id update uses WHERE shopify_fulfillment_id IS NULL guard
  */
 export async function writeShopifyFulfillment(
@@ -72,28 +72,24 @@ export async function writeShopifyFulfillment(
   // 3. Fetch fulfillmentOrder ID
   const orderGid = `gid://shopify/Order/${identity.external_order_id}`;
 
-  const foResponse: any = await client.query({
-    data: {
-      query: `
-        query ($orderId: ID!) {
-          order(id: $orderId) {
-            fulfillmentOrders(first: 10) {
-              edges {
-                node {
-                  id
-                  status
-                }
-              }
+  const foResponse: any = await client.request(
+    `query ($orderId: ID!) {
+      order(id: $orderId) {
+        fulfillmentOrders(first: 10) {
+          edges {
+            node {
+              id
+              status
             }
           }
         }
-      `,
-      variables: { orderId: orderGid },
-    },
-  });
+      }
+    }`,
+    { variables: { orderId: orderGid } }
+  );
 
   const fulfillmentOrderEdges: any[] =
-    foResponse?.body?.data?.order?.fulfillmentOrders?.edges ?? [];
+    foResponse?.data?.order?.fulfillmentOrders?.edges ?? [];
 
   // Filter to open fulfillment orders only — skip already-fulfilled
   const openEdges = fulfillmentOrderEdges.filter(
@@ -108,38 +104,36 @@ export async function writeShopifyFulfillment(
     return;
   }
 
-  // 4. Execute fulfillmentCreate mutation
-  const fulfillmentResponse: any = await client.query({
-    data: {
-      query: `
-        mutation ($input: FulfillmentInput!) {
-          fulfillmentCreate(input: $input) {
-            fulfillment { id }
-            userErrors { field message }
-          }
-        }
-      `,
+  // 4. Execute fulfillmentCreateV2 mutation (Shopify API 2024-01+)
+  const fulfillmentResponse: any = await client.request(
+    `mutation ($fulfillment: FulfillmentV2Input!) {
+      fulfillmentCreateV2(fulfillment: $fulfillment) {
+        fulfillment { id }
+        userErrors { field message }
+      }
+    }`,
+    {
       variables: {
-        input: {
+        fulfillment: {
           lineItemsByFulfillmentOrder: openEdges.map((e: any) => ({
             fulfillmentOrderId: e.node.id,
           })),
         },
       },
-    },
-  });
+    }
+  );
 
   const userErrors =
-    fulfillmentResponse?.body?.data?.fulfillmentCreate?.userErrors;
+    fulfillmentResponse?.data?.fulfillmentCreateV2?.userErrors;
 
   if (userErrors?.length > 0) {
     throw new Error(
-      `[WMS_WRITEBACK] Shopify fulfillmentCreate userErrors: ${JSON.stringify(userErrors)}`
+      `[WMS_WRITEBACK] Shopify fulfillmentCreateV2 userErrors: ${JSON.stringify(userErrors)}`
     );
   }
 
   const shopifyFulfillmentId =
-    fulfillmentResponse?.body?.data?.fulfillmentCreate?.fulfillment?.id ?? null;
+    fulfillmentResponse?.data?.fulfillmentCreateV2?.fulfillment?.id ?? null;
 
   // 5. Persist shopify_fulfillment_id — guard prevents overwrite on retry
   if (shopifyFulfillmentId) {

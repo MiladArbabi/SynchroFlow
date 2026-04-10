@@ -88,6 +88,7 @@ export function decrypt(encrypted: EncryptedPayload, context: string): string {
 const ALLOWED_CONTEXTS = [
   'sync.worker',
   'order-identity-guard',
+  'wms.shipConfirmation.writeback',
   'shopify.dev', // dev-only (already guarded by NODE_ENV)
 ];
 

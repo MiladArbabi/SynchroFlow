@@ -30,6 +30,16 @@ const REQUIRED_SCOPES = [
    * - Shopify returns authorization error
    */
   'write_fulfillments',
+
+  /**
+   * REQUIRED FOR WMS FULFILLMENT WRITEBACK (WM-20)
+   * -----------------------------------------------
+   * fulfillmentOrders query + fulfillmentCreateV2 mutation
+   * require merchant-managed fulfillment order scopes.
+   * Without these, Shopify returns 'Access denied for fulfillmentOrders field.'
+   */
+  'read_merchant_managed_fulfillment_orders',
+  'write_merchant_managed_fulfillment_orders',
 ];
 
 const shopify = shopifyApi({
