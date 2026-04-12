@@ -12,6 +12,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { ScanBarcode, PackageCheck, Clock } from 'lucide-react';
+import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import PickSessionPage, {
   type LineItem,
   type ConfirmScanParams,
@@ -77,6 +78,8 @@ export type WmsModuleFT2Props = {
   onPackComplete: (batchId: string) => Promise<void>;
   onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
   onRefresh: () => void;
+  isOnline: boolean;
+  queuedCount: number;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -257,6 +260,8 @@ export default function WmsModuleFT2({
   onPackComplete,
   onConfirmShipment,
   onRefresh,
+  isOnline,
+  queuedCount,
 }: WmsModuleFT2Props) {
   const [activeSession, setActiveSession] = useState<ActiveSession>(null);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -334,7 +339,10 @@ export default function WmsModuleFT2({
 
       {/* PAGE HEADER */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700}>Warehouse</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h5" fontWeight={700}>Warehouse</Typography>
+          <WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} />
+        </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           Pick and pack active batches.
         </Typography>

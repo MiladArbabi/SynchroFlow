@@ -1,6 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/WmsPage.tsx
 import { useCallback } from 'react';
-import { WmsModuleFT2 } from '@lasyncro/wms';
+import { 
+  WmsModuleFT2, 
+  useOfflineScanQueue, 
+  WmsConnectionBadge  
+} from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
 import { axiosInstance } from 'api/axiosConfig';
 import type {
@@ -21,6 +26,12 @@ import type {
 
 export default function WmsPage() {
   const { data, isLoading, isError, refetch } = useWms();
+
+  const httpPost = useCallback(async (url: string, body: Record<string, unknown>) => {
+    await axiosInstance.post(url, body);
+  }, []);
+
+  const { isOnline, queuedCount, submitScan } = useOfflineScanQueue({ httpPost });
 
   // ── PICK CALLBACKS ──────────────────────────────────────
   const handleClaimBatch = useCallback(async (batchId: string) => {
@@ -44,11 +55,14 @@ export default function WmsPage() {
   }, []);
 
   const handleConfirmScan = useCallback(async (batchId: string, params: ConfirmScanParams) => {
-    await axiosInstance.post('/api/v1/wms/pick/scan', {
-      pick_batch_id: batchId,
-      ...params,
+    // device_event_id: stable idempotency key — safe to replay on reconnect (server deduplicates)
+    const deviceEventId = crypto.randomUUID();
+    await submitScan({
+      deviceEventId,
+      url: '/api/v1/wms/pick/scan',
+      body: { pick_batch_id: batchId, ...params },
     });
-  }, []);
+  }, [submitScan]);
 
   const handleReportException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
@@ -139,6 +153,8 @@ export default function WmsPage() {
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
       onRefresh={refetch}
+      isOnline={isOnline}
+      queuedCount={queuedCount}
     />
   );
 }

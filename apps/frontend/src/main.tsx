@@ -94,6 +94,20 @@ const defaultLocale = 'en';
 // Check if we are in the Playwright E2E test environment
 const isE2ETest = import.meta.env.MODE === 'e2e';
 
+/**
+ * WMS SERVICE WORKER (WM-24)
+ * --------------------------
+ * Registers sw.js for Background Sync (offline pick scan queue).
+ * Skipped in E2E test mode — SW interferes with Playwright request interception.
+ */
+if ('serviceWorker' in navigator && !isE2ETest) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[SW] Registration failed:', err);
+    });
+  });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
