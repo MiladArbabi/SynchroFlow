@@ -1,6 +1,7 @@
 // apps/backend/src/services/wms/pickBatch.service.ts
 import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
+import { dispatchNotification } from '../notifications/notificationDispatch.service.js';
 
 /**
  * PICK BATCH SERVICE (WM-07)
@@ -132,6 +133,18 @@ export async function releaseBatch(
     total_line_items: runningLineItems,
     total_units: runningUnits,
   });
+
+  // Notify operators of new batch — broadcast to pool (no targeted assignment at release)
+  // assigned_operator_id support: extend releaseBatch params when direct assignment is added
+  dispatchNotification({
+    shopId,
+    payload: {
+      title: 'New batch ready to pick',
+      body: `Batch ${pickBatchId.slice(0, 8).toUpperCase()} released — ${runningLineItems} line items. Claim it to start picking.`,
+      data: { route: '/wms', batchId: pickBatchId },
+    },
+    broadcastToRole: 'operator',
+  }).catch((err) => console.error('[PICK_BATCH_RELEASED_PUSH_FAILED]', err.message));
 
   // 6. Initialize warehouse status for all selected orders
   await trx('order_warehouse_status').insert(

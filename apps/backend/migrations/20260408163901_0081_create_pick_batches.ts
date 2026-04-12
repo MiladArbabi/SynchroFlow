@@ -137,6 +137,35 @@ export async function up(knex: Knex): Promise<void> {
 
     table.timestamp('released_at', { useTz: true }).notNullable();
 
+    /**
+     * OPERATOR ASSIGNMENT (WM-22)
+     * ----------------------------
+     * Optional targeted assignment for pick and pack operators.
+     *
+     * Notification logic:
+     * - assigned_operator_id IS NULL + broadcast_on_release = true → notify all operators
+     * - assigned_operator_id IS SET → notify assigned operator only
+     * - Same pattern applies to assigned_packer_id for pack notifications
+     */
+    table
+      .integer('assigned_operator_id')
+      .nullable()
+      .references('id')
+      .inTable('users')
+      .onDelete('SET NULL');
+
+    table
+      .integer('assigned_packer_id')
+      .nullable()
+      .references('id')
+      .inTable('users')
+      .onDelete('SET NULL');
+
+    table
+      .boolean('broadcast_on_release')
+      .notNullable()
+      .defaultTo(true);
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());

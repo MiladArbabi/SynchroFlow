@@ -13,5 +13,8 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["src/ui/**/*"]
+    "include": [
+      "src/ui/**/*", 
+      "../../apps/frontend/src/vite-env.d.ts"
+    ]
 }

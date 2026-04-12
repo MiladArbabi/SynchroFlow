@@ -4,7 +4,8 @@ import { useCallback } from 'react';
 import { 
   WmsModuleFT2, 
   useOfflineScanQueue, 
-  WmsConnectionBadge  
+  WmsConnectionBadge,
+  useWebPush,
 } from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
 import { axiosInstance } from 'api/axiosConfig';
@@ -32,6 +33,9 @@ export default function WmsPage() {
   }, []);
 
   const { isOnline, queuedCount, submitScan } = useOfflineScanQueue({ httpPost });
+
+  // Register Web Push subscription on first WMS load (WM-22)
+  useWebPush({ httpPost });
 
   // ── PICK CALLBACKS ──────────────────────────────────────
   const handleClaimBatch = useCallback(async (batchId: string) => {

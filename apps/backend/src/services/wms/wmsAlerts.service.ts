@@ -1,5 +1,6 @@
 // apps/backend/src/services/wms/wmsAlerts.service.ts
 import { Knex } from 'knex';
+import { dispatchNotification } from '../notifications/notificationDispatch.service.js';
 
 /**
  * WMS ALERT SERVICE (WM-21)
@@ -106,6 +107,17 @@ export async function firePickExceptionAlert(
     isActive: true,
   });
 
+  // Notify owner/admin — exception needs supervisor review
+  dispatchNotification({
+    shopId,
+    payload: {
+      title: `${stage === 'pick' ? 'Pick' : 'Pack'} exception reported`,
+      body: `Batch ${batchId.slice(0, 8).toUpperCase()} — ${exceptionType.replace(/_/g, ' ')}. Review in SKU Gaps.`,
+      data: { route: '/sku-gaps', batchId },
+    },
+    broadcastToRole: 'owner',
+  }).catch((err) => console.error('[WMS_EXCEPTION_PUSH_FAILED]', err.message));
+
   console.info('[WMS_EXCEPTION_ALERT_FIRED]', { shopId, batchId, stage, exceptionType });
 }
 
@@ -171,6 +183,19 @@ export async function fireBatchReadyToPackAlert(
     isActive,
   });
 
+  // Notify operators — packer needed (broadcast to pool)
+  if (isActive) {
+    dispatchNotification({
+      shopId,
+      payload: {
+        title: 'Batch ready to pack',
+        body: `Batch ${batchId.slice(0, 8).toUpperCase()} pick complete. Claim it to start packing.`,
+        data: { route: '/wms', batchId },
+      },
+      broadcastToRole: 'operator',
+    }).catch((err) => console.error('[WMS_READY_TO_PACK_PUSH_FAILED]', err.message));
+  }
+
   console.info('[WMS_READY_TO_PACK_ALERT_FIRED]', { shopId, batchId, isActive });
 }
 
@@ -200,6 +225,19 @@ export async function fireBatchReadyToShipAlert(
     entityType: 'pick_batch',
     isActive,
   });
+
+  // Notify owner/admin — ship confirmation needed
+  if (isActive) {
+    dispatchNotification({
+      shopId,
+      payload: {
+        title: 'Batch ready to ship',
+        body: `Batch ${batchId.slice(0, 8).toUpperCase()} packing complete. Confirm shipment.`,
+        data: { route: '/wms', batchId },
+      },
+      broadcastToRole: 'owner',
+    }).catch((err) => console.error('[WMS_READY_TO_SHIP_PUSH_FAILED]', err.message));
+  }
 
   console.info('[WMS_READY_TO_SHIP_ALERT_FIRED]', { shopId, batchId, isActive });
 }
