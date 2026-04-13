@@ -30,10 +30,12 @@ import demandRoutes from '../api/demand/demand.routes.js';
 import wmsRoutes from '../api/wms/wms.routes.js';
 import notificationsRoutes from '../api/notifications/notifications.routes.js';
 import membersRoutes from '../api/members/members.routes.js';
+import shopifyBillingRoutes from '../api/shopify/shopify.billing.routes.js';
 
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook.js';
 import { verifyStripeSignature } from '../api/billing/stripe.verify.middleware.js';
+import billingRoutes from '../api/billing/billing.routes.js';
 import { registerLifecycleRoutes } from '../api/lifecycle/lifecycle.routes.js';
 
 // Raw body capture for webhook verification
@@ -104,6 +106,8 @@ export function createApp(): Express {
   app.use('/api/v1/wms', wmsRoutes);
   app.use('/api/v1/notifications', notificationsRoutes);
   app.use('/api/v1/members', membersRoutes);
+  app.use('/api/v1/billing', billingRoutes);
+  app.use('/api/v1/shopify-billing', shopifyBillingRoutes);
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

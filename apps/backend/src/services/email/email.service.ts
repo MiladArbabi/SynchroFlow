@@ -71,3 +71,100 @@ export async function sendOperatorInviteEmail(params: SendOperatorInviteParams):
 
   console.info('[EMAIL] Operator invite sent', { toEmail, shopName, role });
 }
+
+export interface SendTrialReminderParams {
+  toEmail: string;
+  firstName: string;
+  daysLeft: number;
+  trialEndsAt: Date;
+}
+
+/**
+ * sendTrialReminderEmail
+ * ----------------------
+ * Sent at D-3 and D-1 before Growth trial expires.
+ * Non-fatal: caller logs failure and continues.
+ */
+export async function sendTrialReminderEmail(params: SendTrialReminderParams): Promise<void> {
+  const { toEmail, firstName, daysLeft, trialEndsAt } = params;
+  const expiryDate = trialEndsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: toEmail,
+    subject: `Your LaSyncro Growth trial ends in ${daysLeft} day${daysLeft > 1 ? 's' : ''}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <h2 style="margin-bottom: 8px;">Your trial ends soon</h2>
+        <p style="color: #555;">Hi ${firstName},</p>
+        <p style="color: #555;">
+          Your free Growth trial expires on <strong>${expiryDate}</strong> — that's ${daysLeft} day${daysLeft > 1 ? 's' : ''} away.
+        </p>
+        <p style="color: #555;">
+          After expiry your account will move to the Starter plan and you'll lose access to
+          Cash Flow, LTV, Demand forecasting, and Specter intelligence.
+        </p>
+        <a href="https://app.lasyncro.com/settings/billing" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#000;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
+          Upgrade to Growth
+        </a>
+        <p style="color: #aaa; font-size: 12px; margin-top: 32px;">
+          LaSyncro · Operational intelligence for growing merchants
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    console.error('[EMAIL] sendTrialReminderEmail failed:', error);
+    throw new Error(`EMAIL_DELIVERY_FAILED: ${error.message}`);
+  }
+
+  console.info('[EMAIL] Trial reminder sent', { toEmail, daysLeft });
+}
+
+export interface SendTrialExpiryParams {
+  toEmail: string;
+  firstName: string;
+}
+
+/**
+ * sendTrialExpiryEmail
+ * --------------------
+ * Sent immediately after a shop is downgraded from Growth trial to Starter.
+ * Non-fatal: caller logs failure and continues.
+ */
+export async function sendTrialExpiryEmail(params: SendTrialExpiryParams): Promise<void> {
+  const { toEmail, firstName } = params;
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: toEmail,
+    subject: 'Your LaSyncro Growth trial has ended',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <h2 style="margin-bottom: 8px;">Your Growth trial has ended</h2>
+        <p style="color: #555;">Hi ${firstName},</p>
+        <p style="color: #555;">
+          Your 14-day Growth trial has expired. Your account is now on the Starter plan.
+        </p>
+        <p style="color: #555;">
+          Upgrade to Growth to restore access to Cash Flow, LTV, Demand forecasting,
+          and Specter — intelligence that pays for itself in a single prevented stockout.
+        </p>
+        <a href="https://app.lasyncro.com/settings/billing" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#000;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
+          Upgrade to Growth — $179/mo
+        </a>
+        <p style="color: #aaa; font-size: 12px; margin-top: 32px;">
+          LaSyncro · Operational intelligence for growing merchants
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    console.error('[EMAIL] sendTrialExpiryEmail failed:', error);
+    throw new Error(`EMAIL_DELIVERY_FAILED: ${error.message}`);
+  }
+
+  console.info('[EMAIL] Trial expiry email sent', { toEmail });
+}

@@ -264,6 +264,23 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
+
+  // start trial expiry worker (MON-07)
+  try {
+    const trialExpiry = await import('../workers/trial-expiry.worker.js');
+    if (typeof trialExpiry.startTrialExpiryWorker === 'function') {
+      await Promise.resolve(trialExpiry.startTrialExpiryWorker());
+      if (typeof trialExpiry.stopTrialExpiryWorker === 'function') {
+        workerStopFns.push(async () => trialExpiry.stopTrialExpiryWorker());
+      }
+      console.log('[bootstrap/workers] Trial expiry worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Trial expiry worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
 }
 
 export async function stopWorkers(): Promise<void> {

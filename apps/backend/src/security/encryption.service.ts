@@ -89,7 +89,8 @@ const ALLOWED_CONTEXTS = [
   'sync.worker',
   'order-identity-guard',
   'wms.shipConfirmation.writeback',
-  'shopify.dev', // dev-only (already guarded by NODE_ENV)
+  'shopify.dev',        // dev-only (already guarded by NODE_ENV)
+  'shopify.billing',    // Shopify RecurringApplicationCharge API (MON-09)
 ];
 
 if (!ALLOWED_CONTEXTS.includes(context)) {
