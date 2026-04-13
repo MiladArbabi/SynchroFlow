@@ -5,10 +5,7 @@
 
 import React from 'react';
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
-import { ActivationSurfaceAdapter } from 'activation/ActivationSurfaceAdapter';
-import { resolveActivationConfig } from 'activation/resolveActivationConfig';
 import { useShopLifecycle } from './ShopLifecycleContext';
-import { useLocation } from 'react-router-dom';
 import { useIntegration } from 'contexts/integration';
 
 type Props = {
@@ -16,10 +13,9 @@ type Props = {
   onActivation: (actionId: string) => void;
 };
 
-export function ShopLifecycleGate({ children, onActivation }: Props) {
+export function ShopLifecycleGate({ children }: Props) {
 
   const { phase, isBooting, integrationExists } = useShopLifecycle();
-  const location = useLocation();
   const integration = useIntegration();
 
   /**
@@ -53,57 +49,22 @@ export function ShopLifecycleGate({ children, onActivation }: Props) {
     integration.hasIntegration
   ) {
     return <EmptyDashboardState />;
-  }
-
-  const rawSegment = location.pathname.split('/')[1];
-
-  /**
-   * Module identity is derived directly from the first route segment.
-   * No synthetic remapping is allowed.
-   *
-   * Routing decides WHICH surface mounts.
-   * Activation config decides WHAT renders.
-   */
-  const moduleId = rawSegment;
+  };
 
   
   switch (phase) {
     case 'FT_MINUS_ONE': {
-      console.log(
-        '[FT_MINUS_ONE][MODULE_ID]',
-        location.pathname,
-        moduleId
-      );
-
       /**
-       * 🔥 PRE-FT0 LOADER (CORRECT LAYER)
-       * --------------------------------
-       * Backend FT0 is delayed (ingestion-driven).
-       * Show loader immediately once system interaction begins.
-       *
-       * Signal:
-       * - integration exists → lifecycle has started progressing
+       * FT_MINUS_ONE — pass through to LifecycleRouteHost.
+       * WelcomePage is rendered there — no activation config needed.
+       * If integration exists but lifecycle hasn't advanced yet,
+       * show loader while backend catches up.
        */
       if (integrationExists) {
-        console.warn('[LOADER_MOUNT_PRE_FT0]', {
-          ts: performance.now(),
-        });
-
         return <EmptyDashboardState />;
       }
 
-      const activationConfig = resolveActivationConfig(moduleId);
-
-      if (!activationConfig) {
-        return null;
-      }
-
-      return (
-        <ActivationSurfaceAdapter
-          surface={activationConfig}
-          onAction={onActivation}
-        />
-      );
+      return <>{children}</>;
     }
 
     case 'FT0':

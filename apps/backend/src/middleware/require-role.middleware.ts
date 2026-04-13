@@ -17,8 +17,19 @@ export function requireRole(allowedRoles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const roles = req.user?.roles;
 
-    if (!roles || roles.length === 0) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    // Distinguish missing roles claim (token shape violation) from empty roles (no role assigned)
+    if (!roles) {
+      return res.status(401).json({
+        error: 'MISSING_ROLES_CLAIM',
+        action: 'LOGOUT_REQUIRED',
+      });
+    }
+
+    if (roles.length === 0) {
+      return res.status(403).json({
+        error: 'NO_ROLE_ASSIGNED',
+        action: 'CONTACT_ADMIN',
+      });
     }
 
     const hasRole = roles.some((r) => allowedRoles.includes(r));

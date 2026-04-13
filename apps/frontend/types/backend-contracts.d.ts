@@ -1,3 +1,4 @@
+/* eslint-disable */
 // apps/frontend/types/backend-contracts.d.ts
 
 // ---- Module: api-types ---------------------------------
@@ -21,6 +22,12 @@ declare module 'api-types' {
     first_name?: string;
     last_name?: string;
     shop_id?: number;
+    /**
+     * Role from users.role — synced from shop_memberships.role on change (WM-31).
+     * Source of truth for JWT is shop_memberships.role (via shop-resolution.service.ts).
+     * Deprecated in favour of action-level entitlements in WM-19.
+     */
+    role?: 'owner' | 'admin' | 'operator';
     created_at: string;
     updated_at: string;
     preferred_mode?: 'survival' | 'growth' | 'architect';

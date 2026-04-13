@@ -15,6 +15,7 @@ import type {
   LineItem,
   PackOrder,
 } from '@lasyncro/wms';
+import { useAuth } from 'contexts/AuthContext';
 
 /**
  * WMS GATE PAGE
@@ -27,6 +28,10 @@ import type {
 
 export default function WmsPage() {
   const { data, isLoading, isError, refetch } = useWms();
+
+  const { user } = useAuth();
+  const userRole = user?.role ?? 'operator';
+  const canReleaseBatch = userRole === 'owner' || userRole === 'admin';
 
   const httpPost = useCallback(async (url: string, body: Record<string, unknown>) => {
     await axiosInstance.post(url, body);

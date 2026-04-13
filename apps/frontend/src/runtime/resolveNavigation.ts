@@ -27,11 +27,17 @@ export interface ResolvedNavigation {
 interface ResolveNavigationInput {
   entitlements: EntitlementSnapshot | null;
   lifecyclePhase: UILifecyclePhase;
+  /**
+   * Current user role — used to restrict nav to role-permitted items.
+   * operator: WMS only. owner/admin: full nav.
+   * Will be superseded by action-level entitlements in WM-19.
+   */
+  userRole?: string;
 }
-
 export function resolveNavigation({
   entitlements,
-  lifecyclePhase
+  lifecyclePhase,
+  userRole,
 }: ResolveNavigationInput): ResolvedNavigation {
 
   console.log('LIFECYCLE PHASE:', lifecyclePhase);
@@ -70,6 +76,9 @@ export function resolveNavigation({
             : false;
 
         if (!lifecycleAllowed) continue;
+
+        // 🔒 Role gate: operators only see WMS
+        if (userRole === 'operator' && item.id !== 'wms') continue;
 
             // 🔐 Entitlement Visibility Gate
             const visibility = resolveNavVisibility({

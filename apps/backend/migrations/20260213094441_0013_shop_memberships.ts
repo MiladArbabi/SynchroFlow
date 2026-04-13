@@ -19,7 +19,19 @@ export async function up(knex: Knex): Promise<void> {
       .inTable('users')
       .onDelete('CASCADE');
 
-    table.string('role', 50).notNullable(); // e.g. admin, operator, viewer
+    /**
+     * ROLE
+     * ----
+     * Enum-constrained at DB level.
+     * owner    — full access, settings, batch release
+     * admin    — same as owner, multi-user management
+     * operator — WMS-only (pick, pack, stow)
+     *
+     * Source of truth for JWT shop_roles claim (see token.service.ts).
+     * users.role mirrors this — kept in sync on role change (WM-31).
+     * Will be superseded by action-level entitlements (WM-19).
+     */
+    table.enum('role', ['owner', 'admin', 'operator']).notNullable();
 
     table.timestamps(true, true);
 

@@ -157,7 +157,8 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
               userId: response.data.user.id,
             });
 
-            navigate('/orders');
+            const landingPath = response.data.user?.role === 'operator' ? '/wms' : '/';
+            navigate(landingPath);
           } else {
             console.error('--- [LOGIN DEBUG 4] ---');
             throw new Error('Invalid login response from server.');

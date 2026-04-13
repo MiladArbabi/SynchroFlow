@@ -20,7 +20,7 @@
 // - Pages MUST NOT inspect lifecycle
 // - Routing is the single source of truth
 //
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
 // FT1 pages (diagnostic / onboarding surfaces)
@@ -28,6 +28,7 @@ import OrdersPage from 'pages/ft1-pages/OrdersPage';
 import ProductsPage from 'pages/ft1-pages/ProductsPage';
 import CustomersPage from 'pages/ft1-pages/CustomersPage';
 import FinancesPage from 'pages/ft1-pages/FinancesPage';
+import WelcomePage from 'pages/onboarding/WelcomePage';
 
 // FT2 pages (observability / governed truth surfaces)
 import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
@@ -42,6 +43,7 @@ import CashFlowPage from 'pages/ft2-pages/CashFlowPage';
 import DemandPage from 'pages/ft2-pages/DemandPage';
 
 import WmsPage from 'pages/ft2-pages/WmsPage';
+import MembersPage from 'pages/ft2-pages/MembersPage';
 import SkuGapsPage from 'pages/ft2-pages/SkuGapsPage';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
@@ -51,6 +53,7 @@ import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState'
 
 export function LifecycleRouteHost() {
   const { phase, readiness, isBooting } = useShopLifecycle();
+  const location = useLocation();
 
   console.log('[ROUTE_HOST_RENDER]', {
     phase,
@@ -58,8 +61,16 @@ export function LifecycleRouteHost() {
     ts: performance.now(),
   });
 
+  // FT_MINUS_ONE handled — renders WelcomePage
   if (phase === 'FT_MINUS_ONE') {
-    console.warn('[TRACE_PHASE_FT_MINUS_ONE]', { ts: performance.now() });
+    /**
+     * FT_MINUS_ONE — single surface, canonical URL is /.
+     * Any other URL redirects here to prevent ghost routes.
+     */
+    if (location.pathname !== '/') {
+      return <Navigate to="/" replace />;
+    }
+    return <WelcomePage />;
   }
 
   if (phase === 'FT0' || phase === 'FT0_PREPARING') {
@@ -87,40 +98,6 @@ export function LifecycleRouteHost() {
     console.info('[LIFECYCLE_ROUTE_BOOTING]');
     return <EmptyDashboardState />;
   }
-
-  if (phase === 'FT_MINUS_ONE') {
-    console.info('[LIFECYCLE_ROUTE_ACTIVATION]', { phase, readiness });
-
-    /**
-     * 🔥 PRE-FT0 LOADER (UX FIX)
-     * --------------------------
-     * Backend FT0 is ingestion-driven and delayed.
-     * We must show loader immediately once integration exists.
-     *
-     * Signal used:
-     * - readiness !== null → system has begun backend interaction
-     */
-    if (readiness !== null) {
-      console.warn('[LOADER_MOUNT_PRE_FT0]', {
-        phase,
-        ts: performance.now(),
-      });
-
-      return <EmptyDashboardState />;
-    }
-
-    /**
-     * F-01 FIX — NO BLANK SCREEN
-     * ---------------------------
-     * readiness === null means lifecycle has not yet resolved.
-     * Previously returned null → blank screen for events 1-24.
-     *
-     * Fix: show EmptyDashboardState immediately.
-     * This covers the gap between OAuth success and first
-     * readiness signal arriving from the backend.
-     */
-    return <EmptyDashboardState />;
-  };
 
   /**
    * ✅ FT0 (initialization phase)
@@ -221,9 +198,6 @@ export function LifecycleRouteHost() {
       {/* FULFILLMENT QUEUE */}
       <Route path="/fulfillment/*" element={<FulfillmentQueuePage />} />
 
-      {/* Catch-all → Overview */}
-      <Route path="*" element={<Navigate to="/overview" replace />} />
-
       {/* ALERTS */}
       <Route path="/alerts/*" element={<AlertsPage />} />
 
@@ -241,6 +215,12 @@ export function LifecycleRouteHost() {
 
       {/* SKU-GAPS */}
       <Route path="/sku-gaps/*" element={<SkuGapsPage />} />
+
+      {/* TEAM — member & role management (WM-31) */}
+      <Route path="/team/*" element={<MembersPage />} />
+
+      {/* Catch-all → Overview */}
+      <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
   );
 }

@@ -29,6 +29,7 @@ import customersLtvRoutes from '../api/customers/customers.ltv.routes.js';
 import demandRoutes from '../api/demand/demand.routes.js';
 import wmsRoutes from '../api/wms/wms.routes.js';
 import notificationsRoutes from '../api/notifications/notifications.routes.js';
+import membersRoutes from '../api/members/members.routes.js';
 
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
 import { stripeWebhookHandler } from '../api/billing/stripe.webhook.js';
@@ -63,11 +64,19 @@ export function createApp(): Express {
   
   app.use(cookieParser() as any);
 
-  //TEMP
-  app.use((req, _res, next) => {
-    console.log('[ROUTE HIT]', req.method, req.path);
-    next();
-  });
+  /**
+   * REQUEST LOGGER (LOG-01)
+   * -----------------------
+   * Gated behind LOG_LEVEL=debug to suppress noise in development.
+   * Set LOG_LEVEL=debug in .env to enable per-request logging.
+   * Always disabled in production.
+   */
+  if (process.env.LOG_LEVEL === 'debug' && process.env.NODE_ENV !== 'production') {
+    app.use((req, _res, next) => {
+      console.log('[ROUTE HIT]', req.method, req.path);
+      next();
+    });
+  }
 
   // Register routes
   app.use('/api/v1/layouts', layoutRoutes);
@@ -94,6 +103,7 @@ export function createApp(): Express {
   app.use('/api/v1/modules/demand', demandRoutes);
   app.use('/api/v1/wms', wmsRoutes);
   app.use('/api/v1/notifications', notificationsRoutes);
+  app.use('/api/v1/members', membersRoutes);
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);
