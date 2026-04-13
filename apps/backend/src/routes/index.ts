@@ -13,6 +13,8 @@ import onboardingReadinessRouter from '../onboarding/readiness.router.js';
 import specterRouter from '../api/specter/specter.routes.js';
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
 import overviewRoutes from './overview.js';
+import alertsRoutes from '../api/alerts/alerts.routes.js';
+import returnsRoutes from '../api/returns/returns.routes.js';
 import financesRoutes from '../api/finances/index.js';
 import systemRoutes from '../api/system/system.routes.js';
 
@@ -29,14 +31,24 @@ router.use('/feedback', feedbackRoutes);
  */
 router.use('/v1/orders', ordersRoutes);
 
-router.use('/products', productsRoutes);
-router.use('/customers', customersRoutes);
+// Legacy product list at /api/v1/products; FT2 at /api/v1/modules/products/ft2
+router.use('/v1/products', productsRoutes);
+router.use('/v1/modules/products', productsRoutes);
+
+// Legacy customer list at /api/v1/customers; FT2 at /api/v1/modules/customers/ft2
+router.use('/v1/customers', customersRoutes);
+router.use('/v1/modules/customers', customersRoutes);
+
 router.use('/user-state', userStateRoutes); 
 router.use('/onboarding', onboardingReadinessRouter);
 
 router.use('/v1/modules/order-nexus', orderNexusRoutes);
 router.use('/v1/modules/finances', financesRoutes);
 router.use('/v1/modules/overview', overviewRoutes);
+// Alerts inbox — ranked operator signals, auto-resolved per snapshot cycle
+router.use('/v1/alerts', alertsRoutes);
+// Returns intelligence — refund summary + per-variant breakdown
+router.use('/v1/modules/returns', returnsRoutes);
 
 // Mount under /api/v1/specter -> final path: GET /api/v1/specter/:shopId/state
 router.use('/v1/specter', specterRouter);

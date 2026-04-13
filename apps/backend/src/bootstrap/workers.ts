@@ -235,7 +235,9 @@ export async function startWorkers(): Promise<void> {
   try {
     const wmsAutoRelease = await import('../workers/wms.batch.auto-release.worker.js');
     if (typeof wmsAutoRelease.startWmsBatchAutoReleaseWorker === 'function') {
-      await Promise.resolve(wmsAutoRelease.startWmsBatchAutoReleaseWorker());
+      // Fire-and-forget — polling loop runs indefinitely, must not block bootstrap
+      void wmsAutoRelease.startWmsBatchAutoReleaseWorker();
+
       if (typeof wmsAutoRelease.stopWmsBatchAutoReleaseWorker === 'function') {
         workerStopFns.push(async () => await wmsAutoRelease.stopWmsBatchAutoReleaseWorker());
       }
@@ -248,11 +250,31 @@ export async function startWorkers(): Promise<void> {
     );
   }
 
+  // start shop operational snapshot dispatcher
+  // Triggers computeShopOperationalSnapshot per shop after reconciliation.
+  // Without this: orders_operational_control_snapshot stays empty → Orders/Overview show zeros.
+  try {
+    const snapshotDispatcher = await import('../workers/projections/shopSnapshotJob.dispatcher.js');
+    if (typeof snapshotDispatcher.startShopSnapshotJobDispatcher === 'function') {
+      await Promise.resolve(snapshotDispatcher.startShopSnapshotJobDispatcher()).then(() => {
+        console.log('[bootstrap/workers] Shop snapshot dispatcher started');
+      }).catch((err) => {
+        console.error('[bootstrap/workers] Shop snapshot dispatcher threw during start:', err);
+      });
+    }
+  } catch (err) {
+    console.error(
+      '[bootstrap/workers] Shop snapshot dispatcher FAILED TO START:',
+      err
+    );
+  }
+
+
   // start WMS idle alert worker
   try {
     const wmsIdleAlert = await import('../workers/wms.idle.alert.worker.js');
     if (typeof wmsIdleAlert.startWmsIdleAlertWorker === 'function') {
-      await Promise.resolve(wmsIdleAlert.startWmsIdleAlertWorker());
+      void wmsIdleAlert.startWmsIdleAlertWorker();
       if (typeof wmsIdleAlert.stopWmsIdleAlertWorker === 'function') {
         workerStopFns.push(async () => wmsIdleAlert.stopWmsIdleAlertWorker());
       }
@@ -269,10 +291,12 @@ export async function startWorkers(): Promise<void> {
   try {
     const trialExpiry = await import('../workers/trial-expiry.worker.js');
     if (typeof trialExpiry.startTrialExpiryWorker === 'function') {
-      await Promise.resolve(trialExpiry.startTrialExpiryWorker());
+      void trialExpiry.startTrialExpiryWorker();
+
       if (typeof trialExpiry.stopTrialExpiryWorker === 'function') {
         workerStopFns.push(async () => trialExpiry.stopTrialExpiryWorker());
       }
+      
       console.log('[bootstrap/workers] Trial expiry worker started');
     }
   } catch (err) {

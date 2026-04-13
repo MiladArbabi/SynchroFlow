@@ -63,9 +63,12 @@ export async function computeReturnsIntelligence(
      * ------------------
      * Aggregate refund revenue and margin leakage.
      */
+    // Join through refund_execution_line_items to scope to refunded lines only.
+    // Direct join on lasyncro_order_id fans out to all line items — incorrect.
     const summaryRow = await trx('refund_executions as re')
       .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
-      .join('order_revenue_units as oru', 'oru.lasyncro_order_id', 're.lasyncro_order_id')
+      .join('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
+      .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
       .where('o.shop_id', shopId)
       .select(
         trx.raw('COUNT(DISTINCT re.lasyncro_refund_execution_id) as total_refunds'),
@@ -79,7 +82,8 @@ export async function computeReturnsIntelligence(
             END
           ), 0) as total_margin_leakage
         `),
-        trx.raw('COALESCE(SUM(oru.quantity), 0) as total_units_returned'),
+        // Use refunded_quantity from line items — not the original order quantity
+        trx.raw('COALESCE(SUM(reli.refunded_quantity), 0) as total_units_returned'),
       )
       .first();
 
@@ -129,7 +133,8 @@ export async function computeReturnsIntelligence(
      */
     const variantRows = await trx('refund_executions as re')
       .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
-      .join('order_revenue_units as oru', 'oru.lasyncro_order_id', 're.lasyncro_order_id')
+      .join('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
+      .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
       .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oru.lasyncro_variant_id')
       .where('o.shop_id', shopId)
       .groupBy('oru.lasyncro_variant_id', 'v.title', 'oru.sku')
@@ -138,8 +143,8 @@ export async function computeReturnsIntelligence(
         'v.title as variant_title',
         'oru.sku',
         trx.raw('COUNT(DISTINCT re.lasyncro_refund_execution_id) as total_refunds'),
-        trx.raw('SUM(oru.quantity) as total_units_returned'),
-        trx.raw('SUM(oru.line_total) as revenue_leakage'),
+        trx.raw('SUM(reli.refunded_quantity) as total_units_returned'),
+        trx.raw('SUM(reli.refunded_amount) as revenue_leakage'),
         trx.raw(`
           SUM(
             CASE
