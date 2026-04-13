@@ -41,6 +41,9 @@ interface EntitlementsResponse {
   // ⚠️ LEGACY — array form retained for backward compatibility
   modules: string[];
   flags: string[];
+
+  /** Subscription tier from backend entitlements snapshot (MON-03) */
+  tier: string;
 }
 
 // --- Context shape exposed to UI ---
@@ -49,7 +52,14 @@ interface EntitlementsContextValue {
   modules: string[];
   flags: string[];
 
-  snapshot: EntitlementSnapshot; // ✅ ADD THIS
+  snapshot: EntitlementSnapshot;
+
+  /**
+   * Subscription tier (MON-03).
+   * Use for UI gating of intelligence modules (MON-06) and upgrade prompts (MON-10).
+   * Defaults to 'starter' until resolved.
+   */
+  tier: string;
 
   isLoading: boolean;
   hasResolved: boolean;
@@ -75,6 +85,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [shopId, setShopId] = useState<number | null>(null);
   const [modules, setModules] = useState<string[]>([]);
   const [flags, setFlags] = useState<string[]>([]);
+  const [tier, setTier] = useState<string>('starter');
   const [isLoading, setIsLoading] = useState(false);
   const [hasResolved, setHasResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +95,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     shopId: number | null;
     modules: string[];
     flags: string[];
+    tier: string;
   } | null>(null);
 
   const snapshot = React.useMemo(() => ({
@@ -168,9 +180,12 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           console.groupEnd();
         } */
 
+        const nextTier = typeof payload.tier === 'string' ? payload.tier : 'starter';
+
         setShopId(nextShopId);
         setModules(nextModules);
         setFlags(nextFlags);
+        setTier(nextTier);
         setError(null);
         setHasResolved(true);
 
@@ -178,7 +193,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         lastGoodSnapshotRef.current = {
           shopId: nextShopId,
           modules: nextModules,
-          flags: nextFlags
+          flags: nextFlags,
+          tier: nextTier,
         };
 
         if (import.meta.env.DEV) {
@@ -207,6 +223,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setShopId(snap.shopId);
         setModules(snap.modules);
         setFlags(snap.flags);
+        setTier(snap.tier);
         setError(null);
         setHasResolved(true);
 
@@ -249,6 +266,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     modules,
     flags,
     snapshot,
+    tier,
     isLoading,
     hasResolved,
     error,

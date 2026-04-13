@@ -155,6 +155,32 @@ export const createMember = async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'EMAIL_ALREADY_IN_USE' });
     }
 
+    // --- Seat limit enforcement (MON-04) ---
+    // Tier is read from JWT claim (set at login/refresh via shop_subscriptions).
+    // Falls back to 'starter' (1 seat) if claim is missing — fail closed.
+    const { getTierConfig, isValidTier } = await import('@lasyncro/backend-core/config/tiers.js');
+    const rawTier = req.user!.tier ?? 'starter';
+    const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
+    const { seatLimit } = getTierConfig(currentTier);
+
+    const activeSeatCount = await db('shop_memberships')
+      .where({ shop_id: shopId })
+      .whereNull('revoked_at')
+      .count('id as count')
+      .first();
+
+    const currentSeats = Number(activeSeatCount?.count ?? 0);
+
+    if (currentSeats >= seatLimit) {
+      console.warn('[MEMBERS] Seat limit reached', { shopId, currentSeats, seatLimit, tier: currentTier });
+      return res.status(403).json({
+        error: 'SEAT_LIMIT_REACHED',
+        current: currentSeats,
+        limit: seatLimit,
+        tier: currentTier,
+      });
+    }
+
     // Resolve shop name + creator name for invite email
     const shop = await db('shops').where({ id: shopId }).first('name');
     const creator = await db('users').where({ id: creatorUserId }).first('first_name', 'last_name', 'email');

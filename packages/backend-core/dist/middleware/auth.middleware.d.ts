@@ -8,6 +8,12 @@ export interface AuthContext {
     shopId?: number;
     actorType?: 'shop_user' | 'system_service' | 'support_admin';
     roles?: string[];
+    /**
+     * Subscription tier from JWT claim (MON-03).
+     * Set by token.service.ts at issuance. Falls back to 'starter'.
+     * Use for middleware gating only — never trust for billing decisions.
+     */
+    tier?: string;
 }
 declare global {
     namespace Express {

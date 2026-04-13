@@ -12,7 +12,8 @@ export interface NavItem {
 
   requiredModuleId?: string;
   requiredFlagId?: string;
-
+  /** Minimum subscription tier required to show this nav item (MON-06) */
+  requiredTier?: string;
   meta?: Record<string, unknown>;
 }
 

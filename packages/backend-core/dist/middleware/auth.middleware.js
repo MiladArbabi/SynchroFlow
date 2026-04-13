@@ -40,6 +40,7 @@ export const authenticateToken = (req, res, next) => {
             shopId: payload.shop_id,
             actorType: payload.actor_type,
             roles: payload.shop_roles,
+            tier: payload.tier ?? 'starter',
         };
         return next();
     });

@@ -1,6 +1,7 @@
 // apps/backend/src/api/entitlements/entitlements.controller.ts
 import { Request, Response } from 'express';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { resolveTierForShop } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 /**
  * GET /api/v1/entitlements/me
@@ -25,6 +26,7 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
         shopId: null,
         modules: [],
         flags: [],
+        tier: 'starter',
       });
     }
 
@@ -42,12 +44,14 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
       }
     }
 
-    // 4. Return normalized snapshot
-    // Ensure we always return the expected structure, even if service returns unexpected data
+    // 4. Return normalized snapshot — includes tier for frontend gating (MON-03)
+    const tier = await resolveTierForShop(entitlements.shopId);
+
     return res.json({
       shopId: entitlements.shopId ?? null,
       modules: Array.isArray(entitlements.modules) ? entitlements.modules : [],
       flags: Array.isArray(entitlements.flags) ? entitlements.flags : [],
+      tier,
     });
   } catch (error) {
     console.error('Error fetching entitlements:', error);

@@ -39,6 +39,11 @@
     "./services/*/*/*.js": {
       "types": "./dist/services/*/*/*.d.ts",
       "default": "./dist/services/*/*/*.js"
+    },
+    
+    "./config/*.js": {
+      "types": "./dist/config/*.d.ts",
+      "default": "./dist/config/*.js"
     }
   },
   "files": ["dist"],

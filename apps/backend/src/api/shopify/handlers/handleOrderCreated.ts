@@ -95,6 +95,60 @@ export async function handleOrderCreated(
   const shopId = installation.shop_id;
 
   /**
+   * ORDER VOLUME CAP ENFORCEMENT (MON-05)
+   * --------------------------------------
+   * Starter tier: 50 orders/month cap.
+   * At 80% (40/50) → warn via console (alert system hook can be added here).
+   * At 100% (50/50) → block ingestion hard.
+   * Cap resets on calendar month boundary (COUNT filter by current month).
+   * Falls back to 'starter' cap if no subscription row exists.
+   */
+  const { getTierConfig, isValidTier } = await import('@lasyncro/backend-core/config/tiers.js');
+
+  const subRow = await db('shop_subscriptions')
+    .where({ shop_id: shopId })
+    .first('tier');
+
+  const rawTier = subRow?.tier ?? 'starter';
+  const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
+  const { monthlyOrderCap } = getTierConfig(currentTier);
+
+  if (isFinite(monthlyOrderCap)) {
+    const startOfMonth = new Date();
+    startOfMonth.setUTCDate(1);
+    startOfMonth.setUTCHours(0, 0, 0, 0);
+
+    const countRow = await db('domain_events')
+      .where({ shop_id: shopId, event_type: 'orders/create' })
+      .where('event_time', '>=', startOfMonth)
+      .count('id as count')
+      .first();
+
+    const monthlyCount = Number(countRow?.count ?? 0);
+
+    if (monthlyCount >= monthlyOrderCap) {
+      console.warn('[ORDER_CAP_HARD_BLOCK] Monthly order cap reached — ingestion blocked', {
+        shopId,
+        tier: currentTier,
+        monthlyCount,
+        monthlyOrderCap,
+      });
+      return;
+    }
+
+    const warningThreshold = Math.floor(monthlyOrderCap * 0.8);
+    if (monthlyCount >= warningThreshold) {
+      console.warn('[ORDER_CAP_APPROACHING] Shop approaching monthly order cap', {
+        shopId,
+        tier: currentTier,
+        monthlyCount,
+        monthlyOrderCap,
+        warningThreshold,
+      });
+    }
+  }
+
+  /**
    * INGESTION IDENTITY ENFORCEMENT
    * ------------------------------
    * external_event_id is REQUIRED and persisted.

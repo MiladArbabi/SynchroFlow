@@ -11,6 +11,12 @@ export interface AuthContext {
   shopId?: number;             // Optional (future-safe)
   actorType?: 'shop_user' | 'system_service' | 'support_admin';
   roles?: string[];
+  /**
+   * Subscription tier from JWT claim (MON-03).
+   * Set by token.service.ts at issuance. Falls back to 'starter'.
+   * Use for middleware gating only — never trust for billing decisions.
+   */
+  tier?: string;
 }
 
 // Extend the Express Request type to include the user property
@@ -70,6 +76,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
       shopId: payload.shop_id,
       actorType: payload.actor_type,
       roles: payload.shop_roles,
+      tier: payload.tier ?? 'starter',
     };
 
     return next();

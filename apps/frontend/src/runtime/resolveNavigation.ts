@@ -33,11 +33,18 @@ interface ResolveNavigationInput {
    * Will be superseded by action-level entitlements in WM-19.
    */
   userRole?: string;
+  /**
+   * Current subscription tier for nav tier gating (MON-06).
+   * Defaults to 'starter' if not provided.
+   */
+  currentTier?: string;
 }
+
 export function resolveNavigation({
   entitlements,
   lifecyclePhase,
   userRole,
+  currentTier = 'starter',
 }: ResolveNavigationInput): ResolvedNavigation {
 
   console.log('LIFECYCLE PHASE:', lifecyclePhase);
@@ -80,11 +87,13 @@ export function resolveNavigation({
         // 🔒 Role gate: operators only see WMS
         if (userRole === 'operator' && item.id !== 'wms') continue;
 
-            // 🔐 Entitlement Visibility Gate
+            // 🔐 Entitlement + Tier Visibility Gate (MON-06)
             const visibility = resolveNavVisibility({
-            requiredModuleId: item.requiredModuleId,
-            modules: entitlements ? Array.from(entitlements.modules) : []
-        });
+              requiredModuleId: item.requiredModuleId,
+              modules: entitlements ? Array.from(entitlements.modules) : [],
+              requiredTier: item.requiredTier,
+              currentTier,
+            });
 
             if (visibility === 'hidden') continue;
 

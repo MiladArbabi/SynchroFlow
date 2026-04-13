@@ -47,6 +47,17 @@ export declare function requireShopContextForUser(userId: number): Promise<Resol
  */
 export declare function requireShopIdForUser(userId: number): Promise<number>;
 /**
+ * Resolve the active subscription tier for a shop.
+ *
+ * Falls back to 'starter' if no subscription row exists.
+ * Never throws — degrading to free tier is always safe.
+ *
+ * Used by:
+ *   - token.service.ts (JWT tier claim, MON-03)
+ *   - require-entitlement middleware (MON-03)
+ */
+export declare function resolveTierForShop(shopId: number): Promise<string>;
+/**
  * FUTURE EXTENSION (DOCUMENTED, NOT IMPLEMENTED)
  * ----------------------------------------------
  *

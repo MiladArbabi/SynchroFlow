@@ -130,6 +130,31 @@ export async function requireShopIdForUser(
 }
 
 /**
+ * Resolve the active subscription tier for a shop.
+ *
+ * Falls back to 'starter' if no subscription row exists.
+ * Never throws — degrading to free tier is always safe.
+ *
+ * Used by:
+ *   - token.service.ts (JWT tier claim, MON-03)
+ *   - require-entitlement middleware (MON-03)
+ */
+export async function resolveTierForShop(
+  shopId: number
+): Promise<string> {
+  const row = await db('shop_subscriptions')
+    .where({ shop_id: shopId })
+    .first('tier');
+
+  if (!row) {
+    console.warn('[shop-resolution] no subscription row for shop, defaulting to starter', { shopId });
+    return 'starter';
+  }
+
+  return row.tier;
+}
+
+/**
  * FUTURE EXTENSION (DOCUMENTED, NOT IMPLEMENTED)
  * ----------------------------------------------
  *

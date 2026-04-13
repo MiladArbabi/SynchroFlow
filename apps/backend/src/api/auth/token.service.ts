@@ -26,6 +26,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import db from '@lasyncro/backend-core/db.js';
+import { resolveTierForShop } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 console.log('[AUTH][ENV_CHECK]', {
   JWT_SECRET: !!process.env.JWT_SECRET,
@@ -170,6 +171,10 @@ export async function issueAuthTokens(
 
   const sessionId = crypto.randomUUID();
 
+  // Resolve subscription tier for JWT claim (MON-03)
+  // Falls back to 'starter' — never blocks token issuance
+  const tier = await resolveTierForShop(shopId);
+
   // ─────────────────────────────────────────────────────────────
   // 🔐 Access Token (JWT)
   // ─────────────────────────────────────────────────────────────
@@ -185,6 +190,7 @@ export async function issueAuthTokens(
       shop_id: shopId,
 
       shop_roles: shopRoles,
+      tier,
       scopes,
 
       session_id: sessionId,

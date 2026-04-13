@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { issueAuthTokens } from './token.service.js';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { ResolvedShopContext, requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
@@ -82,6 +83,44 @@ export const registerUser = async (req: Request, res: Response) => {
       },
       trx
     );
+
+    // --- 14-day Growth trial assignment (MON-07) ---
+    // Every new shop gets Growth-tier entitlements for 14 days.
+    // Converts to Starter automatically at trial_ends_at if no payment added.
+    // Reminder emails sent at D-3 and D-1 (see trial expiry job, MON-07).
+    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+    await trx('shop_subscriptions').insert({
+      shop_id: newShop.id,
+      tier: 'growth',
+      billing_interval: 'monthly',
+      status: 'trialing',
+      trial_ends_at: trialEndsAt,
+    });
+
+    const { getTierConfig } = await import('@lasyncro/backend-core/config/tiers.js');
+    const growthConfig = getTierConfig('growth');
+
+    const moduleRows = growthConfig.modules.map((moduleKey) => ({
+      shop_id: newShop.id,
+      module_key: moduleKey,
+      flag_key: null as string | null,
+      source: 'trial:growth',
+    }));
+
+    const flagRows = growthConfig.flags.map((flagKey) => ({
+      shop_id: newShop.id,
+      module_key: flagKey.split('.')[0],
+      flag_key: flagKey,
+      source: 'trial:growth',
+    }));
+
+    await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+
+    console.log('[auth][register] Growth trial assigned', {
+      shopId: newShop.id,
+      trialEndsAt,
+    });
 
     return createdUser;
   });
