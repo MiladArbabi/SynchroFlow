@@ -52,12 +52,14 @@ export type ProductsFt2Snapshot = {
     coverage: 'complete' | 'partial' | 'missing' | 'unknown';
   } | null;
 
-   dataFreshness?: {
-    structural: 'fresh' | 'stale' | 'unknown';
-    inventory: 'fresh' | 'stale' | 'unknown';
-    sales: 'fresh' | 'stale' | 'unknown';
-    fulfillment: 'fresh' | 'stale' | 'unknown';
-    cost: 'fresh' | 'stale' | 'unknown';
+   // Each field is independently nullable — backend FTEP returns null per-field
+  // when that domain's freshness is 'unknown' (see ProductDataFreshnessFtep.service.ts)
+  dataFreshness?: {
+    structural: 'fresh' | 'stale' | 'unknown' | null;
+    inventory: 'fresh' | 'stale' | 'unknown' | null;
+    sales: 'fresh' | 'stale' | 'unknown' | null;
+    fulfillment: 'fresh' | 'stale' | 'unknown' | null;
+    cost: 'fresh' | 'stale' | 'unknown' | null;
   } | null;
 
   alignment?: {
@@ -67,6 +69,14 @@ export type ProductsFt2Snapshot = {
   dependency?: {
     surface: 'isolated' | 'coupled' | 'unknown';
     blastRadius: 'contained' | 'wide' | 'unknown';
+  } | null;
+
+  // Catalog-level signals — downgraded from intelligence layer
+  // Source of truth: ProductsFtep.types.ts → signals
+  signals?: {
+    catalog: 'ok' | 'attention' | 'unknown';
+    skuCoverage: 'ok' | 'gaps' | 'unknown';
+    variantComplexity: 'simple' | 'complex' | 'unknown';
   } | null;
 };
 
@@ -139,5 +149,10 @@ export function mapProductsFt2Props(
       snapshot.dependency === undefined
         ? null
         : snapshot.dependency,
+
+    signals:
+      snapshot.signals === undefined
+        ? null
+        : snapshot.signals,
   };
 }

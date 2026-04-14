@@ -24,22 +24,6 @@ import { getProductDependencyFacts } from './products-dependency-facts/ProductDe
 import { buildProductDependencyFtep } from './products-dependency-ftep/ProductDependencyFtep.service.js';
 import { buildProductDependencyIntelligence } from './products-dependency-intelligence/ProductDependencyIntelligence.service.js';
 
-
-interface GetProductsFt2SnapshotInput {
-  shopId: number;
-  period: { from: string; to: string };
-
-  /**
-   * Entitlement resolution is passed in.
-   * Provider never infers.
-   */
-  entitlements: {
-    productDataIntegrity: {
-      allowed: boolean;
-    };
-  };
-}
-
 /**
  * Products FT2 Provider
  * --------------------
