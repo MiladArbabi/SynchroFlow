@@ -91,6 +91,7 @@ const ALLOWED_CONTEXTS = [
   'wms.shipConfirmation.writeback',
   'shopify.dev',        // dev-only (already guarded by NODE_ENV)
   'shopify.billing',    // Shopify RecurringApplicationCharge API (MON-09)
+  'shopify-token-backfill', // Historical refund backfill — one-shot per shop
 ];
 
 if (!ALLOWED_CONTEXTS.includes(context)) {

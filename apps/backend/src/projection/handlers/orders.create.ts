@@ -300,17 +300,12 @@ export async function handleOrdersCreate({
       });
 
     /**
-     * LINE ITEM NORMALIZATION (CRITICAL FIX)
-     * --------------------------------------
-     * Supports multiple ingestion shapes:
-     * - Shopify GraphQL: { lineItems: { edges: [...] } }
-     * - Canonical normalized: { lineItems: [...] }
-     * - Legacy REST: { line_items: [...] }
-     *
-     * Without this:
-     * - line items silently drop
-     * - revenue units never created
-     * - entire system operates on empty state
+     * LINE ITEM INSERT (NEW ORDERS ONLY)
+     * -----------------------------------
+     * Full insert with all fields.
+     * Runs only when order is new.
+     * Replay safety for existing orders handled by the
+     * unconditional update loop below.
      */
     const lineEdges = Array.isArray(payload.lineItems)
       ? payload.lineItems
@@ -318,141 +313,51 @@ export async function handleOrdersCreate({
       ?? payload.line_items
       ?? [];
 
-    console.debug('[ORDER_LINE_ITEMS_SHAPE]', {
-      raw: payload.lineItems,
-      keys: payload.lineItems ? Object.keys(payload.lineItems) : null,
-    });
-
-      for (const edge of lineEdges) {
-
+    for (const edge of lineEdges) {
       const li = edge.node ?? edge;
-
-      console.debug('[LINE_ITEM_PROCESSING]', {
-        variantId: li.variant?.id ?? li.variant_id,
-      });
-
-      let variantGid =
-        li.variant?.id ??
-        li.variantId ??
-        li.variant_id ??
-        null;
+      let variantGid = li.variant?.id ?? li.variantId ?? li.variant_id ?? null;
       if (!variantGid) continue;
-
       variantGid = String(variantGid);
-
       const variantId = variantGid.startsWith('gid://')
         ? variantGid
         : `gid://shopify/ProductVariant/${variantGid}`;
 
       const variantIdentity = await trx('external_product_identity_map')
-        .where({
-          shop_id: domainEvent.shop_id,
-          platform: 'shopify',
-          external_variant_id: variantId,
-        })
+        .where({ shop_id: domainEvent.shop_id, platform: 'shopify', external_variant_id: variantId })
         .first();
 
-      console.debug('[VARIANT_IDENTITY_LOOKUP]', {
-        variantId,
-        found: !!variantIdentity
-      });
-
       if (!variantIdentity) {
-        /**
-         * HARD INVARIANT VIOLATION
-         * ------------------------
-         * Orders referencing unknown variants indicates:
-         * - product sync lag
-         * - broken ingestion ordering
-         *
-         * Silent skip causes:
-         * - empty order_line_items
-         * - broken revenue units
-         * - invalid constraints + decisions
-         *
-         * MUST fail fast to preserve system integrity.
-         */
         throw new Error(
           `[ORDER_LINE_ITEM_VARIANT_IDENTITY_MISSING] shopId=${domainEvent.shop_id} order=${externalOrderId} variant=${variantId}`
         );
       }
 
       const variantRow = await trx('variants')
-        .where({
-          lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
-        })
+        .where({ lasyncro_variant_id: variantIdentity.lasyncro_variant_id })
         .first();
 
-      console.debug('[VARIANT_ROW_LOOKUP]', {
-        lasyncro_variant_id: variantIdentity?.lasyncro_variant_id,
-        found: !!variantRow
-      });
-
       if (!variantRow) {
-        /**
-         * INVARIANT VIOLATION (FATAL)
-         * ---------------------------
-         * variantIdentity exists but variantRow does not — identity map
-         * references a variant that was never persisted. This indicates
-         * a broken product sync, not a transient condition.
-         *
-         * Silent continue here produces empty order_line_items and
-         * broken revenue units — identical consequence to missing
-         * variantIdentity, which already throws. Policy must be consistent.
-         */
-        console.error('[ORDER_LINE_ITEM_VARIANT_ROW_MISSING_FATAL]', {
-          shopId: domainEvent.shop_id,
-          externalOrderId,
-          variantId,
-          lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
-        });
         throw new Error(
           `[ORDER_LINE_ITEM_VARIANT_ROW_MISSING] shopId=${domainEvent.shop_id} order=${externalOrderId} variant=${variantId}`
         );
       }
 
       const quantity = li.quantity ?? 0;
-
-      /**
-       * UNIT PRICE RESOLUTION (CANONICAL-FIRST)
-       * ----------------------------------------
-       * Canonical payload maps originalUnitPriceSet → unitPrice (flat number).
-       * Raw Shopify GraphQL payload uses originalUnitPriceSet.shopMoney.amount.
-       * Raw Shopify REST payload uses price.
-       *
-       * Priority:
-       * 1. li.unitPrice     — canonical mapper output
-       * 2. li.originalUnitPriceSet.shopMoney.amount — raw GraphQL
-       * 3. li.price         — raw REST
-       * 4. 0                — fallback (should never reach)
-       */
       const unitPrice =
-        li.unitPrice != null
-          ? Number(li.unitPrice)
-          : li.originalUnitPriceSet?.shopMoney?.amount != null
-            ? Number(li.originalUnitPriceSet.shopMoney.amount)
-            : li.price != null
-              ? Number(li.price)
-              : 0;
+        li.unitPrice != null ? Number(li.unitPrice)
+        : li.originalUnitPriceSet?.shopMoney?.amount != null ? Number(li.originalUnitPriceSet.shopMoney.amount)
+        : li.price != null ? Number(li.price)
+        : 0;
 
-      console.debug('[ORDER_LINE_ITEM_INSERT_ATTEMPT]', {
-        variantId,
-        lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
-      });
-
+      // Canonical payload uses lineItemId; raw GraphQL uses id
+      const lineItemId = li.lineItemId ?? li.id;
       await trx('order_line_items')
         .insert({
           lasyncro_line_item_id: crypto
             .createHash('sha1')
-            .update(
-              `${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${externalOrderId}:line:${li.id}`
-            )
-            .digest('hex')
-            .slice(0, 32)
-            .replace(
-              /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
-              '$1-$2-$3-$4-$5'
-            ),
+            .update(`${ORDER_UUID_NAMESPACE}:${domainEvent.shop_id}:shopify:${externalOrderId}:line:${lineItemId}`)
+            .digest('hex').slice(0, 32)
+            .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, '$1-$2-$3-$4-$5'),
           lasyncro_order_id: lasyncroOrderId,
           lasyncro_product_id: variantRow.lasyncro_product_id,
           lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
@@ -462,25 +367,58 @@ export async function handleOrdersCreate({
           unit_price: unitPrice,
           line_total: unitPrice * quantity,
           platform: 'shopify',
-          external_line_item_id: li.id,
+          external_line_item_id: lineItemId,
           created_at: canonicalEventTime,
           updated_at: canonicalEventTime,
         })
-        /**
-         * CONFLICT STRATEGY: MERGE (LINE ITEM IDENTITY)
-         * --------------------------------------------
-         * Ensures deterministic projection of line items.
-         * Prevents silent drops during replay or duplicate ingestion.
-         */
         .onConflict('lasyncro_line_item_id')
-        .merge({
-          updated_at: trx.fn.now()
-        });
+        .merge({ external_line_item_id: lineItemId, updated_at: trx.fn.now() });
 
-        console.debug('[ORDER_LINE_ITEM_INSERT_SUCCESS]', {
-          variantId,
-        });
+        console.debug('[ORDER_LINE_ITEM_INSERT_SUCCESS]', { externalLineItemId: lineItemId });
     }
+  } // end if (!existingOrder)
+
+  /**
+   * LINE ITEM EXTERNAL ID BACKFILL (REPLAY-SAFE)
+   * ---------------------------------------------
+   * Runs for both new and existing orders.
+   * Ensures external_line_item_id is always populated
+   * even when order already existed at projection time.
+   * Idempotent — onConflict merge handles duplicates.
+   */
+  const lineEdgesForUpdate = Array.isArray(payload.lineItems)
+    ? payload.lineItems
+    : payload.lineItems?.edges
+    ?? payload.line_items
+    ?? [];
+
+  for (const edge of lineEdgesForUpdate) {
+    const li = edge.node ?? edge;
+    const lineItemId = li.lineItemId ?? li.id;
+    if (!lineItemId) continue;
+
+    let variantGid = li.variant?.id ?? li.variantId ?? li.variant_id ?? null;
+    if (!variantGid) continue;
+    variantGid = String(variantGid);
+    const variantId = variantGid.startsWith('gid://')
+      ? variantGid
+      : `gid://shopify/ProductVariant/${variantGid}`;
+
+    const variantIdentity = await trx('external_product_identity_map')
+      .where({ shop_id: domainEvent.shop_id, platform: 'shopify', external_variant_id: variantId })
+      .first();
+
+    if (!variantIdentity) continue;
+
+    await trx('order_line_items')
+      .where({
+        lasyncro_order_id: lasyncroOrderId,
+        lasyncro_variant_id: variantIdentity.lasyncro_variant_id,
+      })
+      .update({
+        external_line_item_id: lineItemId,
+        updated_at: canonicalEventTime,
+      });
   }
 
     let baselineStatus:

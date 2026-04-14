@@ -122,9 +122,15 @@ export async function handleRefundsCreate({
 
     for (const item of refundLineItems) {
 
-      const externalLineItemId = String(
-        item?.line_item?.id ?? item?.line_item_id ?? ''
-      );
+      // Normalize line item ID — backfill may store full GID or numeric ID.
+      // order_line_items.external_line_item_id stores full GID format.
+      // Ensure we always look up by GID.
+      const rawLineItemId = String(item?.line_item?.id ?? item?.line_item_id ?? '');
+      const externalLineItemId = rawLineItemId.startsWith('gid://')
+        ? rawLineItemId
+        : rawLineItemId
+          ? `gid://shopify/LineItem/${rawLineItemId}`
+          : '';
 
       if (!externalLineItemId) continue;
 
