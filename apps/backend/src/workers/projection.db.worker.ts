@@ -1,5 +1,6 @@
 import db from '@lasyncro/backend-core/db.js';
 import { projectDomainEventCore } from '../projection/projection.engine.js';
+import { debugLog } from '../projection/projection.utils.js';
 
 /**
  * DB-DRIVEN PROJECTION WORKER (SOURCE OF TRUTH)
@@ -228,7 +229,7 @@ for (const event of nextEvents) {
           );
         }
 
-        console.debug('[DB_PROJECTION_PROCESSING]', {
+        debugLog('[DB_PROJECTION_PROCESSING]', {
           domain_event_id: event.id,
         });
 
@@ -279,11 +280,11 @@ for (const event of nextEvents) {
             updated_at: trx.fn.now(),
           });
 
-        console.debug('[DB_CURSOR_ADVANCED]', {
+        debugLog('[DB_CURSOR_ADVANCED]', {
           to: eventId,
         });
 
-        console.debug('[DB_PROJECTION_EXECUTED]', {
+        debugLog('[DB_PROJECTION_EXECUTED]', {
           domain_event_id: eventId,
         });
       });

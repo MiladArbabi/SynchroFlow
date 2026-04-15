@@ -3,6 +3,7 @@
 import db from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
 import crypto from 'crypto';
+import { debugLog } from '../../projection/projection.utils.js';
 
 
 /**
@@ -181,7 +182,7 @@ export class OrderFulfillmentIngestionService {
       status === 'cancelled' ||
       newPrecedence >= currentPrecedence;
 
-    console.info('[FULFILLMENT_PRECEDENCE_CHECK]', {
+    debugLog('[FULFILLMENT_PRECEDENCE_CHECK]', {
       lasyncroOrderId,
       incomingStatus: status,
       existingStatus: existing.status,

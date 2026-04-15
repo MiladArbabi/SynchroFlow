@@ -1,7 +1,7 @@
 // apps/backend/src/projection/projection.engine.ts
 import { Knex } from 'knex';
 import { projectionRegistry } from './projection.registry.js';
-import { extractExternalOrderId } from './projection.utils.js';
+import { extractExternalOrderId, debugLog } from './projection.utils.js';
 
 import { projectOrderAge } from '../projections/orderAgeProjection.js';
 import { projectOrderConstraints } from '../projections/orderConstraintProjection.js';
@@ -71,7 +71,7 @@ export async function projectDomainEvent(
       trx
     });
 
-    console.debug('[PROJECTION_EXECUTED_VIA_RUNTIME]', {
+    debugLog('[PROJECTION_EXECUTED_VIA_RUNTIME]', {
       domain_event_id
     });
   });
@@ -148,7 +148,7 @@ export async function projectDomainEventCore({
         domainEvent.event_type === 'orders/fulfillment_updated'
       ) {
         canonicalPayload = domainEvent.event_payload;
-        console.debug('[CANONICAL_FULFILLMENT_PASSTHROUGH]', {
+        debugLog('[CANONICAL_FULFILLMENT_PASSTHROUGH]', {
           eventId: domain_event_id,
           eventType: domainEvent.event_type,
         });
@@ -202,7 +202,7 @@ export async function projectDomainEventCore({
             domainEvent.shop_id
           );
 
-          console.debug('[CANONICAL_NORMALIZATION_APPLIED]', {
+          debugLog('[CANONICAL_NORMALIZATION_APPLIED]', {
             eventId: domain_event_id,
             eventType: domainEvent.event_type,
           });
@@ -410,7 +410,7 @@ export async function projectDomainEventCore({
             updated_at: trx.fn.now(),
           });
 
-        console.debug('[PROJECTION_COMPLETED]', {
+        debugLog('[PROJECTION_COMPLETED]', {
           orderId: projectionTargetOrderId,
           domain_event_id,
         });
@@ -466,7 +466,7 @@ export async function projectDomainEventCore({
           throw new Error('[PROJECTION_ORCHESTRATION_INVALID_STATE]');
         }
 
-        console.debug('[PROJECTION_ORCHESTRATION_START]', {
+        debugLog('[PROJECTION_ORCHESTRATION_START]', {
           orderId: projectionTargetOrderId,
           domain_event_id
         });
@@ -510,7 +510,7 @@ export async function projectDomainEventCore({
            *
            * Without this log, silent projection failures are undetectable.
            */
-          console.debug('[AGE_PROJECTION_VERIFIED]', {
+          debugLog('[AGE_PROJECTION_VERIFIED]', {
             orderId: projectionTargetOrderId,
             aggregateVersion
           });
@@ -568,7 +568,7 @@ export async function projectDomainEventCore({
             });
         }
 
-        console.debug('[PROJECTION_ORCHESTRATION_COMPLETED]', {
+        debugLog('[PROJECTION_ORCHESTRATION_COMPLETED]', {
           orderId: projectionTargetOrderId,
           domain_event_id
         });

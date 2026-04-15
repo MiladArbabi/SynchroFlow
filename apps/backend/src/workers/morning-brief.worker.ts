@@ -80,9 +80,12 @@ export async function startMorningBriefWorker(): Promise<void> {
 
   // Wait until 5am UTC before first run
   const initialDelay = msUntilNextRun();
-  console.info('[morning-brief-worker] started — first run in', {
-    minutes: Math.round(initialDelay / 60000),
-  });
+  
+  // DEBUG only — this fires on every restart and is intentionally silent in production.
+  // First run is intentionally delayed until 5am UTC via msUntilNextRun().
+  console.debug('[morning-brief-worker] started — first run in', {
+      minutes: Math.round(initialDelay / 60000),
+    });
 
   await sleep(initialDelay);
 

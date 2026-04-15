@@ -197,17 +197,6 @@ export function LifecycleProvider({
       try {
         const res = await getFt2Readiness();
 
-        /**
-         * ⚠️ REMOVED: lifecycle fetch from readiness effect
-         * ------------------------------------------------
-         * Readiness must NOT fetch lifecycle.
-         * Lifecycle polling is the ONLY source.
-         */
-        console.log('[AUDIT][READINESS_ONLY]', {
-          readiness: res,
-          ts: performance.now(),
-        });
-
         console.info('[LIFECYCLE][READINESS_SYNC]', {
           ready: res?.ready,
           ts: performance.now(),
@@ -222,11 +211,13 @@ export function LifecycleProvider({
     }
 
     loadReadiness();
-    const i = setInterval(loadReadiness, 3000);
+
+    // Stop polling once FT2 is confirmed — no further readiness checks needed
+    const i = isHydratedTerminal ? null : setInterval(loadReadiness, 3000);
 
     return () => {
       cancelled = true;
-      clearInterval(i);
+      if (i) clearInterval(i);
     };
   }, [shopId]);
 
@@ -358,7 +349,7 @@ export function LifecycleProvider({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [shopId, state.integrationExists]);
+  }, [shopId, state.integrationExists, isHydratedTerminal]);
 
   /* ---------------- FT2 restore ---------------- */
 
@@ -389,6 +380,9 @@ export function LifecycleProvider({
     if (!state.bootResolved) return;
     if (!state.integrationExists) return;
     if (!shopId) return;
+
+    // FT2 is terminal — lifecycle will not progress further, stop polling
+    if (isHydratedTerminal) return;
 
     let cancelled = false;
 
@@ -441,12 +435,6 @@ export function LifecycleProvider({
   }
 
   const isBooting = false;
-
-  console.log('[LIFECYCLE_PROVIDER_RENDER]', {
-    phase: state.phase,
-    readiness,
-    isResolved,
-  });
 
   return (
     <ShopLifecycleContext.Provider 

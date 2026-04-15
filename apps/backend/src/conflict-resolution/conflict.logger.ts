@@ -6,6 +6,7 @@
  */
 
 import { ConflictType, ResolutionStrategy } from './conflict.types.js';
+import { debugLog } from '../projection/projection.utils.js';
 
 export function logConflictResolved(params: {
   entity: string;
@@ -14,7 +15,7 @@ export function logConflictResolved(params: {
   resolutionStrategy: ResolutionStrategy;
   note?: string;
 }) {
-  console.info('[CONFLICT_RESOLVED]', params);
+  debugLog('[CONFLICT_RESOLVED]', params);
 }
 
 export function logConflictIgnored(params: {
@@ -22,7 +23,7 @@ export function logConflictIgnored(params: {
   conflictKey: string[] | string;
   note?: string;
 }) {
-  console.warn('[CONFLICT_IGNORED]', params);
+  debugLog('[CONFLICT_IGNORED]', params);
 }
 
 export function logIdempotentSkip(params: {

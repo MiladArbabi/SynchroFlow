@@ -1,8 +1,3 @@
 {
-  "watch": [
-    "apps/backend/src",
-    "packages/core-engine/build/Release/sf_core.node"
-  ],
-  "ext": "ts,json,node",
-  "exec": "npm run build -w api && npm start -w api"
+  "_comment": "This file is not used by any active dev script. Both dev-api and dev:worker define inline nodemon args in apps/backend/package.json. Do not add watch config here."
 }

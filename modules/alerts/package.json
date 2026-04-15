@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "rm -f tsconfig.tsbuildinfo && rm -rf dist && tsc -b tsconfig.json"
+    "build": "tsc -b tsconfig.json"
   },
   "dependencies": {
     "@lasyncro/ui-ft2": "0.1.0"

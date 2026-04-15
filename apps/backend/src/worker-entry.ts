@@ -12,10 +12,8 @@ import './api/shopify/shopify.webhook.js';
 
 import { initQueue } from './queue.js';
 import { startWorkers } from './bootstrap/workers.js';
-import './bootstrap/workers.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
-import { startShopSnapshotJobDispatcher } from './workers/projections/shopSnapshotJob.dispatcher.js';
 import { startProjectionHealthWorker } from './workers/projection.health.worker.js';
 
 async function start() {
@@ -90,8 +88,9 @@ async function start() {
    * processDomainEvent → projection → reconciliation
    */
   console.warn('[RECONCILIATION_DISPATCHER_DISABLED]');
-
-  startShopSnapshotJobDispatcher();
+ // NOTE: startShopSnapshotJobDispatcher is started via startWorkers() → bootstrap/workers.ts
+ // Do NOT call it here — doing so creates a duplicate setInterval poll loop on shop_snapshot_jobs,
+ // causing every snapshot job to execute twice.
 
   /**
    * PROJECTION HEALTH WORKER

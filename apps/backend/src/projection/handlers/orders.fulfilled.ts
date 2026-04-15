@@ -22,7 +22,7 @@ import { resolveExternalOrderId } from '../../services/identity/resolveExternalO
 import orderFulfillmentIngestionService 
   from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
-
+import { debugLog } from '../projection.utils.js';
 
 const ORDERS_PROJECTION = 'orders_projection';
 
@@ -38,7 +38,7 @@ export async function handleOrdersFulfilled({
   trx: Knex.Transaction;
 }) {
 
-  console.debug('[FULFILLMENT_HANDLER_START]', {
+  debugLog('[FULFILLMENT_HANDLER_START]', {
     eventId: domain_event_id,
   });
 
@@ -82,7 +82,7 @@ export async function handleOrdersFulfilled({
   
   const externalOrderId = String(payload.order_id);
 
-  console.debug('[FULFILLMENT_BEFORE_ID_RESOLUTION]', {
+  debugLog('[FULFILLMENT_BEFORE_ID_RESOLUTION]', {
     eventId: domain_event_id,
   });
 
@@ -120,8 +120,8 @@ export async function handleOrdersFulfilled({
     .select('aggregate_version')
     .first();
 
-  console.debug('[ORDER_ROW_LOCKED_FOR_UPDATE]', { lasyncroOrderId });
-  console.debug('[FULFILLMENT_AFTER_ID_RESOLUTION]', { eventId: domain_event_id, lasyncroOrderId });
+  debugLog('[ORDER_ROW_LOCKED_FOR_UPDATE]', { lasyncroOrderId });
+  debugLog('[FULFILLMENT_AFTER_ID_RESOLUTION]', { eventId: domain_event_id, lasyncroOrderId });
 
   /**
    * STATUS RESOLUTION (STRICT — NO FALLBACKS)
@@ -273,7 +273,7 @@ export async function handleOrdersFulfilled({
       trx
     );
 
-    console.debug('[FULFILLMENT_INGESTION_COMPLETED]', {
+    debugLog('[FULFILLMENT_INGESTION_COMPLETED]', {
       lasyncroOrderId,
       status,
       eventTime: canonicalEventTime,
@@ -406,7 +406,7 @@ export async function handleOrdersFulfilled({
             intentSnapshot.aggregateVersion,
             normalizedObserved
           );
-          console.info('[RECONCILIATION_JOB_PUBLISHED_POST_COMMIT]', {
+          debugLog('[RECONCILIATION_JOB_PUBLISHED_POST_COMMIT]', {
             lasyncroOrderId: intentSnapshot.lasyncroOrderId,
             aggregateVersion: intentSnapshot.aggregateVersion,
           });

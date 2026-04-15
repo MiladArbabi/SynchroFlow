@@ -14,6 +14,7 @@ import { FirstInsightService } from '../../services/first-insight.service.js';
  * not at fulfillment.
  */
 import { writeOrderRevenueUnits } from '../../workers/reconciliation/revenue-units.writer.js';
+import { debugLog } from '../projection.utils.js';
 
 const ORDER_UUID_NAMESPACE =
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
@@ -32,13 +33,13 @@ export async function handleOrdersCreate({
 
   const traceId = domainEvent.event_payload?.trace_id;
 
-  console.debug('[ORDER_INGESTION_TRACE]', {
+  debugLog('[ORDER_INGESTION_TRACE]', {
     eventId: domain_event_id,
     shopId: domainEvent.shop_id,
     traceId,
   });
 
-  console.log('[ORDER_HANDLER_ENTER]', {
+  debugLog('[ORDER_HANDLER_ENTER]', {
     eventId: domain_event_id,
     eventType: domainEvent.event_type,
   });
@@ -73,7 +74,7 @@ export async function handleOrdersCreate({
       trx
     );
 
-    console.info('[FT0_ENTRY_FROM_INGESTION]', { shopId });
+    debugLog('[FT0_ENTRY_FROM_INGESTION]', { shopId });
   }
 
   /**
@@ -123,7 +124,7 @@ export async function handleOrdersCreate({
 
   let externalOrderId = String(rawId);
 
-  console.debug('[ORDER_ID_TRACE]', {
+  debugLog('[ORDER_ID_TRACE]', {
     eventId: domain_event_id,
     eventType: domainEvent.event_type,
     rawId,
@@ -131,7 +132,7 @@ export async function handleOrdersCreate({
   });
 
   if (domainEvent.event_payload?.order_id && !domainEvent.event_payload?.id) {
-    console.debug('[ORDER_ID_FALLBACK_USED]', {
+    debugLog('[ORDER_ID_FALLBACK_USED]', {
       eventType: domainEvent.event_type,
       used: 'order_id',
       eventId: domain_event_id,
@@ -161,7 +162,7 @@ export async function handleOrdersCreate({
       '$1-$2-$3-$4-$5'
     );
 
-  console.debug('[ORDER_HASH_TRACE]', {
+  debugLog('[ORDER_HASH_TRACE]', {
     eventId: domain_event_id,
     externalOrderId,
     lasyncroOrderId,
@@ -171,7 +172,7 @@ export async function handleOrdersCreate({
     .where({ lasyncro_order_id: lasyncroOrderId })
     .first();
 
-  console.debug('[ORDER_EXISTENCE_CHECK]', {
+  debugLog('[ORDER_EXISTENCE_CHECK]', {
     eventId: domain_event_id,
     lasyncroOrderId,
     exists: !!existingOrder,
@@ -248,7 +249,7 @@ export async function handleOrdersCreate({
       updated_at: canonicalEventTime,
     });
 
-    console.log('[ORDER_INSERTED]', { lasyncroOrderId });
+    debugLog('[ORDER_INSERTED]', { lasyncroOrderId });
 
     /**
      * CUSTOMER UPSERT
@@ -269,7 +270,7 @@ export async function handleOrdersCreate({
         .onConflict(['shop_id', 'external_customer_id'])
         .ignore();
 
-      console.debug('[CUSTOMER_UPSERTED]', {
+      debugLog('[CUSTOMER_UPSERTED]', {
         hashedId: payload.customer.hashedId,
         orderId: lasyncroOrderId,
       });
@@ -279,7 +280,7 @@ export async function handleOrdersCreate({
       `SELECT current_setting('app.current_tenant', true) as tenant`
     );
 
-    console.debug('[RLS_TENANT_CHECK]', tenantCheck.rows[0]);
+    debugLog('[RLS_TENANT_CHECK]', tenantCheck.rows[0]);
 
     await trx('external_order_identity_map')
       .insert({
@@ -374,7 +375,7 @@ export async function handleOrdersCreate({
         .onConflict('lasyncro_line_item_id')
         .merge({ external_line_item_id: lineItemId, updated_at: trx.fn.now() });
 
-        console.debug('[ORDER_LINE_ITEM_INSERT_SUCCESS]', { externalLineItemId: lineItemId });
+        debugLog('[ORDER_LINE_ITEM_INSERT_SUCCESS]', { externalLineItemId: lineItemId });
     }
   } // end if (!existingOrder)
 
@@ -501,7 +502,7 @@ export async function handleOrdersCreate({
     /**
      * PROJECTION TRACE
      */
-    /* console.debug('[FULFILLMENT_PROJECTED_INITIAL]', {
+    /* debugLog('[FULFILLMENT_PROJECTED_INITIAL]', {
       lasyncroOrderId,
     }); */
 

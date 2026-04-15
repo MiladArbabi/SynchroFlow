@@ -16,7 +16,7 @@
     "build:apps": "npm --workspace ui run build && npm --workspace api run build",
     "start": "node apps/backend/dist/src/server.js",
     "dev": "concurrently \"npm:dev-api\" \"npm:dev-worker\" \"npm:dev-ui\"",
-    "dev-worker": "npm run dev:worker --workspace=api",
+    "dev-worker": "wait-on tcp:5432 && SKIP_DEPS=1 npm run dev:worker --workspace=api",
     "dev-api": "wait-on tcp:5432 && npm run dev --workspace=api",
     "dev:api:test": "NODE_ENV=test npm --workspace ./apps/backend run dev",
     "dev-ui": "wait-on tcp:3000 && npm run dev --workspace=ui",

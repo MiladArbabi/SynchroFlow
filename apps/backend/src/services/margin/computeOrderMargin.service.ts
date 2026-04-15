@@ -1,6 +1,7 @@
 // apps/backend/src/services/margin/computeOrderMargin.service.ts
 
 import type { Knex } from 'knex';
+import { debugLog } from '../../projection/projection.utils.js';
 
 /**
  * MARGIN COMPUTATION SERVICE (MG-01, MG-02)
@@ -95,7 +96,7 @@ export async function computeOrderMargin(
       updated_at: trx.fn.now(),
     });
 
-  console.debug('[MARGIN_COMPUTED]', {
+  debugLog('[MARGIN_COMPUTED]', {
     orderId,
     grossRevenue,
     estimatedCost,

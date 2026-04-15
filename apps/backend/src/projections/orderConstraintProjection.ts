@@ -7,6 +7,8 @@ import { ConstraintEvaluationResult } from '../services/constraints/constraint.t
 import { logConflictResolved } from '../conflict-resolution/conflict.logger.js';
 import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
 
+import { debugLog } from '../projection/projection.utils.js';
+
 /**
  * ARCHITECTURE CHANGE (EVENT SYSTEM REMOVED)
  * ------------------------------------------
@@ -102,19 +104,6 @@ export async function projectOrderConstraints(
     }
 
     constraintMap[result.type].push(result);
-
-    /**
-     * META VISIBILITY (NON-BREAKING)
-     * ------------------------------
-     * Surface constraint metadata without affecting control logic.
-     */
-    /* if (result.meta) {
-      console.debug('[CONSTRAINT_META]', {
-        orderId,
-        type: result.type,
-        meta: result.meta
-      });
-    } */
   }
 
   /**
@@ -285,7 +274,7 @@ export async function projectOrderConstraints(
             updated_at: trx.fn.now()
           })
 
-          console.warn('[CONSTRAINT_EVENT_INSERTED]', {
+          debugLog('[CONSTRAINT_EVENT_INSERTED]', {
             orderId,
             type,
             targetId
@@ -329,12 +318,6 @@ export async function projectOrderConstraints(
           aggregate_version: aggregateVersion,
           updated_at: trx.fn.now()
         });
-
-      /* console.warn('[CONSTRAINT_DUAL_WRITE_RESOLVED]', {
-        orderId,
-        type,
-        targetId
-      }); */
       }
 
 
