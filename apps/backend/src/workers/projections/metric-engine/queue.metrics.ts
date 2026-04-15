@@ -32,9 +32,32 @@ export async function computeQueueMetrics(
     .count('* as count')
     .first();
 
-  const queueManualReview = Number(
+  const queueManualReviewConstrained = Number(
     requireRow(queueManualReviewRow as CountRow | undefined, 'queueManualReviewRow').count ?? 0
   );
+
+  // Partially fulfilled orders require manual review — operator must decide
+  // whether to ship the remainder or close the order.
+  // These are not constrained (no active constraint row) but must not ship automatically.
+  const partiallyFulfilledRow = await trx('orders as o')
+    .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .andWhere('o.payment_state', 'paid')
+    .andWhere('ofs.status', 'partially_fulfilled')
+    .whereNotExists(
+      trx('order_constraints as oc')
+        .select(1)
+        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('oc.is_active', true)
+    )
+    .count('* as count')
+    .first();
+
+  const partiallyFulfilled = Number(
+    requireRow(partiallyFulfilledRow as CountRow | undefined, 'partiallyFulfilledRow').count ?? 0
+  );
+
+  const queueManualReview = queueManualReviewConstrained + partiallyFulfilled;
 
   const queueAwaitingInventoryRow = await trx('order_constraints as oc')
     .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
@@ -75,11 +98,19 @@ const queueReadyToShipRow = await trx('orders as o')
   .where('o.shop_id', shopId)
   .andWhere('o.order_created_at', '<=', snapshotCutoff)
   .andWhere('o.payment_state', 'paid')
+  // Exclude fully fulfilled orders
   .whereNotExists(
     trx('order_fulfillment_status as ofs')
       .select(1)
       .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
       .andWhere('ofs.status', 'fulfilled')
+  )
+  // Exclude partially fulfilled — these require manual review before shipping remainder
+  .whereNotExists(
+    trx('order_fulfillment_status as ofs')
+      .select(1)
+      .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
+      .andWhere('ofs.status', 'partially_fulfilled')
   )
   .whereNotExists(
     trx('order_constraints as oc')
@@ -108,11 +139,19 @@ const readyToShipRevenueRow = await trx('order_revenue_units_net as oru')
   .where('o.shop_id', shopId)
   .andWhere('o.order_created_at', '<=', snapshotCutoff)
   .andWhere('o.payment_state', 'paid')
+  // Exclude fully fulfilled — mirrors queueReadyToShipRow exactly
   .whereNotExists(
     trx('order_fulfillment_status as ofs')
       .select(1)
       .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
       .andWhere('ofs.status', 'fulfilled')
+  )
+  // Exclude partially fulfilled — must stay in sync with queueReadyToShipRow
+  .whereNotExists(
+    trx('order_fulfillment_status as ofs')
+      .select(1)
+      .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
+      .andWhere('ofs.status', 'partially_fulfilled')
   )
   .whereNotExists(
     trx('order_constraints as oc')

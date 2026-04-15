@@ -18,13 +18,26 @@ export async function computeSlaMetrics(
    * Filtering by creation time corrupts aging distributions.
    */
 
-  const agingBuckets = await trx('order_age_snapshot as oas')
-    .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-    .where('o.shop_id', shopId)
-    /**
-     * DB CONTRACT: replace raw aggregation with explicit typed select
-     * Ensures schema visibility and future type inference compatibility
-     */
+  // CRITICAL: use latest aggregate_version per order only.
+  // order_age_snapshot is append-only — multiple rows per order exist.
+  // Joining without version filter inflates all counts by ~3x.
+  const agingBuckets = await trx
+    .with('latest_age_snapshot', (qb) => {
+      // Select only the single latest snapshot row per order.
+      // DISTINCT ON guarantees one row per lasyncro_order_id — the one with highest aggregate_version.
+      qb.from('order_age_snapshot as oas')
+        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .distinctOn('oas.lasyncro_order_id')
+        .select('oas.lasyncro_order_id', 'oas.age_since_creation_seconds')
+        .orderBy('oas.lasyncro_order_id')
+        .orderBy('oas.aggregate_version', 'desc');
+    })
+    .from('latest_age_snapshot as oas')
+    .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'oas.lasyncro_order_id')
+    // CRITICAL: only count unfulfilled orders.
+    // Fulfilled orders retain age_since_creation_seconds and corrupt aging distributions.
+    .whereIn('ofs.status', ['pending', 'partially_fulfilled'])
     .select([
       trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds < 86400) as aging_24h'),
       trx.raw('COUNT(*) FILTER (WHERE oas.age_since_creation_seconds >= 86400 AND oas.age_since_creation_seconds < 172800) as aging_48h'),

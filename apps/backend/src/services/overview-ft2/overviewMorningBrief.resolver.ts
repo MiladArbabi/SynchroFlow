@@ -121,7 +121,9 @@ export async function computeMorningBrief(input: {
       id: alert.alert_key,
       priority,
       title: alert.title,
-      detail: alert.message,
+      // Strip trailing revenue suffix injected by alerts aggregator (e.g. ".$42,952 at risk")
+      // Revenue impact is surfaced separately via revenueImpact field — not in detail text.
+      detail: alert.message.replace(/\.\$[\d,]+ at risk$/, '').trim(),
       module: destination.module,
       deepLink: destination.deepLink,
       revenueImpact: alert.revenue_impact != null ? Number(alert.revenue_impact) : null,

@@ -29,36 +29,49 @@ export async function computeConstraintMetrics(
     return row;
   }
 
-  const blockedRevenueRows = await trx('order_revenue_units_net as runet')
+  // --- Inventory + customer blocked revenue ---
+  // These constraints are variant-level (target_id = lasyncro_variant_id).
+  // Join through revenue units to get revenue per blocked variant.
+  const variantBlockedRevenueRows = await trx('order_revenue_units_net as runet')
     .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
-    .leftJoin('order_constraints as oc', (join) => {
+    .join('order_constraints as oc', (join) => {
       join.on('oc.lasyncro_order_id', '=', 'runet.lasyncro_order_id')
         .andOn('oc.target_id', '=', 'runet.lasyncro_variant_id')
-        /**
-         * DB CONTRACT: avoid raw boolean usage
-         */
         .andOn('oc.is_active', '=', trx.client.raw('?', [true]));
     })
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    /**
-     * DB CONTRACT: explicit aggregation columns (typed + inspectable)
-     */
     .select([
       trx.raw("SUM(CASE WHEN oc.constraint_type = 'inventory' THEN runet.net_revenue ELSE 0 END) as inventory_blocked"),
       trx.raw("SUM(CASE WHEN oc.constraint_type = 'customer' THEN runet.net_revenue ELSE 0 END) as customer_blocked"),
-      trx.raw("SUM(CASE WHEN oc.constraint_type = 'operational' THEN runet.net_revenue ELSE 0 END) as operational_blocked"),
     ])
     .first();
 
-  const blocked = requireRow(
-    blockedRevenueRows as BlockedRevenueRow | undefined,
-    'blockedRevenueRows'
+  const variantBlocked = requireRow(
+    variantBlockedRevenueRows as Omit<BlockedRevenueRow, 'operational_blocked'> | undefined,
+    'variantBlockedRevenueRows'
   );
+  const revenueBlockedInventory = Number(variantBlocked.inventory_blocked ?? 0);
+  const revenueBlockedCustomer = Number(variantBlocked.customer_blocked ?? 0);
 
-  const revenueBlockedInventory = Number(blocked.inventory_blocked ?? 0);
-  const revenueBlockedCustomer = Number(blocked.customer_blocked ?? 0);
-  const revenueBlockedOperational = Number(blocked.operational_blocked ?? 0);
+  // --- Operational blocked revenue ---
+  // Operational constraints are order-level (target_id = NULL).
+  // Sum total_price directly from orders — not via revenue units.
+  const operationalBlockedRow = await trx('orders as o')
+    .join('order_constraints as oc', (join) => {
+      join.on('oc.lasyncro_order_id', '=', 'o.lasyncro_order_id')
+        .andOnVal('oc.constraint_type', 'operational')
+        .andOnVal('oc.is_active', true);
+    })
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .sum('o.total_price as operational_blocked')
+    .first();
+
+  const revenueBlockedOperational = Number(
+    (operationalBlockedRow as { operational_blocked: number | string | null } | undefined)
+      ?.operational_blocked ?? 0
+  );
 
   const blockedRevenueTotal =
     revenueBlockedInventory +
