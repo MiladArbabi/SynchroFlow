@@ -21,7 +21,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-refresh/only-export-components */
 // apps/frontend/src/contexts/EntitlementsContext.tsx
-
 import React, {
   createContext,
   useContext,
@@ -32,6 +31,7 @@ import React, {
 } from 'react';
 import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from './AuthContext';
+import { Tier, isValidTier } from '../config/tiers';
 import { EntitlementSnapshot } from 'runtime/EntitlementSnapshot';
 
 // --- Backend payload shape ---
@@ -43,7 +43,7 @@ interface EntitlementsResponse {
   flags: string[];
 
   /** Subscription tier from backend entitlements snapshot (MON-03) */
-  tier: string;
+  tier: Tier;
 }
 
 // --- Context shape exposed to UI ---
@@ -59,7 +59,7 @@ interface EntitlementsContextValue {
    * Use for UI gating of intelligence modules (MON-06) and upgrade prompts (MON-10).
    * Defaults to 'starter' until resolved.
    */
-  tier: string;
+  tier: Tier;
 
   isLoading: boolean;
   hasResolved: boolean;
@@ -85,7 +85,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [shopId, setShopId] = useState<number | null>(null);
   const [modules, setModules] = useState<string[]>([]);
   const [flags, setFlags] = useState<string[]>([]);
-  const [tier, setTier] = useState<string>('starter');
+  const [tier, setTier] = useState<Tier>('starter');
   const [isLoading, setIsLoading] = useState(false);
   const [hasResolved, setHasResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +95,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     shopId: number | null;
     modules: string[];
     flags: string[];
-    tier: string;
+    tier: Tier;
   } | null>(null);
 
   const snapshot = React.useMemo(() => ({
@@ -180,7 +180,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           console.groupEnd();
         } */
 
-        const nextTier = typeof payload.tier === 'string' ? payload.tier : 'starter';
+        // Validate against canonical Tier union — unrecognized values degrade to 'starter' (fail-safe).
+        const nextTier: Tier = isValidTier(payload.tier) ? payload.tier : 'starter';
 
         setShopId(nextShopId);
         setModules(nextModules);

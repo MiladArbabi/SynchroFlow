@@ -228,11 +228,14 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const atRisk     = operationalControl?.at_risk_revenue ?? null;
 
   // ── Aging orders ─────────────────────────────────────────────
-  // Filter to 24h–72h+ bands only. Orders > 7 days are likely data issues.
-  // Sort newest breach first — those are the ones still fixable today.
-  const agingOrders = (operatorSummary?.agingOrders ?? [])
-    .filter(o => o.ageHours <= 168) // exclude orders older than 7 days
-    .sort((a, b) => a.ageHours - b.ageHours); // newest breach first
+  // Split aging orders into three SLA bands — each band shows orders that
+  // crossed that threshold. Sorted ascending within band (least late first).
+  const allAgingOrders = (operatorSummary?.agingOrders ?? [])
+    .sort((a, b) => a.ageHours - b.ageHours);
+
+  const aging24Orders = allAgingOrders.filter(o => o.ageHours >= 24 && o.ageHours < 48);
+  const aging48Orders = allAgingOrders.filter(o => o.ageHours >= 48 && o.ageHours < 72);
+  const aging72Orders = allAgingOrders.filter(o => o.ageHours >= 72);
 
   const agingCount = operationalControl?.aging_48h ?? 0;
   const aging72Count = operationalControl?.aging_72h_plus ?? 0;
@@ -356,6 +359,31 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
         </Box>
       )}
 
+      {/* ── 72H+ URGENT BANNER ─────────────────────────────────── */}
+      {aging72Count > 0 && (
+        <Box sx={{
+          p: 2, mb: 2,
+          border: '1px solid',
+          borderColor: 'error.light',
+          borderRadius: 1.5,
+          borderLeft: '4px solid',
+          borderLeftColor: 'error.main',
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2,
+        }}>
+          <Box>
+            <Typography variant="body2" fontWeight={600}>
+              {fmtN(aging72Count)} orders past 72 hours — customers may cancel
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              These are your most urgent. Resolving them first protects your refund rate.
+            </Typography>
+          </Box>
+          <Button size="small" variant="outlined" color="error" startIcon={<ExternalLink size={14} />} sx={{ flexShrink: 0 }}>
+            View 72h+ orders
+          </Button>
+        </Box>
+      )}
+
       {/* ── PULSE ROW ──────────────────────────────────────────── */}
       <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
         Right now
@@ -367,11 +395,11 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
         borderRadius: 2, overflow: 'hidden', mb: 4,
       }}>
         {[
-          { label: 'Total order value',    value: fmt$(totalSales),          color: 'text.primary' },
-          { label: 'Collected',            value: fmt$(earned),              color: 'success.dark' },
-          { label: 'Ready to ship',        value: fmtN(qReady),             color: qReady > 0 ? 'success.dark' : 'text.primary' },
-          { label: 'Stuck orders',         value: fmtN(constrained),        color: constrained > 0 ? 'error.main' : 'text.primary' },
-          { label: 'Revenue at risk',      value: fmt$(atRisk),              color: atRisk && atRisk > 0 ? 'error.main' : 'text.primary' },
+          { label: 'Total orders',         value: fmtN(orders?.total),       color: 'text.primary' },
+          { label: 'Shipped',              value: fmtN(orders?.fulfilled),   color: 'success.dark' },
+          { label: 'Ready to ship',        value: fmtN(qReady),              color: qReady > 0 ? 'success.dark' : 'text.primary' },
+          { label: 'Stuck orders',         value: fmtN(constrained),         color: constrained > 0 ? 'error.main' : 'text.primary' },
+          { label: 'Waiting to ship',      value: fmtN(orders?.unfulfilled), color: 'text.primary' },
         ].map((stat, i, arr) => (
           <Box key={stat.label} sx={{ display: 'flex' }}>
             <Box sx={{ minWidth: 120, px: 2, py: 1.5 }}>
@@ -400,90 +428,95 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             Start here — orders crossing the line
           </Typography>
 
-          <Box sx={{ ...cardSx, mb: 3 }}>
-
-            {/* Column headers */}
-            <Box sx={{
-              display: 'grid', gridTemplateColumns: '1fr auto auto',
-              gap: 1, px: 2, py: 1,
-              borderBottom: '1px solid', borderColor: 'divider',
-            }}>
-              {['Order', 'Age', 'Status'].map(h => (
-                <Typography key={h} variant="caption" sx={{
-                  fontWeight: 600, letterSpacing: '.04em',
-                  color: 'text.disabled', textAlign: h !== 'Order' ? 'right' : 'left',
-                }}>
-                  {h}
-                </Typography>
-              ))}
-            </Box>
-
-            {agingOrders.length === 0 ? (
-              <Box sx={{ px: 2, py: 2 }}>
-                <Typography variant="caption" color="text.secondary">
-                  {operatorSummary === undefined
-                    ? `${fmtN(agingCount)} overdue orders — loading details…`
-                    : 'No orders past 24 hours. All caught up.'}
-                </Typography>
+          {/* 72h+ band */}
+          {aging72Orders.length > 0 && (
+            <Box sx={{ ...cardSx, mb: 2 }}>
+              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'error.main' }}>72h+ — deadline missed</Typography>
+                <Typography variant="caption" color="text.secondary">{aging72Orders.length} orders</Typography>
               </Box>
-            ) : (
-              agingOrders.slice(0, 5).map((order) => {
-                const bucket = slaBucket(order.ageHours);
-                return (
-                  <Box
-                    key={order.lasyncro_order_id}
-                    sx={{
-                      display: 'grid', gridTemplateColumns: '1fr auto auto',
-                      gap: 1, alignItems: 'center',
-                      px: 2, py: 1.25,
-                      borderBottom: '1px solid', borderColor: 'divider',
-                      '&:last-child': { borderBottom: 'none' },
-                      '&:hover': { bgcolor: 'action.hover' },
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="body2" fontWeight={600}>
-                        {order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {constraintLabel(order.constraintType)}
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2" fontWeight={700} sx={{
-                      textAlign: 'right',
-                      color: bucket.severity === 'critical' ? 'error.main'
-                           : bucket.severity === 'warning'  ? 'warning.dark'
-                           : 'text.secondary',
-                    }}>
-                      {bucket.label}
-                    </Typography>
-                    <Chip
-                      label={order.isShippingSlaBreached ? 'SLA missed' : bucket.label === '72h+' ? 'Urgent' : 'Late'}
-                      size="small"
-                      color={order.isShippingSlaBreached ? 'error' : bucket.severity === 'critical' ? 'error' : bucket.severity === 'warning' ? 'warning' : 'default'}
-                      variant="outlined"
-                      sx={{ fontSize: 10, height: 20 }}
-                    />
+              {aging72Orders.slice(0, 5).map((order) => (
+                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' } }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
                   </Box>
-                );
-              })
-            )}
-
-            {agingCount > 5 && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
-                Showing 5 of {fmtN(agingCount)} overdue orders — sorted by newest breach first
-              </Typography>
-            )}
-
-            <Box sx={{ px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1 }}>
-              <Button size="small" variant="outlined" color="inherit" startIcon={<ExternalLink size={14} />}>
-                Open all in order view
-              </Button>
-              <Button size="small" variant="outlined" color="inherit">
-                Mark as reviewed
-              </Button>
+                  <Chip label={order.isShippingSlaBreached ? 'SLA missed' : 'Urgent'} size="small" color="error" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
+                </Box>
+              ))}
+              {aging72Orders.length > 5 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                  +{aging72Orders.length - 5} more
+                </Typography>
+              )}
             </Box>
+          )}
 
+          {/* 48h+ band */}
+          {aging48Orders.length > 0 && (
+            <Box sx={{ ...cardSx, mb: 2 }}>
+              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'warning.dark' }}>48h+ — needs attention today</Typography>
+                <Typography variant="caption" color="text.secondary">{aging48Orders.length} orders</Typography>
+              </Box>
+              {aging48Orders.slice(0, 5).map((order) => (
+                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' } }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
+                  </Box>
+                  <Chip label="Late" size="small" color="warning" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
+                </Box>
+              ))}
+              {aging48Orders.length > 5 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                  +{aging48Orders.length - 5} more
+                </Typography>
+              )}
+            </Box>
+          )}
+
+          {/* 24h+ band */}
+          {aging24Orders.length > 0 && (
+            <Box sx={{ ...cardSx, mb: 2 }}>
+              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>24h+ — keep an eye on these</Typography>
+                <Typography variant="caption" color="text.secondary">{aging24Orders.length} orders</Typography>
+              </Box>
+              {aging24Orders.slice(0, 5).map((order) => (
+                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' } }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
+                  </Box>
+                  <Chip label="Watch" size="small" color="default" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
+                </Box>
+              ))}
+              {aging24Orders.length > 5 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                  +{aging24Orders.length - 5} more
+                </Typography>
+              )}
+            </Box>
+          )}
+
+          {allAgingOrders.length === 0 && (
+            <Box sx={{ ...cardSx, mb: 2, px: 2, py: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                {operatorSummary === undefined
+                  ? `${fmtN(agingCount)} overdue orders — loading details…`
+                  : 'No overdue orders. All caught up.'}
+              </Typography>
+            </Box>
+          )}
+
+          <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+            <Button size="small" variant="outlined" color="inherit" startIcon={<ExternalLink size={14} />}>
+              Open all in order view
+            </Button>
+            <Button size="small" variant="outlined" color="inherit">
+              Mark as reviewed
+            </Button>
           </Box>
 
           {/* What's holding things up */}
@@ -587,24 +620,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             </Box>
           )}
 
-          {aging72Count > 0 && (
-            <Box sx={{
-              border: '1px solid', borderColor: 'error.light', borderRadius: 1.5,
-              borderLeft: '4px solid', borderLeftColor: 'error.main',
-              p: 2, mb: 1.5,
-            }}>
-              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                {fmtN(aging72Count)} orders past 72 hours — customers may cancel
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                These are your most urgent. Resolving them first protects your refund rate.
-              </Typography>
-              <Button size="small" variant="outlined" color="error" startIcon={<ExternalLink size={14} />}>
-                View 72h+ orders
-              </Button>
-            </Box>
-          )}
-
         </Box>
         
         {/* RIGHT */}
@@ -689,70 +704,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
               </Box>
             ))}
           </Box>
-
-          {/* Quick actions */}
-          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-            Quick actions
-          </Typography>
-
-          {qReady > 0 && (
-            <Box sx={{
-              border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
-              p: 2, mb: 1.5,
-            }}>
-              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                Ship the {fmtN(qReady)} {qReady === 1 ? 'order' : 'orders'} that {qReady === 1 ? 'is' : 'are'} ready
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                {qReady === 1
-                  ? 'This order is packed and waiting. Print the label and hand it off.'
-                  : 'These orders are packed and waiting. Print labels and hand them off.'}
-              </Typography>
-              <Button size="small" variant="contained" color="success" startIcon={<Printer size={14} />}>
-                Print shipping {qReady === 1 ? 'label' : 'labels'}
-              </Button>
-            </Box>
-          )}
-
-          {constrained > 0 && (
-            <Box sx={{
-              border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
-              p: 2, mb: 1.5,
-            }}>
-              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                Review {fmtN(constrained)} stuck orders
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                Each needs a decision from you. Open them in bulk to work through faster.
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button size="small" variant="outlined" color="inherit" startIcon={<ClipboardList size={14} />}>
-                  Open bulk review
-                </Button>
-                <Button size="small" variant="outlined" color="inherit" startIcon={<Printer size={14} />}>
-                  Generate pick list
-                </Button>
-              </Box>
-            </Box>
-          )}
-
-          {aging72Count > 0 && (
-            <Box sx={{
-              border: '1px solid', borderColor: 'error.light', borderRadius: 1.5,
-              borderLeft: '4px solid', borderLeftColor: 'error.main',
-              p: 2,
-            }}>
-              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                {fmtN(aging72Count)} orders past 72 hours — customers may cancel
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                These are your most urgent. Resolving them first protects your refund rate.
-              </Typography>
-              <Button size="small" variant="outlined" color="error" startIcon={<ExternalLink size={14} />}>
-                View 72h+ orders
-              </Button>
-            </Box>
-          )}
 
         </Box>
       </Box>

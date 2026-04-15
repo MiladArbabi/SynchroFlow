@@ -252,7 +252,7 @@ export default function CashFlowModuleFT2({ data, isLoading, isError }: CashFlow
                     }}
                   >
                     <Box>
-                      <Typography variant="body2" fontWeight={500}>
+                      <Typography variant="body2" fontWeight={600}>
                         {CONSTRAINT_LABELS[c.constraint_type] ?? c.constraint_type}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">

@@ -580,9 +580,44 @@ export const httpCompletePack = async (req: Request, res: Response) => {
           updated_at: now,
         });
 
+      // --- Usage metering (MON-11) ---
+      // Count non-cancelled orders in this batch — billed at pack-complete.
+      // Cancelled orders excluded: order_cancelled mid-pick generates a stow task,
+      // those items never reach the customer.
+      const billableOrders = await trx('pick_batch_orders as pbo')
+        .join('order_fulfillment_status as ofs', 'pbo.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .where({ 'pbo.pick_batch_id': batchId, 'pbo.shop_id': shopId })
+        .whereNot('ofs.status', 'cancelled')
+        .count<[{ count: string }]>('pbo.lasyncro_order_id as count')
+        .first();
+
+      const billableCount = parseInt(billableOrders?.count ?? '0', 10);
+
+      if (billableCount > 0) {
+        // Increment shipped_orders on the open billing period for this shop.
+        // If no open period exists, log and continue — never block fulfillment for billing failures.
+        const updated = await trx('shop_usage_metrics')
+          .where({ shop_id: shopId })
+          .whereNull('period_ends_at')
+          .increment('shipped_orders', billableCount);
+
+        if (updated === 0) {
+          console.warn('[WMS_PACK_COMPLETE][USAGE] no open billing period found — shipped_orders not incremented', {
+            shopId,
+            batchId,
+            billableCount,
+          });
+        } else {
+          console.info('[WMS_PACK_COMPLETE][USAGE] shipped_orders incremented', {
+            shopId,
+            batchId,
+            billableCount,
+          });
+        }
+      }
+
       // Alert supervisors — batch ready to ship
       await fireBatchReadyToShipAlert(trx, { shopId, batchId, isActive: true });
-
       console.info('[WMS_PACK_COMPLETED]', { pick_batch_id: batchId, packed_by: userId, shopId });
     });
 

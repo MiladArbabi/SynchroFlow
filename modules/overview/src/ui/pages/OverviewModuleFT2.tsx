@@ -1,6 +1,6 @@
 // modules/overview/src/ui/pages/OverviewModuleFT2.tsx
 import { Box, Typography, Divider, Chip } from '@mui/material';
-import { PanelRow } from '@lasyncro/ui-ft2';
+import { useTheme } from '@mui/material/styles';
 
 /**
  * OverviewModuleFT2DataProps
@@ -70,17 +70,19 @@ function PulseStat({
   value: number | null;
   tone?: 'neutral' | 'warning' | 'critical';
 }) {
+   const theme = useTheme();
+  // Use theme tokens — never hardcode hex. Keeps colors consistent across light/dark modes.
   const color =
     tone === 'critical'
-      ? '#C62828'
+      ? theme.palette.error.dark
       : tone === 'warning'
-      ? '#F9A825'
-      : 'text.primary';
+      ? theme.palette.warning.dark
+      : theme.palette.text.primary;
 
   return (
     <Box sx={{ flex: 1, minWidth: 120, px: 2, py: 1.5 }}>
       <Typography
-        variant="h4"
+        variant="h5"
         fontWeight={700}
         sx={{ color, fontVariantNumeric: 'tabular-nums' }}
       >

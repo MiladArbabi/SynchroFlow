@@ -73,6 +73,13 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('current_period_end').nullable();
     table.timestamp('canceled_at').nullable();
 
+    // --- Extra seats (MON-04) ---
+    // Purchasable seat add-ons above tier base limit.
+    // Effective seat limit = TIER_CONFIG[tier].seatLimit + extra_seats.
+    // Incremented via Stripe quantity-based price object.
+    // Never negative — enforced by check constraint below.
+    table.integer('extra_seats').notNullable().defaultTo(0);
+
     table
       .timestamp('created_at')
       .notNullable()
@@ -131,6 +138,13 @@ export async function up(knex: Knex): Promise<void> {
     ALTER TABLE shop_subscriptions
     ADD CONSTRAINT shop_subscriptions_status_valid
     CHECK (status IN ('trialing', 'active', 'past_due', 'canceled', 'unpaid'));
+  `);
+
+  // --- Extra seats constraint ---
+  await knex.raw(`
+    ALTER TABLE shop_subscriptions
+    ADD CONSTRAINT shop_subscriptions_extra_seats_nonnegative
+    CHECK (extra_seats >= 0);
   `);
 }
 

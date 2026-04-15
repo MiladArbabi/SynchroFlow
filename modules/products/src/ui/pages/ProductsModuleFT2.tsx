@@ -442,12 +442,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
             </Box>
 
             {/* ── Progress bar ── */}
-            <Box sx={{ position: 'relative', height: 8, borderRadius: 4, bgcolor: theme.palette.error.main, overflow: 'hidden', mb: 2, mt: 1.5 }}>
+            <Box sx={{ position: 'relative', height: 8, borderRadius: 1, bgcolor: theme.palette.error.main, overflow: 'hidden', mb: 2, mt: 1.5 }}>
               <Box sx={{
                 position: 'absolute', left: 0, top: 0, height: '100%',
                 width: `${sellablePct}%`,
                 bgcolor: theme.palette.success.main,
-                borderRadius: 4,
+                borderRadius: 1,
                 transition: 'width 0.4s ease',
               }} />
             </Box>
@@ -626,12 +626,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
 
                     {/* Return rate bar */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'divider', overflow: 'hidden' }}>
+                      <Box sx={{ flex: 1, height: 6, borderRadius: 1, bgcolor: 'divider', overflow: 'hidden' }}>
                         <Box sx={{
                           height: '100%',
                           width: `${barPct}%`,
                           bgcolor: rateColor,
-                          borderRadius: 3,
+                          borderRadius: 1,
                           transition: 'width 0.3s ease',
                         }} />
                       </Box>

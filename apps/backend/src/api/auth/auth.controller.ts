@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { issueAuthTokens } from './token.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { TIERS, getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { ResolvedShopContext, requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
@@ -92,15 +93,13 @@ export const registerUser = async (req: Request, res: Response) => {
 
     await trx('shop_subscriptions').insert({
       shop_id: newShop.id,
-      tier: 'growth',
+      tier: 'growth' satisfies typeof TIERS[number], // Trial tier (MON-07). 'satisfies' ensures compile-time validation against Tier union.
       billing_interval: 'monthly',
       status: 'trialing',
       trial_ends_at: trialEndsAt,
     });
 
-    const { getTierConfig } = await import('@lasyncro/backend-core/config/tiers.js');
     const growthConfig = getTierConfig('growth');
-
     const moduleRows = growthConfig.modules.map((moduleKey) => ({
       shop_id: newShop.id,
       module_key: moduleKey,
