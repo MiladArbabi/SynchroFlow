@@ -65,14 +65,11 @@ export type OrdersFt2Snapshot = {
    */
   obligations?: {
     totalBlockedValue: number | null;
-
-    blockedBy: {
-      inventory: number | null;
-      customer: number | null;
-      operational: number | null;
-      other: number | null;
-    } | null;
-
+    /**
+     * blockedBy breakdown is NOT produced by the backend FTEP layer.
+     * Do not add attribution fields here — FT2 obligations are aggregate-only.
+     * See: orderFtep.types.ts FT2ObligationsExposure
+     */
     coverage: {
       status: 'sufficient' | 'insufficient';
     };

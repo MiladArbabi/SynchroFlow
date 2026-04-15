@@ -102,6 +102,16 @@ export type OrderNexusFT2Snapshot =
     queue_awaiting_inventory: number;
     queue_ready_to_ship: number;
     queue_awaiting_customer: number;
+
+    /**
+     * Extended command center metrics.
+     * These fields are produced by the reconciliation projection
+     * and must stay in sync with orders_operational_control_snapshot.
+     */
+    total_at_risk_revenue: number;
+    sla_breach_24h_revenue: number;
+    top_blocking_type: string;
+    partial_fulfillment_opportunity: number;
   } | null;
 
   ingestion: {

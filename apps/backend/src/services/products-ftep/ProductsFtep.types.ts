@@ -23,7 +23,34 @@ export interface ProductsFT2Exposure {
       to: string;
     };
     productsObserved: number | null;
+
+    // Status distribution — raw counts from facts, no inference
+    statusCounts: {
+      active: number | null;
+      inactive: number | null;
+      archived: number | null;
+    } | null;
+
+    // SKU structure counts — presence-based, no ratios
+    variantsObserved: number | null;
+    productsWithSkuCount: number | null;
+    productsWithoutSkuCount: number | null;
   };
+
+  // Operational counts — presence-based, no inference
+  // Source: ProductOperationalFacts
+  operationalCounts: {
+    productsWithInventoryCount: number | null;
+    productsWithoutInventoryCount: number | null;
+    skusWithSalesCount: number | null;
+    totalSkusObserved: number | null;
+  } | null;
+
+  // Supply counts — presence-based, no inference
+  // Source: ProductSupplyFacts
+  supplyCounts: {
+    productsWithInventorySignalCount: number | null;
+  } | null;
 
   outcome: {
     status: 'positive' | 'negative' | 'unknown';

@@ -352,17 +352,6 @@ export async function getOrderNexusFt2StateSnapshot(
             manual_review: operationalControlRow.queue_manual_review,
           }
         : null,
-
-      /**
-       * DEPRECATED FIELD
-       * ----------------
-       * Retained temporarily for backward compatibility
-       * with existing snapshot adapters.
-       *
-       * Always empty since Operations Queue replaced
-       * the Priority Stack architecture.
-       */
-      priorityStack: [],
     },
 
     refunds: refundsFacts,

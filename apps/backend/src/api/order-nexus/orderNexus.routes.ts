@@ -14,6 +14,7 @@ import orderNexusRevenueEpistemicController
   from './orderNexusRevenueEpistemic.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
+import { httpGetOrdersOperatorSummary } from './orders.operator.controller.js';
 
 const router = Router();
 
@@ -75,6 +76,19 @@ router.get(
   authenticateToken,
   requireFt2,
   orderNexusRevenueEpistemicController
+);
+
+/**
+ * Operator Summary
+ * ----------------
+ * Purpose-built operator surface — no FTEP constraints.
+ * Raw counts, named entities, actionable breakdown.
+ * See: services/orders-operator/OrdersOperatorSummary.provider.ts
+ */
+router.get(
+  '/operator-summary',
+  authenticateToken,
+  httpGetOrdersOperatorSummary
 );
 
 export default router;

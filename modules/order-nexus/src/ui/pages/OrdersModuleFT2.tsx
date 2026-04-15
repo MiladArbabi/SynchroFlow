@@ -1,157 +1,33 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
-/**
- * FT2 LAYOUT CONTRACT
- * -------------------
- * Every FT2Row child must implement the span contract.
- *
- * Current implementation:
- *   FT2Panel
- *
- * Historical note:
- *   FT2Surface was previously used but has been
- *   superseded by the unified FT2Panel primitive.
- */
-import { 
-  FT2Layout, 
-  FT2Row, 
-  FT2Panel, 
-  PanelFooter, 
-  PanelRow, 
-  PanelActions 
-} from '@lasyncro/ui-ft2';
-import { Button } from '@mui/material';
+
+import {
+  Box,
+  Typography,
+  Chip,
+  Divider,
+  useTheme,
+  Button,
+} from '@mui/material';
+import {
+  AlertTriangle,
+  Package,
+  Clock,
+  CheckCircle,
+  HelpCircle,
+  Printer,
+  ClipboardList,
+  ExternalLink,
+} from 'lucide-react';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
-
-import { OperationalCommandCenter } from '../components/OperationalCommandCenter.js';
-import { OrdersOverviewInfoBlock } from '../components/OrdersOverviewInfoBlock.js';
-import { RevenueOverviewInfoBlock } from '../components/RevenueOverviewInfoBlock.js';
-import { RevenueIntegrityInfoBlock } from '../components/RevenueIntegrityInfoBlock.js';
-
-import { OrdersDecisionBrief } from '../components/OrdersDecisionBrief.js';
 import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
-import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
-
-/**
- * OPERATIONS QUEUE
- * ----------------
- * Replaces legacy Priority Stack.
- *
- * Surface now exposes operational signals derived from
- * orders_operational_control_snapshot instead of
- * order_risk_snapshot ranking.
- */
+import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
-import { OperationalSignalsSection } from '../components/OperationalSignalsSection.js';
-
-/**
- * Operations Queue action handler
- *
- * Responsibilities:
- * - emit operational intent
- * - trigger lifecycle progression
- * - provide observable instrumentation
- *
- * NOTE
- * ----
- * Real orchestration will later be delegated to
- * the Action Orchestrator layer.
- */
-function handleOperationsAction(
-  actionType: string,
-  signal: OperationalSignal
-) {
-
-  console.info('[OrdersModuleFT2] Operational action received', {
-    actionType,
-    signalId: signal.id,
-  });
-
-  /**
-   * ACTION ROUTER
-   * -------------
-   * Explicit action registry for Operations Queue.
-   *
-   * Rules:
-   * - Every actionType emitted by the signal mapper
-   *   MUST be registered here.
-   * - Unknown actions trigger a hard error.
-   *
-   * This ensures the UI never exposes
-   * non-functional operational controls.
-   */
-  switch (actionType) {
-
-    case 'open_inventory_blocked_orders':
-    case 'open_sla_risk_orders':
-    case 'open_manual_review_orders':
-    case 'investigate_orders':
-    case 'inspect_exception_orders':
-    case 'investigate_aging_orders':
-    case 'inspect_partial_orders':
-    case 'review_payment_orders':
-      updateSignalLifecycle(signal.id, 'IN_PROGRESS');
-        console.info('[OrdersModuleFT2] navigation action requested', {
-          actionType,
-          signalId: signal.id
-        });
-      break;
-
-    case 'notify_inventory_supplier':
-    case 'prioritize_orders':
-    case 'print_shipping_labels':
-    case 'contact_customer':
-    case 'start_fulfillment_batch':
-    case 'contact_warehouse':
-    case 'contact_customer_payment':
-    case 'split_shipments':
-    /**
-     * WAREHOUSE EXECUTION WORKFLOWS
-     * -----------------------------
-     * Actions that initiate fulfillment pipeline operations.
-     *
-     * generate_pick_list
-     *   → creates picking session for warehouse execution
-     */
-    case 'generate_pick_list':
-      updateSignalLifecycle(signal.id, 'IN_PROGRESS');
-        console.info('[OrdersModuleFT2] workflow action requested', {
-          actionType,
-          signalId: signal.id
-        });
-      break;
-
-    default:
-      console.error(
-        '[OrdersModuleFT2] Unknown OperationsQueue actionType',
-        { actionType, signalId: signal.id }
-      );
-
-  }
-
-}
-
-/**
- * ─────────────────────────────────────────────────────────────
- * ORDERS MODULE — FT2
- * ─────────────────────────────────────────────────────────────
- *
- * Purpose:
- * - Render the canonical, read-only FT2 truth surface for Orders.
- *
- * Core invariants:
- * - No inference
- * - No recommendations
- * - No execution assumptions
- * - Equal visual weight for all values
- * - `null` ALWAYS renders as epistemic absence (`—`)
- */
 
 /**
  * OrdersModuleFT2DataProps
  * -----------------------
- * STRICT data contract.
- * This component performs NO data derivation.
+ * STRICT data contract. No data derivation in this component.
  */
 export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
@@ -169,36 +45,17 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
     blocked: number | null;
   };
 
-    /**
-   * Phase 1 — Operational Control Snapshot
-   * --------------------------------------
-   * Fully derived backend snapshot.
-   * Strict passthrough only.
-   *
-   * NOTE:
-   * This module is environment-agnostic.
-   * No logging or runtime branching allowed here.
-   */
   operationalControl: {
     snapshot_date: string;
     aggregate_version: number;
-
     realized_revenue: number;
     at_risk_revenue: number;
-    /**
-     * COMMAND CENTER — PRIMARY METRICS
-     * --------------------------------
-     * Backend-computed decision drivers.
-     * Must remain in sync with snapshot + resolver.
-     */
     total_at_risk_revenue: number;
     sla_breach_24h_revenue: number;
     top_blocking_type: string;
-
     blocked_revenue: number;
     revenue_leakage: number;
     avg_contribution_margin_pct: number;
-
     orders_at_sla_risk: number;
     aging_24h: number;
     aging_48h: number;
@@ -206,41 +63,14 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
     pending_fulfillment: number;
     pending_payment: number;
     exception_orders: number;
-
     constrained_orders: number;
     revenue_blocked_inventory: number;
     revenue_blocked_customer: number;
     revenue_blocked_operational: number;
-
-    /**
-     * WORK QUEUE METRICS
-     * ------------------
-     * Derived from orders_operational_control_snapshot.
-     *
-     * These values represent operational workload queues
-     * produced by the reconciliation projection.
-     *
-     * IMPORTANT:
-     * Each queue must appear exactly once in this interface.
-     * Duplicate fields create silent TypeScript structural
-     * shadowing and can mask schema drift between backend
-     * projections and FT2 UI contracts.
-     */
     queue_manual_review: number;
     queue_awaiting_inventory: number;
     queue_ready_to_ship: number;
     queue_awaiting_customer: number;
-
-    /**
-     * PARTIAL FULFILLMENT OPPORTUNITY
-     * --------------------------------
-     * Orders containing both:
-     * - available inventory
-     * - out-of-stock items
-     *
-     * Allows warehouse to ship partial orders.
-     * Derived by reconciliation projection.
-     */
     partial_fulfillment_opportunity: number;
   };
 
@@ -252,293 +82,684 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
   obligations?: {
     totalBlockedValue: number | null;
-    blockedBy: {
-      inventory: number | null;
-      customer: number | null;
-      operational: number | null;
-      other: number | null;
-    } | null;
-    coverage: {
-      status: 'sufficient' | 'insufficient';
-    };
+    /**
+     * blockedBy breakdown is NOT produced by the backend FTEP layer.
+     * Do not add attribution fields here — FT2 obligations are aggregate-only.
+     */
+    coverage: { status: 'sufficient' | 'insufficient' };
   };
 
-  /**
-   * Decision Layer (Authoritative Backend Snapshot)
-   * -----------------------------------------------
-   * Fully derived. No client computation.
-   * Backend owns ordering and scoring.
-   */
   decision: {
+    /**
+     * brief is null when no operational snapshot exists (degraded state).
+     * Never spread null — guard before use.
+     */
     brief: {
       ready_to_ship: number;
       awaiting_customer: number;
       inventory_blocked_revenue: string | number;
       manual_review: string | number;
-    };
+    } | null;
   };
-  /**
-   * ORDER SELECT HANDLER (B-02)
-   * ---------------------------
-   * Called when an operator selects an order to view detail.
-   * Parent (OrdersFT2Page) owns the panel state.
-   * Optional — panel is not rendered if not provided.
-   */
+
   onOrderSelect?: (orderId: string) => void;
+
+  /**
+   * Operator Summary (independent load)
+   * Populated by GET /api/v1/modules/order-nexus/operator-summary.
+   * null = still loading or unavailable. Must render gracefully.
+   */
+  operatorSummary?: {
+    constraintCounts?: { inventory: number; customer: number; operational: number };
+    topBlockingType?: string | null;
+    agingOrders?: Array<{
+      lasyncro_order_id: string;
+      externalOrderId: string | null;
+      ageHours: number;
+      isShippingSlaBreached: boolean;
+      constraintType: string | null;
+    }>;
+    queueCounts?: {
+      readyToShip: number;
+      awaitingInventory: number;
+      awaitingCustomer: number;
+      manualReview: number;
+    };
+  } | null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// LOCAL HELPERS
+// ─────────────────────────────────────────────────────────────
+
+const fmt$ = (n: number | null | undefined): string =>
+  n == null ? '—' : `$${Math.round(n).toLocaleString()}`;
+
+const fmtN = (n: number | null | undefined): string =>
+  n == null ? '—' : Math.round(n).toLocaleString();
+
+/**
+ * SLA bucket label — groups aging orders into operator-meaningful bands.
+ * Raw hours (1,292 hrs) are meaningless. Bands (72h+) are actionable.
+ */
+const slaBucket = (hours: number): { label: string; severity: 'critical' | 'warning' | 'mild' } => {
+  if (hours >= 72) return { label: '72h+', severity: 'critical' };
+  if (hours >= 48) return { label: '48h+', severity: 'warning' };
+  return { label: '24h+', severity: 'mild' };
 };
 
+const constraintLabel = (type: string | null | undefined): string => {
+  switch (type) {
+    case 'inventory':   return 'Out of stock';
+    case 'customer':    return 'Waiting on customer';
+    case 'operational': return 'Needs review';
+    default:            return 'No specific block';
+  }
+};
 
-export default function OrdersModuleFT2(
-  props: OrdersModuleFT2DataProps
-) {
-    const {
-      orders,
-      revenue,
-      returns,
-      obligations,
-      decision,
-      operationalControl,
-      distribution,
-      onOrderSelect
-    } = props;
+// Retained for signal lifecycle tracking — not rendered.
+function handleOperationsAction(actionType: string, signal: OperationalSignal) {
+  updateSignalLifecycle(signal.id, 'IN_PROGRESS');
+  console.info('[OrdersModuleFT2] action', { actionType, signalId: signal.id });
+}
 
-    /**
-     * OPERATIONAL HEALTH CLASSIFIER
-     * -----------------------------
-     * Computes high-level operational state from snapshot metrics.
-     * Provides global operational state only.
-     * 
-     * Design rule:
-     * - System Health must never duplicate incident signals.
-     * - Actionable issues belong exclusively to Operations Queue.
-     *
-     * This logic MUST remain presentation-only.
-     * No operational decisions may occur here.
-     */
-    const exceptionOrders = operationalControl?.exception_orders ?? 0;
-    const constrainedOrders = operationalControl?.constrained_orders ?? 0;
+// ─────────────────────────────────────────────────────────────
+// MONEY BAR — proportional bar relative to totalSales
+// ─────────────────────────────────────────────────────────────
+function MoneyBar({ value, total, color }: { value: number | null; total: number | null; color: string }) {
+  const pct = value && total && total > 0 ? Math.min(Math.round((value / total) * 100), 100) : 0;
+  return (
+    <Box sx={{ height: 4, width: 80, background: 'action.selected', borderRadius: 2, mt: '5px', overflow: 'hidden' }}>
+      <Box sx={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
+    </Box>
+  );
+}
 
-    let operationalHealth: 'healthy' | 'warning' | 'critical' = 'healthy';
+// ─────────────────────────────────────────────────────────────
+// ORDERS MODULE — FT2 (OPERATOR SURFACE)
+// ─────────────────────────────────────────────────────────────
+export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
+  const theme = useTheme();
 
-    /**
-     * SNAPSHOT INTEGRITY GUARD (UI BOUNDARY)
-     * --------------------------------------
-     * operationalControl may be undefined if:
-     * - resolver returned null
-     * - API response not yet loaded
-     *
-     * Signal engine REQUIRES a valid snapshot.
-     *
-     * We fail loudly AND provide deterministic fallback
-     * to prevent runtime crashes.
-     */
-    const safeOperationalControl = operationalControl ?? {
-      snapshot_date: new Date().toISOString(),
-      aggregate_version: 0,
+  const {
+    orders,
+    revenue,
+    operationalControl,
+    operatorSummary,
+    distribution,
+  } = props;
 
-      realized_revenue: 0,
-      at_risk_revenue: 0,
-      total_at_risk_revenue: 0,
-      sla_breach_24h_revenue: 0,
-      top_blocking_type: 'none',
+  // ── Health classification ────────────────────────────────────
+  const constrained = operationalControl?.constrained_orders ?? 0;
+  const exceptions  = operationalControl?.exception_orders ?? 0;
+  const isCritical  = constrained > 0;
+  const isWarning   = !isCritical && exceptions > 0;
 
-      blocked_revenue: 0,
-      revenue_leakage: 0,
-      avg_contribution_margin_pct: 0,
+  // ── Constraint counts ────────────────────────────────────────
+  // Prefer operator summary (accurate DB counts) over snapshot revenue fields.
+  const invBlocked  = operatorSummary?.constraintCounts?.inventory
+    ?? operationalControl?.revenue_blocked_inventory  ?? 0;
+  const custBlocked = operatorSummary?.constraintCounts?.customer
+    ?? operationalControl?.revenue_blocked_customer   ?? 0;
+  const opsBlocked  = operatorSummary?.constraintCounts?.operational
+    ?? operationalControl?.revenue_blocked_operational ?? 0;
 
-      orders_at_sla_risk: 0,
-      aging_24h: 0,
-      aging_48h: 0,
-      aging_72h_plus: 0,
+  // ── Dominant blocker — derived from actual counts, not stale snapshot field ──
+  const dominantBlocker: 'inventory' | 'customer' | 'operational' | 'unknown' =
+    invBlocked >= custBlocked && invBlocked >= opsBlocked && invBlocked > 0 ? 'inventory' :
+    custBlocked >= invBlocked && custBlocked >= opsBlocked && custBlocked > 0 ? 'customer' :
+    opsBlocked > 0 ? 'operational' : 'unknown';
 
-      pending_fulfillment: 0,
-      pending_payment: 0,
-      exception_orders: 0,
-      constrained_orders: 0,
+  // ── Queue counts ─────────────────────────────────────────────
+  const qReady   = operatorSummary?.queueCounts?.readyToShip       ?? operationalControl?.queue_ready_to_ship      ?? 0;
+  const qInv     = operatorSummary?.queueCounts?.awaitingInventory
+    ?? (operationalControl?.queue_awaiting_inventory > 0
+        ? operationalControl?.queue_awaiting_inventory
+        : operationalControl?.constrained_orders)
+    ?? 0;
+  const qCust    = operatorSummary?.queueCounts?.awaitingCustomer   ?? operationalControl?.queue_awaiting_customer  ?? 0;
+  const qManual  = operatorSummary?.queueCounts?.manualReview       ?? operationalControl?.queue_manual_review      ?? 0;
+  const qPending = operationalControl?.pending_fulfillment ?? 0;
 
-      revenue_blocked_inventory: 0,
-      revenue_blocked_customer: 0,
-      revenue_blocked_operational: 0,
+  // ── Revenue ──────────────────────────────────────────────────
+  const earned     = revenue?.earned     ?? null;
+  const pending    = revenue?.pending    ?? null;
+  const totalSales = revenue?.totalSales ?? null;
+  const atRisk     = operationalControl?.at_risk_revenue ?? null;
 
-      queue_manual_review: 0,
-      queue_awaiting_inventory: 0,
-      queue_ready_to_ship: 0,
-      queue_awaiting_customer: 0,
+  // ── Aging orders ─────────────────────────────────────────────
+  // Filter to 24h–72h+ bands only. Orders > 7 days are likely data issues.
+  // Sort newest breach first — those are the ones still fixable today.
+  const agingOrders = (operatorSummary?.agingOrders ?? [])
+    .filter(o => o.ageHours <= 168) // exclude orders older than 7 days
+    .sort((a, b) => a.ageHours - b.ageHours); // newest breach first
 
-      partial_fulfillment_opportunity: 0
-    };
+  const agingCount = operationalControl?.aging_48h ?? 0;
+  const aging72Count = operationalControl?.aging_72h_plus ?? 0;
 
-    if (!operationalControl) {
-      console.error('[OrdersModuleFT2] operationalControl missing → using fallback');
-    }
+  // ── Signal engine — retained for lifecycle, not rendered ─────
+  const safeSnap = operationalControl ?? {
+    snapshot_date: new Date().toISOString(), aggregate_version: 0,
+    realized_revenue: 0, at_risk_revenue: 0, total_at_risk_revenue: 0,
+    sla_breach_24h_revenue: 0, top_blocking_type: 'none',
+    blocked_revenue: 0, revenue_leakage: 0, avg_contribution_margin_pct: 0,
+    orders_at_sla_risk: 0, aging_24h: 0, aging_48h: 0, aging_72h_plus: 0,
+    pending_fulfillment: 0, pending_payment: 0, exception_orders: 0,
+    constrained_orders: 0, revenue_blocked_inventory: 0,
+    revenue_blocked_customer: 0, revenue_blocked_operational: 0,
+    queue_manual_review: 0, queue_awaiting_inventory: 0,
+    queue_ready_to_ship: 0, queue_awaiting_customer: 0,
+    partial_fulfillment_opportunity: 0,
+  };
+  if (!operationalControl) {
+    console.error('[OrdersModuleFT2] operationalControl missing → using fallback');
+  }
+  mapOperationalSignals(safeSnap);
+  mapWorkQueues(safeSnap);
 
-    const operationalSignals = mapOperationalSignals(safeOperationalControl);
-
-    /**
-     * Workload queue mapping
-     *
-     * Converts projection metrics into
-     * operational workload queues.
-     *
-     * Source:
-     * orders_operational_control_snapshot
-     */
-    const workQueues = mapWorkQueues(safeOperationalControl);
+  // ── Shared tokens ────────────────────────────────────────────
+  const dividerSx = { borderColor: 'divider' };
+  const rowSx = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    px: 2,
+    py: 1.5,
+    borderBottom: '1px solid',
+    borderColor: 'divider',
+    '&:last-child': { borderBottom: 'none' },
+  };
+  const cardSx = {
+    border: '1px solid',
+    borderColor: 'divider',
+    borderRadius: 2,
+    overflow: 'hidden',
+  };
 
   return (
-    <FT2Layout>
+    <Box sx={{ p: 3 }}>
 
-      {/* -----------------------------------------------------
-        SYSTEM HEALTH ROW
-        -----------------------------------------------------
-        Full-width escalation banner.
-        Span=4 guarantees Control Tower priority visibility.
-      ----------------------------------------------------- */}
-      {operationalHealth !== 'healthy' && (
-        <FT2Row intent="support">
-
-          <FT2Panel
-            id="system-health"
-            title="System Health"
-            span={4}
-          >
-            <PanelRow
-              label={
-                operationalHealth === 'critical'
-                  ? '🚨 Critical operational state'
-                  : '⚠️ Operational pressure detected'
-              }
-              value={
-                operationalHealth === 'critical'
-                  ? `${constrainedOrders} constrained orders • operational intervention required`
-                  : `${exceptionOrders} operational exceptions detected`
-              }
-            />
-
-            {operationalHealth === 'critical' && (
-              <PanelActions>
-                <Button
-                  size="small"
-                  variant="contained"
-                  onClick={() => {
-                    console.info('[OrdersModuleFT2] banner action', {
-                      intent: 'orders.queue.awaiting_inventory'
-                    });
-
-                    const queuePanel = document.getElementById('work-queue');
-
-                    if (queuePanel) {
-                      queuePanel.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                      });
-                    }
-
-                    const queueRow = document.getElementById('queue-awaiting-inventory');
-
-                    if (queueRow) {
-                      queueRow.style.transition = 'background-color 0.4s ease';
-                      queueRow.style.backgroundColor = 'rgba(245,158,11,0.18)';
-
-                      setTimeout(() => {
-                        queueRow.style.backgroundColor = '';
-                      }, 1800);
-                    }
-                  }}
-                >
-                  View Inventory-Blocked Orders
-                </Button>
-              </PanelActions>
-            )}
-
-            <PanelFooter
-              line1="> SYSTEM STATE SUMMARY"
-              line2="> SOURCE: orders_operational_control_snapshot"
-            />
-
-          </FT2Panel>
-
-        </FT2Row>
+      {/* ── MOMENTUM BAR ───────────────────────────────────────── */}
+      {orders?.fulfilled != null && orders.fulfilled > 0 && (
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: 1,
+          px: 2, py: 1.25, mb: 2.5,
+          background: 'action.hover',
+          border: '1px solid', borderColor: 'divider',
+          borderRadius: 1.5,
+        }}>
+          <CheckCircle size={14} color={theme.palette.success.main} />
+          <Typography variant="caption" color="text.secondary">
+            You've shipped{' '}
+            <Typography component="span" variant="caption" sx={{ fontWeight: 600, color: 'success.dark' }}>
+              {fmtN(orders.fulfilled)} orders
+            </Typography>
+            {' '}and collected{' '}
+            <Typography component="span" variant="caption" sx={{ fontWeight: 600, color: 'success.dark' }}>
+              {fmt$(earned)}
+            </Typography>
+            {' '}— keep it up.
+            {/**
+              * DELTA NOTE:
+              * Yesterday comparison requires retaining previous snapshot rows.
+              * Currently only one snapshot day exists. Re-enable once the
+              * reconciliation projection retains historical snapshots.
+              */}
+          </Typography>
+        </Box>
       )}
 
-      {/* -----------------------------------------------------
-        CORE OPERATIONS ROW
-        -----------------------------------------------------
-        Control Tower scanning layout.
+      {/* ── PRIORITY BANNER ────────────────────────────────────── */}
+      {(isCritical || isWarning) && (
+        <Box sx={{
+          p: 2, mb: 3,
+          border: '1px solid',
+          borderColor: isCritical ? 'error.light' : 'warning.light',
+          borderRadius: 1.5,
+          borderLeft: '4px solid',
+          borderLeftColor: isCritical ? 'error.main' : 'warning.main',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 1.5 }}>
+            <Box>
+              <Typography variant="body2" fontWeight={600}>
+                {isCritical
+                  ? `${fmtN(constrained)} orders are stuck and cannot ship`
+                  : `${fmtN(exceptions)} orders need your attention`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {isCritical
+                  ? `${fmt$(pending)} in paid orders waiting — most need ${
+                      dominantBlocker === 'inventory'   ? 'stock restocking' :
+                      dominantBlocker === 'customer'    ? 'customer action' :
+                      dominantBlocker === 'operational' ? 'manual review' :
+                      'your attention'
+                    } to ship`
+                  : 'Some orders need a decision before they can ship'}
+              </Typography>
+            </Box>
+            <Chip
+              label="Needs action"
+              size="small"
+              color={isCritical ? 'error' : 'warning'}
+              variant="outlined"
+              sx={{ flexShrink: 0 }}
+            />
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button size="small" variant="contained" color="error" startIcon={<ClipboardList size={14} />}>
+              Review {fmtN(constrained)} stuck orders
+            </Button>
+            <Button size="small" variant="outlined" color="inherit" startIcon={<Printer size={14} />}>
+              Print pick list
+            </Button>
+          </Box>
+        </Box>
+      )}
 
-        Chart (2) | Operations (1) | WorkQueue (1)
+      {/* ── PULSE ROW ──────────────────────────────────────────── */}
+      <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+        Right now
+      </Typography>
 
-        FT2Row span engine ensures deterministic
-        proportional layout regardless of viewport.
-      ----------------------------------------------------- */}
-      <FT2Row intent="analysis">
+      <Box sx={{
+        display: 'flex', flexWrap: 'wrap',
+        border: '1px solid', borderColor: 'divider',
+        borderRadius: 2, overflow: 'hidden', mb: 4,
+      }}>
+        {[
+          { label: 'Total order value',    value: fmt$(totalSales),          color: 'text.primary' },
+          { label: 'Collected',            value: fmt$(earned),              color: 'success.dark' },
+          { label: 'Ready to ship',        value: fmtN(qReady),             color: qReady > 0 ? 'success.dark' : 'text.primary' },
+          { label: 'Stuck orders',         value: fmtN(constrained),        color: constrained > 0 ? 'error.main' : 'text.primary' },
+          { label: 'Revenue at risk',      value: fmt$(atRisk),              color: atRisk && atRisk > 0 ? 'error.main' : 'text.primary' },
+        ].map((stat, i, arr) => (
+          <Box key={stat.label} sx={{ display: 'flex' }}>
+            <Box sx={{ minWidth: 120, px: 2, py: 1.5 }}>
+              <Typography variant="h5" fontWeight={700} sx={{ color: stat.color, fontVariantNumeric: 'tabular-nums' }}>
+                {stat.value}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                {stat.label}
+              </Typography>
+            </Box>
+            {i < arr.length - 1 && <Divider orientation="vertical" flexItem sx={dividerSx} />}
+          </Box>
+        ))}
+      </Box>
 
-      <FT2Panel span={2} title="Operational Command Center">
-        <OperationalCommandCenter
-          operationalControl={safeOperationalControl}
-        />
-      </FT2Panel>
+      <Divider sx={{ mb: 4, ...dividerSx }} />
 
-      {/* Signals Surface */}
-      <FT2Panel span={2} title="Operational Signals">
+      {/* ── TWO COLUMN ─────────────────────────────────────────── */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 3 }}>
 
-        <OperationalSignalsSection
-          signals={operationalSignals}
-          queues={workQueues}
-          onSignalAction={handleOperationsAction}
-        />
-      </FT2Panel>
-    </FT2Row>
+        {/* LEFT */}
+        <Box>
 
-      {/* -----------------------------------------------------
-        BUSINESS CONTEXT ROW
-        -----------------------------------------------------
-        Informational surfaces supporting operator decisions.
-        Each panel span=1 to maintain visual parity.
-      ----------------------------------------------------- */}
-      <FT2Row intent="analysis">
+          {/* Start here — SLA-bucketed aging orders */}
+          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+            Start here — orders crossing the line
+          </Typography>
 
-        <OrdersOverviewInfoBlock
-          span={1}
-          orders={orders}
-        />
+          <Box sx={{ ...cardSx, mb: 3 }}>
 
-        <RevenueOverviewInfoBlock
-          span={1}
-          revenue={{
-            totalSales: revenue.totalSales,
-            earned: revenue.earned,
-            pending: revenue.pending,
-          }}
-        />
+            {/* Column headers */}
+            <Box sx={{
+              display: 'grid', gridTemplateColumns: '1fr auto auto',
+              gap: 1, px: 2, py: 1,
+              borderBottom: '1px solid', borderColor: 'divider',
+            }}>
+              {['Order', 'Age', 'Status'].map(h => (
+                <Typography key={h} variant="caption" sx={{
+                  fontWeight: 600, letterSpacing: '.04em',
+                  color: 'text.disabled', textAlign: h !== 'Order' ? 'right' : 'left',
+                }}>
+                  {h}
+                </Typography>
+              ))}
+            </Box>
 
-        <OrdersDecisionBrief
-          span={1}
-          {...decision.brief}
-        />
+            {agingOrders.length === 0 ? (
+              <Box sx={{ px: 2, py: 2 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {operatorSummary === undefined
+                    ? `${fmtN(agingCount)} overdue orders — loading details…`
+                    : 'No orders past 24 hours. All caught up.'}
+                </Typography>
+              </Box>
+            ) : (
+              agingOrders.slice(0, 5).map((order) => {
+                const bucket = slaBucket(order.ageHours);
+                return (
+                  <Box
+                    key={order.lasyncro_order_id}
+                    sx={{
+                      display: 'grid', gridTemplateColumns: '1fr auto auto',
+                      gap: 1, alignItems: 'center',
+                      px: 2, py: 1.25,
+                      borderBottom: '1px solid', borderColor: 'divider',
+                      '&:last-child': { borderBottom: 'none' },
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body2" fontWeight={600}>
+                        {order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {constraintLabel(order.constraintType)}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" fontWeight={700} sx={{
+                      textAlign: 'right',
+                      color: bucket.severity === 'critical' ? 'error.main'
+                           : bucket.severity === 'warning'  ? 'warning.dark'
+                           : 'text.secondary',
+                    }}>
+                      {bucket.label}
+                    </Typography>
+                    <Chip
+                      label={order.isShippingSlaBreached ? 'SLA missed' : bucket.label === '72h+' ? 'Urgent' : 'Late'}
+                      size="small"
+                      color={order.isShippingSlaBreached ? 'error' : bucket.severity === 'critical' ? 'error' : bucket.severity === 'warning' ? 'warning' : 'default'}
+                      variant="outlined"
+                      sx={{ fontSize: 10, height: 20 }}
+                    />
+                  </Box>
+                );
+              })
+            )}
 
-      {/**
-        * DEGRADED SNAPSHOT SAFETY
-        * ------------------------
-        * Resolver may return null when the operational snapshot
-        * is unavailable (projection rebuild or pipeline failure).
-        *
-        * UI must tolerate null and surface degraded system state
-        * rather than crashing the Control Tower.
-        */}
-        <RevenueIntegrityInfoBlock
-          at_risk_revenue={operationalControl?.at_risk_revenue ?? null}
-          revenue_leakage={operationalControl?.revenue_leakage ?? null}
-          avg_contribution_margin_pct={
-            operationalControl?.avg_contribution_margin_pct ?? null
-          }
-        />
+            {agingCount > 5 && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
+                Showing 5 of {fmtN(agingCount)} overdue orders — sorted by newest breach first
+              </Typography>
+            )}
 
-      </FT2Row>
+            <Box sx={{ px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1 }}>
+              <Button size="small" variant="outlined" color="inherit" startIcon={<ExternalLink size={14} />}>
+                Open all in order view
+              </Button>
+              <Button size="small" variant="outlined" color="inherit">
+                Mark as reviewed
+              </Button>
+            </Box>
+
+          </Box>
+
+          {/* What's holding things up */}
+          {(invBlocked > 0 || custBlocked > 0 || opsBlocked > 0) && (
+            <>
+              <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+                What's holding up your orders
+              </Typography>
+              <Box sx={{ ...cardSx, mb: 3 }}>
+                {[
+                  {
+                    icon: <HelpCircle size={16} />,
+                    label: 'Needs manual review',
+                    sub: 'Address issues, fraud checks, or other blockers',
+                    count: opsBlocked,
+                    color: opsBlocked > 0 ? theme.palette.error.main : theme.palette.text.disabled,
+                    chipColor: opsBlocked > 0 ? 'error' as const : 'default' as const,
+                    action: 'Review',
+                  },
+                  {
+                    icon: <Package size={16} />,
+                    label: 'Out of stock items',
+                    sub: 'Orders cannot ship — items not in warehouse',
+                    count: invBlocked,
+                    color: invBlocked > 0 ? theme.palette.error.main : theme.palette.text.disabled,
+                    chipColor: invBlocked > 0 ? 'error' as const : 'default' as const,
+                    action: 'Check stock',
+                  },
+                  {
+                    icon: <Clock size={16} />,
+                    label: 'Waiting on customer',
+                    sub: "Customer hasn't responded or confirmed",
+                    count: custBlocked,
+                    color: custBlocked > 0 ? theme.palette.warning.main : theme.palette.text.disabled,
+                    chipColor: custBlocked > 0 ? 'warning' as const : 'default' as const,
+                    action: 'Contact',
+                  },
+                ]
+                .filter(item => item.count > 0)
+                .map((item) => (
+                  <Box key={item.label} sx={{
+                    ...rowSx,
+                    '&:hover': { bgcolor: 'action.hover' },
+                  }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Box sx={{ color: item.color }}>{item.icon}</Box>
+                      <Box>
+                        <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
+                        <Typography variant="caption" color="text.secondary">{item.sub}</Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip label={`${fmtN(item.count)} orders`} size="small" color={item.chipColor} variant="outlined" />
+                      <Button size="small" variant="text" color="inherit" sx={{ fontSize: 12, minWidth: 0 }}>
+                        {item.action}
+                      </Button>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </>
+          )}
+
+          {/* Quick actions */}
+          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+            Quick actions
+          </Typography>
+
+          {qReady > 0 && (
+            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, mb: 1.5 }}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                Ship the {fmtN(qReady)} {qReady === 1 ? 'order' : 'orders'} that {qReady === 1 ? 'is' : 'are'} ready
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                {qReady === 1
+                  ? 'This order is packed and waiting. Print the label and hand it off.'
+                  : 'These orders are packed and waiting. Print labels and hand them off.'}
+              </Typography>
+              <Button size="small" variant="contained" color="success" startIcon={<Printer size={14} />}>
+                Print shipping {qReady === 1 ? 'label' : 'labels'}
+              </Button>
+            </Box>
+          )}
+
+          {constrained > 0 && (
+            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, mb: 1.5 }}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                Review {fmtN(constrained)} stuck orders
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Each needs a decision from you. Open them in bulk to work through faster.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" variant="outlined" color="inherit" startIcon={<ClipboardList size={14} />}>
+                  Open bulk review
+                </Button>
+                <Button size="small" variant="outlined" color="inherit" startIcon={<Printer size={14} />}>
+                  Generate pick list
+                </Button>
+              </Box>
+            </Box>
+          )}
+
+          {aging72Count > 0 && (
+            <Box sx={{
+              border: '1px solid', borderColor: 'error.light', borderRadius: 1.5,
+              borderLeft: '4px solid', borderLeftColor: 'error.main',
+              p: 2, mb: 1.5,
+            }}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                {fmtN(aging72Count)} orders past 72 hours — customers may cancel
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                These are your most urgent. Resolving them first protects your refund rate.
+              </Typography>
+              <Button size="small" variant="outlined" color="error" startIcon={<ExternalLink size={14} />}>
+                View 72h+ orders
+              </Button>
+            </Box>
+          )}
+
+        </Box>
+        
+        {/* RIGHT */}
+        <Box>
+
+          {/* Your money */}
+          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+            Your money
+          </Typography>
+
+          <Box sx={{ ...cardSx, mb: 3 }}>
+            {[
+              {
+                label: 'Total order value',
+                sub: 'All orders ever placed',
+                value: totalSales,
+                color: theme.palette.text.secondary,
+              },
+              {
+                label: 'Collected — shipped orders',
+                sub: 'Revenue in hand',
+                value: earned,
+                color: theme.palette.success.dark,
+              },
+              {
+                label: 'Paid but not yet shipped',
+                sub: 'Customers are waiting',
+                value: pending,
+                color: theme.palette.warning.dark,
+              },
+              {
+                label: 'At risk of being lost',
+                sub: 'Overdue, may cancel or refund',
+                value: atRisk,
+                color: atRisk && atRisk > 0 ? theme.palette.error.main : theme.palette.text.secondary,
+              },
+            ].map((item) => (
+              <Box key={item.label} sx={{ ...rowSx }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">{item.sub}</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="body2" fontWeight={700} sx={{ color: item.color }}>
+                    {fmt$(item.value)}
+                  </Typography>
+                  <MoneyBar value={item.value} total={totalSales} color={item.color} />
+                </Box>
+              </Box>
+            ))}
+          </Box>
+
+          {/* Orders by stage */}
+          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+            Orders by stage
+          </Typography>
+
+          <Box sx={{ ...cardSx, mb: 3 }}>
+            {[
+              { color: theme.palette.success.main,   label: 'Ready to pack and ship',       count: qReady,   action: 'Ship now' },
+              { color: theme.palette.error.main,      label: 'Needs someone to look at it',  count: opsBlocked > 0 ? opsBlocked : qManual, action: 'Review' },
+              { color: theme.palette.warning.main,    label: 'Being processed for shipment', count: qPending, action: null },
+              { color: theme.palette.text.disabled,   label: 'Waiting for stock',            count: invBlocked > 0 ? invBlocked : qInv, action: null },
+              { color: theme.palette.text.disabled,   label: 'Waiting for customer reply',   count: qCust,    action: null },
+            ].map((item) => (
+              <Box key={item.label} sx={{
+                ...rowSx,
+                '&:hover': { bgcolor: 'action.hover' },
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                  <Typography variant="body2">{item.label}</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body2" fontWeight={700}>{fmtN(item.count)}</Typography>
+                  {item.action && item.count > 0 && (
+                    <Button size="small" variant="text" color="inherit" sx={{ fontSize: 12, minWidth: 0 }}>
+                      {item.action}
+                    </Button>
+                  )}
+                </Box>
+              </Box>
+            ))}
+          </Box>
+
+          {/* Quick actions */}
+          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+            Quick actions
+          </Typography>
+
+          {qReady > 0 && (
+            <Box sx={{
+              border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
+              p: 2, mb: 1.5,
+            }}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                Ship the {fmtN(qReady)} {qReady === 1 ? 'order' : 'orders'} that {qReady === 1 ? 'is' : 'are'} ready
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                {qReady === 1
+                  ? 'This order is packed and waiting. Print the label and hand it off.'
+                  : 'These orders are packed and waiting. Print labels and hand them off.'}
+              </Typography>
+              <Button size="small" variant="contained" color="success" startIcon={<Printer size={14} />}>
+                Print shipping {qReady === 1 ? 'label' : 'labels'}
+              </Button>
+            </Box>
+          )}
+
+          {constrained > 0 && (
+            <Box sx={{
+              border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
+              p: 2, mb: 1.5,
+            }}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                Review {fmtN(constrained)} stuck orders
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Each needs a decision from you. Open them in bulk to work through faster.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" variant="outlined" color="inherit" startIcon={<ClipboardList size={14} />}>
+                  Open bulk review
+                </Button>
+                <Button size="small" variant="outlined" color="inherit" startIcon={<Printer size={14} />}>
+                  Generate pick list
+                </Button>
+              </Box>
+            </Box>
+          )}
+
+          {aging72Count > 0 && (
+            <Box sx={{
+              border: '1px solid', borderColor: 'error.light', borderRadius: 1.5,
+              borderLeft: '4px solid', borderLeftColor: 'error.main',
+              p: 2,
+            }}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                {fmtN(aging72Count)} orders past 72 hours — customers may cancel
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                These are your most urgent. Resolving them first protects your refund rate.
+              </Typography>
+              <Button size="small" variant="outlined" color="error" startIcon={<ExternalLink size={14} />}>
+                View 72h+ orders
+              </Button>
+            </Box>
+          )}
+
+        </Box>
+      </Box>
 
       {/* Optional analytical surfaces */}
       {distribution}
 
-    </FT2Layout>
+    </Box>
   );
 }

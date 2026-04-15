@@ -1,12 +1,13 @@
-// apps/frontend/src/pages/ProductsFT2Page.tsx
+// apps/frontend/src/pages/ft2-pages/ProductsFT2Page.tsx
 //
 // ProductsFT2Page
 // ---------------
-// FT2-only Products observability surface.
-
+// Products module — FT2 observability + operator summary surface.
 import { ProductsModuleFT2 } from '@lasyncro/products';
 import { useProductsFt2Snapshot } from '../products/useProductsFt2Snapshot';
 import { mapProductsFt2Props } from '../products/useProductsFt2Adapter';
+import { useProductsOperatorSummary } from '../products/useProductsOperatorSummary';
+import type { ProductsOperatorSummary } from '../products/useProductsOperatorSummary';
 import { useState } from 'react';
 import {
   FT2DateRangeBar,
@@ -23,6 +24,7 @@ export default function ProductsFT2Page() {
   });
 
   const snapshotQuery = useProductsFt2Snapshot(range);
+  const operatorQuery = useProductsOperatorSummary(range);
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) {
@@ -32,9 +34,11 @@ export default function ProductsFT2Page() {
   }
 
   const props = mapProductsFt2Props(snapshotQuery.data);
+  const operatorSummary: ProductsOperatorSummary | null =
+    operatorQuery.isSuccess ? operatorQuery.data : null;
 
   if (__DEV__) {
-    console.debug('[ProductsFT2Page] rendering ProductsModuleFT2', props);
+    console.debug('[ProductsFT2Page] rendering ProductsModuleFT2', { props, operatorSummary });
   }
 
   return (
@@ -43,7 +47,7 @@ export default function ProductsFT2Page() {
         value={range}
         onChange={setRange}
       />
-      <ProductsModuleFT2 {...props} />
+      <ProductsModuleFT2 {...props} operatorSummary={operatorSummary} />
     </>
   );
 }

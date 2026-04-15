@@ -80,12 +80,19 @@ export async function getProductOperationalFacts(
       ? productsObserved - productsWithInventoryCount
       : null;
 
-  // ─────────────────────────────────────────
-  // Sales observability (time-scoped, legal)
-  // ─────────────────────────────────────────
   let skusWithSalesCount: number | null = null;
   let totalSkusObserved: number | null = null;
 
+  // ─────────────────────────────────────────
+  // Sales observability — two sources reconciled:
+  // 1. order_revenue_units (variant-level, period-scoped)
+  // 2. historical_sales (SKU-level, period-scoped)
+  //
+  // totalSkusObserved is the canonical SKU surface from
+  // the variants table — NOT filtered to sales hits.
+  // skus.length = 0 means no SKUs exist on products,
+  // in which case sales observability is not computable.
+  // ─────────────────────────────────────────
   const salesVariantRows = await db('order_revenue_units as ru')
     .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
     .join('variants as v', 'v.lasyncro_variant_id', 'ru.lasyncro_variant_id')
@@ -94,9 +101,10 @@ export async function getProductOperationalFacts(
     .andWhere('o.order_created_at', '<=', period.to)
     .distinct('v.sku');
 
-  if (salesVariantRows.length > 0) {
+  if (salesVariantRows.length > 0 && productsObserved > 0) {
     skusWithSalesCount = salesVariantRows.length;
-    totalSkusObserved = skus.length;
+    // totalSkusObserved = canonical product surface, not SKU-filtered subset
+    totalSkusObserved = productsObserved;
   }
 
   if (skus.length > 0) {
@@ -107,8 +115,10 @@ export async function getProductOperationalFacts(
       .whereIn('sku', skus)
       .distinct('sku');
 
+    // Only overwrite if historical_sales produces a result —
+    // use productsObserved as the canonical total surface
     skusWithSalesCount = salesRows.length;
-    totalSkusObserved = skus.length;
+    totalSkusObserved = productsObserved;
   }
 
   // ─────────────────────────────────────────

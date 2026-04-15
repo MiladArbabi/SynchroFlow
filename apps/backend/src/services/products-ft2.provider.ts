@@ -196,15 +196,32 @@ const alignmentIntelligence =
 
   return {
     ...exposureBase,
-
     alignment: alignmentExposure
       ? { alignment: alignmentExposure.alignment }
       : null,
-
     productDataIntegrity,
     operational: operationalExposure.operational ?? null,
     supply: supplyExposure.supply ?? null,
     dataFreshness: freshnessExposure.freshness ?? null,
     dependency: dependency.dependency ?? null,
+
+    // Operational counts — raw presence-based facts, no inference
+    // Source: ProductOperationalFacts (getProductOperationalFacts)
+    operationalCounts: operationalFacts.productsObserved !== null
+      ? {
+          productsWithInventoryCount: operationalFacts.productsWithInventoryCount,
+          productsWithoutInventoryCount: operationalFacts.productsWithoutInventoryCount,
+          skusWithSalesCount: operationalFacts.skusWithSalesCount,
+          totalSkusObserved: operationalFacts.totalSkusObserved,
+        }
+      : null,
+
+    // Supply counts — presence-based facts, no inference
+    // Source: ProductSupplyFacts (getProductSupplyFacts)
+    supplyCounts: supplyFacts.productsObserved !== null
+      ? {
+          productsWithInventorySignalCount: supplyFacts.productsWithInventorySignalCount,
+        }
+      : null,
   };
 }

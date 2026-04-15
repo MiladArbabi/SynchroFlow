@@ -13,14 +13,6 @@ import type { ProductsModuleFT2Props } from '@lasyncro/products';
  * - Adapter MUST normalize undefined → null
  */
 export type ProductsFt2Snapshot = {
-  context?: {
-    period?: {
-      from?: string;
-      to?: string;
-    };
-    productsObserved?: number | null;
-  };
-
   outcome?: {
     status: 'positive' | 'negative' | 'unknown';
   } | null;
@@ -78,6 +70,36 @@ export type ProductsFt2Snapshot = {
     skuCoverage: 'ok' | 'gaps' | 'unknown';
     variantComplexity: 'simple' | 'complex' | 'unknown';
   } | null;
+
+  // Raw counts passed through from FTEP context
+  // Source: ProductsFtep.types.ts → context
+  context?: {
+    period?: { from?: string; to?: string };
+    productsObserved?: number | null;
+    statusCounts?: {
+      active: number | null;
+      inactive: number | null;
+      archived: number | null;
+    } | null;
+    variantsObserved?: number | null;
+    productsWithSkuCount?: number | null;
+    productsWithoutSkuCount?: number | null;
+  };
+
+  // Operational presence counts — no inference
+  // Source: ProductsFtep.types.ts → operationalCounts
+  operationalCounts?: {
+    productsWithInventoryCount: number | null;
+    productsWithoutInventoryCount: number | null;
+    skusWithSalesCount: number | null;
+    totalSkusObserved: number | null;
+  } | null;
+
+  // Supply presence counts — no inference
+  // Source: ProductsFtep.types.ts → supplyCounts
+  supplyCounts?: {
+    productsWithInventorySignalCount: number | null;
+  } | null;
 };
 
 /**
@@ -95,6 +117,7 @@ export type ProductsFt2Snapshot = {
 export function mapProductsFt2Props(
   snapshot: ProductsFt2Snapshot
 ): ProductsModuleFT2Props {
+  
   return {
     context: {
       period: snapshot.context?.period
@@ -103,56 +126,70 @@ export function mapProductsFt2Props(
             to: snapshot.context.period.to ?? '',
           }
         : { from: '', to: '' },
-
       productsObserved:
         snapshot.context?.productsObserved === undefined
           ? null
           : snapshot.context.productsObserved,
+      statusCounts:
+        snapshot.context?.statusCounts === undefined
+          ? null
+          : snapshot.context.statusCounts,
+      variantsObserved:
+        snapshot.context?.variantsObserved === undefined
+          ? null
+          : snapshot.context.variantsObserved,
+      productsWithSkuCount:
+        snapshot.context?.productsWithSkuCount === undefined
+          ? null
+          : snapshot.context.productsWithSkuCount,
+      productsWithoutSkuCount:
+        snapshot.context?.productsWithoutSkuCount === undefined
+          ? null
+          : snapshot.context.productsWithoutSkuCount,
     },
-
     outcome:
       snapshot.outcome === undefined
         ? null
         : snapshot.outcome,
-
     trend:
       snapshot.trend === undefined
         ? null
         : snapshot.trend,
-    
     productDataIntegrity:
       snapshot.productDataIntegrity === undefined
         ? null
         : snapshot.productDataIntegrity,
-
     operational:
       snapshot.operational === undefined
         ? null
         : snapshot.operational,
-
     supply:
       snapshot.supply === undefined
         ? null
         : snapshot.supply,
-
     dataFreshness:
       snapshot.dataFreshness === undefined
         ? null
         : snapshot.dataFreshness,
-
     alignment:
       snapshot.alignment === undefined
         ? null
         : snapshot.alignment,
-    
     dependency:
       snapshot.dependency === undefined
         ? null
         : snapshot.dependency,
-
     signals:
       snapshot.signals === undefined
         ? null
         : snapshot.signals,
+    operationalCounts:
+      snapshot.operationalCounts === undefined
+        ? null
+        : snapshot.operationalCounts,
+    supplyCounts:
+      snapshot.supplyCounts === undefined
+        ? null
+        : snapshot.supplyCounts,
   };
 }

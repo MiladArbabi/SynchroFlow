@@ -3,6 +3,30 @@ import { Knex } from 'knex';
 type DbExecutor = Knex | Knex.Transaction;
 
 /**
+ * mapShopifyProductType
+ * ---------------------
+ * Maps Shopify's free-text productType to canonical product_type values.
+ *
+ * Shopify productType is merchant-defined free text — not an enum.
+ * We pattern-match known digital/gift/service types.
+ * Everything else defaults to 'physical'.
+ *
+ * Canonical values:
+ * - 'physical'   → requires warehouse picking, shipping, SKU
+ * - 'digital'    → no warehouse ops, no SKU requirement
+ * - 'gift_card'  → financial instrument, no warehouse ops
+ * - 'service'    → subscription/plan, no physical fulfillment
+ */
+function mapShopifyProductType(productType: string | null | undefined): string {
+  if (!productType) return 'physical';
+  const t = productType.toLowerCase().trim();
+  if (t === 'gift_card' || t === 'gift card' || t === 'giftcard') return 'gift_card';
+  if (t === 'digital' || t === 'download' || t === 'e-book' || t === 'ebook') return 'digital';
+  if (t === 'service' || t === 'subscription' || t === 'plan' || t === 'membership') return 'service';
+  return 'physical';
+}
+
+/**
  * SHOPIFY PRODUCTS CORE
  * ---------------------
  * Low-level product persistence logic.
@@ -27,17 +51,20 @@ export async function syncProducts(
         shop_id: shopId,
         title: node.title,
         status: node.status?.toLowerCase() || 'active',
+        // product_type sourced from Shopify productType field.
+        // Maps to canonical values: physical, digital, gift_card, service.
+        // Defaults to 'physical' — most products are physical.
+        product_type: mapShopifyProductType(node.productType),
+        shopify_product_type_raw: node.productType ?? null,
       })
       .onConflict('lasyncro_product_id')
-      .ignore()
-      .then((res) => {
-        if (!res || res.length === 0) {
-          console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
-            entity: 'product',
-            conflictKey: 'lasyncro_product_id'
-          });
-        }
-        return res;
+      .merge({
+        // Update mutable fields on resync — title and type can change in Shopify
+        title: node.title,
+        status: node.status?.toLowerCase() || 'active',
+        product_type: mapShopifyProductType(node.productType),
+        shopify_product_type_raw: node.productType ?? null,
+        updated_at: new Date().toISOString(),
       });
 
     const variantEdges = node.variants?.edges || [];
@@ -81,15 +108,13 @@ export async function syncProducts(
           status: 'active',
         })
         .onConflict('lasyncro_variant_id')
-        .ignore()
-        .then((res) => {
-          if (!res || res.length === 0) {
-            console.debug('[INGESTION_DUPLICATE_SKIPPED]', {
-              entity: 'variant',
-              conflictKey: 'lasyncro_variant_id'
-            });
-          }
-          return res;
+        .merge({
+          // Update mutable variant fields on resync
+          sku: variant.sku || null,
+          title: variant.title,
+          unit_cost: unitCost,
+          status: 'active',
+          updated_at: new Date().toISOString(),
         });
 
       // 3. Insert external identity mapping (variant-level)

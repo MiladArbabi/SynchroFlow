@@ -15,7 +15,60 @@ export interface ProductsModuleFT2DataProps {
   context: {
     period: { from: string; to: string };
     productsObserved: number | null;
+    statusCounts: {
+      active: number | null;
+      inactive: number | null;
+      archived: number | null;
+    } | null;
+    variantsObserved: number | null;
+    productsWithSkuCount: number | null;
+    productsWithoutSkuCount: number | null;
   };
+
+  // Operational presence counts — raw facts, no inference
+  operationalCounts: {
+    productsWithInventoryCount: number | null;
+    productsWithoutInventoryCount: number | null;
+    skusWithSalesCount: number | null;
+    totalSkusObserved: number | null;
+  } | null;
+
+  // Supply presence counts — raw facts, no inference
+  supplyCounts: {
+    productsWithInventorySignalCount: number | null;
+  } | null;
+
+  // Operator summary — purpose-built actionable surface
+  // Source: GET /api/v1/modules/products/operator-summary
+  // Null = endpoint not yet loaded or data unavailable
+  operatorSummary: {
+    sellability: {
+      sellable: number | null;
+      blocked: number | null;
+      blockedReasons: {
+        noSku: number | null;
+        noInventory: number | null;
+        zeroStock: number | null;
+      };
+    };
+    deadWeight: {
+      noSalesCount: number | null;
+    };
+    drift: {
+      addedThisPeriod: number | null;
+    };
+    topReturned: Array<{
+      variantTitle: string | null;
+      sku: string | null;
+      unitsReturned: number;
+      revenueLeakage: number;
+      returnRatePct: number;
+    }>;
+    noSkuProducts: Array<{
+      productTitle: string | null;
+      variants: Array<{ variantTitle: string | null }>;
+    }>;
+  } | null;
 
   outcome: { status: 'positive' | 'negative' | 'unknown' } | null;
   trend: { direction: 'up' | 'down' | 'flat' | 'unknown' } | null;
@@ -168,10 +221,12 @@ function SignalRow({
 }) {
   const theme = useTheme();
 
+   // Use CSS variable references — palette values resolved at build time
+  // do not update on scheme switch in MUI v6 colorSchemes mode.
   const toneColor: Record<SignalTone, string> = {
     positive: theme.palette.success.main,
     warning: theme.palette.warning.main,
-    neutral: theme.palette.text.secondary,
+    neutral: 'var(--mui-palette-text-secondary)',
   };
 
   const tone = resolveSignalTone(value);
@@ -272,6 +327,9 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
     alignment,
     dataFreshness,
     signals,
+    operationalCounts,
+    supplyCounts,
+    operatorSummary,
   } = props;
 
   const theme = useTheme();
@@ -286,170 +344,308 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   return (
     <Box sx={{ p: 3 }}>
 
-      {/* ─────────────────────────────────────────
-          ZONE 1 — CATALOG PRESENCE
-          Top-level count. Active/archived deferred
-          until backend computes them (ISS-03).
+    {/* ─────────────────────────────────────────
+          ZONE 1 — YOUR PRODUCTS
+          Orientation anchor only — one sentence.
+          Detail lives in Zone 5 (sellability).
           ───────────────────────────────────────── */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-          Catalog Presence
+      <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Typography variant="h5" fontWeight={700} sx={{ color: 'var(--mui-palette-text-primary)' }}>
+          You have {context.productsObserved ?? '—'} products
         </Typography>
+        {outcome?.status != null && outcome.status !== 'unknown' && (
+          <Chip
+            label={outcome.status === 'positive' ? '✓ Looking good' : '✗ Needs attention'}
+            size="small"
+            color={outcome.status === 'positive' ? 'success' : 'error'}
+          />
+        )}
+      </Box>
+
+      {/* ─────────────────────────────────────────
+          DATA TRUST BAR
+          Collapsed from Zone 3 + Zone 4.
+          Operator-readable freshness only — no system jargon.
+          ───────────────────────────────────────── */}
+      {dataFreshness && (
         <Box
           sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 0,
+            mb: 4,
+            px: 2,
+            py: 1.25,
             border: '1px solid',
             borderColor: 'divider',
             borderRadius: 2,
-            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 1.5,
           }}
         >
-          <Box sx={{ flex: 1, minWidth: 160, px: 2, py: 1.5 }}>
-            <Typography variant="h4" fontWeight={700} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              {context.productsObserved ?? '—'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-              Products detected
-            </Typography>
-          </Box>
-          <Divider orientation="vertical" flexItem />
-          <Box sx={{ flex: 1, minWidth: 160, px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography
-              variant="body1"
-              fontWeight={600}
-              sx={{ color: outcomeColor }}
-            >
-              {outcome?.status === 'positive'
-                ? 'Healthy'
-                : outcome?.status === 'negative'
-                ? 'Needs attention'
-                : '—'}
-            </Typography>
-            {outcome?.status != null && outcome.status !== 'unknown' && (
-              <Chip
-                label={outcome.status === 'positive' ? '✓ All clear' : '✗ Attention needed'}
-                size="small"
-                color={outcome.status === 'positive' ? 'success' : 'error'}
-              />
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mr: 0.5 }}>
+            Data trust
+          </Typography>
+          {(
+            [
+              ['Stock', dataFreshness.structural],
+              ['Inventory', dataFreshness.inventory],
+              ['Sales', dataFreshness.sales],
+              ['Fulfillment', dataFreshness.fulfillment],
+              ['Cost', dataFreshness.cost],
+            ] as [string, string | null][]
+          ).map(([label, value]) => {
+            const isStale = value === 'stale';
+            const isUnknown = value == null || value === 'unknown';
+            const dotColor = isStale
+              ? theme.palette.warning.main
+              : isUnknown
+              ? theme.palette.text.secondary
+              : theme.palette.success.main;
+            return (
+              <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0 }} />
+                <Typography variant="caption" sx={{ color: isStale ? theme.palette.warning.main : 'var(--mui-palette-text-secondary)' }}>
+                  {label}{isStale ? ' — stale' : ''}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+
+      {/* ─────────────────────────────────────────
+          ZONE 5 — WHAT CAN I ACTUALLY SELL TODAY?
+          Plain-language sellability surface.
+          Source: /operator-summary → sellability
+          ───────────────────────────────────────── */}
+      {operatorSummary && (() => {
+        const total = (operatorSummary.sellability.sellable ?? 0) + (operatorSummary.sellability.blocked ?? 0);
+        const sellable = operatorSummary.sellability.sellable ?? 0;
+        const blocked = operatorSummary.sellability.blocked ?? 0;
+        const noSku = operatorSummary.sellability.blockedReasons.noSku ?? 0;
+        const noInventory = operatorSummary.sellability.blockedReasons.noInventory ?? 0;
+        const zeroStock = operatorSummary.sellability.blockedReasons.zeroStock ?? 0;
+        const noSales = operatorSummary.deadWeight.noSalesCount ?? 0;
+        const added = operatorSummary.drift.addedThisPeriod ?? 0;
+        const sellablePct = total > 0 ? (sellable / total) * 100 : 0;
+
+        return (
+          <Box sx={{ mb: 4, mt: 4 }}>
+            {/* ── Header ── */}
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
+              <Typography variant="h5" fontWeight={700} sx={{ color: sellable === 0 ? theme.palette.error.main : sellable < total ? theme.palette.warning.main : theme.palette.success.main }}>
+                {sellable} of {total}
+              </Typography>
+              <Typography variant="body1" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                products are ready to sell
+              </Typography>
+            </Box>
+
+            {/* ── Progress bar ── */}
+            <Box sx={{ position: 'relative', height: 8, borderRadius: 4, bgcolor: theme.palette.error.main, overflow: 'hidden', mb: 2, mt: 1.5 }}>
+              <Box sx={{
+                position: 'absolute', left: 0, top: 0, height: '100%',
+                width: `${sellablePct}%`,
+                bgcolor: theme.palette.success.main,
+                borderRadius: 4,
+                transition: 'width 0.4s ease',
+              }} />
+            </Box>
+
+            {/* ── Blocked reasons ── */}
+            {blocked > 0 && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 3 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Why are {blocked} blocked?
+                </Typography>
+                {noSku > 0 && (
+                  <Box sx={{ borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.error.main, borderLeft: '4px solid', borderLeftColor: theme.palette.error.main, overflow: 'hidden' }}>
+                    {/* Header row */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5 }}>
+                      <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.error.main, minWidth: 24 }}>{noSku}</Typography>
+                      <Box>
+                        <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                          {noSku === 1 ? 'product has' : 'products have'} no product code — your warehouse can't identify or pick these
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Fix this in your store by adding a unique code to each product, then re-sync.
+                        </Typography>
+                      </Box>
+                    </Box>
+                    {/* Product list */}
+                    {operatorSummary.noSkuProducts.length > 0 && (
+                      <Box sx={{ borderTop: '1px solid', borderColor: theme.palette.error.main, opacity: 0.3 }} />
+                    )}
+                    {operatorSummary.noSkuProducts.map((p, idx) => (
+                      <Box
+                        key={idx}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          justifyContent: 'space-between',
+                          px: 2,
+                          py: 0.75,
+                          borderTop: idx === 0 ? 'none' : '1px solid',
+                          borderColor: 'divider',
+                          '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)', fontWeight: 500 }}>
+                          {p.productTitle ?? 'Unknown product'}
+                        </Typography>
+                        {p.variants.length > 1 && (
+                          <Typography variant="caption" color="text.secondary">
+                            {p.variants.length} options: {p.variants.map(v => v.variantTitle ?? '—').join(', ')}
+                          </Typography>
+                        )}
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+                {noInventory > 0 && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.warning.main, borderLeft: '4px solid', borderLeftColor: theme.palette.warning.main }}>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.warning.main, minWidth: 24 }}>{noInventory}</Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                      have no stock data — inventory hasn't been recorded for these products
+                    </Typography>
+                  </Box>
+                )}
+                {zeroStock > 0 && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.warning.main, borderLeft: '4px solid', borderLeftColor: theme.palette.warning.main }}>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.warning.main, minWidth: 24 }}>{zeroStock}</Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                      are out of stock — listed as active but nothing left to ship
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
             )}
+
+            {/* ── Dead weight + drift ── */}
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              {noSales > 0 && (
+                <Box sx={{ flex: 1, minWidth: 200, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
+                    {noSales}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
+                    {noSales === 1 ? 'product' : 'products'} generated no orders this period
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                    Active but not selling — consider reviewing or archiving
+                  </Typography>
+                </Box>
+              )}
+              {added > 0 && (
+                <Box sx={{ flex: 1, minWidth: 200, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.primary.main, fontVariantNumeric: 'tabular-nums' }}>
+                    {added}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
+                    {added === 1 ? 'product' : 'products'} added this period
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                    New to your catalog — check they're fully set up before selling
+                  </Typography>
+                </Box>
+              )}
+            </Box>
           </Box>
-        </Box>
-      </Box>
+        );
+      })()}
 
       {/* ─────────────────────────────────────────
-          ZONE 2 — CATALOG SIGNALS
-          Downgraded from intelligence layer.
-          Source: ProductsFtep.types.ts → signals
+          ZONE 6 — WHICH PRODUCTS KEEP COMING BACK?
+          Plain-language return signal with visual rate bar.
+          Source: /operator-summary → topReturned
           ───────────────────────────────────────── */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-          Catalog Signals
-        </Typography>
-        {signals ? (
-          <SectionCard title="SKU Health" footer="> CATALOG SIGNALS — LOSSY, NON-SEMANTIC">
-            <SignalRow label="Catalog health" value={signals.catalog} displayValue={CATALOG_LABELS[signals.catalog] ?? signals.catalog} />
-            <SignalRow label="SKU coverage" value={signals.skuCoverage} displayValue={SKU_COVERAGE_LABELS[signals.skuCoverage] ?? signals.skuCoverage} />
-            <SignalRow label="Variant complexity" value={signals.variantComplexity} displayValue={VARIANT_COMPLEXITY_LABELS[signals.variantComplexity] ?? signals.variantComplexity} />
-          </SectionCard>
-        ) : (
-          <SuppressedSection title="SKU Health" />
-        )}
-      </Box>
+      {operatorSummary && operatorSummary.topReturned.length > 0 && (() => {
+        const maxRate = Math.max(...operatorSummary.topReturned.map(r => r.returnRatePct));
+        return (
+          <Box sx={{ mb: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
+              <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.error.main }}>
+                {operatorSummary.topReturned.length}
+              </Typography>
+              <Typography variant="body1" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                {operatorSummary.topReturned.length === 1 ? 'product has' : 'products have'} significant return activity
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              High return rates may signal product quality, description, or fulfilment issues.
+            </Typography>
 
-      {/* ─────────────────────────────────────────
-          ZONE 2 — OPERATIONAL + SUPPLY SIGNALS
-          ───────────────────────────────────────── */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-          Operational Signals
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+              {operatorSummary.topReturned.map((item, idx) => {
+                const barPct = maxRate > 0 ? (item.returnRatePct / maxRate) * 100 : 0;
+                const rateColor = item.returnRatePct >= 20
+                  ? theme.palette.error.main
+                  : item.returnRatePct >= 10
+                  ? theme.palette.warning.main
+                  : theme.palette.success.main;
+                const fmt = (n: number) =>
+                  `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-          {operational ? (
-            <SectionCard title="Inventory & Fulfillment" footer="> OPERATIONAL SIGNALS — NO EXECUTION DETAIL">
-              <SignalRow label="Inventory visibility" value={operational.inventory} displayValue={INVENTORY_LABELS[operational.inventory] ?? operational.inventory} />
-              <SignalRow label="Fulfillment visibility" value={operational.fulfillment} displayValue={FULFILLMENT_LABELS[operational.fulfillment] ?? operational.fulfillment} />
-              <SignalRow label="Operational stability" value={operational.stability} displayValue={STABILITY_LABELS[operational.stability] ?? operational.stability} />
-            </SectionCard>
-          ) : (
-            <SuppressedSection title="Inventory & Fulfillment" />
-          )}
+                return (
+                  <Box
+                    key={idx}
+                    sx={{
+                      px: 2,
+                      py: 1.5,
+                      borderBottom: '1px solid',
+                      borderColor: 'divider',
+                      '&:last-child': { borderBottom: 'none' },
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    {/* Product name + code */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                      <Box>
+                        <Typography variant="body2" fontWeight={600} sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                          {item.variantTitle && item.variantTitle !== 'Default Title'
+                            ? item.variantTitle
+                            : item.sku
+                            ? `Product ${item.sku}`
+                            : `Product #${idx + 1}`}
+                        </Typography>
+                        {item.sku && (
+                          <Typography variant="caption" color="text.secondary">
+                            Code: {item.sku}
+                          </Typography>
+                        )}
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          {item.unitsReturned} {item.unitsReturned === 1 ? 'unit' : 'units'} returned
+                        </Typography>
+                        <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.error.main }}>
+                          {fmt(item.revenueLeakage)} lost
+                        </Typography>
+                      </Box>
+                    </Box>
 
-          {supply ? (
-            <SectionCard title="Supply & Replenishment" footer="> SUPPLY SIGNALS — NO FORECASTING">
-              <SignalRow label="Replenishment observability" value={supply.replenishment} displayValue={REPLENISHMENT_LABELS[supply.replenishment] ?? supply.replenishment} />
-              <SignalRow label="Supply coverage" value={supply.coverage} displayValue={COVERAGE_LABELS[supply.coverage] ?? supply.coverage} />
-            </SectionCard>
-          ) : (
-            <SuppressedSection title="Supply & Replenishment" />
-          )}
-
-        </Box>
-      </Box>
-
-      {/* ─────────────────────────────────────────
-          ZONE 3 — DEPENDENCY + ALIGNMENT
-          ───────────────────────────────────────── */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-          System Coherence
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-
-          {dependency ? (
-            <SectionCard title="Dependency Surface" footer="> IMPACT ASSESSMENT IS USER-INFERRED">
-              <SignalRow label="Dependency surface" value={dependency.surface} displayValue={SURFACE_LABELS[dependency.surface] ?? dependency.surface} />
-              <SignalRow label="Blast radius" value={dependency.blastRadius} displayValue={BLAST_RADIUS_LABELS[dependency.blastRadius] ?? dependency.blastRadius} />
-            </SectionCard>
-          ) : (
-            <SuppressedSection title="Dependency Surface" />
-          )}
-
-          {alignment ? (
-            <SectionCard title="Cross-Domain Alignment" footer="> SIGNAL ONLY — NO INTERPRETATION">
-              <SignalRow label="Reality agreement" value={alignment.alignment} displayValue={ALIGNMENT_LABELS[alignment.alignment] ?? alignment.alignment} />
-            </SectionCard>
-          ) : (
-            <SuppressedSection title="Cross-Domain Alignment" />
-          )}
-
-        </Box>
-      </Box>
-
-      {/* ─────────────────────────────────────────
-          ZONE 4 — DATA FRESHNESS
-          Per-domain, independently nullable.
-          null per field = that domain's freshness unknown.
-          ───────────────────────────────────────── */}
-      <Box>
-        <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-          Data Freshness
-        </Typography>
-        {dataFreshness ? (
-          <SectionCard title="Trust Latency" footer="> PER-DOMAIN FRESHNESS — INDEPENDENT SIGNALS">
-            {(
-              [
-                ['Structural data', dataFreshness.structural],
-                ['Inventory data', dataFreshness.inventory],
-                ['Sales data', dataFreshness.sales],
-                ['Fulfillment data', dataFreshness.fulfillment],
-                ['Cost data', dataFreshness.cost],
-              ] as [string, string | null][]
-            ).map(([label, value]) => (
-              <SignalRow
-                key={label}
-                label={label}
-                value={value}
-                displayValue={value != null ? (FRESHNESS_LABELS[value] ?? value) : 'Insufficient data'}
-              />
-            ))}
-          </SectionCard>
-        ) : (
-          <SuppressedSection title="Trust Latency" />
-        )}
-      </Box>
+                    {/* Return rate bar */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'divider', overflow: 'hidden' }}>
+                        <Box sx={{
+                          height: '100%',
+                          width: `${barPct}%`,
+                          bgcolor: rateColor,
+                          borderRadius: 3,
+                          transition: 'width 0.3s ease',
+                        }} />
+                      </Box>
+                      <Typography variant="caption" fontWeight={700} sx={{ color: rateColor, minWidth: 60, textAlign: 'right' }}>
+                        {item.returnRatePct}% returned
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          </Box>
+        );
+      })()}
 
     </Box>
   );

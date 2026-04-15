@@ -215,6 +215,62 @@ export const performInitialSync = async (
     });
 
     console.log(`[ShopifyService] Sync COMPLETED for shopId: ${shopId}`);
+
+    /**
+     * HISTORICAL REFUND BACKFILL (POST-ORDER-SYNC)
+     * --------------------------------------------
+     * Webhooks only deliver future refunds.
+     * Must run after orders are ingested AND projected —
+     * external_order_identity_map is populated by projection,
+     * not by sync. Poll until projection catches up before backfill.
+     * Fire-and-forget — never block sync completion.
+     */
+    (async () => {
+      try {
+        const { backfillShopifyRefunds } = await import(
+          './shopify/shopifyRefundBackfill.service.js'
+        );
+
+        // Wait for projection to catch up — poll every 2s, max 60s
+        const latestEvent = await db('domain_events')
+          .where({ shop_id: shopId })
+          .orderBy('id', 'desc')
+          .select('id')
+          .first();
+
+        if (latestEvent?.id) {
+          const targetEventId = Number(latestEvent.id);
+          const maxWaitMs = 60_000;
+          const pollMs = 2_000;
+          const start = Date.now();
+
+          while (Date.now() - start < maxWaitMs) {
+            const cursor = await db('projection_cursors')
+              .where({ projection_name: 'orders_projection' })
+              .select('last_processed_event_id')
+              .first();
+
+            const processed = Number(cursor?.last_processed_event_id ?? 0);
+            if (processed >= targetEventId) break;
+
+            console.info('[REFUND_BACKFILL_AWAITING_PROJECTION]', {
+              shopId,
+              processed,
+              target: targetEventId,
+            });
+            await new Promise(r => setTimeout(r, pollMs));
+          }
+        }
+
+        const result = await backfillShopifyRefunds(shopId);
+        console.info('[REFUND_BACKFILL_POST_SYNC]', result);
+      } catch (err) {
+        console.error('[REFUND_BACKFILL_POST_SYNC_FAILED]', {
+          error: (err as Error).message,
+        });
+      }
+    })();
+
     /**
      * WEBHOOK REGISTRATION (ISOLATED SIDE-EFFECT)
      */

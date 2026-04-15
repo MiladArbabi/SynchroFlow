@@ -1,0 +1,109 @@
+// apps/backend/src/services/products-operator/ProductsOperatorSummary.provider.ts
+import { getProductsOperatorFacts } from './ProductsOperatorFacts.service.js';
+import { ProductsOperatorFacts } from './ProductsOperatorFacts.service.js';
+
+/**
+ * ProductsOperatorSummary
+ * -----------------------
+ * Purpose-built operator response contract.
+ *
+ * DESIGN CONTRACT:
+ * - Operator language only — no technical jargon
+ * - No FTEP constraints — this is a direct operator surface
+ * - Null = data not available, not a policy decision
+ */
+export interface ProductsOperatorSummary {
+  period: { from: string; to: string };
+
+  // ── Sellability ───────────────────────────────────────────
+  sellability: {
+    sellable: number | null;
+    blocked: number | null;
+    blockedReasons: {
+      noSku: number | null;
+      noInventory: number | null;
+      zeroStock: number | null;
+    };
+  };
+
+  // ── Dead weight ───────────────────────────────────────────
+  // Active products with no sales in the selected period
+  deadWeight: {
+    noSalesCount: number | null;
+  };
+
+  // ── Catalog drift ─────────────────────────────────────────
+  drift: {
+    addedThisPeriod: number | null;
+  };
+
+  // ── Top returned variants (all-time, top 5) ───────────────
+  topReturned: Array<{
+    variantTitle: string | null;
+    sku: string | null;
+    unitsReturned: number;
+    revenueLeakage: number;
+    returnRatePct: number;
+  }>;
+
+  // Products missing product code — grouped by product name
+  // Operator needs to know exactly which products to fix
+  noSkuProducts: Array<{
+    productTitle: string | null;
+    variants: Array<{ variantTitle: string | null }>;
+  }>;
+}
+
+/**
+ * getProductsOperatorSummary
+ * --------------------------
+ * Orchestrates operator facts into operator summary.
+ *
+ * Rules:
+ * - No FTEP policy applied
+ * - No intelligence downgrade
+ * - Direct facts → response mapping
+ */
+export async function getProductsOperatorSummary(input: {
+  shopId: number;
+  period: { from: string; to: string };
+}): Promise<ProductsOperatorSummary> {
+  const facts: ProductsOperatorFacts = await getProductsOperatorFacts(input);
+
+  const blocked =
+    (facts.noSkuCount ?? 0) +
+    (facts.noInventoryCount ?? 0) +
+    (facts.zeroStockCount ?? 0);
+
+  return {
+    period: facts.period,
+
+    sellability: {
+      sellable: facts.sellableCount,
+      blocked: blocked > 0 ? blocked : 0,
+      blockedReasons: {
+        noSku: facts.noSkuCount,
+        noInventory: facts.noInventoryCount,
+        zeroStock: facts.zeroStockCount,
+      },
+    },
+
+    deadWeight: {
+      noSalesCount: facts.noSalesCount,
+    },
+
+    drift: {
+      addedThisPeriod: facts.addedThisPeriodCount,
+    },
+
+    topReturned: facts.topReturned.map(r => ({
+      variantTitle: r.variantTitle,
+      sku: r.sku,
+      unitsReturned: r.unitsReturned,
+      revenueLeakage: r.revenueLeakage,
+      returnRatePct: r.returnRatePct,
+    })),
+
+    noSkuProducts: facts.noSkuProducts,
+  };
+}

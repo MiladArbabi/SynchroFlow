@@ -15,9 +15,39 @@ export async function up(knex: Knex): Promise<void> {
 
     // Stable commercial identity
     table.string('sku').nullable();
-
     table.string('title').nullable();
     table.string('status').notNullable().defaultTo('active');
+
+    /**
+     * PRODUCT TYPE
+     * ------------
+     * Canonical product classification.
+     *
+     * Values:
+     * - 'physical'   → requires warehouse picking, shipping, SKU
+     * - 'digital'    → no warehouse ops, no SKU requirement
+     * - 'gift_card'  → special financial instrument, no warehouse ops
+     * - 'service'    → subscription/plan, no physical fulfillment
+     *
+     * Defaults to 'physical' — most products are physical.
+     * Sourced from platform (Shopify product_type field) during ingestion.
+     * Never inferred — always platform-authoritative.
+     */
+    table.string('product_type', 64).notNullable().defaultTo('physical');
+    table.index(['shop_id', 'product_type']);
+
+    /**
+     * SHOPIFY PRODUCT TYPE RAW
+     * ------------------------
+     * Stores the raw productType string from Shopify as-is.
+     * Used for:
+     * - Debugging unmapped product types
+     * - Improving mapShopifyProductType() over time
+     * - Auditing platform data without losing fidelity
+     *
+     * Never used for business logic — always use product_type instead.
+     */
+    table.string('shopify_product_type_raw', 255).nullable();
 
     table.timestamp('created_at', { useTz: true })
       .notNullable()

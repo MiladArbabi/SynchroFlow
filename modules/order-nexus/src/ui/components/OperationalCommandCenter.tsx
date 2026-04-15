@@ -136,11 +136,11 @@ export const OperationalCommandCenter: FC<Props> = ({
     <div
         onClick={handleUrgencyClick}
         style={{
-        marginTop: 12,
-        padding: 8,
-        background: `${theme.palette.primary.main}!important`,
-        border: '1px solid red',
-        cursor: 'pointer'
+          marginTop: 12,
+          padding: 8,
+          background: 'var(--mui-palette-error-light)',
+          border: '1px solid var(--mui-palette-error-main)',
+          cursor: 'pointer',
         }}
     >
         <strong>

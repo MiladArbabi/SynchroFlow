@@ -10,23 +10,22 @@ type TypographyComponentConfig = Components<Theme>['MuiTypography'];
 // ==============================|| OVERRIDES - TYPOGRAPHY ||============================== //
 
 export default function Typography(theme: Theme): TypographyComponentConfig {
-    // Define headingColor using standard palette access
-    const headingColor = theme.palette.text.primary; // Adjusted
-    const secondaryColor = theme.palette.text.secondary;
-
-    // --- FIX: Define variant styles using the variants array ---
+    // Use CSS variable references instead of resolved palette values.
+    // Resolved palette values are captured at theme build time and do NOT
+    // update when color scheme switches — causing dark mode to render
+    // light mode colors. CSS vars resolve at paint time per active scheme.
     const typographyVariants: ComponentsVariants['MuiTypography'] = [
-        { props: { variant: 'h1' }, style: { color: headingColor } },
-        { props: { variant: 'h2' }, style: { color: headingColor } },
-        { props: { variant: 'h3' }, style: { color: headingColor } },
-        { props: { variant: 'h4' }, style: { color: headingColor } },
-        { props: { variant: 'h5' }, style: { color: headingColor } },
-        { props: { variant: 'h6' }, style: { color: headingColor } },
-        { props: { variant: 'subtitle1' }, style: { color: headingColor } }, // Adjusted
-        { props: { variant: 'subtitle2' }, style: { color: secondaryColor } },
-        { props: { variant: 'caption' }, style: { color: secondaryColor } },
-        { props: { variant: 'body1' }, style: { color: theme.palette.text.primary } },
-        { props: { variant: 'body2' }, style: { color: theme.palette.text.primary } }, // Adjusted
+        { props: { variant: 'h1' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'h2' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'h3' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'h4' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'h5' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'h6' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'subtitle1' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'subtitle2' }, style: { color: 'var(--mui-palette-text-secondary)' } },
+        { props: { variant: 'caption' }, style: { color: 'var(--mui-palette-text-secondary)' } },
+        { props: { variant: 'body1' }, style: { color: 'var(--mui-palette-text-primary)' } },
+        { props: { variant: 'body2' }, style: { color: 'var(--mui-palette-text-primary)' } },
     ];
 
     return {

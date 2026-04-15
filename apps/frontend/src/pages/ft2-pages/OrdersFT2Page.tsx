@@ -17,6 +17,7 @@ import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
 import { OrderDetailPanel } from '../../pages/orders/OrderDetailPanel';
+import { useOrdersOperatorSummary } from '../orders/useOrdersOperatorSummary';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -31,14 +32,25 @@ export default function OrdersFT2Page() {
 
   const snapshotQuery = useOrdersFt2Snapshot();
 
-  if (!snapshotQuery.isSuccess) {
-    console.log('[AUDIT][snapshot]', {
-      isSuccess: snapshotQuery.isSuccess,
-      status: snapshotQuery.status,
-      fetchStatus: snapshotQuery.fetchStatus,
-      hasData: !!snapshotQuery.data,
-    });
+  /**
+   * OPERATOR SUMMARY
+   * ----------------
+   * Loads independently from the FT2 snapshot.
+   * Page renders FT2 data immediately — operator data populates when ready.
+   * Follows the Products module two-endpoint pattern.
+   */
+  const operatorSummaryQuery = useOrdersOperatorSummary();
 
+  /**
+   * PROGRESSIVE RENDER GUARD
+   * ------------------------
+   * Only block render if data is entirely absent.
+   * isLoading with stale data → render with previous data.
+   * error state → render with null-safe fallback in OrdersModuleFT2.
+   * This mirrors the Products module pattern: operator surface
+   * renders immediately, secondary data loads independently.
+   */
+  if (!snapshotQuery.data) {
     return <div>Loading orders insights…</div>;
   }
 
@@ -77,6 +89,7 @@ export default function OrdersFT2Page() {
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}
+        operatorSummary={operatorSummaryQuery.data ?? null}
       />
 
       {/**

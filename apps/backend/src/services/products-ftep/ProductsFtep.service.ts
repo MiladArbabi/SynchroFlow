@@ -36,6 +36,22 @@ export function buildProductsFtep(
   const context = {
     period: facts.period,
     productsObserved: intelligence.productsObserved ?? null,
+
+    // Status distribution — raw counts, no inference
+    statusCounts: facts.statusCounts.active !== null ||
+      facts.statusCounts.inactive !== null ||
+      facts.statusCounts.archived !== null
+        ? {
+            active: facts.statusCounts.active,
+            inactive: facts.statusCounts.inactive,
+            archived: facts.statusCounts.archived,
+          }
+        : null,
+
+    // SKU + variant structure — presence-based counts only
+    variantsObserved: facts.variantsObserved,
+    productsWithSkuCount: facts.productsWithSkuCount,
+    productsWithoutSkuCount: facts.productsWithoutSkuCount,
   };
 
   // Unknown intelligence → total downgrade
@@ -46,13 +62,14 @@ export function buildProductsFtep(
       trend: null,
       signals: null,
       productDataIntegrity: null,
-
       // REQUIRED FT2 domains — default null
       dependency: null,
       operational: null,
       supply: null,
       dataFreshness: null,
       alignment: null,
+      operationalCounts: null,
+      supplyCounts: null,
     };
   }
 
@@ -88,22 +105,20 @@ export function buildProductsFtep(
 
   return {
     context,
-
     outcome: {
       status: intelligence.outcome.status,
     },
-
     trend: {
       direction: intelligence.trend.direction,
     },
-
     signals,
     productDataIntegrity: null,
-
     dependency: null,
     operational: null,
     supply: null,
     dataFreshness: null,
     alignment,
+    operationalCounts: null,
+    supplyCounts: null,
   };
 }
