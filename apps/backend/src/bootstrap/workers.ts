@@ -305,8 +305,24 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
-}
 
+  // start morning brief worker (OVR-02)
+  try {
+    const morningBrief = await import('../workers/morning-brief.worker.js');
+    if (typeof morningBrief.startMorningBriefWorker === 'function') {
+      void morningBrief.startMorningBriefWorker();
+      if (typeof morningBrief.stopMorningBriefWorker === 'function') {
+        workerStopFns.push(async () => morningBrief.stopMorningBriefWorker());
+      }
+      console.log('[bootstrap/workers] Morning brief worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Morning brief worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+}
 export async function stopWorkers(): Promise<void> {
   // run stop functions in sequence, ignore individual errors
   for (const fn of workerStopFns) {
