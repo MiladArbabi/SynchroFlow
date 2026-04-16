@@ -15,6 +15,7 @@ import type {
   OperationalSignalLifecycle,
   OperationalSignalSeverity
 } from '../../../contracts/operationalSignals.js';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 
 export function createPaymentProblemSignal(
   snapshot: {
@@ -48,7 +49,7 @@ export function createPaymentProblemSignal(
      */
     impactDetail:
       snapshot.at_risk_revenue > 0
-        ? `$${snapshot.at_risk_revenue.toLocaleString()} revenue at risk`
+        ? `${formatCurrencyCompact(snapshot.at_risk_revenue)} revenue at risk`
         : undefined,
 
     metadata: {

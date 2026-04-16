@@ -35,6 +35,23 @@ export async function up(knex: Knex): Promise<void> {
 
     table.timestamps(true, true);
 
+    /**
+     * CURRENCY LAYER 2 — User Display Preference
+     * -------------------------------------------
+     * Per-user display currency override.
+     * Defaults to shop base_currency at membership creation.
+     * All DB values remain in shop base_currency — conversion is display-only.
+     *
+     * locale: drives Intl.NumberFormat formatting (e.g. 'en-US', 'en-GB')
+     * display_currency: ISO 4217 code (e.g. 'USD', 'EUR', 'GBP')
+     */
+    table.string('display_currency', 3)
+      .notNullable()
+      .defaultTo('USD');
+    table.string('locale', 10)
+      .notNullable()
+      .defaultTo('en-US');
+
     table.unique(['shop_id', 'user_id']);
     table.index(['user_id']);
     table.index(['shop_id']);

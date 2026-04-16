@@ -1,5 +1,6 @@
 // modules/products/src/ui/pages/ProductsModuleFT2.tsx
 import { Box, Typography, Chip, Divider, useTheme } from '@mui/material';
+import { formatCurrency } from '@lasyncro/shared/ui';
 
 /**
  * ProductsModuleFT2DataProps
@@ -583,8 +584,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   : item.returnRatePct >= 10
                   ? theme.palette.warning.main
                   : theme.palette.success.main;
-                const fmt = (n: number) =>
-                  `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  const fmt = (n: number) => formatCurrency(n);
 
                 return (
                   <Box

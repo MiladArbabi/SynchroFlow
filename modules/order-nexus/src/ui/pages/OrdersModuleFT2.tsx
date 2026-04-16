@@ -23,6 +23,7 @@ import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
 import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
 import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 
 /**
  * OrdersModuleFT2DataProps
@@ -133,7 +134,7 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 // ─────────────────────────────────────────────────────────────
 
 const fmt$ = (n: number | null | undefined): string =>
-  n == null ? '—' : `$${Math.round(n).toLocaleString()}`;
+  formatCurrencyCompact(n);
 
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();

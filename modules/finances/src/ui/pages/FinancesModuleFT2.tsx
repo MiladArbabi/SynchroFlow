@@ -2,6 +2,7 @@
 import { Box, Typography, ToggleButtonGroup, ToggleButton, useTheme } from '@mui/material';
 import { useState } from 'react';
 import { FT2Layout, FT2Row } from '@lasyncro/ui-ft2';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 
 /**
  * LOCAL MARGIN TYPE
@@ -112,8 +113,7 @@ export default function FinancesModuleFT2(props: FinancesModuleFT2Props) {
     statusFilter === 'all' ? true : o.fulfillment_status === statusFilter
   );
 
-  const fmt = (n: number) =>
-    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const fmt = (n: number) => formatCurrencyCompact(n);
 
   return (
     <FT2Layout>

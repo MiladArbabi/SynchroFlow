@@ -275,6 +275,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   }
 
   let shopifyAccessToken: string;
+  let shopBaseCurrency = 'USD'; // set from Shopify shop.json at OAuth time, fallback to USD
 
   // --- Step 2.2.2.a: Token exchange (OUTSIDE DB transaction) ---
   try {
@@ -288,6 +289,18 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       });
 
       shopifyAccessToken = tokenResponse.data?.access_token;
+
+      // Fetch store currency from Shopify Admin API
+      // Used to set shops.base_currency — conversion is display-only, never stored
+      try {
+        const shopInfoRes = await axios.get(
+          `https://${oauthContext.shopDomain}/admin/api/2024-01/shop.json`,
+          { headers: { 'X-Shopify-Access-Token': shopifyAccessToken } }
+        );
+        shopBaseCurrency = shopInfoRes.data?.shop?.currency ?? 'USD';
+      } catch (err) {
+        console.warn('[OAuth] Failed to fetch shop currency — defaulting to USD', err);
+      }
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
     }
@@ -304,6 +317,11 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   try {
     const result = await db.transaction(async trx => {
       const { shopId } = await requireShopContextForUser(oauthContext.userId);
+
+      // Persist shop base currency captured from Shopify at OAuth time
+      await trx('shops')
+        .where({ id: shopId })
+        .update({ base_currency: shopBaseCurrency });
 
       const encryptedToken = encryptToken(shopifyAccessToken);
 

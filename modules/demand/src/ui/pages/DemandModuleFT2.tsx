@@ -2,6 +2,7 @@
 
 import { Box, Typography, CircularProgress, Chip, useTheme } from '@mui/material';
 import { AlertTriangle, TrendingDown, Package, CheckCircle } from 'lucide-react';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 
 export type DemandVelocity = {
   lasyncro_variant_id: string;
@@ -64,8 +65,7 @@ function VariantRow({ variant }: { variant: DemandVelocity }) {
   const theme = useTheme();
   const config = URGENCY_CONFIG[variant.reorder_urgency];
 
-  const fmt = (n: number) =>
-    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const fmt = (n: number) => formatCurrencyCompact(n);
 
   const stockoutDate = variant.estimated_stockout_date
     ? new Date(variant.estimated_stockout_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -115,8 +115,7 @@ export default function DemandModuleFT2({ data, isLoading, isError }: DemandModu
   const summary = data?.summary;
   const variants = data?.variants ?? [];
 
-  const fmt = (n: number) =>
-    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const fmt = (n: number) => formatCurrencyCompact(n);
 
   return (
     <Box sx={{ p: 3 }}>

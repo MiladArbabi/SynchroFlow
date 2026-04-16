@@ -21,6 +21,18 @@ export async function up(knex: Knex): Promise<void> {
       .defaultTo(false);
 
     table.timestamps(true, true);
+
+    /**
+     * CURRENCY LAYER 1 — Shop Base Currency
+     * --------------------------------------
+     * Set at onboarding from Shopify store currency.
+     * All monetary values in DB are stored in this currency.
+     * Conversion is display-only — never stored as converted values.
+     * Defaults to 'USD' until Shopify installation sets it.
+     */
+    table.string('base_currency', 3)
+      .notNullable()
+      .defaultTo('USD');
   });
 
   // --- RLS: Enforce tenant isolation ---

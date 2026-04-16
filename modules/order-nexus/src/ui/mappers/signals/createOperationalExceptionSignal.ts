@@ -15,6 +15,7 @@ import type {
   OperationalSignalLifecycle,
   OperationalSignalSeverity
 } from '../../../contracts/operationalSignals.js';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 
 export function createOperationalExceptionSignal(
   snapshot: {
@@ -53,7 +54,7 @@ export function createOperationalExceptionSignal(
      */
     impactDetail:
       snapshot.revenue_blocked_operational > 0
-        ? `$${snapshot.revenue_blocked_operational.toLocaleString()} revenue at risk`
+        ? `${formatCurrencyCompact(snapshot.revenue_blocked_operational)} revenue at risk`
         : undefined,
 
     metadata: {

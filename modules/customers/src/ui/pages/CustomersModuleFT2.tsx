@@ -2,6 +2,7 @@
 
 import { Box, Typography, CircularProgress, Alert, useTheme, Chip } from '@mui/material';
 import { Users, TrendingUp, AlertTriangle, Star } from 'lucide-react';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 
 /**
  * LOCAL TYPES
@@ -98,8 +99,8 @@ function StatBox({
 
 function CustomerRow({ customer }: { customer: CustomerLtvRecord }) {
   const theme = useTheme();
-  const fmt = (n: number) =>
-    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+  const fmt = (n: number) => formatCurrencyCompact(n);
 
   const churnColor =
     customer.churn_risk === 'low'
@@ -156,8 +157,8 @@ function CustomerRow({ customer }: { customer: CustomerLtvRecord }) {
 
 export default function CustomersModuleFT2({ ltv }: CustomersModuleFT2Props) {
   const theme = useTheme();
-  const fmt = (n: number) =>
-    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+  const fmt = (n: number) => formatCurrencyCompact(n);
 
   const summary = ltv?.summary;
   const customers = ltv?.customers ?? [];

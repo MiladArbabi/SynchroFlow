@@ -9,6 +9,7 @@ import {
   Divider,
 } from '@mui/material';
 import { DollarSign, Clock, AlertTriangle, RotateCcw, Package, Lock } from 'lucide-react';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 
 /**
  * LOCAL TYPES
@@ -108,7 +109,7 @@ function StatCard({
 function BucketRow({ bucket }: { bucket: CashFlowBucket }) {
   const theme = useTheme();
   const fmt = (n: number) =>
-    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    formatCurrencyCompact(n);
 
   const colorMap: Record<string, string> = {
     Realized: theme.palette.success.main,
@@ -157,7 +158,7 @@ export default function CashFlowModuleFT2({ data, isLoading, isError }: CashFlow
   const byConstraint = data?.by_constraint ?? [];
 
   const fmt = (n: number) =>
-    `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    formatCurrencyCompact(n);
 
   return (
     <Box sx={{ p: 3 }}>
