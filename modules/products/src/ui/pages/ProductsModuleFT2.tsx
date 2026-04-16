@@ -43,7 +43,7 @@ export interface ProductsModuleFT2DataProps {
   // Operator summary — purpose-built actionable surface
   // Source: GET /api/v1/modules/products/operator-summary
   // Null = endpoint not yet loaded or data unavailable
-  operatorSummary: {
+  operatorSummary?: {
     sellability: {
       sellable: number | null;
       blocked: number | null;
@@ -589,7 +589,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   : item.returnRatePct >= 10
                   ? theme.palette.warning.main
                   : theme.palette.success.main;
-                  const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale);
+                  const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
                 return (
                   <Box

@@ -42,7 +42,7 @@ export async function resolveShopContextForUser(userId) {
     const memberships = await db('shop_memberships')
         .where({ user_id: userId })
         .whereNull('revoked_at')
-        .select('shop_id as shopId', 'role');
+        .select('shop_id as shopId', 'role', 'display_currency as displayCurrency', 'locale');
     if (memberships.length === 0) {
         return null;
     }

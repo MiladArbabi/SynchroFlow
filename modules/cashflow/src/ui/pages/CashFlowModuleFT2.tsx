@@ -113,7 +113,7 @@ function BucketRow({ bucket, currency }: { bucket: CashFlowBucket; currency?: Cu
   
   const theme = useTheme();
   const fmt = (n: number) =>
-    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   const colorMap: Record<string, string> = {
     Realized: theme.palette.success.main,
@@ -168,7 +168,7 @@ export default function CashFlowModuleFT2({
   const byConstraint = data?.by_constraint ?? [];
 
   const fmt = (n: number) =>
-    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   return (
     <Box sx={{ p: 3 }}>

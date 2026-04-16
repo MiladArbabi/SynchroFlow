@@ -13,6 +13,7 @@
 import { CustomersModuleFT2 } from '@lasyncro/customers';
 import { useCustomerLtv } from '../customers/useCustomerLtv';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import { useExchangeRates } from 'hooks/useExchangeRates';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -20,6 +21,7 @@ export default function CustomersFT2Page() {
 
   const ltvQuery = useCustomerLtv();
   const { displayCurrency, locale } = useEntitlements();
+  const { rates } = useExchangeRates();
 
   if (__DEV__) {
     console.debug('[CustomersFT2Page] rendering CustomersModuleFT2');
@@ -28,7 +30,7 @@ export default function CustomersFT2Page() {
   return (
     <CustomersModuleFT2
         ltv={ltvQuery.data ?? null}
-        currency={{ displayCurrency, locale }}
+        currency={{ displayCurrency, locale, rates }}
       />
   );
 }

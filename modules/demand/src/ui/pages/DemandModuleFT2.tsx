@@ -68,7 +68,7 @@ function VariantRow({ variant, currency }: { variant: DemandVelocity; currency?:
   const theme = useTheme();
   const config = URGENCY_CONFIG[variant.reorder_urgency];
 
-  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   const stockoutDate = variant.estimated_stockout_date
     ? new Date(variant.estimated_stockout_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -118,7 +118,7 @@ export default function DemandModuleFT2({ data, isLoading, isError, currency }: 
   const summary = data?.summary;
   const variants = data?.variants ?? [];
 
-  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   return (
     <Box sx={{ p: 3 }}>

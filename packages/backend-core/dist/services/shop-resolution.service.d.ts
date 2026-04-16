@@ -4,6 +4,13 @@
 export interface ResolvedShopContext {
     shopId: number;
     role: 'owner' | 'admin' | 'operator' | 'viewer';
+    /**
+     * CURRENCY LAYER 2 — User display preference from shop_memberships.
+     * Defaults to 'USD' / 'en-US' until user updates in settings.
+     * Never used for DB storage — display only.
+     */
+    displayCurrency: string;
+    locale: string;
 }
 /**
  * Resolve the ACTIVE shop membership for a user.

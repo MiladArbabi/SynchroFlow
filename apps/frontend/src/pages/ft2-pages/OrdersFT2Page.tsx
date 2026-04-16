@@ -19,6 +19,7 @@ import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
 import { OrderDetailPanel } from '../../pages/orders/OrderDetailPanel';
 import { useOrdersOperatorSummary } from '../orders/useOrdersOperatorSummary';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import { useExchangeRates } from 'hooks/useExchangeRates';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -30,7 +31,6 @@ export default function OrdersFT2Page() {
    * null = panel closed. orderId = panel open for that order.
    */
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-
   const snapshotQuery = useOrdersFt2Snapshot();
 
   /**
@@ -42,6 +42,7 @@ export default function OrdersFT2Page() {
    */
   const operatorSummaryQuery = useOrdersOperatorSummary();
   const { displayCurrency, locale } = useEntitlements();
+  const { rates } = useExchangeRates();
 
   /**
    * PROGRESSIVE RENDER GUARD
@@ -92,7 +93,7 @@ export default function OrdersFT2Page() {
         {...headerProps}
         operationalControl={operationalControl}
         operatorSummary={operatorSummaryQuery.data ?? null}
-        currency={{ displayCurrency, locale }}
+        currency={{ displayCurrency, locale, rates }}
       />
 
       {/**

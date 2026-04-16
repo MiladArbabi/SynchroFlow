@@ -51,7 +51,7 @@ export function createPaymentProblemSignal(
      */
     impactDetail:
       snapshot.at_risk_revenue > 0
-        ? `${formatCurrencyCompact(snapshot.at_risk_revenue, currency?.displayCurrency, currency?.locale)} revenue at risk`
+        ? `${formatCurrencyCompact(snapshot.at_risk_revenue, currency?.displayCurrency, currency?.locale, currency?.rates)} revenue at risk`
         : undefined,
 
     metadata: {

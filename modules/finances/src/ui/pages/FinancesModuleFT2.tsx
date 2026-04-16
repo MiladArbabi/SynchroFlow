@@ -117,7 +117,7 @@ export default function FinancesModuleFT2({ currency, ...props }: FinancesModule
     statusFilter === 'all' ? true : o.fulfillment_status === statusFilter
   );
 
-  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   return (
     <FT2Layout>

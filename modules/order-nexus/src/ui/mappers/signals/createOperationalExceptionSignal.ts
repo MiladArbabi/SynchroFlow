@@ -56,7 +56,7 @@ export function createOperationalExceptionSignal(
      */
     impactDetail:
       snapshot.revenue_blocked_operational > 0
-        ? `${formatCurrencyCompact(snapshot.revenue_blocked_operational, currency?.displayCurrency, currency?.locale)} revenue at risk`
+        ? `${formatCurrencyCompact(snapshot.revenue_blocked_operational, currency?.displayCurrency, currency?.locale, currency?.rates)} revenue at risk`
         : undefined,
 
     metadata: {

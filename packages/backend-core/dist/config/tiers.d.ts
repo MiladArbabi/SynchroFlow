@@ -7,6 +7,10 @@ export interface TierConfig {
     seatLimit: number;
     /** Max orders ingested per calendar month. Infinity = unlimited. */
     monthlyOrderCap: number;
+    /** Max orders shipped via WMS per billing period. Infinity = unlimited. Overage billed at $0.08/order. */
+    shippedOrderCap: number;
+    /** Max Specter sessions per billing period. Infinity = unlimited. Overage degrades to specter_sdk_free. */
+    specterSessionCap: number;
     /**
      * Module keys granted to this tier.
      * Must match module_key values in shop_module_entitlements.

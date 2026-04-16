@@ -103,7 +103,7 @@ function StatBox({
 function CustomerRow({ customer, currency }: { customer: CustomerLtvRecord; currency?: CurrencyContext }) {
   const theme = useTheme();
 
-  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   const churnColor =
     customer.churn_risk === 'low'
@@ -161,7 +161,7 @@ function CustomerRow({ customer, currency }: { customer: CustomerLtvRecord; curr
 export default function CustomersModuleFT2({ ltv, currency }: CustomersModuleFT2Props) {
   const theme = useTheme();
 
-  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   const summary = ltv?.summary;
   const customers = ltv?.customers ?? [];

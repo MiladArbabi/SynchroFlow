@@ -30,6 +30,13 @@ export type EntitlementSnapshot = {
 export type CurrencyContext = {
   displayCurrency: string;
   locale: string;
+  /**
+   * Exchange rates map: { EUR: 0.92, GBP: 0.79, ... }
+   * 1 USD = N target currency.
+   * Optional — if absent, amounts display in base currency without conversion.
+   * Populated by useExchangeRates() hook in host app pages.
+   */
+  rates?: Record<string, number>;
 };
 
 export type UserSnapshot = {

@@ -14,6 +14,7 @@ import {
   type FT2DateRange,
 } from '@lasyncro/ui-ft2';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import { useExchangeRates } from 'hooks/useExchangeRates';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -27,6 +28,7 @@ export default function ProductsFT2Page() {
   const snapshotQuery = useProductsFt2Snapshot(range);
   const operatorQuery = useProductsOperatorSummary(range);
   const { displayCurrency, locale } = useEntitlements();
+  const { rates } = useExchangeRates();
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) {
@@ -49,7 +51,10 @@ export default function ProductsFT2Page() {
         value={range}
         onChange={setRange}
       />
-      <ProductsModuleFT2 {...props} operatorSummary={operatorSummary} currency={{ displayCurrency, locale }} />
+      <ProductsModuleFT2 
+        {...props}
+        operatorSummary={operatorSummary} 
+        currency={{ displayCurrency, locale, rates }} />
     </>
   );
 }

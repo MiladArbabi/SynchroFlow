@@ -322,7 +322,26 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
+
+// start exchange rate worker — fetches daily FX rates for display-only currency conversion
+  try {
+    const exchangeRate = await import('../workers/exchange-rate.worker.js');
+    if (typeof exchangeRate.startExchangeRateWorker === 'function') {
+      await exchangeRate.startExchangeRateWorker();
+      if (typeof exchangeRate.stopExchangeRateWorker === 'function') {
+        workerStopFns.push(async () => exchangeRate.stopExchangeRateWorker());
+      }
+      console.info('[bootstrap/workers] Exchange rate worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Exchange rate worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
 }
+
+
 export async function stopWorkers(): Promise<void> {
   // run stop functions in sequence, ignore individual errors
   for (const fn of workerStopFns) {

@@ -7,6 +7,7 @@ import { useFinancesFt2Snapshot } from '../finances/useFinancesFt2Snapshot';
 import { mapFinancesFt2Props } from '../finances/useFinancesFt2Adapter';
 import { useMargin } from '../finances/useMargin';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import { useExchangeRates } from 'hooks/useExchangeRates';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -20,6 +21,7 @@ export default function FinancesFT2Page() {
   const snapshotQuery = useFinancesFt2Snapshot(range);
   const marginQuery = useMargin();
   const { displayCurrency, locale } = useEntitlements();
+  const { rates } = useExchangeRates();
 
   if (!snapshotQuery.isSuccess) {
     if (__DEV__) console.debug('[FinancesFT2Page] awaiting FT2 snapshot');
@@ -36,7 +38,7 @@ export default function FinancesFT2Page() {
       <FinancesModuleFT2
         {...props}
         margin={marginQuery.data ?? null}
-        currency={{ displayCurrency, locale }}
+        currency={{ displayCurrency, locale, rates }}
       />
     </>
   );

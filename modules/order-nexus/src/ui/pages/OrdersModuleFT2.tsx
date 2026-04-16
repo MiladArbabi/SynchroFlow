@@ -193,7 +193,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   } = props;
 
   const fmt$ = (n: number | null | undefined): string =>
-    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
+    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   // ── Health classification ────────────────────────────────────
   const constrained = operationalControl?.constrained_orders ?? 0;

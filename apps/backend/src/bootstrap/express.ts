@@ -30,6 +30,7 @@ import demandRoutes from '../api/demand/demand.routes.js';
 import wmsRoutes from '../api/wms/wms.routes.js';
 import notificationsRoutes from '../api/notifications/notifications.routes.js';
 import membersRoutes from '../api/members/members.routes.js';
+import currencyRoutes from '../api/currency/currency.routes.js';
 import shopifyBillingRoutes from '../api/shopify/shopify.billing.routes.js';
 
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
@@ -107,6 +108,7 @@ export function createApp(): Express {
   app.use('/api/v1/wms', wmsRoutes);
   app.use('/api/v1/notifications', notificationsRoutes);
   app.use('/api/v1/members', membersRoutes);
+  app.use('/api/v1/currency', currencyRoutes);
   // Historical refund ingestion — idempotent, one-shot per shop
   app.post('/api/v1/integrations/refund-backfill', authenticateToken, httpRefundBackfill);
   app.use('/api/v1/billing', billingRoutes);

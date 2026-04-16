@@ -20,114 +20,113 @@
 //   Never derive tier membership from entitlement rows — always
 //   derive entitlement rows FROM tier constants.
 export const TIERS = ['starter', 'core', 'growth', 'scale'];
+// --- Cumulative module sets ---
+// Each tier's modules are derived by spreading the previous tier.
+// NEVER repeat module keys manually — add to the lowest tier that grants access.
+// This eliminates drift: a module added to STARTER_MODULES is automatically
+// available in all higher tiers.
+const STARTER_MODULES = [
+    'order-nexus', // Orders list + detail
+    'fulfillment', // Fulfillment queue
+    'alerts', // Operational alerts
+    'shopify_integration',
+    'specter_sdk_free',
+];
+const CORE_MODULES = [
+    ...STARTER_MODULES,
+    'wms-lite', // WMS pick/pack/stow (MON-03)
+    'returns',
+    'products',
+    'sku-gaps', // Product-side problem center — surfaces issues from WMS receive/pick/pack
+];
+const GROWTH_MODULES = [
+    ...CORE_MODULES,
+    'customers',
+    'finances', // Cash Flow
+    'demand',
+    'specter', // Full Specter (supersedes specter_sdk_free)
+    'echo-hub',
+];
+const SCALE_MODULES = [
+    ...GROWTH_MODULES,
+    'floor-planning',
+    'barcodes',
+    'wms', // WMS Advanced (supersedes wms-lite)
+];
+// --- Cumulative flag sets ---
+const STARTER_FLAGS = [];
+const CORE_FLAGS = [...STARTER_FLAGS];
+const GROWTH_FLAGS = [
+    ...CORE_FLAGS,
+    'orders.advanced_filters',
+    'customers.segmentation',
+    'specter.full_capture',
+];
+const SCALE_FLAGS = [...GROWTH_FLAGS];
 export const TIER_CONFIG = {
     /**
      * Starter (Free)
      * - 1 seat (owner only)
-     * - 50 orders/month cap
+     * - 50 orders/month ingestion cap
      * - Core operational modules only
      */
     starter: {
         monthlyPriceCents: 0,
         seatLimit: 1,
         monthlyOrderCap: 50,
-        modules: [
-            'order-nexus', // Orders list + detail
-            'fulfillment', // Fulfillment queue
-            'alerts', // Operational alerts
-            'shopify_integration',
-            'specter_sdk_free',
-        ],
-        flags: [],
+        shippedOrderCap: 0, // WMS not available on Starter
+        specterSessionCap: 500,
+        modules: STARTER_MODULES,
+        flags: STARTER_FLAGS,
     },
     /**
      * Core ($79/month)
-     * - 2 seats
-     * - Unlimited orders
-     * - Adds WMS-Lite, Returns, Products
+     * - 2 seats + extra seats at $15/seat/mo
+     * - 2,000 orders ingested/mo — soft cap, degraded priority above limit
+     * - 200 orders shipped via WMS/mo — overage at $0.08/order
+     * - Adds WMS, Returns, Products
      */
     core: {
         monthlyPriceCents: 7900,
         seatLimit: 2,
-        monthlyOrderCap: Infinity,
-        modules: [
-            'order-nexus',
-            'fulfillment',
-            'alerts',
-            'shopify_integration',
-            'specter_sdk_free',
-            'wms-lite', // MON-02: wired from FT2_PAID_MODULES
-            'returns',
-            'products',
-        ],
-        flags: [],
+        monthlyOrderCap: 2000,
+        shippedOrderCap: 200,
+        specterSessionCap: 5000,
+        modules: CORE_MODULES,
+        flags: CORE_FLAGS,
     },
     /**
      * Growth ($179/month)
-     * - 5 seats
-     * - Unlimited orders
-     * - Adds intelligence modules: Cash Flow, LTV, Demand, Specter
+     * - 5 seats + extra seats at $12/seat/mo
+     * - 10,000 orders ingested/mo
+     * - 1,000 orders shipped via WMS/mo — overage at $0.08/order
+     * - Adds intelligence: Cash Flow, LTV, Demand, Specter
      * - 14-day free trial on signup (MON-07)
-     * - Annual billing available at 20% discount (MON-08)
+     * - Annual billing at 20% discount (MON-08)
      */
     growth: {
         monthlyPriceCents: 17900,
         seatLimit: 5,
-        monthlyOrderCap: Infinity,
-        modules: [
-            'order-nexus',
-            'fulfillment',
-            'alerts',
-            'shopify_integration',
-            'specter_sdk_free',
-            'wms-lite',
-            'returns',
-            'products',
-            'customers',
-            'finances', // Cash Flow
-            'demand',
-            'specter', // Full Specter (replaces specter_sdk_free)
-            'echo-hub',
-        ],
-        flags: [
-            'orders.advanced_filters',
-            'customers.segmentation',
-            'specter.full_capture',
-        ],
+        monthlyOrderCap: 10000,
+        shippedOrderCap: 1000,
+        specterSessionCap: 25000,
+        modules: GROWTH_MODULES,
+        flags: GROWTH_FLAGS,
     },
     /**
      * Scale ($349/month)
      * - Unlimited seats
-     * - Unlimited orders
+     * - Unlimited orders ingested and shipped
      * - Adds Floor Planning, Barcodes, WMS Advanced
      */
     scale: {
         monthlyPriceCents: 34900,
         seatLimit: Infinity,
         monthlyOrderCap: Infinity,
-        modules: [
-            'order-nexus',
-            'fulfillment',
-            'alerts',
-            'shopify_integration',
-            'specter_sdk_free',
-            'wms-lite',
-            'returns',
-            'products',
-            'customers',
-            'finances',
-            'demand',
-            'specter',
-            'echo-hub',
-            'floor-planning',
-            'barcodes',
-            'wms', // WMS Advanced (full, supersedes wms-lite)
-        ],
-        flags: [
-            'orders.advanced_filters',
-            'customers.segmentation',
-            'specter.full_capture',
-        ],
+        shippedOrderCap: Infinity,
+        specterSessionCap: Infinity,
+        modules: SCALE_MODULES,
+        flags: SCALE_FLAGS,
     },
 };
 /**
