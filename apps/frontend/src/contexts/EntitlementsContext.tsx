@@ -44,6 +44,10 @@ interface EntitlementsResponse {
 
   /** Subscription tier from backend entitlements snapshot (MON-03) */
   tier: Tier;
+
+  /** CURRENCY LAYER 2 — user display preference from shop_memberships */
+  displayCurrency: string;
+  locale: string;
 }
 
 // --- Context shape exposed to UI ---
@@ -51,7 +55,6 @@ interface EntitlementsContextValue {
   shopId: number | null;
   modules: string[];
   flags: string[];
-
   snapshot: EntitlementSnapshot;
 
   /**
@@ -61,6 +64,8 @@ interface EntitlementsContextValue {
    */
   tier: Tier;
 
+  displayCurrency: string;
+  locale: string;
   isLoading: boolean;
   hasResolved: boolean;
   error: string | null;
@@ -89,6 +94,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [hasResolved, setHasResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<string>('USD');
+  const [locale, setLocale] = useState<string>('en-US');
 
   // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
   const lastGoodSnapshotRef = React.useRef<{
@@ -96,6 +103,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     modules: string[];
     flags: string[];
     tier: Tier;
+    displayCurrency: string;
+    locale: string;
   } | null>(null);
 
   const snapshot = React.useMemo(() => ({
@@ -187,6 +196,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setModules(nextModules);
         setFlags(nextFlags);
         setTier(nextTier);
+        setDisplayCurrency(payload.displayCurrency ?? 'USD');
+        setLocale(payload.locale ?? 'en-US');
         setError(null);
         setHasResolved(true);
 
@@ -196,6 +207,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           modules: nextModules,
           flags: nextFlags,
           tier: nextTier,
+          displayCurrency: payload.displayCurrency ?? 'USD',
+          locale: payload.locale ?? 'en-US',
         };
 
         if (import.meta.env.DEV) {
@@ -225,6 +238,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setModules(snap.modules);
         setFlags(snap.flags);
         setTier(snap.tier);
+        setDisplayCurrency(snap.displayCurrency ?? 'USD');
+        setLocale(snap.locale ?? 'en-US');
         setError(null);
         setHasResolved(true);
 
@@ -268,6 +283,10 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     flags,
     snapshot,
     tier,
+
+    displayCurrency,
+    locale,
+    
     isLoading,
     hasResolved,
     error,

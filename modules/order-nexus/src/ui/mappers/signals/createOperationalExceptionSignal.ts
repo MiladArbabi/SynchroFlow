@@ -16,6 +16,7 @@ import type {
   OperationalSignalSeverity
 } from '../../../contracts/operationalSignals.js';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 export function createOperationalExceptionSignal(
   snapshot: {
@@ -28,7 +29,8 @@ export function createOperationalExceptionSignal(
   detectedAt: string,
   lifecycle: OperationalSignalLifecycle,
   severity: OperationalSignalSeverity,
-  signalId: string
+  signalId: string,
+  currency?: CurrencyContext
 ): OperationalSignal {
 
   return {
@@ -54,7 +56,7 @@ export function createOperationalExceptionSignal(
      */
     impactDetail:
       snapshot.revenue_blocked_operational > 0
-        ? `${formatCurrencyCompact(snapshot.revenue_blocked_operational)} revenue at risk`
+        ? `${formatCurrencyCompact(snapshot.revenue_blocked_operational, currency?.displayCurrency, currency?.locale)} revenue at risk`
         : undefined,
 
     metadata: {

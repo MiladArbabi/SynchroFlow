@@ -3,6 +3,7 @@
 import { Box, Typography, CircularProgress, Alert, useTheme, Chip } from '@mui/material';
 import { Users, TrendingUp, AlertTriangle, Star } from 'lucide-react';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 /**
  * LOCAL TYPES
@@ -48,6 +49,8 @@ export type CustomerLtvData = {
  */
 export interface CustomersModuleFT2Props {
   ltv: CustomerLtvData;
+  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  currency?: CurrencyContext;
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -97,10 +100,10 @@ function StatBox({
   );
 }
 
-function CustomerRow({ customer }: { customer: CustomerLtvRecord }) {
+function CustomerRow({ customer, currency }: { customer: CustomerLtvRecord; currency?: CurrencyContext }) {
   const theme = useTheme();
 
-  const fmt = (n: number) => formatCurrencyCompact(n);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   const churnColor =
     customer.churn_risk === 'low'
@@ -155,10 +158,10 @@ function CustomerRow({ customer }: { customer: CustomerLtvRecord }) {
   );
 }
 
-export default function CustomersModuleFT2({ ltv }: CustomersModuleFT2Props) {
+export default function CustomersModuleFT2({ ltv, currency }: CustomersModuleFT2Props) {
   const theme = useTheme();
 
-  const fmt = (n: number) => formatCurrencyCompact(n);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   const summary = ltv?.summary;
   const customers = ltv?.customers ?? [];
@@ -239,7 +242,7 @@ export default function CustomersModuleFT2({ ltv }: CustomersModuleFT2Props) {
               </Box>
 
               {customers.map(c => (
-                <CustomerRow key={c.customer_hashed_id} customer={c} />
+                <CustomerRow key={c.customer_hashed_id} customer={c} currency={currency} />
               ))}
             </Box>
           )}

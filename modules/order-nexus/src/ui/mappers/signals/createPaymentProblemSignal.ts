@@ -16,6 +16,7 @@ import type {
   OperationalSignalSeverity
 } from '../../../contracts/operationalSignals.js';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 export function createPaymentProblemSignal(
   snapshot: {
@@ -26,7 +27,8 @@ export function createPaymentProblemSignal(
   detectedAt: string,
   lifecycle: OperationalSignalLifecycle,
   severity: OperationalSignalSeverity,
-  signalId: string
+  signalId: string,
+  currency?: CurrencyContext
 ): OperationalSignal {
 
   return {
@@ -49,7 +51,7 @@ export function createPaymentProblemSignal(
      */
     impactDetail:
       snapshot.at_risk_revenue > 0
-        ? `${formatCurrencyCompact(snapshot.at_risk_revenue)} revenue at risk`
+        ? `${formatCurrencyCompact(snapshot.at_risk_revenue, currency?.displayCurrency, currency?.locale)} revenue at risk`
         : undefined,
 
     metadata: {

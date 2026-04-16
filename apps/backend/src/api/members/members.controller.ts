@@ -249,3 +249,51 @@ export const createMember = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+/**
+ * PATCH /api/v1/members/me/currency
+ * ----------------------------------
+ * Self-service endpoint — any authenticated user updates their own
+ * display_currency and locale in shop_memberships.
+ *
+ * Access: all roles (UI restricted to owner/admin via route guard in frontend)
+ * RLS: enforced via app.current_tenant — users can only update their own membership
+ *
+ * Body: { displayCurrency: string, locale: string }
+ */
+export const updateMyCurrencyPreference = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { displayCurrency, locale } = req.body as {
+      displayCurrency?: string;
+      locale?: string;
+    };
+
+    if (!displayCurrency && !locale) {
+      return res.status(400).json({ error: 'At least one of displayCurrency or locale is required' });
+    }
+
+    // Validate ISO 4217 currency code format (3 uppercase letters)
+    if (displayCurrency && !/^[A-Z]{3}$/.test(displayCurrency)) {
+      return res.status(400).json({ error: 'displayCurrency must be a valid ISO 4217 code (e.g. USD, EUR, GBP)' });
+    }
+
+    const updates: Record<string, string> = {};
+    if (displayCurrency) updates.display_currency = displayCurrency;
+    if (locale) updates.locale = locale;
+
+    await db('shop_memberships')
+      .where({ user_id: userId })
+      .whereNull('revoked_at')
+      .update(updates);
+
+    console.info('[MEMBERS] Currency preference updated', { userId, displayCurrency, locale });
+
+    return res.json({ success: true, displayCurrency, locale });
+  } catch (err) {
+    console.error('[MEMBERS] updateMyCurrencyPreference failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};

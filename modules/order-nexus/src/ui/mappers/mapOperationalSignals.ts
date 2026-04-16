@@ -20,6 +20,7 @@ import {
 } from './lifecycle/signalLifecycleEngine.js';
 import { normalizeOperationalSnapshot } from './utils/normalizeOperationalSnapshot.js';
 import { sortOperationalSignals } from './utils/sortOperationalSignals.js';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 /**
  * SIGNAL IDENTIFIERS
@@ -120,9 +121,9 @@ const SNAPSHOT_FIELD_COVERAGE: Record<string, 'signal' | 'ignored'> = {
   // pending_fulfillment
 };
 
-
 export function mapOperationalSignals(
-  snapshot: OperationalControlSnapshot
+  snapshot: OperationalControlSnapshot,
+  currency?: CurrencyContext
 ): OperationalSignal[] {
 
   const safeSnapshot =
@@ -231,12 +232,12 @@ export function mapOperationalSignals(
             snapshot: safeSnapshot,
             states,
             evaluationTime,
-            activeSignalTypes
+            activeSignalTypes,
+            currency
           },
           detectedAt
         )
       );
-
     }
   };
 

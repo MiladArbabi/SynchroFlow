@@ -27,12 +27,15 @@ import { createAwaitingCustomerSignal } from './createAwaitingCustomerSignal.js'
 import { createOperationalExceptionSignal } from './createOperationalExceptionSignal.js';
 import { createPaymentProblemSignal } from './createPaymentProblemSignal.js';
 import { createEarlyAgingSignal, createAgingOrdersSignal } from './createAgingSignals.js';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 export type SignalExecutionContext = {
   snapshot: OperationalControlSnapshot;
   states: OperationalStates;
   evaluationTime: number;
   activeSignalTypes: Set<string>;
+  /** CURRENCY LAYER 3 — passed from OrdersModuleFT2 props */
+  currency?: CurrencyContext;
 };
 
 type SignalRegistryEntry = {
@@ -40,7 +43,8 @@ type SignalRegistryEntry = {
   shouldEmit: (states: OperationalStates) => boolean;
   build: (
     ctx: SignalExecutionContext,
-    detectedAt: string
+    detectedAt: string,
+    currency?: CurrencyContext,
   ) => OperationalSignal;
 };
 
@@ -107,7 +111,8 @@ export const signalRegistry: SignalRegistryEntry[] = [
         detectedAt,
         getLifecycle(),
         'critical',
-        signalId('operational-exception')
+        signalId('operational-exception'),
+        ctx.currency
       )
   },
 
@@ -120,7 +125,8 @@ export const signalRegistry: SignalRegistryEntry[] = [
         detectedAt,
         getLifecycle(),
         'critical',
-        signalId('payment-retry')
+        signalId('payment-retry'),
+        ctx.currency
       )
   },
 

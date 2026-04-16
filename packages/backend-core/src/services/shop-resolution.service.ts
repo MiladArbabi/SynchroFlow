@@ -27,6 +27,13 @@ import db from '../db.js'
 export interface ResolvedShopContext {
   shopId: number;
   role: 'owner' | 'admin' | 'operator' | 'viewer';
+  /**
+   * CURRENCY LAYER 2 — User display preference from shop_memberships.
+   * Defaults to 'USD' / 'en-US' until user updates in settings.
+   * Never used for DB storage — display only.
+   */
+  displayCurrency: string;
+  locale: string;
 }
 
 /**
@@ -58,7 +65,12 @@ export async function resolveShopContextForUser(
   const memberships = await db('shop_memberships')
     .where({ user_id: userId })
     .whereNull('revoked_at')
-    .select<ResolvedShopContext[]>('shop_id as shopId', 'role');
+    .select<ResolvedShopContext[]>(
+      'shop_id as shopId',
+      'role',
+      'display_currency as displayCurrency',
+      'locale'
+    );
 
   if (memberships.length === 0) {
     return null;

@@ -3,6 +3,7 @@ import { Box, Typography, ToggleButtonGroup, ToggleButton, useTheme } from '@mui
 import { useState } from 'react';
 import { FT2Layout, FT2Row } from '@lasyncro/ui-ft2';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 /**
  * LOCAL MARGIN TYPE
@@ -66,7 +67,10 @@ export interface FinancesModuleFT2DataProps {
   margin: MarginData;
 }
 
-export type FinancesModuleFT2Props = FinancesModuleFT2DataProps;
+export type FinancesModuleFT2Props = FinancesModuleFT2DataProps & {
+  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  currency?: CurrencyContext;
+};
 
 type StatusFilter = 'all' | 'pending' | 'fulfilled';
 
@@ -103,7 +107,7 @@ function MarginBar({ min, avg, max }: { min: number; avg: number; max: number })
   );
 }
 
-export default function FinancesModuleFT2(props: FinancesModuleFT2Props) {
+export default function FinancesModuleFT2({ currency, ...props }: FinancesModuleFT2Props) {
   const theme = useTheme();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const { margin } = props;
@@ -113,7 +117,7 @@ export default function FinancesModuleFT2(props: FinancesModuleFT2Props) {
     statusFilter === 'all' ? true : o.fulfillment_status === statusFilter
   );
 
-  const fmt = (n: number) => formatCurrencyCompact(n);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   return (
     <FT2Layout>

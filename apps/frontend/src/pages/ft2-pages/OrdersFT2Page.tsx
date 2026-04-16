@@ -18,6 +18,7 @@ import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
 import { OrderDetailPanel } from '../../pages/orders/OrderDetailPanel';
 import { useOrdersOperatorSummary } from '../orders/useOrdersOperatorSummary';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -40,6 +41,7 @@ export default function OrdersFT2Page() {
    * Follows the Products module two-endpoint pattern.
    */
   const operatorSummaryQuery = useOrdersOperatorSummary();
+  const { displayCurrency, locale } = useEntitlements();
 
   /**
    * PROGRESSIVE RENDER GUARD
@@ -90,6 +92,7 @@ export default function OrdersFT2Page() {
         {...headerProps}
         operationalControl={operationalControl}
         operatorSummary={operatorSummaryQuery.data ?? null}
+        currency={{ displayCurrency, locale }}
       />
 
       {/**

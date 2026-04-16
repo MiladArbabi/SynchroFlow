@@ -24,6 +24,7 @@ import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
 import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 /**
  * OrdersModuleFT2DataProps
@@ -127,14 +128,14 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
       manualReview: number;
     };
   } | null;
+
+  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  currency?: CurrencyContext;
 }
 
 // ─────────────────────────────────────────────────────────────
 // LOCAL HELPERS
 // ─────────────────────────────────────────────────────────────
-
-const fmt$ = (n: number | null | undefined): string =>
-  formatCurrencyCompact(n);
 
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();
@@ -188,7 +189,11 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     operationalControl,
     operatorSummary,
     distribution,
+    currency,
   } = props;
+
+  const fmt$ = (n: number | null | undefined): string =>
+    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   // ── Health classification ────────────────────────────────────
   const constrained = operationalControl?.constrained_orders ?? 0;
@@ -258,7 +263,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   if (!operationalControl) {
     console.error('[OrdersModuleFT2] operationalControl missing → using fallback');
   }
-  mapOperationalSignals(safeSnap);
+  mapOperationalSignals(safeSnap, currency);
   mapWorkQueues(safeSnap);
 
   // ── Shared tokens ────────────────────────────────────────────

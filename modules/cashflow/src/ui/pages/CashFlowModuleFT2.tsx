@@ -10,6 +10,7 @@ import {
 } from '@mui/material';
 import { DollarSign, Clock, AlertTriangle, RotateCcw, Package, Lock } from 'lucide-react';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 /**
  * LOCAL TYPES
@@ -51,6 +52,8 @@ export type CashFlowModuleFT2Props = {
   data: CashFlowData;
   isLoading: boolean;
   isError: boolean;
+  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  currency?: CurrencyContext;
 };
 
 const BUCKET_ICONS: Record<string, React.ReactNode> = {
@@ -106,10 +109,11 @@ function StatCard({
   );
 }
 
-function BucketRow({ bucket }: { bucket: CashFlowBucket }) {
+function BucketRow({ bucket, currency }: { bucket: CashFlowBucket; currency?: CurrencyContext }) {
+  
   const theme = useTheme();
   const fmt = (n: number) =>
-    formatCurrencyCompact(n);
+    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   const colorMap: Record<string, string> = {
     Realized: theme.palette.success.main,
@@ -150,7 +154,13 @@ function BucketRow({ bucket }: { bucket: CashFlowBucket }) {
   );
 }
 
-export default function CashFlowModuleFT2({ data, isLoading, isError }: CashFlowModuleFT2Props) {
+export default function CashFlowModuleFT2({ 
+  data, 
+  isLoading, 
+  isError, 
+  currency 
+}: CashFlowModuleFT2Props) {
+
   const theme = useTheme();
 
   const summary = data?.summary;
@@ -158,7 +168,7 @@ export default function CashFlowModuleFT2({ data, isLoading, isError }: CashFlow
   const byConstraint = data?.by_constraint ?? [];
 
   const fmt = (n: number) =>
-    formatCurrencyCompact(n);
+    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -225,7 +235,7 @@ export default function CashFlowModuleFT2({ data, isLoading, isError }: CashFlow
             </Typography>
             <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
               {buckets.map(bucket => (
-                <BucketRow key={bucket.label} bucket={bucket} />
+                <BucketRow key={bucket.label} bucket={bucket} currency={currency} />
               ))}
             </Box>
           </Box>

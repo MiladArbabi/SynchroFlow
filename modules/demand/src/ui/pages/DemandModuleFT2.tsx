@@ -3,6 +3,7 @@
 import { Box, Typography, CircularProgress, Chip, useTheme } from '@mui/material';
 import { AlertTriangle, TrendingDown, Package, CheckCircle } from 'lucide-react';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 export type DemandVelocity = {
   lasyncro_variant_id: string;
@@ -37,6 +38,8 @@ export type DemandModuleFT2Props = {
   data: DemandData;
   isLoading: boolean;
   isError: boolean;
+  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  currency?: CurrencyContext;
 };
 
 const URGENCY_CONFIG = {
@@ -61,11 +64,11 @@ function StatBox({ label, value, color, icon }: { label: string; value: string; 
   );
 }
 
-function VariantRow({ variant }: { variant: DemandVelocity }) {
+function VariantRow({ variant, currency }: { variant: DemandVelocity; currency?: CurrencyContext }) {
   const theme = useTheme();
   const config = URGENCY_CONFIG[variant.reorder_urgency];
 
-  const fmt = (n: number) => formatCurrencyCompact(n);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   const stockoutDate = variant.estimated_stockout_date
     ? new Date(variant.estimated_stockout_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -110,12 +113,12 @@ function VariantRow({ variant }: { variant: DemandVelocity }) {
   );
 }
 
-export default function DemandModuleFT2({ data, isLoading, isError }: DemandModuleFT2Props) {
+export default function DemandModuleFT2({ data, isLoading, isError, currency }: DemandModuleFT2Props) {
   const theme = useTheme();
   const summary = data?.summary;
   const variants = data?.variants ?? [];
 
-  const fmt = (n: number) => formatCurrencyCompact(n);
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -155,7 +158,7 @@ export default function DemandModuleFT2({ data, isLoading, isError }: DemandModu
               ))}
             </Box>
 
-            {variants.map(v => <VariantRow key={v.lasyncro_variant_id} variant={v} />)}
+            {variants.map(v => <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} />)}
 
             {variants.length === 0 && (
               <Box sx={{ py: 4, textAlign: 'center' }}>

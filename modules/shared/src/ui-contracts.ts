@@ -18,6 +18,20 @@ export type EntitlementSnapshot = {
   flags: string[];   // e.g. ['beta-analytics']
 };
 
+/**
+ * CURRENCY CONTEXT — passed to all FT2 modules via props
+ * -------------------------------------------------------
+ * Drives Intl.NumberFormat formatting across all monetary displays.
+ * Never hardcode 'USD' or 'en-US' in module components.
+ *
+ * displayCurrency: ISO 4217 code from shop_memberships.display_currency
+ * locale: Intl locale tag from shop_memberships.locale
+ */
+export type CurrencyContext = {
+  displayCurrency: string;
+  locale: string;
+};
+
 export type UserSnapshot = {
   id: string;
   email?: string;

@@ -1,6 +1,7 @@
 // modules/products/src/ui/pages/ProductsModuleFT2.tsx
 import { Box, Typography, Chip, Divider, useTheme } from '@mui/material';
 import { formatCurrency } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 /**
  * ProductsModuleFT2DataProps
@@ -116,7 +117,10 @@ export interface ProductsModuleFT2DataProps {
   } | null;
 }
 
-export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
+export type ProductsModuleFT2Props = ProductsModuleFT2DataProps & {
+  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  currency?: CurrencyContext;
+};
 
 // ─────────────────────────────────────────
 // LABEL MAPS
@@ -328,6 +332,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
     alignment,
     dataFreshness,
     signals,
+    currency,
     operationalCounts,
     supplyCounts,
     operatorSummary,
@@ -584,7 +589,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   : item.returnRatePct >= 10
                   ? theme.palette.warning.main
                   : theme.palette.success.main;
-                  const fmt = (n: number) => formatCurrency(n);
+                  const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale);
 
                 return (
                   <Box
