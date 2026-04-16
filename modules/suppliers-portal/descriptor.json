@@ -1,0 +1,23 @@
+{
+  "id": "suppliers-portal",
+  "name": "Suppliers Portal",
+  "version": "0.1.0",
+  "routes": [
+    {
+      "id": "suppliers-portal-home",
+      "key": "suppliers-portal-home",
+      "name": "Suppliers Portal Home",
+      "path": "/suppliers-portal",
+      "requiredModuleId": "suppliers-portal",
+      "order": 100
+    }
+  ],
+  "navItems": [
+    {
+      "id": "suppliers-portal",
+      "title": "Suppliers",
+      "path": "/suppliers-portal",
+      "order": 40
+    }
+  ]
+}

@@ -7,14 +7,16 @@
 // --- Module & signal primitives ---
 
 export type ModuleId =
-  | 'platform'          // Store connection, FT0 integration-level tasks
+  | 'platform'           // Store connection, FT0 integration-level tasks
   | 'order-nexus'
   | 'return-nexus'
   | 'finances'
   | 'specter'
   | 'sku-os'
   | 'wms-lite'
-  | 'problem-center';
+  | 'problem-center'
+  | 'suppliers-portal'   // PO management, supplier ratings, ETA tracking
+  | 'floor-planning';    // Warehouse floor layout + barcode management
 
 export type ReadinessSignalName = string; // e.g. "integration.connected"
 

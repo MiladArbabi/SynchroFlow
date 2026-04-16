@@ -43,6 +43,9 @@ import CashFlowPage from 'pages/ft2-pages/CashFlowPage';
 import DemandPage from 'pages/ft2-pages/DemandPage';
 
 import WmsPage from 'pages/ft2-pages/WmsPage';
+import SuppliersPortalPage from 'pages/ft2-pages/SuppliersPortalPage';
+import FloorPlanningPage from 'pages/ft2-pages/FloorPlanningPage';
+
 import MembersPage from 'pages/ft2-pages/MembersPage';
 import SkuGapsPage from 'pages/ft2-pages/SkuGapsPage';
 
@@ -212,6 +215,12 @@ export function LifecycleRouteHost() {
 
       {/* WMS */}
       <Route path="/wms/*" element={<WmsPage />} />
+
+      {/* SUPPLIERS PORTAL */}
+      <Route path="/suppliers-portal/*" element={<SuppliersPortalPage />} />
+
+      {/* FLOOR PLANNING */}
+      <Route path="/floor-planning/*" element={<FloorPlanningPage />} />
 
       {/* SKU-GAPS */}
       <Route path="/sku-gaps/*" element={<SkuGapsPage />} />

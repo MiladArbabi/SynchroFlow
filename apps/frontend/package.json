@@ -29,6 +29,8 @@
     "@lasyncro/returns": "0.1.0",
     "@lasyncro/specter": "0.1.0",
     "@lasyncro/wms": "0.1.0",
+    "@lasyncro/suppliers-portal": "0.1.0",
+    "@lasyncro/floor-planning": "0.1.0",
     "@lasyncro/sku-gaps": "0.1.0",
     "@mui/icons-material": "^7.3.4",
     "@mui/lab": "^7.0.1-beta.18",

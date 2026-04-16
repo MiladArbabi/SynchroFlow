@@ -128,7 +128,27 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
     lockedMessage:
       'You have reached the Free tier limit for Problem Center workflows. Upgrade to unlock the full EchoHub experience.',
     resetPeriod: 'monthly'
-  }
+  },
+
+  // FEAT-001: Suppliers Portal — PO management, supplier ratings, ETA tracking
+  'suppliers-portal': {
+    enabled: false,
+    maxUnits: null,
+    metric: 'tasks',
+    upgradeRoute: '/upgrade/suppliers-portal',
+    lockedMessage: 'Suppliers Portal is not available on the Free tier. Upgrade to manage POs, ETAs, and supplier ratings.',
+    resetPeriod: 'monthly',
+  },
+
+  // FEAT-002: Floor Planning — warehouse floor layout + barcode management
+  'floor-planning': {
+    enabled: false,
+    maxUnits: null,
+    metric: 'tasks',
+    upgradeRoute: '/upgrade/floor-planning',
+    lockedMessage: 'Floor Planning is not available on the Free tier. Upgrade to manage warehouse layouts and barcodes.',
+    resetPeriod: 'monthly',
+  },
 };
 
 // How entitlements describe module-level access.

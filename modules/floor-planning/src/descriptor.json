@@ -1,0 +1,23 @@
+{
+  "id": "floor-planning",
+  "name": "Floor Planning",
+  "version": "0.1.0",
+  "routes": [
+    {
+      "id": "floor-planning-home",
+      "key": "floor-planning-home",
+      "name": "Floor Planning Home",
+      "path": "/floor-planning",
+      "requiredModuleId": "floor-planning",
+      "order": 100
+    }
+  ],
+  "navItems": [
+    {
+      "id": "floor-planning",
+      "title": "Floor Planning",
+      "path": "/floor-planning",
+      "order": 50
+    }
+  ]
+}
