@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LaSyncro — Finally know what's happening in your Shopify store</title>
+<title>LaSyncro — The operational brain for serious Shopify merchants</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
@@ -49,15 +49,12 @@
     --bg-2:    #1C2740;
     --bg-3:    #243050;
     --surface: #1C2740;
-
     --ink:   #F0EEE8;
     --ink-2: #C8C4BB;
     --ink-3: #8B8F9A;
     --ink-4: #5A5F6E;
-
     --rule:  rgba(255,255,255,0.08);
     --rule-2:rgba(255,255,255,0.14);
-
     --accent-ghost:  rgba(255,107,43,0.12);
     --accent-border: rgba(255,107,43,0.25);
   }
@@ -88,11 +85,9 @@ nav {
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--rule);
 }
-
 @media (prefers-color-scheme: dark) {
   nav { background: rgba(21,29,41,0.88); }
 }
-
 .nav-logo {
   display: flex;
   align-items: center;
@@ -131,8 +126,6 @@ nav {
   overflow: hidden;
   background: var(--bg);
 }
-
-/* grid texture */
 .hero-grid {
   position: absolute;
   inset: 0;
@@ -145,8 +138,6 @@ nav {
   opacity: 0.5;
   z-index: 0;
 }
-
-/* orange glow from below */
 .hero-glow {
   position: absolute;
   bottom: -60px;
@@ -158,14 +149,12 @@ nav {
   z-index: 0;
   pointer-events: none;
 }
-
 .hero-inner {
   position: relative;
   z-index: 1;
   max-width: 820px;
   text-align: center;
 }
-
 .hero-eyebrow {
   display: inline-flex;
   align-items: center;
@@ -182,8 +171,7 @@ nav {
   margin-bottom: 32px;
 }
 .eyebrow-dot {
-  width: 6px;
-  height: 6px;
+  width: 6px; height: 6px;
   background: var(--accent);
   border-radius: 50%;
   animation: blink 2.4s ease-in-out infinite;
@@ -192,7 +180,6 @@ nav {
   0%,100% { opacity: 1; transform: scale(1); }
   50%      { opacity: 0.4; transform: scale(0.75); }
 }
-
 .hero-h1 {
   font-family: var(--serif);
   font-size: clamp(44px, 7.5vw, 84px);
@@ -204,16 +191,14 @@ nav {
   font-style: italic;
   color: var(--accent);
 }
-
 .hero-sub {
   font-size: clamp(16px, 2vw, 19px);
   line-height: 1.7;
   color: var(--ink-3);
-  max-width: 540px;
+  max-width: 560px;
   margin: 22px auto 0;
   font-weight: 300;
 }
-
 .hero-actions {
   display: flex;
   align-items: center;
@@ -222,7 +207,6 @@ nav {
   margin-top: 40px;
   flex-wrap: wrap;
 }
-
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -240,7 +224,6 @@ nav {
   cursor: pointer;
 }
 .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -257,9 +240,15 @@ nav {
   transition: background 0.15s, border-color 0.15s;
 }
 .btn-secondary:hover { background: var(--bg-2); border-color: var(--ink-4); }
-
+.hero-trust {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--ink-4);
+  letter-spacing: 0.02em;
+}
+.hero-trust span { margin: 0 6px; opacity: 0.4; }
 .hero-proof {
-  margin-top: 52px;
+  margin-top: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -309,6 +298,7 @@ nav {
   text-transform: uppercase;
   margin-top: 3px;
   display: block;
+  max-width: 160px;
 }
 
 /* ── SHARED SECTION STRUCTURE ── */
@@ -384,8 +374,6 @@ nav {
   color: var(--ink-3);
   font-weight: 300;
 }
-
-/* callout card */
 .pain-callout {
   background: var(--space-1);
   border-radius: 14px;
@@ -438,6 +426,125 @@ nav {
   padding-top: 20px;
 }
 
+/* ── TRANSFORMATION ── */
+.transformation-section {
+  padding: 96px 5vw;
+  background: var(--bg-2);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.transformation-inner {
+  max-width: 1160px;
+  margin: 0 auto;
+}
+.transformation-header {
+  max-width: 560px;
+  margin-bottom: 56px;
+}
+.transform-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.transform-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 24px 1fr;
+  gap: 0 20px;
+  align-items: center;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.transform-row:first-child { border-top: 1px solid var(--rule); }
+@media (max-width: 720px) {
+  .transform-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .transform-arrow { display: none; }
+}
+.transform-module {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.transform-before {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-3);
+  font-weight: 300;
+  padding-right: 8px;
+}
+.transform-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 16px;
+  opacity: 0.6;
+}
+.transform-after {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  font-weight: 400;
+}
+
+/* ── HOW IT WORKS (4-step) ── */
+.howitworks-section {
+  padding: 96px 5vw;
+  background: var(--bg);
+  border-bottom: 1px solid var(--rule);
+}
+.howitworks-inner {
+  max-width: 1160px;
+  margin: 0 auto;
+}
+.howitworks-header {
+  max-width: 600px;
+  margin-bottom: 56px;
+}
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  overflow: hidden;
+}
+@media (max-width: 840px) {
+  .steps-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .steps-grid { grid-template-columns: 1fr; }
+}
+.step-cell {
+  background: var(--surface);
+  padding: 28px 24px;
+}
+.step-num {
+  font-family: var(--serif);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+.step-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+.step-desc {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--ink-3);
+  font-weight: 300;
+}
+
 /* ── MODULES ── */
 #modules {
   background: var(--bg-2);
@@ -452,9 +559,8 @@ nav {
   max-width: 1160px;
   margin: 0 auto;
 }
-@media (max-width: 960px)  { .modules-grid { grid-template-columns: repeat(2,1fr); } }
-@media (max-width: 520px)  { .modules-grid { grid-template-columns: 1fr; } }
-
+@media (max-width: 960px) { .modules-grid { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 520px) { .modules-grid { grid-template-columns: 1fr; } }
 .module-card {
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -525,19 +631,197 @@ nav {
   font-size: 16px;
   line-height: 1.75;
   color: var(--ink-3);
-  max-width: 540px;
+  max-width: 560px;
   margin: 24px auto 0;
   font-weight: 300;
 }
 
-/* ── STORY STRIP ── */
-#story {
+/* ── ICP QUALIFIER ── */
+.icp-strip {
+  background: var(--bg-2);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 20px 5vw;
+  text-align: center;
+}
+.icp-strip p {
+  font-size: 13px;
+  color: var(--ink-3);
+  line-height: 1.6;
+  max-width: 680px;
+  margin: 0 auto;
+  font-weight: 300;
+}
+.icp-strip strong {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+/* ── MORNING BRIEF FEATURE ── */
+.brief-section {
   background: var(--space-1);
   padding: 88px 5vw;
   border-top: 1px solid var(--space-3);
 }
+.brief-inner {
+  max-width: 1060px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 72px;
+  align-items: center;
+}
+@media (max-width: 800px) {
+  .brief-inner { grid-template-columns: 1fr; gap: 44px; }
+}
+.brief-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+.brief-h2 {
+  font-family: var(--serif);
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.12;
+  color: #fff;
+  letter-spacing: -0.02em;
+  margin-bottom: 20px;
+}
+.brief-h2 em { font-style: italic; color: var(--accent-hover); }
+.brief-body {
+  font-size: 16px;
+  line-height: 1.75;
+  color: rgba(255,255,255,0.5);
+  font-weight: 300;
+  margin-bottom: 28px;
+}
+.brief-proofpoints {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.brief-proofpoints li {
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+  font-weight: 300;
+  padding-left: 16px;
+  position: relative;
+  line-height: 1.55;
+}
+.brief-proofpoints li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+.brief-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 28px;
+  overflow: hidden;
+}
+.brief-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.brief-card-title {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: #fff;
+}
+.brief-card-date {
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 0.05em;
+}
+.brief-alert {
+  background: rgba(255,107,43,0.1);
+  border: 1px solid rgba(255,107,43,0.2);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.brief-alert-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.brief-alert-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-hover);
+  margin-bottom: 2px;
+}
+.brief-alert-val {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  font-weight: 300;
+}
+.brief-safe {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.brief-safe-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4CAF7A;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.brief-safe-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 2px;
+}
+.brief-safe-val {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  font-weight: 300;
+}
+.brief-card-footer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 11px;
+  color: rgba(255,255,255,0.22);
+  letter-spacing: 0.04em;
+}
+
+/* ── FOUNDER STORY ── */
+#story {
+  background: var(--bg);
+  padding: 88px 5vw;
+  border-top: 1px solid var(--rule);
+}
 .story-inner {
-  max-width: 780px;
+  max-width: 760px;
   margin: 0 auto;
 }
 .story-label {
@@ -550,23 +834,23 @@ nav {
 }
 .story-h2 {
   font-family: var(--serif);
-  font-size: clamp(28px, 4vw, 46px);
+  font-size: clamp(28px, 4vw, 44px);
   line-height: 1.15;
-  color: #fff;
+  color: var(--ink);
   letter-spacing: -0.02em;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
-.story-h2 em { font-style: italic; color: var(--accent-hover); }
+.story-h2 em { font-style: italic; color: var(--accent); }
 .story-body {
   font-size: 16px;
   line-height: 1.8;
-  color: rgba(255,255,255,0.55);
+  color: var(--ink-3);
   font-weight: 300;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .story-body strong {
-  color: rgba(255,255,255,0.9);
-  font-weight: 400;
+  color: var(--ink-2);
+  font-weight: 500;
 }
 .story-cta {
   display: inline-flex;
@@ -612,8 +896,6 @@ nav {
   margin-bottom: 36px;
   line-height: 1.65;
 }
-
-/* tiers */
 .tier-row {
   display: grid;
   grid-template-columns: repeat(3,1fr);
@@ -622,7 +904,6 @@ nav {
   text-align: left;
 }
 @media (max-width: 600px) { .tier-row { grid-template-columns: 1fr; } }
-
 .tier-card {
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.07);
@@ -655,8 +936,6 @@ nav {
   font-weight: 300;
   line-height: 1.55;
 }
-
-/* form */
 .wl-form {
   display: flex;
   flex-direction: column;
@@ -691,8 +970,6 @@ nav {
   letter-spacing: 0.01em;
 }
 .wl-form button:hover { background: var(--accent-hover); transform: translateY(-1px); }
-
-/* progress */
 .wl-progress { margin-top: 20px; }
 .wl-progress-labels {
   display: flex;
@@ -719,7 +996,6 @@ nav {
   font-size: 12px;
   color: rgba(255,255,255,0.2);
 }
-
 #wl-success {
   display: none;
   background: rgba(255,107,43,0.1);
@@ -757,6 +1033,12 @@ footer {
   font-size: 18px;
   color: rgba(255,255,255,0.5);
 }
+.footer-tagline {
+  font-size: 12px;
+  color: rgba(255,255,255,0.18);
+  font-style: italic;
+  font-family: var(--serif);
+}
 .footer-copy { font-size: 12px; color: rgba(255,255,255,0.18); }
 
 /* ── SCROLL REVEAL ── */
@@ -791,23 +1073,24 @@ footer {
   <div class="hero-inner">
     <div class="hero-eyebrow">
       <span class="eyebrow-dot" aria-hidden="true"></span>
-      For Shopify store owners
+      Built for Shopify merchants who run their own warehouse
     </div>
     <h1 class="hero-h1">
-      Your warehouse<br> in your pocket
+      Your operation,<br><em>finally synced up.</em>
     </h1>
     <p class="hero-sub">
-      No special scanners. No IT setup. No training days. Your team uses the phones they already have.
+      LaSyncro connects every row of your business — orders, inventory, suppliers, warehouse, and workforce — into one real-time picture you can actually act on.
     </p>
     <div class="hero-actions">
       <a href="#waitlist" class="btn-primary" onclick="posthog.capture('clicked_waitlist',{location:'hero'})">
-        Get early access — it's free
+        Start free — 14-day Growth trial included
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </a>
       <a href="#pain" class="btn-secondary">See how it works</a>
     </div>
+    <p class="hero-trust">No credit card<span>·</span>Connects to Shopify in 60 seconds<span>·</span>Cancel anytime</p>
     <div class="hero-proof" aria-label="Social proof">
       <div class="proof-avatars" aria-hidden="true">
         <div class="proof-avatar av1">MK</div>
@@ -824,20 +1107,20 @@ footer {
 <!-- ── STAT BAR ── -->
 <div class="stat-bar" role="region" aria-label="Key statistics">
   <div class="stat-item">
+    <span class="stat-n">73<span>%</span></span>
+    <span class="stat-l">Find out they've stocked out from a customer complaint</span>
+  </div>
+  <div class="stat-item">
     <span class="stat-n">2<span>.</span>5h</span>
-    <span class="stat-l">Lost every day just figuring out what's going on</span>
+    <span class="stat-l">Lost every morning just figuring out what's happening</span>
   </div>
   <div class="stat-item">
     <span class="stat-n"><span>5</span></span>
-    <span class="stat-l">Different tools that don't talk to each other</span>
-  </div>
-  <div class="stat-item">
-    <span class="stat-n">73<span>%</span></span>
-    <span class="stat-l">Find out they've run out of stock from a customer complaint</span>
+    <span class="stat-l">Disconnected tools the average merchant stitches together</span>
   </div>
   <div class="stat-item">
     <span class="stat-n">912h</span>
-    <span class="stat-l">Hours wasted per year — per store owner</span>
+    <span class="stat-l">Hours wasted per year, per store owner</span>
   </div>
 </div>
 
@@ -846,42 +1129,42 @@ footer {
   <div class="pain-layout">
     <div>
       <div class="section-label">Sound familiar?</div>
-      <h2 class="section-h2">Running a Shopify store shouldn't feel like this</h2>
-      <p class="section-body">Most store owners spend hours every morning just trying to understand what's going on — before they can even start working.</p>
+      <h2 class="section-h2">This is not a failure of effort.<br><em>It's a failure of infrastructure.</em></h2>
+      <p class="section-body">Most merchants work extraordinarily hard. They fail not from lack of effort, but because their tools — spreadsheets, WhatsApp, disconnected platforms — were never designed to work together.</p>
       <div class="pain-lines">
         <div class="pain-line">
           <span class="pain-num">01</span>
           <div>
-            <div class="pain-title">Your tools don't talk to each other</div>
-            <div class="pain-desc">Your orders are in Shopify. Your stock is in a spreadsheet. Your money is in your accounting app. You have to pull it all together yourself — every single day.</div>
+            <div class="pain-title">You find out a SKU stocked out from an angry customer email</div>
+            <div class="pain-desc">By the time you know, the sale is lost, the customer is unhappy, and the reorder is already late. The signal was in your data all along — you just couldn't see it.</div>
           </div>
         </div>
         <div class="pain-line">
           <span class="pain-num">02</span>
           <div>
-            <div class="pain-title">You can't see the full picture</div>
-            <div class="pain-desc">None of your tools know what the others are doing. So the really useful information — like "this customer's order is late and we're also running low on that product" — lives nowhere.</div>
+            <div class="pain-title">POs negotiated on WhatsApp, tracked on a spreadsheet</div>
+            <div class="pain-desc">There's a PO thread from three weeks ago that nobody can find. The supplier says it's on its way. You have no idea what was agreed, when it's due, or how many units are outstanding.</div>
           </div>
         </div>
         <div class="pain-line">
           <span class="pain-num">03</span>
           <div>
-            <div class="pain-title">You live and die by spreadsheets</div>
-            <div class="pain-desc">You have the master spreadsheet. Probably several. Nobody fully trusts them — but you can't run the business without them either.</div>
+            <div class="pain-title">Your operator is asking something they shouldn't need to ask</div>
+            <div class="pain-desc">Which shelf does the new stock go on? The location doc was last updated in February. You spend ten minutes finding an answer that should already be in a system.</div>
           </div>
         </div>
         <div class="pain-line">
           <span class="pain-num">04</span>
           <div>
-            <div class="pain-title">You only find out when it's too late</div>
-            <div class="pain-desc">You find out you've run out of stock when a customer emails to complain. You spot a pricing problem in last month's report. You see the bad review before you see the issue that caused it.</div>
+            <div class="pain-title">You have no idea which supplier is actually reliable</div>
+            <div class="pain-desc">Your supplier says "on their way" every time. You've never had the data to push back — no on-time rate, no fill rate, no objective measure of anything.</div>
           </div>
         </div>
         <div class="pain-line">
           <span class="pain-num">05</span>
           <div>
-            <div class="pain-title">The warehouse runs on WhatsApp</div>
-            <div class="pain-desc">Your team coordinates through messages, voice notes, and sticky notes. There's no single place to see what's been picked, packed, or shipped today.</div>
+            <div class="pain-title">The spreadsheet is always wrong by the time someone updates it</div>
+            <div class="pain-desc">You have the master spreadsheet. Probably several. Nobody fully trusts them — but you can't run the business without them either.</div>
           </div>
         </div>
       </div>
@@ -902,51 +1185,84 @@ footer {
             <div class="callout-stat-l">per year</div>
           </div>
         </div>
-        <div class="callout-meta">Shopify store owner · small team · doing it all themselves</div>
+        <div class="callout-meta">Shopify store owner · own warehouse · doing it all themselves</div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="section reveal">
-  <div class="modules-intro" style="max-width: 820px; margin: 0 auto;">
-    <div class="section-label">How it actually works</div>
-    <h2 class="section-h2">Where the work gets done —<br><em>not just tracked.</em></h2>
-    <p class="section-body">
-      Most tools tell you what’s happening. LaSyncro is where your team actually picks, packs, and ships orders — with everything updating automatically as they go.
-    </p>
+<!-- ── TRANSFORMATION ── -->
+<section class="transformation-section reveal">
+  <div class="transformation-inner">
+    <div class="transformation-header">
+      <div class="section-label">What LaSyncro changes</div>
+      <h2 class="section-h2">Before and after,<br><em>in plain terms.</em></h2>
+    </div>
+    <div class="transform-grid">
+      <div class="transform-row">
+        <div class="transform-module">Purchase orders</div>
+        <div class="transform-before">Finding out a SKU stocked out from an angry customer email</div>
+        <div class="transform-arrow">→</div>
+        <div class="transform-after">Stock-out risk surfaced 4 days before the customer notices</div>
+      </div>
+      <div class="transform-row">
+        <div class="transform-module">Warehouse</div>
+        <div class="transform-before">Operator asking which shelf to use because the location doc is from February</div>
+        <div class="transform-arrow">→</div>
+        <div class="transform-after">Barcoded locations — scan to stow — every movement tracked</div>
+      </div>
+      <div class="transform-row">
+        <div class="transform-module">Suppliers</div>
+        <div class="transform-before">Supplier always "on their way" — no data on who's actually reliable</div>
+        <div class="transform-arrow">→</div>
+        <div class="transform-after">On-time rate, fill rate, defect rate — built from every delivery, automatically</div>
+      </div>
+      <div class="transform-row">
+        <div class="transform-module">Demand</div>
+        <div class="transform-before">Running margin calculations with last month's data in Excel</div>
+        <div class="transform-arrow">→</div>
+        <div class="transform-after">Real-time stock velocity per SKU — restock risk surfaced before the stockout</div>
+      </div>
+      <div class="transform-row">
+        <div class="transform-module">Intelligence</div>
+        <div class="transform-before">Finding out what's happening by asking someone</div>
+        <div class="transform-arrow">→</div>
+        <div class="transform-after">Your Morning Brief — what needs attention, before the day begins</div>
+      </div>
+    </div>
   </div>
+</section>
 
-  <div class="modules-grid" style="max-width: 900px; margin-top: 40px;">
-    
-    <div class="module-card">
-      <div class="module-name">See what to do next</div>
-      <div class="module-desc">
-        Your team always knows what needs to go out today — sorted and ready. No messages, no confusion.
+<!-- ── HOW IT WORKS ── -->
+<section class="howitworks-section reveal">
+  <div class="howitworks-inner">
+    <div class="howitworks-header">
+      <div class="section-label">How it works</div>
+      <h2 class="section-h2">Where the work gets done —<br><em>not just tracked.</em></h2>
+      <p class="section-body">Connect your Shopify store once. LaSyncro reads your operation from your own data — no manual setup required to see value.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-cell">
+        <div class="step-num">01</div>
+        <div class="step-title">Connect Shopify in 60 seconds</div>
+        <div class="step-desc">OAuth once. LaSyncro pulls your orders, products, and inventory history — no CSV imports, no manual setup.</div>
+      </div>
+      <div class="step-cell">
+        <div class="step-num">02</div>
+        <div class="step-title">Your operation loads automatically</div>
+        <div class="step-desc">Within 2–4 minutes, LaSyncro builds your fulfillment queue, calculates demand velocity, and composes your first Morning Brief.</div>
+      </div>
+      <div class="step-cell">
+        <div class="step-num">03</div>
+        <div class="step-title">See what was already in your data</div>
+        <div class="step-desc">Most merchants find their first stock-out risk signal within 4 minutes. That insight was always in your data — LaSyncro just surfaces it.</div>
+      </div>
+      <div class="step-cell">
+        <div class="step-num">04</div>
+        <div class="step-title">Your team works from their phones</div>
+        <div class="step-desc">Operators pick, pack, and receive stock by scanning barcodes. Every scan updates inventory, releases held orders, and routes stow tasks — automatically.</div>
       </div>
     </div>
-
-    <div class="module-card">
-      <div class="module-name">Scan and confirm</div>
-      <div class="module-desc">
-        Every item picked and packed is confirmed in seconds. No manual updates, no missed steps.
-      </div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-name">Everything updates instantly</div>
-      <div class="module-desc">
-        Orders, stock, and status stay in sync automatically — so you always know what’s going on.
-      </div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-name">Nothing gets lost</div>
-      <div class="module-desc">
-        Every action is tracked, so you can always see what happened — and fix issues before they grow.
-      </div>
-    </div>
-
   </div>
 </section>
 
@@ -954,8 +1270,8 @@ footer {
 <section id="modules" class="section reveal">
   <div class="modules-intro">
     <div class="section-label">What LaSyncro does</div>
-     <h2 class="section-h2">Everything you need to see — and run —<br><em>in one place.</em></h2>
-    <p class="section-body">Connect your Shopify store once. LaSyncro does the rest — pulling everything together so you can see what's happening — and keep things moving without slowing down.</p>
+    <h2 class="section-h2">Everything you need to see — and run —<br><em>in one place.</em></h2>
+    <p class="section-body">One system. Every row. Your operation, finally coherent.</p>
   </div>
   <div class="modules-grid">
 
@@ -963,118 +1279,178 @@ footer {
       <div class="module-icon">
         <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
       </div>
-      <div class="module-name">Orders to ship</div>
-      <div class="module-replaces">Replaces WhatsApp back-and-forth</div>
-      <div class="module-desc">See exactly what needs to go out today, sorted by urgency. Your team always knows what to pick first.</div>
+      <div class="module-name">Purchase orders</div>
+      <div class="module-replaces">Replaces WhatsApp + spreadsheet PO tracking</div>
+      <div class="module-desc">Create a structured PO in 3 minutes. Scan to receive. Watch held orders auto-release the moment stock is confirmed.</div>
     </div>
 
     <div class="module-card">
       <div class="module-icon">
         <svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
       </div>
-      <div class="module-name">Stock levels</div>
-      <div class="module-replaces">Replaces the stock spreadsheet</div>
-      <div class="module-desc">See what you have, what's selling fast, and what you need to reorder — before you run out.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1"/></svg>
-      </div>
-      <div class="module-name">Profit per order</div>
-      <div class="module-replaces">Replaces the monthly accountant update</div>
-      <div class="module-desc">See how much you actually made on each order — after costs, fees, and returns. Updated live.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
-      </div>
-      <div class="module-name">Cash in the bank</div>
-      <div class="module-replaces">Replaces the cash flow spreadsheet</div>
-      <div class="module-desc">Know how much money you actually have — and whether you'll have enough next month.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-      </div>
-      <div class="module-name">Returns</div>
-      <div class="module-replaces">Replaces manual return tracking</div>
-      <div class="module-desc">Track what's coming back and why. Spot patterns before they start eating into your profits.</div>
+      <div class="module-name">Warehouse management</div>
+      <div class="module-replaces">Replaces the location spreadsheet</div>
+      <div class="module-desc">Barcoded locations. Operator task queues. Every movement tracked — received, stowed, picked, packed, shipped.</div>
     </div>
 
     <div class="module-card">
       <div class="module-icon">
         <svg viewBox="0 0 24 24"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0"/></svg>
       </div>
-      <div class="module-name">Your best customers</div>
-      <div class="module-replaces">Replaces guesswork</div>
-      <div class="module-desc">See who your most valuable customers are — and get an early warning when someone's about to stop buying.</div>
+      <div class="module-name">Supplier intelligence</div>
+      <div class="module-replaces">Replaces supplier guesswork</div>
+      <div class="module-desc">On-time rate, fill rate, defect rate — built automatically from every delivery. After 5 POs, you know which suppliers are costing you money.</div>
+    </div>
+
+    <div class="module-card">
+      <div class="module-icon">
+        <svg viewBox="0 0 24 24"><path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+      </div>
+      <div class="module-name">Demand signals</div>
+      <div class="module-replaces">Replaces reactive restocking</div>
+      <div class="module-desc">Actual sales velocity per SKU. Days-of-stock remaining. Restock risk ranked by commercial urgency — before customers feel the gap.</div>
+    </div>
+
+    <div class="module-card">
+      <div class="module-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1"/></svg>
+      </div>
+      <div class="module-name">Cash flow projection</div>
+      <div class="module-replaces">Replaces the monthly accountant update</div>
+      <div class="module-desc">Real-time margin per order. COGS committed on every receive. Cash flow updated the moment stock lands — not at month end.</div>
     </div>
 
     <div class="module-card">
       <div class="module-icon">
         <svg viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
       </div>
-      <div class="module-name">Early warnings</div>
-      <div class="module-replaces">Replaces finding out too late</div>
-      <div class="module-desc">Get a heads-up before something goes wrong — a late order, a low-stock item, a customer who's gone quiet.</div>
+      <div class="module-name">Morning Brief</div>
+      <div class="module-replaces">Replaces reactive firefighting</div>
+      <div class="module-desc">Every morning, before you open Shopify: stock risks, arriving POs, held orders, supplier alerts — prioritised by commercial consequence.</div>
+    </div>
+
+    <div class="module-card">
+      <div class="module-icon">
+        <svg viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+      </div>
+      <div class="module-name">Returns tracking</div>
+      <div class="module-replaces">Replaces manual return logging</div>
+      <div class="module-desc">Track what's coming back and why. Spot patterns before they start eating into your margins — without building another spreadsheet.</div>
     </div>
 
     <div class="module-card">
       <div class="module-icon">
         <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </div>
-      <div class="module-name">Warehouse on your phone</div>
-      <div class="module-replaces">Replaces WhatsApp and sticky notes</div>
-      <div class="module-desc">Your team picks, packs, and ships from their phones. You see every order confirmed in real time — without asking.</div>
+      <div class="module-name">Your best customers</div>
+      <div class="module-replaces">Replaces LTV guesswork</div>
+      <div class="module-desc">See who your most valuable customers are — and get an early warning when a high-LTV customer has gone quiet.</div>
     </div>
 
   </div>
 </section>
 
-<!-- ── THESIS ── -->
-<section id="thesis" class="reveal">
+<!-- ── THESIS ── */-->
+<section id="thesis">
   <div class="thesis-inner">
     <p class="thesis-text">
       Big businesses have whole teams watching their numbers. You have <em>spreadsheets and not enough hours.</em> LaSyncro fixes that.
     </p>
     <p class="thesis-sub">
-      Your Shopify store already has all the data. LaSyncro brings it together and shows you what matters — so you can spend your time running the business, not figuring out what's happening in it.
+      Your Shopify store already has all the data. LaSyncro connects every row and shows you what matters — so you can spend your time running the operation, not figuring out what's happening in it.
     </p>
   </div>
 </section>
 
+<!-- ── ICP QUALIFIER ── -->
+<div class="icp-strip">
+  <p><strong>LaSyncro is built for Shopify merchants doing serious volume from their own warehouse</strong> — typically £500K to £10M+ in revenue, with high SKU complexity and a small warehouse team that needs to punch above its weight. If you're still running operations on spreadsheets, you're leaving money on the table every day.</p>
+</div>
+
+<!-- ── MORNING BRIEF ── -->
+<section class="brief-section reveal">
+  <div class="brief-inner">
+    <div>
+      <div class="brief-label">The Morning Brief</div>
+      <h2 class="brief-h2">Know before<br><em>it breaks.</em></h2>
+      <p class="brief-body">Every morning, before you open Shopify, LaSyncro composes a prioritised snapshot of your operation — stock risks, arriving POs, held orders, supplier alerts, and workforce load. The day begins with clarity, not firefighting.</p>
+      <ul class="brief-proofpoints">
+        <li>Delivered by email or push notification before the day begins</li>
+        <li>Prioritised by commercial consequence — what costs you the most, first</li>
+        <li>Pulling from real-time data, not last night's export</li>
+        <li>The morning you skip the Brief is the morning something slips</li>
+      </ul>
+    </div>
+    <div>
+      <div class="brief-card" aria-label="Morning Brief preview">
+        <div class="brief-card-header">
+          <div class="brief-card-title">Good morning, Jamie.</div>
+          <div class="brief-card-date">Today · 7:02 AM</div>
+        </div>
+        <div class="brief-alert">
+          <div class="brief-alert-dot"></div>
+          <div>
+            <div class="brief-alert-label">3 SKUs will stock out within 7 days</div>
+            <div class="brief-alert-val">£47,200 at risk at current sell rate · View restock recommendations</div>
+          </div>
+        </div>
+        <div class="brief-alert">
+          <div class="brief-alert-dot"></div>
+          <div>
+            <div class="brief-alert-label">PO #0041 arriving today — 4 held orders waiting</div>
+            <div class="brief-alert-val">Orders will auto-release on scan · Stow tasks ready for your operator</div>
+          </div>
+        </div>
+        <div class="brief-safe">
+          <div class="brief-safe-dot"></div>
+          <div>
+            <div class="brief-safe-label">Supplier: Meadow Textiles · 98% on-time</div>
+            <div class="brief-safe-val">Last 8 deliveries · 100% fill rate · No action needed</div>
+          </div>
+        </div>
+        <div class="brief-safe">
+          <div class="brief-safe-dot"></div>
+          <div>
+            <div class="brief-safe-label">12 orders fulfilled yesterday</div>
+            <div class="brief-safe-val">Avg 1.4 days to ship · Pick accuracy 99.2%</div>
+          </div>
+        </div>
+        <div class="brief-card-footer">LaSyncro · let's sync up every row.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ── FOUNDER STORY ── -->
-<!--   <div class="story-inner">
-    <div class="story-label">Why I built this</div>
+<section id="story" class="reveal">
+  <div class="story-inner">
+    <div class="story-label">Why we built this</div>
     <h2 class="story-h2">
-      I was the store owner<br><em>drowning in spreadsheets.</em>
+      We were the merchants <em>drowning in spreadsheets.</em>
     </h2>
     <p class="story-body">
-      For three years, I started every morning the same way. <strong>Four tabs open. 47 WhatsApp messages from the warehouse. And a spreadsheet called cashflow_v3_FINAL_miladREVISED.xlsx</strong> that I was the only person who understood — and even I wasn't sure it was right anymore.
+      LaSyncro was built because we lived the 8am problem. Three customer emails about delayed orders. A supplier waiting on a PO that was agreed over WhatsApp — nobody could find the thread. A warehouse operator asking which shelf the new stock goes on, because the location spreadsheet was last updated in February.
     </p>
     <p class="story-body">
-      The first two hours of every day weren't spent running the business. They were spent figuring out what the business was doing. I missed hikes. I missed the gym. I missed my friends' football games. Not because things were going badly — but because I could never fully switch off.
+      <strong>This is not a failure of effort.</strong> SMB operators work extraordinarily hard. This is a failure of infrastructure. Every piece of the operation — orders, inventory, suppliers, warehouse, workforce — existed in a different tool that didn't know what the others were doing.
     </p>
     <p class="story-body">
-      Eventually I realised: <strong>all the information existed. It was just scattered across five different places.</strong> So I built something to pull it all together. The first thing I did when it worked? Went for a hike. On a Wednesday morning. Because I finally could.
+      Every feature in LaSyncro came from a real merchant asking for it. We're not a SaaS company that discovered logistics — we're operators who built software to solve what we couldn't buy.
     </p>
     <a href="#waitlist" class="story-cta" onclick="posthog.capture('clicked_waitlist',{location:'story'})">
-      Join the waitlist
+      Get early access — it's free
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </a>
   </div>
-</section> -->
+</section>
 
 <!-- ── WAITLIST ── -->
 <section id="waitlist" class="reveal">
   <div class="waitlist-inner">
-    <h2 class="waitlist-h2">Get in <em>early.</em><br>It's completely free.</h2>
-    <p class="waitlist-sub">We're letting a small group of Shopify store owners in first. Sign up and we'll also send you a free checklist to see how much time your operations are costing you.</p>
+    <h2 class="waitlist-h2">Start free.<br><em>See your operation clearly.</em></h2>
+    <p class="waitlist-sub">Connect Shopify in 60 seconds. No credit card. Most merchants see their first actionable intelligence within 4 minutes of syncing. We're letting a small group of serious warehouse merchants in first.</p>
 
     <div class="tier-row">
       <div class="tier-card">
@@ -1085,7 +1461,7 @@ footer {
       <div class="tier-card featured">
         <div class="tier-name">Beta tester</div>
         <div class="tier-spots">50 spots</div>
-        <div class="tier-perk">Access before launch · weekly chats with the founder</div>
+        <div class="tier-perk">Access before launch · weekly calls with the founder</div>
       </div>
       <div class="tier-card">
         <div class="tier-name">Founding store</div>
@@ -1101,7 +1477,7 @@ footer {
     </form>
 
     <div id="wl-success" role="alert">
-      You're on the list. Check your inbox — your free checklist is on its way.<br>
+      You're on the list. Check your inbox — your free operations checklist is on its way.<br>
       <span style="font-size:13px;opacity:.6;margin-top:6px;display:block">Share your link to move up the queue.</span>
     </div>
 
@@ -1127,6 +1503,7 @@ footer {
       </svg>
       <span class="footer-wordmark">LaSyncro</span>
     </a>
+    <span class="footer-tagline">Let's sync up every row.</span>
     <span class="footer-copy">© 2026 LaSyncro. All rights reserved.</span>
   </div>
 </footer>
@@ -1144,14 +1521,12 @@ function handleSubmit(e) {
   document.getElementById('wl-success').style.display = 'block';
 }
 
-/* Progress bar fill on load */
 window.addEventListener('load', function() {
   setTimeout(function() {
     document.getElementById('wl-fill').style.width = '82%';
   }, 600);
 });
 
-/* Scroll reveal */
 var revealObs = new IntersectionObserver(function(entries) {
   entries.forEach(function(e) {
     if (e.isIntersecting) {

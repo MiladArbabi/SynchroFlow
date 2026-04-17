@@ -1,4 +1,5 @@
-// modules/suppliers-portal/src/ui/pages/SuppliersPortalPage.tsx
+// modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx
+import { useState } from 'react';
 import {
   Box,
   Paper,
@@ -7,33 +8,109 @@ import {
   Alert,
   Chip,
   Divider,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem,
+  IconButton,
 } from '@mui/material';
-import { Truck, Star, Clock } from 'lucide-react';
+import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
 
 /**
  * SUPPLIERS PORTAL MODULE — FT2 SURFACE
  * ---------------------------------------
- * Displays POs, ETA tracking, and supplier ratings.
+ * Displays POs (primary) and suppliers list (secondary/bottom).
  *
- * All API data injected via props — module stays decoupled
+ * Layout:
+ *   1. Open POs — accordion per PO, line items fetched on expand
+ *   2. Suppliers — accordion list at bottom
+ *
+ * Create PO flow:
+ *   - Supplier selector with inline "Add new supplier" option
+ *   - Dynamic line items (description, qty, optional unit cost)
+ *   - Expected delivery date + notes
+ *
+ * All API callbacks injected via props — module stays decoupled
  * from apps/frontend HTTP layer.
- *
- * Theme-aware: Paper, theme.palette tokens, no hardcoded colors.
  */
 
+export type PurchaseOrderStatus =
+  | 'draft' | 'ordered' | 'confirmed'
+  | 'in_production' | 'shipped' | 'partially_received' | 'received' | 'cancelled';
+
 export type PurchaseOrder = {
-  po_id: string;
+  id: string;
   supplier_name: string;
-  supplier_rating: number | null; // 1–5, null if unrated
-  status: 'pending' | 'confirmed' | 'in_transit' | 'received' | 'cancelled';
-  eta: string | null;             // ISO date string
+  supplier_on_time_rate: number | null;
+  supplier_fill_rate: number | null;
+  status: PurchaseOrderStatus;
+  expected_delivery_date: string | null;
+  actual_delivery_date: string | null;
   line_items_count: number;
-  total_units: number;
+  total_units_ordered: number;
+  total_units_received: number;
+  notes: string | null;
+  document_url: string | null;
   created_at: string;
+};
+
+export type PoLineItem = {
+  id: string;
+  lasyncro_variant_id: string | null;
+  description: string;
+  quantity_ordered: number;
+  quantity_received: number;
+  unit_cost_cents: number | null;
+  sku: string | null;
+};
+
+export type Supplier = {
+  id: number;
+  name: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  on_time_rate: number | null;
+  fill_rate: number | null;
+  defect_rate: number | null;
+  total_pos: number;
+  active: boolean;
+  open_po_count: number;
+};
+
+export type CreateSupplierInput = {
+  name: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+};
+
+export type CreatePoInput = {
+  supplier_id: number;
+  expected_delivery_date?: string;
+  notes?: string;
+  line_items: {
+    description: string;
+    quantity_ordered: number;
+    unit_cost_cents?: number;
+  }[];
 };
 
 export type SuppliersPortalData = {
   purchase_orders: PurchaseOrder[];
+  suppliers: Supplier[];
 } | null;
 
 export type SuppliersPortalPageProps = {
@@ -41,133 +118,742 @@ export type SuppliersPortalPageProps = {
   isLoading: boolean;
   isError: boolean;
   onRefresh: () => void;
+  onFetchLineItems: (poId: string) => Promise<PoLineItem[]>;
+  onUpdatePoStatus: (poId: string, status: PurchaseOrderStatus, actualDeliveryDate?: string) => Promise<void>;
+  onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
+  onCreatePo: (input: CreatePoInput) => Promise<void>;
 };
 
-const STATUS_LABELS: Record<PurchaseOrder['status'], {
+const STATUS_CONFIG: Record<PurchaseOrderStatus, {
   label: string;
-  color: 'default' | 'primary' | 'success' | 'warning' | 'error';
+  color: 'default' | 'primary' | 'warning' | 'success' | 'error' | 'info';
 }> = {
-  pending:    { label: 'Pending',     color: 'default'  },
-  confirmed:  { label: 'Confirmed',   color: 'primary'  },
-  in_transit: { label: 'In Transit',  color: 'warning'  },
-  received:   { label: 'Received',    color: 'success'  },
-  cancelled:  { label: 'Cancelled',   color: 'error'    },
+  draft:              { label: 'Draft',           color: 'default' },
+  ordered:               { label: 'Sent',            color: 'info'    },
+  confirmed:          { label: 'Confirmed',       color: 'primary' },
+  in_production:      { label: 'In Production',   color: 'warning' },
+  shipped:            { label: 'Shipped',         color: 'info'    },
+  partially_received: { label: 'Part. Received',  color: 'warning' },
+  received:           { label: 'Received',        color: 'success' },
+  cancelled:          { label: 'Cancelled',       color: 'error'   },
 };
 
-function RatingStars({ rating }: { rating: number | null }) {
-  if (rating === null) {
-    return (
-      <Typography variant="caption" color="text.secondary">
-        Unrated
-      </Typography>
+const OPEN_STATUSES: PurchaseOrderStatus[] = [
+  'draft', 'ordered', 'confirmed', 'in_production', 'shipped', 'partially_received'
+];
+
+const NEW_SUPPLIER_SENTINEL = '__new__';
+
+// ─────────────────────────────────────────────
+// CREATE PO DIALOG
+// ─────────────────────────────────────────────
+
+type LineItemDraft = {
+  key: number;
+  description: string;
+  quantity_ordered: string;
+  unit_cost_cents: string;
+};
+
+function CreatePoDialog({
+  open,
+  suppliers,
+  onClose,
+  onCreateSupplier,
+  onCreatePo,
+}: {
+  open: boolean;
+  suppliers: Supplier[];
+  onClose: () => void;
+  onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
+  onCreatePo: (input: CreatePoInput) => Promise<void>;
+}) {
+  const [supplierId, setSupplierId] = useState<string>('');
+  const [newSupplier, setNewSupplier] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '' });
+  const [expectedDate, setExpectedDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [lineItems, setLineItems] = useState<LineItemDraft[]>([
+    { key: 0, description: '', quantity_ordered: '', unit_cost_cents: '' },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  let keyCounter = lineItems.length;
+
+  const isNewSupplier = supplierId === NEW_SUPPLIER_SENTINEL;
+
+  const addLineItem = () => {
+    setLineItems((prev) => [
+      ...prev,
+      { key: keyCounter++, description: '', quantity_ordered: '', unit_cost_cents: '' },
+    ]);
+  };
+
+  const removeLineItem = (key: number) => {
+    setLineItems((prev) => prev.filter((i) => i.key !== key));
+  };
+
+  const updateLineItem = (key: number, field: keyof LineItemDraft, value: string) => {
+    setLineItems((prev) =>
+      prev.map((i) => (i.key === key ? { ...i, [field]: value } : i))
     );
-  }
+  };
+
+  const handleSubmit = async () => {
+    setError(null);
+
+    // Validate supplier
+    if (!supplierId) return setError('Please select a supplier.');
+    if (isNewSupplier && !newSupplier.name.trim()) return setError('New supplier name is required.');
+
+    // Validate line items
+    for (const item of lineItems) {
+      if (!item.description.trim()) return setError('All line items need a description.');
+      const qty = parseInt(item.quantity_ordered, 10);
+      if (isNaN(qty) || qty < 1) return setError('All line items need a valid quantity (≥ 1).');
+    }
+
+    setSubmitting(true);
+    try {
+      let resolvedSupplierId: number;
+
+      if (isNewSupplier) {
+        const created = await onCreateSupplier({
+          name: newSupplier.name.trim(),
+          contact_name: newSupplier.contact_name.trim() || undefined,
+          contact_email: newSupplier.contact_email.trim() || undefined,
+          contact_phone: newSupplier.contact_phone.trim() || undefined,
+        });
+        resolvedSupplierId = created.id;
+      } else {
+        resolvedSupplierId = parseInt(supplierId, 10);
+      }
+
+      await onCreatePo({
+        supplier_id: resolvedSupplierId,
+        expected_delivery_date: expectedDate || undefined,
+        notes: notes.trim() || undefined,
+        line_items: lineItems.map((item) => ({
+          description: item.description.trim(),
+          quantity_ordered: parseInt(item.quantity_ordered, 10),
+          unit_cost_cents: item.unit_cost_cents
+            ? Math.round(parseFloat(item.unit_cost_cents) * 100)
+            : undefined,
+        })),
+      });
+
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? 'Failed to create purchase order.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleClose = () => {
+    if (submitting) return;
+    setSupplierId('');
+    setNewSupplier({ name: '', contact_name: '', contact_email: '', contact_phone: '' });
+    setExpectedDate('');
+    setNotes('');
+    setLineItems([{ key: 0, description: '', quantity_ordered: '', unit_cost_cents: '' }]);
+    setError(null);
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+      <DialogTitle>New Purchase Order</DialogTitle>
+      <DialogContent>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+
+          {error && <Alert severity="error">{error}</Alert>}
+
+          {/* SUPPLIER SELECTOR */}
+          <TextField
+            select
+            label="Supplier"
+            value={supplierId}
+            onChange={(e) => setSupplierId(e.target.value)}
+            fullWidth
+            size="small"
+          >
+            {suppliers.filter((s) => s.active).map((s) => (
+              <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
+            ))}
+            <MenuItem value={NEW_SUPPLIER_SENTINEL}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Plus size={14} />
+                <Typography variant="body2">Add new supplier</Typography>
+              </Box>
+            </MenuItem>
+          </TextField>
+
+          {/* INLINE NEW SUPPLIER FORM */}
+          {isNewSupplier && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+              <Typography variant="caption" fontWeight={700} color="text.secondary">NEW SUPPLIER</Typography>
+              <TextField label="Name *" size="small" fullWidth value={newSupplier.name}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, name: e.target.value }))} />
+              <TextField label="Contact name" size="small" fullWidth value={newSupplier.contact_name}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, contact_name: e.target.value }))} />
+              <TextField label="Email" size="small" fullWidth value={newSupplier.contact_email}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, contact_email: e.target.value }))} />
+              <TextField label="Phone" size="small" fullWidth value={newSupplier.contact_phone}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, contact_phone: e.target.value }))} />
+            </Box>
+          )}
+
+          {/* ETA */}
+          <TextField
+            label="Expected delivery date"
+            type="date"
+            size="small"
+            fullWidth
+            value={expectedDate}
+            onChange={(e) => setExpectedDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+          />
+
+          {/* LINE ITEMS */}
+          <Box>
+            <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+              LINE ITEMS
+            </Typography>
+            {lineItems.map((item, idx) => (
+              <Box key={item.key} sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'flex-start' }}>
+                <TextField
+                  label="Description *"
+                  size="small"
+                  value={item.description}
+                  onChange={(e) => updateLineItem(item.key, 'description', e.target.value)}
+                  sx={{ flex: 3 }}
+                />
+                <TextField
+                  label="Qty *"
+                  size="small"
+                  type="number"
+                  value={item.quantity_ordered}
+                  onChange={(e) => updateLineItem(item.key, 'quantity_ordered', e.target.value)}
+                  inputProps={{ min: 1 }}
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  label="Unit cost"
+                  size="small"
+                  type="number"
+                  value={item.unit_cost_cents}
+                  onChange={(e) => updateLineItem(item.key, 'unit_cost_cents', e.target.value)}
+                  inputProps={{ min: 0, step: 0.01 }}
+                  sx={{ flex: 1.5 }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={() => removeLineItem(item.key)}
+                  disabled={lineItems.length === 1}
+                  sx={{ mt: 0.5 }}
+                >
+                  <Trash2 size={14} />
+                </IconButton>
+              </Box>
+            ))}
+            <Button size="small" startIcon={<Plus size={14} />} onClick={addLineItem}>
+              Add line item
+            </Button>
+          </Box>
+
+          {/* NOTES */}
+          <TextField
+            label="Notes"
+            size="small"
+            fullWidth
+            multiline
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Any notes about this PO..."
+          />
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleClose} disabled={submitting}>Cancel</Button>
+        <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting}>
+          {submitting ? 'Creating...' : 'Create PO'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────
+// PO ACCORDION
+// ─────────────────────────────────────────────
+
+function RatingBadge({ label, value }: { label: string; value: number | null }) {
+  if (value === null) return null;
+  const color = value >= 90 ? 'success' : value >= 70 ? 'warning' : 'error';
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-      <Star size={12} />
-      <Typography variant="caption" fontWeight={700}>
-        {rating.toFixed(1)}
-      </Typography>
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Chip label={`${Math.round(value)}%`} size="small" color={color} />
     </Box>
   );
 }
 
-function PoCard({ po }: { po: PurchaseOrder }) {
-  const status = STATUS_LABELS[po.status] ?? { label: po.status, color: 'default' as const };
-  const eta = po.eta ? new Date(po.eta).toLocaleDateString() : '—';
-  const createdAt = new Date(po.created_at).toLocaleDateString();
+function ReceiveShipmentDialog({
+  open,
+  lineItems,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  lineItems: PoLineItem[] | null;
+  onClose: () => void;
+  onConfirm: (items: { line_item_id: string; quantity_received: number }[], notes: string) => Promise<void>;
+}) {
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
+    setError(null);
+    const items = (lineItems ?? [])
+      .map((item) => ({
+        line_item_id: item.id,
+        quantity_received: parseInt(quantities[item.id] ?? '0', 10),
+      }))
+      .filter((item) => item.quantity_received > 0);
+
+    if (items.length === 0) return setError('Enter at least one received quantity.');
+
+    setSubmitting(true);
+    try {
+      await onConfirm(items, notes);
+      onClose();
+    } catch {
+      setError('Failed to record receipt.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 2 }}>
-
-      {/* HEADER */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-        <Typography variant="body2" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
-          {po.po_id.slice(0, 8).toUpperCase()}
-        </Typography>
-        <Chip label={status.label} color={status.color} size="small" />
-      </Box>
-
-      {/* SUPPLIER */}
-      <Typography variant="subtitle2" fontWeight={700} noWrap sx={{ mb: 0.5 }}>
-        {po.supplier_name}
-      </Typography>
-      <RatingStars rating={po.supplier_rating} />
-
-      <Divider sx={{ my: 1.5 }} />
-
-      {/* STATS */}
-      <Box sx={{ display: 'flex', gap: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Truck size={13} />
-          <Typography variant="caption" color="text.secondary">
-            {po.total_units} units · {po.line_items_count} lines
-          </Typography>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>Receive Shipment</DialogTitle>
+      <DialogContent>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          {error && <Alert severity="error">{error}</Alert>}
+          {!lineItems && <CircularProgress size={20} />}
+          {lineItems && lineItems.map((item) => {
+            const remaining = item.quantity_ordered - item.quantity_received;
+            return (
+              <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ flex: 3 }}>
+                  <Typography variant="body2" fontWeight={600}>{item.description}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Ordered: {item.quantity_ordered} · Already received: {item.quantity_received} · Remaining: {remaining}
+                  </Typography>
+                </Box>
+                <TextField
+                  label="Qty received"
+                  size="small"
+                  type="number"
+                  value={quantities[item.id] ?? ''}
+                  onChange={(e) => setQuantities((p) => ({ ...p, [item.id]: e.target.value }))}
+                  inputProps={{ min: 0, max: remaining }}
+                  sx={{ flex: 1 }}
+                  disabled={remaining === 0}
+                />
+              </Box>
+            );
+          })}
+          <TextField
+            label="Notes"
+            size="small"
+            fullWidth
+            multiline
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Any notes about this shipment..."
+          />
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Clock size={13} />
-          <Typography variant="caption" color="text.secondary">
-            ETA: {eta}
-          </Typography>
-        </Box>
-      </Box>
-
-      <Typography variant="caption" color="text.disabled" sx={{ mt: 1, display: 'block' }}>
-        Created {createdAt}
-      </Typography>
-    </Paper>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button variant="contained" color="success" onClick={() => void handleConfirm()} disabled={submitting}>
+          {submitting ? 'Recording...' : 'Confirm Receipt'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
+
+function PoAccordion({
+  po,
+  onFetchLineItems,
+  onUpdatePoStatus,
+}: {
+  po: PurchaseOrder;
+  onFetchLineItems: (poId: string) => Promise<PoLineItem[]>;
+  onUpdatePoStatus: (poId: string, status: PurchaseOrderStatus, actualDeliveryDate?: string) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [lineItems, setLineItems] = useState<PoLineItem[] | null>(null);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [receiveOpen, setReceiveOpen] = useState(false);
+
+  const status = STATUS_CONFIG[po.status];
+  const eta = po.expected_delivery_date
+    ? new Date(po.expected_delivery_date).toLocaleDateString()
+    : '—';
+
+  const handleExpand = async () => {
+    setExpanded((v) => !v);
+    if (!lineItems && !loadingItems) {
+      setLoadingItems(true);
+      try {
+        const items = await onFetchLineItems(po.id);
+        setLineItems(items);
+      } catch {
+        setError('Failed to load line items.');
+      } finally {
+        setLoadingItems(false);
+      }
+    }
+  };
+
+  const handleStatusUpdate = async (newStatus: PurchaseOrderStatus) => {
+    setUpdatingStatus(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await onUpdatePoStatus(
+        po.id,
+        newStatus,
+        newStatus === 'received' || newStatus === 'partially_received' ? today : undefined
+      );
+    } catch {
+      setError('Failed to update status.');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  return (
+    <Accordion
+      expanded={expanded}
+      onChange={() => void handleExpand()}
+      variant="outlined"
+      sx={{ mb: 1.5, borderRadius: '8px !important', '&:before': { display: 'none' } }}
+    >
+      <AccordionSummary expandIcon={<ChevronDown size={16} />}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%', pr: 1 }}>
+          <Box sx={{ flex: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <Typography variant="body2" fontWeight={700}>{po.supplier_name}</Typography>
+              <Chip label={status.label} size="small" color={status.color} />
+            </Box>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Clock size={12} />
+                <Typography variant="caption" color="text.secondary">ETA: {eta}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Package size={12} />
+                <Typography variant="caption" color="text.secondary">
+                  {po.total_units_ordered} units · {po.line_items_count} lines
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+      </AccordionSummary>
+
+      <AccordionDetails sx={{ pt: 0 }}>
+        <Divider sx={{ mb: 2 }} />
+
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+        {loadingItems && <CircularProgress size={20} />}
+
+        {lineItems && (
+          <TableContainer sx={{ mb: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Ordered</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Received</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {lineItems.map((item) => (
+                  <TableRow key={item.id} hover>
+                    <TableCell sx={{ fontSize: 12 }}>{item.description}</TableCell>
+                    <TableCell sx={{ fontSize: 12, fontFamily: 'monospace' }}>{item.sku ?? '—'}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12 }}>{item.quantity_ordered}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12, fontWeight: item.quantity_received > 0 ? 700 : 400 }}>
+                      {item.quantity_received}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {OPEN_STATUSES.includes(po.status) && (
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {po.status === 'draft' && (
+              <Button size="small" variant="outlined" disabled={updatingStatus}
+                onClick={() => void handleStatusUpdate('ordered')}>Mark Ordered</Button>
+            )}
+            {po.status === 'ordered' && (
+              <>
+                <Button size="small" variant="outlined" disabled={updatingStatus}
+                  onClick={() => void handleStatusUpdate('confirmed')}>Mark Confirmed</Button>
+                <Button size="small" variant="outlined" color="warning" disabled={updatingStatus}
+                  onClick={() => void handleStatusUpdate('in_production')}>Skip → In Production</Button>
+              </>
+            )}
+            {po.status === 'confirmed' && (
+              <>
+                <Button size="small" variant="outlined" color="warning" disabled={updatingStatus}
+                  onClick={() => void handleStatusUpdate('in_production')}>Mark In Production</Button>
+                <Button size="small" variant="outlined" color="info" disabled={updatingStatus}
+                  onClick={() => void handleStatusUpdate('shipped')}>Skip → Shipped</Button>
+              </>
+            )}
+           <Button size="small" variant="outlined" color="success" disabled
+              startIcon={<CheckCircle size={14} />}>
+              Receive via WMS
+            </Button>
+            <Button size="small" variant="outlined" color="error" disabled={updatingStatus}
+              startIcon={<XCircle size={14} />}
+              onClick={() => void handleStatusUpdate('cancelled')}>Cancel PO</Button>
+          </Box>
+        )}
+
+        {po.notes && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+            Notes: {po.notes}
+          </Typography>
+        )}
+      </AccordionDetails>
+    </Accordion>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SUPPLIER ACCORDION
+// ─────────────────────────────────────────────
+
+function SupplierAccordion({ supplier }: { supplier: Supplier }) {
+  return (
+    <Accordion
+      variant="outlined"
+      sx={{ mb: 1, borderRadius: '8px !important', '&:before': { display: 'none' } }}
+    >
+      <AccordionSummary expandIcon={<ChevronDown size={16} />}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%', pr: 1 }}>
+          <Box sx={{ flex: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" fontWeight={700}>{supplier.name}</Typography>
+              {!supplier.active && <Chip label="Inactive" size="small" />}
+              {Number(supplier.open_po_count) > 0 && (
+                <Chip
+                  label={`${supplier.open_po_count} open PO${Number(supplier.open_po_count) > 1 ? 's' : ''}`}
+                  size="small" color="primary"
+                />
+              )}
+            </Box>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <RatingBadge label="On-time" value={supplier.on_time_rate} />
+            <RatingBadge label="Fill" value={supplier.fill_rate} />
+          </Box>
+        </Box>
+      </AccordionSummary>
+      <AccordionDetails sx={{ pt: 0 }}>
+        <Divider sx={{ mb: 1.5 }} />
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          {supplier.contact_name && (
+            <Typography variant="caption" color="text.secondary">Contact: {supplier.contact_name}</Typography>
+          )}
+          {supplier.contact_email && (
+            <Typography variant="caption" color="text.secondary">Email: {supplier.contact_email}</Typography>
+          )}
+          {supplier.contact_phone && (
+            <Typography variant="caption" color="text.secondary">Phone: {supplier.contact_phone}</Typography>
+          )}
+          <Typography variant="caption" color="text.secondary">Lifetime POs: {supplier.total_pos}</Typography>
+          {supplier.defect_rate !== null && (
+            <Typography variant="caption" color="text.secondary">Defect rate: {supplier.defect_rate}%</Typography>
+          )}
+        </Box>
+      </AccordionDetails>
+    </Accordion>
+  );
+}
+
+// ─────────────────────────────────────────────
+// MAIN MODULE
+// ─────────────────────────────────────────────
 
 export default function SuppliersPortalModuleFT2({
   data,
   isLoading,
   isError,
+  onRefresh,
+  onFetchLineItems,
+  onUpdatePoStatus,
+  onCreateSupplier,
+  onCreatePo,
 }: SuppliersPortalPageProps) {
-  const orders = data?.purchase_orders ?? [];
+  const [createPoOpen, setCreatePoOpen] = useState(false);
+  const [showClosed, setShowClosed] = useState(false);
+
+  const allPos = data?.purchase_orders ?? [];
+  const suppliers = data?.suppliers ?? [];
+  const openPos = allPos.filter((po) => OPEN_STATUSES.includes(po.status));
+  const closedPos = allPos.filter((po) => !OPEN_STATUSES.includes(po.status));
+
+  const handlePoCreated = () => {
+    setCreatePoOpen(false);
+    onRefresh();
+  };
 
   return (
-    <Box sx={{ p: 2, maxWidth: 600, mx: 'auto' }}>
+    <Box sx={{ p: 2, maxWidth: 700, mx: 'auto' }}>
 
-      {/* PAGE HEADER */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700}>Suppliers</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Purchase orders, ETAs, and supplier ratings.
-        </Typography>
+      {/* HEADER */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700}>Suppliers</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Purchase orders, ETAs, and supplier ratings.
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          startIcon={<Plus size={16} />}
+          onClick={() => setCreatePoOpen(true)}
+        >
+          New PO
+        </Button>
       </Box>
 
-      {/* LOADING */}
       {isLoading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
           <CircularProgress size={24} />
         </Box>
       )}
 
-      {/* ERROR */}
       {isError && (
         <Alert severity="error" sx={{ mb: 3 }}>
           Failed to load supplier data. Please refresh.
         </Alert>
       )}
 
-      {/* EMPTY STATE */}
-      {!isLoading && !isError && orders.length === 0 && (
-        <Paper
-          variant="outlined"
-          sx={{ textAlign: 'center', py: 8, borderRadius: 2, borderStyle: 'dashed' }}
-        >
-          <Truck size={40} style={{ opacity: 0.3 }} />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            No purchase orders found.
-          </Typography>
-        </Paper>
+      {!isLoading && !isError && (
+        <>
+          {/* OPEN POs */}
+          <Box sx={{ mb: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Truck size={18} />
+              <Typography variant="subtitle1" fontWeight={700}>Open Purchase Orders</Typography>
+              <Chip label={openPos.length} size="small" color={openPos.length > 0 ? 'primary' : 'default'} />
+            </Box>
+
+            {openPos.length === 0 ? (
+              <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
+                <Truck size={36} style={{ opacity: 0.3 }} />
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  No open purchase orders.
+                </Typography>
+                <Button
+                  size="small"
+                  startIcon={<Plus size={14} />}
+                  sx={{ mt: 2 }}
+                  onClick={() => setCreatePoOpen(true)}
+                >
+                  Create your first PO
+                </Button>
+              </Paper>
+            ) : (
+              openPos.map((po) => (
+                <PoAccordion
+                  key={po.id}
+                  po={po}
+                  onFetchLineItems={onFetchLineItems}
+                  onUpdatePoStatus={onUpdatePoStatus}
+                />
+              ))
+            )}
+          </Box>
+
+          {/* CLOSED POs */}
+          {closedPos.length > 0 && (
+            <Box sx={{ mb: 4 }}>
+              <Box
+                sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, cursor: 'pointer' }}
+                onClick={() => setShowClosed((v) => !v)}
+              >
+                <Typography variant="subtitle2" color="text.secondary">
+                  {closedPos.length} closed / cancelled PO{closedPos.length > 1 ? 's' : ''}
+                </Typography>
+                <ChevronDown
+                  size={14}
+                  style={{ transform: showClosed ? 'rotate(180deg)' : 'none', transition: '0.2s' }}
+                />
+              </Box>
+              {showClosed && closedPos.map((po) => (
+                <PoAccordion
+                  key={po.id}
+                  po={po}
+                  onFetchLineItems={onFetchLineItems}
+                  onUpdatePoStatus={onUpdatePoStatus}
+                />
+              ))}
+            </Box>
+          )}
+
+          <Divider sx={{ mb: 3 }} />
+
+          {/* SUPPLIERS LIST — bottom */}
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Star size={18} />
+              <Typography variant="subtitle1" fontWeight={700}>Suppliers</Typography>
+              <Chip label={suppliers.length} size="small" />
+            </Box>
+
+            {suppliers.length === 0 ? (
+              <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
+                <Star size={36} style={{ opacity: 0.3 }} />
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  No suppliers added yet. Create a PO to add your first supplier.
+                </Typography>
+              </Paper>
+            ) : (
+              suppliers.map((s) => <SupplierAccordion key={s.id} supplier={s} />)
+            )}
+          </Box>
+        </>
       )}
 
-      {/* PO LIST */}
-      {!isLoading && orders.map((po) => (
-        <PoCard key={po.po_id} po={po} />
-      ))}
+      {/* CREATE PO DIALOG */}
+      <CreatePoDialog
+        open={createPoOpen}
+        suppliers={suppliers}
+        onClose={handlePoCreated}
+        onCreateSupplier={onCreateSupplier}
+        onCreatePo={onCreatePo}
+      />
     </Box>
   );
 }
