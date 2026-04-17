@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { requireRole } from '../../middleware/require-role.middleware.js';
-import { httpGetLayout } from './floor-planning.controller.js';
+import { httpGetLayout, httpUpdateProductBarcode } from './floor-planning.controller.js';
 
 /**
  * FLOOR PLANNING ROUTES
@@ -22,6 +22,14 @@ router.get(
   requireFt2,
   requireRole(['owner', 'admin']),
   httpGetLayout
+);
+
+router.patch(
+  '/products/:lasyncroVariantId/barcode',
+  authenticateToken,
+  requireFt2,
+  requireRole(['owner', 'admin']),
+  httpUpdateProductBarcode
 );
 
 export default router;

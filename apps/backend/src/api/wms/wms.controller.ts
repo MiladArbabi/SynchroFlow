@@ -780,6 +780,44 @@ export const httpCreateStowTask = async (req: Request, res: Response) => {
   }
 };
 
+// ISSUE-003/FEAT-004: Assigns a location to a pending stow task created without one.
+// Required before an operator can claim an inbound_stock stow task (location unknown at creation).
+export async function httpAssignStowLocation(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const taskId = req.params.taskId as string;
+  const { location_code } = req.body;
+
+  if (!location_code || typeof location_code !== 'string' || location_code.trim() === '') {
+    return res.status(400).json({ error: 'location_code is required' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Verify location exists in this shop's warehouse
+      const location = await trx('warehouse_locations')
+        .where({ shop_id: shopId, location_code: location_code.trim() })
+        .first();
+      if (!location) return res.status(404).json({ error: 'Location not found' });
+
+      const updated = await trx('stow_tasks')
+        .where({ stow_task_id: taskId, shop_id: shopId, status: 'pending' })
+        .update({ location_code: location_code.trim(), updated_at: new Date() });
+
+      if (updated === 0) throw new Error('Stow task not found or not in pending status');
+    });
+
+    console.info('[STOW_LOCATION_ASSIGNED]', { shopId, taskId, location_code });
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('[STOW_LOCATION_ASSIGN_FAILED]', { shopId, taskId, error: err.message });
+    return res.status(500).json({ error: `Failed to assign location: ${err.message}` });
+  }
+}
+
 // ─────────────────────────────────────────
 // POST /api/v1/wms/stow-tasks/:taskId/claim
 // ─────────────────────────────────────────

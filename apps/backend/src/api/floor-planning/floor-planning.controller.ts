@@ -60,3 +60,41 @@ export async function httpGetLayout(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to fetch floor planning layout' });
   }
 }
+
+// ISSUE-003 fix: Allows owner/admin to correct a wrong or missing barcode on a variant.
+// Updates external_product_identity_map — the authoritative physical scan resolution table.
+// Safe: keyed on (shop_id, lasyncro_variant_id) — one row per variant per shop.
+export async function httpUpdateProductBarcode(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const lasyncroVariantId = req.params.lasyncroVariantId as string;
+  const { barcode } = req.body;
+
+  if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
+    return res.status(400).json({ error: 'barcode is required and must be a non-empty string' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const updated = await trx('external_product_identity_map')
+        .where({ lasyncro_variant_id: lasyncroVariantId, shop_id: shopId })
+        .update({ barcode: barcode.trim() });
+
+      if (updated === 0) {
+        throw new Error('Variant not found in identity map');
+      }
+    });
+
+    console.info('[floor-planning] barcode updated', { shopId, lasyncroVariantId, barcode });
+    return res.json({ success: true });
+  } catch (err: any) {
+    if (err.message === 'Variant not found in identity map') {
+      return res.status(404).json({ error: err.message });
+    }
+    console.error('[floor-planning] httpUpdateProductBarcode failed', err);
+    return res.status(500).json({ error: 'Failed to update barcode' });
+  }
+}

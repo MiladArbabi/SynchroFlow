@@ -33,10 +33,11 @@ export interface CreateStowTaskInput {
   shopId: number;
   lasyncroVariantId: string;
   quantity: number;
-  locationCode: string;
+  locationCode?: string;        // nullable — assigned after WM-36 suggestion
   trigger: 'order_cancelled_mid_pick' | 'inbound_stock';
   pickBatchId?: string;
   lasyncroOrderId?: string;
+  poId?: string;                // populated when trigger = inbound_stock (FEAT-004)
 }
 
 export interface StowConfirmInput {
@@ -57,6 +58,7 @@ export async function createStowTask(
     trigger,
     pickBatchId,
     lasyncroOrderId,
+    poId,
   } = input;
 
   const result = await trx('stow_tasks')
@@ -64,7 +66,8 @@ export async function createStowTask(
       shop_id: shopId,
       lasyncro_variant_id: lasyncroVariantId,
       quantity,
-      location_code: locationCode,
+      location_code: locationCode ?? null,
+      po_id: poId ?? null,
       status: 'pending',
       trigger,
       pick_batch_id: pickBatchId ?? null,
@@ -99,6 +102,7 @@ export async function claimStowTask(
 
   if (!task) throw new Error(`[STOW_CLAIM] Task not found: ${stowTaskId}`);
   if (task.status !== 'pending') throw new Error(`[STOW_CLAIM] Task not claimable: ${task.status}`);
+  if (!task.location_code) throw new Error(`[STOW_CLAIM] Cannot claim stow task without assigned location: ${stowTaskId}`);
   if (task.claimed_by !== null) throw new Error('[STOW_CLAIM] Task already claimed');
 
   const now = new Date();
@@ -129,6 +133,7 @@ export async function confirmStow(
 
   if (!task) throw new Error(`[STOW_CONFIRM] Task not found: ${stowTaskId}`);
   if (task.status !== 'in_progress') throw new Error(`[STOW_CONFIRM] Task not in progress: ${task.status}`);
+  if (!task.location_code) throw new Error(`[STOW_CONFIRM] Cannot confirm stow: location_code not assigned to task ${stowTaskId}`);
   if (task.claimed_by !== claimedBy) throw new Error('[STOW_CONFIRM] Task owned by different operator');
 
   const completedAt = new Date();

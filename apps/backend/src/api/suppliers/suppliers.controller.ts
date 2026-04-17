@@ -1,6 +1,7 @@
 // apps/backend/src/api/suppliers/suppliers.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { fireReceiveArrivedAlert } from '../../services/wms/wmsAlerts.service.js';
 
 /**
  * SUPPLIERS PORTAL CONTROLLERS
@@ -198,7 +199,7 @@ export async function httpGetPoLineItems(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { poId } = req.params;
+  const poId = req.params.poId as string;
 
   try {
     const line_items = await db.transaction(async (trx) => {
@@ -225,7 +226,7 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { poId } = req.params;
+  const poId = req.params.poId as string;
   const { status, actual_delivery_date } = req.body;
 
   const VALID_STATUSES = [
@@ -240,8 +241,10 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      const po = await trx('purchase_orders')
-        .where({ id: poId, shop_id: shopId })
+      const po = await trx('purchase_orders as po')
+        .join('suppliers as s', 'po.supplier_id', 's.id')
+        .where({ 'po.id': poId, 'po.shop_id': shopId })
+        .select('po.*', 's.name as supplier_name')
         .first();
 
       if (!po) {
@@ -261,6 +264,21 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
         await trx('suppliers')
           .where({ id: po.supplier_id, shop_id: shopId })
           .increment('total_pos', 1);
+        await recomputeSupplierRating(trx, shopId, po.supplier_id);
+      }
+
+      // FEAT-004: Emit receive alert so operators are notified to open a receive session.
+      if (status === 'shipped') {
+        await fireReceiveArrivedAlert(trx, {
+          shopId,
+          poId,
+          supplierName: po.supplier_name,
+        });
+      }
+
+      // Write actual_delivery_date on shipped if provided, then recompute rating
+      // so on_time_rate reflects late/early delivery at receive time, not just on close.
+      if (status === 'shipped' && actual_delivery_date) {
         await recomputeSupplierRating(trx, shopId, po.supplier_id);
       }
 
@@ -286,7 +304,7 @@ export async function httpReceiveShipment(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { poId } = req.params;
+  const poId = req.params.poId as string;
   const { receive_notes, line_items } = req.body;
 
   if (!Array.isArray(line_items) || line_items.length === 0) {
@@ -373,7 +391,9 @@ export async function httpReceiveShipment(req: Request, res: Response) {
  * avg_delivery_days: mean of (actual_delivery_date - expected_delivery_date) in days.
  *   Negative = arrived early. Positive = arrived late.
  *
- * defect_rate: updated separately by WMS pick exception flow (future sprint).
+ * defect_rate: sourced from receive_exceptions at receive time (FEAT-004), NOT pick exceptions.
+ * Pick exceptions reflect fulfilment errors; receive exceptions reflect supplier quality defects.
+ * Recompute trigger: receive job close → update defect_rate via receive_exceptions count.
  */
 async function recomputeSupplierRating(trx: any, shopId: number, supplierId: number) {
   const pos = await trx('purchase_orders as po')

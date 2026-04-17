@@ -24,6 +24,7 @@ import {
   httpClaimStowTask,
   httpConfirmStow,
   httpCreateStowTask,
+  httpAssignStowLocation,
 } from './wms.controller.js';
 /**
  * WMS ROUTES (WM-03)
@@ -191,6 +192,15 @@ router.post(
   requireTier('core'),
   requireRole(['operator', 'owner', 'admin']),
   httpConfirmStow
+);
+
+router.patch(
+  '/stow-tasks/:taskId/location',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireRole(['owner', 'admin']),
+  httpAssignStowLocation
 );
 
 export default router;

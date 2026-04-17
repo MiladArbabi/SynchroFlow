@@ -7,12 +7,12 @@ import { dispatchNotification } from '../notifications/notificationDispatch.serv
  * --------------------------
  * Proactive alert firing for WMS warehouse signals.
  *
- * Alert keys are deterministic — safe to call multiple times:
- * - wms:exception:pick:{batchId}     — pick exception raised
- * - wms:exception:pack:{batchId}     — pack exception raised
- * - wms:stow:pending:{shopId}        — stow task created (auto-resolves on confirm)
+ * - wms:exception:pick:{batchId}      — pick exception raised
+ * - wms:exception:pack:{batchId}      — pack exception raised
+ * - wms:stow:pending:{stowTaskId}     — stow task created (auto-resolves on confirm)
  * - wms:batch:ready_to_pack:{batchId} — pick complete, packer needed
  * - wms:batch:ready_to_ship:{batchId} — pack complete, shipment needed
+ * - wms:receive:arrived:{poId}        — PO shipped, receive session needed (FEAT-004)
  *
  * All alerts:
  * - Upsert on (shop_id, alert_key) — idempotent
@@ -240,4 +240,36 @@ export async function fireBatchReadyToShipAlert(
   }
 
   console.info('[WMS_READY_TO_SHIP_ALERT_FIRED]', { shopId, batchId, isActive });
+}
+
+// FEAT-004: Fires when PO transitions to `shipped` — triggers operator receive session.
+// Alert key is deterministic (idempotent on re-advance). Resolves when receive job closes.
+export async function fireReceiveArrivedAlert(
+  trx: Knex.Transaction,
+  params: { shopId: number; poId: string; supplierName: string }
+): Promise<void> {
+  const { shopId, poId, supplierName } = params;
+  const poShort = poId.slice(0, 8).toUpperCase();
+  await upsertWmsAlert(trx, {
+    shopId,
+    alertKey: `wms:receive:arrived:${poId}`,
+    alertType: 'wms_receive_arrived',
+    severity: 'info',
+    title: 'Shipment arrived — receive required',
+    message: `PO ${poShort} from ${supplierName} is marked shipped. Open a receive session to process inbound stock.`,
+    entityId: poId,
+    entityType: 'purchase_order',
+    isActive: true,
+  });
+  // Notify all operators — inbound stock needs processing
+  dispatchNotification({
+    shopId,
+    payload: {
+      title: 'Shipment arrived',
+      body: `PO ${poShort} from ${supplierName} ready to receive.`,
+      data: { route: '/wms/receive', poId },
+    },
+    broadcastToRole: 'operator',
+  }).catch((err) => console.error('[WMS_RECEIVE_ARRIVED_PUSH_FAILED]', err.message));
+  console.info('[WMS_RECEIVE_ARRIVED_ALERT_FIRED]', { shopId, poId });
 }

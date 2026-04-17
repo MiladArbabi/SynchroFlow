@@ -70,12 +70,12 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable();
 
     /**
-     * Target location where item must be stowed.
-     * Derived from warehouse_locations at task generation time.
+     * Target stow location. Nullable at creation — assigned during suggestion (WM-36)
+     * or manually by operator before claiming.
      */
     table
       .string('location_code', 255)
-      .notNullable();
+      .nullable();
 
     table
       .specificType('status', 'stow_task_status')
@@ -95,6 +95,17 @@ export async function up(knex: Knex): Promise<void> {
       .nullable()
       .references('pick_batch_id')
       .inTable('pick_batches')
+      .onDelete('SET NULL');
+
+    /**
+     * Source PO — populated when trigger = inbound_stock (FEAT-004).
+     * Enables traceability from stow task back to purchase order.
+     */
+    table
+      .uuid('po_id')
+      .nullable()
+      .references('id')
+      .inTable('purchase_orders')
       .onDelete('SET NULL');
 
     table
