@@ -85,8 +85,14 @@ nav {
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--rule);
 }
+/* add inside your existing <style> block */
+.nav-logo img {
+  transition: opacity 0.15s;
+}
 @media (prefers-color-scheme: dark) {
-  nav { background: rgba(21,29,41,0.88); }
+  .nav-logo img {
+    content: url('White_text__no_bg.png');
+  }
 }
 .nav-logo {
   display: flex;
@@ -1055,11 +1061,7 @@ footer {
 <!-- ── NAV ── -->
 <nav>
   <a href="#" class="nav-logo" aria-label="LaSyncro home">
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
-      <rect width="28" height="28" rx="6" fill="#FF6B2B"/>
-      <path d="M8 14L12.5 18.5L20 10" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <span class="nav-wordmark">LaSyncro</span>
+    <img src="Dark_text__no_bg.png" alt="LaSyncro" height="28" style="display:block;">
   </a>
   <a href="#waitlist" class="nav-cta" onclick="posthog.capture('clicked_waitlist',{location:'header'})">
     Get early access
@@ -1497,11 +1499,7 @@ footer {
 <footer>
   <div class="footer-inner">
     <a href="#" class="footer-logo" aria-label="LaSyncro">
-      <svg width="22" height="22" viewBox="0 0 28 28" fill="none" aria-hidden="true">
-        <rect width="28" height="28" rx="6" fill="#FF6B2B"/>
-        <path d="M8 14L12.5 18.5L20 10" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span class="footer-wordmark">LaSyncro</span>
+      <img src="White_text__no_bg.png" alt="LaSyncro" height="22" style="display:block;">
     </a>
     <span class="footer-tagline">Let's sync up every row.</span>
     <span class="footer-copy">© 2026 LaSyncro. All rights reserved.</span>
