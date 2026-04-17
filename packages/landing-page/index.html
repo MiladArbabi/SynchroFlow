@@ -14,1244 +14,200 @@
 </script>
 
 <style>
-/* ── Design tokens ── */
 :root {
-  --accent:        #FF6B2B;
-  --accent-hover:  #FF8C5A;
-  --accent-ghost:  #FFF0E8;
-  --accent-border: #FFDCCA;
-
-  --bg:      #FAFAF8;
-  --bg-2:    #F3F2EF;
-  --bg-3:    #E8E6E0;
-  --surface: #FFFFFF;
-
-  --ink:   #0F0E0D;
-  --ink-2: #3A3835;
-  --ink-3: #6B7280;
-  --ink-4: #9CA3AF;
-
-  --rule:  #E8E6E0;
-  --rule-2:#D1CFC8;
-
-  --space-1:#151D29;
-  --space-2:#1C2740;
-  --space-3:#243050;
-  --space-4:#2E3D62;
-
-  --serif: 'Instrument Serif', Georgia, serif;
-  --sans:  'DM Sans', system-ui, sans-serif;
+  --accent:#FF6B2B; --accent-hover:#FF8C5A; --accent-ghost:#FFF0E8; --accent-border:#FFDCCA;
+  --bg:#FAFAF8; --bg-2:#F3F2EF; --bg-3:#E8E6E0; --surface:#FFFFFF;
+  --ink:#0F0E0D; --ink-2:#3A3835; --ink-3:#6B7280; --ink-4:#9CA3AF;
+  --rule:#E8E6E0; --rule-2:#D1CFC8;
+  --space-1:#151D29; --space-2:#1C2740; --space-3:#243050; --space-4:#2E3D62;
+  --serif:'Instrument Serif',Georgia,serif; --sans:'DM Sans',system-ui,sans-serif;
 }
-
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme:dark) {
   :root {
-    --bg:      #151D29;
-    --bg-2:    #1C2740;
-    --bg-3:    #243050;
-    --surface: #1C2740;
-    --ink:   #F0EEE8;
-    --ink-2: #C8C4BB;
-    --ink-3: #8B8F9A;
-    --ink-4: #5A5F6E;
-    --rule:  rgba(255,255,255,0.08);
-    --rule-2:rgba(255,255,255,0.14);
-    --accent-ghost:  rgba(255,107,43,0.12);
-    --accent-border: rgba(255,107,43,0.25);
+    --bg:#151D29; --bg-2:#1C2740; --bg-3:#243050; --surface:#1C2740;
+    --ink:#F0EEE8; --ink-2:#C8C4BB; --ink-3:#8B8F9A; --ink-4:#5A5F6E;
+    --rule:rgba(255,255,255,0.08); --rule-2:rgba(255,255,255,0.14);
+    --accent-ghost:rgba(255,107,43,0.12); --accent-border:rgba(255,107,43,0.25);
   }
 }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;overflow-x:hidden;}
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
-body {
-  font-family: var(--sans);
-  background: var(--bg);
-  color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-}
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;height:60px;display:flex;align-items:center;padding:0 5vw;justify-content:space-between;background:rgba(250,250,248,0.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--rule);}
+@media (prefers-color-scheme:dark){nav{background:rgba(21,29,41,0.92);}}
+.nav-logo{display:flex;align-items:center;text-decoration:none;}
+.nav-cta{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:var(--accent);color:#fff;font-size:13px;font-weight:500;font-family:var(--sans);border-radius:6px;text-decoration:none;transition:background 0.15s;}
+.nav-cta:hover{background:var(--accent-hover);}
 
-/* ── NAV ── */
-nav {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 100;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  padding: 0 5vw;
-  justify-content: space-between;
-  background: rgba(250,250,248,0.85);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--rule);
-}
-@media (prefers-color-scheme: dark) {
-  nav { background: rgba(21,29,41,0.88); }
-}
-.nav-logo {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  text-decoration: none;
-}
-.nav-wordmark {
-  font-family: var(--serif);
-  font-size: 20px;
-  color: var(--ink);
-  letter-spacing: -0.01em;
-}
-.nav-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--sans);
-  border-radius: 6px;
-  text-decoration: none;
-  transition: background 0.15s;
-}
-.nav-cta:hover { background: var(--accent-hover); }
+/* HERO */
+.hero{min-height:100svh;display:grid;place-items:center;padding:120px 5vw 80px;position:relative;overflow:hidden;background:var(--bg);}
+.hero-grid{position:absolute;inset:0;background-image:linear-gradient(var(--rule) 1px,transparent 1px),linear-gradient(90deg,var(--rule) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 70% 55% at 50% 38%,black 15%,transparent 75%);-webkit-mask-image:radial-gradient(ellipse 70% 55% at 50% 38%,black 15%,transparent 75%);opacity:0.5;z-index:0;}
+.hero-glow{position:absolute;bottom:-60px;left:50%;transform:translateX(-50%);width:700px;height:360px;background:radial-gradient(ellipse,rgba(255,107,43,0.10) 0%,transparent 70%);z-index:0;pointer-events:none;}
+.hero-inner{position:relative;z-index:1;max-width:820px;text-align:center;}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--accent);background:var(--accent-ghost);border:1px solid var(--accent-border);padding:5px 14px;border-radius:100px;margin-bottom:32px;}
+.eyebrow-dot{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:blink 2.4s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.4;transform:scale(0.75);}}
+.hero-h1{font-family:var(--serif);font-size:clamp(46px,7.5vw,88px);line-height:1.03;letter-spacing:-0.025em;color:var(--ink);}
+.hero-h1 em{font-style:italic;color:var(--accent);}
+.hero-sub{font-size:clamp(16px,2vw,19px);line-height:1.7;color:var(--ink-3);max-width:500px;margin:22px auto 0;font-weight:300;}
+.hero-actions{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:40px;flex-wrap:wrap;}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;padding:14px 28px;background:var(--accent);color:#fff;font-size:15px;font-weight:500;font-family:var(--sans);border-radius:8px;text-decoration:none;transition:background 0.15s,transform 0.15s;border:none;cursor:pointer;}
+.btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px);}
+.hero-trust{margin-top:14px;font-size:12px;color:var(--ink-4);letter-spacing:0.02em;}
+.hero-trust span{margin:0 6px;opacity:0.4;}
+.hero-proof{margin-top:40px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:13px;color:var(--ink-4);flex-wrap:wrap;}
+.proof-avatars{display:flex;}
+.proof-avatar{width:30px;height:30px;border-radius:50%;border:2px solid var(--bg);margin-left:-8px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;}
+.proof-avatar:first-child{margin-left:0;}
+.av1{background:#2E3D62;color:#FF8C5A;} .av2{background:#FFF0E8;color:#FF6B2B;} .av3{background:#1C2740;color:#8B8F9A;} .av4{background:#F3F2EF;color:#3A3835;}
+.proof-pipe{width:1px;height:18px;background:var(--rule-2);}
 
-/* ── HERO ── */
-.hero {
-  min-height: 100svh;
-  display: grid;
-  place-items: center;
-  padding: 100px 5vw 80px;
-  position: relative;
-  overflow: hidden;
-  background: var(--bg);
-}
-.hero-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--rule) 1px, transparent 1px),
-    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
-  background-size: 60px 60px;
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 38%, black 15%, transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 38%, black 15%, transparent 75%);
-  opacity: 0.5;
-  z-index: 0;
-}
-.hero-glow {
-  position: absolute;
-  bottom: -60px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 600px;
-  height: 320px;
-  background: radial-gradient(ellipse, rgba(255,107,43,0.12) 0%, transparent 70%);
-  z-index: 0;
-  pointer-events: none;
-}
-.hero-inner {
-  position: relative;
-  z-index: 1;
-  max-width: 820px;
-  text-align: center;
-}
-.hero-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-ghost);
-  border: 1px solid var(--accent-border);
-  padding: 5px 14px;
-  border-radius: 100px;
-  margin-bottom: 32px;
-}
-.eyebrow-dot {
-  width: 6px; height: 6px;
-  background: var(--accent);
-  border-radius: 50%;
-  animation: blink 2.4s ease-in-out infinite;
-}
-@keyframes blink {
-  0%,100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.4; transform: scale(0.75); }
-}
-.hero-h1 {
-  font-family: var(--serif);
-  font-size: clamp(44px, 7.5vw, 84px);
-  line-height: 1.04;
-  letter-spacing: -0.025em;
-  color: var(--ink);
-}
-.hero-h1 em {
-  font-style: italic;
-  color: var(--accent);
-}
-.hero-sub {
-  font-size: clamp(16px, 2vw, 19px);
-  line-height: 1.7;
-  color: var(--ink-3);
-  max-width: 560px;
-  margin: 22px auto 0;
-  font-weight: 300;
-}
-.hero-actions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 40px;
-  flex-wrap: wrap;
-}
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 28px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 500;
-  font-family: var(--sans);
-  border-radius: 8px;
-  text-decoration: none;
-  transition: background 0.15s, transform 0.15s;
-  border: none;
-  cursor: pointer;
-}
-.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 14px 22px;
-  background: transparent;
-  color: var(--ink-2);
-  font-size: 15px;
-  font-weight: 400;
-  font-family: var(--sans);
-  border: 1px solid var(--rule-2);
-  border-radius: 8px;
-  text-decoration: none;
-  transition: background 0.15s, border-color 0.15s;
-}
-.btn-secondary:hover { background: var(--bg-2); border-color: var(--ink-4); }
-.hero-trust {
-  margin-top: 16px;
-  font-size: 12px;
-  color: var(--ink-4);
-  letter-spacing: 0.02em;
-}
-.hero-trust span { margin: 0 6px; opacity: 0.4; }
-.hero-proof {
-  margin-top: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  font-size: 13px;
-  color: var(--ink-4);
-  flex-wrap: wrap;
-}
-.proof-avatars { display: flex; }
-.proof-avatar {
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  border: 2px solid var(--bg);
-  margin-left: -8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 500;
-}
-.proof-avatar:first-child { margin-left: 0; }
-.av1 { background: #2E3D62; color: #FF8C5A; }
-.av2 { background: #FFF0E8; color: #FF6B2B; }
-.av3 { background: #1C2740; color: #8B8F9A; }
-.av4 { background: #F3F2EF; color: #3A3835; }
-.proof-pipe { width: 1px; height: 18px; background: var(--rule-2); }
+/* BEFORE / AFTER */
+.ba-section{background:var(--bg-2);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:0 5vw;}
+.ba-inner{max-width:1000px;margin:0 auto;}
+.ba-row{display:grid;grid-template-columns:1fr 36px 1fr;align-items:center;padding:18px 0;border-bottom:1px solid var(--rule);}
+.ba-row:last-child{border-bottom:none;}
+.ba-before{font-size:13px;color:var(--ink-3);font-weight:300;line-height:1.5;padding-right:16px;}
+.ba-arrow-cell{display:flex;align-items:center;justify-content:center;}
+.ba-arrow-icon{width:22px;height:22px;border-radius:50%;background:var(--accent-ghost);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.ba-arrow-icon svg{width:10px;height:10px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.ba-after{font-size:13px;color:var(--ink);font-weight:500;line-height:1.5;padding-left:16px;}
+@media(max-width:600px){.ba-row{grid-template-columns:1fr;gap:8px;padding:16px 0;}.ba-arrow-cell{display:none;}.ba-before{padding-right:0;padding-bottom:8px;border-bottom:1px dashed var(--rule-2);}.ba-after{padding-left:0;}}
 
-/* ── BEFORE/AFTER STRIP ── */
-.ba-strip {
-  background: var(--bg-2);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  padding: 0 5vw;
-}
-.ba-inner {
-  max-width: 1160px;
-  margin: 0 auto;
-}
-.ba-pair {
-  display: grid;
-  grid-template-columns: 1fr 20px 1fr;
-  gap: 0 16px;
-  align-items: center;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--rule);
-}
-.ba-pair:last-child { border-bottom: none; }
-.ba-before {
-  font-size: 13px;
-  color: var(--ink-3);
-  font-weight: 300;
-  line-height: 1.5;
-  font-style: italic;
-}
-.ba-arrow {
-  color: var(--accent);
-  font-size: 14px;
-  text-align: center;
-  opacity: 0.7;
-}
-.ba-after {
-  font-size: 13px;
-  color: var(--ink);
-  font-weight: 500;
-  line-height: 1.5;
-}
-@media (max-width: 640px) {
-  .ba-pair { grid-template-columns: 1fr; gap: 6px; }
-  .ba-arrow { display: none; }
-  .ba-before { padding-bottom: 4px; border-bottom: 1px dashed var(--rule-2); }
-}
+/* STAT BAR */
+.stat-bar{background:var(--space-1);padding:28px 5vw;display:flex;justify-content:center;gap:clamp(28px,6vw,80px);flex-wrap:wrap;}
+.stat-item{text-align:center;}
+.stat-n{font-family:var(--serif);font-size:32px;color:#fff;display:block;letter-spacing:-0.02em;line-height:1;}
+.stat-n span{color:var(--accent);}
+.stat-l{font-size:11px;color:rgba(255,255,255,0.65);letter-spacing:0.06em;text-transform:uppercase;margin-top:5px;display:block;max-width:140px;line-height:1.4;}
 
-/* ── STAT BAR ── */
-.stat-bar {
-  background: var(--space-1);
-  padding: 22px 5vw;
-  display: flex;
-  justify-content: center;
-  gap: clamp(28px, 7vw, 96px);
-  flex-wrap: wrap;
-}
-.stat-item { text-align: center; }
-.stat-n {
-  font-family: var(--serif);
-  font-size: 30px;
-  color: #fff;
-  display: block;
-  letter-spacing: -0.02em;
-}
-.stat-n span { color: var(--accent); }
-.stat-l {
-  font-size: 11px;
-  color: rgba(255,255,255,0.65);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  margin-top: 3px;
-  display: block;
-  max-width: 160px;
-}
+/* HOW IT WORKS */
+.how-section{padding:88px 5vw;background:var(--bg);border-top:1px solid var(--rule);}
+.how-inner{max-width:1100px;margin:0 auto;}
+.section-label{font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent);margin-bottom:12px;}
+.section-h2{font-family:var(--serif);font-size:clamp(28px,4vw,48px);line-height:1.1;letter-spacing:-0.02em;color:var(--ink);margin-bottom:44px;}
+.section-h2 em{font-style:italic;color:var(--ink-3);}
+.how-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;}
+@media(max-width:800px){.how-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:480px){.how-grid{grid-template-columns:1fr;}}
+.how-cell{background:var(--surface);padding:28px 22px;display:flex;flex-direction:column;gap:10px;}
+.how-num{font-family:var(--serif);font-size:13px;font-style:italic;color:var(--accent);}
+.how-icon{width:38px;height:38px;background:var(--accent-ghost);border-radius:8px;display:flex;align-items:center;justify-content:center;}
+.how-icon svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+.how-title{font-size:14px;font-weight:500;color:var(--ink);line-height:1.3;}
+.how-desc{font-size:12px;line-height:1.6;color:var(--ink-3);font-weight:300;}
 
-/* ── SHARED SECTION STRUCTURE ── */
-.section { padding: 96px 5vw; }
-.section-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 16px;
-}
-.section-h2 {
-  font-family: var(--serif);
-  font-size: clamp(32px, 4.5vw, 54px);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-  max-width: 680px;
-}
-.section-h2 em { font-style: italic; color: var(--ink-3); }
-.section-body {
-  font-size: 17px;
-  line-height: 1.7;
-  color: var(--ink-3);
-  max-width: 540px;
-  margin-top: 16px;
-  font-weight: 300;
-}
+/* ICP STRIP */
+.icp-strip{background:var(--space-1);padding:24px 5vw;border-top:1px solid var(--space-3);text-align:center;}
+.icp-strip p{font-size:14px;color:rgba(255,255,255,0.72);line-height:1.7;max-width:700px;margin:0 auto;font-weight:300;}
+.icp-strip strong{color:#fff;font-weight:500;}
 
-/* ── PAIN SECTION ── */
-#pain {
-  background: var(--bg);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-}
-.pain-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 72px;
-  align-items: start;
-  max-width: 1160px;
-  margin: 0 auto;
-}
-@media (max-width: 800px) {
-  .pain-layout { grid-template-columns: 1fr; gap: 44px; }
-}
-.pain-lines { margin-top: 44px; }
-.pain-line {
-  display: grid;
-  grid-template-columns: 32px 1fr;
-  gap: 16px;
-  padding: 20px 0;
-  border-bottom: 1px solid var(--rule);
-}
-.pain-line:first-child { border-top: 1px solid var(--rule); }
-.pain-num {
-  font-family: var(--serif);
-  font-size: 12px;
-  font-style: italic;
-  color: var(--accent);
-  padding-top: 2px;
-}
-.pain-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
-  margin-bottom: 4px;
-}
-.pain-desc {
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--ink-3);
-  font-weight: 300;
-}
-.pain-callout {
-  background: var(--space-1);
-  border-radius: 14px;
-  padding: 40px;
-  position: sticky;
-  top: 80px;
-  border: 1px solid var(--space-3);
-}
-.pain-release {
-  margin-top: 12px;
-  font-weight: 400;
-  color: var(--ink-2);
-}
-.callout-quote {
-  font-family: var(--serif);
-  font-size: clamp(21px, 2.8vw, 30px);
-  line-height: 1.35;
-  color: #fff;
-  margin-bottom: 28px;
-}
-.callout-quote em { font-style: italic; color: var(--accent-hover); }
-.callout-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 28px;
-}
-.callout-stat {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 8px;
-  padding: 16px;
-}
-.callout-stat-n {
-  font-family: var(--serif);
-  font-size: 34px;
-  color: #fff;
-  display: block;
-  letter-spacing: -0.02em;
-}
-.callout-stat-n span { color: var(--accent); }
-.callout-stat-l {
-  font-size: 11px;
-  color: rgba(255,255,255,0.6);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-top: 2px;
-}
-.callout-meta {
-  font-size: 11px;
-  color: rgba(255,255,255,0.55);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  padding-top: 20px;
-}
+/* MORNING BRIEF */
+.brief-section{background:var(--space-1);padding:88px 5vw;border-top:1px solid var(--space-3);}
+.brief-inner{max-width:1060px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center;}
+@media(max-width:800px){.brief-inner{grid-template-columns:1fr;gap:40px;}}
+.brief-label{font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent);margin-bottom:14px;}
+.brief-h2{font-family:var(--serif);font-size:clamp(26px,3.5vw,42px);line-height:1.12;color:#fff;letter-spacing:-0.02em;margin-bottom:16px;}
+.brief-h2 em{font-style:italic;color:var(--accent-hover);}
+.brief-body{font-size:15px;line-height:1.75;color:rgba(255,255,255,0.72);font-weight:300;}
+.brief-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);border-radius:14px;padding:24px;overflow:hidden;}
+.brief-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);}
+.brief-greeting{font-family:var(--serif);font-size:16px;color:#fff;}
+.brief-date{font-size:11px;color:rgba(255,255,255,0.55);letter-spacing:0.04em;}
+.brief-row{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border-radius:8px;margin-bottom:7px;}
+.brief-row:last-child{margin-bottom:0;}
+.brief-row.alert{background:rgba(255,107,43,0.10);border:1px solid rgba(255,107,43,0.20);}
+.brief-row.ok{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);}
+.brief-dot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex-shrink:0;}
+.brief-row.alert .brief-dot{background:var(--accent);}
+.brief-row.ok .brief-dot{background:#4CAF7A;}
+.brief-row-title{font-size:12px;font-weight:500;margin-bottom:2px;}
+.brief-row.alert .brief-row-title{color:var(--accent-hover);}
+.brief-row.ok .brief-row-title{color:rgba(255,255,255,0.88);}
+.brief-row-sub{font-size:11px;color:rgba(255,255,255,0.62);font-weight:300;line-height:1.4;}
+.brief-footer{margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:11px;color:rgba(255,255,255,0.52);letter-spacing:0.05em;font-style:italic;font-family:var(--serif);}
 
-/* ── TRANSFORMATION ── */
-.transformation-section {
-  padding: 96px 5vw;
-  background: var(--bg-2);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-}
-.transformation-inner {
-  max-width: 1160px;
-  margin: 0 auto;
-}
-.transformation-header {
-  max-width: 560px;
-  margin-bottom: 56px;
-}
-.transform-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.transform-row {
-  display: grid;
-  grid-template-columns: 140px 1fr 24px 1fr;
-  gap: 0 20px;
-  align-items: center;
-  padding: 20px 0;
-  border-bottom: 1px solid var(--rule);
-}
-.transform-row:first-child { border-top: 1px solid var(--rule); }
-@media (max-width: 720px) {
-  .transform-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  .transform-arrow { display: none; }
-}
-.transform-module {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-.transform-before {
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--ink-3);
-  font-weight: 300;
-  padding-right: 8px;
-}
-.transform-arrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-  font-size: 16px;
-  opacity: 0.6;
-}
-.transform-after {
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--ink);
-  font-weight: 400;
-}
+/* PRICING */
+.pricing-section{padding:88px 5vw;background:var(--bg);border-top:1px solid var(--rule);}
+.pricing-inner{max-width:1100px;margin:0 auto;}
+.pricing-header{max-width:480px;margin-bottom:44px;}
+.pricing-header p{font-size:15px;line-height:1.65;color:var(--ink-3);margin-top:10px;font-weight:300;}
+.pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:start;}
+@media(max-width:960px){.pricing-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:520px){.pricing-grid{grid-template-columns:1fr;}}
+.pricing-card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:22px;position:relative;}
+.pricing-card.featured{border-color:var(--accent-border);background:var(--accent-ghost);}
+.pricing-badge{display:inline-block;font-size:10px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent);background:#fff;border:1px solid var(--accent-border);border-radius:100px;padding:3px 10px;margin-bottom:10px;}
+.pricing-tier{font-size:11px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px;}
+.pricing-card.featured .pricing-tier{color:var(--accent);}
+.pricing-price{font-family:var(--serif);font-size:34px;color:var(--ink);letter-spacing:-0.02em;line-height:1;margin-bottom:10px;}
+.pricing-price span{font-size:13px;color:var(--ink-3);font-family:var(--sans);letter-spacing:0;}
+.pricing-desc{font-size:12px;line-height:1.55;color:var(--ink-3);font-weight:300;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--rule);}
+.pricing-features{list-style:none;display:flex;flex-direction:column;gap:6px;}
+.pricing-features li{font-size:12px;color:var(--ink-2);font-weight:300;line-height:1.4;padding-left:13px;position:relative;}
+.pricing-features li::before{content:'';position:absolute;left:0;top:6px;width:4px;height:4px;background:var(--accent);border-radius:50%;opacity:0.55;}
+.pricing-footer{max-width:560px;margin:28px auto 0;text-align:center;}
+.pricing-footnote{font-size:13px;color:var(--ink-3);font-weight:300;margin-bottom:7px;}
+.pricing-roi{font-size:14px;color:var(--ink-2);font-weight:400;font-style:italic;font-family:var(--serif);}
 
-/* ── HOW IT WORKS (4-step) ── */
-.howitworks-section {
-  padding: 96px 5vw;
-  background: var(--bg);
-  border-bottom: 1px solid var(--rule);
-}
-.howitworks-inner {
-  max-width: 1160px;
-  margin: 0 auto;
-}
-.howitworks-header {
-  max-width: 600px;
-  margin-bottom: 56px;
-}
-.steps-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1px;
-  background: var(--rule);
-  border: 1px solid var(--rule);
-  border-radius: 12px;
-  overflow: hidden;
-}
-@media (max-width: 840px) {
-  .steps-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 480px) {
-  .steps-grid { grid-template-columns: 1fr; }
-}
-.step-cell {
-  background: var(--surface);
-  padding: 28px 24px;
-}
-.step-num {
-  font-family: var(--serif);
-  font-size: 13px;
-  font-style: italic;
-  color: var(--accent);
-  margin-bottom: 14px;
-}
-.step-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
-  margin-bottom: 8px;
-  line-height: 1.3;
-}
-.step-desc {
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--ink-3);
-  font-weight: 300;
-}
+/* WAITLIST */
+.waitlist-section{background:var(--space-1);padding:88px 5vw;border-top:1px solid var(--space-3);}
+.waitlist-inner{max-width:560px;margin:0 auto;text-align:center;}
+.waitlist-h2{font-family:var(--serif);font-size:clamp(30px,4.5vw,52px);color:#fff;letter-spacing:-0.02em;line-height:1.1;margin-bottom:10px;}
+.waitlist-h2 em{font-style:italic;color:var(--accent-hover);}
+.waitlist-sub{font-size:15px;color:rgba(255,255,255,0.68);font-weight:300;margin-bottom:32px;line-height:1.65;}
+.tier-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:24px;text-align:left;}
+@media(max-width:560px){.tier-row{grid-template-columns:1fr;}}
+.tier-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:14px;}
+.tier-card.featured{background:rgba(255,107,43,0.08);border-color:rgba(255,107,43,0.28);}
+.tier-name{font-size:10px;font-weight:500;letter-spacing:0.09em;text-transform:uppercase;color:rgba(255,255,255,0.58);margin-bottom:5px;}
+.tier-card.featured .tier-name{color:var(--accent-hover);}
+.tier-spots{font-family:var(--serif);font-size:20px;color:#fff;letter-spacing:-0.01em;margin-bottom:4px;}
+.tier-perk{font-size:11px;color:rgba(255,255,255,0.62);font-weight:300;line-height:1.5;}
+.wl-form{display:flex;flex-direction:column;gap:9px;}
+.wl-form input{width:100%;padding:13px 16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);border-radius:8px;color:#fff;font-size:15px;font-family:var(--sans);outline:none;transition:border-color 0.15s;}
+.wl-form input::placeholder{color:rgba(255,255,255,0.30);}
+.wl-form input:focus{border-color:rgba(255,107,43,0.55);}
+.wl-form button{width:100%;padding:15px;background:var(--accent);color:#fff;font-size:15px;font-weight:500;font-family:var(--sans);border:none;border-radius:8px;cursor:pointer;transition:background 0.15s,transform 0.15s;}
+.wl-form button:hover{background:var(--accent-hover);transform:translateY(-1px);}
+#wl-success{display:none;background:rgba(255,107,43,0.10);border:1px solid rgba(255,107,43,0.28);border-radius:8px;padding:22px;color:var(--accent-hover);font-size:15px;line-height:1.6;}
+.wl-progress{margin-top:18px;}
+.wl-progress-labels{display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.55);margin-bottom:7px;}
+.wl-track{height:3px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;}
+.wl-fill{height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width 1.2s cubic-bezier(.16,1,.3,1);}
+.wl-fine{margin-top:12px;font-size:12px;color:rgba(255,255,255,0.48);}
 
-/* ── MODULES ── */
-#modules {
-  background: var(--bg-2);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-}
-.modules-intro { max-width: 1160px; margin: 0 auto 56px; }
-.modules-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  max-width: 1160px;
-  margin: 0 auto;
-}
-@media (max-width: 960px) { .modules-grid { grid-template-columns: repeat(2,1fr); } }
-@media (max-width: 520px) { .modules-grid { grid-template-columns: 1fr; } }
-.module-card {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 10px;
-  padding: 22px;
-  transition: border-color 0.2s, transform 0.2s;
-}
-.module-card:hover {
-  border-color: var(--accent-border);
-  transform: translateY(-2px);
-}
-.module-icon {
-  width: 34px; height: 34px;
-  background: var(--accent-ghost);
-  border-radius: 7px;
-  display: flex; align-items: center; justify-content: center;
-  margin-bottom: 14px;
-}
-.module-icon svg {
-  width: 17px; height: 17px;
-  stroke: var(--accent);
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.module-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink);
-  margin-bottom: 5px;
-}
-.module-replaces {
-  font-size: 10px;
-  color: var(--ink-4);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--rule);
-}
-.module-desc {
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--ink-3);
-  font-weight: 300;
-}
+/* FOOTER CTA */
+.footer-cta{background:var(--bg-2);padding:72px 5vw;border-top:1px solid var(--rule);text-align:center;}
+.footer-cta-inner{max-width:540px;margin:0 auto;}
+.footer-cta-h2{font-family:var(--serif);font-size:clamp(22px,3.5vw,36px);color:var(--ink);letter-spacing:-0.02em;line-height:1.15;margin-bottom:14px;}
+.footer-cta-sub{font-size:15px;color:var(--ink-3);font-weight:300;line-height:1.65;margin-bottom:26px;}
 
-/* ── THESIS ── */
-#thesis {
-  background: var(--bg);
-  padding: 88px 5vw;
-}
-.thesis-inner {
-  max-width: 800px;
-  margin: 0 auto;
-  text-align: center;
-}
-.thesis-text {
-  font-family: var(--serif);
-  font-size: clamp(24px, 3.5vw, 42px);
-  line-height: 1.3;
-  color: var(--ink);
-  letter-spacing: -0.015em;
-}
-.thesis-text em { font-style: italic; color: var(--accent); }
-.thesis-sub {
-  font-size: 16px;
-  line-height: 1.75;
-  color: var(--ink-3);
-  max-width: 560px;
-  margin: 24px auto 0;
-  font-weight: 300;
-}
+/* FOOTER */
+footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255,0.05);}
+.footer-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+.footer-logo{display:flex;align-items:center;text-decoration:none;}
+.footer-tagline{font-size:12px;color:rgba(255,255,255,0.45);font-style:italic;font-family:var(--serif);}
+.footer-copy{font-size:12px;color:rgba(255,255,255,0.38);}
 
-/* ── ICP QUALIFIER ── */
-.icp-strip {
-  background: var(--bg-2);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  padding: 20px 5vw;
-  text-align: center;
-}
-.icp-strip p {
-  font-size: 13px;
-  color: var(--ink-3);
-  line-height: 1.6;
-  max-width: 680px;
-  margin: 0 auto;
-  font-weight: 300;
-}
-.icp-strip strong {
-  color: var(--ink-2);
-  font-weight: 500;
-}
-
-/* ── MORNING BRIEF FEATURE ── */
-.brief-section {
-  background: var(--space-1);
-  padding: 88px 5vw;
-  border-top: 1px solid var(--space-3);
-}
-.brief-inner {
-  max-width: 1060px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 72px;
-  align-items: center;
-}
-@media (max-width: 800px) {
-  .brief-inner { grid-template-columns: 1fr; gap: 44px; }
-}
-.brief-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 16px;
-}
-.brief-h2 {
-  font-family: var(--serif);
-  font-size: clamp(28px, 4vw, 44px);
-  line-height: 1.12;
-  color: #fff;
-  letter-spacing: -0.02em;
-  margin-bottom: 20px;
-}
-.brief-h2 em { font-style: italic; color: var(--accent-hover); }
-.brief-body {
-  font-size: 16px;
-  line-height: 1.75;
-  color: rgba(255,255,255,0.72);
-  font-weight: 300;
-  margin-bottom: 28px;
-}
-.brief-proofpoints {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.brief-proofpoints li {
-  font-size: 13px;
-  color: rgba(255,255,255,0.78);
-  font-weight: 300;
-  padding-left: 16px;
-  position: relative;
-  line-height: 1.55;
-}
-.brief-proofpoints li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 7px;
-  width: 5px;
-  height: 5px;
-  background: var(--accent);
-  border-radius: 50%;
-}
-.brief-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 14px;
-  padding: 28px;
-  overflow: hidden;
-}
-.brief-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-}
-.brief-card-title {
-  font-family: var(--serif);
-  font-size: 17px;
-  color: #fff;
-}
-.brief-card-date {
-  font-size: 11px;
-  color: rgba(255,255,255,0.55);
-  letter-spacing: 0.05em;
-}
-.brief-alert {
-  background: rgba(255,107,43,0.1);
-  border: 1px solid rgba(255,107,43,0.2);
-  border-radius: 8px;
-  padding: 12px 14px;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.brief-alert-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  margin-top: 4px;
-  flex-shrink: 0;
-}
-.brief-alert-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--accent-hover);
-  margin-bottom: 2px;
-}
-.brief-alert-val {
-  font-size: 11px;
-  color: rgba(255,255,255,0.65);
-  font-weight: 300;
-}
-.brief-safe {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 8px;
-  padding: 12px 14px;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.brief-safe-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #4CAF7A;
-  margin-top: 4px;
-  flex-shrink: 0;
-}
-.brief-safe-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.88);
-  margin-bottom: 2px;
-}
-.brief-safe-val {
-  font-size: 11px;
-  color: rgba(255,255,255,0.62);
-  font-weight: 300;
-}
-.brief-card-footer {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  font-size: 11px;
-  color: rgba(255,255,255,0.52);
-  letter-spacing: 0.06em;
-  font-style: italic;
-  font-family: var(--serif);
-}
-
-/* ── FOUNDER STORY ── */
-#story {
-  background: var(--bg);
-  padding: 88px 5vw;
-  border-top: 1px solid var(--rule);
-}
-.story-inner {
-  max-width: 760px;
-  margin: 0 auto;
-}
-.story-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 20px;
-}
-.story-h2 {
-  font-family: var(--serif);
-  font-size: clamp(28px, 4vw, 44px);
-  line-height: 1.15;
-  color: var(--ink);
-  letter-spacing: -0.02em;
-  margin-bottom: 28px;
-}
-.story-h2 em { font-style: italic; color: var(--accent); }
-.story-body {
-  font-size: 16px;
-  line-height: 1.8;
-  color: var(--ink-3);
-  font-weight: 300;
-  margin-bottom: 16px;
-}
-.story-body strong {
-  color: var(--ink-2);
-  font-weight: 500;
-}
-.story-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 28px;
-  padding: 13px 24px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: var(--sans);
-  border-radius: 8px;
-  text-decoration: none;
-  transition: background 0.15s;
-}
-.story-cta:hover { background: var(--accent-hover); }
-
-/* ── PRICING ── */
-.pricing-section {
-  padding: 96px 5vw;
-  background: var(--bg);
-  border-top: 1px solid var(--rule);
-}
-.pricing-inner { max-width: 1160px; margin: 0 auto; }
-.pricing-header { max-width: 560px; margin-bottom: 56px; }
-.pricing-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  align-items: start;
-}
-@media (max-width: 960px) { .pricing-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 520px) { .pricing-grid { grid-template-columns: 1fr; } }
-.pricing-card {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 12px;
-  padding: 24px;
-  position: relative;
-}
-.pricing-featured {
-  border-color: var(--accent-border);
-  background: var(--accent-ghost);
-}
-.pricing-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: #fff;
-  border: 1px solid var(--accent-border);
-  border-radius: 100px;
-  padding: 3px 10px;
-  margin-bottom: 12px;
-}
-.pricing-tier {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 8px;
-}
-.pricing-featured .pricing-tier { color: var(--accent); }
-.pricing-price {
-  font-family: var(--serif);
-  font-size: 36px;
-  color: var(--ink);
-  letter-spacing: -0.02em;
-  margin-bottom: 12px;
-  line-height: 1;
-}
-.pricing-price span {
-  font-size: 14px;
-  color: var(--ink-3);
-  font-family: var(--sans);
-  letter-spacing: 0;
-}
-.pricing-desc {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--ink-3);
-  font-weight: 300;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--rule);
-}
-.pricing-features {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.pricing-features li {
-  font-size: 12px;
-  color: var(--ink-2);
-  font-weight: 300;
-  line-height: 1.4;
-  padding-left: 14px;
-  position: relative;
-}
-.pricing-features li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 6px;
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  border-radius: 50%;
-  opacity: 0.6;
-}
-.pricing-footnote {
-  font-size: 13px;
-  color: var(--ink-3);
-  text-align: center;
-  margin-top: 32px;
-  font-weight: 300;
-}
-.pricing-roi {
-  font-size: 13px;
-  color: var(--ink-2);
-  text-align: center;
-  margin-top: 10px;
-  font-weight: 400;
-  font-style: italic;
-  font-family: var(--serif);
-}
-
-/* ── WAITLIST ── */
-#waitlist {
-  background: var(--space-1);
-  padding: 96px 5vw;
-  border-top: 1px solid var(--space-3);
-}
-.waitlist-inner {
-  max-width: 660px;
-  margin: 0 auto;
-  text-align: center;
-}
-.waitlist-h2 {
-  font-family: var(--serif);
-  font-size: clamp(32px, 5vw, 56px);
-  color: #fff;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  margin-bottom: 12px;
-}
-.waitlist-h2 em { font-style: italic; color: var(--accent-hover); }
-.waitlist-sub {
-  font-size: 16px;
-  color: rgba(255,255,255,0.68);
-  font-weight: 300;
-  margin-bottom: 36px;
-  line-height: 1.65;
-}
-.tier-row {
-  display: grid;
-  grid-template-columns: repeat(3,1fr);
-  gap: 8px;
-  margin-bottom: 32px;
-  text-align: left;
-}
-@media (max-width: 600px) { .tier-row { grid-template-columns: 1fr; } }
-.tier-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 8px;
-  padding: 16px;
-}
-.tier-card.featured {
-  background: rgba(255,107,43,0.08);
-  border-color: rgba(255,107,43,0.28);
-}
-.tier-name {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.58);
-  margin-bottom: 6px;
-}
-.tier-card.featured .tier-name { color: var(--accent-hover); }
-.tier-spots {
-  font-family: var(--serif);
-  font-size: 22px;
-  color: #fff;
-  letter-spacing: -0.01em;
-  margin-bottom: 5px;
-}
-.tier-perk {
-  font-size: 12px;
-  color: rgba(255,255,255,0.62);
-  font-weight: 300;
-  line-height: 1.55;
-}
-.wl-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.wl-form input {
-  width: 100%;
-  padding: 14px 18px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 15px;
-  font-family: var(--sans);
-  outline: none;
-  transition: border-color 0.15s;
-}
-.wl-form input::placeholder { color: rgba(255,255,255,0.28); }
-.wl-form input:focus { border-color: rgba(255,107,43,0.55); }
-.wl-form button {
-  width: 100%;
-  padding: 16px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 500;
-  font-family: var(--sans);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s, transform 0.15s;
-  letter-spacing: 0.01em;
-}
-.wl-form button:hover { background: var(--accent-hover); transform: translateY(-1px); }
-.wl-progress { margin-top: 20px; }
-.wl-progress-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: rgba(255,255,255,0.55);
-  margin-bottom: 8px;
-}
-.wl-track {
-  height: 3px;
-  background: rgba(255,255,255,0.07);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.wl-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
-  width: 0%;
-  transition: width 1.2s cubic-bezier(.16,1,.3,1);
-}
-.wl-fine {
-  margin-top: 14px;
-  font-size: 12px;
-  color: rgba(255,255,255,0.48);
-}
-#wl-success {
-  display: none;
-  background: rgba(255,107,43,0.1);
-  border: 1px solid rgba(255,107,43,0.28);
-  border-radius: 8px;
-  padding: 24px;
-  color: var(--accent-hover);
-  font-size: 15px;
-  line-height: 1.6;
-}
-
-/* ── FOOTER ── */
-footer {
-  background: #080A0F;
-  padding: 36px 5vw;
-  border-top: 1px solid rgba(255,255,255,0.05);
-}
-.footer-inner {
-  max-width: 1160px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.footer-logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-decoration: none;
-}
-.footer-wordmark {
-  font-family: var(--serif);
-  font-size: 18px;
-  color: rgba(255,255,255,0.5);
-}
-.footer-tagline {
-  font-size: 12px;
-  color: rgba(255,255,255,0.45);
-  font-style: italic;
-  font-family: var(--serif);
-}
-.footer-copy { font-size: 12px; color: rgba(255,255,255,0.38); }
-/* ── FOOTER CTA ── */
-.footer-cta {
-  background: var(--space-1);
-  padding: 80px 5vw;
-  border-top: 1px solid var(--space-3);
-  text-align: center;
-}
-.footer-cta-inner { max-width: 600px; margin: 0 auto; }
-.footer-cta-h2 {
-  font-family: var(--serif);
-  font-size: clamp(26px, 4vw, 42px);
-  color: #fff;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  margin-bottom: 16px;
-}
-.footer-cta-sub {
-  font-size: 16px;
-  color: rgba(255,255,255,0.68);
-  font-weight: 300;
-  line-height: 1.65;
-  margin-bottom: 32px;
-}
-
-/* ── SCROLL REVEAL ── */
-.reveal {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.65s ease, transform 0.65s ease;
-}
-.reveal.in { opacity: 1; transform: translateY(0); }
+/* REVEAL */
+.reveal{opacity:0;transform:translateY(18px);transition:opacity 0.6s ease,transform 0.6s ease;}
+.reveal.in{opacity:1;transform:translateY(0);}
 </style>
 </head>
 <body>
 
-<!-- ── NAV ── -->
+<!-- NAV -->
 <nav>
   <a href="#" class="nav-logo" aria-label="LaSyncro home">
-    <img src="White_text_no_bg.png" alt="LaSyncro" height="28" style="display:block;">
+    <img src="Dark_text_no_bg.png" alt="LaSyncro" height="28" style="display:block;">
   </a>
-  <a href="#waitlist" class="nav-cta" onclick="posthog.capture('clicked_waitlist',{location:'header'})">
-    Get early access
-  </a>
+  <a href="#waitlist" class="nav-cta" onclick="posthog.capture('clicked_waitlist',{location:'header'})">Get early access</a>
 </nav>
 
-<!-- ── HERO ── -->
+<!-- HERO -->
 <section class="hero">
   <div class="hero-grid" aria-hidden="true"></div>
   <div class="hero-glow" aria-hidden="true"></div>
@@ -1260,23 +216,16 @@ footer {
       <span class="eyebrow-dot" aria-hidden="true"></span>
       Built for Shopify merchants who run their own warehouse
     </div>
-    <h1 class="hero-h1">
-      Your operation,<br><em>finally synced up.</em>
-    </h1>
-    <p class="hero-sub">
-      LaSyncro connects every row of your business — orders, inventory, suppliers, warehouse, and workforce — into one real-time picture you can actually act on.
-    </p>
+    <h1 class="hero-h1">Your operation,<br><em>finally synced up.</em></h1>
+    <p class="hero-sub">Orders, inventory, suppliers, warehouse, workforce — one real-time picture you can act on.</p>
     <div class="hero-actions">
       <a href="#waitlist" class="btn-primary" onclick="posthog.capture('clicked_waitlist',{location:'hero'})">
         Start free — 14-day Growth trial included
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
-      <a href="#pain" class="btn-secondary">See how it works</a>
     </div>
     <p class="hero-trust">No credit card<span>·</span>Connects to Shopify in 60 seconds<span>·</span>Cancel anytime</p>
-    <div class="hero-proof" aria-label="Social proof">
+    <div class="hero-proof">
       <div class="proof-avatars" aria-hidden="true">
         <div class="proof-avatar av1">MK</div>
         <div class="proof-avatar av2">SR</div>
@@ -1289,33 +238,33 @@ footer {
   </div>
 </section>
 
-<!-- ── BEFORE/AFTER STRIP ── -->
-<section class="ba-strip">
+<!-- BEFORE / AFTER -->
+<section class="ba-section reveal">
   <div class="ba-inner">
-    <div class="ba-pair">
+    <div class="ba-row">
       <div class="ba-before">Finding out a SKU stocked out from an angry customer email</div>
-      <div class="ba-arrow" aria-hidden="true">→</div>
+      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
       <div class="ba-after">Stock-out risk surfaced 4 days before the customer notices</div>
     </div>
-    <div class="ba-pair">
+    <div class="ba-row">
       <div class="ba-before">POs negotiated over WhatsApp, confirmed over email, tracked on a spreadsheet</div>
-      <div class="ba-arrow" aria-hidden="true">→</div>
+      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
       <div class="ba-after">One structured PO. Scan to receive. Inventory updates automatically.</div>
     </div>
-    <div class="ba-pair">
+    <div class="ba-row">
       <div class="ba-before">Supplier always "on their way" — no data on who's actually reliable</div>
-      <div class="ba-arrow" aria-hidden="true">→</div>
+      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
       <div class="ba-after">On-time rate, fill rate, defect rate — built from every delivery, automatically</div>
     </div>
-    <div class="ba-pair">
-      <div class="ba-before">Operator asking which shelf to use because the location spreadsheet is from February</div>
-      <div class="ba-arrow" aria-hidden="true">→</div>
+    <div class="ba-row">
+      <div class="ba-before">Operator asking which shelf because the location spreadsheet is from February</div>
+      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
       <div class="ba-after">Barcoded locations. Scan to stow. Every movement tracked.</div>
     </div>
   </div>
 </section>
 
-<!-- ── STAT BAR ── -->
+<!-- STAT BAR -->
 <div class="stat-bar" role="region" aria-label="Key statistics">
   <div class="stat-item">
     <span class="stat-n">73<span>%</span></span>
@@ -1335,346 +284,114 @@ footer {
   </div>
 </div>
 
-<!-- ── PAIN ── -->
-<section id="pain" class="section reveal">
-  <div class="pain-layout">
-    <div>
-      <div class="section-label">Sound familiar?</div>
-      <h2 class="section-h2">This is not a failure of effort.<br><em>It's a failure of infrastructure.</em></h2>
-      <p class="section-body pain-narrative">
-        It's 8am. Three customer emails about delayed orders sit unanswered. A supplier is waiting on a PO confirmation that was agreed over WhatsApp three weeks ago and nobody can find the thread. Your warehouse operator is asking which shelf the new stock goes on because the location spreadsheet was last updated in February.
-      </p>
-      <p class="section-body pain-release">
-        This is not a failure of effort. SMB operators work extraordinarily hard. This is a failure of infrastructure. LaSyncro exists to end this.
-      </p>
-      <div class="pain-lines">
-        <div class="pain-line">
-          <span class="pain-num">01</span>
-          <div>
-            <div class="pain-title">You find out a SKU stocked out from an angry customer email</div>
-            <div class="pain-desc">By the time you know, the sale is lost, the customer is unhappy, and the reorder is already late. The signal was in your data all along — you just couldn't see it.</div>
-          </div>
+<!-- HOW IT WORKS -->
+<section class="how-section reveal">
+  <div class="how-inner">
+    <div class="section-label">How it works</div>
+    <h2 class="section-h2">Connect once.<br><em>Everything follows.</em></h2>
+    <div class="how-grid">
+      <div class="how-cell">
+        <div class="how-num">01</div>
+        <div class="how-icon">
+          <svg viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
         </div>
-        <div class="pain-line">
-          <span class="pain-num">02</span>
-          <div>
-            <div class="pain-title">POs negotiated on WhatsApp, tracked on a spreadsheet</div>
-            <div class="pain-desc">There's a PO thread from three weeks ago that nobody can find. The supplier says it's on its way. You have no idea what was agreed, when it's due, or how many units are outstanding.</div>
-          </div>
-        </div>
-        <div class="pain-line">
-          <span class="pain-num">03</span>
-          <div>
-            <div class="pain-title">Your operator is asking something they shouldn't need to ask</div>
-            <div class="pain-desc">Which shelf does the new stock go on? The location doc was last updated in February. You spend ten minutes finding an answer that should already be in a system.</div>
-          </div>
-        </div>
-        <div class="pain-line">
-          <span class="pain-num">04</span>
-          <div>
-            <div class="pain-title">You have no idea which supplier is actually reliable</div>
-            <div class="pain-desc">Your supplier says "on their way" every time. You've never had the data to push back — no on-time rate, no fill rate, no objective measure of anything.</div>
-          </div>
-        </div>
-        <div class="pain-line">
-          <span class="pain-num">05</span>
-          <div>
-            <div class="pain-title">The spreadsheet is always wrong by the time someone updates it</div>
-            <div class="pain-desc">You have the master spreadsheet. Probably several. Nobody fully trusts them — but you can't run the business without them either.</div>
-          </div>
-        </div>
+        <div class="how-title">Connect Shopify in 60 seconds</div>
+        <div class="how-desc">OAuth once. Orders, products, and inventory history load automatically — no CSV imports, no setup calls.</div>
       </div>
-    </div>
-
-    <div>
-      <div class="pain-callout">
-        <div class="callout-quote">
-          "I wasn't running my store. I was just trying to figure out <em>what was happening</em> in it."
+      <div class="how-cell">
+        <div class="how-num">02</div>
+        <div class="how-icon">
+          <svg viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
         </div>
-        <div class="callout-stats">
-          <div class="callout-stat">
-            <span class="callout-stat-n">2<span>.</span>5h</span>
-            <div class="callout-stat-l">per day</div>
-          </div>
-          <div class="callout-stat">
-            <span class="callout-stat-n">912h</span>
-            <div class="callout-stat-l">per year</div>
-          </div>
+        <div class="how-title">See what was already in your data</div>
+        <div class="how-desc">Stock-out risks, held orders, supplier issues — visible within minutes. The intelligence was always there.</div>
+      </div>
+      <div class="how-cell">
+        <div class="how-num">03</div>
+        <div class="how-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
         </div>
-        <div class="callout-meta">Shopify store owner · own warehouse · doing it all themselves</div>
+        <div class="how-title">Your team works from their phones</div>
+        <div class="how-desc">Scan to pick, pack, and receive stock. Every scan updates inventory and routes stow tasks — no clipboards, no WhatsApp.</div>
+      </div>
+      <div class="how-cell">
+        <div class="how-num">04</div>
+        <div class="how-icon">
+          <svg viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        </div>
+        <div class="how-title">Know before it breaks</div>
+        <div class="how-desc">Your Morning Brief lands before you open Shopify — stock risks, arriving POs, and alerts ranked by commercial consequence.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ── TRANSFORMATION ── -->
-<section class="transformation-section reveal">
-  <div class="transformation-inner">
-    <div class="transformation-header">
-      <div class="section-label">What LaSyncro changes</div>
-      <h2 class="section-h2">Before and after,<br><em>in plain terms.</em></h2>
-    </div>
-    <div class="transform-grid">
-      <div class="transform-row">
-        <div class="transform-module">Purchase orders</div>
-        <div class="transform-before">Finding out a SKU stocked out from an angry customer email</div>
-        <div class="transform-arrow">→</div>
-        <div class="transform-after">Stock-out risk surfaced 4 days before the customer notices</div>
-      </div>
-      <div class="transform-row">
-        <div class="transform-module">Warehouse</div>
-        <div class="transform-before">Operator asking which shelf to use because the location doc is from February</div>
-        <div class="transform-arrow">→</div>
-        <div class="transform-after">Barcoded locations — scan to stow — every movement tracked</div>
-      </div>
-      <div class="transform-row">
-        <div class="transform-module">Suppliers</div>
-        <div class="transform-before">Supplier always "on their way" — no data on who's actually reliable</div>
-        <div class="transform-arrow">→</div>
-        <div class="transform-after">On-time rate, fill rate, defect rate — built from every delivery, automatically</div>
-      </div>
-      <div class="transform-row">
-        <div class="transform-module">Demand</div>
-        <div class="transform-before">Running margin calculations with last month's data in Excel</div>
-        <div class="transform-arrow">→</div>
-        <div class="transform-after">Real-time stock velocity per SKU — restock risk surfaced before the stockout</div>
-      </div>
-      <div class="transform-row">
-        <div class="transform-module">Intelligence</div>
-        <div class="transform-before">Finding out what's happening by asking someone</div>
-        <div class="transform-arrow">→</div>
-        <div class="transform-after">Your Morning Brief — what needs attention, before the day begins</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── HOW IT WORKS ── -->
-<section class="howitworks-section reveal">
-  <div class="howitworks-inner">
-    <div class="howitworks-header">
-      <div class="section-label">How it works</div>
-      <h2 class="section-h2">Where the work gets done —<br><em>not just tracked.</em></h2>
-      <p class="section-body">Connect your Shopify store once. LaSyncro reads your operation from your own data — no manual setup required to see value.</p>
-    </div>
-    <div class="steps-grid">
-      <div class="step-cell">
-        <div class="step-num">01</div>
-        <div class="step-title">Connect Shopify in 60 seconds</div>
-        <div class="step-desc">OAuth once. LaSyncro pulls your orders, products, and inventory history — no CSV imports, no manual setup.</div>
-      </div>
-      <div class="step-cell">
-        <div class="step-num">02</div>
-        <div class="step-title">Your operation loads automatically</div>
-        <div class="step-desc">Within 2–4 minutes, LaSyncro builds your fulfillment queue, calculates demand velocity, and composes your first Morning Brief.</div>
-      </div>
-      <div class="step-cell">
-        <div class="step-num">03</div>
-        <div class="step-title">See what was already in your data</div>
-        <div class="step-desc">Most merchants find their first stock-out risk signal within 4 minutes. That insight was always in your data — LaSyncro just surfaces it.</div>
-      </div>
-      <div class="step-cell">
-        <div class="step-num">04</div>
-        <div class="step-title">Your team works from their phones</div>
-        <div class="step-desc">Operators pick, pack, and receive stock by scanning barcodes. Every scan updates inventory, releases held orders, and routes stow tasks — automatically.</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── MODULES ── -->
-<section id="modules" class="section reveal">
-  <div class="modules-intro">
-    <div class="section-label">What LaSyncro does</div>
-    <h2 class="section-h2">Everything you need to see — and run —<br><em>in one place.</em></h2>
-    <p class="section-body">One system. Every row. Your operation, finally coherent.</p>
-  </div>
-  <div class="modules-grid">
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-      </div>
-      <div class="module-name">Purchase orders</div>
-      <div class="module-replaces">Replaces WhatsApp + spreadsheet PO tracking</div>
-      <div class="module-desc">Create a structured PO in 3 minutes. Scan to receive. Watch held orders auto-release the moment stock is confirmed.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-      </div>
-      <div class="module-name">Warehouse management</div>
-      <div class="module-replaces">Replaces the location spreadsheet</div>
-      <div class="module-desc">Barcoded locations. Operator task queues. Every movement tracked — received, stowed, picked, packed, shipped.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0"/></svg>
-      </div>
-      <div class="module-name">Supplier intelligence</div>
-      <div class="module-replaces">Replaces supplier guesswork</div>
-      <div class="module-desc">On-time rate, fill rate, defect rate — built automatically from every delivery. After 5 POs, you know which suppliers are costing you money.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
-      </div>
-      <div class="module-name">Demand signals</div>
-      <div class="module-replaces">Replaces reactive restocking</div>
-      <div class="module-desc">Actual sales velocity per SKU. Days-of-stock remaining. Restock risk ranked by commercial urgency — before customers feel the gap.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1"/></svg>
-      </div>
-      <div class="module-name">Cash flow projection</div>
-      <div class="module-replaces">Replaces the monthly accountant update</div>
-      <div class="module-desc">Real-time margin per order. COGS committed on every receive. Cash flow updated the moment stock lands — not at month end.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-      </div>
-      <div class="module-name">Morning Brief</div>
-      <div class="module-replaces">Replaces reactive firefighting</div>
-      <div class="module-desc">Every morning, before you open Shopify: stock risks, arriving POs, held orders, supplier alerts — prioritised by commercial consequence.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-      </div>
-      <div class="module-name">Returns tracking</div>
-      <div class="module-replaces">Replaces manual return logging</div>
-      <div class="module-desc">Track what's coming back and why. Spot patterns before they start eating into your margins — without building another spreadsheet.</div>
-    </div>
-
-    <div class="module-card">
-      <div class="module-icon">
-        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-      </div>
-      <div class="module-name">Your best customers</div>
-      <div class="module-replaces">Replaces LTV guesswork</div>
-      <div class="module-desc">See who your most valuable customers are — and get an early warning when a high-LTV customer has gone quiet.</div>
-    </div>
-
-  </div>
-</section>
-
-<!-- ── THESIS ── */-->
-<section id="thesis">
-  <div class="thesis-inner">
-    <p class="thesis-text">
-      Big businesses have whole teams watching their numbers. You have <em>spreadsheets and not enough hours.</em> LaSyncro fixes that.
-    </p>
-    <p class="thesis-sub">
-      Your Shopify store already has all the data. LaSyncro connects every row and shows you what matters — so you can spend your time running the operation, not figuring out what's happening in it.
-    </p>
-  </div>
-</section>
-
-<!-- ── ICP QUALIFIER ── -->
+<!-- ICP QUALIFIER -->
 <div class="icp-strip">
-  <p><strong>LaSyncro is built for Shopify merchants doing serious volume from their own warehouse</strong> — typically £500K to £10M+ in revenue, with high SKU complexity and a small warehouse team that needs to punch above its weight. If you're still running operations on spreadsheets, you're leaving money on the table every day.</p>
+  <p><strong>Built for Shopify merchants doing serious volume from their own warehouse</strong> — typically £500K to £10M+ in revenue, high SKU complexity, small team. If you're still running operations on spreadsheets, you're leaving money on the table every day.</p>
 </div>
 
-<!-- ── MORNING BRIEF ── -->
+<!-- MORNING BRIEF -->
 <section class="brief-section reveal">
   <div class="brief-inner">
     <div>
       <div class="brief-label">The Morning Brief</div>
       <h2 class="brief-h2">Know before<br><em>it breaks.</em></h2>
-      <p class="brief-body">Every morning, before you open Shopify, LaSyncro composes a prioritised snapshot of your operation — stock risks, arriving POs, held orders, supplier alerts, and workforce load. The day begins with clarity, not firefighting.</p>
-      <ul class="brief-proofpoints">
-        <li>Delivered by email or push notification before the day begins</li>
-        <li>Prioritised by commercial consequence — what costs you the most, first</li>
-        <li>Pulling from real-time data, not last night's export</li>
-        <li>The morning you skip the Brief is the morning something slips</li>
-      </ul>
+      <p class="brief-body">Every morning, before you open Shopify — stock risks, arriving POs, held orders, supplier alerts. Ranked by commercial consequence. The day begins with clarity, not firefighting.</p>
     </div>
     <div>
-      <div class="brief-card" aria-label="Morning Brief preview">
+      <div class="brief-card">
         <div class="brief-card-header">
-          <div class="brief-card-title">Good morning, Jamie.</div>
-          <div class="brief-card-date">Today · 7:02 AM</div>
+          <div class="brief-greeting">Good morning, Jamie.</div>
+          <div class="brief-date">Today · 7:02 AM</div>
         </div>
-        <div class="brief-alert">
-          <div class="brief-alert-dot"></div>
+        <div class="brief-row alert">
+          <div class="brief-dot"></div>
           <div>
-            <div class="brief-alert-label">3 SKUs will stock out within 7 days</div>
-            <div class="brief-alert-val">£47,200 at risk at current sell rate · View restock recommendations</div>
+            <div class="brief-row-title">3 SKUs will stock out within 7 days</div>
+            <div class="brief-row-sub">£47,200 at risk · View restock recommendations</div>
           </div>
         </div>
-        <div class="brief-alert">
-          <div class="brief-alert-dot"></div>
+        <div class="brief-row alert">
+          <div class="brief-dot"></div>
           <div>
-            <div class="brief-alert-label">PO #0041 arriving today — 4 held orders waiting</div>
-            <div class="brief-alert-val">Orders will auto-release on scan · Stow tasks ready for your operator</div>
+            <div class="brief-row-title">PO #0041 arriving today — 4 held orders waiting</div>
+            <div class="brief-row-sub">Orders auto-release on scan · Stow tasks queued</div>
           </div>
         </div>
-        <div class="brief-safe">
-          <div class="brief-safe-dot"></div>
+        <div class="brief-row ok">
+          <div class="brief-dot"></div>
           <div>
-            <div class="brief-safe-label">Supplier: Meadow Textiles · 98% on-time</div>
-            <div class="brief-safe-val">Last 8 deliveries · 100% fill rate · No action needed</div>
+            <div class="brief-row-title">Meadow Textiles · 98% on-time</div>
+            <div class="brief-row-sub">Last 8 deliveries · 100% fill rate · No action needed</div>
           </div>
         </div>
-        <div class="brief-safe">
-          <div class="brief-safe-dot"></div>
+        <div class="brief-row ok">
+          <div class="brief-dot"></div>
           <div>
-            <div class="brief-safe-label">12 orders fulfilled yesterday</div>
-            <div class="brief-safe-val">Avg 1.4 days to ship · Pick accuracy 99.2%</div>
+            <div class="brief-row-title">12 orders fulfilled yesterday</div>
+            <div class="brief-row-sub">Avg 1.4 days to ship · Pick accuracy 99.2%</div>
           </div>
         </div>
-        <div class="brief-card-footer">LaSyncro · let's sync up every row.</div>
+        <div class="brief-footer">LaSyncro · let's sync up every row.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ── FOUNDER STORY ── -->
-<section id="story" class="reveal">
-  <div class="story-inner">
-    <div class="story-label">Why we built this</div>
-    <h2 class="story-h2">
-      We were the merchants <em>drowning in spreadsheets.</em>
-    </h2>
-    <p class="story-body">
-      LaSyncro was built because we lived the 8am problem. Three customer emails about delayed orders. A supplier waiting on a PO that was agreed over WhatsApp — nobody could find the thread. A warehouse operator asking which shelf the new stock goes on, because the location spreadsheet was last updated in February.
-    </p>
-    <p class="story-body">
-      <strong>This is not a failure of effort.</strong> SMB operators work extraordinarily hard. This is a failure of infrastructure. Every piece of the operation — orders, inventory, suppliers, warehouse, workforce — existed in a different tool that didn't know what the others were doing.
-    </p>
-    <p class="story-body">
-      Every feature in LaSyncro came from a real merchant asking for it. We're not a SaaS company that discovered logistics — we're operators who built software to solve what we couldn't buy.
-    </p>
-    <a href="#waitlist" class="story-cta" onclick="posthog.capture('clicked_waitlist',{location:'story'})">
-      Get early access — it's free
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </a>
-  </div>
-</section>
-
-<!-- ── PRICING ── -->
-<section id="pricing" class="pricing-section reveal">
+<!-- PRICING -->
+<section class="pricing-section reveal">
   <div class="pricing-inner">
     <div class="pricing-header">
       <div class="section-label">Pricing</div>
-      <h2 class="section-h2">Transparent pricing.<br><em>No per-seat surprises.</em></h2>
-      <p class="section-body">Start free, grow into the tier that fits your operation. The Growth tier — where most serious merchants end up — pays for itself the first time it prevents a stockout.</p>
+      <h2 class="section-h2" style="margin-bottom:10px;">Transparent.<br><em>No per-seat surprises.</em></h2>
+      <p>The Growth tier pays for itself the first time it prevents a stockout.</p>
     </div>
     <div class="pricing-grid">
       <div class="pricing-card">
         <div class="pricing-tier">Starter</div>
         <div class="pricing-price">Free</div>
-        <div class="pricing-desc">See what you've been missing. The demand funnel — enough to understand LaSyncro, not enough to run on permanently.</div>
+        <div class="pricing-desc">See what you've been missing. Enough to understand LaSyncro, not enough to run on permanently.</div>
         <ul class="pricing-features">
           <li>50 orders / month</li>
           <li>1 operator seat</li>
@@ -1685,7 +402,7 @@ footer {
       <div class="pricing-card">
         <div class="pricing-tier">Core</div>
         <div class="pricing-price">£79<span>/mo</span></div>
-        <div class="pricing-desc">Your first warehouse hire tier. Structured workflows, without the full intelligence layer.</div>
+        <div class="pricing-desc">Structured workflows for your first warehouse hire — without the full intelligence layer.</div>
         <ul class="pricing-features">
           <li>500 orders / month</li>
           <li>2 operator seats</li>
@@ -1693,7 +410,7 @@ footer {
           <li>Full WMS — pick, pack, receive, stow</li>
         </ul>
       </div>
-      <div class="pricing-card pricing-featured">
+      <div class="pricing-card featured">
         <div class="pricing-badge">Most merchants land here</div>
         <div class="pricing-tier">Growth</div>
         <div class="pricing-price">£179<span>/mo</span></div>
@@ -1701,7 +418,6 @@ footer {
         <ul class="pricing-features">
           <li>2,000 orders / month</li>
           <li>5 operator seats</li>
-          <li>100 POs / month</li>
           <li>Cash flow projection</li>
           <li>Demand intelligence + restock risk</li>
           <li>Supplier ratings (full)</li>
@@ -1713,35 +429,35 @@ footer {
         <div class="pricing-price">£349<span>/mo</span></div>
         <div class="pricing-desc">Serious volume, no limits. For merchants doing £5M+ who need enterprise-grade reliability.</div>
         <ul class="pricing-features">
-          <li>Unlimited orders + seats + POs</li>
-          <li>Floor planning</li>
-          <li>Barcode generation</li>
+          <li>Unlimited orders, seats, POs</li>
+          <li>Floor planning + barcode generation</li>
           <li>Custom DPA · 99.9% SLA</li>
           <li>Dedicated support</li>
         </ul>
       </div>
     </div>
-    <p class="pricing-footnote">Annual billing saves 20% — two months free. All plans include a 14-day Growth trial. No credit card required to start.</p>
-    <p class="pricing-roi">At £179/month, LaSyncro costs less per day than a single unplanned stockout costs in lost revenue.</p>
+    <div class="pricing-footer">
+      <p class="pricing-footnote">Annual billing saves 20% — two months free. All plans include a 14-day Growth trial. No credit card required.</p>
+      <p class="pricing-roi">At £179/month, LaSyncro costs less per day than a single unplanned stockout.</p>
+    </div>
   </div>
 </section>
 
-<!-- ── WAITLIST ── -->
-<section id="waitlist" class="reveal">
+<!-- WAITLIST -->
+<section id="waitlist" class="waitlist-section reveal">
   <div class="waitlist-inner">
     <h2 class="waitlist-h2">Start free.<br><em>See your operation clearly.</em></h2>
-    <p class="waitlist-sub">Connect Shopify in 60 seconds. No credit card. Most merchants see their first actionable intelligence within 4 minutes of syncing. We're letting a small group of serious warehouse merchants in first.</p>
-
+    <p class="waitlist-sub">Connect Shopify in 60 seconds. Most merchants see their first stock-out risk within 4 minutes of syncing.</p>
     <div class="tier-row">
       <div class="tier-card">
         <div class="tier-name">Early access</div>
         <div class="tier-spots">500 spots</div>
-        <div class="tier-perk">30-day free trial · your price locked forever</div>
+        <div class="tier-perk">30-day free trial · price locked forever</div>
       </div>
       <div class="tier-card featured">
         <div class="tier-name">Beta tester</div>
         <div class="tier-spots">50 spots</div>
-        <div class="tier-perk">Access before launch · weekly calls with the founder</div>
+        <div class="tier-perk">Access before launch · weekly calls with founder</div>
       </div>
       <div class="tier-card">
         <div class="tier-name">Founding store</div>
@@ -1749,44 +465,36 @@ footer {
         <div class="tier-perk">First in · direct line to the founder</div>
       </div>
     </div>
-
     <form class="wl-form" id="wl-form" onsubmit="handleSubmit(event)" novalidate>
       <input type="email" required placeholder="Your email address" id="wl-email" autocomplete="email"/>
-      <input type="text"  required placeholder="Your store URL (e.g. yourstore.myshopify.com)" id="wl-store"/>
+      <input type="text" required placeholder="Your store URL (e.g. yourstore.myshopify.com)" id="wl-store"/>
       <button type="submit">Reserve my spot — it's free</button>
     </form>
-
     <div id="wl-success" role="alert">
       You're on the list. Check your inbox — your free operations checklist is on its way.<br>
       <span style="font-size:13px;opacity:.6;margin-top:6px;display:block">Share your link to move up the queue.</span>
     </div>
-
     <div class="wl-progress" id="wl-progress">
-      <div class="wl-progress-labels">
-        <span>41 store owners joined</span>
-        <span>50 early access spots</span>
-      </div>
+      <div class="wl-progress-labels"><span>41 store owners joined</span><span>50 early access spots</span></div>
       <div class="wl-track"><div class="wl-fill" id="wl-fill"></div></div>
     </div>
-
     <p class="wl-fine">No spam. No credit card. Unsubscribe anytime.</p>
   </div>
 </section>
 
-<!-- ── FOOTER CTA ── -->
+<!-- FOOTER CTA -->
 <section class="footer-cta">
   <div class="footer-cta-inner">
     <h2 class="footer-cta-h2">Your spreadsheets aren't going to sync themselves.</h2>
     <p class="footer-cta-sub">Start free. Connect Shopify in 60 seconds. See your own operation clearly for the first time.</p>
     <a href="#waitlist" class="btn-primary" onclick="posthog.capture('clicked_waitlist',{location:'footer_cta'})">
       Start free — 14-day Growth trial included
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
   </div>
 </section>
 
+<!-- FOOTER -->
 <footer>
   <div class="footer-inner">
     <a href="#" class="footer-logo" aria-label="LaSyncro">
@@ -1802,33 +510,18 @@ function handleSubmit(e) {
   e.preventDefault();
   var email = document.getElementById('wl-email').value;
   var store = document.getElementById('wl-store').value;
-  if (typeof posthog !== 'undefined') {
-    posthog.capture('waitlist_signup', { email: email, store: store });
-  }
+  if (typeof posthog !== 'undefined') posthog.capture('waitlist_signup', { email: email, store: store });
   document.getElementById('wl-form').style.display = 'none';
   document.getElementById('wl-progress').style.display = 'none';
   document.getElementById('wl-success').style.display = 'block';
 }
-
 window.addEventListener('load', function() {
-  setTimeout(function() {
-    document.getElementById('wl-fill').style.width = '82%';
-  }, 600);
+  setTimeout(function() { document.getElementById('wl-fill').style.width = '82%'; }, 600);
 });
-
-var revealObs = new IntersectionObserver(function(entries) {
-  entries.forEach(function(e) {
-    if (e.isIntersecting) {
-      e.target.classList.add('in');
-      revealObs.unobserve(e.target);
-    }
-  });
+var obs = new IntersectionObserver(function(entries) {
+  entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('in'); obs.unobserve(e.target); } });
 }, { threshold: 0.07 });
-
-document.querySelectorAll('.reveal').forEach(function(el) {
-  revealObs.observe(el);
-});
+document.querySelectorAll('.reveal').forEach(function(el) { obs.observe(el); });
 </script>
-
 </body>
 </html>
