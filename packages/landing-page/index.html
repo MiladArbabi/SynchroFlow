@@ -195,129 +195,6 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 /* REVEAL */
 .reveal{opacity:0;transform:translateY(18px);transition:opacity 0.6s ease,transform 0.6s ease;}
 .reveal.in{opacity:1;transform:translateY(0);}
-
-/* ──────────────────────────────────────────────────────────────
-   STORY ANIMATIONS — subtle, editorial. Chaos → Sync narrative.
-   ────────────────────────────────────────────────────────────── */
-
-/* Logo light/dark swap (light text on dark nav, dark text on light nav) */
-@media (prefers-color-scheme:dark){
-  .logo-light-mode{display:none!important;}
-  .logo-dark-mode{display:block!important;}
-}
-
-/* Hero — data pulse sweeping across the grid, every 9s */
-.hero-pulse{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;mask-image:radial-gradient(ellipse 70% 55% at 50% 38%,black 15%,transparent 75%);-webkit-mask-image:radial-gradient(ellipse 70% 55% at 50% 38%,black 15%,transparent 75%);}
-.hero-pulse::before{content:'';position:absolute;top:0;bottom:0;left:-30%;width:30%;background:linear-gradient(90deg,transparent 0%,rgba(255,107,43,0.22) 50%,transparent 100%);filter:blur(22px);animation:pulse-sweep 9s cubic-bezier(.5,.05,.5,.95) infinite;}
-@keyframes pulse-sweep{
-  0%   {transform:translateX(0);}
-  100% {transform:translateX(480%);}
-}
-
-/* ─── FRAGMENT → SYNC VISUALIZATION (hero centerpiece) ─── */
-.chaos-sync{position:relative;width:100%;max-width:680px;height:148px;margin:56px auto 0;z-index:1;}
-.cs-frag{position:absolute;display:inline-flex;align-items:center;gap:7px;padding:7px 13px;background:var(--surface);border:1px solid var(--rule);border-radius:100px;font-size:12px;font-weight:400;color:var(--ink-2);font-family:var(--sans);white-space:nowrap;box-shadow:0 1px 3px rgba(15,14,13,0.04);transition:all 1.3s cubic-bezier(.16,1,.3,1);}
-.cs-frag .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-4);transition:background 1.3s cubic-bezier(.16,1,.3,1);}
-.cs-frag.accent .dot{background:var(--accent);}
-
-/* Positions: CHAOS state — scattered, mixed rotations */
-.cs-frag[data-i="0"]{left:2%;top:8px;transform:rotate(-6deg);animation:drift-a 6.5s ease-in-out infinite;}
-.cs-frag[data-i="1"]{left:22%;top:56px;transform:rotate(4deg);animation:drift-b 7.2s ease-in-out infinite;}
-.cs-frag[data-i="2"]{left:42%;top:14px;transform:rotate(-2deg);animation:drift-c 5.8s ease-in-out infinite;}
-.cs-frag[data-i="3"]{left:58%;top:64px;transform:rotate(7deg);animation:drift-a 6.9s ease-in-out infinite reverse;}
-.cs-frag[data-i="4"]{left:74%;top:20px;transform:rotate(-5deg);animation:drift-b 6.2s ease-in-out infinite reverse;}
-
-@keyframes drift-a{0%,100%{translate:0 0;}50%{translate:0 -6px;}}
-@keyframes drift-b{0%,100%{translate:0 0;}50%{translate:3px 5px;}}
-@keyframes drift-c{0%,100%{translate:0 0;}50%{translate:-4px 3px;}}
-
-/* Converged line — drawn through all chips after scroll trigger */
-.cs-line{position:absolute;top:50%;left:7%;right:7%;height:1px;background:linear-gradient(90deg,transparent 0%,var(--accent-border) 12%,var(--accent-border) 88%,transparent 100%);transform:scaleX(0);transform-origin:left center;transition:transform 1.4s cubic-bezier(.16,1,.3,1) 0.5s;z-index:0;}
-
-/* SYNC state — activated by .synced class */
-.chaos-sync.synced .cs-line{transform:scaleX(1);}
-.chaos-sync.synced .cs-frag{animation:none!important;top:50%!important;transform:translateY(-50%) rotate(0deg)!important;border-color:var(--accent-border);background:var(--surface);box-shadow:0 2px 10px rgba(255,107,43,0.08);}
-.chaos-sync.synced .cs-frag .dot{background:var(--accent);}
-.chaos-sync.synced .cs-frag[data-i="0"]{left:2%;}
-.chaos-sync.synced .cs-frag[data-i="1"]{left:22%;}
-.chaos-sync.synced .cs-frag[data-i="2"]{left:42%;}
-.chaos-sync.synced .cs-frag[data-i="3"]{left:62%;}
-.chaos-sync.synced .cs-frag[data-i="4"]{left:80%;}
-
-.cs-caption{position:absolute;bottom:-32px;left:0;right:0;text-align:center;font-size:11px;color:var(--ink-4);letter-spacing:0.06em;text-transform:uppercase;opacity:0;transition:opacity 0.8s ease 1.3s;font-family:var(--sans);}
-.chaos-sync.synced .cs-caption{opacity:1;}
-.cs-caption em{font-style:normal;color:var(--accent);}
-
-@media(max-width:640px){
-  .chaos-sync{height:200px;max-width:100%;}
-  .cs-frag{font-size:11px;padding:6px 10px;}
-  .cs-frag[data-i="0"]{left:0;top:6px;}
-  .cs-frag[data-i="1"]{left:auto;right:0;top:42px;}
-  .cs-frag[data-i="2"]{left:12%;top:78px;}
-  .cs-frag[data-i="3"]{left:auto;right:8%;top:114px;}
-  .cs-frag[data-i="4"]{left:30%;top:150px;}
-  .chaos-sync.synced .cs-frag{top:auto!important;}
-  .chaos-sync.synced .cs-frag[data-i="0"]{top:0!important;left:0!important;}
-  .chaos-sync.synced .cs-frag[data-i="1"]{top:38px!important;left:0!important;}
-  .chaos-sync.synced .cs-frag[data-i="2"]{top:76px!important;left:0!important;}
-  .chaos-sync.synced .cs-frag[data-i="3"]{top:114px!important;left:0!important;}
-  .chaos-sync.synced .cs-frag[data-i="4"]{top:152px!important;left:0!important;}
-  .cs-line{display:none;}
-}
-
-/* ─── BEFORE/AFTER ledger — staggered reveal + orange arrow trail ─── */
-.ba-row{opacity:0;transform:translateY(10px);transition:opacity 0.7s ease,transform 0.7s ease;}
-.ba-row.in{opacity:1;transform:translateY(0);}
-.ba-row .ba-before{transition:color 0.8s ease;}
-.ba-row.in .ba-before{color:var(--ink-4);} /* fades to hinted — the past recedes */
-.ba-row .ba-arrow-icon{transform:scale(0.6);opacity:0;transition:transform 0.5s cubic-bezier(.16,1,.3,1) 0.3s,opacity 0.5s ease 0.3s;}
-.ba-row.in .ba-arrow-icon{transform:scale(1);opacity:1;}
-.ba-row .ba-after{clip-path:inset(0 100% 0 0);transition:clip-path 0.9s cubic-bezier(.5,.05,.3,1) 0.45s;}
-.ba-row.in .ba-after{clip-path:inset(0 0 0 0);}
-
-/* ─── STAT BAR — numbers tick up when revealed ─── */
-.stat-n{opacity:0;transform:translateY(6px);transition:opacity 0.6s ease,transform 0.6s ease;}
-.stat-bar.in .stat-n{opacity:1;transform:translateY(0);}
-.stat-bar.in .stat-item:nth-child(1) .stat-n{transition-delay:0.00s;}
-.stat-bar.in .stat-item:nth-child(2) .stat-n{transition-delay:0.12s;}
-.stat-bar.in .stat-item:nth-child(3) .stat-n{transition-delay:0.24s;}
-.stat-bar.in .stat-item:nth-child(4) .stat-n{transition-delay:0.36s;}
-
-/* ─── HOW-IT-WORKS — cells cascade, icon tile scales in ─── */
-.how-cell{opacity:0;transform:translateY(14px);transition:opacity 0.65s ease,transform 0.65s ease;}
-.how-grid.in .how-cell{opacity:1;transform:translateY(0);}
-.how-grid.in .how-cell:nth-child(1){transition-delay:0.00s;}
-.how-grid.in .how-cell:nth-child(2){transition-delay:0.10s;}
-.how-grid.in .how-cell:nth-child(3){transition-delay:0.20s;}
-.how-grid.in .how-cell:nth-child(4){transition-delay:0.30s;}
-.how-cell .how-icon{transform:scale(0.8);transition:transform 0.6s cubic-bezier(.16,1,.3,1);}
-.how-grid.in .how-cell .how-icon{transform:scale(1);}
-
-/* ─── MORNING BRIEF — rows type in, first alert dot pulses once ─── */
-.brief-row{opacity:0;transform:translateX(-8px);transition:opacity 0.55s ease,transform 0.55s ease;}
-.brief-card.in .brief-row{opacity:1;transform:translateX(0);}
-.brief-card.in .brief-row:nth-of-type(1){transition-delay:0.35s;}
-.brief-card.in .brief-row:nth-of-type(2){transition-delay:0.50s;}
-.brief-card.in .brief-row:nth-of-type(3){transition-delay:0.65s;}
-.brief-card.in .brief-row:nth-of-type(4){transition-delay:0.80s;}
-.brief-card .brief-card-header{opacity:0;transform:translateY(-4px);transition:opacity 0.5s ease,transform 0.5s ease;}
-.brief-card.in .brief-card-header{opacity:1;transform:translateY(0);}
-.brief-card .brief-footer{opacity:0;transition:opacity 0.6s ease 1.0s;}
-.brief-card.in .brief-footer{opacity:1;}
-.brief-card.in .brief-row.alert:first-of-type .brief-dot{animation:alert-pulse 2.4s ease-out 1.3s 2;}
-@keyframes alert-pulse{
-  0%,100%{box-shadow:0 0 0 0 rgba(255,107,43,0.5);}
-  30%{box-shadow:0 0 0 8px rgba(255,107,43,0);}
-}
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion:reduce){
-  .hero-pulse::before,.cs-frag,.cs-line,.cs-caption{animation:none!important;transition:none!important;}
-  .chaos-sync .cs-frag{top:50%!important;transform:translateY(-50%) rotate(0deg)!important;}
-  .chaos-sync .cs-line{transform:scaleX(1)!important;}
-  .chaos-sync .cs-caption{opacity:1!important;}
-  .reveal,.ba-row,.stat-n,.how-cell,.brief-row,.brief-card-header,.brief-footer,.how-icon{opacity:1!important;transform:none!important;clip-path:none!important;transition:none!important;}
-}
 </style>
 </head>
 <body>
@@ -325,8 +202,7 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <!-- NAV -->
 <nav>
   <a href="#" class="nav-logo" aria-label="LaSyncro home">
-    <img src="white_text_no_bg.png" class="logo-light-mode" alt="LaSyncro" height="28" style="display:block;">
-    <img src="dark_text_no_bg.png" class="logo-dark-mode" alt="LaSyncro" height="28" style="display:none;">
+    <img src="white_text_no_bg.png" alt="LaSyncro" height="28" style="display:block;">
   </a>
   <a href="#waitlist" class="nav-cta" onclick="posthog.capture('clicked_waitlist',{location:'header'})">Get early access</a>
 </nav>
@@ -334,7 +210,6 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <!-- HERO -->
 <section class="hero">
   <div class="hero-grid" aria-hidden="true"></div>
-  <div class="hero-pulse" aria-hidden="true"></div>
   <div class="hero-glow" aria-hidden="true"></div>
   <div class="hero-inner">
     <div class="hero-eyebrow">
@@ -359,16 +234,6 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
       </div>
       <div class="proof-pipe" aria-hidden="true"></div>
       <span>41 store owners already waiting</span>
-    </div>
-    <!-- CHAOS → SYNC visualization -->
-    <div class="chaos-sync" id="chaos-sync" aria-hidden="true">
-      <div class="cs-line"></div>
-      <div class="cs-frag" data-i="0"><span class="dot"></span>Shopify orders</div>
-      <div class="cs-frag" data-i="1"><span class="dot"></span>Inventory spreadsheet</div>
-      <div class="cs-frag" data-i="2"><span class="dot"></span>Supplier WhatsApp</div>
-      <div class="cs-frag" data-i="3"><span class="dot"></span>PO email thread</div>
-      <div class="cs-frag" data-i="4"><span class="dot"></span>Warehouse clipboard</div>
-      <div class="cs-caption">Five disconnected tools &nbsp;·&nbsp; <em>one real-time picture</em></div>
     </div>
   </div>
 </section>
@@ -657,30 +522,6 @@ var obs = new IntersectionObserver(function(entries) {
   entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('in'); obs.unobserve(e.target); } });
 }, { threshold: 0.07 });
 document.querySelectorAll('.reveal').forEach(function(el) { obs.observe(el); });
-
-// Animate individual elements inside reveal sections
-var storyObs = new IntersectionObserver(function(entries) {
-  entries.forEach(function(e) {
-    if (e.isIntersecting) { e.target.classList.add('in'); storyObs.unobserve(e.target); }
-  });
-}, { threshold: 0.18 });
-
-document.querySelectorAll('.ba-row, .how-grid, .stat-bar, .brief-card').forEach(function(el) {
-  storyObs.observe(el);
-});
-
-// Chaos → Sync — trigger once hero is fully settled, with a brief "chaos" period first
-var syncObs = new IntersectionObserver(function(entries) {
-  entries.forEach(function(e) {
-    if (e.isIntersecting) {
-      var el = e.target;
-      setTimeout(function(){ el.classList.add('synced'); }, 1800); // 1.8s of drift, then converge
-      syncObs.unobserve(el);
-    }
-  });
-}, { threshold: 0.4 });
-var cs = document.getElementById('chaos-sync');
-if (cs) syncObs.observe(cs);
 </script>
 </body>
 </html>
