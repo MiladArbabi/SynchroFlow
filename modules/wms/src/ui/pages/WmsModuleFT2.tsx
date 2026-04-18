@@ -21,6 +21,9 @@ import PickSessionPage, {
 import PackSessionPage, {
   type PackOrder,
 } from './PackSessionPage.js';
+import ReceiveSessionPage, {
+  type ReceiveJobLine,
+} from './ReceiveSessionPage.js';
 
 /**
  * WMS MODULE — FT2 SURFACE
@@ -59,12 +62,20 @@ export type WmsModuleFT2Props = {
   data: WmsData;
   isLoading: boolean;
   isError: boolean;
+
+  onCreateReceiveJob?: (poId: string) => Promise<{ receive_job_id: string }>;
+  onFetchReceiveJob?: (jobId: string) => Promise<{ job: { po_id: string; supplier_name: string }; lines: ReceiveJobLine[] }>;
+  onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
+  onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }) => Promise<void>;
+  onCloseReceiveJob?: (jobId: string, params: { actual_delivery_date?: string }) => Promise<void>;
+
   onClaimBatch: (batchId: string) => Promise<void>;
   onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
   onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onConfirmScan: (batchId: string, params: ConfirmScanParams) => Promise<void>;
   onReportException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
   onPickComplete: (batchId: string) => Promise<void>;
+
   onClaimPack: (batchId: string) => Promise<void>;
   onFetchPackOrders: (batchId: string) => Promise<PackOrder[]>;
   onConfirmPackScan: (batchId: string, params: {
@@ -76,6 +87,7 @@ export type WmsModuleFT2Props = {
   onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
   onPrintLabel: (orderId: string) => Promise<void>;
   onPackComplete: (batchId: string) => Promise<void>;
+
   onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
   onRefresh: () => void;
   isOnline: boolean;
@@ -240,12 +252,20 @@ function BatchCard({
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
   | { type: 'pack'; batchId: string; orders: PackOrder[] }
+  | { type: 'receive'; receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] }
   | null;
 
 export default function WmsModuleFT2({
   data,
   isLoading,
   isError,
+
+  onCreateReceiveJob,
+  onFetchReceiveJob,
+  onInspectReceiveLine,
+  onReportReceiveException,
+  onCloseReceiveJob,
+  
   onClaimBatch,
   onFetchLineItems,
   onResolveBarcode,
@@ -330,6 +350,22 @@ export default function WmsModuleFT2({
         onPrintLabel={onPrintLabel}
         onConfirmShipment={(orderId, partial) => onConfirmShipment(activeSession.batchId, orderId, partial)}
         onPackComplete={() => onPackComplete(activeSession.batchId)}
+      />
+    );
+  }
+
+  // Active receive session
+  if (activeSession?.type === 'receive') {
+    return (
+      <ReceiveSessionPage
+        receiveJobId={activeSession.receiveJobId}
+        poId={activeSession.poId}
+        supplierName={activeSession.supplierName}
+        lines={activeSession.lines}
+        onInspectLine={(params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
+        onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
+        onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
+        onComplete={exitSession}
       />
     );
   }

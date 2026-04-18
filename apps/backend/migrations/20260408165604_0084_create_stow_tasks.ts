@@ -98,15 +98,13 @@ export async function up(knex: Knex): Promise<void> {
       .onDelete('SET NULL');
 
     /**
-     * Source PO — populated when trigger = inbound_stock (FEAT-004).
-     * Enables traceability from stow task back to purchase order.
+     * Source PO for inbound_stock trigger (FEAT-004).
+     * No FK — purchase_orders is created in migration 0095 (after this).
+     * Integrity enforced at application layer in receiveJob.service.ts.
      */
     table
       .uuid('po_id')
-      .nullable()
-      .references('id')
-      .inTable('purchase_orders')
-      .onDelete('SET NULL');
+      .nullable();
 
     table
       .uuid('lasyncro_order_id')

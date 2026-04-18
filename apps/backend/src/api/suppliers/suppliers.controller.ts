@@ -265,6 +265,8 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
           .where({ id: po.supplier_id, shop_id: shopId })
           .increment('total_pos', 1);
         await recomputeSupplierRating(trx, shopId, po.supplier_id);
+        // Resolve the receive alert — PO fully received, no further operator action needed.
+        await fireReceiveArrivedAlert(trx, { shopId, poId, supplierName: po.supplier_name, isActive: false });
       }
 
       // FEAT-004: Emit receive alert so operators are notified to open a receive session.

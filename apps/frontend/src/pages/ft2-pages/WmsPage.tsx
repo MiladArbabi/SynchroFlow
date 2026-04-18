@@ -143,11 +143,50 @@ export default function WmsPage() {
     });
   }, []);
 
+  // ── RECEIVE CALLBACKS (FEAT-004) ────────────────────────
+  const handleCreateReceiveJob = useCallback(async (poId: string) => {
+    const { data } = await axiosInstance.post(
+      `/api/v1/suppliers/purchase-orders/${poId}/receive-jobs`
+    );
+    return data;
+  }, []);
+
+  const handleFetchReceiveJob = useCallback(async (jobId: string) => {
+    const { data } = await axiosInstance.get(`/api/v1/suppliers/receive-jobs/${jobId}`);
+    return data;
+  }, []);
+
+  const handleInspectReceiveLine = useCallback(async (
+    jobId: string,
+    params: { lasyncro_variant_id: string; quantity_accepted: number; quantity_rejected: number }
+  ) => {
+    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/inspect`, params);
+  }, []);
+
+  const handleReportReceiveException = useCallback(async (
+    jobId: string,
+    params: { lasyncro_variant_id: string; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }
+  ) => {
+    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, params);
+  }, []);
+
+  const handleCloseReceiveJob = useCallback(async (
+    jobId: string,
+    params: { actual_delivery_date?: string }
+  ) => {
+    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/close`, params);
+  }, []);
+
   return (
     <WmsModuleFT2
       data={data ?? null}
       isLoading={isLoading}
       isError={isError}
+      onCreateReceiveJob={handleCreateReceiveJob}
+      onFetchReceiveJob={handleFetchReceiveJob}
+      onInspectReceiveLine={handleInspectReceiveLine}
+      onReportReceiveException={handleReportReceiveException}
+      onCloseReceiveJob={handleCloseReceiveJob}
       onClaimBatch={handleClaimBatch}
       onFetchLineItems={handleFetchLineItems}
       onResolveBarcode={handleResolveBarcode}

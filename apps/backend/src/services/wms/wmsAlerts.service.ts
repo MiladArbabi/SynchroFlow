@@ -12,7 +12,8 @@ import { dispatchNotification } from '../notifications/notificationDispatch.serv
  * - wms:stow:pending:{stowTaskId}     — stow task created (auto-resolves on confirm)
  * - wms:batch:ready_to_pack:{batchId} — pick complete, packer needed
  * - wms:batch:ready_to_ship:{batchId} — pack complete, shipment needed
- * - wms:receive:arrived:{poId}        — PO shipped, receive session needed (FEAT-004)
+ * - wms:receive:arrived:{poId}                              — PO shipped, receive session needed (FEAT-004)
+ * - wms:receive:exception:{jobId}:{variantId}               — inspection exception raised (FEAT-004)
  *
  * All alerts:
  * - Upsert on (shop_id, alert_key) — idempotent
@@ -246,9 +247,9 @@ export async function fireBatchReadyToShipAlert(
 // Alert key is deterministic (idempotent on re-advance). Resolves when receive job closes.
 export async function fireReceiveArrivedAlert(
   trx: Knex.Transaction,
-  params: { shopId: number; poId: string; supplierName: string }
+  params: { shopId: number; poId: string; supplierName: string; isActive?: boolean }
 ): Promise<void> {
-  const { shopId, poId, supplierName } = params;
+  const { shopId, poId, supplierName, isActive = true } = params;
   const poShort = poId.slice(0, 8).toUpperCase();
   await upsertWmsAlert(trx, {
     shopId,
@@ -259,17 +260,41 @@ export async function fireReceiveArrivedAlert(
     message: `PO ${poShort} from ${supplierName} is marked shipped. Open a receive session to process inbound stock.`,
     entityId: poId,
     entityType: 'purchase_order',
-    isActive: true,
+    isActive,
   });
   // Notify all operators — inbound stock needs processing
-  dispatchNotification({
+  if (isActive) {
+    dispatchNotification({
+      shopId,
+      payload: {
+        title: 'Shipment arrived',
+        body: `PO ${poShort} from ${supplierName} ready to receive.`,
+        data: { route: '/wms', poId },
+      },
+      broadcastToRole: 'operator',
+    }).catch((err) => console.error('[WMS_RECEIVE_ARRIVED_PUSH_FAILED]', err.message));
+  }
+  console.info('[WMS_RECEIVE_ARRIVED_ALERT_FIRED]', { shopId, poId, isActive });
+}
+
+// FEAT-004: Fires when an inspection exception is raised during a receive session.
+// Targets owner/admin — operator cannot self-resolve receive exceptions.
+export async function fireReceiveExceptionAlert(
+  trx: Knex.Transaction,
+  params: { shopId: number; receiveJobId: string; lasyncroVariantId: string; exceptionType: string }
+): Promise<void> {
+  const { shopId, receiveJobId, lasyncroVariantId, exceptionType } = params;
+  const jobShort = receiveJobId.slice(0, 8).toUpperCase();
+  await upsertWmsAlert(trx, {
     shopId,
-    payload: {
-      title: 'Shipment arrived',
-      body: `PO ${poShort} from ${supplierName} ready to receive.`,
-      data: { route: '/wms/receive', poId },
-    },
-    broadcastToRole: 'operator',
-  }).catch((err) => console.error('[WMS_RECEIVE_ARRIVED_PUSH_FAILED]', err.message));
-  console.info('[WMS_RECEIVE_ARRIVED_ALERT_FIRED]', { shopId, poId });
+    alertKey: `wms:receive:exception:${receiveJobId}:${lasyncroVariantId}`,
+    alertType: 'wms_receive_exception',
+    severity: 'warning',
+    title: 'Receive exception reported',
+    message: `Job ${jobShort}: ${exceptionType} exception on variant ${lasyncroVariantId.slice(0, 8)}.`,
+    entityId: receiveJobId,
+    entityType: 'receive_job',
+    isActive: true,
+  });
+  console.info('[WMS_RECEIVE_EXCEPTION_ALERT_FIRED]', { shopId, receiveJobId, lasyncroVariantId, exceptionType });
 }
