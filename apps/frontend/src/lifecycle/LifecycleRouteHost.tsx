@@ -50,6 +50,7 @@ import MembersPage from 'pages/ft2-pages/MembersPage';
 import SkuGapsPage from 'pages/ft2-pages/SkuGapsPage';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
+import SyncAnimationPage from 'activation/SyncAnimationPage';
 
 // NOTE:
 // - Never reuse FT1 pages for FT2
@@ -64,20 +65,28 @@ export function LifecycleRouteHost() {
     ts: performance.now(),
   });
 
+  // FT0 must be checked BEFORE FT_MINUS_ONE.
+  // After OAuth, phase briefly stays FT_MINUS_ONE on the client
+  // until polling catches up. Checking FT0 first ensures SyncAnimationPage
+  // renders immediately once the backend confirms FT0.
+  if (phase === 'FT0' || phase === 'FT0_PREPARING') {
+    console.info('[LIFECYCLE_ROUTE_FT0]', { phase, ts: performance.now() });
+    return <SyncAnimationPage />;
+  }
+
   // FT_MINUS_ONE handled — renders WelcomePage
   if (phase === 'FT_MINUS_ONE') {
-    /**
-     * FT_MINUS_ONE — single surface, canonical URL is /.
-     * Any other URL redirects here to prevent ghost routes.
-     */
+    // OAuth just completed — backend hasn't written FT0 snapshot yet
+    // but connect=success signals we're in the sync window.
+    // Show SyncAnimationPage immediately rather than flashing WelcomePage.
+    const params = new URLSearchParams(location.search);
+    if (params.get('connect') === 'success') {
+      return <SyncAnimationPage />;
+    }
     if (location.pathname !== '/') {
       return <Navigate to="/" replace />;
     }
     return <WelcomePage />;
-  }
-
-  if (phase === 'FT0' || phase === 'FT0_PREPARING') {
-    console.warn('[TRACE_PHASE_FT0]', { ts: performance.now() });
   }
 
   /**
@@ -99,25 +108,6 @@ export function LifecycleRouteHost() {
    */
   if (isBooting) {
     console.info('[LIFECYCLE_ROUTE_BOOTING]');
-    return <EmptyDashboardState />;
-  }
-
-  /**
-   * ✅ FT0 (initialization phase)
-   * ----------------------------
-   * Explicit loader while backend prepares system.
-   */
-  if (phase === 'FT0' || phase === 'FT0_PREPARING') {
-    console.info('[LIFECYCLE_ROUTE_FT0]', {
-      phase,
-      ts: performance.now(),
-    });
-
-    console.warn('[LOADER_MOUNT]', {
-      phase,
-      ts: performance.now(),
-    });
-
     return <EmptyDashboardState />;
   }
 

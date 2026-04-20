@@ -542,12 +542,25 @@ export const getSyncStatus = async (req: Request, res: Response) => {
       percentage = 100;
     }
 
+    // Fetch real entity counts for sync animation counters.
+    // These are cheap COUNT queries — no joins, PK-indexed by shop_id.
+    const [orderCount, variantCount, customerCount] = await Promise.all([
+      db('orders').where({ shop_id: shopId }).count('* as count').first(),
+      db('variants').where({ shop_id: shopId }).count('* as count').first(),
+      db('customers').where({ shop_id: shopId }).count('* as count').first(),
+    ]);
+
     res.json({
       status: integration.sync_status,
       progress: {
         current: integration.sync_progress_current,
         total: integration.sync_progress_total,
-        percentage: percentage,
+        percentage,
+      },
+      counts: {
+        orders:    Number((orderCount as any)?.count ?? 0),
+        variants:  Number((variantCount as any)?.count ?? 0),
+        customers: Number((customerCount as any)?.count ?? 0),
       },
       lastError: integration.sync_last_error,
     });

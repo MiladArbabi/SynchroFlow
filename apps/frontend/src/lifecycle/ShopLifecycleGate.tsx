@@ -4,7 +4,6 @@
 // Owns whether children are allowed to exist.
 
 import React from 'react';
-import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { useIntegration } from 'contexts/integration';
 
@@ -28,49 +27,29 @@ export function ShopLifecycleGate({ children }: Props) {
     return null;
   }
 
-  /**
-   * F-01 FIX — IMMEDIATE LOADER ON INTEGRATION PRESENT
-   * ---------------------------------------------------
-   * integration.hasIntegration is resolved from IntegrationProvider
-   * which polls independently of lifecycle — it resolves faster.
-   *
-   * When OAuth has completed (hasIntegration = true) but lifecycle
-   * poll has not yet returned FT0, show the loader immediately.
-   *
-   * This eliminates the 3-5s blank screen between OAuth success
-   * and the first FT0 lifecycle poll response.
-   *
-   * Gate: only apply during FT_MINUS_ONE — other phases have
-   * their own explicit rendering paths.
-   */
   if (
     phase === 'FT_MINUS_ONE' &&
     integration.bootResolved &&
     integration.hasIntegration
   ) {
-    return <EmptyDashboardState />;
+    // Integration exists but lifecycle hasn't advanced to FT0 yet.
+    // Pass through to LifecycleRouteHost — SyncAnimationPage handles this.
+    return <>{children}</>;
   };
-
   
   switch (phase) {
     case 'FT_MINUS_ONE': {
-      /**
-       * FT_MINUS_ONE — pass through to LifecycleRouteHost.
-       * WelcomePage is rendered there — no activation config needed.
-       * If integration exists but lifecycle hasn't advanced yet,
-       * show loader while backend catches up.
-       */
       if (integrationExists) {
-        return <EmptyDashboardState />;
+        // Lifecycle hasn't caught up yet — pass through, LifecycleRouteHost decides.
+        return <>{children}</>;
       }
-
       return <>{children}</>;
     }
-
     case 'FT0':
     case 'FT0_SYNCING':
     case 'FT0_PREPARING':
-      return <EmptyDashboardState />;
+      // Pass through — SyncAnimationPage in LifecycleRouteHost owns this phase.
+      return <>{children}</>;
 
     /**
      * ✅ FT1 lifecycle (no readiness required)
