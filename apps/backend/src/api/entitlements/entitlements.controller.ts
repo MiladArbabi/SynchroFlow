@@ -1,5 +1,6 @@
 // apps/backend/src/api/entitlements/entitlements.controller.ts
 import { Request, Response } from 'express';
+import db from '@lasyncro/backend-core/db.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { resolveTierForShop } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { resolveShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
@@ -49,12 +50,23 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
     const tier = await resolveTierForShop(entitlements.shopId);
     const shopContext = await resolveShopContextForUser(userId);
 
+    // Trial expiry — sourced from shop_subscriptions.trial_ends_at
+    // Null if shop has an active paid subscription or no subscription row.
+    const subscription = await db('shop_subscriptions')
+      .where({ shop_id: entitlements.shopId })
+      .first('trial_ends_at', 'status');
+
+    const trialEndsAt =
+      subscription?.status === 'trialing' && subscription?.trial_ends_at
+        ? new Date(subscription.trial_ends_at).toISOString()
+        : null;
+
     return res.json({
       shopId: entitlements.shopId ?? null,
       modules: Array.isArray(entitlements.modules) ? entitlements.modules : [],
       flags: Array.isArray(entitlements.flags) ? entitlements.flags : [],
       tier,
-      // CURRENCY LAYER 2 — user display preference from shop_memberships
+      trialEndsAt,
       displayCurrency: shopContext?.displayCurrency ?? 'USD',
       locale: shopContext?.locale ?? 'en-US',
     });

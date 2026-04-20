@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import IconComponent from "../../components/Icon";
+import { TrialCountdownChip } from 'components/TrialCountdownChip';
 
 import ProfileSection from "layout/MainLayout/Header/ProfileSection";
 
@@ -24,9 +25,6 @@ interface TopnavbarContentProps {
 }
 
 const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
-  isEditing,
-  onEditToggle,
-  onAddWidget,
   onToggleSidenav
 }) => {
   const location = useLocation();
@@ -115,6 +113,9 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
           ml: "auto"
         }}
       >
+        {/* Trial Countdown Chip */}
+        <TrialCountdownChip />
+
         <Tooltip title="Light mode">
           <IconButton
             size="small"

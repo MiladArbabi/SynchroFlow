@@ -45,6 +45,8 @@ interface EntitlementsResponse {
   /** Subscription tier from backend entitlements snapshot (MON-03) */
   tier: Tier;
 
+  trialEndsAt: string | null; // ISO timestamp, null if not on trial
+
   /** CURRENCY LAYER 2 — user display preference from shop_memberships */
   displayCurrency: string;
   locale: string;
@@ -63,6 +65,7 @@ interface EntitlementsContextValue {
    * Defaults to 'starter' until resolved.
    */
   tier: Tier;
+  trialEndsAt: string | null;
 
   displayCurrency: string;
   locale: string;
@@ -96,6 +99,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<string>('USD');
   const [locale, setLocale] = useState<string>('en-US');
+  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
   // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
   const lastGoodSnapshotRef = React.useRef<{
@@ -196,6 +200,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setModules(nextModules);
         setFlags(nextFlags);
         setTier(nextTier);
+        setTrialEndsAt(payload.trialEndsAt ?? null);
         setDisplayCurrency(payload.displayCurrency ?? 'USD');
         setLocale(payload.locale ?? 'en-US');
         setError(null);
@@ -282,7 +287,9 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     modules,
     flags,
     snapshot,
+
     tier,
+    trialEndsAt,
 
     displayCurrency,
     locale,

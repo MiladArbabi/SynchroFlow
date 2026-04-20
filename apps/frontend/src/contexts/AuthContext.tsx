@@ -52,10 +52,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // ⚠️ User must be fetched OR decoded (depending on your system)
       // TEMP: mark as logged in without user hydration
+      // Decode JWT payload (base64) to extract shop_id and user claims.
+      // No library needed — JWT payload is standard base64url.
+      let decodedUser = null;
+      try {
+        const payload = JSON.parse(atob(tokenFromUrl.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        decodedUser = {
+          shop_id: payload.shop_id ?? null,
+          userId: payload.user_id ?? null,
+          role: payload.shop_roles?.[0] ?? 'owner',
+        };
+      } catch {
+        console.warn('[AUTH][OAUTH_HANDOFF] JWT decode failed — user will be null');
+      }
       setAuthState({
         isLoggedIn: true,
         isLoading: false,
-        user: null, // ← will explain below
+        user: decodedUser,
         accessToken: tokenFromUrl,
       });
 

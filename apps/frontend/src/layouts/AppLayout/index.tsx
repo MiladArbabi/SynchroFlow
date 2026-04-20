@@ -62,36 +62,34 @@ const AppLayout = (props: AppLayoutProps) => {
    * This prevents lifecycle from overriding toggle actions.
    */
   useEffect(() => {
-    if (!isSidenavAllowed && sidenavState !== 'CLOSED') {
+    // Only force-close when phase is definitively non-FT2.
+    // 'FT_MINUS_ONE' and 'FT1'/'FT1_READY' are stable non-FT2 phases.
+    // Never force-close during boot (phase undefined/null) — would destroy
+    // persisted COMPACT state before FT2 is confirmed.
+    const isDefinitelyNotFt2 = phase === 'FT_MINUS_ONE' || phase === 'FT1' || phase === 'FT1_READY' || phase === 'FT0' || phase === 'FT0_PREPARING';
+    if (isDefinitelyNotFt2 && sidenavState !== 'CLOSED') {
       console.info('[SIDENAV][FORCE_CLOSE_OUTSIDE_FT2]', {
         phase,
         from: sidenavState,
         to: 'CLOSED',
       });
-
       setSidenavState('CLOSED');
     }
 
-    const saved = localStorage.getItem('sidenavState');
-
     // On first FT2 entry, clear any stale FT1-era 'CLOSED' preference
     // so the sidenav opens automatically for the merchant's first FT2 experience.
-    if (isSidenavAllowed && saved === 'CLOSED' && !hasAutoOpenedRef.current) {
-      localStorage.removeItem('sidenavState');
-    }
-
-    if (
-      isSidenavAllowed &&
-      sidenavState === 'CLOSED' &&
-      !hasAutoOpenedRef.current &&
-      localStorage.getItem('sidenavState') === null
-    ) {
-      console.info('[SIDENAV][AUTO_OPEN_ON_FT2_ENTRY]', {
-        phase,
-      });
-
+    if (isSidenavAllowed && !hasAutoOpenedRef.current) {
       hasAutoOpenedRef.current = true;
-      setSidenavState('EXPANDED');
+      const savedOnFt2Entry = localStorage.getItem('sidenavState') as SidenavState | null;
+      if (!savedOnFt2Entry) {
+        // No prior preference — first ever FT2 entry, open expanded
+        console.info('[SIDENAV][AUTO_OPEN_ON_FT2_ENTRY]', { phase });
+        setSidenavState('EXPANDED');
+      } else {
+        // Restore exact user preference — EXPANDED, COMPACT, or CLOSED
+        console.info('[SIDENAV][RESTORE_ON_FT2_ENTRY]', { phase, restored: savedOnFt2Entry });
+        setSidenavState(savedOnFt2Entry);
+      }
     }
   }, [isSidenavAllowed, phase, sidenavState]);
 
