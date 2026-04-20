@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 // apps/frontend/src/pages/ft1-pages/AhaMomentPage.tsx
 //

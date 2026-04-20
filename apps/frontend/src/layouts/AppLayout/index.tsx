@@ -74,11 +74,17 @@ const AppLayout = (props: AppLayoutProps) => {
 
     const saved = localStorage.getItem('sidenavState');
 
+    // On first FT2 entry, clear any stale FT1-era 'CLOSED' preference
+    // so the sidenav opens automatically for the merchant's first FT2 experience.
+    if (isSidenavAllowed && saved === 'CLOSED' && !hasAutoOpenedRef.current) {
+      localStorage.removeItem('sidenavState');
+    }
+
     if (
       isSidenavAllowed &&
       sidenavState === 'CLOSED' &&
       !hasAutoOpenedRef.current &&
-      saved === null // only auto-open if no prior user preference
+      localStorage.getItem('sidenavState') === null
     ) {
       console.info('[SIDENAV][AUTO_OPEN_ON_FT2_ENTRY]', {
         phase,

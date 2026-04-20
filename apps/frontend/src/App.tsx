@@ -26,7 +26,6 @@ import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 
 import AppLayout from 'layouts/AppLayout';
 import { EntitlementBoundary } from 'runtime/EntitlementBoundary';
-import { Ft1Outlet } from 'lifecycle/Ft1Outlet';
 
 const queryClient = new QueryClient();
 
@@ -117,7 +116,6 @@ function LifecycleGuardedApp({
         <>
           <EntitlementBoundary>
             <LifecycleRouteHost />
-            <Ft1Outlet />
           </EntitlementBoundary>
         </>
       </ShopLifecycleGate>
