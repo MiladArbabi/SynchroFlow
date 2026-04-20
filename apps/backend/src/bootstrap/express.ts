@@ -23,6 +23,7 @@ import trustFt2Routes from '../api/trust/index.js';
 import financesRoutes from '../api/finances/finances.routes.js';
 import systemRoutes from '../api/system/system.routes.js';
 import alertsRoutes from '../api/alerts/alerts.routes.js';
+import ahaRoutes from '../api/aha/aha.routes.js';
 import returnsRoutes from '../api/returns/returns.routes.js';
 import cashflowRoutes from '../api/cashflow/cashflow.routes.js';
 import customersLtvRoutes from '../api/customers/customers.ltv.routes.js';
@@ -103,6 +104,7 @@ export function createApp(): Express {
   app.use('/api/v1/modules/trust', trustFt2Routes);
   app.use('/api/v1/system', systemRoutes);
   app.use('/api/v1/alerts', alertsRoutes);
+  app.use('/api/v1/aha', ahaRoutes);
   app.use('/api/v1/modules/returns', returnsRoutes);
   app.use('/api/v1/modules/cashflow', cashflowRoutes);
   app.use('/api/v1/modules/customers', customersLtvRoutes);

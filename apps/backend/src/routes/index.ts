@@ -14,6 +14,7 @@ import specterRouter from '../api/specter/specter.routes.js';
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
 import overviewRoutes from './overview.js';
 import alertsRoutes from '../api/alerts/alerts.routes.js';
+import ahaRoutes from '../api/aha/aha.routes.js';
 import returnsRoutes from '../api/returns/returns.routes.js';
 import financesRoutes from '../api/finances/index.js';
 import systemRoutes from '../api/system/system.routes.js';
@@ -47,6 +48,8 @@ router.use('/v1/modules/finances', financesRoutes);
 router.use('/v1/modules/overview', overviewRoutes);
 // Alerts inbox — ranked operator signals, auto-resolved per snapshot cycle
 router.use('/v1/alerts', alertsRoutes);
+// Aha signal — 6-priority cascade, returns personalised first insight
+router.use('/v1/aha', ahaRoutes);
 // Returns intelligence — refund summary + per-variant breakdown
 router.use('/v1/modules/returns', returnsRoutes);
 

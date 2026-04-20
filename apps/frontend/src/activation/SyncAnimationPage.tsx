@@ -102,7 +102,7 @@ const STATUS_TO_STEP: Record<string, number> = {
 const POLL_INTERVAL_MS        = 2000;
 const MIN_STEP_DISPLAY_MS     = 1200;
 const SYNTHETIC_STEP_DELAY_MS = 8000;
-const REASSURANCE_DELAY_MS    = 90_000;
+const REASSURANCE_DELAY_MS    = 60_000;
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
 

@@ -24,6 +24,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 
 // FT1 pages (diagnostic / onboarding surfaces)
+import AhaMomentPage from 'pages/ft1-pages/AhaMomentPage';
 import OrdersPage from 'pages/ft1-pages/OrdersPage';
 import ProductsPage from 'pages/ft1-pages/ProductsPage';
 import CustomersPage from 'pages/ft1-pages/CustomersPage';
@@ -135,7 +136,8 @@ export function LifecycleRouteHost() {
         * - crashes (missing FT2 contracts)
         * - mixed lifecycle UI
         */
-        <Route path="/overview/*" element={<OrdersPage />} />
+      // Aha moment owns the /overview route in FT1
+      <Route path="/overview/*" element={<AhaMomentPage />} />
 
       {/* ORDERS */}
       <Route path="/orders/*" element={<OrdersPage />} />
