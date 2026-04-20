@@ -168,3 +168,102 @@ export async function sendTrialExpiryEmail(params: SendTrialExpiryParams): Promi
 
   console.info('[EMAIL] Trial expiry email sent', { toEmail });
 }
+
+export interface SendSyncAcknowledgementParams {
+  toEmail: string;
+  firstName: string;
+}
+
+/**
+ * sendSyncAcknowledgementEmail
+ * ----------------------------
+ * Sent immediately when merchant enters a custom email in SyncAnimationPage.
+ * Sets expectation + explains Morning Brief while they wait.
+ * Only sent when merchant specifies a custom email (not their registered one).
+ */
+export async function sendSyncAcknowledgementEmail(params: SendSyncAcknowledgementParams): Promise<void> {
+  const { toEmail, firstName } = params;
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: toEmail,
+    subject: 'LaSyncro is reading your store — we\'ll email you when it\'s ready',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <h2 style="margin-bottom: 8px;">We're on it.</h2>
+        <p style="color: #555;">Hi ${firstName || 'there'},</p>
+        <p style="color: #555;">
+          LaSyncro is reading your orders, products, and fulfilment history right now.
+          We'll send you another email the moment your Morning Brief is ready.
+        </p>
+        <h3 style="margin-top: 24px; margin-bottom: 8px; color: #111;">What to expect when you return</h3>
+        <p style="color: #555;">
+          Your Morning Brief is a ranked list of what needs your attention today —
+          stock risks, late orders, and revenue signals — prioritised by commercial impact.
+          It's built from your actual data, not generic advice.
+        </p>
+        <p style="color: #555;">
+          Most stores are ready within a few minutes. You can close this tab — your data will be waiting.
+        </p>
+        <p style="color: #aaa; font-size: 12px; margin-top: 32px;">
+          LaSyncro · Operational intelligence for growing merchants
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    console.error('[EMAIL] sendSyncAcknowledgementEmail failed:', error);
+    throw new Error(`EMAIL_DELIVERY_FAILED: ${error.message}`);
+  }
+
+  console.info('[EMAIL] Sync acknowledgement email sent', { toEmail });
+}
+
+export interface SendSyncCompletedParams {
+  toEmail: string;
+  firstName: string;
+}
+
+/**
+ * sendSyncCompletedEmail
+ * ----------------------
+ * Sent from FT0 completion handler when sync actually finishes.
+ * Sent to sync_notify_email if set, otherwise registered user email.
+ * Non-fatal — never blocks lifecycle transition.
+ */
+export async function sendSyncCompletedEmail(params: SendSyncCompletedParams): Promise<void> {
+  const { toEmail, firstName } = params;
+  const appUrl = process.env.FRONTEND_URL ?? 'https://app.lasyncro.com';
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: toEmail,
+    subject: 'Your operation is ready — here\'s what we found',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <h2 style="margin-bottom: 8px;">Your Morning Brief is ready.</h2>
+        <p style="color: #555;">Hi ${firstName || 'there'},</p>
+        <p style="color: #555;">
+          LaSyncro has finished reading your store. We've ranked what needs
+          your attention today by commercial impact — stock risks, delivery issues,
+          and revenue signals specific to your operation.
+        </p>
+        <a href="${appUrl}"
+           style="display:inline-block;margin-top:16px;padding:12px 24px;background:#FF6B2B;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
+          View your Morning Brief
+        </a>
+        <p style="color: #aaa; font-size: 12px; margin-top: 32px;">
+          LaSyncro · Operational intelligence for growing merchants
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    console.error('[EMAIL] sendSyncCompletedEmail failed:', error);
+    throw new Error(`EMAIL_DELIVERY_FAILED: ${error.message}`);
+  }
+
+  console.info('[EMAIL] Sync completed email sent', { toEmail });
+}

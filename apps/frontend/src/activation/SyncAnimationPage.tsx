@@ -30,6 +30,7 @@ import { useColorScheme } from '@mui/material/styles';
 import { CheckCircle, Clock, Volume2, VolumeX } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { ThemeMode } from 'config';
+import { useAuth } from 'contexts/AuthContext';
 
 // ─── Brand tokens (accent + semantic only) ────────────────────────────────────
 
@@ -274,7 +275,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, state, counts, pal }) => {
 
 const SyncAnimationPage: React.FC = () => {
   const pal = useSyncTheme();
-
+  const { user } = useAuth();
+  
   const [stepStates, setStepStates]           = useState<StepState[]>(STEPS.map(() => 'pending'));
   const [activeStepIndex, setActiveStepIndex] = useState(-1);
   const [showTeaser, setShowTeaser]           = useState(false);
@@ -290,10 +292,27 @@ const SyncAnimationPage: React.FC = () => {
   const allTimersRef             = useRef<ReturnType<typeof setTimeout>[]>([]);
   const soundEnabledRef          = useRef(false);
 
+  const [emailRequested, setEmailRequested]     = useState(false);
+  const [emailInputVisible, setEmailInputVisible] = useState(false);
+  const [emailInput, setEmailInput]             = useState('');
+
   const addTimer = (fn: () => void, ms: number) => {
     const t = setTimeout(fn, ms);
     allTimersRef.current.push(t);
     return t;
+  };
+
+  const handleEmailNotify = async () => {
+    if (emailRequested) return;
+    try {
+      await axiosInstance.post('/api/v1/integrations/sync-notify', {
+        notifyEmail: emailInput.trim() || undefined,
+      });
+      setEmailRequested(true);
+      setEmailInputVisible(false);
+    } catch (err) {
+      console.warn('[SyncAnimationPage] email notify failed', err);
+    }
   };
 
   useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
@@ -583,18 +602,42 @@ const SyncAnimationPage: React.FC = () => {
                     Still syncing — larger stores take a few minutes.
                   </Typography>
                   <Typography sx={{ fontSize: '0.75rem', color: pal.textSecond }}>
-                    You can wait here or jump in with what we've found so far.
+                    You can wait here or check your email to be notified when sync is complete.
                   </Typography>
                 </Box>
               </Box>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Button size="small" variant="contained" sx={{ backgroundColor: ACCENT, color: '#fff', fontSize: '0.75rem', textTransform: 'none', borderRadius: '6px', px: 1.5, py: 0.5, fontWeight: 600, '&:hover': { backgroundColor: ACCENT_HOVER } }}>
-                  Continue to dashboard
-                </Button>
-                <Button size="small" sx={{ color: ACCENT, fontSize: '0.75rem', textTransform: 'none', border: `1px solid ${ACCENT_BORDER}`, borderRadius: '6px', px: 1.5, py: 0.5, '&:hover': { backgroundColor: ACCENT_GHOST } }}>
-                  Email me when it's ready
+              {!emailRequested ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, flex: 1 }}>
+            {!emailInputVisible ? (
+              <Button
+                size="small"
+                onClick={() => { setEmailInput(user?.email ?? ''); setEmailInputVisible(true); }}
+                sx={{ color: ACCENT, fontSize: '0.75rem', textTransform: 'none', border: `1px solid ${ACCENT_BORDER}`, borderRadius: '6px', px: 1.5, py: 0.5, '&:hover': { backgroundColor: ACCENT_GHOST } }}
+              >
+                Email me when it's ready
+              </Button>
+            ) : (
+              <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  type="email"
+                  placeholder="your@email.com"
+                  value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)}
+                  style={{ flex: 1, minWidth: 160, padding: '4px 10px', borderRadius: 6, border: `1px solid ${ACCENT_BORDER}`, backgroundColor: 'transparent', color: pal.textPrimary, fontSize: '0.75rem', outline: 'none' }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleEmailNotify(); }}
+                  autoFocus
+                />
+                <Button size="small" onClick={handleEmailNotify} sx={{ color: '#fff', backgroundColor: ACCENT, fontSize: '0.75rem', textTransform: 'none', borderRadius: '6px', px: 1.5, py: 0.5, flexShrink: 0, '&:hover': { backgroundColor: ACCENT_HOVER } }}>
+                  Send
                 </Button>
               </Box>
+                )}
+              </Box>
+            ) : (
+              <Typography sx={{ fontSize: '0.75rem', color: pal.textSecond }}>
+                ✓ We'll email you when it's ready
+              </Typography>
+            )}
             </Box>
           )}
         </Box>

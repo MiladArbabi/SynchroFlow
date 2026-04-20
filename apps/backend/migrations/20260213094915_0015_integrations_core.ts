@@ -28,6 +28,9 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['shop_id', 'platform'], {
       indexName: 'integrations_shop_platform_unique',
     });
+
+    // Optional email for sync completion notification (set via "Email me" CTA in FT0)
+    table.string('sync_notify_email').nullable();
   });
 
   // --- RLS: Enforce tenant isolation ---

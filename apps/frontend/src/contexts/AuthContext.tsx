@@ -61,6 +61,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           shop_id: payload.shop_id ?? null,
           userId: payload.user_id ?? null,
           role: payload.shop_roles?.[0] ?? 'owner',
+          email: payload.email ?? null,
+          first_name: payload.first_name ?? null,
         };
       } catch {
         console.warn('[AUTH][OAUTH_HANDOFF] JWT decode failed — user will be null');

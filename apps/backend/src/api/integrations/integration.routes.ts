@@ -3,9 +3,10 @@ import { Router } from 'express';
 import { 
   initiateOAuth, 
   handleOAuthCallback, 
-  getSyncStatus,
-  preFlightCheck,
-  triggerManualSync
+  getSyncStatus, 
+  preFlightCheck, 
+  triggerManualSync, 
+  requestSyncNotification 
 } from './integration.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { triggerManualInitialSync } from './manualSync.controller.js';
@@ -29,6 +30,8 @@ router.post(
   authenticateToken,
   triggerManualInitialSync
 );
+
+router.post('/sync-notify', authenticateToken, requestSyncNotification);
 
 // This new endpoint must be authenticated
 /* router.get('/discovery-status', authenticateToken, getDiscoveryStatus);

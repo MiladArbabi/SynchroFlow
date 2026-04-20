@@ -159,7 +159,7 @@ export async function issueAuthTokens(
 
   const userExists = await db('users')
     .where({ id: userId })
-    .first('id');
+    .first('id', 'email', 'first_name');
 
   if (!userExists) {
     throw new Error('AUTH_INVARIANT_VIOLATION: user does not exist');
@@ -188,6 +188,9 @@ export async function issueAuthTokens(
       actor_type: actorType,
       user_id: userId,
       shop_id: shopId,
+
+      email: userExists.email,
+      first_name: userExists.first_name ?? null,
 
       shop_roles: shopRoles,
       tier,

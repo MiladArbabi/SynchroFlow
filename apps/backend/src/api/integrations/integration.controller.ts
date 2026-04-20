@@ -689,3 +689,53 @@ export const triggerManualSync = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to trigger sync.' });
   }
 };
+
+/**
+ * POST /api/v1/integrations/sync-notify
+ * --------------------------------------
+ * Merchant requests email notification when sync completes.
+ * - Custom email → saves to sync_notify_email + sends acknowledgement
+ * - No custom email → registered email used for completion only (no acknowledgement)
+ */
+export const requestSyncNotification = async (req: Request, res: Response) => {
+  try {
+    const { userId } = requireAuthStrict(req);
+    const { notifyEmail } = req.body as { notifyEmail?: string };
+    const customEmail = notifyEmail?.trim() || null;
+
+    const user = await db('users')
+      .where({ id: userId })
+      .first('email', 'first_name');
+
+    if (!user?.email) {
+      return res.status(400).json({ error: 'User email not found' });
+    }
+
+    const { shopId } = await requireShopContextForUser(userId);
+
+    if (customEmail) {
+      // Store for FT0 completion handler
+      await db('integrations')
+        .where({ shop_id: shopId })
+        .update({ sync_notify_email: customEmail });
+
+      // Send acknowledgement to custom email immediately
+      const { sendSyncAcknowledgementEmail } = await import(
+        '../../services/email/email.service.js'
+      );
+      sendSyncAcknowledgementEmail({
+        toEmail: customEmail,
+        firstName: user.first_name ?? '',
+      }).catch((err) => {
+        console.error('[SYNC_NOTIFY] acknowledgement email failed', { userId, err });
+      });
+    }
+
+    console.info('[SYNC_NOTIFY] queued', { userId, customEmail: customEmail ?? 'registered' });
+    return res.status(200).json({ ok: true });
+
+  } catch (err) {
+    console.error('[SYNC_NOTIFY] failed', err);
+    return res.status(500).json({ error: 'Failed to queue notification' });
+  }
+};
