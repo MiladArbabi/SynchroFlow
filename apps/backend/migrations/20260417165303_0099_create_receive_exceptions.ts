@@ -86,7 +86,7 @@ export async function up(knex: Knex): Promise<void> {
 
     table
       .integer('raised_by')
-      .notNullable()
+      .nullable() // Nullable: operator account may be removed (SET NULL on delete)
       .references('id')
       .inTable('users')
       .onDelete('SET NULL');

@@ -18,6 +18,11 @@ const REQUIRED_SCOPES = [
   'read_customers',
   'read_products',
   'read_inventory',
+  'write_inventory',          // stow cascade sync — already added
+  'read_inventory_shipments',
+  'write_inventory_shipments',
+  'read_inventory_transfers',
+  'write_inventory_transfers',
   'read_fulfillments',
 
   /**

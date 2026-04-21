@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { fireReceiveArrivedAlert } from '../../services/wms/wmsAlerts.service.js';
+import { recomputeSupplierRating } from '../../services/suppliers/supplierRating.service.js';
 
 /**
  * SUPPLIERS PORTAL CONTROLLERS
@@ -380,68 +381,4 @@ export async function httpReceiveShipment(req: Request, res: Response) {
     console.error('[suppliers] httpReceiveShipment failed', err);
     return res.status(500).json({ error: 'Failed to record shipment receipt' });
   }
-}
-
-// ─────────────────────────────────────────────
-// SUPPLIER RATING RECOMPUTE
-// ─────────────────────────────────────────────
-
-/**
- * Recomputes on_time_rate, fill_rate, and avg_delivery_days for a supplier.
- * Called after every receive action.
- *
- * avg_delivery_days: mean of (actual_delivery_date - expected_delivery_date) in days.
- *   Negative = arrived early. Positive = arrived late.
- *
- * defect_rate: sourced from receive_exceptions at receive time (FEAT-004), NOT pick exceptions.
- * Pick exceptions reflect fulfilment errors; receive exceptions reflect supplier quality defects.
- * Recompute trigger: receive job close → update defect_rate via receive_exceptions count.
- */
-async function recomputeSupplierRating(trx: any, shopId: number, supplierId: number) {
-  const pos = await trx('purchase_orders as po')
-    .leftJoin('purchase_order_line_items as li', function (this: any) {
-      this.on('li.po_id', 'po.id').andOn('li.shop_id', trx.raw('?', [shopId]));
-    })
-    .where({ 'po.supplier_id': supplierId, 'po.shop_id': shopId })
-    .whereIn('po.status', ['received', 'partially_received'])
-    .groupBy('po.id', 'po.expected_delivery_date', 'po.actual_delivery_date')
-    .select(
-      'po.id',
-      'po.expected_delivery_date',
-      'po.actual_delivery_date',
-      trx.raw('COALESCE(SUM(li.quantity_ordered), 0) as total_ordered'),
-      trx.raw('COALESCE(SUM(li.quantity_received), 0) as total_received')
-    );
-
-  if (pos.length === 0) return;
-
-  const onTimeCount = pos.filter((p: any) =>
-    p.actual_delivery_date && p.expected_delivery_date &&
-    new Date(p.actual_delivery_date) <= new Date(p.expected_delivery_date)
-  ).length;
-
-  const totalOrdered = pos.reduce((sum: number, p: any) => sum + Number(p.total_ordered), 0);
-  const totalReceived = pos.reduce((sum: number, p: any) => sum + Number(p.total_received), 0);
-
-  const on_time_rate = (onTimeCount / pos.length) * 100;
-  const fill_rate = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : null;
-
-  // avg_delivery_days — only for POs with both dates recorded
-  const posWithDates = pos.filter((p: any) => p.actual_delivery_date && p.expected_delivery_date);
-  const avg_delivery_days = posWithDates.length > 0
-    ? posWithDates.reduce((sum: number, p: any) => {
-        const diff = (new Date(p.actual_delivery_date).getTime() - new Date(p.expected_delivery_date).getTime())
-          / (1000 * 60 * 60 * 24);
-        return sum + diff;
-      }, 0) / posWithDates.length
-    : null;
-
-  await trx('suppliers')
-    .where({ id: supplierId, shop_id: shopId })
-    .update({
-      on_time_rate: on_time_rate.toFixed(2),
-      fill_rate: fill_rate !== null ? fill_rate.toFixed(2) : null,
-      avg_delivery_days: avg_delivery_days !== null ? avg_delivery_days.toFixed(2) : null,
-      updated_at: new Date(),
-    });
 }

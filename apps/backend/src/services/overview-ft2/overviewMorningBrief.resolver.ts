@@ -60,12 +60,24 @@ export interface MorningBriefSnapshot {
 // Maps alert_type to frontend route with pre-applied filter.
 // Must stay in sync with frontend router.
 const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
-  sla_breach:      { module: 'order-nexus', deepLink: '/orders?filter=sla_breached' },
-  operational:     { module: 'order-nexus', deepLink: '/orders?filter=aging_72h' },
-  inventory:       { module: 'order-nexus', deepLink: '/orders?filter=out_of_stock' },
-  customer:        { module: 'order-nexus', deepLink: '/orders?filter=address_issue' },
-  revenue_at_risk: { module: 'cashflow',    deepLink: '/cash-flow?focus=constrained' },
-  missing_cogs:    { module: 'finances',    deepLink: '/finances?focus=missing_cogs' },
+  // Order signals
+  sla_breach:               { module: 'order-nexus',      deepLink: '/orders?filter=sla_breached' },
+  operational:              { module: 'order-nexus',      deepLink: '/orders?filter=aging_72h' },
+  inventory:                { module: 'order-nexus',      deepLink: '/orders?filter=out_of_stock' },
+  customer:                 { module: 'order-nexus',      deepLink: '/orders?filter=address_issue' },
+  // Financial signals
+  revenue_at_risk:          { module: 'cashflow',         deepLink: '/cash-flow?focus=constrained' },
+  missing_cogs:             { module: 'finances',         deepLink: '/finances?focus=missing_cogs' },
+  // WMS signals
+  wms_receive_arrived:      { module: 'wms',              deepLink: '/wms?filter=receive_pending' },
+  wms_receive_exception:    { module: 'wms',              deepLink: '/wms?filter=receive_exceptions' },
+  wms_stow_pending:         { module: 'wms',              deepLink: '/wms?filter=stow_pending' },
+  wms_pick_exception:       { module: 'wms',              deepLink: '/wms?filter=pick_exceptions' },
+  wms_pack_exception:       { module: 'wms',              deepLink: '/wms?filter=pack_exceptions' },
+  wms_batch_ready_to_pack:  { module: 'wms',              deepLink: '/wms?filter=ready_to_pack' },
+  wms_batch_ready_to_ship:  { module: 'wms',              deepLink: '/wms?filter=ready_to_ship' },
+  // Supplier signals
+  wms_supplier_rating:      { module: 'suppliers-portal', deepLink: '/suppliers-portal' },
 };
 
 const SEVERITY_PRIORITY: Record<string, number> = {

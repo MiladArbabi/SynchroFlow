@@ -13,6 +13,9 @@ import {
   fireBatchReadyToPackAlert,
   fireBatchReadyToShipAlert,
 } from '../../services/wms/wmsAlerts.service.js';
+import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
+import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
+import { syncStowedQuantityToShopify } from '../../services/wms/shopifyInventorySync.service.js';
 
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
@@ -873,7 +876,86 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         isActive: false,
         trigger: 'inbound_stock',
       });
+
+      // CASCADE: Rebuild inventory projection for stowed variant so
+      // constraint evaluator sees updated available_quantity on next reconciliation.
+      const task = await trx('stow_tasks')
+        .where({ stow_task_id: taskId, shop_id: shopId })
+        .select('lasyncro_variant_id')
+        .first();
+
+      if (task?.lasyncro_variant_id) {
+        await rebuildInventoryProjectionForVariants(
+          shopId,
+          [task.lasyncro_variant_id],
+          trx,
+          new Date()
+        );
+
+        // CASCADE: Enqueue reconciliation for orders constrained on this variant.
+        // Constraint engine will re-evaluate inventory block and release if stock now sufficient.
+        const constrainedOrders = await trx('order_constraints as oc')
+          .join('orders as o', 'oc.lasyncro_order_id', 'o.lasyncro_order_id')
+          .where({
+            'oc.shop_id': shopId,
+            'oc.constraint_type': 'inventory',
+            'oc.is_active': true,
+            'oc.block_type': 'oversell',
+          })
+          .where('oc.target_id', task.lasyncro_variant_id)
+          .select('o.lasyncro_order_id', 'o.aggregate_version');
+
+        for (const order of constrainedOrders) {
+          await trx('order_reconciliation_intents')
+            .insert({
+              lasyncro_order_id: order.lasyncro_order_id,
+              aggregate_version: order.aggregate_version,
+              created_at: new Date(),
+            })
+            .onConflict(['lasyncro_order_id', 'aggregate_version'])
+            .ignore();
+        }
+
+        if (constrainedOrders.length > 0) {
+          console.info('[STOW_CASCADE_ORDERS_QUEUED]', {
+            shopId,
+            taskId,
+            variantId: task.lasyncro_variant_id,
+            ordersQueued: constrainedOrders.length,
+          });
+          // CASCADE NOTE: Cash flow projection (computeCashFlowProjection) is live-computed
+          // from inventory_truth × variants.unit_cost. The inventory rebuild above is sufficient
+          // to refresh the 60-day projection on next read — no explicit write required.
+          // Pre-condition: variants.unit_cost must be populated for COGS to appear in projection.
+          
+        }
+      }
     });
+
+    // CASCADE: Sync stowed quantity to Shopify OUTSIDE transaction —
+    // external HTTP call must not hold DB connection open.
+    // Failure is logged but does not fail the stow confirmation.
+    const stowedTask = await db('stow_tasks')
+      .where({ stow_task_id: taskId, shop_id: shopId })
+      .select('lasyncro_variant_id', 'quantity', 'location_code')
+      .first();
+
+    if (stowedTask?.lasyncro_variant_id && stowedTask?.location_code) {
+      syncStowedQuantityToShopify(db as any, {
+        shopId,
+        lasyncroVariantId: stowedTask.lasyncro_variant_id,
+        locationCode: stowedTask.location_code,
+        quantityDelta: stowedTask.quantity,
+      }).catch((err: Error) => {
+        // Non-fatal — internal inventory_truth is source of truth.
+        // Shopify sync failure is recoverable via manual reconciliation.
+        console.error('[SHOPIFY_INV_SYNC_FAILED]', {
+          shopId,
+          taskId,
+          error: err.message,
+        });
+      });
+    }
 
     return res.status(200).json({ stow_task_id: taskId, status: 'completed' });
   } catch (error) {

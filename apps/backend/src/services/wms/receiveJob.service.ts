@@ -2,6 +2,7 @@
 import { Knex } from 'knex';
 import { createStowTask } from './stow.service.js';
 import { fireStowTaskAlert, fireReceiveArrivedAlert } from './wmsAlerts.service.js';
+import { recomputeSupplierRating, recomputeSupplierDefectRate } from '../suppliers/supplierRating.service.js';
 
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
@@ -203,6 +204,18 @@ export async function closeReceiveJob(
       .where({ id: job.po_id, shop_id: shopId })
       .update({ status: newPoStatus, updated_at: new Date() });
   }
+
+  // 3a. Increment supplier total_pos on full receipt — mirrors httpUpdatePoStatus behaviour
+  if (fullyReceived) {
+    await trx('suppliers')
+      .where({ id: po.supplier_id, shop_id: shopId })
+      .increment('total_pos', 1);
+  }
+
+  // 3b. Recompute supplier rating — on_time_rate, fill_rate, avg_delivery_days
+  await recomputeSupplierRating(trx, shopId, po.supplier_id);
+  // 3c. Recompute defect_rate from receive_exceptions (defect type only)
+  await recomputeSupplierDefectRate(trx, shopId, po.supplier_id);
 
   // 4. Create stow tasks for accepted units (quantity > 0 only)
   for (const line of lines) {
