@@ -10,8 +10,8 @@ import { sendOperatorInviteEmail } from '../../services/email/email.service.js';
  * Owner/admin API for shop member management (WM-31).
  *
  * All queries are RLS-scoped via app.current_tenant.
- * Role changes update BOTH users.role and shop_memberships.role
- * to keep them in sync until users.role is deprecated (WM-19).
+ * Role changes update shop_memberships.role — source of truth for JWT shop_roles claim.
+ * users.role sync removed (WM-19).
  *
  * Source of truth for JWT roles: shop_memberships.role
  * (resolved at login/refresh via shop-resolution.service.ts)
@@ -50,8 +50,7 @@ export const listMembers = async (req: Request, res: Response) => {
  * PATCH /api/v1/members/:userId/role
  * Updates role for a shop member.
  *
- * Syncs both shop_memberships.role and users.role atomically.
- * users.role will be deprecated in WM-19 — sync kept until then.
+ * Updates shop_memberships.role — source of truth for JWT shop_roles claim (WM-19).
  *
  * Body: { role: 'owner' | 'admin' | 'operator' }
  */
@@ -98,10 +97,8 @@ export const updateMemberRole = async (req: Request, res: Response) => {
         .where({ id: membership.id })
         .update({ role, updated_at: new Date() });
 
-      // 3. Sync users.role — kept in sync until WM-19 deprecates it
-      await trx('users')
-        .where({ id: targetUserId })
-        .update({ role, updated_at: new Date() });
+      // users.role sync removed — WM-19 complete.
+      // shop_memberships.role is the sole source of truth for JWT shop_roles claim.
     });
 
     console.info('[MEMBERS] Role updated', {

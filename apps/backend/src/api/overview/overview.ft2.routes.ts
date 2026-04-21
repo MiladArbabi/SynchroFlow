@@ -4,7 +4,8 @@ import { getOverviewModulesFt2 } from './overview.modules-ft2.controller.js';
 import { getMorningBrief } from './overview.morning-brief.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
-import { requireRole } from '../../middleware/require-role.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
+
 const router = Router();
 /**
  * STRICT Overview FT2
@@ -40,7 +41,7 @@ router.get(
   '/morning-brief',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('morning-brief:read'),
   getMorningBrief
 );
 export default router;

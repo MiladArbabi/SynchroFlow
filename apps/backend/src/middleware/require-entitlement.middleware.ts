@@ -6,7 +6,7 @@
 //
 // Gates access by subscription tier (from JWT claim).
 // Does NOT replace role checks for permission levels (owner/admin/operator) —
-// those remain in requireRole until WM-19 deprecates users.role entirely.
+// role checks are handled by requireAction middleware (WM-19).
 //
 // Usage:
 //   router.get('/cash-flow', authenticateToken, requireTier('growth'), handler)

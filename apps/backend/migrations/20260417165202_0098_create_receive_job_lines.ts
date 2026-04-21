@@ -59,6 +59,15 @@ export async function up(knex: Knex): Promise<void> {
      */
     table.boolean('inspection_complete').notNullable().defaultTo(false);
 
+    /**
+     * LOCATION SUGGESTION (WM-36)
+     * ----------------------------
+     * Pre-populated on job creation from inventory_unit_status last-known-location.
+     * Null = no prior stow history — operator assigns manually via PATCH /stow-tasks/:id/location.
+     * Copied to stow_task.location_code on job close if operator hasn't overridden.
+     */
+    table.string('suggested_location_code', 255).nullable();
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());

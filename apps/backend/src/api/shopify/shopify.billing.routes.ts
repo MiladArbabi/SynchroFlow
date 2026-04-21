@@ -8,7 +8,7 @@
 
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
-import { requireRole } from '../../middleware/require-role.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   createShopifyCharge,
   handleShopifyCallback,
@@ -18,10 +18,10 @@ import {
 const router = Router();
 
 // GET  /api/v1/shopify-billing/subscription
-router.get('/subscription', authenticateToken, requireRole(['owner', 'admin']), getShopifySubscription);
+router.get('/subscription', authenticateToken, requireAction('shopify-billing:read'), getShopifySubscription);
 
 // POST /api/v1/shopify-billing/checkout
-router.post('/checkout', authenticateToken, requireRole(['owner']), createShopifyCharge);
+router.post('/checkout', authenticateToken, requireAction('shopify-billing:write'), createShopifyCharge);
 
 // GET  /api/v1/shopify-billing/callback — no JWT auth (browser redirect from Shopify)
 router.get('/callback', handleShopifyCallback);

@@ -3,6 +3,7 @@ import { Knex } from 'knex';
 import { createStowTask } from './stow.service.js';
 import { fireStowTaskAlert, fireReceiveArrivedAlert } from './wmsAlerts.service.js';
 import { recomputeSupplierRating, recomputeSupplierDefectRate } from '../suppliers/supplierRating.service.js';
+import { suggestStowLocation } from './locationSuggestion.service.js';
 
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
@@ -61,16 +62,25 @@ export async function createReceiveJob(
 
   const jobId = receiveJobId?.receive_job_id ?? receiveJobId;
 
-  // Create one line per variant
-  await trx('receive_job_lines').insert(
-    lineItems.map((li: any) => ({
-      shop_id: shopId,
-      receive_job_id: jobId,
-      po_line_item_id: li.id,
-      lasyncro_variant_id: li.lasyncro_variant_id,
-      quantity_expected: li.quantity_ordered,
-    }))
+  // Create one line per variant — with location suggestion (WM-36)
+  const jobLines = await Promise.all(
+    lineItems.map(async (li: any) => {
+      const suggestedLocation = li.lasyncro_variant_id
+        ? await suggestStowLocation(trx, { shopId, lasyncroVariantId: li.lasyncro_variant_id })
+        : null;
+
+      return {
+        shop_id: shopId,
+        receive_job_id: jobId,
+        po_line_item_id: li.id,
+        lasyncro_variant_id: li.lasyncro_variant_id,
+        quantity_expected: li.quantity_ordered,
+        suggested_location_code: suggestedLocation ?? null,
+      };
+    })
   );
+
+  await trx('receive_job_lines').insert(jobLines);
 
   console.info('[RECEIVE_JOB_CREATED]', { shopId, poId, jobId, totalVariants: lineItems.length, totalUnits });
   return jobId;
@@ -205,6 +215,29 @@ export async function closeReceiveJob(
       .update({ status: newPoStatus, updated_at: new Date() });
   }
 
+  // 3. Backfill variants.unit_cost from PO line items where cost is unknown (= 0).
+  // unit_cost_cents on PO line items is the merchant's authoritative purchase cost.
+  // Never overwrite a real cost — only fill the 0-placeholder left by Shopify ingestion.
+  for (const line of lines) {
+    if (!line.po_line_item_id || line.quantity_accepted <= 0) continue;
+
+    const poLine = await trx('purchase_order_line_items')
+      .where({ id: line.po_line_item_id, shop_id: shopId })
+      .select('unit_cost_cents', 'lasyncro_variant_id')
+      .first();
+
+    if (!poLine?.unit_cost_cents || poLine.unit_cost_cents <= 0) continue;
+    if (!poLine.lasyncro_variant_id) continue;
+
+    await trx('variants')
+      .where({ lasyncro_variant_id: poLine.lasyncro_variant_id, shop_id: shopId })
+      .where('unit_cost', 0) // only fill placeholder — never overwrite real cost
+      .update({
+        unit_cost: poLine.unit_cost_cents / 100,
+        updated_at: new Date(),
+      });
+  }
+
   // 3a. Increment supplier total_pos on full receipt — mirrors httpUpdatePoStatus behaviour
   if (fullyReceived) {
     await trx('suppliers')
@@ -227,7 +260,9 @@ export async function closeReceiveJob(
       quantity: line.quantity_accepted,
       trigger: 'inbound_stock',
       poId: job.po_id,
-      // location_code omitted — assigned via PATCH /stow-tasks/:taskId/location (WM-36)
+      // WM-36: use suggested location from receive_job_lines if available.
+      // Operator can still override via PATCH /stow-tasks/:taskId/location.
+      locationCode: line.suggested_location_code ?? undefined,
     });
 
     await fireStowTaskAlert(trx, {

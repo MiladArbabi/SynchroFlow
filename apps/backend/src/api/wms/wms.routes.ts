@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
-import { requireRole } from '../../middleware/require-role.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 import { requireTier } from '../../middleware/require-entitlement.middleware.js';
 import {
   httpGetBatches,
@@ -38,7 +38,7 @@ import {
  */
 
 // WMS routes — all gated at Core tier minimum (MON-03).
-// Tier enforcement: authenticateToken → requireFt2 → requireTier → requireRole
+// Tier enforcement: authenticateToken → requireFt2 → requireTier → requireAction
 // Seat limit is the natural Scale differentiator — no Scale-only routes needed.
 const router = Router();
 router.get(
@@ -46,7 +46,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:read'),
   httpGetBatches
 );
 router.get(
@@ -54,7 +54,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:read'),
   httpGetBatchLineItems
 );
 router.post(
@@ -62,7 +62,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['owner', 'admin']),
+  requireAction('wms:batch:release'),
   httpReleaseBatch
 );
 router.post(
@@ -70,7 +70,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:batch:claim'),
   httpClaimBatch
 );
 router.post(
@@ -78,7 +78,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:pick:scan'),
   httpCompletePick
 );
 router.post(
@@ -86,7 +86,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:pack:scan'),
   httpClaimPack
 );
 router.get(
@@ -94,7 +94,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:read'),
   httpGetBatchOrders
 );
 router.get(
@@ -102,7 +102,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['owner', 'admin']),
+  requireAction('wms:read'),
   httpGetSkuGaps
 );
 router.get(
@@ -110,7 +110,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:read'),
   httpGetStowTasks
 );
 router.post(
@@ -118,7 +118,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:pack:scan'),
   httpConfirmPackScan
 );
 router.post(
@@ -126,7 +126,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:pack:scan'),
   httpCompletePack
 );
 router.post(
@@ -134,7 +134,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:exception:report'),
   httpReportPickException
 );
 router.post(
@@ -142,7 +142,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:read'),
   httpResolveBarcode
 );
 router.post(
@@ -150,7 +150,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:pick:scan'),
   httpConfirmPickScan
 );
 router.post(
@@ -158,7 +158,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['owner', 'admin']),
+  requireAction('wms:exception:report'),
   httpResolveException
 );
 router.post(
@@ -166,7 +166,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:ship:confirm'),
   httpConfirmShipment
 );
 router.post(
@@ -174,7 +174,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['owner', 'admin']),
+  requireAction('wms:stow:location'),
   httpCreateStowTask
 );
 router.post(
@@ -182,7 +182,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:stow:claim'),
   httpClaimStowTask
 );
 router.post(
@@ -190,7 +190,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['operator', 'owner', 'admin']),
+  requireAction('wms:stow:confirm'),
   httpConfirmStow
 );
 
@@ -199,7 +199,7 @@ router.patch(
   authenticateToken,
   requireFt2,
   requireTier('core'),
-  requireRole(['owner', 'admin']),
+  requireAction('wms:stow:location'),
   httpAssignStowLocation
 );
 

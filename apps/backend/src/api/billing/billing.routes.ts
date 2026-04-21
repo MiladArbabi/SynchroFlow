@@ -2,12 +2,12 @@
 //
 // Billing routes (MON-08)
 // -----------------------
-// All routes require authentication (owner/admin only via requireRole).
+// All routes require authentication. Access controlled via requireAction.
 // Stripe webhook is registered separately in express.ts (no JWT auth).
 
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
-import { requireRole } from '../../middleware/require-role.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   createCheckoutSession,
   createPortalSession,
@@ -17,12 +17,12 @@ import {
 const router = Router();
 
 // GET  /api/v1/billing/subscription — current subscription state
-router.get('/subscription', authenticateToken, requireRole(['owner', 'admin']), getSubscription);
+router.get('/subscription', authenticateToken, requireAction('billing:read'), getSubscription);
 
 // POST /api/v1/billing/checkout — create Stripe Checkout session
-router.post('/checkout', authenticateToken, requireRole(['owner']), createCheckoutSession);
+router.post('/checkout', authenticateToken, requireAction('billing:write'), createCheckoutSession);
 
 // POST /api/v1/billing/portal — create Stripe Customer Portal session
-router.post('/portal', authenticateToken, requireRole(['owner', 'admin']), createPortalSession);
+router.post('/portal', authenticateToken, requireAction('billing:read'), createPortalSession);
 
 export default router;

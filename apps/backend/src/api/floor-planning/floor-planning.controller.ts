@@ -43,10 +43,14 @@ export async function httpGetLayout(req: Request, res: Response) {
         })
         .where('v.shop_id', shopId)
         .orderBy('v.created_at', 'desc')
+        .leftJoin('products as p', function () {
+          this.on('p.lasyncro_product_id', 'v.lasyncro_product_id')
+              .andOn('p.shop_id', trx.raw('?', [shopId]));
+        })
         .select(
           'v.lasyncro_variant_id',
           'v.sku',
-          trx.raw(`'' as product_title`),  // FEAT-002: join products table for title
+          'p.title as product_title',
           trx.raw(`null as variant_title`),
           'ep.barcode'
         );

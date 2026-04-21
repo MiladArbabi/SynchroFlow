@@ -124,7 +124,7 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
  *
  * All endpoints require:
  * - authenticateToken — valid JWT
- * - requireRole — role-based access (temporary until WM-19)
+ * - requireAction — action-level access control (WM-19)
  * - requireFt2 — shop must be in FT2 lifecycle
  *
  * Tenant isolation:

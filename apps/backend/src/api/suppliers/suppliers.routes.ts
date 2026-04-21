@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
-import { requireRole } from '../../middleware/require-role.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   httpGetSuppliers,
   httpCreateSupplier,
@@ -36,7 +36,7 @@ router.get(
   '/',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('suppliers:read'),
   httpGetSuppliers
 );
 
@@ -44,7 +44,7 @@ router.post(
   '/',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('suppliers:write'),
   httpCreateSupplier
 );
 
@@ -53,7 +53,7 @@ router.get(
   '/purchase-orders',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('po:read'),
   httpGetPurchaseOrders
 );
 
@@ -61,7 +61,7 @@ router.post(
   '/purchase-orders',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('po:write'),
   httpCreatePurchaseOrder
 );
 
@@ -69,7 +69,7 @@ router.get(
   '/purchase-orders/:poId/line-items',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('po:read'),
   httpGetPoLineItems
 );
 
@@ -77,7 +77,7 @@ router.patch(
   '/purchase-orders/:poId/status',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('po:status'),
   httpUpdatePoStatus
 );
 
@@ -85,7 +85,7 @@ router.post(
   '/purchase-orders/:poId/receive',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('po:receive'),
   httpReceiveShipment
 );
 
@@ -94,28 +94,28 @@ router.post(
   '/purchase-orders/:poId/receive-jobs',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin', 'operator']),
+  requireAction('receive-job:create'),
   httpCreateReceiveJob
 );
 router.get(
   '/receive-jobs/:jobId',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin', 'operator']),
+  requireAction('receive-job:read'),
   httpGetReceiveJob
 );
 router.post(
   '/receive-jobs/:jobId/inspect',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin', 'operator']),
+  requireAction('receive-job:inspect'),
   httpInspectReceiveJobLine
 );
 router.post(
   '/receive-jobs/:jobId/close',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin']),
+  requireAction('receive-job:close'),
   httpCloseReceiveJob
 );
 
@@ -123,7 +123,7 @@ router.post(
   '/receive-jobs/:jobId/exception',
   authenticateToken,
   requireFt2,
-  requireRole(['owner', 'admin', 'operator']),
+  requireAction('receive-job:exception'),
   httpReportReceiveException
 );
 

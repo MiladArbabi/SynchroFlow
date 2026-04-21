@@ -1,7 +1,7 @@
 // apps/backend/src/api/members/members.routes.ts
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
-import { requireRole } from '../../middleware/require-role.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 import { createMember, listMembers, updateMemberRole, updateMyCurrencyPreference } from './members.controller.js';
 
 /**
@@ -16,13 +16,13 @@ import { createMember, listMembers, updateMemberRole, updateMyCurrencyPreference
 const router = Router();
 
 // List all active shop members
-router.get('/', authenticateToken, requireRole(['owner', 'admin']), listMembers);
+router.get('/', authenticateToken, requireAction('members:read'), listMembers);
 
 // Update a member's role
-router.patch('/:userId/role', authenticateToken, requireRole(['owner', 'admin']), updateMemberRole);
+router.patch('/:userId/role', authenticateToken, requireAction('members:write'), updateMemberRole);
 
 // Create a new shop member and send invite email
-router.post('/', authenticateToken, requireRole(['owner', 'admin']), createMember);
+router.post('/', authenticateToken, requireAction('members:write'), createMember);
 
 // Update own display currency + locale preference (self-service, all roles)
 router.patch('/me/currency', authenticateToken, updateMyCurrencyPreference);
