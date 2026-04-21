@@ -26,7 +26,9 @@
 //   Never add role arrays to route files.
 //   Never add new roles without updating this map.
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import '@lasyncro/backend-core/middleware/auth.middleware.js'; // augments Express.Request with .user
+import { isActionAllowed } from '../services/permissions/permissionCache.service.js';
 
 /**
  * Canonical action → allowed roles map.
@@ -93,16 +95,15 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
  * @param action - Key from ACTION_ROLE_MAP
  */
 export function requireAction(action: string) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const allowedRoles = ACTION_ROLE_MAP[action];
-
+  return async (req: Request, res: Response, next: NextFunction) => {
     // Guard: unknown action = misconfigured route, not a user error
-    if (!allowedRoles) {
+    if (!ACTION_ROLE_MAP[action]) {
       console.error('[requireAction] Unknown action:', action);
       return res.status(500).json({ error: 'MISCONFIGURED_ACTION', action });
     }
 
     const roles = req.user?.roles;
+    const shopId = req.user?.shopId;
 
     if (!roles) {
       return res.status(401).json({
@@ -118,13 +119,30 @@ export function requireAction(action: string) {
       });
     }
 
-    const hasRole = roles.some((r) => allowedRoles.includes(r));
+    // Shop-configured permissions (Redis-cached, DB-backed).
+    // Falls back to ACTION_ROLE_MAP if shop has no config yet.
+    // Shop-configured permissions (Redis-cached, DB-backed).
+    // Falls back to ACTION_ROLE_MAP if shop has no config yet.
+    if (shopId) {
+      let allowed = false;
+      for (const role of roles) {
+        if (await isActionAllowed(shopId, action, role)) {
+          allowed = true;
+          break;
+        }
+      }
+      return allowed
+        ? next()
+        : res.status(403).json({ error: 'ACTION_FORBIDDEN', action, current: roles });
+    }
 
+    // Fallback: no shopId on token — use static ACTION_ROLE_MAP
+    const allowedRoles = ACTION_ROLE_MAP[action] as string[];
+    const hasRole = roles.some((r: string) => allowedRoles.includes(r));
     if (!hasRole) {
       return res.status(403).json({
         error: 'ACTION_FORBIDDEN',
         action,
-        required: allowedRoles,
         current: roles,
       });
     }

@@ -8,6 +8,7 @@ import { startWorkers } from './bootstrap/workers.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { runSchemaGuard } from './utils/schemaGuard.js';
+import { initRedisClient, closeRedisClient } from '@lasyncro/backend-core/services/redis.client.js';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -21,13 +22,13 @@ const __filename = fileURLToPath(import.meta.url);
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 
 async function start() {
+  await initRedisClient();
   await initSpecterStore();
-
   // schema verification FIRST
   await runSchemaGuard();
-
   // infrastructure SECOND
   await initQueue();
+
   await startWorkers();
 
   server = app.listen(port, HOST, () => {
@@ -37,6 +38,7 @@ async function start() {
 
 async function shutdown(sig?: string) {
   console.log('[server] shutdown triggered', sig || '');
+  try { await closeRedisClient(); } catch (e) { /* ignore */ }
   try { await closeSpecterStore(); } catch (e) { /* ignore */ }
   try { await closeQueue(); } catch (e) { /* ignore */ }
 

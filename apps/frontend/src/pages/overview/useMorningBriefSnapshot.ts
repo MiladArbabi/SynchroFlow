@@ -32,6 +32,8 @@ export interface MorningBriefData {
   generatedAt: string;
   trustWarning: boolean;
   fromCache: boolean;
+  greeting: string | null;
+  summaryLine: string | null;
 }
 
 export function useMorningBriefSnapshot(force = false) {
@@ -40,7 +42,7 @@ export function useMorningBriefSnapshot(force = false) {
     queryFn: async () => {
       const { data, status } = await axiosInstance.get(
         `/api/v1/modules/overview/morning-brief${force ? '?force=true' : ''}`,
-        { validateStatus: (s) => s === 200 || s === 204 }
+        { validateStatus: (s: number) => s === 200 || s === 204 }
       );
       // 204 = trust not eligible — no brief available
       if (status === 204) return null;

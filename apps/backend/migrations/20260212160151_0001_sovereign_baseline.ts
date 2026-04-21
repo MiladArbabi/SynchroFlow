@@ -33,6 +33,21 @@ export async function up(knex: Knex): Promise<void> {
     table.string('base_currency', 3)
       .notNullable()
       .defaultTo('USD');
+
+    /**
+     * SHOP TIMEZONE (IANA format, e.g. 'Europe/London', 'America/New_York')
+     * -----------------------------------------------------------------------
+     * Used by:
+     * - Morning Brief nightly job (runs at 5am per shop timezone, OVR-02)
+     * - Greeting computation (Good morning / Good afternoon)
+     * - Any time-of-day logic scoped to merchant local time
+     *
+     * Set at onboarding from Shopify store timezone.
+     * Defaults to 'UTC' until Shopify installation sets it.
+     */
+    table.string('timezone', 100)
+      .notNullable()
+      .defaultTo('UTC');
   });
 
   // --- RLS: Enforce tenant isolation ---

@@ -7,6 +7,7 @@ import MainCard from 'ui-component/cards/MainCard';
 
 // project imports
 import LocalizationSettings from '../account-settings/LocalizationSettings';
+import PermissionsSettings from '../account-settings/PermissionsSettings';
 
 import IconComponent from 'components/Icon';
 import { SpecterConfigPanel } from 'components/specter/SpecterConfigPanel';
@@ -109,6 +110,12 @@ const AccountSettingsPage: React.FC = () => {
               iconPosition="start"
               {...a11yProps(3)}
             />
+            <Tab
+              label="Permissions"
+              icon={<IconComponent name="Shield" size="small" />}
+              iconPosition="start"
+              {...a11yProps(4)}
+            />
           </Tabs>
 
         </Box>
@@ -121,8 +128,11 @@ const AccountSettingsPage: React.FC = () => {
         <TabPanel value={value} index={2}>
           <Typography>Security settings placeholder. (e.g., change password, 2FA)</Typography>
         </TabPanel>
-        <TabPanel value={value} index={3}>
+         <TabPanel value={value} index={3}>
           <SpecterConfigPanel />
+        </TabPanel>
+        <TabPanel value={value} index={4}>
+          <PermissionsSettings />
         </TabPanel>
       </Box>
     </MainCard>

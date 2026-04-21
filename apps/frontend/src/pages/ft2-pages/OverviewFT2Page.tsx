@@ -11,6 +11,7 @@ import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { FirstInsightBanner } from '../overview/FirstInsightBanner';
 import { useAuth } from 'contexts/AuthContext';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
@@ -42,6 +43,7 @@ export default function OverviewPageFT2() {
    * Null = trust not eligible or brief not computed yet.
    */
   const isOwnerOrAdmin = user?.role === 'owner' || user?.role === 'admin';
+  const { displayCurrency } = useEntitlements();
   const morningBrief = useMorningBriefSnapshot(forceRefresh);
 
   if (!overviewModules.isSuccess) return null;
@@ -82,6 +84,7 @@ export default function OverviewPageFT2() {
         } : null}
         
         morningBrief={isOwnerOrAdmin ? (morningBrief.data ?? null) : undefined}
+        currency={displayCurrency}
         onNavigate={(deepLink) => navigate(deepLink)}
         onRefreshBrief={() => setForceRefresh(f => !f)}
       />

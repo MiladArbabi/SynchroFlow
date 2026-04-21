@@ -28,6 +28,44 @@
 import db from '@lasyncro/backend-core/db.js';
 import { getTrustFt2Snapshot } from '../trust-ft2/trustFt2.resolver.js';
 
+/**
+ * Computes a personalized greeting based on shop timezone and owner's first name.
+ * Falls back gracefully if timezone or name is missing.
+ */
+function computeGreeting(firstName: string | null, timezone: string): string {
+  let hour = new Date().getHours(); // fallback: server local time
+  try {
+    const localTime = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone: timezone,
+    }).format(new Date());
+    hour = parseInt(localTime, 10);
+  } catch {
+    // Invalid timezone — use server time
+  }
+
+  const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+  const name = firstName?.trim();
+  return name
+    ? `Good ${timeOfDay}, ${name}`
+    : `Good ${timeOfDay}`;
+}
+
+/**
+ * Computes a one-sentence business context summary for the brief header.
+ */
+function computeSummaryLine(
+  signalCount: number,
+  hasUrgentIssues: boolean
+): string {
+  if (signalCount === 0) return 'All clear — operations are on track today.';
+  if (hasUrgentIssues) {
+    return `${signalCount} issue${signalCount > 1 ? 's' : ''} need${signalCount === 1 ? 's' : ''} your attention today.`;
+  }
+  return `${signalCount} item${signalCount > 1 ? 's' : ''} to review when you have a moment.`;
+}
+
 // --- Types ---
 
 export interface MorningBriefSignal {
@@ -54,6 +92,10 @@ export interface MorningBriefSnapshot {
   generatedAt: string;
   /** True if trust state degraded after brief was cached */
   trustWarning: boolean;
+  /** Personalized greeting — "Good morning, Milad" */
+  greeting: string;
+  /** One-sentence business context — "3 issues need your attention" */
+  summaryLine: string;
 }
 
 // --- Deep link map ---
@@ -96,10 +138,28 @@ export async function computeMorningBrief(input: {
   // --- Trust gate ---
   // Owner/admin brief requires trusted data.
   // Never surface intelligence signals from stale or partial sync.
-  const trust = await getTrustFt2Snapshot({ shopId });
-  if (trust.trustEligible !== true) {
-    return null;
+  // DEV BYPASS: In development, skip trust gate so the brief renders with seed data.
+  // Remove this bypass before deploying to production.
+  const isDev = process.env.NODE_ENV === 'development';
+  if (!isDev) {
+    const trust = await getTrustFt2Snapshot({ shopId });
+    if (trust.trustEligible !== true) {
+      return null;
+    }
   }
+
+  // --- Fetch owner name + shop timezone for greeting ---
+  const shopRow = await db('shops').where({ id: shopId }).select('timezone').first();
+  const timezone = shopRow?.timezone ?? 'UTC';
+
+  const ownerRow = await db('users as u')
+    .join('shop_memberships as sm', 'sm.user_id', 'u.id')
+    .where({ 'sm.shop_id': shopId, 'sm.role': 'owner' })
+    .orderBy('sm.created_at', 'asc')
+    .select('u.first_name')
+    .first();
+
+  const firstName = ownerRow?.first_name ?? null;
 
   // --- Read active, non-dismissed alerts ---
   // Ranked by severity (critical first) then revenue impact (highest first).
@@ -142,11 +202,15 @@ export async function computeMorningBrief(input: {
     };
   });
 
+  const hasUrgentIssues = signals.some(s => s.priority <= 2);
+
   return {
     signals,
-    hasUrgentIssues: signals.some(s => s.priority <= 2),
+    hasUrgentIssues,
     generatedAt: new Date().toISOString(),
     trustWarning: false,
+    greeting: computeGreeting(firstName, timezone),
+    summaryLine: computeSummaryLine(signals.length, hasUrgentIssues),
   };
 }
 
@@ -171,6 +235,8 @@ export async function persistMorningBrief(
       has_urgent_issues: brief?.hasUrgentIssues ?? false,
       trust_eligible: brief !== null,
       trust_warning: brief?.trustWarning ?? false,
+      greeting: brief?.greeting ?? null,
+      summary_line: brief?.summaryLine ?? null,
       generated_at: now,
       next_refresh_at: nextRefresh,
       created_at: now,
@@ -182,6 +248,8 @@ export async function persistMorningBrief(
       has_urgent_issues: brief?.hasUrgentIssues ?? false,
       trust_eligible: brief !== null,
       trust_warning: brief?.trustWarning ?? false,
+      greeting: brief?.greeting ?? null,
+      summary_line: brief?.summaryLine ?? null,
       generated_at: now,
       next_refresh_at: nextRefresh,
       updated_at: now,

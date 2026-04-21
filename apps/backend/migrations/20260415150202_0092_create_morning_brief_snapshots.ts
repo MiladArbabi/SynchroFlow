@@ -52,6 +52,18 @@ export async function up(knex: Knex): Promise<void> {
     // Empty array = quiet day (no urgent issues).
     table.jsonb('signals').notNullable().defaultTo('[]');
 
+    /**
+     * GREETING + SUMMARY (OVR-01)
+     * ----------------------------
+     * greeting: personalized salutation computed at brief generation time.
+     *   e.g. "Good morning, Milad" — uses shop timezone for time-of-day accuracy.
+     * summary_line: one-sentence business context sentence.
+     *   e.g. "3 urgent issues need your attention" or "All clear — operations on track."
+     * Both null when trust not eligible or brief not yet computed.
+     */
+    table.string('greeting', 255).nullable();
+    table.string('summary_line', 500).nullable();
+
     // --- Metadata ---
     table.boolean('has_urgent_issues').notNullable().defaultTo(false);
 

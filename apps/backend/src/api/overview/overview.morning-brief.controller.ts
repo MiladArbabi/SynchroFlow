@@ -40,6 +40,8 @@ export async function getMorningBrief(req: Request, res: Response) {
           hasUrgentIssues: cached.has_urgent_issues,
           generatedAt: cached.generated_at,
           trustWarning: cached.trust_warning,
+          greeting: cached.greeting ?? null,
+          summaryLine: cached.summary_line ?? null,
           fromCache: true,
         });
       }

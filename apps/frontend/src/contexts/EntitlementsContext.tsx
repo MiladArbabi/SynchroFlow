@@ -32,7 +32,7 @@ import React, {
 import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from './AuthContext';
 import { Tier, isValidTier } from '../config/tiers';
-import { EntitlementSnapshot } from 'runtime/EntitlementSnapshot';
+import { EntitlementSnapshot } from '@lasyncro/shared/activation';
 
 // --- Backend payload shape ---
 interface EntitlementsResponse {
