@@ -68,6 +68,9 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'floor-planning:read':      ['owner', 'admin'],
   'floor-planning:write':     ['owner', 'admin'],
 
+  // ── CUSTOMERS ──────────────────────────────────────────────────────────────
+  'customers:read':           ['owner', 'admin'],
+
   // ── OVERVIEW / MORNING BRIEF ───────────────────────────────
   'overview:read':            ['owner', 'admin'],
   'morning-brief:read':       ['owner', 'admin'],

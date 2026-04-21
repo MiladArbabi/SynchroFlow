@@ -1,29 +1,27 @@
-// apps/backend/src/api/customers/customers.routes.ts
 import { Router } from 'express';
-import { getCustomerDetails, getCustomerList } from './customers.controller.js'; 
+import { getCustomerDetails, getCustomerList } from './customers.controller.js';
 import { httpGetCustomersFt2 } from './customers.ft2.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 
 const router = Router();
 
 // FT2 — read-only snapshot (MUST come before :id)
 router.get('/ft2', authenticateToken, requireFt2, httpGetCustomersFt2);
 
-/**
-* @route   GET /api/v1/customers
-* @desc    Get a list of all customers for the authenticated shop
-* @access  Private
-*/
+router.get(
+  '/',
+  authenticateToken,
+  requireAction('customers:read'),
+  getCustomerList
+);
 
-router.get('/', getCustomerList);
+router.get(
+  '/:id',
+  authenticateToken,
+  requireAction('customers:read'),
+  getCustomerDetails
+);
 
-/**
- * @route   GET /api/v1/customers/:id
- * @desc    Get full customer details by ID
- * @access  Private
- */
-
-router.get('/:id', getCustomerDetails);
- 
 export default router;

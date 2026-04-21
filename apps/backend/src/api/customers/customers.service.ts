@@ -30,16 +30,14 @@ export interface CustomerApiResponse {
 
 interface DatabaseCustomer {
   id: number;
-  platform_customer_id: string;
-  email: string;
-  first_name?: string;
-  last_name?: string;
-  phone?: string;
+  external_customer_id: string | null;
+  email: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   total_orders: number;
   total_spent: number;
-  state: string;
   created_at: Date;
-  tags?: string;
+  updated_at: Date;
 }
  
 export class CustomersService {
@@ -48,13 +46,29 @@ export class CustomersService {
    */
   static async getCustomerList(shopId: number): Promise<DatabaseCustomer[]> {
     try {
-      const customers = await db
-        .select('*')
-        .from('customers')
-        .where({ shop_id: shopId })
-        .orderBy('created_at', 'desc');
+      // Join orders to derive real metrics per customer
+      // Links via customers.external_customer_id = orders.customer_hashed_id
+      const customers = await db('customers as c')
+        .where('c.shop_id', shopId)
+        .leftJoin('orders as o', function () {
+          this.on('o.customer_hashed_id', 'c.external_customer_id')
+              .andOn('o.shop_id', db.raw('?', [shopId]));
+        })
+        .groupBy('c.id')
+        .orderBy('c.created_at', 'desc')
+        .select(
+          'c.id',
+          'c.external_customer_id',
+          'c.email',
+          'c.first_name',
+          'c.last_name',
+          'c.created_at',
+          'c.updated_at',
+          db.raw('COUNT(o.lasyncro_order_id) as total_orders'),
+          db.raw('COALESCE(SUM(o.total_price), 0) as total_spent'),
+        );
 
-return customers;
+      return customers;
     } catch (error) {
       console.error('Error fetching customer list:', error);
       throw new Error('Failed to fetch customers');
@@ -66,55 +80,72 @@ return customers;
    */
   static async getCustomerDetailsById(customerId: string | number, shopId: number): Promise<CustomerApiResponse | null> {
     try {
-      // Get customer from database
       const customer = await db
         .select('*')
         .from('customers')
-        .where({ 
-          id: customerId,
-          shop_id: shopId 
-        })
+        .where({ id: customerId, shop_id: shopId })
         .first();
 
-      if (!customer) {
-        return null;
-      }
+      if (!customer) return null;
 
-      // Get identity resolution data
+      // --- Fetch orders via external_customer_id = orders.customer_hashed_id ---
+      const orders = await db('orders as o')
+        .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where({ 'o.shop_id': shopId })
+        .where('o.customer_hashed_id', customer.external_customer_id)
+        .orderBy('o.order_created_at', 'desc')
+        .limit(20)
+        .select(
+          'o.lasyncro_order_id',
+          'o.total_price',
+          'o.currency',
+          'o.payment_state',
+          'o.order_created_at',
+          'ofs.status as fulfillment_status',
+        );
+
+      // --- Derive metrics from orders ---
+      const totalRevenue = orders.reduce((sum: number, o: any) => sum + Number(o.total_price ?? 0), 0);
+      const totalOrders = orders.length;
+      const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+      // --- Identity resolution (best-effort) ---
       let resolution: UnifiedCustomerProfile | null | undefined = undefined;
-      try {
-        resolution = await CustomerResolutionService.findCustomersByEmail(shopId, customer.email);
-      } catch (resolutionError) {
-        console.warn('Customer resolution failed:', resolutionError);
-        // Continue without resolution data
+      if (customer.email) {
+        try {
+          resolution = await CustomerResolutionService.findCustomersByEmail(shopId, customer.email);
+        } catch {
+          // non-fatal — resolution data is enrichment only
+        }
       }
-
-      // Calculate metrics
-      const aov = customer.total_orders > 0 ? customer.total_spent / customer.total_orders : 0;
-      const ltv = customer.total_spent * 1.2; // Simple LTV projection
-
-      // Parse tags
-      const tags = customer.tags ? customer.tags.split(',').map((tag: string) => tag.trim()) : [];
 
       return {
         id: customer.id,
         profile: {
-          name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Unknown Customer',
-          email: customer.email,
-          phone: customer.phone || '',
-          location: '', // TODO: Extract from customer data
-          joined_date: customer.created_at.toISOString(),
-          tags
+          name: `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim() || 'Unknown Customer',
+          email: customer.email ?? '',
+          phone: '',       // Not stored — Shopify PII not ingested
+          location: '',    // Not stored — Shopify PII not ingested
+          joined_date: new Date(customer.created_at).toISOString(),
+          tags: [],
         },
         metrics: {
-          total_revenue: parseFloat(customer.total_spent.toString()),
-          total_orders: customer.total_orders,
+          total_revenue: parseFloat(totalRevenue.toFixed(2)),
+          total_orders: totalOrders,
           aov: parseFloat(aov.toFixed(2)),
-          ltv: parseFloat(ltv.toFixed(2))
+          ltv: parseFloat((totalRevenue * 1.2).toFixed(2)), // simple 1.2x projection
         },
         resolution,
-        orders: [], // TODO: Fetch orders for this customer
-        tickets: [] // TODO: Fetch support tickets
+        orders: orders.map((o: any) => ({
+          id: o.lasyncro_order_id,
+          orderDate: new Date(o.order_created_at).toISOString(),
+          status: o.payment_state ?? 'unknown',
+          fulfillmentStatus: o.fulfillment_status ?? 'pending',
+          total: Number(o.total_price),
+          currency: o.currency ?? 'USD',
+          paymentState: o.payment_state ?? 'unknown',
+        })),
+        tickets: [], // No support ticket system — intentionally empty
       };
     } catch (error) {
       console.error('Error fetching customer details:', error);
