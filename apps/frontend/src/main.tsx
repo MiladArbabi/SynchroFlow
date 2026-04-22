@@ -48,12 +48,38 @@ import { loadAllModules } from 'runtime/moduleLoader';
 import { bootstrapNavGroups } from 'runtime/navBootstrap';
 import { RouteLogger } from './debug/RouteLogger';
 
-if (!window._lasyncroNavigate) {
-  window._lasyncroNavigate = (path: string) => {
-    // use HTML5 history so router reacts; also dispatch popstate so listeners respond
-    window.history.pushState(null, '', path);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  };
+// --- [POSTHOG INITIALIZATION - SINGLE SOURCE OF TRUTH] ---
+import posthog from 'posthog-js';
+import { PostHogProvider } from 'posthog-js/react';
+
+const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
+const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com';
+
+// HARD GUARD: prevent silent failure
+if (!posthogKey) {
+  console.error('[POSTHOG] Missing API key. Analytics disabled.');
+} else {
+  console.log('[ENV CHECK]', {
+    key: import.meta.env.VITE_PUBLIC_POSTHOG_KEY,
+    mode: import.meta.env.MODE
+  });
+
+  posthog.init(posthogKey, {
+    api_host: posthogHost,
+    capture_pageview: false, // handled manually later (SPA control)
+    capture_exceptions: true,
+    autocapture: false, // prevent noisy garbage events
+  });
+
+  // --- [DEBUG EXPOSURE - REMOVE IN PROD IF NEEDED] ---
+  if (typeof window !== 'undefined') {
+    (window as any).posthog = posthog;
+  }
+
+  console.info('[POSTHOG] Initialized', {
+    key_present: !!posthogKey,
+    host: posthogHost
+  });
 }
 
 // --- Create React Query Client ---
@@ -119,8 +145,7 @@ const queryClient = new QueryClient({
 });
 
 root.render(
-  <>
-    {/* 1. PostHog (Analytics) */}
+  <PostHogProvider client={posthog}>
       {/* 2. ConfigProvider (Berry Theme) */}
       <ConfigProvider>
         {/* 3. React Query (Data Fetching) */}
@@ -152,7 +177,7 @@ root.render(
           <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
       </ConfigProvider>
-    </>
+    </PostHogProvider>
 );
 
 (window as any)._lasyncroHost = {

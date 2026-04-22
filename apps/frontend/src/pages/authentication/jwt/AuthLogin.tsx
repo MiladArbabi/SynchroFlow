@@ -7,7 +7,7 @@ import { axiosInstance } from 'api/axiosConfig';
 import { clearToken } from 'utils/authStore';
 
 // -- ANALYTICS
-import { PostHog } from 'posthog-js/react';
+import { useUiEvents } from 'analytics/useUiEvents';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -84,7 +84,6 @@ function getErrorMessage(error: any): string {
 // ===============================|| JWT - LOGIN ||=============================== //
 
 interface AuthLoginProps {
-  posthog: PostHog;
   [key: string]: any;
 }
 
@@ -93,9 +92,10 @@ interface LoginFormValues {
   password: string;
 }
 
-export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
+export default function JWTLogin({ ...others }: AuthLoginProps) {
   const auth = useAuth();
   const navigate = useNavigate();
+  const { emit } = useUiEvents();
 
   // --- NATIVE ERROR CATCHER ---
   // A React state to hold and display submission errors
@@ -146,12 +146,10 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
 
             // --- [START POSTHOG ANALYTICS] ---
             const user = response.data.user;
-            posthog.identify(user.id, {
-              email: user.email,
-              name: user.name,
+            // --- ANALYTICS: login success (NO PII) ---
+            emit('auth.login.success', {
+              user_id: user.id
             });
-            posthog.capture('user_login_success');
-            // --- [END POSTHOG] ---
 
             console.info('[AUTH][LOGIN_SUCCESS]', {
               userId: response.data.user.id,
@@ -170,6 +168,17 @@ export default function JWTLogin({ posthog, ...others }: AuthLoginProps) {
           // Call our new helper function to get a user-friendly message
           const errorMessage = getErrorMessage(err);
           console.error('User-facing error:', errorMessage);
+
+          // --- ANALYTICS SAFE ERROR NORMALIZATION ---
+          const errorCode =
+            errorMessage.includes('Invalid credentials') ? 'invalid_credentials' :
+            errorMessage.includes('User not found') ? 'user_not_found' :
+            'unknown_error';
+
+          // --- ANALYTICS: login failure ---
+          emit('auth.login.failed', {
+            error_code: errorCode
+          });
           
           // Propagate the error to our native state hook
           setSubmitError(errorMessage);

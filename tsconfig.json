@@ -27,6 +27,7 @@
       "test-utils": ["apps/frontend/src/test-utils.tsx"],
       "menu-items/*": ["apps/frontend/src/menu-items/*"],
       "wiring/*": ["apps/frontend/src/wiring/*"],
+      "analytics/*": ["apps/frontend/src/analytics/*"],
       
       // Wildcard aliases for directories inside /src
       "components/*": ["apps/frontend/src/components/*"],

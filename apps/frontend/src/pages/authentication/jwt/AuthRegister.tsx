@@ -4,11 +4,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { axiosInstance } from 'api/axiosConfig';
-import { usePostHog } from '@posthog/react';
 
 // -- ANALYTICS 
-import { PostHog } from 'posthog-js';
 import { useAuth } from 'contexts/AuthContext';
+import { useUiEvents } from 'analytics/useUiEvents';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -62,22 +61,14 @@ export interface StringColorProps {
     secondary?: string;
 }
 
-// Define the prop interface we expect from RegisterPage.tsx
-interface AuthRegisterProps {
-  posthog: PostHog;
-}
-
-export default function JWTRegister({ posthog, ...others }: AuthRegisterProps & JWTRegisterProps) {
+export default function JWTRegister({ ...others }: JWTRegisterProps) {
   const theme = useTheme();
-  const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const [showPassword, setShowPassword] = useState(false);
   const [checked, setChecked] = useState(true);
+  const { emit } = useUiEvents();
 
   const [strength, setStrength] = useState(0);
   const [level, setLevel] = useState<StringColorProps>();
-
-  const navigate = useNavigate();
-  const auth = useAuth();
 
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -150,28 +141,14 @@ export default function JWTRegister({ posthog, ...others }: AuthRegisterProps & 
               password: values.password // Send password as is
             });
 
-            // --- [START POSTHOG ANALYTICS] ---
-            if (posthog && response.data.id) { // Check that we have a user ID
+            // --- ANALYTICS: signup success (NO PII) ---
+            if (response.data.id) {
               const newUserId = response.data.id.toString();
 
-              // 1. Alias the new user ID with the old anonymous ID
-              posthog.alias(
-                newUserId,
-                posthog.get_distinct_id()
-              );
-
-              // 2. Identify the new user and set their properties
-              posthog.identify(
-                newUserId,
-                {
-                  email: trimmedEmail,
-                }
-              );
-
-              // 3. Capture the sign-up event
-              posthog.capture('user_signup_success');
+              emit('auth.signup.success', {
+                user_id: newUserId
+              });
             }
-            // --- [END POSTHOG] ---
  
            // --- SUCCESS: Registration completed ---
             // Registration does NOT authenticate the user.
@@ -189,8 +166,24 @@ export default function JWTRegister({ posthog, ...others }: AuthRegisterProps & 
             // if (scriptedRef.current)
 
             // Extract error message from API response if available
-            const apiError = err.response?.data?.error || 'Registration failed. Please try again.';
+            const rawError = err.response?.data?.error;
+
+            // --- ANALYTICS SAFE ERROR NORMALIZATION ---
+            const errorCode =
+              rawError === 'User already exists' ? 'user_exists' :
+              rawError === 'Invalid email' ? 'invalid_email' :
+              rawError === 'Weak password' ? 'weak_password' :
+              'unknown_error';
+
+            const apiError = rawError || 'Registration failed. Please try again.';
+
             setErrors({ submit: apiError });
+
+            // --- ANALYTICS: signup failure ---
+            emit('auth.signup.failed', {
+              error_code: errorCode
+            });
+
             setSubmitting(false);
           }
         }}

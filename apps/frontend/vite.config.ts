@@ -48,6 +48,8 @@ export default defineConfig({
       'layout': path.resolve(__dirname, './src/layout'),
       'menu-items': path.resolve(__dirname, './src/menu-items'),
       'api': path.resolve(__dirname, './src/api'),
+      // analytics alias required for central event pipeline (prevents dead module tree-shaking)
+      'analytics': path.resolve(__dirname, './src/analytics'),
       
       // --- OUR EXISTING ALIASES ---
       '@lasyncro/shared/ui': path.resolve(__dirname, '../../modules/shared/src/ui'),

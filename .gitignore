@@ -18,6 +18,7 @@ node_modules/
 
 # Environment files (Critical for Security)
 .env
+apps/frontend/.env
 .env.*
 !.env.example # Keep the example file
 *.log

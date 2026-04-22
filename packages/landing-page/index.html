@@ -9,7 +9,9 @@
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
 
-  gtag('config', 'G-JS4G2TR569');
+  gtag('config', 'G-JS4G2TR569', {
+    campaign_source: 'landing'
+  });
 </script>
 
 <meta charset="UTF-8">
@@ -491,7 +493,10 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
     <a href="#waitlist" class="btn-primary"
       onclick="
         if (typeof gtag === 'function') {
-          gtag('event', 'cta_click', { location: 'hero' });
+          gtag('event', 'cta_click', {
+            location: 'hero',
+            target: 'waitlist'
+          });
         }
         if (typeof posthog !== 'undefined') {
           posthog.capture('clicked_waitlist', { location: 'hero' });
@@ -871,29 +876,51 @@ function handleSubmit(e) {
   var email = emailEl.value.trim();
   var store = storeEl.value.trim();
 
+  if (typeof gtag === 'function') {
+    gtag('event', 'waitlist_form_submit_attempt', {
+      form_name: 'waitlist'
+    });
+  }
+
   // Basic validation
   if (!email || !store) {
+    if (typeof gtag === 'function') {
+      gtag('event', 'form_error', {
+        field: 'missing_fields'
+      });
+    }
     alert('Please fill in both fields.');
     return;
   }
 
-  // Simple email format check
   var emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   if (!emailValid) {
+    if (typeof gtag === 'function') {
+      gtag('event', 'form_error', {
+        field: 'email',
+        error_type: 'invalid_format'
+      });
+    }
     alert('Enter a valid email address.');
     return;
   }
 
-  // Optional: basic store format check
   if (!store.includes('.')) {
+    if (typeof gtag === 'function') {
+      gtag('event', 'form_error', {
+        field: 'store',
+        error_type: 'invalid_format'
+      });
+    }
     alert('Enter a valid store URL.');
     return;
   }
 
   // GA (no PII)
   if (typeof gtag === 'function') {
-    gtag('event', 'waitlist_signup', {
-      method: 'landing_page'
+    gtag('event', 'waitlist_form_submit_success', {
+      form_name: 'waitlist',
+      source: 'landing_page'
     });
   }
 

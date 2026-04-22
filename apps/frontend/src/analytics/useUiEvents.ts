@@ -1,33 +1,44 @@
 // apps/frontend/src/analytics/useUiEvents.ts
 
+import { useCallback } from 'react';
+import { sendEvent } from '../analytics/adapter';
+
+
 /**
- * Generic UI event emitter.
+ * CENTRAL ANALYTICS LAYER
  *
- * HARD RULES:
- * - No lifecycle knowledge
- * - No entitlement knowledge
- * - No vendor lock-in (PostHog, GA, etc.)
- * - Payloads must be stable and minimal
+ * RULES:
+ * - Single entry point for all tracking
+ * - Enforces naming + structure
+ * - Prevents vendor lock-in
+ * - Prevents event chaos
  */
 
-export interface UiEvent {
-  event: 'ui.intent';
-  payload: {
-    action: string;
-    surface: string;
-    moduleId?: string;
-    taskId?: string;
-  };
-}
+export type UiEventName =
+  | 'ui.intent'
+  | 'auth.signup.success'
+  | 'auth.signup.failed'
+  | 'auth.login.success'
+  | 'auth.login.failed'
+  | 'integration.connect.started'
+  | 'integration.connect.failed'
+  | 'integration.connect.back'
+  | 'integration.connect.cancelled'
+  // 'integration.connect.redirected'
+  // Fired AFTER backend returns OAuth URL and BEFORE hard redirect.
+  // Critical for measuring drop-off before OAuth handoff.
+  | 'integration.connect.redirected'
+  | 'integration.platform.selected';
+
+export type UiEventPayload = Record<string, unknown>;
 
 export function useUiEvents() {
-  return {
-    emit(event: UiEvent) {
-      // Intentionally abstract.
-      // Wiring to PostHog / Segment / etc happens at adapter layer later.
-      if (import.meta.env.DEV) {
-        console.debug('[ui-event]', event);
-      }
-    },
-  };
+    const emit = useCallback((event: UiEventName, payload: UiEventPayload = {}) => {
+    console.info('[analytics:emit]', event);
+
+    sendEvent(event, payload);
+
+  }, []);
+
+  return { emit };
 }
