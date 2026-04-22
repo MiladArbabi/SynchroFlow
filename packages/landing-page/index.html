@@ -342,6 +342,44 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 .ba-row .ba-after{clip-path:inset(0 100% 0 0);transition:clip-path 0.9s cubic-bezier(.5,.05,.3,1) 0.45s;}
 .ba-row.in .ba-after{clip-path:inset(0 0 0 0);}
 
+.ba-after{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+
+.ba-after-text{
+  flex:1;
+}
+
+.ba-after-visual{
+  flex-shrink:0;
+}
+
+.ba-after-visual img{
+  width:120px;
+  height:auto;
+  border-radius:8px;
+  border:1px solid var(--rule);
+  background:var(--bg-2);
+}
+
+@media(max-width:600px){
+
+  .ba-after{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:10px;
+  }
+
+  .ba-after-visual img{
+    width:100%;
+    max-width:200px;
+  }
+
+}
+
 /* ─── STAT BAR — numbers tick up when revealed ─── */
 .stat-n{opacity:0;transform:translateY(6px);transition:opacity 0.6s ease,transform 0.6s ease;}
 .stat-bar.in .stat-n{opacity:1;transform:translateY(0);}
@@ -455,25 +493,92 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <!-- BEFORE / AFTER -->
 <section class="ba-section reveal">
   <div class="ba-inner">
-    <div class="ba-row">
-      <div class="ba-before">Finding out a SKU stocked out from an angry customer email</div>
-      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
-      <div class="ba-after">Stock-out risk surfaced 4 days before the customer notices</div>
+
+      <div class="ba-row">
+        <div class="ba-before">
+          Finding out a SKU stocked out from an angry customer email
+        </div>
+        <div class="ba-arrow-cell">
+          <div class="ba-arrow-icon">
+            <svg viewBox="0 0 10 10">
+              <path d="M2 5h6M5 2l3 3-3 3"/>
+            </svg>
+          </div>
+        </div>
+        <div class="ba-after">
+          <div class="ba-after-text">
+            Stock-out risk surfaced days before it impacts revenue
+          </div>
+          <div class="ba-after-visual">
+            <img src="ba-stock-risk.png" alt="">
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="ba-row">
-      <div class="ba-before">POs negotiated over WhatsApp, confirmed over email, tracked on a spreadsheet</div>
-      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
-      <div class="ba-after">One structured PO. Scan to receive. Inventory updates automatically.</div>
+
+      <div class="ba-row">
+        <div class="ba-before">
+          POs negotiated over WhatsApp, confirmed over email, tracked on a spreadsheet
+        </div>
+        <div class="ba-arrow-cell">
+          <div class="ba-arrow-icon">
+            <svg viewBox="0 0 10 10">
+              <path d="M2 5h6M5 2l3 3-3 3"/>
+            </svg>
+          </div>
+        </div>
+        <div class="ba-after">
+          <div class="ba-after-text">
+            Receive stock by scanning — inventory updates instantly
+          </div>
+          <div class="ba-after-visual">
+            <img src="ba-stock-risk.png" alt="">
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="ba-row">
-      <div class="ba-before">Supplier always "on their way" — no data on who's actually reliable</div>
-      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
-      <div class="ba-after">On-time rate, fill rate, defect rate — built from every delivery, automatically</div>
+
+      <div class="ba-row">
+        <div class="ba-before">
+          Supplier always “on their way” — no data on who’s actually reliable
+        </div>
+        <div class="ba-arrow-cell">
+          <div class="ba-arrow-icon">
+            <svg viewBox="0 0 10 10">
+              <path d="M2 5h6M5 2l3 3-3 3"/>
+            </svg>
+          </div>
+        </div>
+        <div class="ba-after">
+          <div class="ba-after-text">
+            Supplier performance becomes measurable with every delivery
+          </div>
+          <div class="ba-after-visual">
+            <img src="ba-stock-risk.png" alt="">
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="ba-row">
-      <div class="ba-before">Operator asking which shelf because the location spreadsheet is from February</div>
-      <div class="ba-arrow-cell"><div class="ba-arrow-icon"><svg viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3"/></svg></div></div>
-      <div class="ba-after">Barcoded locations. Scan to stow. Every movement tracked.</div>
+      <div class="ba-before">
+        Operator asking where items are — location tracking lives in outdated spreadsheets
+      </div>
+      <div class="ba-arrow-cell">
+        <div class="ba-arrow-icon">
+          <svg viewBox="0 0 10 10">
+            <path d="M2 5h6M5 2l3 3-3 3"/>
+          </svg>
+        </div>
+      </div>
+      <div class="ba-after">
+        <div class="ba-after-text">
+          Scan location. Every item is placed exactly where it belongs
+        </div>
+        <div class="ba-after-visual">
+          <img src="ba-stock-risk.png" alt="">
+        </div>
+      </div>
     </div>
   </div>
 </section>
