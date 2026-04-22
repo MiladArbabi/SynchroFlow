@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-JS4G2TR569"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-JS4G2TR569');
+</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaSyncro — The operational brain for serious Shopify merchants</title>
@@ -432,7 +443,17 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
   <a href="#" class="nav-logo" aria-label="LaSyncro home">
     <img src="White_text_no_bg.png" alt="LaSyncro" height="28" style="display:block;">
   </a>
-  <a href="#waitlist" class="nav-cta" onclick="posthog.capture('clicked_waitlist',{location:'header'})">Get early access</a>
+  <a href="#waitlist" class="nav-cta"
+  onclick="
+    if (typeof gtag === 'function') {
+      gtag('event', 'cta_click', { location: 'header' });
+    }
+    if (typeof posthog !== 'undefined') {
+      posthog.capture('clicked_waitlist', { location: 'header' });
+    }
+  ">
+  Get early access
+</a>
 </nav>
 
 <!-- HERO -->
@@ -467,7 +488,15 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <div class="hero-actions-row">
 
   <div class="hero-actions">
-    <a href="#waitlist" class="btn-primary">
+    <a href="#waitlist" class="btn-primary"
+      onclick="
+        if (typeof gtag === 'function') {
+          gtag('event', 'cta_click', { location: 'hero' });
+        }
+        if (typeof posthog !== 'undefined') {
+          posthog.capture('clicked_waitlist', { location: 'hero' });
+        }
+      ">
       Start free — 14-day Growth trial included
     </a>
   </div>
@@ -784,7 +813,7 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
         <div class="tier-perk">First in · direct line to the founder</div>
       </div>
     </div>
-    <form class="wl-form" id="wl-form" onsubmit="handleSubmit(event)" novalidate>
+    <form class="wl-form" id="wl-form" onsubmit="handleSubmit(event)">
       <input type="email" required placeholder="Your email address" id="wl-email" autocomplete="email"/>
       <input type="text" required placeholder="Your store URL (e.g. yourstore.myshopify.com)" id="wl-store"/>
       <button type="submit">Reserve my spot — it's free</button>
@@ -806,7 +835,15 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
   <div class="footer-cta-inner">
     <h2 class="footer-cta-h2">Your spreadsheets aren't going to sync themselves.</h2>
     <p class="footer-cta-sub">Start free. Connect Shopify in 60 seconds. See your own operation clearly for the first time.</p>
-    <a href="#waitlist" class="btn-primary" onclick="posthog.capture('clicked_waitlist',{location:'footer_cta'})">
+    <a href="#waitlist" class="btn-primary"
+      onclick="
+        if (typeof gtag === 'function') {
+          gtag('event', 'cta_click', { location: 'footer_cta' });
+        }
+        if (typeof posthog !== 'undefined') {
+          posthog.capture('clicked_waitlist', { location: 'footer_cta' });
+        }
+      ">
       Start free — 14-day Growth trial included
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
@@ -827,13 +864,49 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <script>
 function handleSubmit(e) {
   e.preventDefault();
-  var email = document.getElementById('wl-email').value;
-  var store = document.getElementById('wl-store').value;
-  if (typeof posthog !== 'undefined') posthog.capture('waitlist_signup', { email: email, store: store });
+
+  var emailEl = document.getElementById('wl-email');
+  var storeEl = document.getElementById('wl-store');
+
+  var email = emailEl.value.trim();
+  var store = storeEl.value.trim();
+
+  // Basic validation
+  if (!email || !store) {
+    alert('Please fill in both fields.');
+    return;
+  }
+
+  // Simple email format check
+  var emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!emailValid) {
+    alert('Enter a valid email address.');
+    return;
+  }
+
+  // Optional: basic store format check
+  if (!store.includes('.')) {
+    alert('Enter a valid store URL.');
+    return;
+  }
+
+  // GA (no PII)
+  if (typeof gtag === 'function') {
+    gtag('event', 'waitlist_signup', {
+      method: 'landing_page'
+    });
+  }
+
+  // PostHog (PII allowed here if you want)
+  if (typeof posthog !== 'undefined') {
+    posthog.capture('waitlist_signup', { email: email, store: store });
+  }
+
   document.getElementById('wl-form').style.display = 'none';
   document.getElementById('wl-progress').style.display = 'none';
   document.getElementById('wl-success').style.display = 'block';
 }
+
 window.addEventListener('load', function() {
   setTimeout(function() { document.getElementById('wl-fill').style.width = '82%'; }, 600);
 });
