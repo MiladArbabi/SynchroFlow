@@ -235,6 +235,11 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;height:60px;display:flex;ali
 .brief-row.ok .brief-row-title{color:rgba(255,255,255,0.88);}
 .brief-row-sub{font-size:11px;color:rgba(255,255,255,0.62);font-weight:300;line-height:1.4;}
 .brief-footer{margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:11px;color:rgba(255,255,255,0.52);letter-spacing:0.05em;font-style:italic;font-family:var(--serif);}
+@media(max-width:800px){
+  .brief-visual{
+    margin-top:24px;
+  }
+}
 
 /* PRICING */
 .pricing-section{padding:88px 5vw;background:var(--bg);border-top:1px solid var(--rule);}
@@ -450,6 +455,20 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 .brief-card .brief-footer{opacity:0;transition:opacity 0.6s ease 1.0s;}
 .brief-card.in .brief-footer{opacity:1;}
 .brief-card.in .brief-row.alert:first-of-type .brief-dot{animation:alert-pulse 2.4s ease-out 1.3s 2;}
+.brief-visual{
+  display:flex;
+  justify-content:center;
+}
+
+.brief-visual img{
+  width:100%;
+  max-width:520px;
+  height:auto;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.03);
+}
+
 @keyframes alert-pulse{
   0%,100%{box-shadow:0 0 0 0 rgba(255,107,43,0.5);}
   30%{box-shadow:0 0 0 8px rgba(255,107,43,0);}
@@ -713,42 +732,11 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
       <p class="brief-body">Every morning, before you open Shopify — stock risks, arriving POs, held orders, supplier alerts. Ranked by commercial consequence. The day begins with clarity, not firefighting.</p>
     </div>
     <div>
-      <div class="brief-card">
-        <div class="brief-card-header">
-          <div class="brief-greeting">Good morning, Jamie.</div>
-          <div class="brief-date">Today · 7:02 AM</div>
-        </div>
-        <div class="brief-row alert">
-          <div class="brief-dot"></div>
-          <div>
-            <div class="brief-row-title">3 SKUs will stock out within 7 days</div>
-            <div class="brief-row-sub">£47,200 at risk · View restock recommendations</div>
-          </div>
-        </div>
-        <div class="brief-row alert">
-          <div class="brief-dot"></div>
-          <div>
-            <div class="brief-row-title">PO #0041 arriving today — 4 held orders waiting</div>
-            <div class="brief-row-sub">Orders auto-release on scan · Stow tasks queued</div>
-          </div>
-        </div>
-        <div class="brief-row ok">
-          <div class="brief-dot"></div>
-          <div>
-            <div class="brief-row-title">Meadow Textiles · 98% on-time</div>
-            <div class="brief-row-sub">Last 8 deliveries · 100% fill rate · No action needed</div>
-          </div>
-        </div>
-        <div class="brief-row ok">
-          <div class="brief-dot"></div>
-          <div>
-            <div class="brief-row-title">12 orders fulfilled yesterday</div>
-            <div class="brief-row-sub">Avg 1.4 days to ship · Pick accuracy 99.2%</div>
-          </div>
-        </div>
-        <div class="brief-footer">LaSyncro · let's sync up every row.</div>
-      </div>
+
+    <div class="brief-visual">
+      <img src="brief-intelligence.png" alt="Warehouse activity turning into real-time operational intelligence">
     </div>
+      
   </div>
 </section>
 
