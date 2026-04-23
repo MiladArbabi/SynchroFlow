@@ -28,7 +28,11 @@ export type UiEventName =
   // Fired AFTER backend returns OAuth URL and BEFORE hard redirect.
   // Critical for measuring drop-off before OAuth handoff.
   | 'integration.connect.redirected'
-  | 'integration.platform.selected';
+  | 'integration.platform.selected'
+  // Conversion events (UX-09)
+  | 'upgrade_prompt.shown'
+  | 'upgrade_prompt.dismissed'
+  | 'upgrade_prompt.clicked';
 
 export type UiEventPayload = Record<string, unknown>;
 

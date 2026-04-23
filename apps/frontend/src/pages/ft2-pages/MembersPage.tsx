@@ -11,6 +11,10 @@ import {
 } from '@mui/material';
 import { UserPlus } from 'lucide-react';
 import { useMembers, useUpdateMemberRole, useCreateMember, type MemberRole } from '../members/useMembers';
+import { useEntitlements } from '../../contexts/EntitlementsContext';
+import { UpgradePrompt } from '../../components/UpgradePrompt';
+import { LinearProgress } from '@mui/material';
+import { TIER_SEAT_LIMIT, type Tier } from '../../config/tiers';
 
 /**
  * MEMBERS PAGE (WM-31)
@@ -64,6 +68,14 @@ export default function MembersPage() {
   const [successEmail, setSuccessEmail] = useState<string | null>(null);
 
   const members = data?.members ?? [];
+  const { tier } = useEntitlements();
+  const rawSeatLimit = TIER_SEAT_LIMIT[tier as Tier] ?? 1;
+  const seatLimit = rawSeatLimit === Infinity ? null : rawSeatLimit;
+  const seatCount = members.length;
+  const seatUsagePct = seatLimit ? (seatCount / seatLimit) * 100 : 0;
+  const atSeatLimit = seatLimit !== null && seatCount >= seatLimit;
+  const nearSeatLimit = seatLimit !== null && seatUsagePct >= 80 && !atSeatLimit;
+  const [seatLimitModalOpen, setSeatLimitModalOpen] = useState(false);
 
   const openModal = () => {
     setForm(EMPTY_FORM);
@@ -100,6 +112,11 @@ export default function MembersPage() {
         },
         onError: (err: Error & { response?: { data?: { error?: string } } }) => {
           const msg = err?.response?.data?.error;
+          if (msg === 'SEAT_LIMIT_REACHED') {
+            closeModal();
+            setSeatLimitModalOpen(true);
+            return;
+          }
           setFormError(
             msg === 'EMAIL_ALREADY_IN_USE'
               ? 'This email is already registered.'
@@ -125,13 +142,47 @@ export default function MembersPage() {
           <Button
             variant="contained"
             startIcon={<UserPlus size={16} />}
-            onClick={openModal}
+            onClick={atSeatLimit ? () => setSeatLimitModalOpen(true) : openModal}
             size="small"
           >
             Add Member
           </Button>
         )}
       </Box>
+
+      {/* SEAT USAGE */}
+      {seatLimit !== null && (
+        <Box sx={{ mb: 3, p: 2, borderRadius: '8px', border: '1px solid', borderColor: atSeatLimit ? 'error.light' : nearSeatLimit ? 'warning.light' : 'divider' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.secondary' }}>
+              Team seats
+            </Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: atSeatLimit ? 'error.main' : 'text.primary' }}>
+              {seatCount} of {seatLimit} used
+            </Typography>
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={Math.min(seatUsagePct, 100)}
+            color={atSeatLimit ? 'error' : nearSeatLimit ? 'warning' : 'primary'}
+            sx={{ borderRadius: 4, height: 6 }}
+          />
+          {atSeatLimit && (
+            <Typography sx={{ fontSize: 11, color: 'error.main', mt: 1 }}>
+              Seat limit reached. Upgrade your plan to add more team members.
+            </Typography>
+          )}
+        </Box>
+      )}
+
+      {/* SEAT LIMIT MODAL */}
+      <UpgradePrompt
+        requiredTier="growth"
+        mode="modal"
+        featureName="Additional team seats"
+        open={seatLimitModalOpen}
+        onClose={() => setSeatLimitModalOpen(false)}
+      />
 
       {/* LOADING */}
       {isLoading && (

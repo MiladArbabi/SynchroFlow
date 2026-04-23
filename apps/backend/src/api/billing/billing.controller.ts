@@ -162,6 +162,32 @@ export async function createPortalSession(req: Request, res: Response) {
 }
 
 /**
+ * GET /api/v1/billing/usage
+ * Returns current period order usage vs cap for the authenticated shop.
+ */
+export async function getUsage(req: Request, res: Response) {
+  const shopId = req.user!.shopId!;
+  try {
+    // Current open period — period_ends_at IS NULL
+    const usage = await db('shop_usage_metrics')
+      .where({ shop_id: shopId })
+      .whereNull('period_ends_at')
+      .orderBy('period_starts_at', 'desc')
+      .first('ingested_orders', 'shipped_orders', 'tier_at_period_start', 'period_starts_at');
+
+    return res.json({
+      ingested_orders: usage?.ingested_orders ?? 0,
+      shipped_orders: usage?.shipped_orders ?? 0,
+      tier: usage?.tier_at_period_start ?? 'starter',
+      period_starts_at: usage?.period_starts_at ?? null,
+    });
+  } catch (err: any) {
+    console.error('[billing] getUsage failed', { shopId, err: err.message });
+    return res.status(500).json({ error: 'Failed to fetch usage' });
+  }
+}
+
+/**
  * GET /api/v1/billing/subscription
  *
  * Returns current subscription state for the authenticated shop.

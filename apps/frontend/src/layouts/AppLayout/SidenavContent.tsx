@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/SidenavContent.tsx
 import React, { useMemo } from 'react';
 import {
@@ -10,11 +9,14 @@ import {
   ListItemText,
   Typography
 } from '@mui/material';
-import { useModuleHealth } from 'runtime/useModuleHealth';
 import { useNavigate, useLocation } from 'react-router-dom';
-import SimpleBar from 'ui-component/third-party/SimpleBar';
-import { useResolvedNavigation } from 'runtime/useResolvedNavigation';
-import { useEntitlements } from 'contexts/EntitlementsContext';
+import { useState } from 'react';
+import { Lock } from 'lucide-react';
+import { UpgradePrompt } from '../../components/UpgradePrompt';
+import SimpleBar from '../../ui-component/third-party/SimpleBar';
+import { useResolvedNavigation } from '../../runtime/useResolvedNavigation';
+import { useModuleHealth } from '../../runtime/useModuleHealth';
+import { useEntitlements } from '../../contexts/EntitlementsContext';
 
 type SidenavState = 'EXPANDED' | 'COMPACT' | 'CLOSED';
 
@@ -27,9 +29,7 @@ interface SidenavProps {
 
 const SidenavContent: React.FC<SidenavProps> = ({
   brandName,
-  routes,
   sidenavState,
-  isConnected,
 }) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -39,10 +39,11 @@ const SidenavContent: React.FC<SidenavProps> = ({
 
   const isExpanded = sidenavState === 'EXPANDED';
   const isCompact = sidenavState === 'COMPACT';
-
   const iconSize = isExpanded ? 18 : isCompact ? 22 : 18;
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
 
-  console.log('SNAPSHOT MODULES:', Array.from(snapshot.modules));
+  console.log('SNAPSHOT MODULES:', Array.from(snapshot.moduleKey));
 
   const logo = useMemo(
   () => (
@@ -75,14 +76,23 @@ const SidenavContent: React.FC<SidenavProps> = ({
             {groups.flatMap(group => group.items).map((item) => (
                 <ListItemButton
                   key={item.id}
-                  sx={{
-                    borderRadius: '8px',
-                    justifyContent: isExpanded ? 'flex-start' : 'center',
-                    px: isExpanded ? 1.5 : 0,
-                    py: isExpanded ? 1 : 1.5
-                  }}
                   selected={pathname === item.path}
-                  onClick={() => navigate(item.path)}
+                    disabled={false}
+                    onClick={() => {
+                      if (item.disabled) {
+                        setUpgradeFeature(item.title);
+                        setUpgradeOpen(true);
+                      } else {
+                        navigate(item.path);
+                      }
+                    }}
+                    sx={{
+                      borderRadius: '8px',
+                      justifyContent: isExpanded ? 'flex-start' : 'center',
+                      px: isExpanded ? 1.5 : 0,
+                      py: isExpanded ? 1 : 1.5,
+                      opacity: item.disabled ? 0.5 : 1,
+                    }}
                 >
                 <ListItemIcon
                   sx={{
@@ -115,6 +125,11 @@ const SidenavContent: React.FC<SidenavProps> = ({
                       }}
                     />
                   )}
+                {item.disabled && (
+                    <Box sx={{ position: 'absolute', bottom: -2, right: -2 }}>
+                      <Lock size={8} />
+                    </Box>
+                  )}
                 </ListItemIcon>
                 {isExpanded && (
                   <ListItemText
@@ -126,6 +141,14 @@ const SidenavContent: React.FC<SidenavProps> = ({
           </List>
         </Box>
       </SimpleBar>
+
+      <UpgradePrompt
+        requiredTier="growth"
+        mode="modal"
+        featureName={upgradeFeature}
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+      />
     </Box>
   );
 };

@@ -7,7 +7,7 @@ import { axiosInstance } from 'api/axiosConfig';
 import { clearToken } from 'utils/authStore';
 
 // -- ANALYTICS
-import { useUiEvents } from 'analytics/useUiEvents';
+import { useUiEvents } from '../../../analytics/useUiEvents';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -21,7 +21,7 @@ import InputLabel from '@mui/material/InputLabel';
 import OutlinedInput from '@mui/material/OutlinedInput';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { useAuth } from 'contexts/AuthContext';
+import { useAuth } from '../../../contexts/AuthContext';
 
 // third party
 import * as Yup from 'yup';

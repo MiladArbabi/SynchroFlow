@@ -6,8 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { axiosInstance } from 'api/axiosConfig';
 
 // -- ANALYTICS 
-import { useAuth } from 'contexts/AuthContext';
-import { useUiEvents } from 'analytics/useUiEvents';
+import { useUiEvents } from '../../../analytics/useUiEvents';
 
 // material-ui
 import Button from '@mui/material/Button';

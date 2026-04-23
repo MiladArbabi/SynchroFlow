@@ -20,7 +20,8 @@
 // Theming: uses useTheme() exclusively — no hardcoded colors.
 // Palette source of truth: apps/frontend/src/themes/palette.ts
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { sendEvent } from '../analytics/adapter';
 import {
   Box,
   Button,
@@ -81,6 +82,11 @@ function UpgradeCTAContent({
   const theme = useTheme();
   const tier = TIER_DISPLAY[requiredTier] ?? TIER_DISPLAY.growth;
 
+  // Track impression on mount
+  useEffect(() => {
+    sendEvent('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null });
+  }, [requiredTier, featureName]);
+
   return (
     <Stack spacing={2} alignItems="center" textAlign="center" sx={{ py: 2 }}>
       {/* Lock icon badge */}
@@ -122,6 +128,7 @@ function UpgradeCTAContent({
         size="large"
         endIcon={<ArrowForwardIcon />}
         href={BILLING_URL}
+        onClick={() => sendEvent('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null })}
         sx={{
           mt: 1,
           px: 4,
@@ -141,7 +148,10 @@ function UpgradeCTAContent({
         <Button
           variant="text"
           size="small"
-          onClick={onClose}
+          onClick={() => {
+            sendEvent('upgrade_prompt.dismissed', { requiredTier, featureName: featureName ?? null });
+            onClose();
+          }}
           sx={{ color: theme.palette.action.disabled }}
         >
           Maybe later

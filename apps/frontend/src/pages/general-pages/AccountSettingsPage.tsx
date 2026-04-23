@@ -8,6 +8,7 @@ import MainCard from 'ui-component/cards/MainCard';
 // project imports
 import LocalizationSettings from '../account-settings/LocalizationSettings';
 import PermissionsSettings from '../account-settings/PermissionsSettings';
+import BillingSettings from '../../pages/account-settings/BillingSettings';
 
 import IconComponent from 'components/Icon';
 import { SpecterConfigPanel } from 'components/specter/SpecterConfigPanel';
@@ -116,6 +117,12 @@ const AccountSettingsPage: React.FC = () => {
               iconPosition="start"
               {...a11yProps(4)}
             />
+            <Tab
+              label="Billing"
+              icon={<IconComponent name="CreditCard" size="small" />}
+              iconPosition="start"
+              {...a11yProps(5)}
+            />
           </Tabs>
 
         </Box>
@@ -133,6 +140,9 @@ const AccountSettingsPage: React.FC = () => {
         </TabPanel>
         <TabPanel value={value} index={4}>
           <PermissionsSettings />
+        </TabPanel>
+        <TabPanel value={value} index={5}>
+          <BillingSettings />
         </TabPanel>
       </Box>
     </MainCard>

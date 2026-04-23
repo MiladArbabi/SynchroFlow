@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx
 import React from "react";
 import { useLocation, Link as RouterLink } from "react-router-dom";
@@ -8,8 +7,7 @@ import {
   Typography,
   Breadcrumbs as MuiBreadcrumbs,
   Link,
-  Tooltip,
-  useTheme
+  Tooltip
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import IconComponent from "../../components/Icon";
@@ -28,7 +26,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   onToggleSidenav
 }) => {
   const location = useLocation();
-  const theme = useTheme();
   const { mode, setMode } = useColorScheme();
 
   const pathnames = location.pathname.split("/").filter((x) => x);

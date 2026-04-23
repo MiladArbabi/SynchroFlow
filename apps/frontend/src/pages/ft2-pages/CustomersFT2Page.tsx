@@ -12,21 +12,32 @@
 
 import { CustomersModuleFT2 } from '@lasyncro/customers';
 import { useCustomerLtv } from '../customers/useCustomerLtv';
-import { useEntitlements } from 'contexts/EntitlementsContext';
-import { useExchangeRates } from 'hooks/useExchangeRates';
+import { useEntitlements } from '../../contexts/EntitlementsContext';
+import { useExchangeRates } from '../../hooks/useExchangeRates';
+import { UpgradePrompt } from '../../components/UpgradePrompt';
 
 const __DEV__ = import.meta.env.DEV;
 
 export default function CustomersFT2Page() {
 
   const ltvQuery = useCustomerLtv();
-  const { displayCurrency, locale } = useEntitlements();
+  const { displayCurrency, locale, tier } = useEntitlements();
+  const isLocked = tier === 'starter' || tier === 'core';
   const { rates } = useExchangeRates();
 
   if (__DEV__) {
     console.debug('[CustomersFT2Page] rendering CustomersModuleFT2');
   }
 
+  if (isLocked) return (
+    <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Customer LTV">
+      <CustomersModuleFT2
+        ltv={null}
+        currency={{ displayCurrency, locale, rates }}
+      />
+    </UpgradePrompt>
+  );
+  
   return (
     <CustomersModuleFT2
         ltv={ltvQuery.data ?? null}

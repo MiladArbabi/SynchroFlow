@@ -1,7 +1,7 @@
 // apps/frontend/src/lifecycle/Ft1OnboardingGate.tsx
 
 import React from 'react';
-import { useUiEvents } from 'analytics/useUiEvents';
+import { useUiEvents } from '../analytics/useUiEvents';
 
 interface Ft1OnboardingGateProps {
   moduleId: string;

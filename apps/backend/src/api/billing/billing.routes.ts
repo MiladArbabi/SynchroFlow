@@ -12,12 +12,15 @@ import {
   createCheckoutSession,
   createPortalSession,
   getSubscription,
+  getUsage,
 } from './billing.controller.js';
 
 const router = Router();
 
 // GET  /api/v1/billing/subscription — current subscription state
 router.get('/subscription', authenticateToken, requireAction('billing:read'), getSubscription);
+
+router.get('/usage', authenticateToken, requireAction('billing:read'), getUsage);
 
 // POST /api/v1/billing/checkout — create Stripe Checkout session
 router.post('/checkout', authenticateToken, requireAction('billing:write'), createCheckoutSession);

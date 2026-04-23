@@ -10,8 +10,11 @@ import { useShopLifecycle } from "lifecycle/ShopLifecycleContext";
 import { ToastProvider } from "contexts/ToastContext";
 import { ConnectStoreModal } from "components/ConnectStoreModal";
 
+import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useSystemHealth } from 'hooks/useSystemHealth';
 import { SystemHealthBanner } from 'components/SystemHealthBanner';
+import { TrialCountdownBanner } from "../../components/TrialCountdownBanner";
+import { PostTrialInterstitial } from '../../components/PostTrialInterstitial';
 
 interface AppLayoutProps {
   children?: ReactNode;
@@ -30,10 +33,15 @@ const AppLayout = (props: AppLayoutProps) => {
 
   const { phase } = useShopLifecycle();
   const [isConnected, setIsConnected] = useState(false);
+  const { trialEndsAt, tier } = useEntitlements();
+  // Post-trial: trial ended within last 7 days and user is now on starter
+  const isPostTrial = tier === 'starter' && trialEndsAt !== null &&
+    new Date(trialEndsAt) < new Date() &&
+    (Date.now() - new Date(trialEndsAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
   const [sidenavState, setSidenavState] = useState<SidenavState>(() => {
-    const saved = localStorage.getItem('sidenavState') as SidenavState | null;
+  const saved = localStorage.getItem('sidenavState') as SidenavState | null;
 
-    console.info('[SIDENAV][INIT_FROM_STORAGE]', { saved });
+  console.info('[SIDENAV][INIT_FROM_STORAGE]', { saved });
 
     return saved ?? 'CLOSED';
   });
@@ -44,6 +52,7 @@ const AppLayout = (props: AppLayoutProps) => {
   */
   const isSidenavAllowed = phase === 'FT2_READY';
   const hasAutoOpenedRef = React.useRef(false); // audit: prevent re-open after manual close
+
 
   /**
    * SYSTEM HEALTH
@@ -201,6 +210,11 @@ const AppLayout = (props: AppLayoutProps) => {
               lagSeconds={systemHealth.snapshot?.lag_seconds}
             />
           )}
+
+          {/* TRIAL COUNTDOWN BANNER (UX-03) */}
+          <TrialCountdownBanner trialEndsAt={trialEndsAt} />
+          {/* POST-TRIAL INTERSTITIAL (UX-07) */}
+          <PostTrialInterstitial show={isPostTrial} />
 
           {/* CONTENT AREA */}
           <Box

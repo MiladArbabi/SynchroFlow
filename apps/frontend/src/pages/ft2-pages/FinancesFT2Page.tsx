@@ -6,8 +6,9 @@ import { FinancesModuleFT2 } from '@lasyncro/finances';
 import { useFinancesFt2Snapshot } from '../finances/useFinancesFt2Snapshot';
 import { mapFinancesFt2Props } from '../finances/useFinancesFt2Adapter';
 import { useMargin } from '../finances/useMargin';
-import { useEntitlements } from 'contexts/EntitlementsContext';
-import { useExchangeRates } from 'hooks/useExchangeRates';
+import { useEntitlements } from '../../contexts/EntitlementsContext';
+import { useExchangeRates } from '../../hooks/useExchangeRates';
+import UpgradePrompt from '../../components/UpgradePrompt';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -20,7 +21,8 @@ export default function FinancesFT2Page() {
 
   const snapshotQuery = useFinancesFt2Snapshot(range);
   const marginQuery = useMargin();
-  const { displayCurrency, locale } = useEntitlements();
+  const { displayCurrency, locale, tier } = useEntitlements();
+  const isLocked = tier === 'starter' || tier === 'core';
   const { rates } = useExchangeRates();
 
   if (!snapshotQuery.isSuccess) {
@@ -32,6 +34,15 @@ export default function FinancesFT2Page() {
 
   if (__DEV__) console.debug('[FinancesFT2Page] rendering FinancesModuleFT2', props);
 
+  if (isLocked) return (
+    <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Finances Intelligence">
+      <FinancesModuleFT2
+        {...props}
+        margin={null}
+        currency={{ displayCurrency, locale, rates }}
+      />
+    </UpgradePrompt>
+  );
   return (
     <>
       <FT2DateRangeBar value={range} onChange={setRange} />
