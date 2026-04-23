@@ -186,10 +186,23 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;height:60px;display:flex;ali
 .how-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;}
 @media(max-width:800px){.how-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:480px){.how-grid{grid-template-columns:1fr;}}
-.how-cell{background:var(--surface);padding:28px 22px;display:flex;flex-direction:column;gap:10px;}
+.how-cell{background:var(--surface);padding:28px 22px;display:flex;flex-direction:column;gap:12px;}
 .how-num{font-family:var(--serif);font-size:13px;font-style:italic;color:var(--accent);}
 .how-icon{width:38px;height:38px;background:var(--accent-ghost);border-radius:8px;display:flex;align-items:center;justify-content:center;}
-.how-icon svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+.how-visual{
+  width:100%;
+  display:flex;
+  justify-content:flex-start;
+}
+
+.how-visual img{
+  width:100%;
+  max-width:160px;
+  height:auto;
+  border-radius:10px;
+  border:1px solid var(--rule);
+  background:var(--bg-2);
+}
 .how-title{font-size:14px;font-weight:500;color:var(--ink);line-height:1.3;}
 .how-desc{font-size:12px;line-height:1.6;color:var(--ink-3);font-weight:300;}
 
@@ -652,32 +665,32 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
     <div class="how-grid">
       <div class="how-cell">
         <div class="how-num">01</div>
-        <div class="how-icon">
-          <svg viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        <div class="how-visual">
+          <img src="how-01.png" alt="">
         </div>
         <div class="how-title">Connect Shopify in 60 seconds</div>
         <div class="how-desc">OAuth once. Orders, products, and inventory history load automatically — no CSV imports, no setup calls.</div>
       </div>
       <div class="how-cell">
         <div class="how-num">02</div>
-        <div class="how-icon">
-          <svg viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        <div class="how-visual">
+          <img src="how-02.png" alt="">
         </div>
         <div class="how-title">See what was already in your data</div>
         <div class="how-desc">Stock-out risks, held orders, supplier issues — visible within minutes. The intelligence was always there.</div>
       </div>
       <div class="how-cell">
         <div class="how-num">03</div>
-        <div class="how-icon">
-          <svg viewBox="0 0 24 24"><path d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        <div class="how-visual">
+          <img src="how-03.png" alt="">
         </div>
         <div class="how-title">Your team works from their phones</div>
         <div class="how-desc">Scan to pick, pack, and receive stock. Every scan updates inventory and routes stow tasks — no clipboards, no WhatsApp.</div>
       </div>
       <div class="how-cell">
         <div class="how-num">04</div>
-        <div class="how-icon">
-          <svg viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <div class="how-visual">
+          <img src="how-04.png" alt="">
         </div>
         <div class="how-title">Know before it breaks</div>
         <div class="how-desc">Your Morning Brief lands before you open Shopify — stock risks, arriving POs, and alerts ranked by commercial consequence.</div>
