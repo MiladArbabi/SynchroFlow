@@ -211,6 +211,68 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;height:60px;display:flex;ali
 .icp-strip p{font-size:14px;color:rgba(255,255,255,0.72);line-height:1.7;max-width:700px;margin:0 auto;font-weight:300;}
 .icp-strip strong{color:#fff;font-weight:500;}
 
+.cred-section{
+  padding:64px 5vw;
+  background:var(--bg-2);
+  border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);
+}
+
+.cred-inner{
+  max-width:900px;
+  margin:0 auto;
+  text-align:center;
+}
+
+.cred-line{
+  font-size:13px;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  color:var(--ink-4);
+  margin-bottom:32px;
+}
+
+.cred-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:20px;
+}
+
+@media(max-width:600px){
+  .cred-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+.cred-item{
+  padding:18px;
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:10px;
+  text-align:left;
+}
+
+.cred-title{
+  font-size:14px;
+  font-weight:500;
+  color:var(--ink);
+  margin-bottom:6px;
+}
+
+.cred-sub{
+  font-size:12px;
+  color:var(--ink-3);
+  line-height:1.6;
+}
+
+.cred-foot{
+  margin-top:28px;
+  font-size:14px;
+  font-family:var(--serif);
+  font-style:italic;
+  color:var(--ink-2);
+}
+
 /* MORNING BRIEF */
 .brief-section{background:var(--space-1);padding:88px 5vw;border-top:1px solid var(--space-3);}
 .brief-inner{max-width:1060px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center;}
@@ -703,6 +765,44 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <div class="icp-strip">
   <p><strong>Built for Shopify merchants doing serious volume from their own warehouse</strong> — typically £500K to £10M+ in revenue, high SKU complexity, small team. If you're still running operations on spreadsheets, you're leaving money on the table every day.</p>
 </div>
+
+<section class="cred-section">
+  <div class="cred-inner">
+
+    <div class="cred-line">
+      Built from real warehouse operations — not theory
+    </div>
+
+    <div class="cred-grid">
+
+      <div class="cred-item">
+        <div class="cred-title">Every scan updates inventory</div>
+        <div class="cred-sub">No delays. No manual reconciliation. No drift.</div>
+      </div>
+
+      <div class="cred-item">
+        <div class="cred-title">Every delivery builds supplier history</div>
+        <div class="cred-sub">Fill rate, defects, delays — captured automatically</div>
+      </div>
+
+      <div class="cred-item">
+        <div class="cred-title">Every movement is tracked</div>
+        <div class="cred-sub">From receiving → stowing → picking → shipping</div>
+      </div>
+
+      <div class="cred-item">
+        <div class="cred-title">Runs on your team’s phones</div>
+        <div class="cred-sub">No hardware. No training overhead.</div>
+      </div>
+
+    </div>
+
+    <div class="cred-foot">
+      This is not another dashboard. It is your operation, running correctly.
+    </div>
+
+  </div>
+</section>
 
 <!-- MORNING BRIEF -->
 <section class="brief-section reveal">
