@@ -36,12 +36,35 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
   const navigate = useNavigate();
 
   const ALERT_TYPE_ROUTES: Record<string, string> = {
-    wms_pick_exception: '/sku-gaps',
-    wms_pack_exception: '/sku-gaps',
-    wms_stow_pending: '/wms',
-    wms_batch_ready_to_pack: '/wms',
-    wms_batch_ready_to_ship: '/wms',
-    wms_operator_idle: '/wms',
+    // WMS
+    wms_pick_exception:       '/sku-gaps',
+    wms_pack_exception:       '/sku-gaps',
+    wms_stow_pending:         '/wms',
+    wms_batch_ready_to_pack:  '/wms',
+    wms_batch_ready_to_ship:  '/wms',
+    wms_operator_idle:        '/wms',
+    // Demand
+    stockout_risk:            '/demand',
+    reorder_warning:          '/demand',
+    // Cash flow
+    revenue_at_risk:          '/cash-flow',
+    // Order nexus
+    operational:              '/orders',
+    sla_breach:               '/orders',
+  };
+
+  const ALERT_TYPE_LABELS: Record<string, string> = {
+    wms_pick_exception:       'SKU Gaps',
+    wms_pack_exception:       'SKU Gaps',
+    wms_stow_pending:         'Warehouse',
+    wms_batch_ready_to_pack:  'Warehouse',
+    wms_batch_ready_to_ship:  'Warehouse',
+    wms_operator_idle:        'Warehouse',
+    stockout_risk:            'Demand',
+    reorder_warning:          'Demand',
+    revenue_at_risk:          'Cash Flow',
+    operational:              'Orders',
+    sla_breach:               'Orders',
   };
 
   const deepLinkRoute = ALERT_TYPE_ROUTES[alert.alert_type];
@@ -110,7 +133,7 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
               }}
               onClick={() => navigate(deepLinkRoute)}
             >
-              Go to {deepLinkRoute === '/sku-gaps' ? 'SKU Gaps' : 'Warehouse'}
+              Go to {ALERT_TYPE_LABELS[alert.alert_type] ?? 'module'}
               <ArrowRight size={12} />
             </Typography>
           </Box>

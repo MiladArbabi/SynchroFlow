@@ -240,7 +240,17 @@ export async function computeDemandIntelligence(
           supplier_lead_time_days: supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null,
         };
       })
+
       .filter((v: DemandVelocity) => v.units_sold_all_time > 0 || v.available_quantity > 0)
+      // Exclude gift cards and products with no meaningful identity
+      // These are Shopify system products — not real inventory items
+      .filter((v: DemandVelocity) => {
+        if (!v.title) return false;
+        const title = v.title.trim();
+        // Exclude pure currency amounts (gift cards: "$10", "$25", "$50")
+        if (/^\$\d+$/.test(title)) return false;
+        return true;
+      })
       .sort((a: DemandVelocity, b: DemandVelocity) => {
         const urgencyOrder = { critical: 0, warning: 1, healthy: 2, no_velocity: 3, overstocked: 4 };
         return (urgencyOrder[a.reorder_urgency] ?? 5) - (urgencyOrder[b.reorder_urgency] ?? 5);
@@ -288,10 +298,20 @@ export async function computeDemandIntelligence(
             source: 'demand',
             alert_type: 'stockout_risk',
             severity: 'critical',
-            title: `${v.sku ?? v.title ?? 'Variant'} — stockout risk`,
-            message: v.days_of_stock_remaining != null
-              ? `${v.days_of_stock_remaining} days of stock remaining at current velocity.`
-              : `Stock depleted — reorder immediately.`,
+            title: v.sku && v.title && v.sku !== v.title
+              ? `${v.title} (${v.sku}) — stockout risk`
+              : `${v.sku ?? v.title ?? 'Variant'} — stockout risk`,
+            message: (() => {
+              const qty = v.suggested_reorder_qty;
+              const qtyLabel = qty != null ? `${qty} unit${qty === 1 ? '' : 's'}` : null;
+              if (v.available_quantity <= 0) {
+                return `Out of stock — reorder ${qtyLabel ?? 'immediately'}.`;
+              }
+              if (v.days_of_stock_remaining != null) {
+                return `${v.days_of_stock_remaining} days of stock at current velocity. Suggested reorder: ${qtyLabel ?? 'unknown'}.`;
+              }
+              return 'Stock depleted — reorder immediately.';
+            })(),
             entity_id: v.lasyncro_variant_id,
             entity_type: 'variant',
             revenue_impact: v.unit_cost && v.suggested_reorder_qty
@@ -311,17 +331,19 @@ export async function computeDemandIntelligence(
       }
     }
 
-    // Resolve alerts for variants that are no longer critical
-    const nonCriticalIds = variants
-      .filter(v => v.reorder_urgency !== 'critical')
-      .map(v => `demand:stockout_risk:${v.lasyncro_variant_id}`);
+    // Resolve alerts for variants that are no longer critical OR were excluded
+    // This covers: urgency changed to non-critical, AND filtered-out variants (gift cards etc.)
+    const criticalAlertKeys = new Set(
+      variants
+        .filter(v => v.reorder_urgency === 'critical')
+        .map(v => `demand:stockout_risk:${v.lasyncro_variant_id}`)
+    );
 
-    if (nonCriticalIds.length > 0) {
-      await trx('alerts')
-        .where({ shop_id: shopId, source: 'demand', is_active: true })
-        .whereIn('alert_key', nonCriticalIds)
-        .update({ is_active: false, resolved_at: trx.fn.now(), updated_at: trx.fn.now() });
-    }
+    // Resolve ALL active demand alerts for this shop that aren't in the current critical set
+    await trx('alerts')
+      .where({ shop_id: shopId, source: 'demand', is_active: true })
+      .whereNotIn('alert_key', Array.from(criticalAlertKeys))
+      .update({ is_active: false, resolved_at: trx.fn.now(), updated_at: trx.fn.now() });
 
     return { summary, variants, computed_at: new Date().toISOString() };
   });
