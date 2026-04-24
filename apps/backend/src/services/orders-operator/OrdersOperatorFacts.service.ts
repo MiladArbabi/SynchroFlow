@@ -51,6 +51,18 @@ export interface OrdersOperatorFacts {
     ageHours: number;
     isShippingSlaBreached: boolean;
     constraintType: string | null;
+    isPriorityFlagged: boolean;
+    /** Minutes until 72h SLA breach — negative means already breached */
+    timeToSlaBreachMinutes: number | null;
+  }>;
+
+  /** Orders breaching 72h SLA within the next 8 hours */
+  imminentSlaBreachers: Array<{
+    lasyncro_order_id: string;
+    externalOrderId: string | null;
+    minutesUntilBreach: number;
+    constraintType: string | null;
+    revenue: number;
   }>;
 
   // ── Queue summary (from latest snapshot) ──────────────────
@@ -161,27 +173,96 @@ export async function getOrdersOperatorFacts(
     )
     .orderBy('oas.age_since_creation_seconds', 'desc')
     .limit(20)
+    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
     .select(
       'o.lasyncro_order_id',
+      'o.order_created_at',
       'eim.external_order_id',
       'oas.age_since_creation_seconds',
       'oas.is_shipping_sla_breached',
-      'dominant_constraint.constraint_type'
+      'dominant_constraint.constraint_type',
+      db.raw('COALESCE(ofs.is_priority_flagged, false) as is_priority_flagged'),
     );
 
-  const agingOrders = agingRows.map((row: any) => ({
-    lasyncro_order_id: row.lasyncro_order_id,
-    externalOrderId: row.external_order_id ?? null,
-    ageHours: Math.floor(Number(row.age_since_creation_seconds) / 3600),
-    isShippingSlaBreached: Boolean(row.is_shipping_sla_breached),
-    constraintType: row.constraint_type ?? null,
-  }));
+  const SLA_HOURS = 72;
+  const agingOrders = agingRows.map((row: any) => {
+    const orderCreatedAt = new Date(row.order_created_at);
+    const slaDeadline = new Date(orderCreatedAt.getTime() + SLA_HOURS * 60 * 60 * 1000);
+    const timeToSlaBreachMinutes = Math.round((slaDeadline.getTime() - Date.now()) / 60000);
+    return {
+      lasyncro_order_id: row.lasyncro_order_id,
+      externalOrderId: row.external_order_id ?? null,
+      ageHours: Math.floor(Number(row.age_since_creation_seconds) / 3600),
+      isShippingSlaBreached: Boolean(row.is_shipping_sla_breached),
+      constraintType: row.constraint_type ?? null,
+      isPriorityFlagged: Boolean(row.is_priority_flagged),
+      timeToSlaBreachMinutes,
+    };
+  });
+
+  // ─────────────────────────────────────────
+  // Imminent SLA breachers — will breach 72h SLA within 8 hours
+  // NOT yet breached (age < 72h) but within the warning window
+  // ─────────────────────────────────────────
+  const imminentWindowStart = 72 * 3600 - 8 * 3600; // 64h in seconds
+  const imminentWindowEnd   = 72 * 3600;             // 72h in seconds
+
+  const imminentRows = await db('order_age_snapshot as oas')
+    .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+    .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+    .leftJoin(
+      db('order_constraints').where('is_active', true)
+        .groupBy('lasyncro_order_id')
+        .select('lasyncro_order_id')
+        .min('constraint_type as constraint_type')
+        .as('dc'),
+      'dc.lasyncro_order_id', 'o.lasyncro_order_id'
+    )
+    .leftJoin(
+      db('order_revenue_units').groupBy('lasyncro_order_id')
+        .select('lasyncro_order_id')
+        .sum('line_total as revenue')
+        .as('rev'),
+      'rev.lasyncro_order_id', 'o.lasyncro_order_id'
+    )
+    .where('o.shop_id', shopId)
+    .andWhere('oas.age_since_creation_seconds', '>=', imminentWindowStart)
+    .andWhere('oas.age_since_creation_seconds', '<', imminentWindowEnd)
+    .andWhere(
+      'oas.aggregate_version',
+      db('order_age_snapshot as oas2')
+        .where('oas2.lasyncro_order_id', db.raw('oas.lasyncro_order_id'))
+        .max('oas2.aggregate_version')
+    )
+    .orderBy('oas.age_since_creation_seconds', 'desc')
+    .limit(20)
+    .select(
+      'o.lasyncro_order_id',
+      'o.order_created_at',
+      'eim.external_order_id',
+      'oas.age_since_creation_seconds',
+      'dc.constraint_type',
+      db.raw('COALESCE(rev.revenue, 0) as revenue'),
+    );
+
+  const imminentSlaBreachers = imminentRows.map((row: any) => {
+    const slaDeadline = new Date(new Date(row.order_created_at).getTime() + 72 * 60 * 60 * 1000);
+    const minutesUntilBreach = Math.max(0, Math.round((slaDeadline.getTime() - Date.now()) / 60000));
+    return {
+      lasyncro_order_id: row.lasyncro_order_id,
+      externalOrderId: row.external_order_id ?? null,
+      minutesUntilBreach,
+      constraintType: row.constraint_type ?? null,
+      revenue: Math.round(Number(row.revenue) * 100) / 100,
+    };
+  });
 
   return {
     shopId,
     constraintCounts,
     topBlockingType,
     agingOrders,
+    imminentSlaBreachers,
     queueCounts,
   };
 }

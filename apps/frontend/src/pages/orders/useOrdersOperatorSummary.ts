@@ -40,6 +40,17 @@ export interface OrdersOperatorSummary {
     ageHours: number;
     isShippingSlaBreached: boolean;
     constraintType: string | null;
+    isPriorityFlagged: boolean;
+    /** Minutes until 72h SLA breach — negative means already breached */
+    timeToSlaBreachMinutes: number | null;
+  }>;
+  /** Orders breaching 72h SLA within the next 8 hours */
+  imminentSlaBreachers?: Array<{
+    lasyncro_order_id: string;
+    externalOrderId: string | null;
+    minutesUntilBreach: number;
+    constraintType: string | null;
+    revenue: number;
   }>;
 
   /**

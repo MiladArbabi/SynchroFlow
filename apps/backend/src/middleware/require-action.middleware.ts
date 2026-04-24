@@ -68,6 +68,9 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'floor-planning:read':      ['owner', 'admin'],
   'floor-planning:write':     ['owner', 'admin'],
 
+  // ── ORDER NEXUS ────────────────────────────────────────────────────────────
+  'orders:prioritise':        ['owner', 'admin'],
+
   // ── CUSTOMERS ──────────────────────────────────────────────────────────────
   'customers:read':           ['owner', 'admin'],
 

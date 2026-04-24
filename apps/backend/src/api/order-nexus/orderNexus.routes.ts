@@ -15,6 +15,8 @@ import orderNexusRevenueEpistemicController
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { httpGetOrdersOperatorSummary } from './orders.operator.controller.js';
+import { httpPrioritiseOrders, httpDeprioritiseOrders } from './orderNexusPrioritise.controller.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 
 const router = Router();
 
@@ -89,6 +91,26 @@ router.get(
   '/operator-summary',
   authenticateToken,
   httpGetOrdersOperatorSummary
+);
+
+/**
+ * Priority flagging (ON-01)
+ * -------------------------
+ * Sets/clears is_priority_flagged on order_fulfillment_status.
+ * Owner/admin only — operators don't manage order prioritisation.
+ */
+router.post(
+  '/prioritise',
+  authenticateToken,
+  requireAction('orders:prioritise'),
+  httpPrioritiseOrders
+);
+
+router.post(
+  '/deprioritise',
+  authenticateToken,
+  requireAction('orders:prioritise'),
+  httpDeprioritiseOrders
 );
 
 export default router;

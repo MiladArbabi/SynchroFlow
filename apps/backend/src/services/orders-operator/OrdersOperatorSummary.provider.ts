@@ -46,6 +46,15 @@ export interface OrdersOperatorSummary {
     ageHours: number;
     isShippingSlaBreached: boolean;
     constraintType: string | null;
+    isPriorityFlagged: boolean;
+    timeToSlaBreachMinutes: number | null;
+  }>;
+  imminentSlaBreachers: Array<{
+    lasyncro_order_id: string;
+    externalOrderId: string | null;
+    minutesUntilBreach: number;
+    constraintType: string | null;
+    revenue: number;
   }>;
 
   /**
@@ -79,6 +88,7 @@ export async function getOrdersOperatorSummary(
     constraintCounts: facts.constraintCounts,
     topBlockingType: facts.topBlockingType,
     agingOrders: facts.agingOrders,
+    imminentSlaBreachers: facts.imminentSlaBreachers,
     queueCounts: facts.queueCounts,
   };
 }

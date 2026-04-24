@@ -26,10 +26,35 @@ export type CashFlowByConstraint = {
   revenue_blocked: number;
 };
 
+export type PoOutflow = {
+  supplier_name: string;
+  po_id: string;
+  expected_delivery_date: string | null;
+  total_cost: number;
+  status: string;
+};
+
+export type ProjectionPoint = {
+  week: string;
+  conservative: number;
+  base: number;
+  optimistic: number;
+};
+
+export type GrossProfit = {
+  gross_revenue: number;
+  total_cogs: number;
+  gross_profit: number;
+  gross_margin_pct: number | null;
+};
+
 export type CashFlowResponse = {
   summary: CashFlowSummary;
+  gross_profit: GrossProfit;
   buckets: CashFlowBucket[];
   by_constraint: CashFlowByConstraint[];
+  po_outflows: PoOutflow[];
+  projection_60d: ProjectionPoint[];
   computed_at: string;
 };
 

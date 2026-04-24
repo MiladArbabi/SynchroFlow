@@ -1,5 +1,6 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
 
+import { useState } from 'react';
 import {
   Box,
   Typography,
@@ -7,12 +8,18 @@ import {
   Divider,
   useTheme,
   Button,
+  Checkbox,
+  Tooltip,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   AlertTriangle,
   Package,
   Clock,
   CheckCircle,
+  Flag,
+  Timer,
+  Zap,
   HelpCircle,
   Printer,
   ClipboardList,
@@ -120,6 +127,15 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
       ageHours: number;
       isShippingSlaBreached: boolean;
       constraintType: string | null;
+      isPriorityFlagged: boolean;
+      timeToSlaBreachMinutes: number | null;
+    }>;
+    imminentSlaBreachers?: Array<{
+      lasyncro_order_id: string;
+      externalOrderId: string | null;
+      minutesUntilBreach: number;
+      constraintType: string | null;
+      revenue: number;
     }>;
     queueCounts?: {
       readyToShip: number;
@@ -245,6 +261,52 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
 
   const agingCount = operationalControl?.aging_48h ?? 0;
   const aging72Count = operationalControl?.aging_72h_plus ?? 0;
+
+  // ── Priority selection state ──────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [prioritising, setPrioritising] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkPrioritise = async () => {
+    if (selectedIds.size === 0) return;
+    setPrioritising(true);
+    try {
+      await fetch('/api/v1/modules/order-nexus/prioritise', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ order_ids: Array.from(selectedIds) }),
+      });
+      setSelectedIds(new Set());
+    } finally {
+      setPrioritising(false);
+    }
+  };
+
+  const imminentBreachers = operatorSummary?.imminentSlaBreachers ?? [];
+
+  // ── SLA countdown label ───────────────────────────────────
+  const slaCountdownLabel = (minutesRemaining: number | null): { label: string; color: 'error' | 'warning' | 'default' } => {
+    if (minutesRemaining === null) return { label: 'SLA unknown', color: 'default' };
+    if (minutesRemaining <= 0) {
+      const hoursBreached = Math.abs(Math.floor(minutesRemaining / 60));
+      return { label: `Breached ${hoursBreached}h ago`, color: 'error' };
+    }
+    if (minutesRemaining < 60) return { label: `${minutesRemaining}m left`, color: 'error' };
+    const hours = Math.floor(minutesRemaining / 60);
+    const mins = minutesRemaining % 60;
+    return {
+      label: `${hours}h ${mins}m left`,
+      color: minutesRemaining < 240 ? 'error' : 'warning',
+    };
+  };
 
   // ── Signal engine — retained for lifecycle, not rendered ─────
   const safeSnap = operationalControl ?? {
@@ -434,6 +496,67 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             Start here — orders crossing the line
           </Typography>
 
+          {/* ── IMMINENT SLA BREACHERS — will breach in <8h ── */}
+          {imminentBreachers.length > 0 && (
+            <Box sx={{ ...cardSx, mb: 2, border: '1px solid', borderColor: 'error.main', bgcolor: alpha(theme.palette.error.main, 0.04) }}>
+              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'error.light', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Timer size={14} color={theme.palette.error.main} />
+                <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
+                  Breaching SLA in &lt;8h — act now
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>{imminentBreachers.length} orders</Typography>
+              </Box>
+              {imminentBreachers.map((order) => (
+                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' } }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>
+                      {order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="caption" sx={{ color: 'error.main', fontWeight: 600, display: 'block' }}>
+                      {order.minutesUntilBreach < 60
+                        ? `${order.minutesUntilBreach}m until breach`
+                        : `${Math.floor(order.minutesUntilBreach / 60)}h ${order.minutesUntilBreach % 60}m until breach`}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">{fmt$(order.revenue)} at risk</Typography>
+                  </Box>
+                  <Chip label="Critical" size="small" color="error" sx={{ fontSize: 10, height: 20 }} />
+                </Box>
+              ))}
+            </Box>
+          )}
+
+          {/* ── BULK ACTION BAR — appears when orders selected ── */}
+          {selectedIds.size > 0 && (
+            <Box sx={{
+              display: 'flex', alignItems: 'center', gap: 1.5,
+              px: 2, py: 1.25, mb: 2, borderRadius: 2,
+              bgcolor: alpha(theme.palette.primary.main, 0.08),
+              border: '1px solid', borderColor: alpha(theme.palette.primary.main, 0.3),
+            }}>
+              <Flag size={14} color={theme.palette.primary.main} />
+              <Typography variant="body2" fontWeight={600} color="primary">
+                {selectedIds.size} order{selectedIds.size > 1 ? 's' : ''} selected
+              </Typography>
+              <Button
+                size="small"
+                variant="contained"
+                color="primary"
+                disabled={prioritising}
+                onClick={handleBulkPrioritise}
+                startIcon={<Zap size={12} />}
+                sx={{ ml: 'auto', fontSize: 11, py: 0.25 }}
+              >
+                {prioritising ? 'Prioritising...' : 'Prioritise selected'}
+              </Button>
+              <Button size="small" variant="text" onClick={() => setSelectedIds(new Set())} sx={{ fontSize: 11 }}>
+                Clear
+              </Button>
+            </Box>
+          )}
+
           {/* 72h+ band */}
           {aging72Orders.length > 0 && (
             <Box sx={{ ...cardSx, mb: 2 }}>
@@ -441,15 +564,23 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Typography variant="caption" sx={{ fontWeight: 600, color: 'error.main' }}>72h+ — deadline missed</Typography>
                 <Typography variant="caption" color="text.secondary">{aging72Orders.length} orders</Typography>
               </Box>
-              {aging72Orders.slice(0, 5).map((order) => (
-                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' } }}>
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
-                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
+              {aging72Orders.slice(0, 5).map((order) => {
+                const countdown = slaCountdownLabel(order.timeToSlaBreachMinutes ?? null);
+                return (
+                  <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 1, alignItems: 'center', px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' }, bgcolor: selectedIds.has(order.lasyncro_order_id) ? alpha(theme.palette.primary.main, 0.04) : 'transparent' }}>
+                    <Checkbox size="small" checked={selectedIds.has(order.lasyncro_order_id)} onChange={() => toggleSelect(order.lasyncro_order_id)} sx={{ p: 0.5 }} />
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
+                        {order.isPriorityFlagged && <Tooltip title="Priority flagged"><Flag size={12} color={theme.palette.warning.main} /></Tooltip>}
+                      </Box>
+                      <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: `${countdown.color}.main`, fontWeight: 600, whiteSpace: 'nowrap' }}>{countdown.label}</Typography>
+                    <Chip label={order.isShippingSlaBreached ? 'SLA missed' : 'Urgent'} size="small" color="error" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
                   </Box>
-                  <Chip label={order.isShippingSlaBreached ? 'SLA missed' : 'Urgent'} size="small" color="error" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
-                </Box>
-              ))}
+                );
+              })}
               {aging72Orders.length > 5 && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                   +{aging72Orders.length - 5} more
@@ -465,15 +596,23 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Typography variant="caption" sx={{ fontWeight: 600, color: 'warning.dark' }}>48h+ — needs attention today</Typography>
                 <Typography variant="caption" color="text.secondary">{aging48Orders.length} orders</Typography>
               </Box>
-              {aging48Orders.slice(0, 5).map((order) => (
-                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' } }}>
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
-                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
+              {aging48Orders.slice(0, 5).map((order) => {
+                const countdown = slaCountdownLabel(order.timeToSlaBreachMinutes ?? null);
+                return (
+                  <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 1, alignItems: 'center', px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' }, bgcolor: selectedIds.has(order.lasyncro_order_id) ? alpha(theme.palette.primary.main, 0.04) : 'transparent' }}>
+                    <Checkbox size="small" checked={selectedIds.has(order.lasyncro_order_id)} onChange={() => toggleSelect(order.lasyncro_order_id)} sx={{ p: 0.5 }} />
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
+                        {order.isPriorityFlagged && <Tooltip title="Priority flagged"><Flag size={12} color={theme.palette.warning.main} /></Tooltip>}
+                      </Box>
+                      <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: `${countdown.color}.main`, fontWeight: 600, whiteSpace: 'nowrap' }}>{countdown.label}</Typography>
+                    <Chip label="Late" size="small" color="warning" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
                   </Box>
-                  <Chip label="Late" size="small" color="warning" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
-                </Box>
-              ))}
+                );
+              })}
               {aging48Orders.length > 5 && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                   +{aging48Orders.length - 5} more
@@ -517,11 +656,8 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           )}
 
           <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-            <Button size="small" variant="outlined" color="inherit" startIcon={<ExternalLink size={14} />}>
-              Open all in order view
-            </Button>
-            <Button size="small" variant="outlined" color="inherit">
-              Mark as reviewed
+            <Button size="small" variant="outlined" color="inherit" startIcon={<ExternalLink size={14} />} href="/fulfillment">
+              Go to fulfillment queue →
             </Button>
           </Box>
 
