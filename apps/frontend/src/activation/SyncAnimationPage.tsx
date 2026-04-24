@@ -31,6 +31,8 @@ import { CheckCircle, Clock, Volume2, VolumeX } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { ThemeMode } from 'config';
 import { useAuth } from 'contexts/AuthContext';
+import { useSyncStatus } from './hooks/useSyncStatus';
+import { useSyncStepMachine } from './hooks/useSyncStepMachine';
 
 // ─── Brand tokens (accent + semantic only) ────────────────────────────────────
 
@@ -72,13 +74,6 @@ interface SyncCounts {
   customers: number;
 }
 
-interface SyncStatusResponse {
-  status: string;
-  progress: { current: number; total: number; percentage: number };
-  counts: SyncCounts;
-  lastError: string | null;
-}
-
 interface StepDef {
   heading: string;
   subheading: (counts: SyncCounts) => string;
@@ -87,23 +82,6 @@ interface StepDef {
   /** If true, only marked done on COMPLETED — not when next step activates */
   doneOnCompleted?: boolean;
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const STATUS_TO_STEP: Record<string, number> = {
-  PENDING:           0,
-  SYNCING_PRODUCTS:  1,
-  SYNCING_ORDERS:    2,
-  SYNCING_INVENTORY: 2,
-  SYNCING_SHOP:      2,
-  COMPLETING:        4,
-  // COMPLETED handled separately
-};
-
-const POLL_INTERVAL_MS        = 2000;
-const MIN_STEP_DISPLAY_MS     = 1200;
-const SYNTHETIC_STEP_DELAY_MS = 8000;
-const REASSURANCE_DELAY_MS    = 60_000;
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
 
@@ -274,33 +252,26 @@ const StepRow: React.FC<StepRowProps> = ({ step, state, counts, pal }) => {
 // ─── SyncAnimationPage ────────────────────────────────────────────────────────
 
 const SyncAnimationPage: React.FC = () => {
+  // source of truth: backend sync state (status + counts)
+  const { status, counts: polledCounts, progress } = useSyncStatus();
+  
+  const {
+    stepStates,
+    activeStepIndex,
+    progressWidth,
+    showTeaser,
+    showReassurance,
+    isError
+  } = useSyncStepMachine(status, polledCounts, STEPS.length, progress);
+  
   const pal = useSyncTheme();
   const { user } = useAuth();
   
-  const [stepStates, setStepStates]           = useState<StepState[]>(STEPS.map(() => 'pending'));
-  const [activeStepIndex, setActiveStepIndex] = useState(-1);
-  const [showTeaser, setShowTeaser]           = useState(false);
-  const [showReassurance, setShowReassurance] = useState(false);
   const [soundEnabled, setSoundEnabled]       = useState(false);
-  const [counts, setCounts]                   = useState<SyncCounts>({ orders: 0, variants: 0, customers: 0 });
-  const [progressWidth, setProgressWidth]     = useState(0);
-
-  const completedSequenceRunRef  = useRef(false);
-  const teaserShownRef           = useRef(false);
-  const syntheticStepQueuedRef   = useRef(false);
-  const syntheticStepTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const allTimersRef             = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const soundEnabledRef          = useRef(false);
 
   const [emailRequested, setEmailRequested]     = useState(false);
   const [emailInputVisible, setEmailInputVisible] = useState(false);
   const [emailInput, setEmailInput]             = useState('');
-
-  const addTimer = (fn: () => void, ms: number) => {
-    const t = setTimeout(fn, ms);
-    allTimersRef.current.push(t);
-    return t;
-  };
 
   const handleEmailNotify = async () => {
     if (emailRequested) return;
@@ -315,219 +286,33 @@ const SyncAnimationPage: React.FC = () => {
     }
   };
 
-  useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
-
-  const playCompletionChime = () => {
-    if (!soundEnabledRef.current) return;
-    try {
-      const ctx  = new AudioContext();
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.4);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.6);
-    } catch { /* AudioContext unavailable — silent fail */ }
-  };
-
-  // ── Explicit state setters ────────────────────────────────────────────────
-
-  const activateStep = (index: number) => {
-    setActiveStepIndex(index);
-    setProgressWidth(((index + 1) / STEPS.length) * 100);
-    setStepStates((prev) => {
-      if (prev[index] !== 'pending') return prev;
-      const next = [...prev] as StepState[];
-      next[index] = 'active';
-      return next;
-    });
-  };
-
-  /**
-   * markStepDone — only marks done if step does NOT have doneOnCompleted.
-   * Steps 2 + 3 are marked done only in runCompletedSequence.
-   */
-  const markStepDone = (index: number) => {
-    if (STEPS[index]?.doneOnCompleted) return; // guard — these wait for COMPLETED
-    setStepStates((prev) => {
-      if (prev[index] !== 'active') return prev;
-      const next = [...prev] as StepState[];
-      next[index] = 'done';
-      return next;
-    });
-  };
-
-  /** markStepDoneForced — used only in runCompletedSequence for doneOnCompleted steps */
-  const markStepDoneForced = (index: number) => {
-    setStepStates((prev) => {
-      if (prev[index] !== 'active') return prev;
-      const next = [...prev] as StepState[];
-      next[index] = 'done';
-      return next;
-    });
-  };
-
-  // ── Poll + sequencing ─────────────────────────────────────────────────────
-
-  useEffect(() => {
-    let pollCancelled = false;
-    let mainPollId: ReturnType<typeof setInterval> | null = null;
-    let countsPollId: ReturnType<typeof setInterval> | null = null;
-
-    const stepQueue: number[] = [];
-    let stepSchedulerRunning  = false;
-    let currentDisplayStep    = -1;
-
-    const stopMainPoll = () => {
-      pollCancelled = true;
-      if (mainPollId !== null) { clearInterval(mainPollId); mainPollId = null; }
-    };
-
-    const stopCountsPoll = () => {
-      if (countsPollId !== null) { clearInterval(countsPollId); countsPollId = null; }
-    };
-
-    function processQueue() {
-      if (stepSchedulerRunning) return;
-
-      while (stepQueue.length > 0 && stepQueue[0] <= currentDisplayStep) {
-        stepQueue.shift();
-      }
-
-      if (stepQueue.length === 0) return;
-
-      const nextStep = stepQueue[0];
-
-      // Fill skipped steps
-      if (nextStep > currentDisplayStep + 1) {
-        for (let i = currentDisplayStep + 1; i < nextStep; i++) {
-          stepQueue.unshift(i);
-        }
-      }
-
-      const stepToShow = stepQueue.shift()!;
-      if (stepToShow <= currentDisplayStep) { processQueue(); return; }
-
-      stepSchedulerRunning = true;
-      currentDisplayStep   = stepToShow;
-
-      activateStep(stepToShow);
-
-      // Mark previous step done — only if it's not a doneOnCompleted step
-      if (stepToShow > 0) markStepDone(stepToShow - 1);
-
-      // Queue synthetic step 3 eight seconds after step 2 activates
-      if (stepToShow === 2 && !syntheticStepQueuedRef.current) {
-        syntheticStepQueuedRef.current = true;
-        syntheticStepTimerRef.current = setTimeout(() => {
-          enqueueStep(3);
-        }, SYNTHETIC_STEP_DELAY_MS);
-      }
-
-      addTimer(() => {
-        stepSchedulerRunning = false;
-        processQueue();
-      }, MIN_STEP_DISPLAY_MS);
-    }
-
-    function enqueueStep(index: number) {
-      const lastQueued = stepQueue[stepQueue.length - 1] ?? currentDisplayStep;
-      if (index > lastQueued) stepQueue.push(index);
-      processQueue();
-    }
-
-    /**
-     * runCompletedSequence — fires exactly once on COMPLETED.
-     *
-     * Timeline:
-     *   0ms   — stop main poll, freeze counts
-     *   0ms   — mark steps 2 + 3 done (green) — they were orange during order sync
-     *   0ms   — enqueue step 4 through scheduler
-     *   800ms — teaser appears
-     *   chime — if opted in
-     */
-    const runCompletedSequence = (finalCounts: SyncCounts) => {
-      if (completedSequenceRunRef.current) return;
-      completedSequenceRunRef.current = true;
-
-      stopMainPoll();
-      setCounts(finalCounts);
-
-      // Cancel synthetic step timer if COMPLETED arrives before 8s
-      if (syntheticStepTimerRef.current !== null) {
-        clearTimeout(syntheticStepTimerRef.current);
-        syntheticStepTimerRef.current = null;
-      }
-
-      // Mark steps 2 and 3 done immediately (were orange during order sync)
-      markStepDoneForced(2);
-      markStepDoneForced(3);
-
-      // Continue polling counts for projection catch-up
-      countsPollId = setInterval(async () => {
-        try {
-          const { data } = await axiosInstance.get<SyncStatusResponse>('/api/v1/integrations/sync-status');
-          if (data.counts) setCounts(data.counts);
-        } catch { /* non-fatal */ }
-      }, POLL_INTERVAL_MS);
-
-      // Step 4 through scheduler — respects MIN_STEP_DISPLAY_MS
-      enqueueStep(4);
-
-      addTimer(() => {
-        if (!teaserShownRef.current) {
-          teaserShownRef.current = true;
-          setShowTeaser(true);
-        }
-      }, 800);
-
-      playCompletionChime();
-    };
-
-    async function poll() {
-      if (pollCancelled) return;
-      try {
-        const { data } = await axiosInstance.get<SyncStatusResponse>('/api/v1/integrations/sync-status');
-        if (pollCancelled) return;
-
-        if (data.counts) setCounts(data.counts);
-
-        if (data.status === 'COMPLETED') { runCompletedSequence(data.counts); return; }
-        if (data.status === 'FAILED')    { stopMainPoll(); return; }
-
-        const targetStep = STATUS_TO_STEP[data.status] ?? 0;
-        enqueueStep(targetStep);
-
-      } catch (err) {
-        console.warn('[SyncAnimationPage] poll failed', err);
-      }
-    }
-
-    poll();
-    mainPollId = setInterval(poll, POLL_INTERVAL_MS);
-
-    return () => {
-      stopMainPoll();
-      stopCountsPoll();
-      if (syntheticStepTimerRef.current !== null) clearTimeout(syntheticStepTimerRef.current);
-      const timers = allTimersRef.current;
-      timers.forEach(clearTimeout);
-    };
-  }, []); // intentionally runs once
-
-  // Reassurance at 90s
-  useEffect(() => {
-    const t = setTimeout(() => setShowReassurance(true), REASSURANCE_DELAY_MS);
-    return () => clearTimeout(t);
-  }, []);
-
   const phaseHeading = activeStepIndex >= 0
     ? (PHASE_HEADINGS[activeStepIndex] ?? PHASE_HEADINGS[0])
     : 'Your operation is ready';
+
+  // explicit failure state — prevents misleading progress UI
+  if (isError) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100dvh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: pal.bg
+        }}
+      >
+        <Box sx={{ textAlign: 'center', maxWidth: 320 }}>
+          <Typography sx={{ fontSize: '1.2rem', fontWeight: 700, mb: 1 }}>
+            Sync failed
+          </Typography>
+          <Typography sx={{ fontSize: '0.9rem', color: pal.textSecond }}>
+            Something went wrong while connecting your store.
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -572,7 +357,7 @@ const SyncAnimationPage: React.FC = () => {
           {/* Steps */}
           <Box sx={{ mb: 3, pl: 1.5, borderLeft: `1px solid ${pal.stepBorder}`, ml: 0.5 }}>
             {STEPS.map((step, i) => (
-              <StepRow key={i} step={step} state={stepStates[i]} counts={counts} pal={pal} />
+              <StepRow key={i} step={step} state={stepStates[i]} counts={polledCounts} pal={pal} />
             ))}
           </Box>
 

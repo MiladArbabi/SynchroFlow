@@ -16,8 +16,8 @@ import { UpgradePrompt } from '../../components/UpgradePrompt';
 import SimpleBar from '../../ui-component/third-party/SimpleBar';
 import { useResolvedNavigation } from '../../runtime/useResolvedNavigation';
 import { useModuleHealth } from '../../runtime/useModuleHealth';
-import { useEntitlements } from '../../contexts/EntitlementsContext';
-
+/* import { useEntitlements } from '../../contexts/EntitlementsContext';
+ */
 type SidenavState = 'EXPANDED' | 'COMPACT' | 'CLOSED';
 
 interface SidenavProps {
@@ -34,7 +34,7 @@ const SidenavContent: React.FC<SidenavProps> = ({
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { groups } = useResolvedNavigation();
-  const { snapshot } = useEntitlements();
+  /* const { snapshot } = useEntitlements(); */
   const moduleHealth = useModuleHealth();
 
   const isExpanded = sidenavState === 'EXPANDED';
@@ -42,8 +42,6 @@ const SidenavContent: React.FC<SidenavProps> = ({
   const iconSize = isExpanded ? 18 : isCompact ? 22 : 18;
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
-
-  console.log('SNAPSHOT MODULES:', Array.from(snapshot.moduleKey));
 
   const logo = useMemo(
   () => (
