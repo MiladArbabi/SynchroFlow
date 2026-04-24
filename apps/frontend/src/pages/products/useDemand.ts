@@ -10,12 +10,16 @@ export type DemandVelocity = {
   unit_cost: number | null;
   available_quantity: number;
   units_sold_30d: number;
+  units_sold_prev_30d: number;
   units_sold_all_time: number;
   velocity_per_day: number;
+  velocity_trend: 'up' | 'down' | 'stable';
   days_of_stock_remaining: number | null;
   reorder_signal: boolean;
   reorder_urgency: 'critical' | 'warning' | 'healthy' | 'overstocked' | 'no_velocity';
   estimated_stockout_date: string | null;
+  suggested_reorder_qty: number | null;
+  supplier_lead_time_days: number | null;
 };
 
 export type DemandSummary = {

@@ -1,10 +1,20 @@
 // modules/demand/src/ui/pages/DemandModuleFT2.tsx
-
-import { Box, Typography, CircularProgress, Chip, useTheme } from '@mui/material';
-import { AlertTriangle, TrendingDown, Package, CheckCircle } from 'lucide-react';
+import { useState } from 'react';
+import {
+  Box, Typography, CircularProgress, Chip, Button, Collapse,
+  useTheme,
+} from '@mui/material';
+import { useColorScheme, alpha } from '@mui/material/styles';
+import {
+  AlertTriangle, TrendingDown, TrendingUp, Package,
+  CheckCircle, ChevronDown, ShoppingCart, Minus,
+} from 'lucide-react';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
+// ─────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────
 export type DemandVelocity = {
   lasyncro_variant_id: string;
   title: string | null;
@@ -12,11 +22,15 @@ export type DemandVelocity = {
   unit_cost: number | null;
   available_quantity: number;
   units_sold_30d: number;
+  units_sold_prev_30d: number;
   velocity_per_day: number;
+  velocity_trend: 'up' | 'down' | 'stable';
   days_of_stock_remaining: number | null;
   reorder_signal: boolean;
   reorder_urgency: 'critical' | 'warning' | 'healthy' | 'overstocked' | 'no_velocity';
   estimated_stockout_date: string | null;
+  suggested_reorder_qty: number | null;
+  supplier_lead_time_days: number | null;
 };
 
 export type DemandSummary = {
@@ -38,95 +52,228 @@ export type DemandModuleFT2Props = {
   data: DemandData;
   isLoading: boolean;
   isError: boolean;
-  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
   currency?: CurrencyContext;
 };
 
-const URGENCY_CONFIG = {
-  critical: { label: 'Critical', color: '#DC2626', icon: <AlertTriangle size={12} /> },
-  warning: { label: 'Reorder Soon', color: '#CA8A04', icon: <TrendingDown size={12} /> },
-  healthy: { label: 'Healthy', color: '#16A34A', icon: <CheckCircle size={12} /> },
-  overstocked: { label: 'Overstocked', color: '#2563EB', icon: <Package size={12} /> },
-  no_velocity: { label: 'No Sales', color: '#6B7280', icon: <Package size={12} /> },
-};
-
-function StatBox({ label, value, color, icon }: { label: string; value: string; color?: string; icon: React.ReactNode }) {
-  return (
-    <Box sx={{ flex: 1, p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2, minWidth: 140 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, color: color ?? 'text.secondary' }}>
-        {icon}
-        <Typography variant="caption" color="inherit">{label}</Typography>
-      </Box>
-      <Typography variant="h5" fontWeight={700} sx={{ color: color ?? 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
-        {value}
-      </Typography>
-    </Box>
-  );
+// ─────────────────────────────────────────────
+// THEME HOOK
+// ─────────────────────────────────────────────
+function useDemandTheme() {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  return {
+    isDark,
+    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
+    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
+    rowHover:    isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
+    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
+    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+  };
 }
 
-function VariantRow({ variant, currency }: { variant: DemandVelocity; currency?: CurrencyContext }) {
+// ─────────────────────────────────────────────
+// VELOCITY TREND BADGE
+// ─────────────────────────────────────────────
+function TrendBadge({ trend, prev, current }: { trend: 'up' | 'down' | 'stable'; prev: number; current: number }) {
   const theme = useTheme();
-  const config = URGENCY_CONFIG[variant.reorder_urgency];
+  if (trend === 'stable' || prev === 0) return <Minus size={12} color={theme.palette.text.secondary as string} />;
 
-  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
-
-  const stockoutDate = variant.estimated_stockout_date
-    ? new Date(variant.estimated_stockout_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    : '—';
+  const pct = prev > 0 ? Math.round(Math.abs((current - prev) / prev) * 100) : 0;
+  const isUp = trend === 'up';
 
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr',
-        px: 2,
-        py: 1.5,
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-        alignItems: 'center',
-        '&:hover': { bgcolor: 'action.hover' },
-      }}
-    >
-      <Box>
-        <Typography variant="body2" fontWeight={500}>{variant.title ?? 'Unknown'}</Typography>
-        {variant.sku && <Typography variant="caption" color="text.secondary">{variant.sku}</Typography>}
-      </Box>
-      <Typography variant="body2">{variant.available_quantity}</Typography>
-      <Typography variant="body2">{variant.units_sold_30d}</Typography>
-      <Typography variant="body2">{variant.velocity_per_day}/day</Typography>
-      <Typography variant="body2">
-        {variant.days_of_stock_remaining != null ? `${variant.days_of_stock_remaining}d` : '—'}
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+      {isUp
+        ? <TrendingUp size={12} color={theme.palette.success.main} />
+        : <TrendingDown size={12} color={theme.palette.error.main} />
+      }
+      <Typography sx={{ fontSize: 10, fontWeight: 600, color: isUp ? 'success.main' : 'error.main' }}>
+        {pct}%
       </Typography>
-      <Chip
-        label={config.label}
-        size="small"
-        sx={{
-          bgcolor: config.color,
-          color: '#fff',
-          fontWeight: 600,
-          fontSize: 10,
-          height: 20,
-          width: 'fit-content',
-        }}
-      />
     </Box>
   );
 }
 
+// ─────────────────────────────────────────────
+// ORDER CTA — navigates to suppliers portal
+// ─────────────────────────────────────────────
+function OrderCTA({ variant }: { variant: DemandVelocity }) {
+  const params = new URLSearchParams();
+  params.set('action', 'create-po');
+  if (variant.lasyncro_variant_id) params.set('variantId', variant.lasyncro_variant_id);
+  if (variant.sku) params.set('sku', variant.sku);
+  if (variant.suggested_reorder_qty) params.set('qty', String(variant.suggested_reorder_qty));
+  if (variant.title) params.set('description', variant.title);
+
+  const href = `/suppliers-portal?${params.toString()}`;
+
+  return (
+    <Button
+      size="small"
+      variant="outlined"
+      startIcon={<ShoppingCart size={12} />}
+      href={href}
+      sx={{ fontSize: 10, py: 0.25, px: 1, minWidth: 0, borderRadius: '6px', whiteSpace: 'nowrap' }}
+    >
+      {variant.suggested_reorder_qty ? `Order ${variant.suggested_reorder_qty}` : 'Order'}
+    </Button>
+  );
+}
+
+// ─────────────────────────────────────────────
+// VARIANT ROW
+// ─────────────────────────────────────────────
+function VariantRow({ variant, currency, pal }: {
+  variant: DemandVelocity;
+  currency?: CurrencyContext;
+  pal: ReturnType<typeof useDemandTheme>;
+}) {
+  const theme = useTheme();
+  const isCritical = variant.reorder_urgency === 'critical';
+  const isWarning = variant.reorder_urgency === 'warning';
+
+  const accentColor = isCritical
+    ? theme.palette.error.main
+    : isWarning
+    ? theme.palette.warning.main
+    : theme.palette.text.secondary;
+
+  const stockoutLabel = variant.estimated_stockout_date
+    ? new Date(variant.estimated_stockout_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : null;
+
+  return (
+    <Box sx={{
+      display: 'grid',
+      gridTemplateColumns: '2fr 80px 80px 80px 100px 120px',
+      px: 2, py: 1.25,
+      borderBottom: `0.5px solid ${pal.border}`,
+      alignItems: 'center',
+      gap: 1,
+      borderLeft: `3px solid ${isCritical ? theme.palette.error.main : isWarning ? theme.palette.warning.main : 'transparent'}`,
+      '&:hover': { background: pal.rowHover },
+    }}>
+      {/* Product */}
+      <Box>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary, lineHeight: 1.3 }}>
+          {variant.title ?? 'Unknown'}
+        </Typography>
+        <Typography sx={{ fontSize: 10, color: pal.textSecond, fontFamily: 'monospace' }}>
+          {variant.sku ?? '—'}
+        </Typography>
+      </Box>
+
+      {/* In stock */}
+      <Typography sx={{ fontSize: 13, color: variant.available_quantity <= 0 ? 'error.main' : pal.textPrimary }}>
+        {variant.available_quantity}
+      </Typography>
+
+      {/* Sold 30d + trend */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Typography sx={{ fontSize: 13, color: pal.textPrimary }}>{variant.units_sold_30d}</Typography>
+        <TrendBadge trend={variant.velocity_trend} prev={variant.units_sold_prev_30d} current={variant.units_sold_30d} />
+      </Box>
+
+      {/* Days left */}
+      <Typography sx={{ fontSize: 13, fontWeight: isCritical || isWarning ? 600 : 400, color: accentColor }}>
+        {variant.days_of_stock_remaining != null ? `${variant.days_of_stock_remaining}d` : '—'}
+        {stockoutLabel && isCritical && (
+          <Typography component="span" sx={{ fontSize: 10, color: 'error.main', display: 'block' }}>
+            ~{stockoutLabel}
+          </Typography>
+        )}
+      </Typography>
+
+      {/* Status chip */}
+      <Box>
+        {isCritical && <Chip label="Critical" size="small" color="error" sx={{ fontSize: 10, height: 20, fontWeight: 700 }} />}
+        {isWarning && <Chip label="Reorder Soon" size="small" color="warning" sx={{ fontSize: 10, height: 20 }} />}
+        {variant.reorder_urgency === 'healthy' && <Chip label="Healthy" size="small" color="success" sx={{ fontSize: 10, height: 20 }} />}
+        {variant.reorder_urgency === 'overstocked' && <Chip label="Overstocked" size="small" color="info" sx={{ fontSize: 10, height: 20 }} />}
+        {variant.reorder_urgency === 'no_velocity' && <Chip label="No Sales" size="small" sx={{ fontSize: 10, height: 20 }} />}
+      </Box>
+
+      {/* CTA */}
+      {(isCritical || isWarning) ? (
+        <OrderCTA variant={variant} />
+      ) : (
+        <Box />
+      )}
+    </Box>
+  );
+}
+
+// ─────────────────────────────────────────────
+// MAIN EXPORT
+// ─────────────────────────────────────────────
 export default function DemandModuleFT2({ data, isLoading, isError, currency }: DemandModuleFT2Props) {
   const theme = useTheme();
+  const pal = useDemandTheme();
+  const [showRest, setShowRest] = useState(false);
+
   const summary = data?.summary;
-  const variants = data?.variants ?? [];
+  const allVariants = data?.variants ?? [];
+  const actionVariants = allVariants.filter(v => v.reorder_urgency === 'critical' || v.reorder_urgency === 'warning');
+  const restVariants = allVariants.filter(v => v.reorder_urgency !== 'critical' && v.reorder_urgency !== 'warning');
 
   const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
+  // Command header framing
+  const criticalCount = summary?.critical_reorder_count ?? 0;
+  const warningCount = summary?.warning_reorder_count ?? 0;
+  const headerStatus = criticalCount > 0 ? 'critical' : warningCount > 0 ? 'warning' : 'healthy';
+
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700}>Demand & Inventory</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Sales velocity, days-of-stock remaining, and reorder signals per product variant.
-        </Typography>
+    <Box sx={{ p: { xs: 2, md: 3 } }}>
+
+      {/* ── ZONE 1: COMMAND HEADER ── */}
+      <Box sx={{
+        background: pal.cardBg,
+        border: `0.5px solid ${pal.border}`,
+        borderRadius: '12px',
+        overflow: 'hidden',
+        mb: 2,
+      }}>
+        <Box sx={{
+          p: '1rem 1.25rem',
+          borderBottom: `0.5px solid ${pal.border}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2,
+        }}>
+          <Box>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em', mb: '4px' }}>
+              Demand Intelligence
+            </Typography>
+            {isLoading ? (
+              <Typography sx={{ fontSize: 16, color: pal.textPrimary }}>Computing...</Typography>
+            ) : summary ? (
+              <Typography sx={{ fontSize: 16, fontWeight: 500, color: headerStatus === 'critical' ? theme.palette.error.main : headerStatus === 'warning' ? theme.palette.warning.main : theme.palette.success.main }}>
+                {criticalCount > 0
+                  ? `${criticalCount} product${criticalCount > 1 ? 's' : ''} at critical stockout risk`
+                  : warningCount > 0
+                  ? `${warningCount} product${warningCount > 1 ? 's' : ''} need reordering soon`
+                  : 'All products have healthy stock levels'}
+              </Typography>
+            ) : null}
+          </Box>
+
+          {/* Metric tiles */}
+          {summary && (
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Critical', value: summary.critical_reorder_count, color: theme.palette.error.main },
+                { label: 'Reorder Soon', value: summary.warning_reorder_count, color: theme.palette.warning.main },
+                { label: 'Avg Days Stock', value: summary.avg_days_of_stock != null ? `${summary.avg_days_of_stock}d` : '—', color: pal.textPrimary },
+                { label: 'Inventory Value', value: fmt(summary.total_inventory_value), color: pal.textPrimary },
+              ].map(({ label, value, color }) => (
+                <Box key={label} sx={{ background: pal.tileBg, borderRadius: '6px', px: 1.5, py: 0.75, minWidth: 80 }}>
+                  <Typography sx={{ fontSize: 16, fontWeight: 600, color, lineHeight: 1.2 }}>{value}</Typography>
+                  <Typography sx={{ fontSize: 10, color: pal.textSecond }}>{label}</Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
       </Box>
 
       {isLoading && (
@@ -135,38 +282,80 @@ export default function DemandModuleFT2({ data, isLoading, isError, currency }: 
         </Box>
       )}
 
-      {summary && (
-        <>
-          {/* ZONE 1 — PULSE */}
-          <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-            <StatBox label="Variants Tracked" value={String(summary.total_variants_tracked)} icon={<Package size={14} />} />
-            <StatBox label="Critical Reorder" value={String(summary.critical_reorder_count)} icon={<AlertTriangle size={14} />} color={theme.palette.error.main} />
-            <StatBox label="Reorder Soon" value={String(summary.warning_reorder_count)} icon={<TrendingDown size={14} />} color={theme.palette.warning.main} />
-            <StatBox label="Stockouts" value={String(summary.stockout_count)} icon={<AlertTriangle size={14} />} color={theme.palette.error.main} />
-            <StatBox label="Inventory Value" value={fmt(summary.total_inventory_value)} icon={<Package size={14} />} color={theme.palette.primary.main} />
+      {isError && (
+        <Typography color="error" sx={{ p: 2 }}>Failed to load demand data.</Typography>
+      )}
+
+      {/* ── ZONE 2: PRIORITY ACTION LIST ── */}
+      {!isLoading && allVariants.length > 0 && (
+        <Box sx={{
+          background: pal.cardBg,
+          border: `0.5px solid ${pal.border}`,
+          borderRadius: '12px',
+          overflow: 'hidden',
+          mb: 2,
+        }}>
+          {/* Table header */}
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: '2fr 80px 80px 80px 100px 120px',
+            px: 2, py: 1,
+            borderBottom: `0.5px solid ${pal.border}`,
+            gap: 1,
+          }}>
+            {['Product', 'In Stock', 'Sold 30d', 'Days Left', 'Status', 'Action'].map(h => (
+              <Typography key={h} sx={{ fontSize: 10, fontWeight: 600, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {h}
+              </Typography>
+            ))}
           </Box>
 
-          {/* ZONE 2 — VARIANT TABLE */}
-          <Box>
-            <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
-              Variants — ranked by urgency
-            </Typography>
-
-            <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-              {['Product', 'In Stock', 'Sold (30d)', 'Velocity', 'Days Left', 'Status'].map(h => (
-                <Typography key={h} variant="caption" color="text.secondary" fontWeight={600}>{h}</Typography>
-              ))}
+          {/* Action items (critical + warning) */}
+          {actionVariants.length === 0 ? (
+            <Box sx={{ py: 4, textAlign: 'center' }}>
+              <CheckCircle size={24} color={theme.palette.success.main} />
+              <Typography sx={{ fontSize: 13, color: pal.textSecond, mt: 1 }}>
+                No reorder signals — all products are healthy.
+              </Typography>
             </Box>
+          ) : (
+            actionVariants.map(v => (
+              <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
+            ))
+          )}
 
-            {variants.map(v => <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} />)}
-
-            {variants.length === 0 && (
-              <Box sx={{ py: 4, textAlign: 'center' }}>
-                <Typography variant="body2" color="text.secondary">No variant data available.</Typography>
+          {/* Collapsed: healthy + overstocked + no_velocity */}
+          {restVariants.length > 0 && (
+            <>
+              <Box
+                onClick={() => setShowRest(v => !v)}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1,
+                  px: 2, py: 1, cursor: 'pointer',
+                  borderTop: `0.5px solid ${pal.border}`,
+                  '&:hover': { background: pal.rowHover },
+                }}
+              >
+                <ChevronDown size={14} color={pal.textSecond} style={{ transform: showRest ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
+                <Typography sx={{ fontSize: 12, color: pal.textSecond }}>
+                  {restVariants.length} healthy / overstocked / no-sales product{restVariants.length > 1 ? 's' : ''}
+                </Typography>
               </Box>
-            )}
-          </Box>
-        </>
+              <Collapse in={showRest}>
+                {restVariants.map(v => (
+                  <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
+                ))}
+              </Collapse>
+            </>
+          )}
+        </Box>
+      )}
+
+      {!isLoading && !isError && allVariants.length === 0 && (
+        <Box sx={{ textAlign: 'center', py: 8, color: pal.textSecond }}>
+          <Package size={36} style={{ opacity: 0.3 }} />
+          <Typography sx={{ mt: 2, fontSize: 14 }}>No inventory data yet.</Typography>
+        </Box>
       )}
     </Box>
   );

@@ -41,6 +41,8 @@ export function resolveNavVisibility({
   promoteIfLocked,
   hideIfLocked,
 }: ResolveNavVisibilityArgs): NavVisibility {
+  // DEV BYPASS: never lock nav items in development
+  if (import.meta.env.DEV) return 'enabled';
   // --- Tier gate (checked first — tier supersedes module entitlement) ---
   if (requiredTier) {
     const required = TIER_ORDER[requiredTier] ?? 0;

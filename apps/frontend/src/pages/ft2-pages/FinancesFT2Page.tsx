@@ -22,7 +22,7 @@ export default function FinancesFT2Page() {
   const snapshotQuery = useFinancesFt2Snapshot(range);
   const marginQuery = useMargin();
   const { displayCurrency, locale, tier } = useEntitlements();
-  const isLocked = tier === 'starter' || tier === 'core';
+  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
   const { rates } = useExchangeRates();
 
   if (!snapshotQuery.isSuccess) {

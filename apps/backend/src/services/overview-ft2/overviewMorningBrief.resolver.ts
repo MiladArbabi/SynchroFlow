@@ -118,8 +118,10 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   wms_pack_exception:       { module: 'wms',              deepLink: '/wms?filter=pack_exceptions' },
   wms_batch_ready_to_pack:  { module: 'wms',              deepLink: '/wms?filter=ready_to_pack' },
   wms_batch_ready_to_ship:  { module: 'wms',              deepLink: '/wms?filter=ready_to_ship' },
-  // Supplier signals
+  // ── Supplier signals
   wms_supplier_rating:      { module: 'suppliers-portal', deepLink: '/suppliers-portal' },
+  // ── Demand signals
+  stockout_risk:            { module: 'demand',           deepLink: '/demand?filter=critical' },
 };
 
 const SEVERITY_PRIORITY: Record<string, number> = {

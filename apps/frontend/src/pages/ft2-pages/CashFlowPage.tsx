@@ -9,7 +9,7 @@ export default function CashFlowPage() {
   const { data, isLoading, isError } = useCashFlow();
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
-  const isLocked = tier === 'starter' || tier === 'core';
+  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
 
  if (isLocked) return (
     <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Cash Flow Intelligence">

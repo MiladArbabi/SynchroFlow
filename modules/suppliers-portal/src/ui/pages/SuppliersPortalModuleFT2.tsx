@@ -122,6 +122,10 @@ export type SuppliersPortalPageProps = {
   onUpdatePoStatus: (poId: string, status: PurchaseOrderStatus, actualDeliveryDate?: string) => Promise<void>;
   onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
   onCreatePo: (input: CreatePoInput) => Promise<void>;
+  /** When true, auto-opens the Create PO dialog on mount (from demand module handoff) */
+  autoOpenCreatePo?: boolean;
+  /** Pre-filled line item from demand module handoff */
+  prefilledLineItem?: { description: string; quantity_ordered: number; lasyncro_variant_id?: string };
 };
 
 const STATUS_CONFIG: Record<PurchaseOrderStatus, {
@@ -713,8 +717,10 @@ export default function SuppliersPortalModuleFT2({
   onUpdatePoStatus,
   onCreateSupplier,
   onCreatePo,
+  autoOpenCreatePo = false,
+  prefilledLineItem,
 }: SuppliersPortalPageProps) {
-  const [createPoOpen, setCreatePoOpen] = useState(false);
+  const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
   const [showClosed, setShowClosed] = useState(false);
 
   const allPos = data?.purchase_orders ?? [];

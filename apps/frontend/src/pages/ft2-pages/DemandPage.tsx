@@ -9,7 +9,7 @@ export default function DemandPage() {
   const { data, isLoading, isError } = useDemand();
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
-  const isLocked = tier === 'starter' || tier === 'core';
+  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
 
   if (isLocked) return (
     <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Demand Forecasting">

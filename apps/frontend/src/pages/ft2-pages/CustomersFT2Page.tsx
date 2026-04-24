@@ -22,7 +22,7 @@ export default function CustomersFT2Page() {
 
   const ltvQuery = useCustomerLtv();
   const { displayCurrency, locale, tier } = useEntitlements();
-  const isLocked = tier === 'starter' || tier === 'core';
+  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
   const { rates } = useExchangeRates();
 
   if (__DEV__) {

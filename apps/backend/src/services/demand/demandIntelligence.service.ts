@@ -33,12 +33,19 @@ export type DemandVelocity = {
   unit_cost: number | null;
   available_quantity: number;
   units_sold_30d: number;
+  units_sold_prev_30d: number;
   units_sold_all_time: number;
   velocity_per_day: number;
+  /** 'up' = >10% increase vs prior period, 'down' = >10% decrease, 'stable' = within 10% */
+  velocity_trend: 'up' | 'down' | 'stable';
   days_of_stock_remaining: number | null;
   reorder_signal: boolean;
   reorder_urgency: 'critical' | 'warning' | 'healthy' | 'overstocked' | 'no_velocity';
   estimated_stockout_date: string | null;
+  /** Suggested units to order: (velocity_per_day × lead_time_days × 1.2) - available_quantity */
+  suggested_reorder_qty: number | null;
+  /** Supplier avg delivery days — null if no supplier linked */
+  supplier_lead_time_days: number | null;
 };
 
 export type DemandSummary = {
@@ -101,6 +108,49 @@ export async function computeDemandIntelligence(
     );
 
     /**
+     * PREV 30-DAY VELOCITY (days 31-60) — for trend computation
+     */
+    const prevWindowStart = new Date();
+    prevWindowStart.setDate(prevWindowStart.getDate() - VELOCITY_WINDOW_DAYS * 2);
+    const prevWindowEnd = new Date(windowStart);
+
+    const velocityPrev30d = await trx('order_revenue_units as oru')
+      .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+      .where('o.shop_id', shopId)
+      .where('o.order_created_at', '>=', prevWindowStart)
+      .where('o.order_created_at', '<', prevWindowEnd)
+      .groupBy('oru.lasyncro_variant_id')
+      .select(
+        'oru.lasyncro_variant_id',
+        trx.raw('SUM(oru.quantity) as units_sold_prev_30d'),
+      );
+
+    const velocityPrev30dMap = new Map(
+      velocityPrev30d.map((r: any) => [r.lasyncro_variant_id, Number(r.units_sold_prev_30d)])
+    );
+
+    /**
+     * SUPPLIER LEAD TIME PER VARIANT
+     * Sourced from most recent received PO for this variant via suppliers.avg_delivery_days
+     */
+    const supplierLeadTime = await trx('purchase_order_line_items as poli')
+      .join('purchase_orders as po', 'po.id', 'poli.po_id')
+      .join('suppliers as s', 's.id', 'po.supplier_id')
+      .where('poli.shop_id', shopId)
+      .whereNotNull('poli.lasyncro_variant_id')
+      .whereNotNull('s.avg_delivery_days')
+      .groupBy('poli.lasyncro_variant_id')
+      .orderByRaw('MAX(po.created_at) DESC')
+      .select(
+        'poli.lasyncro_variant_id',
+        trx.raw('AVG(s.avg_delivery_days) as avg_lead_time_days'),
+      );
+
+    const supplierLeadTimeMap = new Map(
+      supplierLeadTime.map((r: any) => [r.lasyncro_variant_id, Math.ceil(Number(r.avg_lead_time_days))])
+    );
+
+    /**
      * ALL-TIME UNITS SOLD PER VARIANT
      */
     const allTimeSales = await trx('order_revenue_units as oru')
@@ -137,9 +187,26 @@ export async function computeDemandIntelligence(
     const variants: DemandVelocity[] = inventoryRows
       .map((row: any) => {
         const units30d = velocity30dMap.get(row.lasyncro_variant_id) ?? 0;
+        const unitsPrev30d = velocityPrev30dMap.get(row.lasyncro_variant_id) ?? 0;
         const unitsAllTime = allTimeSalesMap.get(row.lasyncro_variant_id) ?? 0;
         const availableQty = Number(row.available_quantity ?? 0);
         const velocityPerDay = Math.round((units30d / VELOCITY_WINDOW_DAYS) * 100) / 100;
+        const leadTimeDays = supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? 14; // default 14d
+
+        // Velocity trend: compare current vs prior 30d
+        const velocityTrend: 'up' | 'down' | 'stable' = (() => {
+          if (unitsPrev30d === 0 && units30d > 0) return 'up';
+          if (unitsPrev30d === 0) return 'stable';
+          const changePct = (units30d - unitsPrev30d) / unitsPrev30d;
+          if (changePct > 0.1) return 'up';
+          if (changePct < -0.1) return 'down';
+          return 'stable';
+        })();
+
+        // Suggested reorder: cover lead time + 20% safety stock buffer
+        const suggestedReorderQty = velocityPerDay > 0
+          ? Math.max(0, Math.ceil(velocityPerDay * leadTimeDays * 1.2) - availableQty)
+          : null;
 
         const daysOfStock =
           velocityPerDay > 0
@@ -161,12 +228,16 @@ export async function computeDemandIntelligence(
           unit_cost: row.unit_cost != null ? Number(row.unit_cost) : null,
           available_quantity: availableQty,
           units_sold_30d: units30d,
+          units_sold_prev_30d: unitsPrev30d,
           units_sold_all_time: unitsAllTime,
           velocity_per_day: velocityPerDay,
+          velocity_trend: velocityTrend,
           days_of_stock_remaining: daysOfStock,
           reorder_signal: reorderSignal,
           reorder_urgency: urgency,
           estimated_stockout_date: stockoutDate,
+          suggested_reorder_qty: suggestedReorderQty,
+          supplier_lead_time_days: supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null,
         };
       })
       .filter((v: DemandVelocity) => v.units_sold_all_time > 0 || v.available_quantity > 0)
@@ -204,6 +275,53 @@ export async function computeDemandIntelligence(
       avg_days_of_stock: avgDaysOfStock,
       total_inventory_value: Math.round(totalInventoryValue * 100) / 100,
     };
+
+   // Fire demand alerts for critical variants (stockout risk)
+    // Non-blocking — alert failure must not fail the demand computation
+    const criticalVariants = variants.filter(v => v.reorder_urgency === 'critical');
+    for (const v of criticalVariants) {
+      try {
+        await trx('alerts')
+          .insert({
+            shop_id: shopId,
+            alert_key: `demand:stockout_risk:${v.lasyncro_variant_id}`,
+            source: 'demand',
+            alert_type: 'stockout_risk',
+            severity: 'critical',
+            title: `${v.sku ?? v.title ?? 'Variant'} — stockout risk`,
+            message: v.days_of_stock_remaining != null
+              ? `${v.days_of_stock_remaining} days of stock remaining at current velocity.`
+              : `Stock depleted — reorder immediately.`,
+            entity_id: v.lasyncro_variant_id,
+            entity_type: 'variant',
+            revenue_impact: v.unit_cost && v.suggested_reorder_qty
+              ? v.unit_cost * v.suggested_reorder_qty
+              : null,
+            is_active: true,
+          })
+          .onConflict(['shop_id', 'alert_key'])
+          .merge({
+            is_active: true,
+            title: trx.raw('EXCLUDED.title'),
+            message: trx.raw('EXCLUDED.message'),
+            updated_at: trx.fn.now(),
+          });
+      } catch {
+        // non-fatal
+      }
+    }
+
+    // Resolve alerts for variants that are no longer critical
+    const nonCriticalIds = variants
+      .filter(v => v.reorder_urgency !== 'critical')
+      .map(v => `demand:stockout_risk:${v.lasyncro_variant_id}`);
+
+    if (nonCriticalIds.length > 0) {
+      await trx('alerts')
+        .where({ shop_id: shopId, source: 'demand', is_active: true })
+        .whereIn('alert_key', nonCriticalIds)
+        .update({ is_active: false, resolved_at: trx.fn.now(), updated_at: trx.fn.now() });
+    }
 
     return { summary, variants, computed_at: new Date().toISOString() };
   });
