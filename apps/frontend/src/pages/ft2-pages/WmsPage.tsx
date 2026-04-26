@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/WmsPage.tsx
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { 
   WmsModuleFT2, 
   useOfflineScanQueue, 
@@ -16,6 +16,7 @@ import type {
   PackOrder,
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 
 /**
  * WMS GATE PAGE
@@ -27,6 +28,7 @@ import { useAuth } from 'contexts/AuthContext';
  */
 
 export default function WmsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data, isLoading, isError, refetch } = useWms();
 
   const { user } = useAuth();
@@ -38,6 +40,31 @@ export default function WmsPage() {
   }, []);
 
   const { isOnline, queuedCount, submitScan } = useOfflineScanQueue({ httpPost });
+
+  const handleFetchReceiveJob = useCallback(async (jobId: string) => {
+    const { data } = await axiosInstance.get(`/api/v1/suppliers/receive-jobs/${jobId}`);
+    return data;
+  }, []);
+
+  /**
+   * RECEIVE SESSION AUTO-ENTRY
+   * --------------------------
+   * When navigating from SuppliersPortal via "Receive via WMS",
+   * the URL contains ?receiveJobId=xxx. We fetch the job and
+   * enter the receive session automatically, then clean the param
+   * so refreshing doesn't re-trigger the session.
+   */
+  useEffect(() => {
+    const receiveJobId = searchParams.get('receiveJobId');
+    if (!receiveJobId) return;
+
+    // Clean param immediately — prevents re-trigger on refresh
+    setSearchParams({}, { replace: true });
+
+    void handleFetchReceiveJob(receiveJobId).catch(() => {
+      console.error('[WmsPage] Failed to auto-enter receive session', { receiveJobId });
+    });
+  }, [searchParams, setSearchParams, handleFetchReceiveJob]);
 
   // Register Web Push subscription on first WMS load (WM-22)
   useWebPush({ httpPost });
@@ -143,16 +170,16 @@ export default function WmsPage() {
     });
   }, []);
 
-  // ── RECEIVE CALLBACKS (FEAT-004) ────────────────────────
+  /**
+   * RECEIVE VIA WMS
+   * ---------------
+   * Creates a receive job for a shipped PO.
+   * Navigation to WMS receive session is handled by PoAccordion → handleReceive.
+   */
   const handleCreateReceiveJob = useCallback(async (poId: string) => {
     const { data } = await axiosInstance.post(
       `/api/v1/suppliers/purchase-orders/${poId}/receive-jobs`
     );
-    return data;
-  }, []);
-
-  const handleFetchReceiveJob = useCallback(async (jobId: string) => {
-    const { data } = await axiosInstance.get(`/api/v1/suppliers/receive-jobs/${jobId}`);
     return data;
   }, []);
 

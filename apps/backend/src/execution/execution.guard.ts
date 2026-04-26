@@ -144,6 +144,50 @@ const client = createShopifyGraphQLClient({
 
     throw new Error('SHOPIFY_ALREADY_FULFILLED');
   }
+
+  /**
+   * ADDRESS VALIDATION (PP1-01)
+   * ---------------------------
+   * Prevents fulfillment against incomplete shipping addresses.
+   * Typos and missing fields cause returned packages — catch here
+   * before any external side-effect fires.
+   *
+   * Required fields: address1, city, zip, country.
+   * province is optional (not all countries use it).
+   *
+   * FAIL POLICY: hard block — operator must resolve via customer constraint.
+   */
+  const addressResponse: any = await client.query({
+    data: {
+      query: `
+        query ($id: ID!) {
+          order(id: $id) {
+            shippingAddress {
+              address1
+              city
+              zip
+              country
+            }
+          }
+        }
+      `,
+      variables: { id: orderGid }
+    }
+  });
+
+  const shippingAddress = addressResponse?.body?.data?.order?.shippingAddress;
+
+  const missingFields = ['address1', 'city', 'zip', 'country'].filter(
+    (field) => !shippingAddress?.[field]?.trim()
+  );
+
+  if (!shippingAddress || missingFields.length > 0) {
+    console.warn('[EXECUTION_GUARD_BLOCK_INCOMPLETE_ADDRESS]', {
+      decision_id: job.decision_id,
+      missing_fields: missingFields,
+    });
+    throw new Error('INCOMPLETE_SHIPPING_ADDRESS');
+  }
 }
 
   /**

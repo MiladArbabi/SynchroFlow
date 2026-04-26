@@ -67,6 +67,19 @@ export default function SuppliersPortalPage() {
     refetch();
   }, [refetch]);
 
+  /**
+   * RECEIVE VIA WMS
+   * ---------------
+   * Creates a receive job for a shipped PO.
+   * Navigation to WMS receive session is handled by PoAccordion → handleReceive.
+   */
+  const handleCreateReceiveJob = useCallback(async (poId: string) => {
+    const { data } = await axiosInstance.post(
+      `/api/v1/suppliers/purchase-orders/${poId}/receive-jobs`
+    );
+    return data;
+  }, []);
+
   return (
     <SuppliersPortalModuleFT2
       data={data}
@@ -77,6 +90,7 @@ export default function SuppliersPortalPage() {
       onUpdatePoStatus={handleUpdatePoStatus}
       onCreateSupplier={handleCreateSupplier}
       onCreatePo={handleCreatePo}
+      onCreateReceiveJob={handleCreateReceiveJob}
       autoOpenCreatePo={demandAction === 'create-po'}
       prefilledLineItem={demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
         description: demandDescription ?? demandSku ?? '',

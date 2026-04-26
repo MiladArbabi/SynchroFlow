@@ -378,12 +378,37 @@ async function processExecutionMessage(
      * - Preserve DLQ fallback for safety
      */
     const retryCount = Number(
-    msg.properties?.headers?.['x-retry-count'] || 0
+     msg.properties?.headers?.['x-retry-count'] || 0
     );
 
     const nextRetryCount = retryCount + 1;
-
     const channel = getQueueChannel(EXECUTION_QUEUE);
+
+    /**
+     * SOFT BLOCK ERRORS — no retry
+     * -----------------------------
+     * These are operator-resolvable conditions, not system failures.
+     * Retrying would be wasteful and misleading.
+     * The decision stays in 'failure' state until the operator resolves
+     * the underlying issue and re-triggers execution.
+     */
+    const SOFT_BLOCK_ERRORS = new Set([
+      'INCOMPLETE_SHIPPING_ADDRESS',
+      'SHOPIFY_ALREADY_FULFILLED',
+      'EXTERNAL_ORDER_ID_NOT_FOUND',
+    ]);
+
+    if (SOFT_BLOCK_ERRORS.has((err as Error).message)) {
+      console.warn('[EXECUTION_SOFT_BLOCK]', {
+        decision_id: (() => {
+          try { return JSON.parse(msg.content.toString())?.decision_id; }
+          catch { return 'UNKNOWN_DECISION_ID'; }
+        })(),
+        reason: (err as Error).message,
+      });
+      channel.ack(msg as any);
+      return;
+    }
 
     /**
      * RETRY BACKOFF STRATEGY (ALIGNED WITH RECONCILIATION)

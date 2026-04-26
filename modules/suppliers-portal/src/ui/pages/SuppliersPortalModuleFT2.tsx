@@ -1,5 +1,6 @@
 // modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -122,6 +123,8 @@ export type SuppliersPortalPageProps = {
   onUpdatePoStatus: (poId: string, status: PurchaseOrderStatus, actualDeliveryDate?: string) => Promise<void>;
   onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
   onCreatePo: (input: CreatePoInput) => Promise<void>;
+  /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
+  onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
   /** When true, auto-opens the Create PO dialog on mount (from demand module handoff) */
   autoOpenCreatePo?: boolean;
   /** Pre-filled line item from demand module handoff */
@@ -498,17 +501,37 @@ function PoAccordion({
   po,
   onFetchLineItems,
   onUpdatePoStatus,
+  onCreateReceiveJob,
 }: {
   po: PurchaseOrder;
   onFetchLineItems: (poId: string) => Promise<PoLineItem[]>;
   onUpdatePoStatus: (poId: string, status: PurchaseOrderStatus, actualDeliveryDate?: string) => Promise<void>;
+  /** Creates a receive job for this PO and navigates to the WMS receive session. */
+  onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [lineItems, setLineItems] = useState<PoLineItem[] | null>(null);
   const [loadingItems, setLoadingItems] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [receiveOpen, setReceiveOpen] = useState(false);
+
+  const navigate = useNavigate();
+
+  /**
+   * RECEIVE VIA WMS
+   * ---------------
+   * Creates a receive job for this PO, then navigates to the WMS page
+   * with the job ID as a query param. WmsPage reads receiveJobId and
+   * auto-enters the receive session — no manual navigation needed.
+   */
+  const handleReceive = useCallback(async () => {
+    try {
+      const { receive_job_id } = await onCreateReceiveJob(po.id);
+      navigate(`/wms?receiveJobId=${receive_job_id}`);
+    } catch {
+      setError('Failed to start receive session. Please try again.');
+    }
+  }, [onCreateReceiveJob, po.id, navigate]);
 
   const status = STATUS_CONFIG[po.status];
   const eta = po.expected_delivery_date
@@ -632,8 +655,14 @@ function PoAccordion({
                   onClick={() => void handleStatusUpdate('shipped')}>Skip → Shipped</Button>
               </>
             )}
-           <Button size="small" variant="outlined" color="success" disabled
-              startIcon={<CheckCircle size={14} />}>
+           <Button
+              size="small"
+              variant="outlined"
+              color="success"
+              disabled={updatingStatus}
+              startIcon={<CheckCircle size={14} />}
+              onClick={() => void handleReceive()}
+            >
               Receive via WMS
             </Button>
             <Button size="small" variant="outlined" color="error" disabled={updatingStatus}
@@ -717,6 +746,7 @@ export default function SuppliersPortalModuleFT2({
   onUpdatePoStatus,
   onCreateSupplier,
   onCreatePo,
+  onCreateReceiveJob,
   autoOpenCreatePo = false,
   prefilledLineItem,
 }: SuppliersPortalPageProps) {
@@ -797,6 +827,7 @@ export default function SuppliersPortalModuleFT2({
                   po={po}
                   onFetchLineItems={onFetchLineItems}
                   onUpdatePoStatus={onUpdatePoStatus}
+                  onCreateReceiveJob={onCreateReceiveJob}
                 />
               ))
             )}
@@ -823,6 +854,7 @@ export default function SuppliersPortalModuleFT2({
                   po={po}
                   onFetchLineItems={onFetchLineItems}
                   onUpdatePoStatus={onUpdatePoStatus}
+                  onCreateReceiveJob={onCreateReceiveJob}
                 />
               ))}
             </Box>
