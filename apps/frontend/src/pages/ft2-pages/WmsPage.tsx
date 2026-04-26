@@ -146,13 +146,25 @@ export default function WmsPage() {
 
   const handlePrintLabel = useCallback(async (orderId: string) => {
     /**
-     * PRINT LABEL
-     * -----------
-     * Triggers server-side label generation.
-     * Currently a stub — label printing integration (thermal printer
-     * or PDF download) to be implemented in shipping sprint.
+     * PACKING SLIP (PP1-02)
+     * ---------------------
+     * Fetches Shopify packing slip URL for a fulfilled order.
+     * Opens in new tab — works for both thermal printer workflows
+     * and standard browser print dialogs.
+     *
+     * 409 = order not yet fulfilled (no fulfillment ID yet) — safe to ignore.
      */
-    console.info('[WMS] Print label requested for order:', orderId);
+    try {
+      const { data } = await axiosInstance.get(`/api/v1/wms/orders/${orderId}/packing-slip`);
+      if (data?.packing_slip_url) {
+        window.open(data.packing_slip_url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status !== 409) {
+        console.error('[WMS] Failed to fetch packing slip', { orderId, error: (err as Error)?.message });
+      }
+    }
   }, []);
 
   const handlePackComplete = useCallback(async (batchId: string) => {

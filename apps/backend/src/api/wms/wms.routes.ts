@@ -25,7 +25,9 @@ import {
   httpConfirmStow,
   httpCreateStowTask,
   httpAssignStowLocation,
+  httpGetPackingSlipUrl,
 } from './wms.controller.js';
+
 /**
  * WMS ROUTES (WM-03)
  * -------------------
@@ -201,6 +203,15 @@ router.patch(
   requireTier('core'),
   requireAction('wms:stow:location'),
   httpAssignStowLocation
+);
+
+router.get(
+  '/orders/:orderId/packing-slip',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetPackingSlipUrl
 );
 
 export default router;

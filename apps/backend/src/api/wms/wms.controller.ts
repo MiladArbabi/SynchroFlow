@@ -1276,3 +1276,63 @@ export const httpResolveException = async (req: Request, res: Response) => {
     return res.status(500).json({ error: `Failed to resolve exception: ${message}` });
   }
 };
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/orders/:orderId/packing-slip
+// ─────────────────────────────────────────
+/**
+ * PACKING SLIP URL (PP1-02)
+ * -------------------------
+ * Returns the Shopify packing slip URL for a fulfilled order.
+ *
+ * Requires:
+ * - order_warehouse_status.shopify_fulfillment_id (set by writeShopifyFulfillment)
+ * - external_order_identity_map.external_order_id
+ * - shopify_app_installations.shop_domain
+ *
+ * URL format: https://{shop_domain}/admin/orders/{order_id}/fulfillments/{fulfillment_id}/packing_slips
+ */
+export const httpGetPackingSlipUrl = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { orderId } = req.params;
+  if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const row = await trx('order_warehouse_status as ows')
+        .join('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'ows.lasyncro_order_id')
+        .join('shopify_app_installations as sai', 'sai.shop_id', trx.raw('?', [shopId]))
+        .where('ows.lasyncro_order_id', orderId)
+        .where('ows.shop_id', shopId)
+        .select(
+          'ows.shopify_fulfillment_id',
+          'eoim.external_order_id',
+          'sai.shop_domain',
+        )
+        .first();
+
+      return row;
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (!result.shopify_fulfillment_id) {
+      return res.status(409).json({ error: 'Order not yet fulfilled — no packing slip available' });
+    }
+
+    const packingSlipUrl = `https://${result.shop_domain}/admin/orders/${result.external_order_id}/fulfillments/${result.shopify_fulfillment_id}/packing_slips`;
+
+    return res.json({ packing_slip_url: packingSlipUrl });
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_PACKING_SLIP_FAILED]', { shopId, orderId, error: message });
+    return res.status(500).json({ error: `Failed to get packing slip URL: ${message}` });
+  }
+};
