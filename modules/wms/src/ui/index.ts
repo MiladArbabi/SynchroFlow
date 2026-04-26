@@ -11,3 +11,4 @@ export { useOfflineScanQueue } from './hooks/useOfflineScanQueue.js';
 export type { UseOfflineScanQueueResult, ScanQueueEntry } from './hooks/useOfflineScanQueue.js';
 export { WmsConnectionBadge } from './components/WmsConnectionBadge.js';
 export { useWebPush } from './hooks/useWebPush.js';
+export type { WmsBatch, WmsData, WmsStowTask, WmsModuleFT2Props } from './pages/WmsModuleFT2.js';

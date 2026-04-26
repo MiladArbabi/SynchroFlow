@@ -180,11 +180,23 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo(0);
 
+    /**
+     * SHIPPING ADDRESS (PP3-04)
+     * -------------------------
+     * Province and country captured at order ingestion from Shopify webhook.
+     * Used for region-based alert rules (shop_alert_rules.rule_type = 'order_from_region').
+     *
+     * province: ISO 3166-2 subdivision code (e.g. 'CA', 'NY') — nullable for countries without provinces.
+     * country_code: ISO 3166-1 alpha-2 (e.g. 'US', 'GB') — nullable if not provided by platform.
+     */
+    table.string('shipping_province', 100).nullable();
+    table.string('shipping_country_code', 2).nullable();
+
     table.timestamp('created_at', { useTz: true }).notNullable();
     table.timestamp('updated_at', { useTz: true }).notNullable();
-
     table.index(['shop_id', 'order_created_at']);
     table.index(['shop_id', 'customer_hashed_id']);
+    table.index(['shop_id', 'shipping_province']);
   });
 
   // --- RLS: Enforce tenant isolation at DB level (MANDATORY) ---
@@ -369,6 +381,44 @@ export async function up(knex: Knex): Promise<void> {
     FOR EACH ROW
     EXECUTE FUNCTION enforce_checkpoint_monotonicity();
   `);
+
+  /**
+   * SHOP ALERT RULES (PP3-01)
+   * -------------------------
+   * User-configurable alert rules evaluated on order arrival.
+   *
+   * rule_type values (v1):
+   * - 'order_from_region'  — fires when shipping_province matches config.province
+   * - 'order_above_value'  — fires when total_price >= config.threshold
+   * - 'new_order'          — fires on every new order
+   *
+   * config: JSONB — rule-type-specific parameters
+   * push_enabled: whether to also fire a push notification
+   *
+   * alert_key format: rule:{rule_id}:order:{lasyncro_order_id}
+   * Idempotent — safe on webhook replay.
+   */
+  await knex.schema.createTable('shop_alert_rules', (table) => {
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.integer('shop_id').notNullable().references('id').inTable('shops').onDelete('CASCADE');
+    table.string('rule_type', 50).notNullable();
+    table.jsonb('config').notNullable().defaultTo('{}');
+    table.boolean('push_enabled').notNullable().defaultTo(false);
+    table.boolean('is_active').notNullable().defaultTo(true);
+    table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.index(['shop_id', 'is_active']);
+  });
+
+  await knex.raw(`ALTER TABLE shop_alert_rules ENABLE ROW LEVEL SECURITY;`);
+  await knex.raw(`ALTER TABLE shop_alert_rules FORCE ROW LEVEL SECURITY;`);
+  await knex.raw(`DROP POLICY IF EXISTS shop_alert_rules_tenant_isolation ON shop_alert_rules;`);
+  await knex.raw(`
+    CREATE POLICY shop_alert_rules_tenant_isolation
+    ON shop_alert_rules
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
@@ -376,4 +426,5 @@ export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('orders');
   await knex.schema.dropTableIfExists('user_states');
   await knex.schema.dropTableIfExists('shops');
+  await knex.schema.dropTableIfExists('shop_alert_rules');
 }

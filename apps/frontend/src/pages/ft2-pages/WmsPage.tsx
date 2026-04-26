@@ -29,7 +29,7 @@ import { useSearchParams } from 'react-router-dom';
 
 export default function WmsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data, isLoading, isError, refetch } = useWms();
+  const { data, isLoading, isError, refetch, stowTasks } = useWms();
 
   const { user } = useAuth();
   const userRole = user?.role ?? 'operator';
@@ -216,6 +216,14 @@ export default function WmsPage() {
     await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/close`, params);
   }, []);
 
+  const handleClaimStowTask = useCallback(async (taskId: string) => {
+    await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/claim`);
+  }, []);
+
+  const handleConfirmStow = useCallback(async (taskId: string) => {
+    await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/confirm`);
+  }, []);
+
   return (
     <WmsModuleFT2
       data={data ?? null}
@@ -242,6 +250,9 @@ export default function WmsPage() {
       onRefresh={refetch}
       isOnline={isOnline}
       queuedCount={queuedCount}
+      stowTasks={stowTasks}
+      onClaimStowTask={handleClaimStowTask}
+      onConfirmStow={handleConfirmStow}
     />
   );
 }

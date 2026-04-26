@@ -4,6 +4,7 @@ import { X, AlertTriangle, AlertCircle, Info, ArrowRight } from 'lucide-react';
 import { useAlerts, useDismissAlert, type Alert } from '../alerts/useAlerts';
 import { useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
+import AlertRulesPanel from 'components/AlertRulesPanel';
 
 /**
  * ALERTS INBOX PAGE (AL-04)
@@ -163,99 +164,101 @@ export default function AlertsPage() {
   const info = alerts.filter(a => a.severity === 'info');
 
   return (
-    <Box sx={{ p: 3 }}>
-
-      {/* HEADER */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700}>
-          Alerts
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          System-generated signals ranked by urgency and commercial impact.
-        </Typography>
-      </Box>
-
-      {/* LOADING */}
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
-
-      {/* ERROR */}
-      {isError && (
-        <MuiAlert severity="error" sx={{ mb: 3 }}>
-          Failed to load alerts. Please refresh.
-        </MuiAlert>
-      )}
-
-      {/* EMPTY STATE */}
-      {!isLoading && !isError && alerts.length === 0 && (
-        <Box
-          sx={{
-            p: 4,
-            textAlign: 'center',
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: 2,
-          }}
-        >
-          <Typography variant="body1" fontWeight={600}>
-            No active alerts
+    <Box sx={{ p: 3, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 3, alignItems: 'start' }}>
+      <Box>
+        {/* HEADER */}
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h5" fontWeight={700}>
+            Alerts
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Your operations are running smoothly. Alerts will appear here when action is needed.
+            System-generated signals ranked by urgency and commercial impact.
           </Typography>
         </Box>
-      )}
 
-      {/* CRITICAL */}
-      {critical.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="overline" color="error.main" sx={{ mb: 1.5, display: 'block' }}>
-            Critical — {critical.length}
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {critical.map(alert => (
-              <AlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
-            ))}
+        {/* LOADING */}
+        {isLoading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
+            <CircularProgress size={24} />
           </Box>
-        </Box>
-      )}
+        )}
 
-      {/* DIVIDER */}
-      {critical.length > 0 && warning.length > 0 && (
-        <Divider sx={{ mb: 3 }} />
-      )}
+        {/* ERROR */}
+        {isError && (
+          <MuiAlert severity="error" sx={{ mb: 3 }}>
+            Failed to load alerts. Please refresh.
+          </MuiAlert>
+        )}
 
-      {/* WARNING */}
-      {warning.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="overline" color="warning.main" sx={{ mb: 1.5, display: 'block' }}>
-            Warnings — {warning.length}
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {warning.map(alert => (
-              <AlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
-            ))}
+        {/* EMPTY STATE */}
+        {!isLoading && !isError && alerts.length === 0 && (
+          <Box
+            sx={{
+              p: 4,
+              textAlign: 'center',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 2,
+            }}
+          >
+            <Typography variant="body1" fontWeight={600}>
+              No active alerts
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Your operations are running smoothly. Alerts will appear here when action is needed.
+            </Typography>
           </Box>
-        </Box>
-      )}
+        )}
 
-      {/* INFO */}
-      {info.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="overline" color="primary.main" sx={{ mb: 1.5, display: 'block' }}>
-            Info — {info.length}
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {info.map(alert => (
-              <AlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
-            ))}
+        {/* CRITICAL */}
+        {critical.length > 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="overline" color="error.main" sx={{ mb: 1.5, display: 'block' }}>
+              Critical — {critical.length}
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {critical.map(alert => (
+                <AlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
+              ))}
+            </Box>
           </Box>
-        </Box>
-      )}
+        )}
 
+        {/* DIVIDER */}
+        {critical.length > 0 && warning.length > 0 && (
+          <Divider sx={{ mb: 3 }} />
+        )}
+
+        {/* WARNING */}
+        {warning.length > 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="overline" color="warning.main" sx={{ mb: 1.5, display: 'block' }}>
+              Warnings — {warning.length}
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {warning.map(alert => (
+                <AlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {/* INFO */}
+        {info.length > 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="overline" color="primary.main" sx={{ mb: 1.5, display: 'block' }}>
+              Info — {info.length}
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {info.map(alert => (
+                <AlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        </Box>
+      <AlertRulesPanel />
     </Box>
   );
 }

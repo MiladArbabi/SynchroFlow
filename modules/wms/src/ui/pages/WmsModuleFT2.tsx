@@ -58,6 +58,20 @@ export type WmsData = {
   batches: WmsBatch[];
 } | null;
 
+export type WmsStowTask = {
+  stow_task_id: string;
+  lasyncro_variant_id: string;
+  quantity: number;
+  location_code: string | null;
+  status: 'pending' | 'in_progress';
+  trigger: string;
+  claimed_by: number | null;
+  claimed_at: string | null;
+  created_at: string;
+  variant_title: string | null;
+  sku: string | null;
+};
+
 export type WmsModuleFT2Props = {
   data: WmsData;
   isLoading: boolean;
@@ -90,6 +104,10 @@ export type WmsModuleFT2Props = {
 
   onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
   onRefresh: () => void;
+  /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
+  stowTasks?: WmsStowTask[];
+  onClaimStowTask?: (taskId: string) => Promise<void>;
+  onConfirmStow?: (taskId: string) => Promise<void>;
   isOnline: boolean;
   queuedCount: number;
 };
@@ -249,6 +267,70 @@ function BatchCard({
   );
 }
 
+/**
+ * STOW TASK CARD
+ * --------------
+ * Displays a pending stow task — stock that needs to be put away.
+ * Triggered by: inbound receive close, cancelled order mid-pick.
+ */
+function StowTaskCard({
+  task,
+  onClaim,
+  onConfirm,
+}: {
+  task: WmsStowTask;
+  onClaim: (taskId: string) => void;
+  onConfirm: (taskId: string) => void;
+}) {
+  const theme = useTheme();
+  const label = task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase();
+  const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 2, borderColor: theme.palette.warning.light }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+        <Typography variant="body2" fontWeight={700}>{label}</Typography>
+        <Chip label="Stow pending" size="small" color="warning" />
+      </Box>
+      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <Typography variant="caption" color="text.secondary">
+          Qty: {task.quantity}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Location: {task.location_code ?? 'Unassigned'}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Source: {triggerLabel}
+        </Typography>
+      </Box>
+      {task.status === 'pending' && (
+        <Button
+          variant="outlined"
+          color="warning"
+          fullWidth
+          size="large"
+          sx={{ borderRadius: 2, fontWeight: 700 }}
+          onClick={() => onClaim(task.stow_task_id)}
+        >
+          Claim & Stow
+        </Button>
+      )}
+      {task.status === 'in_progress' && (
+        <Button
+          variant="contained"
+          color="warning"
+          fullWidth
+          size="large"
+          sx={{ borderRadius: 2, fontWeight: 700 }}
+          onClick={() => onConfirm(task.stow_task_id)}
+        >
+          Confirm Stowed
+        </Button>
+      )}
+    </Paper>
+  );
+}
+
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
   | { type: 'pack'; batchId: string; orders: PackOrder[] }
@@ -282,6 +364,9 @@ export default function WmsModuleFT2({
   onRefresh,
   isOnline,
   queuedCount,
+  stowTasks,
+  onClaimStowTask,
+  onConfirmStow,
 }: WmsModuleFT2Props) {
   const [activeSession, setActiveSession] = useState<ActiveSession>(null);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -427,6 +512,23 @@ export default function WmsModuleFT2({
           onContinuePack={(id) => void enterPackSession(id, false)}
         />
       ))}
+
+      {/* STOW TASKS */}
+      {!isLoading && !loadingSession && (stowTasks ?? []).length > 0 && (
+        <Box sx={{ mt: batches.length > 0 ? 3 : 0 }}>
+          <Typography variant="overline" color="warning.main" sx={{ mb: 1.5, display: 'block' }}>
+            Stow tasks — {(stowTasks ?? []).length} pending
+          </Typography>
+          {(stowTasks ?? []).map((task) => (
+            <StowTaskCard
+              key={task.stow_task_id}
+              task={task}
+              onClaim={(id) => void onClaimStowTask?.(id).then(onRefresh)}
+              onConfirm={(id) => void onConfirmStow?.(id).then(onRefresh)}
+            />
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }

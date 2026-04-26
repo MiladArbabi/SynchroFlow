@@ -15,6 +15,7 @@ import {
 } from '@lasyncro/ui-ft2';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
+import CostEntryPanel from 'components/CostEntryPanel';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -47,10 +48,13 @@ export default function ProductsFT2Page() {
 
   return (
     <>
+      <CostEntryPanel />
+
       <FT2DateRangeBar
         value={range}
         onChange={setRange}
       />
+      
       <ProductsModuleFT2 
         {...props}
         operatorSummary={operatorSummary} 

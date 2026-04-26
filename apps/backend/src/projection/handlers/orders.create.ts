@@ -15,6 +15,7 @@ import { FirstInsightService } from '../../services/first-insight.service.js';
  */
 import { writeOrderRevenueUnits } from '../../workers/reconciliation/revenue-units.writer.js';
 import { debugLog } from '../projection.utils.js';
+import { evaluateAlertRulesForOrder } from '../../services/alerts/alertRules.service.js';
 
 const ORDER_UUID_NAMESPACE =
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
@@ -245,11 +246,50 @@ export async function handleOrdersCreate({
        * Null for guest checkouts — expected and allowed.
        */
       customer_hashed_id: payload.customer?.hashedId ?? null,
+      /**
+       * SHIPPING REGION (PP3-04)
+       * -------------------------
+       * Supports both REST and GraphQL Shopify payloads.
+       * REST:    shipping_address.province_code / country_code
+       * GraphQL: shippingAddress.provinceCode / countryCode
+       *
+       * Used by shop_alert_rules.rule_type = 'order_from_region'
+       * to fire per-order region alerts.
+       */
+      shipping_province:
+        payload.shippingAddress?.provinceCode ??
+        payload.shipping_address?.province_code ??
+        null,
+      shipping_country_code:
+        payload.shippingAddress?.countryCode ??
+        payload.shipping_address?.country_code ??
+        null,
       created_at: canonicalEventTime,
       updated_at: canonicalEventTime,
     });
 
     debugLog('[ORDER_INSERTED]', { lasyncroOrderId });
+
+    /**
+     * ALERT RULES EVALUATION (PP3-01, PP3-02)
+     * ----------------------------------------
+     * Evaluates shop_alert_rules against the new order.
+     * Non-blocking — errors logged, never thrown.
+     * Runs inside the same transaction for atomicity.
+     */
+    await evaluateAlertRulesForOrder(trx, {
+      lasyncroOrderId,
+      shopId: domainEvent.shop_id,
+      totalPrice: totalPrice ?? 0,
+      shippingProvince:
+        payload.shippingAddress?.provinceCode ??
+        payload.shipping_address?.province_code ??
+        null,
+      shippingCountryCode:
+        payload.shippingAddress?.countryCode ??
+        payload.shipping_address?.country_code ??
+        null,
+    });
 
     /**
      * CUSTOMER UPSERT

@@ -14,7 +14,8 @@
 
 import { FC } from 'react';
 import { useTheme } from '@mui/material/styles';
-
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 type Props = {
   operationalControl: {
@@ -35,6 +36,8 @@ type Props = {
   onDriverClick?: (driver: string) => void;
   onBreakdownClick?: (type: string) => void;
   onUrgencyClick?: () => void;
+  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  currency?: CurrencyContext;
 };
 
 export const OperationalCommandCenter: FC<Props> = ({
@@ -42,8 +45,12 @@ export const OperationalCommandCenter: FC<Props> = ({
   onDriverClick,
   onBreakdownClick,
   onUrgencyClick,
+  currency,
 }) => {
     const theme = useTheme();
+
+    const fmt$ = (n: number): string =>
+      formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
   /**
    * PRIMARY METRICS
@@ -120,7 +127,7 @@ export const OperationalCommandCenter: FC<Props> = ({
     style={{ cursor: 'pointer', marginBottom: 12 }}
     >
         <strong>
-            Fix {primaryIssue.label} blockage — {primaryIssue.value}
+            Fix {primaryIssue.label} blockage — {fmt$(primaryIssue.value)}
         </strong>
 
         <div style={{ fontSize: 12, opacity: 0.7 }}>
@@ -144,7 +151,7 @@ export const OperationalCommandCenter: FC<Props> = ({
         }}
     >
         <strong>
-        Immediate risk: {urgency} revenue breaching SLA
+        Immediate risk: {fmt$(urgency)} revenue breaching SLA
         </strong>
 
         <div style={{ fontSize: 12 }}>

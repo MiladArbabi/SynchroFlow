@@ -1,7 +1,11 @@
 // apps/backend/src/api/alerts/alerts.routes.ts
-
 import { Router } from 'express';
 import { httpGetAlerts, httpDismissAlert } from './alerts.controller.js';
+import {
+  httpGetAlertRules,
+  httpCreateAlertRule,
+  httpDeleteAlertRule,
+} from './alertRules.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
 const router = Router();
@@ -19,5 +23,14 @@ router.get('/', authenticateToken, httpGetAlerts);
  * @access  Private
  */
 router.post('/:alertId/dismiss', authenticateToken, httpDismissAlert);
+
+/**
+ * ALERT RULES (PP3-01)
+ * --------------------
+ * User-configurable rules evaluated on order arrival.
+ */
+router.get('/rules', authenticateToken, httpGetAlertRules);
+router.post('/rules', authenticateToken, httpCreateAlertRule);
+router.delete('/rules/:ruleId', authenticateToken, httpDeleteAlertRule);
 
 export default router;
