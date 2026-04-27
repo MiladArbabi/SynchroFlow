@@ -28,6 +28,7 @@ export type Task = {
 type Props = {
   onSelectTask: (task: Task) => void;
   onLogout: () => void;
+  onOpenAvailability: () => void;
 };
 
 async function fetchTasks(): Promise<Task[]> {
@@ -85,7 +86,7 @@ function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
   );
 }
 
-export default function TaskListScreen({ onSelectTask, onLogout }: Props) {
+export default function TaskListScreen({ onSelectTask, onLogout, onOpenAvailability }: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -109,12 +110,17 @@ export default function TaskListScreen({ onSelectTask, onLogout }: Props) {
   return (
     <Screen>
       {/* HEADER */}
-      <View style={styles.header}>
+      <Row style={styles.header}>
         <Text style={styles.headerTitle}>My tasks</Text>
-        <TouchableOpacity onPress={onLogout} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.logoutText}>Sign out</Text>
-        </TouchableOpacity>
-      </View>
+        <Row justify="flex-end" style={{ gap: spacing.md }}>
+          <TouchableOpacity onPress={onOpenAvailability} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.calendarText}>Calendar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onLogout} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.logoutText}>Sign out</Text>
+          </TouchableOpacity>
+        </Row>
+      </Row>
 
       <Divider />
 
@@ -190,6 +196,10 @@ const styles = StyleSheet.create({
   },
   taskSubtitle: {
     color: colors.ink3,
+    fontSize: font.size.sm,
+  },
+  calendarText: {
+    color: colors.accent,
     fontSize: font.size.sm,
   },
   chevron: {

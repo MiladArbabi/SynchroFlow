@@ -1,23 +1,32 @@
 // apps/mobile/App.tsx
+import { useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from './src/hooks/useAuth';
 import LoginScreen from './src/screens/LoginScreen';
-import TaskListScreen from './src/screens/TaskListScreen';
+import TaskListScreen, { type Task } from './src/screens/TaskListScreen';
+import AvailabilityScreen from './src/screens/AvailabilityScreen';
 import { colors } from './src/theme';
 
 /**
- * APP ROOT
- * --------
- * Auth gate — no navigation library for v1.
- * React Navigation added in Sprint 4 (availability calendar).
+ * APP ROOT (Mobile v1)
+ * --------------------
+ * Minimal stack navigator — no library needed for 3 screens.
+ * React Navigation added Sprint 4 when stack depth increases.
  *
- * isLoading  → splash spinner
- * !auth      → LoginScreen
- * auth       → TaskListScreen
+ * Screens:
+ * - login        → LoginScreen
+ * - tasks        → TaskListScreen (home)
+ * - availability → AvailabilityScreen
+ * - scan         → ScanScreen (Sprint 1 M5 — TODO)
  */
+
+type Screen = 'tasks' | 'availability' | 'scan';
+
 export default function App() {
   const { isAuthenticated, isLoading, error, login, logout } = useAuth();
+  const [screen, setScreen] = useState<Screen>('tasks');
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   if (isLoading) {
     return (
@@ -28,26 +37,34 @@ export default function App() {
     );
   }
 
+  if (!isAuthenticated) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <LoginScreen onLogin={login} error={error} />
+      </>
+    );
+  }
+
   return (
     <>
       <StatusBar style="light" />
-      {isAuthenticated
-        ? <TaskListScreen
-            onSelectTask={(task) => {
-              /**
-               * TODO — Sprint 1 M5: ScanScreen
-               * Navigate to barcode scan screen with task context.
-               * Placeholder until ScanScreen is built.
-               */
-              console.info('[APP] task selected', task.id, task.type);
-            }}
-            onLogout={() => void logout()}
-          />
-        : <LoginScreen
-            onLogin={login}
-            error={error}
-          />
-      }
+
+      {screen === 'tasks' && (
+        <TaskListScreen
+          onSelectTask={(task) => {
+            setActiveTask(task);
+            // TODO Sprint 1 M5: setScreen('scan')
+            console.info('[APP] task selected', task.id, task.type);
+          }}
+          onLogout={() => void logout()}
+          onOpenAvailability={() => setScreen('availability')}
+        />
+      )}
+
+      {screen === 'availability' && (
+        <AvailabilityScreen onBack={() => setScreen('tasks')} />
+      )}
     </>
   );
 }

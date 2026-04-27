@@ -135,11 +135,78 @@ export async function up(knex: Knex): Promise<void> {
     );
   `);
 
-  // NOTE:
+   // NOTE:
   // Enforced via users → ensures state never leaks across tenants
+
+  /**
+   * OPERATOR AVAILABILITY (PP10-03)
+   * --------------------------------
+   * Operators self-declare available/unavailable days on mobile calendar.
+   * Owner reads this to assign tasks within available windows.
+   * Upsert on (shop_id, user_id, date) — one row per operator per day.
+   */
+  await knex.schema.createTable('operator_availability', (table) => {
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.integer('shop_id').notNullable().references('id').inTable('shops').onDelete('CASCADE');
+    table.integer('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    table.date('date').notNullable();
+    table.boolean('is_available').notNullable().defaultTo(true);
+    table.text('notes').nullable();
+    table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.unique(['shop_id', 'user_id', 'date']);
+    table.index(['shop_id', 'date']);
+  });
+
+  await knex.raw(`ALTER TABLE operator_availability ENABLE ROW LEVEL SECURITY;`);
+  await knex.raw(`ALTER TABLE operator_availability FORCE ROW LEVEL SECURITY;`);
+  await knex.raw(`DROP POLICY IF EXISTS operator_availability_tenant_isolation ON operator_availability;`);
+  await knex.raw(`
+    CREATE POLICY operator_availability_tenant_isolation
+    ON operator_availability
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
+  `);
+
+  /**
+   * OPERATOR TASK LOG (PP10-03 — Level 1 labor tracking)
+   * -----------------------------------------------------
+   * Records task duration per operator — hours logged per task.
+   * started_at: when operator claims the task
+   * completed_at: when operator confirms completion
+   * duration_minutes: denormalised on close for fast dashboard reads
+   *
+   * task_type: 'pick' | 'pack' | 'stow' | 'receive'
+   * entity_id: pick_batch_id | stow_task_id | receive_job_id
+   */
+  await knex.schema.createTable('operator_task_log', (table) => {
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.integer('shop_id').notNullable().references('id').inTable('shops').onDelete('CASCADE');
+    table.integer('operator_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    table.string('task_type', 20).notNullable();
+    table.string('entity_id', 255).notNullable();
+    table.timestamp('started_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.timestamp('completed_at', { useTz: true }).nullable();
+    table.integer('duration_minutes').nullable()
+      .comment('Computed on close: completed_at - started_at. Denormalised for fast reads.');
+    table.index(['shop_id', 'operator_id']);
+    table.index(['shop_id', 'task_type']);
+  });
+
+  await knex.raw(`ALTER TABLE operator_task_log ENABLE ROW LEVEL SECURITY;`);
+  await knex.raw(`ALTER TABLE operator_task_log FORCE ROW LEVEL SECURITY;`);
+  await knex.raw(`DROP POLICY IF EXISTS operator_task_log_tenant_isolation ON operator_task_log;`);
+  await knex.raw(`
+    CREATE POLICY operator_task_log_tenant_isolation
+    ON operator_task_log
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('operator_task_log');
+  await knex.schema.dropTableIfExists('operator_availability');
   await knex.schema.dropTableIfExists('user_states');
   await knex.schema.dropTableIfExists('users');
 }
