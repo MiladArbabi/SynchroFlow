@@ -26,6 +26,7 @@ import {
   httpCreateStowTask,
   httpAssignStowLocation,
   httpGetPackingSlipUrl,
+  httpResolveLocation,
 } from './wms.controller.js';
 
 /**
@@ -214,4 +215,12 @@ router.get(
   httpGetPackingSlipUrl
 );
 
+router.post(
+  '/location/resolve',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpResolveLocation
+);
 export default router;

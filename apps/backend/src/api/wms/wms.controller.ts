@@ -48,7 +48,9 @@ export const httpGetBatches = async (req: Request, res: Response) => {
           'pick_completed_at',
           'pack_claimed_at',
           'pack_completed_at',
-          'released_at'
+          'released_at',
+          'assigned_operator_id',
+          'assigned_packer_id',
         );
     });
 
@@ -142,9 +144,17 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
+    const { assigned_operator_id, assigned_packer_id } = req.body ?? {};
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return releaseBatch(trx, shopId, 'manual', userId);
+      return releaseBatch(
+        trx,
+        shopId,
+        'manual',
+        userId,
+        assigned_operator_id ?? null,
+        assigned_packer_id ?? null,
+      );
     });
 
     if (!result) {
@@ -1343,5 +1353,40 @@ export const httpGetPackingSlipUrl = async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_PACKING_SLIP_FAILED]', { shopId, orderId, error: message });
     return res.status(500).json({ error: `Failed to get packing slip URL: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/location/resolve
+// ─────────────────────────────────────────
+export const httpResolveLocation = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { scanned_value } = req.body;
+  if (!scanned_value) return res.status(400).json({ error: 'scanned_value required' });
+
+  try {
+    const location = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .where(function () {
+          this.where('barcode', scanned_value)
+            .orWhere('location_code', scanned_value);
+        })
+        .select('location_code', 'barcode', 'type')
+        .first();
+    });
+
+    if (!location) {
+      return res.status(404).json({ error: 'LOCATION_NOT_FOUND' });
+    }
+
+    return res.json({ location_code: location.location_code, barcode: location.barcode, type: location.type });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[LOCATION_RESOLVE_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Failed to resolve location: ${message}` });
   }
 };

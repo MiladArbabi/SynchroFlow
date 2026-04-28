@@ -36,13 +36,76 @@ export async function httpCreateReceiveJob(req: Request, res: Response) {
         return res.status(409).json({ error: `Cannot receive PO in status: ${po.status}` });
       }
 
-      return createReceiveJob(trx, { shopId, poId, operatorId: req.user?.userId });
+      const { assigned_operator_id } = req.body ?? {};
+      return createReceiveJob(trx, { shopId, poId, operatorId: assigned_operator_id ?? null });
     });
 
     return res.status(201).json({ receive_job_id: jobId });
   } catch (err: any) {
     console.error('[RECEIVE_JOB_CREATE_FAILED]', { shopId, poId, error: err.message });
     return res.status(500).json({ error: `Failed to create receive job: ${err.message}` });
+  }
+}
+
+// ─────────────────────────────────────────
+// GET /receive-jobs
+// ─────────────────────────────────────────
+export async function httpListReceiveJobs(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  const roles = req.user?.roles ?? [];
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  // status filter: ?status=pending,in_progress (comma-separated, optional)
+  const rawStatus = req.query.status as string | undefined;
+  const statusFilter = rawStatus ? rawStatus.split(',').map((s) => s.trim()) : null;
+
+  try {
+    const jobs = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      let query = trx('receive_jobs as rj')
+        .join('purchase_orders as po', 'rj.po_id', 'po.id')
+        .join('suppliers as s', 'po.supplier_id', 's.id')
+        .where('rj.shop_id', shopId)
+        .whereNot('rj.status', 'cancelled')
+        .select(
+          'rj.receive_job_id',
+          'rj.status',
+          'rj.assigned_operator_id',
+          'rj.total_variants',
+          'rj.total_units',
+          'rj.units_accepted',
+          'rj.units_rejected',
+          'rj.units_inspected',
+          'rj.started_at',
+          'rj.closed_at',
+          'rj.created_at',
+          's.name as supplier_name',
+          'po.id as po_id',
+          'po.expected_delivery_date',
+        )
+        .orderBy('rj.created_at', 'desc');
+
+      if (statusFilter) {
+        query = query.whereIn('rj.status', statusFilter);
+      }
+
+      // Operators only see jobs assigned to them or unassigned (pool)
+      if (roles.includes('operator') && !roles.includes('owner') && !roles.includes('admin')) {
+        query = query.where(function () {
+          this.whereNull('rj.assigned_operator_id')
+            .orWhere('rj.assigned_operator_id', userId);
+        });
+      }
+
+      return query;
+    });
+
+    return res.json({ receive_jobs: jobs });
+  } catch (err: any) {
+    console.error('[RECEIVE_JOB_LIST_FAILED]', { shopId, error: err.message });
+    return res.status(500).json({ error: 'Failed to fetch receive jobs' });
   }
 }
 

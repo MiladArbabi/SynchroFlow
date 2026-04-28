@@ -19,6 +19,8 @@ const REFRESH_TOKEN_KEY = 'lasyncro_refresh_token';
 
 export function useAuth() {
   const [token, setToken] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,6 +102,8 @@ export function useAuth() {
       await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
       apiClient.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
       setToken(accessToken);
+      setRole(data.user?.role ?? null);
+      setUserId(data.user?.id ?? null);
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -114,6 +118,8 @@ export function useAuth() {
     await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
     delete apiClient.defaults.headers.common['Authorization'];
     setToken(null);
+    setRole(null);
+    setUserId(null);
   }, []);
 
   return {
@@ -122,5 +128,8 @@ export function useAuth() {
     error,
     login,
     logout,
+    role,
+    userId,
+    roles: role ? [role] : [],
   };
 }

@@ -111,3 +111,35 @@ export const httpGetTeamAvailability = async (req: Request, res: Response) => {
 
   return res.json({ team_availability: rows });
 };
+
+// ─────────────────────────────────────────
+// GET /api/v1/operators/team
+// ─────────────────────────────────────────
+export const httpGetTeamOperators = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const operators = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('shop_memberships as sm')
+        .join('users as u', 'u.id', 'sm.user_id')
+        .where('sm.shop_id', shopId)
+        .whereNull('sm.revoked_at')
+        .whereIn('sm.role', ['operator', 'admin', 'owner'])
+        .select(
+          'u.id as user_id',
+          'u.first_name',
+          'u.last_name',
+          'sm.role',
+        )
+        .orderBy('sm.role')
+        .orderBy('u.first_name');
+    });
+
+    return res.json({ operators });
+  } catch (err: any) {
+    console.error('[TEAM_OPERATORS_LIST_FAILED]', { shopId, error: err.message });
+    return res.status(500).json({ error: 'Failed to fetch team operators' });
+  }
+};

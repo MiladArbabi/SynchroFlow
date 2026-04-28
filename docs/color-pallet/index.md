@@ -1,34 +1,31 @@
-The final palette — all tokens
-Space dark
-#151D29
-Space mid
-#1C2740
-Space surface
-#243050
-Orange
-#FF6B2B
-Orange light
-#FF8C5A
-Orange ghost
-#FFF0E8
-Paper
-#FAFAF8
-Paper-2
-#F3F2EF
-Rule
-#E8E6E0
-Ink
-#0F0E0D
-Ink-muted
-#6B7280
-Ink-hint
-#9CA3AF
+# LaSyncro Design Tokens
+
+## Final Palette
+
 Click any swatch to copy the hex value.
 
-CSS variables — the complete root block
-This replaces everything in both your current root blocks. Copy this once, use everywhere — landing page, app, emails, docs.
+| Token           | Hex       |
+|----------------|-----------|
+| Space dark      | `#151D29` |
+| Space mid       | `#1C2740` |
+| Space surface   | `#243050` |
+| Orange          | `#FF6B2B` |
+| Orange light    | `#FF8C5A` |
+| Orange ghost    | `#FFF0E8` |
+| Paper           | `#FAFAF8` |
+| Paper-2         | `#F3F2EF` |
+| Rule            | `#E8E6E0` |
+| Ink             | `#0F0E0D` |
+| Ink-muted       | `#6B7280` |
+| Ink-hint        | `#9CA3AF` |
 
-Light + dark mode CSSCopy
+---
+
+## CSS Variables – Complete Root Block
+
+Replace both existing `:root` blocks with this single definition. Use everywhere: landing page, app, emails, docs.
+
+```css
 /* ── LaSyncro design tokens ── */
 :root {
   /* Accent — orange */
@@ -85,15 +82,23 @@ Light + dark mode CSSCopy
     --accent-border: rgba(255,107,43,0.25);
   }
 }
-The accent (orange) is identical in light and dark mode — it's already warm enough to read on both white and space-dark. Never adjust the orange per mode. Everything else flips via the media query.
-Usage rules — what goes where
-Element	Light mode token	Dark mode token	Notes
-Page background	--bg	--bg	Auto-switches
-Card / surface	--surface	--surface	Cards, inputs, modals
-Primary CTA button	--accent	--accent	Never change this per mode
-CTA hover	--accent-hover	--accent-hover	Lighten, not darken
-Accent badge bg	--accent-ghost	--accent-ghost	rgba version in dark
-Hero / dark sections	--space-1	--space-1	Same in both — intentionally dark
-Body text	--ink	--ink	Auto-switches
-Secondary text	--ink-3	--ink-3	Captions, hints, metadata
-Dividers / borders	--rule	--rule	Auto-switches
+```
+
+> **Important**  
+> The accent (orange) is identical in light and dark mode – it is already warm enough to read on both white and space-dark. **Never adjust the orange per mode**. Everything else flips via the media query.
+
+---
+
+## Usage Rules – What Goes Where
+
+| Element                 | Light mode token | Dark mode token | Notes                                                                 |
+|-------------------------|------------------|-----------------|-----------------------------------------------------------------------|
+| Page background         | `--bg`           | `--bg`          | Auto-switches                                                         |
+| Card / surface          | `--surface`      | `--surface`     | Cards, inputs, modals                                                 |
+| Primary CTA button      | `--accent`       | `--accent`      | Never change this per mode                                            |
+| CTA hover               | `--accent-hover` | `--accent-hover`| Lighten, not darken                                                   |
+| Accent badge background | `--accent-ghost` | `--accent-ghost`| Uses `rgba()` version in dark mode                                    |
+| Hero / dark sections    | `--space-1`      | `--space-1`     | Same in both – intentionally dark                                     |
+| Body text               | `--ink`          | `--ink`         | Auto-switches                                                         |
+| Secondary text          | `--ink-3`        | `--ink-3`       | Captions, hints, metadata                                             |
+| Dividers / borders      | `--rule`         | `--rule`        | Auto-switches                                                         |

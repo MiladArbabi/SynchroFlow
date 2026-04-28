@@ -139,10 +139,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   errorBanner: {
-    backgroundColor: 'rgba(239,68,68,0.12)',
+    backgroundColor: colors.errorGhost,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.25)',
+    borderColor: colors.errorBorder,
     padding: spacing.sm + 4,
   },
   errorText: {

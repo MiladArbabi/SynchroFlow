@@ -5,6 +5,7 @@ import {
   httpGetMyAvailability,
   httpUpsertAvailability,
   httpGetTeamAvailability,
+  httpGetTeamOperators,
 } from './operators.controller.js';
 
 const router = Router();
@@ -22,5 +23,11 @@ router.post('/availability', authenticateToken, httpUpsertAvailability);
  * GET /api/v1/operators/team-availability?week=YYYY-MM-DD
  */
 router.get('/team-availability', authenticateToken, httpGetTeamAvailability);
+
+/**
+ * Owner/admin fetches list of all shop operators for task assignment.
+ * GET /api/v1/operators/team
+ */
+router.get('/team', authenticateToken, httpGetTeamOperators);
 
 export default router;

@@ -1,70 +1,94 @@
 // apps/mobile/src/theme.ts
-
 /**
  * LASYNCRO MOBILE DESIGN TOKENS
  * ------------------------------
  * Single source of truth for the mobile app.
- * Mirrors the web CSS variables — never deviate.
+ * Strictly mirrors the CSS variable dark-mode override block.
+ * Mobile is always dark mode — operator warehouse context.
  *
- * Mobile is always dark mode (operator warehouse context).
- * Light mode is not needed for v1 — operators work in warehouses.
+ * NEVER use raw hex or rgba() in screen files.
+ * ALWAYS reference a token from this file.
  */
 
 export const colors = {
-  // Backgrounds
+  // ── Backgrounds (dark mode --space values) ──────────────────────────────
   bg:       '#151D29',  // --space-1 — page background
-  bg2:      '#1C2740',  // --space-2 — cards, modals
+  bg2:      '#1C2740',  // --space-2 — cards, modals, surface
   bg3:      '#243050',  // --space-3 — elevated surfaces
   bg4:      '#2E3D62',  // --space-4 — highest elevation
 
-  // Ink
-  ink:      '#F0EEE8',  // primary text
-  ink2:     '#C8C4BB',  // secondary text
-  ink3:     '#8B8F9A',  // captions, hints
-  ink4:     '#5A5F6E',  // disabled
+  // ── Ink (dark mode) ──────────────────────────────────────────────────────
+  ink:      '#F0EEE8',  // --ink   — primary text
+  ink2:     '#C8C4BB',  // --ink-2 — secondary text
+  ink3:     '#8B8F9A',  // --ink-3 — captions, hints
+  ink4:     '#5A5F6E',  // --ink-4 — disabled
 
-  // Accent — orange (never changes between modes)
-  accent:        '#FF6B2B',
-  accentHover:   '#FF8C5A',
-  accentGhost:   'rgba(255, 107, 43, 0.12)',
-  accentBorder:  'rgba(255, 107, 43, 0.25)',
+  // ── Accent — orange (identical in both modes, never changes) ────────────
+  accent:       '#FF6B2B',  // --accent
+  accentHover:  '#FF8C5A',  // --accent-hover
+  accentGhost:  'rgba(255,107,43,0.12)',  // --accent-ghost dark
+  accentBorder: 'rgba(255,107,43,0.25)', // --accent-border dark
 
-  // Rule / border
-  rule:   'rgba(255, 255, 255, 0.08)',
-  rule2:  'rgba(255, 255, 255, 0.14)',
+  // ── Rule / border (dark mode) ────────────────────────────────────────────
+  rule:  'rgba(255,255,255,0.08)',  // --rule dark
+  rule2: 'rgba(255,255,255,0.14)', // --rule-2 dark
 
-  // Semantic signals
-  success:  '#22c55e',
-  warning:  '#f59e0b',
-  error:    '#ef4444',
-  info:     '#60A5FA',
+  // ── Semantic signals (not in brand tokens — use sparingly) ───────────────
+  // These are standard semantic colors — green/yellow/red are universal
+  success: '#22c55e',
+  warning: '#f59e0b',
+  error:   '#ef4444',
+  info:    '#60A5FA',
+
+  // ── Semantic ghost backgrounds (semantic color + 0.12 alpha) ─────────────
+  successGhost:  'rgba(34,197,94,0.12)',
+  warningGhost:  'rgba(245,158,11,0.12)',
+  errorGhost:    'rgba(239,68,68,0.12)',
+  infoGhost:     'rgba(96,165,250,0.12)',
+  purpleGhost:   'rgba(167,139,250,0.12)',
+
+  // ── Semantic borders ──────────────────────────────────────────────────────
+  successBorder: 'rgba(34,197,94,0.3)',
+  errorBorder:   'rgba(239,68,68,0.25)',
+
+  // ── Extended accent ───────────────────────────────────────────────────────
+  purple: '#A78BFA',  // task category color — stow/receive
+
+  // ── Camera overlay backgrounds ────────────────────────────────────────────
+  // Used exclusively in scan screens where camera is full-screen
+  // These are NOT brand colors — they are functional overlays
+  cameraOverlay:     'rgba(15,14,13,0.70)',  // top bar on camera
+  cameraBg:          'rgba(15,14,13,0.85)',  // standard camera UI panel
+  cameraBgDark:      'rgba(15,14,13,0.90)',  // bottom bar on camera
+  cameraBgCard:      'rgba(15,14,13,0.75)',  // floating card on camera
+  cameraHint:        'rgba(240,238,232,0.6)', // dimmed text on camera
 } as const;
 
 export const spacing = {
-  xs:   4,
-  sm:   8,
-  md:   16,
-  lg:   24,
-  xl:   32,
-  xxl:  48,
+  xs:  4,
+  sm:  8,
+  md:  16,
+  lg:  24,
+  xl:  32,
+  xxl: 48,
 } as const;
 
 export const radius = {
-  sm:  8,
-  md:  12,
-  lg:  16,
-  xl:  24,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
 } as const;
 
 export const font = {
   sans: 'System',  // DM Sans when loaded — system fallback for now
   size: {
-    xs:   11,
-    sm:   13,
-    md:   15,
-    lg:   17,
-    xl:   22,
-    xxl:  28,
+    xs:  11,
+    sm:  13,
+    md:  15,
+    lg:  17,
+    xl:  22,
+    xxl: 28,
   },
   weight: {
     regular:  '400' as const,

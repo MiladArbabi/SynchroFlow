@@ -13,6 +13,7 @@ import {
   httpReceiveShipment,
 } from './suppliers.controller.js';
 import {
+  httpListReceiveJobs,
   httpCreateReceiveJob,
   httpGetReceiveJob,
   httpInspectReceiveJobLine,
@@ -87,6 +88,15 @@ router.post(
   requireFt2,
   requireAction('po:receive'),
   httpReceiveShipment
+);
+
+// ── RECEIVE JOBS ───────────────────────────────────────────
+router.get(
+  '/receive-jobs',
+  authenticateToken,
+  requireFt2,
+  requireAction('receive-job:read'),
+  httpListReceiveJobs
 );
 
 // ── RECEIVE JOBS (FEAT-004) ────────────────────────────

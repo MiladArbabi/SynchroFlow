@@ -204,6 +204,24 @@ export async function seed(knex: Knex): Promise<void> {
 
     console.log('[DEV_SEED] ✅ Lifecycle snapshot seeded → FT2');
 
+    // ── WAREHOUSE LOCATIONS ──────────────────────────────────────────────────
+    // Seed minimal bin locations for dev stow testing.
+   const locationRows = [
+      { location_code: `WH-${shop.id}-ROOT`, barcode: null, type: 'warehouse' },
+      { location_code: `WH-${shop.id}-A01`, barcode: `LOC-A01`, type: 'bin' },
+      { location_code: `WH-${shop.id}-A02`, barcode: `LOC-A02`, type: 'bin' },
+      { location_code: `WH-${shop.id}-B01`, barcode: `LOC-B01`, type: 'bin' },
+      { location_code: `WH-${shop.id}-B02`, barcode: `LOC-B02`, type: 'bin' },
+    ];
+
+    for (const loc of locationRows) {
+      await trx('warehouse_locations')
+        .insert({ shop_id: shop.id, ...loc })
+        .onConflict(['shop_id', 'location_code'])
+        .ignore();
+    }
+    console.log('[DEV_SEED] ✅ Warehouse locations seeded (ROOT + 4 bins)');
+
   } else {
     console.log('[DEV_SEED] ⚠️ No shop membership created');
     console.log('[DEV_SEED] → This user CANNOT log in');

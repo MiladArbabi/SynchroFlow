@@ -10,6 +10,9 @@ import { apiClient } from '@lasyncro/mobile-core';
 import { useOfflineScanQueue } from '../hooks/useOfflineScanQueue';
 import type { Task } from './TaskListScreen';
 
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { TaskStackScreenProps } from '../navigation/types';
+
 /**
  * SCAN SCREEN (Sprint 1 M5)
  * --------------------------
@@ -26,24 +29,24 @@ import type { Task } from './TaskListScreen';
  * Wrong item: shows error, does not count the scan.
  */
 
-type Props = {
-  task: Task;
-  onComplete: () => void;
-  onBack: () => void;
-};
-
 type ScanState = 'idle' | 'resolving' | 'success' | 'error';
 
 const VIBRATION_SUCCESS = [0, 80];
 const VIBRATION_ERROR = [0, 100, 80, 100];
 
-export default function ScanScreen({ task, onComplete, onBack }: Props) {
+export default function ScanScreen() {
+  const navigation = useNavigation();
+  const route = useRoute<TaskStackScreenProps<'Scan'>['route']>();
+  const { task, lineItems = [] } = route.params;
   const [permission, requestPermission] = useCameraPermissions();
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [scanCount, setScanCount] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(false);
+  const [showException, setShowException] = useState(false);
+  const [exceptionVariantId, setExceptionVariantId] = useState<string | null>(null);
+  const [exceptionLineItemId, setExceptionLineItemId] = useState<string | null>(null);
 
   const { submitScan, isOnline, queuedCount } = useOfflineScanQueue();
 
@@ -106,13 +109,36 @@ export default function ScanScreen({ task, onComplete, onBack }: Props) {
   const handlePickComplete = useCallback(async () => {
     try {
       await apiClient.post(`/api/v1/wms/batch/${task.id}/pick-complete`);
-      onComplete();
+      navigation.goBack();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })
         ?.response?.data?.error ?? 'Failed to complete pick.';
       Alert.alert('Cannot complete', msg);
     }
-  }, [task.id, onComplete]);
+  }, [task.id, navigation]);
+
+  const handleReportException = useCallback(async (
+    exceptionType: string,
+    quantityFound: number,
+  ) => {
+    if (!exceptionVariantId || !exceptionLineItemId) return;
+    try {
+      await apiClient.post(`/api/v1/wms/batch/${task.id}/exception`, {
+        lasyncro_line_item_id: exceptionLineItemId,
+        lasyncro_variant_id: exceptionVariantId,
+        exception_type: exceptionType,
+        stage: 'pick',
+        quantity_required: 1,
+        quantity_found: quantityFound,
+      });
+      setShowException(false);
+      setExceptionVariantId(null);
+      setExceptionLineItemId(null);
+      setScanState('idle');
+    } catch {
+      Alert.alert('Failed', 'Could not report exception. Try again.');
+    }
+  }, [task.id, exceptionVariantId, exceptionLineItemId]);
 
   // Permission not yet determined
   if (!permission) {
@@ -165,7 +191,7 @@ export default function ScanScreen({ task, onComplete, onBack }: Props) {
 
       {/* TOP BAR */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>‹ Back</Text>
         </TouchableOpacity>
         <Badge
@@ -222,10 +248,44 @@ export default function ScanScreen({ task, onComplete, onBack }: Props) {
         )}
         <Button
           label="Cancel"
-          onPress={onBack}
+          onPress={() => navigation.goBack()}
           variant="ghost"
           style={styles.cancelBtn}
         />
+
+        {/* EXCEPTION MODAL */}
+      {showException && (
+        <View style={styles.exceptionSheet}>
+          <Text style={styles.exceptionTitle}>Report exception</Text>
+          {[
+            { type: 'item_missing', label: 'Item missing', qty: 0 },
+            { type: 'short_pick', label: 'Short pick', qty: 0 },
+            { type: 'product_defect', label: 'Product defect', qty: 1 },
+            { type: 'packaging_defect', label: 'Packaging defect', qty: 1 },
+            { type: 'wrong_item', label: 'Wrong item', qty: 0 },
+          ].map(({ type, label, qty }) => (
+            <Button
+              key={type}
+              label={label}
+              onPress={() => void handleReportException(type, qty)}
+              variant="ghost"
+              style={styles.exceptionBtn}
+            />
+          ))}
+          <Button
+            label="Report exception"
+            onPress={() => setShowException(true)}
+            variant="ghost"
+            style={styles.exceptionTriggerBtn}
+          />
+          <Button
+            label="Cancel"
+            onPress={() => setShowException(false)}
+            variant="ghost"
+            style={styles.exceptionCancelBtn}
+          />
+        </View>
+      )}
       </View>
     </View>
   );
@@ -261,7 +321,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,14,13,0.7)',
+    backgroundColor: colors.cameraOverlay,
   },
   backBtn: {
     padding: spacing.xs,
@@ -321,7 +381,7 @@ const styles = StyleSheet.create({
   feedbackError: { color: colors.error },
   instructionText: {
     marginTop: spacing.lg,
-    color: 'rgba(240,238,232,0.6)',
+    color: colors.cameraHint,
     fontSize: font.size.sm,
   },
   bottomBar: {
@@ -331,7 +391,7 @@ const styles = StyleSheet.create({
     right: 0,
     padding: spacing.lg,
     paddingBottom: spacing.xl,
-    backgroundColor: 'rgba(15,14,13,0.85)',
+    backgroundColor: colors.cameraBg,
     gap: spacing.sm,
   },
   completeBtn: {},
@@ -345,4 +405,25 @@ const styles = StyleSheet.create({
   permissionBtn: {
     marginTop: spacing.md,
   },
+  exceptionSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.bg2,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.rule,
+    gap: spacing.sm,
+  },
+  exceptionTitle: {
+    color: colors.ink,
+    fontSize: font.size.md,
+    fontWeight: font.weight.semibold,
+    marginBottom: spacing.sm,
+  },
+  exceptionBtn: {},
+  exceptionCancelBtn: { marginTop: spacing.xs },
+  exceptionTriggerBtn: {},
 });

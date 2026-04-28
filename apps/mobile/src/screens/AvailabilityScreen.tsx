@@ -52,11 +52,7 @@ function formatMonthRange(dates: string[]): string {
   return `${first.toLocaleDateString('en-US', opts)} – ${last.toLocaleDateString('en-US', opts)}`;
 }
 
-type Props = {
-  onBack: () => void;
-};
-
-export default function AvailabilityScreen({ onBack }: Props) {
+export default function AvailabilityScreen() {
   const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(new Date()));
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -133,9 +129,7 @@ export default function AvailabilityScreen({ onBack }: Props) {
     <Screen>
       {/* HEADER */}
       <Row style={styles.header}>
-        <TouchableOpacity onPress={onBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
+        <View style={{ width: 48 }} />
         <Text style={styles.headerTitle}>My availability</Text>
         <View style={{ width: 48 }} />
       </Row>
@@ -328,12 +322,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statusAvailable: {
-    backgroundColor: 'rgba(34,197,94,0.12)',
-    borderColor: 'rgba(34,197,94,0.3)',
+    backgroundColor: colors.successGhost,
+    borderColor: colors.successBorder,
   },
   statusUnavailable: {
-    backgroundColor: 'rgba(239,68,68,0.10)',
-    borderColor: 'rgba(239,68,68,0.25)',
+    backgroundColor: colors.errorGhost,
+    borderColor: colors.errorBorder,
   },
   statusPast: {
     backgroundColor: colors.bg3,
@@ -357,10 +351,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorBanner: {
-    backgroundColor: 'rgba(239,68,68,0.12)',
+    backgroundColor: colors.errorGhost,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.25)',
+    borderColor: colors.errorBorder,
     padding: spacing.md,
   },
   errorText: {

@@ -209,11 +209,13 @@ export const loginUser = async (req: Request, res: Response) => {
     });
 
     const { password_hash, ...publicUser } = user;
-
     return res.status(200).json({
       accessToken,
-      refreshToken, // Included for mobile clients (stored in SecureStore, not cookie)
-      user: publicUser,
+      refreshToken,
+      user: {
+        ...publicUser,
+        role: shopContext.role,
+      },
     });
 
   } catch (error) {

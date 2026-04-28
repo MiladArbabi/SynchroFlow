@@ -8,6 +8,11 @@ import { Screen, Card, Badge, Row, Divider } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { TaskStackParamList } from '../navigation/types';
+import { useAuth } from '../hooks/useAuth';
+
 /**
  * TASK LIST SCREEN (Mobile v1)
  * ----------------------------
@@ -20,43 +25,77 @@ import { apiClient } from '@lasyncro/mobile-core';
 
 export type Task = {
   id: string;
-  type: 'pick' | 'stow' | 'receive';
+  type: 'pick' | 'stow' | 'receive' | 'pack';
   title: string;
   subtitle: string;
+  assigned: boolean;
 };
 
-type Props = {
-  onSelectTask: (task: Task) => void;
-  onLogout: () => void;
-  onOpenAvailability: () => void;
-};
-
-async function fetchTasks(): Promise<Task[]> {
+async function fetchTasks(userId?: number, roles?: string[]): Promise<Task[]> {
   const tasks: Task[] = [];
+  const isOperator = roles?.includes('operator') && !roles?.includes('owner') && !roles?.includes('admin');
 
-  const [batchRes, stowRes] = await Promise.all([
+  const [batchRes, stowRes, receiveRes] = await Promise.all([
     apiClient.get('/api/v1/wms/batches'),
     apiClient.get('/api/v1/wms/stow-tasks'),
+    apiClient.get('/api/v1/suppliers/receive-jobs?status=pending,in_progress,inspection'),
   ]);
 
+  // ── Pick batches ──────────────────────────────────────────────────────────
   for (const batch of batchRes.data.batches ?? []) {
+    const assignedPicker = batch.assigned_operator_id;
+    const assignedPacker = batch.assigned_packer_id;
+
+    // Pick phase
     if (batch.status === 'pending' || batch.status === 'picking') {
-      tasks.push({
-        id: batch.pick_batch_id,
-        type: 'pick',
-        title: batch.status === 'picking' ? 'Continue picking' : 'Pick batch',
-        subtitle: `${batch.total_line_items} lines · ${batch.total_units} units`,
-      });
+      if (!isOperator || !assignedPicker || assignedPicker === userId) {
+        tasks.push({
+          id: batch.pick_batch_id,
+          type: 'pick',
+          title: batch.status === 'picking' ? 'Continue picking' : 'Pick batch',
+          subtitle: `${batch.total_line_items} lines · ${batch.total_units} units`,
+          assigned: !!assignedPicker,
+        });
+      }
+    }
+
+    // Pack phase
+    if (batch.status === 'pick_complete' || batch.status === 'packing') {
+      if (!isOperator || !assignedPacker || assignedPacker === userId) {
+        tasks.push({
+          id: batch.pick_batch_id,
+          type: 'pack',
+          title: batch.status === 'packing' ? 'Continue packing' : 'Pack batch',
+          subtitle: `${batch.total_units} units · ${batch.units_picked} picked`,
+          assigned: !!assignedPacker,
+        });
+      }
     }
   }
 
+  // ── Stow tasks ────────────────────────────────────────────────────────────
   for (const task of stowRes.data.stow_tasks ?? []) {
     tasks.push({
       id: task.stow_task_id,
       type: 'stow',
       title: task.variant_title ?? 'Stow stock',
       subtitle: `${task.quantity} units → ${task.location_code ?? 'Unassigned'}`,
+      assigned: false,
     });
+  }
+
+  // ── Receive jobs ──────────────────────────────────────────────────────────
+  for (const job of receiveRes.data.receive_jobs ?? []) {
+    const assignedOp = job.assigned_operator_id;
+    if (!isOperator || !assignedOp || assignedOp === userId) {
+      tasks.push({
+        id: job.receive_job_id,
+        type: 'receive',
+        title: job.status === 'in_progress' ? 'Continue receiving' : 'Receive shipment',
+        subtitle: `${job.supplier_name} · ${job.total_variants} variants`,
+        assigned: !!assignedOp,
+      });
+    }
   }
 
   return tasks;
@@ -66,6 +105,7 @@ const TYPE_BADGE: Record<Task['type'], { label: string; variant: 'info' | 'warni
   pick:    { label: 'PICK',    variant: 'info' },
   stow:    { label: 'STOW',   variant: 'warning' },
   receive: { label: 'RECEIVE', variant: 'success' },
+  pack:    { label: 'PACK',   variant: 'info' },
 };
 
 function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
@@ -86,7 +126,9 @@ function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
   );
 }
 
-export default function TaskListScreen({ onSelectTask, onLogout, onOpenAvailability }: Props) {
+export default function TaskListScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
+  const { logout, userId, roles } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -96,7 +138,7 @@ export default function TaskListScreen({ onSelectTask, onLogout, onOpenAvailabil
     if (!silent) setLoading(true);
     setError(null);
     try {
-      setTasks(await fetchTasks());
+      setTasks(await fetchTasks(userId ?? undefined, roles));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: unknown }; message?: string });
       console.error('[TASKS] fetch failed', JSON.stringify(msg?.response?.data ?? msg?.message ?? err));
@@ -115,10 +157,7 @@ export default function TaskListScreen({ onSelectTask, onLogout, onOpenAvailabil
       <Row style={styles.header}>
         <Text style={styles.headerTitle}>My tasks</Text>
         <Row justify="flex-end" style={{ gap: spacing.md }}>
-          <TouchableOpacity onPress={onOpenAvailability} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Text style={styles.calendarText}>Calendar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onLogout} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+           <TouchableOpacity onPress={() => void logout()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Text style={styles.logoutText}>Sign out</Text>
           </TouchableOpacity>
         </Row>
@@ -154,7 +193,18 @@ export default function TaskListScreen({ onSelectTask, onLogout, onOpenAvailabil
           />
         }
         renderItem={({ item }) => (
-          <TaskCard task={item} onPress={() => onSelectTask(item)} />
+          <TaskCard
+            task={item}
+            onPress={() =>
+              item.type === 'pick'
+                ? navigation.navigate('PickBrief', { task: item })
+                : item.type === 'receive'
+                ? navigation.navigate('ReceiveJob', { task: item })
+                : item.type === 'stow'
+                ? navigation.navigate('Stow', { task: item })
+                : navigation.navigate('Scan', { task: item })
+            }
+          />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
@@ -232,10 +282,10 @@ const styles = StyleSheet.create({
   errorBanner: {
     margin: spacing.md,
     padding: spacing.md,
-    backgroundColor: 'rgba(239,68,68,0.12)',
+    backgroundColor: colors.errorGhost,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.25)',
+    borderColor: colors.errorBorder,
   },
   errorText: {
     color: colors.error,

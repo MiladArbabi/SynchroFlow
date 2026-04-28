@@ -1,34 +1,108 @@
 // apps/mobile/App.tsx
-import { useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuth } from './src/hooks/useAuth';
+import { colors, font, spacing } from './src/theme';
+
 import LoginScreen from './src/screens/LoginScreen';
-import TaskListScreen, { type Task } from './src/screens/TaskListScreen';
+import TaskListScreen from './src/screens/TaskListScreen';
 import AvailabilityScreen from './src/screens/AvailabilityScreen';
 import ScanScreen from './src/screens/ScanScreen';
-import { colors } from './src/theme';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import ReceiveJobScreen from './src/screens/ReceiveJobScreen';
+import StowScreen from './src/screens/StowScreen';
+import PickBriefScreen from './src/screens/PickBriefScreen';
+import DispatchScreen from './src/screens/DispatchScreen';
+import TeamDashboardScreen from './src/screens/TeamDashboardScreen';
 
-/**
- * APP ROOT (Mobile v1)
- * --------------------
- * Minimal stack navigator — no library needed for 3 screens.
- * React Navigation added Sprint 4 when stack depth increases.
- *
- * Screens:
- * - login        → LoginScreen
- * - tasks        → TaskListScreen (home)
- * - availability → AvailabilityScreen
- * - scan         → ScanScreen (Sprint 1 M5 — TODO)
- */
+function TabIcon({ label, focused }: { label: string; focused: boolean }) {
+  return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.4 }}>{label}</Text>;
+}
 
-type Screen = 'tasks' | 'availability' | 'scan';
+// ─── Task stack (shared by both roles) ───────────────────────────────────────
+const TaskStack = createNativeStackNavigator();
+function TaskStackNavigator() {
+  return (
+    <TaskStack.Navigator screenOptions={{ headerShown: false }}>
+      <TaskStack.Screen name="TaskList" component={TaskListScreen} />
+      <TaskStack.Screen name="PickBrief" component={PickBriefScreen} />
+      <TaskStack.Screen name="Scan" component={ScanScreen} />
+      <TaskStack.Screen name="ReceiveJob" component={ReceiveJobScreen} />
+      <TaskStack.Screen name="Stow" component={StowScreen} />
+    </TaskStack.Navigator>
+  );
+}
 
+// ─── Operator tabs ────────────────────────────────────────────────────────────
+const OperatorTab = createBottomTabNavigator();
+function OperatorTabs() {
+  return (
+    <OperatorTab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.ink4,
+        tabBarLabelStyle: styles.tabLabel,
+      }}
+    >
+      <OperatorTab.Screen
+        name="Tasks"
+        component={TaskStackNavigator}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📋" focused={focused} />, tabBarLabel: 'Tasks' }}
+      />
+      <OperatorTab.Screen
+        name="Availability"
+        component={AvailabilityScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📅" focused={focused} />, tabBarLabel: 'Calendar' }}
+      />
+    </OperatorTab.Navigator>
+  );
+}
+
+// ─── Owner/Admin tabs ─────────────────────────────────────────────────────────
+const OwnerTab = createBottomTabNavigator();
+function OwnerTabs() {
+  return (
+    <OwnerTab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.ink4,
+        tabBarLabelStyle: styles.tabLabel,
+      }}
+    >
+      <OwnerTab.Screen
+        name="Tasks"
+        component={TaskStackNavigator}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📋" focused={focused} />, tabBarLabel: 'Tasks' }}
+      />
+      <OwnerTab.Screen
+        name="Dispatch"
+        component={DispatchScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon label="🚀" focused={focused} />, tabBarLabel: 'Dispatch' }}
+      />
+      <OwnerTab.Screen
+        name="Team"
+        component={TeamDashboardScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon label="👥" focused={focused} />, tabBarLabel: 'Team' }}
+      />
+      <OwnerTab.Screen
+        name="Availability"
+        component={AvailabilityScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📅" focused={focused} />, tabBarLabel: 'Calendar' }}
+      />
+    </OwnerTab.Navigator>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const { isAuthenticated, isLoading, error, login, logout } = useAuth();
-  const [screen, setScreen] = useState<Screen>('tasks');
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const { isAuthenticated, isLoading, error, login, role } = useAuth();
 
   if (isLoading) {
     return (
@@ -43,45 +117,21 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <>
+      <SafeAreaProvider>
         <StatusBar style="light" />
         <LoginScreen onLogin={login} error={error} />
-      </>
+      </SafeAreaProvider>
     );
   }
 
+  const isOwnerOrAdmin = role === 'owner' || role === 'admin';
+
   return (
-     <SafeAreaProvider>
+    <SafeAreaProvider>
       <StatusBar style="light" />
-
-      {screen === 'tasks' && (
-        <TaskListScreen
-          onSelectTask={(task) => {
-            setActiveTask(task);
-            setScreen('scan');
-          }}
-          onLogout={() => void logout()}
-          onOpenAvailability={() => setScreen('availability')}
-        />
-      )}
-
-      {screen === 'scan' && activeTask && (
-        <ScanScreen
-          task={activeTask}
-          onComplete={() => {
-            setActiveTask(null);
-            setScreen('tasks');
-          }}
-          onBack={() => {
-            setActiveTask(null);
-            setScreen('tasks');
-          }}
-        />
-      )}
-
-      {screen === 'availability' && (
-        <AvailabilityScreen onBack={() => setScreen('tasks')} />
-      )}
+      <NavigationContainer>
+        {isOwnerOrAdmin ? <OwnerTabs /> : <OperatorTabs />}
+      </NavigationContainer>
     </SafeAreaProvider>
   );
 }
@@ -92,5 +142,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  tabBar: {
+    backgroundColor: colors.bg2,
+    borderTopColor: colors.rule,
+    borderTopWidth: 1,
+    paddingTop: spacing.xs,
+    height: 60,
+  },
+  tabLabel: {
+    fontSize: 11,
+    marginBottom: spacing.xs,
   },
 });

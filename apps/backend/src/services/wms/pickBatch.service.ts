@@ -33,7 +33,9 @@ export async function releaseBatch(
   trx: Knex.Transaction,
   shopId: number,
   trigger: 'auto' | 'manual',
-  releasedBy: number | null
+  releasedBy: number | null,
+  assignedOperatorId?: number | null,
+  assignedPackerId?: number | null,
 ): Promise<ReleaseBatchResult | null> {
 
   // 1. Load WMS settings for this shop
@@ -104,7 +106,7 @@ export async function releaseBatch(
   // 4. Create pick batch
   const pickBatchId = randomUUID();
 
-  await trx('pick_batches').insert({
+ await trx('pick_batches').insert({
     pick_batch_id: pickBatchId,
     shop_id: shopId,
     status: 'pending',
@@ -114,6 +116,8 @@ export async function releaseBatch(
     total_units: runningUnits,
     released_by: releasedBy,
     released_at: new Date(),
+    assigned_operator_id: assignedOperatorId ?? null,
+    assigned_packer_id: assignedPackerId ?? null,
   });
 
   // 5. Assign orders to batch
@@ -191,8 +195,7 @@ export async function releaseBatch(
     total_units: runningUnits,
   });
 
-  // Notify operators of new batch — broadcast to pool (no targeted assignment at release)
-  // assigned_operator_id support: extend releaseBatch params when direct assignment is added
+  // Notify operators — targeted if assigned, broadcast to pool otherwise
   dispatchNotification({
     shopId,
     payload: {
@@ -200,7 +203,10 @@ export async function releaseBatch(
       body: `Batch ${pickBatchId.slice(0, 8).toUpperCase()} released — ${runningLineItems} line items. Claim it to start picking.`,
       data: { route: '/wms', batchId: pickBatchId },
     },
-    broadcastToRole: 'operator',
+
+    ...(assignedOperatorId
+        ? { targetUserId: assignedOperatorId }
+        : { broadcastToRole: 'operator' as const }),
   }).catch((err) => console.error('[PICK_BATCH_RELEASED_PUSH_FAILED]', err.message));
 
   // 6. Initialize warehouse status for all selected orders
