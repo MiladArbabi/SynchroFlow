@@ -2,7 +2,8 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
@@ -20,19 +21,30 @@ import PackScreen from './src/screens/PackScreen';
 import OverviewScreen from './src/screens/OverviewScreen';
 import DispatchScreen from './src/screens/DispatchScreen';
 import TeamDashboardScreen from './src/screens/TeamDashboardScreen';
+import ScannerScreen from './src/screens/ScannerScreen';
+import { AppHeader, Screen } from './src/ui';
 
 // ─── Tab icon ────────────────────────────────────────────────────────────────
-function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
-  return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.4 }}>{emoji}</Text>;
+function TabIcon({ name, focused }: { name: keyof typeof Ionicons.glyphMap; focused: boolean }) {
+  return (
+    <Ionicons
+      name={name}
+      size={22}
+      color={focused ? colors.accent : colors.ink4}
+    />
+  );
 }
 
 // ─── Placeholder screens ──────────────────────────────────────────────────────
 function NotificationsScreen() {
   return (
-    <View style={placeholder.root}>
-      <Text style={placeholder.title}>Notifications</Text>
-      <Text style={placeholder.sub}>System alerts — coming soon</Text>
-    </View>
+    <Screen>
+      <AppHeader showLogo />
+      <View style={placeholder.root}>
+        <Text style={placeholder.title}>Alerts</Text>
+        <Text style={placeholder.sub}>System alerts — coming soon</Text>
+      </View>
+    </Screen>
   );
 }
 function SettingsScreen() {
@@ -43,21 +55,16 @@ function SettingsScreen() {
     </View>
   );
 }
-function OwnerSettingsScreen() {
+function AlertsScreen() {
   const { logout } = useAuth();
   return (
-    <View style={placeholder.root}>
-      <Text style={placeholder.title}>Settings</Text>
-      <Text style={placeholder.sub}>Alerts · Reports · WMS · Members — coming soon</Text>
-      <TouchableOpacity
-        onPress={() => void logout()}
-        style={{ marginTop: spacing.xl, padding: spacing.md }}
-      >
-        <Text style={{ color: colors.error, fontSize: font.size.md, fontWeight: font.weight.semibold }}>
-          Sign out
-        </Text>
-      </TouchableOpacity>
-    </View>
+    <Screen>
+      <AppHeader showLogo  />
+      <View style={placeholder.root}>
+        <Text style={placeholder.title}>Alerts</Text>
+        <Text style={placeholder.sub}>Exception inbox — coming soon</Text>
+      </View>
+    </Screen>
   );
 }
 const placeholder = StyleSheet.create({
@@ -109,7 +116,7 @@ function OperatorTabs() {
         name="Tasks"
         component={TaskStackNavigator}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📋" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="list-outline" focused={focused} />,
           tabBarLabel: 'Tasks',
         }}
       />
@@ -117,7 +124,7 @@ function OperatorTabs() {
         name="Notifications"
         component={NotificationsScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🔔" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="notifications-outline" focused={focused} />,
           tabBarLabel: 'Alerts',
         }}
       />
@@ -125,16 +132,16 @@ function OperatorTabs() {
         name="Calendar"
         component={AvailabilityScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="calendar-outline" focused={focused} />,
           tabBarLabel: 'Calendar',
         }}
       />
       <OperatorTab.Screen
-        name="Settings"
-        component={SettingsScreen}
+        name="Scanner"
+        component={ScannerScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
-          tabBarLabel: 'Settings',
+          tabBarIcon: ({ focused }) => <TabIcon name="scan-outline" focused={focused} />,
+          tabBarLabel: 'Scanner',
         }}
       />
     </OperatorTab.Navigator>
@@ -159,7 +166,7 @@ function OwnerTabs() {
         name="Overview"
         component={OverviewScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📊" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="stats-chart-outline" focused={focused} />,
           tabBarLabel: 'Overview',
         }}
       />
@@ -167,7 +174,7 @@ function OwnerTabs() {
         name="Tasks"
         component={DispatchScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🚀" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="rocket-outline" focused={focused} />,
           tabBarLabel: 'Tasks',
         }}
       />
@@ -175,16 +182,16 @@ function OwnerTabs() {
         name="Team"
         component={TeamDashboardScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="👥" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="people-outline" focused={focused} />,
           tabBarLabel: 'Team',
         }}
       />
       <OwnerTab.Screen
-        name="Settings"
-        component={OwnerSettingsScreen}
+        name="Alerts"
+        component={AlertsScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
-          tabBarLabel: 'Settings',
+          tabBarIcon: ({ focused }) => <TabIcon name="notifications-outline" focused={focused} />,
+          tabBarLabel: 'Alerts',
         }}
       />
     </OwnerTab.Navigator>

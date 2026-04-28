@@ -4,7 +4,7 @@ import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, RefreshControl,
 } from 'react-native';
-import { Screen, Card, Badge, Row, Divider } from '../ui';
+import { Screen, Card, Badge, Row, Divider, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 
@@ -128,7 +128,7 @@ function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
 
 export default function TaskListScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
-  const { logout, userId, roles } = useAuth();
+  const { userId, roles } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -154,14 +154,7 @@ export default function TaskListScreen() {
   return (
     <Screen>
       {/* HEADER */}
-      <Row style={styles.header}>
-        <Text style={styles.headerTitle}>My tasks</Text>
-        <Row justify="flex-end" style={{ gap: spacing.md }}>
-           <TouchableOpacity onPress={() => void logout()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Text style={styles.logoutText}>Sign out</Text>
-          </TouchableOpacity>
-        </Row>
-      </Row>
+      <AppHeader showLogo />
 
       <Divider />
 
@@ -213,19 +206,6 @@ export default function TaskListScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  headerTitle: {
-    color: colors.ink,
-    fontSize: font.size.xl,
-    fontWeight: font.weight.bold,
-  },
   logoutText: {
     color: colors.ink3,
     fontSize: font.size.sm,

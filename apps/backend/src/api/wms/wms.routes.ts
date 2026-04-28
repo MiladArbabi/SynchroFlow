@@ -27,6 +27,8 @@ import {
   httpAssignStowLocation,
   httpGetPackingSlipUrl,
   httpResolveLocation,
+  httpGetOrderPool,
+  httpScanResolve,
 } from './wms.controller.js';
 
 /**
@@ -223,4 +225,23 @@ router.post(
   requireAction('wms:read'),
   httpResolveLocation
 );
+
+router.get(
+  '/order-pool',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetOrderPool
+);
+
+router.post(
+  '/scan/resolve',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpScanResolve
+);
+
 export default router;

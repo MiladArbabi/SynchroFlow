@@ -1390,3 +1390,241 @@ export const httpResolveLocation = async (req: Request, res: Response) => {
     return res.status(500).json({ error: `Failed to resolve location: ${message}` });
   }
 };
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/order-pool
+// ─────────────────────────────────────────
+export const httpGetOrderPool = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const rows = await trx('orders as o')
+        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+        .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
+        .whereNotExists(
+          trx('order_constraints as oc')
+            .where('oc.lasyncro_order_id', trx.raw('o.lasyncro_order_id'))
+            .where('oc.is_active', true)
+            .select(1)
+        )
+        .where('o.shop_id', shopId)
+        .whereIn('ofs.status', ['pending', 'processing'])
+        .whereNull('pbo.lasyncro_order_id')
+        .orderBy('o.order_created_at', 'asc')
+        .select(
+          'o.lasyncro_order_id',
+          'o.total_price',
+          'o.currency',
+          'o.order_created_at',
+        );
+      return rows;
+    });
+    return res.json({
+      eligible_order_count: result.length,
+      orders: result,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_ORDER_POOL_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Failed to fetch order pool: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/scan/resolve
+// ─────────────────────────────────────────
+// Universal scanner — resolves product, location, or order barcode
+// and returns full warehouse context.
+export const httpScanResolve = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { scanned_value } = req.body;
+  if (!scanned_value) return res.status(400).json({ error: 'scanned_value required' });
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // ── 1. Try location barcode ──────────────────────────────────────────
+      const location = await trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .where(function () {
+          this.where('barcode', scanned_value).orWhere('location_code', scanned_value);
+        })
+        .first();
+
+      if (location) {
+        const inventory = await trx('inventory_truth as it')
+          .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+          .where({ 'it.shop_id': shopId, 'it.location_code': location.location_code })
+          .where('it.on_hand_quantity', '>', 0)
+          .select(
+            'it.lasyncro_variant_id',
+            'v.title as variant_title',
+            'v.sku',
+            'it.on_hand_quantity',
+            'it.reserved_quantity',
+            'it.available_quantity',
+          );
+
+        const activeSowTasks = await trx('stow_tasks')
+          .where({ shop_id: shopId, location_code: location.location_code })
+          .whereIn('status', ['pending', 'in_progress'])
+          .count('* as count')
+          .first();
+
+        return {
+          type: 'location',
+          location_code: location.location_code,
+          inventory,
+          total_variants: inventory.length,
+          total_units: inventory.reduce((s: number, i: any) => s + i.on_hand_quantity, 0),
+          pending_stow_tasks: Number(activeSowTasks?.count ?? 0),
+        };
+      }
+
+      // ── 2. Try product barcode / SKU ─────────────────────────────────────
+      const variantIdentity = await trx('external_product_identity_map')
+        .where({ shop_id: shopId })
+        .where(function () {
+          this.where('barcode', scanned_value)
+            .orWhere('external_sku', scanned_value);
+        })
+        .first();
+
+      // Also try barcode_print_jobs (laSyncro-generated barcodes)
+      const printJobMatch = !variantIdentity
+        ? await trx('barcode_print_jobs')
+            .where({ shop_id: shopId, barcode_value: scanned_value })
+            .first()
+        : null;
+
+      const lasyncroVariantId = variantIdentity?.lasyncro_variant_id
+        ?? printJobMatch?.lasyncro_variant_id;
+
+      if (lasyncroVariantId) {
+        const variant = await trx('variants')
+          .where({ lasyncro_variant_id: lasyncroVariantId, shop_id: shopId })
+          .select('title', 'sku', 'unit_cost')
+          .first();
+
+        // Inventory across all locations
+        const inventory = await trx('inventory_truth')
+          .where({ shop_id: shopId, lasyncro_variant_id: lasyncroVariantId })
+          .where('on_hand_quantity', '>', 0)
+          .select('location_code', 'on_hand_quantity', 'reserved_quantity', 'available_quantity');
+
+        // Active receive job
+        const activeReceive = await trx('receive_job_lines as rjl')
+          .join('receive_jobs as rj', 'rj.receive_job_id', 'rjl.receive_job_id')
+          .where({ 'rjl.lasyncro_variant_id': lasyncroVariantId, 'rj.shop_id': shopId })
+          .whereIn('rj.status', ['pending', 'in_progress', 'inspection'])
+          .select('rj.receive_job_id', 'rj.status', 'rjl.quantity_expected', 'rjl.quantity_accepted', 'rjl.inspection_complete')
+          .first();
+
+        // Active pick batch
+        const activePick = await trx('pick_batch_orders as pbo')
+          .join('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
+          .join('order_line_items as oli', 'oli.lasyncro_order_id', 'pbo.lasyncro_order_id')
+          .where({ 'oli.lasyncro_variant_id': lasyncroVariantId, 'pb.shop_id': shopId })
+          .whereIn('pb.status', ['pending', 'picking', 'pick_complete', 'packing'])
+          .select('pb.pick_batch_id', 'pb.status')
+          .first();
+
+        // Active stow task
+        const activeStow = await trx('stow_tasks')
+          .where({ shop_id: shopId, lasyncro_variant_id: lasyncroVariantId })
+          .whereIn('status', ['pending', 'in_progress'])
+          .select('stow_task_id', 'status', 'location_code', 'quantity')
+          .first();
+
+        // Active exceptions
+        const exceptions = await trx('pick_exceptions')
+          .where({ shop_id: shopId, lasyncro_variant_id: lasyncroVariantId })
+          .whereNull('resolved_at')
+          .count('* as count')
+          .first();
+
+        // Derive warehouse stage
+        let stage = 'unknown';
+        if (activeReceive && !activeReceive.inspection_complete) stage = 'receiving';
+        else if (activeReceive && activeReceive.inspection_complete) stage = 'received';
+        else if (activeStow?.status === 'pending') stage = 'stow_pending';
+        else if (activeStow?.status === 'in_progress') stage = 'stowing';
+        else if (activePick?.status === 'pending' || activePick?.status === 'picking') stage = 'picking';
+        else if (activePick?.status === 'pick_complete') stage = 'pick_complete';
+        else if (activePick?.status === 'packing') stage = 'packing';
+        else if (inventory.length > 0) stage = 'stowed';
+
+        return {
+          type: 'product',
+          lasyncro_variant_id: lasyncroVariantId,
+          variant_title: variant?.title ?? null,
+          sku: variant?.sku ?? null,
+          unit_cost: variant?.unit_cost ?? null,
+          stage,
+          inventory,
+          total_on_hand: inventory.reduce((s: number, i: any) => s + i.on_hand_quantity, 0),
+          total_reserved: inventory.reduce((s: number, i: any) => s + i.reserved_quantity, 0),
+          total_available: inventory.reduce((s: number, i: any) => s + i.available_quantity, 0),
+          active_receive: activeReceive ?? null,
+          active_stow: activeStow ?? null,
+          active_batch: activePick ?? null,
+          open_exceptions: Number(exceptions?.count ?? 0),
+        };
+      }
+
+      // ── 3. Try order external ID (invoice scan) ───────────────────────────
+      const orderIdentity = await trx('external_order_identity_map')
+        .where({ shop_id: shopId, external_order_id: scanned_value })
+        .first();
+
+      if (orderIdentity) {
+        const order = await trx('orders as o')
+          .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+          .where({ 'o.lasyncro_order_id': orderIdentity.lasyncro_order_id })
+          .select('o.total_price', 'o.currency', 'o.order_created_at', 'ofs.status as fulfillment_status')
+          .first();
+
+        const lineItems = await trx('order_line_items as oli')
+          .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+          .where({ 'oli.lasyncro_order_id': orderIdentity.lasyncro_order_id })
+          .select('oli.title', 'oli.quantity', 'v.sku');
+
+        const batch = await trx('pick_batch_orders as pbo')
+          .join('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
+          .where({ 'pbo.lasyncro_order_id': orderIdentity.lasyncro_order_id })
+          .whereNotIn('pb.status', ['pack_complete', 'cancelled'])
+          .select('pb.pick_batch_id', 'pb.status')
+          .first();
+
+        return {
+          type: 'order',
+          external_order_id: scanned_value,
+          lasyncro_order_id: orderIdentity.lasyncro_order_id,
+          fulfillment_status: order?.fulfillment_status ?? null,
+          total_price: order?.total_price ?? null,
+          currency: order?.currency ?? null,
+          order_created_at: order?.order_created_at ?? null,
+          line_items: lineItems,
+          active_batch: batch ?? null,
+        };
+      }
+
+      return null;
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: 'SCAN_NOT_RESOLVED', scanned_value });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[SCAN_RESOLVE_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Scan resolve failed: ${message}` });
+  }
+};

@@ -4,7 +4,7 @@ import {
   View, Text, TouchableOpacity,
   StyleSheet, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { Screen, Card, Row, Button, Divider } from '../ui';
+import { Screen, Card, Row, Button, Divider, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 
@@ -128,11 +128,7 @@ export default function AvailabilityScreen() {
   return (
     <Screen>
       {/* HEADER */}
-      <Row style={styles.header}>
-        <View style={{ width: 48 }} />
-        <Text style={styles.headerTitle}>My availability</Text>
-        <View style={{ width: 48 }} />
-      </Row>
+      <AppHeader showLogo />
 
       <Divider />
 
@@ -240,16 +236,6 @@ export default function AvailabilityScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  headerTitle: {
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-  },
   backText: {
     color: colors.accent,
     fontSize: font.size.md,

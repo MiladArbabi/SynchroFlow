@@ -5,3 +5,5 @@ export { Button } from './Button';
 export { Badge } from './Badge';
 export { Divider } from './Divider';
 export { Row } from './Row';
+export { AppHeader } from './AppHeader';
+export { ProfileSheet } from './ProfileSheet';

@@ -4,9 +4,10 @@ import {
   View, Text, StyleSheet, ActivityIndicator,
   ScrollView, TouchableOpacity,
 } from 'react-native';
-import { Screen, Card, Badge, Row, Divider, Button } from '../ui';
+import { Screen, Card, Badge, Row, Divider, Button, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
+import { useAuth } from '../contexts/AuthContext';
 
 type Operator = {
   user_id: number;
@@ -25,6 +26,8 @@ type OperatorStatus = {
 };
 
 export default function TeamDashboardScreen() {
+  const { logout } = useAuth();
+  
   const [operators, setOperators] = useState<Operator[]>([]);
   const [statuses, setStatuses] = useState<OperatorStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,12 +112,7 @@ export default function TeamDashboardScreen() {
   return (
     <Screen>
       {/* HEADER */}
-      <Row style={styles.header}>
-        <Text style={styles.headerTitle}>Team</Text>
-        <TouchableOpacity onPress={() => void load()}>
-          <Text style={styles.refreshText}>↻ Refresh</Text>
-        </TouchableOpacity>
-      </Row>
+      <AppHeader showLogo onRefresh={() => void load()}  />
 
       {/* SUMMARY ROW */}
       <Row style={styles.summary}>
@@ -221,18 +219,6 @@ export default function TeamDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    color: colors.ink,
-    fontSize: font.size.xl,
-    fontWeight: font.weight.bold,
-  },
   refreshText: {
     color: colors.accent,
     fontSize: font.size.sm,

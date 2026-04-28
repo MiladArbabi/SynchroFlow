@@ -2,16 +2,21 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Screen } from '../ui';
 import { colors, font, spacing } from '../theme';
+import { AppHeader } from '../ui';
+import { useAuth } from '../hooks/useAuth';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function OverviewScreen() {
+  const { logout } = useAuth();
+
   return (
-    <Screen>
-      <View style={styles.header}>
-        <Text style={styles.title}>Overview</Text>
-        <Text style={styles.subtitle}>Morning brief and KPIs — coming soon</Text>
-      </View>
-    </Screen>
-  );
+  <Screen>
+    <AppHeader showLogo  />
+    <View style={styles.header}>
+      <Text style={styles.subtitle}>Morning brief and KPIs — coming soon</Text>
+    </View>
+  </Screen>
+);
 }
 
 const styles = StyleSheet.create({
