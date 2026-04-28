@@ -131,7 +131,9 @@ for (const { name: file } of appliedMigrations) {
   await db.destroy();
 }
 
-main().catch(err => {
-  console.error('[migration-runner] failed', err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch(err => {
+    console.error('[migration-runner] failed', err);
+    process.exit(1);
+  });

@@ -97,7 +97,9 @@ export default function TaskListScreen({ onSelectTask, onLogout, onOpenAvailabil
     setError(null);
     try {
       setTasks(await fetchTasks());
-    } catch {
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: unknown }; message?: string });
+      console.error('[TASKS] fetch failed', JSON.stringify(msg?.response?.data ?? msg?.message ?? err));
       setError('Failed to load tasks. Check your connection.');
     } finally {
       setLoading(false);

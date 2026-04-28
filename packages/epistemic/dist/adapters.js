@@ -29,4 +29,3 @@ export function legacyToEpistemic(value, explanation) {
         evaluatedAt: new Date().toISOString(),
     };
 }
-//# sourceMappingURL=adapters.js.map

@@ -193,6 +193,37 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['shop_id', 'task_type']);
   });
 
+  /**
+   * OPERATOR AUDIT LOG (AUD-01)
+   * ----------------------------
+   * Append-only audit trail for all operator actions.
+   * One row per action — never updated, never deleted.
+   */
+  await knex.schema.createTable('operator_audit_log', (table) => {
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.integer('shop_id').notNullable().references('id').inTable('shops').onDelete('CASCADE');
+    table.integer('operator_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    table.string('action_type', 50).notNullable();
+    table.string('entity_type', 50).notNullable();
+    table.string('entity_id', 255).notNullable();
+    table.jsonb('metadata').notNullable().defaultTo('{}');
+    table.timestamp('occurred_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.index(['shop_id', 'operator_id']);
+    table.index(['shop_id', 'action_type']);
+    table.index(['shop_id', 'entity_type', 'entity_id']);
+    table.index(['occurred_at']);
+  });
+
+  await knex.raw(`ALTER TABLE operator_audit_log ENABLE ROW LEVEL SECURITY;`);
+  await knex.raw(`ALTER TABLE operator_audit_log FORCE ROW LEVEL SECURITY;`);
+  await knex.raw(`DROP POLICY IF EXISTS operator_audit_log_tenant_isolation ON operator_audit_log;`);
+  await knex.raw(`
+    CREATE POLICY operator_audit_log_tenant_isolation
+    ON operator_audit_log
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
+  `);
+
   await knex.raw(`ALTER TABLE operator_task_log ENABLE ROW LEVEL SECURITY;`);
   await knex.raw(`ALTER TABLE operator_task_log FORCE ROW LEVEL SECURITY;`);
   await knex.raw(`DROP POLICY IF EXISTS operator_task_log_tenant_isolation ON operator_task_log;`);
@@ -209,4 +240,5 @@ export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('operator_availability');
   await knex.schema.dropTableIfExists('user_states');
   await knex.schema.dropTableIfExists('users');
+  await knex.schema.dropTableIfExists('operator_audit_log');
 }

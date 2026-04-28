@@ -119,6 +119,7 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
         lasyncroVariantId: lasyncro_variant_id,
         quantityAccepted: quantity_accepted,
         quantityRejected: quantity_rejected,
+        inspectedBy: req.user!.userId,
       });
     });
 

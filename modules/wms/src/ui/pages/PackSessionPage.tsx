@@ -250,15 +250,18 @@ export default function PackSessionPage({
           </Typography>
 
           <Button
-            variant="contained"
+            variant="outlined"
             fullWidth
             size="large"
             startIcon={<Printer size={18} />}
             onClick={() => void handlePrintAndAdvance()}
-            sx={{ borderRadius: 2, fontWeight: 700, mb: 1.5 }}
+            sx={{ borderRadius: 2, fontWeight: 700, mb: 1 }}
           >
-            Print Label & {isLastOrder ? 'Complete Pack' : 'Next Order'}
+            Open Shopify label & {isLastOrder ? 'Complete Pack' : 'Next Order'}
           </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 2 }}>
+            Opens your Shopify packing slip in a new tab — print from there.
+          </Typography>
 
           <Button
             variant="contained"

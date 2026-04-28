@@ -121,8 +121,89 @@ export async function seed(knex: Knex): Promise<void> {
       role: 'owner',
     });
 
+    // Seed growth tier subscription — required for WMS + FT2 access
+    await trx('shop_subscriptions')
+      .insert({
+        shop_id: shop.id,
+        tier: 'growth',
+        billing_interval: 'monthly',
+        status: 'active',
+      })
+      .onConflict('shop_id')
+      .merge({ tier: 'growth', status: 'active' });
+
     console.log('[DEV_SEED] ✅ Full identity seeded');
     console.log('[DEV_SEED] → This user CAN log in');
+
+    // Seed WMS settings — required for batch release
+    await trx('shop_wms_settings')
+      .insert({ shop_id: shop.id })
+      .onConflict('shop_id')
+      .ignore();
+
+    // ── OPERATOR USER ──────────────────────────────────────────────────────
+    // Provides mobile login credentials for operator-role testing.
+    // Email: operator@test.com / password123
+    const OPERATOR_EMAIL = 'operator@test.com';
+    const operatorPasswordHash = await bcrypt.hash('password123', 10);
+
+    const existingOperator = await trx('users')
+      .where({ email: OPERATOR_EMAIL })
+      .first();
+
+    let operatorUser = existingOperator;
+    if (!operatorUser) {
+      const [inserted] = await trx('users')
+        .insert({
+          shop_id: shop.id,
+          email: OPERATOR_EMAIL,
+          password_hash: operatorPasswordHash,
+          first_name: 'Operator',
+          last_name: 'Dev',
+        })
+        .returning('*');
+      operatorUser = inserted;
+      console.log(`[DEV_SEED] Operator user created (id=${operatorUser.id}, email=${operatorUser.email})`);
+    } else {
+      console.log(`[DEV_SEED] Reusing existing operator user (id=${operatorUser.id})`);
+    }
+
+    await trx('shop_memberships')
+      .insert({
+        shop_id: shop.id,
+        user_id: operatorUser.id,
+        role: 'operator',
+      })
+      .onConflict(['shop_id', 'user_id'])
+      .ignore();
+
+    console.log('[DEV_SEED] ✅ Operator identity seeded');
+    console.log('[DEV_SEED] → operator@test.com / password123 (role: operator)');
+
+    // ── LIFECYCLE SNAPSHOT (FT2) ───────────────────────────────────────────
+    // Seeds shop lifecycle to FT2 so mobile operator flows work immediately
+    // without requiring manual owner onboarding after every dev:full-reset.
+    await trx('user_lifecycle_snapshot')
+      .insert({
+        shop_id: shop.id,
+        user_id: user.id,
+        phase: 'FT2',
+        subphase: null,
+        since: new Date(),
+        last_event_id: trx.raw('gen_random_uuid()'),
+        updated_at: new Date(),
+      })
+      .onConflict('shop_id')
+      .merge({
+        phase: 'FT2',
+        subphase: null,
+        since: new Date(),
+        last_event_id: trx.raw('gen_random_uuid()'),
+        updated_at: new Date(),
+      });
+
+    console.log('[DEV_SEED] ✅ Lifecycle snapshot seeded → FT2');
+
   } else {
     console.log('[DEV_SEED] ⚠️ No shop membership created');
     console.log('[DEV_SEED] → This user CANNOT log in');

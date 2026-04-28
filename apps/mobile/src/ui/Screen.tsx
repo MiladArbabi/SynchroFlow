@@ -1,12 +1,13 @@
 // apps/mobile/src/ui/Screen.tsx
-import { View, StyleSheet, SafeAreaView, StatusBar } from 'react-native';
+import { View, StyleSheet, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 
 /**
  * SCREEN
  * ------
  * Base wrapper for every screen.
- * Handles safe area, status bar, background.
+ * Uses react-native-safe-area-context for safe area handling.
  */
 export function Screen({ children }: { children: React.ReactNode }) {
   return (

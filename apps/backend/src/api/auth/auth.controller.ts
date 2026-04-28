@@ -212,6 +212,7 @@ export const loginUser = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       accessToken,
+      refreshToken, // Included for mobile clients (stored in SecureStore, not cookie)
       user: publicUser,
     });
 
@@ -240,9 +241,8 @@ export const refreshToken = async (req: Request, res: Response) => {
       retryAfter: 60,
     });
   }
-  // 1. Get refresh token from HttpOnly cookie
-  const incomingRefreshToken = req.cookies.refreshToken;
-
+  // 1. Get refresh token from HttpOnly cookie (web) or request body (mobile)
+  const incomingRefreshToken = req.cookies.refreshToken ?? req.body?.refreshToken;
   if (!incomingRefreshToken) {
     return res.status(401).json({
       error: 'SESSION_EXPIRED',

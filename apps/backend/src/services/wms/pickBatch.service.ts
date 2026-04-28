@@ -1,6 +1,7 @@
 // apps/backend/src/services/wms/pickBatch.service.ts
 import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
+import { v5 as uuidv5 } from 'uuid';
 import { dispatchNotification } from '../notifications/notificationDispatch.service.js';
 
 /**
@@ -123,6 +124,62 @@ export async function releaseBatch(
       shop_id: shopId,
     }))
   );
+
+  /**
+   * RESERVATION HOLD ON BATCH RELEASE (INV-03)
+   * -------------------------------------------
+   * Write reservation_hold movements for all line items in the batch.
+   * Decrements available_quantity, increments reserved_quantity on inventory_truth.
+   *
+   * Invariant: available_quantity = on_hand_quantity - reserved_quantity
+   * Movement is append-only and idempotent via device_event_id.
+   *
+   * Audit: reference_type='pick_batch', reference_id=pickBatchId
+   */
+  const RESERVATION_NAMESPACE = 'c2d3e4f5-a6b7-8901-bcde-f12345678901';
+
+  const allLineItems = await trx('order_line_items')
+    .whereIn('lasyncro_order_id', selectedOrderIds)
+    .where('shop_id', shopId)
+    .select('lasyncro_line_item_id', 'lasyncro_variant_id', 'quantity');
+
+  for (const li of allLineItems) {
+    const movementId = uuidv5(
+      `${pickBatchId}:${li.lasyncro_line_item_id}:reservation_hold`,
+      RESERVATION_NAMESPACE
+    );
+    const deviceEventId = uuidv5(
+      `${pickBatchId}:${li.lasyncro_line_item_id}:device`,
+      RESERVATION_NAMESPACE
+    );
+
+    await trx('inventory_movements')
+      .insert({
+        lasyncro_inventory_movement_id: movementId,
+        lasyncro_variant_id: li.lasyncro_variant_id,
+        shop_id: shopId,
+        movement_type: 'reservation_hold',
+        quantity_delta: li.quantity, // positive per check constraint
+        location_code: `WH-${shopId}-ROOT`, // reserved from available pool
+        reference_type: 'pick_batch',
+        reference_id: pickBatchId,
+        platform: 'wms',
+        occurred_at: new Date(),
+        device_event_id: deviceEventId,
+      })
+      .onConflict(['device_event_id'])
+      .ignore();
+
+    // Decrement available, increment reserved on inventory_truth
+    await trx('inventory_truth')
+      .where({ shop_id: shopId, lasyncro_variant_id: li.lasyncro_variant_id })
+      .update({
+        available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [li.quantity]),
+        reserved_quantity: trx.raw('reserved_quantity + ?', [li.quantity]),
+        last_evaluated_at: new Date(),
+        updated_at: new Date(),
+      });
+  }
 
   console.info('[PICK_BATCH_RELEASED]', {
     pick_batch_id: pickBatchId,

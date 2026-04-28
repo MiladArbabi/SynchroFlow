@@ -1,6 +1,6 @@
 // apps/backend/src/services/wms/stow.service.ts
 import { Knex } from 'knex';
-import { v5 as uuidv5 } from 'uuid';
+import { writeAuditLog } from '../audit/operatorAudit.service.js';
 
 /**
  * STOW SERVICE (WM-05)
@@ -117,6 +117,14 @@ export async function claimStowTask(
     });
 
   console.info('[STOW_TASK_CLAIMED]', { stowTaskId, userId, shopId });
+  await writeAuditLog(trx, {
+    shopId,
+    operatorId: userId,
+    actionType: 'stow_claim',
+    entityType: 'stow_task',
+    entityId: stowTaskId,
+    metadata: { location_code: task.location_code },
+  });
 }
 
 export async function confirmStow(
@@ -138,39 +146,65 @@ export async function confirmStow(
 
   const completedAt = new Date();
 
-  // 2. Deterministic movement id + device_event_id
-  const inventoryMovementId = uuidv5(
-    `${stowTaskId}:inventory:inbound_purchase`,
-    STOW_NAMESPACE
-  );
-  const deviceEventId = uuidv5(
-    `${stowTaskId}:inbound_purchase`,
-    STOW_NAMESPACE
-  );
+  /**
+   * LOCATION TRANSFER ON STOW CONFIRM (INV-02)
+   * --------------------------------------------
+   * Inventory was already written at receive close (inbound_purchase at ROOT).
+   * Stow confirm moves stock from WH-ROOT → actual bin location.
+   *
+   * Two operations:
+   * 1. Decrement ROOT inventory_truth (stock leaving unlocated zone)
+   * 2. Upsert actual bin inventory_truth (stock arriving at bin)
+   *
+   * inventory_movements is append-only — no movement written here.
+   * The movement audit trail is: receive_job (inbound_purchase) → stow_task (location_transfer on truth)
+   *
+   * Audit: stow_tasks.completed_at + claimed_by provide full operator audit trail.
+   */
+  const rootLocation = `WH-${shopId}-ROOT`;
 
-  // 3. Write inbound_purchase movement to inventory ledger
-  await trx('inventory_movements')
-    .insert({
-      lasyncro_inventory_movement_id: inventoryMovementId,
-      lasyncro_variant_id: task.lasyncro_variant_id,
+  // 2a. Decrement ROOT location
+  await trx('inventory_truth')
+    .where({
       shop_id: shopId,
-      movement_type: 'inbound_purchase',
-      quantity_delta: task.quantity, // positive — stow increases on-hand
-      location_code: task.location_code,
-      reference_type: 'stow_task',
-      reference_id: stowTaskId,
-      platform: null,
-      occurred_at: completedAt,
-      device_event_id: deviceEventId,
+      lasyncro_variant_id: task.lasyncro_variant_id,
+      location_code: rootLocation,
     })
-    .onConflict(['device_event_id'])
-    .ignore();
+    .update({
+      on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [task.quantity]),
+      available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [task.quantity]),
+      sellable_quantity: trx.raw('GREATEST(0, sellable_quantity - ?)', [task.quantity]),
+      last_evaluated_at: completedAt,
+      updated_at: completedAt,
+    });
 
-  console.info('[STOW_MOVEMENT_WRITTEN]', {
-    inventoryMovementId,
+  // 2b. Upsert actual bin location
+  await trx('inventory_truth')
+    .insert({
+      shop_id: shopId,
+      lasyncro_variant_id: task.lasyncro_variant_id,
+      location_code: task.location_code,
+      on_hand_quantity: task.quantity,
+      reserved_quantity: 0,
+      committed_quantity: 0,
+      available_quantity: task.quantity,
+      sellable_quantity: task.quantity,
+      last_evaluated_at: completedAt,
+    })
+    .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
+    .merge({
+      on_hand_quantity: trx.raw('inventory_truth.on_hand_quantity + ?', [task.quantity]),
+      available_quantity: trx.raw('inventory_truth.available_quantity + ?', [task.quantity]),
+      sellable_quantity: trx.raw('inventory_truth.sellable_quantity + ?', [task.quantity]),
+      last_evaluated_at: completedAt,
+      updated_at: completedAt,
+    });
+
+  console.info('[STOW_LOCATION_TRANSFER]', {
     lasyncroVariantId: task.lasyncro_variant_id,
     quantity: task.quantity,
-    locationCode: task.location_code,
+    from: rootLocation,
+    to: task.location_code,
     shopId,
   });
 
@@ -198,14 +232,25 @@ export async function confirmStow(
     .update({
       status: 'completed',
       completed_at: completedAt,
-      inventory_movement_id: inventoryMovementId,
       updated_at: completedAt,
     });
 
   console.info('[STOW_CONFIRMED]', {
     stowTaskId,
-    inventoryMovementId,
     shopId,
     claimedBy,
+  });
+
+  await writeAuditLog(trx, {
+    shopId,
+    operatorId: claimedBy,
+    actionType: 'stow_confirm',
+    entityType: 'stow_task',
+    entityId: stowTaskId,
+    metadata: {
+      location_code: task.location_code,
+      quantity: task.quantity,
+      lasyncro_variant_id: task.lasyncro_variant_id,
+    },
   });
 }

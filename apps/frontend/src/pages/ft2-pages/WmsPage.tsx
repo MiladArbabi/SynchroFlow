@@ -148,11 +148,14 @@ export default function WmsPage() {
     /**
      * PACKING SLIP (PP1-02)
      * ---------------------
-     * Fetches Shopify packing slip URL for a fulfilled order.
-     * Opens in new tab — works for both thermal printer workflows
-     * and standard browser print dialogs.
+     * Opens Shopify packing slip in a new tab.
+     * Operator prints the label from Shopify's print dialog.
      *
-     * 409 = order not yet fulfilled (no fulfillment ID yet) — safe to ignore.
+     * 409 = fulfillment not yet confirmed in Shopify — slip opens anyway
+     * via fallback to Shopify admin orders page for manual label access.
+     *
+     * TODO Sprint 7: replace with Shippo label generation for
+     * in-app thermal printer support.
      */
     try {
       const { data } = await axiosInstance.get(`/api/v1/wms/orders/${orderId}/packing-slip`);
@@ -161,7 +164,11 @@ export default function WmsPage() {
       }
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status !== 409) {
+      if (status === 409) {
+        // Order not yet fulfilled in Shopify — fulfillment fires async.
+        // Operator should wait a moment and retry, or print from Shopify orders directly.
+        console.info('[WMS] Packing slip not yet available — fulfillment still processing', { orderId });
+      } else {
         console.error('[WMS] Failed to fetch packing slip', { orderId, error: (err as Error)?.message });
       }
     }

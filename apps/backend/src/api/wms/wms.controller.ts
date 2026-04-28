@@ -7,6 +7,7 @@ import { confirmPickScan } from '../../services/wms/pickScan.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
 import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
+import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
 import {
   firePickExceptionAlert,
   fireStowTaskAlert,
@@ -255,6 +256,14 @@ export const httpClaimBatch = async (req: Request, res: Response) => {
         pick_batch_id: batchId,
         claimed_by: userId,
         shopId,
+      });
+      await writeAuditLog(trx, {
+        shopId,
+        operatorId: userId,
+        actionType: 'pick_claim',
+        entityType: 'pick_batch',
+        entityId: String(batchId),
+        metadata: { claimed_at: now },
       });
     });
 

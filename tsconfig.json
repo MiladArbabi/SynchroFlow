@@ -1,71 +1,117 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ESNext"
+    ],
     "module": "ESNext",
     "skipLibCheck": true,
-
-    /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-
-    /* Linting */
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "types": ["jest", "@testing-library/jest-dom"],
-
+    "types": [
+      "jest",
+      "@testing-library/jest-dom"
+    ],
     "allowJs": true,
     "checkJs": false,
     "baseUrl": ".",
     "paths": {
-      "test-utils": ["apps/frontend/src/test-utils.tsx"],
-      "menu-items/*": ["apps/frontend/src/menu-items/*"],
-      "wiring/*": ["apps/frontend/src/wiring/*"],
-      "analytics/*": ["apps/frontend/src/analytics/*"],
-      
-      // Wildcard aliases for directories inside /src
-      "components/*": ["apps/frontend/src/components/*"],
-      "contexts/*": ["apps/frontend/src/contexts/*"],
-      "pages/*": ["apps/frontend/src/pages/*"],
-      "layouts/*": ["apps/frontend/src/layouts/*"], 
-      "utils/*": ["apps/frontend/src/utils/*"],
-      "hooks/*": ["apps/frontend/src/hooks/*"],
-      "assets/*": ["apps/frontend/src/assets/*"],
-
-      "config": ["apps/frontend/src/config.ts"],
-      "layout/*": ["apps/frontend/src/layout/*"],
-      "api/*": ["apps/frontend/src/api/*"],
-      "ui-component/*": ["apps/frontend/src/ui-component/*"],
-      "menu-items": ["apps/frontend/src/menu-items/index.ts"],
-      "widgets/*": ["apps/frontend/src/widgets/*"],
-      "themes/*": ["apps/frontend/src/themes/*"],
-      "runtime/*": ["apps/frontend/src/runtime/*"],
-      "runtime": ["apps/frontend/src/runtime/index.ts"],
-      "types/*": ["apps/frontend/src/types/*"],
-
-      "ui/src/*": ["apps/frontend/src/*"],
-      
-      // Aliases for root files
-      "Layout": ["apps/frontend/src/Layout.tsx"],
-      "App": ["apps/frontend/src/App.tsx"],
-      "LoginPage": ["apps/frontend/src/LoginPage.tsx"],
-      "routes": ["apps/frontend/src/routes.tsx"],
-
-      // --- BACKEND ALIASES ---
+      "test-utils": [
+        "apps/frontend/src/test-utils.tsx"
+      ],
+      "menu-items/*": [
+        "apps/frontend/src/menu-items/*"
+      ],
+      "wiring/*": [
+        "apps/frontend/src/wiring/*"
+      ],
+      "analytics/*": [
+        "apps/frontend/src/analytics/*"
+      ],
+      "components/*": [
+        "apps/frontend/src/components/*"
+      ],
+      "contexts/*": [
+        "apps/frontend/src/contexts/*"
+      ],
+      "pages/*": [
+        "apps/frontend/src/pages/*"
+      ],
+      "layouts/*": [
+        "apps/frontend/src/layouts/*"
+      ],
+      "utils/*": [
+        "apps/frontend/src/utils/*"
+      ],
+      "hooks/*": [
+        "apps/frontend/src/hooks/*"
+      ],
+      "assets/*": [
+        "apps/frontend/src/assets/*"
+      ],
+      "config": [
+        "apps/frontend/src/config.ts"
+      ],
+      "layout/*": [
+        "apps/frontend/src/layout/*"
+      ],
+      "api/*": [
+        "apps/frontend/src/api/*"
+      ],
+      "ui-component/*": [
+        "apps/frontend/src/ui-component/*"
+      ],
+      "menu-items": [
+        "apps/frontend/src/menu-items/index.ts"
+      ],
+      "widgets/*": [
+        "apps/frontend/src/widgets/*"
+      ],
+      "themes/*": [
+        "apps/frontend/src/themes/*"
+      ],
+      "runtime/*": [
+        "apps/frontend/src/runtime/*"
+      ],
+      "runtime": [
+        "apps/frontend/src/runtime/index.ts"
+      ],
+      "types/*": [
+        "apps/frontend/src/types/*"
+      ],
+      "ui/src/*": [
+        "apps/frontend/src/*"
+      ],
+      "Layout": [
+        "apps/frontend/src/Layout.tsx"
+      ],
+      "App": [
+        "apps/frontend/src/App.tsx"
+      ],
+      "LoginPage": [
+        "apps/frontend/src/LoginPage.tsx"
+      ],
+      "routes": [
+        "apps/frontend/src/routes.tsx"
+      ],
       "api-src/*": [
         "apps/backend/dist/apps/backend/src/*",
         "apps/backend/src/*"
       ],
       "api-db": [
         "apps/backend/dist/apps/backend/src/db.js",
-         "apps/backend/src/db.ts"
-        ],
+        "apps/backend/src/db.ts"
+      ],
       "api-server": [
         "apps/backend/dist/apps/backend/src/server.js",
         "apps/backend/src/server.ts"
@@ -74,16 +120,22 @@
         "apps/backend/src/types.ts",
         "apps/backend/dist/apps/backend/src/types.js"
       ],
-
-      /* Shared package — runtime should resolve to compiled JS in modules/shared/dist */
-      "@lasyncro/shared/*": ["modules/shared/dist/*"],
-      "@lasyncro/shared": ["modules/shared/dist/index.js"],
-
-      /* module-level alias for internal modules (specter etc.) — point to compiled output too */
-      "modules-specter/*": ["modules/specter/dist/*", "modules/specter/src/*"],
-
-      "lifecycle/*": ["apps/frontend/src/lifecycle/*"],
-      "activation/*": ["apps/frontend/src/activation/*"],
+      "@lasyncro/shared/*": [
+        "modules/shared/dist/*"
+      ],
+      "@lasyncro/shared": [
+        "modules/shared/dist/index.js"
+      ],
+      "modules-specter/*": [
+        "modules/specter/dist/*",
+        "modules/specter/src/*"
+      ],
+      "lifecycle/*": [
+        "apps/frontend/src/lifecycle/*"
+      ],
+      "activation/*": [
+        "apps/frontend/src/activation/*"
+      ]
     }
   },
   "include": [
@@ -96,10 +148,17 @@
     "modules/order-nexus/src",
     "modules/customers/src",
     "modules/shared/src/contracts.ts",
-    "modules/finances/src/ui/FinancesAhaPanel.tsx", "packages/backend-core/middleware" ],
+    "modules/finances/src/ui/FinancesAhaPanel.tsx",
+    "packages/backend-core/middleware"
+  ],
   "exclude": [],
   "references": [
-    { "path": "./packages/epistemic/tsconfig.json" },
-    { "path": "./modules/shared/tsconfig.json" }
-  ]
+    {
+      "path": "./packages/epistemic/tsconfig.json"
+    },
+    {
+      "path": "./modules/shared/tsconfig.json"
+    }
+  ],
+  "extends": "expo/tsconfig.base"
 }

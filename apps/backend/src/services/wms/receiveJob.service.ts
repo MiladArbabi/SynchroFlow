@@ -1,9 +1,11 @@
 // apps/backend/src/services/wms/receiveJob.service.ts
 import { Knex } from 'knex';
+import { v5 as uuidv5 } from 'uuid';
 import { createStowTask } from './stow.service.js';
 import { fireStowTaskAlert, fireReceiveArrivedAlert } from './wmsAlerts.service.js';
 import { recomputeSupplierRating, recomputeSupplierDefectRate } from '../suppliers/supplierRating.service.js';
 import { suggestStowLocation } from './locationSuggestion.service.js';
+import { writeAuditLog } from '../audit/operatorAudit.service.js';
 
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
@@ -96,6 +98,7 @@ export interface InspectLineInput {
   lasyncroVariantId: string;
   quantityAccepted: number;
   quantityRejected: number;
+  inspectedBy: number;
 }
 
 /**
@@ -107,7 +110,7 @@ export async function inspectReceiveJobLine(
   trx: Knex.Transaction,
   input: InspectLineInput
 ): Promise<void> {
-  const { shopId, receiveJobId, lasyncroVariantId, quantityAccepted, quantityRejected } = input;
+  const { shopId, receiveJobId, lasyncroVariantId, quantityAccepted, quantityRejected, inspectedBy } = input;
 
   const line = await trx('receive_job_lines')
     .where({ receive_job_id: receiveJobId, lasyncro_variant_id: lasyncroVariantId, shop_id: shopId })
@@ -136,6 +139,14 @@ export async function inspectReceiveJobLine(
     });
 
   console.info('[RECEIVE_LINE_INSPECTED]', { receiveJobId, lasyncroVariantId, quantityAccepted, quantityRejected });
+  await writeAuditLog(trx, {
+    shopId,
+    operatorId: inspectedBy,
+    actionType: 'receive_inspect',
+    entityType: 'receive_job',
+    entityId: receiveJobId,
+    metadata: { lasyncro_variant_id: lasyncroVariantId, quantity_accepted: quantityAccepted, quantity_rejected: quantityRejected },
+  });
 }
 
 // ─────────────────────────────────────────
@@ -250,6 +261,106 @@ export async function closeReceiveJob(
   // 3c. Recompute defect_rate from receive_exceptions (defect type only)
   await recomputeSupplierDefectRate(trx, shopId, po.supplier_id);
 
+  /**
+   * INVENTORY WRITE ON RECEIVE CLOSE (INV-01)
+   * ------------------------------------------
+   * Write inbound_purchase movement immediately on receive close.
+   * Stock becomes available at WH-{shopId}-ROOT (unlocated).
+   * Stow confirm later updates location_code on inventory_truth only.
+   *
+   * Invariant: available_quantity = on_hand_quantity - reserved_quantity
+   * Movement is append-only — never updated after insert.
+   *
+   * Audit: reference_type='receive_job', reference_id=receiveJobId
+   */
+  const RECEIVE_NAMESPACE = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+  for (const line of lines) {
+    if (line.quantity_accepted <= 0) continue;
+
+    const rootLocation = `WH-${shopId}-ROOT`;
+    const movementId = uuidv5(
+      `${receiveJobId}:${line.lasyncro_variant_id}:inbound_purchase`,
+      RECEIVE_NAMESPACE
+    );
+    const deviceEventId = uuidv5(
+      `${receiveJobId}:${line.lasyncro_variant_id}:device`,
+      RECEIVE_NAMESPACE
+    );
+
+    await trx('inventory_movements')
+      .insert({
+        lasyncro_inventory_movement_id: movementId,
+        lasyncro_variant_id: line.lasyncro_variant_id,
+        shop_id: shopId,
+        movement_type: 'inbound_purchase',
+        quantity_delta: line.quantity_accepted,
+        location_code: rootLocation,
+        reference_type: 'receive_job',
+        reference_id: receiveJobId,
+        platform: 'wms',
+        occurred_at: new Date(),
+        device_event_id: deviceEventId,
+      })
+      .onConflict(['device_event_id'])
+      .ignore();
+
+    // Upsert inventory_truth — increment on_hand and available at ROOT
+    await trx('inventory_truth')
+      .insert({
+        shop_id: shopId,
+        lasyncro_variant_id: line.lasyncro_variant_id,
+        location_code: rootLocation,
+        on_hand_quantity: line.quantity_accepted,
+        reserved_quantity: 0,
+        committed_quantity: 0,
+        available_quantity: line.quantity_accepted,
+        sellable_quantity: line.quantity_accepted,
+        last_evaluated_at: new Date(),
+      })
+      .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
+      .merge({
+        on_hand_quantity: trx.raw('inventory_truth.on_hand_quantity + ?', [line.quantity_accepted]),
+        available_quantity: trx.raw('inventory_truth.available_quantity + ?', [line.quantity_accepted]),
+        sellable_quantity: trx.raw('inventory_truth.sellable_quantity + ?', [line.quantity_accepted]),
+        last_evaluated_at: new Date(),
+        updated_at: new Date(),
+      });
+
+    /**
+     * BARCODE GENERATION ON RECEIVE CLOSE (BAR-01)
+     * ----------------------------------------------
+     * One barcode per variant — shared across all units of same SKU.
+     * barcode_value = SKU if available, else short variant ID.
+     * Operator prints and attaches to product packaging before stow.
+     */
+    const variant = await trx('variants')
+      .where({ lasyncro_variant_id: line.lasyncro_variant_id, shop_id: shopId })
+      .select('sku')
+      .first();
+
+    const barcodeValue = variant?.sku?.trim()
+      ? variant.sku.trim()
+      : line.lasyncro_variant_id.replace(/-/g, '').slice(0, 12).toUpperCase();
+
+    await trx('barcode_print_jobs')
+      .insert({
+        shop_id: shopId,
+        receive_job_id: receiveJobId,
+        lasyncro_variant_id: line.lasyncro_variant_id,
+        quantity: line.quantity_accepted,
+        barcode_value: barcodeValue,
+        status: 'pending',
+        created_by: closedBy,
+      })
+      .onConflict(['shop_id', 'receive_job_id', 'lasyncro_variant_id'])
+      .merge({
+        quantity: line.quantity_accepted,
+        barcode_value: barcodeValue,
+        status: 'pending',
+        updated_at: new Date(),
+      });
+  }
+
   // 4. Create stow tasks for accepted units (quantity > 0 only)
   for (const line of lines) {
     if (line.quantity_accepted <= 0) continue;
@@ -292,4 +403,12 @@ export async function closeReceiveJob(
   });
 
   console.info('[RECEIVE_JOB_CLOSED]', { shopId, receiveJobId, poId: job.po_id, newPoStatus, closedBy });
+  await writeAuditLog(trx, {
+    shopId,
+    operatorId: closedBy,
+    actionType: 'receive_close',
+    entityType: 'receive_job',
+    entityId: receiveJobId,
+    metadata: { po_id: job.po_id, po_status: newPoStatus },
+  });
 }

@@ -2,6 +2,7 @@
 import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
 import { v5 as uuidv5 } from 'uuid';
+import { writeAuditLog } from '../audit/operatorAudit.service.js';
 
 /**
  * PICK SCAN SERVICE (WM-01)
@@ -227,6 +228,20 @@ export async function confirmPickScan(
     lasyncro_variant_id: lasyncroVariantId,
     status: 'picked',
     shopId,
+  });
+
+  await writeAuditLog(trx, {
+    shopId,
+    operatorId: scannedBy,
+    actionType: 'pick_scan',
+    entityType: 'pick_batch',
+    entityId: pickBatchId,
+    metadata: {
+      lasyncro_line_item_id: lasyncroLineItemId,
+      lasyncro_variant_id: lasyncroVariantId,
+      location_code: locationCode,
+      quantity_confirmed: quantityConfirmed,
+    },
   });
 
   return {

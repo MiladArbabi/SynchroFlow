@@ -6,7 +6,9 @@ import { useAuth } from './src/hooks/useAuth';
 import LoginScreen from './src/screens/LoginScreen';
 import TaskListScreen, { type Task } from './src/screens/TaskListScreen';
 import AvailabilityScreen from './src/screens/AvailabilityScreen';
+import ScanScreen from './src/screens/ScanScreen';
 import { colors } from './src/theme';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 /**
  * APP ROOT (Mobile v1)
@@ -30,10 +32,12 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <View style={styles.splash}>
-        <StatusBar style="light" />
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.splash}>
+          <StatusBar style="light" />
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
@@ -47,25 +51,38 @@ export default function App() {
   }
 
   return (
-    <>
+     <SafeAreaProvider>
       <StatusBar style="light" />
 
       {screen === 'tasks' && (
         <TaskListScreen
           onSelectTask={(task) => {
             setActiveTask(task);
-            // TODO Sprint 1 M5: setScreen('scan')
-            console.info('[APP] task selected', task.id, task.type);
+            setScreen('scan');
           }}
           onLogout={() => void logout()}
           onOpenAvailability={() => setScreen('availability')}
         />
       )}
 
+      {screen === 'scan' && activeTask && (
+        <ScanScreen
+          task={activeTask}
+          onComplete={() => {
+            setActiveTask(null);
+            setScreen('tasks');
+          }}
+          onBack={() => {
+            setActiveTask(null);
+            setScreen('tasks');
+          }}
+        />
+      )}
+
       {screen === 'availability' && (
         <AvailabilityScreen onBack={() => setScreen('tasks')} />
       )}
-    </>
+    </SafeAreaProvider>
   );
 }
 
