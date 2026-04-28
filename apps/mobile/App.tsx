@@ -2,27 +2,71 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useAuth } from './src/hooks/useAuth';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { colors, font, spacing } from './src/theme';
 
+// Screens
 import LoginScreen from './src/screens/LoginScreen';
 import TaskListScreen from './src/screens/TaskListScreen';
 import AvailabilityScreen from './src/screens/AvailabilityScreen';
 import ScanScreen from './src/screens/ScanScreen';
+import PickBriefScreen from './src/screens/PickBriefScreen';
 import ReceiveJobScreen from './src/screens/ReceiveJobScreen';
 import StowScreen from './src/screens/StowScreen';
-import PickBriefScreen from './src/screens/PickBriefScreen';
+import PackScreen from './src/screens/PackScreen';
+import OverviewScreen from './src/screens/OverviewScreen';
 import DispatchScreen from './src/screens/DispatchScreen';
 import TeamDashboardScreen from './src/screens/TeamDashboardScreen';
 
-function TabIcon({ label, focused }: { label: string; focused: boolean }) {
-  return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.4 }}>{label}</Text>;
+// ─── Tab icon ────────────────────────────────────────────────────────────────
+function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
+  return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.4 }}>{emoji}</Text>;
 }
 
-// ─── Task stack (shared by both roles) ───────────────────────────────────────
+// ─── Placeholder screens ──────────────────────────────────────────────────────
+function NotificationsScreen() {
+  return (
+    <View style={placeholder.root}>
+      <Text style={placeholder.title}>Notifications</Text>
+      <Text style={placeholder.sub}>System alerts — coming soon</Text>
+    </View>
+  );
+}
+function SettingsScreen() {
+  return (
+    <View style={placeholder.root}>
+      <Text style={placeholder.title}>Settings</Text>
+      <Text style={placeholder.sub}>Profile & preferences — coming soon</Text>
+    </View>
+  );
+}
+function OwnerSettingsScreen() {
+  const { logout } = useAuth();
+  return (
+    <View style={placeholder.root}>
+      <Text style={placeholder.title}>Settings</Text>
+      <Text style={placeholder.sub}>Alerts · Reports · WMS · Members — coming soon</Text>
+      <TouchableOpacity
+        onPress={() => void logout()}
+        style={{ marginTop: spacing.xl, padding: spacing.md }}
+      >
+        <Text style={{ color: colors.error, fontSize: font.size.md, fontWeight: font.weight.semibold }}>
+          Sign out
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+const placeholder = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  title: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+  sub: { color: colors.ink3, fontSize: font.size.sm, textAlign: 'center' },
+});
+
+// ─── Task stack (shared) ──────────────────────────────────────────────────────
 const TaskStack = createNativeStackNavigator();
 function TaskStackNavigator() {
   return (
@@ -32,18 +76,30 @@ function TaskStackNavigator() {
       <TaskStack.Screen name="Scan" component={ScanScreen} />
       <TaskStack.Screen name="ReceiveJob" component={ReceiveJobScreen} />
       <TaskStack.Screen name="Stow" component={StowScreen} />
+      <TaskStack.Screen name="Pack" component={PackScreen} />
     </TaskStack.Navigator>
   );
 }
 
-// ─── Operator tabs ────────────────────────────────────────────────────────────
+// ─── Tab bar options shared ───────────────────────────────────────────────────
+const tabBarStyle = (bottomInset: number) => ({
+  backgroundColor: colors.bg2,
+  borderTopColor: colors.rule,
+  borderTopWidth: 1,
+  height: 60 + bottomInset,
+  paddingBottom: bottomInset + spacing.xs,
+  paddingTop: spacing.xs,
+});
+
+// ─── OPERATOR tabs ────────────────────────────────────────────────────────────
 const OperatorTab = createBottomTabNavigator();
 function OperatorTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <OperatorTab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: tabBarStyle(insets.bottom),
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.ink4,
         tabBarLabelStyle: styles.tabLabel,
@@ -52,56 +108,91 @@ function OperatorTabs() {
       <OperatorTab.Screen
         name="Tasks"
         component={TaskStackNavigator}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📋" focused={focused} />, tabBarLabel: 'Tasks' }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📋" focused={focused} />,
+          tabBarLabel: 'Tasks',
+        }}
       />
       <OperatorTab.Screen
-        name="Availability"
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🔔" focused={focused} />,
+          tabBarLabel: 'Alerts',
+        }}
+      />
+      <OperatorTab.Screen
+        name="Calendar"
         component={AvailabilityScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📅" focused={focused} />, tabBarLabel: 'Calendar' }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
+          tabBarLabel: 'Calendar',
+        }}
+      />
+      <OperatorTab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
+          tabBarLabel: 'Settings',
+        }}
       />
     </OperatorTab.Navigator>
   );
 }
 
-// ─── Owner/Admin tabs ─────────────────────────────────────────────────────────
+// ─── OWNER/ADMIN tabs ─────────────────────────────────────────────────────────
 const OwnerTab = createBottomTabNavigator();
 function OwnerTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <OwnerTab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: tabBarStyle(insets.bottom),
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.ink4,
         tabBarLabelStyle: styles.tabLabel,
       }}
     >
       <OwnerTab.Screen
-        name="Tasks"
-        component={TaskStackNavigator}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📋" focused={focused} />, tabBarLabel: 'Tasks' }}
+        name="Overview"
+        component={OverviewScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📊" focused={focused} />,
+          tabBarLabel: 'Overview',
+        }}
       />
       <OwnerTab.Screen
-        name="Dispatch"
+        name="Tasks"
         component={DispatchScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon label="🚀" focused={focused} />, tabBarLabel: 'Dispatch' }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🚀" focused={focused} />,
+          tabBarLabel: 'Tasks',
+        }}
       />
       <OwnerTab.Screen
         name="Team"
         component={TeamDashboardScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon label="👥" focused={focused} />, tabBarLabel: 'Team' }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="👥" focused={focused} />,
+          tabBarLabel: 'Team',
+        }}
       />
       <OwnerTab.Screen
-        name="Availability"
-        component={AvailabilityScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon label="📅" focused={focused} />, tabBarLabel: 'Calendar' }}
+        name="Settings"
+        component={OwnerSettingsScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
+          tabBarLabel: 'Settings',
+        }}
       />
     </OwnerTab.Navigator>
   );
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
-export default function App() {
+function AppInner() {
   const { isAuthenticated, isLoading, error, login, role } = useAuth();
 
   if (isLoading) {
@@ -109,7 +200,6 @@ export default function App() {
       <SafeAreaProvider>
         <View style={styles.splash}>
           <StatusBar style="light" />
-          <ActivityIndicator size="large" color={colors.accent} />
         </View>
       </SafeAreaProvider>
     );
@@ -136,6 +226,14 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
+  );
+}
+
 const styles = StyleSheet.create({
   splash: {
     flex: 1,
@@ -143,15 +241,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  tabBar: {
-    backgroundColor: colors.bg2,
-    borderTopColor: colors.rule,
-    borderTopWidth: 1,
-    paddingTop: spacing.xs,
-    height: 60,
-  },
   tabLabel: {
-    fontSize: 11,
-    marginBottom: spacing.xs,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.medium,
   },
 });

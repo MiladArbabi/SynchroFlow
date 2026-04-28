@@ -17,6 +17,7 @@ export type TaskStackParamList = {
   Scan: { task: Task; lineItems?: LineItem[] };
   ReceiveJob: { task: Task };
   Stow: { task: Task };
+  Pack: { task: Task };
 };
 
 export type TaskStackScreenProps<T extends keyof TaskStackParamList> =
