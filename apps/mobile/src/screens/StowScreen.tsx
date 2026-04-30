@@ -2,15 +2,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator,
-  Alert, Vibration, TouchableOpacity,
+  Alert, ScrollView, TouchableOpacity, TextInput,
+  KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { TaskStackScreenProps, TaskStackParamList } from '../navigation/types';
-import { Screen, Card, Button, Badge, Row, Divider } from '../ui';
+import { Screen, Card, Button, Badge, Row, Divider, AppHeader, WorkflowStep } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
+import { Ionicons } from '@expo/vector-icons';
 
 type StowTask = {
   stow_task_id: string;
@@ -23,17 +24,12 @@ type StowTask = {
   claimed_by: number | null;
 };
 
-type ScanPhase = 'location' | 'product';
-type ScreenPhase = 'summary' | 'stowing' | 'complete';
+type ScreenPhase = 'summary' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'complete';
 
-const VIBRATION_SUCCESS = [0, 80];
-const VIBRATION_ERROR = [0, 100, 80, 100];
-
-const EXCEPTION_TYPES = [
-  { type: 'item_missing', label: 'Item missing' },
-  { type: 'product_defect', label: 'Product defect' },
-  { type: 'packaging_defect', label: 'Packaging defect' },
-  { type: 'wrong_item', label: 'Wrong item' },
+const STOW_EXCEPTIONS = [
+  { type: 'item_missing', label: 'Item missing', icon: 'search-outline' },
+  { type: 'product_defect', label: 'Damaged', icon: 'hammer-outline' },
+  { type: 'packaging_defect', label: 'Packaging', icon: 'cube-outline' },
 ];
 
 export default function StowScreen() {
@@ -41,218 +37,296 @@ export default function StowScreen() {
   const route = useRoute<TaskStackScreenProps<'Stow'>['route']>();
   const { task } = route.params;
 
-  // ── Screen state ──────────────────────────────────────────────────────────
   const [screenPhase, setScreenPhase] = useState<ScreenPhase>('summary');
   const [tasks, setTasks] = useState<StowTask[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmedLocation, setConfirmedLocation] = useState<string | null>(null);
 
-  // ── Scan state ────────────────────────────────────────────────────────────
-  const [scanPhase, setScanPhase] = useState<ScanPhase>('location');
-  const [scannedLocation, setScannedLocation] = useState<string | null>(null);
-  const [scannedProduct, setScannedProduct] = useState<string | null>(null);
-  const [scanFeedback, setScanFeedback] = useState<string | null>(null);
-  const [scanOk, setScanOk] = useState<boolean | null>(null);
-  const [cooldown, setCooldown] = useState(false);
+  // Partial stow tracking
+  const [remainingQty, setRemainingQty] = useState(0);
+  const [qtyInput, setQtyInput] = useState('');
 
-  // ── Exception state ───────────────────────────────────────────────────────
-  const [showException, setShowException] = useState(false);
+  const currentTask = tasks[currentIndex] ?? null;
 
-  const [permission, requestPermission] = useCameraPermissions();
+  const [shortfallModal, setShortfallModal] = useState<{
+    qty: number;
+    shortfall: number;
+    reportedExceptions: Array<{ type: string; qty: number; probLabel: string }>;
+  } | null>(null);
+  const [selectedExType, setSelectedExType] = useState('');
+  const [exQtyInput, setExQtyInput] = useState('');
 
-  // ── Load all pending stow tasks ───────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await apiClient.get('/api/v1/wms/stow-tasks');
-      const pending = (data.stow_tasks ?? []).filter(
+      const all = (data.stow_tasks ?? []).filter(
         (t: StowTask) => t.status === 'pending' || t.status === 'in_progress'
       );
-      setTasks(pending);
+      const tapped = all.find((t: StowTask) => t.stow_task_id === task.id);
+      const rest = all.filter((t: StowTask) => t.stow_task_id !== task.id);
+      const ordered = tapped ? [tapped, ...rest] : all;
+      setTasks(ordered);
+      if (ordered.length > 0) {
+        setRemainingQty(ordered[0].quantity);
+        // Resume in-progress task at correct step
+        if (ordered[0].status === 'in_progress' && ordered[0].location_code) {
+          setConfirmedLocation(ordered[0].location_code);
+          setScreenPhase('product_scan');
+        }
+      }
     } catch {
       setError('Failed to load stow tasks.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [task.id]);
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    if (!permission?.granted) void requestPermission();
-  }, [permission, requestPermission]);
-
-  const currentTask = tasks[currentIndex] ?? null;
-
-  // ── Assign location + claim task ──────────────────────────────────────────
-  const assignAndClaim = useCallback(async (locationCode: string) => {
+  // ── Location scan confirmed ───────────────────────────────────────────────
+  const handleLocationScan = useCallback(async (scannedValue: string) => {
     if (!currentTask) return;
-    setSubmitting(true);
+
+    const { data } = await apiClient.post('/api/v1/wms/location/resolve', {
+      scanned_value: scannedValue,
+    });
+
+    if (!data?.location_code) {
+      throw Object.assign(new Error('Location not found.'), {
+        response: { data: { error: 'Location not recognised. Try scanning the bin barcode.' } },
+      });
+    }
+
+    if (!currentTask.location_code) {
+      await apiClient.patch(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/location`, {
+        location_code: data.location_code,
+      });
+    } else if (data.location_code !== currentTask.location_code) {
+      throw Object.assign(new Error('Wrong location.'), {
+        response: { data: { error: `Wrong location. Expected: ${currentTask.location_code}` } },
+      });
+    }
+
+    setTasks(prev => prev.map((t, i) =>
+      i === currentIndex ? { ...t, location_code: data.location_code, status: 'in_progress' } : t
+    ));
+
     try {
-      // Assign location if not already set
-      if (!currentTask.location_code) {
-        await apiClient.patch(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/location`, {
-          location_code: locationCode,
-        });
-      }
-      // Claim task
       await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/claim`);
-      setTasks((prev) =>
-        prev.map((t, i) =>
-          i === currentIndex ? { ...t, location_code: locationCode, status: 'in_progress' } : t
-        )
-      );
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error ?? 'Failed to claim task.';
-      Alert.alert('Error', msg);
-      setScanPhase('location');
-      setScannedLocation(null);
-    } finally {
-      setSubmitting(false);
+        ?.response?.data?.error ?? '';
+      // Already claimed by this operator — treat as success
+      if (!msg.includes('already') && !msg.includes('in_progress')) throw err;
     }
+    setConfirmedLocation(data.location_code);
+    setScreenPhase('product_scan');
   }, [currentTask, currentIndex]);
 
-  // ── Confirm stow ──────────────────────────────────────────────────────────
-  const confirmStow = useCallback(async () => {
+  // ── Product scan confirmed ────────────────────────────────────────────────
+  const handleProductScan = useCallback(async (scannedValue: string) => {
+    if (!currentTask) return;
+
+    const { data: resolved } = await apiClient.post('/api/v1/wms/barcode/resolve', {
+      scanned_value: scannedValue,
+    });
+
+    if (!resolved?.lasyncro_variant_id) {
+      throw Object.assign(new Error('Barcode not recognised.'), {
+        response: { data: { error: 'Barcode not recognised. Try scanning again.' } },
+      });
+    }
+
+    if (resolved.lasyncro_variant_id !== currentTask.lasyncro_variant_id) {
+      throw Object.assign(new Error('Wrong product.'), {
+        response: { data: { error: 'Wrong product — does not match this stow task.' } },
+      });
+    }
+
+    // Move to qty confirmation
+    setQtyInput('');
+    setScreenPhase('qty_confirm');
+  }, [currentTask]);
+
+  // ── Submit Handler Helper ───────────────────────────────────────────────────────────
+  const submitStow = useCallback(async (qty: number) => {
     if (!currentTask) return;
     setSubmitting(true);
     try {
-      await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/confirm`);
-      Vibration.vibrate(VIBRATION_SUCCESS);
+      await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/confirm`, {
+        quantity_placed: qty,
+      });
 
-      const nextIndex = currentIndex + 1;
-      if (nextIndex >= tasks.length) {
-        setScreenPhase('complete');
+      const newRemaining = remainingQty - qty;
+      if (newRemaining > 0) {
+        setRemainingQty(newRemaining);
+        setConfirmedLocation(null);
+        setQtyInput('');
+        setShortfallModal(null);
+        setScreenPhase('location_scan');
       } else {
-        setCurrentIndex(nextIndex);
-        setScanPhase('location');
-        setScannedLocation(null);
-        setScannedProduct(null);
-        setScanFeedback(null);
-        setScanOk(null);
+        const nextIndex = currentIndex + 1;
+        if (nextIndex >= tasks.length) {
+          setScreenPhase('complete');
+        } else {
+          setCurrentIndex(nextIndex);
+          setRemainingQty(tasks[nextIndex].quantity);
+          setConfirmedLocation(null);
+          setQtyInput('');
+          setShortfallModal(null);
+          setScreenPhase('location_scan');
+        }
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error ?? 'Failed to confirm stow.';
-      Alert.alert('Error', msg);
+        ?.response?.data?.error ?? 'Stow confirm failed.';
+      if (msg.includes('not in progress') || msg.includes('completed')) {
+        // Already confirmed — advance
+        const nextIndex = currentIndex + 1;
+        if (nextIndex >= tasks.length) setScreenPhase('complete');
+        else {
+          setCurrentIndex(nextIndex);
+          setRemainingQty(tasks[nextIndex].quantity);
+          setConfirmedLocation(null);
+          setQtyInput('');
+          setShortfallModal(null);
+          setScreenPhase('location_scan');
+        }
+      } else {
+        Alert.alert('Error', msg);
+      }
     } finally {
       setSubmitting(false);
     }
-  }, [currentTask, currentIndex, tasks.length]);
+  }, [currentTask, remainingQty, currentIndex, tasks]);
 
-  // ── Report exception ──────────────────────────────────────────────────────
-  const reportException = useCallback(async (exceptionType: string) => {
+  // ── Qty confirm ───────────────────────────────────────────────────────────
+  const handleQtyConfirm = useCallback(async () => {
+    if (!currentTask) return;
+
+    const qty = parseInt(qtyInput, 10);
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert('Invalid', 'Enter how many units you are placing here.');
+      return;
+    }
+    if (qty > remainingQty) {
+      Alert.alert('Too many', `Only ${remainingQty} units remaining to stow.`);
+      return;
+    }
+
+    const shortfall = remainingQty - qty;
+
+    if (shortfall > 0) {
+      // Show shortfall modal — same pattern as receive
+      setShortfallModal({ qty, shortfall, reportedExceptions: [] });
+      setSelectedExType('');
+      setExQtyInput(String(shortfall));
+      return;
+    }
+
+    await submitStow(qty);
+  }, [currentTask, qtyInput, remainingQty]);
+
+  // ── Exception handler ─────────────────────────────────────────────────────
+  const handleException = useCallback(async (exceptionType: string, quantity: number = 1) => {
     if (!currentTask) return;
     try {
-      await apiClient.post(`/api/v1/wms/batch/${task.id}/exception`, {
-        lasyncro_line_item_id: currentTask.stow_task_id,
-        lasyncro_variant_id: currentTask.lasyncro_variant_id,
+      await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/exception`, {
         exception_type: exceptionType,
-        stage: 'pick',
-        quantity_required: currentTask.quantity,
-        quantity_found: 0,
+        quantity,
+        notes: 'Reported during stow',
       });
-      setShowException(false);
-      Alert.alert('Exception reported', 'Moving to next task.');
-      const nextIndex = currentIndex + 1;
-      if (nextIndex >= tasks.length) {
-        setScreenPhase('complete');
+
+      const newRemaining = remainingQty - quantity;
+      if (newRemaining <= 0) {
+        const nextIndex = currentIndex + 1;
+        if (nextIndex >= tasks.length) {
+          setScreenPhase('complete');
+        } else {
+          setCurrentIndex(nextIndex);
+          setRemainingQty(tasks[nextIndex].quantity);
+          setConfirmedLocation(null);
+          setScreenPhase('location_scan');
+        }
       } else {
-        setCurrentIndex(nextIndex);
-        setScanPhase('location');
-        setScannedLocation(null);
-        setScannedProduct(null);
+        setRemainingQty(newRemaining);
       }
     } catch {
       Alert.alert('Error', 'Failed to report exception.');
     }
-  }, [currentTask, currentIndex, tasks.length, task.id]);
+  }, [currentTask, remainingQty, currentIndex, tasks]);
 
-  // ── Barcode scan handler ──────────────────────────────────────────────────
-  const handleScan = useCallback(async ({ data: scannedValue }: { data: string }) => {
-    if (cooldown || submitting) return;
-    setCooldown(true);
-    setTimeout(() => setCooldown(false), 1500);
 
-    if (scanPhase === 'location') {
-      try {
-        const { data } = await apiClient.post('/api/v1/wms/location/resolve', {
-          scanned_value: scannedValue,
-        });
-        Vibration.vibrate(VIBRATION_SUCCESS);
-        setScanOk(true);
-        setScanFeedback(`✓ ${data.location_code}`);
-        setScannedLocation(data.location_code);
-        setScanPhase('product');
-        await assignAndClaim(data.location_code);
-      } catch {
-        Vibration.vibrate(VIBRATION_ERROR);
-        setScanOk(false);
-        setScanFeedback('Location not found. Try again.');
-        setTimeout(() => { setScanFeedback(null); setScanOk(null); }, 2000);
-      }
-    } else {
-      // Product scan — verify it matches the current task's variant
-      try {
-        const { data } = await apiClient.post('/api/v1/wms/barcode/resolve', {
-          scanned_value: scannedValue,
-        });
-        if (data.lasyncro_variant_id !== currentTask?.lasyncro_variant_id) {
-          Vibration.vibrate(VIBRATION_ERROR);
-          setScanOk(false);
-          setScanFeedback('Wrong product. Scan the correct barcode.');
-          setTimeout(() => { setScanFeedback(null); setScanOk(null); }, 2000);
-          return;
-        }
-        Vibration.vibrate(VIBRATION_SUCCESS);
-        setScanOk(true);
-        setScannedProduct(scannedValue);
-        setScanFeedback(`✓ Product confirmed`);
-      } catch {
-        Vibration.vibrate(VIBRATION_ERROR);
-        setScanOk(false);
-        setScanFeedback('Barcode not recognised.');
-        setTimeout(() => { setScanFeedback(null); setScanOk(null); }, 2000);
-      }
+  // ----------------- shortfall exception confirm handler ---------------------------//
+  const handleShortfallConfirm = useCallback(async () => {
+    if (!shortfallModal || !currentTask || !selectedExType) return;
+
+    const exQty = parseInt(exQtyInput, 10);
+    if (isNaN(exQty) || exQty <= 0 || exQty > shortfallModal.shortfall) {
+      Alert.alert('Invalid', `Enter between 1 and ${shortfallModal.shortfall}.`);
+      return;
     }
-  }, [cooldown, submitting, scanPhase, currentTask, assignAndClaim]);
 
-  // ── SUMMARY SCREEN ────────────────────────────────────────────────────────
+    setSubmitting(true);
+    try {
+      const { data: probData } = await apiClient.post(
+        `/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/exception`,
+        { exception_type: selectedExType, quantity: exQty, notes: 'Reported during stow qty confirm' }
+      );
+
+      const newReported = [
+        ...shortfallModal.reportedExceptions,
+        { type: selectedExType, qty: exQty, probLabel: probData.prob_label ?? 'PROB-?' },
+      ];
+      const newShortfall = shortfallModal.shortfall - exQty;
+
+      if (newShortfall > 0) {
+        setShortfallModal(prev => prev ? { ...prev, shortfall: newShortfall, reportedExceptions: newReported } : null);
+        setSelectedExType('');
+        setExQtyInput('');
+      } else {
+        setShortfallModal(null);
+        await submitStow(shortfallModal.qty);
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error ?? 'Failed to report exception.';
+      Alert.alert('Error', msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [shortfallModal, currentTask, selectedExType, exQtyInput, submitStow]);
+
+  // ── SUMMARY ───────────────────────────────────────────────────────────────
   if (screenPhase === 'summary') {
     return (
       <Screen>
-        <Row style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Stow tasks</Text>
-          <Badge label={`${tasks.length} tasks`} variant="info" />
-        </Row>
+        <AppHeader showLogo />
         <Divider />
-
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
+          <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
         ) : error ? (
           <View style={styles.center}>
             <Text style={styles.errorText}>{error}</Text>
-            <Button label="Retry" onPress={load} style={styles.retryBtn} />
+            <Button label="Retry" onPress={load} style={{ marginTop: spacing.md }} />
           </View>
         ) : tasks.length === 0 ? (
           <View style={styles.center}>
             <Text style={styles.emptyText}>No stow tasks pending.</Text>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
+              <Text style={styles.backLinkText}>Back to tasks</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
-            {/* Summary stats */}
-            <Row style={styles.summary}>
+            <Row style={styles.summaryRow}>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>{tasks.length}</Text>
-                <Text style={styles.summaryLabel}>Tasks</Text>
+                <Text style={styles.summaryLabel}>SKUs</Text>
               </View>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>
@@ -262,39 +336,34 @@ export default function StowScreen() {
               </View>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>
-                  {new Set(tasks.map((t) => t.location_code).filter(Boolean)).size}
+                  {new Set(tasks.map(t => t.location_code).filter(Boolean)).size}
                 </Text>
                 <Text style={styles.summaryLabel}>Locations</Text>
               </View>
             </Row>
-
             <Divider />
-
-            {/* Task list preview */}
-            {tasks.map((t, i) => (
-              <Card key={t.stow_task_id} style={styles.previewCard}>
-                <Row style={{ justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.variantTitle} numberOfLines={1}>
-                      {t.variant_title ?? t.sku ?? t.lasyncro_variant_id.slice(0, 8)}
-                    </Text>
-                    <Text style={styles.sku}>{t.sku}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-                    <Text style={styles.qty}>{t.quantity} units</Text>
+            <ScrollView contentContainerStyle={styles.list}>
+              {tasks.map((t) => (
+                <Card key={t.stow_task_id} style={styles.taskCard}>
+                  <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.taskTitle} numberOfLines={1}>
+                        {t.variant_title ?? t.sku ?? t.stow_task_id.slice(0, 8)}
+                      </Text>
+                      <Text style={styles.taskMeta}>{t.quantity} units</Text>
+                    </View>
                     {t.location_code
                       ? <Badge label={t.location_code} variant="success" />
                       : <Badge label="No location" variant="warning" />
                     }
-                  </View>
-                </Row>
-              </Card>
-            ))}
-
+                  </Row>
+                </Card>
+              ))}
+            </ScrollView>
             <View style={styles.footer}>
               <Button
                 label="Start stowing"
-                onPress={() => setScreenPhase('stowing')}
+                onPress={() => setScreenPhase('location_scan')}
                 variant="primary"
               />
             </View>
@@ -304,377 +373,394 @@ export default function StowScreen() {
     );
   }
 
-  // ── COMPLETE SCREEN ───────────────────────────────────────────────────────
+  // ── COMPLETE ──────────────────────────────────────────────────────────────
   if (screenPhase === 'complete') {
     return (
       <Screen>
+        <AppHeader showLogo />
         <View style={styles.center}>
           <Text style={styles.completeIcon}>✓</Text>
           <Text style={styles.completeTitle}>Stow complete</Text>
-          <Text style={styles.completeSubtitle}>
-            {tasks.length} task{tasks.length !== 1 ? 's' : ''} completed.{'\n'}
-            Inventory has been updated.
+          <Text style={styles.completeSub}>
+            {tasks.length} SKU{tasks.length !== 1 ? 's' : ''} stowed.{'\n'}
+            Inventory updated.
           </Text>
-          <Button
-            label="Done"
-            onPress={() => navigation.goBack()}
-            variant="primary"
-            style={styles.doneBtn}
-          />
+          <TouchableOpacity style={styles.completeBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.completeBtnText}>Back to tasks</Text>
+          </TouchableOpacity>
         </View>
       </Screen>
     );
   }
 
-  // ── STOW SCREEN (per task) ────────────────────────────────────────────────
   if (!currentTask) return null;
 
-  const overlayColor = scanOk === true
-    ? colors.success
-    : scanOk === false
-    ? colors.error
-    : 'transparent';
-
-  return (
-    <View style={styles.root}>
-      {/* CAMERA */}
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing="back"
-        onBarcodeScanned={!cooldown && !submitting && !scannedProduct ? handleScan : undefined}
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'code39', 'upc_a', 'upc_e'],
-        }}
-      />
-
-      {/* OVERLAY */}
-      {scanOk !== null && (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: `${overlayColor}22` }]} />
-      )}
-
-      {/* ── SECTION 1: LOCATION ── */}
-      <View style={styles.topBar}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => setScreenPhase('summary')}>
-            <Text style={styles.backText}>‹ Summary</Text>
-          </TouchableOpacity>
-          <Badge
-            label={`${currentIndex + 1} / ${tasks.length}`}
-            variant="info"
-          />
-        </Row>
-
-        {/* Location section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>① Location</Text>
-          {scannedLocation ? (
-            <Row style={styles.sectionValue}>
-              <Text style={styles.sectionValueText}>✓ {scannedLocation}</Text>
-            </Row>
-          ) : currentTask.location_code ? (
-            <Text style={styles.sectionHint}>
-              Scan location barcode — target: {currentTask.location_code}
-            </Text>
-          ) : (
-            <Text style={styles.sectionHint}>Scan any available bin location</Text>
-          )}
-        </View>
-
-        {/* Product section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>② Product</Text>
-          {scannedProduct ? (
-            <Text style={styles.sectionValueText}>✓ Barcode confirmed</Text>
-          ) : scannedLocation ? (
-            <Text style={styles.sectionHint}>
-              Scan product barcode
-            </Text>
-          ) : (
-            <Text style={styles.sectionHintDisabled}>Waiting for location scan…</Text>
-          )}
-        </View>
-      </View>
-
-      {/* ── SECTION 2: PRODUCT ── */}
-      <View style={styles.productBar}>
-        <Text style={styles.productTitle} numberOfLines={1}>
-          {currentTask.variant_title ?? currentTask.sku ?? '—'}
-        </Text>
-        {currentTask.sku && (
-          <Text style={styles.productSku}>{currentTask.sku}</Text>
-        )}
-        <Text style={styles.productQty}>{currentTask.quantity} units to stow</Text>
-      </View>
-
-      {/* Viewfinder */}
-      <View style={styles.viewfinderContainer}>
-        <View style={[
-          styles.viewfinder,
-          scanOk === true && { borderColor: colors.success },
-          scanOk === false && { borderColor: colors.error },
-        ]}>
-          <View style={[styles.corner, styles.cornerTL]} />
-          <View style={[styles.corner, styles.cornerTR]} />
-          <View style={[styles.corner, styles.cornerBL]} />
-          <View style={[styles.corner, styles.cornerBR]} />
-        </View>
-        {scanFeedback ? (
-          <Text style={[
-            styles.feedbackText,
-            scanOk === true ? styles.feedbackSuccess : styles.feedbackError,
-          ]}>
-            {scanFeedback}
-          </Text>
-        ) : (
-          <Text style={styles.instructionText}>
-            {scanPhase === 'location' ? 'Scan location barcode' : 'Scan product barcode'}
-          </Text>
-        )}
-      </View>
-
-      {/* ── SECTION 3: ACTIONS ── */}
-      <View style={styles.bottomBar}>
-        {scannedProduct && (
-          <View style={styles.confirmBox}>
-            <Text style={styles.confirmText}>
-              {currentTask.variant_title ?? currentTask.sku} → {scannedLocation}
-            </Text>
-            <Text style={styles.confirmSubtext}>{currentTask.quantity} units</Text>
-          </View>
-        )}
-
-        {scannedProduct && (
-          <Button
-            label={submitting ? 'Confirming…' : 'Confirm stow'}
-            onPress={() => void confirmStow()}
-            variant="primary"
-          />
-        )}
-
-        <Button
-          label="Report exception"
-          onPress={() => setShowException(true)}
-          variant="ghost"
+  // ── LOCATION SCAN ─────────────────────────────────────────────────────────
+  if (screenPhase === 'location_scan') {
+    return (
+      <Screen>
+        <AppHeader
+          title={`Stow · ${currentIndex + 1}/${tasks.length}`}
+          rightAction={{ icon: 'close-outline', onPress: () => setScreenPhase('summary') }}
         />
-
-        <Button
-          label="Back to summary"
-          onPress={() => {
-            setScreenPhase('summary');
-            setScanPhase('location');
-            setScannedLocation(null);
-            setScannedProduct(null);
-            setScanFeedback(null);
-            setScanOk(null);
+        <WorkflowStep
+          scanType="location"
+          context={{
+            label: 'Stowing',
+            value: currentTask.variant_title ?? currentTask.sku ?? '—',
+            sublabel: `${remainingQty} of ${currentTask.quantity} units remaining`,
           }}
-          variant="ghost"
+          item={{
+            title: 'Scan the bin barcode',
+            sku: 'Point camera at location barcode or type location code',
+            quantity: remainingQty,
+            currentIndex: currentIndex + 1,
+            totalCount: tasks.length,
+          }}
+          exceptions={STOW_EXCEPTIONS}
+          onConfirm={handleLocationScan}
+          onException={handleException}
+          confirmLabel="Confirm location"
+          isSubmitting={submitting}
         />
-      </View>
+      </Screen>
+    );
+  }
 
-      {/* EXCEPTION SHEET */}
-      {showException && (
-        <View style={styles.exceptionSheet}>
-          <Text style={styles.exceptionTitle}>Report exception</Text>
-          {EXCEPTION_TYPES.map(({ type, label }) => (
+  // ── PRODUCT SCAN ──────────────────────────────────────────────────────────
+  if (screenPhase === 'product_scan') {
+    return (
+      <Screen>
+        <AppHeader
+          title={`Stow · ${currentIndex + 1}/${tasks.length}`}
+          rightAction={{ icon: 'close-outline', onPress: () => setScreenPhase('summary') }}
+        />
+        <WorkflowStep
+          scanType="product"
+          context={{
+            label: 'Location confirmed',
+            value: confirmedLocation ?? currentTask.location_code ?? '—',
+            sublabel: 'Now scan the product barcode',
+          }}
+          item={{
+            title: currentTask.variant_title ?? currentTask.sku ?? '—',
+            sku: currentTask.sku,
+            quantity: remainingQty,
+            currentIndex: currentIndex + 1,
+            totalCount: tasks.length,
+          }}
+          exceptions={STOW_EXCEPTIONS}
+          onConfirm={handleProductScan}
+          onException={handleException}
+          confirmLabel="Confirm product"
+          isSubmitting={submitting}
+        />
+      </Screen>
+    );
+  }
+
+ // ── QTY CONFIRM ───────────────────────────────────────────────────────────
+  if (screenPhase === 'qty_confirm') {
+    return (
+      <Screen>
+        <AppHeader
+          title={`Stow · ${currentIndex + 1}/${tasks.length}`}
+          rightAction={{ icon: 'close-outline', onPress: () => setScreenPhase('summary') }}
+        />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
+          {/* Step banner */}
+          <View style={[styles.stepBanner, { borderLeftColor: colors.success }]}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={colors.success} />
+            <Text style={[styles.stepBannerText, { color: colors.success }]}>
+              CONFIRM QUANTITY
+            </Text>
+          </View>
+
+          {/* Context */}
+          <View style={styles.qtySection}>
+            <Text style={styles.qtySectionLabel}>Location</Text>
+            <Text style={styles.qtySectionValue}>{confirmedLocation}</Text>
+          </View>
+          <Divider />
+          <View style={styles.qtySection}>
+            <Text style={styles.qtySectionLabel}>Product</Text>
+            <Text style={styles.qtySectionValue}>
+              {currentTask.variant_title ?? currentTask.sku ?? '—'}
+            </Text>
+            {currentTask.sku && (
+              <Text style={styles.qtySectionSub}>{currentTask.sku}</Text>
+            )}
+          </View>
+          <Divider />
+
+          {/* Qty input */}
+          <View style={styles.qtyInputSection}>
+            <Text style={styles.qtyQuestion}>
+              How many units are you placing here?
+            </Text>
+            <Row style={styles.qtyRow}>
+              <TextInput
+                style={styles.qtyInput}
+                keyboardType="number-pad"
+                value={qtyInput}
+                onChangeText={setQtyInput}
+                placeholder={`/ ${remainingQty}`}
+                placeholderTextColor={colors.ink4}
+                maxLength={4}
+                autoFocus
+              />
+              <Text style={styles.qtyRemaining}>of {remainingQty}</Text>
+            </Row>
+            {remainingQty < currentTask.quantity && (
+              <Text style={styles.partialNote}>
+                Partial stow — {currentTask.quantity - remainingQty} units already placed
+              </Text>
+            )}
+          </View>
+
+          {/* Buttons inline — not absolute, moves with keyboard */}
+          <View style={styles.qtyActions}>
             <Button
-              key={type}
-              label={label}
-              onPress={() => void reportException(type)}
-              variant="ghost"
+              label={submitting ? 'Confirming…' : 'Confirm stow'}
+              onPress={() => void handleQtyConfirm()}
+              variant="primary"
             />
-          ))}
-          <Button
-            label="Cancel"
-            onPress={() => setShowException(false)}
-            variant="ghost"
-            style={{ marginTop: spacing.xs }}
+            <Button
+              label="Back to product scan"
+              onPress={() => setScreenPhase('product_scan')}
+              variant="ghost"
+              style={{ marginTop: spacing.sm }}
+            />
+          </View>
+        </KeyboardAvoidingView>
+
+        {/* Shortfall modal */}
+        <Modal
+          visible={!!shortfallModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShortfallModal(null)}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShortfallModal(null)}
           />
-        </View>
-      )}
-    </View>
-  );
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'position' : 'height'}
+          >
+            <View style={styles.modalSheet}>
+              <View style={styles.sheetHandle} />
+              {shortfallModal && (
+                <>
+                  <Text style={styles.modalTitle}>
+                    {shortfallModal.shortfall} unit{shortfallModal.shortfall > 1 ? 's' : ''} unaccounted
+                  </Text>
+                  <Text style={styles.modalSubtitle}>
+                    {shortfallModal.reportedExceptions.length > 0
+                      ? `${shortfallModal.reportedExceptions.reduce((s, e) => s + e.qty, 0)} explained. What about the rest?`
+                      : `You placed ${shortfallModal.qty} of ${remainingQty}. What happened to the rest?`
+                    }
+                  </Text>
+
+                  {/* Already reported */}
+                  {shortfallModal.reportedExceptions.map((ex, i) => (
+                    <View key={i} style={styles.reportedEx}>
+                      <Text style={styles.reportedExText}>
+                        ✓ {ex.qty} × {ex.type} → {ex.probLabel}
+                      </Text>
+                    </View>
+                  ))}
+
+                  {/* Exception type grid */}
+                  <View style={styles.exceptionGrid}>
+                    {STOW_EXCEPTIONS.map(({ type, label, icon }) => (
+                      <TouchableOpacity
+                        key={type}
+                        style={[
+                          styles.exceptionGridItem,
+                          selectedExType === type && styles.exceptionGridItemSelected,
+                        ]}
+                        onPress={() => setSelectedExType(type)}
+                      >
+                        <Ionicons
+                          name={icon as any}
+                          size={22}
+                          color={selectedExType === type ? colors.accent : colors.ink3}
+                        />
+                        <Text style={[
+                          styles.exceptionGridLabel,
+                          selectedExType === type && styles.exceptionGridLabelSelected,
+                        ]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Qty */}
+                  <View style={styles.exQtyRow}>
+                    <Text style={styles.exQtyLabel}>
+                      How many? (max {shortfallModal.shortfall})
+                    </Text>
+                    <TextInput
+                      style={styles.exQtyInput}
+                      keyboardType="number-pad"
+                      value={exQtyInput}
+                      onChangeText={setExQtyInput}
+                      placeholder={String(shortfallModal.shortfall)}
+                      placeholderTextColor={colors.ink4}
+                      maxLength={3}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.modalConfirm, (!selectedExType || submitting) && styles.modalConfirmDisabled]}
+                    onPress={() => void handleShortfallConfirm()}
+                    disabled={!selectedExType || submitting}
+                  >
+                    <Text style={styles.modalConfirmText}>
+                      {submitting ? 'Processing…' : 'Report & continue'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.miscountBtn}
+                    onPress={() => { setShortfallModal(null); void submitStow(remainingQty); }}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="refresh-outline" size={16} color={colors.ink3} />
+                    <Text style={styles.miscountText}>
+                      I miscounted — all {remainingQty} are here
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      </Screen>
+    );
+  }
+
+  return null;
 }
 
-const VIEWFINDER_SIZE = 220;
-const CORNER_SIZE = 22;
-const CORNER_THICKNESS = 3;
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  topBar: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    paddingTop: 56,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    backgroundColor: colors.cameraBg,
-    gap: spacing.sm,
-  },
-  backText: { color: colors.accent, fontSize: font.size.md },
-  section: { gap: 2 },
-  sectionLabel: {
-    color: colors.ink3,
-    fontSize: font.size.xs ?? 11,
-    fontWeight: font.weight.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  sectionValue: { alignItems: 'center', gap: spacing.xs },
-  sectionValueText: {
-    color: colors.success,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-  },
-  sectionHint: { color: colors.ink2, fontSize: font.size.sm },
-  sectionHintDisabled: { color: colors.ink4, fontSize: font.size.sm },
-  productBar: {
-    position: 'absolute',
-    bottom: 200,
-    left: spacing.lg,
-    right: spacing.lg,
-    backgroundColor: colors.cameraBgCard,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  productTitle: {
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-  },
-  productSku: { color: colors.ink3, fontSize: font.size.sm },
-  productQty: { color: colors.accent, fontSize: font.size.sm },
-  viewfinderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  viewfinder: {
-    width: VIEWFINDER_SIZE,
-    height: VIEWFINDER_SIZE,
-    position: 'relative',
-    borderColor: colors.accent,
-  },
-  corner: {
-    position: 'absolute',
-    width: CORNER_SIZE,
-    height: CORNER_SIZE,
-    borderColor: 'inherit',
-    borderWidth: CORNER_THICKNESS,
-  },
-  cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
-  cornerTR: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
-  cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
-  cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
-  feedbackText: {
-    marginTop: spacing.lg,
-    fontSize: font.size.lg,
-    fontWeight: font.weight.bold,
-  },
-  feedbackSuccess: { color: colors.success },
-  feedbackError: { color: colors.error },
-  instructionText: {
-    marginTop: spacing.lg,
-    color: colors.cameraHint,
-    fontSize: font.size.sm,
-  },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    backgroundColor: colors.cameraBgDark,
-    gap: spacing.sm,
-  },
-  confirmBox: {
-    backgroundColor: colors.bg3,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  confirmText: {
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-  },
-  confirmSubtext: { color: colors.ink3, fontSize: font.size.sm },
-  exceptionSheet: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: colors.bg2,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
-    gap: spacing.sm,
-  },
-  exceptionTitle: {
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-    marginBottom: spacing.xs,
-  },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    color: colors.ink,
-    fontSize: font.size.xl,
-    fontWeight: font.weight.bold,
-  },
-  summary: {
-    justifyContent: 'space-around',
-    paddingVertical: spacing.md,
-  },
+  summaryRow: { justifyContent: 'space-around', paddingVertical: spacing.md },
   summaryItem: { alignItems: 'center', gap: spacing.xs },
-  summaryValue: {
-    color: colors.accent,
-    fontSize: font.size.lg,
-    fontWeight: font.weight.bold,
-  },
-  summaryLabel: { color: colors.ink3, fontSize: font.size.xs ?? 11 },
-  previewCard: { marginHorizontal: spacing.md, marginBottom: spacing.sm },
-  variantTitle: {
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-  },
-  sku: { color: colors.ink3, fontSize: font.size.sm },
-  qty: { color: colors.ink2, fontSize: font.size.sm },
+  summaryValue: { color: colors.accent, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  summaryLabel: { color: colors.ink3, fontSize: font.size.xs },
+  list: { padding: spacing.md, paddingBottom: 120, gap: spacing.sm },
+  taskCard: { gap: spacing.xs },
+  taskTitle: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold },
+  taskMeta: { color: colors.ink3, fontSize: font.size.sm },
   footer: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    backgroundColor: colors.bg,
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    padding: spacing.lg, paddingBottom: spacing.xl,
+    backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.rule,
   },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
   errorText: { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
   emptyText: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center' },
-  retryBtn: { marginTop: spacing.md },
-  completeIcon: { fontSize: 64, marginBottom: spacing.md },
-  completeTitle: {
-    color: colors.ink,
-    fontSize: font.size.xl,
-    fontWeight: font.weight.bold,
-    marginBottom: spacing.sm,
+  backLink: { marginTop: spacing.lg, padding: spacing.md },
+  backLinkText: { color: colors.ink3, fontSize: font.size.sm },
+  completeIcon: { fontSize: 64, color: colors.success, marginBottom: spacing.md },
+  completeTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+  completeSub: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
+  completeBtn: {
+    backgroundColor: colors.accent, borderRadius: 12,
+    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    width: '100%', alignItems: 'center',
   },
-  completeSubtitle: {
-    color: colors.ink3,
-    fontSize: font.size.md,
+  completeBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  // Step banner
+  stepBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    borderLeftWidth: 3, backgroundColor: colors.bg2,
+  },
+  stepBannerText: {
+    fontSize: font.size.sm, fontWeight: font.weight.bold,
+    letterSpacing: 1, textTransform: 'uppercase',
+  },
+  // Qty confirm
+  qtySection: { padding: spacing.lg, gap: spacing.xs },
+  qtySectionLabel: {
+    color: colors.ink3, fontSize: font.size.xs,
+    fontWeight: font.weight.semibold, textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+  qtySectionValue: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  qtySectionSub: { color: colors.ink3, fontSize: font.size.sm },
+  qtyInputSection: { padding: spacing.lg, gap: spacing.md },
+  qtyQuestion: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
+  qtyRow: { alignItems: 'center', gap: spacing.md },
+  qtyInput: {
+    flex: 1, backgroundColor: colors.bg3, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.rule2,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    color: colors.ink, fontSize: font.size.xxl, fontWeight: font.weight.bold,
     textAlign: 'center',
-    lineHeight: 22,
   },
-  doneBtn: { marginTop: spacing.xl, width: '100%' },
+  qtyRemaining: { color: colors.ink3, fontSize: font.size.md },
+  partialNote: { color: colors.info, fontSize: font.size.sm },
+  qtyActions: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.rule,
+    backgroundColor: colors.bg,
+    marginTop: 'auto',
+  },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalSheet: {
+    backgroundColor: colors.bg2, borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl, padding: spacing.lg,
+    paddingBottom: spacing.xxl, gap: spacing.md,
+  },
+  sheetHandle: {
+    width: 40, height: 4, backgroundColor: colors.ink4,
+    borderRadius: 2, alignSelf: 'center', marginBottom: spacing.xs,
+  },
+  modalTitle: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  modalSubtitle: { color: colors.ink3, fontSize: font.size.sm, lineHeight: 18 },
+  reportedEx: {
+    backgroundColor: colors.successGhost, borderRadius: radius.sm,
+    padding: spacing.sm, borderWidth: 1, borderColor: colors.successBorder,
+  },
+  reportedExText: { color: colors.success, fontSize: font.size.sm },
+  exceptionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  exceptionGridItem: {
+    width: '30%', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: spacing.md, borderRadius: radius.md,
+    backgroundColor: colors.bg3, borderWidth: 1, borderColor: colors.rule,
+    gap: spacing.xs,
+  },
+  exceptionGridItemSelected: { borderColor: colors.accent, backgroundColor: colors.accentGhost },
+  exceptionGridLabel: { color: colors.ink3, fontSize: font.size.xs, textAlign: 'center' },
+  exceptionGridLabelSelected: { color: colors.accent, fontWeight: font.weight.semibold },
+  exQtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  exQtyLabel: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
+  exQtyInput: {
+    backgroundColor: colors.bg3, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.rule2,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold,
+    textAlign: 'center', width: 80,
+  },
+  modalConfirm: {
+    backgroundColor: colors.accent, borderRadius: radius.md,
+    paddingVertical: spacing.md, alignItems: 'center',
+  },
+  modalConfirmDisabled: { backgroundColor: colors.bg3 },
+  modalConfirmText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  miscountBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.xs, paddingVertical: spacing.md,
+  },
+  miscountText: { color: colors.ink3, fontSize: font.size.sm },
 });

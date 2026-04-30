@@ -2,7 +2,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Vibration, ActivityIndicator,
+  TouchableOpacity, Vibration, ActivityIndicator, TextInput,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,6 +63,8 @@ export default function ScannerScreen() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualValue, setManualValue] = useState('');
 
   useEffect(() => {
     if (!permission?.granted) void requestPermission();
@@ -362,6 +365,57 @@ export default function ScannerScreen() {
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
+
+      {/* Manual entry */}
+      {manualMode ? (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'position' : 'height'}
+          keyboardVerticalOffset={0}
+          style={styles.manualSheetWrapper}
+        >
+        <View style={styles.manualSheet}>
+          <Text style={styles.manualLabel}>Enter barcode manually</Text>
+          <TextInput
+            style={styles.manualInput}
+            value={manualValue}
+            onChangeText={setManualValue}
+            placeholder="SKU, barcode, location or order ID"
+            placeholderTextColor={colors.ink4}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus
+          />
+          <View style={styles.manualBtns}>
+            <TouchableOpacity
+              style={styles.manualSubmit}
+              onPress={() => {
+                if (manualValue.trim()) {
+                  setManualMode(false);
+                  void handleScan({ data: manualValue.trim() });
+                  setManualValue('');
+                }
+              }}
+            >
+              <Text style={styles.manualSubmitText}>Search</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.manualCancel}
+              onPress={() => { setManualMode(false); setManualValue(''); }}
+            >
+              <Text style={styles.manualCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+       </KeyboardAvoidingView>
+      ) : (
+        <TouchableOpacity
+          style={styles.manualTrigger}
+          onPress={() => setManualMode(true)}
+        >
+          <Ionicons name="create-outline" size={18} color={colors.ink3} />
+          <Text style={styles.manualTriggerText}>Enter manually</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -450,4 +504,82 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
   },
   permBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  manualTrigger: {
+    position: 'absolute',
+    bottom: spacing.xxl + spacing.lg,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    padding: spacing.md,
+    backgroundColor: colors.cameraBg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.rule,
+  },
+  manualTriggerText: {
+    color: colors.ink3,
+    fontSize: font.size.sm,
+  },
+  manualSheet: {
+    backgroundColor: colors.bg2,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+    borderTopWidth: 1,
+    borderTopColor: colors.rule,
+    gap: spacing.md,
+  },
+  manualLabel: {
+    color: colors.ink3,
+    fontSize: font.size.sm,
+    fontWeight: font.weight.medium,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  manualInput: {
+    backgroundColor: colors.bg3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.rule2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    color: colors.ink,
+    fontSize: font.size.md,
+    fontWeight: font.weight.medium,
+  },
+  manualBtns: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  manualSubmit: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  manualSubmitText: {
+    color: colors.bg,
+    fontSize: font.size.md,
+    fontWeight: font.weight.bold,
+  },
+  manualCancel: {
+    flex: 1,
+    backgroundColor: colors.bg3,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.rule,
+  },
+  manualCancelText: {
+    color: colors.ink3,
+    fontSize: font.size.md,
+  },
+  manualSheetWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
 });

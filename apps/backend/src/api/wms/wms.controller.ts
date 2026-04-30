@@ -195,10 +195,13 @@ export const httpClaimBatch = async (req: Request, res: Response) => {
         throw new Error('BATCH_NOT_FOUND');
       }
 
+      if (batch.status === 'picking' && batch.picked_by === userId) {
+        // Operator re-claiming their own batch — allow through
+        return;
+      }
       if (batch.status !== 'pending') {
         throw new Error(`BATCH_NOT_CLAIMABLE:${batch.status}`);
       }
-
       if (batch.picked_by !== null) {
         throw new Error('BATCH_ALREADY_CLAIMED');
       }
@@ -872,6 +875,8 @@ export const httpClaimStowTask = async (req: Request, res: Response) => {
 // POST /api/v1/wms/stow-tasks/:taskId/confirm
 // ─────────────────────────────────────────
 export const httpConfirmStow = async (req: Request, res: Response) => {
+  const { quantity_placed } = req.body ?? {};
+
   const shopId = req.user?.shopId;
   const userId = req.user?.userId;
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -887,6 +892,9 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         stowTaskId: taskId,
         shopId,
         claimedBy: userId,
+        quantityPlaced: typeof quantity_placed === 'number' && quantity_placed > 0
+          ? quantity_placed
+          : undefined,
       });
       // Auto-resolve stow alert
       await fireStowTaskAlert(trx, {
@@ -904,23 +912,27 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         .first();
 
       if (task?.lasyncro_variant_id) {
-        await rebuildInventoryProjectionForVariants(
+        // NOTE: intentionally NOT rebuilding inventory projection after stow confirm.
+        // Stow confirm is a location transfer only — inventory_truth is updated directly
+        // by confirmStow. Rebuilding from movements would erase the location transfer
+        // since no new movement is written on stow (per inventory contract INV-02).
+      /*  await rebuildInventoryProjectionForVariants(
           shopId,
           [task.lasyncro_variant_id],
           trx,
           new Date()
-        );
+        ); */
 
         // CASCADE: Enqueue reconciliation for orders constrained on this variant.
         // Constraint engine will re-evaluate inventory block and release if stock now sufficient.
         const constrainedOrders = await trx('order_constraints as oc')
           .join('orders as o', 'oc.lasyncro_order_id', 'o.lasyncro_order_id')
           .where({
-            'oc.shop_id': shopId,
             'oc.constraint_type': 'inventory',
             'oc.is_active': true,
             'oc.block_type': 'oversell',
           })
+          .where('o.shop_id', shopId)
           .where('oc.target_id', task.lasyncro_variant_id)
           .select('o.lasyncro_order_id', 'o.aggregate_version');
 
@@ -942,11 +954,7 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
             variantId: task.lasyncro_variant_id,
             ordersQueued: constrainedOrders.length,
           });
-          // CASCADE NOTE: Cash flow projection (computeCashFlowProjection) is live-computed
-          // from inventory_truth × variants.unit_cost. The inventory rebuild above is sufficient
-          // to refresh the 60-day projection on next read — no explicit write required.
-          // Pre-condition: variants.unit_cost must be populated for COGS to appear in projection.
-          
+          // CASCADE NOTE: inventory_truth updated directly by confirmStow — no rebuild needed.
         }
       }
     });
@@ -1626,5 +1634,241 @@ export const httpScanResolve = async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[SCAN_RESOLVE_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Scan resolve failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/problem-center
+// ─────────────────────────────────────────
+export const httpCreateProblemTask = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const {
+    lasyncro_variant_id,
+    quantity,
+    exception_type,
+    source,
+    source_exception_id,
+  } = req.body;
+
+  if (!lasyncro_variant_id || !quantity || !exception_type || !source) {
+    return res.status(400).json({ error: 'lasyncro_variant_id, quantity, exception_type, source required' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Atomically increment prob_label_sequence and return new value
+      const seqResult = await trx.raw(`
+        UPDATE shop_wms_settings
+        SET prob_label_sequence = prob_label_sequence + 1,
+            updated_at = NOW()
+        WHERE shop_id = ?
+        RETURNING prob_label_sequence, problem_bin_location
+      `, [shopId]);
+
+      const seqRow = seqResult.rows[0];
+      const seqNum = seqRow.prob_label_sequence;
+      const probLabel = `PROB-${shopId}-${String(seqNum).padStart(4, '0')}`;
+      const problemBin = seqRow.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+
+      // Create problem center task
+      const [task] = await trx('problem_center_tasks')
+        .insert({
+          shop_id: shopId,
+          status: 'open',
+          source,
+          source_exception_id: source_exception_id ?? null,
+          lasyncro_variant_id,
+          quantity,
+          exception_type,
+          problem_bin_location: problemBin,
+          notes: probLabel,
+        })
+        .returning('*');
+
+      // Generate PROB label print job
+      await trx('barcode_print_jobs')
+        .insert({
+          shop_id: shopId,
+          receive_job_id: null,
+          lasyncro_variant_id,
+          quantity,
+          barcode_value: probLabel,
+          status: 'pending',
+          created_by: userId,
+        });
+
+      return { problem_task_id: task.problem_task_id, prob_label: probLabel, problem_bin: problemBin };
+    });
+
+    return res.status(201).json(result);
+  } catch (err: any) {
+    console.error('[PROBLEM_CENTER_CREATE_FAILED]', { shopId, error: err.message, stack: err.stack });
+    return res.status(500).json({ error: `Failed to create problem task: ${err.message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/problem-center
+// ─────────────────────────────────────────
+export const httpGetProblemTasks = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  const roles = req.user?.roles ?? [];
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const tasks = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      let query = trx('problem_center_tasks as pct')
+        .join('variants as v', 'v.lasyncro_variant_id', 'pct.lasyncro_variant_id')
+        .where('pct.shop_id', shopId)
+        .whereIn('pct.status', ['open', 'investigating'])
+        .orderBy('pct.created_at', 'desc')
+        .select(
+          'pct.problem_task_id',
+          'pct.status',
+          'pct.source',
+          'pct.exception_type',
+          'pct.quantity',
+          'pct.problem_bin_location',
+          'pct.assigned_operator_id',
+          'pct.claimed_by',
+          'pct.notes as prob_label',
+          'pct.created_at',
+          'v.title as variant_title',
+          'v.sku',
+        );
+
+      // Operators see pool + assigned to them only
+      const isOperator = roles.includes('operator') && !roles.includes('owner') && !roles.includes('admin');
+      if (isOperator) {
+        query = query.where(function () {
+          this.whereNull('pct.assigned_operator_id')
+            .orWhere('pct.assigned_operator_id', userId);
+        });
+      }
+
+      return query;
+    });
+
+    return res.json({ problem_tasks: tasks });
+  } catch (err: any) {
+    console.error('[PROBLEM_CENTER_FETCH_FAILED]', { shopId, error: err.message });
+    return res.status(500).json({ error: `Failed to fetch problem tasks: ${err.message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/stow-tasks/:taskId/exception
+// ─────────────────────────────────────────
+export const httpReportStowException = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const taskId = String(req.params.taskId);
+  const { exception_type, quantity, notes } = req.body;
+
+  if (!exception_type || !quantity || typeof quantity !== 'number' || quantity <= 0) {
+    return res.status(400).json({ error: 'exception_type and quantity required' });
+  }
+
+  const VALID_STOW_EXCEPTIONS = ['item_missing', 'product_defect', 'packaging_defect'];
+  if (!VALID_STOW_EXCEPTIONS.includes(exception_type)) {
+    return res.status(400).json({ error: `Invalid exception_type. Must be: ${VALID_STOW_EXCEPTIONS.join(', ')}` });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+      const task = await trx('stow_tasks')
+        .where({ stow_task_id: taskId, shop_id: shopId })
+        .select('lasyncro_variant_id', 'quantity', 'location_code', 'status')
+        .first();
+
+      if (!task) throw new Error('Stow task not found');
+
+      const affectedQty = Math.min(quantity, task.quantity);
+      const movementType = exception_type === 'item_missing' ? 'shrinkage' : 'damage';
+      const locationCode = task.location_code ?? `WH-${shopId}-ROOT`;
+
+      // Write inventory movement (shrinkage or damage)
+      const movementId = crypto.randomUUID();
+      const deviceEventId = crypto.randomUUID();
+
+      await trx('inventory_movements').insert({
+        lasyncro_inventory_movement_id: movementId,
+        lasyncro_variant_id: task.lasyncro_variant_id,
+        shop_id: shopId,
+        movement_type: movementType,
+        quantity_delta: -affectedQty,
+        location_code: locationCode,
+        reference_type: 'stow_task',
+        reference_id: taskId,
+        platform: 'wms',
+        occurred_at: new Date(),
+        device_event_id: deviceEventId,
+      }).onConflict(['device_event_id']).ignore();
+
+      // Decrement inventory_truth
+      await trx('inventory_truth')
+        .where({ shop_id: shopId, lasyncro_variant_id: task.lasyncro_variant_id, location_code: locationCode })
+        .update({
+          on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [affectedQty]),
+          available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [affectedQty]),
+          sellable_quantity: trx.raw('GREATEST(0, sellable_quantity - ?)', [affectedQty]),
+          updated_at: new Date(),
+        });
+
+      // Create problem center task
+      const seqResult = await trx.raw(`
+        UPDATE shop_wms_settings
+        SET prob_label_sequence = prob_label_sequence + 1, updated_at = NOW()
+        WHERE shop_id = ?
+        RETURNING prob_label_sequence, problem_bin_location
+      `, [shopId]);
+
+      const seqRow = seqResult.rows[0];
+      const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
+      const problemBin = seqRow.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+
+      await trx('problem_center_tasks').insert({
+        shop_id: shopId,
+        status: 'open',
+        source: 'stow',
+        source_exception_id: taskId,
+        lasyncro_variant_id: task.lasyncro_variant_id,
+        quantity: affectedQty,
+        exception_type,
+        problem_bin_location: problemBin,
+        notes: probLabel,
+      });
+
+      // Write audit log
+      await writeAuditLog(trx, {
+        shopId,
+        operatorId: userId,
+        actionType: 'stow_exception',
+        entityType: 'stow_task',
+        entityId: taskId,
+        metadata: { exception_type, quantity: affectedQty, movement_type: movementType, prob_label: probLabel },
+      });
+
+      return { prob_label: probLabel, problem_bin: problemBin, movement_type: movementType };
+    });
+
+    console.info('[STOW_EXCEPTION_REPORTED]', { shopId, taskId, exception_type, quantity });
+    return res.status(201).json(result);
+  } catch (err: any) {
+    console.error('[STOW_EXCEPTION_FAILED]', { shopId, taskId, error: err.message });
+    return res.status(500).json({ error: `Stow exception failed: ${err.message}` });
   }
 };

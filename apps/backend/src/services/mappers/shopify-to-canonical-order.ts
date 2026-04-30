@@ -146,7 +146,7 @@ export function mapShopifyOrderNodeToCanonical(
         // 🔑 Identity (explicit, no synthesis)
         variantId: li.variant?.id ?? null,
 
-        title: li.title ?? '',
+        title: li.variant?.title ?? li.title ?? '',
         sku: li.sku ?? li.variant?.sku ?? null,
 
         quantity: li.quantity,

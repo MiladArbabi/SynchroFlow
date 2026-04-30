@@ -212,6 +212,7 @@ export async function seed(knex: Knex): Promise<void> {
       { location_code: `WH-${shop.id}-A02`, barcode: `LOC-A02`, type: 'bin' },
       { location_code: `WH-${shop.id}-B01`, barcode: `LOC-B01`, type: 'bin' },
       { location_code: `WH-${shop.id}-B02`, barcode: `LOC-B02`, type: 'bin' },
+      { location_code: `WH-${shop.id}-PROBLEM`, barcode: `LOC-PROBLEM`, type: 'bin' },
     ];
 
     for (const loc of locationRows) {
@@ -220,7 +221,212 @@ export async function seed(knex: Knex): Promise<void> {
         .onConflict(['shop_id', 'location_code'])
         .ignore();
     }
+
     console.log('[DEV_SEED] ✅ Warehouse locations seeded (ROOT + 4 bins)');
+
+    // Seed problem bin location in WMS settings
+    await trx('shop_wms_settings')
+      .where({ shop_id: shop.id })
+      .update({ problem_bin_location: `WH-${shop.id}-PROBLEM` });
+
+    // ── QA OPERATIONAL DATA ──────────────────────────────────────────────────
+    // Seeds a complete end-to-end flow for QA:
+    // Supplier → PO (shipped) → ready for receive → stow → pick → pack → ship
+
+    // 1. Supplier
+    const [supplier] = await trx('suppliers')
+      .insert({
+        shop_id: shop.id,
+        name: 'QA Test Supplier',
+        contact_email: 'supplier@qa.test',
+        active: true,
+      })
+      .onConflict(['shop_id', 'name'])
+      .merge({ active: true })
+      .returning('*');
+
+    console.log(`[DEV_SEED] QA supplier created (id=${supplier.id})`);
+
+    // 2. Create minimal QA variants for end-to-end flow testing
+    const now = new Date();
+    const qaProductDefs = [
+      { title: 'QA Shirt', sku: 'QA-SHIRT-S', cost: 2500 },
+      { title: 'QA Hoodie', sku: 'QA-HOODIE-M', cost: 3500 },
+      { title: 'QA Cap', sku: 'QA-CAP-OS', cost: 1500 },
+    ];
+
+    // Upsert a QA product
+    let qaProduct = await trx('products')
+      .where({ shop_id: shop.id, title: 'QA Products' })
+      .first();
+    if (!qaProduct) {
+      const [inserted] = await trx('products').insert({
+        shop_id: shop.id,
+        lasyncro_product_id: trx.raw('gen_random_uuid()'),
+        title: 'QA Products',
+        updated_at: now,
+        created_at: now,
+      }).returning('*');
+      qaProduct = inserted;
+    }
+
+    const qaVariants: Array<{ lasyncro_variant_id: string; sku: string; title: string }> = [];
+    for (const def of qaProductDefs) {
+      let variant = await trx('variants').where({ shop_id: shop.id, sku: def.sku }).first();
+      if (!variant) {
+        const [inserted] = await trx('variants').insert({
+          shop_id: shop.id,
+          lasyncro_variant_id: trx.raw('gen_random_uuid()'),
+          lasyncro_product_id: qaProduct.lasyncro_product_id,
+          sku: def.sku,
+          title: def.title,
+          unit_cost: def.cost / 100,
+          updated_at: now,
+          created_at: now,
+        }).returning('*');
+        variant = inserted;
+      }
+      qaVariants.push({
+        lasyncro_variant_id: variant.lasyncro_variant_id,
+        sku: variant.sku,
+        title: variant.title,
+      });
+    }
+
+    console.log(`[DEV_SEED] QA variants created (${qaVariants.length})`);
+
+    if (qaVariants.length === 0) {
+      console.log('[DEV_SEED] ⚠️ QA variants failed — skipping QA PO seed');
+    } else {
+      // 3. Purchase Order (status: shipped — ready to receive)
+      const [po] = await trx('purchase_orders')
+        .insert({
+          shop_id: shop.id,
+          supplier_id: supplier.id,
+          status: 'shipped',
+          expected_delivery_date: new Date().toISOString().split('T')[0],
+          notes: 'QA test PO — full flow seed',
+        })
+        .returning('*');
+
+      console.log(`[DEV_SEED] QA PO created (id=${po.id})`);
+
+      // 4. PO line items — one per variant
+      for (const variant of qaVariants) {
+        await trx('purchase_order_line_items').insert({
+          po_id: po.id,
+          shop_id: shop.id,
+          lasyncro_variant_id: variant.lasyncro_variant_id,
+          description: variant.title ?? variant.sku ?? 'QA Product',
+          quantity_ordered: 10,
+          quantity_received: 0,
+          unit_cost_cents: 2500,
+        });
+      }
+
+      console.log(`[DEV_SEED] QA PO line items created (${qaVariants.length} variants)`);
+
+      // 5. Seed barcodes for variants so scanner can resolve them
+    for (let idx = 0; idx < qaVariants.length; idx++) {
+      const variant = qaVariants[idx];
+      const barcodeValue = variant.sku ?? `QA${variant.lasyncro_variant_id.replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+      await trx('external_product_identity_map')
+        .insert({
+          id: trx.raw('gen_random_uuid()'),
+          lasyncro_variant_id: variant.lasyncro_variant_id,
+          shop_id: shop.id,
+          platform: 'shopify',
+          external_product_id: `100000${idx}`,
+          external_variant_id: `200000${idx}`,
+          external_sku: variant.sku ?? null,
+          barcode: barcodeValue,
+        })
+        .onConflict(['shop_id', 'platform', 'external_product_id', 'external_variant_id'])
+        .ignore();
+    }
+
+    console.log(`[DEV_SEED] QA barcodes registered for ${qaVariants.length} variants`);
+
+    // 6. Seed 3 orders in the pool (pending, no batch, no constraints)
+    for (let i = 0; i < 3; i++) {
+      const variant = qaVariants[i % qaVariants.length];
+
+      const variantRow = await trx('variants')
+        .where({ lasyncro_variant_id: variant.lasyncro_variant_id })
+        .first();
+
+      const [order] = await trx('orders')
+        .insert({
+          shop_id: shop.id,
+          lasyncro_order_id: trx.raw('gen_random_uuid()'),
+          aggregate_version: 1,
+          last_projected_version: 1,
+          payment_state: 'paid',
+          currency: 'USD',
+          total_price: 59.95,
+          subtotal_price: 59.95,
+          total_tax: 0,
+          order_created_at: new Date(),
+          order_updated_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .returning('*');
+
+      // external_order_id must be numeric only
+      await trx('external_order_identity_map')
+        .insert({
+          lasyncro_order_id: order.lasyncro_order_id,
+          shop_id: shop.id,
+          platform: 'shopify',
+          external_order_id: `${900001 + i}`,
+        })
+        .onConflict(['shop_id', 'platform', 'external_order_id'])
+        .ignore();
+
+      await trx('order_line_items')
+        .insert({
+          lasyncro_line_item_id: trx.raw('gen_random_uuid()'),
+          lasyncro_order_id: order.lasyncro_order_id,
+          lasyncro_product_id: variantRow?.lasyncro_product_id,
+          lasyncro_variant_id: variant.lasyncro_variant_id,
+          title: variant.title ?? variant.sku ?? 'QA Product',
+          sku: variant.sku ?? null,
+          quantity: 1,
+          unit_price: 59.95,
+          line_total: 59.95,
+          platform: 'shopify',
+          external_line_item_id: `${800001 + i}`,
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .onConflict(['platform', 'external_line_item_id'])
+        .ignore();
+
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+      await trx('order_fulfillment_status')
+        .insert({
+          lasyncro_fulfillment_id: trx.raw('gen_random_uuid()'),
+          lasyncro_order_id: order.lasyncro_order_id,
+          status: 'pending',
+          status_updated_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .onConflict('lasyncro_order_id')
+        .ignore();
+    }
+
+      console.log('[DEV_SEED] ✅ QA orders seeded (3 orders in pool)');
+      console.log('[DEV_SEED] ✅ QA flow ready:');
+      console.log('[DEV_SEED]    Owner → Dispatch → Receive → create receive job from QA PO');
+      console.log('[DEV_SEED]    Owner → Dispatch → Pick → release batch (3 orders in pool)');
+      console.log('[DEV_SEED]    Operator → claim receive job → inspect → close → barcodes generated');
+      console.log('[DEV_SEED]    Operator → claim stow → scan LOC-A01 → scan product barcode');
+      console.log('[DEV_SEED]    Operator → claim pick batch → scan product barcodes');
+      console.log('[DEV_SEED]    Operator → claim pack → scan items → scan QA-ORD-100x → ship');
+    }
 
   } else {
     console.log('[DEV_SEED] ⚠️ No shop membership created');

@@ -1,15 +1,17 @@
 // apps/mobile/src/screens/ReceiveJobScreen.tsx
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, ActivityIndicator,
-  Alert, TextInput, TouchableOpacity,
+  View, Text, StyleSheet, ActivityIndicator,
+  Alert, ScrollView, TouchableOpacity, TextInput, Modal,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { TaskStackScreenProps, TaskStackParamList } from '../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Screen, Card, Button, Badge, Row, Divider } from '../ui';
+import type { TaskStackScreenProps, TaskStackParamList } from '../navigation/types';
+import { Screen, Card, Button, Badge, Row, Divider, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
+import { Ionicons } from '@expo/vector-icons';
 
 type ReceiveJobLine = {
   receive_job_line_id: string;
@@ -28,25 +30,30 @@ type ReceiveJob = {
   supplier_name: string;
   total_variants: number;
   total_units: number;
-  units_accepted: number;
-  units_rejected: number;
 };
 
-type InspectionEntry = {
-  accepted: string;
-  rejected: string;
-  done: boolean;
+type ExceptionEntry = {
+  exception_type: string;
+  quantity: number;
+  prob_label: string;
 };
+
+type LineState = {
+  input: string;           // what operator typed
+  exceptions: ExceptionEntry[];
+  confirmed: boolean;
+};
+
+type ScreenPhase = 'inspect' | 'summary' | 'closed';
 
 const EXCEPTION_TYPES = [
-  { type: 'defect', label: 'Product defect' },
-  { type: 'packaging_damage', label: 'Packaging damage' },
-  { type: 'wrong_item', label: 'Wrong item' },
-  { type: 'wrong_variant', label: 'Wrong variant' },
-  { type: 'wrong_quantity', label: 'Wrong quantity' },
-  { type: 'barcode_mismatch', label: 'Barcode mismatch' },
-  { type: 'other', label: 'Other' },
-];
+  { type: 'defect', label: 'Damaged', icon: 'hammer-outline' },
+  { type: 'packaging_damage', label: 'Packaging', icon: 'cube-outline' },
+  { type: 'wrong_item', label: 'Wrong item', icon: 'swap-horizontal-outline' },
+  { type: 'wrong_quantity', label: 'Wrong qty', icon: 'calculator-outline' },
+  { type: 'wrong_variant', label: 'Wrong variant', icon: 'git-branch-outline' },
+  { type: 'other', label: 'Other', icon: 'ellipsis-horizontal-outline' },
+] as const;
 
 export default function ReceiveJobScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
@@ -55,16 +62,23 @@ export default function ReceiveJobScreen() {
 
   const [job, setJob] = useState<ReceiveJob | null>(null);
   const [lines, setLines] = useState<ReceiveJobLine[]>([]);
+  const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [screenPhase, setScreenPhase] = useState<ScreenPhase>('inspect');
 
-  // Per-line inspection state: lineId → { accepted, rejected, done }
-  const [inspection, setInspection] = useState<Record<string, InspectionEntry>>({});
-
-  // Exception sheet state
-  const [exceptionLine, setExceptionLine] = useState<ReceiveJobLine | null>(null);
-  const [exceptionNotes, setExceptionNotes] = useState('');
+  // Shortfall modal
+  // Shortfall modal
+  const [shortfallModal, setShortfallModal] = useState<{
+    line: ReceiveJobLine;
+    accepted: number;
+    totalShortfall: number;
+    remainingShortfall: number;
+    reportedExceptions: ExceptionEntry[];
+  } | null>(null);
+  const [selectedExceptionType, setSelectedExceptionType] = useState('');
+  const [exceptionQtyInput, setExceptionQtyInput] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,18 +86,18 @@ export default function ReceiveJobScreen() {
     try {
       const { data } = await apiClient.get(`/api/v1/suppliers/receive-jobs/${task.id}`);
       setJob(data.job);
-      setLines(data.lines ?? []);
+      const fetchedLines: ReceiveJobLine[] = data.lines ?? [];
+      setLines(fetchedLines);
 
-      // Pre-fill inspection state from existing data
-      const init: Record<string, InspectionEntry> = {};
-      for (const line of data.lines ?? []) {
+      const init: Record<string, LineState> = {};
+      for (const line of fetchedLines) {
         init[line.receive_job_line_id] = {
-          accepted: line.inspection_complete ? String(line.quantity_accepted) : String(line.quantity_expected),
-          rejected: line.inspection_complete ? String(line.quantity_rejected) : '0',
-          done: line.inspection_complete,
+          input: line.inspection_complete ? String(line.quantity_accepted) : '',
+          exceptions: [],
+          confirmed: line.inspection_complete,
         };
       }
-      setInspection(init);
+      setLineStates(init);
     } catch {
       setError('Failed to load receive job.');
     } finally {
@@ -93,403 +107,679 @@ export default function ReceiveJobScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const handleInspectLine = useCallback(async (line: ReceiveJobLine) => {
-    const entry = inspection[line.receive_job_line_id];
-    if (!entry) return;
+  // Confirm a line — called after operator types qty and taps Confirm
+  const handleConfirmLine = useCallback(async (line: ReceiveJobLine) => {
+    const state = lineStates[line.receive_job_line_id];
+    const inputVal = state.input.trim();
 
-    const accepted = parseInt(entry.accepted, 10);
-    const rejected = parseInt(entry.rejected, 10);
-
-    if (isNaN(accepted) || isNaN(rejected) || accepted < 0 || rejected < 0) {
-      Alert.alert('Invalid', 'Enter valid quantities.');
+    if (!inputVal) {
+      Alert.alert('Enter quantity', 'How many units are good to go?');
       return;
     }
-    if (accepted + rejected > line.quantity_expected) {
-      Alert.alert('Invalid', `Total cannot exceed expected qty (${line.quantity_expected}).`);
+
+    const accepted = parseInt(inputVal, 10);
+    if (isNaN(accepted) || accepted < 0) {
+      Alert.alert('Invalid', 'Enter a valid number.');
+      return;
+    }
+    if (accepted > line.quantity_expected) {
+      Alert.alert('Too many', `Cannot accept more than expected (${line.quantity_expected}).`);
+      return;
+    }
+
+    const shortfall = line.quantity_expected - accepted;
+
+    if (shortfall > 0) {
+      setShortfallModal({
+        line,
+        accepted,
+        totalShortfall: shortfall,
+        remainingShortfall: shortfall,
+        reportedExceptions: [],
+      });
+      setSelectedExceptionType('');
+      setExceptionQtyInput(String(shortfall));
+      return;
+    }
+
+    // All good — confirm directly
+    await submitLineInspection(line, accepted, 0, null);
+  }, [lineStates]);
+
+  // Submit line inspection to backend
+  const submitLineInspection = useCallback(async (
+    line: ReceiveJobLine,
+    accepted: number,
+    shortfall: number,
+    exceptionType: string | null,
+    preReportedExceptions?: ExceptionEntry[],
+  ) => {
+    setSubmitting(true);
+    try {
+      let exceptions: ExceptionEntry[] = preReportedExceptions ?? [];
+
+      // Single exception path (direct confirm with one type)
+      if (shortfall > 0 && exceptionType && !preReportedExceptions) {
+        await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
+          lasyncro_variant_id: line.lasyncro_variant_id,
+          receive_job_line_id: line.receive_job_line_id,
+          exception_type: exceptionType,
+          quantity_affected: shortfall,
+          notes: `${shortfall} unit${shortfall > 1 ? 's' : ''} unaccounted during receive`,
+        });
+        const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
+          lasyncro_variant_id: line.lasyncro_variant_id,
+          quantity: shortfall,
+          exception_type: exceptionType,
+          source: 'receive',
+        });
+        exceptions = [{ exception_type: exceptionType, quantity: shortfall, prob_label: probData.prob_label }];
+      }
+
+      // Inspect line
+      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/inspect`, {
+        lasyncro_variant_id: line.lasyncro_variant_id,
+        quantity_accepted: accepted,
+        quantity_rejected: shortfall,
+      });
+
+      // Update local state
+      setLineStates(prev => ({
+        ...prev,
+        [line.receive_job_line_id]: {
+          ...prev[line.receive_job_line_id],
+          confirmed: true,
+          input: String(accepted),
+          exceptions,
+        },
+      }));
+
+      setLines(prev => prev.map(l =>
+        l.receive_job_line_id === line.receive_job_line_id
+          ? { ...l, inspection_complete: true, quantity_accepted: accepted, quantity_rejected: shortfall }
+          : l
+      ));
+
+      setShortfallModal(null);
+      setSelectedExceptionType('');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error ?? 'Failed to confirm.';
+      Alert.alert('Error', msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [task.id]);
+
+  // Handle shortfall modal confirm
+  const handleShortfallConfirm = useCallback(async () => {
+    if (!shortfallModal || !selectedExceptionType) return;
+
+    const qty = parseInt(exceptionQtyInput, 10);
+    if (isNaN(qty) || qty <= 0 || qty > shortfallModal.remainingShortfall) {
+      Alert.alert('Invalid', `Enter between 1 and ${shortfallModal.remainingShortfall}.`);
       return;
     }
 
     setSubmitting(true);
     try {
-      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/inspect`, {
-        lasyncro_variant_id: line.lasyncro_variant_id,
-        quantity_accepted: accepted,
-        quantity_rejected: rejected,
+      // Report this exception
+      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
+        lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
+        receive_job_line_id: shortfallModal.line.receive_job_line_id,
+        exception_type: selectedExceptionType,
+        quantity_affected: qty,
+        notes: `${qty} unit${qty > 1 ? 's' : ''} unaccounted during receive`,
       });
-      setInspection((prev) => ({
-        ...prev,
-        [line.receive_job_line_id]: { ...entry, done: true },
-      }));
-      setLines((prev) =>
-        prev.map((l) =>
-          l.receive_job_line_id === line.receive_job_line_id
-            ? { ...l, inspection_complete: true, quantity_accepted: accepted, quantity_rejected: rejected }
-            : l
-        )
-      );
+
+      const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
+        lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
+        quantity: qty,
+        exception_type: selectedExceptionType,
+        source: 'receive',
+      });
+
+      const probLabel = probData.prob_label ?? 'PROB-?';
+      const newException: ExceptionEntry = {
+        exception_type: selectedExceptionType,
+        quantity: qty,
+        prob_label: probLabel,
+      };
+
+      const newRemaining = shortfallModal.remainingShortfall - qty;
+      const newReported = [...shortfallModal.reportedExceptions, newException];
+
+      if (newRemaining > 0) {
+        // Still unaccounted — update modal for next exception
+        setShortfallModal(prev => prev ? {
+          ...prev,
+          remainingShortfall: newRemaining,
+          reportedExceptions: newReported,
+        } : null);
+        setSelectedExceptionType('');
+        setExceptionQtyInput('');  // empty — operator must type
+      } else {
+        // All accounted — submit inspection
+        await submitLineInspection(
+          shortfallModal.line,
+          shortfallModal.accepted,
+          shortfallModal.totalShortfall,
+          null, // exceptions already reported individually
+          newReported,
+        );
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error ?? 'Inspection failed.';
+        ?.response?.data?.error ?? 'Failed.';
       Alert.alert('Error', msg);
     } finally {
       setSubmitting(false);
     }
-  }, [inspection, task.id]);
+  }, [shortfallModal, selectedExceptionType, exceptionQtyInput, task.id, submitLineInspection]);
 
-  const handleReportException = useCallback(async (
-    line: ReceiveJobLine,
-    exceptionType: string,
-    notes?: string,
-  ) => {
-    try {
-      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
-        lasyncro_variant_id: line.lasyncro_variant_id,
-        receive_job_line_id: line.receive_job_line_id,
-        exception_type: exceptionType,
-        quantity_affected: parseInt(inspection[line.receive_job_line_id]?.rejected ?? '0', 10) || 1,
-        notes: notes || undefined,
-      });
-      setExceptionLine(null);
-      setExceptionNotes('');
-    } catch {
-      Alert.alert('Error', 'Failed to report exception.');
-    }
-  }, [task.id, inspection]);
+  // Miscount — accept all
+  const handleMiscount = useCallback(async () => {
+    if (!shortfallModal) return;
+    const line = shortfallModal.line;
+    setLineStates(prev => ({
+      ...prev,
+      [line.receive_job_line_id]: {
+        ...prev[line.receive_job_line_id],
+        input: String(line.quantity_expected),
+      },
+    }));
+    setShortfallModal(null);
+    await submitLineInspection(line, line.quantity_expected, 0, null);
+  }, [shortfallModal, submitLineInspection]);
 
+  // Close job
   const handleClose = useCallback(async () => {
-    const allDone = lines.every((l) => l.inspection_complete);
-    if (!allDone) {
-      Alert.alert('Incomplete', 'All lines must be inspected before closing.');
-      return;
+    setSubmitting(true);
+    try {
+      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/close`, {});
+      setScreenPhase('closed');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error ?? 'Failed to close job.';
+      Alert.alert('Error', msg);
+    } finally {
+      setSubmitting(false);
     }
+  }, [task.id]);
 
-    Alert.alert(
-      'Close receive job',
-      'This will generate barcodes for all accepted variants and create stow tasks. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Close & generate barcodes',
-          style: 'default',
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/close`, {});
-              Alert.alert(
-                '✓ Receive job closed',
-                'Barcodes are being generated. Print and attach to accepted products before stow.',
-                [{ text: 'Done', onPress: () => navigation.goBack() }]
-              );
-            } catch (err: unknown) {
-              const msg = (err as { response?: { data?: { error?: string } } })
-                ?.response?.data?.error ?? 'Failed to close job.';
-              Alert.alert('Error', msg);
-            } finally {
-              setSubmitting(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [lines, task.id, navigation]);
+  const confirmedCount = lines.filter(l => lineStates[l.receive_job_line_id]?.confirmed).length;
+  const totalExceptions = Object.values(lineStates).reduce((s, ls) => s + ls.exceptions.length, 0);
 
-  const allInspected = lines.every((l) => l.inspection_complete);
-  const inspectedCount = lines.filter((l) => l.inspection_complete).length;
-
-  if (loading) {
+  // ── CLOSED ────────────────────────────────────────────────────────────────
+  if (screenPhase === 'closed') {
     return (
       <Screen>
+        <AppHeader showLogo />
         <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
-      </Screen>
-    );
-  }
-
-  if (error || !job) {
-    return (
-      <Screen>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{error ?? 'Job not found.'}</Text>
-          <Button label="Retry" onPress={load} style={styles.retryBtn} />
-        </View>
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen>
-      {/* HEADER */}
-      <Row style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{job.supplier_name}</Text>
-        <Badge
-          label={`${inspectedCount}/${lines.length}`}
-          variant={allInspected ? 'success' : 'warning'}
-        />
-      </Row>
-
-      <Divider />
-
-      {/* SUMMARY */}
-      <Row style={styles.summary}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{job.total_variants}</Text>
-          <Text style={styles.summaryLabel}>Variants</Text>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{job.total_units}</Text>
-          <Text style={styles.summaryLabel}>Expected</Text>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{job.units_accepted}</Text>
-          <Text style={styles.summaryLabel}>Accepted</Text>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{job.units_rejected}</Text>
-          <Text style={styles.summaryLabel}>Rejected</Text>
-        </View>
-      </Row>
-
-      <Divider />
-
-      {/* LINE ITEMS */}
-      <FlatList
-        data={lines}
-        keyExtractor={(item) => item.receive_job_line_id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item: line }) => {
-          const entry = inspection[line.receive_job_line_id] ?? {
-            accepted: String(line.quantity_expected),
-            rejected: '0',
-            done: false,
-          };
-
-          return (
-            <Card style={line.inspection_complete ? { ...styles.lineCard, ...styles.lineCardDone } : styles.lineCard}>
-              {/* Variant info */}
-              <Row style={styles.lineHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.variantTitle} numberOfLines={1}>
-                    {line.variant_title ?? line.sku ?? line.lasyncro_variant_id.slice(0, 8)}
-                  </Text>
-                  {line.sku && <Text style={styles.sku}>{line.sku}</Text>}
-                </View>
-                {line.inspection_complete ? (
-                  <Badge label="✓ Done" variant="success" />
-                ) : (
-                  <Badge label={`Exp: ${line.quantity_expected}`} variant="info" />
-                )}
-              </Row>
-
-              {/* Inspection inputs */}
-              {!line.inspection_complete && (
-                <>
-                  <Row style={styles.inputRow}>
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Accepted</Text>
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="number-pad"
-                        value={entry.accepted}
-                        onChangeText={(v) =>
-                          setInspection((prev) => ({
-                            ...prev,
-                            [line.receive_job_line_id]: { ...entry, accepted: v },
-                          }))
-                        }
-                      />
-                    </View>
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Rejected</Text>
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="number-pad"
-                        value={entry.rejected}
-                        onChangeText={(v) =>
-                          setInspection((prev) => ({
-                            ...prev,
-                            [line.receive_job_line_id]: { ...entry, rejected: v },
-                          }))
-                        }
-                      />
-                    </View>
-                  </Row>
-
-                  <Row style={styles.lineActions}>
-                    <Button
-                      label="Confirm"
-                      onPress={() => void handleInspectLine(line)}
-                      variant="primary"
-                      style={styles.confirmBtn}
-                    />
-                    <Button
-                      label="Exception"
-                      onPress={() => setExceptionLine(line)}
-                      variant="ghost"
-                      style={styles.exceptionBtn}
-                    />
-                  </Row>
-                </>
-              )}
-
-              {/* Already inspected — allow exception reporting */}
-              {line.inspection_complete && line.quantity_rejected > 0 && (
-                <Button
-                  label="Report exception"
-                  onPress={() => setExceptionLine(line)}
-                  variant="ghost"
-                  style={styles.exceptionBtn}
-                />
-              )}
-            </Card>
-          );
-        }}
-        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
-      />
-
-      {/* CLOSE BUTTON */}
-      <View style={styles.footer}>
-        <Button
-          label={submitting ? 'Processing…' : `Close & generate barcodes (${lines.filter(l => l.inspection_complete).length}/${lines.length})`}
-          onPress={() => void handleClose()}
-          variant="primary"
-        />
-      </View>
-
-      {/* EXCEPTION SHEET */}
-      {exceptionLine && (
-        <View style={styles.exceptionSheet}>
-          <Text style={styles.exceptionTitle}>
-            Exception — {exceptionLine.variant_title ?? exceptionLine.sku}
+          <Text style={styles.completeIcon}>✓</Text>
+          <Text style={styles.completeTitle}>Receive complete</Text>
+          <Text style={styles.completeSub}>
+            Barcodes printed for accepted items.{'\n'}
+            {totalExceptions > 0
+              ? `${totalExceptions} item${totalExceptions > 1 ? 's' : ''} sent to Problem Center.\n`
+              : ''}
+            Stow tasks created — ready to put away.
           </Text>
-          {EXCEPTION_TYPES.map(({ type, label }) => (
-            <Button
-              key={type}
-              label={label}
-              onPress={() => {
-                if (type === 'other' || type === 'barcode_mismatch') {
-                  // Show notes input
-                  Alert.prompt(
-                    label,
-                    'Add notes (required)',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Report',
-                        onPress: (notes: string | undefined) => void handleReportException(exceptionLine, type, notes),
-                      },
-                    ],
-                    'plain-text'
-                  );
-                } else {
-                  void handleReportException(exceptionLine, type);
-                }
-              }}
-              variant="ghost"
-              style={styles.exceptionTypeBtn}
-            />
-          ))}
+          <TouchableOpacity style={styles.completeBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.completeBtnText}>Back to tasks</Text>
+          </TouchableOpacity>
+        </View>
+      </Screen>
+    );
+  }
+
+  // ── SUMMARY ───────────────────────────────────────────────────────────────
+  if (screenPhase === 'summary') {
+    const totalAccepted = lines.reduce((s, l) => s + (l.quantity_accepted || 0), 0);
+    const totalRejected = lines.reduce((s, l) => s + (l.quantity_rejected || 0), 0);
+
+    return (
+      <Screen>
+        <AppHeader showLogo />
+        <View style={styles.summaryHeader}>
+          <Text style={styles.summaryTitle}>Ready to close</Text>
+          <Text style={styles.summarySupplier}>{job?.supplier_name}</Text>
+        </View>
+        <Divider />
+
+        <Row style={styles.summaryStats}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{totalAccepted}</Text>
+            <Text style={styles.statLabel}>Accepted</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, totalRejected > 0 && { color: colors.error }]}>
+              {totalRejected}
+            </Text>
+            <Text style={styles.statLabel}>Rejected</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, totalExceptions > 0 && { color: colors.warning }]}>
+              {totalExceptions}
+            </Text>
+            <Text style={styles.statLabel}>Exceptions</Text>
+          </View>
+        </Row>
+        <Divider />
+
+        <ScrollView contentContainerStyle={styles.summaryList}>
+          {lines.map(line => {
+            const state = lineStates[line.receive_job_line_id];
+            return (
+              <View key={line.receive_job_line_id} style={styles.summaryCard}>
+                <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.summaryVariant} numberOfLines={1}>
+                    {line.variant_title ?? line.sku ?? '—'}
+                  </Text>
+                  <Badge
+                    label={line.quantity_rejected > 0 ? `${line.quantity_accepted}✓ ${line.quantity_rejected}✗` : `${line.quantity_accepted} ✓`}
+                    variant={line.quantity_rejected > 0 ? 'warning' : 'success'}
+                  />
+                </Row>
+                {state?.exceptions.map((ex, i) => (
+                  <Text key={i} style={styles.summaryException}>
+                    ⚠ {ex.prob_label} · {ex.quantity} × {ex.exception_type} → Problem Center
+                  </Text>
+                ))}
+              </View>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.footer}>
           <Button
-            label="Cancel"
-            onPress={() => setExceptionLine(null)}
+            label={submitting ? 'Closing…' : 'Close & generate barcodes'}
+            onPress={() => void handleClose()}
+            variant="primary"
+          />
+          <Button
+            label="Back to inspection"
+            onPress={() => setScreenPhase('inspect')}
             variant="ghost"
-            style={styles.cancelExceptionBtn}
+            style={{ marginTop: spacing.sm }}
           />
         </View>
+      </Screen>
+    );
+  }
+
+  // ── INSPECT ───────────────────────────────────────────────────────────────
+  return (
+    <Screen>
+      <AppHeader showLogo />
+
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
+      ) : error ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Button label="Retry" onPress={load} style={{ marginTop: spacing.md }} />
+        </View>
+      ) : (
+        <>
+          <View style={styles.jobHeader}>
+            <Text style={styles.supplierName}>{job?.supplier_name}</Text>
+            <Badge
+              label={`${confirmedCount}/${lines.length}`}
+              variant={confirmedCount === lines.length ? 'success' : 'info'}
+            />
+          </View>
+          <Divider />
+
+          <ScrollView contentContainerStyle={styles.list}>
+            {lines.map((line, idx) => {
+              const state = lineStates[line.receive_job_line_id];
+              if (!state) return null;
+
+              return (
+                <Card key={line.receive_job_line_id} style={styles.lineCard}>
+                  {/* Line header */}
+                  <Row style={styles.lineHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.variantTitle} numberOfLines={1}>
+                        {line.variant_title ?? line.sku ?? `Item ${idx + 1}`}
+                      </Text>
+                      {line.sku && <Text style={styles.sku}>{line.sku}</Text>}
+                    </View>
+                    {state.confirmed
+                      ? <Badge label="✓ Done" variant="success" />
+                      : <Badge label={`of ${line.quantity_expected}`} variant="info" />
+                    }
+                  </Row>
+
+                  {/* Exception entries */}
+                  {state.exceptions.map((ex, i) => (
+                    <View key={i} style={styles.exceptionEntry}>
+                      <Row style={{ alignItems: 'center', gap: spacing.xs }}>
+                        <Ionicons name="warning-outline" size={14} color={colors.warning} />
+                        <Text style={styles.exceptionEntryText}>
+                          {ex.quantity} × {ex.exception_type}
+                        </Text>
+                        <View style={styles.probLabel}>
+                          <Text style={styles.probLabelText}>{ex.prob_label}</Text>
+                        </View>
+                      </Row>
+                      <Text style={styles.probInstruction}>
+                        Move to problem bin · print label
+                      </Text>
+                    </View>
+                  ))}
+
+                  {/* Input — only if not confirmed */}
+                  {!state.confirmed && (
+                    <View style={styles.inputSection}>
+                      <Text style={styles.inputQuestion}>
+                        How many are good to go?
+                      </Text>
+                      <Row style={styles.inputRow}>
+                        <TextInput
+                          style={styles.input}
+                          keyboardType="number-pad"
+                          value={state.input}
+                          onChangeText={(v) =>
+                            setLineStates(prev => ({
+                              ...prev,
+                              [line.receive_job_line_id]: {
+                                ...prev[line.receive_job_line_id],
+                                input: v,
+                              },
+                            }))
+                          }
+                          placeholder={String(line.quantity_expected)}
+                          placeholderTextColor={colors.ink4}
+                          maxLength={4}
+                          returnKeyType="done"
+                          onSubmitEditing={() => void handleConfirmLine(line)}
+                        />
+                        <TouchableOpacity
+                          style={[
+                            styles.confirmBtn,
+                            !state.input && styles.confirmBtnDisabled,
+                          ]}
+                          onPress={() => void handleConfirmLine(line)}
+                          disabled={!state.input || submitting}
+                        >
+                          <Text style={styles.confirmBtnText}>Confirm</Text>
+                        </TouchableOpacity>
+                      </Row>
+                    </View>
+                  )}
+
+                  {/* Confirmed summary */}
+                  {state.confirmed && (
+                    <Text style={styles.confirmedText}>
+                      {line.quantity_accepted} accepted
+                      {line.quantity_rejected > 0 ? ` · ${line.quantity_rejected} to Problem Center` : ''}
+                    </Text>
+                  )}
+                </Card>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <Button
+              label={confirmedCount === lines.length ? 'Review & close →' : `${confirmedCount}/${lines.length} confirmed`}
+              onPress={() => {
+                if (confirmedCount === lines.length) {
+                  setScreenPhase('summary');
+                } else {
+                  Alert.alert('Not done yet', 'Confirm all items before reviewing.');
+                }
+              }}
+              variant={confirmedCount === lines.length ? 'primary' : 'ghost'}
+            />
+          </View>
+        </>
       )}
+
+      {/* Shortfall modal */}
+      <Modal
+        visible={!!shortfallModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShortfallModal(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShortfallModal(null)}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'position' : 'height'}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.sheetHandle} />
+
+            {shortfallModal && (
+              <>
+                <Text style={styles.modalTitle}>
+                  {shortfallModal.remainingShortfall} unit{shortfallModal.remainingShortfall > 1 ? 's' : ''} still unaccounted
+                </Text>
+                <Text style={styles.modalSubtitle}>
+                  {shortfallModal.reportedExceptions.length > 0
+                    ? `${shortfallModal.totalShortfall - shortfallModal.remainingShortfall} of ${shortfallModal.totalShortfall} explained. What about the rest?`
+                    : `You confirmed ${shortfallModal.accepted} of ${shortfallModal.line.quantity_expected}. What happened?`
+                  }
+                </Text>
+
+                {/* Reported so far */}
+                {shortfallModal.reportedExceptions.map((ex, i) => (
+                  <View key={i} style={styles.reportedEx}>
+                    <Text style={styles.reportedExText}>
+                      ✓ {ex.quantity} × {ex.exception_type} → {ex.prob_label}
+                    </Text>
+                  </View>
+                ))}
+
+                {/* Qty for this exception */}
+                <View style={styles.exQtyRow}>
+                  <Text style={styles.modalLabel}>
+                    How many? (max {shortfallModal.remainingShortfall})
+                  </Text>
+                  <TextInput
+                    style={styles.exQtyInput}
+                    keyboardType="number-pad"
+                    value={exceptionQtyInput}
+                    onChangeText={setExceptionQtyInput}
+                    placeholder={String(shortfallModal.remainingShortfall)}
+                    placeholderTextColor={colors.ink4}
+                    maxLength={3}
+                  />
+                </View>
+
+                {/* Exception type grid */}
+                <View style={styles.exceptionGrid}>
+                  {EXCEPTION_TYPES.map(({ type, label, icon }) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.exceptionGridItem,
+                        selectedExceptionType === type && styles.exceptionGridItemSelected,
+                      ]}
+                      onPress={() => setSelectedExceptionType(type)}
+                    >
+                      <Ionicons
+                        name={icon as any}
+                        size={22}
+                        color={selectedExceptionType === type ? colors.accent : colors.ink3}
+                      />
+                      <Text style={[
+                        styles.exceptionGridLabel,
+                        selectedExceptionType === type && styles.exceptionGridLabelSelected,
+                      ]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Actions */}
+                <TouchableOpacity
+                  style={[
+                    styles.modalConfirm,
+                    !selectedExceptionType && styles.modalConfirmDisabled,
+                  ]}
+                  onPress={() => void handleShortfallConfirm()}
+                  disabled={!selectedExceptionType || submitting}
+                >
+                  <Text style={styles.modalConfirmText}>
+                    {submitting ? 'Processing…' : `Report & confirm`}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.miscountBtn}
+                  onPress={() => void handleMiscount()}
+                  disabled={submitting}
+                >
+                  <Ionicons name="refresh-outline" size={16} color={colors.ink3} />
+                  <Text style={styles.miscountText}>
+                    I miscounted — all {shortfallModal.line.quantity_expected} are good
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  jobHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
   },
-  backText: { color: colors.accent, fontSize: font.size.md },
-  headerTitle: {
-    flex: 1,
-    color: colors.ink,
-    fontSize: font.size.lg,
-    fontWeight: font.weight.bold,
-    marginHorizontal: spacing.md,
+  supplierName: {
+    color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold,
+    flex: 1, marginRight: spacing.sm,
   },
-  summary: {
-    justifyContent: 'space-around',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  summaryItem: { alignItems: 'center', gap: spacing.xs },
-  summaryValue: {
-    color: colors.accent,
-    fontSize: font.size.lg,
-    fontWeight: font.weight.bold,
-  },
-  summaryLabel: { color: colors.ink3, fontSize: font.size.xs ?? 11 },
-  list: { padding: spacing.md, paddingBottom: 120 },
+  list: { padding: spacing.md, paddingBottom: 100, gap: spacing.sm },
   lineCard: { gap: spacing.sm },
-  lineCardDone: { opacity: 0.7 },
   lineHeader: { justifyContent: 'space-between', alignItems: 'flex-start' },
-  variantTitle: {
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-  },
+  variantTitle: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold },
   sku: { color: colors.ink3, fontSize: font.size.sm, marginTop: 2 },
-  inputRow: { gap: spacing.md, marginTop: spacing.xs },
-  inputGroup: { flex: 1, gap: spacing.xs },
-  inputLabel: { color: colors.ink3, fontSize: font.size.sm },
+  exceptionEntry: {
+    backgroundColor: colors.warningGhost, borderRadius: radius.sm,
+    padding: spacing.sm, borderWidth: 1, borderColor: colors.warning,
+    gap: 4,
+  },
+  exceptionEntryText: { flex: 1, color: colors.ink2, fontSize: font.size.sm },
+  probLabel: {
+    backgroundColor: colors.bg3, borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: 2,
+    borderWidth: 1, borderColor: colors.rule2,
+  },
+  probLabelText: { color: colors.accent, fontSize: font.size.xs, fontWeight: font.weight.bold },
+  probInstruction: { color: colors.ink4, fontSize: font.size.xs, marginLeft: spacing.lg },
+  inputSection: { gap: spacing.sm },
+  inputQuestion: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
+  inputRow: { gap: spacing.sm, alignItems: 'center' },
   input: {
-    backgroundColor: colors.bg3,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
+    flex: 1, backgroundColor: colors.bg3, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.rule2,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold,
     textAlign: 'center',
   },
-  lineActions: { gap: spacing.sm, marginTop: spacing.xs },
-  confirmBtn: { flex: 1 },
-  exceptionBtn: { flex: 1 },
+  confirmBtn: {
+    backgroundColor: colors.accent, borderRadius: radius.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+  },
+  confirmBtnDisabled: { backgroundColor: colors.bg3 },
+  confirmBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  confirmedText: { color: colors.success, fontSize: font.size.sm },
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    backgroundColor: colors.bg,
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    padding: spacing.lg, paddingBottom: spacing.xl,
+    backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.rule,
   },
-  exceptionSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: colors.bg2,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
-    gap: spacing.sm,
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalSheet: {
+    backgroundColor: colors.bg2, borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl, padding: spacing.lg,
+    paddingBottom: spacing.xxl, gap: spacing.md,
   },
-  exceptionTitle: {
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-    marginBottom: spacing.xs,
+  sheetHandle: {
+    width: 40, height: 4, backgroundColor: colors.ink4,
+    borderRadius: 2, alignSelf: 'center', marginBottom: spacing.xs,
   },
-  exceptionTypeBtn: {},
-  cancelExceptionBtn: { marginTop: spacing.xs },
+  modalTitle: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  modalSubtitle: { color: colors.ink3, fontSize: font.size.sm, lineHeight: 18 },
+  modalLabel: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
+  exceptionGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
+  },
+  exceptionGridItem: {
+    width: '30%', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: spacing.md, borderRadius: radius.md,
+    backgroundColor: colors.bg3, borderWidth: 1, borderColor: colors.rule,
+    gap: spacing.xs,
+  },
+  exceptionGridItemSelected: {
+    borderColor: colors.accent, backgroundColor: colors.accentGhost,
+  },
+  exceptionGridLabel: { color: colors.ink3, fontSize: font.size.xs, textAlign: 'center' },
+  exceptionGridLabelSelected: { color: colors.accent, fontWeight: font.weight.semibold },
+  modalConfirm: {
+    backgroundColor: colors.accent, borderRadius: radius.md,
+    paddingVertical: spacing.md, alignItems: 'center',
+  },
+  modalConfirmDisabled: { backgroundColor: colors.bg3 },
+  modalConfirmText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  miscountBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.xs, paddingVertical: spacing.md,
+  },
+  miscountText: { color: colors.ink3, fontSize: font.size.sm },
+  // Summary
+  summaryHeader: { padding: spacing.lg, paddingBottom: spacing.md },
+  summaryTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold },
+  summarySupplier: { color: colors.ink3, fontSize: font.size.md },
+  summaryStats: { justifyContent: 'space-around', paddingVertical: spacing.md },
+  statItem: { alignItems: 'center', gap: spacing.xs },
+  statValue: { color: colors.accent, fontSize: font.size.xl, fontWeight: font.weight.bold },
+  statLabel: { color: colors.ink3, fontSize: font.size.xs },
+  summaryList: { padding: spacing.md, paddingBottom: 120, gap: spacing.sm },
+  summaryCard: {
+    backgroundColor: colors.bg2, borderRadius: radius.md,
+    padding: spacing.md, gap: spacing.xs,
+  },
+  summaryVariant: {
+    color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold, flex: 1,
+  },
+  summaryException: { color: colors.warning, fontSize: font.size.sm },
+  // Complete
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  completeIcon: { fontSize: 64, color: colors.success, marginBottom: spacing.md },
+  completeTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+  completeSub: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
+  completeBtn: {
+    backgroundColor: colors.accent, borderRadius: 12,
+    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    width: '100%', alignItems: 'center',
+  },
+  completeBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
   errorText: { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
-  retryBtn: { marginTop: spacing.md },
+  reportedEx: {
+    backgroundColor: colors.successGhost, borderRadius: radius.sm,
+    padding: spacing.sm, borderWidth: 1, borderColor: colors.successBorder,
+  },
+  reportedExText: { color: colors.success, fontSize: font.size.sm },
+  exQtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  exQtyInput: {
+    backgroundColor: colors.bg3, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.rule2,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold,
+    textAlign: 'center', width: 80,
+  },
 });

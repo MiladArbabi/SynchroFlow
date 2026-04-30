@@ -24,19 +24,32 @@ export async function httpCreateReceiveJob(req: Request, res: Response) {
   const poId = req.params.poId as string;
 
   try {
+    // Pre-transaction validation
+    const po = await db('purchase_orders')
+      .where({ id: poId, shop_id: shopId })
+      .first();
+
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+    if (po.status !== 'shipped' && po.status !== 'partially_received') {
+      return res.status(409).json({ error: `Cannot receive PO in status: ${po.status}` });
+    }
+
+    // Guard: prevent duplicate active receive jobs
+    const activeJob = await db('receive_jobs')
+      .where({ po_id: poId, shop_id: shopId })
+      .whereIn('status', ['pending', 'in_progress', 'inspection', 'barcode_assignment', 'stow_ready'])
+      .first();
+
+    if (activeJob) {
+      return res.status(409).json({
+        error: 'An active receive job already exists for this PO',
+        receive_job_id: activeJob.receive_job_id,
+      });
+    }
+
+    const { assigned_operator_id } = req.body ?? {};
     const jobId = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-      const po = await trx('purchase_orders')
-        .where({ id: poId, shop_id: shopId })
-        .first();
-
-      if (!po) return res.status(404).json({ error: 'Purchase order not found' });
-      if (po.status !== 'shipped' && po.status !== 'partially_received') {
-        return res.status(409).json({ error: `Cannot receive PO in status: ${po.status}` });
-      }
-
-      const { assigned_operator_id } = req.body ?? {};
       return createReceiveJob(trx, { shopId, poId, operatorId: assigned_operator_id ?? null });
     });
 

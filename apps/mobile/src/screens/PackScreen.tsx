@@ -2,14 +2,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator,
-  Alert, Vibration, TouchableOpacity, ScrollView,
+  Alert, TouchableOpacity, ScrollView,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { TaskStackScreenProps, TaskStackParamList } from '../navigation/types';
-import { Screen, Card, Button, Badge, Row, Divider } from '../ui';
-import { colors, font, spacing, radius } from '../theme';
+import { Screen, Card, Button, Badge, Row, Divider, AppHeader, WorkflowStep } from '../ui';
+import { colors, font, spacing } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 
 type LineItem = {
@@ -31,13 +30,9 @@ type Order = {
   line_items: LineItem[];
 };
 
-type ScreenPhase = 'brief' | 'scanning' | 'complete';
-type ScanMode = 'product' | 'invoice';
+type ScreenPhase = 'brief' | 'item_scan' | 'invoice_scan' | 'complete';
 
-const VIBRATION_SUCCESS = [0, 80];
-const VIBRATION_ERROR = [0, 100, 80, 100];
-
-const EXCEPTION_TYPES = [
+const PACK_EXCEPTIONS = [
   { type: 'product_defect', label: 'Product defect' },
   { type: 'packaging_defect', label: 'Packaging defect' },
   { type: 'wrong_item', label: 'Wrong item' },
@@ -53,20 +48,15 @@ export default function PackScreen() {
   const [screenPhase, setScreenPhase] = useState<ScreenPhase>('brief');
   const [orders, setOrders] = useState<Order[]>([]);
   const [currentOrderIndex, setCurrentOrderIndex] = useState(0);
+  const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [scanMode, setScanMode] = useState<ScanMode>('product');
-  const [scanFeedback, setScanFeedback] = useState<string | null>(null);
-  const [scanOk, setScanOk] = useState<boolean | null>(null);
-  const [cooldown, setCooldown] = useState(false);
-
-  const [showException, setShowException] = useState(false);
-  const [exceptionLine, setExceptionLine] = useState<LineItem | null>(null);
-
-  const [permission, requestPermission] = useCameraPermissions();
   const currentOrder = orders[currentOrderIndex] ?? null;
+  const unscannedLines = currentOrder?.line_items.filter(li => !li.pack_scanned) ?? [];
+  const currentLine = unscannedLines[0] ?? null;
+  const scannedCount = currentOrder?.line_items.filter(li => li.pack_scanned).length ?? 0;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,20 +72,18 @@ export default function PackScreen() {
   }, [task.id]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    if (!permission?.granted) void requestPermission();
-  }, [permission, requestPermission]);
 
+  // ── Claim pack ────────────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {
     setSubmitting(true);
     try {
       await apiClient.post(`/api/v1/wms/batch/${task.id}/pack/claim`);
-      setScreenPhase('scanning');
+      setScreenPhase('item_scan');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })
         ?.response?.data?.error ?? 'Failed to claim pack job.';
-      if (msg.includes('packing')) {
-        setScreenPhase('scanning');
+      if (msg.includes('packing') || msg.includes('already')) {
+        setScreenPhase('item_scan');
       } else {
         Alert.alert('Error', msg);
       }
@@ -104,152 +92,148 @@ export default function PackScreen() {
     }
   }, [task.id]);
 
-  const handleShipOrder = useCallback(async (lasyncroOrderId: string) => {
-    setSubmitting(true);
-    try {
-      await apiClient.post(`/api/v1/wms/batch/${task.id}/ship`, {
-        lasyncro_order_id: lasyncroOrderId,
-        partial_shipment: false,
+  // ── Confirm item scan ─────────────────────────────────────────────────────
+  const handleItemScan = useCallback(async (scannedValue: string) => {
+    if (!currentOrder || !currentLine) return;
+
+    // Resolve barcode
+    const { data: resolved } = await apiClient.post('/api/v1/wms/barcode/resolve', {
+      scanned_value: scannedValue,
+    });
+
+    if (!resolved?.lasyncro_variant_id) {
+      throw Object.assign(new Error('Barcode not recognised.'), {
+        response: { data: { error: 'Barcode not recognised. Try scanning again.' } },
       });
-      const nextIndex = currentOrderIndex + 1;
-      if (nextIndex >= orders.length) {
+    }
+
+    if (resolved.lasyncro_variant_id !== currentLine.lasyncro_variant_id) {
+      throw Object.assign(new Error('Wrong item.'), {
+        response: { data: { error: 'Wrong item — does not match this order line.' } },
+      });
+    }
+
+    // Confirm pack scan
+    await apiClient.post('/api/v1/wms/pack/scan', {
+      pick_batch_id: task.id,
+      lasyncro_order_id: currentOrder.lasyncro_order_id,
+      lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
+      lasyncro_variant_id: currentLine.lasyncro_variant_id,
+      quantity_confirmed: currentLine.quantity,
+    });
+
+    // Mark line as scanned
+    setOrders(prev =>
+      prev.map((o, i) =>
+        i === currentOrderIndex
+          ? {
+              ...o,
+              line_items: o.line_items.map(li =>
+                li.lasyncro_line_item_id === currentLine.lasyncro_line_item_id
+                  ? { ...li, pack_scanned: true }
+                  : li
+              ),
+            }
+          : o
+      )
+    );
+
+    // Check if all lines scanned for this order
+    const remainingAfter = unscannedLines.filter(
+      li => li.lasyncro_line_item_id !== currentLine.lasyncro_line_item_id
+    );
+
+    if (remainingAfter.length === 0) {
+      // All items scanned → move to invoice scan
+      setScreenPhase('invoice_scan');
+    }
+  }, [currentOrder, currentLine, currentOrderIndex, unscannedLines, task.id]);
+
+  // ── Confirm invoice scan → ship ───────────────────────────────────────────
+  const handleInvoiceScan = useCallback(async (scannedValue: string) => {
+    if (!currentOrder) return;
+
+    const normalizedScan = scannedValue.replace(/^#/, '').trim();
+    if (normalizedScan !== currentOrder.external_order_id) {
+      throw Object.assign(new Error('Wrong invoice.'), {
+        response: { data: { error: `Wrong invoice. Expected order #${currentOrder.external_order_id}` } },
+      });
+    }
+
+    await apiClient.post(`/api/v1/wms/batch/${task.id}/ship`, {
+      lasyncro_order_id: currentOrder.lasyncro_order_id,
+      partial_shipment: false,
+    });
+
+    const nextIndex = currentOrderIndex + 1;
+    if (nextIndex >= orders.length) {
+      try {
         await apiClient.post(`/api/v1/wms/batch/${task.id}/pack-complete`);
-        setScreenPhase('complete');
-      } else {
-        setCurrentOrderIndex(nextIndex);
-        setScanMode('product');
-        setScanFeedback(null);
-        setScanOk(null);
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { error?: string } } })
+          ?.response?.data?.error ?? 'Failed to complete pack.';
+        // If already complete, still show complete screen
+        if (!msg.includes('pack_complete')) {
+          Alert.alert('Warning', msg);
+        }
       }
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error ?? 'Failed to ship order.';
-      Alert.alert('Ship failed', msg);
-    } finally {
-      setSubmitting(false);
+      setScreenPhase('complete');
+    } else {
+      setCurrentOrderIndex(nextIndex);
+      setCurrentLineIndex(0);
+      setScreenPhase('item_scan');
     }
-  }, [task.id, currentOrderIndex, orders.length]);
+  }, [currentOrder, currentOrderIndex, orders.length, task.id]);
 
-  const handleScan = useCallback(async ({ data: scannedValue }: { data: string }) => {
-    if (cooldown || submitting || !currentOrder) return;
-    setCooldown(true);
-    setTimeout(() => setCooldown(false), 1500);
-
-    if (scanMode === 'invoice') {
-      if (scannedValue !== currentOrder.external_order_id) {
-        Vibration.vibrate(VIBRATION_ERROR);
-        setScanOk(false);
-        setScanFeedback(`Wrong invoice. Expected #${currentOrder.external_order_id}`);
-        setTimeout(() => { setScanFeedback(null); setScanOk(null); }, 2500);
-        return;
-      }
-      Vibration.vibrate(VIBRATION_SUCCESS);
-      setScanOk(true);
-      setScanFeedback(`✓ Invoice confirmed`);
-      await handleShipOrder(currentOrder.lasyncro_order_id);
-      return;
-    }
-
-    try {
-      const { data: resolved } = await apiClient.post('/api/v1/wms/barcode/resolve', {
-        scanned_value: scannedValue,
-      });
-      const matchingLine = currentOrder.line_items.find(
-        (li) => li.lasyncro_variant_id === resolved.lasyncro_variant_id && !li.pack_scanned
-      );
-      if (!matchingLine) {
-        Vibration.vibrate(VIBRATION_ERROR);
-        setScanOk(false);
-        setScanFeedback('Item not in this order or already scanned.');
-        setTimeout(() => { setScanFeedback(null); setScanOk(null); }, 2000);
-        return;
-      }
-      await apiClient.post('/api/v1/wms/pack/scan', {
-        pick_batch_id: task.id,
-        lasyncro_order_id: currentOrder.lasyncro_order_id,
-        lasyncro_line_item_id: matchingLine.lasyncro_line_item_id,
-        lasyncro_variant_id: matchingLine.lasyncro_variant_id,
-        quantity_confirmed: matchingLine.quantity,
-      });
-      Vibration.vibrate(VIBRATION_SUCCESS);
-      setScanOk(true);
-      setScanFeedback(`✓ ${matchingLine.title}`);
-      setOrders((prev) =>
-        prev.map((o, i) =>
-          i === currentOrderIndex
-            ? { ...o, line_items: o.line_items.map((li) =>
-                li.lasyncro_line_item_id === matchingLine.lasyncro_line_item_id
-                  ? { ...li, pack_scanned: true } : li) }
-            : o
-        )
-      );
-      setTimeout(() => { setScanFeedback(null); setScanOk(null); }, 1200);
-      const allScanned = currentOrder.line_items.every(
-        (li) => li.lasyncro_line_item_id === matchingLine.lasyncro_line_item_id || li.pack_scanned
-      );
-      if (allScanned) {
-        setScanMode('invoice');
-        setScanFeedback('✓ All items scanned — scan invoice to ship');
-        setScanOk(true);
-      }
-    } catch {
-      Vibration.vibrate(VIBRATION_ERROR);
-      setScanOk(false);
-      setScanFeedback('Barcode not recognised.');
-      setTimeout(() => { setScanFeedback(null); setScanOk(null); }, 2000);
-    }
-  }, [cooldown, submitting, currentOrder, currentOrderIndex, scanMode, task.id, handleShipOrder]);
-
-  const handleException = useCallback(async (exceptionType: string) => {
-    if (!exceptionLine || !currentOrder) return;
-    try {
-      await apiClient.post(`/api/v1/wms/batch/${task.id}/exception`, {
-        lasyncro_line_item_id: exceptionLine.lasyncro_line_item_id,
-        lasyncro_variant_id: exceptionLine.lasyncro_variant_id,
+  // ── Report exception ──────────────────────────────────────────────────────
+  const handleItemException = useCallback(async (exceptionType: string, quantity: number = 1) => {
+    if (!currentOrder || !currentLine) return;
+    await apiClient.post(`/api/v1/wms/batch/${task.id}/exception`, {
+        lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
+        lasyncro_variant_id: currentLine.lasyncro_variant_id,
         exception_type: exceptionType,
         stage: 'pack',
-        quantity_required: exceptionLine.quantity,
-        quantity_found: 0,
+        quantity_required: currentLine.quantity,
+        quantity_found: currentLine.quantity - quantity,
       });
-      setShowException(false);
-      setExceptionLine(null);
-      setOrders((prev) =>
-        prev.map((o, i) =>
-          i === currentOrderIndex
-            ? { ...o, line_items: o.line_items.map((li) =>
-                li.lasyncro_line_item_id === exceptionLine.lasyncro_line_item_id
-                  ? { ...li, pack_scanned: true } : li) }
-            : o
-        )
-      );
-    } catch {
-      Alert.alert('Error', 'Failed to report exception.');
+    // Mark as scanned to advance
+    setOrders(prev =>
+      prev.map((o, i) =>
+        i === currentOrderIndex
+          ? {
+              ...o,
+              line_items: o.line_items.map(li =>
+                li.lasyncro_line_item_id === currentLine.lasyncro_line_item_id
+                  ? { ...li, pack_scanned: true }
+                  : li
+              ),
+            }
+          : o
+      )
+    );
+    const remainingAfter = unscannedLines.filter(
+      li => li.lasyncro_line_item_id !== currentLine.lasyncro_line_item_id
+    );
+    if (remainingAfter.length === 0) {
+      setScreenPhase('invoice_scan');
     }
-  }, [exceptionLine, currentOrder, currentOrderIndex, task.id]);
+  }, [currentOrder, currentLine, currentOrderIndex, unscannedLines, task.id]);
 
-  const unscannedLines = currentOrder?.line_items.filter((li) => !li.pack_scanned) ?? [];
-
+  // ── BRIEF SCREEN ──────────────────────────────────────────────────────────
   if (screenPhase === 'brief') {
     return (
       <Screen>
-        <Row style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Pack brief</Text>
-          <Badge label={`${orders.length} order${orders.length !== 1 ? 's' : ''}`} variant="info" />
-        </Row>
-        <Divider />
+        <AppHeader showLogo />
         {loading ? (
           <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
         ) : error ? (
           <View style={styles.center}>
             <Text style={styles.errorText}>{error}</Text>
-            <Button label="Retry" onPress={load} style={styles.retryBtn} />
+            <Button label="Retry" onPress={load} style={{ marginTop: spacing.md }} />
           </View>
         ) : (
           <>
-            <Row style={styles.summary}>
+            <Row style={styles.summaryRow}>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>{orders.length}</Text>
                 <Text style={styles.summaryLabel}>Orders</Text>
@@ -277,7 +261,7 @@ export default function PackScreen() {
                       {order.currency} {Number(order.total_price).toFixed(2)}
                     </Text>
                   </Row>
-                  {order.line_items.map((li) => (
+                  {order.line_items.map(li => (
                     <Text key={li.lasyncro_line_item_id} style={styles.lineText} numberOfLines={1}>
                       · {li.title} × {li.quantity}
                     </Text>
@@ -298,17 +282,21 @@ export default function PackScreen() {
     );
   }
 
+  // ── COMPLETE SCREEN ───────────────────────────────────────────────────────
   if (screenPhase === 'complete') {
     return (
       <Screen>
+        <AppHeader showLogo />
         <View style={styles.center}>
           <Text style={styles.completeIcon}>📦</Text>
           <Text style={styles.completeTitle}>Pack complete</Text>
-          <Text style={styles.completeSubtitle}>
+          <Text style={styles.completeSub}>
             {orders.length} order{orders.length !== 1 ? 's' : ''} packed and shipped.{'\n'}
             Inventory updated.
           </Text>
-          <Button label="Done" onPress={() => navigation.goBack()} variant="primary" style={styles.doneBtn} />
+          <TouchableOpacity style={styles.completeBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.completeBtnText}>Back to tasks</Text>
+          </TouchableOpacity>
         </View>
       </Screen>
     );
@@ -316,152 +304,80 @@ export default function PackScreen() {
 
   if (!currentOrder) return null;
 
-  const overlayColor = scanOk === true ? colors.success : scanOk === false ? colors.error : 'transparent';
-
-  return (
-    <View style={styles.root}>
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing="back"
-        onBarcodeScanned={!cooldown && !submitting ? handleScan : undefined}
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'code39', 'upc_a', 'upc_e'],
-        }}
-      />
-      {scanOk !== null && (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: `${overlayColor}22` }]} />
-      )}
-      <View style={styles.topBar}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => setScreenPhase('brief')}>
-            <Text style={styles.backText}>‹ Brief</Text>
-          </TouchableOpacity>
-          <Badge label={`Order ${currentOrderIndex + 1} / ${orders.length}`} variant="info" />
-          <Badge
-            label={scanMode === 'invoice' ? 'SCAN INVOICE' : 'SCAN PRODUCT'}
-            variant={scanMode === 'invoice' ? 'warning' : 'info'}
-          />
-        </Row>
-        <Text style={styles.orderIdText}>#{currentOrder.external_order_id}</Text>
-        {scanMode === 'product' && (
-          <View style={styles.remainingList}>
-            {currentOrder.line_items.map((li) => (
-              <Row key={li.lasyncro_line_item_id} style={styles.remainingItem}>
-                <Text style={[styles.remainingText, li.pack_scanned && styles.remainingTextDone]} numberOfLines={1}>
-                  {li.pack_scanned ? '✓ ' : '· '}{li.title} × {li.quantity}
-                </Text>
-                {!li.pack_scanned && (
-                  <TouchableOpacity onPress={() => { setExceptionLine(li); setShowException(true); }}>
-                    <Text style={styles.exceptionTrigger}>!</Text>
-                  </TouchableOpacity>
-                )}
-              </Row>
-            ))}
-          </View>
-        )}
-        {scanMode === 'invoice' && (
-          <Text style={styles.invoiceHint}>
-            All items scanned. Seal parcel, attach shipping label, then scan invoice barcode.
-          </Text>
-        )}
-      </View>
-      <View style={styles.viewfinderContainer}>
-        <View style={[
-          styles.viewfinder,
-          scanOk === true && { borderColor: colors.success },
-          scanOk === false && { borderColor: colors.error },
-        ]}>
-          <View style={[styles.corner, styles.cornerTL]} />
-          <View style={[styles.corner, styles.cornerTR]} />
-          <View style={[styles.corner, styles.cornerBL]} />
-          <View style={[styles.corner, styles.cornerBR]} />
-        </View>
-        {scanFeedback ? (
-          <Text style={[styles.feedbackText, scanOk === true ? styles.feedbackSuccess : styles.feedbackError]}>
-            {scanFeedback}
-          </Text>
-        ) : (
-          <Text style={styles.instructionText}>
-            {scanMode === 'invoice' ? 'Scan invoice barcode' : `${unscannedLines.length} item${unscannedLines.length !== 1 ? 's' : ''} remaining`}
-          </Text>
-        )}
-      </View>
-      <View style={styles.bottomBar}>
-        {scanMode === 'invoice' && (
-          <Button
-            label={submitting ? 'Shipping…' : `Ship order #${currentOrder.external_order_id}`}
-            onPress={() => void handleShipOrder(currentOrder.lasyncro_order_id)}
-            variant="primary"
-          />
-        )}
-        <Button
-          label="Report exception"
-          onPress={() => { setExceptionLine(unscannedLines[0] ?? null); setShowException(true); }}
-          variant="ghost"
+  // ── ITEM SCAN PHASE ───────────────────────────────────────────────────────
+  if (screenPhase === 'item_scan' && currentLine) {
+    const totalLines = currentOrder.line_items.length;
+    return (
+      <Screen>
+        <AppHeader
+          title={`Pack · Order ${currentOrderIndex + 1}/${orders.length}`}
+          rightAction={{ icon: 'close-outline', onPress: () => navigation.goBack() }}
         />
-      </View>
-      {showException && exceptionLine && (
-        <View style={styles.exceptionSheet}>
-          <Text style={styles.exceptionTitle}>Exception — {exceptionLine.title}</Text>
-          {EXCEPTION_TYPES.map(({ type, label }) => (
-            <Button key={type} label={label} onPress={() => void handleException(type)} variant="ghost" />
-          ))}
-          <Button
-            label="Cancel"
-            onPress={() => { setShowException(false); setExceptionLine(null); }}
-            variant="ghost"
-            style={{ marginTop: spacing.xs }}
-          />
-        </View>
-      )}
-    </View>
-  );
+        <WorkflowStep
+          context={{
+            label: 'Order',
+            value: `#${currentOrder.external_order_id}`,
+            sublabel: `${currentOrder.currency} ${Number(currentOrder.total_price).toFixed(2)} · ${scannedCount}/${totalLines} items scanned`,
+          }}
+          item={{
+            title: currentLine.title,
+            sku: currentLine.sku,
+            quantity: currentLine.quantity,
+            currentIndex: scannedCount + 1,
+            totalCount: totalLines,
+          }}
+          exceptions={PACK_EXCEPTIONS}
+          onConfirm={handleItemScan}
+          onException={handleItemException}
+          confirmLabel="Confirm item"
+          isSubmitting={submitting}
+        />
+      </Screen>
+    );
+  }
+
+  // ── INVOICE SCAN PHASE ────────────────────────────────────────────────────
+  if (screenPhase === 'invoice_scan') {
+    return (
+      <Screen>
+        <AppHeader
+          title={`Pack · Order ${currentOrderIndex + 1}/${orders.length}`}
+          rightAction={{ icon: 'close-outline', onPress: () => navigation.goBack() }}
+        />
+        <WorkflowStep
+          context={{
+            label: 'Ready to ship',
+            value: `#${currentOrder.external_order_id}`,
+            sublabel: 'All items verified. Seal parcel and attach shipping label.',
+          }}
+          item={{
+            title: 'Scan invoice barcode',
+            sku: `${currentOrder.line_items.length} item${currentOrder.line_items.length !== 1 ? 's' : ''} confirmed`,
+            quantity: currentOrder.line_items.reduce((s, li) => s + li.quantity, 0),
+            currentIndex: currentOrderIndex + 1,
+            totalCount: orders.length,
+          }}
+          exceptions={[{ type: 'other', label: 'Cannot ship this order' }]}
+          inputPrefix="#"
+          onConfirm={handleInvoiceScan}
+          onException={async () => {
+            Alert.alert('Cannot ship', 'Please contact the owner/admin.');
+          }}
+          confirmLabel="Confirm shipment"
+          isSubmitting={submitting}
+        />
+      </Screen>
+    );
+  }
+
+  return null;
 }
 
-const VIEWFINDER_SIZE = 220;
-const CORNER_SIZE = 22;
-const CORNER_THICKNESS = 3;
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  topBar: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    paddingTop: 56, paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
-    backgroundColor: colors.cameraBg, gap: spacing.sm,
+  summaryRow: {
+    justifyContent: 'space-around',
+    paddingVertical: spacing.md,
   },
-  backText: { color: colors.accent, fontSize: font.size.md },
-  orderIdText: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
-  remainingList: { gap: 4 },
-  remainingItem: { justifyContent: 'space-between', alignItems: 'center' },
-  remainingText: { color: colors.ink2, fontSize: font.size.sm, flex: 1 },
-  remainingTextDone: { color: colors.success, textDecorationLine: 'line-through' },
-  exceptionTrigger: { color: colors.error, fontSize: font.size.md, fontWeight: font.weight.bold, paddingHorizontal: spacing.sm },
-  invoiceHint: { color: colors.ink2, fontSize: font.size.sm, lineHeight: 18 },
-  viewfinderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  viewfinder: { width: VIEWFINDER_SIZE, height: VIEWFINDER_SIZE, position: 'relative', borderColor: colors.accent },
-  corner: { position: 'absolute', width: CORNER_SIZE, height: CORNER_SIZE, borderColor: 'inherit', borderWidth: CORNER_THICKNESS },
-  cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
-  cornerTR: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
-  cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
-  cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
-  feedbackText: { marginTop: spacing.lg, fontSize: font.size.lg, fontWeight: font.weight.bold, textAlign: 'center', paddingHorizontal: spacing.lg },
-  feedbackSuccess: { color: colors.success },
-  feedbackError: { color: colors.error },
-  instructionText: { marginTop: spacing.lg, color: colors.cameraHint, fontSize: font.size.sm },
-  bottomBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: spacing.lg, paddingBottom: spacing.xl,
-    backgroundColor: colors.cameraBgDark, gap: spacing.sm,
-  },
-  exceptionSheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: colors.bg2, padding: spacing.lg, paddingBottom: spacing.xl,
-    borderTopWidth: 1, borderTopColor: colors.rule, gap: spacing.sm,
-  },
-  exceptionTitle: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold, marginBottom: spacing.xs },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md, justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold },
-  summary: { justifyContent: 'space-around', paddingVertical: spacing.md },
   summaryItem: { alignItems: 'center', gap: spacing.xs },
   summaryValue: { color: colors.accent, fontSize: font.size.lg, fontWeight: font.weight.bold },
   summaryLabel: { color: colors.ink3, fontSize: font.size.xs },
@@ -477,9 +393,13 @@ const styles = StyleSheet.create({
   },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
   errorText: { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
-  retryBtn: { marginTop: spacing.md },
   completeIcon: { fontSize: 64, marginBottom: spacing.md },
-  completeTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.sm },
-  completeSubtitle: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22 },
-  doneBtn: { marginTop: spacing.xl, width: '100%' },
+  completeTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+  completeSub: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
+  completeBtn: {
+    backgroundColor: colors.accent, borderRadius: 12,
+    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    width: '100%', alignItems: 'center',
+  },
+  completeBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
 });

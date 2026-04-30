@@ -30,12 +30,19 @@ export default function PickBriefScreen() {
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [batchStatus, setBatchStatus] = useState<string>('pending');
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await apiClient.get(`/api/v1/wms/batch/${task.id}/line-items`);
-      setLineItems(data.line_items ?? []);
+      const [lineRes, batchRes] = await Promise.all([
+        apiClient.get(`/api/v1/wms/batch/${task.id}/line-items`),
+        apiClient.get('/api/v1/wms/batches'),
+      ]);
+      setLineItems(lineRes.data.line_items ?? []);
+      const batch = (batchRes.data.batches ?? []).find((b: any) => b.pick_batch_id === task.id);
+      if (batch) setBatchStatus(batch.status);
     } catch {
       setError('Failed to load batch details.');
     } finally {
@@ -72,8 +79,18 @@ export default function PickBriefScreen() {
       <Row style={styles.header}>
         <Text style={styles.headerTitle}>Pick brief</Text>
         <Badge
-          label={task.title.includes('Continue') ? 'IN PROGRESS' : 'PENDING'}
-          variant={task.title.includes('Continue') ? 'warning' : 'info'}
+          label={
+            batchStatus === 'pick_complete' ? 'PICK COMPLETE' :
+            batchStatus === 'picking' ? 'IN PROGRESS' :
+            batchStatus === 'packing' ? 'PACKING' :
+            batchStatus === 'pack_complete' ? 'PACKED' :
+            'PENDING'
+          }
+          variant={
+            batchStatus === 'pick_complete' || batchStatus === 'pack_complete' ? 'success' :
+            batchStatus === 'picking' || batchStatus === 'packing' ? 'warning' :
+            'info'
+          }
         />
       </Row>
 
@@ -127,7 +144,13 @@ export default function PickBriefScreen() {
       {/* ACTIONS */}
       {!loading && !error && (
         <View style={styles.actions}>
-          {task.title.includes('Continue') ? (
+          {batchStatus === 'pick_complete' || batchStatus === 'pack_complete' ? (
+            <Button
+              label="Pick complete ✓"
+              onPress={() => navigation.goBack()}
+              variant="ghost"
+            />
+          ) : batchStatus === 'picking' ? (
             <Button
               label="Continue picking"
               onPress={handleContinue}

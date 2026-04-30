@@ -44,6 +44,7 @@ export interface StowConfirmInput {
   stowTaskId: string;
   shopId: number;
   claimedBy: number;
+  quantityPlaced?: number; // partial stow support
 }
 
 export async function createStowTask(
@@ -97,10 +98,12 @@ export async function claimStowTask(
 ): Promise<void> {
   const task = await trx('stow_tasks')
     .where({ stow_task_id: stowTaskId, shop_id: shopId })
-    .select('status', 'claimed_by')
+    .select('status', 'claimed_by', 'location_code')
     .first();
 
   if (!task) throw new Error(`[STOW_CLAIM] Task not found: ${stowTaskId}`);
+  // Allow operator to re-claim their own in-progress task (e.g. after navigating back)
+  if (task.status === 'in_progress' && task.claimed_by === userId) return;
   if (task.status !== 'pending') throw new Error(`[STOW_CLAIM] Task not claimable: ${task.status}`);
   if (!task.location_code) throw new Error(`[STOW_CLAIM] Cannot claim stow task without assigned location: ${stowTaskId}`);
   if (task.claimed_by !== null) throw new Error('[STOW_CLAIM] Task already claimed');
@@ -131,7 +134,7 @@ export async function confirmStow(
   trx: Knex.Transaction,
   input: StowConfirmInput
 ): Promise<void> {
-  const { stowTaskId, shopId, claimedBy } = input;
+  const { stowTaskId, shopId, claimedBy, quantityPlaced } = input;
 
   // 1. Validate task
   const task = await trx('stow_tasks')
@@ -145,24 +148,8 @@ export async function confirmStow(
   if (task.claimed_by !== claimedBy) throw new Error('[STOW_CONFIRM] Task owned by different operator');
 
   const completedAt = new Date();
-
-  /**
-   * LOCATION TRANSFER ON STOW CONFIRM (INV-02)
-   * --------------------------------------------
-   * Inventory was already written at receive close (inbound_purchase at ROOT).
-   * Stow confirm moves stock from WH-ROOT → actual bin location.
-   *
-   * Two operations:
-   * 1. Decrement ROOT inventory_truth (stock leaving unlocated zone)
-   * 2. Upsert actual bin inventory_truth (stock arriving at bin)
-   *
-   * inventory_movements is append-only — no movement written here.
-   * The movement audit trail is: receive_job (inbound_purchase) → stow_task (location_transfer on truth)
-   *
-   * Audit: stow_tasks.completed_at + claimed_by provide full operator audit trail.
-   */
+  const qty = quantityPlaced ?? task.quantity; // support partial stow
   const rootLocation = `WH-${shopId}-ROOT`;
-
   // 2a. Decrement ROOT location
   await trx('inventory_truth')
     .where({
@@ -171,31 +158,30 @@ export async function confirmStow(
       location_code: rootLocation,
     })
     .update({
-      on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [task.quantity]),
-      available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [task.quantity]),
-      sellable_quantity: trx.raw('GREATEST(0, sellable_quantity - ?)', [task.quantity]),
+      on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [qty]),
+      available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [qty]),
+      sellable_quantity: trx.raw('GREATEST(0, sellable_quantity - ?)', [qty]),
       last_evaluated_at: completedAt,
       updated_at: completedAt,
     });
-
   // 2b. Upsert actual bin location
   await trx('inventory_truth')
     .insert({
       shop_id: shopId,
       lasyncro_variant_id: task.lasyncro_variant_id,
       location_code: task.location_code,
-      on_hand_quantity: task.quantity,
+      on_hand_quantity: qty,
       reserved_quantity: 0,
       committed_quantity: 0,
-      available_quantity: task.quantity,
-      sellable_quantity: task.quantity,
+      available_quantity: qty,
+      sellable_quantity: qty,
       last_evaluated_at: completedAt,
     })
     .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
     .merge({
-      on_hand_quantity: trx.raw('inventory_truth.on_hand_quantity + ?', [task.quantity]),
-      available_quantity: trx.raw('inventory_truth.available_quantity + ?', [task.quantity]),
-      sellable_quantity: trx.raw('inventory_truth.sellable_quantity + ?', [task.quantity]),
+      on_hand_quantity: trx.raw('inventory_truth.on_hand_quantity + ?', [qty]),
+      available_quantity: trx.raw('inventory_truth.available_quantity + ?', [qty]),
+      sellable_quantity: trx.raw('inventory_truth.sellable_quantity + ?', [qty]),
       last_evaluated_at: completedAt,
       updated_at: completedAt,
     });
@@ -249,7 +235,8 @@ export async function confirmStow(
     entityId: stowTaskId,
     metadata: {
       location_code: task.location_code,
-      quantity: task.quantity,
+      quantity: qty,
+      quantity_remaining: task.quantity - qty,
       lasyncro_variant_id: task.lasyncro_variant_id,
     },
   });

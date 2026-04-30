@@ -144,7 +144,6 @@ export async function releaseBatch(
 
   const allLineItems = await trx('order_line_items')
     .whereIn('lasyncro_order_id', selectedOrderIds)
-    .where('shop_id', shopId)
     .select('lasyncro_line_item_id', 'lasyncro_variant_id', 'quantity');
 
   for (const li of allLineItems) {

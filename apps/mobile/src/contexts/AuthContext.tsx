@@ -19,6 +19,15 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -45,11 +54,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const stored = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
-        if (stored) {
+        if (stored && !isTokenExpired(stored)) {
+          // Token still valid — use it
           apiClient.defaults.headers.common['Authorization'] = `Bearer ${stored}`;
           setToken(stored);
         } else {
-          await tryRefresh();
+          // Token missing or expired — try refresh
+          const newToken = await tryRefresh();
+          if (!newToken) {
+            await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+            await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+            delete apiClient.defaults.headers.common['Authorization'];
+          }
         }
       } catch {
         // SecureStore unavailable
@@ -72,7 +88,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             error.config.headers['Authorization'] = `Bearer ${newToken}`;
             return apiClient.request(error.config);
           }
+          // Refresh failed — clear all tokens and reset state
           await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+          await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+          delete apiClient.defaults.headers.common['Authorization'];
+          setToken(null);
+          setRole(null);
+          setUserId(null);
+
           await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
           delete apiClient.defaults.headers.common['Authorization'];
           setToken(null);

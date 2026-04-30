@@ -61,10 +61,29 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo(20);
 
+    /**
+     * PROBLEM BIN LOCATION
+     * --------------------
+     * Configurable per shop — where operators physically place
+     * flagged/excepted items for owner review and resolution.
+     * Defaults to WH-{shopId}-PROBLEM if not configured.
+     */
+    table.string('problem_bin_location', 255)
+      .nullable();
+
+    /**
+     * PROB LABEL SEQUENCE
+     * -------------------
+     * Auto-incrementing counter for PROB-{shopId}-{seq} labels.
+     * Incremented atomically on each problem center task creation.
+     */
+    table.integer('prob_label_sequence')
+      .notNullable()
+      .defaultTo(0);
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
-
     table.timestamp('updated_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());

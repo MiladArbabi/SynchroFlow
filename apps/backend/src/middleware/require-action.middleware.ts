@@ -48,7 +48,7 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'receive-job:create':       ['owner', 'admin', 'operator'],
   'receive-job:read':         ['owner', 'admin', 'operator'],
   'receive-job:inspect':      ['owner', 'admin', 'operator'],
-  'receive-job:close':        ['owner', 'admin'],
+  'receive-job:close':        ['owner', 'admin', 'operator'],
   'receive-job:exception':    ['owner', 'admin', 'operator'],
 
   // ── WMS ────────────────────────────────────────────────────
@@ -59,9 +59,9 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'wms:pack:scan':            ['owner', 'admin', 'operator'],
   'wms:stow:claim':           ['owner', 'admin', 'operator'],
   'wms:stow:confirm':         ['owner', 'admin', 'operator'],
-  'wms:stow:location':        ['owner', 'admin'],
+  'wms:stow:location':        ['owner', 'admin', 'operator'],
   'wms:exception:report':     ['owner', 'admin', 'operator'],
-  'wms:ship:confirm':         ['owner', 'admin'],
+  'wms:ship:confirm':         ['owner', 'admin', 'operator'],
   'wms:settings:write':       ['owner', 'admin'],
 
   // ── FLOOR PLANNING ─────────────────────────────────────────

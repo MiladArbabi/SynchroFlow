@@ -63,7 +63,7 @@ export default function DispatchScreen() {
   const { logout } = useAuth();
   
   const [orderPoolCount, setOrderPoolCount] = useState<number>(0);
-  const [tab, setTab] = useState<ProcessTab>('pick');
+  const [tab, setTab] = useState<ProcessTab>('receive');
   const [operators, setOperators] = useState<Operator[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [stowTasks, setStowTasks] = useState<StowTask[]>([]);
@@ -74,7 +74,6 @@ export default function DispatchScreen() {
 
   // Assignment state
   const [selectedPicker, setSelectedPicker] = useState<number | null>(null);
-  const [selectedPacker, setSelectedPacker] = useState<number | null>(null);
   const [selectedReceiveOperator, setSelectedReceiveOperator] = useState<number | null>(null);
   const [selectedPo, setSelectedPo] = useState<string | null>(null);
 
@@ -130,14 +129,13 @@ export default function DispatchScreen() {
             try {
               const result = await apiClient.post('/api/v1/wms/batch/release', {
                 assigned_operator_id: selectedPicker ?? null,
-                assigned_packer_id: selectedPacker ?? null,
+                assigned_packer_id: null,
               });
               if (result.data?.message) {
                 Alert.alert('No orders', 'No eligible orders available for batching.');
               } else {
                 Alert.alert('✓ Batch released', `${result.data.order_count} orders · ${result.data.total_line_items} lines`);
                 setSelectedPicker(null);
-                setSelectedPacker(null);
                 void load();
               }
             } catch (err: unknown) {
@@ -151,7 +149,7 @@ export default function DispatchScreen() {
         },
       ]
     );
-  }, [selectedPicker, selectedPacker, load]);
+  }, [selectedPicker, load]);
 
   // ── Create receive job ────────────────────────────────────────────────────
   const handleCreateReceiveJob = useCallback(async () => {
@@ -181,9 +179,14 @@ export default function DispatchScreen() {
               setSelectedReceiveOperator(null);
               void load();
             } catch (err: unknown) {
+              const status = (err as { response?: { status?: number } })?.response?.status;
               const msg = (err as { response?: { data?: { error?: string } } })
                 ?.response?.data?.error ?? 'Failed to create receive job.';
-              Alert.alert('Error', msg);
+              if (status === 409) {
+                Alert.alert('Already exists', msg);
+              } else {
+                Alert.alert('Error', msg);
+              }
             } finally {
               setSubmitting(false);
             }
@@ -248,7 +251,7 @@ export default function DispatchScreen() {
       <AppHeader showLogo onRefresh={() => void load()}  />
       {/* TOP NAV */}
       <Row style={styles.topNav}>
-        {(['pick', 'receive', 'stow', 'pack'] as ProcessTab[]).map((t) => (
+        {(['receive', 'stow', 'pick', 'pack'] as ProcessTab[]).map((t) => (
           <TouchableOpacity
             key={t}
             style={tab === t ? styles.topNavItemActive : styles.topNavItem}
@@ -302,9 +305,7 @@ export default function DispatchScreen() {
               {/* Release new batch */}
               <Text style={styles.sectionTitle}>Release batch</Text>
               <Text style={styles.sectionHint}>System selects eligible orders automatically. Oldest orders released first.</Text>
-
-              <OperatorPicker label="Picker" selected={selectedPicker} onSelect={setSelectedPicker} />
-              <OperatorPicker label="Packer" selected={selectedPacker} onSelect={setSelectedPacker} />
+                <OperatorPicker label="Assign picker" selected={selectedPicker} onSelect={setSelectedPicker} />
               <Button
                 label={submitting ? 'Releasing…' : 'Release pick batch'}
                 onPress={() => void handleReleaseBatch()}
@@ -356,7 +357,7 @@ export default function DispatchScreen() {
                         : styles.poCard}>
                         <Row style={{ justifyContent: 'space-between' }}>
                           <Text style={styles.jobSupplier}>{po.supplier_name}</Text>
-                          <Badge label={po.status === 'shipped' ? 'SHIPPED' : 'PARTIAL'} variant={po.status === 'shipped' ? 'success' : 'warning'} />
+                          <Badge label={po.status === 'shipped' ? 'ARRIVED' : 'PARTIAL'} variant={po.status === 'shipped' ? 'success' : 'warning'} />
                         </Row>
                         <Text style={styles.jobMeta}>
                           {po.line_items_count} variants · {po.total_units_ordered} units
@@ -477,7 +478,7 @@ const styles = StyleSheet.create({
   chipText: { color: colors.ink3, fontSize: font.size.sm },
   chipTextSelected: { color: colors.accent, fontWeight: font.weight.semibold, fontSize: font.size.sm },
   poCard: { gap: spacing.xs, borderWidth: 1, borderColor: 'transparent' },
-  poCardSelected: { borderColor: colors.accent },
+  poCardSelected: { borderColor: colors.accent, backgroundColor: colors.accentGhost },
   actionBtn: { marginTop: spacing.xs },
   emptyText: { color: colors.ink3, fontSize: font.size.sm },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },

@@ -29,6 +29,9 @@ import {
   httpResolveLocation,
   httpGetOrderPool,
   httpScanResolve,
+  httpCreateProblemTask,
+  httpGetProblemTasks,
+  httpReportStowException,
 } from './wms.controller.js';
 
 /**
@@ -242,6 +245,33 @@ router.post(
   requireTier('core'),
   requireAction('wms:read'),
   httpScanResolve
+);
+
+router.post(
+  '/problem-center',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:exception:report'),
+  httpCreateProblemTask
+);
+
+router.get(
+  '/problem-center',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetProblemTasks
+);
+
+router.post(
+  '/stow-tasks/:taskId/exception',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:exception:report'),
+  httpReportStowException
 );
 
 export default router;

@@ -7,3 +7,5 @@ export { Divider } from './Divider';
 export { Row } from './Row';
 export { AppHeader } from './AppHeader';
 export { ProfileSheet } from './ProfileSheet';
+export { WorkflowStep } from './WorkflowStep';
+export type { WorkflowStepContext, WorkflowStepItem, ExceptionType } from './WorkflowStep';

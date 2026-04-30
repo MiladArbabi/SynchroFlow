@@ -4,6 +4,7 @@ import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, RefreshControl,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Screen, Card, Badge, Row, Divider, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
@@ -60,26 +61,32 @@ async function fetchTasks(userId?: number, roles?: string[]): Promise<Task[]> {
     }
 
     // Pack phase
-    if (batch.status === 'pick_complete' || batch.status === 'packing') {
+    if (batch.status === 'pick_complete' || batch.status === 'packing' || batch.status === 'pack_complete') {
       if (!isOperator || !assignedPacker || assignedPacker === userId) {
         tasks.push({
           id: batch.pick_batch_id,
           type: 'pack',
-          title: batch.status === 'packing' ? 'Continue packing' : 'Pack batch',
-          subtitle: `${batch.total_units} units · ${batch.units_picked} picked`,
+          title: batch.status === 'pack_complete' ? 'Pack complete ✓' :
+                 batch.status === 'packing' ? 'Continue packing' : 'Pack batch',
+          subtitle: batch.status === 'pack_complete'
+            ? `${batch.total_units} units shipped`
+            : `${batch.total_units} units · ${batch.units_picked} picked`,
           assigned: !!assignedPacker,
         });
       }
     }
   }
 
-  // ── Stow tasks ────────────────────────────────────────────────────────────
-  for (const task of stowRes.data.stow_tasks ?? []) {
+  // ── Stow tasks — grouped into single session ──────────────────────────────
+  const stowTasks = stowRes.data.stow_tasks ?? [];
+  if (stowTasks.length > 0) {
+    const totalUnits = stowTasks.reduce((s: number, t: any) => s + t.quantity, 0);
+    const hasInProgress = stowTasks.some((t: any) => t.status === 'in_progress');
     tasks.push({
-      id: task.stow_task_id,
+      id: stowTasks[0].stow_task_id,  // use first task id as entry point
       type: 'stow',
-      title: task.variant_title ?? 'Stow stock',
-      subtitle: `${task.quantity} units → ${task.location_code ?? 'Unassigned'}`,
+      title: hasInProgress ? 'Continue stowing' : 'Stow session',
+      subtitle: `${stowTasks.length} variant${stowTasks.length !== 1 ? 's' : ''} · ${totalUnits} units`,
       assigned: false,
     });
   }
@@ -105,7 +112,7 @@ const TYPE_BADGE: Record<Task['type'], { label: string; variant: 'info' | 'warni
   pick:    { label: 'PICK',    variant: 'info' },
   stow:    { label: 'STOW',   variant: 'warning' },
   receive: { label: 'RECEIVE', variant: 'success' },
-  pack:    { label: 'PACK',   variant: 'info' },
+  pack:    { label: 'PACK',   variant: 'warning' },
 };
 
 function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
@@ -150,11 +157,16 @@ export default function TaskListScreen() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load(true);
+    }, [load])
+  );
 
   return (
     <Screen>
       {/* HEADER */}
-      <AppHeader showLogo />
+      <AppHeader showLogo onRefresh={() => { setRefreshing(true); void load(true); }} />
 
       <Divider />
 
@@ -175,16 +187,16 @@ export default function TaskListScreen() {
 
       {/* TASK LIST */}
       <FlatList
-        data={tasks}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing || loading}
-            onRefresh={() => { setRefreshing(true); void load(true); }}
-            tintColor={colors.accent}
-          />
-        }
+          data={tasks}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[styles.list, { flexGrow: 1 }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing || loading}
+              onRefresh={() => { setRefreshing(true); void load(true); }}
+              tintColor={colors.accent}
+            />
+          }
         renderItem={({ item }) => (
           <TaskCard
             task={item}
@@ -195,6 +207,8 @@ export default function TaskListScreen() {
                 ? navigation.navigate('ReceiveJob', { task: item })
                 : item.type === 'stow'
                 ? navigation.navigate('Stow', { task: item })
+                : item.type === 'pack'
+                ? navigation.navigate('Pack', { task: item })
                 : navigation.navigate('Scan', { task: item })
             }
           />
