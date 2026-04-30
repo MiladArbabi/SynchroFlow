@@ -120,38 +120,35 @@ async function upsertIdleAlert({
   stage: 'pick' | 'pack';
   idleMinutes: number;
 }): Promise<void> {
-  await db('alerts')
-    .insert({
-      shop_id: shopId,
-      alert_key: alertKey,
-      source: 'wms',
-      alert_type: 'wms_operator_idle',
-      severity: 'warning',
-      title: `Operator idle during ${stage}`,
-      message: `Operator has been inactive for ${idleMinutes} minute${idleMinutes !== 1 ? 's' : ''} on batch ${batchId.slice(0, 8).toUpperCase()}.`,
-      entity_id: batchId,
-      entity_type: 'pick_batch',
-      revenue_impact: null,
-      is_active: isActive,
-      dismissed_at: isActive ? null : db.raw('"alerts"."dismissed_at"'),
-    })
-    .onConflict(['shop_id', 'alert_key'])
-    .merge({
-      is_active: isActive,
-      title: db.raw('EXCLUDED.title'),
-      message: db.raw('EXCLUDED.message'),
-      updated_at: db.fn.now(),
-      dismissed_at: isActive ? null : db.raw('"alerts"."dismissed_at"'),
-    });
+  const title = `Operator idle during ${stage}`;
+  const message = `Operator has been inactive for ${idleMinutes} minute${idleMinutes !== 1 ? 's' : ''} on batch ${batchId.slice(0, 8).toUpperCase()}.`;
+
+  await db.raw(`
+    INSERT INTO alerts (
+      shop_id, alert_key, source, alert_type, severity,
+      title, message, entity_id, entity_type,
+      revenue_impact, is_active, dismissed_at
+    ) VALUES (
+      ?, ?, 'wms', 'wms_operator_idle', 'warning',
+      ?, ?, ?, 'pick_batch',
+      NULL, ?, ?
+    )
+    ON CONFLICT (shop_id, alert_key) DO UPDATE SET
+      is_active = EXCLUDED.is_active,
+      title = EXCLUDED.title,
+      message = EXCLUDED.message,
+      updated_at = CURRENT_TIMESTAMP,
+      dismissed_at = CASE
+        WHEN EXCLUDED.is_active = false THEN CURRENT_TIMESTAMP
+        ELSE alerts.dismissed_at
+      END
+  `, [
+    shopId, alertKey,
+    title, message, batchId, batchId,
+    isActive, isActive ? null : new Date(),
+  ]);
 
   if (isActive) {
-    console.warn('[WMS_IDLE_ALERT_FIRED]', {
-      shopId,
-      alertKey,
-      stage,
-      userId,
-      batchId,
-      idleMinutes,
-    });
+    console.warn('[WMS_IDLE_ALERT_FIRED]', { shopId, alertKey, stage, userId, batchId, idleMinutes });
   }
 }

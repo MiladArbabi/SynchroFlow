@@ -33,11 +33,11 @@ type Order = {
 type ScreenPhase = 'brief' | 'item_scan' | 'invoice_scan' | 'complete';
 
 const PACK_EXCEPTIONS = [
-  { type: 'product_defect', label: 'Product defect' },
-  { type: 'packaging_defect', label: 'Packaging defect' },
-  { type: 'wrong_item', label: 'Wrong item' },
-  { type: 'short_pick', label: 'Short pick' },
-  { type: 'item_missing', label: 'Item missing' },
+  { type: 'product_defect', label: 'Damaged', icon: 'hammer-outline' },
+  { type: 'packaging_defect', label: 'Packaging', icon: 'cube-outline' },
+  { type: 'wrong_item', label: 'Wrong item', icon: 'swap-horizontal-outline' },
+  { type: 'short_pick', label: 'Short pick', icon: 'remove-circle-outline' },
+  { type: 'item_missing', label: 'Item missing', icon: 'search-outline' },
 ];
 
 export default function PackScreen() {

@@ -9,11 +9,11 @@ import { colors, font, spacing } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 
 const PICK_EXCEPTIONS = [
-  { type: 'item_missing', label: 'Item missing' },
-  { type: 'short_pick', label: 'Short pick' },
-  { type: 'product_defect', label: 'Product defect' },
-  { type: 'packaging_defect', label: 'Packaging defect' },
-  { type: 'wrong_item', label: 'Wrong item' },
+  { type: 'item_missing', label: 'Item missing', icon: 'search-outline' },
+  { type: 'short_pick', label: 'Short pick', icon: 'remove-circle-outline' },
+  { type: 'product_defect', label: 'Damaged', icon: 'hammer-outline' },
+  { type: 'packaging_defect', label: 'Packaging', icon: 'cube-outline' },
+  { type: 'wrong_item', label: 'Wrong item', icon: 'swap-horizontal-outline' },
 ];
 
 export default function ScanScreen() {
@@ -151,11 +151,12 @@ const handleException = useCallback(async (exceptionType: string, quantity: numb
         }}
       />
       <WorkflowStep
-        context={{
-          label: 'Location',
-          value: currentItem.location_code ?? 'ROOT',
-          sublabel: 'Go to this location to pick the item',
-        }}
+          scanType="product"
+          context={{
+            label: 'Location',
+            value: currentItem.location_code ?? 'ROOT',
+            sublabel: 'Go to this location to pick the item',
+          }}
         item={{
           title: currentItem.title,
           sku: currentItem.sku,

@@ -20,8 +20,9 @@ import StowScreen from './src/screens/StowScreen';
 import PackScreen from './src/screens/PackScreen';
 import OverviewScreen from './src/screens/OverviewScreen';
 import DispatchScreen from './src/screens/DispatchScreen';
-import TeamDashboardScreen from './src/screens/TeamDashboardScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
+import OwnerSettingsScreen from './src/screens/OwnerSettingsScreen';
+
 import { AppHeader, Screen } from './src/ui';
 
 // ─── Tab icon ────────────────────────────────────────────────────────────────
@@ -179,19 +180,19 @@ function OwnerTabs() {
         }}
       />
       <OwnerTab.Screen
-        name="Team"
-        component={TeamDashboardScreen}
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="people-outline" focused={focused} />,
-          tabBarLabel: 'Team',
-        }}
-      />
-      <OwnerTab.Screen
         name="Alerts"
         component={AlertsScreen}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon name="notifications-outline" focused={focused} />,
           tabBarLabel: 'Alerts',
+        }}
+      />
+      <OwnerTab.Screen
+        name="Scanner"
+        component={ScannerScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon name="scan-outline" focused={focused} />,
+          tabBarLabel: 'Scanner',
         }}
       />
     </OwnerTab.Navigator>

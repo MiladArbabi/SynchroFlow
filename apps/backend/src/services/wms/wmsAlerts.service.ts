@@ -52,29 +52,30 @@ async function upsertWmsAlert(
     isActive,
   } = params;
 
-  await trx('alerts')
-    .insert({
-      shop_id: shopId,
-      alert_key: alertKey,
-      source: 'wms',
-      alert_type: alertType,
-      severity,
-      title,
-      message,
-      entity_id: entityId ?? null,
-      entity_type: entityType ?? null,
-      revenue_impact: null,
-      is_active: isActive,
-      dismissed_at: isActive ? null : trx.fn.now(),
-    })
-    .onConflict(['shop_id', 'alert_key'])
-    .merge({
-      is_active: isActive,
-      title: trx.raw('EXCLUDED.title'),
-      message: trx.raw('EXCLUDED.message'),
-      updated_at: trx.fn.now(),
-      ...(isActive === false && { dismissed_at: trx.fn.now() }),
-    });
+  await trx.raw(`
+    INSERT INTO alerts (
+      shop_id, alert_key, source, alert_type, severity,
+      title, message, entity_id, entity_type,
+      revenue_impact, is_active, dismissed_at
+    ) VALUES (
+      ?, ?, 'wms', ?, ?,
+      ?, ?, ?, ?,
+      NULL, ?, ?
+    )
+    ON CONFLICT (shop_id, alert_key) DO UPDATE SET
+      is_active = EXCLUDED.is_active,
+      title = EXCLUDED.title,
+      message = EXCLUDED.message,
+      updated_at = CURRENT_TIMESTAMP,
+      dismissed_at = CASE
+        WHEN EXCLUDED.is_active = false THEN CURRENT_TIMESTAMP
+        ELSE alerts.dismissed_at
+      END
+  `, [
+    shopId, alertKey, alertType, severity,
+    title, message, entityId ?? null, entityType ?? null,
+    isActive, isActive ? null : new Date(),
+  ]);
 }
 
 // ─────────────────────────────────────────

@@ -88,11 +88,20 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
        */
       return trx('order_line_items as oli')
         .join('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'oli.lasyncro_order_id')
-        .leftJoin('inventory_truth as it', (join) => {
-          join
-            .on('it.lasyncro_variant_id', 'oli.lasyncro_variant_id')
-            .andOn('it.shop_id', trx.raw('?', [shopId]));
-        })
+        .leftJoin(
+          trx.raw(`
+            (SELECT DISTINCT ON (lasyncro_variant_id)
+              lasyncro_variant_id, location_code
+             FROM inventory_truth
+             WHERE shop_id = ?
+               AND on_hand_quantity > 0
+               AND location_code != ?
+             ORDER BY lasyncro_variant_id, location_code ASC
+            ) as it
+          `, [shopId, `WH-${shopId}-ROOT`]),
+          'it.lasyncro_variant_id',
+          'oli.lasyncro_variant_id'
+        )
         .leftJoin('pick_scan_log as psl', (join) => {
           join
             .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
@@ -108,7 +117,7 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
           'oli.sku',
           'oli.title',
           'oli.quantity',
-          trx.raw(`COALESCE(it.location_code, 'WH-${shopId}-ROOT') as location_code`)
+          trx.raw(`COALESCE(it.location_code, ?) as location_code`, [`WH-${shopId}-ROOT`])
         );
     });
 

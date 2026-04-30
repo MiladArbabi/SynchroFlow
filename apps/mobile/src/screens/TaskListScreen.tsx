@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, RefreshControl,
+  ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Screen, Card, Badge, Row, Divider, AppHeader } from '../ui';
@@ -139,6 +140,7 @@ export default function TaskListScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (silent = false) => {
@@ -167,6 +169,24 @@ export default function TaskListScreen() {
     <Screen>
       {/* HEADER */}
       <AppHeader showLogo onRefresh={() => { setRefreshing(true); void load(true); }} />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+        style={styles.filterScroll}
+      >
+        {[null, 'pick', 'stow', 'receive', 'pack'].map(filter => (
+          <TouchableOpacity
+            key={filter ?? 'all'}
+            style={[styles.filterChip, activeFilter === filter && styles.filterChipActive]}
+            onPress={() => setActiveFilter(filter)}
+          >
+            <Text style={[styles.filterChipText, activeFilter === filter && styles.filterChipTextActive]}>
+              {filter === null ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       <Divider />
 
@@ -187,7 +207,7 @@ export default function TaskListScreen() {
 
       {/* TASK LIST */}
       <FlatList
-          data={tasks}
+          data={activeFilter ? tasks.filter(t => t.type === activeFilter) : tasks}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.list, { flexGrow: 1 }]}
           refreshControl={
@@ -284,5 +304,39 @@ const styles = StyleSheet.create({
   errorText: {
     color: colors.error,
     fontSize: font.size.sm,
+  },
+  filterScroll: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.rule,
+    flexGrow: 0,
+  },
+  filterRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg2,
+    borderWidth: 1,
+    borderColor: colors.rule,
+    alignSelf: 'flex-start',
+  },
+  filterChipActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentGhost,
+  },
+  filterChipText: {
+    color: colors.ink3,
+    fontSize: font.size.sm,
+    fontWeight: font.weight.medium,
+  },
+  filterChipTextActive: {
+    color: colors.accent,
+    fontWeight: font.weight.bold,
   },
 });

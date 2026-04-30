@@ -1,339 +1,317 @@
 // apps/mobile/src/screens/DispatchScreen.tsx
 import { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ActivityIndicator,
-  Alert, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, Alert, ActivityIndicator,
+  Modal,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen, Card, Button, Badge, Row, Divider, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 import { useAuth } from '../hooks/useAuth';
 
-type Operator = {
-  user_id: number;
-  first_name: string;
-  last_name: string;
-  role: string;
-};
+type ProcessTab = 'inbound' | 'outbound' | 'exceptions';
 
+type Operator = { id: number; name: string; email: string };
+type Batch = {
+  pick_batch_id: string;
+  status: string;
+  total_units: number;
+  total_line_items: number;
+  assigned_operator_id: number | null;
+  assigned_packer_id: number | null;
+};
+type StowTask = {
+  stow_task_id: string;
+  status: string;
+  variant_title: string | null;
+  quantity: number;
+  location_code: string | null;
+};
+type ReceiveJob = {
+  receive_job_id: string;
+  status: string;
+  supplier_name: string;
+  po_id: string;
+  assigned_operator_id: number | null;
+};
 type PurchaseOrder = {
   id: string;
   status: string;
   supplier_name: string;
   expected_delivery_date: string | null;
-  line_items_count: number;
+  actual_delivery_date: string | null;
   total_units_ordered: number;
+  line_items_count: number;
+  has_active_job: boolean;
 };
-
-type Batch = {
-  pick_batch_id: string;
+type ProblemTask = {
+  problem_task_id: string;
   status: string;
-  total_line_items: number;
-  total_units: number;
-  units_picked: number;
-  units_packed: number;
-  assigned_operator_id: number | null;
-  assigned_packer_id: number | null;
-  released_at: string;
-};
-
-type StowTask = {
-  stow_task_id: string;
+  source: string;
+  exception_type: string;
+  quantity: number;
   variant_title: string | null;
   sku: string | null;
-  quantity: number;
-  location_code: string | null;
-  status: string;
-  claimed_by: number | null;
+  prob_label: string;
+  problem_bin_location: string | null;
+  created_at: string;
 };
 
-type ReceiveJob = {
-  receive_job_id: string;
-  supplier_name: string;
-  status: string;
-  total_variants: number;
-  total_units: number;
-  units_accepted: number;
-  assigned_operator_id: number | null;
-};
+function getEtaLabel(dateStr: string | null): { label: string; variant: 'error' | 'warning' | 'info' | 'success' } {
+  if (!dateStr) return { label: 'No ETA', variant: 'info' };
+  const eta = new Date(dateStr);
+  const now = new Date();
+  const diffDays = Math.ceil((eta.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-type ProcessTab = 'pick' | 'receive' | 'stow' | 'pack';
+  if (diffDays < 0) return { label: 'Overdue', variant: 'error' };
+  if (diffDays === 0) return { label: 'Arriving today', variant: 'warning' };
+  if (diffDays <= 3) return { label: `In ${diffDays} day${diffDays > 1 ? 's' : ''}`, variant: 'warning' };
+  if (diffDays <= 7) return { label: 'This week', variant: 'info' };
+  if (diffDays <= 30) return { label: 'This month', variant: 'info' };
+  return { label: 'Next month+', variant: 'info' };
+}
 
 export default function DispatchScreen() {
   const { logout } = useAuth();
-  
-  const [orderPoolCount, setOrderPoolCount] = useState<number>(0);
-  const [tab, setTab] = useState<ProcessTab>('receive');
+  const [tab, setTab] = useState<ProcessTab>('inbound');
   const [operators, setOperators] = useState<Operator[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [stowTasks, setStowTasks] = useState<StowTask[]>([]);
   const [receiveJobs, setReceiveJobs] = useState<ReceiveJob[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [problemTasks, setProblemTasks] = useState<ProblemTask[]>([]);
+  const [orderPoolCount, setOrderPoolCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // Assignment state
-  const [selectedPicker, setSelectedPicker] = useState<number | null>(null);
-  const [selectedReceiveOperator, setSelectedReceiveOperator] = useState<number | null>(null);
+  // Inbound state
   const [selectedPo, setSelectedPo] = useState<string | null>(null);
+  const [selectedReceiveOperator, setSelectedReceiveOperator] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // Outbound state
+  const [selectedPicker, setSelectedPicker] = useState<number | null>(null);
+
+  // PO Modal States
+  const [poModal, setPoModal] = useState<PurchaseOrder | null>(null);
+  const [poSubmitting, setPoSubmitting] = useState(false);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const [opsRes, batchRes, stowRes, receiveRes, poRes, poolRes] = await Promise.all([
+      const [opsRes, batchRes, stowRes, receiveRes, poRes, poolRes, problemRes] = await Promise.all([
         apiClient.get('/api/v1/operators/team'),
         apiClient.get('/api/v1/wms/batches'),
         apiClient.get('/api/v1/wms/stow-tasks'),
         apiClient.get('/api/v1/suppliers/receive-jobs?status=pending,in_progress,inspection'),
         apiClient.get('/api/v1/suppliers/purchase-orders'),
         apiClient.get('/api/v1/wms/order-pool'),
+        apiClient.get('/api/v1/wms/problem-center'),
       ]);
-      setOperators(opsRes.data.operators ?? []);
+
+      setOperators(opsRes.data.members ?? []);
       setBatches(batchRes.data.batches ?? []);
       setStowTasks(stowRes.data.stow_tasks ?? []);
       setReceiveJobs(receiveRes.data.receive_jobs ?? []);
-      setPurchaseOrders(
-        (poRes.data.purchase_orders ?? []).filter(
-          (po: PurchaseOrder) => po.status === 'shipped' || po.status === 'partially_received'
-        )
-      );
       setOrderPoolCount(poolRes.data.eligible_order_count ?? 0);
+      setProblemTasks(problemRes.data.problem_tasks ?? []);
+
+      // Enrich POs with active job flag
+      const jobs: ReceiveJob[] = receiveRes.data.receive_jobs ?? [];
+      const activePoIds = new Set(jobs.map(j => j.po_id));
+      const pos = (poRes.data.purchase_orders ?? []).map((po: PurchaseOrder) => ({
+        ...po,
+        has_active_job: activePoIds.has(po.id),
+      }));
+      setPurchaseOrders(pos);
     } catch {
-      Alert.alert('Error', 'Failed to load tasks.');
+      // silent fail
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useFocusEffect(useCallback(() => { void load(true); }, [load]));
 
-  const operatorName = (id: number | null) => {
-    if (!id) return 'Pool';
-    const op = operators.find(o => o.user_id === id);
-    return op ? op.first_name : `#${id}`;
-  };
+  // ── PO status update handler ─────────────────────────────────────────────────────────
+  const handlePoStatusUpdate = useCallback(async (poId: string, status: string) => {
+    setPoSubmitting(true);
+    try {
+      await apiClient.patch(`/api/v1/suppliers/purchase-orders/${poId}/status`, {
+        status,
+        ...(status === 'shipped' && { actual_delivery_date: new Date().toISOString().split('T')[0] }),
+      });
+      setPoModal(null);
+      void load(true);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error ?? 'Failed to update PO.';
+      Alert.alert('Error', msg);
+    } finally {
+      setPoSubmitting(false);
+    }
+  }, [load]);
 
-  // ── Release pick batch ────────────────────────────────────────────────────
+  // ── Release batch ─────────────────────────────────────────────────────────
   const handleReleaseBatch = useCallback(async () => {
-    Alert.alert(
-      'Release pick batch',
-      selectedPicker
-        ? `Assign picker to ${operatorName(selectedPicker)}?`
-        : 'Dispatch to operator pool?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Release',
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              const result = await apiClient.post('/api/v1/wms/batch/release', {
-                assigned_operator_id: selectedPicker ?? null,
-                assigned_packer_id: null,
-              });
-              if (result.data?.message) {
-                Alert.alert('No orders', 'No eligible orders available for batching.');
-              } else {
-                Alert.alert('✓ Batch released', `${result.data.order_count} orders · ${result.data.total_line_items} lines`);
-                setSelectedPicker(null);
-                void load();
-              }
-            } catch (err: unknown) {
-              const msg = (err as { response?: { data?: { error?: string } } })
-                ?.response?.data?.error ?? 'Failed to release batch.';
-              Alert.alert('Error', msg);
-            } finally {
-              setSubmitting(false);
-            }
-          },
-        },
-      ]
-    );
+    setSubmitting(true);
+    try {
+      await apiClient.post('/api/v1/wms/batch/release', {
+        assigned_operator_id: selectedPicker ?? null,
+        assigned_packer_id: null,
+      });
+      setSelectedPicker(null);
+      void load(true);
+      Alert.alert('✓ Batch released', 'Pick batch is now available for operators.');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error ?? 'Failed to release batch.';
+      Alert.alert('Error', msg);
+    } finally {
+      setSubmitting(false);
+    }
   }, [selectedPicker, load]);
 
   // ── Create receive job ────────────────────────────────────────────────────
   const handleCreateReceiveJob = useCallback(async () => {
-    if (!selectedPo) {
-      Alert.alert('Select PO', 'Please select a purchase order first.');
-      return;
+    if (!selectedPo) { Alert.alert('Select a PO first'); return; }
+    setSubmitting(true);
+    try {
+      await apiClient.post(`/api/v1/suppliers/purchase-orders/${selectedPo}/receive-jobs`, {
+        assigned_operator_id: selectedReceiveOperator ?? null,
+      });
+      setSelectedPo(null);
+      setSelectedReceiveOperator(null);
+      void load(true);
+      Alert.alert('✓ Receive job created', 'Operators can now claim the job.');
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const msg = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error ?? 'Failed to create receive job.';
+      if (status === 409) Alert.alert('Already exists', msg);
+      else Alert.alert('Error', msg);
+    } finally {
+      setSubmitting(false);
     }
-    const po = purchaseOrders.find(p => p.id === selectedPo);
-    Alert.alert(
-      'Create receive job',
-      `PO from ${po?.supplier_name}${selectedReceiveOperator
-        ? ` → ${operatorName(selectedReceiveOperator)}`
-        : ' → pool'}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Create',
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              await apiClient.post(
-                `/api/v1/suppliers/purchase-orders/${selectedPo}/receive-jobs`,
-                { assigned_operator_id: selectedReceiveOperator ?? null }
-              );
-              Alert.alert('✓ Receive job created', 'Operator notified.');
-              setSelectedPo(null);
-              setSelectedReceiveOperator(null);
-              void load();
-            } catch (err: unknown) {
-              const status = (err as { response?: { status?: number } })?.response?.status;
-              const msg = (err as { response?: { data?: { error?: string } } })
-                ?.response?.data?.error ?? 'Failed to create receive job.';
-              if (status === 409) {
-                Alert.alert('Already exists', msg);
-              } else {
-                Alert.alert('Error', msg);
-              }
-            } finally {
-              setSubmitting(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [selectedPo, selectedReceiveOperator, purchaseOrders, load]);
+  }, [selectedPo, selectedReceiveOperator, load]);
 
-  // ── Operator picker ───────────────────────────────────────────────────────
-  function OperatorPicker({
-    label,
-    selected,
-    onSelect,
-  }: {
+  // ── Operator picker chip ──────────────────────────────────────────────────
+  const OperatorPicker = ({ label, selected, onSelect }: {
     label: string;
     selected: number | null;
     onSelect: (id: number | null) => void;
-  }) {
-    return (
-      <View style={styles.pickerGroup}>
-        <Text style={styles.pickerLabel}>{label}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <Row style={styles.pickerRow}>
+  }) => (
+    <View style={styles.operatorPicker}>
+      <Text style={styles.operatorPickerLabel}>{label}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <Row style={styles.operatorChips}>
+          <TouchableOpacity
+            style={[styles.chip, selected === null && styles.chipSelected]}
+            onPress={() => onSelect(null)}
+          >
+            <Text style={[styles.chipText, selected === null && styles.chipTextSelected]}>
+              Pool
+            </Text>
+          </TouchableOpacity>
+          {operators.map(op => (
             <TouchableOpacity
-              style={selected === null ? styles.chipSelected : styles.chip}
-              onPress={() => onSelect(null)}
+              key={op.id}
+              style={[styles.chip, selected === op.id && styles.chipSelected]}
+              onPress={() => onSelect(op.id)}
             >
-              <Text style={selected === null ? styles.chipTextSelected : styles.chipText}>Pool</Text>
+              <Text style={[styles.chipText, selected === op.id && styles.chipTextSelected]}>
+                {op.name ?? op.email.split('@')[0]}
+              </Text>
             </TouchableOpacity>
-            {operators.map((op) => (
-              <TouchableOpacity
-                key={op.user_id}
-                style={selected === op.user_id ? styles.chipSelected : styles.chip}
-                onPress={() => onSelect(op.user_id)}
-              >
-                <Text style={selected === op.user_id ? styles.chipTextSelected : styles.chipText}>
-                  {op.first_name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </Row>
-        </ScrollView>
-      </View>
-    );
-  }
+          ))}
+        </Row>
+      </ScrollView>
+    </View>
+  );
 
-  // ── Batch status badge ────────────────────────────────────────────────────
-  const batchBadgeVariant = (status: string) => {
-    if (status === 'picking') return 'info' as const;
-    if (status === 'pick_complete') return 'success' as const;
-    if (status === 'packing') return 'warning' as const;
-    return 'info' as const;
-  };
-
-  const pickBatches = batches.filter(b => b.status === 'pending' || b.status === 'picking');
-  const packBatches = batches.filter(b => b.status === 'pick_complete' || b.status === 'packing');
+  const activeBatches = batches.filter(b => !['pack_complete', 'cancelled'].includes(b.status));
+  const activeStow = stowTasks.filter(t => ['pending', 'in_progress'].includes(t.status));
+  const activeReceive = receiveJobs.filter(j => ['pending', 'in_progress', 'inspection'].includes(j.status));
+  const packReady = batches.filter(b => ['pick_complete', 'packing'].includes(b.status));
+  const openProblems = problemTasks.filter(t => ['open', 'investigating'].includes(t.status));
 
   return (
     <Screen>
-      {/* HEADER */}
-      <AppHeader showLogo onRefresh={() => void load()}  />
-      {/* TOP NAV */}
-      <Row style={styles.topNav}>
-        {(['receive', 'stow', 'pick', 'pack'] as ProcessTab[]).map((t) => (
+      <AppHeader showLogo onRefresh={() => void load()} />
+
+      {/* Top nav */}
+      <View style={styles.topNav}>
+        {(['inbound', 'outbound', 'exceptions'] as ProcessTab[]).map(t => (
           <TouchableOpacity
             key={t}
-            style={tab === t ? styles.topNavItemActive : styles.topNavItem}
+            style={t === tab ? styles.topNavItemActive : styles.topNavItem}
             onPress={() => setTab(t)}
           >
-            <Text style={tab === t ? styles.topNavTextActive : styles.topNavText}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+            <Text style={t === tab ? styles.topNavTextActive : styles.topNavText}>
+              {t === 'inbound' ? 'Inbound' : t === 'outbound' ? 'Outbound' : 'Exceptions'}
             </Text>
+            {t === 'exceptions' && openProblems.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{openProblems.length}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         ))}
-      </Row>
-
-      <Divider />
+      </View>
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
 
-          {/* ── PICK TAB ── */}
-          {tab === 'pick' && (
+          {/* ── INBOUND ── */}
+          {tab === 'inbound' && (
             <>
-              {/* Active pick batches */}
-              {pickBatches.length > 0 && (
+              {/* Summary cards */}
+              <Row style={styles.summaryRow}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryCount}>{activeReceive.length}</Text>
+                  <Text style={styles.summaryLabel}>Active receive</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryCount}>{activeStow.length}</Text>
+                  <Text style={styles.summaryLabel}>Stow pending</Text>
+                </View>
+              </Row>
+              <Divider />
+
+              {/* Active receive jobs */}
+              {activeReceive.length > 0 && (
                 <>
-                  <Text style={styles.sectionTitle}>Active ({pickBatches.length})</Text>
-                  {pickBatches.map((b) => (
-                    <Card key={b.pick_batch_id} style={styles.jobCard}>
-                      <Row style={styles.jobHeader}>
-                        <Text style={styles.jobId}>{b.pick_batch_id.slice(0, 8).toUpperCase()}</Text>
-                        <Badge label={b.status.replace('_', ' ').toUpperCase()} variant={batchBadgeVariant(b.status)} />
+                  <Text style={styles.sectionTitle}>Active receive jobs</Text>
+                  {activeReceive.map(job => (
+                    <Card key={job.receive_job_id} style={styles.jobCard}>
+                      <Row style={{ justifyContent: 'space-between' }}>
+                        <Text style={styles.jobTitle}>{job.supplier_name}</Text>
+                        <Badge label={job.status.toUpperCase()} variant="info" />
                       </Row>
-                      <Text style={styles.jobMeta}>{b.total_line_items} lines · {b.total_units} units · picker: {operatorName(b.assigned_operator_id)}</Text>
-                      <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { width: `${b.total_units > 0 ? Math.round((b.units_picked / b.total_units) * 100) : 0}%` as any }]} />
-                      </View>
                     </Card>
                   ))}
                   <Divider />
                 </>
               )}
 
-              {/* Order pool */}
-              <View style={[styles.poolCard, orderPoolCount > 0 && styles.poolCardActive]}>
-                <Text style={styles.poolCount}>{orderPoolCount}</Text>
-                <Text style={styles.poolLabel}>
-                  {orderPoolCount === 1 ? 'order' : 'orders'} ready in pool
-                </Text>
-              </View>
-
-              {/* Release new batch */}
-              <Text style={styles.sectionTitle}>Release batch</Text>
-              <Text style={styles.sectionHint}>System selects eligible orders automatically. Oldest orders released first.</Text>
-                <OperatorPicker label="Assign picker" selected={selectedPicker} onSelect={setSelectedPicker} />
-              <Button
-                label={submitting ? 'Releasing…' : 'Release pick batch'}
-                onPress={() => void handleReleaseBatch()}
-                variant="primary"
-                style={styles.actionBtn}
-              />
-            </>
-          )}
-
-          {/* ── RECEIVE TAB ── */}
-          {tab === 'receive' && (
-            <>
-              {/* Active receive jobs */}
-              {receiveJobs.length > 0 && (
+              {/* Active stow tasks */}
+              {activeStow.length > 0 && (
                 <>
-                  <Text style={styles.sectionTitle}>Active ({receiveJobs.length})</Text>
-                  {receiveJobs.map((j) => (
-                    <Card key={j.receive_job_id} style={styles.jobCard}>
-                      <Row style={styles.jobHeader}>
-                        <Text style={styles.jobSupplier}>{j.supplier_name}</Text>
-                        <Badge
-                          label={j.status.replace('_', ' ').toUpperCase()}
-                          variant={j.status === 'closed' ? 'success' : 'info'}
-                        />
+                  <Text style={styles.sectionTitle}>Stow tasks</Text>
+                  {activeStow.map(t => (
+                    <Card key={t.stow_task_id} style={styles.jobCard}>
+                      <Row style={{ justifyContent: 'space-between' }}>
+                        <Text style={styles.jobTitle}>{t.variant_title ?? t.stow_task_id.slice(0, 8)}</Text>
+                        <Badge label={`${t.quantity} units`} variant="warning" />
                       </Row>
-                      <Text style={styles.jobMeta}>
-                        {j.total_variants} variants · {j.units_accepted} accepted · operator: {operatorName(j.assigned_operator_id)}
-                      </Text>
+                      {t.location_code && (
+                        <Text style={styles.jobMeta}>{t.location_code}</Text>
+                      )}
                     </Card>
                   ))}
                   <Divider />
@@ -341,166 +319,477 @@ export default function DispatchScreen() {
               )}
 
               {/* Create receive job */}
-              <Text style={styles.sectionTitle}>New receive job</Text>
-              {purchaseOrders.length === 0 ? (
-                <Text style={styles.emptyText}>No POs ready to receive.</Text>
-              ) : (
-                <>
-                  <Text style={styles.pickerLabel}>Select PO</Text>
-                  {purchaseOrders.map((po) => (
-                    <TouchableOpacity
-                      key={po.id}
-                      onPress={() => setSelectedPo(po.id === selectedPo ? null : po.id)}
-                    >
-                      <Card style={selectedPo === po.id
-                        ? { ...styles.poCard, ...styles.poCardSelected }
-                        : styles.poCard}>
-                        <Row style={{ justifyContent: 'space-between' }}>
-                          <Text style={styles.jobSupplier}>{po.supplier_name}</Text>
-                          <Badge label={po.status === 'shipped' ? 'ARRIVED' : 'PARTIAL'} variant={po.status === 'shipped' ? 'success' : 'warning'} />
-                        </Row>
-                        <Text style={styles.jobMeta}>
-                          {po.line_items_count} variants · {po.total_units_ordered} units
-                          {po.expected_delivery_date ? ` · ETA ${po.expected_delivery_date}` : ''}
+              <Text style={styles.sectionTitle}>Create receive job</Text>
+              <Text style={styles.sectionHint}>Select a shipped PO to open a receive session.</Text>
+
+              {purchaseOrders
+                .filter(po => ['shipped', 'partially_received'].includes(po.status))
+                .map(po => (
+                  <TouchableOpacity
+                    key={po.id}
+                    style={[
+                      styles.poCard,
+                      selectedPo === po.id && styles.poCardSelected,
+                      po.has_active_job && styles.poCardDisabled,
+                    ]}
+                    onPress={() => !po.has_active_job && setSelectedPo(
+                      selectedPo === po.id ? null : po.id
+                    )}
+                    disabled={po.has_active_job}
+                  >
+                    <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={styles.poName}>{po.supplier_name}</Text>
+                      <Row style={{ gap: spacing.xs }}>
+                        {po.has_active_job
+                          ? <Badge label="JOB ACTIVE" variant="warning" />
+                          : <Badge label="ARRIVED" variant="success" />
+                        }
+                      </Row>
+                    </Row>
+                    {(() => {
+                      const dateStr = po.actual_delivery_date ?? po.expected_delivery_date;
+                      const label = po.actual_delivery_date ? 'Arrived' : 'Expected';
+                      if (!dateStr) return null;
+                      return (
+                        <Text style={styles.poMeta}>
+                          {label}: {new Date(dateStr).toLocaleDateString('en-GB', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                          })}
                         </Text>
-                      </Card>
-                    </TouchableOpacity>
-                  ))}
-                  <OperatorPicker label="Assign operator" selected={selectedReceiveOperator} onSelect={setSelectedReceiveOperator} />
-                  <Button
-                    label={submitting ? 'Creating…' : 'Create receive job'}
-                    onPress={() => void handleCreateReceiveJob()}
-                    variant="primary"
-                    style={styles.actionBtn}
-                  />
+                      );
+                    })()}
+                  </TouchableOpacity>
+                ))
+              }
+
+              {purchaseOrders.filter(po => ['shipped', 'partially_received'].includes(po.status)).length === 0 && (
+                <Text style={styles.emptyText}>No POs ready to receive.</Text>
+              )}
+
+              <OperatorPicker
+                label="Assign operator (optional)"
+                selected={selectedReceiveOperator}
+                onSelect={setSelectedReceiveOperator}
+              />
+
+              <Button
+                label={submitting ? 'Creating…' : 'Create receive job'}
+                onPress={() => void handleCreateReceiveJob()}
+                variant={selectedPo ? 'primary' : 'ghost'}
+                style={{ marginTop: spacing.md }}
+              />
+
+              {/* PO Pipeline */}
+              {purchaseOrders.filter(po => !['shipped', 'partially_received', 'received', 'cancelled'].includes(po.status)).length > 0 && (
+                <>
+                  <Divider />
+                  <Text style={styles.sectionTitle}>PO pipeline</Text>
+                  <Text style={styles.sectionHint}>All open purchase orders and their arrival status.</Text>
+                  {purchaseOrders
+                    .filter(po => !['shipped', 'partially_received', 'received', 'cancelled'].includes(po.status))
+                    .sort((a, b) => {
+                      if (!a.expected_delivery_date) return 1;
+                      if (!b.expected_delivery_date) return -1;
+                      return new Date(a.expected_delivery_date).getTime() - new Date(b.expected_delivery_date).getTime();
+                    })
+                    .map(po => {
+                      const eta = getEtaLabel(po.expected_delivery_date);
+                      return (
+                        <TouchableOpacity key={po.id} onPress={() => setPoModal(po)}>
+                         <Card style={styles.pipelineCard}>
+                          <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.jobTitle} numberOfLines={1}>
+                                {po.supplier_name}
+                              </Text>
+                              <Text style={styles.jobMeta}>
+                                {po.line_items_count} SKU{Number(po.line_items_count) !== 1 ? 's' : ''} · {po.total_units_ordered} units
+                              </Text>
+                            </View>
+                            <View style={{ gap: spacing.xs, alignItems: 'flex-end' }}>
+                              <Badge
+                                label={po.status.replace(/_/g, ' ').toUpperCase()}
+                                variant={
+                                  po.status === 'shipped' ? 'success' :
+                                  po.status === 'partially_received' ? 'warning' : 'info'
+                                }
+                              />
+                              <Badge label={eta.label} variant={eta.variant} />
+                            </View>
+                          </Row>
+                          {(() => {
+                            const dateStr = po.actual_delivery_date ?? po.expected_delivery_date;
+                            const label = po.actual_delivery_date ? 'Arrived' : 'Expected';
+                            if (!dateStr) return null;
+                            return (
+                              <Text style={styles.poMeta}>
+                                {label}: {new Date(dateStr).toLocaleDateString('en-GB', {
+                                  day: 'numeric', month: 'short', year: 'numeric',
+                                })}
+                              </Text>
+                            );
+                          })()}
+                         </Card>
+                        </TouchableOpacity>
+                      );
+                    })
+                  }
                 </>
               )}
             </>
           )}
 
-          {/* ── STOW TAB ── */}
-          {tab === 'stow' && (
+          {/* ── OUTBOUND ── */}
+          {tab === 'outbound' && (
             <>
-              <Text style={styles.sectionTitle}>
-                Stow tasks ({stowTasks.length})
-              </Text>
-              {stowTasks.length === 0 ? (
-                <Text style={styles.emptyText}>No stow tasks pending.</Text>
-              ) : (
-                stowTasks.map((t) => (
-                  <Card key={t.stow_task_id} style={styles.jobCard}>
-                    <Row style={styles.jobHeader}>
-                      <Text style={styles.jobSupplier} numberOfLines={1}>
-                        {t.variant_title ?? t.sku ?? t.stow_task_id.slice(0, 8)}
-                      </Text>
-                      <Badge
-                        label={t.status === 'in_progress' ? 'IN PROGRESS' : 'PENDING'}
-                        variant={t.status === 'in_progress' ? 'warning' : 'info'}
-                      />
-                    </Row>
-                    <Text style={styles.jobMeta}>
-                      {t.quantity} units → {t.location_code ?? 'No location'} · operator: {operatorName(t.claimed_by)}
+              {/* Order pool card */}
+              <View style={[styles.poolCard, orderPoolCount > 0 && styles.poolCardActive]}>
+                <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <Text style={styles.poolCount}>{orderPoolCount}</Text>
+                    <Text style={styles.poolLabel}>
+                      {orderPoolCount === 1 ? 'order' : 'orders'} ready in pool
                     </Text>
-                  </Card>
-                ))
+                  </View>
+                  <Ionicons
+                    name="layers-outline"
+                    size={32}
+                    color={orderPoolCount > 0 ? colors.accent : colors.ink4}
+                  />
+                </Row>
+              </View>
+
+              {/* Active batches */}
+              {activeBatches.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>Active batches</Text>
+                  {activeBatches.map(batch => (
+                    <Card key={batch.pick_batch_id} style={styles.jobCard}>
+                      <Row style={{ justifyContent: 'space-between' }}>
+                        <Text style={styles.jobTitle}>
+                          {batch.pick_batch_id.slice(0, 8).toUpperCase()}
+                        </Text>
+                        <Badge
+                          label={batch.status.replace(/_/g, ' ').toUpperCase()}
+                          variant={
+                            batch.status === 'picking' ? 'info' :
+                            batch.status === 'pick_complete' ? 'success' :
+                            batch.status === 'packing' ? 'warning' : 'info'
+                          }
+                        />
+                      </Row>
+                      <Text style={styles.jobMeta}>
+                        {batch.total_units} units · {batch.total_line_items} lines
+                      </Text>
+                    </Card>
+                  ))}
+                  <Divider />
+                </>
               )}
+
+              {/* Release batch */}
+              <Text style={styles.sectionTitle}>Release pick batch</Text>
+              <Text style={styles.sectionHint}>
+                System selects eligible orders automatically. Oldest orders released first.
+              </Text>
+
+              <OperatorPicker
+                label="Assign picker (optional)"
+                selected={selectedPicker}
+                onSelect={setSelectedPicker}
+              />
+
+              <Button
+                label={submitting ? 'Releasing…' : orderPoolCount > 0 ? 'Release batch' : 'No orders in pool'}
+                onPress={() => orderPoolCount > 0 ? void handleReleaseBatch() : null}
+                variant={orderPoolCount > 0 ? 'primary' : 'ghost'}
+                style={{ marginTop: spacing.md }}
+              />
             </>
           )}
 
-          {/* ── PACK TAB ── */}
-          {tab === 'pack' && (
+          {/* ── EXCEPTIONS ── */}
+          {tab === 'exceptions' && (
             <>
-              <Text style={styles.sectionTitle}>
-                Pack jobs ({packBatches.length})
-              </Text>
-              {packBatches.length === 0 ? (
-                <Text style={styles.emptyText}>No batches ready to pack.</Text>
+              <Row style={styles.summaryRow}>
+                <View style={styles.summaryCard}>
+                  <Text style={[styles.summaryCount, openProblems.length > 0 && { color: colors.error }]}>
+                    {openProblems.length}
+                  </Text>
+                  <Text style={styles.summaryLabel}>Open problems</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryCount}>
+                    {problemTasks.filter(t => t.status === 'resolved').length}
+                  </Text>
+                  <Text style={styles.summaryLabel}>Resolved</Text>
+                </View>
+              </Row>
+              <Divider />
+
+              {openProblems.length === 0 ? (
+                <View style={styles.center}>
+                  <Ionicons name="checkmark-circle-outline" size={48} color={colors.success} />
+                  <Text style={styles.quietTitle}>No open exceptions</Text>
+                  <Text style={styles.quietSub}>All problems resolved.</Text>
+                </View>
               ) : (
-                packBatches.map((b) => (
-                  <Card key={b.pick_batch_id} style={styles.jobCard}>
-                    <Row style={styles.jobHeader}>
-                      <Text style={styles.jobId}>{b.pick_batch_id.slice(0, 8).toUpperCase()}</Text>
-                      <Badge label={b.status.replace('_', ' ').toUpperCase()} variant={batchBadgeVariant(b.status)} />
-                    </Row>
-                    <Text style={styles.jobMeta}>
-                      {b.total_units} units · packer: {operatorName(b.assigned_packer_id)}
-                    </Text>
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFillPack, { width: `${b.total_units > 0 ? Math.round((b.units_packed / b.total_units) * 100) : 0}%` as any }]} />
-                    </View>
-                  </Card>
-                ))
+                <>
+                  <Text style={styles.sectionTitle}>Open problem tasks</Text>
+                  {openProblems.map(task => (
+                    <Card key={task.problem_task_id} style={styles.problemCard}>
+                      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.jobTitle} numberOfLines={1}>
+                            {task.variant_title ?? task.sku ?? '—'}
+                          </Text>
+                          <Text style={styles.jobMeta}>
+                            {task.exception_type.replace(/_/g, ' ')} · {task.quantity} unit{task.quantity > 1 ? 's' : ''}
+                          </Text>
+                        </View>
+                        <View style={{ gap: spacing.xs, alignItems: 'flex-end' }}>
+                          <Badge
+                            label={task.source.toUpperCase()}
+                            variant="info"
+                          />
+                          <Badge
+                            label={task.status.toUpperCase()}
+                            variant={task.status === 'open' ? 'error' : 'warning'}
+                          />
+                        </View>
+                      </Row>
+                      <Row style={styles.probLabelRow}>
+                        <Ionicons name="pricetag-outline" size={14} color={colors.accent} />
+                        <Text style={styles.probLabelText}>{task.prob_label}</Text>
+                        {task.problem_bin_location && (
+                          <Text style={styles.probBin}>→ {task.problem_bin_location}</Text>
+                        )}
+                      </Row>
+                    </Card>
+                  ))}
+                </>
               )}
             </>
           )}
 
         </ScrollView>
       )}
+    {/* PO Modal */}
+      <Modal
+        visible={!!poModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPoModal(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setPoModal(null)}
+        />
+        <View style={styles.modalSheet}>
+          <View style={styles.sheetHandle} />
+          {poModal && (
+            <>
+              <Text style={styles.modalTitle}>{poModal.supplier_name}</Text>
+              <Text style={styles.modalSubtitle}>
+                {poModal.line_items_count} SKU{Number(poModal.line_items_count) !== 1 ? 's' : ''} · {poModal.total_units_ordered} units
+              </Text>
+              {poModal.expected_delivery_date && (
+                <Text style={styles.modalMeta}>
+                  ETA: {new Date(poModal.expected_delivery_date).toLocaleDateString('en-GB', {
+                    day: 'numeric', month: 'short', year: 'numeric',
+                  })}
+                </Text>
+              )}
+
+              <View style={styles.modalDivider} />
+
+              {/* Status badge */}
+              <Row style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
+                <Badge
+                  label={poModal.status.replace(/_/g, ' ').toUpperCase()}
+                  variant={poModal.status === 'shipped' ? 'success' : 'info'}
+                />
+                <Badge label={getEtaLabel(poModal.expected_delivery_date).label}
+                  variant={getEtaLabel(poModal.expected_delivery_date).variant}
+                />
+              </Row>
+
+              {/* Actions */}
+              {!['shipped', 'partially_received', 'received'].includes(poModal.status) && (
+                <TouchableOpacity
+                  style={styles.modalActionPrimary}
+                  onPress={() => void handlePoStatusUpdate(poModal.id, 'shipped')}
+                  disabled={poSubmitting}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={20} color={colors.bg} />
+                  <Text style={styles.modalActionPrimaryText}>
+                    {poSubmitting ? 'Updating…' : 'Mark as arrived'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={styles.modalActionSecondary}
+                onPress={() => {
+                  setPoModal(null);
+                  Alert.alert('Coming soon', 'PO edit screen coming in next sprint.');
+                }}
+              >
+                <Ionicons name="create-outline" size={20} color={colors.ink} />
+                <Text style={styles.modalActionSecondaryText}>Modify PO</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalActionDanger}
+                onPress={() => {
+                  Alert.alert(
+                    'Cancel PO',
+                    'Are you sure you want to cancel this purchase order?',
+                    [
+                      { text: 'Keep', style: 'cancel' },
+                      { text: 'Cancel PO', style: 'destructive',
+                        onPress: () => void handlePoStatusUpdate(poModal.id, 'cancelled') },
+                    ]
+                  );
+                }}
+                disabled={poSubmitting}
+              >
+                <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+                <Text style={styles.modalActionDangerText}>Cancel PO</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setPoModal(null)}
+              >
+                <Text style={styles.modalCancelText}>Close</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  refreshText: { color: colors.accent, fontSize: font.size.xl },
   topNav: {
+    flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    gap: spacing.xs,
+    gap: spacing.sm,
     paddingBottom: spacing.sm,
+    paddingTop: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.rule,
   },
   topNavItem: {
     flex: 1, paddingVertical: spacing.sm,
     alignItems: 'center', borderRadius: radius.sm,
-    backgroundColor: colors.bg2,
+    backgroundColor: colors.bg2, flexDirection: 'row',
+    justifyContent: 'center', gap: spacing.xs,
   },
   topNavItemActive: {
     flex: 1, paddingVertical: spacing.sm,
     alignItems: 'center', borderRadius: radius.sm,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accent, flexDirection: 'row',
+    justifyContent: 'center', gap: spacing.xs,
   },
   topNavText: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
   topNavTextActive: { color: colors.bg, fontSize: font.size.sm, fontWeight: font.weight.bold },
-  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
-  sectionTitle: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
-  sectionHint: { color: colors.ink3, fontSize: font.size.sm, lineHeight: 18 },
+  tabBadge: {
+    backgroundColor: colors.error, borderRadius: 8,
+    minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  tabBadgeText: { color: colors.bg, fontSize: 10, fontWeight: font.weight.bold },
+  content: { padding: spacing.lg, paddingBottom: 100, gap: spacing.md },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl, gap: spacing.md },
+  summaryRow: { gap: spacing.md },
+  summaryCard: {
+    flex: 1, backgroundColor: colors.bg2, borderRadius: radius.md,
+    padding: spacing.md, alignItems: 'center', gap: spacing.xs,
+    borderWidth: 1, borderColor: colors.rule,
+  },
+  summaryCount: { color: colors.accent, fontSize: font.size.xl, fontWeight: font.weight.bold },
+  summaryLabel: { color: colors.ink3, fontSize: font.size.xs },
+  sectionTitle: {
+    color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold,
+  },
+  sectionHint: { color: colors.ink3, fontSize: font.size.sm, marginTop: -spacing.xs },
   jobCard: { gap: spacing.xs },
-  jobHeader: { justifyContent: 'space-between', alignItems: 'center' },
-  jobId: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.bold },
-  jobSupplier: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold, flex: 1, marginRight: spacing.sm },
+  jobTitle: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold, flex: 1 },
   jobMeta: { color: colors.ink3, fontSize: font.size.sm },
-  progressTrack: { height: 4, backgroundColor: colors.bg3, borderRadius: 2, overflow: 'hidden', marginTop: spacing.xs },
-  progressFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 2 },
-  progressFillPack: { height: '100%', backgroundColor: colors.success, borderRadius: 2 },
-  pickerGroup: { gap: spacing.xs },
-  pickerLabel: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium, textTransform: 'uppercase', letterSpacing: 0.5 },
-  pickerRow: { gap: spacing.sm, paddingVertical: spacing.xs },
-  chip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.sm, backgroundColor: colors.bg2, borderWidth: 1, borderColor: 'transparent' },
-  chipSelected: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.sm, backgroundColor: colors.accentGhost, borderWidth: 1, borderColor: colors.accentBorder },
-  chipText: { color: colors.ink3, fontSize: font.size.sm },
-  chipTextSelected: { color: colors.accent, fontWeight: font.weight.semibold, fontSize: font.size.sm },
-  poCard: { gap: spacing.xs, borderWidth: 1, borderColor: 'transparent' },
+  poCard: {
+    backgroundColor: colors.bg2, borderRadius: radius.md,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.rule, gap: spacing.xs,
+  },
   poCardSelected: { borderColor: colors.accent, backgroundColor: colors.accentGhost },
-  actionBtn: { marginTop: spacing.xs },
-  emptyText: { color: colors.ink3, fontSize: font.size.sm },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  poCardDisabled: { opacity: 0.5 },
+  poName: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold, flex: 1 },
+  poMeta: { color: colors.ink3, fontSize: font.size.sm },
   poolCard: {
+    backgroundColor: colors.bg2, borderRadius: radius.md, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.rule,
+  },
+  poolCardActive: { borderColor: colors.accentBorder },
+  poolCount: { color: colors.accent, fontSize: font.size.xxl, fontWeight: font.weight.bold },
+  poolLabel: { color: colors.ink3, fontSize: font.size.sm, marginTop: spacing.xs },
+  operatorPicker: { gap: spacing.sm },
+  operatorPickerLabel: { color: colors.ink3, fontSize: font.size.sm },
+  operatorChips: { gap: spacing.sm, flexWrap: 'nowrap' },
+  chip: {
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+    borderRadius: radius.sm, backgroundColor: colors.bg2,
+    borderWidth: 1, borderColor: colors.rule,
+  },
+  chipSelected: { borderColor: colors.accent, backgroundColor: colors.accentGhost },
+  chipText: { color: colors.ink3, fontSize: font.size.sm },
+  chipTextSelected: { color: colors.accent, fontWeight: font.weight.semibold },
+  problemCard: { gap: spacing.sm },
+  probLabelRow: { alignItems: 'center', gap: spacing.xs },
+  probLabelText: { color: colors.accent, fontSize: font.size.sm, fontWeight: font.weight.bold },
+  probBin: { color: colors.ink3, fontSize: font.size.sm },
+  emptyText: { color: colors.ink3, fontSize: font.size.sm, textAlign: 'center', paddingVertical: spacing.md },
+  quietTitle: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  quietSub: { color: colors.ink3, fontSize: font.size.md },
+  pipelineCard: { gap: spacing.xs },
+  etaDate: { color: colors.ink4, fontSize: font.size.xs },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalSheet: {
     backgroundColor: colors.bg2,
-    borderRadius: radius.md,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
     padding: spacing.lg,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.rule,
+    paddingBottom: spacing.xxl,
+    gap: spacing.sm,
   },
-  poolCardActive: {
-    borderColor: colors.accentBorder,
+  sheetHandle: {
+    width: 40, height: 4, backgroundColor: colors.ink4,
+    borderRadius: 2, alignSelf: 'center', marginBottom: spacing.sm,
   },
-  poolCount: {
-    color: colors.accent,
-    fontSize: font.size.xxl,
-    fontWeight: font.weight.bold,
+  modalTitle: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  modalSubtitle: { color: colors.ink3, fontSize: font.size.sm },
+  modalMeta: { color: colors.ink4, fontSize: font.size.xs },
+  modalDivider: { height: 1, backgroundColor: colors.rule, marginVertical: spacing.xs },
+  modalActionPrimary: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.accent, borderRadius: radius.md,
+    padding: spacing.md,
   },
-  poolLabel: {
-    color: colors.ink3,
-    fontSize: font.size.sm,
-    marginTop: spacing.xs,
+  modalActionPrimaryText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  modalActionSecondary: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.bg3, borderRadius: radius.md,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.rule,
   },
+  modalActionSecondaryText: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.medium },
+  modalActionDanger: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.errorGhost, borderRadius: radius.md,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.errorBorder,
+  },
+  modalActionDangerText: { color: colors.error, fontSize: font.size.md, fontWeight: font.weight.medium },
+  modalCancel: { alignItems: 'center', paddingVertical: spacing.md },
+  modalCancelText: { color: colors.ink3, fontSize: font.size.md },
 });

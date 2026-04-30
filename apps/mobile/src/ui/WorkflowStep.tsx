@@ -38,6 +38,7 @@ export type WorkflowStepItem = {
 export type ExceptionType = {
   type: string;
   label: string;
+  icon?: string;
 };
 
 type Props = {
@@ -78,6 +79,7 @@ export function WorkflowStep({
   const [permission, requestPermission] = useCameraPermissions();
   const inputRef = useRef<TextInput>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const confirmingRef = useRef(false);
 
   const scanConfig = {
     location: {
@@ -115,9 +117,12 @@ export function WorkflowStep({
   }, []);
 
   const handleConfirm = useCallback(async () => {
+    if (confirmingRef.current) return;
+    confirmingRef.current = true;
     if (!barcodeValue.trim()) {
       setErrorMsg('Please scan or enter a barcode first.');
       setScanState('error');
+      confirmingRef.current = false;
       return;
     }
 
@@ -138,6 +143,7 @@ export function WorkflowStep({
         setBarcodeValue('');
         setScanState('idle');
         setErrorMsg(null);
+        confirmingRef.current = false;
       }, 600);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })
@@ -145,6 +151,7 @@ export function WorkflowStep({
       setErrorMsg(msg);
       setScanState('error');
       Vibration.vibrate(VIBRATION_ERROR);
+      confirmingRef.current = false;
     }
   }, [barcodeValue, expectedBarcode, onConfirm]);
 
@@ -222,6 +229,10 @@ export function WorkflowStep({
       <Divider />
 
       {/* ── SECTION 3: ACTION ── */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.actionKAV}
+      >
       <View style={styles.section}>
         <View style={styles.scanTypeHeader}>
           <Ionicons name={scanConfig.icon} size={18} color={scanConfig.color} />
@@ -286,10 +297,11 @@ export function WorkflowStep({
           style={styles.exceptionBtn}
           onPress={() => setShowExceptions(true)}
         >
-            <Ionicons name="warning-outline" size={18} color={colors.ink3} />
-          <Text style={styles.exceptionBtnText}>Report problem</Text>
-        </TouchableOpacity>
-      </View>
+              <Ionicons name="warning-outline" size={18} color={colors.ink3} />
+            <Text style={styles.exceptionBtnText}>Report problem</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
 
       {/* ── CAMERA MODAL ── */}
       <Modal visible={showCamera} animationType="slide" onRequestClose={() => setShowCamera(false)}>
@@ -344,7 +356,9 @@ export function WorkflowStep({
 
             {/* Exception type grid */}
             <View style={styles.exceptionGrid}>
-              {exceptions.map(({ type, label }) => (
+              {exceptions.map((exc) => {
+              const { type, label } = exc;
+              return (
                 <TouchableOpacity
                   key={type}
                   style={[
@@ -354,7 +368,7 @@ export function WorkflowStep({
                   onPress={() => setSelectedExType(type)}
                 >
                   <Ionicons
-                    name="alert-circle-outline"
+                    name={(exc.icon ?? 'alert-circle-outline') as any}
                     size={22}
                     color={selectedExType === type ? colors.accent : colors.ink3}
                   />
@@ -365,7 +379,8 @@ export function WorkflowStep({
                     {label}
                   </Text>
                 </TouchableOpacity>
-              ))}
+              );
+            })}
             </View>
 
             {/* Qty input */}
@@ -718,4 +733,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.success,
     borderColor: colors.success,
   },
+  actionKAV: { flex: 1 },
 });

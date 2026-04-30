@@ -303,7 +303,7 @@ export async function seed(knex: Knex): Promise<void> {
         .insert({
           shop_id: shop.id,
           supplier_id: supplier.id,
-          status: 'shipped',
+          status: 'confirmed',
           expected_delivery_date: new Date().toISOString().split('T')[0],
           notes: 'QA test PO — full flow seed',
         })
@@ -349,7 +349,7 @@ export async function seed(knex: Knex): Promise<void> {
 
     // 6. Seed 3 orders in the pool (pending, no batch, no constraints)
     for (let i = 0; i < 3; i++) {
-      const variant = qaVariants[i % qaVariants.length];
+        const variant = qaVariants[i]; // each order gets a unique variant
 
       const variantRow = await trx('variants')
         .where({ lasyncro_variant_id: variant.lasyncro_variant_id })
