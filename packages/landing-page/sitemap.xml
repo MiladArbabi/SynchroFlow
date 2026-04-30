@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  sitemap.xml — lasyncro.com
+  Updated: 2026-04
+  Static sitemap for the landing page. When blog/compare/features routes are added,
+  extend this file with their slugs. Submit to Google Search Console after each deploy.
+  GSC: https://search.google.com/search-console
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <!-- Homepage -->
+  <url>
+    <loc>https://lasyncro.com/</loc>
+    <lastmod>2026-04-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+
+  <!-- About — entity anchor page (to be built) -->
+  <url>
+    <loc>https://lasyncro.com/about</loc>
+    <lastmod>2026-04-30</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Blog index (to be built) -->
+  <url>
+    <loc>https://lasyncro.com/blog</loc>
+    <lastmod>2026-04-30</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <!-- Comparison hub (to be built) -->
+  <url>
+    <loc>https://lasyncro.com/compare</loc>
+    <lastmod>2026-04-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+</urlset>

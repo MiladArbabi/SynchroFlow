@@ -1,0 +1,40 @@
+# robots.txt — lasyncro.com
+# Updated: 2026-04
+# All crawlers permitted. AI crawlers explicitly allowed for AEO (Answer Engine Optimisation).
+
+User-agent: *
+Allow: /
+
+# Google
+User-agent: Googlebot
+Allow: /
+
+# Google AI / Search Generative Experience
+User-agent: Google-Extended
+Allow: /
+
+# OpenAI / ChatGPT
+User-agent: GPTBot
+Allow: /
+
+# Anthropic / Claude
+User-agent: ClaudeBot
+Allow: /
+
+# Perplexity
+User-agent: PerplexityBot
+Allow: /
+
+# Amazon
+User-agent: Amazonbot
+Allow: /
+
+# Cohere
+User-agent: cohere-ai
+Allow: /
+
+# Meta
+User-agent: FacebookBot
+Allow: /
+
+Sitemap: https://lasyncro.com/sitemap.xml

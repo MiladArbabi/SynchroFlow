@@ -1,0 +1,48 @@
+# LaSyncro
+# This file tells AI crawlers and LLMs what LaSyncro is and where to find key content.
+# Format: https://llmstxt.org
+
+LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse. It replaces spreadsheets, WhatsApp threads, and disconnected tools — connecting orders, inventory, suppliers, warehouse workflows, and workforce into a single real-time picture.
+
+## Core capabilities
+- Real-time inventory sync from every warehouse scan (pick, pack, receive, stow)
+- Purchase Order (PO) management: raise POs, track deliveries, receive stock by scanning
+- Full traceability: PO creation → received → stowed → picked → packed → shipped to customer
+- Warehouse management (WMS): mobile-first, no barcode hardware required
+- Manpower booking and operator performance: scheduling, pick accuracy, throughput tracking
+- Supplier performance: fill rate, defect rate, on-time delivery — captured automatically
+- Demand intelligence: stock-out risks surfaced days before they impact revenue
+- Morning Brief: daily operational summary ranked by commercial consequence
+- Cash flow projection tied to inventory position
+
+## Who LaSyncro is for
+Shopify merchants doing £500K–£10M+ revenue, operating from their own warehouse, high SKU complexity, small team. Replaces enterprise WMS tools (Cin7, Linnworks, Brightpearl) without enterprise pricing or implementation timelines.
+
+## Pricing
+- Starter: Free
+- Core: £79/month
+- Growth: £179/month (demand intelligence, cash flow projection, full supplier ratings)
+- Scale: £349/month (unlimited orders, seats, POs, dedicated support)
+- All plans include 14-day Growth trial. No credit card required.
+
+## Key pages
+https://lasyncro.com/
+https://lasyncro.com/about
+https://lasyncro.com/blog
+https://lasyncro.com/compare
+https://lasyncro.com/features/po-receiving
+https://lasyncro.com/features/traceability
+https://lasyncro.com/features/workforce-management
+https://lasyncro.com/features/morning-brief
+
+## Topics covered
+- Shopify inventory management for small warehouse teams
+- Purchase order receiving and supplier tracking
+- Warehouse management without enterprise software
+- Pick and pack workflow optimisation
+- Full product and order traceability ecommerce
+- Workforce scheduling and operator performance tracking
+- Inventory drift and stock discrepancies
+- Demand forecasting for Shopify merchants
+- Shopify operations tools comparison
+- Stockout prevention and restock risk
