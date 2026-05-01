@@ -17,28 +17,28 @@ export default function CompareIndex() {
   )
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-16">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+    <main style={{ maxWidth: '680px', margin: '0 auto', padding: '48px 0' }}>
+      <h1 style={{ fontFamily: 'var(--serif)', fontSize: '2rem', fontWeight: 400, color: 'var(--ink)', marginBottom: '8px' }}>
         LaSyncro vs Alternatives
       </h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-12">
+      <p style={{ fontSize: '15px', color: 'var(--ink-3)', marginBottom: '48px', lineHeight: 1.6 }}>
         How LaSyncro compares to enterprise WMS and operations tools — built for Shopify merchants who need operational intelligence without the enterprise price tag.
       </p>
 
       {pages.length === 0 && (
-        <p className="text-gray-400">Comparison pages coming soon.</p>
+        <p style={{ color: 'var(--ink-4)' }}>Comparison pages coming soon.</p>
       )}
 
-      <ul className="space-y-8">
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {pages.map((page) => (
-          <li key={page.slug}>
-            <a href={`/compare/${page.slug}`} className="group flex flex-col gap-2">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-orange-500 transition-colors">
+          <li key={page.slug} style={{ paddingBottom: '36px', marginBottom: '36px', borderBottom: '1px solid var(--rule)' }}>
+            <a href={`/compare/${page.slug}`} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={{ fontSize: '18px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4 }}>
                 {page.frontmatter.title}
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              </span>
+              <span style={{ fontSize: '14px', color: 'var(--ink-3)', lineHeight: 1.6 }}>
                 {page.frontmatter.description}
-              </p>
+              </span>
             </a>
           </li>
         ))}
