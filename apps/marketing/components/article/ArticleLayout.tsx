@@ -19,7 +19,13 @@ export default function ArticleLayout({
   relatedLinks = [],
 }: ArticleLayoutProps) {
   return (
-    <article style={{ maxWidth: '680px', margin: '0 auto', padding: '48px 0' }}>
+    <div style={{ maxWidth: '780px', margin: '0 auto', padding: '48px 24px' }}>
+    <article style={{
+      background: '#FFFFFF',
+      border: '1px solid #E8E6E0',
+      borderRadius: '12px',
+      padding: '48px 56px',
+    }}>
 
       {/* Article header */}
       <header style={{ marginBottom: '40px' }}>
@@ -56,5 +62,6 @@ export default function ArticleLayout({
       <InternalLinks links={relatedLinks} />
 
     </article>
+    </div>
   )
 }
