@@ -114,3 +114,7 @@ body {
   border-top: 1px solid var(--rule);
   margin: 2rem 0;
 }
+/* Nav CTA hover */
+.nav-cta:hover {
+  background: var(--accent-hover) !important;
+}

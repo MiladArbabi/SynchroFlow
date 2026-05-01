@@ -92,8 +92,7 @@ function Nav() {
           textDecoration: 'none',
           transition: 'background 0.15s',
         }}
-        onMouseOver={(e) => (e.currentTarget.style.background = 'var(--accent-hover)')}
-        onMouseOut={(e) => (e.currentTarget.style.background = 'var(--accent)')}
+        className="nav-cta"
       >
         Get early access
       </a>
