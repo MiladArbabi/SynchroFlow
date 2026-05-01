@@ -1,9 +1,10 @@
 // apps/mobile/src/ui/AppHeader.tsx
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, font, spacing } from '../theme';
 import { ProfileSheet } from './ProfileSheet';
+import { useNavigation } from '@react-navigation/native';
 
 type Props = {
   title?: string;
@@ -18,6 +19,18 @@ type Props = {
 
 export function AppHeader({ title, showLogo, onRefresh, showProfile = true, rightAction }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const navigation = useNavigation<any>();
+
+  const handleSettings = useCallback(() => {
+    try {
+      // Navigate to Settings tab in the root tab navigator
+      navigation.getParent()?.navigate('Settings') ??
+      navigation.navigate('Settings' as never);
+    } catch {
+      // not available on this navigator
+    }
+  }, [navigation]);
+  
   return (
     <View style={styles.header}>
       {/* LEFT — logo or title */}
@@ -51,7 +64,11 @@ export function AppHeader({ title, showLogo, onRefresh, showProfile = true, righ
           </TouchableOpacity>
         )}
       </View>
-    <ProfileSheet visible={profileOpen} onClose={() => setProfileOpen(false)} />
+    <ProfileSheet
+        visible={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        onSettings={handleSettings}
+      />
   </View>
   );
 }

@@ -7,9 +7,10 @@ import { useAuth } from '../hooks/useAuth';
 type Props = {
   visible: boolean;
   onClose: () => void;
+  onSettings?: () => void;
 };
 
-export function ProfileSheet({ visible, onClose }: Props) {
+export function ProfileSheet({ visible, onClose, onSettings }: Props) {
   const { logout, role, userId } = useAuth();
 
   const handleLogout = async () => {
@@ -48,10 +49,10 @@ export function ProfileSheet({ visible, onClose }: Props) {
         <View style={styles.divider} />
 
         {/* Menu items */}
-        <TouchableOpacity style={styles.menuItem} onPress={onClose}>
+        <TouchableOpacity style={styles.menuItem} onPress={() => { onClose(); onSettings?.(); }}>
           <Ionicons name="settings-outline" size={20} color={colors.ink3} />
           <Text style={styles.menuItemText}>Settings</Text>
-          <Text style={styles.menuItemSub}>Coming soon</Text>
+          <Ionicons name="chevron-forward-outline" size={16} color={colors.ink4} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.menuItem} onPress={onClose}>

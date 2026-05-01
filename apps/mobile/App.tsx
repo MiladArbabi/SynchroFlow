@@ -195,6 +195,14 @@ function OwnerTabs() {
           tabBarLabel: 'Scanner',
         }}
       />
+      <OwnerTab.Screen
+        name="Settings"
+        component={OwnerSettingsScreen}
+        options={{
+          tabBarButton: () => null, // hidden from tab bar
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </OwnerTab.Navigator>
   );
 }
