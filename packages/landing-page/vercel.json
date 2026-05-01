@@ -1,0 +1,40 @@
+{
+  "rewrites": [
+    {
+      "source": "/blog",
+      "destination": "https://synchro-flow-marketing.vercel.app/blog"
+    },
+    {
+      "source": "/blog/:path*",
+      "destination": "https://synchro-flow-marketing.vercel.app/blog/:path*"
+    },
+    {
+      "source": "/about",
+      "destination": "https://synchro-flow-marketing.vercel.app/about"
+    },
+    {
+      "source": "/compare",
+      "destination": "https://synchro-flow-marketing.vercel.app/compare"
+    },
+    {
+      "source": "/compare/:path*",
+      "destination": "https://synchro-flow-marketing.vercel.app/compare/:path*"
+    },
+    {
+      "source": "/features/:path*",
+      "destination": "https://synchro-flow-marketing.vercel.app/features/:path*"
+    },
+    {
+      "source": "/industries/:path*",
+      "destination": "https://synchro-flow-marketing.vercel.app/industries/:path*"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "https://synchro-flow-marketing.vercel.app/sitemap.xml"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "https://synchro-flow-marketing.vercel.app/robots.txt"
+    }
+  ]
+}
