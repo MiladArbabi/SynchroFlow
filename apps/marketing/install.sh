@@ -1,15 +1,17 @@
 #!/bin/bash
 # install.sh — Vercel install script for apps/marketing
-# Runs from apps/marketing as working directory (Vercel root directory setting)
-# Installs all deps from monorepo root without triggering postinstall, then rebuilds native binaries
+# Vercel sets working directory to apps/marketing (root directory setting)
+# We navigate to monorepo root, install without postinstall, then rebuild native binaries
 
 set -e
 
-# Navigate to monorepo root (two levels up from apps/marketing)
-cd ../..
+# Vercel working directory is apps/marketing — go to monorepo root
+MONOREPO_ROOT="$(cd ../.. && pwd)"
 
-# Install without postinstall scripts
-npm install --ignore-scripts
+echo "Monorepo root: $MONOREPO_ROOT"
 
-# Rebuild lightningcss native binary for the current platform (Linux on Vercel)
-npm rebuild lightningcss
+# Install all deps without triggering monorepo postinstall
+npm install --ignore-scripts --prefix "$MONOREPO_ROOT"
+
+# Rebuild lightningcss for the current platform inside node_modules at monorepo root
+npm rebuild lightningcss --prefix "$MONOREPO_ROOT"
