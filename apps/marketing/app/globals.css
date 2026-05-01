@@ -118,3 +118,19 @@ body {
 .nav-cta:hover {
   background: var(--accent-hover) !important;
 }
+/* Nav CTA — hardcoded to avoid Tailwind conflicts */
+.nav-cta {
+  display: inline-flex !important;
+  align-items: center;
+  padding: 8px 18px;
+  background: #FF6B2B !important;
+  color: #fff !important;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  text-decoration: none !important;
+  transition: background 0.15s;
+}
+.nav-cta:hover {
+  background: #FF8C5A !important;
+}

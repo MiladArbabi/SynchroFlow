@@ -55,7 +55,7 @@ function Nav() {
     }}>
       <a href="https://lasyncro.com" aria-label="LaSyncro home" style={{ display: 'flex', alignItems: 'center' }}>
         <Image
-          src="/logo.png"
+          src="https://lasyncro.com/white_text_no_bg.png"
           alt="LaSyncro"
           width={81}
           height={28}
