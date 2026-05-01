@@ -13,18 +13,18 @@ interface FAQProps {
 
 export default function FAQ({ items }: FAQProps) {
   if (!items?.length) return null
-  return (
+return (
     <section aria-label="Frequently asked questions" style={{ marginTop: '48px' }}>
-      <h2 style={{ fontFamily: 'var(--serif)', fontSize: '1.5rem', fontWeight: 400, color: 'var(--ink)', marginBottom: '24px' }}>
+      <h2 style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: '1.1rem', fontWeight: 500, color: '#0F0E0D', marginBottom: '24px', letterSpacing: 0 }}>
         Frequently Asked Questions
       </h2>
       <div>
         {items.map((item, i) => (
-          <div key={i} style={{ borderBottom: '1px solid var(--rule)', paddingBottom: '24px', marginBottom: '24px' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: 500, color: 'var(--ink)', marginBottom: '8px' }}>
+          <div key={i} style={{ borderBottom: '1px solid #E8E6E0', paddingBottom: '20px', marginBottom: '20px' }}>
+            <h3 style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: '1rem', fontWeight: 500, color: '#0F0E0D', marginBottom: '8px', lineHeight: 1.5 }}>
               {item.question}
             </h3>
-            <p style={{ fontSize: '14px', lineHeight: 1.7, color: 'var(--ink-3)', margin: 0 }}>
+            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: '1rem', lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
               {item.answer}
             </p>
           </div>
