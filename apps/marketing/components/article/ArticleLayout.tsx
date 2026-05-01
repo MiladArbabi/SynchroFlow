@@ -1,7 +1,6 @@
 // components/article/ArticleLayout.tsx
 // Wraps all article, compare, and industry pages.
-// Composes QuickAnswer, FAQ, InternalLinks, and WaitlistCTA in the correct order.
-// Children = MDX rendered content (the body between QuickAnswer and FAQ).
+// Uses inline styles exclusively — avoids Tailwind/CSS variable conflicts in production.
 
 import { Frontmatter } from '@/lib/mdx'
 import FAQ from './FAQ'
@@ -20,34 +19,34 @@ export default function ArticleLayout({
   relatedLinks = [],
 }: ArticleLayoutProps) {
   return (
-    <article className="mx-auto max-w-2xl px-4 py-16">
+    <article style={{ maxWidth: '680px', margin: '0 auto', padding: '48px 0' }}>
+
       {/* Article header */}
-      <header className="mb-8">
-        <p className="text-xs font-semibold uppercase tracking-widest text-orange-500 mb-3">
+      <header style={{ marginBottom: '40px' }}>
+        <p style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#FF6B2B', marginBottom: '12px' }}>
           {frontmatter.tags?.[0]}
         </p>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white leading-tight mb-4">
+        <h1 style={{ fontFamily: 'var(--serif)', fontSize: '2.2rem', fontWeight: 400, color: 'var(--ink)', lineHeight: 1.25, marginBottom: '16px' }}>
           {frontmatter.title}
         </h1>
-        <p className="text-base text-gray-500 dark:text-gray-400">
+        <p style={{ fontSize: '16px', color: 'var(--ink-3)', lineHeight: 1.6, marginBottom: '12px' }}>
           {frontmatter.description}
         </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
+        <p style={{ fontSize: '12px', color: 'var(--ink-4)' }}>
           {frontmatter.date}
-          {frontmatter.lastReviewed !== frontmatter.date &&
-            ` · Updated ${frontmatter.lastReviewed}`}
+          {frontmatter.lastReviewed !== frontmatter.date && ` · Updated ${frontmatter.lastReviewed}`}
         </p>
       </header>
 
-      {/* MDX body — QuickAnswer is embedded inside MDX as a component */}
-      <div className="prose prose-gray dark:prose-invert max-w-none">
+      {/* MDX body */}
+      <div className="prose">
         {children}
       </div>
 
-      {/* Mid-article CTA — rendered after body, before FAQ */}
+      {/* Mid-article CTA */}
       <WaitlistCTA variant="inline" text={frontmatter.cta_text} />
 
-      {/* FAQ section — driven by frontmatter faq[] */}
+      {/* FAQ */}
       <FAQ items={frontmatter.faq} />
 
       {/* End-of-article CTA */}
@@ -55,6 +54,7 @@ export default function ArticleLayout({
 
       {/* Internal links */}
       <InternalLinks links={relatedLinks} />
+
     </article>
   )
 }

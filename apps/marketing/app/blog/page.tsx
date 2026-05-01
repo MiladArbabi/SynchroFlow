@@ -31,8 +31,20 @@ return (
 
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {articles.map((article) => (
-          <li key={article.slug} style={{ paddingBottom: '36px', marginBottom: '36px', borderBottom: '1px solid var(--rule)' }}>
-            <a href={`/blog/${article.slug}`} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <li key={article.slug} style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--rule)',
+            borderRadius: '12px',
+            marginBottom: '16px',
+            overflow: 'hidden',
+          }}>
+            <a href={`/blog/${article.slug}`} style={{
+              textDecoration: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              padding: '24px 28px',
+            }}>
               <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#FF6B2B' }}>
                 {article.frontmatter.tags?.[0]}
               </span>
@@ -42,7 +54,7 @@ return (
               <span style={{ fontSize: '14px', color: 'var(--ink-3)', lineHeight: 1.6 }}>
                 {article.frontmatter.description}
               </span>
-              <span style={{ fontSize: '12px', color: 'var(--ink-4)' }}>
+              <span style={{ fontSize: '12px', color: 'var(--ink-4)', marginTop: '4px' }}>
                 {article.frontmatter.date}
               </span>
             </a>
