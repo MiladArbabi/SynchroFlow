@@ -39,7 +39,7 @@ export default function ArticleLayout({
       </header>
 
       {/* MDX body */}
-      <div className="prose">
+      <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: '1rem', lineHeight: 1.8, color: '#3A3835' }}>
         {children}
       </div>
 

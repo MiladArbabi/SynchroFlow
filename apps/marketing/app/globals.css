@@ -54,9 +54,9 @@
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: var(--sans);
-  background: var(--bg);
-  color: var(--ink);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: #FAFAF8;
+  color: #0F0E0D;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }

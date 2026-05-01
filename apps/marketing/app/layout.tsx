@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${dmSans.variable} ${instrumentSerif.variable}`}>
-      <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'var(--sans)', background: 'var(--bg)', color: 'var(--ink)' }}>
+      <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
         <Nav />
         <main style={{ flex: 1, paddingTop: '60px', padding: '60px 5vw 0' }}>{children}</main>
         <Footer />
