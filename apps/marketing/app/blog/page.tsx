@@ -32,8 +32,8 @@ return (
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {articles.map((article) => (
           <li key={article.slug} style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--rule)',
+            background: '#FFFFFF',
+            border: '1px solid #E8E6E0',
             borderRadius: '12px',
             marginBottom: '16px',
             overflow: 'hidden',

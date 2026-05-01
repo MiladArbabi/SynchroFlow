@@ -134,3 +134,48 @@ body {
 .nav-cta:hover {
   background: #FF8C5A !important;
 }
+/* ── Article body — scope all MDX content typography ── */
+article h2 {
+  font-family: var(--serif);
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: #0F0E0D;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  line-height: 1.3;
+}
+article h3 {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: #3A3835;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+article p {
+  font-size: 1rem;
+  line-height: 1.8;
+  color: #3A3835;
+  margin-bottom: 1.25rem;
+}
+article ul, article ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+  color: #3A3835;
+}
+article li {
+  line-height: 1.7;
+  margin-bottom: 0.4rem;
+  font-size: 1rem;
+}
+article strong {
+  color: #0F0E0D;
+  font-weight: 500;
+}
+article a {
+  color: #FF6B2B;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+article a:hover {
+  color: #FF8C5A;
+}
