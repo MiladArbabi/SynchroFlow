@@ -113,3 +113,11 @@ pnpm-debug.log*
 
 #claude
 .claude/worktrees/
+
+# ----------------------------------------------------------------------
+# apps/marketing (Next.js)
+# ----------------------------------------------------------------------
+apps/marketing/.next/
+apps/marketing/out/
+apps/marketing/.env*.local
+apps/marketing/next-env.d.ts
