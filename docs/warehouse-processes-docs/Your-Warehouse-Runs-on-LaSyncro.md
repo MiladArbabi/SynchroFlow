@@ -62,7 +62,7 @@ It’s what happens **during and around them**.
 
 ---
 
-### A. SKU-Gaps (Inventory Problems)
+### A. problem-center (Inventory Problems)
 
 Sometimes inventory isn’t right:
 
@@ -214,7 +214,7 @@ To go deeper into each step:
 
 To handle real-world issues:
 
-* SKU-Gaps (Inventory Problems)
+* problem-center (Inventory Problems)
 * Problem-Center (Order Issues)
 * Returns & Refunds
 

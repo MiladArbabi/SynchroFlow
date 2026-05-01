@@ -1,4 +1,4 @@
-// modules/sku-gaps/src/ui/ModuleEntry.tsx
+// modules/problem-center/src/ui/ModuleEntry.tsx
 import { TriangleAlert } from 'lucide-react';
 
 /**
@@ -7,12 +7,12 @@ import { TriangleAlert } from 'lucide-react';
  * Registers the SKU Gaps module in the sidenav.
  *
  * Visible to: owner, admin roles (supervisor surface).
- * Route: /sku-gaps → SkuGapsPage (gate page)
+ * Route: /problem-center → ProblemCenterPage (gate page)
  *
  * Nav group: operations
  */
 export default {
-  id: 'sku-gaps',
+  id: 'problem-center',
   name: 'SKU Gaps',
   version: '0.1.0',
   navGroups: [
@@ -24,9 +24,9 @@ export default {
   ],
   navItems: [
     {
-      id: 'sku-gaps',
+      id: 'problem-center',
       title: 'SKU Gaps',
-      path: '/sku-gaps',
+      path: '/problem-center',
       group: 'operations',
       order: 40,
       icon: TriangleAlert,

@@ -33,7 +33,7 @@ const PLAN_FEATURES = {
 
   // Products
   'products.operator_summary': 'core',
-  'products.sku_gaps':         'core',
+  'products.problem_center':   'core',
   'products.top_returned':     'growth',
 
   // Cash Flow
@@ -57,7 +57,7 @@ const PLAN_FEATURES = {
   'wms.pick_batches':          'core',
   'wms.pack':                  'core',
   'wms.stow':                  'core',
-  'wms.sku_gaps':              'core',
+  'wms.problem_center':        'core',
 
   // Alerts
   'alerts.inbox':              'core',

@@ -17,7 +17,7 @@ import {
   httpGetBatchOrders,
   httpConfirmPackScan,
   httpCompletePack,
-  httpGetSkuGaps,
+  httpGetProblemCenterExceptions,
   httpResolveException,
   httpConfirmShipment,
   httpGetStowTasks,
@@ -32,6 +32,8 @@ import {
   httpCreateProblemTask,
   httpGetProblemTasks,
   httpReportStowException,
+  httpGetWmsSettings,
+  httpResolveProblemTask,
 } from './wms.controller.js';
 
 /**
@@ -105,14 +107,16 @@ router.get(
   requireAction('wms:read'),
   httpGetBatchOrders
 );
+
 router.get(
-  '/sku-gaps',
+  '/problem-center/pick-exceptions',
   authenticateToken,
   requireFt2,
   requireTier('core'),
   requireAction('wms:read'),
-  httpGetSkuGaps
+  httpGetProblemCenterExceptions
 );
+
 router.get(
   '/stow-tasks',
   authenticateToken,
@@ -161,14 +165,26 @@ router.post(
   requireAction('wms:pick:scan'),
   httpConfirmPickScan
 );
+// Resolves a pick exception under problem-center domain
 router.post(
-  '/sku-gaps/:exceptionId/resolve',
+  '/problem-center/pick-exceptions/:exceptionId/resolve',
   authenticateToken,
   requireFt2,
   requireTier('core'),
   requireAction('wms:exception:report'),
   httpResolveException
 );
+
+// Resolve a problem_center_tasks row (re_stow / discard / return / write_off)
+router.post(
+  '/problem-center/:taskId/resolve',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:exception:report'),
+  httpResolveProblemTask
+);
+
 router.post(
   '/batch/:batchId/ship',
   authenticateToken,
@@ -272,6 +288,15 @@ router.post(
   requireTier('core'),
   requireAction('wms:exception:report'),
   httpReportStowException
+);
+
+router.get(
+  '/settings',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetWmsSettings
 );
 
 export default router;

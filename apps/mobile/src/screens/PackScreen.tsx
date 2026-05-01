@@ -196,6 +196,13 @@ export default function PackScreen() {
         quantity_required: currentLine.quantity,
         quantity_found: currentLine.quantity - quantity,
       });
+    // Create PROB label + problem center task for physical bin routing
+    await apiClient.post('/api/v1/wms/problem-center', {
+      lasyncro_variant_id: currentLine.lasyncro_variant_id,
+      quantity,
+      exception_type: exceptionType,
+      source: 'pack',
+    });
     // Mark as scanned to advance
     setOrders(prev =>
       prev.map((o, i) =>

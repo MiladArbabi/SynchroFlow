@@ -48,7 +48,7 @@ import SuppliersPortalPage from 'pages/ft2-pages/SuppliersPortalPage';
 import FloorPlanningPage from 'pages/ft2-pages/FloorPlanningPage';
 
 import MembersPage from 'pages/ft2-pages/MembersPage';
-import SkuGapsPage from 'pages/ft2-pages/SkuGapsPage';
+import ProblemCenterPage from 'pages/ft2-pages/ProblemCenterPage';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import SyncAnimationPage from 'activation/SyncAnimationPage';
@@ -214,8 +214,8 @@ export function LifecycleRouteHost() {
       {/* FLOOR PLANNING */}
       <Route path="/floor-planning/*" element={<FloorPlanningPage />} />
 
-      {/* SKU-GAPS */}
-      <Route path="/sku-gaps/*" element={<SkuGapsPage />} />
+      {/* PROBLEM-CENTER */}
+      <Route path="/problem-center/*" element={<ProblemCenterPage />} />
 
       {/* TEAM — member & role management (WM-31) */}
       <Route path="/team/*" element={<MembersPage />} />

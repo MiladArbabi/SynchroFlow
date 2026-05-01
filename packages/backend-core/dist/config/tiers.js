@@ -37,7 +37,7 @@ const CORE_MODULES = [
     'wms-lite', // WMS pick/pack/stow (MON-03)
     'returns',
     'products',
-    'sku-gaps', // Product-side problem center — surfaces issues from WMS receive/pick/pack
+    'problem-center', // Product-side problem center — surfaces issues from WMS receive/pick/pack
 ];
 const GROWTH_MODULES = [
     ...CORE_MODULES,

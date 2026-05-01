@@ -1,4 +1,4 @@
-// modules/sku-gaps/src/ui/pages/SkuGapsModuleFT2.tsx
+// modules/problem-center/src/ui/pages/ProblemCenterModuleFT2.tsx
 import { useState } from 'react';
 import {
   Box,
@@ -62,13 +62,13 @@ export type PickException = {
   batch_short_id?: string;
 };
 
-export type SkuGapsData = {
+export type ProblemCenterData = {
   exceptions: PickException[];
   total_unresolved: number;
 } | null;
 
-export type SkuGapsModuleFT2Props = {
-  data: SkuGapsData;
+export type ProblemCenterModuleFT2Props = {
+  data: ProblemCenterData;
   isLoading: boolean;
   isError: boolean;
   onResolve: (exceptionId: string, note: string) => Promise<void>;
@@ -212,13 +212,13 @@ function ExceptionCard({
   );
 }
 
-export default function SkuGapsModuleFT2({
+export default function ProblemCenterModuleFT2({
   data,
   isLoading,
   isError,
   onResolve,
   onRefresh,
-}: SkuGapsModuleFT2Props) {
+}: ProblemCenterModuleFT2Props) {
   const [stageFilter, setStageFilter] = useState<'all' | 'pick' | 'pack'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showResolved, setShowResolved] = useState(false);

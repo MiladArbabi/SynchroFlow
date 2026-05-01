@@ -137,7 +137,7 @@ If handled correctly:
 Most common causes:
 
 * incorrect stowing
-* unlogged SKU-Gaps
+* unlogged problem-center
 * manual adjustments outside the system
 
 ---
@@ -162,7 +162,7 @@ Most common causes:
 
 * follow stowing exactly
 * never place items outside assigned locations
-* always log SKU-Gaps
+* always log problem-center
 * never bypass scanning
 
 ---

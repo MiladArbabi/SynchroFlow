@@ -74,7 +74,7 @@ Where it started:
 
 How to prevent:
 
-* log SKU-Gaps early
+* log problem-center early
 * never pick damaged items
 
 ---
@@ -183,7 +183,7 @@ LaSyncro allows you to:
 * trace returns back to origin
 * connect them to:
 
-  * SKU-Gaps
+  * problem-center
   * Problem-Center logs
   * workflow steps
 
@@ -201,7 +201,7 @@ This gives you:
 
 ### Step 1 — Capture Every Issue
 
-* log SKU-Gaps
+* log problem-center
 * use Problem-Center
 * never bypass the system
 

@@ -1211,9 +1211,9 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
 };
 
 // ─────────────────────────────────────────
-// GET /api/v1/wms/sku-gaps
+// GET /api/v1/wms/problem-center
 // ─────────────────────────────────────────
-export const httpGetSkuGaps = async (req: Request, res: Response) => {
+export const httpGetProblemCenterExceptions = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -1253,13 +1253,13 @@ export const httpGetSkuGaps = async (req: Request, res: Response) => {
     return res.status(200).json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[WMS_SKU_GAPS_FAILED]', { shopId, error: message });
+    console.error('[WMS_PROBLEM_CENTER_EXCEPTIONS_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Failed to fetch SKU gaps: ${message}` });
   }
 };
 
 // ─────────────────────────────────────────
-// POST /api/v1/wms/sku-gaps/:exceptionId/resolve
+// POST /api/v1/wms/problem-center/:exceptionId/resolve
 // ─────────────────────────────────────────
 export const httpResolveException = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
@@ -1310,6 +1310,72 @@ export const httpResolveException = async (req: Request, res: Response) => {
     if (message === 'EXCEPTION_ALREADY_RESOLVED') return res.status(409).json({ error: 'Exception already resolved' });
     console.error('[WMS_EXCEPTION_RESOLVE_FAILED]', { shopId, userId, exceptionId, error: message });
     return res.status(500).json({ error: `Failed to resolve exception: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/problem-center/:taskId/resolve
+// ─────────────────────────────────────────
+// Resolves an open problem_center_tasks row.
+// resolution_action drives downstream inventory impact (not yet implemented — INV-03):
+//   re_stow   → creates new stow task, item re-enters inventory
+//   discard   → writes 'damage' inventory_movement, decrements inventory_truth
+//   return    → future: return PO line
+//   write_off → writes 'shrinkage' inventory_movement, decrements inventory_truth
+export const httpResolveProblemTask = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { taskId } = req.params;
+  const { resolution_action, resolution_notes } = req.body;
+
+  const VALID_ACTIONS = ['re_stow', 'discard', 'return', 'write_off'];
+  if (!taskId) return res.status(400).json({ error: 'taskId is required' });
+  if (!resolution_action || !VALID_ACTIONS.includes(resolution_action)) {
+    return res.status(400).json({ error: `resolution_action must be one of: ${VALID_ACTIONS.join(', ')}` });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const task = await trx('problem_center_tasks')
+        .where({ problem_task_id: taskId, shop_id: shopId })
+        .select('status', 'lasyncro_variant_id', 'quantity')
+        .first();
+
+      if (!task) throw new Error('TASK_NOT_FOUND');
+      if (task.status === 'resolved') throw new Error('TASK_ALREADY_RESOLVED');
+
+      await trx('problem_center_tasks')
+        .where({ problem_task_id: taskId })
+        .update({
+          status: 'resolved',
+          resolution_action,
+          resolution_notes: resolution_notes?.trim() ?? null,
+          resolved_by: userId,
+          resolved_at: new Date(),
+          updated_at: new Date(),
+        });
+
+      console.info('[PROBLEM_CENTER_RESOLVED]', {
+        problem_task_id: taskId,
+        resolution_action,
+        resolved_by: userId,
+        shopId,
+      });
+
+      return { problem_task_id: taskId, resolved: true, resolution_action };
+    });
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    const message = err.message;
+    if (message === 'TASK_NOT_FOUND') return res.status(404).json({ error: 'Problem task not found' });
+    if (message === 'TASK_ALREADY_RESOLVED') return res.status(409).json({ error: 'Task already resolved' });
+    console.error('[PROBLEM_CENTER_RESOLVE_FAILED]', { shopId, userId, taskId, error: message });
+    return res.status(500).json({ error: `Failed to resolve problem task: ${message}` });
   }
 };
 
@@ -1643,6 +1709,33 @@ export const httpScanResolve = async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[SCAN_RESOLVE_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Scan resolve failed: ${message}` });
+  }
+};
+
+
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/settings
+// ─────────────────────────────────────────
+// Returns the shop's WMS configuration row (shop_wms_settings).
+// Used by OwnerSettingsScreen > Warehouse tab.
+// Read-only — PATCH endpoint pending (ISSUE-010).
+export const httpGetWmsSettings = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const settings = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('shop_wms_settings').where({ shop_id: shopId }).first();
+    });
+
+    if (!settings) return res.status(404).json({ error: 'WMS settings not found for this shop' });
+
+    return res.status(200).json({ settings });
+  } catch (err: any) {
+    console.error('[WMS_SETTINGS_FETCH_FAILED]', { shopId, error: err.message });
+    return res.status(500).json({ error: `Failed to fetch WMS settings: ${err.message}` });
   }
 };
 

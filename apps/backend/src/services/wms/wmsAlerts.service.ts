@@ -115,7 +115,7 @@ export async function firePickExceptionAlert(
     payload: {
       title: `${stage === 'pick' ? 'Pick' : 'Pack'} exception reported`,
       body: `Batch ${batchId.slice(0, 8).toUpperCase()} — ${exceptionType.replace(/_/g, ' ')}. Review in SKU Gaps.`,
-      data: { route: '/sku-gaps', batchId },
+      data: { route: '/problem-center', batchId },
     },
     broadcastToRole: 'owner',
   }).catch((err) => console.error('[WMS_EXCEPTION_PUSH_FAILED]', err.message));

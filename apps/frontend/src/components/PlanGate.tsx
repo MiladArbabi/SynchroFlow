@@ -33,7 +33,7 @@ const FEATURE_LABELS: Partial<Record<PlanFeature, string>> = {
   'orders.pick_list':          'Pick List',
   'orders.advanced_filters':   'Advanced Filters',
   'products.operator_summary': 'Products Summary',
-  'products.sku_gaps':         'SKU Gaps',
+  'products.problem_center':   'Problem Center',
   'products.top_returned':     'Top Returned Products',
   'cashflow.revenue_buckets':      'Cash Flow',
   'cashflow.constraint_breakdown': 'Constraint Breakdown',
@@ -45,7 +45,7 @@ const FEATURE_LABELS: Partial<Record<PlanFeature, string>> = {
   'wms.pick_batches':          'WMS',
   'wms.pack':                  'WMS Pack',
   'wms.stow':                  'WMS Stow',
-  'wms.sku_gaps':              'WMS SKU Gaps',
+  'wms.problem_center':        'WMS Problem Center',
   'alerts.inbox':              'Alerts',
   'specter.full_capture':      'Full Analytics',
 };

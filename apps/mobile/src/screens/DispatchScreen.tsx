@@ -97,6 +97,9 @@ export default function DispatchScreen() {
   // PO Modal States
   const [poModal, setPoModal] = useState<PurchaseOrder | null>(null);
   const [poSubmitting, setPoSubmitting] = useState(false);
+  // Problem center resolution modal
+  const [resolveModal, setResolveModal] = useState<ProblemTask | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -565,6 +568,12 @@ export default function DispatchScreen() {
                           <Text style={styles.probBin}>→ {task.problem_bin_location}</Text>
                         )}
                       </Row>
+                      <Button
+                        label="Resolve"
+                        variant="ghost"
+                        onPress={() => setResolveModal(task)}
+                        style={{ marginTop: spacing.sm }}
+                      />
                     </Card>
                   ))}
                 </>
@@ -574,6 +583,71 @@ export default function DispatchScreen() {
 
         </ScrollView>
       )}
+
+      
+    {/* Problem Resolution Modal */}
+    <Modal
+      visible={!!resolveModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setResolveModal(null)}
+    >
+      <TouchableOpacity
+        style={styles.modalBackdrop}
+        activeOpacity={1}
+        onPress={() => setResolveModal(null)}
+      />
+      <View style={styles.modalSheet}>
+        <View style={styles.sheetHandle} />
+        {resolveModal && (
+          <>
+            <Text style={styles.modalTitle}>Resolve Problem Task</Text>
+            <Text style={styles.modalSubtitle}>
+              {resolveModal.variant_title ?? resolveModal.sku ?? '—'} · {resolveModal.quantity} unit{resolveModal.quantity > 1 ? 's' : ''}
+            </Text>
+            <Text style={styles.modalMeta}>{resolveModal.prob_label}</Text>
+            <View style={styles.modalDivider} />
+            {/* Resolution actions — each has different inventory impact (INV-03) */}
+            {([ 
+              { action: 're_stow', label: 'Re-stow', hint: 'Item re-enters inventory via new stow task', icon: 'arrow-undo-outline' },
+              { action: 'discard', label: 'Discard', hint: 'Writes damage movement, decrements inventory', icon: 'trash-outline' },
+              { action: 'write_off', label: 'Write off', hint: 'Writes shrinkage movement, decrements inventory', icon: 'close-circle-outline' },
+              { action: 'return', label: 'Return to supplier', hint: 'Marks for supplier return (future PO line)', icon: 'return-down-back-outline' },
+            ] as const).map(({ action, label, hint, icon }) => (
+              <TouchableOpacity
+                key={action}
+                style={styles.resolveOption}
+                disabled={resolving}
+                onPress={async () => {
+                  setResolving(true);
+                  try {
+                    await apiClient.post(`/api/v1/wms/problem-center/${resolveModal.problem_task_id}/resolve`, {
+                      resolution_action: action,
+                    });
+                    setResolveModal(null);
+                    // Refresh problem tasks
+                    const { data } = await apiClient.get('/api/v1/wms/problem-center');
+                    setProblemTasks(data.problem_tasks ?? []);
+                  } catch {
+                    Alert.alert('Error', `Failed to resolve as "${label}". Try again.`);
+                  } finally {
+                    setResolving(false);
+                  }
+                }}
+              >
+                <Ionicons name={icon as any} size={20} color={colors.accent} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.resolveLabel}>{label}</Text>
+                  <Text style={styles.resolveHint}>{hint}</Text>
+                </View>
+                {resolving ? <ActivityIndicator size="small" color={colors.accent} /> : <Ionicons name="chevron-forward" size={16} color={colors.ink3} />}
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+      </View>
+    </Modal>
+
     {/* PO Modal */}
       <Modal
         visible={!!poModal}
@@ -792,4 +866,22 @@ const styles = StyleSheet.create({
   modalActionDangerText: { color: colors.error, fontSize: font.size.md, fontWeight: font.weight.medium },
   modalCancel: { alignItems: 'center', paddingVertical: spacing.md },
   modalCancelText: { color: colors.ink3, fontSize: font.size.md },
+  resolveOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.bg3,
+    },
+    resolveLabel: {
+      color: colors.ink,
+      fontSize: font.size.sm,
+      fontWeight: '600',
+    },
+    resolveHint: {
+      color: colors.ink3,
+      fontSize: font.size.xs,
+      marginTop: 2,
+    },
 });

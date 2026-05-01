@@ -223,7 +223,7 @@ Returns link back to:
 
 * picking errors
 * packing mistakes
-* SKU-Gaps
+* problem-center
 * Problem-Center issues
 
 ---
@@ -264,7 +264,7 @@ To prevent returns:
 
 To manage root causes:
 
-→ SKU-Gaps
+→ problem-center
 → Problem-Center
 
 ---

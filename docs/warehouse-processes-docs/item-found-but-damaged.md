@@ -141,7 +141,7 @@ Common causes:
 * damage during receiving
 * poor storage conditions
 * handling issues
-* unreported SKU-Gaps
+* unreported problem-center
 
 ---
 
@@ -164,7 +164,7 @@ Common causes:
 ## 9. How To Prevent This
 
 * inspect items during receiving
-* log SKU-Gaps immediately
+* log problem-center immediately
 * avoid placing damaged items into storage
 * maintain handling discipline
 

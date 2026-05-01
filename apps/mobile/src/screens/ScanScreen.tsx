@@ -80,6 +80,13 @@ const handleException = useCallback(async (exceptionType: string, quantity: numb
         quantity_required: currentItem.quantity,
         quantity_found: currentItem.quantity - quantity,
       });
+      // Create PROB label + problem center task for physical bin routing
+      await apiClient.post('/api/v1/wms/problem-center', {
+        lasyncro_variant_id: currentItem.lasyncro_variant_id,
+        quantity,
+        exception_type: exceptionType,
+        source: 'pick',
+      });
       // Move to next item
       const nextIndex = currentIndex + 1;
       if (nextIndex >= lineItems.length) {

@@ -38,8 +38,8 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
 
   const ALERT_TYPE_ROUTES: Record<string, string> = {
     // WMS
-    wms_pick_exception:       '/sku-gaps',
-    wms_pack_exception:       '/sku-gaps',
+    wms_pick_exception:       '/problem-center',
+    wms_pack_exception:       '/problem-center',
     wms_stow_pending:         '/wms',
     wms_batch_ready_to_pack:  '/wms',
     wms_batch_ready_to_ship:  '/wms',
