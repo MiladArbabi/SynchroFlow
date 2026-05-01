@@ -1,44 +1,77 @@
 // components/article/WaitlistCTA.tsx
-// Conversion block — renders mid-article and end-of-article.
-// Links directly to the waitlist on lasyncro.com.
-// variant="inline" = compact mid-article placement
-// variant="full"   = prominent end-of-article placement
+// Conversion block — mid-article (inline) and end-of-article (full).
+// Uses hardcoded hex values to avoid CSS variable resolution issues.
 
 interface WaitlistCTAProps {
   variant?: 'inline' | 'full'
   text?: string
 }
 
-export default function WaitlistCTA({
-  variant = 'full',
-  text,
-}: WaitlistCTAProps) {
+export default function WaitlistCTA({ variant = 'full', text }: WaitlistCTAProps) {
   const href = 'https://lasyncro.com/#waitlist'
 
   if (variant === 'inline') {
     return (
-      <div className="my-8 flex items-center gap-4 rounded-lg border border-gray-200 bg-gray-50 px-5 py-4 dark:border-gray-700 dark:bg-gray-800/50">
-        <p className="flex-1 text-sm text-gray-700 dark:text-gray-300">
-          {text ?? 'LaSyncro handles this automatically \u2014 real-time, no manual work.'}
+      <div style={{
+        margin: '32px 0',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        borderRadius: '8px',
+        border: '1px solid #E8E6E0',
+        background: '#F3F2EF',
+        padding: '16px 20px',
+      }}>
+        <p style={{ flex: 1, fontSize: '14px', color: '#3A3835', margin: 0, lineHeight: 1.6 }}>
+          {text ?? 'LaSyncro handles this automatically — real-time, no manual work.'}
         </p>
-        <a href={href} className="shrink-0 rounded-md bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 transition-colors">
-          {'Start free \u2192'}
+        <a
+          href={href}
+          style={{
+            flexShrink: 0,
+            borderRadius: '6px',
+            background: '#FF6B2B',
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontWeight: 500,
+            color: '#fff',
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Start free
         </a>
       </div>
     )
   }
 
   return (
-    <div className="my-10 rounded-xl border border-orange-200 bg-orange-50 px-8 py-8 text-center dark:border-orange-900 dark:bg-orange-950/30">
-      <p className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+    <div style={{
+      margin: '48px 0',
+      borderRadius: '12px',
+      border: '1px solid #FFDCCA',
+      background: '#FFF0E8',
+      padding: '40px 32px',
+      textAlign: 'center',
+    }}>
+      <p style={{ fontSize: '18px', fontWeight: 500, color: '#0F0E0D', marginBottom: '8px' }}>
         {text ?? 'See your operation clearly for the first time.'}
       </p>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+      <p style={{ fontSize: '14px', color: '#6B7280', marginBottom: '24px', lineHeight: 1.6 }}>
         41 store owners already waiting. Connect Shopify in 60 seconds. No credit card required.
       </p>
-      <a 
+      <a
         href={href}
-        className="inline-block rounded-md bg-orange-500 px-6 py-3 text-sm font-medium text-white hover:bg-orange-600 transition-colors"
+        style={{
+          display: 'inline-block',
+          borderRadius: '6px',
+          background: '#FF6B2B',
+          padding: '12px 24px',
+          fontSize: '14px',
+          fontWeight: 500,
+          color: '#fff',
+          textDecoration: 'none',
+        }}
       >
         Reserve my spot — it&apos;s free
       </a>

@@ -16,34 +16,35 @@ export default function BlogIndex() {
     (a, b) => new Date(b.frontmatter.date).getTime() - new Date(a.frontmatter.date).getTime()
   )
 
-  return (
-    <main className="mx-auto max-w-2xl px-4 py-16">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+return (
+    <main style={{ maxWidth: '680px', margin: '0 auto', padding: '48px 0' }}>
+      <h1 style={{ fontFamily: 'var(--serif)', fontSize: '2rem', fontWeight: 400, color: 'var(--ink)', marginBottom: '8px' }}>
         Blog
       </h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-12">
+      <p style={{ fontSize: '15px', color: 'var(--ink-3)', marginBottom: '48px', lineHeight: 1.6 }}>
         Operational intelligence for Shopify merchants running their own warehouse.
       </p>
 
       {articles.length === 0 && (
-        <p className="text-gray-400">No articles published yet.</p>
+        <p style={{ color: 'var(--ink-4)' }}>No articles published yet.</p>
       )}
 
-      <ul className="space-y-10">
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {articles.map((article) => (
-          <li key={article.slug}>
-            
-              <a href={`/blog/${article.slug}`} className="group flex flex-col gap-2">
-              <span className="text-xs font-semibold uppercase tracking-widest text-orange-500">
+          <li key={article.slug} style={{ paddingBottom: '36px', marginBottom: '36px', borderBottom: '1px solid var(--rule)' }}>
+            <a href={`/blog/${article.slug}`} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#FF6B2B' }}>
                 {article.frontmatter.tags?.[0]}
               </span>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-orange-500 transition-colors">
+              <span style={{ fontSize: '18px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4 }}>
                 {article.frontmatter.title}
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              </span>
+              <span style={{ fontSize: '14px', color: 'var(--ink-3)', lineHeight: 1.6 }}>
                 {article.frontmatter.description}
-              </p>
-              <span className="text-xs text-gray-400">{article.frontmatter.date}</span>
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--ink-4)' }}>
+                {article.frontmatter.date}
+              </span>
             </a>
           </li>
         ))}

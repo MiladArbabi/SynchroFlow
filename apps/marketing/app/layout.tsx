@@ -6,7 +6,6 @@ import type { Metadata } from 'next'
 import { DM_Sans, Instrument_Serif } from 'next/font/google'
 import './globals.css'
 import Link from 'next/link'
-import Image from 'next/image'
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -54,13 +53,11 @@ function Nav() {
       borderBottom: '1px solid rgba(255,255,255,0.08)',
     }}>
       <a href="https://lasyncro.com" aria-label="LaSyncro home" style={{ display: 'flex', alignItems: 'center' }}>
-        <Image
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
           src="https://lasyncro.com/logo.png"
           alt="LaSyncro"
-          width={81}
-          height={28}
-          style={{ width: 'auto', height: '28px' }}
-          priority
+          style={{ height: '28px', width: 'auto', display: 'block' }}
         />
       </a>
       <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
