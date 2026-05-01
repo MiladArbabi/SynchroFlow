@@ -31,13 +31,31 @@ export default function CompareIndex() {
 
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {pages.map((page) => (
-          <li key={page.slug} style={{ paddingBottom: '36px', marginBottom: '36px', borderBottom: '1px solid var(--rule)' }}>
-            <a href={`/compare/${page.slug}`} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '18px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.4 }}>
+          <li key={page.slug} style={{
+            background: '#FFFFFF',
+            border: '1px solid #E8E6E0',
+            borderRadius: '12px',
+            marginBottom: '16px',
+            overflow: 'hidden',
+          }}>
+            <a href={`/compare/${page.slug}`} style={{
+              textDecoration: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              padding: '24px 28px',
+            }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#FF6B2B' }}>
+                {page.frontmatter.tags?.[0]}
+              </span>
+              <span style={{ fontSize: '18px', fontWeight: 500, color: '#0F0E0D', lineHeight: 1.4 }}>
                 {page.frontmatter.title}
               </span>
-              <span style={{ fontSize: '14px', color: 'var(--ink-3)', lineHeight: 1.6 }}>
+              <span style={{ fontSize: '14px', color: '#6B7280', lineHeight: 1.6 }}>
                 {page.frontmatter.description}
+              </span>
+              <span style={{ fontSize: '12px', color: '#9CA3AF', marginTop: '4px' }}>
+                {page.frontmatter.date}
               </span>
             </a>
           </li>
