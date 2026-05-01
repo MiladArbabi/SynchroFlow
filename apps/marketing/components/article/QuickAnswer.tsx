@@ -1,7 +1,6 @@
 // components/article/QuickAnswer.tsx
-// Renders the 40-60 word answer block at the top of every article.
-// Visually distinct box — extracted by Google AI Overviews, ChatGPT, and Perplexity for citations.
-// RULE: Every article MUST have a QuickAnswer. Never skip this component.
+// 40-60 word answer block at top of every article.
+// Visually distinct — extracted by Google AI Overviews, ChatGPT, and Perplexity for citations.
 
 interface QuickAnswerProps {
   children: React.ReactNode
@@ -11,12 +10,18 @@ export default function QuickAnswer({ children }: QuickAnswerProps) {
   return (
     <aside
       aria-label="Quick answer"
-      className="my-6 rounded-xl border border-orange-200 bg-orange-50 px-6 py-5 dark:border-orange-900 dark:bg-orange-950/30"
+      style={{
+        margin: '24px 0',
+        borderRadius: '12px',
+        border: '1px solid #FFDCCA',
+        background: '#FFF0E8',
+        padding: '20px 24px',
+      }}
     >
-      <p className="text-xs font-semibold uppercase tracking-widest text-orange-500 mb-2">
+      <p style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#FF6B2B', marginBottom: '8px' }}>
         Quick Answer
       </p>
-      <div className="text-base leading-relaxed text-gray-800 dark:text-gray-200">
+      <div style={{ fontSize: '15px', lineHeight: 1.7, color: '#3A3835' }}>
         {children}
       </div>
     </aside>

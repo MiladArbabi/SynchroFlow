@@ -1,7 +1,6 @@
 // components/article/InternalLinks.tsx
-// Renders related article links at the bottom of every article.
-// Every article should link to 3+ related pages — critical for internal link graph.
-// Always include at least one comparison page and one feature page per article.
+// Related article links at the bottom of every article.
+// Every article should link to 3+ related pages.
 
 interface LinkItem {
   href: string
@@ -16,20 +15,19 @@ interface InternalLinksProps {
 export default function InternalLinks({ links }: InternalLinksProps) {
   if (!links?.length) return null
   return (
-    <section aria-label="Related articles" className="mt-12 border-t border-gray-200 dark:border-gray-700 pt-8">
-      <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-4">
+    <section aria-label="Related articles" style={{ marginTop: '48px', borderTop: '1px solid var(--rule)', paddingTop: '32px' }}>
+      <h3 style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-3)', marginBottom: '16px' }}>
         Related
       </h3>
-      <ul className="space-y-3">
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {links.map((link, i) => (
           <li key={i}>
-            
-              <a href={link.href} className="group flex flex-col gap-0.5 text-sm">
-              <span className="font-medium text-orange-500 group-hover:text-orange-600 transition-colors">
+            <a href={link.href} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 500, color: '#FF6B2B' }}>
                 {link.title}
               </span>
               {link.description && (
-                <span className="text-gray-500 dark:text-gray-400">
+                <span style={{ fontSize: '13px', color: 'var(--ink-3)' }}>
                   {link.description}
                 </span>
               )}
