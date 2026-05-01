@@ -1,11 +1,15 @@
 #!/bin/bash
-# install.sh — used by Vercel to install deps without triggering monorepo postinstall
-# Installs marketing workspace deps only, then rebuilds native binaries for the target platform
+# install.sh — Vercel install script for apps/marketing
+# Runs from apps/marketing as working directory (Vercel root directory setting)
+# Installs all deps from monorepo root without triggering postinstall, then rebuilds native binaries
 
 set -e
 
-# Install from repo root without running postinstall scripts
+# Navigate to monorepo root (two levels up from apps/marketing)
+cd ../..
+
+# Install without postinstall scripts
 npm install --ignore-scripts
 
-# Rebuild only the native binaries needed by the marketing app
-npm rebuild lightningcss --prefix apps/marketing
+# Rebuild lightningcss native binary for the current platform (Linux on Vercel)
+npm rebuild lightningcss
