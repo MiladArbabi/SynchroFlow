@@ -3,8 +3,9 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator, Switch,
+  Modal, TextInput, Alert,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Card, Badge, Row, Divider, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
@@ -50,11 +51,20 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function OwnerSettingsScreen() {
+  const navigation = useNavigation();
   const [tab, setTab] = useState<SettingsTab>('team');
   const [operators, setOperators] = useState<Operator[]>([]);
   const [statuses, setStatuses] = useState<OperatorStatus[]>([]);
   const [wmsSettings, setWmsSettings] = useState<WmsSettings | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Team management state
+  const [inviteModal, setInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
+  const [inviteRole, setInviteRole] = useState<'operator' | 'admin'>('operator');
+  const [inviting, setInviting] = useState(false);  
 
   // Preferences state (local only for now)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -119,12 +129,48 @@ export default function OwnerSettingsScreen() {
   useEffect(() => { void load(); }, [load]);
   useFocusEffect(useCallback(() => { void load(true); }, [load]));
 
+  const handleInvite = useCallback(async () => {
+    if (!inviteEmail.trim()) return Alert.alert('Error', 'Email is required.');
+    setInviting(true);
+    try {
+      await apiClient.post('/api/v1/members', {
+        email: inviteEmail.trim().toLowerCase(),
+        first_name: inviteFirstName.trim() || undefined,
+        last_name: inviteLastName.trim() || undefined,
+        role: inviteRole,
+      });
+      setInviteModal(false);
+      setInviteEmail(''); setInviteFirstName(''); setInviteLastName('');
+      await load(true);
+    } catch (err: any) {
+      const code = err?.response?.data?.error;
+      Alert.alert('Error', code === 'EMAIL_ALREADY_IN_USE' ? 'That email is already in use.' :
+        code === 'SEAT_LIMIT_REACHED' ? 'Seat limit reached for your plan.' : 'Failed to invite member.');
+    } finally {
+      setInviting(false);
+    }
+  }, [inviteEmail, inviteFirstName, inviteLastName, inviteRole, load]);
+
+  const handleRevoke = useCallback((op: Operator) => {
+    Alert.alert('Revoke access', `Remove ${op.name ?? op.email} from your team? They will lose access immediately.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Revoke', style: 'destructive', onPress: async () => {
+        try {
+          await apiClient.delete(`/api/v1/members/${op.id}`);
+          await load(true);
+        } catch {
+          Alert.alert('Error', 'Failed to revoke access.');
+        }
+      }},
+    ]);
+  }, [load]);
+
   const getOperatorStatus = (opId: number) =>
     statuses.find(s => s.operator_id === opId);
 
   return (
     <Screen>
-      <AppHeader showLogo onRefresh={() => void load()} />
+      <AppHeader onBack={() => navigation.goBack()} title="Settings" onRefresh={() => void load()} showProfile={false} />
 
       {/* Top nav */}
       <View style={styles.topNav}>
@@ -161,34 +207,55 @@ export default function OwnerSettingsScreen() {
               </Row>
               <Divider />
 
-              <Text style={styles.sectionTitle}>Team members</Text>
+              <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={styles.sectionTitle}>Team members</Text>
+                <TouchableOpacity style={styles.inviteBtn} onPress={() => setInviteModal(true)}>
+                  <Ionicons name="person-add-outline" size={14} color={colors.bg} />
+                  <Text style={styles.inviteBtnText}>Invite</Text>
+                </TouchableOpacity>
+              </Row>
               {operators.map(op => {
                 const status = getOperatorStatus(op.id);
                 const statusKey = status?.status ?? 'idle';
                 return (
                   <Card key={op.id} style={styles.memberCard}>
-                    <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Row style={{ alignItems: 'center', gap: spacing.sm }}>
+                      {/* Avatar */}
                       <View style={styles.memberAvatar}>
                         <Text style={styles.memberAvatarText}>
                           {(op.name ?? op.email).charAt(0).toUpperCase()}
                         </Text>
                       </View>
-                      <View style={{ flex: 1, marginLeft: spacing.md }}>
-                        <Text style={styles.memberName}>
+                      {/* Name + status */}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.memberName} numberOfLines={1}>
                           {op.name ?? op.email.split('@')[0]}
                         </Text>
-                        <Text style={styles.memberEmail}>{op.email}</Text>
+                        <Text style={styles.memberEmail} numberOfLines={1}>{op.email}</Text>
+                        {status && (
+                          <Text style={[styles.memberStatus, { color: STATUS_COLOR[statusKey] }]}>
+                            ● {STATUS_LABEL[statusKey]}
+                          </Text>
+                        )}
                       </View>
-                      <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-                        <Badge label={op.role.toUpperCase()} variant="info" />
-                        <View style={[styles.statusDot, { backgroundColor: STATUS_COLOR[statusKey] }]} />
-                      </View>
+                      {/* Role badge */}
+                      <Badge label={op.role.toUpperCase()} variant="info" />
+                      {/* Actions */}
+                      <TouchableOpacity
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        onPress={() => (navigation as any).navigate('OperatorPerformance', { operatorId: op.id, operatorName: op.name ?? op.email })}
+                      >
+                        <Ionicons name="bar-chart-outline" size={18} color={colors.accent} />
+                      </TouchableOpacity>
+                      {op.role !== 'owner' && (
+                        <TouchableOpacity
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          onPress={() => handleRevoke(op)}
+                        >
+                          <Ionicons name="person-remove-outline" size={18} color={colors.error} />
+                        </TouchableOpacity>
+                      )}
                     </Row>
-                    {status && (
-                      <Text style={[styles.memberStatus, { color: STATUS_COLOR[statusKey] }]}>
-                        ● {STATUS_LABEL[statusKey]} — {status.current_task}
-                      </Text>
-                    )}
                   </Card>
                 );
               })}
@@ -206,49 +273,82 @@ export default function OwnerSettingsScreen() {
 
               <Card style={styles.settingCard}>
                 <Text style={styles.settingLabel}>Problem bin location</Text>
-                <Text style={styles.settingValue}>
-                  {wmsSettings?.problem_bin_location ?? 'Not configured'}
-                </Text>
-                <Text style={styles.settingHint}>
-                  Where operators physically place flagged items.
-                </Text>
+                <TextInput
+                  style={styles.settingInput}
+                  value={wmsSettings?.problem_bin_location ?? ''}
+                  placeholder="e.g. WH-1-PROBLEM"
+                  placeholderTextColor={colors.ink4}
+                  onChangeText={v => setWmsSettings(s => s ? { ...s, problem_bin_location: v } : s)}
+                />
+                <Text style={styles.settingHint}>Where operators physically place flagged items.</Text>
               </Card>
-
               <Card style={styles.settingCard}>
                 <Text style={styles.settingLabel}>Max batch line items</Text>
-                <Text style={styles.settingValue}>
-                  {wmsSettings?.max_batch_line_items ?? 108}
-                </Text>
-                <Text style={styles.settingHint}>Maximum line items per pick batch.</Text>
+                <TextInput
+                  style={styles.settingInput}
+                  value={String(wmsSettings?.max_batch_line_items ?? 108)}
+                  keyboardType="number-pad"
+                  placeholderTextColor={colors.ink4}
+                  onChangeText={v => setWmsSettings(s => s ? { ...s, max_batch_line_items: Number(v) || 108 } : s)}
+                />
+                <Text style={styles.settingHint}>Maximum line items per pick batch (1–500).</Text>
               </Card>
-
               <Card style={styles.settingCard}>
                 <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.settingLabel}>Auto-release batches</Text>
-                    <Text style={styles.settingHint}>
-                      Auto-release every {wmsSettings?.auto_release_interval_minutes ?? 30} min.
-                    </Text>
+                    <Text style={styles.settingHint}>Auto-release every {wmsSettings?.auto_release_interval_minutes ?? 30} min.</Text>
                   </View>
                   <Switch
                     value={wmsSettings?.auto_release_enabled ?? false}
-                    disabled
+                    onValueChange={v => setWmsSettings(s => s ? { ...s, auto_release_enabled: v } : s)}
                     trackColor={{ true: colors.accent, false: colors.bg3 }}
                   />
                 </Row>
+                {wmsSettings?.auto_release_enabled && (
+                  <>
+                    <Text style={styles.settingLabel}>Interval (minutes)</Text>
+                    <TextInput
+                      style={styles.settingInput}
+                      value={String(wmsSettings?.auto_release_interval_minutes ?? 30)}
+                      keyboardType="number-pad"
+                      placeholderTextColor={colors.ink4}
+                      onChangeText={v => setWmsSettings(s => s ? { ...s, auto_release_interval_minutes: Number(v) || 30 } : s)}
+                    />
+                  </>
+                )}
               </Card>
-
               <Card style={styles.settingCard}>
-                <Text style={styles.settingLabel}>Idle alert threshold</Text>
-                <Text style={styles.settingValue}>
-                  {wmsSettings?.idle_alert_threshold_minutes ?? 20} min
-                </Text>
-                <Text style={styles.settingHint}>
-                  Alert when operator is inactive for this long.
-                </Text>
+                <Text style={styles.settingLabel}>Idle alert threshold (minutes)</Text>
+                <TextInput
+                  style={styles.settingInput}
+                  value={String(wmsSettings?.idle_alert_threshold_minutes ?? 20)}
+                  keyboardType="number-pad"
+                  placeholderTextColor={colors.ink4}
+                  onChangeText={v => setWmsSettings(s => s ? { ...s, idle_alert_threshold_minutes: Number(v) || 20 } : s)}
+                />
+                <Text style={styles.settingHint}>Alert when operator inactive for this long (1–480).</Text>
               </Card>
 
-              <Text style={styles.comingSoon}>✎ Editing coming soon</Text>
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={async () => {
+                  try {
+                    await apiClient.patch('/api/v1/wms/settings', {
+                      problem_bin_location: wmsSettings?.problem_bin_location,
+                      max_batch_line_items: wmsSettings?.max_batch_line_items,
+                      auto_release_enabled: wmsSettings?.auto_release_enabled,
+                      auto_release_interval_minutes: wmsSettings?.auto_release_interval_minutes,
+                      idle_alert_threshold_minutes: wmsSettings?.idle_alert_threshold_minutes,
+                    });
+                    Alert.alert('Saved', 'Warehouse settings updated.');
+                  } catch {
+                    Alert.alert('Error', 'Failed to save settings.');
+                  }
+                }}
+              >
+                <Text style={styles.saveBtnText}>Save changes</Text>
+              </TouchableOpacity>
             </>
           )}
 
@@ -323,9 +423,61 @@ export default function OwnerSettingsScreen() {
               </Text>
             </>
           )}
-
         </ScrollView>
       )}
+
+      {/* Invite Member Modal */}
+      <Modal visible={inviteModal} transparent animationType="slide" onRequestClose={() => setInviteModal(false)}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setInviteModal(false)} />
+        <View style={styles.modalSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.modalTitle}>Invite team member</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Email address *"
+            placeholderTextColor={colors.ink4}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={inviteEmail}
+            onChangeText={setInviteEmail}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="First name"
+            placeholderTextColor={colors.ink4}
+            value={inviteFirstName}
+            onChangeText={setInviteFirstName}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Last name"
+            placeholderTextColor={colors.ink4}
+            value={inviteLastName}
+            onChangeText={setInviteLastName}
+          />
+          <Text style={styles.inputLabel}>Role</Text>
+          <Row style={{ gap: spacing.sm, marginBottom: spacing.md }}>
+            {(['operator', 'admin'] as const).map(r => (
+              <TouchableOpacity
+                key={r}
+                style={[styles.roleChip, inviteRole === r && styles.roleChipActive]}
+                onPress={() => setInviteRole(r)}
+              >
+                <Text style={[styles.roleChipText, inviteRole === r && styles.roleChipTextActive]}>
+                  {r.charAt(0).toUpperCase() + r.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </Row>
+          <TouchableOpacity
+            style={[styles.inviteSubmitBtn, inviting && { opacity: 0.6 }]}
+            onPress={() => void handleInvite()}
+            disabled={inviting}
+          >
+            <Text style={styles.inviteSubmitText}>{inviting ? 'Sending invite…' : 'Send invite'}</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -390,4 +542,21 @@ const styles = StyleSheet.create({
   toneChipTextActive: { color: colors.accent, fontWeight: font.weight.semibold },
   comingSoon: { color: colors.ink4, fontSize: font.size.sm, textAlign: 'center', paddingVertical: spacing.md },
   emptyText: { color: colors.ink3, fontSize: font.size.sm, textAlign: 'center', paddingVertical: spacing.md },
+  inviteBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.accent, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+    inviteBtnText: { color: colors.bg, fontSize: font.size.xs, fontWeight: font.weight.semibold },
+    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+    modalSheet: { backgroundColor: colors.bg2, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
+    sheetHandle: { width: 40, height: 4, backgroundColor: colors.bg3, borderRadius: 2, alignSelf: 'center', marginBottom: spacing.sm },
+    modalTitle: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+    input: { backgroundColor: colors.bg3, borderRadius: radius.sm, padding: spacing.md, color: colors.ink, fontSize: font.size.sm },
+    inputLabel: { color: colors.ink3, fontSize: font.size.xs, fontWeight: font.weight.medium },
+    roleChip: { flex: 1, padding: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.bg3, alignItems: 'center', borderWidth: 1, borderColor: 'transparent' },
+    roleChipActive: { borderColor: colors.accent, backgroundColor: colors.accentGhost },
+    roleChipText: { color: colors.ink3, fontSize: font.size.sm },
+    roleChipTextActive: { color: colors.accent, fontWeight: font.weight.semibold },
+    inviteSubmitBtn: { backgroundColor: colors.accent, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center' },
+    inviteSubmitText: { color: colors.bg, fontSize: font.size.sm, fontWeight: font.weight.bold },
+    settingInput: { backgroundColor: colors.bg3, borderRadius: radius.sm, padding: spacing.sm, color: colors.ink, fontSize: font.size.sm, marginTop: spacing.xs },
+    saveBtn: { backgroundColor: colors.accent, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.xs },
+    saveBtnText: { color: colors.bg, fontSize: font.size.sm, fontWeight: font.weight.bold },
 });

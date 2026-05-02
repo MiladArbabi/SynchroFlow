@@ -11,13 +11,14 @@ type Props = {
   showLogo?: boolean;
   onRefresh?: () => void;
   showProfile?: boolean;
+  onBack?: () => void;
   rightAction?: {
     icon: keyof typeof Ionicons.glyphMap;
     onPress: () => void;
   };
 };
 
-export function AppHeader({ title, showLogo, onRefresh, showProfile = true, rightAction }: Props) {
+export function AppHeader({ title, showLogo, onRefresh, showProfile = true, onBack, rightAction }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);
   const navigation = useNavigation<any>();
 
@@ -34,7 +35,11 @@ export function AppHeader({ title, showLogo, onRefresh, showProfile = true, righ
   return (
     <View style={styles.header}>
       {/* LEFT — logo or title */}
-      {showLogo ? (
+      {onBack ? (
+        <TouchableOpacity onPress={onBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="arrow-back-outline" size={24} color={colors.ink} />
+        </TouchableOpacity>
+      ) : showLogo ? (
         <Image
           source={require('../../assets/logo.png')}
           style={styles.logo}

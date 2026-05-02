@@ -3,6 +3,7 @@ import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
 import { v5 as uuidv5 } from 'uuid';
 import { dispatchNotification } from '../notifications/notificationDispatch.service.js';
+import { fireBatchReleasedAlert } from './wmsAlerts.service.js';
 
 /**
  * PICK BATCH SERVICE (WM-07)
@@ -192,6 +193,15 @@ export async function releaseBatch(
     order_count: selectedOrderIds.length,
     total_line_items: runningLineItems,
     total_units: runningUnits,
+  });
+
+  // Fire alert to owner/admin inbox — visible in Overview + Alerts tab
+  await fireBatchReleasedAlert(trx, {
+    shopId,
+    batchId: pickBatchId,
+    orderCount: selectedOrderIds.length,
+    lineItems: runningLineItems,
+    assignedOperatorId: assignedOperatorId ?? null,
   });
 
   // Notify operators — targeted if assigned, broadcast to pool otherwise

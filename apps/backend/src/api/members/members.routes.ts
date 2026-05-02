@@ -2,7 +2,14 @@
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
-import { createMember, listMembers, updateMemberRole, updateMyCurrencyPreference } from './members.controller.js';
+import { 
+    createMember, 
+    listMembers, 
+    updateMemberRole, 
+    updateMyCurrencyPreference, 
+    revokeMember, 
+    getOperatorPerformance
+ } from './members.controller.js';
 
 /**
  * MEMBERS ROUTES (WM-31)
@@ -26,5 +33,11 @@ router.post('/', authenticateToken, requireAction('members:write'), createMember
 
 // Update own display currency + locale preference (self-service, all roles)
 router.patch('/me/currency', authenticateToken, updateMyCurrencyPreference);
+
+// Revoke a member's shop access
+router.delete('/:userId', authenticateToken, requireAction('members:write'), revokeMember);
+
+// Operator performance metrics (owner/admin only)
+router.get('/:userId/performance', authenticateToken, requireAction('members:read'), getOperatorPerformance);
 
 export default router;

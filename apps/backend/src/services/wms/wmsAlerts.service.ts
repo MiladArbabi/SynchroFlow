@@ -299,3 +299,34 @@ export async function fireReceiveExceptionAlert(
   });
   console.info('[WMS_RECEIVE_EXCEPTION_ALERT_FIRED]', { shopId, receiveJobId, lasyncroVariantId, exceptionType });
 }
+
+// ─────────────────────────────────────────
+// Batch Released (pick job created)
+// ─────────────────────────────────────────
+// Fires when owner/auto-release creates a pick batch.
+// Targets owner/admin alert inbox + notifies assigned operator or operator pool.
+export async function fireBatchReleasedAlert(
+  trx: Knex | Knex.Transaction,
+  params: {
+    shopId: number;
+    batchId: string;
+    orderCount: number;
+    lineItems: number;
+    assignedOperatorId?: number | null;
+  }
+): Promise<void> {
+  const { shopId, batchId, orderCount, lineItems, assignedOperatorId } = params;
+  const batchShort = batchId.slice(0, 8).toUpperCase();
+  await upsertWmsAlert(trx, {
+    shopId,
+    alertKey: `wms:batch:released:${batchId}`,
+    alertType: 'wms_batch_released',
+    severity: 'info',
+    title: `Pick batch released — ${orderCount} order${orderCount > 1 ? 's' : ''}`,
+    message: `Batch ${batchShort} is ready to pick (${lineItems} line items). ${assignedOperatorId ? 'Assigned to operator.' : 'Available to any operator.'}`,
+    entityId: batchId,
+    entityType: 'pick_batch',
+    isActive: true,
+  });
+  console.info('[WMS_BATCH_RELEASED_ALERT_FIRED]', { shopId, batchId, orderCount, lineItems, assignedOperatorId });
+}

@@ -29,7 +29,7 @@ import { isValidTier, Tier, TIER_CONFIG } from '@lasyncro/backend-core/config/ti
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('[billing] STRIPE_SECRET_KEY not set');
-  return new Stripe(key, { apiVersion: '2026-03-25.dahlia' });
+  return new Stripe(key, { apiVersion: '2026-04-22.dahlia' });
 }
 
 /**

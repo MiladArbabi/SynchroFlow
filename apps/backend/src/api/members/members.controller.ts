@@ -248,6 +248,152 @@ export const createMember = async (req: Request, res: Response) => {
 };
 
 /**
+ * DELETE /api/v1/members/:userId
+ * Revokes a shop membership — sets revoked_at, does not delete the user.
+ * Owner cannot revoke themselves.
+ */
+export const revokeMember = async (req: Request, res: Response) => {
+  const shopId = req.user!.shopId!;
+  const requesterId = req.user!.userId;
+  const targetUserId = Number(req.params.userId);
+
+  if (targetUserId === requesterId) {
+    return res.status(400).json({ error: 'CANNOT_REVOKE_SELF' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const membership = await trx('shop_memberships')
+        .where({ shop_id: shopId, user_id: targetUserId })
+        .whereNull('revoked_at')
+        .first('id', 'role');
+
+      if (!membership) throw Object.assign(new Error('MEMBER_NOT_FOUND'), { statusCode: 404 });
+      if (membership.role === 'owner') throw Object.assign(new Error('CANNOT_REVOKE_OWNER'), { statusCode: 403 });
+
+      await trx('shop_memberships')
+        .where({ id: membership.id })
+        .update({ revoked_at: new Date(), updated_at: new Date() });
+
+      console.info('[MEMBERS] Member revoked', { shopId, targetUserId, revokedBy: requesterId });
+    });
+
+    return res.json({ success: true, userId: targetUserId });
+  } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'MEMBER_NOT_FOUND' });
+    if (err.statusCode === 403) return res.status(403).json({ error: 'CANNOT_REVOKE_OWNER' });
+    console.error('[MEMBERS] revokeMember failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * GET /api/v1/members/:userId/performance
+ * Returns operator performance metrics derived from completed WMS tasks.
+ *
+ * Metrics (all time, scoped to shop):
+ * - pick_rate_uph: avg units picked per hour across completed pick batches
+ * - pack_rate_uph: avg units packed per hour across completed pack batches
+ * - stow_rate_uph: avg units stowed per hour across completed stow tasks
+ * - batches_picked: total pick batches completed
+ * - batches_packed: total pack batches completed
+ * - receive_jobs_closed: total receive jobs closed
+ * - dock_to_stock_hours: avg hours from receive close → last stow complete per PO
+ */
+export const getOperatorPerformance = async (req: Request, res: Response) => {
+  const shopId = req.user!.shopId!;
+  const targetUserId = Number(req.params.userId);
+
+  try {
+    const metrics = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Pick performance
+      const pickBatches = await trx('pick_batches')
+        .where({ shop_id: shopId, picked_by: targetUserId })
+        .whereNotNull('pick_completed_at')
+        .whereNotNull('pick_claimed_at')
+        .select('units_picked', 'pick_claimed_at', 'pick_completed_at');
+
+      const pickRates = pickBatches
+        .map((b: any) => {
+          const hrs = (new Date(b.pick_completed_at).getTime() - new Date(b.pick_claimed_at).getTime()) / 3600000;
+          return hrs > 0 ? b.units_picked / hrs : null;
+        })
+        .filter((r: number | null) => r !== null) as number[];
+
+      // Pack performance
+      const packBatches = await trx('pick_batches')
+        .where({ shop_id: shopId, packed_by: targetUserId })
+        .whereNotNull('pack_completed_at')
+        .whereNotNull('pack_claimed_at')
+        .select('units_packed', 'pack_claimed_at', 'pack_completed_at');
+
+      const packRates = packBatches
+        .map((b: any) => {
+          const hrs = (new Date(b.pack_completed_at).getTime() - new Date(b.pack_claimed_at).getTime()) / 3600000;
+          return hrs > 0 ? b.units_packed / hrs : null;
+        })
+        .filter((r: number | null) => r !== null) as number[];
+
+      // Stow performance
+      const stowTasks = await trx('stow_tasks')
+        .where({ shop_id: shopId, claimed_by: targetUserId })
+        .whereNotNull('completed_at')
+        .whereNotNull('claimed_at')
+        .select('quantity', 'claimed_at', 'completed_at');
+
+      const stowRates = stowTasks
+        .map((t: any) => {
+          const hrs = (new Date(t.completed_at).getTime() - new Date(t.claimed_at).getTime()) / 3600000;
+          return hrs > 0 ? t.quantity / hrs : null;
+        })
+        .filter((r: number | null) => r !== null) as number[];
+
+      // Dock-to-stock: receive close → last stow complete per PO
+      const dockToStockRows = await trx.raw(`
+        SELECT
+          rj.receive_job_id,
+          rj.closed_at,
+          MAX(st.completed_at) as last_stow_at
+        FROM receive_jobs rj
+        JOIN stow_tasks st ON st.po_id = rj.po_id AND st.shop_id = rj.shop_id
+        WHERE rj.shop_id = ?
+          AND rj.assigned_operator_id = ?
+          AND rj.closed_at IS NOT NULL
+          AND st.completed_at IS NOT NULL
+        GROUP BY rj.receive_job_id, rj.closed_at
+      `, [shopId, targetUserId]);
+
+      const dtsHours = dockToStockRows.rows
+        .map((r: any) => {
+          const hrs = (new Date(r.last_stow_at).getTime() - new Date(r.closed_at).getTime()) / 3600000;
+          return hrs >= 0 ? hrs : null;
+        })
+        .filter((h: number | null) => h !== null) as number[];
+
+      const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+      return {
+        pick_rate_uph: avg(pickRates) !== null ? Math.round(avg(pickRates)! * 10) / 10 : null,
+        pack_rate_uph: avg(packRates) !== null ? Math.round(avg(packRates)! * 10) / 10 : null,
+        stow_rate_uph: avg(stowRates) !== null ? Math.round(avg(stowRates)! * 10) / 10 : null,
+        batches_picked: pickBatches.length,
+        batches_packed: packBatches.length,
+        receive_jobs_closed: dockToStockRows.rows.length,
+        dock_to_stock_hours: avg(dtsHours) !== null ? Math.round(avg(dtsHours)! * 10) / 10 : null,
+      };
+    });
+
+    return res.json({ userId: targetUserId, metrics });
+  } catch (err: any) {
+    console.error('[MEMBERS] getOperatorPerformance failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
  * PATCH /api/v1/members/me/currency
  * ----------------------------------
  * Self-service endpoint — any authenticated user updates their own

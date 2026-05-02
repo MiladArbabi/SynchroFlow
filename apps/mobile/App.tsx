@@ -1,13 +1,17 @@
 // apps/mobile/App.tsx
-import { NavigationContainer } from '@react-navigation/native';
+import { useState, useCallback } from 'react';
+import { AppHeader, Screen } from './src/ui';
+import { NavigationContainer, useFocusEffect } from '@react-navigation/native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+
+import { apiClient } from '@lasyncro/mobile-core';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
-import { colors, font, spacing } from './src/theme';
+import { colors, font, radius, spacing } from './src/theme';
 
 // Screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -21,9 +25,9 @@ import PackScreen from './src/screens/PackScreen';
 import OverviewScreen from './src/screens/OverviewScreen';
 import DispatchScreen from './src/screens/DispatchScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
-import OwnerSettingsScreen from './src/screens/OwnerSettingsScreen';
 
-import { AppHeader, Screen } from './src/ui';
+import OwnerSettingsScreen from './src/screens/OwnerSettingsScreen';
+import OperatorPerformanceScreen from './src/screens/OperatorPerformanceScreen';
 
 // ─── Tab icon ────────────────────────────────────────────────────────────────
 function TabIcon({ name, focused }: { name: keyof typeof Ionicons.glyphMap; focused: boolean }) {
@@ -36,37 +40,94 @@ function TabIcon({ name, focused }: { name: keyof typeof Ionicons.glyphMap; focu
   );
 }
 
-// ─── Placeholder screens ──────────────────────────────────────────────────────
-function NotificationsScreen() {
+// ─── Alert feed (shared by Operator Notifications + Owner Alerts tabs) ────────
+interface AlertItem {
+  id: string;
+  alert_type: string;
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  message: string;
+  revenue_impact: number | null;
+  created_at: string;
+  is_active: boolean;
+}
+
+function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: string }) {
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await apiClient.get('/api/v1/alerts?active_only=true&limit=50');
+      setAlerts(data.data ?? []);
+    } catch {
+      setAlerts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
+
   return (
     <Screen>
       <AppHeader showLogo />
-      <View style={placeholder.root}>
-        <Text style={placeholder.title}>Alerts</Text>
-        <Text style={placeholder.sub}>System alerts — coming soon</Text>
-      </View>
+      <ScrollView contentContainerStyle={alertStyles.container} showsVerticalScrollIndicator={false}>
+        <Text style={alertStyles.heading}>{title}</Text>
+        {loading ? (
+          <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
+        ) : alerts.length === 0 ? (
+          <View style={alertStyles.empty}>
+            <Ionicons name="checkmark-circle-outline" size={48} color={colors.success} />
+            <Text style={alertStyles.emptyText}>{emptyMessage}</Text>
+          </View>
+        ) : (
+          alerts.map(alert => (
+            <View key={alert.id} style={[alertStyles.card, alert.severity === 'critical' && alertStyles.cardCritical]}>
+              <View style={alertStyles.cardHeader}>
+                <Text style={alertStyles.cardTitle} numberOfLines={2}>{alert.title}</Text>
+                <View style={[alertStyles.badge, alertStyles[`badge_${alert.severity}`]]}>
+                  <Text style={alertStyles.badgeText}>{alert.severity.toUpperCase()}</Text>
+                </View>
+              </View>
+              <Text style={alertStyles.cardMessage}>{alert.message}</Text>
+              {alert.revenue_impact != null && (
+                <Text style={alertStyles.revenueImpact}>${alert.revenue_impact.toLocaleString()} at risk</Text>
+              )}
+            </View>
+          ))
+        )}
+      </ScrollView>
     </Screen>
   );
 }
-function SettingsScreen() {
-  return (
-    <View style={placeholder.root}>
-      <Text style={placeholder.title}>Settings</Text>
-      <Text style={placeholder.sub}>Profile & preferences — coming soon</Text>
-    </View>
-  );
+
+const alertStyles = StyleSheet.create({
+  container: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
+  heading: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+  empty: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
+  emptyText: { color: colors.ink3, fontSize: font.size.sm, textAlign: 'center' },
+  card: { backgroundColor: colors.bg2, borderRadius: radius.md, padding: spacing.md, gap: spacing.xs, borderLeftWidth: 3, borderLeftColor: colors.ink3 },
+  cardCritical: { borderLeftColor: colors.error },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm },
+  cardTitle: { color: colors.ink, fontSize: font.size.sm, fontWeight: font.weight.semibold, flex: 1 },
+  cardMessage: { color: colors.ink3, fontSize: font.size.sm },
+  revenueImpact: { color: colors.error, fontSize: font.size.xs, fontWeight: font.weight.semibold },
+  badge: { borderRadius: radius.sm, paddingHorizontal: spacing.xs, paddingVertical: 2 },
+  badge_critical: { backgroundColor: colors.error },
+  badge_warning: { backgroundColor: colors.warning },
+  badge_info: { backgroundColor: colors.info },
+  badgeText: { color: colors.bg, fontSize: 10, fontWeight: font.weight.bold },
+});
+
+// ─── Placeholder screens ──────────────────────────────────────────────────────
+function NotificationsScreen() {
+  return <AlertFeed title="Notifications" emptyMessage="No alerts for your account." />;
 }
+
 function AlertsScreen() {
-  const { logout } = useAuth();
-  return (
-    <Screen>
-      <AppHeader showLogo  />
-      <View style={placeholder.root}>
-        <Text style={placeholder.title}>Alerts</Text>
-        <Text style={placeholder.sub}>Exception inbox — coming soon</Text>
-      </View>
-    </Screen>
-  );
+  return <AlertFeed title="Alerts" emptyMessage="No alerts to review." />;
 }
 const placeholder = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
@@ -149,6 +210,17 @@ function OperatorTabs() {
   );
 }
 
+const OwnerRootStack = createNativeStackNavigator();
+function OwnerRoot() {
+  return (
+    <OwnerRootStack.Navigator screenOptions={{ headerShown: false }}>
+      <OwnerRootStack.Screen name="OwnerTabs" component={OwnerTabs} />
+      <OwnerRootStack.Screen name="Settings" component={OwnerSettingsScreen} />
+      <OwnerRootStack.Screen name="OperatorPerformance" component={OperatorPerformanceScreen} />
+    </OwnerRootStack.Navigator>
+  );
+}
+
 // ─── OWNER/ADMIN tabs ─────────────────────────────────────────────────────────
 const OwnerTab = createBottomTabNavigator();
 function OwnerTabs() {
@@ -195,14 +267,6 @@ function OwnerTabs() {
           tabBarLabel: 'Scanner',
         }}
       />
-      <OwnerTab.Screen
-        name="Settings"
-        component={OwnerSettingsScreen}
-        options={{
-          tabBarButton: () => null, // hidden from tab bar
-          tabBarStyle: { display: 'none' },
-        }}
-      />
     </OwnerTab.Navigator>
   );
 }
@@ -236,7 +300,7 @@ function AppInner() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <NavigationContainer>
-        {isOwnerOrAdmin ? <OwnerTabs /> : <OperatorTabs />}
+        {isOwnerOrAdmin ? <OwnerRoot /> : <OperatorTabs />}
       </NavigationContainer>
     </SafeAreaProvider>
   );

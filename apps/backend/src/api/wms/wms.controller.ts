@@ -1712,7 +1712,64 @@ export const httpScanResolve = async (req: Request, res: Response) => {
   }
 };
 
+// ─────────────────────────────────────────
+// PATCH /api/v1/wms/settings
+// ─────────────────────────────────────────
+// Updates editable WMS settings fields for the shop.
+// All fields optional — only provided fields are updated.
+export const httpPatchWmsSettings = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
+  const {
+    problem_bin_location,
+    max_batch_line_items,
+    auto_release_enabled,
+    auto_release_interval_minutes,
+    idle_alert_threshold_minutes,
+  } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (problem_bin_location !== undefined) updates.problem_bin_location = String(problem_bin_location).trim() || null;
+  if (max_batch_line_items !== undefined) {
+    const val = Number(max_batch_line_items);
+    if (!Number.isInteger(val) || val < 1 || val > 500) return res.status(400).json({ error: 'max_batch_line_items must be 1–500' });
+    updates.max_batch_line_items = val;
+  }
+  if (auto_release_enabled !== undefined) updates.auto_release_enabled = Boolean(auto_release_enabled);
+  if (auto_release_interval_minutes !== undefined) {
+    const val = Number(auto_release_interval_minutes);
+    if (!Number.isInteger(val) || val < 5 || val > 1440) return res.status(400).json({ error: 'auto_release_interval_minutes must be 5–1440' });
+    updates.auto_release_interval_minutes = val;
+  }
+  if (idle_alert_threshold_minutes !== undefined) {
+    const val = Number(idle_alert_threshold_minutes);
+    if (!Number.isInteger(val) || val < 1 || val > 480) return res.status(400).json({ error: 'idle_alert_threshold_minutes must be 1–480' });
+    updates.idle_alert_threshold_minutes = val;
+  }
+
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields provided' });
+  updates.updated_at = new Date();
+
+  try {
+    const settings = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const [updated] = await trx('shop_wms_settings')
+        .where({ shop_id: shopId })
+        .update(updates)
+        .returning('*');
+      if (!updated) throw new Error('SETTINGS_NOT_FOUND');
+      return updated;
+    });
+
+    console.info('[WMS_SETTINGS_UPDATED]', { shopId, updates });
+    return res.status(200).json({ settings });
+  } catch (err: any) {
+    if (err.message === 'SETTINGS_NOT_FOUND') return res.status(404).json({ error: 'WMS settings not found' });
+    console.error('[WMS_SETTINGS_PATCH_FAILED]', { shopId, error: err.message });
+    return res.status(500).json({ error: `Failed to update WMS settings: ${err.message}` });
+  }
+};
 
 // ─────────────────────────────────────────
 // GET /api/v1/wms/settings

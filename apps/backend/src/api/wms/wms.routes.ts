@@ -34,6 +34,7 @@ import {
   httpReportStowException,
   httpGetWmsSettings,
   httpResolveProblemTask,
+  httpPatchWmsSettings,
 } from './wms.controller.js';
 
 /**
@@ -288,6 +289,15 @@ router.post(
   requireTier('core'),
   requireAction('wms:exception:report'),
   httpReportStowException
+);
+
+router.patch(
+  '/settings',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpPatchWmsSettings
 );
 
 router.get(
