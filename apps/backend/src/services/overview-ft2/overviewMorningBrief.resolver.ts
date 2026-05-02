@@ -71,6 +71,8 @@ function computeSummaryLine(
 export interface MorningBriefSignal {
   /** Deterministic signal ID — matches alert_key */
   id: string;
+  /** Original alert_type — used by mobile for tab routing */
+  alertType: string;
   /** 1 = most urgent, 5 = least urgent */
   priority: 1 | 2 | 3 | 4 | 5;
   /** Short operator-vocabulary title */
@@ -118,6 +120,7 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   wms_pack_exception:       { module: 'wms',              deepLink: '/wms?filter=pack_exceptions' },
   wms_batch_ready_to_pack:  { module: 'wms',              deepLink: '/wms?filter=ready_to_pack' },
   wms_batch_ready_to_ship:  { module: 'wms',              deepLink: '/wms?filter=ready_to_ship' },
+  wms_batch_released:       { module: 'wms',              deepLink: '/wms?filter=outbound' },
   // ── Supplier signals
   wms_supplier_rating:      { module: 'suppliers-portal', deepLink: '/suppliers-portal' },
   // ── Demand signals
@@ -193,6 +196,7 @@ export async function computeMorningBrief(input: {
 
     return {
       id: alert.alert_key,
+      alertType: alert.alert_type,
       priority,
       title: alert.title,
       // Strip trailing revenue suffix injected by alerts aggregator (e.g. ".$42,952 at risk")

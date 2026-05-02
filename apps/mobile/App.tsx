@@ -71,7 +71,9 @@ function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: strin
       wms_supplier_rating:     'inbound',
     };
     if (alertType.startsWith('wms_')) {
-      navigation.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' } });
+      // Navigate via parent (root stack) to correctly pass params to nested tab
+      const parent = navigation.getParent() ?? navigation;
+      parent.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' } });
     } else {
       navigation.navigate('OwnerTabs', { screen: 'Alerts' });
     }

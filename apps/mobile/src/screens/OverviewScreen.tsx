@@ -10,6 +10,7 @@ import { apiClient } from '@lasyncro/mobile-core';
 
 interface BriefSignal {
   id: string;
+  alertType: string;
   priority: 1 | 2 | 3 | 4 | 5;
   title: string;
   detail: string;
@@ -52,14 +53,20 @@ export default function OverviewScreen() {
       wms_supplier_rating:     'inbound',
     };
     switch (module) {
-      case 'wms':
-        navigation.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' } });
+      case 'wms': {
+        const parent = navigation.getParent() ?? navigation;
+        parent.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' } });
         break;
-      case 'order-nexus':
-        navigation.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: 'outbound' } });
+      }
+      case 'order-nexus': {
+        const p = navigation.getParent() ?? navigation;
+        p.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: 'outbound' } });
         break;
-      default:
-        navigation.navigate('OwnerTabs', { screen: 'Alerts' });
+      }
+      default: {
+        const p = navigation.getParent() ?? navigation;
+        p.navigate('OwnerTabs', { screen: 'Alerts' });
+      }
     }
   }, [navigation]);
 
@@ -121,8 +128,7 @@ export default function OverviewScreen() {
                 <Text style={styles.sectionTitle}>
                   {brief.hasUrgentIssues ? '⚠️ Needs attention' : 'To review'}
                 </Text>
-                {brief.signals.map(signal => (
-                  <TouchableOpacity key={signal.id} onPress={() => navigateToModule(signal.module, signal.id)} activeOpacity={0.7}>
+                {brief.signals.map(signal => (<TouchableOpacity key={signal.id} onPress={() => navigateToModule(signal.module, signal.alertType)} activeOpacity={0.7}>
                   <Card style={styles.signalCard}>
                     <View style={styles.signalHeader}>
                       <Text style={styles.signalTitle} numberOfLines={1}>{signal.title}</Text>
