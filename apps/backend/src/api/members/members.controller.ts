@@ -289,6 +289,29 @@ export const revokeMember = async (req: Request, res: Response) => {
 };
 
 /**
+ * GET /api/v1/members/me/preferences
+ * Returns notification preferences for the authenticated user.
+ */
+export const getMyPreferences = async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const shopId = req.user!.shopId!;
+
+  try {
+    const membership = await db('shop_memberships')
+      .where({ user_id: userId, shop_id: shopId })
+      .whereNull('revoked_at')
+      .first('notification_preferences');
+
+    if (!membership) return res.status(404).json({ error: 'Membership not found' });
+
+    return res.json({ preferences: membership.notification_preferences ?? {} });
+  } catch (err) {
+    console.error('[MEMBERS] getMyPreferences failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
  * GET /api/v1/members/:userId/performance
  * Returns operator performance metrics derived from completed WMS tasks.
  *
@@ -389,6 +412,52 @@ export const getOperatorPerformance = async (req: Request, res: Response) => {
     return res.json({ userId: targetUserId, metrics });
   } catch (err: any) {
     console.error('[MEMBERS] getOperatorPerformance failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * PATCH /api/v1/members/me/preferences
+ * Persists notification preferences for the authenticated user.
+ * Stored as JSONB in shop_memberships.notification_preferences.
+ */
+export const updateMyPreferences = async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const shopId = req.user!.shopId!;
+
+  const { push_enabled, alert_tone, alert_types } = req.body;
+
+  const VALID_TONES = ['urgent', 'standard', 'silent'];
+  if (alert_tone !== undefined && !VALID_TONES.includes(alert_tone)) {
+    return res.status(400).json({ error: `alert_tone must be one of: ${VALID_TONES.join(', ')}` });
+  }
+
+  try {
+    // Fetch existing prefs and merge — partial updates supported
+    const membership = await db('shop_memberships')
+      .where({ user_id: userId, shop_id: shopId })
+      .whereNull('revoked_at')
+      .first('notification_preferences');
+
+    if (!membership) return res.status(404).json({ error: 'Membership not found' });
+
+    const existing = membership.notification_preferences ?? {};
+    const updated = {
+      ...existing,
+      ...(push_enabled !== undefined && { push_enabled: Boolean(push_enabled) }),
+      ...(alert_tone !== undefined && { alert_tone }),
+      ...(alert_types !== undefined && { alert_types: { ...existing.alert_types, ...alert_types } }),
+    };
+
+    await db('shop_memberships')
+      .where({ user_id: userId, shop_id: shopId })
+      .whereNull('revoked_at')
+      .update({ notification_preferences: JSON.stringify(updated), updated_at: new Date() });
+
+    console.info('[MEMBERS] Preferences updated', { userId, shopId });
+    return res.json({ success: true, preferences: updated });
+  } catch (err) {
+    console.error('[MEMBERS] updateMyPreferences failed:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

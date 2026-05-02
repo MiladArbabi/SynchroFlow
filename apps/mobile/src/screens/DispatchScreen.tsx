@@ -4,12 +4,16 @@ import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, Alert, ActivityIndicator,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
+  TextInput,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Card, Button, Badge, Row, Divider, AppHeader } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../hooks/useAuth';
 
 type ProcessTab = 'inbound' | 'outbound' | 'exceptions';
@@ -76,7 +80,9 @@ function getEtaLabel(dateStr: string | null): { label: string; variant: 'error' 
 
 export default function DispatchScreen() {
   const { logout } = useAuth();
-  const [tab, setTab] = useState<ProcessTab>('inbound');
+
+  const route = useRoute<any>();
+  const [tab, setTab] = useState<ProcessTab>(route.params?.initialTab ?? 'inbound');
   const [operators, setOperators] = useState<Operator[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [stowTasks, setStowTasks] = useState<StowTask[]>([]);
@@ -97,6 +103,13 @@ export default function DispatchScreen() {
   // PO Modal States
   const [poModal, setPoModal] = useState<PurchaseOrder | null>(null);
   const [poSubmitting, setPoSubmitting] = useState(false);
+  const [modifyModal, setModifyModal] = useState<PurchaseOrder | null>(null);
+  const [modifyEta, setModifyEta] = useState('');
+  const [modifyNotes, setModifyNotes] = useState('');
+  const [modifying, setModifying] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [modifyLineItems, setModifyLineItems] = useState<any[]>([]);
+
   // Problem center resolution modal
   const [resolveModal, setResolveModal] = useState<ProblemTask | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -138,6 +151,12 @@ export default function DispatchScreen() {
 
   useEffect(() => { void load(); }, [load]);
   useFocusEffect(useCallback(() => { void load(true); }, [load]));
+  // Update tab when navigated to with initialTab param (screen may already be mounted)
+  useFocusEffect(useCallback(() => {
+    if (route.params?.initialTab) {
+      setTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]));
 
   // ── PO status update handler ─────────────────────────────────────────────────────────
   const handlePoStatusUpdate = useCallback(async (poId: string, status: string) => {
@@ -234,6 +253,24 @@ export default function DispatchScreen() {
       </ScrollView>
     </View>
   );
+
+  const handleModifyPo = useCallback(async () => {
+    if (!modifyModal) return;
+    setModifying(true);
+    try {
+      await apiClient.patch(`/api/v1/suppliers/purchase-orders/${modifyModal.id}`, {
+        expected_delivery_date: modifyEta || null,
+        notes: modifyNotes || null,
+      });
+      setModifyModal(null);
+      await load(true);
+    } catch (err: any) {
+      const code = err?.response?.data?.error;
+      Alert.alert('Error', code === 'PO_NOT_EDITABLE' ? 'This PO cannot be modified in its current status.' : 'Failed to update PO.');
+    } finally {
+      setModifying(false);
+    }
+  }, [modifyModal, modifyEta, modifyNotes, load]);
 
   const activeBatches = batches.filter(b => !['pack_complete', 'cancelled'].includes(b.status));
   const activeStow = stowTasks.filter(t => ['pending', 'in_progress'].includes(t.status));
@@ -648,6 +685,114 @@ export default function DispatchScreen() {
       </View>
     </Modal>
 
+    {/* Modify PO Modal */}
+    <Modal visible={!!modifyModal} transparent animationType="slide" onRequestClose={() => setModifyModal(null)}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setModifyModal(null)} />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalSheet}>
+            <View style={styles.sheetHandle} />
+            {modifyModal && (
+              <>
+                {/* Header with back button for when date picker is open */}
+                <Row style={{ alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
+                  {showDatePicker ? (
+                    <TouchableOpacity onPress={() => setShowDatePicker(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="arrow-back-outline" size={20} color={colors.ink} />
+                    </TouchableOpacity>
+                  ) : null}
+                  <Text style={styles.modalTitle}>{showDatePicker ? 'Select date' : 'Modify PO'}</Text>
+                </Row>
+                <Text style={styles.modalSubtitle}>{modifyModal.supplier_name}</Text>
+                <View style={styles.modalDivider} />
+
+                {showDatePicker ? (
+                  <>
+                  <DateTimePicker
+                    value={modifyEta ? new Date(modifyEta) : new Date()}
+                    mode="date"
+                    display="spinner"
+                    minimumDate={new Date()}
+                    onChange={(event, date) => {
+                      if (event.type === 'dismissed') {
+                        setShowDatePicker(false);
+                        return;
+                      }
+                      // Track spinning selection without closing
+                      if (date) setModifyEta(date.toISOString().split('T')[0]);
+                    }}
+                  />
+                  <TouchableOpacity
+                    style={styles.modalActionPrimary}
+                    onPress={() => setShowDatePicker(false)}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={20} color={colors.bg} />
+                    <Text style={styles.modalActionPrimaryText}>Confirm date</Text>
+                  </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    {/* Editable fields — visually distinct with accent border */}
+                    <Text style={styles.modifyLabelEditable}>
+                      <Ionicons name="pencil-outline" size={11} color={colors.accent} /> Expected delivery date
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.modifyInputEditable}
+                      onPress={() => setShowDatePicker(true)}
+                    >
+                      <Text style={{ color: modifyEta ? colors.ink : colors.ink4, fontSize: font.size.sm, flex: 1 }}>
+                        {modifyEta ? new Date(modifyEta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Tap to select date'}
+                      </Text>
+                      <Ionicons name="calendar-outline" size={16} color={colors.accent} />
+                    </TouchableOpacity>
+
+                    {/* Read-only line items — muted style */}
+                    {modifyLineItems.length > 0 && (
+                      <>
+                        <Text style={styles.modifyLabel}>
+                          <Ionicons name="lock-closed-outline" size={11} color={colors.ink4} /> Line items
+                        </Text>
+                        {modifyLineItems.map((li: any) => (
+                          <View key={li.id} style={styles.lineItemRow}>
+                            <Text style={styles.lineItemSku} numberOfLines={1}>{li.sku ?? li.description}</Text>
+                            <Text style={styles.lineItemQty}>
+                              {li.quantity_received}/{li.quantity_ordered} units
+                              {li.unit_cost_cents ? ` · $${(li.unit_cost_cents / 100).toFixed(2)}` : ''}
+                            </Text>
+                          </View>
+                        ))}
+                      </>
+                    )}
+                    <View style={styles.modalDivider} />
+
+                    <Text style={styles.modifyLabelEditable}>
+                      <Ionicons name="pencil-outline" size={11} color={colors.accent} /> Comments
+                    </Text>
+                <TextInput
+                      style={[styles.modifyInput, { minHeight: 80 }]}
+                      value={modifyNotes}
+                      placeholder="Add comments or instructions for this PO…"
+                      placeholderTextColor={colors.ink4}
+                      multiline
+                      onChangeText={setModifyNotes}
+                    />
+                    <TouchableOpacity
+                      style={[styles.modalActionPrimary, modifying && { opacity: 0.6 }]}
+                  onPress={() => void handleModifyPo()}
+                  disabled={modifying}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={20} color={colors.bg} />
+                  <Text style={styles.modalActionPrimaryText}>{modifying ? 'Saving…' : 'Save changes'}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+
     {/* PO Modal */}
       <Modal
         visible={!!poModal}
@@ -703,16 +848,26 @@ export default function DispatchScreen() {
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity
-                style={styles.modalActionSecondary}
-                onPress={() => {
-                  setPoModal(null);
-                  Alert.alert('Coming soon', 'PO edit screen coming in next sprint.');
-                }}
-              >
-                <Ionicons name="create-outline" size={20} color={colors.ink} />
-                <Text style={styles.modalActionSecondaryText}>Modify PO</Text>
-              </TouchableOpacity>
+              {!['received', 'cancelled'].includes(poModal.status) && (
+                <TouchableOpacity
+                  style={styles.modalActionSecondary}
+                  onPress={() => {
+                    setModifyEta(poModal.expected_delivery_date ?? '');
+                    setModifyNotes('');
+                    setShowDatePicker(false);
+                    setModifyLineItems([]);
+                    setModifyModal(poModal);
+                    // Load line items for display
+                    apiClient.get(`/api/v1/suppliers/purchase-orders/${poModal.id}/line-items`)
+                      .then(r => setModifyLineItems(r.data.line_items ?? []))
+                      .catch(() => {});
+                    setPoModal(null);
+                  }}
+                >
+                  <Ionicons name="create-outline" size={20} color={colors.ink} />
+                  <Text style={styles.modalActionSecondaryText}>Modify PO</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={styles.modalActionDanger}
@@ -884,4 +1039,11 @@ const styles = StyleSheet.create({
       fontSize: font.size.xs,
       marginTop: 2,
     },
+    modifyLabel: { color: colors.ink3, fontSize: font.size.xs, fontWeight: font.weight.medium, marginTop: spacing.xs },
+    modifyInput: { backgroundColor: colors.bg3, borderRadius: radius.sm, padding: spacing.sm, color: colors.ink, fontSize: font.size.sm, marginTop: spacing.xs },
+    lineItemRow: { backgroundColor: colors.bg3, borderRadius: radius.sm, padding: spacing.sm, marginTop: spacing.xs },
+    lineItemSku: { color: colors.ink, fontSize: font.size.sm, fontWeight: font.weight.medium },
+    lineItemQty: { color: colors.ink3, fontSize: font.size.xs, marginTop: 2 },
+    modifyLabelEditable: { color: colors.accent, fontSize: font.size.xs, fontWeight: font.weight.medium, marginTop: spacing.xs },
+    modifyInputEditable: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg3, borderRadius: radius.sm, padding: spacing.sm, marginTop: spacing.xs, borderWidth: 1, borderColor: colors.accentBorder },
 });

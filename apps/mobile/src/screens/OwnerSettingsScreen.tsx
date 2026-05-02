@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator, Switch,
-  Modal, TextInput, Alert,
+  Modal, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -64,7 +64,8 @@ export default function OwnerSettingsScreen() {
   const [inviteFirstName, setInviteFirstName] = useState('');
   const [inviteLastName, setInviteLastName] = useState('');
   const [inviteRole, setInviteRole] = useState<'operator' | 'admin'>('operator');
-  const [inviting, setInviting] = useState(false);  
+  const [inviting, setInviting] = useState(false);
+  const [memberActionModal, setMemberActionModal] = useState<Operator | null>(null);
 
   // Preferences state (local only for now)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -75,19 +76,53 @@ export default function OwnerSettingsScreen() {
     batchReady: true,
     shipmentReady: true,
   });
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+  // Load preferences on mount
+  useEffect(() => {
+    apiClient.get('/api/v1/members/me/preferences')
+      .then(({ data }) => {
+        const p = data.preferences ?? {};
+        if (p.push_enabled !== undefined) setNotificationsEnabled(p.push_enabled);
+        if (p.alert_tone) setAlertTone(p.alert_tone);
+        if (p.alert_types) setAlertTypes(prev => ({ ...prev, ...p.alert_types }));
+        setPrefsLoaded(true);
+      })
+      .catch(() => setPrefsLoaded(true));
+  }, []);
+
+  // Auto-save preferences when they change (after initial load)
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    apiClient.patch('/api/v1/members/me/preferences', {
+      push_enabled: notificationsEnabled,
+      alert_tone: alertTone,
+      alert_types: {
+        exceptions: alertTypes.exceptions,
+        idle: alertTypes.idle,
+        batch_ready: alertTypes.batchReady,
+        shipment_ready: alertTypes.shipmentReady,
+      },
+    }).catch(() => {});
+  }, [notificationsEnabled, alertTone, alertTypes, prefsLoaded]);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const [opsRes, batchRes, stowRes, receiveRes, wmsRes] = await Promise.all([
-        apiClient.get('/api/v1/operators/team'),
+        apiClient.get('/api/v1/members'),
         apiClient.get('/api/v1/wms/batches'),
         apiClient.get('/api/v1/wms/stow-tasks'),
         apiClient.get('/api/v1/suppliers/receive-jobs?status=in_progress'),
         apiClient.get('/api/v1/wms/settings').catch(() => ({ data: null })),
       ]);
 
-      const members: Operator[] = opsRes.data.members ?? [];
+      const members: Operator[] = (opsRes.data.members ?? []).map((m: any) => ({
+        id: m.user_id,
+        name: [m.first_name, m.last_name].filter(Boolean).join(' ') || null,
+        email: m.email,
+        role: m.role,
+      }));
       setOperators(members);
 
       const batches = batchRes.data.batches ?? [];
@@ -219,13 +254,7 @@ export default function OwnerSettingsScreen() {
                 const statusKey = status?.status ?? 'idle';
                 return (
                   <Card key={op.id} style={styles.memberCard}>
-                    <Row style={{ alignItems: 'center', gap: spacing.sm }}>
-                      {/* Avatar */}
-                      <View style={styles.memberAvatar}>
-                        <Text style={styles.memberAvatarText}>
-                          {(op.name ?? op.email).charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
+                    <Row style={{ alignItems: 'center', gap: spacing.sm, flexWrap: 'nowrap' }}>
                       {/* Name + status */}
                       <View style={{ flex: 1 }}>
                         <Text style={styles.memberName} numberOfLines={1}>
@@ -238,23 +267,24 @@ export default function OwnerSettingsScreen() {
                           </Text>
                         )}
                       </View>
-                      {/* Role badge */}
-                      <Badge label={op.role.toUpperCase()} variant="info" />
-                      {/* Actions */}
-                      <TouchableOpacity
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        onPress={() => (navigation as any).navigate('OperatorPerformance', { operatorId: op.id, operatorName: op.name ?? op.email })}
-                      >
-                        <Ionicons name="bar-chart-outline" size={18} color={colors.accent} />
-                      </TouchableOpacity>
-                      {op.role !== 'owner' && (
+                      {/* Right side — badge + actions all center-aligned */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 0 }}>
+                        <Badge label={op.role.toUpperCase()} variant="info" />
                         <TouchableOpacity
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() => handleRevoke(op)}
+                          onPress={() => (navigation as any).navigate('OperatorPerformance', { operatorId: op.id, operatorName: op.name ?? op.email })}
                         >
-                          <Ionicons name="person-remove-outline" size={18} color={colors.error} />
+                          <Ionicons name="bar-chart-outline" size={18} color={colors.accent} />
                         </TouchableOpacity>
-                      )}
+                        {op.role !== 'owner' && (
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => setMemberActionModal(op)}
+                          >
+                            <Ionicons name="ellipsis-vertical" size={18} color={colors.ink3} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </Row>
                   </Card>
                 );
@@ -417,18 +447,62 @@ export default function OwnerSettingsScreen() {
                 <Text style={styles.settingLabel}>App version</Text>
                 <Text style={styles.settingValue}>1.0.0</Text>
               </Card>
-
-              <Text style={styles.comingSoon}>
-                Preferences sync to cloud — coming soon
-              </Text>
             </>
           )}
         </ScrollView>
       )}
 
+      {/* Member Action Modal — role change + revoke */}
+      <Modal visible={!!memberActionModal} transparent animationType="slide" onRequestClose={() => setMemberActionModal(null)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setMemberActionModal(null)} />
+        <View style={styles.modalSheet}>
+          <View style={styles.sheetHandle} />
+          {memberActionModal && (
+            <>
+              <Text style={styles.modalTitle}>{memberActionModal.name ?? memberActionModal.email}</Text>
+              <Text style={styles.memberEmail}>{memberActionModal.email}</Text>
+              <View style={styles.modalDivider} />
+              <Text style={styles.inputLabel}>Change role</Text>
+              <Row style={{ gap: spacing.sm, marginBottom: spacing.md }}>
+                {(['operator', 'admin'] as const).map(r => (
+                  <TouchableOpacity
+                    key={r}
+                    style={[styles.roleChip, memberActionModal.role === r && styles.roleChipActive]}
+                    onPress={async () => {
+                      if (memberActionModal.role === r) return;
+                      try {
+                        await apiClient.patch(`/api/v1/members/${memberActionModal.id}/role`, { role: r });
+                        setMemberActionModal(null);
+                        await load(true);
+                      } catch {
+                        Alert.alert('Error', 'Failed to update role.');
+                      }
+                    }}
+                  >
+                    <Text style={[styles.roleChipText, memberActionModal.role === r && styles.roleChipTextActive]}>
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </Row>
+              <View style={styles.modalDivider} />
+              <TouchableOpacity
+                style={[styles.inviteSubmitBtn, { backgroundColor: colors.error }]}
+                onPress={() => { setMemberActionModal(null); handleRevoke(memberActionModal); }}
+              >
+                <Text style={styles.inviteSubmitText}>Revoke access</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+       </View>
+      </Modal>
+
       {/* Invite Member Modal */}
       <Modal visible={inviteModal} transparent animationType="slide" onRequestClose={() => setInviteModal(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setInviteModal(false)} />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setInviteModal(false)} />
         <View style={styles.modalSheet}>
           <View style={styles.sheetHandle} />
           <Text style={styles.modalTitle}>Invite team member</Text>
@@ -477,6 +551,7 @@ export default function OwnerSettingsScreen() {
             <Text style={styles.inviteSubmitText}>{inviting ? 'Sending invite…' : 'Send invite'}</Text>
           </TouchableOpacity>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </Screen>
   );
@@ -559,4 +634,5 @@ const styles = StyleSheet.create({
     settingInput: { backgroundColor: colors.bg3, borderRadius: radius.sm, padding: spacing.sm, color: colors.ink, fontSize: font.size.sm, marginTop: spacing.xs },
     saveBtn: { backgroundColor: colors.accent, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.xs },
     saveBtnText: { color: colors.bg, fontSize: font.size.sm, fontWeight: font.weight.bold },
+    modalDivider: { height: 1, backgroundColor: colors.bg3, marginVertical: spacing.xs },
 });

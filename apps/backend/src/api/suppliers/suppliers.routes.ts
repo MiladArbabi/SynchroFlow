@@ -11,6 +11,7 @@ import {
   httpGetPoLineItems,
   httpUpdatePoStatus,
   httpReceiveShipment,
+  httpPatchPurchaseOrder,
 } from './suppliers.controller.js';
 import {
   httpListReceiveJobs,
@@ -80,6 +81,14 @@ router.patch(
   requireFt2,
   requireAction('po:status'),
   httpUpdatePoStatus
+);
+
+router.patch(
+  '/purchase-orders/:poId',
+  authenticateToken,
+  requireFt2,
+  requireAction('po:write'),
+  httpPatchPurchaseOrder
 );
 
 router.post(

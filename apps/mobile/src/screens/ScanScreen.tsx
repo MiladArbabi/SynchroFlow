@@ -24,8 +24,21 @@ export default function ScanScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [complete, setComplete] = useState(false);
+  const [pickPhase, setPickPhase] = useState<'location' | 'product'>('location');
 
   const currentItem = lineItems[currentIndex] ?? null;
+
+  const handleLocationConfirm = useCallback(async (scannedValue: string) => {
+    if (!currentItem) return;
+    // Resolve scanned value against expected location
+    const expected = currentItem.location_code ?? 'ROOT';
+    if (scannedValue.trim().toUpperCase() !== expected.toUpperCase()) {
+      throw Object.assign(new Error('Wrong location.'), {
+        response: { data: { error: `Wrong location — expected ${expected}. Scan the correct location barcode.` } },
+      });
+    }
+    setPickPhase('product');
+  }, [currentItem]);
 
   const handleConfirm = useCallback(async (scannedValue: string) => {
     if (!currentItem) return;
@@ -63,6 +76,7 @@ export default function ScanScreen() {
         setComplete(true);
       } else {
         setCurrentIndex(nextIndex);
+        setPickPhase('location');
       }
     } finally {
       setSubmitting(false);
@@ -86,6 +100,7 @@ const handleException = useCallback(async (exceptionType: string, quantity: numb
         quantity,
         exception_type: exceptionType,
         source: 'pick',
+        source_exception_id: task.id,
       });
       // Move to next item
       const nextIndex = currentIndex + 1;
@@ -93,6 +108,7 @@ const handleException = useCallback(async (exceptionType: string, quantity: numb
         setComplete(true);
       } else {
         setCurrentIndex(nextIndex);
+        setPickPhase('location');
       }
     } catch {
       Alert.alert('Error', 'Failed to report exception.');
@@ -157,26 +173,49 @@ const handleException = useCallback(async (exceptionType: string, quantity: numb
           onPress: () => navigation.goBack(),
         }}
       />
-      <WorkflowStep
+      {pickPhase === 'location' ? (
+        <WorkflowStep
+          scanType="location"
+          context={{
+            label: 'Item',
+            value: currentItem.title,
+            sublabel: `SKU: ${currentItem.sku ?? '—'} · Qty: ${currentItem.quantity}`,
+          }}
+          item={{
+            title: currentItem.location_code ?? 'ROOT',
+            sku: null,
+            quantity: currentItem.quantity,
+            currentIndex: currentIndex + 1,
+            totalCount: lineItems.length,
+          }}
+          exceptions={[]}
+          onConfirm={handleLocationConfirm}
+          onException={async () => {}}
+          confirmLabel="Confirm location"
+          isSubmitting={false}
+        />
+      ) : (
+        <WorkflowStep
           scanType="product"
           context={{
             label: 'Location',
             value: currentItem.location_code ?? 'ROOT',
-            sublabel: 'Go to this location to pick the item',
+            sublabel: 'Scan the product barcode to confirm pick',
           }}
-        item={{
-          title: currentItem.title,
-          sku: currentItem.sku,
-          quantity: currentItem.quantity,
-          currentIndex: currentIndex + 1,
-          totalCount: lineItems.length,
-        }}
-        exceptions={PICK_EXCEPTIONS}
-        onConfirm={handleConfirm}
-        onException={handleException}
-        confirmLabel="Confirm pick"
-        isSubmitting={submitting}
-      />
+          item={{
+            title: currentItem.title,
+            sku: currentItem.sku,
+            quantity: currentItem.quantity,
+            currentIndex: currentIndex + 1,
+            totalCount: lineItems.length,
+          }}
+          exceptions={PICK_EXCEPTIONS}
+          onConfirm={handleConfirm}
+          onException={handleException}
+          confirmLabel="Confirm pick"
+          isSubmitting={submitting}
+        />
+      )}
     </Screen>
   );
 }

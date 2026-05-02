@@ -13,6 +13,8 @@ type AuthState = {
   role: string | null;
   userId: number | null;
   roles: string[];
+  email: string | null;
+  firstName: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -28,10 +30,21 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+function decodeTokenClaims(token: string): { email: string | null; firstName: string | null } {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return { email: payload.email ?? null, firstName: payload.first_name ?? null };
+  } catch {
+    return { email: null, firstName: null };
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const newAccessToken: string = data.accessToken;
       await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, newAccessToken);
       apiClient.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
+      const claims = decodeTokenClaims(newAccessToken);
+      setEmail(claims.email);
+      setFirstName(claims.firstName);
       setToken(newAccessToken);
       return newAccessToken;
     } catch {
@@ -58,6 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Token still valid — use it
           apiClient.defaults.headers.common['Authorization'] = `Bearer ${stored}`;
           setToken(stored);
+          const claims = decodeTokenClaims(stored);
+          setEmail(claims.email);
+          setFirstName(claims.firstName);
         } else {
           // Token missing or expired — try refresh
           const newToken = await tryRefresh();
@@ -95,12 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setToken(null);
           setRole(null);
           setUserId(null);
-
-          await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-          delete apiClient.defaults.headers.common['Authorization'];
-          setToken(null);
-          setRole(null);
-          setUserId(null);
+          setEmail(null);
+          setFirstName(null);
         }
         return Promise.reject(error);
       }
@@ -120,6 +135,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(accessToken);
       setRole(data.user?.role ?? null);
       setUserId(data.user?.id ?? null);
+      const claims = decodeTokenClaims(accessToken);
+      setEmail(claims.email);
+      setFirstName(claims.firstName);
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -136,6 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setRole(null);
     setUserId(null);
+    setEmail(null);
+    setFirstName(null);
   }, []);
 
   return (
@@ -146,6 +166,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       userId,
       roles: role ? [role] : [],
+      email,
+      firstName,
       login,
       logout,
     }}>

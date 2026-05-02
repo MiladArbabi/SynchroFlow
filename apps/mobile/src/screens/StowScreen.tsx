@@ -153,16 +153,17 @@ export default function StowScreen() {
   }, [currentTask]);
 
   // ── Submit Handler Helper ───────────────────────────────────────────────────────────
-  const submitStow = useCallback(async (qty: number) => {
+  const submitStow = useCallback(async (qty: number, exceptionsFiled = false) => {
     if (!currentTask) return;
     setSubmitting(true);
     try {
       await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/confirm`, {
         quantity_placed: qty,
       });
-
       const newRemaining = remainingQty - qty;
-      if (newRemaining > 0) {
+      // Only loop back for partial stow if no exceptions were filed for the shortfall.
+      // If exceptions cover the gap, advance to next task.
+      if (newRemaining > 0 && !exceptionsFiled) {
         setRemainingQty(newRemaining);
         setConfirmedLocation(null);
         setQtyInput('');
@@ -290,7 +291,7 @@ export default function StowScreen() {
         setExQtyInput('');
       } else {
         setShortfallModal(null);
-        await submitStow(shortfallModal.qty);
+        await submitStow(shortfallModal.qty, true);
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })

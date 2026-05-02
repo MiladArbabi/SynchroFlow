@@ -382,3 +382,50 @@ export async function httpReceiveShipment(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to record shipment receipt' });
   }
 }
+
+/**
+ * PATCH /api/v1/suppliers/purchase-orders/:poId
+ * Updates editable PO header fields: expected_delivery_date, notes, document_url.
+ * Cannot modify line items or status via this endpoint.
+ * Only allowed when PO is not yet shipped/received/cancelled.
+ */
+export async function httpPatchPurchaseOrder(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { poId } = req.params;
+  const { expected_delivery_date, notes, document_url } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (expected_delivery_date !== undefined) updates.expected_delivery_date = expected_delivery_date || null;
+  if (notes !== undefined) updates.notes = notes?.trim() || null;
+  if (document_url !== undefined) updates.document_url = document_url?.trim() || null;
+
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields provided' });
+  updates.updated_at = new Date();
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const po = await trx('purchase_orders')
+        .where({ id: poId, shop_id: shopId })
+        .select('status')
+        .first();
+
+      if (!po) throw Object.assign(new Error('PO_NOT_FOUND'), { statusCode: 404 });
+      if (['shipped', 'received', 'cancelled'].includes(po.status)) {
+        throw Object.assign(new Error('PO_NOT_EDITABLE'), { statusCode: 409 });
+      }
+
+      await trx('purchase_orders').where({ id: poId, shop_id: shopId }).update(updates);
+      console.info('[SUPPLIERS] PO updated', { shopId, poId, updates });
+    });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'PO not found' });
+    if (err.statusCode === 409) return res.status(409).json({ error: 'PO cannot be modified in its current status' });
+    console.error('[suppliers] httpPatchPurchaseOrder failed', err);
+    return res.status(500).json({ error: 'Failed to update purchase order' });
+  }
+}

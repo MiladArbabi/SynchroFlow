@@ -202,6 +202,7 @@ export default function PackScreen() {
       quantity,
       exception_type: exceptionType,
       source: 'pack',
+      source_exception_id: task.id,
     });
     // Mark as scanned to advance
     setOrders(prev =>

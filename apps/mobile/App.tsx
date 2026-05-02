@@ -1,7 +1,7 @@
 // apps/mobile/App.tsx
 import { useState, useCallback } from 'react';
 import { AppHeader, Screen } from './src/ui';
-import { NavigationContainer, useFocusEffect } from '@react-navigation/native';
+import { NavigationContainer, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 
 import { apiClient } from '@lasyncro/mobile-core';
@@ -27,6 +27,7 @@ import DispatchScreen from './src/screens/DispatchScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
 
 import OwnerSettingsScreen from './src/screens/OwnerSettingsScreen';
+import OperatorSettingsScreen from './src/screens/OperatorSettingsScreen';
 import OperatorPerformanceScreen from './src/screens/OperatorPerformanceScreen';
 
 // ─── Tab icon ────────────────────────────────────────────────────────────────
@@ -55,6 +56,26 @@ interface AlertItem {
 function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: string }) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigation = useNavigation<any>();
+
+  const navigateToModule = useCallback((alertType: string) => {
+    const WMS_TAB_MAP: Record<string, 'inbound' | 'outbound' | 'exceptions'> = {
+      wms_receive_arrived:     'inbound',
+      wms_receive_exception:   'exceptions',
+      wms_stow_pending:        'inbound',
+      wms_pick_exception:      'exceptions',
+      wms_pack_exception:      'exceptions',
+      wms_batch_ready_to_pack: 'outbound',
+      wms_batch_ready_to_ship: 'outbound',
+      wms_batch_released:      'outbound',
+      wms_supplier_rating:     'inbound',
+    };
+    if (alertType.startsWith('wms_')) {
+      navigation.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' } });
+    } else {
+      navigation.navigate('OwnerTabs', { screen: 'Alerts' });
+    }
+  }, [navigation]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,7 +105,8 @@ function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: strin
           </View>
         ) : (
           alerts.map(alert => (
-            <View key={alert.id} style={[alertStyles.card, alert.severity === 'critical' && alertStyles.cardCritical]}>
+            <TouchableOpacity key={alert.id} onPress={() => navigateToModule(alert.alert_type)} activeOpacity={0.7}>
+            <View style={[alertStyles.card, alert.severity === 'critical' && alertStyles.cardCritical]}>
               <View style={alertStyles.cardHeader}>
                 <Text style={alertStyles.cardTitle} numberOfLines={2}>{alert.title}</Text>
                 <View style={[alertStyles.badge, alertStyles[`badge_${alert.severity}`]]}>
@@ -96,6 +118,7 @@ function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: strin
                 <Text style={alertStyles.revenueImpact}>${alert.revenue_impact.toLocaleString()} at risk</Text>
               )}
             </View>
+          </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -159,6 +182,16 @@ const tabBarStyle = (bottomInset: number) => ({
   paddingBottom: bottomInset + spacing.xs,
   paddingTop: spacing.xs,
 });
+
+const OperatorRootStack = createNativeStackNavigator();
+function OperatorRoot() {
+  return (
+    <OperatorRootStack.Navigator screenOptions={{ headerShown: false }}>
+      <OperatorRootStack.Screen name="OperatorTabs" component={OperatorTabs} />
+      <OperatorRootStack.Screen name="Settings" component={OperatorSettingsScreen} />
+    </OperatorRootStack.Navigator>
+  );
+}
 
 // ─── OPERATOR tabs ────────────────────────────────────────────────────────────
 const OperatorTab = createBottomTabNavigator();
@@ -300,7 +333,7 @@ function AppInner() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <NavigationContainer>
-        {isOwnerOrAdmin ? <OwnerRoot /> : <OperatorTabs />}
+        {isOwnerOrAdmin ? <OwnerRoot /> : <OperatorRoot />}
       </NavigationContainer>
     </SafeAreaProvider>
   );

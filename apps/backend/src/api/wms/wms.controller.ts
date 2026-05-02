@@ -1342,7 +1342,7 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
 
       const task = await trx('problem_center_tasks')
         .where({ problem_task_id: taskId, shop_id: shopId })
-        .select('status', 'lasyncro_variant_id', 'quantity')
+        .select('status', 'lasyncro_variant_id', 'quantity', 'source_exception_id', 'source')
         .first();
 
       if (!task) throw new Error('TASK_NOT_FOUND');
@@ -1358,6 +1358,14 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           resolved_at: new Date(),
           updated_at: new Date(),
         });
+
+      // Deactivate alerts linked to this specific problem task only.
+      // Matches by source_exception_id (the batch/task ID stored as entity_id on the alert).
+      if (task.source_exception_id) {
+        await trx('alerts')
+          .where({ shop_id: shopId, entity_id: task.source_exception_id, is_active: true })
+          .update({ is_active: false, updated_at: new Date() });
+      }
 
       console.info('[PROBLEM_CENTER_RESOLVED]', {
         problem_task_id: taskId,

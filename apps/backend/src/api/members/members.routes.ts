@@ -8,7 +8,9 @@ import {
     updateMemberRole, 
     updateMyCurrencyPreference, 
     revokeMember, 
-    getOperatorPerformance
+    getOperatorPerformance,
+    getMyPreferences,
+    updateMyPreferences
  } from './members.controller.js';
 
 /**
@@ -39,5 +41,9 @@ router.delete('/:userId', authenticateToken, requireAction('members:write'), rev
 
 // Operator performance metrics (owner/admin only)
 router.get('/:userId/performance', authenticateToken, requireAction('members:read'), getOperatorPerformance);
+
+// Self-service preferences (all roles)
+router.get('/me/preferences', authenticateToken, getMyPreferences);
+router.patch('/me/preferences', authenticateToken, updateMyPreferences);
 
 export default router;

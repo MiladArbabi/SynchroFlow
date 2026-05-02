@@ -1,5 +1,6 @@
 // apps/mobile/src/screens/OverviewScreen.tsx
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigation } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,9 +33,35 @@ function signalVariant(priority: number): 'error' | 'warning' | 'info' {
 }
 
 export default function OverviewScreen() {
+  const navigation = useNavigation<any>();
+
   const [brief, setBrief] = useState<MorningBrief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const navigateToModule = useCallback((module: string, alertType: string) => {
+    const WMS_TAB_MAP: Record<string, 'inbound' | 'outbound' | 'exceptions'> = {
+      wms_receive_arrived:     'inbound',
+      wms_receive_exception:   'exceptions',
+      wms_stow_pending:        'inbound',
+      wms_pick_exception:      'exceptions',
+      wms_pack_exception:      'exceptions',
+      wms_batch_ready_to_pack: 'outbound',
+      wms_batch_ready_to_ship: 'outbound',
+      wms_batch_released:      'outbound',
+      wms_supplier_rating:     'inbound',
+    };
+    switch (module) {
+      case 'wms':
+        navigation.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' } });
+        break;
+      case 'order-nexus':
+        navigation.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: 'outbound' } });
+        break;
+      default:
+        navigation.navigate('OwnerTabs', { screen: 'Alerts' });
+    }
+  }, [navigation]);
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
@@ -49,11 +76,11 @@ export default function OverviewScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void load(true); }, [load]));
 
   return (
     <Screen>
-      <AppHeader showLogo />
+      <AppHeader showLogo onRefresh={() => void load(true)} />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {loading ? (
           <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
@@ -82,12 +109,6 @@ export default function OverviewScreen() {
               </Text>
             </View>
 
-            {/* Refresh */}
-            <TouchableOpacity style={styles.refreshRow} onPress={() => void load(true)}>
-              <Ionicons name="refresh-outline" size={14} color={colors.ink3} />
-              <Text style={styles.refreshText}>Refresh brief</Text>
-            </TouchableOpacity>
-
             {/* Signals */}
             {brief.signals.length === 0 ? (
               <View style={styles.center}>
@@ -101,7 +122,8 @@ export default function OverviewScreen() {
                   {brief.hasUrgentIssues ? '⚠️ Needs attention' : 'To review'}
                 </Text>
                 {brief.signals.map(signal => (
-                  <Card key={signal.id} style={styles.signalCard}>
+                  <TouchableOpacity key={signal.id} onPress={() => navigateToModule(signal.module, signal.id)} activeOpacity={0.7}>
+                  <Card style={styles.signalCard}>
                     <View style={styles.signalHeader}>
                       <Text style={styles.signalTitle} numberOfLines={1}>{signal.title}</Text>
                       <Badge
@@ -116,6 +138,7 @@ export default function OverviewScreen() {
                       </Text>
                     )}
                   </Card>
+                  </TouchableOpacity>
                 ))}
               </>
             )}
