@@ -26,6 +26,8 @@ type Batch = {
   total_line_items: number;
   assigned_operator_id: number | null;
   assigned_packer_id: number | null;
+  picker_name: string | null;
+  packer_name: string | null;
 };
 type StowTask = {
   stow_task_id: string;
@@ -40,6 +42,7 @@ type ReceiveJob = {
   supplier_name: string;
   po_id: string;
   assigned_operator_id: number | null;
+  operator_name: string | null;
 };
 type PurchaseOrder = {
   id: string;
@@ -329,9 +332,21 @@ export default function DispatchScreen() {
                   <Text style={styles.sectionTitle}>Active receive jobs</Text>
                   {activeReceive.map(job => (
                     <Card key={job.receive_job_id} style={styles.jobCard}>
-                      <Row style={{ justifyContent: 'space-between' }}>
-                        <Text style={styles.jobTitle}>{job.supplier_name}</Text>
-                        <Badge label={job.status.toUpperCase()} variant="info" />
+                      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.jobTitle}>{job.supplier_name}</Text>
+                          <Text style={styles.jobMeta}>
+                            {job.status === 'in_progress' && job.operator_name
+                              ? `In progress · ${job.operator_name}`
+                              : job.status === 'inspection'
+                                ? `Inspecting · ${job.operator_name ?? ''}`
+                                : 'Awaiting claim'}
+                          </Text>
+                        </View>
+                        <Badge
+                          label={job.status.replace(/_/g, ' ').toUpperCase()}
+                          variant={job.operator_name ? 'success' : 'warning'}
+                        />
                       </Row>
                     </Card>
                   ))}
@@ -505,10 +520,23 @@ export default function DispatchScreen() {
                   <Text style={styles.sectionTitle}>Active batches</Text>
                   {activeBatches.map(batch => (
                     <Card key={batch.pick_batch_id} style={styles.jobCard}>
-                      <Row style={{ justifyContent: 'space-between' }}>
-                        <Text style={styles.jobTitle}>
-                          {batch.pick_batch_id.slice(0, 8).toUpperCase()}
-                        </Text>
+                      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.jobTitle}>
+                            {batch.pick_batch_id.slice(0, 8).toUpperCase()}
+                          </Text>
+                          <Text style={styles.jobMeta}>
+                            {batch.total_units} units · {batch.total_line_items} lines
+                          </Text>
+                          <Text style={styles.jobMeta}>
+                            {batch.status === 'pending'
+                              ? 'Awaiting claim'
+                              : batch.picker_name
+                                ? `Picker: ${batch.picker_name}`
+                                : 'Awaiting claim'}
+                            {batch.packer_name ? ` · Packer: ${batch.packer_name}` : ''}
+                          </Text>
+                        </View>
                         <Badge
                           label={batch.status.replace(/_/g, ' ').toUpperCase()}
                           variant={
@@ -518,9 +546,6 @@ export default function DispatchScreen() {
                           }
                         />
                       </Row>
-                      <Text style={styles.jobMeta}>
-                        {batch.total_units} units · {batch.total_line_items} lines
-                      </Text>
                     </Card>
                   ))}
                   <Divider />

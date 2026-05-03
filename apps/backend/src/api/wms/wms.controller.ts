@@ -30,27 +30,31 @@ export const httpGetBatches = async (req: Request, res: Response) => {
     const batches = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      return trx('pick_batches')
-        .where({ shop_id: shopId })
-        .whereNotIn('status', ['pack_complete', 'cancelled'])
-        .orderBy('released_at', 'desc')
+      return trx('pick_batches as pb')
+        .where({ 'pb.shop_id': shopId })
+        .whereNotIn('pb.status', ['pack_complete', 'cancelled'])
+        .leftJoin('users as upick', 'upick.id', 'pb.picked_by')
+        .leftJoin('users as upack', 'upack.id', 'pb.packed_by')
+        .orderBy('pb.released_at', 'desc')
         .select(
-          'pick_batch_id',
-          'status',
-          'release_trigger',
-          'total_line_items',
-          'total_units',
-          'units_picked',
-          'units_packed',
-          'picked_by',
-          'packed_by',
-          'pick_claimed_at',
-          'pick_completed_at',
-          'pack_claimed_at',
-          'pack_completed_at',
-          'released_at',
-          'assigned_operator_id',
-          'assigned_packer_id',
+          'pb.pick_batch_id',
+          'pb.status',
+          'pb.release_trigger',
+          'pb.total_line_items',
+          'pb.total_units',
+          'pb.units_picked',
+          'pb.units_packed',
+          'pb.picked_by',
+          'pb.packed_by',
+          'pb.pick_claimed_at',
+          'pb.pick_completed_at',
+          'pb.pack_claimed_at',
+          'pb.pack_completed_at',
+          'pb.released_at',
+          'pb.assigned_operator_id',
+          'pb.assigned_packer_id',
+          trx.raw(`COALESCE(upick.first_name || ' ' || COALESCE(upick.last_name, ''), upick.email) as picker_name`),
+          trx.raw(`COALESCE(upack.first_name || ' ' || COALESCE(upack.last_name, ''), upack.email) as packer_name`),
         );
     });
 

@@ -144,7 +144,7 @@ async function upsertIdleAlert({
       END
   `, [
     shopId, alertKey,
-    title, message, batchId, batchId,
+    title, message, batchId,
     isActive, isActive ? null : new Date(),
   ]);
 

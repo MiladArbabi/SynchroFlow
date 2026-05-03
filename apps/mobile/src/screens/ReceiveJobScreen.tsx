@@ -44,7 +44,7 @@ type LineState = {
   confirmed: boolean;
 };
 
-type ScreenPhase = 'inspect' | 'summary' | 'closed';
+type ScreenPhase = 'brief' | 'inspect' | 'summary' | 'closed';
 
 const EXCEPTION_TYPES = [
   { type: 'defect', label: 'Damaged', icon: 'hammer-outline' },
@@ -66,7 +66,8 @@ export default function ReceiveJobScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [screenPhase, setScreenPhase] = useState<ScreenPhase>('inspect');
+  const [screenPhase, setScreenPhase] = useState<ScreenPhase>('brief');
+  const [claiming, setClaiming] = useState(false);
 
   // Shortfall modal
   // Shortfall modal
@@ -106,6 +107,19 @@ export default function ReceiveJobScreen() {
   }, [task.id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const handleClaim = useCallback(async () => {
+    setClaiming(true);
+    try {
+      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/claim`);
+      setScreenPhase('inspect');
+    } catch (err: any) {
+      const code = err?.response?.data?.error;
+      Alert.alert('Error', code === 'JOB_CLAIMED_BY_OTHER' ? 'This job has been claimed by another operator.' : 'Failed to claim job.');
+    } finally {
+      setClaiming(false);
+    }
+  }, [task.id]);
 
   // Confirm a line — called after operator types qty and taps Confirm
   const handleConfirmLine = useCallback(async (line: ReceiveJobLine) => {
@@ -309,6 +323,42 @@ export default function ReceiveJobScreen() {
 
   const confirmedCount = lines.filter(l => lineStates[l.receive_job_line_id]?.confirmed).length;
   const totalExceptions = Object.values(lineStates).reduce((s, ls) => s + ls.exceptions.length, 0);
+
+  if (screenPhase === 'brief') {
+    return (
+      <Screen>
+        <AppHeader
+          title="Receive Job"
+          onBack={() => navigation.goBack()}
+          showProfile={false}
+        />
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
+        ) : error ? (
+          <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>
+        ) : job ? (
+          <ScrollView contentContainerStyle={styles.briefContainer}>
+            <Text style={styles.briefSupplier}>{job.supplier_name}</Text>
+            <Text style={styles.briefMeta}>{job.total_variants} SKU{job.total_variants !== 1 ? 's' : ''} · {job.total_units} units expected</Text>
+            <Divider />
+            <Text style={styles.briefSectionTitle}>Line items</Text>
+            {lines.map(line => (
+              <Card key={line.receive_job_line_id} style={styles.briefLineCard}>
+                <Text style={styles.briefLineName} numberOfLines={1}>{line.variant_title ?? line.sku ?? '—'}</Text>
+                <Text style={styles.briefLineMeta}>SKU: {line.sku ?? '—'} · {line.quantity_expected} units expected</Text>
+              </Card>
+            ))}
+            <Button
+              label={claiming ? 'Claiming…' : 'Claim & start inspection'}
+              onPress={() => void handleClaim()}
+              variant="primary"
+              style={{ marginTop: spacing.lg }}
+            />
+          </ScrollView>
+        ) : null}
+      </Screen>
+    );
+  }
 
   // ── CLOSED ────────────────────────────────────────────────────────────────
   if (screenPhase === 'closed') {
@@ -782,4 +832,11 @@ const styles = StyleSheet.create({
     color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold,
     textAlign: 'center', width: 80,
   },
+  briefContainer: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
+  briefSupplier: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold },
+  briefMeta: { color: colors.ink3, fontSize: font.size.sm },
+  briefSectionTitle: { color: colors.ink, fontSize: font.size.sm, fontWeight: font.weight.semibold },
+  briefLineCard: { gap: spacing.xs },
+  briefLineName: { color: colors.ink, fontSize: font.size.sm, fontWeight: font.weight.medium },
+  briefLineMeta: { color: colors.ink3, fontSize: font.size.xs },
 });

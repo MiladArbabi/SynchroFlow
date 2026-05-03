@@ -80,6 +80,7 @@ export async function httpListReceiveJobs(req: Request, res: Response) {
       let query = trx('receive_jobs as rj')
         .join('purchase_orders as po', 'rj.po_id', 'po.id')
         .join('suppliers as s', 'po.supplier_id', 's.id')
+        .leftJoin('users as u', 'u.id', 'rj.assigned_operator_id')
         .where('rj.shop_id', shopId)
         .whereNot('rj.status', 'cancelled')
         .select(
@@ -97,6 +98,7 @@ export async function httpListReceiveJobs(req: Request, res: Response) {
           's.name as supplier_name',
           'po.id as po_id',
           'po.expected_delivery_date',
+          trx.raw(`COALESCE(u.first_name || ' ' || COALESCE(u.last_name, ''), u.email) as operator_name`),
         )
         .orderBy('rj.created_at', 'desc');
 
@@ -166,6 +168,48 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
   } catch (err: any) {
     console.error('[RECEIVE_JOB_GET_FAILED]', { shopId, jobId, error: err.message });
     return res.status(500).json({ error: 'Failed to fetch receive job' });
+  }
+}
+
+// POST /receive-jobs/:jobId/claim
+// Operator claims the receive job — sets status to in_progress, records started_at.
+// Idempotent: re-claiming by same operator is allowed.
+export async function httpClaimReceiveJob(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const { jobId } = req.params;
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const job = await trx('receive_jobs')
+        .where({ receive_job_id: jobId, shop_id: shopId })
+        .select('status', 'assigned_operator_id', 'started_at')
+        .first();
+      if (!job) throw Object.assign(new Error('JOB_NOT_FOUND'), { statusCode: 404 });
+      if (!['pending', 'in_progress'].includes(job.status)) {
+        throw Object.assign(new Error('JOB_NOT_CLAIMABLE'), { statusCode: 409 });
+      }
+      // Allow re-claim by same operator, reject if claimed by someone else
+      if (job.assigned_operator_id && job.assigned_operator_id !== userId) {
+        throw Object.assign(new Error('JOB_CLAIMED_BY_OTHER'), { statusCode: 409 });
+      }
+      await trx('receive_jobs')
+        .where({ receive_job_id: jobId })
+        .update({
+          status: 'in_progress',
+          assigned_operator_id: userId,
+          started_at: job.started_at ?? new Date(),
+          updated_at: new Date(),
+        });
+      console.info('[RECEIVE_JOB_CLAIMED]', { jobId, userId, shopId });
+    });
+    return res.json({ success: true, receive_job_id: jobId });
+  } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'Job not found' });
+    if (err.statusCode === 409) return res.status(409).json({ error: err.message });
+    console.error('[RECEIVE_JOB_CLAIM_FAILED]', { jobId, userId, error: err.message });
+    return res.status(500).json({ error: 'Failed to claim receive job' });
   }
 }
 

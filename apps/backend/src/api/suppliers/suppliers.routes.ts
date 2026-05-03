@@ -17,6 +17,7 @@ import {
   httpListReceiveJobs,
   httpCreateReceiveJob,
   httpGetReceiveJob,
+  httpClaimReceiveJob,
   httpInspectReceiveJobLine,
   httpCloseReceiveJob,
   httpReportReceiveException,
@@ -122,6 +123,13 @@ router.get(
   requireFt2,
   requireAction('receive-job:read'),
   httpGetReceiveJob
+);
+router.post(
+  '/receive-jobs/:jobId/claim',
+  authenticateToken,
+  requireFt2,
+  requireAction('receive-job:read'),
+  httpClaimReceiveJob
 );
 router.post(
   '/receive-jobs/:jobId/inspect',
