@@ -339,17 +339,24 @@ export const httpCompletePick = async (req: Request, res: Response) => {
        * ----------------
        * All line items must have a confirmed scan before
        * pick_complete is allowed. Prevents partial pick acknowledgement.
+       * Count exceptions as a confirmed pick towards total picked items.
        */
       const confirmedScans = await trx('pick_scan_log')
         .where({ pick_batch_id: batchId, status: 'confirmed' })
         .count<{ count: string }>('scan_id as count')
         .first();
-
       const scannedCount = Number(confirmedScans?.count ?? 0);
 
-      if (scannedCount < batch.total_line_items) {
+      // Exceptions count as resolved line items — operator deliberately skipped them
+      const exceptionCount = await trx('pick_exceptions')
+        .where({ pick_batch_id: batchId })
+        .countDistinct<{ count: string }>('lasyncro_line_item_id as count')
+        .first();
+      const resolvedCount = scannedCount + Number(exceptionCount?.count ?? 0);
+
+      if (resolvedCount < batch.total_line_items) {
         throw new Error(
-          `INCOMPLETE_PICK:${scannedCount}/${batch.total_line_items}`
+          `INCOMPLETE_PICK:${resolvedCount}/${batch.total_line_items}`
         );
       }
 

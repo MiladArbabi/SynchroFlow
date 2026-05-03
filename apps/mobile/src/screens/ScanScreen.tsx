@@ -140,9 +140,6 @@ const handleException = useCallback(async (exceptionType: string, quantity: numb
           <TouchableOpacity style={styles.completeBtn} onPress={() => void handlePickComplete()}>
             <Text style={styles.completeBtnText}>Complete pick</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>Back to brief</Text>
-          </TouchableOpacity>
         </View>
       </Screen>
     );
