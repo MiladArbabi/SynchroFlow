@@ -56,13 +56,10 @@ export const httpGetConstrainedOrders = async (
       const query = trx('order_constraints as oc')
         .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
         .leftJoin('decisions as d', function () {
-          /**
-           * decisions.entity_id is varchar; order_constraints.lasyncro_order_id is uuid.
-           * Must cast entity_id to uuid for the join to resolve.
-           */
           this.on(trx.raw('"d"."entity_id"::uuid = "oc"."lasyncro_order_id"'))
             .andOn('d.shop_id', '=', trx.raw('?', [shopId]));
         })
+        .leftJoin('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'oc.lasyncro_order_id')
         .where('oc.is_active', true)
         .where('o.shop_id', shopId)
         .select(
@@ -71,10 +68,23 @@ export const httpGetConstrainedOrders = async (
           'oc.block_type',
           'oc.started_at as constrained_since',
           'o.total_price as revenue',
+          'o.promised_ship_by',
           'd.recommended_action',
           'd.priority',
-          'd.id as decision_id'
+          'd.id as decision_id',
+          // SLA fields from order_age_snapshot
+          'oas.age_since_creation_seconds',
+          'oas.is_shipping_sla_breached',
+          'oas.is_delivery_sla_breached'
         )
+        /**
+         * SLA-AWARE SORT ORDER
+         * --------------------
+         * Priority: SLA breached first, then by age descending.
+         * Operators must see the most urgent orders at the top.
+         */
+        .orderByRaw('oas.is_shipping_sla_breached DESC NULLS LAST')
+        .orderByRaw('oas.age_since_creation_seconds DESC NULLS LAST')
         .orderBy('d.priority', 'desc')
         .limit(limit)
         .offset(offset);

@@ -217,7 +217,84 @@ export default function CustomersModuleFT2({ ltv, currency }: CustomersModuleFT2
             />
           </Box>
 
-          {/* ZONE 2 — CUSTOMER TABLE */}
+          {/* ZONE 2 — AT-RISK COHORT */}
+          {(summary.at_risk_count > 0 || summary.lost_count > 0) && (() => {
+            const atRiskCustomers = customers
+              .filter(c => c.customer_tier === 'AT_RISK' || c.customer_tier === 'LOST')
+              .slice(0, 5);
+            return (
+              <Box sx={{
+                mb: 3,
+                border: '1px solid',
+                borderColor: theme.palette.warning.main,
+                borderRadius: 2,
+                overflow: 'hidden',
+              }}>
+                <Box sx={{
+                  px: 2, py: 1.5,
+                  bgcolor: theme.palette.mode === 'dark'
+                    ? 'rgba(202,138,4,0.12)'
+                    : 'rgba(202,138,4,0.06)',
+                  borderBottom: '1px solid',
+                  borderColor: theme.palette.warning.main,
+                  display: 'flex', alignItems: 'center', gap: 1,
+                }}>
+                  <AlertTriangle size={14} color={theme.palette.warning.main} />
+                  <Typography variant="caption" fontWeight={700} color="warning.main">
+                    {summary.at_risk_count + summary.lost_count} high-value customers need attention
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                    No order in 90+ days
+                  </Typography>
+                </Box>
+                {atRiskCustomers.map(c => (
+                  <Box key={c.customer_hashed_id} sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1fr 1fr',
+                    px: 2, py: 1.25,
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    alignItems: 'center',
+                    '&:last-child': { borderBottom: 'none' },
+                  }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        bgcolor: c.customer_tier === 'LOST'
+                          ? theme.palette.error.main
+                          : theme.palette.warning.main,
+                      }} />
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                        {c.customer_hashed_id.slice(0, 8).toUpperCase()}
+                      </Typography>
+                    </Box>
+                    <Typography variant="caption" fontWeight={600}>
+                      {fmt(c.total_revenue)} LTV
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {c.days_since_last_order != null ? `${c.days_since_last_order}d ago` : '—'}
+                    </Typography>
+                    <Box sx={{
+                      display: 'inline-flex',
+                      bgcolor: c.customer_tier === 'LOST'
+                        ? theme.palette.error.main
+                        : theme.palette.warning.main,
+                      color: '#fff',
+                      borderRadius: '4px',
+                      px: '6px', py: '2px',
+                      width: 'fit-content',
+                    }}>
+                      <Typography sx={{ fontSize: 10, fontWeight: 700 }}>
+                        {c.customer_tier}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            );
+          })()}
+
+          {/* ZONE 3 — CUSTOMER TABLE */}
           {customers.length > 0 && (
             <Box>
               <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>

@@ -18,7 +18,9 @@ import {
   getConstraintLabel,
   type ConstrainedOrder,
 } from '../orders/useConstrainedOrders';
+import { useTheme } from '@mui/material/styles';
 import { OrderDetailPanel } from '../orders/OrderDetailPanel';
+import { getSlaProximity, getAgeLabel } from '../orders/useConstrainedOrders';
 
 /**
  * FULFILLMENT QUEUE PAGE (B-01)
@@ -61,9 +63,14 @@ type OrderCardProps = {
 };
 
 function OrderCard({ order, onSelect }: OrderCardProps) {
-  const constrainedSince = order.constrained_since
-    ? new Date(order.constrained_since).toLocaleDateString()
-    : null;
+  const theme = useTheme();
+  const proximity = getSlaProximity(order);
+  const ageLabel = getAgeLabel(order);
+
+  const slaColor =
+    proximity === 'breached' ? theme.palette.error.main :
+    proximity === 'warning'  ? theme.palette.warning.main :
+    theme.palette.success.main;
 
   const revenue = order.revenue != null
     ? `$${Number(order.revenue).toFixed(2)}`
@@ -72,7 +79,11 @@ function OrderCard({ order, onSelect }: OrderCardProps) {
   return (
     <Card
       variant="outlined"
-      sx={{ mb: 1.5, borderRadius: 1.5 }}
+      sx={{
+        mb: 1.5,
+        borderRadius: 1.5,
+        borderLeft: `3px solid ${slaColor}`,
+      }}
     >
       <CardActionArea onClick={() => onSelect(order.order_id)}>
         <CardContent sx={{ py: 1.5, px: 2 }}>
@@ -87,7 +98,7 @@ function OrderCard({ order, onSelect }: OrderCardProps) {
             )}
           </Box>
 
-          <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap', alignItems: 'center' }}>
             {order.block_type && (
               <Chip
                 label={order.block_type.replace(/_/g, ' ')}
@@ -96,14 +107,25 @@ function OrderCard({ order, onSelect }: OrderCardProps) {
                 sx={{ fontSize: 11 }}
               />
             )}
-            {constrainedSince && (
-              <Chip
-                label={`Since ${constrainedSince}`}
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: 11 }}
-              />
-            )}
+            {/* SLA AGE BADGE — color-coded proximity */}
+            <Chip
+              label={
+                proximity === 'breached'
+                  ? `⚠ ${ageLabel} — SLA breached`
+                  : `${ageLabel} old`
+              }
+              size="small"
+              sx={{
+                fontSize: 11,
+                bgcolor: proximity === 'breached'
+                  ? 'error.main'
+                  : proximity === 'warning'
+                  ? 'warning.main'
+                  : 'success.main',
+                color: '#fff',
+                fontWeight: proximity === 'breached' ? 700 : 400,
+              }}
+            />
           </Box>
 
           {order.recommended_action && (

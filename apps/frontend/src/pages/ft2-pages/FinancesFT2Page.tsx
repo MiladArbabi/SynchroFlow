@@ -6,6 +6,7 @@ import { FinancesModuleFT2 } from '@lasyncro/finances';
 import { useFinancesFt2Snapshot } from '../finances/useFinancesFt2Snapshot';
 import { mapFinancesFt2Props } from '../finances/useFinancesFt2Adapter';
 import { useMargin } from '../finances/useMargin';
+import { useSkuMargin } from '../finances/useSkuMargin';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { PlanGate } from '../../components/PlanGate';
@@ -20,6 +21,7 @@ export default function FinancesFT2Page() {
   });
   const snapshotQuery = useFinancesFt2Snapshot(range);
   const marginQuery = useMargin();
+  const skuMarginQuery = useSkuMargin();
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
 
@@ -39,6 +41,7 @@ export default function FinancesFT2Page() {
         <FinancesModuleFT2
           {...props}
           margin={marginQuery.data ?? null}
+          skuMargin={skuMarginQuery.data ?? null}
           currency={{ displayCurrency, locale, rates }}
         />
       </>

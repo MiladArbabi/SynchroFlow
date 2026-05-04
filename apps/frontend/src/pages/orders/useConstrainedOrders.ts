@@ -30,6 +30,7 @@ export type ConstrainedOrder = {
   block_type: string | null;
   constrained_since: string | null;
   revenue: number | null;
+  promised_ship_by: string | null;
   recommended_action: {
     type: string;
     payload: Record<string, unknown>;
@@ -37,7 +38,41 @@ export type ConstrainedOrder = {
   } | null;
   priority: number | null;
   decision_id: string | null;
+  // SLA fields
+  age_since_creation_seconds: number | null;
+  is_shipping_sla_breached: boolean | null;
+  is_delivery_sla_breached: boolean | null;
 };
+
+/**
+ * SLA_PROXIMITY
+ * -------------
+ * Derives color-coded urgency from age and SLA breach flags.
+ * Used to sort and color orders in FulfillmentQueue.
+ *
+ * breached → red
+ * warning  → amber (>75% of 48h threshold)
+ * ok       → green
+ */
+export type SlaProximity = 'breached' | 'warning' | 'ok';
+
+export function getSlaProximity(order: ConstrainedOrder): SlaProximity {
+  if (order.is_shipping_sla_breached || order.is_delivery_sla_breached) {
+    return 'breached';
+  }
+  const ageHours = (order.age_since_creation_seconds ?? 0) / 3600;
+  if (ageHours >= 36) return 'warning'; // 75% of 48h threshold
+  return 'ok';
+}
+
+export function getAgeLabel(order: ConstrainedOrder): string {
+  const seconds = order.age_since_creation_seconds ?? 0;
+  const hours = Math.floor(seconds / 3600);
+  if (hours < 1) return '<1h';
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
 
 export type ConstrainedOrdersResponse = {
   data: ConstrainedOrder[];

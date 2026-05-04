@@ -31,6 +31,21 @@ export type MarginOrder = {
   evaluated_at: string;
 };
 
+export type SkuMarginRow = {
+  lasyncro_variant_id: string;
+  sku: string | null;
+  title: string | null;
+  total_units_sold: number;
+  gross_revenue: number;
+  estimated_cost: number;
+  gross_margin: number;
+  margin_pct: number;
+};
+
+export type SkuMarginData = {
+  data: SkuMarginRow[];
+} | null;
+
 export type MarginData = {
   summary: MarginSummary;
   orders: MarginOrder[];
@@ -65,6 +80,13 @@ export interface FinancesModuleFT2DataProps {
    * null when data is loading or unavailable.
    */
   margin: MarginData;
+  /**
+   * PER-SKU MARGIN (MG-05)
+   * ----------------------
+   * Injected from FinancesFT2Page via useSkuMargin hook.
+   * null when loading or unavailable.
+   */
+  skuMargin: SkuMarginData;
 }
 
 export type FinancesModuleFT2Props = FinancesModuleFT2DataProps & {
@@ -73,6 +95,7 @@ export type FinancesModuleFT2Props = FinancesModuleFT2DataProps & {
 };
 
 type StatusFilter = 'all' | 'pending' | 'fulfilled';
+type ViewMode = 'orders' | 'sku';
 
 function StatBox({ label, value }: { label: string; value: string }) {
   return (
@@ -110,7 +133,8 @@ function MarginBar({ min, avg, max }: { min: number; avg: number; max: number })
 export default function FinancesModuleFT2({ currency, ...props }: FinancesModuleFT2Props) {
   const theme = useTheme();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const { margin } = props;
+  const [viewMode, setViewMode] = useState<ViewMode>('orders');
+  const { margin, skuMargin } = props;
 
   const summary = margin?.summary;
   const orders = (margin?.orders ?? []).filter(o =>
@@ -151,44 +175,85 @@ export default function FinancesModuleFT2({ currency, ...props }: FinancesModule
             {/* ZONE 2 — DISTRIBUTION */}
             <MarginBar min={summary.min_margin_pct} avg={summary.avg_margin_pct} max={summary.max_margin_pct} />
 
-            {/* ZONE 3 — ORDER BREAKDOWN */}
+            {/* ZONE 3 — VIEW TOGGLE + BREAKDOWN */}
             <Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="overline" color="text.secondary">
-                  Order Breakdown — {orders.length} orders
-                </Typography>
-                <ToggleButtonGroup value={statusFilter} exclusive onChange={(_e, val) => val && setStatusFilter(val)} size="small">
-                  <ToggleButton value="all">All</ToggleButton>
-                  <ToggleButton value="pending">Pending</ToggleButton>
-                  <ToggleButton value="fulfilled">Fulfilled</ToggleButton>
+                <ToggleButtonGroup value={viewMode} exclusive onChange={(_e, val) => val && setViewMode(val)} size="small">
+                  <ToggleButton value="orders">By Order</ToggleButton>
+                  <ToggleButton value="sku">By SKU</ToggleButton>
                 </ToggleButtonGroup>
+                {viewMode === 'orders' && (
+                  <ToggleButtonGroup value={statusFilter} exclusive onChange={(_e, val) => val && setStatusFilter(val)} size="small">
+                    <ToggleButton value="all">All</ToggleButton>
+                    <ToggleButton value="pending">Pending</ToggleButton>
+                    <ToggleButton value="fulfilled">Fulfilled</ToggleButton>
+                  </ToggleButtonGroup>
+                )}
               </Box>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-                {['Order', 'Revenue', 'Cost', 'Margin', 'Margin %', 'Status'].map(h => (
-                  <Typography key={h} variant="caption" color="text.secondary" fontWeight={600}>{h}</Typography>
-                ))}
-              </Box>
-
-              {orders.map((order) => {
-                const marginPct = Number(order.margin_pct);
-                const marginColor = marginPct >= 60 ? theme.palette.success.main : marginPct >= 40 ? theme.palette.warning.main : theme.palette.error.main;
-                return (
-                  <Box key={order.order_id} sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}>
-                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 12 }}>{order.order_id.slice(0, 8).toUpperCase()}</Typography>
-                    <Typography variant="body2">{fmt(Number(order.gross_revenue))}</Typography>
-                    <Typography variant="body2">{fmt(Number(order.estimated_cost))}</Typography>
-                    <Typography variant="body2">{fmt(Number(order.gross_margin))}</Typography>
-                    <Typography variant="body2" fontWeight={600} sx={{ color: marginColor }}>{marginPct}%</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{order.fulfillment_status ?? '—'}</Typography>
+              {/* SKU TABLE */}
+              {viewMode === 'sku' && (
+                <>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: '2.5fr 80px 1fr 1fr 1fr 80px', px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    {['Product / SKU', 'Units', 'Revenue', 'Cost', 'Margin', 'Margin %'].map(h => (
+                      <Typography key={h} variant="caption" color="text.secondary" fontWeight={600}>{h}</Typography>
+                    ))}
                   </Box>
-                );
-              })}
+                  {(skuMargin?.data ?? []).map((row) => {
+                    const marginColor =
+                      row.margin_pct >= 60 ? theme.palette.success.main :
+                      row.margin_pct >= 40 ? theme.palette.warning.main :
+                      theme.palette.error.main;
+                    return (
+                      <Box key={row.lasyncro_variant_id} sx={{ display: 'grid', gridTemplateColumns: '2.5fr 80px 1fr 1fr 1fr 80px', px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}>
+                        <Box>
+                          <Typography variant="body2" fontWeight={500}>{row.title ?? '—'}</Typography>
+                          {row.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{row.sku}</Typography>}
+                        </Box>
+                        <Typography variant="body2">{row.total_units_sold}</Typography>
+                        <Typography variant="body2">{fmt(row.gross_revenue)}</Typography>
+                        <Typography variant="body2">{fmt(row.estimated_cost)}</Typography>
+                        <Typography variant="body2">{fmt(row.gross_margin)}</Typography>
+                        <Typography variant="body2" fontWeight={600} sx={{ color: marginColor }}>{row.margin_pct}%</Typography>
+                      </Box>
+                    );
+                  })}
+                  {(skuMargin?.data ?? []).length === 0 && (
+                    <Box sx={{ py: 4, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">No SKU margin data available.</Typography>
+                    </Box>
+                  )}
+                </>
+              )}
 
-              {orders.length === 0 && (
-                <Box sx={{ py: 4, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">No orders match this filter.</Typography>
-                </Box>
+              {/* ORDER TABLE */}
+              {viewMode === 'orders' && (
+                <>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    {['Order', 'Revenue', 'Cost', 'Margin', 'Margin %', 'Status'].map(h => (
+                      <Typography key={h} variant="caption" color="text.secondary" fontWeight={600}>{h}</Typography>
+                    ))}
+                  </Box>
+                  {orders.map((order) => {
+                    const marginPct = Number(order.margin_pct);
+                    const marginColor = marginPct >= 60 ? theme.palette.success.main : marginPct >= 40 ? theme.palette.warning.main : theme.palette.error.main;
+                    return (
+                      <Box key={order.order_id} sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 12 }}>{order.order_id.slice(0, 8).toUpperCase()}</Typography>
+                        <Typography variant="body2">{fmt(Number(order.gross_revenue))}</Typography>
+                        <Typography variant="body2">{fmt(Number(order.estimated_cost))}</Typography>
+                        <Typography variant="body2">{fmt(Number(order.gross_margin))}</Typography>
+                        <Typography variant="body2" fontWeight={600} sx={{ color: marginColor }}>{marginPct}%</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{order.fulfillment_status ?? '—'}</Typography>
+                      </Box>
+                    );
+                  })}
+                  {orders.length === 0 && (
+                    <Box sx={{ py: 4, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">No orders match this filter.</Typography>
+                    </Box>
+                  )}
+                </>
               )}
             </Box>
           </>
