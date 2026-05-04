@@ -11,6 +11,7 @@ import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
 import {
   firePickExceptionAlert,
   fireStowTaskAlert,
+  fireStowExceptionAlert,
   fireBatchReadyToPackAlert,
   fireBatchReadyToShipAlert,
 } from '../../services/wms/wmsAlerts.service.js';
@@ -2040,9 +2041,16 @@ export const httpReportStowException = async (req: Request, res: Response) => {
         metadata: { exception_type, quantity: affectedQty, movement_type: movementType, prob_label: probLabel },
       });
 
+      // Fire alert to owner/admin inbox
+      await fireStowExceptionAlert(trx, {
+        shopId,
+        stowTaskId: taskId,
+        exceptionType: exception_type,
+        quantity: affectedQty,
+      });
+
       return { prob_label: probLabel, problem_bin: problemBin, movement_type: movementType };
     });
-
     console.info('[STOW_EXCEPTION_REPORTED]', { shopId, taskId, exception_type, quantity });
     return res.status(201).json(result);
   } catch (err: any) {

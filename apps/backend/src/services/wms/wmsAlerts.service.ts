@@ -159,6 +159,36 @@ export async function fireStowTaskAlert(
 }
 
 // ─────────────────────────────────────────
+// Stow Exception
+// ─────────────────────────────────────────
+// Fires when operator reports an exception during stow.
+// Targets owner/admin — stow exceptions require supervisor review.
+export async function fireStowExceptionAlert(
+  trx: Knex | Knex.Transaction,
+  params: {
+    shopId: number;
+    stowTaskId: string;
+    exceptionType: string;
+    quantity: number;
+  }
+): Promise<void> {
+  const { shopId, stowTaskId, exceptionType, quantity } = params;
+  const typeLabel = exceptionType.replace(/_/g, ' ');
+  await upsertWmsAlert(trx, {
+    shopId,
+    alertKey: `wms:stow:exception:${stowTaskId}:${exceptionType}`,
+    alertType: 'wms_stow_exception',
+    severity: 'warning',
+    title: `Stow exception — ${typeLabel}`,
+    message: `${quantity} unit${quantity > 1 ? 's' : ''} reported as ${typeLabel} during stow. Item moved to problem bin.`,
+    entityId: stowTaskId,
+    entityType: 'stow_task',
+    isActive: true,
+  });
+  console.info('[WMS_STOW_EXCEPTION_ALERT_FIRED]', { shopId, stowTaskId, exceptionType, quantity });
+};
+
+// ─────────────────────────────────────────
 // Batch Ready to Pack
 // ─────────────────────────────────────────
 

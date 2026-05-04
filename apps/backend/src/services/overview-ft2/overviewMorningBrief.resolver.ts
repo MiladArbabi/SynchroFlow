@@ -121,6 +121,7 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   wms_batch_ready_to_pack:  { module: 'wms',              deepLink: '/wms?filter=ready_to_pack' },
   wms_batch_ready_to_ship:  { module: 'wms',              deepLink: '/wms?filter=ready_to_ship' },
   wms_batch_released:       { module: 'wms',              deepLink: '/wms?filter=outbound' },
+  wms_stow_exception:       { module: 'wms',              deepLink: '/wms?filter=exceptions' },
   // ── Supplier signals
   wms_supplier_rating:      { module: 'suppliers-portal', deepLink: '/suppliers-portal' },
   // ── Demand signals

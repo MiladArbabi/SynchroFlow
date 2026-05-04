@@ -95,13 +95,21 @@ const handleException = useCallback(async (exceptionType: string, quantity: numb
         quantity_found: currentItem.quantity - quantity,
       });
       // Create PROB label + problem center task for physical bin routing
-      await apiClient.post('/api/v1/wms/problem-center', {
+      const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
         lasyncro_variant_id: currentItem.lasyncro_variant_id,
         quantity,
         exception_type: exceptionType,
         source: 'pick',
         source_exception_id: task.id,
       });
+      // Inform operator to place item in problem bin (not applicable for missing items)
+      if (exceptionType !== 'item_missing') {
+        Alert.alert(
+          '⚠ Place in Problem Bin',
+          `Label ${probData.prob_label} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
+          [{ text: 'Got it', style: 'default' }]
+        );
+      }
       // Move to next item
       const nextIndex = currentIndex + 1;
       if (nextIndex >= lineItems.length) {

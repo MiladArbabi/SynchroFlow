@@ -283,6 +283,14 @@ export default function StowScreen() {
         ...shortfallModal.reportedExceptions,
         { type: selectedExType, qty: exQty, probLabel: probData.prob_label ?? 'PROB-?' },
       ];
+      // Tip operator to place item in problem bin
+      if (selectedExType !== 'item_missing') {
+        Alert.alert(
+          '⚠ Place in Problem Bin',
+          `Label ${probData.prob_label ?? 'PROB-?'} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
+          [{ text: 'Got it', style: 'default' }]
+        );
+      }
       const newShortfall = shortfallModal.shortfall - exQty;
 
       if (newShortfall > 0) {

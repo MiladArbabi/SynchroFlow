@@ -254,6 +254,14 @@ export default function ReceiveJobScreen() {
       });
 
       const probLabel = probData.prob_label ?? 'PROB-?';
+      // Tip operator to place item in problem bin (not for missing items)
+      if (selectedExceptionType !== 'item_missing') {
+        Alert.alert(
+          '⚠ Place in Problem Bin',
+          `Label ${probLabel} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
+          [{ text: 'Got it', style: 'default' }]
+        );
+      }
       const newException: ExceptionEntry = {
         exception_type: selectedExceptionType,
         quantity: qty,

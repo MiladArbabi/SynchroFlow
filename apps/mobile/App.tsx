@@ -61,14 +61,15 @@ function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: strin
   const navigateToModule = useCallback((alertType: string) => {
     const WMS_TAB_MAP: Record<string, 'inbound' | 'outbound' | 'exceptions'> = {
       wms_receive_arrived:     'inbound',
-      wms_receive_exception:   'exceptions',
       wms_stow_pending:        'inbound',
-      wms_pick_exception:      'exceptions',
-      wms_pack_exception:      'exceptions',
+      wms_supplier_rating:     'inbound',
       wms_batch_ready_to_pack: 'outbound',
       wms_batch_ready_to_ship: 'outbound',
       wms_batch_released:      'outbound',
-      wms_supplier_rating:     'inbound',
+      wms_receive_exception:   'exceptions',
+      wms_pick_exception:      'exceptions',
+      wms_pack_exception:      'exceptions',
+      wms_stow_exception:      'exceptions',
     };
     if (alertType.startsWith('wms_')) {
       // Navigate via parent (root stack) to correctly pass params to nested tab
