@@ -1175,11 +1175,25 @@ function handleSubmit(e) {
     });
   }
 
-  // PostHog (PII allowed here if you want)
+  // PostHog tracking
   if (typeof posthog !== 'undefined') {
     posthog.capture('waitlist_signup', { email: email, store: store });
   }
 
+  // Send to Resend via serverless function
+  fetch('/api/waitlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, store: store })
+  })
+  .then(function(r) {
+    if (!r.ok) console.error('Waitlist API error:', r.status);
+  })
+  .catch(function(err) {
+    console.error('Waitlist fetch error:', err);
+  });
+
+  // Show success immediately — don't wait for API response
   document.getElementById('wl-form').style.display = 'none';
   document.getElementById('wl-progress').style.display = 'none';
   document.getElementById('wl-success').style.display = 'block';
