@@ -1,27 +1,23 @@
-// api/waitlist.js
-// Vercel serverless function — receives waitlist form submissions and sends
-// notification email via Resend. Triggered by POST /api/waitlist from the landing page.
+// app/api/waitlist/route.ts
+// Waitlist form handler — receives POST from landing page and checklist forms.
+// Sends notification email via Resend to contact@lasyncro.com.
 
-export default async function handler(req, res) {
-  // Only accept POST
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
+import { NextResponse } from 'next/server'
 
-  const { email, store } = req.body
-
-  // Basic validation
-  if (!email || !store) {
-    return res.status(400).json({ error: 'Missing fields' })
-  }
-
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) {
-    console.error('RESEND_API_KEY not set')
-    return res.status(500).json({ error: 'Server configuration error' })
-  }
-
+export async function POST(request: Request) {
   try {
+    const { email, store } = await request.json()
+
+    if (!email) {
+      return NextResponse.json({ error: 'Missing email' }, { status: 400 })
+    }
+
+    const apiKey = process.env.RESEND_API_KEY
+    if (!apiKey) {
+      console.error('RESEND_API_KEY not configured')
+      return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    }
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -31,7 +27,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         from: 'LaSyncro Waitlist <waitlist@lasyncro.com>',
         to: ['contact@lasyncro.com'],
-        subject: `New waitlist signup — ${store}`,
+        subject: `New waitlist signup — ${store || 'no store provided'}`,
         html: `
           <h2>New LaSyncro waitlist signup</h2>
           <table cellpadding="8" style="border-collapse:collapse;font-family:sans-serif;font-size:14px;">
@@ -41,7 +37,7 @@ export default async function handler(req, res) {
             </tr>
             <tr>
               <td style="color:#6B7280;padding-right:24px;">Store URL</td>
-              <td style="font-weight:500;color:#0F0E0D;">${store}</td>
+              <td style="font-weight:500;color:#0F0E0D;">${store || '—'}</td>
             </tr>
             <tr>
               <td style="color:#6B7280;padding-right:24px;">Submitted</td>
@@ -49,7 +45,7 @@ export default async function handler(req, res) {
             </tr>
           </table>
           <p style="margin-top:24px;font-size:13px;color:#9CA3AF;">
-            Sent from lasyncro.com waitlist form
+            Sent from lasyncro.com waitlist/checklist form
           </p>
         `,
       }),
@@ -58,13 +54,13 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const error = await response.text()
       console.error('Resend error:', error)
-      return res.status(500).json({ error: 'Failed to send email' })
+      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
     }
 
-    return res.status(200).json({ success: true })
+    return NextResponse.json({ success: true })
 
   } catch (err) {
-    console.error('Waitlist handler error:', err)
-    return res.status(500).json({ error: 'Internal server error' })
+    console.error('Waitlist route error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -38,6 +38,10 @@
     {
       "source": "/robots.txt",
       "destination": "https://synchro-flow-marketing.vercel.app/robots.txt"
+    },
+    {
+      "source": "/api/waitlist",
+      "destination": "https://synchro-flow-marketing.vercel.app/api/waitlist"
     }
   ]
 }
