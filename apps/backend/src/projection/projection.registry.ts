@@ -12,6 +12,7 @@ import { handleIntegrationSyncRequested } from './handlers/integration.sync_requ
 import { handleReconciliationIntentCaptured } from './handlers/reconciliation.intentCaptured.js';
 import { handleOrdersSyncStarted } from './handlers/orders.sync_started.js';
 import { rebuildInventoryProjectionForVariants } from '../services/inventory/rebuildInventoryProjection.js';
+import { handleCatalogProductSyncReceived } from './handlers/catalog.product_sync_received.js';
 
 /**
  * PROJECTION HANDLER CONTRACT
@@ -219,12 +220,7 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
    * This handler is intentionally no-op until
    * product projection layer is defined.
    */
-  'catalog/product_sync_received': async ({ domainEvent }) => {
-    console.info('[PROJECTION_PRODUCT_SYNC_OBSERVED]', {
-      shopId: domainEvent.shop_id,
-      eventId: domainEvent.id,
-    });
-  },
+  'catalog/product_sync_received': handleCatalogProductSyncReceived,
   'reconciliation/intent_captured': handleReconciliationIntentCaptured,
   /**
    * RETURNS — REQUESTED (INTENTIONAL NO-OP)
