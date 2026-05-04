@@ -31,7 +31,7 @@ const TIERS = [
     seats: '2 seats',
     orders: '2,000 orders/mo',
     highlight: false,
-    features: ['WMS Lite', 'Returns', 'Products', 'SKU Gaps', '200 shipped orders/mo'],
+    features: ['WMS Lite', 'Returns', 'Products', 'Problem Center', '200 shipped orders/mo'],
   },
   {
     id: 'growth',

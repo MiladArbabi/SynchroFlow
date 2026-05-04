@@ -143,7 +143,7 @@ const AppLayout = (props: AppLayoutProps) => {
 
   return (
     <ToastProvider>
-      <Box sx={{ width: "100vw", height: "100vh", display: "flex" }}>
+      <Box sx={{ width: "100vw", height: "100vh", display: "flex", bgcolor: "var(--bg)" }}>
         
         {/* SIDENAV */}
         {isSidenavAllowed && (
@@ -153,7 +153,7 @@ const AppLayout = (props: AppLayoutProps) => {
             minWidth: `${sidenavWidth}px`,
             maxWidth: `${sidenavWidth}px`,
             height: "100%",
-            borderRight: sidenavState !== 'CLOSED' ? "1px solid #e0e0e0" : "none",
+            borderRight: sidenavState !== 'CLOSED' ? "1px solid var(--rule)" : "none",
             display: sidenavState === 'CLOSED' ? 'none' : 'flex',
             flexDirection: "column",
             overflow: "hidden",
@@ -177,7 +177,7 @@ const AppLayout = (props: AppLayoutProps) => {
             sx={{
               height: "60px",
               flexShrink: 0,
-              borderBottom: "1px solid #e0e0e0"
+              borderBottom: "1px solid var(--rule)"
             }}
           >
             {/* TOPNAVBAR (toggle disabled outside FT2_READY) */}

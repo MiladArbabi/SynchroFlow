@@ -6,7 +6,7 @@ import { Knex } from 'knex';
  * Persistent ledger for all exception signals raised during
  * pick and pack operations.
  *
- * Feeds the SKU Gaps module for manual resolution by supervisors.
+ * Feeds the Problem Center module for manual resolution by supervisors.
  *
  * Exception types:
  * - item_missing       — item not found at location
@@ -124,7 +124,7 @@ export async function up(knex: Knex): Promise<void> {
     /**
      * RESOLUTION
      * ----------
-     * resolved = false until supervisor closes via SKU Gaps module.
+     * resolved = false until supervisor closes via Problem Center module.
      */
     table.boolean('resolved').notNullable().defaultTo(false);
 
@@ -148,7 +148,7 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['shop_id']);
     table.index(['pick_batch_id']);
-    table.index(['shop_id', 'resolved']); // SKU Gaps module query
+    table.index(['shop_id', 'resolved']); // Problem Center module query
     table.index(['lasyncro_variant_id']);
   });
 

@@ -1,22 +1,7 @@
 // modules/finances/src/ui/ModuleEntry.tsx
-import { DollarSign } from 'lucide-react';
-
-const descriptor = {
+// Nav registration owned by navBootstrap.ts — no navGroups/navItems here.
+export default {
   id: 'finances',
   name: 'Finances',
   version: '0.1.0',
-
-  navItems: [
-    {
-      id: 'finances',
-      title: 'Finances',
-      path: '/finances',
-      group: 'analytics',
-      icon: DollarSign,
-      order: 20,
-      requiredModuleId: 'finances'
-    }
-  ],
 };
-
-export default descriptor;

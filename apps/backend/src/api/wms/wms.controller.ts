@@ -1268,7 +1268,7 @@ export const httpGetProblemCenterExceptions = async (req: Request, res: Response
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_PROBLEM_CENTER_EXCEPTIONS_FAILED]', { shopId, error: message });
-    return res.status(500).json({ error: `Failed to fetch SKU gaps: ${message}` });
+    return res.status(500).json({ error: `Failed to fetch Problem Center: ${message}` });
   }
 };
 

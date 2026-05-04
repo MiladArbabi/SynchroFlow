@@ -8,7 +8,7 @@ import { mapFinancesFt2Props } from '../finances/useFinancesFt2Adapter';
 import { useMargin } from '../finances/useMargin';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
-import UpgradePrompt from '../../components/UpgradePrompt';
+import { PlanGate } from '../../components/PlanGate';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -18,11 +18,9 @@ export default function FinancesFT2Page() {
     from: null,
     to: null,
   });
-
   const snapshotQuery = useFinancesFt2Snapshot(range);
   const marginQuery = useMargin();
-  const { displayCurrency, locale, tier } = useEntitlements();
-  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
+  const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
 
   if (!snapshotQuery.isSuccess) {
@@ -31,26 +29,19 @@ export default function FinancesFT2Page() {
   }
 
   const props = mapFinancesFt2Props(snapshotQuery.data);
-
   if (__DEV__) console.debug('[FinancesFT2Page] rendering FinancesModuleFT2', props);
 
-  if (isLocked) return (
-    <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Finances Intelligence">
-      <FinancesModuleFT2
-        {...props}
-        margin={null}
-        currency={{ displayCurrency, locale, rates }}
-      />
-    </UpgradePrompt>
-  );
   return (
-    <>
-      <FT2DateRangeBar value={range} onChange={setRange} />
-      <FinancesModuleFT2
-        {...props}
-        margin={marginQuery.data ?? null}
-        currency={{ displayCurrency, locale, rates }}
-      />
-    </>
+    // TIER GATE: finances.overview requires 'growth' (see usePlanEntitlement PLAN_FEATURES)
+    <PlanGate feature="finances.overview">
+      <>
+        <FT2DateRangeBar value={range} onChange={setRange} />
+        <FinancesModuleFT2
+          {...props}
+          margin={marginQuery.data ?? null}
+          currency={{ displayCurrency, locale, rates }}
+        />
+      </>
+    </PlanGate>
   );
 }

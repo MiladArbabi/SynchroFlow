@@ -40,7 +40,7 @@ import { BarcodeScanSurface } from '../components/BarcodeScanSurface.js';
  *
  * Exception flows:
  * - Missing item at pack → report exception, partial shipment option
- * - Defect found at pack → report to SKU Gaps module
+ * - Defect found at pack → report to Problem Center module
  *
  * Completion:
  * - All orders packed → pack complete acknowledgement

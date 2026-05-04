@@ -9,25 +9,10 @@ import { PackageCheck } from 'lucide-react';
  * Nav vocabulary: "Fulfillment Queue" — operator language.
  * Route: /fulfillment → FulfillmentQueuePage
  */
+// modules/fulfillment/src/ui/ModuleEntry.tsx
+// Nav registration owned by navBootstrap.ts — no navGroups/navItems here.
 export default {
   id: 'fulfillment',
   name: 'Fulfillment',
   version: '0.1.0',
-  navGroups: [
-    { 
-        id: 'operations', 
-        label: 'Operations', order: 20 
-    }
-  ],
-  navItems: [
-    {
-      id: 'fulfillment-queue',
-      title: 'Fulfillment',
-      path: '/fulfillment',
-      group: 'operations',
-      order: 20,
-      icon: PackageCheck,
-      requiredModuleId: 'fulfillment'
-    }
-  ]
 };

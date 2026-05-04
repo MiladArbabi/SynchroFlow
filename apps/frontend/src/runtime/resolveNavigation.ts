@@ -2,7 +2,6 @@
 import { getNavigation } from './registerNav';
 import { getRegisteredModules } from './registerModule';
 import { resolveNavVisibility } from '../navigation/resolveNavVisibility';
-import type { EntitlementSnapshot } from './EntitlementSnapshot';
 import type { UILifecyclePhase } from '../lifecycle/types';
 import type { ElementType } from 'react';
 
@@ -12,6 +11,7 @@ export interface ResolvedNavItem {
   path: string;
   icon?: ElementType;
   disabled: boolean;
+  requiredTier?: string;
 }
 
 export interface ResolvedNavGroup {
@@ -22,6 +22,12 @@ export interface ResolvedNavGroup {
 
 export interface ResolvedNavigation {
   groups: ResolvedNavGroup[];
+}
+
+// Local snapshot contract — mirrors EntitlementsContext snapshot shape
+interface EntitlementSnapshot {
+  modules: Set<string>;
+  flags: Set<string>;
 }
 
 interface ResolveNavigationInput {
@@ -102,7 +108,8 @@ export function resolveNavigation({
             title: item.title ?? item.id,
             path: item.path,
             icon: item.icon,
-            disabled: visibility === 'locked'
+            disabled: visibility === 'locked',
+            requiredTier: item.requiredTier,
         });
     }
 

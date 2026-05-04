@@ -14,6 +14,10 @@ import IconComponent from "../../components/Icon";
 import { TrialCountdownChip } from 'components/TrialCountdownChip';
 
 import ProfileSection from "layout/MainLayout/Header/ProfileSection";
+import { Bell } from 'lucide-react';
+import { Badge } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { useAlerts } from '../../pages/alerts/useAlerts';
 
 interface TopnavbarContentProps {
   isEditing: boolean;
@@ -27,6 +31,10 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
 }) => {
   const location = useLocation();
   const { mode, setMode } = useColorScheme();
+
+  const navigate = useNavigate();
+  const { data: alertsData } = useAlerts();
+  const unreadAlerts = alertsData?.data?.length ?? 0;
 
   const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) =>
@@ -110,6 +118,24 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
           ml: "auto"
         }}
       >
+
+        <Tooltip title="Alerts">
+          <IconButton
+            size="small"
+            onClick={() => navigate('/alerts')}
+            sx={{ color: unreadAlerts > 0 ? 'var(--accent)' : 'text.secondary' }}
+          >
+            <Badge
+              badgeContent={unreadAlerts > 0 ? unreadAlerts : undefined}
+              max={99}
+              color="error"
+              sx={{ '& .MuiBadge-badge': { fontSize: 9, minWidth: 16, height: 16 } }}
+            >
+              <Bell size={18} strokeWidth={unreadAlerts > 0 ? 2.5 : 1.75} />
+            </Badge>
+          </IconButton>
+        </Tooltip>
+        
         {/* Trial Countdown Chip */}
         <TrialCountdownChip />
 

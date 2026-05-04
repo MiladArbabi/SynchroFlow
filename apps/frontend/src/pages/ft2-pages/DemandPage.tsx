@@ -3,31 +3,22 @@ import { DemandModuleFT2 } from '@lasyncro/demand';
 import { useDemand } from '../products/useDemand';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
-import UpgradePrompt from '../../components/UpgradePrompt';
+import { PlanGate } from '../../components/PlanGate';
 
 export default function DemandPage() {
   const { data, isLoading, isError } = useDemand();
-  const { displayCurrency, locale, tier } = useEntitlements();
+  const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
-  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
-
-  if (isLocked) return (
-    <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Demand Forecasting">
-      <DemandModuleFT2
-        data={null}
-        isLoading={false}
-        isError={false}
-        currency={{ displayCurrency, locale, rates }}
-      />
-    </UpgradePrompt>
-  );
 
   return (
-    <DemandModuleFT2
-      data={data ?? null}
-      isLoading={isLoading}
-      isError={isError}
-      currency={{ displayCurrency, locale, rates }}
-    />
+    // TIER GATE: demand.forecasting requires 'growth' (see usePlanEntitlement PLAN_FEATURES)
+    <PlanGate feature="demand.forecasting">
+      <DemandModuleFT2
+        data={data ?? null}
+        isLoading={isLoading}
+        isError={isError}
+        currency={{ displayCurrency, locale, rates }}
+      />
+    </PlanGate>
   );
 }

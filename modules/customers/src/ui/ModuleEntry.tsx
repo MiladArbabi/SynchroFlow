@@ -1,22 +1,7 @@
 // modules/customers/src/ui/ModuleEntry.tsx
-import { UsersRound } from 'lucide-react';
-
-const descriptor = {
+// Nav registration owned by navBootstrap.ts — no navGroups/navItems here.
+export default {
   id: 'customers',
   name: 'Customers',
   version: '0.1.0',
-
-  navItems: [
-    {
-      id: 'customers',
-      title: 'Customers',
-      path: '/customers',
-      group: 'operations',
-      order: 30,
-      icon: UsersRound,
-      requiredModuleId: 'customers'
-    }
-  ]
 };
-
-export default descriptor;

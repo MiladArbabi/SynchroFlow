@@ -28,6 +28,11 @@ async function start() {
   await initQueue();
   console.log('[worker-entry] Queue initialized');
 
+  // Declare all queues and exchanges before any worker attaches
+  const { declareTopology } = await import('./queue.topology.js');
+  await declareTopology();
+  console.log('[worker-entry] Queue topology declared');
+
   /**
    * DEV SAFETY: PURGE STALE EVENT TRIGGERS
    * --------------------------------------

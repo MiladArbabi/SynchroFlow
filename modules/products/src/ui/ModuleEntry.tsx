@@ -1,22 +1,7 @@
 // modules/products/src/ui/ModuleEntry.tsx
-import { Package } from 'lucide-react';
-
-const descriptor = {
+// Nav registration owned by navBootstrap.ts — no navGroups/navItems here.
+export default {
   id: 'products',
   name: 'Products',
   version: '0.1.0',
-
-  navItems: [
-    {
-      id: 'products',
-      title: 'Products',
-      path: '/products',
-      group: 'operations',
-      order: 25,
-      icon: Package,
-      requiredModuleId: 'products'
-    }
-  ],
 };
-
-export default descriptor;

@@ -55,8 +55,8 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
   };
 
   const ALERT_TYPE_LABELS: Record<string, string> = {
-    wms_pick_exception:       'SKU Gaps',
-    wms_pack_exception:       'SKU Gaps',
+    wms_pick_exception:       'Problem Center',
+    wms_pack_exception:       'Problem Center',
     wms_stow_pending:         'Warehouse',
     wms_batch_ready_to_pack:  'Warehouse',
     wms_batch_ready_to_ship:  'Warehouse',

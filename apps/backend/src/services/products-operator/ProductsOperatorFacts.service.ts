@@ -67,7 +67,7 @@ export async function getProductsOperatorFacts(input: {
 
   // Join to products to get product_type.
   // Only physical products require SKUs for warehouse operations.
-  // gift_card, digital, and service products are excluded from SKU gap signals.
+  // gift_card, digital, and service products are excluded from Problem Center signals.
   const activeVariants = await db('variants as v')
     .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
     .where({ 'v.shop_id': shopId, 'v.status': 'active' })

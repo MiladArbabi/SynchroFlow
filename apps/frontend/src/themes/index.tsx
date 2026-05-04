@@ -140,6 +140,22 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--ft2-infoblock-diff-neutral': '#6B6B6B',
           '--ft2-infoblock-diff-up': '#2E7D32',    // green
           '--ft2-infoblock-diff-down': '#C62828',  // red
+
+          // ── LaSyncro design tokens (light) ──────────────────
+          '--accent':        '#FF6B2B',
+          '--accent-hover':  '#FF8C5A',
+          '--accent-ghost':  '#FFF0E8',
+          '--accent-border': '#FFDCCA',
+          '--bg':            '#FAFAF8',
+          '--bg-2':          '#F3F2EF',
+          '--bg-3':          '#E8E6E0',
+          '--surface':       '#FFFFFF',
+          '--ink':           '#0F0E0D',
+          '--ink-2':         '#3A3835',
+          '--ink-3':         '#6B7280',
+          '--ink-4':         '#9CA3AF',
+          '--rule':          '#E8E6E0',
+          '--rule-2':        '#D1CFC8',
           },
 
         '[data-color-scheme="dark"]': {
@@ -174,6 +190,22 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--ft2-infoblock-diff-neutral': '#9A9A9A',
           '--ft2-infoblock-diff-up': '#6FCF97',    // softer green
           '--ft2-infoblock-diff-down': '#EF5350',  // softer red
+
+          // ── LaSyncro design tokens (dark) ───────────────────
+          '--accent':        '#FF6B2B',
+          '--accent-hover':  '#FF8C5A',
+          '--accent-ghost':  'rgba(255,107,43,0.12)',
+          '--accent-border': 'rgba(255,107,43,0.25)',
+          '--bg':            '#151D29',
+          '--bg-2':          '#1C2740',
+          '--bg-3':          '#243050',
+          '--surface':       '#1C2740',
+          '--ink':           '#F0EEE8',
+          '--ink-2':         '#C8C4BB',
+          '--ink-3':         '#8B8F9A',
+          '--ink-4':         '#5A5F6E',
+          '--rule':          'rgba(255,255,255,0.08)',
+          '--rule-2':        'rgba(255,255,255,0.14)',
         },
       },
     },

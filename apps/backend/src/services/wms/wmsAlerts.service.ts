@@ -103,7 +103,7 @@ export async function firePickExceptionAlert(
     alertType: stage === 'pick' ? 'wms_pick_exception' : 'wms_pack_exception',
     severity: 'warning',
     title: `${stageLabel} exception — ${typeLabel}`,
-    message: `${stageLabel} exception reported on batch ${batchShort}${variantTitle ? ` for ${variantTitle}` : ''}. Review in SKU Gaps.`,
+    message: `${stageLabel} exception reported on batch ${batchShort}${variantTitle ? ` for ${variantTitle}` : ''}. Review in Problem Center.`,
     entityId: batchId,
     entityType: 'pick_batch',
     isActive: true,
@@ -114,7 +114,7 @@ export async function firePickExceptionAlert(
     shopId,
     payload: {
       title: `${stage === 'pick' ? 'Pick' : 'Pack'} exception reported`,
-      body: `Batch ${batchId.slice(0, 8).toUpperCase()} — ${exceptionType.replace(/_/g, ' ')}. Review in SKU Gaps.`,
+      body: `Batch ${batchId.slice(0, 8).toUpperCase()} — ${exceptionType.replace(/_/g, ' ')}. Review in Problem Center.`,
       data: { route: '/problem-center', batchId },
     },
     broadcastToRole: 'owner',

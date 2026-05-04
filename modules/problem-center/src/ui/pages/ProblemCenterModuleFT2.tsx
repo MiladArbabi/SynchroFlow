@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 /**
- * SKU GAPS MODULE — FT2 SURFACE
+ * Problem Center MODULE — FT2 SURFACE
  * ------------------------------
  * Supervisor surface for reviewing and resolving pick/pack exceptions.
  *
@@ -258,7 +258,7 @@ export default function ProblemCenterModuleFT2({
       {/* HEADER */}
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-          <Typography variant="h5" fontWeight={700}>SKU Gaps</Typography>
+          <Typography variant="h5" fontWeight={700}>Problem Center</Typography>
           {(data?.total_unresolved ?? 0) > 0 && (
             <Chip
               label={data?.total_unresolved}
@@ -282,7 +282,7 @@ export default function ProblemCenterModuleFT2({
       {/* ERROR */}
       {isError && (
         <Alert severity="error" sx={{ mb: 3 }}>
-          Failed to load SKU gaps. Please refresh.
+          Failed to load Problem Center. Please refresh.
         </Alert>
       )}
 
