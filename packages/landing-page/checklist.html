@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Operations Chaos Checklist — LaSyncro</title>
+<meta name="description" content="12 questions. 3 minutes. Find out how much time your Shopify operations are actually costing you each week.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+
+<!-- PostHog -->
+<script>
+  !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset is_identified get_distinct_id get_session_id get_session_data get_property".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+  posthog.init('phc_kVdrQpoCzz5J7n9NzHW2gXHtwA6PC9gQJW294ajhpmrM',{api_host:'https://app.posthog.com',autocapture:true,capture_pageview:true});
+</script>
+
+<style>
+/* ── Tokens (identical to landing page) ── */
+:root {
+  --accent:        #FF6B2B;
+  --accent-hover:  #FF8C5A;
+  --accent-ghost:  #FFF0E8;
+  --accent-border: #FFDCCA;
+  --bg:      #FAFAF8;
+  --bg-2:    #F3F2EF;
+  --bg-3:    #E8E6E0;
+  --surface: #FFFFFF;
+  --ink:   #0F0E0D;
+  --ink-2: #3A3835;
+  --ink-3: #6B7280;
+  --ink-4: #9CA3AF;
+  --rule:  #E8E6E0;
+  --rule-2:#D1CFC8;
+  --space-1:#151D29;
+  --space-2:#1C2740;
+  --space-3:#243050;
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans:  'DM Sans', system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151D29; --bg-2: #1C2740; --bg-3: #243050; --surface: #1C2740;
+    --ink: #F0EEE8; --ink-2: #C8C4BB; --ink-3: #8B8F9A; --ink-4: #5A5F6E;
+    --rule: rgba(255,255,255,0.08); --rule-2: rgba(255,255,255,0.14);
+    --accent-ghost: rgba(255,107,43,0.12); --accent-border: rgba(255,107,43,0.25);
+  }
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* ── NAV ── */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;height:60px;display:flex;align-items:center;padding:0 5vw;justify-content:space-between;background:rgba(250,250,248,.88);backdrop-filter:blur(14px);border-bottom:1px solid var(--rule)}
+@media(prefers-color-scheme:dark){nav{background:rgba(21,29,41,.9)}}
+.nav-logo{display:flex;align-items:center;gap:9px;text-decoration:none}
+.nav-wordmark{font-family:var(--serif);font-size:20px;color:var(--ink);letter-spacing:-.01em}
+.nav-back{font-size:13px;color:var(--ink-3);text-decoration:none;display:flex;align-items:center;gap:5px;transition:color .15s}
+.nav-back:hover{color:var(--ink)}
+.nav-back svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── HERO ── */
+.hero{padding:110px 5vw 56px;text-align:center;border-bottom:1px solid var(--rule);background:var(--bg)}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);background:var(--accent-ghost);border:1px solid var(--accent-border);padding:5px 14px;border-radius:100px;margin-bottom:24px}
+.hero-h1{font-family:var(--serif);font-size:clamp(36px,6vw,64px);line-height:1.08;letter-spacing:-.025em;color:var(--ink);margin-bottom:16px}
+.hero-h1 em{font-style:italic;color:var(--accent)}
+.hero-sub{font-size:clamp(15px,2vw,18px);color:var(--ink-3);font-weight:300;line-height:1.65;max-width:520px;margin:0 auto 28px}
+.hero-meta{display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--ink-4)}
+.hero-meta-item{display:flex;align-items:center;gap:5px}
+.hero-meta-item svg{width:13px;height:13px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── MAIN ── */
+main{max-width:680px;margin:0 auto;padding:48px 5vw 96px}
+
+/* ── PROGRESS ── */
+.progress-wrap{margin-bottom:40px}
+.progress-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.progress-label{font-size:12px;color:var(--ink-3)}
+.progress-fraction{font-size:12px;font-weight:500;color:var(--ink-2)}
+.progress-track{height:3px;background:var(--rule);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .4s ease}
+
+/* ── QUESTION ── */
+.question-wrap{display:none;animation:fadeUp .3s ease}
+.question-wrap.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.q-number{font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+.q-text{font-family:var(--serif);font-size:clamp(22px,3.5vw,32px);line-height:1.2;letter-spacing:-.015em;color:var(--ink);margin-bottom:8px}
+.q-sub{font-size:14px;color:var(--ink-3);font-weight:300;line-height:1.6;margin-bottom:28px}
+
+.options{display:flex;flex-direction:column;gap:10px;margin-bottom:32px}
+.option{display:flex;align-items:flex-start;gap:14px;padding:14px 18px;background:var(--surface);border:1.5px solid var(--rule);border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s;text-align:left;width:100%;font-family:var(--sans)}
+.option:hover{border-color:var(--accent-border);background:var(--accent-ghost)}
+.option.selected{border-color:var(--accent);background:var(--accent-ghost)}
+.option-key{width:26px;height:26px;border-radius:6px;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--ink-3);flex-shrink:0;transition:background .15s,color .15s}
+.option.selected .option-key{background:var(--accent);color:#fff}
+.option-text{font-size:14px;color:var(--ink-2);line-height:1.5;padding-top:3px}
+.option.selected .option-text{color:var(--ink)}
+
+.q-nav{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.btn-next{display:inline-flex;align-items:center;gap:8px;padding:13px 26px;background:var(--accent);color:#fff;font-size:14px;font-weight:500;font-family:var(--sans);border:none;border-radius:8px;cursor:pointer;transition:background .15s,transform .15s;opacity:.4;pointer-events:none}
+.btn-next.ready{opacity:1;pointer-events:auto}
+.btn-next.ready:hover{background:var(--accent-hover);transform:translateY(-1px)}
+.btn-next svg{width:15px;height:15px;stroke:#fff;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.btn-back{display:inline-flex;align-items:center;gap:6px;padding:13px 18px;background:transparent;color:var(--ink-3);font-size:14px;font-family:var(--sans);border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:color .15s,border-color .15s}
+.btn-back:hover{color:var(--ink);border-color:var(--rule-2)}
+.btn-back svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── RESULTS ── */
+#results{display:none}
+.score-ring-wrap{text-align:center;margin-bottom:40px;padding-top:8px}
+.score-ring{position:relative;width:140px;height:140px;margin:0 auto 16px}
+.score-ring svg{width:140px;height:140px;transform:rotate(-90deg)}
+.score-ring-bg{fill:none;stroke:var(--rule);stroke-width:8}
+.score-ring-fill{fill:none;stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset 1.2s cubic-bezier(.16,1,.3,1)}
+.score-number{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.score-n{font-family:var(--serif);font-size:44px;letter-spacing:-.02em;color:var(--ink)}
+.score-denom{font-size:13px;color:var(--ink-4);margin-top:-4px}
+.score-label{font-size:13px;color:var(--ink-3);font-weight:400}
+
+.result-band{border-radius:12px;padding:24px;margin-bottom:20px;text-align:center}
+.result-band h2{font-family:var(--serif);font-size:28px;letter-spacing:-.01em;margin-bottom:8px}
+.result-band p{font-size:15px;line-height:1.65;font-weight:300;max-width:480px;margin:0 auto}
+
+.score-breakdown{margin-bottom:32px}
+.breakdown-title{font-size:12px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-4);margin-bottom:14px}
+.breakdown-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--rule)}
+.breakdown-item:last-child{border-bottom:none}
+.bi-q{font-size:12px;color:var(--ink-3);flex:1;line-height:1.4}
+.bi-score{font-size:12px;font-weight:500;flex-shrink:0;padding:2px 8px;border-radius:10px}
+.bi-1{background:var(--accent-ghost);color:var(--accent)}
+.bi-0{background:var(--bg-2);color:var(--ink-4)}
+
+/* email gate */
+.email-gate{background:var(--space-1);border-radius:14px;padding:36px;text-align:center;color:rgba(255,255,255,.9);margin-bottom:20px}
+.eg-title{font-family:var(--serif);font-size:26px;color:#fff;letter-spacing:-.01em;margin-bottom:8px}
+.eg-title em{font-style:italic;color:var(--accent-hover)}
+.eg-sub{font-size:14px;color:rgba(255,255,255,.5);font-weight:300;margin-bottom:24px;line-height:1.6}
+.eg-form{display:flex;flex-direction:column;gap:10px}
+.eg-input{width:100%;padding:13px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:#fff;font-size:14px;font-family:var(--sans);outline:none;transition:border-color .15s}
+.eg-input::placeholder{color:rgba(255,255,255,.28)}
+.eg-input:focus{border-color:rgba(255,107,43,.5)}
+.eg-btn{width:100%;padding:14px;background:var(--accent);color:#fff;font-size:14px;font-weight:500;font-family:var(--sans);border:none;border-radius:8px;cursor:pointer;transition:background .15s}
+.eg-btn:hover{background:var(--accent-hover)}
+.eg-fine{font-size:11px;color:rgba(255,255,255,.25);margin-top:8px}
+
+.cta-waitlist{display:block;width:100%;padding:15px;background:var(--accent);color:#fff;font-size:15px;font-weight:500;font-family:var(--sans);border:none;border-radius:8px;text-align:center;cursor:pointer;text-decoration:none;transition:background .15s,transform .15s;margin-bottom:12px}
+.cta-waitlist:hover{background:var(--accent-hover);transform:translateY(-1px)}
+.cta-fine{font-size:12px;color:var(--ink-4);text-align:center}
+
+/* reveal animations */
+.reveal{opacity:0;transform:translateY(16px);transition:opacity .5s ease,transform .5s ease}
+.reveal.in{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-logo" aria-label="LaSyncro home">
+  <img src="white_text_no_bg.png" alt="LaSyncro" height="28" style="display:block;">
+ </a>
+  <a href="/" class="nav-back">
+    <svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg>
+    Back to home
+  </a>
+</nav>
+
+<div class="hero">
+  <div class="hero-eyebrow">Free · No account needed</div>
+  <h1 class="hero-h1">The Operations<br><em>Chaos Checklist</em></h1>
+  <p class="hero-sub">12 questions. About 3 minutes. Find out how much time your Shopify operations are actually costing you each week.</p>
+  <div class="hero-meta">
+    <div class="hero-meta-item">
+      <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>
+      3 minutes
+    </div>
+    <div class="hero-meta-item">
+      <svg viewBox="0 0 16 16"><path d="M13 3H3a1 1 0 00-1 1v8a1 1 0 001 1h10a1 1 0 001-1V4a1 1 0 00-1-1z"/><path d="M7 9l2 2 4-4"/></svg>
+      12 questions
+    </div>
+    <div class="hero-meta-item">
+      <svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M8 6v2l1.5 1.5"/></svg>
+      Instant score
+    </div>
+  </div>
+</div>
+
+<main>
+
+  <!-- PROGRESS -->
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-top">
+      <span class="progress-label" id="progress-label">Question 1 of 12</span>
+      <span class="progress-fraction" id="progress-frac">1 / 12</span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-fill" style="width:8.33%"></div>
+    </div>
+  </div>
+
+  <!-- QUESTIONS -->
+  <div id="quiz-wrap">
+
+    <!-- Q1 -->
+    <div class="question-wrap active" data-q="1">
+      <div class="q-number">Question 01</div>
+      <div class="q-text">How long does your morning operational check take?</div>
+      <div class="q-sub">Before you can actually start working — figuring out what's going on.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">Under 15 minutes — I have a clear routine</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">15 to 45 minutes most days</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">45 minutes to 1.5 hours</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">Over 1.5 hours — it takes over my morning</span></button>
+      </div>
+      <div class="q-nav">
+        <div></div>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q2 -->
+    <div class="question-wrap" data-q="2">
+      <div class="q-number">Question 02</div>
+      <div class="q-text">How do you find out you've run out of stock?</div>
+      <div class="q-sub">Think about the last time a product went to zero.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">My system alerts me before it hits zero</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">I notice it during my regular stock check</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">I find out when I try to fulfil an order</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">A customer tells me — usually not politely</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q3 -->
+    <div class="question-wrap" data-q="3">
+      <div class="q-number">Question 03</div>
+      <div class="q-text">How many active spreadsheets are involved in running your store?</div>
+      <div class="q-sub">Spreadsheets you actually open and update regularly.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">None — everything is in proper tools</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-key-text">1 to 3</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">4 to 7</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">8 or more — I've lost count honestly</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q4 -->
+    <div class="question-wrap" data-q="4">
+      <div class="q-number">Question 04</div>
+      <div class="q-text">Do you know your actual profit margin per order — right now, today?</div>
+      <div class="q-sub">Not last month's average. Today's number, after costs and fees.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">Yes — I have a live view of margin per order</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">Roughly — I have a good estimate</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">I find out when the accountant does the monthly report</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">Honestly, no — I'm running a bit blind on this</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q5 -->
+    <div class="question-wrap" data-q="5">
+      <div class="q-number">Question 05</div>
+      <div class="q-text">How does your warehouse team coordinate day to day?</div>
+      <div class="q-sub">How does your picking and packing team know what to do?</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-key-text">A proper system — everyone sees their tasks</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">Printed pick lists from Shopify each morning</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">A WhatsApp or group chat</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">Verbally — people just know / I do it myself</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q6 -->
+    <div class="question-wrap" data-q="6">
+      <div class="q-number">Question 06</div>
+      <div class="q-text">When an order goes wrong, how do you find out what happened?</div>
+      <div class="q-sub">Wrong item shipped, missing order, late delivery.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">There's a clear log — I can trace every step</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">I check Shopify and piece it together</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">I ask the team and hope someone remembers</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">We usually never really know what happened</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q7 -->
+    <div class="question-wrap" data-q="7">
+      <div class="q-number">Question 07</div>
+      <div class="q-text">How confident are you in your cash position right now?</div>
+      <div class="q-sub">Not your bank balance — your actual position after pending payouts, refunds, and supplier invoices.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">Very confident — I have a live view</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">Fairly confident — I check regularly</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">I have a rough idea but wouldn't bet on it</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">I genuinely don't know until something goes wrong</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q8 -->
+    <div class="question-wrap" data-q="8">
+      <div class="q-number">Question 08</div>
+      <div class="q-text">How do you track which customers are at risk of not buying again?</div>
+      <div class="q-sub">High-value customers who've gone quiet.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">Automatically — I get alerts when someone goes quiet</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">I run customer reports regularly</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">I notice occasionally but there's no real system</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">I don't really — I find out when they've already left</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q9 -->
+    <div class="question-wrap" data-q="9">
+      <div class="q-number">Question 09</div>
+      <div class="q-text">How do you manage returns day to day?</div>
+      <div class="q-sub">Tracking what comes back, why, and what happens to the stock.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">It's fully tracked — I can see return rates and reasons</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">I process them in Shopify and keep a rough log</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">I handle them as they come in but there's no real tracking</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">Returns are a bit of a black hole honestly</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q10 -->
+    <div class="question-wrap" data-q="10">
+      <div class="q-number">Question 10</div>
+      <div class="q-text">Do your operational tools talk to each other — automatically?</div>
+      <div class="q-sub">Shopify, your warehouse system, your accounting tool, your shipping carrier.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">Yes — everything syncs automatically</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">Mostly — a few manual steps but it mostly flows</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">Partially — I bridge the gaps manually every day</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">Not really — I'm the integration between all of them</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q11 -->
+    <div class="question-wrap" data-q="11">
+      <div class="q-number">Question 11</div>
+      <div class="q-text">How do you find out about problems before your customers do?</div>
+      <div class="q-sub">Late orders, low stock, anything that could cause a complaint.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-text">I get proactive alerts — I'm always a step ahead</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">I check regularly enough to usually catch things first</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">It varies — sometimes I catch it, sometimes I don't</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">Usually the customer tells me first</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" onclick="next()">Next <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Q12 -->
+    <div class="question-wrap" data-q="12">
+      <div class="q-number">Question 12</div>
+      <div class="q-text">How would you describe your operational day overall?</div>
+      <div class="q-sub">Honest gut feeling.</div>
+      <div class="options">
+        <button class="option" onclick="select(this,0)"><span class="option-key">A</span><span class="option-key-text">Mostly under control — I have good visibility</span></button>
+        <button class="option" onclick="select(this,0)"><span class="option-key">B</span><span class="option-text">Manageable, but I know things could be smoother</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">C</span><span class="option-text">Reactive — I spend a lot of time putting out fires</span></button>
+        <button class="option" onclick="select(this,1)"><span class="option-key">D</span><span class="option-text">I feel like I'm always one step behind the business</span></button>
+      </div>
+      <div class="q-nav">
+        <button class="btn-back" onclick="back()"><svg viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></svg> Back</button>
+        <button class="btn-next" id="btn-finish" onclick="finish()">See my score <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg></button>
+      </div>
+    </div>
+
+  </div><!-- /quiz-wrap -->
+
+  <!-- RESULTS -->
+  <div id="results">
+
+    <div class="score-ring-wrap reveal">
+      <div class="score-ring">
+        <svg viewBox="0 0 140 140">
+          <circle class="score-ring-bg" cx="70" cy="70" r="58"/>
+          <circle class="score-ring-fill" id="ring-fill" cx="70" cy="70" r="58"
+            stroke-dasharray="364.4" stroke-dashoffset="364.4"/>
+        </svg>
+        <div class="score-number">
+          <span class="score-n" id="score-display">0</span>
+          <span class="score-denom">out of 12</span>
+        </div>
+      </div>
+      <div class="score-label" id="score-label-text"></div>
+    </div>
+
+    <div class="result-band reveal" id="result-band"></div>
+
+    <!-- email gate -->
+    <div class="email-gate reveal" id="email-gate">
+      <h2 class="eg-title">Get your <em>full breakdown</em></h2>
+      <p class="eg-sub">See which questions flagged a problem — and what to do about each one. Plus, join the LaSyncro waitlist for early access.</p>
+      <form class="eg-form" onsubmit="handleEmail(event)">
+        <input class="eg-input" type="email" required placeholder="Your email address" id="eg-email" autocomplete="email"/>
+        <button class="eg-btn" type="submit">Send my breakdown →</button>
+      </form>
+      <p class="eg-fine">No spam. Unsubscribe any time.</p>
+    </div>
+
+    <div id="post-email" style="display:none">
+      <div class="score-breakdown reveal" id="breakdown-wrap">
+        <div class="breakdown-title">Your answers at a glance</div>
+        <div id="breakdown-list"></div>
+      </div>
+      <a href="/#waitlist" class="cta-waitlist reveal">Reserve my spot on the LaSyncro waitlist →</a>
+      <p class="cta-fine reveal">Free early access · no card required</p>
+    </div>
+
+  </div><!-- /results -->
+
+</main>
+
+<footer style="background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255,.05)">
+  <div style="max-width:680px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <a href="/" style="display:flex;align-items:center;gap:8px;text-decoration:none">
+      <svg width="20" height="20" viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="6" fill="#FF6B2B"/><path d="M8 14L12.5 18.5L20 10" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span style="font-family:var(--serif);font-size:16px;color:rgba(255,255,255,.5)">LaSyncro</span>
+    </a>
+    <span style="font-size:12px;color:rgba(255,255,255,.18)">© 2026 LaSyncro. All rights reserved.</span>
+  </div>
+</footer>
+
+<script>
+/* ── State ── */
+var current = 1;
+var totalQ  = 12;
+var answers = {}; /* q → score (0 or 1) */
+var qTexts  = [
+  'Morning check-in time',
+  'How you find out about stockouts',
+  'Number of active spreadsheets',
+  'Real-time margin visibility',
+  'Warehouse coordination method',
+  'Order error traceability',
+  'Cash position confidence',
+  'At-risk customer tracking',
+  'Returns management',
+  'Tool integration level',
+  'Proactive problem detection',
+  'Overall operational feeling'
+];
+
+/* ── Select an option ── */
+function select(btn, score) {
+  var wrap = btn.closest('.question-wrap');
+  wrap.querySelectorAll('.option').forEach(function(o){ o.classList.remove('selected'); });
+  btn.classList.add('selected');
+  answers[current] = score;
+  var nextBtn = wrap.querySelector('.btn-next');
+  nextBtn.classList.add('ready');
+  if (typeof posthog !== 'undefined') {
+    posthog.capture('checklist_answer', { question: current, score: score });
+  }
+}
+
+/* ── Navigate ── */
+function showQ(n) {
+  document.querySelectorAll('.question-wrap').forEach(function(w){ w.classList.remove('active'); });
+  var target = document.querySelector('[data-q="'+n+'"]');
+  if (target) target.classList.add('active');
+  var pct = (n / totalQ * 100).toFixed(1);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = 'Question ' + n + ' of ' + totalQ;
+  document.getElementById('progress-frac').textContent = n + ' / ' + totalQ;
+  /* re-apply selected if already answered */
+  if (answers[n] !== undefined) {
+    var opts = target.querySelectorAll('.option');
+    /* find the matching score — mark first matching option */
+    /* simpler: just enable the next button */
+    target.querySelector('.btn-next').classList.add('ready');
+  }
+}
+
+function next() {
+  if (answers[current] === undefined) return;
+  if (current < totalQ) {
+    current++;
+    showQ(current);
+  }
+}
+
+function back() {
+  if (current > 1) {
+    current--;
+    showQ(current);
+  }
+}
+
+/* ── Finish ── */
+function finish() {
+  if (answers[current] === undefined) return;
+  var score = 0;
+  for (var k in answers) { score += answers[k]; }
+
+  if (typeof posthog !== 'undefined') {
+    posthog.capture('checklist_complete', { score: score });
+  }
+
+  document.getElementById('progress-wrap').style.display = 'none';
+  document.getElementById('quiz-wrap').style.display = 'none';
+  document.getElementById('results').style.display = 'block';
+
+  /* Score display */
+  document.getElementById('score-display').textContent = score;
+
+  /* Ring animation */
+  var circumference = 364.4;
+  var offset = circumference - (score / 12 * circumference);
+  var ringEl = document.getElementById('ring-fill');
+  var colour = score <= 4 ? '#1D9E75' : score <= 7 ? '#FF6B2B' : '#E24B4A';
+  ringEl.style.stroke = colour;
+  setTimeout(function(){ ringEl.style.strokeDashoffset = offset; }, 100);
+
+  /* Band content */
+  var band = document.getElementById('result-band');
+  var label = document.getElementById('score-label-text');
+  if (score <= 4) {
+    label.textContent = 'Strong foundations';
+    band.style.background = 'rgba(29,158,117,0.08)';
+    band.style.border = '1px solid rgba(29,158,117,0.2)';
+    band.innerHTML = '<h2 style="color:#1D9E75">You\'re in good shape.</h2><p style="color:var(--ink-3)">Your operations are reasonably well organised. There are still a few areas where better visibility could save you time — the breakdown below shows where.</p>';
+  } else if (score <= 7) {
+    label.textContent = 'Some friction points';
+    band.style.background = 'rgba(255,107,43,0.07)';
+    band.style.border = '1px solid rgba(255,107,43,0.2)';
+    band.innerHTML = '<h2 style="color:#FF6B2B">Room to improve.</h2><p style="color:var(--ink-3)">Your operations are working but there\'s meaningful time being lost to manual work and reactive firefighting. The breakdown below shows exactly where.</p>';
+  } else {
+    label.textContent = 'High operational overhead';
+    band.style.background = 'rgba(226,75,74,0.07)';
+    band.style.border = '1px solid rgba(226,75,74,0.2)';
+    band.innerHTML = '<h2 style="color:#E24B4A">Your operations are costing you.</h2><p style="color:var(--ink-3)">You\'re spending significant time just keeping up with the business — time that should be going toward growing it. LaSyncro is built specifically for this situation.</p>';
+  }
+
+  /* Scroll reveals */
+  setTimeout(function(){
+    document.querySelectorAll('.reveal').forEach(function(el, i){
+      setTimeout(function(){ el.classList.add('in'); }, i * 120);
+    });
+  }, 200);
+}
+
+/* ── Email gate ── */
+function handleEmail(e) {
+  e.preventDefault();
+  var email = document.getElementById('eg-email').value;
+  if (typeof posthog !== 'undefined') {
+    posthog.capture('checklist_email', { email: email });
+  }
+
+  document.getElementById('email-gate').style.display = 'none';
+  document.getElementById('post-email').style.display = 'block';
+
+  /* Build breakdown */
+  var list = document.getElementById('breakdown-list');
+  list.innerHTML = '';
+  for (var i = 1; i <= totalQ; i++) {
+    var s = answers[i] !== undefined ? answers[i] : 0;
+    var div = document.createElement('div');
+    div.className = 'breakdown-item';
+    div.innerHTML = '<span class="bi-q">' + qTexts[i-1] + '</span>'
+      + '<span class="bi-score ' + (s===1?'bi-1':'bi-0') + '">'
+      + (s===1 ? 'Needs attention' : 'Good') + '</span>';
+    list.appendChild(div);
+  }
+
+  /* Re-run reveal on new elements */
+  setTimeout(function(){
+    document.querySelectorAll('#post-email .reveal').forEach(function(el, i){
+      setTimeout(function(){ el.classList.add('in'); }, i * 100);
+    });
+  }, 100);
+}
+
+/* ── Keyboard nav ── */
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    var wrap = document.querySelector('.question-wrap.active');
+    if (!wrap) return;
+    var nextBtn = wrap.querySelector('.btn-next');
+    if (nextBtn && nextBtn.classList.contains('ready')) {
+      if (current === totalQ) finish();
+      else next();
+    }
+  }
+  if (e.key === 'ArrowLeft' && current > 1) back();
+  /* A/B/C/D key selection */
+  var keyMap = { a:0, b:1, c:2, d:3 };
+  var k = e.key.toLowerCase();
+  if (keyMap[k] !== undefined) {
+    var wrap2 = document.querySelector('.question-wrap.active');
+    if (!wrap2) return;
+    var opts = wrap2.querySelectorAll('.option');
+    if (opts[keyMap[k]]) opts[keyMap[k]].click();
+  }
+});
+
+/* Fix option-key-text spans (typo safety) */
+document.querySelectorAll('.option-key-text').forEach(function(el){
+  el.className = 'option-text';
+});
+</script>
+
+</body>
+</html>
