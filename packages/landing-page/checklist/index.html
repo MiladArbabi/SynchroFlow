@@ -588,6 +588,12 @@ function handleEmail(e) {
     posthog.capture('checklist_email', { email: email });
   }
 
+  fetch('/api/waitlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, store: 'checklist-signup' })
+  }).catch(function(err) { console.error('Waitlist error:', err); });
+
   document.getElementById('email-gate').style.display = 'none';
   document.getElementById('post-email').style.display = 'block';
 
