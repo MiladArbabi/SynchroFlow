@@ -1,4 +1,6 @@
 {
+  "installCommand": "echo 'no install needed'",
+  "buildCommand": "echo 'no build needed'",
   "rewrites": [
     {
       "source": "/blog",
