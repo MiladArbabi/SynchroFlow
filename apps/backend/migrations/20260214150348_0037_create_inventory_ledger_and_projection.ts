@@ -100,6 +100,24 @@ export async function up(knex: Knex): Promise<void> {
      */
 
     table.string('platform', 255).nullable();
+
+    /**
+     * SCAN SOURCE (WMS-01)
+     * --------------------
+     * Identifies the physical input method that produced this movement.
+     * Required for hardware attribution, audit, and scan quality analytics.
+     *
+     * Values:
+     *   'camera'  — mobile camera scan (default for app-based picks)
+     *   'usb'     — USB barcode scanner
+     *   'bt'      — Bluetooth scanner
+     *   'manual'  — operator manual entry (no scan device)
+     *   null      — pre-WMS movements / system-generated (reconciliation, opening balance)
+     *
+     * Nullable: legacy and non-WMS movements have no scan context.
+     */
+    table.string('scan_source', 20).nullable();
+
     table.string('location_code', 255).notNullable();
 
     // --- TENANT ANCHOR (MANDATORY) ---

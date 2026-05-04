@@ -3,31 +3,22 @@ import { CashFlowModuleFT2 } from '@lasyncro/cashflow';
 import { useCashFlow } from '../finances/useCashFlow';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
-import UpgradePrompt from '../../components/UpgradePrompt';
+import { PlanGate } from '../../components/PlanGate';
 
 export default function CashFlowPage() {
   const { data, isLoading, isError } = useCashFlow();
-  const { displayCurrency, locale, tier } = useEntitlements();
+  const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
-  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
-
- if (isLocked) return (
-    <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Cash Flow Intelligence">
-      <CashFlowModuleFT2
-        data={null}
-        isLoading={false}
-        isError={false}
-        currency={{ displayCurrency, locale, rates }}
-      />
-    </UpgradePrompt>
-  );
 
   return (
-    <CashFlowModuleFT2
-      data={data ?? null}
-      isLoading={isLoading}
-      isError={isError}
-      currency={{ displayCurrency, locale, rates }}
-    />
+    // TIER GATE: cashflow.revenue_buckets requires 'core' (see usePlanEntitlement PLAN_FEATURES)
+    <PlanGate feature="cashflow.revenue_buckets">
+      <CashFlowModuleFT2
+        data={data ?? null}
+        isLoading={isLoading}
+        isError={isError}
+        currency={{ displayCurrency, locale, rates }}
+      />
+    </PlanGate>
   );
 }

@@ -1,6 +1,5 @@
 /**
- * @rls-exempt
- * System state table (non-tenant scoped)
+ * FT0 state — one row per shop. RLS enforced via shop_id (primary key).
  */
 
 import { Knex } from 'knex';
@@ -74,6 +73,18 @@ export async function up(knex: Knex): Promise<void> {
     CREATE TRIGGER ft0_state_no_delete
     BEFORE DELETE ON ft0_state
     FOR EACH ROW EXECUTE FUNCTION prevent_ft0_state_mutation();
+  `);
+
+  // --- RLS: tenant isolation (shop_id is PK — direct enforcement) ---
+  await knex.raw(`
+    ALTER TABLE ft0_state ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE ft0_state FORCE ROW LEVEL SECURITY;
+  `);
+  await knex.raw(`
+    DROP POLICY IF EXISTS ft0_state_tenant_isolation_policy ON ft0_state;
+    CREATE POLICY ft0_state_tenant_isolation_policy
+    ON ft0_state
+    USING (shop_id = current_setting('app.current_tenant')::int);
   `);
 }
 

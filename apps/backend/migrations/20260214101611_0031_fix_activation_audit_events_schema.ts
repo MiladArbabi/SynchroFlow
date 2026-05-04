@@ -1,6 +1,6 @@
 /**
- * @rls-exempt
- * Schema fix migration (no new tenant table)
+ * Schema fix: recreates activation_audit_events with correct columns.
+ * RLS applied here — shop_id is nullable but tenant-scoped rows must be isolated.
  */
 
 import { Knex } from 'knex';
@@ -43,7 +43,26 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['user_id']);
     table.index(['event_type']);
     table.index(['occurred_at']);
-  });
+
+    });
+
+  // --- RLS: tenant isolation ---
+  // shop_id is nullable (system events have no shop). Policy allows nulls through
+  // so system-level rows remain readable by the service role, but tenant rows
+  // are strictly isolated by shop_id.
+  await knex.raw(`
+    ALTER TABLE activation_audit_events ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE activation_audit_events FORCE ROW LEVEL SECURITY;
+  `);
+  await knex.raw(`
+    DROP POLICY IF EXISTS activation_audit_events_tenant_isolation_policy ON activation_audit_events;
+    CREATE POLICY activation_audit_events_tenant_isolation_policy
+    ON activation_audit_events
+    USING (
+      shop_id IS NULL
+      OR shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

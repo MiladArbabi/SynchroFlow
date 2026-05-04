@@ -21,8 +21,17 @@ import { useBarcodeScanner } from '../hooks/useBarcodeScanner.js';
  * - hint: instruction shown below reticle (e.g. "Scan item barcode")
  */
 
+/**
+ * SCAN SOURCE TYPE
+ * ----------------
+ * Physical input method that produced a scan event.
+ * Declared here as the authoritative UI-layer definition.
+ * Mirrors scan_source column in inventory_movements.
+ */
+export type ScanSource = 'camera' | 'nfc' | 'usb' | 'bt' | 'manual';
+
 export interface BarcodeScanSurfaceProps {
-  onScan: (value: string) => void;
+  onScan: (value: string, source: ScanSource) => void;
   enabled?: boolean;
   hint?: string;
 }
@@ -40,7 +49,11 @@ export function BarcodeScanSurface({
     toggleTorch,
     error,
     restart,
-  } = useBarcodeScanner({ onScan, enabled });
+  } = useBarcodeScanner({
+    // Wrap to always tag camera as source — this surface owns camera identity
+    onScan: (value) => onScan(value, 'camera'),
+    enabled,
+  });
 
   return (
     <Box

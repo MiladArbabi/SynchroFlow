@@ -1185,6 +1185,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     lasyncro_variant_id,
     location_code,
     quantity_confirmed,
+    scan_source, // optional: 'camera' | 'usb' | 'bt' | 'manual' — defaults to 'camera' in service
   } = req.body;
 
   if (
@@ -1211,6 +1212,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
         quantityConfirmed: quantity_confirmed,
         scannedBy: userId,
         shopId,
+        scanSource: scan_source, // forwarded from client; service defaults to 'camera'
       });
     });
 

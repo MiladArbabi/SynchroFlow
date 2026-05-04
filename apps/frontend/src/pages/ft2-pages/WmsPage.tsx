@@ -17,6 +17,7 @@ import type {
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
 import { useSearchParams } from 'react-router-dom';
+import PlanGate from '../../components/PlanGate';
 
 /**
  * WMS GATE PAGE
@@ -96,7 +97,7 @@ export default function WmsPage() {
     await submitScan({
       deviceEventId,
       url: '/api/v1/wms/pick/scan',
-      body: { pick_batch_id: batchId, ...params },
+      body: { pick_batch_id: batchId, ...params, scan_source: params.scan_source },
     });
   }, [submitScan]);
 
@@ -232,6 +233,8 @@ export default function WmsPage() {
   }, []);
 
   return (
+    // TIER GATE: wms.pick_batches requires 'core' (see usePlanEntitlement PLAN_FEATURES)
+    <PlanGate feature="wms.pick_batches">
     <WmsModuleFT2
       data={data ?? null}
       isLoading={isLoading}
@@ -261,5 +264,6 @@ export default function WmsPage() {
       onClaimStowTask={handleClaimStowTask}
       onConfirmStow={handleConfirmStow}
     />
+   </PlanGate>
   );
 }

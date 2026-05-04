@@ -14,34 +14,20 @@ import { CustomersModuleFT2 } from '@lasyncro/customers';
 import { useCustomerLtv } from '../customers/useCustomerLtv';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
-import { UpgradePrompt } from '../../components/UpgradePrompt';
-
-const __DEV__ = import.meta.env.DEV;
+import { PlanGate } from '../../components/PlanGate';
 
 export default function CustomersFT2Page() {
-
   const ltvQuery = useCustomerLtv();
-  const { displayCurrency, locale, tier } = useEntitlements();
-  const isLocked = !import.meta.env.DEV && (tier === 'starter' || tier === 'core');
+  const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
 
-  if (__DEV__) {
-    console.debug('[CustomersFT2Page] rendering CustomersModuleFT2');
-  }
-
-  if (isLocked) return (
-    <UpgradePrompt requiredTier="growth" mode="overlay" featureName="Customer LTV">
-      <CustomersModuleFT2
-        ltv={null}
-        currency={{ displayCurrency, locale, rates }}
-      />
-    </UpgradePrompt>
-  );
-  
   return (
-    <CustomersModuleFT2
+    // TIER GATE: customers.ltv requires 'growth' (see usePlanEntitlement PLAN_FEATURES)
+    <PlanGate feature="customers.ltv">
+      <CustomersModuleFT2
         ltv={ltvQuery.data ?? null}
         currency={{ displayCurrency, locale, rates }}
       />
+    </PlanGate>
   );
 }

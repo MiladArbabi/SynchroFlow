@@ -39,6 +39,15 @@ export interface PickScanInput {
   quantityConfirmed: number;
   scannedBy: number; // user id
   shopId: number;
+  /**
+   * SCAN SOURCE (WMS-01)
+   * Physical input device that produced this scan.
+   * 'camera' = mobile app camera (default for WMS app picks)
+   * 'usb' | 'bt' = hardware scanner (future)
+   * 'manual' = operator manual entry
+   * Null-safe — defaults to 'camera' at service boundary if omitted.
+   */
+  scanSource?: 'camera' | 'usb' | 'bt' | 'manual';
 }
 
 export interface PickScanResult {
@@ -58,6 +67,7 @@ export async function confirmPickScan(
     quantityConfirmed,
     scannedBy,
     shopId,
+    scanSource = 'camera', // default: app camera picks
   } = input;
 
   // 1. Validate batch status and ownership
@@ -137,6 +147,7 @@ export async function confirmPickScan(
       reference_type: 'order_revenue_unit',
       reference_id: lasyncroLineItemId,
       platform: null,
+      scan_source: scanSource,
       occurred_at: scannedAt,
       device_event_id: deviceEventId,
     })

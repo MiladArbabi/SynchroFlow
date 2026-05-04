@@ -226,4 +226,20 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
     });
   },
   'reconciliation/intent_captured': handleReconciliationIntentCaptured,
+  /**
+   * RETURNS — REQUESTED (INTENTIONAL NO-OP)
+   * ----------------------------------------
+   * Shopify fires returns/requested before a refund is issued.
+   * LaSyncro projects returns exclusively via refunds/create,
+   * which carries the authoritative financial event.
+   *
+   * This handler prevents silent projection drop.
+   * No mutation is performed — refunds/create is the canonical path.
+   */
+  'returns/requested': async ({ domainEvent }) => {
+    console.info('[PROJECTION_RETURN_REQUESTED_OBSERVED]', {
+      shopId: domainEvent.shop_id,
+      eventId: domainEvent.id,
+    });
+  },
 };

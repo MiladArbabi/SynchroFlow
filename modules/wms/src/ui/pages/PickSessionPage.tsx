@@ -78,6 +78,8 @@ export interface ConfirmScanParams {
   lasyncro_variant_id: string;
   location_code: string;
   quantity_confirmed: number;
+  /** Physical input device — forwarded to inventory_movements.scan_source */
+  scan_source?: 'camera' | 'nfc' | 'usb' | 'bt' | 'manual';
 }
 
 export interface ReportExceptionParams {
@@ -134,7 +136,8 @@ export default function PickSessionPage({
 }: PickSessionPageProps) {
   const theme = useTheme();
   const inputRef = useRef<HTMLInputElement>(null);
-
+  // Tracks scan source between barcode resolution and confirm — set by input method
+  const scanSourceRef = useRef<ConfirmScanParams['scan_source']>('camera');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanState, setScanState] = useState<ScanState>('idle');
@@ -184,10 +187,10 @@ export default function PickSessionPage({
     }
   }, [isLastItem, handlePickComplete, resetForNextItem]);
 
-  const handleBarcodeInput = useCallback(async (value: string) => {
+  const handleBarcodeInput = useCallback(async (value: string, source: ConfirmScanParams['scan_source'] = 'manual') => {
     if (!currentItem) return;
     if (!value.trim()) return;
-
+    scanSourceRef.current = source; // store source — used on confirm
     setBarcodeInput(value);
     setScanState('idle');
     setSubmitError(null);
@@ -209,7 +212,7 @@ export default function PickSessionPage({
 
   const handleCameraScan = useCallback((scannedValue: string) => {
     setScanState('idle');
-    void handleBarcodeInput(scannedValue);
+    void handleBarcodeInput(scannedValue, 'camera');
   }, [handleBarcodeInput]);
 
   const handleConfirm = useCallback(async () => {
@@ -224,6 +227,7 @@ export default function PickSessionPage({
         lasyncro_variant_id: currentItem.lasyncro_variant_id,
         location_code: currentItem.location_code,
         quantity_confirmed: currentItem.quantity,
+        scan_source: scanSourceRef.current,
       });
 
       setScanState('accepted');

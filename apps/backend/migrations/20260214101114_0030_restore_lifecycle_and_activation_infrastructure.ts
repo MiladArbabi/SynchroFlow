@@ -1,6 +1,7 @@
 /**
- * @rls-exempt
- * Infrastructure restoration (no tenant-owned data)
+ * Infrastructure restoration.
+ * RLS applied to specter_shop_configs (tenant-scoped via shop_id).
+ * activation_audit_events RLS applied in migration 0031.
  */
 
 import { Knex } from 'knex';
@@ -22,6 +23,18 @@ export async function up(knex: Knex): Promise<void> {
       table.timestamp('updated_at').notNullable().defaultTo(knex.fn.now());
       table.unique(['shop_id']);
     });
+
+    // --- RLS: tenant isolation (direct shop_id) ---
+    await knex.raw(`
+      ALTER TABLE specter_shop_configs ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE specter_shop_configs FORCE ROW LEVEL SECURITY;
+    `);
+    await knex.raw(`
+      DROP POLICY IF EXISTS specter_shop_configs_tenant_isolation_policy ON specter_shop_configs;
+      CREATE POLICY specter_shop_configs_tenant_isolation_policy
+      ON specter_shop_configs
+      USING (shop_id = current_setting('app.current_tenant')::int);
+    `);
   }
 
   // ---- activation_audit_events ----
