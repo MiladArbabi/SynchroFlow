@@ -27,6 +27,7 @@ export const metadata: Metadata = {
   title: 'LaSyncro — Operational Intelligence for Shopify Merchants',
   description: 'Real-time inventory, warehouse management, PO receiving, full order traceability and workforce tools for Shopify merchants running their own warehouse.',
   metadataBase: new URL('https://lasyncro.com'),
+  icons: { icon: '/favicon.png' },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
