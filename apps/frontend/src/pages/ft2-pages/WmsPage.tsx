@@ -18,6 +18,7 @@ import type {
 import { useAuth } from 'contexts/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import PlanGate from '../../components/PlanGate';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
 
 /**
  * WMS GATE PAGE
@@ -235,6 +236,10 @@ export default function WmsPage() {
   return (
     // TIER GATE: wms.pick_batches requires 'core' (see usePlanEntitlement PLAN_FEATURES)
     <PlanGate feature="wms.pick_batches">
+    <ModuleTabBar tabs={[
+      { id: 'operations', label: 'Operations', path: '/wms' },
+      { id: 'analytics',  label: 'Analytics',  path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
+    ]} />
     <WmsModuleFT2
       data={data ?? null}
       isLoading={isLoading}

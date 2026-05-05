@@ -46,6 +46,7 @@ import DemandPage from 'pages/ft2-pages/DemandPage';
 import WmsPage from 'pages/ft2-pages/WmsPage';
 import SuppliersPortalPage from 'pages/ft2-pages/SuppliersPortalPage';
 import FloorPlanningPage from 'pages/ft2-pages/FloorPlanningPage';
+import WmsAnalyticsPage from 'pages/ft2-pages/WmsAnalyticsPage';
 
 import MembersPage from 'pages/ft2-pages/MembersPage';
 import ProblemCenterPage from 'pages/ft2-pages/ProblemCenterPage';
@@ -207,6 +208,7 @@ export function LifecycleRouteHost() {
 
       {/* WMS */}
       <Route path="/wms/*" element={<WmsPage />} />
+      <Route path="/wms/analytics" element={<WmsAnalyticsPage />} />
 
       {/* SUPPLIERS PORTAL */}
       <Route path="/suppliers-portal/*" element={<SuppliersPortalPage />} />

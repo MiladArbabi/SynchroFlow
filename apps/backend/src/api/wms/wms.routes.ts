@@ -36,6 +36,7 @@ import {
   httpResolveProblemTask,
   httpPatchWmsSettings,
 } from './wms.controller.js';
+import { httpGetPickAnalytics } from './wms.analytics.controller.js';
 
 /**
  * WMS ROUTES (WM-03)
@@ -307,6 +308,20 @@ router.get(
   requireTier('core'),
   requireAction('wms:read'),
   httpGetWmsSettings
+);
+
+/**
+ * @route   GET /api/v1/wms/analytics
+ * @desc    Pick analytics — accuracy, velocity, error rate by SKU, batch times
+ * @access  Private — FT2, Growth tier, wms:read action
+ */
+router.get(
+  '/analytics',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetPickAnalytics
 );
 
 export default router;
