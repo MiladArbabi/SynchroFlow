@@ -102,3 +102,60 @@ self.addEventListener('sync', (e) => {
     e.waitUntil(flushScanQueue());
   }
 });
+
+// ── Web Push Event Handler (WM-22) ─────────────────────────────────────────
+//
+// Handles incoming push messages from the backend notification dispatch service.
+//
+// Expected payload shape:
+//   { title: string, body: string, url?: string, tag?: string }
+//
+// tag: deduplicates notifications — same tag replaces previous (e.g. alert updates)
+// url: deep link opened on notification click
+
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: 'LaSyncro', body: event.data.text() };
+  }
+
+  const title = payload.title ?? 'LaSyncro';
+  const options = {
+    body:    payload.body ?? '',
+    icon:    '/favicon.png',
+    badge:   '/favicon.png',
+    tag:     payload.tag ?? 'lasyncro-notification',
+    data:    { url: payload.url ?? '/' },
+    requireInteraction: payload.urgent === true,
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+// On notification click — focus app or open deep link
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const url = event.notification.data?.url ?? '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // If app already open, focus it and navigate
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.focus();
+          if ('navigate' in client) client.navigate(url);
+          return;
+        }
+      }
+      // Otherwise open new window
+      if (clients.openWindow) return clients.openWindow(url);
+    })
+  );
+});

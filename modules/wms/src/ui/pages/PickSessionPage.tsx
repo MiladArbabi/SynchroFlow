@@ -24,6 +24,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { BarcodeScanSurface } from '../components/BarcodeScanSurface.js';
+import { useScanSourceDetector } from '../hooks/useScanSourceDetector.js';
 
 /**
  * PICK SESSION PAGE — REDESIGNED (WM-23)
@@ -134,6 +135,12 @@ export default function PickSessionPage({
   onReportException,
   onPickComplete,
 }: PickSessionPageProps) {
+  const { 
+    onInputChange, 
+    detectSourceAndReset, 
+    reset: resetScanDetector 
+  } = useScanSourceDetector();
+
   const theme = useTheme();
   const inputRef = useRef<HTMLInputElement>(null);
   // Tracks scan source between barcode resolution and confirm — set by input method
@@ -164,7 +171,8 @@ export default function PickSessionPage({
     setScanState('idle');
     setSubmitError(null);
     setShortPickQuantity('');
-  }, []);
+    resetScanDetector();
+  }, [resetScanDetector]);
 
   const handlePickComplete = useCallback(async () => {
     setCompletingPick(true);
@@ -458,10 +466,14 @@ export default function PickSessionPage({
           inputRef={inputRef}
           label="Barcode"
           value={barcodeInput}
-          onChange={(e) => setBarcodeInput(e.target.value)}
+          onChange={(e) => {
+            setBarcodeInput(e.target.value);
+            onInputChange();
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && barcodeInput.trim()) {
-              void handleBarcodeInput(barcodeInput);
+              const source = detectSourceAndReset();
+              void handleBarcodeInput(barcodeInput, source);
             }
           }}
           fullWidth
