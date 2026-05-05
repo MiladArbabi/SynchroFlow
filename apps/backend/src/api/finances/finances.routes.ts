@@ -5,6 +5,7 @@ import { httpGetMargin } from './finances.margin.controller.js';
 import { httpGetSkuMargin } from './finances.margin.sku.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
+import { httpGetMarginTrend } from './finances.margin.trend.controller.js';
 
  const router = Router();
 
@@ -48,6 +49,18 @@ router.get(
   authenticateToken,
   requireFt2,
   httpGetSkuMargin
+);
+
+/**
+ * @route   GET /api/v1/modules/finances/margin/trend
+ * @desc    Daily margin trend for 30/90-day chart
+ * @access  Private — FT2, Growth tier
+ */
+router.get(
+  '/margin/trend',
+  authenticateToken,
+  requireFt2,
+  httpGetMarginTrend
 );
 
  export default router;

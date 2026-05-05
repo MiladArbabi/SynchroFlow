@@ -10,6 +10,7 @@ import { useSkuMargin } from '../finances/useSkuMargin';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { PlanGate } from '../../components/PlanGate';
+import { useMarginTrend } from '../finances/useMarginTrend';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -22,6 +23,7 @@ export default function FinancesFT2Page() {
   const snapshotQuery = useFinancesFt2Snapshot(range);
   const marginQuery = useMargin();
   const skuMarginQuery = useSkuMargin();
+  const marginTrendQuery = useMarginTrend(30);
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
 
@@ -43,6 +45,7 @@ export default function FinancesFT2Page() {
           margin={marginQuery.data ?? null}
           skuMargin={skuMarginQuery.data ?? null}
           currency={{ displayCurrency, locale, rates }}
+          marginTrend={marginTrendQuery.data ?? null}
         />
       </>
     </PlanGate>

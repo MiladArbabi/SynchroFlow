@@ -4,6 +4,10 @@ import { useState } from 'react';
 import { FT2Layout, FT2Row } from '@lasyncro/ui-ft2';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine,
+} from 'recharts';
 
 /**
  * LOCAL MARGIN TYPE
@@ -44,6 +48,19 @@ export type SkuMarginRow = {
 
 export type SkuMarginData = {
   data: SkuMarginRow[];
+} | null;
+
+export type MarginTrendPoint = {
+  date: string;
+  avg_margin_pct: number;
+  total_margin: number;
+  total_revenue: number;
+  order_count: number;
+};
+
+export type MarginTrendData = {
+  data: MarginTrendPoint[];
+  days: number;
 } | null;
 
 export type MarginData = {
@@ -87,6 +104,13 @@ export interface FinancesModuleFT2DataProps {
    * null when loading or unavailable.
    */
   skuMargin: SkuMarginData;
+  /**
+   * MARGIN TREND (MG-06)
+   * --------------------
+   * Daily margin trend for 30/90-day chart.
+   * null when loading or unavailable.
+   */
+  marginTrend: MarginTrendData;
 }
 
 export type FinancesModuleFT2Props = FinancesModuleFT2DataProps & {
@@ -134,7 +158,8 @@ export default function FinancesModuleFT2({ currency, ...props }: FinancesModule
   const theme = useTheme();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('orders');
-  const { margin, skuMargin } = props;
+  const { margin, skuMargin, marginTrend } = props;
+  const trendPoints = marginTrend?.data ?? [];
 
   const summary = margin?.summary;
   const orders = (margin?.orders ?? []).filter(o =>
@@ -175,7 +200,57 @@ export default function FinancesModuleFT2({ currency, ...props }: FinancesModule
             {/* ZONE 2 — DISTRIBUTION */}
             <MarginBar min={summary.min_margin_pct} avg={summary.avg_margin_pct} max={summary.max_margin_pct} />
 
-            {/* ZONE 3 — VIEW TOGGLE + BREAKDOWN */}
+            {/* ZONE 3 — MARGIN TREND CHART */}
+            {trendPoints.length > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
+                  Margin Trend — {marginTrend?.days}d
+                </Typography>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={trendPoints} margin={{ top: 5, right: 16, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10, fill: 'var(--ink-3)' }}
+                      tickFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: 'var(--ink-3)' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `${v}%`}
+                      domain={[0, 100]}
+                    />
+                    <Tooltip
+                      formatter={(value) => [`${Number(value)}%`, 'Avg Margin']}
+                      labelFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      contentStyle={{
+                        background: theme.palette.background.paper,
+                        border: `1px solid ${theme.palette.divider}`,
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                    />
+                    <ReferenceLine y={40} stroke={theme.palette.warning.main} strokeDasharray="4 2" strokeWidth={1} />
+                    <Line
+                      type="monotone"
+                      dataKey="avg_margin_pct"
+                      stroke={theme.palette.primary.main}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Dashed line = 40% margin threshold
+                </Typography>
+              </Box>
+            )}
+
+            {/* ZONE 4 — VIEW TOGGLE + BREAKDOWN */}
             <Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <ToggleButtonGroup value={viewMode} exclusive onChange={(_e, val) => val && setViewMode(val)} size="small">
