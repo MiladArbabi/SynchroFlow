@@ -21,6 +21,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { OrderDetailPanel } from '../orders/OrderDetailPanel';
 import { getSlaProximity, getAgeLabel } from '../orders/useConstrainedOrders';
+import { usePlanEntitlement } from '../../hooks/usePlanEntitlement';
 
 /**
  * FULFILLMENT QUEUE PAGE (B-01)
@@ -60,9 +61,10 @@ const SWIMLANES = [
 type OrderCardProps = {
   order: ConstrainedOrder;
   onSelect: (orderId: string) => void;
+  showMargin: boolean;
 };
 
-function OrderCard({ order, onSelect }: OrderCardProps) {
+function OrderCard({ order, onSelect, showMargin }: OrderCardProps) {
   const theme = useTheme();
   const proximity = getSlaProximity(order);
   const ageLabel = getAgeLabel(order);
@@ -75,6 +77,13 @@ function OrderCard({ order, onSelect }: OrderCardProps) {
   const revenue = order.revenue != null
     ? `$${Number(order.revenue).toFixed(2)}`
     : null;
+
+  const marginPct = order.margin_pct != null ? Math.round(Number(order.margin_pct) * 100) : null;
+  const marginColor =
+    marginPct == null ? theme.palette.text.secondary :
+    marginPct >= 40 ? theme.palette.success.main :
+    marginPct >= 20 ? theme.palette.warning.main :
+    theme.palette.error.main;
 
   return (
     <Card
@@ -126,6 +135,21 @@ function OrderCard({ order, onSelect }: OrderCardProps) {
                 fontWeight: proximity === 'breached' ? 700 : 400,
               }}
             />
+
+            {/* MARGIN CHIP — Growth tier only */}
+            {showMargin && marginPct != null && (
+              <Chip
+                label={`${marginPct}% margin`}
+                size="small"
+                sx={{
+                  fontSize: 11,
+                  color: marginColor,
+                  borderColor: marginColor,
+                  fontWeight: 600,
+                }}
+                variant="outlined"
+              />
+            )}
           </Box>
 
           {order.recommended_action && (
@@ -146,9 +170,10 @@ type SwimlaneProps = {
   description: string;
   orders: ConstrainedOrder[];
   onSelect: (orderId: string) => void;
+  showMargin: boolean;
 };
 
-function Swimlane({ label, color, description, orders, onSelect }: SwimlaneProps) {
+function Swimlane({ label, color, description, orders, onSelect, showMargin }: SwimlaneProps) {
   return (
     <Box sx={{ flex: 1, minWidth: 0 }}>
       {/* SWIMLANE HEADER */}
@@ -182,6 +207,7 @@ function Swimlane({ label, color, description, orders, onSelect }: SwimlaneProps
             key={order.order_id}
             order={order}
             onSelect={onSelect}
+            showMargin={showMargin}
           />
         ))
       )}
@@ -192,6 +218,8 @@ function Swimlane({ label, color, description, orders, onSelect }: SwimlaneProps
 export default function FulfillmentQueuePage() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const { data, isLoading, isError } = useConstrainedOrders();
+  const { can } = usePlanEntitlement();
+  const showMargin = can('cashflow.revenue_buckets');
 
   const orders = data?.data ?? [];
 
@@ -240,6 +268,7 @@ export default function FulfillmentQueuePage() {
               {...lane}
               orders={grouped(lane.constraint_type)}
               onSelect={setSelectedOrderId}
+              showMargin={showMargin}
             />
           ))}
         </Box>

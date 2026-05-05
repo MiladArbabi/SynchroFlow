@@ -42,6 +42,8 @@ export type ConstrainedOrder = {
   age_since_creation_seconds: number | null;
   is_shipping_sla_breached: boolean | null;
   is_delivery_sla_breached: boolean | null;
+  gross_margin: number | null;
+  margin_pct: number | null;
 };
 
 /**

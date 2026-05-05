@@ -60,6 +60,7 @@ export const httpGetConstrainedOrders = async (
             .andOn('d.shop_id', '=', trx.raw('?', [shopId]));
         })
         .leftJoin('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'oc.lasyncro_order_id')
+        .leftJoin('order_margin_snapshot as oms', 'oms.lasyncro_order_id', 'oc.lasyncro_order_id')
         .where('oc.is_active', true)
         .where('o.shop_id', shopId)
         .select(
@@ -72,10 +73,13 @@ export const httpGetConstrainedOrders = async (
           'd.recommended_action',
           'd.priority',
           'd.id as decision_id',
-          // SLA fields from order_age_snapshot
+          // SLA fields
           'oas.age_since_creation_seconds',
           'oas.is_shipping_sla_breached',
-          'oas.is_delivery_sla_breached'
+          'oas.is_delivery_sla_breached',
+          // Margin fields (Growth-tier display only — never used for enforcement)
+          'oms.gross_margin',
+          'oms.margin_pct'
         )
         /**
          * SLA-AWARE SORT ORDER
