@@ -113,7 +113,7 @@ function OrderCard({ order, onSelect, showMargin }: OrderCardProps) {
                 label={order.block_type.replace(/_/g, ' ')}
                 size="small"
                 variant="outlined"
-                sx={{ fontSize: 11 }}
+                sx={{ fontSize: 11, color: 'var(--ink-3)', borderColor: 'var(--rule-2)' }}
               />
             )}
             {/* SLA AGE BADGE — color-coded proximity */}
