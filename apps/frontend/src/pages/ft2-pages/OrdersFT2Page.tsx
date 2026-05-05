@@ -20,6 +20,7 @@ import { OrderDetailPanel } from '../../pages/orders/OrderDetailPanel';
 import { useOrdersOperatorSummary } from '../orders/useOrdersOperatorSummary';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -89,6 +90,10 @@ export default function OrdersFT2Page() {
 
   return (
     <>
+      <ModuleTabBar tabs={[
+        { id: 'intelligence', label: 'Intelligence', path: '/orders' },
+        { id: 'fulfillment',  label: 'Fulfillment Queue', path: '/fulfillment' },
+      ]} />
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}

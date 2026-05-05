@@ -22,6 +22,7 @@ import { useTheme } from '@mui/material/styles';
 import { OrderDetailPanel } from '../orders/OrderDetailPanel';
 import { getSlaProximity, getAgeLabel } from '../orders/useConstrainedOrders';
 import { usePlanEntitlement } from '../../hooks/usePlanEntitlement';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
 
 /**
  * FULFILLMENT QUEUE PAGE (B-01)
@@ -233,7 +234,12 @@ export default function FulfillmentQueuePage() {
     orders.filter((o) => o.constraint_type === constraintType);
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box>
+      <ModuleTabBar tabs={[
+        { id: 'intelligence', label: 'Intelligence', path: '/orders' },
+        { id: 'fulfillment',  label: 'Fulfillment Queue', path: '/fulfillment' },
+      ]} />
+      <Box sx={{ p: 3 }}>
 
       {/* PAGE HEADER */}
       <Box sx={{ mb: 3 }}>
@@ -280,6 +286,7 @@ export default function FulfillmentQueuePage() {
         onClose={() => setSelectedOrderId(null)}
       />
 
+      </Box>
     </Box>
   );
 }

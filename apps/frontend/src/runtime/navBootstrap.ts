@@ -64,16 +64,6 @@ export function bootstrapNavGroups() {
   });
 
   registerNavItem({
-    id: 'fulfillment',
-    title: 'Fulfillment',
-    path: '/fulfillment',
-    group: 'daily',
-    order: 30,
-    icon: Package,
-    requiredModuleId: 'fulfillment',
-  });
-
-  registerNavItem({
     id: 'wms',
     title: 'Warehouse',
     path: '/wms',
