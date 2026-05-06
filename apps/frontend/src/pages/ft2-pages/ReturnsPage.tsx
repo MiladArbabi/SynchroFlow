@@ -10,6 +10,7 @@ import {
 } from '@mui/material';
 import { RotateCcw, TrendingDown, Package } from 'lucide-react';
 import { useReturns, type ReturnsByVariant } from '../finances/useReturns';
+import { useReturnsCorrelation } from '../finances/useReturnsCorrelation';
 
 /**
  * RETURNS INTELLIGENCE PAGE (RT-03)
@@ -123,7 +124,11 @@ function VariantRow({ row }: { row: ReturnsByVariant }) {
 }
 
 export default function ReturnsPage() {
+  const theme = useTheme();
   const { data, isLoading, isError } = useReturns();
+  const correlationQuery = useReturnsCorrelation();
+  const correlationRows = correlationQuery.data?.data ?? [];
+  const hasCorrelation = correlationRows.length > 0;
 
   const summary = data?.summary;
   const byVariant = (data?.by_variant ?? []).sort(
@@ -236,6 +241,86 @@ export default function ReturnsPage() {
               {byVariant.map(row => (
                 <VariantRow key={row.lasyncro_variant_id} row={row} />
               ))}
+            </Box>
+          )}
+
+          {/* ZONE 3 — SUPPLIER BATCH CORRELATION */}
+          {hasCorrelation && (
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
+                Supplier Batch Correlation — return rate by batch
+              </Typography>
+              <Box sx={{
+                border: '1px solid', borderColor: 'divider',
+                borderRadius: 2, overflow: 'hidden',
+              }}>
+                {/* TABLE HEADER */}
+                <Box sx={{
+                  display: 'grid',
+                  gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr 1fr',
+                  px: 2, py: 1,
+                  borderBottom: '1px solid', borderColor: 'divider',
+                  bgcolor: 'action.hover',
+                }}>
+                  {['Product', 'Supplier', 'Batch Received', 'Returned', 'Sold', 'Return Rate'].map(h => (
+                    <Typography key={h} variant="caption" color="text.secondary" fontWeight={600}>{h}</Typography>
+                  ))}
+                </Box>
+
+                {correlationRows.map((row, i) => {
+                  const rateColor =
+                    row.return_rate_pct == null ? undefined :
+                    row.return_rate_pct >= 20 ? theme.palette.error.main :
+                    row.return_rate_pct >= 10 ? theme.palette.warning.main :
+                    theme.palette.success.main;
+
+                  const batchLabel = row.batch_received_at
+                    ? new Date(row.batch_received_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                    : row.receive_job_id ? 'Unknown date' : 'No batch data';
+
+                  return (
+                    <Box key={i} sx={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr 1fr',
+                      px: 2, py: 1.5,
+                      borderBottom: '1px solid', borderColor: 'divider',
+                      '&:last-child': { borderBottom: 'none' },
+                      '&:hover': { bgcolor: 'action.hover' },
+                      alignItems: 'center',
+                      borderLeft: row.return_rate_pct != null && row.return_rate_pct >= 20
+                        ? `3px solid ${theme.palette.error.main}`
+                        : '3px solid transparent',
+                    }}>
+                      <Box>
+                        <Typography variant="body2" fontWeight={500}>{row.variant_title ?? '—'}</Typography>
+                        {row.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{row.sku}</Typography>}
+                      </Box>
+                      <Typography variant="body2">{row.supplier_name ?? 'Unknown supplier'}</Typography>
+                      <Typography variant="caption" color="text.secondary">{batchLabel}</Typography>
+                      <Typography variant="body2">{row.units_returned}</Typography>
+                      <Typography variant="body2">{row.units_sold}</Typography>
+                      <Typography variant="body2" fontWeight={600} sx={{ color: rateColor }}>
+                        {row.return_rate_pct != null ? `${row.return_rate_pct}%` : '—'}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+
+              {/* INSIGHT CALLOUT — flag high return rate batches */}
+              {correlationRows.some(r => r.return_rate_pct != null && r.return_rate_pct >= 20) && (
+                <Box sx={{
+                  mt: 1.5, p: 1.5,
+                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(220,38,38,0.08)' : 'rgba(220,38,38,0.04)',
+                  border: `1px solid ${theme.palette.error.main}`,
+                  borderRadius: 1.5,
+                  display: 'flex', alignItems: 'center', gap: 1,
+                }}>
+                  <Typography variant="caption" color="error.main" fontWeight={600}>
+                    ⚠ One or more batches have a return rate ≥20% — contact supplier for credit or quality review.
+                  </Typography>
+                </Box>
+              )}
             </Box>
           )}
         </>

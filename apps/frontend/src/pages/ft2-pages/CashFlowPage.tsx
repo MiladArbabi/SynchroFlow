@@ -4,11 +4,14 @@ import { useCashFlow } from '../finances/useCashFlow';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { PlanGate } from '../../components/PlanGate';
+import { useCashFlowSettings, useUpdateCashFlowSettings } from '../cashflow/useCashFlowSettings';
 
 export default function CashFlowPage() {
   const { data, isLoading, isError } = useCashFlow();
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
+  const { data: settings } = useCashFlowSettings();
+  const { mutateAsync: saveSettings } = useUpdateCashFlowSettings();
 
   return (
     // TIER GATE: cashflow.revenue_buckets requires 'core' (see usePlanEntitlement PLAN_FEATURES)
@@ -18,6 +21,8 @@ export default function CashFlowPage() {
         isLoading={isLoading}
         isError={isError}
         currency={{ displayCurrency, locale, rates }}
+        settings={settings ?? null}
+        onSaveSettings={saveSettings}
       />
     </PlanGate>
   );

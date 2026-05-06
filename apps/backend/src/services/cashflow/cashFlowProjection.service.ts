@@ -237,6 +237,21 @@ export async function computeCashFlowProjection(
       .select(trx.raw('COALESCE(SUM(oru.line_total), 0) as revenue_30d'))
       .first();
 
+    /**
+     * OVERHEAD SETTINGS (CF-02)
+     * -------------------------
+     * Fetch shop-level fixed costs and starting balance.
+     * Used to anchor projection to real cash position.
+     */
+    const settingsRow = await trx('shop_operational_settings')
+      .where('shop_id', shopId)
+      .select('monthly_overhead_amount', 'starting_cash_balance')
+      .first();
+
+    const monthlyOverhead = Number(settingsRow?.monthly_overhead_amount ?? 0);
+    const weeklyOverhead = monthlyOverhead / 4.33; // avg weeks per month
+    const startingBalance = Number(settingsRow?.starting_cash_balance ?? 0);
+
     const realizedRevenue = Number(realizedRow?.revenue ?? 0);
     const pendingRevenue = Number(pendingRow?.revenue ?? 0);
     const atRiskRevenue = Number(atRiskRow?.revenue ?? 0);
@@ -275,9 +290,9 @@ export async function computeCashFlowProjection(
 
     // Build 60-day projection — 9 weekly points
     const projection60d: ProjectionPoint[] = [];
-    let conservativeCumulative = 0;
-    let baseCumulative = 0;
-    let optimisticCumulative = 0;
+    let conservativeCumulative = startingBalance;
+    let baseCumulative = startingBalance;
+    let optimisticCumulative = startingBalance;
 
     // Optimistic boost: blocked orders releasing adds at-risk revenue
     const optimisticBoost = atRiskRevenue;
@@ -295,14 +310,12 @@ export async function computeCashFlowProjection(
 
       // Conservative: only confirmed pending revenue, no new sales
       const conservativeInflow = week === 1 ? pendingRevenue * 0.5 : 0;
-      conservativeCumulative += conservativeInflow - weekOutflows;
-
+      conservativeCumulative += conservativeInflow - weekOutflows - weeklyOverhead;
       // Base: current velocity continues
-      baseCumulative += weeklyVelocity - weekOutflows;
-
+      baseCumulative += weeklyVelocity - weekOutflows - weeklyOverhead;
       // Optimistic: base + blocked orders release in week 1
       const optimisticInflow = week === 1 ? optimisticBoost : 0;
-      optimisticCumulative += weeklyVelocity + optimisticInflow - weekOutflows;
+      optimisticCumulative += weeklyVelocity + optimisticInflow - weekOutflows - weeklyOverhead;
 
       projection60d.push({
         week: weekDate.toISOString().split('T')[0],
