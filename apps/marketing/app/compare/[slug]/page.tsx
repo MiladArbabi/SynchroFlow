@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     openGraph: {
       title: frontmatter.title,
       description: frontmatter.description,
-      url: `https://lasyncro.com/compare/${slug}`,
+      url: `https://www.lasyncro.com/compare/${slug}`,
       type: 'article',
     },
   }
@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function ComparePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const { frontmatter, content } = getContentBySlug('compare', slug)
-  const url = `https://lasyncro.com/compare/${slug}`
+  const url = `https://www.lasyncro.com/compare/${slug}`
 
   return (
     <>
@@ -49,8 +49,8 @@ export default async function ComparePage({ params }: { params: Promise<{ slug: 
       })} />
       <Schema data={generateFAQSchema(frontmatter.faq)} />
       <Schema data={generateBreadcrumbSchema([
-        { name: 'Home', url: 'https://lasyncro.com' },
-        { name: 'Compare', url: 'https://lasyncro.com/compare' },
+        { name: 'Home', url: 'https://www.lasyncro.com' },
+        { name: 'Compare', url: 'https://www.lasyncro.com/compare' },
         { name: frontmatter.title, url },
       ])} />
       <ArticleLayout frontmatter={frontmatter}>

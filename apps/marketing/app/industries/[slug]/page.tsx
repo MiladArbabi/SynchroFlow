@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     openGraph: {
       title: frontmatter.title,
       description: frontmatter.description,
-      url: `https://lasyncro.com/industries/${slug}`,
+      url: `https://www.lasyncro.com/industries/${slug}`,
       type: 'website',
     },
   }
@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function FeaturePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const { frontmatter, content } = getContentBySlug('features', slug)
-  const url = `https://lasyncro.com/features/${slug}`
+  const url = `https://www.lasyncro.com/industries/${slug}`
 
   return (
     <>
@@ -47,8 +47,8 @@ export default async function FeaturePage({ params }: { params: Promise<{ slug: 
       })} />
       <Schema data={generateFAQSchema(frontmatter.faq)} />
       <Schema data={generateBreadcrumbSchema([
-        { name: 'Home', url: 'https://lasyncro.com' },
-        { name: 'Industries', url: 'https://lasyncro.com/industries' },
+        { name: 'Home', url: 'https://www.lasyncro.com' },
+        { name: 'Industries', url: 'https://www.lasyncro.com/industries' },
         { name: frontmatter.title, url },
       ])} />
       <ArticleLayout frontmatter={frontmatter}>
