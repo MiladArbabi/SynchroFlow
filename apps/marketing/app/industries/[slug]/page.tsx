@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title: `${frontmatter.title} — LaSyncro`,
     description: frontmatter.description,
-    alternates: { canonical: `https://lasyncro.com/industries/${slug}` },
+    alternates: { canonical: `https://www.lasyncro.com/industries/${slug}` },
     openGraph: {
       title: frontmatter.title,
       description: frontmatter.description,
