@@ -6,7 +6,7 @@
 import { MetadataRoute } from 'next'
 import { getAllSlugs } from '@/lib/mdx'
 
-const BASE_URL = 'https://lasyncro.com'
+const BASE_URL = 'https://www.lasyncro.com'
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const blogSlugs = getAllSlugs('blog')
@@ -19,6 +19,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE_URL}/about`, lastModified: new Date(), priority: 0.8, changeFrequency: 'monthly' },
     { url: `${BASE_URL}/blog`, lastModified: new Date(), priority: 0.9, changeFrequency: 'daily' },
     { url: `${BASE_URL}/compare`, lastModified: new Date(), priority: 0.8, changeFrequency: 'weekly' },
+    { url: `${BASE_URL}/checklist`, lastModified: new Date(), priority: 0.7, changeFrequency: 'monthly' as const },
   ]
 
   const dynamicRoutes: MetadataRoute.Sitemap = [

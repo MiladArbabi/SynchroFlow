@@ -26,7 +26,7 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   title: 'LaSyncro — Operational Intelligence for Shopify Merchants',
   description: 'Real-time inventory, warehouse management, PO receiving, full order traceability and workforce tools for Shopify merchants running their own warehouse.',
-  metadataBase: new URL('https://lasyncro.com'),
+  metadataBase: new URL('https://www.lasyncro.com'),
   icons: { icon: '/favicon.png' },
 }
 
