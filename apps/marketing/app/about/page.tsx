@@ -8,7 +8,7 @@ import Schema from '@/components/seo/Schema'
 export const metadata: Metadata = {
   title: 'About LaSyncro — Operational Intelligence for Shopify Merchants',
   description: 'LaSyncro is built for Shopify merchants running their own warehouse. Learn about our mission, who we are, and who we build for.',
-  alternates: { canonical: 'https://lasyncro.com/about' },
+  alternates: { canonical: 'https://www.lasyncro.com/about' },
 }
 
 const organizationSchema = {

@@ -8,7 +8,7 @@ import { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Blog — LaSyncro',
   description: 'Guides, tips, and operational intelligence for Shopify merchants running their own warehouse.',
-  alternates: { canonical: 'https://lasyncro.com/blog' },
+  alternates: { canonical: 'https://www.lasyncro.com/blog' },
 }
 
 export default function BlogIndex() {

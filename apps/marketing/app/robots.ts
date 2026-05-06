@@ -18,6 +18,6 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: 'cohere-ai', allow: '/' },
       { userAgent: 'FacebookBot', allow: '/' },
     ],
-    sitemap: 'https://lasyncro.com/sitemap.xml',
+    sitemap: 'https://www.lasyncro.com/sitemap.xml',
   }
 }

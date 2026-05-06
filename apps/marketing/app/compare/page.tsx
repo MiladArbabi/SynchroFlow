@@ -8,7 +8,7 @@ import { getAllContent } from '@/lib/mdx'
 export const metadata: Metadata = {
   title: 'LaSyncro vs Alternatives — Compare Shopify Operations Tools',
   description: 'See how LaSyncro compares to Cin7, Linnworks, Brightpearl and other Shopify operations tools. Built for SMB merchants who need power without enterprise complexity.',
-  alternates: { canonical: 'https://lasyncro.com/compare' },
+  alternates: { canonical: 'https://www.lasyncro.com/compare' },
 }
 
 export default function CompareIndex() {

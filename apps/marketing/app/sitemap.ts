@@ -1,7 +1,7 @@
 // app/sitemap.ts
 // Auto-generated sitemap — reads all MDX slugs at build time.
 // No manual updates needed — add a .mdx file to /content/* and it appears automatically.
-// Submit https://lasyncro.com/sitemap.xml to GSC after each deploy.
+// Submit https://www.lasyncro.com/sitemap.xml to GSC after each deploy.
 
 import { MetadataRoute } from 'next'
 import { getAllSlugs } from '@/lib/mdx'
