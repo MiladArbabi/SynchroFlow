@@ -1,16 +1,17 @@
 // modules/demand/src/ui/pages/DemandModuleFT2.tsx
 import { useState } from 'react';
 import {
-  Box, Typography, CircularProgress, Chip, Button, Collapse,
+  Box, Typography, Chip, Button, Collapse,
   useTheme,
 } from '@mui/material';
-import { useColorScheme, alpha } from '@mui/material/styles';
+import { useColorScheme } from '@mui/material/styles';
 import {
-  AlertTriangle, TrendingDown, TrendingUp, Package,
+  TrendingDown, TrendingUp, Package,
   CheckCircle, ChevronDown, ShoppingCart, Minus,
 } from 'lucide-react';
-import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -207,8 +208,7 @@ function VariantRow({ variant, currency, pal }: {
 // ─────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────
-export default function DemandModuleFT2({ data, isLoading, isError, currency }: DemandModuleFT2Props) {
-  const theme = useTheme();
+function DemandModuleFT2Inner({ data, isLoading, isError, currency }: DemandModuleFT2Props) {  const theme = useTheme();
   const pal = useDemandTheme();
   const [showRest, setShowRest] = useState(false);
 
@@ -276,11 +276,7 @@ export default function DemandModuleFT2({ data, isLoading, isError, currency }: 
         </Box>
       </Box>
 
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
+      {isLoading && <ModuleLoadingSkeleton />}
 
       {isError && (
         <Typography color="error" sx={{ p: 2 }}>Failed to load demand data.</Typography>
@@ -359,4 +355,8 @@ export default function DemandModuleFT2({ data, isLoading, isError, currency }: 
       )}
     </Box>
   );
+}
+
+export default function DemandModuleFT2(props: DemandModuleFT2Props) {
+  return <ModuleErrorBoundary moduleName="demand"><DemandModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }

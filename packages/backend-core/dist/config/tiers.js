@@ -26,6 +26,7 @@ export const TIERS = ['starter', 'core', 'growth', 'scale'];
 // This eliminates drift: a module added to STARTER_MODULES is automatically
 // available in all higher tiers.
 const STARTER_MODULES = [
+    'overview', // Morning brief + operational pulse
     'order-nexus', // Orders list + detail
     'fulfillment', // Fulfillment queue
     'alerts', // Operational alerts

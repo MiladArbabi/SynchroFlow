@@ -1,5 +1,4 @@
 import { Knex } from 'knex';
-import { enqueueProductForIngestion } from '../product-ingestion.service.js';
 import { syncProducts } from './shopifyProducts.core.js';
 
 /**
@@ -35,14 +34,6 @@ export const syncShopifyProducts = async ({
 
   // Existing logic preserved
   await syncProducts(trx, shopId, products);
-
-  for (const { node } of products) {
-    enqueueProductForIngestion({
-      shopId,
-      platform: 'shopify',
-      rawProduct: node,
-    });
-  }
 
   console.info('[SHOPIFY_PRODUCT_SYNC_COMPLETED]', {
     shopId,

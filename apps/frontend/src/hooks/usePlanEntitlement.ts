@@ -61,6 +61,7 @@ const PLAN_FEATURES = {
 
   // Alerts
   'alerts.inbox':              'core',
+  'alerts.rules':              'growth',
 
   // Specter
   'specter.full_capture':      'growth',

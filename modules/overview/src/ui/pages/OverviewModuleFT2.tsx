@@ -3,6 +3,7 @@ import { Box, Typography, Skeleton, Chip } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import { useColorScheme } from '@mui/material/styles';
 import { RefreshCw } from 'lucide-react';
+import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
 /**
  * OverviewModuleFT2DataProps
@@ -366,7 +367,7 @@ function AgingBand({
 // ─────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────
-export default function OverviewModuleFT2(props: OverviewModuleFT2Props) {
+function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
   const theme = useTheme();
   const pal = useOverviewTheme();
   const { morningBrief, pulse, onNavigate, onRefreshBrief } = props;
@@ -587,4 +588,8 @@ export default function OverviewModuleFT2(props: OverviewModuleFT2Props) {
       </Box>
     </Box>
   );
+}
+
+export default function OverviewModuleFT2(props: OverviewModuleFT2Props) {
+  return <ModuleErrorBoundary moduleName="overview"><OverviewModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }

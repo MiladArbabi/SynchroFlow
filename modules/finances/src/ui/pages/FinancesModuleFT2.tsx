@@ -8,6 +8,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
+import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
 /**
  * LOCAL MARGIN TYPE
@@ -154,7 +155,7 @@ function MarginBar({ min, avg, max }: { min: number; avg: number; max: number })
   );
 }
 
-export default function FinancesModuleFT2({ currency, ...props }: FinancesModuleFT2Props) {
+function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) {
   const theme = useTheme();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('orders');
@@ -336,4 +337,8 @@ export default function FinancesModuleFT2({ currency, ...props }: FinancesModule
       </Box>
     </FT2Layout>
   );
+}
+
+export default function FinancesModuleFT2(props: FinancesModuleFT2Props) {
+  return <ModuleErrorBoundary moduleName="finances"><FinancesModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }

@@ -1,6 +1,7 @@
 // apps/backend/src/api/wms/wms.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { getErrorMessage } from '@lasyncro/backend-core';
 import { releaseBatch } from '../../services/wms/pickBatch.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { confirmPickScan } from '../../services/wms/pickScan.service.js';
@@ -508,7 +509,7 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
         );
 
       // Get line items per order
-      const orderIds = batchOrders.map((o: any) => o.lasyncro_order_id);
+      const orderIds = batchOrders.map((o: { lasyncro_order_id: string }) => o.lasyncro_order_id);
       const lineItems = await trx('order_line_items as oli')
         .leftJoin('pack_scan_log as psl', (join) => {
           join
@@ -527,9 +528,9 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
         );
 
       // Group line items by order
-      return batchOrders.map((order: any) => ({
+      return batchOrders.map((order: { lasyncro_order_id: string }) => ({
         ...order,
-        line_items: lineItems.filter((li: any) => li.lasyncro_order_id === order.lasyncro_order_id),
+        line_items: lineItems.filter((li: { lasyncro_order_id: string }) => li.lasyncro_order_id === order.lasyncro_order_id),
       }));
     });
 
@@ -858,9 +859,9 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
 
     console.info('[STOW_LOCATION_ASSIGNED]', { shopId, taskId, location_code });
     return res.json({ success: true });
-  } catch (err: any) {
-    console.error('[STOW_LOCATION_ASSIGN_FAILED]', { shopId, taskId, error: err.message });
-    return res.status(500).json({ error: `Failed to assign location: ${err.message}` });
+  } catch (err: unknown) {
+    console.error('[STOW_LOCATION_ASSIGN_FAILED]', { shopId, taskId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to assign location: ${getErrorMessage(err)}` });
   }
 }
 
@@ -1000,7 +1001,7 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         console.error('[SHOPIFY_INV_SYNC_FAILED]', {
           shopId,
           taskId,
-          error: err.message,
+          error: getErrorMessage(err),
         });
       });
     }
@@ -1259,7 +1260,7 @@ export const httpGetProblemCenterExceptions = async (req: Request, res: Response
           trx.raw(`upper(substring(pe.pick_batch_id::text, 1, 8)) as batch_short_id`)
         );
 
-      const totalUnresolved = exceptions.filter((e: any) => !e.resolved).length;
+      const totalUnresolved = exceptions.filter((e: { resolved: boolean }) => !e.resolved).length;
 
       return { exceptions, total_unresolved: totalUnresolved };
     });
@@ -1392,8 +1393,8 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     });
 
     return res.status(200).json(result);
-  } catch (err: any) {
-    const message = err.message;
+  } catch (err: unknown) {
+    const message = getErrorMessage(err);
     if (message === 'TASK_NOT_FOUND') return res.status(404).json({ error: 'Problem task not found' });
     if (message === 'TASK_ALREADY_RESOLVED') return res.status(409).json({ error: 'Task already resolved' });
     console.error('[PROBLEM_CENTER_RESOLVE_FAILED]', { shopId, userId, taskId, error: message });
@@ -1586,7 +1587,7 @@ export const httpScanResolve = async (req: Request, res: Response) => {
           location_code: location.location_code,
           inventory,
           total_variants: inventory.length,
-          total_units: inventory.reduce((s: number, i: any) => s + i.on_hand_quantity, 0),
+          total_units: inventory.reduce((s: number, i: { on_hand_quantity: number }) => s + i.on_hand_quantity, 0),
           pending_stow_tasks: Number(activeSowTasks?.count ?? 0),
         };
       }
@@ -1672,9 +1673,9 @@ export const httpScanResolve = async (req: Request, res: Response) => {
           unit_cost: variant?.unit_cost ?? null,
           stage,
           inventory,
-          total_on_hand: inventory.reduce((s: number, i: any) => s + i.on_hand_quantity, 0),
-          total_reserved: inventory.reduce((s: number, i: any) => s + i.reserved_quantity, 0),
-          total_available: inventory.reduce((s: number, i: any) => s + i.available_quantity, 0),
+          total_on_hand: inventory.reduce((s: number, i: { on_hand_quantity: number }) => s + i.on_hand_quantity, 0),
+          total_reserved: inventory.reduce((s: number, i: { reserved_quantity: number }) => s + i.reserved_quantity, 0),
+          total_available: inventory.reduce((s: number, i: { available_quantity: number }) => s + i.available_quantity, 0),
           active_receive: activeReceive ?? null,
           active_stow: activeStow ?? null,
           active_batch: activePick ?? null,
@@ -1786,10 +1787,10 @@ export const httpPatchWmsSettings = async (req: Request, res: Response) => {
 
     console.info('[WMS_SETTINGS_UPDATED]', { shopId, updates });
     return res.status(200).json({ settings });
-  } catch (err: any) {
-    if (err.message === 'SETTINGS_NOT_FOUND') return res.status(404).json({ error: 'WMS settings not found' });
-    console.error('[WMS_SETTINGS_PATCH_FAILED]', { shopId, error: err.message });
-    return res.status(500).json({ error: `Failed to update WMS settings: ${err.message}` });
+  } catch (err: unknown) {
+    if (getErrorMessage(err) === 'SETTINGS_NOT_FOUND') return res.status(404).json({ error: 'WMS settings not found' });
+    console.error('[WMS_SETTINGS_PATCH_FAILED]', { shopId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to update WMS settings: ${getErrorMessage(err)}` });
   }
 };
 
@@ -1812,9 +1813,9 @@ export const httpGetWmsSettings = async (req: Request, res: Response) => {
     if (!settings) return res.status(404).json({ error: 'WMS settings not found for this shop' });
 
     return res.status(200).json({ settings });
-  } catch (err: any) {
-    console.error('[WMS_SETTINGS_FETCH_FAILED]', { shopId, error: err.message });
-    return res.status(500).json({ error: `Failed to fetch WMS settings: ${err.message}` });
+  } catch (err: unknown) {
+    console.error('[WMS_SETTINGS_FETCH_FAILED]', { shopId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to fetch WMS settings: ${getErrorMessage(err)}` });
   }
 };
 
@@ -1887,9 +1888,9 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
     });
 
     return res.status(201).json(result);
-  } catch (err: any) {
-    console.error('[PROBLEM_CENTER_CREATE_FAILED]', { shopId, error: err.message, stack: err.stack });
-    return res.status(500).json({ error: `Failed to create problem task: ${err.message}` });
+  } catch (err: unknown) {
+    console.error('[PROBLEM_CENTER_CREATE_FAILED]', { shopId, error: getErrorMessage(err), stack: err instanceof Error ? err.stack : undefined });
+    return res.status(500).json({ error: `Failed to create problem task: ${getErrorMessage(err)}` });
   }
 };
 
@@ -1939,9 +1940,9 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
     });
 
     return res.json({ problem_tasks: tasks });
-  } catch (err: any) {
-    console.error('[PROBLEM_CENTER_FETCH_FAILED]', { shopId, error: err.message });
-    return res.status(500).json({ error: `Failed to fetch problem tasks: ${err.message}` });
+  } catch (err: unknown) {
+    console.error('[PROBLEM_CENTER_FETCH_FAILED]', { shopId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to fetch problem tasks: ${getErrorMessage(err)}` });
   }
 };
 
@@ -2055,8 +2056,8 @@ export const httpReportStowException = async (req: Request, res: Response) => {
     });
     console.info('[STOW_EXCEPTION_REPORTED]', { shopId, taskId, exception_type, quantity });
     return res.status(201).json(result);
-  } catch (err: any) {
-    console.error('[STOW_EXCEPTION_FAILED]', { shopId, taskId, error: err.message });
-    return res.status(500).json({ error: `Stow exception failed: ${err.message}` });
+  } catch (err: unknown) {
+    console.error('[STOW_EXCEPTION_FAILED]', { shopId, taskId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Stow exception failed: ${getErrorMessage(err)}` });
   }
 };

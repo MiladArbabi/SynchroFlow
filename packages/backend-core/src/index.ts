@@ -6,3 +6,4 @@ export * from './middleware/requireAuthStrict.js';
 
 export * from './services/alignment-planes/alignmentPlanes.resolver.js';
 export * from './services/trust-ft2/trustFt2.resolver.js';
+export * from './utils/errorMessage.js';

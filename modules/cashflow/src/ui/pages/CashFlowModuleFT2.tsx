@@ -1,8 +1,9 @@
 // modules/cashflow/src/ui/pages/CashFlowModuleFT2.tsx
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
+import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 import {
-  Box, Typography, CircularProgress, Chip, Divider, useTheme,
-  TextField, Button, Collapse, Switch, FormControlLabel,
+  Box, Typography, useTheme,
+  TextField, Button, Collapse,
 } from '@mui/material';
 import { useColorScheme, alpha } from '@mui/material/styles';
 import {
@@ -10,7 +11,7 @@ import {
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import {
-  TrendingUp, AlertTriangle, Package, ArrowRight, Truck,
+  TrendingUp, ArrowRight, Truck,
 } from 'lucide-react';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
@@ -155,7 +156,7 @@ function MetricTile({ label, value, sub, tone }: {
 // ─────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────
-export default function CashFlowModuleFT2({ 
+function CashFlowModuleFT2Inner({
   data, 
   isLoading, 
   isError, 
@@ -418,9 +419,7 @@ export default function CashFlowModuleFT2({
 
         <Box sx={{ p: '1rem 0.5rem 0.5rem' }}>
           {isLoading ? (
-            <Box sx={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CircularProgress size={24} />
-            </Box>
+            <ModuleLoadingSkeleton rows={3} height={32} />
           ) : chartData.length === 0 ? (
             <Box sx={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Typography sx={{ fontSize: 13, color: pal.textSecond }}>Not enough data for projection.</Typography>
@@ -557,12 +556,16 @@ export default function CashFlowModuleFT2({
         </Box>
       )}
 
-      {isLoading && !data && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
+      {isLoading && !data && <ModuleLoadingSkeleton />}
 
     </Box>
+  );
+}
+
+export default function CashFlowModuleFT2(props: CashFlowModuleFT2Props) {
+  return (
+    <ModuleErrorBoundary moduleName="cashflow">
+      <CashFlowModuleFT2Inner {...props} />
+    </ModuleErrorBoundary>
   );
 }

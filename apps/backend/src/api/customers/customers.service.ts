@@ -105,7 +105,7 @@ export class CustomersService {
         );
 
       // --- Derive metrics from orders ---
-      const totalRevenue = orders.reduce((sum: number, o: any) => sum + Number(o.total_price ?? 0), 0);
+      const totalRevenue = orders.reduce((sum: number, o: { total_price: string | number | null }) => sum + Number(o.total_price ?? 0), 0);
       const totalOrders = orders.length;
       const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
@@ -136,7 +136,7 @@ export class CustomersService {
           ltv: parseFloat((totalRevenue * 1.2).toFixed(2)), // simple 1.2x projection
         },
         resolution,
-        orders: orders.map((o: any) => ({
+        orders: orders.map((o: { lasyncro_order_id: string; order_created_at: string; payment_state: string | null; fulfillment_status: string | null; total_price: string | number; currency: string | null }) => ({
           id: o.lasyncro_order_id,
           orderDate: new Date(o.order_created_at).toISOString(),
           status: o.payment_state ?? 'unknown',

@@ -1,9 +1,11 @@
 // modules/customers/src/ui/pages/CustomersModuleFT2.tsx
-
-import { Box, Typography, CircularProgress, Alert, useTheme, Chip } from '@mui/material';
+import { memo } from 'react';
+import { Box, Typography, useTheme, Chip } from '@mui/material';
+import { ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 import { Users, TrendingUp, AlertTriangle, Star } from 'lucide-react';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
 /**
  * LOCAL TYPES
@@ -100,7 +102,7 @@ function StatBox({
   );
 }
 
-function CustomerRow({ customer, currency }: { customer: CustomerLtvRecord; currency?: CurrencyContext }) {
+const CustomerRow = memo(function CustomerRow({ customer, currency }: { customer: CustomerLtvRecord; currency?: CurrencyContext }) {
   const theme = useTheme();
 
   const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -156,9 +158,9 @@ function CustomerRow({ customer, currency }: { customer: CustomerLtvRecord; curr
       </Typography>
     </Box>
   );
-}
+});
 
-export default function CustomersModuleFT2({ ltv, currency }: CustomersModuleFT2Props) {
+function CustomersModuleFT2Inner({ ltv, currency }: CustomersModuleFT2Props) {
   const theme = useTheme();
 
   const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -177,11 +179,7 @@ export default function CustomersModuleFT2({ ltv, currency }: CustomersModuleFT2
         </Typography>
       </Box>
 
-      {!ltv && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
+      {!ltv && <ModuleLoadingSkeleton />}
 
       {summary && (
         <>
@@ -335,4 +333,8 @@ export default function CustomersModuleFT2({ ltv, currency }: CustomersModuleFT2
       )}
     </Box>
   );
+}
+
+export default function CustomersModuleFT2(props: CustomersModuleFT2Props) {
+  return <ModuleErrorBoundary moduleName="customers"><CustomersModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }

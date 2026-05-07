@@ -53,8 +53,7 @@ export function resolveNavigation({
   currentTier = 'starter',
 }: ResolveNavigationInput): ResolvedNavigation {
 
-  console.log('LIFECYCLE PHASE:', lifecyclePhase);
-  console.log('ENTITLEMENTS:', entitlements);
+  // Debug: re-enable locally if nav resolution needs tracing. Never log in production.
 
   const registeredModules = getRegisteredModules();
   const moduleTierMap = new Map<string, string>();

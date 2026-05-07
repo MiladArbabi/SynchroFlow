@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
-import { useState } from 'react';
+import { useState, useMemo, memo } from 'react';
 import {
   Box,
   Paper,
@@ -24,6 +24,8 @@ import PackSessionPage, {
 import ReceiveSessionPage, {
   type ReceiveJobLine,
 } from './ReceiveSessionPage.js';
+import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
+import { type } from 'os';
 
 /**
  * WMS MODULE — FT2 SURFACE
@@ -124,7 +126,7 @@ const STATUS_LABELS: Record<string, {
   cancelled:     { label: 'Cancelled',   color: 'error'   },
 };
 
-function BatchCard({
+const BatchCard = memo(function BatchCard({
   batch,
   onClaim,
   onContinuePick,
@@ -265,7 +267,7 @@ function BatchCard({
       )}
     </Paper>
   );
-}
+});
 
 /**
  * STOW TASK CARD
@@ -273,7 +275,7 @@ function BatchCard({
  * Displays a pending stow task — stock that needs to be put away.
  * Triggered by: inbound receive close, cancelled order mid-pick.
  */
-function StowTaskCard({
+const StowTaskCard = memo(function StowTaskCard({
   task,
   onClaim,
   onConfirm,
@@ -329,7 +331,7 @@ function StowTaskCard({
       )}
     </Paper>
   );
-}
+});
 
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
@@ -337,7 +339,7 @@ type ActiveSession =
   | { type: 'receive'; receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] }
   | null;
 
-export default function WmsModuleFT2({
+function WmsModuleFT2Inner({
   data,
   isLoading,
   isError,
@@ -531,4 +533,8 @@ export default function WmsModuleFT2({
       )}
     </Box>
   );
+}
+
+export default function WmsModuleFT2(props: WmsModuleFT2Props) {
+  return <ModuleErrorBoundary moduleName="wms"><WmsModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }

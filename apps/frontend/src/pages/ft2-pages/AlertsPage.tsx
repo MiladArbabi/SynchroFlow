@@ -5,6 +5,7 @@ import { useAlerts, useDismissAlert, type Alert } from '../alerts/useAlerts';
 import { useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import AlertRulesPanel from 'components/AlertRulesPanel';
+import PlanGate from '../../components/PlanGate';
 
 /**
  * ALERTS INBOX PAGE (AL-04)
@@ -258,7 +259,10 @@ export default function AlertsPage() {
         )}
 
         </Box>
-      <AlertRulesPanel />
+        {/* Alert rule configuration — Growth tier and above only */}
+        <PlanGate feature="alerts.rules">
+          <AlertRulesPanel />
+        </PlanGate>
     </Box>
   );
 }

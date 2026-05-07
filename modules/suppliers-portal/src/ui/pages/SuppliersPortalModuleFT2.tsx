@@ -5,7 +5,6 @@ import {
   Box,
   Paper,
   Typography,
-  CircularProgress,
   Alert,
   Chip,
   Divider,
@@ -28,6 +27,7 @@ import {
   IconButton,
 } from '@mui/material';
 import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
+import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 
 /**
  * SUPPLIERS PORTAL MODULE — FT2 SURFACE
@@ -451,7 +451,7 @@ function ReceiveShipmentDialog({
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
-          {!lineItems && <CircularProgress size={20} />}
+          {!lineItems && <ModuleLoadingSkeleton rows={1} height={20} />}
           {lineItems && lineItems.map((item) => {
             const remaining = item.quantity_ordered - item.quantity_received;
             return (
@@ -604,7 +604,7 @@ function PoAccordion({
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-        {loadingItems && <CircularProgress size={20} />}
+        {loadingItems && <ModuleLoadingSkeleton rows={1} height={20} />}
 
         {lineItems && (
           <TableContainer sx={{ mb: 2 }}>
@@ -737,7 +737,7 @@ function SupplierAccordion({ supplier }: { supplier: Supplier }) {
 // MAIN MODULE
 // ─────────────────────────────────────────────
 
-export default function SuppliersPortalModuleFT2({
+function SuppliersPortalModuleFT2Inner({
   data,
   isLoading,
   isError,
@@ -783,11 +783,7 @@ export default function SuppliersPortalModuleFT2({
         </Button>
       </Box>
 
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
+      {isLoading && <ModuleLoadingSkeleton />}
 
       {isError && (
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -894,4 +890,8 @@ export default function SuppliersPortalModuleFT2({
       />
     </Box>
   );
+}
+
+export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps) {
+  return <ModuleErrorBoundary moduleName="suppliers-portal"><SuppliersPortalModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }

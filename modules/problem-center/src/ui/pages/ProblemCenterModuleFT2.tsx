@@ -7,7 +7,6 @@ import {
   Chip,
   Button,
   Alert,
-  CircularProgress,
   Divider,
   TextField,
   Dialog,
@@ -17,11 +16,12 @@ import {
   useTheme,
 } from '@mui/material';
 import {
-  TriangleAlert,
   PackageX,
   CheckCircle,
   Filter,
 } from 'lucide-react';
+import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
+
 
 /**
  * Problem Center MODULE — FT2 SURFACE
@@ -212,7 +212,7 @@ function ExceptionCard({
   );
 }
 
-export default function ProblemCenterModuleFT2({
+function ProblemCenterModuleFT2Inner({
   data,
   isLoading,
   isError,
@@ -273,11 +273,7 @@ export default function ProblemCenterModuleFT2({
       </Box>
 
       {/* LOADING */}
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
+      {isLoading && <ModuleLoadingSkeleton />}
 
       {/* ERROR */}
       {isError && (
@@ -406,4 +402,8 @@ export default function ProblemCenterModuleFT2({
       </Dialog>
     </Box>
   );
+}
+
+export default function ProblemCenterModuleFT2(props: ProblemCenterModuleFT2Props) {
+  return <ModuleErrorBoundary moduleName="problem-center"><ProblemCenterModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }

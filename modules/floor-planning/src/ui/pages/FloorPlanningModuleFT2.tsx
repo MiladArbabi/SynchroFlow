@@ -4,7 +4,6 @@ import {
   Box,
   Paper,
   Typography,
-  CircularProgress,
   Alert,
   Chip,
   Divider,
@@ -19,6 +18,7 @@ import {
   IconButton,
 } from '@mui/material';
 import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp } from 'lucide-react';
+import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 
 /**
  * FLOOR PLANNING MODULE — FT2 SURFACE
@@ -237,7 +237,7 @@ function ProductBarcodesTable({ items }: { items: ProductBarcode[] }) {
   );
 }
 
-export default function FloorPlanningModuleFT2({
+function FloorPlanningModuleFT2Inner({
   data,
   isLoading,
   isError,
@@ -255,11 +255,7 @@ export default function FloorPlanningModuleFT2({
         </Typography>
       </Box>
 
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
+      {isLoading && <ModuleLoadingSkeleton />}
 
       {isError && (
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -302,4 +298,8 @@ export default function FloorPlanningModuleFT2({
       )}
     </Box>
   );
+}
+
+export default function FloorPlanningModuleFT2(props: FloorPlanningPageProps) {
+  return <ModuleErrorBoundary moduleName="floor-planning"><FloorPlanningModuleFT2Inner {...props} /></ModuleErrorBoundary>;
 }
