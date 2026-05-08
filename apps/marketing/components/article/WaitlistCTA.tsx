@@ -8,7 +8,7 @@ interface WaitlistCTAProps {
 }
 
 export default function WaitlistCTA({ variant = 'full', text }: WaitlistCTAProps) {
-  const href = 'https://lasyncro.com/#waitlist'
+  const href = 'https://www.lasyncro.com/#waitlist'
 
   if (variant === 'inline') {
     return (
