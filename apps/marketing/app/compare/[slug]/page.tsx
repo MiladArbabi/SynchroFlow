@@ -9,9 +9,10 @@ import { generateArticleSchema, generateFAQSchema, generateBreadcrumbSchema } fr
 import Schema from '@/components/seo/Schema'
 import ArticleLayout from '@/components/article/ArticleLayout'
 import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
 import { Metadata } from 'next'
 
-const components = { QuickAnswer }
+const components = { QuickAnswer, ArticleImage }
 
 export async function generateStaticParams() {
   return getAllSlugs('compare').map((slug) => ({ slug }))

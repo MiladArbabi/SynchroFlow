@@ -8,9 +8,10 @@ import { generateSoftwareSchema, generateFAQSchema, generateBreadcrumbSchema } f
 import Schema from '@/components/seo/Schema'
 import ArticleLayout from '@/components/article/ArticleLayout'
 import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
 import { Metadata } from 'next'
 
-const components = { QuickAnswer }
+const components = { QuickAnswer, ArticleImage }
 
 export async function generateStaticParams() {
   return getAllSlugs('features').map((slug) => ({ slug }))
