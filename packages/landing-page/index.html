@@ -713,7 +713,7 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 
   <div class="hero-actions">
     <a href="#waitlist" class="btn-primary"
-      onclick="handleWaitlistCTA('hero')">
+      onclick="event.preventDefault(); handleWaitlistCTA('hero')">
       Start free — 14-day Growth trial included
     </a>
   </div>
@@ -1085,7 +1085,7 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
     <h2 class="footer-cta-h2">Your spreadsheets aren't going to sync themselves.</h2>
     <p class="footer-cta-sub">Start free. Connect Shopify in 60 seconds. See your own operation clearly for the first time.</p>
     <a href="#waitlist" class="btn-primary"
-      onclick="handleWaitlistCTA('footer_cta')">
+      onclick="event.preventDefault(); handleWaitlistCTA('footer_cta')">
       Start free — 14-day Growth trial included
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
@@ -1120,11 +1120,16 @@ function handleWaitlistCTA(location) {
   if (typeof posthog !== 'undefined') {
     posthog.capture('clicked_waitlist', { location: location });
   }
-  // Focus email input after CSS scroll-behavior completes (~600ms)
-  setTimeout(function() {
-    var el = document.getElementById('wl-email');
-    if (el) el.focus();
-  }, 600);
+  // Prevent native instant anchor jump — manually scroll so we control timing.
+  var target = document.getElementById('waitlist');
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Focus email input after smooth scroll completes (~700ms).
+    setTimeout(function() {
+      var el = document.getElementById('wl-email');
+      if (el) el.focus();
+    }, 700);
+  }
 }
 
 function handleSubmit(e) {
