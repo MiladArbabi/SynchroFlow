@@ -53,7 +53,7 @@ export default async function ComparePage({ params }: { params: Promise<{ slug: 
         { name: 'Compare', url: 'https://www.lasyncro.com/compare' },
         { name: frontmatter.title, url },
       ])} />
-      <ArticleLayout frontmatter={frontmatter}>
+      <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks}>
         <MDXRemote source={content} components={components} />
       </ArticleLayout>
     </>

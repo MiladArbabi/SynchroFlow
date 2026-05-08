@@ -23,6 +23,7 @@ export interface Frontmatter {
   cta_text: string
   cta_url: string
   faq: { question: string; answer: string }[]
+  relatedLinks?: { href: string; title: string; description?: string }[]
 }
 
 export interface ContentItem {
