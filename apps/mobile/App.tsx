@@ -29,6 +29,8 @@ import ScannerScreen from './src/screens/ScannerScreen';
 import OwnerSettingsScreen from './src/screens/OwnerSettingsScreen';
 import OperatorSettingsScreen from './src/screens/OperatorSettingsScreen';
 import OperatorPerformanceScreen from './src/screens/OperatorPerformanceScreen';
+import DemandScreen from './src/screens/DemandScreen';
+import CashFlowScreen from './src/screens/CashFlowScreen';
 
 // ─── Tab icon ────────────────────────────────────────────────────────────────
 function TabIcon({ name, focused }: { name: keyof typeof Ionicons.glyphMap; focused: boolean }) {

@@ -21,7 +21,17 @@ export async function up(knex: Knex): Promise<void> {
      * - order operational constraint projection
      */
     table.integer('fulfillment_sla_hours').notNullable().defaultTo(24);
-
+    /**
+     * CASH FLOW PROJECTION INPUTS
+     * ---------------------------
+     * monthly_overhead_amount: fixed monthly costs (rent, salaries, etc.)
+     *   Deducted weekly in cash flow projection.
+     * starting_cash_balance: anchor point for projection curve.
+     * starting_cash_balance_set_at: when the balance was last manually set.
+     */
+    table.decimal('monthly_overhead_amount', 14, 2).notNullable().defaultTo(0);
+    table.decimal('starting_cash_balance', 14, 2).notNullable().defaultTo(0);
+    table.timestamp('starting_cash_balance_set_at', { useTz: true }).nullable();
     table.timestamp('updated_at').notNullable().defaultTo(knex.fn.now());
   });
 
