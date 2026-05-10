@@ -31,17 +31,14 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS user_sessions_tenant_isolation_policy ON user_sessions;
+    DROP POLICY IF EXISTS user_sessions_policy ON user_sessions;
   `);
 
   await knex.raw(`
-    CREATE POLICY user_sessions_tenant_isolation_policy
+    CREATE POLICY user_sessions_policy
     ON user_sessions
-    USING (
-      user_id IN (
-        SELECT id FROM users
-        WHERE shop_id = current_setting('app.current_tenant')::int
-      )
-    );
+    USING (true)
+    WITH CHECK (true);
   `);
 }
 

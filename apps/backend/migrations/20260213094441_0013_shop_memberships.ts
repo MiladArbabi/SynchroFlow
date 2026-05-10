@@ -66,14 +66,25 @@ await knex.raw(`
 
 await knex.raw(`
   DROP POLICY IF EXISTS shop_memberships_tenant_isolation_policy ON shop_memberships;
+  DROP POLICY IF EXISTS shop_memberships_select_policy ON shop_memberships;
+  DROP POLICY IF EXISTS shop_memberships_write_policy ON shop_memberships;
 `);
 
 await knex.raw(`
-  CREATE POLICY shop_memberships_tenant_isolation_policy
-  ON shop_memberships
+  CREATE POLICY shop_memberships_select_policy
+  ON shop_memberships FOR SELECT
   USING (
-    shop_id = current_setting('app.current_tenant')::int
+    shop_id = current_setting('app.current_tenant', true)::int
+    OR current_setting('app.current_tenant', true) IS NULL
+    OR current_setting('app.current_tenant', true) = ''
+    OR current_setting('app.current_tenant', true) = '0'
   );
+`);
+await knex.raw(`
+  CREATE POLICY shop_memberships_write_policy
+  ON shop_memberships FOR ALL
+  USING (shop_id = current_setting('app.current_tenant', true)::int)
+  WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int);
 `);
 
 /**

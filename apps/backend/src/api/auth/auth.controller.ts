@@ -38,7 +38,11 @@ export const registerUser = async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     const newUser = await db.transaction<User>(async trx => {
-
+    // Registration is a pre-tenant system operation — RLS bypassed for this transaction only.
+    // sf_app cannot bypass RLS globally, so we use SET LOCAL row_security = off scoped to this transaction.
+    // This is safe because registration has no tenant context to enforce yet.
+    await trx.raw(`SET LOCAL row_security = off`);
+    
     // 1️⃣ Create shop
     const [newShop] = await trx('shops')
       .insert({

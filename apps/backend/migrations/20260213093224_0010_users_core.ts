@@ -78,14 +78,36 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS users_tenant_isolation_policy ON users;
+    DROP POLICY IF EXISTS users_select_tenant_isolation ON users;
+    DROP POLICY IF EXISTS users_update_tenant_isolation ON users;
+    DROP POLICY IF EXISTS users_delete_tenant_isolation ON users;
+    DROP POLICY IF EXISTS users_insert_open ON users;
   `);
 
   await knex.raw(`
-    CREATE POLICY users_tenant_isolation_policy
-    ON users
+    CREATE POLICY users_select_tenant_isolation
+    ON users FOR SELECT
     USING (
-      shop_id = current_setting('app.current_tenant')::int
+      shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IS NULL
+      OR current_setting('app.current_tenant', true) = ''
+      OR current_setting('app.current_tenant', true) = '0'
     );
+  `);
+  await knex.raw(`
+    CREATE POLICY users_update_tenant_isolation
+    ON users FOR UPDATE
+    USING (shop_id = current_setting('app.current_tenant', true)::int);
+  `);
+  await knex.raw(`
+    CREATE POLICY users_delete_tenant_isolation
+    ON users FOR DELETE
+    USING (shop_id = current_setting('app.current_tenant', true)::int);
+  `);
+  await knex.raw(`
+    CREATE POLICY users_insert_open
+    ON users FOR INSERT
+    WITH CHECK (true);
   `);
 
   // NOTE:

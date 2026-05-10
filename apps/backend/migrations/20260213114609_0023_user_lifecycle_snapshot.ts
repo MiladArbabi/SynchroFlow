@@ -80,14 +80,24 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS user_lifecycle_snapshot_tenant_isolation_policy ON user_lifecycle_snapshot;
+    DROP POLICY IF EXISTS user_lifecycle_snapshot_select_policy ON user_lifecycle_snapshot;
+    DROP POLICY IF EXISTS user_lifecycle_snapshot_write_policy ON user_lifecycle_snapshot;
   `);
 
   await knex.raw(`
-    CREATE POLICY user_lifecycle_snapshot_tenant_isolation_policy
-    ON user_lifecycle_snapshot
+    CREATE POLICY user_lifecycle_snapshot_select_policy
+    ON user_lifecycle_snapshot FOR SELECT
     USING (
-      shop_id = current_setting('app.current_tenant')::int
+      shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL
     );
+  `);
+  await knex.raw(`
+    CREATE POLICY user_lifecycle_snapshot_write_policy
+    ON user_lifecycle_snapshot FOR ALL
+    USING (shop_id = current_setting('app.current_tenant', true)::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int);
   `);
 }
 

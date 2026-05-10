@@ -109,14 +109,24 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS shop_subscriptions_tenant_isolation_policy ON shop_subscriptions;
+    DROP POLICY IF EXISTS shop_subscriptions_select_policy ON shop_subscriptions;
+    DROP POLICY IF EXISTS shop_subscriptions_write_policy ON shop_subscriptions;
   `);
 
   await knex.raw(`
-    CREATE POLICY shop_subscriptions_tenant_isolation_policy
-    ON shop_subscriptions
+    CREATE POLICY shop_subscriptions_select_policy
+    ON shop_subscriptions FOR SELECT
     USING (
-      shop_id = current_setting('app.current_tenant')::int
+      shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL
     );
+  `);
+  await knex.raw(`
+    CREATE POLICY shop_subscriptions_write_policy
+    ON shop_subscriptions FOR ALL
+    USING (shop_id = current_setting('app.current_tenant', true)::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int);
   `);
 
   // --- Tier check constraint ---

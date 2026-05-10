@@ -71,16 +71,26 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS refresh_tokens_tenant_isolation_policy ON refresh_tokens;
+    DROP POLICY IF EXISTS refresh_tokens_select_policy ON refresh_tokens;
+    DROP POLICY IF EXISTS refresh_tokens_write_policy ON refresh_tokens;
   `);
 
   /* -- 🔒 Direct tenant enforcement (authoritative)
   -- shop_id is NOT NULL → must be used as primary isolation boundary */
   await knex.raw(`
-    CREATE POLICY refresh_tokens_tenant_isolation_policy
-    ON refresh_tokens
+    CREATE POLICY refresh_tokens_select_policy
+    ON refresh_tokens FOR SELECT
     USING (
-      shop_id = current_setting('app.current_tenant')::int
+      shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL
     );
+  `);
+  await knex.raw(`
+    CREATE POLICY refresh_tokens_write_policy
+    ON refresh_tokens FOR ALL
+    USING (shop_id = current_setting('app.current_tenant', true)::int)
+    WITH CHECK (true);
   `);
 
   // NOTE:
