@@ -29,6 +29,7 @@ import ScannerScreen from './src/screens/ScannerScreen';
 import OwnerSettingsScreen from './src/screens/OwnerSettingsScreen';
 import OperatorSettingsScreen from './src/screens/OperatorSettingsScreen';
 import OperatorPerformanceScreen from './src/screens/OperatorPerformanceScreen';
+import IntelligenceScreen from './src/screens/IntelligenceScreen';
 import DemandScreen from './src/screens/DemandScreen';
 import CashFlowScreen from './src/screens/CashFlowScreen';
 
@@ -55,7 +56,7 @@ interface AlertItem {
   is_active: boolean;
 }
 
-function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: string }) {
+function AlertFeed({ title, emptyMessage, showBack }: { title: string; emptyMessage: string; showBack?: boolean }) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation<any>();
@@ -77,8 +78,13 @@ function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: strin
       // Navigate via parent (root stack) to correctly pass params to nested tab
       const parent = navigation.getParent() ?? navigation;
       parent.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' } });
+    } else if (alertType === 'stockout_risk' || alertType === 'sla_breach' || alertType === 'operational') {
+      const parent = navigation.getParent() ?? navigation;
+      parent.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: alertType === 'stockout_risk' ? 'inbound' : 'outbound' } });
     } else {
-      navigation.navigate('OwnerTabs', { screen: 'Alerts' });
+      // cashflow, finances, revenue_at_risk — informational, show Intelligence
+      const parent = navigation.getParent() ?? navigation;
+      parent.navigate('OwnerTabs', { screen: 'Intelligence' });
     }
   }, [navigation]);
 
@@ -98,7 +104,7 @@ function AlertFeed({ title, emptyMessage }: { title: string; emptyMessage: strin
 
   return (
     <Screen>
-      <AppHeader showLogo />
+      <AppHeader showLogo={!showBack} onBack={showBack ? () => navigation.goBack() : undefined} />
       <ScrollView contentContainerStyle={alertStyles.container} showsVerticalScrollIndicator={false}>
         <Text style={alertStyles.heading}>{title}</Text>
         {loading ? (
@@ -155,8 +161,9 @@ function NotificationsScreen() {
 }
 
 function AlertsScreen() {
-  return <AlertFeed title="Alerts" emptyMessage="No alerts to review." />;
+  return <AlertFeed title="Alerts" emptyMessage="No alerts to review." showBack />;
 }
+
 const placeholder = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
   title: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold, marginBottom: spacing.xs },
@@ -255,6 +262,7 @@ function OwnerRoot() {
       <OwnerRootStack.Screen name="OwnerTabs" component={OwnerTabs} />
       <OwnerRootStack.Screen name="Settings" component={OwnerSettingsScreen} />
       <OwnerRootStack.Screen name="OperatorPerformance" component={OperatorPerformanceScreen} />
+      <OwnerRootStack.Screen name="AlertsInbox" component={AlertsScreen} />
     </OwnerRootStack.Navigator>
   );
 }
@@ -290,11 +298,11 @@ function OwnerTabs() {
         }}
       />
       <OwnerTab.Screen
-        name="Alerts"
-        component={AlertsScreen}
+        name="Intelligence"
+        component={IntelligenceScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="notifications-outline" focused={focused} />,
-          tabBarLabel: 'Alerts',
+          tabBarIcon: ({ focused }) => <TabIcon name="pulse-outline" focused={focused} />,
+          tabBarLabel: 'Intelligence',
         }}
       />
       <OwnerTab.Screen

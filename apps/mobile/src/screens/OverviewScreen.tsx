@@ -64,9 +64,21 @@ export default function OverviewScreen() {
         p.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: 'outbound' } });
         break;
       }
+      case 'demand':
+      case 'suppliers-portal': {
+        const p = navigation.getParent() ?? navigation;
+        p.navigate('OwnerTabs', { screen: 'Tasks', params: { initialTab: 'inbound' } });
+        break;
+      }
+      case 'cashflow':
+      case 'finances': {
+        const p = navigation.getParent() ?? navigation;
+        p.navigate('OwnerTabs', { screen: 'Intelligence' });
+        break;
+      }
       default: {
         const p = navigation.getParent() ?? navigation;
-        p.navigate('OwnerTabs', { screen: 'Alerts' });
+        p.navigate('OwnerTabs', { screen: 'Intelligence' });
       }
     }
   }, [navigation]);
@@ -88,7 +100,7 @@ export default function OverviewScreen() {
 
   return (
     <Screen>
-      <AppHeader showLogo onRefresh={() => void load(true)} />
+      <AppHeader showLogo onRefresh={() => void load(true)} rightAction={{ icon: 'notifications-outline', onPress: () => navigation.getParent()?.navigate('AlertsInbox') }} />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {loading ? (
           <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
