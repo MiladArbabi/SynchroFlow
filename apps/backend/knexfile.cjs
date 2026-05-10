@@ -12,8 +12,8 @@ module.exports = {
     connection: {
       host: process.env.PGHOST,
       port: Number(process.env.PGPORT),
-      user: process.env.PGUSER,
-      password: process.env.PGPASSWORD,
+      user: process.env.PGMIGRATION_USER ?? process.env.PGUSER,
+      password: process.env.PGMIGRATION_PASSWORD ?? process.env.PGPASSWORD,
       database: process.env.PGDATABASE,
     },
     migrations: {
