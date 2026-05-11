@@ -37,10 +37,14 @@ export class FirstInsightService {
     }
 
     // 3. Compute monthly order volume (FACT: orders exists)
-    const result = await db('orders')
-      .where({ shop_id: shopId })
-      .count<{ count: string }>('* as count')
-      .first();
+    // SET LOCAL tenant context — required for RLS on orders table.
+    const result = await db.transaction(async trx => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+      return trx('orders')
+        .where({ shop_id: shopId })
+        .count<{ count: string }>('* as count')
+        .first();
+    });
 
     const orderCount = Number(result?.count ?? 0);
 
@@ -94,9 +98,10 @@ export class FirstInsightService {
      * - No side-channel durability writes
      */
     await db.transaction(async trx => {
-
+      // SET LOCAL tenant context — required for auto_create_domain_event_outbox trigger
+      // to pass domain_event_outbox RLS policy check (subquery scoped to current_tenant).
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
       const externalEventId = `internal:lifecycle/first_insight_delivered:${shopId}`;
-
       const [event] = await trx('domain_events')
         .insert({
           shop_id: shopId,

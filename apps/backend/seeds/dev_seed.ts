@@ -670,9 +670,9 @@ export async function seed(knex: Knex): Promise<void> {
     await trx('integrations').insert({
       shop_id: shop.id,
       platform: 'shopify',
-      platform_shop_name: 'dev-shop.myshopify.com',
+      platform_shop_name: 'development-store-15820042357.myshopify.com',
       access_token_encrypted: 'dev_seed_placeholder_not_real',
-      sync_status: 'COMPLETED',
+      sync_status: 'PENDING', // OAuth will update token; sync runs after OAuth completes
       created_at: now,
       updated_at: now,
     }).onConflict(['shop_id', 'platform']).ignore();

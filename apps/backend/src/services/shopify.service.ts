@@ -79,6 +79,7 @@ export const performInitialSync = async (
      * - unnecessary contention
      */
     await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
       if (data.products) {
         await syncShopifyProducts({
           trx,
@@ -100,6 +101,7 @@ export const performInitialSync = async (
      * - avoid rollback coupling with product ingestion
      */
     await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
       const { seedShopifyOpeningBalances } = await import(
         './inventory/seedShopifyOpeningBalances.js'
       );
@@ -163,6 +165,7 @@ export const performInitialSync = async (
      * Prevents product sync failures from affecting order ingestion.
      */
     await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
       let totalOrdersIngested = 0;
 
       await paginateShopify({

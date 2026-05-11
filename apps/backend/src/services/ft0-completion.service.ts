@@ -57,21 +57,22 @@ export class FT0CompletionService {
       return { completed: false };
     }
 
-    // 3. Sync must be completed
-    const completedSync = await db('integrations')
-      .where({ shop_id: shopId, sync_status: 'COMPLETED' })
-      .first();
-
-    if (!completedSync) {
-      console.error('[FT0][BLOCKED][SYNC_NOT_COMPLETED]', { shopId });
-      return { completed: false };
-    }
+    // 3. Integration must be connected (sync_status check removed — race condition prone)
+    // Orders existing (check 4) is the authoritative signal that sync produced data.
+    // sync_status = 'COMPLETED' is set AFTER projection processes events, causing
+    // FT0 evaluation to fail when triggered mid-sync. See: A-015 fix.
 
     // 4. Orders data must exist
-    const ordersRow = await db('orders')
+    // SET LOCAL tenant context — required for RLS on orders table.
+    // FT0CompletionService runs outside projection transaction, so tenant
+    // is not set by the projection engine. Must set explicitly here.
+    const ordersRow = await db.transaction(async trx => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+      return trx('orders')
         .where({ shop_id: shopId })
         .count<{ count: string }>('* as count')
         .first();
+    });
 
     const orderCount = Number(ordersRow?.count ?? 0);
 
@@ -121,6 +122,9 @@ export class FT0CompletionService {
      * - No fallback reads.
      */
     return await db.transaction(async trx => {
+      // SET LOCAL tenant context — required for auto_create_domain_event_outbox trigger
+      // to pass domain_event_outbox RLS policy check (subquery scoped to current_tenant).
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
       const externalEventId = `internal:lifecycle/ft0_completed:${shopId}`;
 
       /**

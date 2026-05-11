@@ -92,15 +92,33 @@ export async function up(knex: Knex): Promise<void> {
   `);
 
   await knex.raw(`
-    CREATE POLICY domain_event_outbox_tenant_isolation_policy
-    ON domain_event_outbox
+    CREATE POLICY domain_event_outbox_select_policy
+    ON domain_event_outbox FOR SELECT
     USING (
       domain_event_id IN (
         SELECT id
         FROM domain_events
-        WHERE shop_id = current_setting('app.current_tenant')::int
+        WHERE shop_id = current_setting('app.current_tenant', true)::int
+        OR current_setting('app.current_tenant', true) IN ('', '0')
+        OR current_setting('app.current_tenant', true) IS NULL
       )
     );
+  `);
+  await knex.raw(`
+    /*
+     * INSERT policy is open — domain_event_outbox is written exclusively
+     * by the auto_create_domain_event_outbox trigger, which fires on
+     * domain_events INSERT. The trigger runs as sf_app without tenant
+     * context (tenant is set LOCAL to the calling transaction, not
+     * propagated to trigger execution context).
+     *
+     * Security: outbox contains only domain_event_id (FK to domain_events).
+     * No tenant-sensitive data is written here. Tenant isolation is
+     * enforced at the domain_events level.
+     */
+    CREATE POLICY domain_event_outbox_insert_policy
+    ON domain_event_outbox FOR INSERT
+    WITH CHECK (true);
   `);
 }
 

@@ -141,9 +141,12 @@ export async function getFt2Readiness(req: Request, res: Response) {
      * Presence = ready
      * Absence = not ready
      */
-    const readiness = await db('system_readiness_state')
-      .where({ shop_id: shopId })
-      .first();
+    const readiness = await db.transaction(async trx => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+      return trx('system_readiness_state')
+        .where({ shop_id: shopId })
+        .first();
+    });
 
     /**
      * Observability — readiness signal
@@ -228,9 +231,12 @@ export async function confirmFt2(req: Request, res: Response) {
 
     const shopContext = await requireShopContextForUser(userId);
 
-    const snapshot = await db('user_lifecycle_snapshot')
-      .where({ shop_id: shopContext.shopId })
-      .first<{ phase: string; shop_id: number }>();
+    const snapshot = await db.transaction(async trx => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopContext.shopId}'`);
+      return trx('user_lifecycle_snapshot')
+        .where({ shop_id: shopContext.shopId })
+        .first<{ phase: string; shop_id: number }>();
+    });
 
     if (snapshot?.phase === 'FT2') {
       /**
@@ -279,9 +285,8 @@ export async function confirmFt2(req: Request, res: Response) {
      * This preserves replay determinism.
      */
     await db.transaction(async trx => {
-
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
       const externalEventId = `internal:lifecycle/ft2_confirmed:${shopId}`;
-
       const [event] = await trx('domain_events')
         .insert({
           shop_id: shopId,

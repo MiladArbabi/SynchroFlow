@@ -398,6 +398,14 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
      * Projection or downstream worker is responsible for execution.
      */
     await db.transaction(async trx => {
+      /**
+       * TENANT CONTEXT (REQUIRED)
+       * -------------------------
+       * Must be set before domain_events INSERT so the auto_create_domain_event_outbox
+       * trigger can pass the outbox RLS policy check (subquery scoped to current_tenant).
+       * Without this, the trigger fires as sf_app with tenant=0 → RLS violation.
+       */
+      await trx.raw(`SET LOCAL app.current_tenant = '${result.shopId}'`);
       const externalEventId = `internal:integration/sync_requested:${result.integration.id}:${Date.now()}`;
       const traceId = `sync:${result.integration.id}:${Date.now()}`;
 

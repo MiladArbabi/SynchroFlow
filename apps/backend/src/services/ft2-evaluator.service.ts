@@ -56,14 +56,18 @@ export class FT2EvaluatorService {
    * Evaluate FT2 readiness for a shop (READ-ONLY)
    */
   static async evaluate(shopId: number): Promise<FT2EvaluationResult> {
+    return db.transaction(async trx => {
+      // SET LOCAL tenant context once for all queries in this evaluation.
+      // All tables queried here (orders, products, customers, system_readiness_state)
+      // have strict RLS enforced via app.current_tenant.
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
     const evaluatedAt = new Date().toISOString();
     const blockers: FT2Blocker[] = [];
     const evidence: Record<string, any> = {};
-
     // -------------------------------------------------------------------
     // SYNC GUARD — FT2 cannot be evaluated during active sync
     // -------------------------------------------------------------------
-    const integration = await db('integrations')
+    const integration = await trx('integrations')
       .where({ shop_id: shopId })
       .first();
 
@@ -118,9 +122,12 @@ export class FT2EvaluatorService {
      *
      * Evaluator must not depend on legacy ft0_state.
      */
-    const readiness = await db('system_readiness_state')
-      .where({ shop_id: shopId })
-      .first();
+    const readiness = await db.transaction(async trx => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+      return trx('system_readiness_state')
+        .where({ shop_id: shopId })
+        .first();
+    });
 
     if (!readiness) {
       return {
@@ -151,12 +158,12 @@ export class FT2EvaluatorService {
      * Reads from `orders` (UUID-backed)
      * lasyncro_order_id is the only valid identity anchor.
      */
-    const ordersA = await db('orders')
+    const ordersA = await trx('orders')
       .where({ shop_id: shopId })
       .count<{ count: string }>('lasyncro_order_id as count')
       .first();
 
-    const ordersB = await db('orders')
+    const ordersB = await trx('orders')
       .where({ shop_id: shopId })
       .count<{ count: string }>('lasyncro_order_id as count')
       .first();
@@ -192,12 +199,12 @@ export class FT2EvaluatorService {
     /* DOMAIN: PRODUCTS                                                    */
     /* ------------------------------------------------------------------ */
 
-    const productsA = await db('products')
+    const productsA = await trx('products')
       .where({ shop_id: shopId })
       .count<{ count: string }>('lasyncro_product_id as count')
       .first();
 
-    const productsB = await db('products')
+    const productsB = await trx('products')
       .where({ shop_id: shopId })
       .count<{ count: string }>('lasyncro_product_id as count')
       .first();
@@ -232,12 +239,12 @@ export class FT2EvaluatorService {
     /* DOMAIN: CUSTOMERS                                                   */
     /* ------------------------------------------------------------------ */
 
-    const customersA = await db('customers')
+    const customersA = await trx('customers')
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
       .first();
 
-    const customersB = await db('customers')
+    const customersB = await trx('customers')
       .where({ shop_id: shopId })
       .count<{ count: string }>('id as count')
       .first();
@@ -274,7 +281,7 @@ export class FT2EvaluatorService {
      * Sovereign SKU linkage is evaluated via order_revenue_units.
      * Each revenue unit must carry a valid lasyncro_product_id.
      */
-    const orphanedUnits = await db('order_revenue_units as ru')
+    const orphanedUnits = await trx('order_revenue_units as ru')
       .join(
         'orders as o',
         'o.lasyncro_order_id',
@@ -312,7 +319,7 @@ export class FT2EvaluatorService {
      * Orders table is authoritative.
      * customer_hashed_id remains nullable for guest checkouts.
      */
-    const ordersWithoutCustomer = await db('orders')
+    const ordersWithoutCustomer = await trx('orders')
       .where({ shop_id: shopId })
       .whereNull('customer_hashed_id')
       .count<{ count: string }>('lasyncro_order_id as count')
@@ -340,13 +347,14 @@ export class FT2EvaluatorService {
       evaluatedAt,
     });
 
-    return {
-      eligible,
-      status: eligible ? 'ELIGIBLE' : 'BLOCKED',
-      blockers,
-      evidence,
-      evaluatorVersion: FT2EvaluatorService.VERSION,
-      evaluatedAt,
-    };
+      return {
+        eligible,
+        status: eligible ? 'ELIGIBLE' : 'BLOCKED',
+        blockers,
+        evidence,
+        evaluatorVersion: FT2EvaluatorService.VERSION,
+        evaluatedAt,
+      };
+    });
   }
 }
