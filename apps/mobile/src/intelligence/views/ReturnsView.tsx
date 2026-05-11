@@ -13,15 +13,15 @@ function ReturnsView({ data, loading, error, onRetry }: { data: ReturnCorrelatio
   if (error) return <ZoneError message={error} onRetry={onRetry} />;
 
   const totalReturned = data.reduce((s, r) => s + Number(r.units_returned), 0);
-  const totalSold = data.reduce((s, r) => s + Number(r.units_sold), 0);
-  const overallRate = totalSold > 0 ? (totalReturned / totalSold) * 100 : null;
+  const totalReceived = data.reduce((s, r) => s + Number(r.units_received), 0);
+  const overallRate = totalReceived > 0 ? (totalReturned / totalReceived) * 100 : null;
   const avgRate = data.length > 0 ? data.reduce((s, r) => s + Number(r.return_rate_pct ?? 0), 0) / data.length : 0;
 
   const supplierMap = new Map<string, { name: string; returned: number; sold: number }>();
   for (const row of data) {
     if (!row.supplier_name) continue;
     const e = supplierMap.get(row.supplier_name) ?? { name: row.supplier_name, returned: 0, sold: 0 };
-    e.returned += row.units_returned; e.sold += row.units_sold;
+    e.returned += row.units_returned; e.sold += row.units_received;
     supplierMap.set(row.supplier_name, e);
   }
   const suppliers = Array.from(supplierMap.values())
@@ -44,7 +44,7 @@ function ReturnsView({ data, loading, error, onRetry }: { data: ReturnCorrelatio
         {overallRate !== null ? (
           <>
             <Text style={[styles.heroValue, { color: returnRateColor(overallRate) }]}>{overallRate.toFixed(1)}%</Text>
-            <Text style={styles.heroTarget}>{totalReturned} of {totalSold} units returned</Text>
+            <Text style={styles.heroTarget}>{totalReturned} of {totalReceived} units received</Text>
             {overallRate >= 10 && (
               <View style={styles.heroAlertRow}>
                 <Ionicons name="warning-outline" size={13} color={colors.error} />
@@ -62,7 +62,7 @@ function ReturnsView({ data, loading, error, onRetry }: { data: ReturnCorrelatio
       )}
       {totalReturned > 0 && (
         <Card>
-          <StatRow label="Units returned this period" value={`${totalReturned} of ${totalSold} sold`} />
+          <StatRow label="Units returned (all batches)" value={`${totalReturned} of ${totalReceived} received`} />
           <StatRow
             label="Return rate impact"
             value={overallRate !== null ? `${overallRate.toFixed(1)}% of revenue at risk` : '—'}

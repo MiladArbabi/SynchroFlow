@@ -11,7 +11,7 @@ export type CorrelationRow = {
   supplier_id: number | null;
   supplier_name: string | null;
   units_returned: number;
-  units_sold: number;
+  units_received: number; // quantity_accepted from receive job — batch denominator (A-013)
   return_rate_pct: number | null;
   revenue_lost: number;
 };

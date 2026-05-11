@@ -626,6 +626,46 @@ export async function seed(knex: Knex): Promise<void> {
 
     console.log(`[DEV_SEED] Created ${orderCount} orders with revenue units and fulfillment status`);
 
+    // ── REFUND EXECUTIONS + LINE ITEMS ───────────────────────────────────────
+    // Required for: Returns intelligence (revenue leakage, return rate charts)
+    // Uses fulfilled orders only — refunds reference real order_revenue_units
+    // RLS note: refund_executions has no shop_id — enforced via orders join
+    const fulfilledOrderIds = orderIds.slice(0, 3); // refund 3 of the 8 fulfilled orders
+    for (const refundOrderId of fulfilledOrderIds) {
+      // Fetch the revenue unit seeded for this order
+      const revenueUnit = await trx('order_revenue_units')
+        .where({ lasyncro_order_id: refundOrderId })
+        .first();
+      if (!revenueUnit) continue;
+
+      const refundedQty = 1;
+      const refundedAmount = Number(revenueUnit.unit_price) * refundedQty;
+      const executedAt = new Date(now);
+      executedAt.setDate(executedAt.getDate() - Math.floor(Math.random() * 14));
+
+      const [refundExecution] = await trx('refund_executions').insert({
+        lasyncro_refund_execution_id: trx.raw('gen_random_uuid()'),
+        lasyncro_order_id: refundOrderId,
+        platform: 'shopify',
+        // external_refund_id must be unique per platform — use order id slice as surrogate
+        external_refund_id: `seed-refund-${refundOrderId.slice(0, 8)}`,
+        total_refund_amount: refundedAmount,
+        executed_at: executedAt,
+        created_at: executedAt,
+        updated_at: executedAt,
+      }).returning('*');
+
+      await trx('refund_execution_line_items').insert({
+        lasyncro_refund_line_item_id: trx.raw('gen_random_uuid()'),
+        lasyncro_refund_execution_id: refundExecution.lasyncro_refund_execution_id,
+        lasyncro_revenue_unit_id: revenueUnit.lasyncro_revenue_unit_id,
+        refunded_quantity: refundedQty,
+        refunded_amount: refundedAmount,
+        created_at: executedAt,
+      });
+    }
+    console.log(`[DEV_SEED] Created 3 refund executions with line items (Returns intelligence ready)`);
+
     // ── SHOPIFY INTEGRATION (for Shopify-dependent services) ─────────────────
     await trx('integrations').insert({
       shop_id: shop.id,

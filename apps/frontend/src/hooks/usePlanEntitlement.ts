@@ -49,15 +49,19 @@ const PLAN_FEATURES = {
 
   // Returns
   'returns.analysis':          'growth',
+  // 'returns.lot_attribution': 'growth', // PHASE 2 — exact batch return rate via lasyncro_lot_id (A-014)
 
   // Finances
   'finances.overview':         'growth',
 
-  // WMS
+ // WMS
   'wms.pick_batches':          'core',
   'wms.pack':                  'core',
   'wms.stow':                  'core',
   'wms.problem_center':        'core',
+  'wms.receive':               'core',   // inbound receive flow — lot tracking builds on this
+  // Returns
+  // 'returns.lot_attribution': 'growth', // PHASE 2 — batch-level return attribution via lot tracking (A-014)
 
   // Alerts
   'alerts.inbox':              'core',

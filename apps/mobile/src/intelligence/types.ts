@@ -82,7 +82,7 @@ export interface ReturnCorrelation {
   supplier_name: string | null;
   receive_job_id: string | null;
   batch_received_at: string | null;
-  units_sold: number;
+  units_received: number; // quantity_accepted from receive job — batch denominator (A-013)
   units_returned: number;
   return_rate_pct: number | null;
 }

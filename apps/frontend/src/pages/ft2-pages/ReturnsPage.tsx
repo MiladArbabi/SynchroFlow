@@ -262,7 +262,7 @@ export default function ReturnsPage() {
                   borderBottom: '1px solid', borderColor: 'divider',
                   bgcolor: 'action.hover',
                 }}>
-                  {['Product', 'Supplier', 'Batch Received', 'Returned', 'Sold', 'Return Rate'].map(h => (
+                  {['Product', 'Supplier', 'Batch Received', 'Returned', 'Received', 'Return Rate'].map(h => (
                     <Typography key={h} variant="caption" color="text.secondary" fontWeight={600}>{h}</Typography>
                   ))}
                 </Box>
@@ -298,7 +298,7 @@ export default function ReturnsPage() {
                       <Typography variant="body2">{row.supplier_name ?? 'Unknown supplier'}</Typography>
                       <Typography variant="caption" color="text.secondary">{batchLabel}</Typography>
                       <Typography variant="body2">{row.units_returned}</Typography>
-                      <Typography variant="body2">{row.units_sold}</Typography>
+                      <Typography variant="body2">{row.units_received}</Typography>
                       <Typography variant="body2" fontWeight={600} sx={{ color: rateColor }}>
                         {row.return_rate_pct != null ? `${row.return_rate_pct}%` : '—'}
                       </Typography>

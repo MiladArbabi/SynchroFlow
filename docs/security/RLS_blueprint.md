@@ -1,4 +1,5 @@
 # RLS Architecture — SynchroFlow
+
 ## Row Level Security: Design, Invariants & Operational Guide
 
 ---
@@ -20,6 +21,7 @@ Row Level Security (RLS) is PostgreSQL's built-in mechanism to enforce this at t
 SynchroFlow uses two PostgreSQL roles with strictly separated responsibilities.
 
 ### `sf_user` — Migration Superuser
+
 - **Privileges:** SUPERUSER, BYPASSRLS
 - **Used by:** `knexfile.cjs` (migrations), direct psql admin sessions
 - **Purpose:** Schema changes, RLS policy creation, role management
@@ -27,6 +29,7 @@ SynchroFlow uses two PostgreSQL roles with strictly separated responsibilities.
 - **Credentials:** `PGMIGRATION_USER=sf_user`, `PGMIGRATION_PASSWORD=sf_pass`
 
 ### `sf_app` — Application Runtime Role
+
 - **Privileges:** SELECT, INSERT, UPDATE, DELETE on all tables. No superuser. No BYPASSRLS.
 - **Used by:** the Express API server, all workers
 - **Purpose:** All runtime data access — subject to RLS policies
@@ -114,6 +117,7 @@ WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
 ```
 
 This means:
+
 - **SELECT:** only rows where `shop_id` matches current tenant
 - **INSERT:** only allowed if `shop_id` matches current tenant
 - **UPDATE/DELETE:** only rows where `shop_id` matches current tenant
@@ -208,6 +212,19 @@ USING (
 );
 ```
 
+## 4b. OAuth-Path Tables\
+
+These tables are accessed during the Shopify OAuth flow **after** a shop exists but **before** a stable tenant context is guaranteed. They use the same split-policy pattern as auth-path tables.
+
+| Table | Why Pre-Tenant Access Needed |
+|---|---------|
+| `shopify_app_installations` | Written during OAuth callback before tenant context is set |
+| `integrations` | Written during OAuth token exchange before tenant context is set |
+| `domain_events` | Read/written during OAuth-triggered sync bootstrap |
+| `integration_oauth_states` | CSRF state token read during OAuth callback (no shop context yet) |
+| `shop_module_entitlements` | Read during post-OAuth entitlement grant before tenant context |
+**Verification:** All five tables confirmed to have split SELECT + ALL policies via `current_setting('\''app.current_tenant'\'', true)` in their migrations.\
+
 ---
 
 ## 5. Migration Rules
@@ -295,27 +312,33 @@ COMMIT;
 ## 7. Common Failure Modes
 
 ### "new row violates row-level security policy"
+
 **Cause:** An INSERT is blocked because the table's `WITH CHECK` clause rejects it.
 **Common cause:** The inserting role is `sf_app` but `app.current_tenant` is not set (or set to `'0'`), and the table uses a strict ALL-command policy.
 **Fix:** Ensure `SET LOCAL app.current_tenant` is called before the INSERT, or if this is an auth-path table, apply the split policy pattern.
 
 ### "query would be affected by row-level security policy"
+
 **Cause:** `SET LOCAL row_security = off` was attempted by a non-superuser role.
 **Fix:** Only `sf_user` can disable row security. `sf_app` cannot. Use split policies instead.
 
 ### All counts return data for wrong tenant
+
 **Cause:** Queries are being run as `sf_user` (superuser with BYPASSRLS), not `sf_app`.
 **Fix:** Check `.env` — `PGUSER` must be `sf_app`, not `sf_user`. Run pen-test as `sf_app` explicitly.
 
 ### Login fails with AUTH_INVARIANT_VIOLATION
+
 **Cause:** `refresh_tokens` or `user_sessions` INSERT is blocked — auth-path table missing the open write policy.
 **Fix:** Apply split policy pattern to the affected table's migration.
 
 ### Tier shows "starter" after login despite growth subscription
+
 **Cause:** `shop_subscriptions` SELECT is blocked during JWT issuance — auth-path table missing the open SELECT policy.
 **Fix:** Apply split policy pattern to `shop_subscriptions`.
 
 ### Phase shows "FT_MINUS_ONE" despite FT2 seed
+
 **Cause:** `user_lifecycle_snapshot` SELECT is blocked during JWT issuance.
 **Fix:** Apply split policy pattern to `user_lifecycle_snapshot`.
 

@@ -66,10 +66,24 @@ export const httpGetReturnsCorrelation = async (req: Request, res: Response) => 
           's.id as supplier_id',
           's.name as supplier_name',
           trx.raw('SUM(rel.refunded_quantity) as units_returned'),
-          trx.raw('SUM(oru.quantity) as units_sold'),
+          /**
+           * BATCH DENOMINATOR (A-013 FIX)
+           * ------------------------------
+           * Use quantity_accepted from the receive job line — units physically
+           * received and accepted into inventory for this batch.
+           *
+           * Previous approach (SUM(oru.quantity)) used all units ever sold of
+           * this variant across all batches, making per-batch return rates
+           * meaningless — a faulty batch would appear healthy because its
+           * returns were divided by the entire variant's sales history.
+           *
+           * PHASE 2: replace with lot-scoped sales count once lot tracking
+           * (A-014) is implemented — that will give exact sold-from-this-batch counts.
+           */
+          trx.raw('COALESCE(MAX(rjl.quantity_accepted), 0) as units_received'),
           trx.raw(`
-            CASE WHEN SUM(oru.quantity) > 0
-            THEN ROUND(SUM(rel.refunded_quantity)::numeric / SUM(oru.quantity) * 100, 1)
+            CASE WHEN COALESCE(MAX(rjl.quantity_accepted), 0) > 0
+            THEN ROUND(SUM(rel.refunded_quantity)::numeric / MAX(rjl.quantity_accepted) * 100, 1)
             ELSE NULL END as return_rate_pct
           `),
           trx.raw('SUM(rel.refunded_amount) as revenue_lost'),
