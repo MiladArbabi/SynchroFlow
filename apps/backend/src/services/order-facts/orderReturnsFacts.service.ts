@@ -1,4 +1,6 @@
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
+type KnexOrTrx = Knex | Knex.Transaction;
 
 /**
  * Refund Facts (Layer 1)
@@ -13,7 +15,10 @@ import db from '@lasyncro/backend-core/db.js';
  * - NOT eligibility
  * - Pure post-execution regression
  */
-export async function extractRefundsFacts(shopId: number): Promise<{
+export async function extractRefundsFacts(
+  shopId: number, 
+  trx?: KnexOrTrx
+): Promise<{
   returnedUnits: number | null;
   returnedRevenue: number | null;
   affectedOrders: number | null;
@@ -24,7 +29,8 @@ export async function extractRefundsFacts(shopId: number): Promise<{
  * --------------------------
  * refunded_quantity is derived in DB view.
  */
-const rows = await db('order_revenue_units_net as runet')
+const qb = trx ?? db;
+const rows = await qb('order_revenue_units_net as runet')
   .join(
     'orders as o',
     'o.lasyncro_order_id',

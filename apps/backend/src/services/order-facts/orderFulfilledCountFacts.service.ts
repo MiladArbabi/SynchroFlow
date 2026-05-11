@@ -1,4 +1,6 @@
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
+type KnexOrTrx = Knex | Knex.Transaction;
 
 /**
  * Fulfilled Orders Count (Layer 1)
@@ -10,10 +12,11 @@ import db from '@lasyncro/backend-core/db.js';
  * - State-based (not time-scoped)
  * - No interpretation
  */
-
 export async function extractFulfilledOrdersCount(
   shopId: number,
+  trx?: KnexOrTrx
 ) {
+  const qb = trx ?? db;
 
   /**
    * FULFILLED ORDER DEFINITION (v2)
@@ -24,7 +27,7 @@ export async function extractFulfilledOrdersCount(
    *
    * Anchor: orders table
    */
-  const row = await db('orders as o')
+  const row = await qb('orders as o')
     .leftJoin(
       'order_fulfillment_status as ofs',
       'o.lasyncro_order_id',

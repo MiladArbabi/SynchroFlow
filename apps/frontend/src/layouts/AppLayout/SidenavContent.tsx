@@ -48,7 +48,13 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState }) => {
   const mainGroups = groups;
 
   const renderItem = (item: ResolvedNavItem) => {
-    const isActive = pathname === item.path || pathname.startsWith(item.path + '?');
+    // /fulfillment is a sub-tab of the Orders module — highlight Orders when on fulfillment route
+    const relatedPaths: Record<string, string[]> = {
+      orders: ['/fulfillment'],
+    };
+    const isActive = pathname === item.path
+      || pathname.startsWith(item.path + '?')
+      || (relatedPaths[item.id] ?? []).some(p => pathname === p || pathname.startsWith(p + '?'));
     const isLocked = item.disabled;
     const hasHealth = moduleHealth.has(item.id);
     const isAlerts = item.id === 'alerts';

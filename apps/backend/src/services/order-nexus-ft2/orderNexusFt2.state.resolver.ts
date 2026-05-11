@@ -1,5 +1,6 @@
 // apps/backend/src/services/order-nexus-ft2/orderNexusFt2.state.resolver.ts
-import db from "@lasyncro/backend-core/db.js";
+import db, { withTenant } from "@lasyncro/backend-core/db.js";
+import type { Knex } from 'knex';
 import { resolveAlignmentPlanes } from "../../services/alignment-planes/alignmentPlanes.resolver.js";
 import { extractOrderFulfillmentFacts } from "../../services/order-facts/orderFulfillmentFacts.service.js";
 import { extractOrderFulfillmentStatusFacts } from "../../services/order-facts/orderFulfillmentStatusFacts.service.js";
@@ -19,20 +20,20 @@ import { OrderNexusFT2Snapshot } from "./orderNexusFt2.types.js";
 export async function getOrderNexusFt2StateSnapshot(
   shopId: number
 ): Promise<OrderNexusFT2Snapshot | null> {
-
+  return withTenant(shopId, async (trx) => {
   // Fulfillment state
-  const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId);
-  const fulfilledOrders = await extractFulfilledOrdersCount(shopId);
-  const activeOrders = await extractActiveOrdersCount(shopId);
+  const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId, trx);
+  const fulfilledOrders = await extractFulfilledOrdersCount(shopId, trx);
+  const activeOrders = await extractActiveOrdersCount(shopId, trx);
 
   const fulfillmentIntelligence =
     deriveOrderFulfillmentIntelligence(fulfillmentFacts);
 
   // Refunds (lifetime)
-  const refundsFacts = await extractRefundsFacts(shopId);
+  const refundsFacts = await extractRefundsFacts(shopId, trx);
 
     // Freshness (state-based)
-  const freshnessRow = await db('orders')
+  const freshnessRow = await trx('orders')
     .where('shop_id', shopId)
     .max('updated_at as last')
     .first();
@@ -59,7 +60,7 @@ export async function getOrderNexusFt2StateSnapshot(
     planes: [],
   });
 
-  const totalOrdersRow = await db('orders')
+  const totalOrdersRow = await trx('orders')
     .where('shop_id', shopId)
     .count<{ count: string }>('lasyncro_order_id as count')
     .first();
@@ -83,7 +84,7 @@ export async function getOrderNexusFt2StateSnapshot(
    * aggregate_version is monotonic within the event stream
    * and guarantees stable replay ordering.
    */
-  const operationalControlRow = await db('orders_operational_control_snapshot')
+  const operationalControlRow = await trx('orders_operational_control_snapshot')
     .where({ shop_id: shopId })
     .orderBy([
       { column: 'snapshot_date', order: 'desc' },
@@ -198,7 +199,7 @@ export async function getOrderNexusFt2StateSnapshot(
    * be exposed through the FT2 state surface to avoid
    * multi-API drift in the UI.
    */
-  const decisionBriefRow = await db('daily_operational_brief_snapshot')
+  const decisionBriefRow = await trx('daily_operational_brief_snapshot')
     .where({ shop_id: shopId })
     .orderBy('brief_date', 'desc')
     .first();
@@ -376,4 +377,5 @@ export async function getOrderNexusFt2StateSnapshot(
   } as any;
 
   return snapshot;
+  });
 }

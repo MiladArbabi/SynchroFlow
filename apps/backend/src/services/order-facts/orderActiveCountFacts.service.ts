@@ -1,4 +1,6 @@
 import db from "@lasyncro/backend-core/db.js";
+import type { Knex } from 'knex';
+type KnexOrTrx = Knex | Knex.Transaction;
 
 /**
  * extractActiveOrdersCount (L1)
@@ -22,8 +24,10 @@ import db from "@lasyncro/backend-core/db.js";
  * - Null represents epistemic absence
  */
 export async function extractActiveOrdersCount(
-  shopId: number
+  shopId: number,
+  trx?: KnexOrTrx
 ): Promise<number | null> {
+  const qb = trx ?? db;
   
   /**
    * ACTIVE ORDER DEFINITION (v2)
@@ -35,7 +39,7 @@ export async function extractActiveOrdersCount(
    *
    * Anchor: orders table (sovereign identity)
    */
-  const row = await db('orders as o')
+  const row = await qb('orders as o')
     .leftJoin(
       'order_fulfillment_status as ofs',
       'o.lasyncro_order_id',

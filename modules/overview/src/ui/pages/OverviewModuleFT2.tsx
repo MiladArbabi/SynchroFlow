@@ -465,7 +465,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
               />
               <MetricTile
                 value={pulse?.blockedRevenue != null ? Math.round(Number(pulse.blockedRevenue)) : null}
-                label="Revenue at risk"
+                label="Blocked Revenue"
                 tone={pulse?.blockedRevenue ? 'critical' : 'neutral'}
                 onClick={onNavigate ? () => onNavigate('/cash-flow?focus=constrained') : undefined}
                 navLabel="To cash flow"

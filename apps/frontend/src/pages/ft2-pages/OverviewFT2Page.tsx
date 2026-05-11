@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -55,10 +56,6 @@ export default function OverviewPageFT2() {
 
   return (
     <>
-      <FT2DateRangeBar
-        value={range}
-        onChange={setRange}
-      />
       {/**
        * FIRST INSIGHT BANNER (B-06)
        * ---------------------------
@@ -68,7 +65,7 @@ export default function OverviewPageFT2() {
        */}
       <FirstInsightBanner
         constrainedCount={operationalControl?.constrained_orders ?? null}
-        atRiskRevenue={operationalControl?.at_risk_revenue ?? null}
+        atRiskRevenue={operationalControl?.blocked_revenue ?? null}
         onNavigateToQueue={() => navigate('/fulfillment')}
       />
       <OverviewModuleFT2
@@ -77,7 +74,7 @@ export default function OverviewPageFT2() {
         pulse={operationalControl ? {
           shipToday: operationalControl.queue_ready_to_ship ?? null,
           blockedOrders: operationalControl.constrained_orders ?? null,
-          blockedRevenue: operationalControl.at_risk_revenue ?? null,
+          blockedRevenue: operationalControl.blocked_revenue ?? null,
           aging24h: operationalControl.aging_24h ?? null,
           aging48h: operationalControl.aging_48h ?? null,
           aging72hPlus: operationalControl.aging_72h_plus ?? null,

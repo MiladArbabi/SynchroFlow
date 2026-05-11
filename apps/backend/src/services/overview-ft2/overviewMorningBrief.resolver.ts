@@ -169,9 +169,11 @@ export async function computeMorningBrief(input: {
 
   // --- Read active, non-dismissed alerts ---
   // Ranked by severity (critical first) then revenue impact (highest first).
-  const alerts = await db('alerts')
-    .where({ shop_id: shopId, is_active: true })
-    .whereNull('dismissed_at')
+const alerts = await db.transaction(async (trx): Promise<any[]> => {
+    await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+    return trx('alerts')
+      .where({ shop_id: shopId, is_active: true })
+      .whereNull('dismissed_at')
     .orderByRaw(`
       CASE severity
         WHEN 'critical' THEN 1
@@ -183,6 +185,7 @@ export async function computeMorningBrief(input: {
     `)
     .limit(5)
     .select('alert_key', 'alert_type', 'severity', 'title', 'message', 'revenue_impact');
+  });
 
   // --- Map to signals ---
   const signals: MorningBriefSignal[] = alerts.map((alert: any, index: number) => {

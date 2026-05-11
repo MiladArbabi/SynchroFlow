@@ -1,6 +1,5 @@
 // apps/backend/src/services/orders-operator/OrdersOperatorFacts.service.ts
-
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 
 /**
  * OrdersOperatorFacts
@@ -78,6 +77,7 @@ export interface OrdersOperatorFacts {
 export async function getOrdersOperatorFacts(
   shopId: number
 ): Promise<OrdersOperatorFacts> {
+  return withTenant(shopId, async (trx) => {
 
   // ─────────────────────────────────────────
   // Constraint breakdown — active constraints per type
@@ -85,7 +85,7 @@ export async function getOrdersOperatorFacts(
   // COUNT DISTINCT orders, not constraint rows, to avoid double-counting
   // orders with multiple active constraints.
   // ─────────────────────────────────────────
-  const constraintRows = await db('order_constraints as oc')
+  const constraintRows = await trx('order_constraints as oc')
     .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .andWhere('oc.is_active', true)
@@ -109,7 +109,7 @@ export async function getOrdersOperatorFacts(
   // Source: orders_operational_control_snapshot
   // Deterministic ordering: snapshot_date DESC, aggregate_version DESC
   // ─────────────────────────────────────────
-  const snapshotRow = await db('orders_operational_control_snapshot')
+  const snapshotRow = await trx('orders_operational_control_snapshot')
     .where({ shop_id: shopId })
     .orderBy([
       { column: 'snapshot_date', order: 'desc' },
@@ -143,7 +143,7 @@ export async function getOrdersOperatorFacts(
   // ─────────────────────────────────────────
   // Latest aggregate_version per order — avoids DISTINCT ON subquery issues.
   // Uses a raw subquery correlated on lasyncro_order_id for correctness.
-  const agingRows = await db('order_age_snapshot as oas')
+  const agingRows = await trx('order_age_snapshot as oas')
     .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
     // External order reference for operator display
     .leftJoin(
@@ -207,7 +207,7 @@ export async function getOrdersOperatorFacts(
   const imminentWindowStart = 72 * 3600 - 8 * 3600; // 64h in seconds
   const imminentWindowEnd   = 72 * 3600;             // 72h in seconds
 
-  const imminentRows = await db('order_age_snapshot as oas')
+  const imminentRows = await trx('order_age_snapshot as oas')
     .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
     .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
     .leftJoin(
@@ -257,12 +257,13 @@ export async function getOrdersOperatorFacts(
     };
   });
 
-  return {
-    shopId,
-    constraintCounts,
-    topBlockingType,
-    agingOrders,
-    imminentSlaBreachers,
-    queueCounts,
-  };
+    return {
+      shopId,
+      constraintCounts,
+      topBlockingType,
+      agingOrders,
+      imminentSlaBreachers,
+      queueCounts,
+    };
+  })
 }

@@ -12,16 +12,12 @@ import {
   Tooltip,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { useColorScheme } from '@mui/material/styles';
 import {
-  AlertTriangle,
-  Package,
-  Clock,
   CheckCircle,
   Flag,
   Timer,
   Zap,
-  HelpCircle,
-  Printer,
   ClipboardList,
   ExternalLink,
 } from 'lucide-react';
@@ -32,6 +28,22 @@ import type { OperationalSignal } from '../../contracts/operationalSignals.js';
 import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+
+// ─────────────────────────────────────────────────────────────
+// THEME HOOK — mirrors OverviewModuleFT2 pattern
+// ─────────────────────────────────────────────────────────────
+function useOrdersTheme() {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  return {
+    isDark,
+    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
+    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
+    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
+    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
+    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+  };
+}
 
 /**
  * OrdersModuleFT2DataProps
@@ -198,6 +210,7 @@ function MoneyBar({ value, total, color }: { value: number | null; total: number
 // ─────────────────────────────────────────────────────────────
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const theme = useTheme();
+  const pal = useOrdersTheme();
 
   const {
     orders,
@@ -247,7 +260,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const earned     = revenue?.earned     ?? null;
   const pending    = revenue?.pending    ?? null;
   const totalSales = revenue?.totalSales ?? null;
-  const atRisk     = operationalControl?.at_risk_revenue ?? null;
+  const blockedRevenue     = operationalControl?.blocked_revenue ?? null;
 
   // ── Aging orders ─────────────────────────────────────────────
   // Split aging orders into three SLA bands — each band shows orders that
@@ -329,7 +342,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   mapWorkQueues(safeSnap);
 
   // ── Shared tokens ────────────────────────────────────────────
-  const dividerSx = { borderColor: 'divider' };
+  const dividerSx = { borderColor: pal.border };
   const rowSx = {
     display: 'flex',
     alignItems: 'center',
@@ -337,18 +350,18 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     px: 2,
     py: 1.5,
     borderBottom: '1px solid',
-    borderColor: 'divider',
+    borderColor: pal.border,
     '&:last-child': { borderBottom: 'none' },
   };
   const cardSx = {
-    border: '1px solid',
-    borderColor: 'divider',
+    background: pal.cardBg,
+    border: `1px solid ${pal.border}`,
     borderRadius: 2,
     overflow: 'hidden',
   };
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3, minHeight: '100%' }}>
 
       {/* ── MOMENTUM BAR ───────────────────────────────────────── */}
       {orders?.fulfilled != null && orders.fulfilled > 0 && (
@@ -394,17 +407,17 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             <Box>
               <Typography variant="body2" fontWeight={600}>
                 {isCritical
-                  ? `${fmtN(constrained)} orders are stuck and cannot ship`
+                  ? `${fmtN(constrained)} orders are blocked and cannot ship`
                   : `${fmtN(exceptions)} orders need your attention`}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {isCritical
-                  ? `${fmt$(pending)} in paid orders waiting — most need ${
+                  ? `${fmt$(blockedRevenue)} blocked — most need ${
                       dominantBlocker === 'inventory'   ? 'stock restocking' :
                       dominantBlocker === 'customer'    ? 'customer action' :
                       dominantBlocker === 'operational' ? 'manual review' :
                       'your attention'
-                    } to ship`
+                    } before they can ship`
                   : 'Some orders need a decision before they can ship'}
               </Typography>
             </Box>
@@ -417,11 +430,23 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             />
           </Box>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Button size="small" variant="contained" color="error" startIcon={<ClipboardList size={14} />}>
-              Review {fmtN(constrained)} stuck orders
+            <Button
+              size="small"
+              variant="contained"
+              color="error"
+              startIcon={<ClipboardList size={14} />}
+              href="/fulfillment?filter=blocked"
+            >
+              Review {fmtN(constrained)} blocked orders
             </Button>
-            <Button size="small" variant="outlined" color="inherit" startIcon={<Printer size={14} />}>
-              Print pick list
+            <Button
+              size="small"
+              variant="outlined"
+              color="inherit"
+              startIcon={<ClipboardList size={14} />}
+              href="/fulfillment"
+            >
+              Go to Fulfillment Queue
             </Button>
           </Box>
         </Box>
@@ -459,20 +484,20 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
 
       <Box sx={{
         display: 'flex', flexWrap: 'wrap',
-        border: '1px solid', borderColor: 'divider',
+        background: pal.cardBg,
+        border: `1px solid ${pal.border}`,
         borderRadius: 2, overflow: 'hidden', mb: 4,
       }}>
         {[
-          { label: 'Total orders',         value: fmtN(orders?.total),       color: 'text.primary' },
-          { label: 'Shipped',              value: fmtN(orders?.fulfilled),   color: 'success.dark' },
-          { label: 'Ready to ship',        value: fmtN(qReady),              color: qReady > 0 ? 'success.dark' : 'text.primary' },
-          { label: 'Stuck orders',         value: fmtN(constrained),         color: constrained > 0 ? 'error.main' : 'text.primary' },
-          { label: 'Waiting to ship',      value: fmtN(orders?.unfulfilled), color: 'text.primary' },
+          { label: 'Total orders',         value: fmtN(orders?.total),       color: pal.textPrimary },
+          { label: 'Shipped',              value: fmtN(orders?.fulfilled),   color: theme.palette.success.main },
+          { label: 'Ready to ship',        value: fmtN(qReady),              color: qReady > 0 ? theme.palette.success.main : pal.textPrimary },
+          { label: 'Stuck orders',         value: fmtN(constrained),         color: constrained > 0 ? theme.palette.error.main : pal.textPrimary },
+          { label: 'Waiting to ship',      value: fmtN(orders?.unfulfilled), color: pal.textPrimary },
         ].map((stat, i, arr) => (
           <Box key={stat.label} sx={{ display: 'flex' }}>
             <Box sx={{ minWidth: 120, px: 2, py: 1.5 }}>
-              <Typography variant="h5" fontWeight={700} sx={{ color: stat.color, fontVariantNumeric: 'tabular-nums' }}>
-                {stat.value}
+              <Typography variant="h5" fontWeight={700} sx={{ color: stat.color, fontVariantNumeric: 'tabular-nums', fontFamily: 'monospace' }}>                {stat.value}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
                 {stat.label}
@@ -661,67 +686,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             </Button>
           </Box>
 
-          {/* What's holding things up */}
-          {(invBlocked > 0 || custBlocked > 0 || opsBlocked > 0) && (
-            <>
-              <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-                What's holding up your orders
-              </Typography>
-              <Box sx={{ ...cardSx, mb: 3 }}>
-                {[
-                  {
-                    icon: <HelpCircle size={16} />,
-                    label: 'Needs manual review',
-                    sub: 'Address issues, fraud checks, or other blockers',
-                    count: opsBlocked,
-                    color: opsBlocked > 0 ? theme.palette.error.main : theme.palette.text.disabled,
-                    chipColor: opsBlocked > 0 ? 'error' as const : 'default' as const,
-                    action: 'Review',
-                  },
-                  {
-                    icon: <Package size={16} />,
-                    label: 'Out of stock items',
-                    sub: 'Orders cannot ship — items not in warehouse',
-                    count: invBlocked,
-                    color: invBlocked > 0 ? theme.palette.error.main : theme.palette.text.disabled,
-                    chipColor: invBlocked > 0 ? 'error' as const : 'default' as const,
-                    action: 'Check stock',
-                  },
-                  {
-                    icon: <Clock size={16} />,
-                    label: 'Waiting on customer',
-                    sub: "Customer hasn't responded or confirmed",
-                    count: custBlocked,
-                    color: custBlocked > 0 ? theme.palette.warning.main : theme.palette.text.disabled,
-                    chipColor: custBlocked > 0 ? 'warning' as const : 'default' as const,
-                    action: 'Contact',
-                  },
-                ]
-                .filter(item => item.count > 0)
-                .map((item) => (
-                  <Box key={item.label} sx={{
-                    ...rowSx,
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Box sx={{ color: item.color }}>{item.icon}</Box>
-                      <Box>
-                        <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
-                        <Typography variant="caption" color="text.secondary">{item.sub}</Typography>
-                      </Box>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Chip label={`${fmtN(item.count)} orders`} size="small" color={item.chipColor} variant="outlined" />
-                      <Button size="small" variant="text" color="inherit" sx={{ fontSize: 12, minWidth: 0 }}>
-                        {item.action}
-                      </Button>
-                    </Box>
-                  </Box>
-                ))}
-              </Box>
-            </>
-          )}
-
           {/* Quick actions */}
           <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
             Quick actions
@@ -734,11 +698,11 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
                 {qReady === 1
-                  ? 'This order is packed and waiting. Print the label and hand it off.'
-                  : 'These orders are packed and waiting. Print labels and hand them off.'}
+                  ? 'This order is ready to be picked. Release a pick batch in the Fulfillment Queue — your operator will claim it on mobile.'
+                  : 'These orders are ready to be picked. Release a pick batch in the Fulfillment Queue — your operators will claim it on mobile.'}
               </Typography>
-              <Button size="small" variant="contained" color="success" startIcon={<Printer size={14} />}>
-                Print shipping {qReady === 1 ? 'label' : 'labels'}
+              <Button size="small" variant="contained" color="success" startIcon={<ClipboardList size={14} />} href="/fulfillment">
+                Go to Fulfillment Queue →
               </Button>
             </Box>
           )}
@@ -746,17 +710,14 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           {constrained > 0 && (
             <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, mb: 1.5 }}>
               <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                Review {fmtN(constrained)} stuck orders
+                Review {fmtN(constrained)} blocked orders
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                Each needs a decision from you. Open them in bulk to work through faster.
+                Each has a constraint preventing shipment — resolve the block to move it into the Orders Pool, ready for picking.
               </Typography>
               <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button size="small" variant="outlined" color="inherit" startIcon={<ClipboardList size={14} />}>
-                  Open bulk review
-                </Button>
-                <Button size="small" variant="outlined" color="inherit" startIcon={<Printer size={14} />}>
-                  Generate pick list
+                <Button size="small" variant="contained" color="error" startIcon={<ClipboardList size={14} />} href="/fulfillment?filter=blocked">
+                  Review blocked orders
                 </Button>
               </Box>
             </Box>
@@ -778,13 +739,13 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 label: 'Total order value',
                 sub: 'All orders ever placed',
                 value: totalSales,
-                color: theme.palette.text.secondary,
+                color: pal.textSecond,
               },
               {
                 label: 'Collected — shipped orders',
                 sub: 'Revenue in hand',
                 value: earned,
-                color: theme.palette.success.dark,
+                color: theme.palette.success.main,
               },
               {
                 label: 'Paid but not yet shipped',
@@ -793,10 +754,18 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 color: theme.palette.warning.dark,
               },
               {
-                label: 'At risk of being lost',
-                sub: 'Overdue, may cancel or refund',
-                value: atRisk,
-                color: atRisk && atRisk > 0 ? theme.palette.error.main : theme.palette.text.secondary,
+                label: 'Blocked revenue',
+                sub: 'Orders with constraints — cannot ship yet',
+                value: blockedRevenue,
+                color: blockedRevenue && blockedRevenue > 0 ? theme.palette.error.main : theme.palette.text.secondary,
+              },
+              {
+                label: 'Revenue leakage',
+                sub: 'Lost to refunds — unrecoverable',
+                value: operationalControl?.revenue_leakage ?? null,
+                color: operationalControl?.revenue_leakage && Number(operationalControl.revenue_leakage) > 0
+                  ? theme.palette.warning.main
+                  : pal.textSecond,
               },
             ].map((item) => (
               <Box key={item.label} sx={{ ...rowSx }}>
@@ -821,11 +790,11 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
 
           <Box sx={{ ...cardSx, mb: 3 }}>
             {[
-              { color: theme.palette.success.main,   label: 'Ready to pack and ship',       count: qReady,   action: 'Ship now' },
-              { color: theme.palette.error.main,      label: 'Needs someone to look at it',  count: opsBlocked > 0 ? opsBlocked : qManual, action: 'Review' },
-              { color: theme.palette.warning.main,    label: 'Being processed for shipment', count: qPending, action: null },
-              { color: theme.palette.text.disabled,   label: 'Waiting for stock',            count: invBlocked > 0 ? invBlocked : qInv, action: null },
-              { color: theme.palette.text.disabled,   label: 'Waiting for customer reply',   count: qCust,    action: null },
+              { color: theme.palette.success.main,  label: 'Ready to pick & ship',        count: qReady,   action: 'Go to queue',    href: '/fulfillment' },
+              { color: theme.palette.error.main,    label: 'Blocked — needs review',       count: opsBlocked > 0 ? opsBlocked : qManual, action: 'Review', href: '/fulfillment?filter=blocked' },
+              { color: theme.palette.warning.main,  label: 'Being picked & packed',        count: qPending, action: null,             href: null },
+              { color: pal.textSecond,              label: 'Waiting for stock',             count: invBlocked > 0 ? invBlocked : qInv, action: null, href: null },
+              { color: pal.textSecond,              label: 'Waiting for customer reply',    count: qCust,    action: null,             href: null },
             ].map((item) => (
               <Box key={item.label} sx={{
                 ...rowSx,
@@ -838,7 +807,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography variant="body2" fontWeight={700}>{fmtN(item.count)}</Typography>
                   {item.action && item.count > 0 && (
-                    <Button size="small" variant="text" color="inherit" sx={{ fontSize: 12, minWidth: 0 }}>
+                    <Button size="small" variant="text" color="inherit" sx={{ fontSize: 12, minWidth: 0 }} href={item.href ?? undefined}>
                       {item.action}
                     </Button>
                   )}

@@ -1,4 +1,8 @@
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
+
+type KnexOrTrx = Knex | Knex.Transaction;
+
 
 /**
  * Fulfillment Status Facts (Layer 1)
@@ -13,7 +17,9 @@ import db from '@lasyncro/backend-core/db.js';
  */
 export async function extractOrderFulfillmentStatusFacts(
   shopId: number,
+  trx?: KnexOrTrx
 ) {
+  const qb = trx ?? db;
 
   /**
    * NOTE:
@@ -21,7 +27,7 @@ export async function extractOrderFulfillmentStatusFacts(
    * status_updated_at is NOT an order timestamp.
    * Do NOT apply FT2 date-range filtering here.
    */
-  const rows = await db('order_fulfillment_status as ofs')
+  const rows = await qb('order_fulfillment_status as ofs')
     .join('orders as o', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .select('ofs.status');
