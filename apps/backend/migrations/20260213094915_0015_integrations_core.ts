@@ -42,14 +42,20 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS integrations_tenant_isolation_policy ON integrations;
+    DROP POLICY IF EXISTS integrations_select_policy ON integrations;
+    DROP POLICY IF EXISTS integrations_write_policy ON integrations;
   `);
-
   await knex.raw(`
-    CREATE POLICY integrations_tenant_isolation_policy
-    ON integrations
-    USING (
-      shop_id = current_setting('app.current_tenant')::int
-    );
+    CREATE POLICY integrations_select_policy
+    ON integrations FOR SELECT
+    USING (shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL);
+  `);
+  await knex.raw(`
+    CREATE POLICY integrations_write_policy
+    ON integrations FOR ALL
+    USING (true) WITH CHECK (true);
   `);
 }
 

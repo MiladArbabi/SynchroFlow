@@ -19,7 +19,6 @@
  * - Status → visual meaning
  */
 
-import React from 'react';
 import {
   Container,
   Typography,
@@ -30,7 +29,7 @@ import {
   Stack,
 } from '@mui/material';
 
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui';
+import type { ActivationSurfaceProps } from '@lasyncro/shared/ui';
 
 /* -------------------------------------------------------------------------- */
 /* Status → Visual Encoding                                                    */

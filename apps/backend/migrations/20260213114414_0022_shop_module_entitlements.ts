@@ -56,14 +56,21 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS shop_module_entitlements_tenant_isolation_policy ON shop_module_entitlements;
+    DROP POLICY IF EXISTS shop_module_entitlements_select_policy ON shop_module_entitlements;
+    DROP POLICY IF EXISTS shop_module_entitlements_write_policy ON shop_module_entitlements;
   `);
 
   await knex.raw(`
-    CREATE POLICY shop_module_entitlements_tenant_isolation_policy
-    ON shop_module_entitlements
-    USING (
-      shop_id = current_setting('app.current_tenant')::int
-    );
+    CREATE POLICY shop_module_entitlements_select_policy
+    ON shop_module_entitlements FOR SELECT
+    USING (shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL);
+  `);
+  await knex.raw(`
+    CREATE POLICY shop_module_entitlements_write_policy
+    ON shop_module_entitlements FOR ALL
+    USING (true) WITH CHECK (true);
   `);
 
   /**

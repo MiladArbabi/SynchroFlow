@@ -50,6 +50,7 @@ export default defineConfig({
       'api': path.resolve(__dirname, './src/api'),
       // analytics alias required for central event pipeline (prevents dead module tree-shaking)
       'analytics': path.resolve(__dirname, './src/analytics'),
+      'activation': path.resolve(__dirname, './src/activation'),
       
       // --- OUR EXISTING ALIASES ---
       '@lasyncro/shared/ui': path.resolve(__dirname, '../../modules/shared/src/ui'),

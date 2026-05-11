@@ -7,15 +7,12 @@ export function useChecklistIntentAdapter() {
 
   return (intent: ChecklistUiIntent) => {
     if (intent.type === 'TASK_CLICK') {
-      emit({
-        event: 'ui.intent',
-        payload: {
+        emit('ui.intent', {
           action: `task_click:${intent.taskId}`,
           surface: 'ft1_checklist',
           moduleId: intent.moduleId,
           taskId: intent.taskId,
-        },
-      });
+        })
     }
-  };
+  }
 }

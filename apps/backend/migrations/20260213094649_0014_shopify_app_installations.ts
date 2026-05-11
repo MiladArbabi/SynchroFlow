@@ -38,14 +38,20 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS shopify_app_installations_tenant_isolation_policy ON shopify_app_installations;
+    DROP POLICY IF EXISTS shopify_app_installations_select_policy ON shopify_app_installations;
+    DROP POLICY IF EXISTS shopify_app_installations_write_policy ON shopify_app_installations;
   `);
-
   await knex.raw(`
-    CREATE POLICY shopify_app_installations_tenant_isolation_policy
-    ON shopify_app_installations
-    USING (
-      shop_id = current_setting('app.current_tenant')::int
-    );
+    CREATE POLICY shopify_app_installations_select_policy
+    ON shopify_app_installations FOR SELECT
+    USING (shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL);
+  `);
+  await knex.raw(`
+    CREATE POLICY shopify_app_installations_write_policy
+    ON shopify_app_installations FOR ALL
+    USING (true) WITH CHECK (true);
   `);
 
   /**

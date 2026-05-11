@@ -1,4 +1,4 @@
-import { ActivationSurfaceProps } from "@lasyncro/shared/ui/activation";
+import type { ActivationSurfaceProps } from "@lasyncro/shared/ui/activation";
 
 export const customersActivationConfig: ActivationSurfaceProps = {
   moduleId: 'customers',

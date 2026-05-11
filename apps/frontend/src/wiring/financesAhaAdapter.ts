@@ -22,15 +22,12 @@ export function useFinancesAhaAdapter() {
       openFt1Checklist();
 
       // 3️⃣ Emit analytics
-      emit({
-        event: 'ui.intent',
-        payload: {
+        emit('ui.intent', {
           action: 'start_onboarding',
           surface: 'finances_aha',
           moduleId: 'finances',
           taskId: intent.taskId,
-        },
-      });
+        })
     }
-  };
+  }
 }

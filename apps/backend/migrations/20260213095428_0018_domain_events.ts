@@ -95,14 +95,20 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.raw(`
     DROP POLICY IF EXISTS domain_events_tenant_isolation_policy ON domain_events;
+    DROP POLICY IF EXISTS domain_events_select_policy ON domain_events;
+    DROP POLICY IF EXISTS domain_events_write_policy ON domain_events;
   `);
-
   await knex.raw(`
-    CREATE POLICY domain_events_tenant_isolation_policy
-    ON domain_events
-    USING (
-      shop_id = current_setting('app.current_tenant')::int
-    );
+    CREATE POLICY domain_events_select_policy
+    ON domain_events FOR SELECT
+    USING (shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL);
+  `);
+  await knex.raw(`
+    CREATE POLICY domain_events_write_policy
+    ON domain_events FOR ALL
+    USING (true) WITH CHECK (true);
   `);
 
   /**

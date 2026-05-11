@@ -33,7 +33,7 @@ const ACTIVATION_BY_MODULE: Record<string, ActivationSurfaceProps> = {
  */
 export function resolveActivationConfig(
   moduleId?: string
-): ActivationSurfaceProps {
+): ActivationSurfaceProps | null {
   if (!moduleId) {
     return null;
   }

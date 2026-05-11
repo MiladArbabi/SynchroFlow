@@ -1,5 +1,5 @@
 //apps/frontend/src/activation/configs/orders.tsx
-import { ActivationSurfaceProps } from "@lasyncro/shared/ui/activation";
+import type { ActivationSurfaceProps } from "@lasyncro/shared/ui/activation";
 
 export const orderNexusActivationConfig: ActivationSurfaceProps = {
   moduleId: 'order-nexus',

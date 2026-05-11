@@ -20,15 +20,12 @@ export function useOrderNexusAhaAdapter() {
       openFt1Checklist();
 
       // 3️⃣ Emit analytics
-      emit({
-        event: 'ui.intent',
-        payload: {
+        emit('ui.intent', {
           action: 'start_onboarding',
           surface: 'order_nexus_aha',
           moduleId: 'order-nexus',
           taskId: intent.taskId,
-        },
-      });
+        })
     }
-  };
+  }
 }

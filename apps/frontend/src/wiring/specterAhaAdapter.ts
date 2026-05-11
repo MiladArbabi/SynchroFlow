@@ -21,15 +21,12 @@ export function useSpecterAhaAdapter() {
       openFt1Checklist();
 
       // 3️⃣ Emit analytics
-      emit({
-        event: 'ui.intent',
-        payload: {
+      emit('ui.intent', {
           action: 'start_onboarding',
           surface: 'specter_aha',
           moduleId: 'specter',
           taskId: intent.taskId,
-        },
-      });
+        })
     }
-  };
+  }
 }

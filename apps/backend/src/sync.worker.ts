@@ -111,12 +111,15 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 
     // --- The sync logic ---
     if (integration!.platform === 'shopify') {
+      // Set tenant context for all RLS-enforced writes during sync
+      await db.raw(`SET app.current_tenant = '${integration!.shop_id}'`);
        await performSmartSync(
          accessToken, 
          integration!.platform_shop_name, 
          integration!.shop_id,
          integration!.id
        );
+      await db.raw(`SET app.current_tenant = '0'`);
      } else {
        console.warn(`[sync.worker] No sync logic implemented for platform: ${integration!.platform}`);
      }

@@ -18,14 +18,11 @@ export function useProductsAhaAdapter() {
     });
 
     // 2. Emit analytics / intent signal
-    emit({
-      event: 'ui.intent',
-      payload: {
-        action: 'start_onboarding',
-        surface: 'products_ft1',
-        moduleId: 'sku-os',
-        taskId: intent.taskId,
-      },
+    emit('ui.intent', {
+      action: 'start_onboarding',
+      surface: 'products_ft1',
+      moduleId: 'sku-os',
+      taskId: intent.taskId,
     });
 
     // 3️⃣ Open the FT1 checklist drawer

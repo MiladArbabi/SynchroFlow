@@ -22,7 +22,23 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "analytics/*": ["src/analytics/*"],
+      "activation/*": ["src/activation/*"],
+      "hooks/*": ["src/hooks/*"],
+      "components/*": ["src/components/*"],
+      "contexts/*": ["src/contexts/*"],
+      "utils/*": ["src/utils/*"],
+      "layouts/*": ["src/layouts/*"],
+      "runtime/*": ["src/runtime/*"],
+      "assets/*": ["src/assets/*"],
+      "widgets/*": ["src/widgets/*"],
+      "api/*": ["src/api/*"],
+      "config": ["src/config.ts"],
+      "wiring/*": ["src/wiring/*"],
+    }
   },
   "include": ["src"]
 }

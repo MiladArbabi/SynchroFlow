@@ -1,6 +1,6 @@
 // apps/frontend/src/activation/configs/trustDataHealth.tsx
 
-import { ActivationSurfaceProps } from '@lasyncro/shared/ui/activation';
+import type { ActivationSurfaceProps } from '@lasyncro/shared/ui/activation';
 
 /**
  * Trust Data Health — FT_MINUS_ONE activation surface
