@@ -212,7 +212,7 @@ USING (
 );
 ```
 
-## 4b. OAuth-Path Tables\
+## 4b. OAuth-Path Tables
 
 These tables are accessed during the Shopify OAuth flow **after** a shop exists but **before** a stable tenant context is guaranteed. They use the same split-policy pattern as auth-path tables.
 
@@ -341,6 +341,27 @@ COMMIT;
 
 **Cause:** `user_lifecycle_snapshot` SELECT is blocked during JWT issuance.
 **Fix:** Apply split policy pattern to `user_lifecycle_snapshot`.
+
+### "FIRST_INSIGHT_POST_COMMIT_FAILED" — domain_event_outbox RLS violation
+
+**Cause:** `FirstInsightService` and similar services insert into `domain_events` inside a `db.transaction()` without setting `app.current_tenant`. The `auto_create_domain_event_outbox` trigger fires on INSERT and attempts to write to `domain_event_outbox`, but the outbox INSERT policy requires the calling session to have tenant context.
+**Fix:** Add `await trx.raw("SET LOCAL app.current_tenant = '${shopId}'")`  as the first line of any transaction that inserts into `domain_events`. Alternatively use `withTenant()`.
+**Note:** `domain_event_outbox` has a split policy — SELECT is tenant-scoped, INSERT is open (trigger-only writer, no tenant-sensitive data).
+
+### FT0/FT2 lifecycle evaluation returns wrong results despite data existing
+
+**Cause:** Services like `FT2EvaluatorService`, `FT0CompletionService`, and `lifecycle.controller.ts` query strict RLS tables (`orders`, `system_readiness_state`, `user_lifecycle_snapshot`) using bare `db()` calls without tenant context. RLS returns 0 rows silently — no error thrown.
+**Fix:** Wrap all reads from strict RLS tables in `withTenant(shopId, trx => ...)` or `db.transaction` with `SET LOCAL app.current_tenant`. The `db` proxy only checks that `app.current_tenant` is *set* — it does not verify it is non-zero.
+
+### Shopify sync fails with products/orders RLS violation
+
+**Cause:** `shopify.service.ts` opens `db.transaction()` for product/order sync but acquires a new connection from the pool — the `SET app.current_tenant` in `sync.worker.ts` was set on a *different* connection.
+**Fix:** Set `SET LOCAL app.current_tenant = '${shopId}'` as the first statement inside each sync transaction, not outside it in the worker.
+
+### Projection rebuild fails with PROJECTION_WRITE_VIOLATION
+
+**Cause:** `rebuildInventoryProjectionForVariants` writes to `order_fulfillment_status`, which is guarded by `enforce_projection_writer` trigger requiring `synchroflow.projection = 'true'`. When called from sync (not projection engine), this GUC is not set.
+**Fix:** Add `await trx.raw("SET LOCAL \"synchroflow.projection\" = 'true'")` before any write to projection-guarded tables outside the projection engine.
 
 ---
 
