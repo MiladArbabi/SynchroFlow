@@ -51,7 +51,7 @@ export default function FAQ({ items }: FAQProps) {
       </div>
 
       {/* FAQ list */}
-      <div style={{ borderTop: '1px solid #E8E6E0' }}>
+      <div>
         {items.map((item, i) => (
           <details key={i} className="faq-item" open={i === 0}>
             <summary>
