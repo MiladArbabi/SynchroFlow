@@ -1,0 +1,180 @@
+---
+title: "Does Shopify Have Built-In Warehouse Management? What It Does (and Doesn't) Do"
+description: "Shopify tracks inventory — but it doesn't manage your warehouse. Here's where Shopify's built-in tools end, what a WMS actually does, and how to bridge the gap without a six-figure implementation."
+date: "2026-05-11"
+lastReviewed: "2026-05-11"
+author: "LaSyncro"
+tags: ["shopify", "warehouse", "wms", "operations"]
+primaryKeyword: "shopify warehouse management"
+secondaryKeywords: ["shopify wms", "shopify warehouse management system", "shopify warehouse management software", "does shopify have built-in warehouse management"]
+vector: 4
+cta_text: "LaSyncro adds a full warehouse management layer to Shopify — operational in 60 seconds, not 6 weeks."
+cta_url: "https://www.lasyncro.com/#waitlist"
+faq:
+  - question: "Does Shopify have a built-in warehouse management system?"
+    answer: "No. Shopify includes basic inventory tracking — stock counts, multi-location toggling, and transfer records — but it does not include warehouse management features like bin-level storage, barcode-driven picking, receiving workflows, or route-optimized fulfillment. Merchants managing their own warehouse need a dedicated WMS that integrates with Shopify."
+  - question: "What is the difference between inventory management and warehouse management?"
+    answer: "Inventory management tells you what you have — stock counts, locations, and levels. Warehouse management tells you where it is, how it moves, and what to do next. Shopify provides the first. A WMS provides the second. Most merchants need both once they exceed 50 daily orders or 200 active SKUs."
+  - question: "Can I use Shopify for warehouse operations with multiple locations?"
+    answer: "Shopify supports multiple inventory locations and can assign orders to fulfil from specific locations. However it does not manage the physical operations within each location — no bin tracking, no pick routing, no scan-based receiving. Multi-location in Shopify is inventory visibility, not warehouse management."
+  - question: "What happens when Shopify inventory doesn't match my actual shelf count?"
+    answer: "The gap between Shopify's count and physical stock is called inventory drift. It accumulates from unrecorded movements — returns stowed without a restock, pick errors not corrected, damaged stock removed without an adjustment. Left unchecked it causes overselling, phantom stockouts, and inaccurate demand forecasting. A scan-based WMS eliminates drift by recording every physical movement in real time."
+  - question: "How do I choose a WMS for a small Shopify warehouse under 500 SKUs?"
+    answer: "Look for a WMS that connects via Shopify OAuth (not CSV export), supports camera-scan picking and receiving without barcode hardware, provides an immutable event ledger rather than snapshots, and is designed for 1–10 person operations. Setup should take minutes, not weeks. Enterprise WMS tools like Cin7, Linnworks, and ShipHero require multi-week implementations and are priced for operations teams — not small warehouse teams."
+  - question: "Do I need a barcode scanner to use a WMS with Shopify?"
+    answer: "Not necessarily. Modern warehouse management tools designed for SMB Shopify merchants use camera-based scanning on mobile devices — no dedicated barcode hardware required. This significantly reduces the barrier to entry for small warehouse teams who cannot justify the cost of handheld scanners for every operator."
+relatedLinks:
+  - href: "/blog/does-shopify-have-built-in-warehouse-management"
+    title: "Does Shopify Have Built-In Warehouse Management?"
+    description: "A deeper look at exactly what Shopify's native tools cover."
+  - href: "/blog/how-to-fix-inventory-drift-shopify"
+    title: "How to Fix Inventory Drift in Shopify"
+    description: "The most common symptom of missing warehouse management."
+  - href: "/blog/shopify-overselling-problem"
+    title: "How to Stop Overselling on Shopify"
+    description: "What happens when inventory drift goes unchecked."
+  - href: "/compare/cin7-alternative"
+    title: "Cin7 Alternative for Small Shopify Stores"
+    description: "Enterprise WMS too heavy? See what fits SMB operations."
+  - href: "/compare/linnworks-alternative"
+    title: "Linnworks Too Expensive? Here Is What Merchants Use Instead"
+    description: "How the most common alternatives compare."
+---
+
+import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
+
+<QuickAnswer>
+Shopify includes basic inventory tracking — stock counts, multi-location toggling, and transfer records — but it does not include warehouse management features like bin-level storage, barcode-driven picking, receiving workflows, or route-optimised fulfilment. Merchants managing their own warehouse need a dedicated WMS that integrates with Shopify to bridge this gap.
+</QuickAnswer>
+
+<ArticleImage
+  src="hero-warehouse-flow.png"
+  alt="Shopify warehouse management gap — what Shopify tracks natively versus what a dedicated warehouse management system provides for SMB merchants"
+  caption="Shopify tells you what you have. A WMS tells you where it is, how it moves, and what to do next."
+  priority={true}
+/>
+
+If you manage your own warehouse and run Shopify, you have almost certainly felt this gap. Your Shopify admin shows stock counts. It accepts orders. It decrements inventory when something sells. But it cannot tell you where in your warehouse that item actually lives, who should go and get it, whether the right item was picked, or whether the delivery that arrived this morning matched what was on the purchase order.
+
+That gap — between inventory visibility and warehouse operations — is where most growing Shopify merchants lose time, make errors, and accumulate the drift that eventually causes stockouts and oversold orders.
+
+This guide covers exactly what Shopify provides natively, what a warehouse management system actually does, the specific failure modes that appear when you run a warehouse on Shopify alone, and what to look for when choosing a WMS built for SMB Shopify operations.
+
+## What Shopify Actually Includes for Inventory
+
+Shopify's built-in inventory tools are genuinely useful at low volume. Understanding exactly what they cover helps you identify precisely where the gap begins.
+
+### Stock Level Tracking Per Variant
+
+Shopify tracks inventory at the product variant level across multiple locations. When an order is placed, it decrements the relevant SKU automatically. When you receive new stock, you can adjust quantities manually or via a connected app. This is the foundation — and it works well when operations are simple.
+
+### Multiple Location Support
+
+Shopify supports multiple inventory locations and can route orders to fulfil from specific locations. You can set priority, transfer stock between locations, and view inventory per location in the admin. This is useful for merchants with a retail store alongside a warehouse, or who fulfil from multiple sites.
+
+What it does not do: manage the physical operations within any location. It knows you have 47 units of SKU XYZ at Warehouse 1. It does not know where in that warehouse those 47 units are, which should be picked first, or whether they are in a sellable condition.
+
+### Basic Low-Stock Alerts
+
+Shopify can notify you when a product reaches a quantity threshold you define. This is a basic demand signal — not demand forecasting, not restock risk scoring, but enough to prompt a manual reorder decision for merchants at low volume.
+
+### Transfer Records Between Locations
+
+Shopify supports stock transfers between locations with a basic record of what was transferred and when. There is no scan verification, no discrepancy detection, and no audit trail of who moved what — just a quantity adjustment between two location totals.
+
+### The Core Distinction
+
+Shopify's tools are inventory visibility — they tell you what you have. Warehouse management tells you where it is, how it moves, and what to do next. Most merchants do not notice the gap until order volume increases and manual processes start breaking under the load.
+
+## What Warehouse Management Actually Means
+
+A true warehouse management system provides five core capabilities that Shopify does not.
+
+### 1. Receiving Workflows
+
+When a supplier delivery arrives, a WMS provides a structured receiving process: scan items in against the purchase order, record discrepancies immediately, assign received stock to specific warehouse locations, and update inventory in real time. Every delivery becomes a verified, timestamped event — not a manual quantity adjustment made after counting.
+
+This matters because a single PO miscount creates a cascade: false stock levels, overselling, emergency reorders, stockouts, refund spikes, and wasted time recounting. Scan-based receiving prevents the cascade at the source.
+
+### 2. Bin and Location Tracking
+
+A WMS knows that SKU-103 is in Aisle 2, Shelf B, Bin 14 — not just "Warehouse 1." This enables directed putaway (telling operators exactly where to stow incoming stock), directed picking (routing pickers to the right location without searching), and cycle counting (auditing specific locations rather than the entire warehouse).
+
+Without bin tracking, a warehouse with 500+ SKUs becomes increasingly difficult to operate accurately as it grows.
+
+### 3. Barcode and Scan-Driven Operations
+
+Every physical movement — receive, stow, pick, pack, return — is confirmed by a scan. The scan is the record. This eliminates the gap between physical reality and system state that causes inventory drift. It also creates an immutable audit trail: every movement has a timestamp, an operator ID, and a location.
+
+### 4. Pick Path Optimisation
+
+A WMS routes pickers through the warehouse efficiently — grouping items by location, sequencing picks to minimise travel, and batching multiple orders where possible. At 20 orders a day, this is nice to have. At 200 orders a day, it is the difference between a warehouse that runs on time and one that doesn't.
+
+### 5. Immutable Event Ledger
+
+A WMS records every stock movement as an event — not just a snapshot of the current count. This means you can replay exactly what happened to any SKU at any point in time. When stock is wrong, you do not have to guess — you can trace every movement back to its source. Shopify stores the current number. A WMS stores the history that produced it.
+
+## The Specific Failure Modes of Running a Warehouse on Shopify Alone
+
+These are not theoretical. They are the operational problems that consistently appear as Shopify merchants scale their warehouse operations without a dedicated WMS.
+
+### Monday Morning Reconciliation
+
+The weekly ritual of exporting orders, cross-checking pick lists, manually adjusting inventory counts, and trying to explain why Shopify says 23 but the shelf says 19. This typically consumes 2-4 hours of a senior team member's time every week — time that could be spent on growth rather than data repair.
+
+### Overselling From Count Lag
+
+Shopify says 5, the shelf has 2. A customer orders 3 and gets a cancellation email. The gap between Shopify's count and physical reality — inventory drift — is the most direct cause of overselling for merchants who manage their own warehouse. See our [full guide to stopping overselling on Shopify](/blog/shopify-overselling-problem) for the specific fixes.
+
+### No Root Cause Tracing
+
+When stock is wrong, Shopify cannot tell you why. It stores the current count — not the sequence of events that produced it. When a discrepancy appears, you ask the team, review paper records, and piece together what probably happened. With a WMS event ledger, you replay exactly what happened. This distinction becomes critical when the same discrepancy keeps recurring — you need to know the root cause, not just reset the count.
+
+### Return Re-Entry Chaos
+
+A returned item arrives, gets inspected, is deemed sellable — and sits in a returns area while Shopify still shows it as sold. Over 50 returns a month, that is 50 units of invisible stock. Without a scan-based returns process that updates Shopify at the point of stow, returns consistently inflate your drift. See our [inventory drift guide](/blog/how-to-fix-inventory-drift-shopify) for the full breakdown.
+
+### Receiving Discrepancy Blindness
+
+A supplier delivers 94 units against a PO for 100. Without a scan-based receiving workflow, the instinct is to receive everything and chase the shortage later. If Shopify gets updated for 100 rather than 94, 6 phantom units enter the system — and your inventory counts are wrong before the first order ships from that stock.
+
+<ArticleImage
+  src="ba-po-receieve.png"
+  alt="LaSyncro purchase order receiving workflow showing scan-to-receive against supplier POs with real-time Shopify inventory updates and discrepancy detection"
+  caption="Scan-based PO receiving catches discrepancies at the point of delivery — before phantom units enter your inventory."
+/>
+
+## What to Look for in a Shopify WMS
+
+The market for Shopify-connected warehouse management splits into two categories that leave most SMB merchants in an uncomfortable middle ground.
+
+**Enterprise WMS tools** — Cin7, Linnworks, ShipHero, NetSuite WMS — are genuinely powerful. They also require multi-week implementations, dedicated IT support, and pricing designed for operations teams managing millions of pounds in revenue. For a [Cin7 alternative](/compare/cin7-alternative) or [Linnworks alternative](/compare/linnworks-alternative) that fits SMB scale, the feature set needs to match the operational complexity — not exceed it by an order of magnitude.
+
+**Lightweight inventory apps** — Stocky, basic Shopify apps — handle simple stock adjustments but do not actually manage warehouse operations. They are inventory visibility tools, not WMS tools.
+
+The gap in the middle is where most Shopify merchants live: serious enough to need real warehouse management, but not large enough to justify an enterprise implementation.
+
+When evaluating a WMS for a Shopify warehouse under 500 SKUs, use this checklist:
+
+- Does it connect via Shopify OAuth — not CSV export or manual sync?
+- Does it support camera-scan picking and receiving without dedicated barcode hardware?
+- Does it provide an immutable event ledger, not just snapshots of current counts?
+- Is it designed for 1–10 person warehouse teams, not enterprise operations managers?
+- What is the actual setup time — minutes or weeks?
+- Does it surface demand intelligence — low stock alerts, restock risk, supplier performance?
+- Does it update Shopify inventory in real time from every scan — not on a sync schedule?
+
+<ArticleImage
+  src="overal-warehouse-in-one-system.png"
+  alt="LaSyncro complete Shopify warehouse management overview showing pick, pack, receive, stow, supplier ratings, and demand intelligence in one platform"
+  caption="One platform for every warehouse operation — connected to Shopify in real time."
+/>
+
+## The Right Starting Point
+
+Most merchants hitting the limits of Shopify's native inventory tools are processing somewhere between 50 and 200 orders per day, managing 100 to 500 active SKUs, and running a warehouse team of 2 to 10 people. They are losing 3 to 5 hours per week to manual reconciliation and experiencing inventory discrepancies that erode customer trust.
+
+The answer is not an enterprise WMS implementation that takes 6 weeks and costs more than the problem it solves. It is a warehouse management layer designed specifically for this scale — one that connects to Shopify in seconds, works on mobile without hardware, and turns every physical movement into a real-time Shopify inventory event.
+
+We are building LaSyncro specifically for this gap. If you are currently stuck between Shopify's basic tools and enterprise systems you do not need, [take the operational readiness checklist](/checklist) to see where your biggest time leaks are — it takes 3 minutes and gives you a personalised breakdown of where your operation is losing time and money.
