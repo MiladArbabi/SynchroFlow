@@ -11,7 +11,7 @@ export default function QuickAnswer({ children }: QuickAnswerProps) {
     <aside
       aria-label="Quick answer"
       style={{
-        margin: '24px 0',
+        margin: '64px auto 0',
         borderRadius: '12px',
         border: '1px solid #FFDCCA',
         background: '#FFF0E8',

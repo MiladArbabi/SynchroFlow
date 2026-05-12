@@ -68,7 +68,7 @@ export default function WaitlistCTA({ variant = 'full', text }: WaitlistCTAProps
           fontSize: '26px', fontWeight: 400, lineHeight: 1.2,
           letterSpacing: '-0.02em', margin: '0 0 6px', color: '#F0EEE8',
         }}>
-          {text ?? 'A full warehouse management layer for Shopify.'}
+          {text ?? 'See your operation clearly for the first time.'}
         </h3>
         <p style={{
           margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif",

@@ -42,10 +42,10 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
             fontFamily: "'Instrument Serif', Georgia, serif",
             fontSize: 'clamp(36px, 5vw, 56px)',
             fontWeight: 400,
-            lineHeight: 1.12,
+            lineHeight: 1.2,
             letterSpacing: '-0.02em',
             color: '#0F0E0D',
-            margin: '0 0 28px',
+            margin: '0 0 32px',
           }}>
             {frontmatter.title}
           </h1>
@@ -55,14 +55,14 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
             fontFamily: "'DM Sans', system-ui, sans-serif",
             fontSize: '19px', fontWeight: 300,
             lineHeight: 1.55, color: '#3A3835',
-            margin: '0 0 32px', maxWidth: '640px',
+            margin: '0 0 36px',
           }}>
             {frontmatter.description}
           </p>
 
           {/* Meta row */}
           <div style={{
-            display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px',
+            display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '18px',
             fontFamily: "'DM Sans', system-ui, sans-serif",
             fontSize: '12px', fontWeight: 500, color: '#6B7280',
           }}>

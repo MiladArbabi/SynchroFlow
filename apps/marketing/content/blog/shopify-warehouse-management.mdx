@@ -48,11 +48,14 @@ import ArticleImage from '@/components/article/ArticleImage'
 Shopify includes basic inventory tracking — stock counts, multi-location toggling, and transfer records — but it does not include warehouse management features like bin-level storage, barcode-driven picking, receiving workflows, or route-optimised fulfilment. Merchants managing their own warehouse need a dedicated WMS that integrates with Shopify to bridge this gap.
 </QuickAnswer>
 
-<ArticleImage
-  src="hero-warehouse-flow.png"
-  alt="Shopify warehouse management gap — what Shopify tracks natively versus what a dedicated warehouse management system provides for SMB merchants"
+<HeroVisual
+  leftLabel="What Shopify tracks"
+  leftHeading="Inventory visibility"
+  leftItems="Stock counts per variant|Multi-location toggling|Transfer records|Low-stock alerts"
+  rightLabel="What a WMS adds"
+  rightHeading="Warehouse operations"
+  rightItems="Bin & location tracking|Scan-based receiving|Pick-path optimisation|Immutable event ledger"
   caption="Shopify tells you what you have. A WMS tells you where it is, how it moves, and what to do next."
-  priority={true}
 />
 
 If you manage your own warehouse and run Shopify, you have almost certainly felt this gap. Your Shopify admin shows stock counts. It accepts orders. It decrements inventory when something sells. But it cannot tell you where in your warehouse that item actually lives, who should go and get it, whether the right item was picked, or whether the delivery that arrived this morning matched what was on the purchase order.
@@ -91,27 +94,27 @@ Shopify's tools are inventory visibility — they tell you what you have. Wareho
 
 A true warehouse management system provides five core capabilities that Shopify does not.
 
-### 1. Receiving Workflows
+<NumberedH3 num="01">Receiving workflows</NumberedH3>
 
 When a supplier delivery arrives, a WMS provides a structured receiving process: scan items in against the purchase order, record discrepancies immediately, assign received stock to specific warehouse locations, and update inventory in real time. Every delivery becomes a verified, timestamped event — not a manual quantity adjustment made after counting.
 
 This matters because a single PO miscount creates a cascade: false stock levels, overselling, emergency reorders, stockouts, refund spikes, and wasted time recounting. Scan-based receiving prevents the cascade at the source.
 
-### 2. Bin and Location Tracking
+<NumberedH3 num="02">Bin and location tracking</NumberedH3>
 
 A WMS knows that SKU-103 is in Aisle 2, Shelf B, Bin 14 — not just "Warehouse 1." This enables directed putaway (telling operators exactly where to stow incoming stock), directed picking (routing pickers to the right location without searching), and cycle counting (auditing specific locations rather than the entire warehouse).
 
 Without bin tracking, a warehouse with 500+ SKUs becomes increasingly difficult to operate accurately as it grows.
 
-### 3. Barcode and Scan-Driven Operations
+<NumberedH3 num="03">Barcode and scan-driven operations</NumberedH3>
 
 Every physical movement — receive, stow, pick, pack, return — is confirmed by a scan. The scan is the record. This eliminates the gap between physical reality and system state that causes inventory drift. It also creates an immutable audit trail: every movement has a timestamp, an operator ID, and a location.
 
-### 4. Pick Path Optimisation
+<NumberedH3 num="04">Pick path optimisation</NumberedH3>
 
 A WMS routes pickers through the warehouse efficiently — grouping items by location, sequencing picks to minimise travel, and batching multiple orders where possible. At 20 orders a day, this is nice to have. At 200 orders a day, it is the difference between a warehouse that runs on time and one that doesn't.
 
-### 5. Immutable Event Ledger
+<NumberedH3 num="05">Immutable event ledger</NumberedH3>
 
 A WMS records every stock movement as an event — not just a snapshot of the current count. This means you can replay exactly what happened to any SKU at any point in time. When stock is wrong, you do not have to guess — you can trace every movement back to its source. Shopify stores the current number. A WMS stores the history that produced it.
 
@@ -157,13 +160,7 @@ The gap in the middle is where most Shopify merchants live: serious enough to ne
 
 When evaluating a WMS for a Shopify warehouse under 500 SKUs, use this checklist:
 
-- Does it connect via Shopify OAuth — not CSV export or manual sync?
-- Does it support camera-scan picking and receiving without dedicated barcode hardware?
-- Does it provide an immutable event ledger, not just snapshots of current counts?
-- Is it designed for 1–10 person warehouse teams, not enterprise operations managers?
-- What is the actual setup time — minutes or weeks?
-- Does it surface demand intelligence — low stock alerts, restock risk, supplier performance?
-- Does it update Shopify inventory in real time from every scan — not on a sync schedule?
+<Checklist items="Does it connect via Shopify OAuth — not CSV export or manual sync?|Does it support camera-scan picking and receiving without dedicated barcode hardware?|Does it provide an immutable event ledger, not just snapshots of current counts?|Is it designed for 1–10 person warehouse teams, not enterprise operations managers?|What is the actual setup time — minutes or weeks?|Does it surface demand intelligence — low stock alerts, restock risk, supplier performance?|Does it update Shopify inventory in real time from every scan — not on a sync schedule?" />
 
 <ArticleImage
   src="overal-warehouse-in-one-system.png"

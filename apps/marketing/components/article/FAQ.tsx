@@ -39,7 +39,7 @@ export default function FAQ({ items }: FAQProps) {
         <p style={{
           fontFamily: "'DM Sans', system-ui, sans-serif",
           fontSize: '16px', fontWeight: 300,
-          lineHeight: 1.6, color: '#6B7280', margin: '48px 0 0',
+          lineHeight: 1.6, color: '#6B7280', margin: '0',
         }}>
           The most common questions merchants ask when they realise Shopify isn´t managing their warehouse.
         </p>
