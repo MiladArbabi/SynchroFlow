@@ -38,8 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${dmSans.variable} ${instrumentSerif.variable}`}>
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
         <Nav />
-          {/* Main content wrapper — padding is handled per-page to avoid collisions with full‑bleed layouts like /blog */}
-          <main style={{ flex: 1 }}>{children}</main>
+        <main style={{ flex: 1, paddingTop: '60px', padding: '60px 5vw 0' }}>{children}</main>
         <Footer />
       </body>
     </html>
