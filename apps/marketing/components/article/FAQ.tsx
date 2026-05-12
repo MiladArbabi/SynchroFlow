@@ -1,6 +1,6 @@
 // components/article/FAQ.tsx
-// Accordion FAQ using <details>/<summary> — no JS required.
-// Animated icon, FAQPage schema fed from frontmatter.
+// Accordion FAQ using <details>/<summary>.
+// LaSyncro-themed: orange accent icon, faded rule dividers, serif heading.
 
 interface FAQItem {
   question: string
@@ -14,11 +14,14 @@ interface FAQProps {
 export default function FAQ({ items }: FAQProps) {
   if (!items?.length) return null
   return (
-    <section style={{ borderTop: '1px solid var(--rule)', padding: '72px 0 16px' }}>
+    <section style={{ padding: '0 0 16px' }}>
       {/* Header */}
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 2fr',
-        gap: '32px', alignItems: 'start', marginBottom: '28px',
+        display: 'grid',
+        gridTemplateColumns: '1fr 2fr',
+        gap: '32px',
+        alignItems: 'start',
+        marginBottom: '40px',
       }}>
         <div>
           <div style={{
@@ -30,7 +33,8 @@ export default function FAQ({ items }: FAQProps) {
           <h2 style={{
             fontFamily: "'Instrument Serif', Georgia, serif",
             fontSize: '36px', fontWeight: 400,
-            letterSpacing: '-0.02em', margin: '0 0 8px',
+            letterSpacing: '-0.02em',
+            margin: 0,
             color: '#0F0E0D', lineHeight: 1.2,
           }}>
             Common <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>questions.</em>
@@ -40,8 +44,9 @@ export default function FAQ({ items }: FAQProps) {
           fontFamily: "'DM Sans', system-ui, sans-serif",
           fontSize: '16px', fontWeight: 300,
           lineHeight: 1.6, color: '#6B7280', margin: '0',
+          paddingTop: '4px',
         }}>
-          The most common questions merchants ask when they realise Shopify isn´t managing their warehouse.
+          The most common questions merchants ask when they realise Shopify is not managing their warehouse.
         </p>
       </div>
 
