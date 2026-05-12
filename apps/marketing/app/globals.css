@@ -116,7 +116,7 @@ article li { font-size: 17px; font-weight: 300; line-height: 1.7; margin-bottom:
 }
 
 /* ── FAQ details/summary ── */
-.faq-item { border-bottom: 1px solid var(--rule); }
+.faq-item { border-bottom: 1px solid #E8E6E0; }
 .faq-item summary {
   list-style: none;
   cursor: pointer;

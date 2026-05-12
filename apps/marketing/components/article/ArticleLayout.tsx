@@ -96,7 +96,7 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
         {/* Faded divider between header and hero visual */}
         <div style={{
           height: '1px',
-          background: 'linear-gradient(90deg, transparent, var(--rule) 20%, var(--rule) 80%, transparent)',
+          background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)',
           margin: '0',
         }} />
       </div>
@@ -111,7 +111,7 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
 
       {/* Divider before FAQ */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
-        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--rule) 20%, var(--rule) 80%, transparent)', margin: '0 0 72px' }} />
+        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)', margin: '0 0 72px' }} />
       </div>
       {/* FAQ */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
@@ -126,9 +126,9 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
 
       {/* Divider after FAQ */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
-        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--rule) 20%, var(--rule) 80%, transparent)', margin: '0 0 72px' }} />
+        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)', margin: '0 0 72px' }} />
       </div>
-      
+
       {/* Related */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
         <InternalLinks links={relatedLinks} />
