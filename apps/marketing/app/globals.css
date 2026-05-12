@@ -20,8 +20,8 @@
   --space-2:       #1C2740;
   --space-3:       #243050;
   --space-4:       #2E3D62;
-  --serif:         'Instrument Serif', Georgia, serif;
-  --sans:          'DM Sans', system-ui, sans-serif;
+  --serif:         var(--font-instrument-serif), 'Instrument Serif', Georgia, serif;
+  --sans:          var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
   --ls-tight:      -0.02em;
   --ls-eyebrow:    0.12em;
   --ls-micro:      0.08em;
@@ -53,7 +53,7 @@
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
   background: #FAFAF8;
   color: #0F0E0D;
   -webkit-font-smoothing: antialiased;
@@ -125,9 +125,10 @@ article li { font-size: 17px; font-weight: 300; line-height: 1.7; margin-bottom:
   grid-template-columns: 1fr auto;
   gap: 20px;
   align-items: center;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
   font-size: 16px;
   font-weight: 500;
+  line-height: 1.35;
   color: #0F0E0D;
   transition: color 0.15s;
 }
@@ -135,7 +136,8 @@ article li { font-size: 17px; font-weight: 300; line-height: 1.7; margin-bottom:
 .faq-item summary:hover { color: #FF6B2B; }
 .faq-item .faq-icon {
   width: 28px; height: 28px; border-radius: 50%;
-  background: #FFF0E8; border: 1px solid #FFDCCA;
+  background: #FFF0E8;
+  border: 1px solid #FFDCCA;
   display: inline-flex; align-items: center; justify-content: center;
   color: #FF6B2B; flex: none;
   transition: transform 0.2s ease;
@@ -143,16 +145,16 @@ article li { font-size: 17px; font-weight: 300; line-height: 1.7; margin-bottom:
 .faq-item[open] .faq-icon { transform: rotate(45deg); }
 .faq-item .faq-answer {
   padding: 0 0 22px;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 300;
   line-height: 1.7;
   color: #3A3835;
   max-width: 640px;
 }
-
 @media (prefers-color-scheme: dark) {
   .faq-item summary { color: #F0EEE8; }
+  .faq-item summary:hover { color: #FF6B2B; }
   .faq-item .faq-answer { color: #C8C4BB; }
   .faq-item .faq-icon { background: rgba(255,107,43,0.12); border-color: rgba(255,107,43,0.25); }
 }

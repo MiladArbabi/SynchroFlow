@@ -16,6 +16,7 @@ export interface Frontmatter {
   date: string
   lastReviewed: string
   author: string
+  titleAccent?: string
   tags: string[]
   primaryKeyword: string
   secondaryKeywords: string[]

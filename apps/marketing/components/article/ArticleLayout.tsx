@@ -47,7 +47,12 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
             color: '#0F0E0D',
             margin: '0 0 32px',
           }}>
-            {frontmatter.title}
+            {frontmatter.titleAccent ? (
+              <>
+                {frontmatter.title}{' '}
+                <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>{frontmatter.titleAccent}</em>
+              </>
+            ) : frontmatter.title}
           </h1>
 
           {/* Deck / description */}
@@ -67,20 +72,22 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
             fontSize: '12px', fontWeight: 500, color: '#6B7280',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#3A3835' }}>
-              <span style={{
-                width: '30px', height: '30px', borderRadius: '50%',
-                background: '#FFF0E8', color: '#FF6B2B',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '11px', fontWeight: 500, letterSpacing: '0.04em',
-              }}>LS</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="https://www.lasyncro.com/favicon.png" alt="" width={20} height={20} style={{ borderRadius: '4px', display: 'block' }} />
               <span>LaSyncro</span>
             </div>
             <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#9CA3AF' }} />
-            <span>{frontmatter.date}</span>
+            <span>{new Date(frontmatter.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
             {frontmatter.lastReviewed !== frontmatter.date && (
               <>
                 <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#9CA3AF' }} />
-                <span>Updated {frontmatter.lastReviewed}</span>
+                <span>Last reviewed {new Date(frontmatter.lastReviewed).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+              </>
+            )}
+            {frontmatter.tags?.length > 0 && (
+              <>
+                <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#9CA3AF' }} />
+                <span>{frontmatter.tags.join(' · ')}</span>
               </>
             )}
           </div>

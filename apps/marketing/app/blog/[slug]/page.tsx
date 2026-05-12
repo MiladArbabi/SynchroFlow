@@ -11,12 +11,13 @@ import ArticleLayout from '@/components/article/ArticleLayout'
 import QuickAnswer from '@/components/article/QuickAnswer'
 import ArticleImage from '@/components/article/ArticleImage'
 import HeroVisual from '@/components/article/HeroVisual'
+import ProductVisual from '@/components/article/ProductVisual'
 import NumberedH3 from '@/components/article/NumberedH3'
 import Checklist from '@/components/article/Checklist'
 import { Metadata } from 'next'
 
 // MDX components available inside .mdx files
-const components = { QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist }
+const components = { QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ProductVisual }
 
 export async function generateStaticParams() {
   return getAllSlugs('blog').map((slug) => ({ slug }))
