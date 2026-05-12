@@ -34,16 +34,22 @@ relatedLinks:
 ---
 
 import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
+import HeroVisual from '@/components/article/HeroVisual'
+import ProductVisual from '@/components/article/ProductVisual'
 
 <QuickAnswer>
 Shopify inventory stops syncing accurately when warehouse movements happen faster than Shopify can record them — or when they are never recorded at all. The four root causes are: conflicting app writes, unrecorded physical movements, multi-location misconfiguration, and return processing gaps. Each has a specific fix.
 </QuickAnswer>
 
-<ArticleImage
-  src="hero-warehouse-flow.png"
-  alt="Shopify warehouse operations showing the gap between manual inventory management and real-time scan-based accuracy"
-  caption="Most Shopify merchants rely on manual processes that break down as order volume grows."
-  priority={true}
+<HeroVisual
+  leftLabel="The symptom"
+  leftHeading="Inventory not syncing"
+  leftItems="Conflicting app writes|Unrecorded movements|Multi-location misconfiguration|Return processing gaps"
+  rightLabel="The fix"
+  rightHeading="Real-time accuracy"
+  rightItems="One authoritative inventory writer|Scan-based movements|Single active location|Returns restocked on scan"
+  caption="Most Shopify inventory sync problems have four root causes — each with a specific, permanent fix."
 />
 
 If your Shopify stock counts do not match what is physically on your shelves, you are not alone. Inventory sync is the most common operational problem reported by Shopify merchants running their own warehouse — and it compounds silently until a customer orders something you do not actually have.
@@ -77,6 +83,12 @@ Shopify's multi-location feature is powerful but easy to misconfigure. If you op
 Returns are the most consistent source of inventory drift for high-volume merchants. A return arrives, gets checked, sits in a returns area — and is never restocked in Shopify. Meanwhile Shopify still shows that unit as sold. Over a month with 50 returns, that is 50 units of invisible stock.
 
 **Fix:** Build a returns processing step that includes a Shopify restock action. Every return checked and approved gets immediately restocked in Shopify before it is put away physically.
+
+<ProductVisual
+  badge="Product · Inventory Sync"
+  title="Every pick, pack, receive and stow updates Shopify in real time — sync failures become structurally impossible"
+  caption="The permanent fix is not a setting change. It is closing the gap between physical movements and system updates entirely."
+/>
 
 ## How to Fix Shopify Inventory Sync — Step by Step
 

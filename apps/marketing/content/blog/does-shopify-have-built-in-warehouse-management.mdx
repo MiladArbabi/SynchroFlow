@@ -34,16 +34,22 @@ relatedLinks:
 ---
 
 import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
+import HeroVisual from '@/components/article/HeroVisual'
+import ProductVisual from '@/components/article/ProductVisual'
 
 <QuickAnswer>
 No — Shopify does not have built-in warehouse management. Shopify tracks inventory levels and decrements stock when orders are placed, but it has no pick and pack workflows, no warehouse location management, no scan-based receiving, and no operator task assignment. These require a separate warehouse management layer connected to Shopify.
 </QuickAnswer>
 
-<ArticleImage
-  src="hero-warehouse-flow-1.png"
-  alt="Shopify warehouse management gap showing what Shopify does natively versus what a dedicated WMS provides for SMB merchants"
+<HeroVisual
+  leftLabel="What Shopify tracks"
+  leftHeading="Inventory visibility"
+  leftItems="Stock counts per variant|Multi-location toggling|Transfer records|Low-stock alerts"
+  rightLabel="What a WMS adds"
+  rightHeading="Warehouse operations"
+  rightItems="Bin & location tracking|Scan-based receiving|Pick-path optimisation|Operator task management"
   caption="Shopify tracks stock levels. A WMS manages every physical movement that affects those levels."
-  priority={true}
 />
 
 This is one of the most searched questions among growing Shopify merchants — and the honest answer is no, with important nuance about what Shopify does and does not do natively.
@@ -104,6 +110,12 @@ Shopify's built-in tools are sufficient when:
 
 At this scale, manual stock adjustments, basic packing slips, and Shopify's low-stock alerts cover most operational needs. The cost of adding a separate WMS is not justified by the operational complexity.
 
+<ProductVisual
+  badge="Product · Warehouse Intelligence"
+  title="Real-time inventory accuracy from every pick, pack, receive and stow — no manual reconciliation"
+  caption="Every warehouse scan updates Shopify instantly. The gap between physical reality and system state closes permanently."
+/>
+
 ## When You Need a Separate Warehouse Management Layer
 
 The signals that you have outgrown Shopify's native inventory tools are consistent across merchants:
@@ -124,6 +136,12 @@ If three or more of these describe your operation today, you need a warehouse ma
 />
 
 ## What the Right Shopify WMS Looks Like
+
+<ProductVisual
+  badge="Product · Morning Brief"
+  title="Daily operational summary — stock risks, arriving POs, held orders, and supplier alerts ranked by commercial consequence"
+  caption="Know what needs attention before the day starts — not after the first complaint arrives."
+/>
 
 For most SMB Shopify merchants, the right WMS is not an enterprise system like Cin7, Linnworks, or ShipHero — these are built for operations teams with IT support and implementation budgets. The right fit is a warehouse management layer that:
 

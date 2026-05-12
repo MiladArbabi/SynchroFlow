@@ -34,10 +34,23 @@ relatedLinks:
 ---
 
 import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
+import HeroVisual from '@/components/article/HeroVisual'
+import ProductVisual from '@/components/article/ProductVisual'
 
 <QuickAnswer>
 Inventory drift is the slow accumulation of discrepancies between Shopify's stock count and what is physically in your warehouse. It is caused by unrecorded movements — returns, damaged stock, pick errors, receiving discrepancies. The immediate fix is a reconciliation stock count. The permanent fix is real-time scan-based inventory that records every movement the moment it happens.
 </QuickAnswer>
+
+<HeroVisual
+  leftLabel="The problem"
+  leftHeading="Inventory drift"
+  leftItems="Unrecorded returns|Pick errors not corrected|Receiving discrepancies|App sync conflicts"
+  rightLabel="The fix"
+  rightHeading="Real-time event ledger"
+  rightItems="Every scan updates Shopify|Immutable movement history|Discrepancy detection|Single authoritative source"
+  caption="Drift is a structural gap between physical reality and system state. Close the gap permanently with scan-based inventory."
+/>
 
 Inventory drift is the most underdiagnosed operational problem in Shopify warehouses. Unlike a stockout — which is visible and immediate — drift is invisible. It accumulates slowly, across hundreds of small unrecorded movements, until the gap between Shopify and reality is large enough to cause real problems: oversold orders, phantom stockouts, and demand forecasts built on numbers that do not reflect what is actually on your shelves.
 
@@ -51,6 +64,13 @@ None of these individual events feels significant. Collectively, across a wareho
 
 ## The Five Root Causes of Inventory Drift
 
+<ArticleImage
+  src="ba-scan-locations.png"
+  alt="LaSyncro mobile scanning interface showing warehouse location management and real-time inventory drift prevention"
+  caption="Every scan closes the gap between physical stock and Shopify's records."
+  priority={true}
+/>
+
 ### 1. Returns Processed Without a Shopify Restock
 
 This is the single largest source of drift for most merchants. A customer return arrives, gets inspected, is deemed sellable, and gets put back on the shelf — but the Shopify restock step is skipped, forgotten, or deferred. Shopify still shows that unit as sold. Over 50 returns a month, that is 50 units of invisible stock.
@@ -62,6 +82,12 @@ This is the single largest source of drift for most merchants. A customer return
 When a picker takes the wrong item — picks SKU A instead of SKU B — two things need to happen: the physical correction and the Shopify inventory correction. In practice, the physical item usually gets put back in the right location, but the Shopify adjustment often does not happen. Result: SKU A is over-counted, SKU B is under-counted.
 
 **Fix:** Any pick correction must include a paired Shopify inventory adjustment. Add this to your pick exception process — no correction is complete until both the physical and Shopify states match.
+
+<ArticleImage
+  src="restock-vs-recieve.png"
+  alt="LaSyncro returns processing workflow showing restock versus reject decisions with real-time Shopify inventory updates"
+  caption="Returns restocked at the point of scan — not at the end of a shift."
+/>
 
 ### 3. Damaged Stock Removed Without Adjustment
 
@@ -81,6 +107,12 @@ Covered in detail in our [inventory sync article](/blog/why-shopify-inventory-no
 
 **Fix:** One authoritative inventory writer. All other apps read-only.
 
+<ProductVisual
+  badge="Product · Receiving"
+  title="Scan-to-receive against supplier POs — every delivery discrepancy caught at the point of arrival"
+  caption="Receiving errors are the single largest source of inventory drift. Scan-based receiving prevents them at the source."
+/>
+
 ## How to Perform a Drift Reconciliation
 
 A drift reconciliation resets your baseline. It does not prevent future drift — it gives you an accurate starting point from which to measure and manage.
@@ -94,6 +126,12 @@ A drift reconciliation resets your baseline. It does not prevent future drift �
 **Step 4 — Update Shopify.** Use Shopify's inventory adjustment tool to bring all counts into alignment with the physical reality. Add adjustment notes explaining each change.
 
 **Step 5 — Implement the root cause fixes.** A reconciliation without fixing the underlying causes is temporary. Within a month, drift will return to similar levels unless the processes that created it are changed.
+
+<ProductVisual
+  badge="Product · Traceability"
+  title="Every stock movement timestamped, attributed, and permanently recorded — replay exactly what happened to any SKU"
+  caption="When stock is wrong, you need to know why — not just reset the count. Full event history makes root cause tracing instant."
+/>
 
 ## The Permanent Fix — Real-Time Scan-Based Inventory
 
