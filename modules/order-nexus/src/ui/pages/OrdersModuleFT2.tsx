@@ -589,7 +589,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Typography variant="caption" sx={{ fontWeight: 600, color: 'error.main' }}>72h+ — deadline missed</Typography>
                 <Typography variant="caption" color="text.secondary">{aging72Orders.length} orders</Typography>
               </Box>
-              {aging72Orders.slice(0, 5).map((order) => {
+              {aging72Orders.slice(0, 3).map((order) => {
                 const countdown = slaCountdownLabel(order.timeToSlaBreachMinutes ?? null);
                 return (
                   <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 1, alignItems: 'center', px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' }, bgcolor: selectedIds.has(order.lasyncro_order_id) ? alpha(theme.palette.primary.main, 0.04) : 'transparent' }}>
@@ -606,9 +606,9 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                   </Box>
                 );
               })}
-              {aging72Orders.length > 5 && (
+              {aging72Orders.length > 3 && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                  +{aging72Orders.length - 5} more
+                  +{aging72Orders.length - 3} more
                 </Typography>
               )}
             </Box>
@@ -621,7 +621,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Typography variant="caption" sx={{ fontWeight: 600, color: 'warning.dark' }}>48h+ — needs attention today</Typography>
                 <Typography variant="caption" color="text.secondary">{aging48Orders.length} orders</Typography>
               </Box>
-              {aging48Orders.slice(0, 5).map((order) => {
+              {aging48Orders.slice(0, 3).map((order) => {
                 const countdown = slaCountdownLabel(order.timeToSlaBreachMinutes ?? null);
                 return (
                   <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 1, alignItems: 'center', px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' }, bgcolor: selectedIds.has(order.lasyncro_order_id) ? alpha(theme.palette.primary.main, 0.04) : 'transparent' }}>
@@ -638,9 +638,9 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                   </Box>
                 );
               })}
-              {aging48Orders.length > 5 && (
+              {aging48Orders.length > 3 && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                  +{aging48Orders.length - 5} more
+                  +{aging48Orders.length - 3} more
                 </Typography>
               )}
             </Box>
@@ -653,7 +653,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>24h+ — keep an eye on these</Typography>
                 <Typography variant="caption" color="text.secondary">{aging24Orders.length} orders</Typography>
               </Box>
-              {aging24Orders.slice(0, 5).map((order) => (
+              {aging24Orders.slice(0, 3).map((order) => (
                 <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' } }}>
                   <Box>
                     <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
@@ -662,9 +662,9 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                   <Chip label="Watch" size="small" color="default" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
                 </Box>
               ))}
-              {aging24Orders.length > 5 && (
+              {aging24Orders.length > 3 && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                  +{aging24Orders.length - 5} more
+                  +{aging24Orders.length - 3} more
                 </Typography>
               )}
             </Box>
