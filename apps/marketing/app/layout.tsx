@@ -57,11 +57,20 @@ function Nav() {
       borderBottom: '1px solid rgba(255,255,255,0.08)',
     }}>
       <a href="https://lasyncro.com" aria-label="LaSyncro home" style={{ display: 'flex', alignItems: 'center' }}>
+        {/* Logo switches based on color scheme — logo-dark for light bg, logo-light for dark bg */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="https://lasyncro.com/logo.png"
+          src="https://www.lasyncro.com/logo-dark.png"
           alt="LaSyncro"
-          style={{ height: '28px', width: 'auto', display: 'block' }}
+          style={{ height: '24px', width: 'auto', display: 'block' }}
+          className="logo-light-mode"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="https://www.lasyncro.com/logo-light.png"
+          alt="LaSyncro"
+          style={{ height: '24px', width: 'auto', display: 'none' }}
+          className="logo-dark-mode"
         />
       </a>
       <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>

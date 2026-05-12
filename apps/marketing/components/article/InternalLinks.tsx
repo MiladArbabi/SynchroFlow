@@ -1,11 +1,12 @@
 // components/article/InternalLinks.tsx
-// Related article links at the bottom of every article.
-// Every article should link to 3+ related pages.
+// Related articles grid — 2-column card layout with arrow hover effect.
+// Matches the "Keep reading" section from the design template.
 
 interface LinkItem {
   href: string
   title: string
   description?: string
+  kicker?: string
 }
 
 interface InternalLinksProps {
@@ -14,27 +15,77 @@ interface InternalLinksProps {
 
 export default function InternalLinks({ links }: InternalLinksProps) {
   if (!links?.length) return null
+
+  const kickers = ['Deeper dive', 'Related', 'Compare', 'Failure mode', 'Guide', 'Next step']
+
   return (
-    <section aria-label="Related articles" style={{ marginTop: '48px', borderTop: '1px solid var(--rule)', paddingTop: '32px' }}>
-      <h3 style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-3)', marginBottom: '16px' }}>
-        Related
-      </h3>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <section className="reveal" style={{ borderTop: '1px solid var(--rule)', padding: '72px 0 96px' }}>
+      <div style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        fontSize: '11px', fontWeight: 500,
+        letterSpacing: '0.12em', textTransform: 'uppercase',
+        color: '#FF6B2B', marginBottom: '14px',
+      }}>
+        Keep reading
+      </div>
+      <h2 style={{
+        fontFamily: "'Instrument Serif', Georgia, serif",
+        fontSize: '32px', fontWeight: 400,
+        letterSpacing: '-0.02em', margin: '0 0 32px',
+        color: '#0F0E0D', lineHeight: 1.12,
+      }}>
+        Related from the operator&apos;s library
+      </h2>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: links.length === 1 ? '1fr' : 'repeat(2, 1fr)',
+        gap: '1px',
+        border: '1px solid var(--rule)',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        background: 'var(--rule)',
+      }}>
         {links.map((link, i) => (
-          <li key={i}>
-            <a href={link.href} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '14px', fontWeight: 500, color: '#FF6B2B' }}>
-                {link.title}
+          <a key={i} href={link.href} className="related-card" style={{
+            display: 'block', padding: '24px 26px',
+            background: '#FFFFFF', textDecoration: 'none',
+            transition: 'background 0.15s',
+          }}>
+            <div style={{
+              fontFamily: "'DM Sans', system-ui, sans-serif",
+              fontSize: '11px', fontWeight: 500,
+              letterSpacing: '0.12em', textTransform: 'uppercase',
+              color: '#9CA3AF', marginBottom: '10px',
+              display: 'flex', alignItems: 'center', gap: '8px',
+            }}>
+              <span>{link.kicker ?? kickers[i % kickers.length]}</span>
+              <span style={{ color: '#FF6B2B' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
+                </svg>
               </span>
-              {link.description && (
-                <span style={{ fontSize: '13px', color: 'var(--ink-3)' }}>
-                  {link.description}
-                </span>
-              )}
-            </a>
-          </li>
+            </div>
+            <h4 style={{
+              fontFamily: "'Instrument Serif', Georgia, serif",
+              fontSize: '20px', fontWeight: 400,
+              letterSpacing: '-0.02em', color: '#0F0E0D',
+              margin: '0 0 8px', lineHeight: 1.25,
+            }}>
+              {link.title}
+            </h4>
+            {link.description && (
+              <p style={{
+                fontFamily: "'DM Sans', system-ui, sans-serif",
+                fontSize: '13px', fontWeight: 300,
+                lineHeight: 1.7, color: '#6B7280', margin: 0,
+              }}>
+                {link.description}
+              </p>
+            )}
+          </a>
         ))}
-      </ul>
+      </div>
     </section>
   )
 }
