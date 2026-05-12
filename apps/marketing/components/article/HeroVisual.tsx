@@ -21,9 +21,9 @@ export default function HeroVisual({
   const leftList = leftItems.split('|')
   const rightList = rightItems.split('|')
   return (
-    <figure className="reveal" style={{ margin: '44px auto 0', maxWidth: '1060px', padding: '0 5vw' }}>
+    <figure className="reveal" style={{ margin: '44px -40px 0' }}>
       <div style={{
-        aspectRatio: '16/8',
+        aspectRatio: '16/7',
         background: '#F3F2EF',
         border: '1px solid #E8E6E0',
         borderRadius: '12px',
@@ -63,7 +63,7 @@ export default function HeroVisual({
           }}>{leftLabel}</span>
           <h4 style={{
             fontFamily: "'Instrument Serif', Georgia, serif",
-            fontSize: '28px', fontWeight: 400,
+            fontSize: '24px', fontWeight: 400,
             lineHeight: 1.15, letterSpacing: '-0.02em',
             margin: 0, color: '#0F0E0D',
           }} dangerouslySetInnerHTML={{ __html: leftHeading }} />
@@ -107,7 +107,7 @@ export default function HeroVisual({
 
         {/* Right column — WMS */}
         <div style={{
-          position: 'relative', padding: '44px 56px',
+          position: 'relative', padding: '36px 40px',
           display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '18px',
         }}>
           <span style={{
@@ -118,7 +118,7 @@ export default function HeroVisual({
           }}>{rightLabel}</span>
           <h4 style={{
             fontFamily: "'Instrument Serif', Georgia, serif",
-            fontSize: '28px', fontWeight: 400,
+            fontSize: '24px', fontWeight: 400,
             lineHeight: 1.15, letterSpacing: '-0.02em',
             margin: 0, color: '#0F0E0D',
           }} dangerouslySetInnerHTML={{ __html: rightHeading }} />
