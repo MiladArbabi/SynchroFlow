@@ -30,6 +30,11 @@
   --r-lg:  12px;
   --r-xl:  14px;
   --r-pill: 100px;
+  /* Typography shorthands used by inline marketing components. */
+  --t-micro:   500 11px/1.2 var(--sans);
+  --t-ui-sm:   400 13px/1.35 var(--sans);
+  --t-body-sm: 300 14px/1.55 var(--sans);
+  --t-ui:      500 14px/1.25 var(--sans);
 }
 
 @media (prefers-color-scheme: dark) {
