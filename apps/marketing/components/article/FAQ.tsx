@@ -53,51 +53,6 @@ export default function FAQ({ items }: FAQProps) {
         </p>
       </div>
 
-      <style>{`
-        .faq-radio { display: none; }
-        .faq-row { border-top: 1px solid #D1CFC8; border-bottom: 1px solid #D1CFC8; margin-bottom: -1px; }
-        .faq-label {
-          display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center;
-          padding: 22px 0; cursor: pointer; user-select: none;
-          font-family: 'DM Sans', system-ui, sans-serif;
-          font-size: 16px; font-weight: 500; line-height: 1.35; color: #0F0E0D;
-          transition: color 0.15s;
-        }
-        .faq-label:hover { color: #FF6B2B; }
-        .faq-plus {
-          width: 30px; height: 30px; border-radius: 50%;
-          background: #FFF0E8; border: 1.5px solid #FFDCCA;
-          display: inline-flex; align-items: center; justify-content: center;
-          color: #CC4A12; flex-shrink: 0;
-          transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), background 0.15s, border-color 0.15s;
-        }
-        .faq-body {
-          display: grid; grid-template-rows: 0fr;
-          transition: grid-template-rows 0.3s cubic-bezier(0.4,0,0.2,1);
-        }
-        .faq-body-inner { overflow: hidden; }
-        .faq-body-text {
-          padding-bottom: 24px;
-          font-family: 'DM Sans', system-ui, sans-serif;
-          font-size: 15px; font-weight: 300; line-height: 1.75;
-          color: #3A3835; max-width: 640px;
-        }
-        .faq-radio:checked ~ .faq-label { color: #0F0E0D; }
-        .faq-radio:checked ~ .faq-label .faq-plus {
-          transform: rotate(45deg); background: #FFDCCA; border-color: #FF6B2B;
-        }
-        .faq-radio:checked ~ .faq-body { grid-template-rows: 1fr; }
-        @media (prefers-color-scheme: dark) {
-          .faq-row { border-color: rgba(255,255,255,0.12); }
-          .faq-label { color: #F0EEE8; }
-          .faq-label:hover { color: #FF6B2B; }
-          .faq-plus { background: rgba(255,107,43,0.12); border-color: rgba(255,107,43,0.25); color: #FF8C5A; }
-          .faq-radio:checked ~ .faq-label { color: #F0EEE8; }
-          .faq-radio:checked ~ .faq-label .faq-plus { background: rgba(255,107,43,0.25); border-color: #FF6B2B; }
-          .faq-body-text { color: #C8C4BB; }
-        }
-      `}</style>
-
       <div>
         {items.map((item, i) => (
           <div key={i} className="faq-row">
