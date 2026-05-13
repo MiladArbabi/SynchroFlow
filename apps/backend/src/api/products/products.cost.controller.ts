@@ -112,7 +112,11 @@ export const httpGetVariantCosts = async (req: Request, res: Response) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       return trx('variants as v')
+        .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
         .where('v.shop_id', shopId)
+        // Exclude non-physical products — gift cards, digital, service variants
+        // have no warehouse cost and pollute the cost entry surface
+        .where('p.product_type', 'physical')
         .orderByRaw('v.unit_cost IS NOT NULL, v.title ASC')
         .select(
           'v.lasyncro_variant_id',
@@ -120,6 +124,7 @@ export const httpGetVariantCosts = async (req: Request, res: Response) => {
           'v.sku',
           'v.unit_cost',
           'v.updated_at',
+          'p.title as product_title',
         );
     });
 

@@ -415,8 +415,8 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
             mb: 4,
             px: 2,
             py: 1.25,
-            border: '1px solid',
-            borderColor: 'divider',
+            background: pal.cardBg,
+            border: `1px solid ${pal.border}`,
             borderRadius: 2,
             display: 'flex',
             alignItems: 'center',
@@ -455,10 +455,13 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
         </Box>
       )}
 
-      {/* ─────────────────────────────────────────
-          ZONE 5 — WHAT CAN I ACTUALLY SELL TODAY?
-          Plain-language sellability surface.
-          Source: /operator-summary → sellability
+    {/* ─────────────────────────────────────────
+      ZONES 5 + 5b — TWO COLUMN LAYOUT
+      Left: sellability + dead weight
+      Right: supply signals + reorder list
+    ───────────────────────────────────────── */}
+    {/* ─────────────────────────────────────────
+          ZONE 5 — SELLABILITY (full width above columns)
           ───────────────────────────────────────── */}
       {operatorSummary && (() => {
         const total = (operatorSummary.sellability.sellable ?? 0) + (operatorSummary.sellability.blocked ?? 0);
@@ -468,11 +471,10 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
         const noInventory = operatorSummary.sellability.blockedReasons.noInventory ?? 0;
         const zeroStock = operatorSummary.sellability.blockedReasons.zeroStock ?? 0;
         const noSales = operatorSummary.deadWeight.noSalesCount ?? 0;
-        const added = operatorSummary.drift.addedThisPeriod ?? 0;
         const sellablePct = total > 0 ? (sellable / total) * 100 : 0;
 
         return (
-          <Box sx={{ mb: 4, mt: 4 }}>
+          <Box sx={{ mb: 3, mt: 4 }}>
             {/* ── Header ── */}
             <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
               <Typography variant="h5" fontWeight={700} sx={{ color: sellable === 0 ? theme.palette.error.main : sellable < total ? theme.palette.warning.main : theme.palette.success.main }}>
@@ -501,7 +503,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   Why are {blocked} blocked?
                 </Typography>
                 {noSku > 0 && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.error.main, borderLeft: '4px solid', borderLeftColor: theme.palette.error.main }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, background: pal.cardBg, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.error.main, borderLeft: '4px solid', borderLeftColor: theme.palette.error.main }}>
                     <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.error.main, minWidth: 24 }}>{noSku}</Typography>
                     <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
                       no product code — warehouse can't identify or pick these. See Catalog tab.
@@ -517,7 +519,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   </Box>
                 )}
                 {zeroStock > 0 && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.warning.main, borderLeft: '4px solid', borderLeftColor: theme.palette.warning.main }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, background: pal.cardBg, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.warning.main, borderLeft: '4px solid', borderLeftColor: theme.palette.warning.main }}>
                     <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.warning.main, minWidth: 24 }}>{zeroStock}</Typography>
                     <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
                       are out of stock — listed as active but nothing left to ship
@@ -526,50 +528,47 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                 )}
               </Box>
             )}
-            {/* ── Dead weight ── */}
-            {/* Catalog drift (added this period) removed — lives in Catalog tab */}
-            {noSales > 0 && (
-              <Box sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-                <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
-                  {noSales}
-                </Typography>
-                <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
-                  {noSales === 1 ? 'product' : 'products'} generated no orders this period
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                  Active but not selling — consider reviewing or archiving
-                </Typography>
-              </Box>
-            )}
-          </Box>
+            </Box>
         );
       })()}
 
       {/* ─────────────────────────────────────────
-          ZONE 5b — SUPPLY RISK + COMBO SIGNALS
-          Cross-domain: demand velocity × product catalog.
-          Source: /operator-summary → demand (growth tier)
-          null = growth tier not enabled or no velocity yet.
+          TWO COLUMN LAYOUT — Supply chain signals
+          Left: dead weight + supply metric cards
+          Right: reorder now list
           ───────────────────────────────────────── */}
-      {operatorSummary?.demand && (() => {
-        const d = operatorSummary.demand!;
-        const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale, currency?.rates);
-        const hasCritical = d.critical_reorder_count > 0;
-        const hasDeadCapital = d.dead_capital_value > 0;
-        const hasReorderNow = d.reorder_now.length > 0;
-
-        if (!hasCritical && !hasDeadCapital && !hasReorderNow) return null;
-
+      {operatorSummary && (() => {
+        const noSales = operatorSummary.deadWeight.noSalesCount ?? 0;
         return (
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="body1" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)', mb: 2 }}>
-              Supply signals
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+      <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start', flexWrap: 'wrap', mb: 4 }}>
+        {/* ── LEFT COLUMN ── */}
+        <Box sx={{ flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Dead weight */}
+          {noSales > 0 && (
+            <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
+              <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
+                {noSales}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
+                {noSales === 1 ? 'product' : 'products'} generated no orders this period
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                Active but not selling — consider reviewing or archiving
+              </Typography>
+            </Box>
+          )}
 
-              {/* Critical reorder */}
+      {/* ── Supply metric cards — in left column ── */}
+        {operatorSummary?.demand && (() => {
+          const d = operatorSummary.demand!;
+          const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale, currency?.rates);
+          const hasCritical = d.critical_reorder_count > 0;
+          const hasDeadCapital = d.dead_capital_value > 0;
+          if (!hasCritical && !hasDeadCapital) return null;
+          return (
+            <>
               {hasCritical && (
-                <Box sx={{ flex: 1, minWidth: 180, p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.error.main}`, borderRadius: 2 }}>
+                <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.error.main}`, borderRadius: 2 }}>
                   <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.error.main, fontVariantNumeric: 'tabular-nums' }}>
                     {d.critical_reorder_count}
                   </Typography>
@@ -581,10 +580,8 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   </Typography>
                 </Box>
               )}
-
-              {/* Warning reorder */}
               {d.warning_reorder_count > 0 && (
-                <Box sx={{ flex: 1, minWidth: 180, p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.warning.main}`, borderRadius: 2 }}>
+                <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.warning.main}`, borderRadius: 2 }}>
                   <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
                     {d.warning_reorder_count}
                   </Typography>
@@ -596,10 +593,8 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   </Typography>
                 </Box>
               )}
-
-              {/* Dead capital */}
               {hasDeadCapital && (
-                <Box sx={{ flex: 1, minWidth: 180, p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
+                <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
                   <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
                     {fmt(d.dead_capital_value)}
                   </Typography>
@@ -611,64 +606,80 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   </Typography>
                 </Box>
               )}
-            </Box>
+            </>
+          );
+        })()}
+        </Box>{/* end LEFT COLUMN */}
 
-            {/* Reorder now list — top 5 most urgent */}
-            {hasReorderNow && (
-              <Box sx={{ border: `1px solid ${pal.border}`, background: pal.cardBg, borderRadius: 2, overflow: 'hidden' }}>
-                <Box sx={{ px: 2, py: 1.25, borderBottom: `1px solid ${pal.border}` }}>
-                  <Typography variant="overline" color="text.secondary">
-                    {d.stockout_count > 0
-                      ? `${d.stockout_count} stocked out · ${d.critical_reorder_count - d.stockout_count > 0 ? `${d.critical_reorder_count - d.stockout_count} critical` : ''} — reorder now`
-                      : 'Reorder now — sorted by urgency'}
-                  </Typography>
-                </Box>
-                {d.reorder_now.slice(0, 5).map((v: 
-                { lasyncro_variant_id: 
-                  string; sku: string 
-                  | null; days_of_stock_remaining: number 
-                  | null; estimated_stockout_date: string 
-                  | null; velocity_per_day: number; suggested_reorder_qty: number 
-                  | null 
-                }, idx: number) => (
-                  <Box
-                    key={v.lasyncro_variant_id}
-                    sx={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      px: 2, py: 1.25,
-                      borderBottom: idx < Math.min(d.reorder_now.length, 5) - 1 ? `1px solid ${pal.border}` : 'none',
-                      '&:hover': { bgcolor: 'action.hover' },
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="body2" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                        {v.sku ?? 'No SKU'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {v.velocity_per_day} units/day · {v.suggested_reorder_qty != null ? `order ${v.suggested_reorder_qty} units` : ''}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: (v.days_of_stock_remaining ?? 99) === 0 ? theme.palette.error.main : theme.palette.warning.main }}>
-                        {v.days_of_stock_remaining === 0 ? 'Stocked out' : v.days_of_stock_remaining != null ? `${v.days_of_stock_remaining}d left` : '—'}
-                      </Typography>
-                      {v.days_of_stock_remaining === 0 ? (
-                        <Typography variant="caption" sx={{ color: theme.palette.error.main }}>
-                          reorder now
-                        </Typography>
-                      ) : v.estimated_stockout_date ? (
-                        <Typography variant="caption" color="text.secondary">
-                          out {new Date(v.estimated_stockout_date).toLocaleDateString()}
-                        </Typography>
-                      ) : null}
-                    </Box>
-                  </Box>
-                ))}
+        {/* ── RIGHT COLUMN — Reorder now list ── */}
+        <Box sx={{ flex: 1, minWidth: 260 }}>
+        {operatorSummary?.demand && (() => {
+          const d = operatorSummary.demand!;
+          const hasReorderNow = d.reorder_now.length > 0;
+          if (!hasReorderNow) return null;
+          return (
+            <Box sx={{ border: `1px solid ${pal.border}`, background: pal.cardBg, borderRadius: 2, overflow: 'hidden' }}>
+              <Box sx={{ px: 2, py: 1.25, borderBottom: `1px solid ${pal.border}` }}>
+                <Typography variant="overline" color="text.secondary">
+                  {d.stockout_count > 0
+                    ? `${d.stockout_count} stocked out · ${d.critical_reorder_count - d.stockout_count > 0 ? `${d.critical_reorder_count - d.stockout_count} critical` : ''} — reorder now`
+                    : 'Reorder now — sorted by urgency'}
+                </Typography>
               </Box>
-            )}
-          </Box>
+              {d.reorder_now.slice(0, 4).map((v: {
+                lasyncro_variant_id: string; sku: string | null;
+                days_of_stock_remaining: number | null; estimated_stockout_date: string | null;
+                velocity_per_day: number; suggested_reorder_qty: number | null
+              }, idx: number) => (
+                <Box
+                  key={v.lasyncro_variant_id}
+                  sx={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    px: 2, py: 1.25,
+                    borderBottom: idx < Math.min(d.reorder_now.length, 2) - 1 ? `1px solid ${pal.border}` : 'none',
+                    '&:hover': { bgcolor: 'action.hover' },
+                  }}
+                >
+                  <Box>
+                    <Typography variant="body2" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                      {v.sku ?? 'No SKU'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {v.velocity_per_day} units/day · {v.suggested_reorder_qty != null ? `order ${v.suggested_reorder_qty} units` : ''}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: (v.days_of_stock_remaining ?? 99) === 0 ? theme.palette.error.main : theme.palette.warning.main }}>
+                      {v.days_of_stock_remaining === 0 ? 'Stocked out' : v.days_of_stock_remaining != null ? `${v.days_of_stock_remaining}d left` : '—'}
+                    </Typography>
+                    {v.days_of_stock_remaining === 0 ? (
+                      <Typography variant="caption" sx={{ color: theme.palette.error.main }}>reorder now</Typography>
+                    ) : v.estimated_stockout_date ? (
+                      <Typography variant="caption" color="text.secondary">
+                        out {new Date(v.estimated_stockout_date).toLocaleDateString()}
+                      </Typography>
+                    ) : null}
+                  </Box>
+                </Box>
+              ))}
+              {d.reorder_now.length > 2 && (
+                <Box component="a" href="/demand" sx={{
+                  display: 'block', px: 2, py: 1,
+                  borderTop: `1px solid ${pal.border}`,
+                  color: 'var(--accent)', fontSize: 12, fontWeight: 600,
+                  textDecoration: 'none', '&:hover': { bgcolor: 'action.hover' },
+                }}>
+                  See all {d.reorder_now.length} in Demand →
+                </Box>
+              )}
+            </Box>
+          );
+        })()}
+        </Box>{/* end RIGHT COLUMN */}
+      </Box>
         );
       })()}
+      {/* end TWO COLUMN LAYOUT */}
 
       {/* ─────────────────────────────────────────
           ZONE 6 — WHICH PRODUCTS KEEP COMING BACK?
@@ -691,7 +702,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
               High return rates may signal product quality, description, or fulfilment issues.
             </Typography>
 
-            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+            <Box sx={{ background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2, overflow: 'hidden' }}>
               {operatorSummary.topReturned.map((item, idx) => {
                 const barPct = maxRate > 0 ? (item.returnRatePct / maxRate) * 100 : 0;
                 const rateColor = item.returnRatePct >= 20

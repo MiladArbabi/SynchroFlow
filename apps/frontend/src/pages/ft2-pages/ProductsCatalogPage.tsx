@@ -29,6 +29,9 @@ export default function ProductsCatalogPage({ range }: Props) {
 
   const { noSkuProducts, sellability, drift } = operatorQuery.data;
   const added = drift.addedThisPeriod ?? 0;
+  const totalProducts = (sellability.sellable ?? 0) + (sellability.blocked ?? 0);
+  // Suppress drift on first sync — when added = total, it's not meaningful signal
+  const showDrift = added > 0 && added < totalProducts;
 
   const cardSx = {
     background: pal.surface,
@@ -45,7 +48,7 @@ export default function ProductsCatalogPage({ range }: Props) {
   };
 
   return (
-    <Box sx={{ p: 3, maxWidth: 720 }}>
+    <Box sx={{ p: 3 }}>
 
       {/* ── No-SKU products ───────────────────────────────── */}
       {/* Full list — Intelligence tab shows count only */}
@@ -53,7 +56,7 @@ export default function ProductsCatalogPage({ range }: Props) {
         <Box sx={cardSx}>
           <Box sx={{ ...headerSx, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="overline" sx={{ color: pal.ink3, fontWeight: 600 }}>
-              {noSkuProducts.length} products missing product code
+              {noSkuProducts.length} products missing product code ({sellability.blockedReasons.noSku ?? 0} variants)
             </Typography>
             <Typography variant="caption" sx={{ color: 'var(--mui-palette-error-main)' }}>
               WMS-Lite cannot pick these
@@ -77,7 +80,7 @@ export default function ProductsCatalogPage({ range }: Props) {
                 </Typography>
                 {p.variants.length > 1 && (
                   <Typography variant="caption" sx={{ color: pal.ink3, ml: 2, flexShrink: 0 }}>
-                    {p.variants.length} options: {p.variants.map(v => v.variantTitle ?? '—').join(', ')}
+                    {p.variants.length} options: {p.variants.map(v => v.variantTitle && v.variantTitle !== 'Default Title' ? v.variantTitle : '—').join(', ')}
                   </Typography>
                 )}
               </Box>
@@ -88,7 +91,7 @@ export default function ProductsCatalogPage({ range }: Props) {
 
       {/* ── Catalog drift ─────────────────────────────────── */}
       {/* Moved from Intelligence tab — setup task, not daily signal */}
-      {added > 0 && (
+      {showDrift && (
         <Box sx={cardSx}>
           <Box sx={headerSx}>
             <Typography variant="overline" sx={{ color: pal.ink3, fontWeight: 600 }}>

@@ -29,6 +29,7 @@ type VariantCost = {
   sku: string | null;
   unit_cost: number | null;
   updated_at: string;
+  product_title: string | null;
 };
 
 // ─────────────────────────────────────────
@@ -200,7 +201,10 @@ function VariantCostRow({ variant }: { variant: VariantCost }) {
     );
   }, [value, variant.lasyncro_variant_id, mutate]);
 
-  const label = variant.title ?? variant.sku ?? variant.lasyncro_variant_id.slice(0, 8).toUpperCase();
+  // Suppress Shopify's "Default Title" placeholder — not meaningful to operators
+  const rawTitle = variant.title === 'Default Title' ? null : variant.title;
+  // For variants with no meaningful title, show product name as context
+  const label = rawTitle ?? variant.sku ?? variant.product_title ?? variant.lasyncro_variant_id.slice(0, 8).toUpperCase();
   const isMissing = variant.unit_cost == null || variant.unit_cost <= 0;
 
   return (
