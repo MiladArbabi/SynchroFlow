@@ -1,3 +1,2 @@
-import financesRoutes from './finances.ft2.routes.js';
-
+import financesRoutes from './finances.routes.js';
 export default financesRoutes;

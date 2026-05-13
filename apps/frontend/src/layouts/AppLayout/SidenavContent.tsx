@@ -52,6 +52,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState }) => {
     const relatedPaths: Record<string, string[]> = {
       orders: ['/fulfillment'],
       products: ['/products/catalog', '/products/costs', '/products/wms-readiness'],
+      finances: ['/finances/margin'],
     };
     const isActive = pathname === item.path
       || pathname.startsWith(item.path + '?')

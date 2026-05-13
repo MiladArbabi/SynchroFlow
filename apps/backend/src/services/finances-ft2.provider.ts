@@ -1,3 +1,4 @@
+import { withTenant } from "@lasyncro/backend-core/db.js";
 import { EpistemicValue } from "../../../../packages/epistemic/dist/epistemic.js";
 import { buildFinancesFacts } from "./finances-facts/FinancesFacts.service.js";
 import { buildFinancesFtep } from "./finances-ftep/FinancesFtep.service.js";
@@ -32,7 +33,8 @@ export async function getFinancesFt2Snapshot(
     };
   }
 ) {
-  const facts = await buildFinancesFacts(input);
+  // withTenant sets SET LOCAL app.current_tenant — required for all strict RLS tables
+  const facts = await withTenant(input.shopId, (trx) => buildFinancesFacts(input, trx));
   const intelligence = buildFinancesIntelligence(facts);
 
   return buildFinancesFtep({

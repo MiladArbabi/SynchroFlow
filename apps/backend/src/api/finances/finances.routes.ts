@@ -6,6 +6,7 @@ import { httpGetSkuMargin } from './finances.margin.sku.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { httpGetMarginTrend } from './finances.margin.trend.controller.js';
+import { httpGetFinancesIntelligence } from './finances.intelligence.controller.js';
 
  const router = Router();
 
@@ -25,7 +26,6 @@ router.get(
   authenticateToken,
   financesEpistemicController
 );
-
 
 /**
  * @route   GET /api/v1/modules/finances/margin
@@ -61,6 +61,18 @@ router.get(
   authenticateToken,
   requireFt2,
   httpGetMarginTrend
+);
+
+/**
+ * @route   GET /api/v1/modules/finances/intelligence
+ * @desc    Aggregated intelligence signals — net margin, cost coverage, blocked revenue at margin
+ * @access  Private — FT2
+ */
+router.get(
+  '/intelligence',
+  authenticateToken,
+  requireFt2,
+  httpGetFinancesIntelligence
 );
 
  export default router;

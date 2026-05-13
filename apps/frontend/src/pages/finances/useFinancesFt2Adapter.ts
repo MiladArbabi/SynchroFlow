@@ -75,6 +75,8 @@ export function mapFinancesFt2Props(
         ? null
         : snapshot.financialConsistency,
     margin: null,
+    skuMargin: null,    // injected by FinancesMarginPage, not from FT2 snapshot
+    marginTrend: null,  // injected by FinancesMarginPage, not from FT2 snapshot
   };
 
   /**

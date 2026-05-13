@@ -1,52 +1,34 @@
 // apps/frontend/src/pages/ft2-pages/FinancesFT2Page.tsx
-import { useState } from 'react';
-import type { FT2DateRange } from '@lasyncro/ui-ft2';
-import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
-import { FinancesModuleFT2 } from '@lasyncro/finances';
-import { useFinancesFt2Snapshot } from '../finances/useFinancesFt2Snapshot';
-import { mapFinancesFt2Props } from '../finances/useFinancesFt2Adapter';
-import { useMargin } from '../finances/useMargin';
-import { useSkuMargin } from '../finances/useSkuMargin';
-import { useEntitlements } from '../../contexts/EntitlementsContext';
-import { useExchangeRates } from '../../hooks/useExchangeRates';
-import { PlanGate } from '../../components/PlanGate';
-import { useMarginTrend } from '../finances/useMarginTrend';
+//
+// FinancesFT2Page
+// ---------------
+// Gate + tab router for the Finances module.
+// Mirrors ProductsFT2Page pattern — ModuleTabBar owns navigation,
+// child pages own their own data fetching.
+//
+// Tabs:
+//   /finances            → Intelligence (daily pulse — net margin, blocked revenue at margin, SKU alerts)
+//   /finances/margin     → Margin       (per-order + per-SKU margin breakdown)
+//   /products/costs      → Cost Health  (missing costs, coverage %, bulk fix)
 
-const __DEV__ = import.meta.env.DEV;
+import { Routes, Route } from 'react-router-dom';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { PlanGate } from '../../components/PlanGate';
+import FinancesIntelligencePage from './FinancesIntelligencePage';
+import FinancesMarginPage from './FinancesMarginPage';
 
 export default function FinancesFT2Page() {
-  const [range, setRange] = useState<FT2DateRange>({
-    preset: 'past_30_days',
-    from: null,
-    to: null,
-  });
-  const snapshotQuery = useFinancesFt2Snapshot(range);
-  const marginQuery = useMargin();
-  const skuMarginQuery = useSkuMargin();
-  const marginTrendQuery = useMarginTrend(30);
-  const { displayCurrency, locale } = useEntitlements();
-  const { rates } = useExchangeRates();
-
-  if (!snapshotQuery.isSuccess) {
-    if (__DEV__) console.debug('[FinancesFT2Page] awaiting FT2 snapshot');
-    return <div>Loading finance insights…</div>;
-  }
-
-  const props = mapFinancesFt2Props(snapshotQuery.data);
-  if (__DEV__) console.debug('[FinancesFT2Page] rendering FinancesModuleFT2', props);
-
   return (
-    // TIER GATE: finances.overview requires 'growth' (see usePlanEntitlement PLAN_FEATURES)
     <PlanGate feature="finances.overview">
       <>
-        <FT2DateRangeBar value={range} onChange={setRange} />
-        <FinancesModuleFT2
-          {...props}
-          margin={marginQuery.data ?? null}
-          skuMargin={skuMarginQuery.data ?? null}
-          currency={{ displayCurrency, locale, rates }}
-          marginTrend={marginTrendQuery.data ?? null}
-        />
+        <ModuleTabBar tabs={[
+          { id: 'intelligence', label: 'Intelligence', path: '/finances' },
+          { id: 'margin',       label: 'Margin',       path: '/finances/margin' },
+        ]} />
+        <Routes>
+          <Route path="/"        element={<FinancesIntelligencePage />} />
+          <Route path="/margin"  element={<FinancesMarginPage />} />
+        </Routes>
       </>
     </PlanGate>
   );

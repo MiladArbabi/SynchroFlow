@@ -1,5 +1,6 @@
 import db from '@lasyncro/backend-core/db.js';
 import type { FinancesFacts } from './FinancesFacts.types.js';
+import { Knex } from 'knex';
 
 interface BuildFinancesFactsInput {
   shopId: number;
@@ -23,9 +24,11 @@ interface BuildFinancesFactsInput {
  * - Nulls preserved
  */
 export async function buildFinancesFacts(
-  input: BuildFinancesFactsInput
+  input: BuildFinancesFactsInput,
+  trx?: Knex | Knex.Transaction  // injected by withTenant caller — never call bare db() on RLS tables
 ): Promise<FinancesFacts> {
   const { shopId, period } = input;
+  const qb = trx ?? db;  // always use qb — bare db() silently returns 0 rows under RLS
 
   /**
    * Revenue — Gross Order Revenue
@@ -42,7 +45,7 @@ export async function buildFinancesFacts(
     * This is structurally sovereign,
     * but NOT execution-adjusted revenue.
     */
-  const revenueRow = await db('orders')
+  const revenueRow = await qb('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', period.from)
     .andWhere('order_created_at', '<=', period.to)
@@ -62,7 +65,7 @@ export async function buildFinancesFacts(
    * - Detached from order creation semantics
    * - Independent of negative order modeling
    */
-  const refundRow = await db('refund_executions as r')
+  const refundRow = await qb('refund_executions as r')
     .join('orders as o', 'r.lasyncro_order_id', 'o.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .andWhere('r.executed_at', '>=', period.from)
@@ -106,7 +109,7 @@ export async function buildFinancesFacts(
    * - 0 orders  → null (no evidence)
    * - ≥1 orders → 100 (fully observed)
    */
-  const ordersCountRow = await db('orders')
+  const ordersCountRow = await qb('orders')
     .where('shop_id', shopId)
     .andWhere('order_created_at', '>=', period.from)
     .andWhere('order_created_at', '<=', period.to)
@@ -135,7 +138,7 @@ export async function buildFinancesFacts(
    * - Null means "no evidence", NOT zero
    */
   
-  const dailyRows = await db('orders')
+  const dailyRows = await qb('orders')
     .select(
       db.raw(
         `

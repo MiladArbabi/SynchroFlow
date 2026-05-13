@@ -205,7 +205,7 @@ export function buildFinancesIntelligence(
    */
   const blindSpots = {
     costsMissing: facts.totalCosts == null,
-    refundsMissing: true, // refunds ingestion not implemented yet
+    refundsMissing: facts.refundsObserved == null,  // null = no refund data observed in period; false = refunds present and queryable
     historyInsufficient: !sufficientForTrend,
   };
 
