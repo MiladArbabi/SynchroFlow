@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const { frontmatter } = getContentBySlug('blog', slug)
   return {
-    title: `${frontmatter.title} — LaSyncro`,
+    title: `LaSyncro | ${frontmatter.title}`,
     description: frontmatter.description,
     alternates: { canonical: `https://www.lasyncro.com/blog/${slug}` },
     openGraph: {
@@ -35,6 +35,20 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       description: frontmatter.description,
       url: `https://www.lasyncro.com/blog/${slug}`,
       type: 'article',
+      images: [
+        {
+          url: 'https://www.lasyncro.com/og_image_lightmode.png',
+          width: 1200,
+          height: 630,
+          alt: 'LaSyncro — Operational intelligence for Shopify merchants',
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: frontmatter.title,
+      description: frontmatter.description,
+      images: ['https://www.lasyncro.com/og_image_lightmode.png'],
     },
   }
 }
