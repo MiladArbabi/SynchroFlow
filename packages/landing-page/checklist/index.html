@@ -154,6 +154,45 @@ main{max-width:680px;margin:0 auto;padding:48px 5vw 96px}
 .reveal{opacity:0;transform:translateY(16px);transition:opacity .5s ease,transform .5s ease}
 .reveal.in{opacity:1;transform:translateY(0)}
 </style>
+
+<!-- Canonical — prevents duplicate indexing if page is served from both lasyncro.com and www.lasyncro.com -->
+<link rel="canonical" href="https://www.lasyncro.com/checklist">
+
+<!-- OG + Twitter card — enables rich previews when shared on LinkedIn, Slack, X -->
+<meta property="og:title" content="The Operations Chaos Checklist — LaSyncro">
+<meta property="og:description" content="12 questions. 3 minutes. Find out how much time your Shopify operations are actually costing you each week.">
+<meta property="og:url" content="https://www.lasyncro.com/checklist">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://www.lasyncro.com/og_image_lightmode.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Operations Chaos Checklist — LaSyncro">
+<meta name="twitter:image" content="https://www.lasyncro.com/og_image_lightmode.png">
+
+<!-- FAQPage schema — enables AI engine citations and Google rich results -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I know if my Shopify operations are inefficient?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Common signs include spending more than 30 minutes each morning reconciling orders, discovering stockouts from customer complaints rather than your own system, and maintaining inventory counts in spreadsheets alongside Shopify."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the Operations Chaos Checklist?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A 12-question diagnostic for Shopify merchants running their own warehouse. It identifies exactly where operational time is being lost — from inventory accuracy to fulfillment workflow to supplier management — and estimates the weekly hours being wasted."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
