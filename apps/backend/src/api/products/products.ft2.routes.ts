@@ -5,6 +5,7 @@ import { getProductsOperatorSummaryHandler } from './products.operator.controlle
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { httpPatchVariantCost, httpGetVariantCosts, httpBulkUpdateVariantCosts } from './products.cost.controller.js';
+import { getProductsWmsReadinessHandler } from './products.wms-readiness.controller.js';
 
 const router = Router();
 
@@ -20,6 +21,13 @@ router.get('/ft2', authenticateToken, requireFt2, getProductsFt2);
  * Final path: GET /api/v1/modules/products/operator-summary
  */
 router.get('/operator-summary', authenticateToken, getProductsOperatorSummaryHandler);
+
+/**
+ * WMS Readiness — warehouse operability signals.
+ * All tiers — pickability is a core WMS-Lite feature.
+ * Final path: GET /api/v1/modules/products/wms-readiness
+ */
+router.get('/wms-readiness', authenticateToken, getProductsWmsReadinessHandler);
 
 /**
  * Variant cost entry — updates unit_cost and backfills unfulfilled order revenue units.

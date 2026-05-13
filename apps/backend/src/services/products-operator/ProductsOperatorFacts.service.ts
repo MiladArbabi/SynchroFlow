@@ -1,5 +1,6 @@
 // apps/backend/src/services/products-operator/ProductsOperatorFacts.service.ts
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 
 /**
  * ProductsOperatorFacts
@@ -59,16 +60,16 @@ export interface ProductsOperatorFacts {
   }>;
 }
 
-export async function getProductsOperatorFacts(input: {
-  shopId: number;
-  period: { from: string; to: string };
-}): Promise<ProductsOperatorFacts> {
+export async function getProductsOperatorFacts(
+  input: { shopId: number; period: { from: string; to: string } },
+  trx?: Knex | Knex.Transaction
+): Promise<ProductsOperatorFacts> {
   const { shopId, period } = input;
-
+  const qb = trx ?? db;
   // Join to products to get product_type.
   // Only physical products require SKUs for warehouse operations.
   // gift_card, digital, and service products are excluded from Problem Center signals.
-  const activeVariants = await db('variants as v')
+  const activeVariants = await qb('variants as v')
     .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
     .where({ 'v.shop_id': shopId, 'v.status': 'active' })
     .select([
@@ -98,7 +99,7 @@ export async function getProductsOperatorFacts(input: {
   // ─────────────────────────────────────────
   // Inventory truth — sellable_quantity per variant
   // ─────────────────────────────────────────
-  const inventoryRows = await db('inventory_truth')
+  const inventoryRows = await qb('inventory_truth')
     .where('shop_id', shopId)
     .whereIn('lasyncro_variant_id', allVariantIds)
     .select(['lasyncro_variant_id', 'sellable_quantity']);
@@ -138,7 +139,7 @@ export async function getProductsOperatorFacts(input: {
   // ─────────────────────────────────────────
   // No-sales variants (period-scoped)
   // ─────────────────────────────────────────
-  const soldVariantRows = await db('order_revenue_units as ru')
+  const soldVariantRows = await qb('order_revenue_units as ru')
     .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '>=', period.from)
@@ -161,7 +162,7 @@ export async function getProductsOperatorFacts(input: {
   // Top returned variants (all-time, top 5)
   // via refund_execution_line_items → order_revenue_units → variants
   // ─────────────────────────────────────────
-  const returnRows = await db('refund_executions as re')
+  const returnRows = await qb('refund_executions as re')
     .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
     .join('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
     .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
@@ -183,7 +184,7 @@ export async function getProductsOperatorFacts(input: {
   const returnVariantIds = returnRows.map((r: any) => r.lasyncro_variant_id);
 
   const ordersPerVariant = returnVariantIds.length > 0
-    ? await db('order_revenue_units as oru')
+    ? await qb('order_revenue_units as oru')
         .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
         .where('o.shop_id', shopId)
         .whereIn('oru.lasyncro_variant_id', returnVariantIds)
@@ -212,7 +213,7 @@ export async function getProductsOperatorFacts(input: {
   });
 
   // Only physical products — gift cards and digital products don't need SKUs
-  const noSkuRows = await db('variants as v')
+  const noSkuRows = await qb('variants as v')
     .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
     .where('v.shop_id', shopId)
     .andWhere('v.status', 'active')

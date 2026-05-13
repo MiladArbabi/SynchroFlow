@@ -1,6 +1,6 @@
 // apps/backend/src/services/products-dependency-facts/ProductDependencyFacts.service.ts
-
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import { ProductDependencyFacts } from './ProductDependencyFacts.types.js';
 
 interface GetProductDependencyFactsInput {
@@ -23,14 +23,16 @@ interface GetProductDependencyFactsInput {
  * - null ≠ 0 strictly enforced
  */
 export async function getProductDependencyFacts(
-  input: GetProductDependencyFactsInput
+  input: GetProductDependencyFactsInput,
+  trx?: Knex | Knex.Transaction
 ): Promise<ProductDependencyFacts> {
   const { shopId, period } = input;
-
+  // trx injected by withTenant caller — never bare qb()
+  const qb = trx ?? db;
   // ─────────────────────────────────────────
   // Canonical product baseline
   // ─────────────────────────────────────────
-  const products = await db('products')
+  const products = await qb('products')
     .where('shop_id', shopId)
     .select(['sku']);
 
@@ -82,7 +84,7 @@ export async function getProductDependencyFacts(
   // SKU-backed presence scans
   // ─────────────────────────────────────────
   const inventorySkus = new Set(
-    (await db('inventory_truth as it')
+    (await qb('inventory_truth as it')
       .join('variants as v', function () {
         this.on('v.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
             .andOn('v.shop_id', '=', 'it.shop_id');
@@ -95,7 +97,7 @@ export async function getProductDependencyFacts(
   );
 
   const salesSkus = new Set(
-    (await db('historical_sales')
+    (await qb('historical_sales')
       .where('shop_id', shopId)
       .andWhere('sale_date', '>=', period.from)
       .andWhere('sale_date', '<=', period.to)
@@ -141,14 +143,14 @@ export async function getProductDependencyFacts(
   // Non-SKU systems (presence only)
   // ─────────────────────────────────────────
   const hasFulfillmentSignals =
-    (await db('order_fulfillment_status as ofs')
+    (await qb('order_fulfillment_status as ofs')
       .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
       .where('o.shop_id', shopId)
       .limit(1)).length > 0;
 
   const hasCostSignals =
     Number(
-      (await db('product_costs')
+      (await qb('product_costs')
         .where('shop_id', shopId)
         .count('* as c'))[0].c
     ) > 0;

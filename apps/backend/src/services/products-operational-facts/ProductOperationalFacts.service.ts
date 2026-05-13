@@ -1,4 +1,5 @@
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import { ProductOperationalFacts } from './ProductOperationalFacts.types.js';
 
 interface GetProductOperationalFactsInput {
@@ -21,14 +22,17 @@ interface GetProductOperationalFactsInput {
  * - Snapshot tables are not time-filtered
  */
 export async function getProductOperationalFacts(
-  input: GetProductOperationalFactsInput
+  input: GetProductOperationalFactsInput,
+  trx?: Knex | Knex.Transaction
 ): Promise<ProductOperationalFacts> {
   const { shopId, period } = input;
+  // trx injected by withTenant caller — never bare qb()
+  const qb = trx ?? db;
 
   // ─────────────────────────────────────────
   // Canonical products (snapshot, no period)
   // ─────────────────────────────────────────
-  const products = await db('products')
+  const products = await qb('products')
     .where('shop_id', shopId)
     .select(['lasyncro_product_id', 'sku']);
 
@@ -61,7 +65,7 @@ export async function getProductOperationalFacts(
   // ─────────────────────────────────────────
   // Inventory observability (snapshot)
   // ─────────────────────────────────────────
-  const inventoryProductRows = await db('inventory_truth as it')
+  const inventoryProductRows = await qb('inventory_truth as it')
     .join('variants as v', function () {
       this.on('v.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
           .andOn('v.shop_id', '=', 'it.shop_id');
@@ -93,7 +97,7 @@ export async function getProductOperationalFacts(
   // skus.length = 0 means no SKUs exist on products,
   // in which case sales observability is not computable.
   // ─────────────────────────────────────────
-  const salesVariantRows = await db('order_revenue_units as ru')
+  const salesVariantRows = await qb('order_revenue_units as ru')
     .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
     .join('variants as v', 'v.lasyncro_variant_id', 'ru.lasyncro_variant_id')
     .where('o.shop_id', shopId)
@@ -108,7 +112,7 @@ export async function getProductOperationalFacts(
   }
 
   if (skus.length > 0) {
-    const salesRows = await db('historical_sales')
+    const salesRows = await qb('historical_sales')
       .where('shop_id', shopId)
       .andWhere('sale_date', '>=', period.from)
       .andWhere('sale_date', '<=', period.to)
@@ -129,7 +133,7 @@ export async function getProductOperationalFacts(
   // Shop scoping MUST derive via orders join.
   // Fulfillment is sovereign and order-scoped.
 
-  const fulfillmentRows = await db('order_fulfillment_status as ofs')
+  const fulfillmentRows = await qb('order_fulfillment_status as ofs')
     .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .select(['ofs.lasyncro_order_id']);

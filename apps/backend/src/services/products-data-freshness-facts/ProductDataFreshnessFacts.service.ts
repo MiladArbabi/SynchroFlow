@@ -1,5 +1,6 @@
 // apps/backend/src/services/products-data-freshness-facts/ProductDataFreshnessFacts.service.ts
 import db from "@lasyncro/backend-core/db.js";
+import type { Knex } from 'knex';
 import { ProductDataFreshnessFacts } from "./ProductDataFreshnessFacts.types.js";
 
 interface GetProductDataFreshnessFactsInput {
@@ -23,14 +24,16 @@ interface GetProductDataFreshnessFactsInput {
  * - Null-preserving
  */
 export async function getProductDataFreshnessFacts(
-  input: GetProductDataFreshnessFactsInput
+  input: GetProductDataFreshnessFactsInput,
+  trx?: Knex | Knex.Transaction
 ): Promise<ProductDataFreshnessFacts> {
   const { shopId, period } = input;
+  const qb = trx ?? db;
 
   // ─────────────────────────────────────────
   // Structural — canonical_products.updated_at
   // ─────────────────────────────────────────
-  const structural = await db('products')
+  const structural = await qb('products')
     .where('shop_id', shopId)
     .max('updated_at as ts')
     .first();
@@ -38,7 +41,7 @@ export async function getProductDataFreshnessFacts(
   // ─────────────────────────────────────────
   // Inventory — inventory_truth.updated_at
   // ─────────────────────────────────────────
-  const inventory = await db('inventory_truth as it')
+  const inventory = await qb('inventory_truth as it')
     .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
     .where('v.shop_id', shopId)
     .max('it.updated_at as ts')
@@ -47,7 +50,7 @@ export async function getProductDataFreshnessFacts(
   // ─────────────────────────────────────────
   // Sales — historical_sales.sale_date (time-scoped)
   // ─────────────────────────────────────────
-  const sales = await db('order_revenue_units as ru')
+  const sales = await qb('order_revenue_units as ru')
     .join('orders as o', 'o.lasyncro_order_id', 'ru.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '>=', period.from)
@@ -58,7 +61,7 @@ export async function getProductDataFreshnessFacts(
   // ─────────────────────────────────────────
   // Fulfillment — order_fulfillment_status.status_updated_at
   // ─────────────────────────────────────────
-  const fulfillment = await db('order_fulfillment_status as ofs')
+  const fulfillment = await qb('order_fulfillment_status as ofs')
     .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .max('ofs.status_updated_at as ts')

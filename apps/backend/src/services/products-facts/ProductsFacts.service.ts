@@ -1,5 +1,6 @@
 // apps/backend/src/services/products-facts/ProductsFacts.service.ts
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import { ProductsFacts } from './ProductsFacts.types.js';
 
 interface GetProductsFactsInput {
@@ -26,7 +27,8 @@ interface GetProductsFactsInput {
  * - platform_product_id is used ONLY for grouping, never exposed
  */
 export async function getProductsFacts(
-  input: GetProductsFactsInput
+  input: GetProductsFactsInput,
+  trx?: Knex | Knex.Transaction
 ): Promise<ProductsFacts> {
   const { shopId, period } = input;
 
@@ -42,7 +44,8 @@ export async function getProductsFacts(
    * - Products are grouping only (via lasyncro_product_id)
    * - No platform identity is used in FT2
    */
-  const rows = await db('variants')
+  // trx injected by withTenant caller (products-ft2.provider) — never bare db()
+  const rows = await (trx ?? db)('variants')
     .where('shop_id', shopId)
     .select([
       'lasyncro_product_id',

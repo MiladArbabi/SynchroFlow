@@ -34,6 +34,24 @@ export async function up(knex: Knex): Promise<void> {
     END$$;
   `);
 
+  // label_type: determines which physical label template is printed.
+  // 'lasyncro' → standard variant identity label (SKU + barcode + product name)
+  // 'problem'  → PROBLEM-BIN label (variant + exception type + problem task ID)
+  //              attached to problematic units before dropping in PROBLEM-BIN
+  await knex.raw(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_type WHERE typname = 'barcode_label_type'
+      ) THEN
+        CREATE TYPE barcode_label_type AS ENUM (
+          'lasyncro',
+          'problem'
+        );
+      END IF;
+    END$$;
+  `);
+
   await knex.schema.createTable('barcode_print_jobs', (table) => {
     table
       .uuid('print_job_id')
@@ -72,6 +90,30 @@ export async function up(knex: Knex): Promise<void> {
      * after printing, this preserves what was actually printed.
      */
     table.string('barcode_value', 255).notNullable();
+
+    /**
+     * LABEL TYPE
+     * ----------
+     * Determines print template:
+     * - lasyncro: standard variant identity label — printed on receive confirm
+     * - problem:  PROBLEM-BIN label — printed when unit flagged as problematic
+     *             operator attaches and drops unit in PROBLEM-BIN
+     */
+    table
+      .specificType('label_type', 'barcode_label_type')
+      .notNullable()
+      .defaultTo('lasyncro');
+
+    /**
+     * PRINTER ASSIGNMENT
+     * ------------------
+     * Which registered shop printer to send this job to.
+     * Nullable — operator selects printer at receive session start.
+     * No FK — printers table created in migration 0106.
+     * Application layer enforces existence.
+     */
+    table.uuid('printer_id').nullable();
+    table.index(['printer_id']); // fast queue poll per printer
 
     table
       .specificType('status', 'barcode_print_job_status')
@@ -124,5 +166,6 @@ export async function up(knex: Knex): Promise<void> {
 
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('barcode_print_jobs');
+  await knex.raw(`DROP TYPE IF EXISTS barcode_label_type;`);
   await knex.raw(`DROP TYPE IF EXISTS barcode_print_job_status;`);
 }

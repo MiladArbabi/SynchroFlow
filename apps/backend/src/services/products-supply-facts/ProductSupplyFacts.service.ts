@@ -1,5 +1,6 @@
 // apps/backend/src/services/products-supply-facts/ProductSupplyFacts.service.ts
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import { ProductSupplyFacts } from './ProductSupplyFacts.types.js';
 
 interface GetProductSupplyFactsInput {
@@ -22,14 +23,17 @@ interface GetProductSupplyFactsInput {
  * - SKU-backed signals only counted at product level
  */
 export async function getProductSupplyFacts(
-  input: GetProductSupplyFactsInput
+  input: GetProductSupplyFactsInput,
+  trx?: Knex | Knex.Transaction
 ): Promise<ProductSupplyFacts> {
   const { shopId, period } = input;
+  // trx injected by withTenant caller — never bare qb()
+  const qb = trx ?? db;
 
   // ─────────────────────────────────────────
   // Canonical products (snapshot)
   // ─────────────────────────────────────────
-  const products = await db('products')
+  const products = await qb('products')
     .where('shop_id', shopId)
     .select(['sku']);
 
@@ -73,7 +77,7 @@ export async function getProductSupplyFacts(
   // ─────────────────────────────────────────
   // Inventory signal presence (SKU-backed)
   // ─────────────────────────────────────────
-  const inventoryRows = await db('inventory_truth as it')
+  const inventoryRows = await qb('inventory_truth as it')
     .join('variants as v', function () {
       this.on('v.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
           .andOn('v.shop_id', '=', 'it.shop_id');
@@ -88,7 +92,7 @@ export async function getProductSupplyFacts(
   // ─────────────────────────────────────────
   // Fulfillment signal presence (order-level only)
   // ─────────────────────────────────────────
-  const fulfillmentRows = await db('order_fulfillment_status as ofs')
+  const fulfillmentRows = await qb('order_fulfillment_status as ofs')
     .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .limit(1);

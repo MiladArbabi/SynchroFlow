@@ -2,20 +2,30 @@
 //
 // ProductsFT2Page
 // ---------------
-// Products module — FT2 observability + operator summary surface.
-import { ProductsModuleFT2 } from '@lasyncro/products';
+// Gate + tab router for the Products module.
+// Mirrors OrdersFT2Page pattern — ModuleTabBar owns navigation,
+// child pages own their own data fetching.
+//
+// Tabs:
+//   /products           → Intelligence (priority signals, ranked by $ impact)
+//   /products/catalog   → Catalog (full SKU list, no-SKU products)
+//   /products/costs     → Costs (cost entry + bulk CSV upload)
+//   /products/wms-readiness → WMS Readiness (pickability, variance, shrinkage)
+
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useState } from 'react';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { FT2DateRangeBar, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { useProductsFt2Snapshot } from '../products/useProductsFt2Snapshot';
 import { mapProductsFt2Props } from '../products/useProductsFt2Adapter';
 import { useProductsOperatorSummary } from '../products/useProductsOperatorSummary';
 import type { ProductsOperatorSummary } from '../products/useProductsOperatorSummary';
-import { useState } from 'react';
-import {
-  FT2DateRangeBar,
-  type FT2DateRange,
-} from '@lasyncro/ui-ft2';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
-import CostEntryPanel from 'components/CostEntryPanel';
+import { ProductsModuleFT2 } from '@lasyncro/products';
+import ProductsCatalogPage from './ProductsCatalogPage';
+import ProductsCostsPage from './ProductsCostsPage';
+import ProductsWmsReadinessPage from './ProductsWmsReadinessPage';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -31,34 +41,48 @@ export default function ProductsFT2Page() {
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
 
-  if (!snapshotQuery.isSuccess) {
-    if (__DEV__) {
-      console.debug('[ProductsFT2Page] awaiting FT2 snapshot');
-    }
-    return <div>Loading product insights…</div>;
-  }
-
-  const props = mapProductsFt2Props(snapshotQuery.data);
-  const operatorSummary: ProductsOperatorSummary | null =
-    operatorQuery.isSuccess ? operatorQuery.data : null;
-
-  if (__DEV__) {
-    console.debug('[ProductsFT2Page] rendering ProductsModuleFT2', { props, operatorSummary });
-  }
-
   return (
     <>
-      <CostEntryPanel />
+      <ModuleTabBar tabs={[
+        { id: 'intelligence',    label: 'Intelligence',   path: '/products' },
+        { id: 'catalog',         label: 'Catalog',        path: '/products/catalog' },
+        { id: 'costs',           label: 'Costs',          path: '/products/costs' },
+        { id: 'wms-readiness',   label: 'WMS Readiness',  path: '/products/wms-readiness' },
+      ]} />
 
-      <FT2DateRangeBar
-        value={range}
-        onChange={setRange}
-      />
-      
-      <ProductsModuleFT2 
-        {...props}
-        operatorSummary={operatorSummary} 
-        currency={{ displayCurrency, locale, rates }} />
+      {/* Date range bar — visible on Intelligence + Catalog tabs only */}
+      <Routes>
+        <Route path="/" element={
+          <FT2DateRangeBar value={range} onChange={setRange} />
+        } />
+        <Route path="/catalog" element={
+          <FT2DateRangeBar value={range} onChange={setRange} />
+        } />
+      </Routes>
+
+      <Routes>
+        <Route path="/" element={(() => {
+          if (!snapshotQuery.isSuccess) {
+            if (__DEV__) console.debug('[ProductsFT2Page] awaiting FT2 snapshot');
+            return <div>Loading product insights…</div>;
+          }
+          const props = mapProductsFt2Props(snapshotQuery.data);
+          const operatorSummary: ProductsOperatorSummary | null =
+            operatorQuery.isSuccess ? operatorQuery.data : null;
+          if (__DEV__) console.debug('[ProductsFT2Page] rendering intelligence tab', { props, operatorSummary });
+          return (
+            <ProductsModuleFT2
+              {...props}
+              operatorSummary={operatorSummary}
+              currency={{ displayCurrency, locale, rates }}
+            />
+          );
+        })()} />
+        <Route path="/catalog"        element={<ProductsCatalogPage range={range} />} />
+        <Route path="/costs"          element={<ProductsCostsPage />} />
+        <Route path="/wms-readiness"  element={<ProductsWmsReadinessPage />} />
+        <Route path="*"               element={<Navigate to="/products" replace />} />
+      </Routes>
     </>
   );
 }

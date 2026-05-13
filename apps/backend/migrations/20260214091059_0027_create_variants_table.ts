@@ -23,6 +23,24 @@ export async function up(knex: Knex): Promise<void> {
     table.string('title', 255).nullable();
 
     /**
+     * GLOBAL IDENTIFIER (EAN / UPC / GTIN / ISBN)
+     * ---------------------------------------------
+     * Synced from Shopify variant.barcode field at product sync time.
+     * Nullable — many SMB products have no global barcode.
+     *
+     * Used at receive time to:
+     * - Match an inbound scan to a variant without manual selection
+     * - Determine receive flow branch:
+     *     barcode IS NOT NULL → scan-to-match flow (no label needed pre-receive)
+     *     barcode IS NULL     → manual PO line selection → generate laSyncro label on confirm
+     *
+     * NOT the laSyncro internal barcode — see barcode_print_jobs.barcode_value
+     * for the system-generated scannable identity assigned post-receive.
+     */
+    table.string('barcode', 255).nullable();
+    table.index(['shop_id', 'barcode']); // fast EAN lookup at receive scan time
+
+    /**
      * PRODUCT COST INVARIANT
      * ----------------------
      * Every variant must carry a canonical cost.

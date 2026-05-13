@@ -106,6 +106,9 @@ export async function syncProducts(
           title: variant.title,
           unit_cost: unitCost,
           status: 'active',
+          // Global identifier (EAN/UPC/GTIN) from Shopify variant.barcode.
+          // Drives receive flow branching — scan-to-match vs manual selection.
+          barcode: variant.barcode || null,
         })
         .onConflict('lasyncro_variant_id')
         .merge({
@@ -114,6 +117,7 @@ export async function syncProducts(
           title: variant.title,
           unit_cost: unitCost,
           status: 'active',
+          barcode: variant.barcode || null, // merchant may add EAN after initial sync
           updated_at: new Date().toISOString(),
         });
 

@@ -34,6 +34,24 @@ export async function up(knex: Knex): Promise<void> {
      */
     table.string('description', 1024).notNullable();
 
+    /**
+     * GLOBAL IDENTIFIER FLAG
+     * -----------------------
+     * Set at PO creation time based on whether the linked variant
+     * has a barcode (EAN/UPC/GTIN) in variants.barcode.
+     *
+     * Drives receive flow branching on mobile:
+     * - true  → scan-to-match flow: operator scans product barcode,
+     *           system matches to variant automatically
+     * - false → manual selection flow: operator taps PO line item,
+     *           system generates laSyncro barcode on confirm + queues
+     *           print job immediately (per-line-item batch)
+     *
+     * Nullable for backward compatibility — existing POs pre-migration
+     * treated as unknown, defaulting to manual selection flow.
+     */
+    table.boolean('has_global_identifier').nullable();
+
     table.integer('quantity_ordered').notNullable();
     table.integer('quantity_received').notNullable().defaultTo(0);
 

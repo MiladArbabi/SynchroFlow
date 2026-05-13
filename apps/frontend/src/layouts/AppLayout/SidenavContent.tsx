@@ -51,6 +51,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState }) => {
     // /fulfillment is a sub-tab of the Orders module — highlight Orders when on fulfillment route
     const relatedPaths: Record<string, string[]> = {
       orders: ['/fulfillment'],
+      products: ['/products/catalog', '/products/costs', '/products/wms-readiness'],
     };
     const isActive = pathname === item.path
       || pathname.startsWith(item.path + '?')

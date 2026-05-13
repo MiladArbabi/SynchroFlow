@@ -1,4 +1,5 @@
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import {
   ProductDataIntegrityFacts,
 } from './ProductDataIntegrityFacts.types.js';
@@ -27,16 +28,19 @@ interface GetProductDataIntegrityFactsInput {
  * - This layer MUST NOT reinterpret time
  */
 export async function getProductDataIntegrityFacts(
-  input: GetProductDataIntegrityFactsInput
+  input: GetProductDataIntegrityFactsInput,
+  trx?: Knex | Knex.Transaction
 ): Promise<ProductDataIntegrityFacts> {
   const { shopId, period } = input;
+    const qb = trx ?? db;
 
 /**
  * Canonical Atomic Surface:
  * - Variants are atomic truth
  * - Products are grouping only
  */
-const rows = await db('variants')
+// trx injected by withTenant caller — never bare db()
+const rows = await qb('variants')
   .where('shop_id', shopId)
   .select([
     'lasyncro_product_id',

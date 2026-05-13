@@ -1,7 +1,24 @@
 // modules/products/src/ui/pages/ProductsModuleFT2.tsx
 import { Box, Typography, Chip, Divider, useTheme } from '@mui/material';
+import { useColorScheme } from '@mui/material/styles';
 import { formatCurrency } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+
+// ─────────────────────────────────────────────────────────────
+// THEME HOOK — mirrors OverviewModuleFT2 / OrdersModuleFT2 pattern
+// ─────────────────────────────────────────────────────────────
+function useProductsTheme() {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  return {
+    isDark,
+    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
+    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
+    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
+    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
+    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+  };
+}
 
 /**
  * ProductsModuleFT2DataProps
@@ -70,6 +87,23 @@ export interface ProductsModuleFT2DataProps {
       productTitle: string | null;
       variants: Array<{ variantTitle: string | null }>;
     }>;
+    // null = growth tier not enabled or no velocity data yet
+    demand: {
+      critical_reorder_count: number;
+      warning_reorder_count: number;
+      stockout_count: number;
+      total_inventory_value: number;
+      dead_capital_value: number;
+      avg_days_of_stock: number | null;
+      reorder_now: Array<{
+        lasyncro_variant_id: string;
+        sku: string | null;
+        days_of_stock_remaining: number | null;
+        estimated_stockout_date: string | null;
+        velocity_per_day: number;
+        suggested_reorder_qty: number | null;
+      }>;
+    } | null;
   } | null;
 
   outcome: { status: 'positive' | 'negative' | 'unknown' } | null;
@@ -273,11 +307,12 @@ function SectionCard({
   footer?: string;
   children: React.ReactNode;
 }) {
+  const pal = useProductsTheme();
   return (
     <Box
       sx={{
-        border: '1px solid',
-        borderColor: 'divider',
+        background: pal.cardBg,
+        border: `1px solid ${pal.border}`,
         borderRadius: 2,
         overflow: 'hidden',
         flex: 1,
@@ -339,6 +374,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   } = props;
 
   const theme = useTheme();
+  const pal = useProductsTheme();
 
   const outcomeColor =
     outcome?.status === 'positive'
@@ -465,47 +501,11 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   Why are {blocked} blocked?
                 </Typography>
                 {noSku > 0 && (
-                  <Box sx={{ borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.error.main, borderLeft: '4px solid', borderLeftColor: theme.palette.error.main, overflow: 'hidden' }}>
-                    {/* Header row */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5 }}>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.error.main, minWidth: 24 }}>{noSku}</Typography>
-                      <Box>
-                        <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                          {noSku === 1 ? 'product has' : 'products have'} no product code — your warehouse can't identify or pick these
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Fix this in your store by adding a unique code to each product, then re-sync.
-                        </Typography>
-                      </Box>
-                    </Box>
-                    {/* Product list */}
-                    {operatorSummary.noSkuProducts.length > 0 && (
-                      <Box sx={{ borderTop: '1px solid', borderColor: theme.palette.error.main, opacity: 0.3 }} />
-                    )}
-                    {operatorSummary.noSkuProducts.map((p, idx) => (
-                      <Box
-                        key={idx}
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'baseline',
-                          justifyContent: 'space-between',
-                          px: 2,
-                          py: 0.75,
-                          borderTop: idx === 0 ? 'none' : '1px solid',
-                          borderColor: 'divider',
-                          '&:hover': { bgcolor: 'action.hover' },
-                        }}
-                      >
-                        <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)', fontWeight: 500 }}>
-                          {p.productTitle ?? 'Unknown product'}
-                        </Typography>
-                        {p.variants.length > 1 && (
-                          <Typography variant="caption" color="text.secondary">
-                            {p.variants.length} options: {p.variants.map(v => v.variantTitle ?? '—').join(', ')}
-                          </Typography>
-                        )}
-                      </Box>
-                    ))}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.error.main, borderLeft: '4px solid', borderLeftColor: theme.palette.error.main }}>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.error.main, minWidth: 24 }}>{noSku}</Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                      no product code — warehouse can't identify or pick these. See Catalog tab.
+                    </Typography>
                   </Box>
                 )}
                 {noInventory > 0 && (
@@ -526,36 +526,146 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                 )}
               </Box>
             )}
+            {/* ── Dead weight ── */}
+            {/* Catalog drift (added this period) removed — lives in Catalog tab */}
+            {noSales > 0 && (
+              <Box sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+                <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
+                  {noSales}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
+                  {noSales === 1 ? 'product' : 'products'} generated no orders this period
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Active but not selling — consider reviewing or archiving
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        );
+      })()}
 
-            {/* ── Dead weight + drift ── */}
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              {noSales > 0 && (
-                <Box sx={{ flex: 1, minWidth: 200, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
-                    {noSales}
+      {/* ─────────────────────────────────────────
+          ZONE 5b — SUPPLY RISK + COMBO SIGNALS
+          Cross-domain: demand velocity × product catalog.
+          Source: /operator-summary → demand (growth tier)
+          null = growth tier not enabled or no velocity yet.
+          ───────────────────────────────────────── */}
+      {operatorSummary?.demand && (() => {
+        const d = operatorSummary.demand!;
+        const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale, currency?.rates);
+        const hasCritical = d.critical_reorder_count > 0;
+        const hasDeadCapital = d.dead_capital_value > 0;
+        const hasReorderNow = d.reorder_now.length > 0;
+
+        if (!hasCritical && !hasDeadCapital && !hasReorderNow) return null;
+
+        return (
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="body1" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)', mb: 2 }}>
+              Supply signals
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+
+              {/* Critical reorder */}
+              {hasCritical && (
+                <Box sx={{ flex: 1, minWidth: 180, p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.error.main}`, borderRadius: 2 }}>
+                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.error.main, fontVariantNumeric: 'tabular-nums' }}>
+                    {d.critical_reorder_count}
                   </Typography>
                   <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
-                    {noSales === 1 ? 'product' : 'products'} generated no orders this period
+                    {d.critical_reorder_count === 1 ? 'SKU' : 'SKUs'} critically low
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    Active but not selling — consider reviewing or archiving
+                    Under 7 days of stock at current velocity
                   </Typography>
                 </Box>
               )}
-              {added > 0 && (
-                <Box sx={{ flex: 1, minWidth: 200, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.primary.main, fontVariantNumeric: 'tabular-nums' }}>
-                    {added}
+
+              {/* Warning reorder */}
+              {d.warning_reorder_count > 0 && (
+                <Box sx={{ flex: 1, minWidth: 180, p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.warning.main}`, borderRadius: 2 }}>
+                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
+                    {d.warning_reorder_count}
                   </Typography>
                   <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
-                    {added === 1 ? 'product' : 'products'} added this period
+                    {d.warning_reorder_count === 1 ? 'SKU' : 'SKUs'} running low
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    New to your catalog — check they're fully set up before selling
+                    Under 14 days of stock — reorder soon
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Dead capital */}
+              {hasDeadCapital && (
+                <Box sx={{ flex: 1, minWidth: 180, p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
+                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
+                    {fmt(d.dead_capital_value)}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
+                    capital in non-moving stock
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                    Active SKUs with stock but zero velocity
                   </Typography>
                 </Box>
               )}
             </Box>
+
+            {/* Reorder now list — top 5 most urgent */}
+            {hasReorderNow && (
+              <Box sx={{ border: `1px solid ${pal.border}`, background: pal.cardBg, borderRadius: 2, overflow: 'hidden' }}>
+                <Box sx={{ px: 2, py: 1.25, borderBottom: `1px solid ${pal.border}` }}>
+                  <Typography variant="overline" color="text.secondary">
+                    {d.stockout_count > 0
+                      ? `${d.stockout_count} stocked out · ${d.critical_reorder_count - d.stockout_count > 0 ? `${d.critical_reorder_count - d.stockout_count} critical` : ''} — reorder now`
+                      : 'Reorder now — sorted by urgency'}
+                  </Typography>
+                </Box>
+                {d.reorder_now.slice(0, 5).map((v: 
+                { lasyncro_variant_id: 
+                  string; sku: string 
+                  | null; days_of_stock_remaining: number 
+                  | null; estimated_stockout_date: string 
+                  | null; velocity_per_day: number; suggested_reorder_qty: number 
+                  | null 
+                }, idx: number) => (
+                  <Box
+                    key={v.lasyncro_variant_id}
+                    sx={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      px: 2, py: 1.25,
+                      borderBottom: idx < Math.min(d.reorder_now.length, 5) - 1 ? `1px solid ${pal.border}` : 'none',
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body2" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
+                        {v.sku ?? 'No SKU'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {v.velocity_per_day} units/day · {v.suggested_reorder_qty != null ? `order ${v.suggested_reorder_qty} units` : ''}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="body2" fontWeight={700} sx={{ color: (v.days_of_stock_remaining ?? 99) === 0 ? theme.palette.error.main : theme.palette.warning.main }}>
+                        {v.days_of_stock_remaining === 0 ? 'Stocked out' : v.days_of_stock_remaining != null ? `${v.days_of_stock_remaining}d left` : '—'}
+                      </Typography>
+                      {v.days_of_stock_remaining === 0 ? (
+                        <Typography variant="caption" sx={{ color: theme.palette.error.main }}>
+                          reorder now
+                        </Typography>
+                      ) : v.estimated_stockout_date ? (
+                        <Typography variant="caption" color="text.secondary">
+                          out {new Date(v.estimated_stockout_date).toLocaleDateString()}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            )}
           </Box>
         );
       })()}

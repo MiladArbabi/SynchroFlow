@@ -1,5 +1,6 @@
 // apps/backend/src/services/products-data-integrity.provider.ts
 import { getProductDataIntegrityFacts } from "./products-data-integrity-facts/ProductDataIntegrityFacts.service.js";
+import type { Knex } from 'knex';
 import { buildProductDataIntegrityFtep } from "./products-data-integrity-ftep/ProductDataIntegrityFtep.service.js";
 import { ProductDataIntegrityFT2Exposure } from "./products-data-integrity-ftep/ProductDataIntegrityFtep.types.js";
 import { buildProductDataIntegrityIntelligence } from "./products-data-integrity-intelligence/ProductDataIntegrityIntelligence.service.js";
@@ -28,7 +29,8 @@ interface GetProductDataIntegritySnapshotInput {
  * - UI shaping
  */
 export async function getProductDataIntegritySnapshot(
-  input: GetProductDataIntegritySnapshotInput
+  input: GetProductDataIntegritySnapshotInput,
+  trx?: Knex | Knex.Transaction
 ): Promise<ProductDataIntegrityFT2Exposure | null> {
   const { shopId, period } = input;
 
@@ -42,10 +44,11 @@ export async function getProductDataIntegritySnapshot(
  * in a future entitlement pass.
  */
 
+  // trx threaded from products-ft2.provider withTenant wrapper
   const facts = await getProductDataIntegrityFacts({
     shopId,
     period,
-  });
+  }, trx);
 
   const intelligence =
     buildProductDataIntegrityIntelligence(facts);

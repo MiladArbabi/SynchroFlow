@@ -43,6 +43,23 @@ export type ProductsOperatorSummary = {
     productTitle: string | null;
     variants: Array<{ variantTitle: string | null }>;
   }>;
+  // null = growth tier not enabled or no velocity data yet
+  demand: {
+    critical_reorder_count: number;
+    warning_reorder_count: number;
+    stockout_count: number;
+    total_inventory_value: number;
+    dead_capital_value: number;
+    avg_days_of_stock: number | null;
+    reorder_now: Array<{
+      lasyncro_variant_id: string;
+      sku: string | null;
+      days_of_stock_remaining: number | null;
+      estimated_stockout_date: string | null;
+      velocity_per_day: number;
+      suggested_reorder_qty: number | null;
+    }>;
+  } | null;
 };
 
 /**

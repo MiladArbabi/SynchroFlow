@@ -1,6 +1,10 @@
 // apps/backend/src/services/products-operator/ProductsOperatorSummary.provider.ts
 import { getProductsOperatorFacts } from './ProductsOperatorFacts.service.js';
 import { ProductsOperatorFacts } from './ProductsOperatorFacts.service.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
+import { 
+  getProductsDemandSignals, type ProductsDemandSignals
+ } from './ProductsDemandBridge.service.js';
 
 /**
  * ProductsOperatorSummary
@@ -52,7 +56,10 @@ export interface ProductsOperatorSummary {
     productTitle: string | null;
     variants: Array<{ variantTitle: string | null }>;
   }>;
-}
+  // ── Demand signals (growth tier) ──────────────────────────
+  // null = demand data unavailable (tier not enabled or no velocity yet)
+  demand: ProductsDemandSignals | null;
+};
 
 /**
  * getProductsOperatorSummary
@@ -68,7 +75,11 @@ export async function getProductsOperatorSummary(input: {
   shopId: number;
   period: { from: string; to: string };
 }): Promise<ProductsOperatorSummary> {
-  const facts: ProductsOperatorFacts = await getProductsOperatorFacts(input);
+  // Fetch facts + demand signals in parallel — demand owns its own RLS transaction
+  const [facts, demand] = await Promise.all([
+    withTenant(input.shopId, (trx) => getProductsOperatorFacts(input, trx)),
+    getProductsDemandSignals(input.shopId),
+  ]);
 
   const blocked =
     (facts.noSkuCount ?? 0) +
@@ -105,5 +116,7 @@ export async function getProductsOperatorSummary(input: {
     })),
 
     noSkuProducts: facts.noSkuProducts,
+    // null when growth tier not enabled or demand data not yet available
+    demand,
   };
 }

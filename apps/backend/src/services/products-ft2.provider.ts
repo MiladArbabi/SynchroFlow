@@ -21,6 +21,7 @@ import { buildProductCrossDomainAlignmentFtep } from './products-cross-domain-al
 import { buildProductCrossDomainAlignmentIntelligence } from './products-cross-domain-alignment/ProductCrossDomainAlignmentIntelligence.service.js';
 import { buildProductDataFreshnessFtep } from './products-data-freshness-ftep/ProductDataFreshnessFtep.service.js';
 import { getProductDependencyFacts } from './products-dependency-facts/ProductDependencyFacts.service.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { buildProductDependencyFtep } from './products-dependency-ftep/ProductDependencyFtep.service.js';
 import { buildProductDependencyIntelligence } from './products-dependency-intelligence/ProductDependencyIntelligence.service.js';
 
@@ -61,11 +62,11 @@ export async function getProductsFt2Snapshot(
   }
 > {
   const { shopId, period } = input;
-
+  return withTenant(shopId, async (trx) => {
   // ─────────────────────────────────────────
   // Core Products FT2
   // ─────────────────────────────────────────
-  const facts = await getProductsFacts(input);
+  const facts = await getProductsFacts(input, trx);
   const intelligence = buildProductsIntelligence(facts);
   const exposureBase = buildProductsFtep({
     facts,
@@ -80,7 +81,7 @@ export async function getProductsFt2Snapshot(
   await getProductDataIntegritySnapshot({
     shopId,
     period,
-  });
+  }, trx);
 
   // ─────────────────────────────────────────
   // Operational Exposure (FT2-safe)
@@ -88,7 +89,7 @@ export async function getProductsFt2Snapshot(
   const operationalFacts = await getProductOperationalFacts({
     shopId,
     period,
-  });
+  }, trx);
 
   const operationalIntelligence =
     buildProductOperationalIntelligence(operationalFacts);
@@ -104,7 +105,7 @@ export async function getProductsFt2Snapshot(
   const supplyFacts = await getProductSupplyFacts({
     shopId,
     period,
-  });
+  }, trx);
 
   const supplyIntelligence =
     buildProductSupplyIntelligence(supplyFacts);
@@ -120,7 +121,7 @@ export async function getProductsFt2Snapshot(
   const freshnessFacts = await getProductDataFreshnessFacts({
     shopId,
     period,
-  });
+  }, trx);
 
   const freshnessIntelligence =
     buildProductDataFreshnessIntelligence(freshnessFacts);
@@ -185,7 +186,7 @@ const alignmentIntelligence =
   const dependencyFacts = await getProductDependencyFacts({
     shopId,
     period,
-  });
+  }, trx);
 
   const dependencyIntelligence =
     buildProductDependencyIntelligence(dependencyFacts);
@@ -223,5 +224,6 @@ const alignmentIntelligence =
           productsWithInventorySignalCount: supplyFacts.productsWithInventorySignalCount,
         }
       : null,
-  };
+    };
+  });
 }
