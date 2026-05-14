@@ -12,10 +12,21 @@ interface ArticleLayoutProps {
   frontmatter: Frontmatter
   children: React.ReactNode
   relatedLinks?: { href: string; title: string; description?: string }[]
+  // wordCount: raw body word count passed from page.tsx — used for accurate read time
+  wordCount: number
+  // basePath: controls breadcrumb root — 'blog' | 'compare' | 'industries' | 'features'
+  basePath?: { href: string; label: string }
 }
 
-export default function ArticleLayout({ frontmatter, children, relatedLinks = [] }: ArticleLayoutProps) {
-  const readTime = Math.ceil((frontmatter.title + ' ').length / 5 / 200) + 7
+export default function ArticleLayout({ 
+  frontmatter, 
+  children, 
+  relatedLinks = [], 
+  wordCount, 
+  basePath = { href: '/blog', label: 'Blog' } 
+}: ArticleLayoutProps) {
+  // 200 wpm average reading speed; minimum 1 min
+  const readTime = Math.max(1, Math.ceil(wordCount / 200))
 
   return (
     <>
@@ -30,8 +41,7 @@ export default function ArticleLayout({ frontmatter, children, relatedLinks = []
             color: '#6B7280', marginBottom: '28px',
             display: 'flex', alignItems: 'center', gap: '10px',
           }}>
-            <Link href="/blog" style={{ color: '#6B7280', textDecoration: 'none', borderBottom: 'none' }}>Blog</Link>
-            <span style={{ color: '#9CA3AF' }}>·</span>
+            <Link href={basePath.href} style={{ color: '#6B7280', textDecoration: 'none', borderBottom: 'none' }}>{basePath.label}</Link>            <span style={{ color: '#9CA3AF' }}>·</span>
             <span style={{ color: '#FF6B2B' }}>{frontmatter.tags?.[0]}</span>
             <span style={{ color: '#9CA3AF' }}>·</span>
             <span>{readTime} min read</span>

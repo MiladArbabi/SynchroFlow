@@ -75,8 +75,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
         { name: frontmatter.title, url },
       ])} />
 
-      <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks}>
-        <MDXRemote source={content} components={components} />
+      <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks} wordCount={content.split(/\s+/).length}>        <MDXRemote source={content} components={components} />
       </ArticleLayout>
     </>
   )

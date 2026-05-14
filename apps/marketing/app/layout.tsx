@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import { DM_Sans, Instrument_Serif } from 'next/font/google'
 import './globals.css'
 import Link from 'next/link'
+import Schema from '@/components/seo/Schema'
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -23,6 +24,22 @@ const instrumentSerif = Instrument_Serif({
   display: 'swap',
 })
 
+// Organization entity — defines LaSyncro as a named entity for Google's Knowledge Graph.
+// All Article/SoftwareApplication schemas reference this via '@id' — this is where it resolves.
+const organizationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  '@id': 'https://lasyncro.com/#organization',
+  name: 'LaSyncro',
+  url: 'https://www.lasyncro.com',
+  logo: 'https://www.lasyncro.com/logo-light.png',
+  sameAs: [],
+  contactPoint: {
+    '@type': 'ContactPoint',
+    email: 'contact@lasyncro.com',
+    contactType: 'customer support',
+  },
+}
 export const metadata: Metadata = {
   title: 'LaSyncro — Operational Intelligence for Shopify Merchants',
   description: 'Real-time inventory, warehouse management, PO receiving, full order traceability and workforce tools for Shopify merchants running their own warehouse.',
@@ -37,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${dmSans.variable} ${instrumentSerif.variable}`}>
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
+        <Schema data={organizationSchema} />
         <Nav />
         <main style={{ flex: 1, paddingTop: '60px', padding: '60px 5vw 0' }}>{children}</main>
         <Footer />
