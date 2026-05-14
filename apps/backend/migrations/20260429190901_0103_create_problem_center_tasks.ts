@@ -39,7 +39,9 @@ export async function up(knex: Knex): Promise<void> {
           'pick',
           'stow',
           'receive',
-          'pack'
+          'pack',
+          -- Returns flow creates tasks for repackaging_required and return_shortfall
+          'returns'
         );
       END IF;
     END$$;

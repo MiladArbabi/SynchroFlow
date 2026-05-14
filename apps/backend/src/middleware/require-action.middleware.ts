@@ -64,6 +64,14 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'wms:ship:confirm':         ['owner', 'admin', 'operator'],
   'wms:settings:write':       ['owner', 'admin'],
 
+  // ── RETURNS ────────────────────────────────────────────────
+  'returns:read':             ['owner', 'admin', 'operator'],
+  'returns:job:create':       ['owner', 'admin', 'operator'], // operator creates return job on mobile
+  'returns:job:claim':        ['owner', 'admin', 'operator'], // operator claims job on mobile
+  'returns:job:process':      ['owner', 'admin', 'operator'], // operator sets condition on line items
+  'returns:job:complete':     ['owner', 'admin', 'operator'], // operator completes job
+  'returns:decision:write':   ['owner', 'admin'],             // owner/admin sets decision on flagged items
+  
   // ── FLOOR PLANNING ─────────────────────────────────────────
   'floor-planning:read':      ['owner', 'admin'],
   'floor-planning:write':     ['owner', 'admin'],

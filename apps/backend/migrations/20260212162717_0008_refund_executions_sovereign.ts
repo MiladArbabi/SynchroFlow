@@ -147,12 +147,25 @@ export async function up(knex: Knex): Promise<void> {
 
     // Physical condition of this returned unit assessed by operator.
     // Nullable — set during mobile returns inbound scan, not at refund creation.
-    // Drives: resellable → restow, damaged/unsellable → write-off alert.
+    // Drives: resellable → restow, repackable → Problem Center, damaged/unsellable → owner alert.
     table.specificType('item_condition', 'return_item_condition_type').nullable();
 
+    // Actual units physically received back — may differ from refunded_quantity.
+    // e.g. customer claimed 3 units but only 2 arrived → shortfall → Problem Center task.
+    table.integer('quantity_received').nullable();
+
+    // Free text set by operator during mobile returns scan.
+    // Required when item_condition = 'damaged' or 'unsellable'.
+    table.text('condition_notes').nullable();
+
+    // Operator who assessed this line item on mobile.
+    // Plain integer — no FK (users table created in 0010, after this migration).
+    // Application layer enforces valid user id.
+    table.integer('processed_by').nullable();
+
+    table.timestamp('processed_at', { useTz: true }).nullable();
+
     table.timestamp('created_at', { useTz: true })
-      .notNullable()
-      .defaultTo(knex.fn.now());
 
     table.index(['lasyncro_refund_execution_id']);
     table.index(['lasyncro_revenue_unit_id']);
@@ -199,11 +212,168 @@ export async function up(knex: Knex): Promise<void> {
     ADD CONSTRAINT refund_execution_line_items_quantity_check
     CHECK (refunded_quantity > 0);
   `);
+
+  // -------------------------------------------------------
+  // 4️⃣ Return job origin enum
+  // -------------------------------------------------------
+  // customer_return   — customer sent item back, refund_execution exists
+  // undelivered_return — carrier returned package, never reached customer, no refund yet
+  await knex.raw(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'return_job_origin_type') THEN
+        CREATE TYPE return_job_origin_type AS ENUM (
+          'customer_return',
+          'undelivered_return'
+        );
+      END IF;
+    END$$;
+  `);
+
+  // Why an undelivered package came back. Nullable — only set for undelivered_return origin.
+  await knex.raw(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'undelivered_reason_type') THEN
+        CREATE TYPE undelivered_reason_type AS ENUM (
+          'wrong_address',
+          'not_claimed',
+          'customs',
+          'carrier_error',
+          'other'
+        );
+      END IF;
+    END$$;
+  `);
+
+  // Owner decision on a return job requiring action.
+  // Set on web (ReturnsItemsPage) after operator flags item or undelivered package arrives.
+  await knex.raw(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'return_owner_decision_type') THEN
+        CREATE TYPE return_owner_decision_type AS ENUM (
+          'reship',
+          'contact_customer',
+          'initiate_refund',
+          'write_off'
+        );
+      END IF;
+    END$$;
+  `);
+
+  // -------------------------------------------------------
+  // 5️⃣ return_jobs — physical return processing jobs
+  // -------------------------------------------------------
+  // One job per physical return event.
+  // Type A (customer_return): linked to refund_execution, operator processes item condition.
+  // Type B (undelivered_return): linked to order, no refund yet, owner decides next action.
+  //
+  // Cascade chain:
+  //   resellable     → stow_task created, inventory_movement +qty
+  //   repackable     → problem_center_task (type: repackaging_required)
+  //   damaged        → owner alert, ReturnsItemsPage "Needs your decision"
+  //   unsellable     → owner alert, write-off pending approval
+  //   undelivered    → order blocked (block_type: returned_undelivered), owner alert
+  await knex.schema.createTable('return_jobs', (table) => {
+    table
+      .uuid('return_job_id')
+      .primary()
+      .defaultTo(knex.raw('gen_random_uuid()'));
+
+    table
+      .integer('shop_id')
+      .notNullable()
+      .references('id')
+      .inTable('shops')
+      .onDelete('CASCADE');
+
+    // Origin determines which FK is populated and which flow applies.
+    table
+      .specificType('origin', 'return_job_origin_type')
+      .notNullable();
+
+    // Type A — customer_return: must be set. Type B — null at creation, set if refund later issued.
+    table
+      .uuid('lasyncro_refund_execution_id')
+      .nullable()
+      .references('lasyncro_refund_execution_id')
+      .inTable('refund_executions')
+      .onDelete('SET NULL');
+
+    // Type B — undelivered_return: must be set. Type A — also set (via refund_execution → order).
+    // Denormalised here for direct order blocking without joining through refund.
+    table
+      .uuid('lasyncro_order_id')
+      .notNullable()
+      .references('lasyncro_order_id')
+      .inTable('orders')
+      .onDelete('CASCADE');
+
+    table
+      .string('status', 50)
+      .notNullable()
+      .defaultTo('pending');
+    // status values: pending | in_progress | awaiting_decision | complete
+
+    // Type B only — why the carrier returned the package.
+    table
+      .specificType('undelivered_reason', 'undelivered_reason_type')
+      .nullable();
+
+    // Owner decision — set on web after operator flags or undelivered package arrives.
+    table
+      .specificType('owner_decision', 'return_owner_decision_type')
+      .nullable();
+
+    table.text('decision_notes').nullable();
+
+    // Plain integer — no FK (users table created in 0010, after this migration).
+    table.integer('decision_by').nullable();
+
+    table.timestamp('decision_at', { useTz: true }).nullable();
+
+    // Operator who claimed and processed this job on mobile.
+    // Plain integer — no FK (users table created in 0010, after this migration).
+    table.integer('claimed_by').nullable();
+
+    table.timestamp('claimed_at', { useTz: true }).nullable();
+    table.timestamp('completed_at', { useTz: true }).nullable();
+
+    table.text('notes').nullable();
+
+    table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+
+    table.index(['shop_id']);
+    table.index(['shop_id', 'status']);
+    table.index(['lasyncro_order_id']);
+    table.index(['lasyncro_refund_execution_id']);
+
+    // No unique constraint here — enforced at application layer:
+    // - undelivered_return: service checks for existing active job before creating
+    // - customer_return: one job per refund_execution (enforced via FK uniqueness on refund_execution_id)
+    // DB-level unique on refund_execution_id prevents duplicate processing jobs per refund.
+    table.unique(
+      ['lasyncro_refund_execution_id'],
+      'return_jobs_refund_execution_unique'
+    );
+  });
+
+  await knex.raw(`ALTER TABLE return_jobs ENABLE ROW LEVEL SECURITY;`);
+  await knex.raw(`ALTER TABLE return_jobs FORCE ROW LEVEL SECURITY;`);
+  await knex.raw(`DROP POLICY IF EXISTS return_jobs_tenant_isolation ON return_jobs;`);
+  await knex.raw(`
+    CREATE POLICY return_jobs_tenant_isolation
+    ON return_jobs
+    USING (shop_id = current_setting('app.current_tenant')::int);
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('return_jobs');
   await knex.schema.dropTableIfExists('refund_execution_line_items');
   await knex.schema.dropTableIfExists('refund_executions');
+  await knex.raw(`DROP TYPE IF EXISTS return_owner_decision_type`);
+  await knex.raw(`DROP TYPE IF EXISTS undelivered_reason_type`);
+  await knex.raw(`DROP TYPE IF EXISTS return_job_origin_type`);
   await knex.raw(`DROP TYPE IF EXISTS return_item_condition_type`);
   await knex.raw(`DROP TYPE IF EXISTS return_reason_type`);
 }

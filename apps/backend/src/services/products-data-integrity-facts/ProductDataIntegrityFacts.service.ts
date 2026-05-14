@@ -81,26 +81,30 @@ const rows = await qb('variants')
     }
   }
 
-  let productsWithMultipleSkus = 0;
-  let maxSkusPerProduct = 0;
+  
+let productsWithMultipleSkus = 0;
+let maxSkusPerProduct = 0;
+let productsWithConflictingFields = 0;
 
-  for (const [, skuSet] of skusByProduct.entries()) {
-    if (skuSet.size > 1) {
-      productsWithMultipleSkus += 1;
-    }
-    if (skuSet.size > maxSkusPerProduct) {
-      maxSkusPerProduct = skuSet.size;
-    }
+for (const [, skuSet] of skusByProduct.entries()) {
+  if (skuSet.size > 1) {
+    productsWithMultipleSkus += 1;
   }
+  if (skuSet.size > maxSkusPerProduct) {
+    maxSkusPerProduct = skuSet.size;
+  }
+}
 
-  /**
-   * Observable conflict definition (facts-level):
-   * - A product is considered conflicting if
-   *   multiple SKUs exist for the same canonical product.
-   *
-   * This is structural truth only.
-   */
-  const productsWithConflictingFields = productsWithMultipleSkus;
+// Re-query for true conflicts: same SKU appearing more than once on the same product
+const conflictRows = await qb('variants')
+  .where('shop_id', shopId)
+  .whereNotNull('sku')
+  .select('lasyncro_product_id', 'sku')
+  .groupBy('lasyncro_product_id', 'sku')
+  .havingRaw('COUNT(*) > 1');
+
+const conflictingProductIds = new Set(conflictRows.map((r: { lasyncro_product_id: string }) => r.lasyncro_product_id));
+productsWithConflictingFields = conflictingProductIds.size;
 
   return {
     shopId,

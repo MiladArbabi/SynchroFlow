@@ -45,6 +45,26 @@ export type ReturnsByVariant = {
 export type ReturnsIntelligenceResult = {
   summary: ReturnsSummary;
   by_variant: ReturnsByVariant[];
+  // Why returns happened — ranked by count. null reason = not captured.
+  by_reason: ReturnReasonBreakdown[];
+  // Physical condition of returned items — drives restock vs write-off decisions.
+  condition_buckets: ConditionBuckets;
+};
+
+export type ReturnReasonBreakdown = {
+  reason: string | null;  // null = not captured at time of refund
+  count: number;
+  revenue_lost: number;
+  pct_of_total: number;
+};
+
+export type ConditionBuckets = {
+  resellable: number;
+  repackable: number;
+  damaged: number;
+  unsellable: number;
+  // Items back in warehouse with no condition recorded yet — need attention
+  unassessed: number;
 };
 
 /**
@@ -210,6 +230,61 @@ export async function computeReturnsIntelligence(
       };
     });
 
-    return { summary, by_variant: byVariant };
+    /**
+     * BY REASON BREAKDOWN
+     * -------------------
+     * Groups refund_executions by return_reason.
+     * null reason = operator did not capture — surfaced as signal in UI.
+     */
+    const reasonRows = await trx('refund_executions as re')
+      .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
+      .join('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
+      .where('o.shop_id', shopId)
+      .groupBy('re.return_reason')
+      .select(
+        're.return_reason as reason',
+        trx.raw('COUNT(DISTINCT re.lasyncro_refund_execution_id) as count'),
+        trx.raw('COALESCE(SUM(reli.refunded_amount), 0) as revenue_lost'),
+      )
+      .orderBy('count', 'desc');
+
+    const byReason: ReturnReasonBreakdown[] = reasonRows.map((row: any) => ({
+      reason:       row.reason ?? null,
+      count:        Number(row.count),
+      revenue_lost: Number(row.revenue_lost),
+      pct_of_total: totalRefunds > 0
+        ? Math.round((Number(row.count) / totalRefunds) * 1000) / 10
+        : 0,
+    }));
+
+    /**
+     * CONDITION BUCKETS
+     * -----------------
+     * Counts returned units by physical condition assessed by operator.
+     * unassessed = item_condition IS NULL — stock in warehouse with no decision.
+     */
+    const conditionRows = await trx('refund_execution_line_items as reli')
+      .join('refund_executions as re', 're.lasyncro_refund_execution_id', 'reli.lasyncro_refund_execution_id')
+      .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
+      .where('o.shop_id', shopId)
+      .groupBy('reli.item_condition')
+      .select(
+        'reli.item_condition as condition',
+        trx.raw('SUM(reli.refunded_quantity) as unit_count'),
+      );
+
+    const conditionMap = new Map(
+      conditionRows.map((r: any) => [r.condition ?? 'unassessed', Number(r.unit_count)])
+    );
+
+    const conditionBuckets: ConditionBuckets = {
+      resellable: conditionMap.get('resellable') ?? 0,
+      repackable: conditionMap.get('repackable') ?? 0,
+      damaged:    conditionMap.get('damaged')    ?? 0,
+      unsellable: conditionMap.get('unsellable') ?? 0,
+      unassessed: conditionMap.get('unassessed') ?? 0,
+    };
+
+    return { summary, by_variant: byVariant, by_reason: byReason, condition_buckets: conditionBuckets };
   });
 }

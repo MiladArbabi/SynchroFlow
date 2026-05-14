@@ -70,7 +70,11 @@ export async function getProductDataFreshnessFacts(
   // ─────────────────────────────────────────
   // Costs — product_costs.updated_at
   // ─────────────────────────────────────────
-  const costs = { ts: null };
+  const costs = await qb('variants')
+    .where('shop_id', shopId)
+    .whereNotNull('unit_cost')
+    .max('updated_at as ts')
+    .first();
 
   return {
     shopId,

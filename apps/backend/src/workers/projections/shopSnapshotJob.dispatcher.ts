@@ -55,7 +55,7 @@ export async function startShopSnapshotJobDispatcher() {
 
       try {
 
-        await computeShopOperationalSnapshot(job.shop_id);
+        await computeShopOperationalSnapshot(String(job.shop_id));
 
         /**
          * ALERTS AGGREGATION

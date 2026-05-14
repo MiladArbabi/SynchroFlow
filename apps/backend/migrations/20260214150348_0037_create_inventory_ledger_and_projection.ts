@@ -20,7 +20,9 @@ export async function up(knex: Knex): Promise<void> {
           'shrinkage',
           'reservation_hold',
           'reservation_release',
-          'reconciliation_correction'
+          'reconciliation_correction',
+          -- Owner-approved write-off from returns flow — distinct from damage for Finances traceability
+          'write_off_return'
         );
       END IF;
     END$$;

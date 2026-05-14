@@ -39,7 +39,7 @@ import FinancesFT2Page from 'pages/ft2-pages/FinancesFT2Page';
 import OverviewFT2Page from 'pages/ft2-pages/OverviewFT2Page';
 import FulfillmentQueuePage from 'pages/ft2-pages/FulfillmentQueuePage';
 import AlertsPage from 'pages/ft2-pages/AlertsPage';
-import ReturnsPage from 'pages/ft2-pages/ReturnsPage';
+import ReturnsFT2Page from 'pages/ft2-pages/ReturnsFT2Page';
 import CashFlowPage from 'pages/ft2-pages/CashFlowPage';
 import DemandPage from 'pages/ft2-pages/DemandPage';
 
@@ -198,7 +198,7 @@ export function LifecycleRouteHost() {
       <Route path="/alerts/*" element={<AlertsPage />} />
 
       {/* RETURNS */}
-      <Route path="/returns/*" element={<ReturnsPage />} />
+      <Route path="/returns/*" element={<ReturnsFT2Page />} />
 
       {/* CASH FLOW */}
       <Route path="/cashflow/*" element={<CashFlowPage />} />
