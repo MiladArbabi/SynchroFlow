@@ -7,6 +7,7 @@ import { DM_Sans, Instrument_Serif } from 'next/font/google'
 import './globals.css'
 import Link from 'next/link'
 import Schema from '@/components/seo/Schema'
+import PostHogProvider from '@/components/PostHogProvider'
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -54,10 +55,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${dmSans.variable} ${instrumentSerif.variable}`}>
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
-        <Schema data={organizationSchema} />
-        <Nav />
-        <main style={{ flex: 1, paddingTop: '60px' }}>{children}</main>
-        <Footer />
+        <PostHogProvider>
+          <Schema data={organizationSchema} />
+          <Nav />
+          <main style={{ flex: 1, paddingTop: '60px' }}>{children}</main>
+          <Footer />
+        </PostHogProvider>
       </body>
     </html>
   )

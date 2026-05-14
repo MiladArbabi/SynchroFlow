@@ -414,15 +414,26 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
 function NewsletterForm() {
   const [email, setEmail] = useState('')
-  const [submitted, setSubmitted] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!email) return
-    setSubmitted(true)
+    if (!email || status === 'loading') return
+    setStatus('loading')
+    try {
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // source: 'newsletter' distinguishes Morning Brief signups from waitlist signups in DB
+        body: JSON.stringify({ email, source: 'newsletter' }),
+      })
+      setStatus(res.ok ? 'success' : 'error')
+    } catch {
+      setStatus('error')
+    }
   }
 
-  if (submitted) {
+  if (status === 'success') {
     return (
       <div style={{ color: 'rgba(240,238,232,0.9)', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, padding: '10px 0' }}>
         ✓ You&apos;re subscribed. First issue lands next Monday.
@@ -441,22 +452,29 @@ function NewsletterForm() {
         type="email" required value={email}
         onChange={e => setEmail(e.target.value)}
         placeholder="your@shopify-store.com"
+        disabled={status === 'loading'}
         style={{
           flex: 1, minWidth: 0, background: 'transparent', border: 'none',
           color: '#F0EEE8', padding: '10px 14px',
           fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300,
-          outline: 'none',
+          outline: 'none', opacity: status === 'loading' ? 0.6 : 1,
         }}
       />
-      <button type="submit" style={{
+      <button type="submit" disabled={status === 'loading'} style={{
         display: 'inline-flex', alignItems: 'center', gap: 8,
         padding: '10px 18px', background: '#FF6B2B', color: '#fff',
         fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
-        borderRadius: 6, border: 'none', cursor: 'pointer',
+        borderRadius: 6, border: 'none', cursor: status === 'loading' ? 'wait' : 'pointer',
+        opacity: status === 'loading' ? 0.7 : 1,
       }}>
-        Subscribe
-        <ArrowRight size={14} />
+        {status === 'loading' ? 'Subscribing…' : 'Subscribe'}
+        {status !== 'loading' && <ArrowRight size={14} />}
       </button>
+      {status === 'error' && (
+        <p style={{ position: 'absolute', bottom: '-24px', left: 0, margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 12, color: '#FF6B2B' }}>
+          Something went wrong — please try again.
+        </p>
+      )}
     </form>
   )
 }
