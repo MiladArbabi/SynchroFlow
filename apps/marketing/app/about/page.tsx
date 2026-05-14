@@ -98,7 +98,7 @@ export default function AboutPage() {
           {/* Right — image */}
           <div>
             <ArticleImage
-              src="/floorplanning-4.png"
+              src="floorplanning-4.png"
               alt="LaSyncro mobile scanning interface showing warehouse location management and real-time inventory drift prevention"
               caption="Every scan closes the gap between physical stock and Shopify's records."
               priority={true}
