@@ -56,7 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
         <Schema data={organizationSchema} />
         <Nav />
-        <main style={{ flex: 1, paddingTop: '60px', padding: '60px 5vw 0' }}>{children}</main>
+        <main style={{ flex: 1, paddingTop: '60px' }}>{children}</main>
         <Footer />
       </body>
     </html>

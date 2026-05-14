@@ -162,6 +162,10 @@ function FeaturedVisual() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+// W: shared horizontal constraint applied to every top-level section.
+// layout.tsx <main> provides only nav clearance (paddingTop: 60px) — no horizontal padding.
+const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
+
 export default function BlogIndex({ articles: allArticles }: { articles: ContentItem[] }) {
 
   // Derive unique categories from articles for filter tabs
@@ -234,7 +238,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
       `}</style>
 
       {/* ── Page header ───────────────────────────────────────────── */}
-      <header style={{ padding: '96px 0 56px' }}>
+      <header style={{ ...W, padding: '96px 5vw 56px' }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)',
@@ -272,8 +276,8 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
       {/* ── Filter strip ──────────────────────────────────────────── */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 24, padding: '18px 0',
+        ...W, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 24, padding: '18px 5vw',
         borderTop: '1px solid var(--rule)',
         borderBottom: '1px solid var(--rule)',
         flexWrap: 'wrap',
@@ -310,7 +314,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
         <section
           className="featured-grid"
           style={{
-            padding: '56px 0 32px',
+            ...W, padding: '56px 5vw 32px',
             display: 'grid',
             gridTemplateColumns: '1.05fr 1fr',
             gap: 56,
@@ -377,9 +381,9 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
       {/* ── Post list ─────────────────────────────────────────────── */}
       <div style={{
-        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+        ...W, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
         borderTop: '1px solid var(--rule)',
-        padding: '56px 0 12px',
+        padding: '56px 5vw 12px',
         gap: 16, flexWrap: 'wrap',
       }}>
         <h3 style={{ font: '400 28px/1.15 var(--serif)', letterSpacing: 'var(--ls-tight)', color: 'var(--ink)', margin: 0 }}>
@@ -394,7 +398,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
         <p style={{ color: 'var(--ink-4)', padding: '24px 0' }}>No articles in this category yet.</p>
       )}
 
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+      <ul style={{ ...W, listStyle: 'none', padding: '0 5vw', margin: '0 auto' }}>
         {filtered.map((article) => (
           <li
             key={article.slug}
@@ -463,7 +467,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
       </ul>
 
       {/* ── Topics grid ───────────────────────────────────────────── */}
-      <section style={{ padding: '80px 0', borderTop: '1px solid var(--rule)', marginTop: 64 }}>
+      <section style={{ ...W, padding: '80px 5vw', borderTop: '1px solid var(--rule)', marginTop: 64 }}>
         <div
           className="topics-title-row"
           style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 32, alignItems: 'start', marginBottom: 32 }}
@@ -524,7 +528,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
       <section
         className="newsletter-grid"
         style={{
-          marginBottom: 64,
+          ...W, marginBottom: 64,
           background: 'var(--space-1)',
           color: '#F0EEE8',
           borderRadius: 'var(--r-xl)',
