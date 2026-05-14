@@ -16,7 +16,6 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: 'PerplexityBot', allow: '/' },
       { userAgent: 'Amazonbot', allow: '/' },
       { userAgent: 'cohere-ai', allow: '/' },
-      { userAgent: 'FacebookBot', allow: '/' },
     ],
     sitemap: 'https://www.lasyncro.com/sitemap.xml',
   }

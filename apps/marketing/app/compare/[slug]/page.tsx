@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: frontmatter.title,
       description: frontmatter.description,
       url: `https://www.lasyncro.com/blog/${slug}`,
-      type: 'article',
+      type: 'website',
       images: [
         {
           url: 'https://www.lasyncro.com/og_image_lightmode.png',

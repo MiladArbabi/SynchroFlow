@@ -72,7 +72,7 @@ export function generateSoftwareSchema({
     operatingSystem: 'Web, iOS, Android',
     offers: {
       '@type': 'AggregateOffer',
-      priceCurrency: 'GBP',
+      priceCurrency: 'USD',
       lowPrice: '0',
       highPrice: '349',
     },
