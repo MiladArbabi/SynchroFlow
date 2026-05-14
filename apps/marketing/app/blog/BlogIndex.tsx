@@ -392,7 +392,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           maskImage: 'radial-gradient(ellipse 60% 80% at 100% 50%, #000 15%, transparent 75%)',
           opacity: 0.8, pointerEvents: 'none',
         }} />
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', margin: 12 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>
             <EyebrowDot />
             Weekly · For operators
