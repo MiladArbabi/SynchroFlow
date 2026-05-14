@@ -1,155 +1,123 @@
-// app/blog/BlogIndex.tsx  ← save as this filename
+// app/blog/BlogIndex.tsx
 // Client component — receives pre-loaded articles from the server page.tsx.
 // Handles filter tabs, hover states, newsletter form.
-// Import from page.tsx: import BlogIndex from './BlogIndex'
+// IMPORTANT: No `font:` shorthand in inline styles — CSS custom properties do not resolve
+// inside the font shorthand in inline React styles. Always use explicit fontFamily/fontSize/
+// fontWeight/lineHeight properties instead.
 
 'use client'
 
 import { useState } from 'react'
 import type { ContentItem } from '@/lib/mdx'
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
+    day: '2-digit', month: 'short', year: 'numeric',
   })
 }
 
-/** Map tag → display label */
 const TAG_LABELS: Record<string, string> = {
-  shopify:   'Shopify',
-  inventory: 'Inventory',
-  sync:      'Sync',
-  operations:'Operations',
-  suppliers: 'Suppliers',
-  compare:   'Compare',
-  wms:       'WMS',
-  picking:   'Pick & Pack',
-  receiving: 'Receiving',
-  workforce: 'Workforce',
-  returns:   'Returns',
+  shopify: 'Shopify', inventory: 'Inventory', sync: 'Sync',
+  operations: 'Operations', suppliers: 'Suppliers', compare: 'Compare',
+  wms: 'WMS', picking: 'Pick & Pack', receiving: 'Receiving',
+  workforce: 'Workforce', returns: 'Returns',
 }
 
 function tagLabel(t: string): string {
   return TAG_LABELS[t] ?? t.charAt(0).toUpperCase() + t.slice(1)
 }
 
-/** Derive category from first tag (used for filter tabs) */
 function postCategory(tags: string[]): string {
   const CATS = ['inventory', 'operations', 'suppliers', 'compare', 'wms', 'receiving', 'workforce']
   return tags.find(t => CATS.includes(t)) ?? tags[0] ?? 'other'
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
 function ArrowRight({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
+      <path d="M5 12h14" /><path d="m13 6 6 6-6 6" />
     </svg>
   )
 }
 
-/** Animated dot for eyebrow labels */
 function EyebrowDot() {
   return (
     <span style={{
       width: 6, height: 6, borderRadius: '50%',
-      background: 'var(--accent)',
+      background: '#FF6B2B',
       display: 'inline-block',
       animation: 'blink 2.4s ease-in-out infinite',
     }} />
   )
 }
 
-// ── Featured visual (grid illustration matching design) ───────────────────────
-
 function FeaturedVisual() {
   return (
     <div style={{
-      border: '1px solid var(--rule)',
-      borderRadius: 'var(--r-lg)',
-      overflow: 'hidden',
-      background: 'var(--bg-2)',
-      aspectRatio: '5/4',
-      position: 'relative',
+      border: '1px solid #E8E6E0', borderRadius: 12, overflow: 'hidden',
+      background: '#F3F2EF', aspectRatio: '5/4', position: 'relative',
     }}>
-      {/* Grid background */}
       <div style={{
         position: 'absolute', inset: 0,
-        background: `
-          radial-gradient(ellipse 70% 55% at 50% 40%, rgba(255,107,43,0.04), transparent 75%),
-          linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%)
-        `,
+        background: 'radial-gradient(ellipse 70% 55% at 50% 40%, rgba(255,107,43,0.04), transparent 75%)',
       }} />
       <div style={{
         position: 'absolute', inset: 0,
-        backgroundImage: `
-          linear-gradient(var(--rule) 1px, transparent 1px),
-          linear-gradient(90deg, var(--rule) 1px, transparent 1px)
-        `,
+        backgroundImage: `linear-gradient(#E8E6E0 1px, transparent 1px), linear-gradient(90deg, #E8E6E0 1px, transparent 1px)`,
         backgroundSize: '28px 28px',
         WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 50% 50%, #000 15%, transparent 75%)',
         maskImage: 'radial-gradient(ellipse 70% 60% at 50% 50%, #000 15%, transparent 75%)',
-        opacity: 0.5,
-        pointerEvents: 'none',
+        opacity: 0.5, pointerEvents: 'none',
       }} />
-
-      {/* Three-column layout */}
       <div style={{
         position: 'absolute', inset: 0,
         display: 'grid', gridTemplateColumns: '1fr auto 1fr',
       }}>
         {/* Left col */}
         <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
-          <span style={{ font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+          <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#6B7280' }}>
             What Shopify tracks
           </span>
-          <h4 style={{ font: '400 22px/1.15 var(--serif)', letterSpacing: 'var(--ls-tight)', color: 'var(--ink)', margin: 0 }}>
+          <h4 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
             Inventory<br />visibility
           </h4>
           <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'grid', gap: 6 }}>
             {['Stock counts per variant', 'Multi-location toggling', 'Transfer records'].map(item => (
-              <li key={item} style={{ font: '300 12.5px/1.4 var(--sans)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--ink-4)', flexShrink: 0 }} />
+              <li key={item} style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 12.5, fontWeight: 300, lineHeight: 1.4, color: '#3A3835', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#9CA3AF', flexShrink: 0 }} />
                 {item}
               </li>
             ))}
           </ul>
         </div>
-
         {/* Middle arrow */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 18px', position: 'relative' }}>
           <span style={{
             position: 'absolute', top: '14%', bottom: '14%', left: '50%', width: 1,
-            background: 'linear-gradient(180deg, transparent, var(--rule-2) 20%, var(--rule-2) 80%, transparent)',
+            background: 'linear-gradient(180deg, transparent, #D1CFC8 20%, #D1CFC8 80%, transparent)',
           }} />
           <span style={{
             width: 34, height: 34, borderRadius: '50%',
-            background: 'var(--accent-ghost)', border: '1px solid var(--accent-border)',
+            background: '#FFF0E8', border: '1px solid #FFDCCA',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--accent)', position: 'relative', zIndex: 1,
+            color: '#FF6B2B', position: 'relative', zIndex: 1,
           }}>
             <ArrowRight size={12} />
           </span>
         </div>
-
         {/* Right col */}
         <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
-          <span style={{ font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)', textTransform: 'uppercase', color: 'var(--accent)' }}>
+          <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FF6B2B' }}>
             What a WMS adds
           </span>
-          <h4 style={{ font: '400 22px/1.15 var(--serif)', letterSpacing: 'var(--ls-tight)', color: 'var(--ink)', margin: 0 }}>
+          <h4 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
             Warehouse<br />operations
           </h4>
           <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'grid', gap: 6 }}>
             {['Bin & location tracking', 'Scan-based receiving', 'Immutable event ledger'].map(item => (
-              <li key={item} style={{ font: '300 12.5px/1.4 var(--sans)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+              <li key={item} style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 12.5, fontWeight: 300, lineHeight: 1.4, color: '#3A3835', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#FF6B2B', flexShrink: 0 }} />
                 {item}
               </li>
             ))}
@@ -160,47 +128,35 @@ function FeaturedVisual() {
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
-// W: shared horizontal constraint applied to every top-level section.
-// layout.tsx <main> provides only nav clearance (paddingTop: 60px) — no horizontal padding.
+// W: shared horizontal constraint — layout.tsx <main> provides only nav clearance
 const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
 
+const TOPIC_DESCRIPTIONS: Record<string, string> = {
+  inventory: 'Why your shelf and Shopify disagree — and how to close the gap permanently.',
+  operations: '2 to 4 hours a week on data repair instead of growth. Here\'s the fix.',
+  suppliers: 'Every PO is a rating. On-time, accuracy, and damage scores from your history.',
+  compare: 'Cin7, Linnworks, ShipHero, Stocky — operator-honest comparisons.',
+  wms: 'What warehouse management actually means for a Shopify SMB.',
+  receiving: 'Scan-to-receive, discrepancy detection, supplier scorecards.',
+  workforce: 'Scheduling, task assignment, and accountability — without enterprise complexity.',
+  returns: 'Returns area inventory is invisible stock. How to fold it back in.',
+}
+
 export default function BlogIndex({ articles: allArticles }: { articles: ContentItem[] }) {
-
-  // Derive unique categories from articles for filter tabs
-  const categories = Array.from(
-    new Set(allArticles.map(a => postCategory(a.frontmatter.tags)))
-  )
-
+  const categories = Array.from(new Set(allArticles.map(a => postCategory(a.frontmatter.tags))))
   const [activeCategory, setActiveCategory] = useState('all')
   const [hoveredSlug, setHoveredSlug] = useState<string | null>(null)
 
   const featured = allArticles[0]
   const remaining = allArticles.slice(1)
+  const filtered = activeCategory === 'all' ? remaining : remaining.filter(a => postCategory(a.frontmatter.tags) === activeCategory)
 
-  const filtered = activeCategory === 'all'
-    ? remaining
-    : remaining.filter(a => postCategory(a.frontmatter.tags) === activeCategory)
-
-  // Derive topics with article counts
   const topicMap: Record<string, number> = {}
   for (const a of allArticles) {
     const cat = postCategory(a.frontmatter.tags)
     topicMap[cat] = (topicMap[cat] ?? 0) + 1
   }
   const topics = Object.entries(topicMap).sort((a, b) => b[1] - a[1])
-
-  const TOPIC_DESCRIPTIONS: Record<string, string> = {
-    inventory:  'Why your shelf and Shopify disagree — and how to close the gap permanently.',
-    operations: '2 to 4 hours a week on data repair instead of growth. Here\'s the fix.',
-    suppliers:  'Every PO is a rating. On-time, accuracy, and damage scores from your history.',
-    compare:    'Cin7, Linnworks, ShipHero, Stocky — operator-honest comparisons.',
-    wms:        'What warehouse management actually means for a Shopify SMB.',
-    receiving:  'Scan-to-receive, discrepancy detection, supplier scorecards.',
-    workforce:  'Scheduling, task assignment, and accountability — without enterprise complexity.',
-    returns:    'Returns area inventory is invisible stock. How to fold it back in.',
-  }
 
   return (
     <>
@@ -209,23 +165,20 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           0%, 100% { transform: scale(1); opacity: 1; }
           50% { transform: scale(.75); opacity: .4; }
         }
-        .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
-        .reveal.in { opacity: 1; transform: translateY(0); }
         .post-row { transition: padding .2s, background .15s; }
-        .post-row:hover { background: var(--bg-2); border-radius: 8px; }
+        .post-row:hover { background: #F3F2EF; border-radius: 8px; }
         .post-title { transition: color .15s; }
-        .post-row:hover .post-title { color: var(--accent) !important; }
+        .post-row:hover .post-title { color: #FF6B2B !important; }
         .post-arrow { transition: color .15s, transform .15s; }
-        .post-row:hover .post-arrow { color: var(--accent) !important; transform: translateX(4px); }
+        .post-row:hover .post-arrow { color: #FF6B2B !important; transform: translateX(4px); }
         .read-link { transition: color .15s, border-color .15s, gap .15s; }
-        .read-link:hover { color: var(--accent) !important; border-color: var(--accent) !important; gap: 12px !important; }
+        .read-link:hover { color: #FF6B2B !important; border-color: #FF6B2B !important; gap: 12px !important; }
         .filter-tab { transition: all .15s; cursor: pointer; }
         .topic-card { transition: background .15s; cursor: pointer; }
-        .topic-card:hover { background: var(--bg-2) !important; }
+        .topic-card:hover { background: #F3F2EF !important; }
+        a { color: inherit; text-decoration: none; }
         @media (max-width: 880px) {
           .post-row-grid { grid-template-columns: 1fr !important; gap: 8px !important; }
-          .post-tag { order: -1; }
-          .post-date { order: 3; }
           .post-arrow-col { display: none !important; }
         }
         @media (max-width: 720px) {
@@ -239,70 +192,37 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
       {/* ── Page header ───────────────────────────────────────────── */}
       <header style={{ ...W, padding: '96px 5vw 56px' }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)',
-          textTransform: 'uppercase', color: 'var(--accent)',
-          marginBottom: 22,
-        }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
           <EyebrowDot />
-          The operator`s library
+          The operator&apos;s library
         </div>
-        <h1
-          className="page-h1"
-          style={{
-            font: '400 64px/1.18 var(--serif)',
-            letterSpacing: 'var(--ls-tight)',
-            color: 'var(--ink)',
-            margin: '0 0 32px',
-            maxWidth: 820,
-          }}
-        >
+        <h1 className="page-h1" style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
           Operational intelligence for merchants who{' '}
-          <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>
-            run their own warehouse.
-          </em>
+          <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>run their own warehouse.</em>
         </h1>
-        <p style={{
-          font: '300 18px/1.55 var(--sans)',
-          color: 'var(--ink-2)',
-          maxWidth: 560,
-          margin: 0,
-        }}>
+        <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, fontWeight: 300, lineHeight: 1.55, color: '#3A3835', maxWidth: 560, margin: 0 }}>
           Guides, post-mortems, and field notes for Shopify operators stuck between
-          spreadsheets and enterprise systems they don`t need.
+          spreadsheets and enterprise systems they don&apos;t need.
         </p>
       </header>
 
       {/* ── Filter strip ──────────────────────────────────────────── */}
-      <div style={{
-        ...W, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 24, padding: '18px 5vw',
-        borderTop: '1px solid var(--rule)',
-        borderBottom: '1px solid var(--rule)',
-        flexWrap: 'wrap',
-      }}>
+      <div style={{ ...W, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, padding: '18px 5vw', borderTop: '1px solid #E8E6E0', borderBottom: '1px solid #E8E6E0', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {['all', ...categories].map(cat => (
-            <button
-              key={cat}
-              className="filter-tab"
-              onClick={() => setActiveCategory(cat)}
-              style={{
-                padding: '8px 14px',
-                font: 'var(--t-ui)', color: activeCategory === cat ? 'var(--accent)' : 'var(--ink-3)',
-                borderRadius: 'var(--r-pill)',
-                border: activeCategory === cat ? '1px solid var(--accent-border)' : '1px solid transparent',
-                background: activeCategory === cat ? 'var(--accent-ghost)' : 'transparent',
-                cursor: 'pointer',
-              }}
-            >
+            <button key={cat} className="filter-tab" onClick={() => setActiveCategory(cat)} style={{
+              padding: '8px 14px',
+              fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
+              color: activeCategory === cat ? '#FF6B2B' : '#6B7280',
+              borderRadius: 100, border: activeCategory === cat ? '1px solid #FFDCCA' : '1px solid transparent',
+              background: activeCategory === cat ? '#FFF0E8' : 'transparent', cursor: 'pointer',
+            }}>
               {cat === 'all' ? 'All' : tagLabel(cat)}
             </button>
           ))}
         </div>
-        <div style={{ font: 'var(--t-ui-sm)', color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ font: '400 16px var(--serif)', color: 'var(--ink)', fontStyle: 'italic' }}>
+        <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
             {allArticles.length}
           </span>
           articles published
@@ -311,67 +231,43 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
       {/* ── Featured article ──────────────────────────────────────── */}
       {featured && (
-        <section
-          className="featured-grid"
-          style={{
-            ...W, padding: '56px 5vw 32px',
-            display: 'grid',
-            gridTemplateColumns: '1.05fr 1fr',
-            gap: 56,
-            alignItems: 'stretch',
-          }}
-        >
+        <section className="featured-grid" style={{ ...W, padding: '56px 5vw 32px', display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 56, alignItems: 'stretch' }}>
           <a href={`/blog/${featured.slug}`} aria-label="Featured article" style={{ display: 'block' }}>
             <FeaturedVisual />
           </a>
-
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{
-                padding: '5px 12px',
-                background: 'var(--surface)',
-                border: '1px solid var(--accent-border)',
-                borderRadius: 'var(--r-pill)',
-                font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)',
-                textTransform: 'uppercase', color: 'var(--accent)',
+                padding: '5px 12px', background: '#FFFFFF',
+                border: '1px solid #FFDCCA', borderRadius: 100,
+                fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500,
+                letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FF6B2B',
               }}>
-                Featured · Latest
+                Featured · This week
               </span>
-              <span style={{ font: 'var(--t-body-sm)', color: 'var(--ink-3)' }}>
+              <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
                 {formatDate(featured.frontmatter.date)} · {Math.ceil(featured.content.split(' ').length / 200)} min read
               </span>
             </div>
-
-            <h2 style={{ font: '400 36px/1.22 var(--serif)', letterSpacing: 'var(--ls-tight)', color: 'var(--ink)', margin: 0 }}>
-              <a href={`/blog/${featured.slug}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+            <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 36, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
+              <a href={`/blog/${featured.slug}`}>
                 {featured.frontmatter.titleAccent ? (
                   <>
-                    {featured.frontmatter.title.split(featured.frontmatter.titleAccent)[0]}
-                    <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>
-                      {featured.frontmatter.titleAccent}
-                    </em>
-                    {featured.frontmatter.title.split(featured.frontmatter.titleAccent)[1]}
+                    {featured.frontmatter.title}{' '}
+                    <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>{featured.frontmatter.titleAccent}</em>
                   </>
                 ) : featured.frontmatter.title}
               </a>
             </h2>
-
-            <p style={{ font: '300 16px/1.65 var(--sans)', color: 'var(--ink-2)', margin: 0 }}>
+            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.65, color: '#3A3835', margin: 0 }}>
               {featured.frontmatter.description}
             </p>
-
-            <a
-              href={`/blog/${featured.slug}`}
-              className="read-link"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                font: 'var(--t-ui)', color: 'var(--ink)',
-                paddingBottom: 4,
-                borderBottom: '1px solid var(--ink)',
-                alignSelf: 'flex-start',
-                textDecoration: 'none',
-              }}
-            >
+            <a href={`/blog/${featured.slug}`} className="read-link" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
+              color: '#0F0E0D', paddingBottom: 4, borderBottom: '1px solid #0F0E0D',
+              alignSelf: 'flex-start',
+            }}>
               Read the full guide
               <ArrowRight size={14} />
             </a>
@@ -379,144 +275,99 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
         </section>
       )}
 
-      {/* ── Post list ─────────────────────────────────────────────── */}
-      <div style={{
-        ...W, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-        borderTop: '1px solid var(--rule)',
-        padding: '56px 5vw 12px',
-        gap: 16, flexWrap: 'wrap',
-      }}>
-        <h3 style={{ font: '400 28px/1.15 var(--serif)', letterSpacing: 'var(--ls-tight)', color: 'var(--ink)', margin: 0 }}>
-          Latest <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>posts</em>
+      {/* ── Post list header ──────────────────────────────────────── */}
+      <div style={{ ...W, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid #E8E6E0', padding: '56px 5vw 12px', gap: 16, flexWrap: 'wrap' }}>
+        <h3 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 28, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
+          Latest <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>posts</em>
         </h3>
-        <span style={{ font: 'var(--t-body-sm)', color: 'var(--ink-3)' }}>
-          {activeCategory === 'all' ? 'All articles' : tagLabel(activeCategory)} · sorted by date
+        <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
+          Sorted by published date
         </span>
       </div>
 
+      {/* ── Post list ─────────────────────────────────────────────── */}
       {filtered.length === 0 && (
-        <p style={{ color: 'var(--ink-4)', padding: '24px 0' }}>No articles in this category yet.</p>
+        <p style={{ ...W, padding: '24px 5vw', color: '#9CA3AF' }}>No articles in this category yet.</p>
       )}
-
       <ul style={{ ...W, listStyle: 'none', padding: '0 5vw', margin: '0 auto' }}>
         {filtered.map((article) => (
-          <li
-            key={article.slug}
-            style={{ borderTop: '1px solid var(--rule)' }}
-          >
-            <a
-              href={`/blog/${article.slug}`}
-              className="post-row"
+          <li key={article.slug} style={{ borderTop: '1px solid #E8E6E0' }}>
+            <a href={`/blog/${article.slug}`} className="post-row"
               onMouseEnter={() => setHoveredSlug(article.slug)}
               onMouseLeave={() => setHoveredSlug(null)}
               style={{
-                display: 'grid',
-                gridTemplateColumns: '120px 1fr 200px auto',
-                gap: 28,
-                alignItems: 'baseline',
+                display: 'grid', gridTemplateColumns: '120px 1fr 180px auto',
+                gap: 28, alignItems: 'baseline',
                 padding: hoveredSlug === article.slug ? '28px 16px' : '28px 4px',
                 margin: hoveredSlug === article.slug ? '0 -16px' : '0',
-                textDecoration: 'none',
-                position: 'relative',
-              }}
-            >
-              <span className="post-date" style={{ font: 'var(--t-ui-sm)', color: 'var(--ink-3)', letterSpacing: '0.04em' }}>
+              }}>
+              <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', letterSpacing: '0.04em' }}>
                 {formatDate(article.frontmatter.date)}
               </span>
-
               <div className="post-row-grid" style={{ minWidth: 0 }}>
-                <h4
-                  className="post-title"
-                  style={{
-                    font: '400 22px/1.25 var(--serif)',
-                    letterSpacing: 'var(--ls-tight)',
-                    color: hoveredSlug === article.slug ? 'var(--accent)' : 'var(--ink)',
-                    margin: '0 0 6px',
-                  }}
-                >
+                <h4 className="post-title" style={{
+                  fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, fontWeight: 400,
+                  lineHeight: 1.25, letterSpacing: '-0.02em',
+                  color: hoveredSlug === article.slug ? '#FF6B2B' : '#0F0E0D',
+                  margin: '0 0 6px',
+                }}>
                   {article.frontmatter.title}
                 </h4>
-                <p style={{ font: '300 14px/1.55 var(--sans)', color: 'var(--ink-3)', margin: 0, maxWidth: 460 }}>
+                <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0, maxWidth: 460 }}>
                   {article.frontmatter.description}
                 </p>
               </div>
-
-              <span
-                className="post-tag"
-                style={{
-                  font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)',
-                  textTransform: 'uppercase', color: 'var(--ink-3)',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                }}
-              >
-                <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+              <span style={{
+                fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500,
+                letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#6B7280',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#FF6B2B', flexShrink: 0 }} />
                 {tagLabel(postCategory(article.frontmatter.tags))}
               </span>
-
-              <span
-                className="post-arrow post-arrow-col"
-                style={{ color: hoveredSlug === article.slug ? 'var(--accent)' : 'var(--ink-4)', alignSelf: 'center' }}
-              >
+              <span className="post-arrow post-arrow-col" style={{ color: hoveredSlug === article.slug ? '#FF6B2B' : '#9CA3AF', alignSelf: 'center' }}>
                 <ArrowRight size={16} />
               </span>
             </a>
           </li>
         ))}
-        {/* Bottom border on last item */}
-        <li style={{ borderTop: '1px solid var(--rule)' }} />
+        <li style={{ borderTop: '1px solid #E8E6E0' }} />
       </ul>
 
       {/* ── Topics grid ───────────────────────────────────────────── */}
-      <section style={{ ...W, padding: '80px 5vw', borderTop: '1px solid var(--rule)', marginTop: 64 }}>
-        <div
-          className="topics-title-row"
-          style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 32, alignItems: 'start', marginBottom: 32 }}
-        >
+      <section style={{ ...W, padding: '80px 5vw', borderTop: '1px solid #E8E6E0', marginTop: 64 }}>
+        <div className="topics-title-row" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 32, alignItems: 'start', marginBottom: 32 }}>
           <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 12 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 12, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
               <EyebrowDot />
               Browse
             </div>
-            <h3 style={{ font: '400 28px/1.22 var(--serif)', letterSpacing: 'var(--ls-tight)', margin: 0 }}>
-              By <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>topic.</em>
+            <h3 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 28, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', margin: 0 }}>
+              By <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>topic.</em>
             </h3>
           </div>
-          <p style={{ font: '300 15px/1.6 var(--sans)', color: 'var(--ink-3)', margin: 0 }}>
-            Every guide is grouped by the operational job it`s helping you do — not by SEO keyword.
-            Pick the part of your warehouse that`s leaking time.
+          <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0 }}>
+            Every guide is grouped by the operational job it&apos;s helping you do — not by SEO keyword.
+            Pick the part of your warehouse that&apos;s leaking time.
           </p>
         </div>
-
-        <div
-          className="topic-grid"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: 1,
-            background: 'var(--rule)',
-            border: '1px solid var(--rule)',
-            borderRadius: 'var(--r-lg)',
-            overflow: 'hidden',
-          }}
-        >
+        <div className="topic-grid" style={{
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 1, background: '#E8E6E0',
+          border: '1px solid #E8E6E0', borderRadius: 12, overflow: 'hidden',
+        }}>
           {topics.map(([cat, count]) => (
-            <div
-              key={cat}
-              className="topic-card"
-              onClick={() => setActiveCategory(cat)}
-              style={{
-                background: 'var(--surface)',
-                padding: '22px 24px',
-                display: 'flex', flexDirection: 'column', gap: 6,
-              }}
-            >
-              <div style={{ font: '500 14px/1.3 var(--sans)', color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div key={cat} className="topic-card" onClick={() => setActiveCategory(cat)} style={{
+              background: '#FFFFFF', padding: '22px 24px',
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500, lineHeight: 1.3, color: '#0F0E0D', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>{tagLabel(cat)}</span>
-                <span style={{ font: '400 13px var(--serif)', color: 'var(--accent)', fontStyle: 'italic' }}>
+                <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 13, color: '#FF6B2B', fontStyle: 'italic' }}>
                   {String(count).padStart(2, '0')}
                 </span>
               </div>
-              <p style={{ font: 'var(--t-body-sm)', color: 'var(--ink-3)', margin: 0 }}>
+              <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0 }}>
                 {TOPIC_DESCRIPTIONS[cat] ?? `Guides covering ${tagLabel(cat).toLowerCase()} for Shopify merchants.`}
               </p>
             </div>
@@ -525,58 +376,41 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
       </section>
 
       {/* ── Newsletter CTA ────────────────────────────────────────── */}
-      <section
-        className="newsletter-grid"
-        style={{
-          ...W, marginBottom: 64,
-          background: 'var(--space-1)',
-          color: '#F0EEE8',
-          borderRadius: 'var(--r-xl)',
-          padding: '44px 48px',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 40,
-          alignItems: 'center',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Grid overlay */}
+      <section className="newsletter-grid" style={{
+        ...W, marginBottom: 64,
+        background: '#151D29', color: '#F0EEE8',
+        borderRadius: 14, padding: '44px 48px',
+        display: 'grid', gridTemplateColumns: '1fr 1fr',
+        gap: 40, alignItems: 'center',
+        position: 'relative', overflow: 'hidden',
+      }}>
         <div style={{
           position: 'absolute', inset: 0,
-          backgroundImage: `
-            linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)
-          `,
+          backgroundImage: `linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)`,
           backgroundSize: '28px 28px',
           WebkitMaskImage: 'radial-gradient(ellipse 60% 80% at 100% 50%, #000 15%, transparent 75%)',
           maskImage: 'radial-gradient(ellipse 60% 80% at 100% 50%, #000 15%, transparent 75%)',
-          opacity: 0.8,
-          pointerEvents: 'none',
+          opacity: 0.8, pointerEvents: 'none',
         }} />
-
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--accent)', font: 'var(--t-micro)', letterSpacing: 'var(--ls-eyebrow)', textTransform: 'uppercase', marginBottom: 12 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>
             <EyebrowDot />
             Weekly · For operators
           </div>
-          <h3 style={{ font: '400 28px/1.22 var(--serif)', letterSpacing: 'var(--ls-tight)', margin: '0 0 10px', color: '#F0EEE8' }}>
+          <h3 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 28, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', margin: '0 0 10px', color: '#F0EEE8' }}>
             The Morning Brief,{' '}
-            <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>in your inbox.</em>
+            <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>in your inbox.</em>
           </h3>
-          <p style={{ margin: 0, font: '300 14.5px/1.6 var(--sans)', color: 'rgba(240,238,232,0.7)', maxWidth: 400 }}>
+          <p style={{ margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14.5, fontWeight: 300, lineHeight: 1.6, color: 'rgba(240,238,232,0.7)', maxWidth: 400 }}>
             One short letter a week. Operational patterns we keep seeing across the merchants we
             work with — and the fixes that actually held.
           </p>
         </div>
-
         <NewsletterForm />
       </section>
     </>
   )
 }
-
-// ── Newsletter form (isolated to manage its own state) ────────────────────────
 
 function NewsletterForm() {
   const [email, setEmail] = useState('')
@@ -590,49 +424,36 @@ function NewsletterForm() {
 
   if (submitted) {
     return (
-      <div style={{ color: 'rgba(240,238,232,0.9)', font: '300 15px/1.6 var(--sans)', padding: '10px 0' }}>
-        ✓ You`re subscribed. First issue lands next Monday.
+      <div style={{ color: 'rgba(240,238,232,0.9)', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, padding: '10px 0' }}>
+        ✓ You&apos;re subscribed. First issue lands next Monday.
       </div>
     )
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      style={{
-        position: 'relative',
-        display: 'flex', gap: 10,
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.12)',
-        borderRadius: 'var(--r-md)',
-        padding: 6,
-      }}
-    >
+    <form onSubmit={handleSubmit} style={{
+      position: 'relative', display: 'flex', gap: 10,
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(255,255,255,0.12)',
+      borderRadius: 8, padding: 6,
+    }}>
       <input
-        type="email"
-        required
-        value={email}
+        type="email" required value={email}
         onChange={e => setEmail(e.target.value)}
         placeholder="your@shopify-store.com"
         style={{
-          flex: 1, minWidth: 0,
-          background: 'transparent',
-          border: 'none',
-          color: '#F0EEE8',
-          padding: '10px 14px',
-          font: '300 14px var(--sans)',
+          flex: 1, minWidth: 0, background: 'transparent', border: 'none',
+          color: '#F0EEE8', padding: '10px 14px',
+          fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300,
           outline: 'none',
         }}
       />
-      <button
-        type="submit"
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '10px 18px', background: 'var(--accent)', color: '#fff',
-          font: 'var(--t-ui)', borderRadius: 'var(--r-sm)', border: 'none',
-          cursor: 'pointer',
-        }}
-      >
+      <button type="submit" style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        padding: '10px 18px', background: '#FF6B2B', color: '#fff',
+        fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
+        borderRadius: 6, border: 'none', cursor: 'pointer',
+      }}>
         Subscribe
         <ArrowRight size={14} />
       </button>
