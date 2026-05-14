@@ -6,6 +6,7 @@
 import { Metadata } from 'next'
 import Schema from '@/components/seo/Schema'
 import Link from 'next/link'
+import ArticleImage from '@/components/article/ArticleImage'
 
 export const metadata: Metadata = {
   title: 'About LaSyncro — Operational Intelligence for Shopify Merchants',
@@ -91,6 +92,13 @@ export default function AboutPage() {
           <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
             Our mission is to give every serious Shopify merchant the operational clarity that was previously only available to enterprise retailers.
           </p>
+
+          <ArticleImage
+            src="../../public/floorplanning-4.png"
+            alt="LaSyncro mobile scanning interface showing warehouse location management and real-time inventory drift prevention"
+            caption="Every scan closes the gap between physical stock and Shopify's records."
+            priority={true}
+          />
         </div>
       </section>
 
