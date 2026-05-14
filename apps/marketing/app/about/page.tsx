@@ -82,23 +82,28 @@ export default function AboutPage() {
 
       {/* ── Body ──────────────────────────────────────────────────── */}
       <section style={{ ...W, padding: '56px 5vw 0' }}>
-        <div style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 28 }}>
-          <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
-            LaSyncro connects orders, inventory, suppliers, warehouse workflows, and workforce into a single real-time picture — replacing the spreadsheets, WhatsApp threads, and disconnected tools most SMB merchants rely on.
-          </p>
-          <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
-            We built LaSyncro for merchants doing $500K to $10M+ in revenue who operate their own warehouse with a small team. Merchants who have outgrown Shopify native tools but cannot justify the price tag or implementation timelines of enterprise WMS platforms like Cin7, Linnworks, or Brightpearl.
-          </p>
-          <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
-            Our mission is to give every serious Shopify merchant the operational clarity that was previously only available to enterprise retailers.
-          </p>
-
-          <ArticleImage
-            src="../../public/floorplanning-4.png"
-            alt="LaSyncro mobile scanning interface showing warehouse location management and real-time inventory drift prevention"
-            caption="Every scan closes the gap between physical stock and Shopify's records."
-            priority={true}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, alignItems: 'center' }}>
+          {/* Left — copy */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
+              LaSyncro connects orders, inventory, suppliers, warehouse workflows, and workforce into a single real-time picture — replacing the spreadsheets, WhatsApp threads, and disconnected tools most SMB merchants rely on.
+            </p>
+            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
+              We built LaSyncro for merchants doing $500K to $10M+ in revenue who operate their own warehouse with a small team. Merchants who have outgrown Shopify native tools but cannot justify the price tag or implementation timelines of enterprise WMS platforms like Cin7, Linnworks, or Brightpearl.
+            </p>
+            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
+              Our mission is to give every serious Shopify merchant the operational clarity that was previously only available to enterprise retailers.
+            </p>
+          </div>
+          {/* Right — image */}
+          <div>
+            <ArticleImage
+              src="/floorplanning-4.png"
+              alt="LaSyncro mobile scanning interface showing warehouse location management and real-time inventory drift prevention"
+              caption="Every scan closes the gap between physical stock and Shopify's records."
+              priority={true}
+            />
+          </div>
         </div>
       </section>
 

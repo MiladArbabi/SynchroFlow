@@ -144,17 +144,8 @@ export default function ArticleLayout({
         <InternalLinks links={relatedLinks} />
       </div>
 
-      {/* Reveal script */}
-      <script dangerouslySetInnerHTML={{ __html: `
-        (function(){
-          var io = new IntersectionObserver(function(entries){
-            entries.forEach(function(e){
-              if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); }
-            });
-          }, { threshold: 0.07 });
-          document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
-        })();
-      `}} />
+      {/* Static reveal script — cached by browser, never inlined per-page (see public/reveal.js) */}
+      <script src="/reveal.js" async />
     </>
   )
 }
