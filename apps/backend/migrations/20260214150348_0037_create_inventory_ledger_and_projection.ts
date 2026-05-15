@@ -199,7 +199,8 @@ export async function up(knex: Knex): Promise<void> {
           'sale',
           'damage',
           'shrinkage',
-          'reservation_release'
+          'reservation_release',
+          'write_off_return'
         )
         AND quantity_delta < 0
       )

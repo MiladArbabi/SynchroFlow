@@ -105,22 +105,6 @@ export async function seed(knex: Knex): Promise<void> {
     throw new Error('[DEV_SEED] Failed to create user');
   }
 
-  /**
-   * 4️⃣ OPTIONALLY CREATE MEMBERSHIP
-   * -------------------------------
-   * This is the ENTIRE difference between:
-   *  - "login works"
-   *  - "403 NO_ACTIVE_SHOP_MEMBERSHIP"
-   */
-  if (process.env.DEV_SEED_MODE === 'full_identity') {
-    console.log('[DEV_SEED] Creating ACTIVE shop membership (OWNER)…');
-
-    await trx('shop_memberships').insert({
-      shop_id: shop.id,
-      user_id: user.id,
-      role: 'owner',
-    });
-
     // Seed growth tier subscription — required for WMS + FT2 access
     await trx('shop_subscriptions')
       .insert({
@@ -131,6 +115,25 @@ export async function seed(knex: Knex): Promise<void> {
       })
       .onConflict('shop_id')
       .merge({ tier: 'growth', status: 'active' });
+
+  /**
+   * 4️⃣ OPTIONALLY CREATE MEMBERSHIP
+   * -------------------------------
+   * This is the ENTIRE difference between:
+   *  - "login works"
+   *  - "403 NO_ACTIVE_SHOP_MEMBERSHIP"
+   */
+  if (process.env.DEV_SEED_MODE === 'full_identity') {
+    console.log('[DEV_SEED] Creating ACTIVE shop membership (OWNER)…');
+    
+    await trx('shop_memberships')
+      .insert({
+        shop_id: shop.id,
+        user_id: user.id,
+        role: 'owner',
+      })
+      .onConflict(['shop_id', 'user_id'])
+      .merge({ role: 'owner' });
 
     console.log('[DEV_SEED] ✅ Full identity seeded');
     console.log('[DEV_SEED] → This user CAN log in');

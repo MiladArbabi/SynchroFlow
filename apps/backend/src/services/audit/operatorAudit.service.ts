@@ -33,14 +33,19 @@ export type AuditActionType =
   | 'pack_scan'
   | 'pack_complete'
   | 'ship_confirm'
-  | 'exception_report';
-
+  | 'exception_report'
+  // ── Returns ──────────────────────────────────────────────
+  | 'return_job_create'
+  | 'return_line_process'
+  | 'return_job_complete'
+  | 'return_decision_set';
 export type AuditEntityType =
   | 'receive_job'
   | 'stow_task'
   | 'pick_batch'
   | 'order'
-  | 'variant';
+  | 'variant'
+  | 'return_job';
 
 export interface WriteAuditLogInput {
   shopId: number;
