@@ -1,13 +1,13 @@
 // components/article/Checklist.tsx
 // Numbered evaluation checklist — orange prefix, bordered grid rows.
-// Usage in MDX: <Checklist items={['Does it connect via OAuth?', '...']} />
-
+// Usage in MDX (string): <Checklist items="Does it connect via OAuth?|Is setup under 60 seconds?" />
+// Usage in MDX (array):  <Checklist items={['Does it connect via OAuth?', 'Is setup under 60 seconds?']} />
 interface ChecklistProps {
-  items: string
+  items: string | string[]
 }
-
 export default function Checklist({ items }: ChecklistProps) {
-  const itemList = items.split('|')
+  // Accept both pipe-delimited string and array
+  const itemList = Array.isArray(items) ? items : items.split('|')
   return (
     <div style={{
       margin: '8px 0 22px',
