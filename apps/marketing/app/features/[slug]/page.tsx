@@ -97,7 +97,7 @@ export default async function FeaturePage({ params }: { params: Promise<{ slug: 
         { name: 'Features', url: 'https://www.lasyncro.com/features' },
         { name: frontmatter.title, url },
       ])} />
-      <ArticleLayout frontmatter={frontmatter} wordCount={content.split(/\s+/).length} basePath={{ href: '/features', label: 'Features' }}>
+      <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks} wordCount={content?.split(/\s+/).length ?? 0}>
         <MDXRemote source={content} components={components} />
       </ArticleLayout>
     </>
