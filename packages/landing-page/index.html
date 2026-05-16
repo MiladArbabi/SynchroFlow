@@ -401,6 +401,8 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
    ────────────────────────────────────────────────────────────── */
 
 /* Logo light/dark swap (light text on dark nav, dark text on light nav) */
+.logo-light-mode{display:block!important;}
+.logo-dark-mode{display:none!important;}
 @media (prefers-color-scheme:dark){
   .logo-light-mode{display:none!important;}
   .logo-dark-mode{display:block!important;}
@@ -584,7 +586,7 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
   "url": "https://lasyncro.com",
   "logo": {
     "@type": "ImageObject",
-    "url": "https://lasyncro.com/White_text_no_bg.png",
+    "url": "https://lasyncro.com/logo.png",
     "width": 400,
     "height": 100
   },
@@ -671,7 +673,8 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <!-- NAV -->
 <nav>
   <a href="#" class="nav-logo" aria-label="LaSyncro home">
-    <img src="White_text_no_bg.png" alt="LaSyncro" height="28" style="display:block;">
+    <img src="/dark_text_no_bg.svg" alt="LaSyncro" height="28" style="display:block;" class="logo-light-mode">
+    <img src="/white_text_no_bg.svg" alt="LaSyncro" height="28" style="display:block;" class="logo-dark-mode">
   </a>
   <a href="#waitlist" class="nav-cta"
   onclick="
@@ -1102,7 +1105,8 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <footer>
   <div class="footer-inner">
     <a href="#" class="footer-logo" aria-label="LaSyncro">
-      <img src="White_text_no_bg.png" alt="LaSyncro" height="22" style="display:block;">
+      <img src="/dark_text_no_bg.svg" alt="LaSyncro" height="22" style="display:block;" class="logo-light-mode">
+      <img src="/white_text_no_bg.svg" alt="LaSyncro" height="22" style="display:block;" class="logo-dark-mode">
     </a>
     <span class="footer-tagline">Let's sync up your rows.</span>
     <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;">
