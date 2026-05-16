@@ -46,21 +46,21 @@ export const metadata: Metadata = {
   description: 'Real-time inventory, warehouse management, PO receiving, full order traceability and workforce tools for Shopify merchants running their own warehouse.',
   metadataBase: new URL('https://www.lasyncro.com'),
     icons: {
-    icon: [
-      // Light mode browser tab — 32×32 logo lines on light background
-      { url: '/favicon-32-light.png', sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: light)' },
-      // Dark mode browser tab — 32×32 logo lines on dark background  
-      { url: '/favicon-32-dark.png', sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
-      // Fallback for browsers that don't support media queries on icons
-      { url: '/favicon-32-light.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicon.ico', sizes: 'any' },
-    ],
-    apple: [
-      // Apple touch icon — 180×180 logo with circular background, works on any bg
-      { url: '/apple-touch-icon-v2.png', sizes: '180x180' },
-    ],
-  },
-}
+      icon: [
+        // SVG favicon — Chrome respects prefers-color-scheme inside SVG (light/dark adaptive)
+        { url: '/favicon-light.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: light)' },
+        { url: '/favicon-dark.svg',  type: 'image/svg+xml', media: '(prefers-color-scheme: dark)' },
+        // PNG fallbacks for browsers that don't support SVG favicons
+        { url: '/favicon-32-light.png', sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: light)' },
+        { url: '/favicon-32-dark.png',  sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
+        { url: '/favicon-32-light.png', sizes: '32x32', type: 'image/png' },
+        { url: '/favicon.ico', sizes: 'any' },
+      ],
+      apple: [
+        { url: '/apple-touch-icon-v2.png', sizes: '180x180' },
+      ],
+    },
+  }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
