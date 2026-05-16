@@ -17,7 +17,48 @@ import Checklist from '@/components/article/Checklist'
 import { Metadata } from 'next'
 
 // MDX components available inside .mdx files
-const components = { QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ProductVisual }
+// MDX components — h2/h3 explicitly mapped to prevent browser default bold rendering
+const components = {
+  QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ProductVisual,
+  h2: ({ children }: { children: React.ReactNode }) => (
+    <h2 style={{
+      fontFamily: "'Instrument Serif', Georgia, serif",
+      fontSize: '32px', fontWeight: 400,
+      lineHeight: 1.25, letterSpacing: '-0.02em',
+      color: '#0F0E0D', margin: '56px 0 18px',
+    }}>{children}</h2>
+  ),
+  h3: ({ children }: { children: React.ReactNode }) => (
+    <h3 style={{
+      fontFamily: "'DM Sans', system-ui, sans-serif",
+      fontSize: '18px', fontWeight: 500,
+      lineHeight: 1.3, color: '#0F0E0D',
+      margin: '36px 0 12px',
+    }}>{children}</h3>
+  ),
+  p: ({ children }: { children: React.ReactNode }) => (
+    <p style={{
+      fontFamily: "'DM Sans', system-ui, sans-serif",
+      fontSize: '17px', fontWeight: 300,
+      lineHeight: 1.75, color: '#3A3835',
+      margin: '0 0 22px',
+    }}>{children}</p>
+  ),
+  ul: ({ children }: { children: React.ReactNode }) => (
+    <ul style={{ paddingLeft: '1.4rem', margin: '0 0 22px' }}>{children}</ul>
+  ),
+  li: ({ children }: { children: React.ReactNode }) => (
+    <li style={{
+      fontFamily: "'DM Sans', system-ui, sans-serif",
+      fontSize: '17px', fontWeight: 300,
+      lineHeight: 1.7, color: '#3A3835',
+      marginBottom: '6px',
+    }}>{children}</li>
+  ),
+  strong: ({ children }: { children: React.ReactNode }) => (
+    <strong style={{ fontWeight: 500, color: '#0F0E0D' }}>{children}</strong>
+  ),
+}
 
 export async function generateStaticParams() {
   return getAllSlugs('blog').map((slug) => ({ slug }))
