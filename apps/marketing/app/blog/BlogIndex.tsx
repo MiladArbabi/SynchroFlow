@@ -246,7 +246,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                 Featured · This week
               </span>
               <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
-                {formatDate(featured.frontmatter.date)} · {Math.ceil(featured.content.split(' ').length / 200)} min read
+                {formatDate(featured.frontmatter.date)} · {Math.ceil((featured.content?.split(' ').length ?? 0) / 200)} min read
               </span>
             </div>
             <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 36, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
