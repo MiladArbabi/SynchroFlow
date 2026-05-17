@@ -32,7 +32,9 @@ export type OverviewModulesFt2Snapshot = {
   } | null;
 };
 
-export function useOverviewModulesFt2Snapshot(range: FT2DateRange) {
+const DEFAULT_RANGE: FT2DateRange = { preset: 'past_30_days', from: null, to: null };
+
+export function useOverviewModulesFt2Snapshot(range: FT2DateRange = DEFAULT_RANGE) {
   return useQuery<OverviewModulesFt2Snapshot>({
     queryKey: ['overview', 'modules-ft2', range.preset],
     queryFn: async () => {

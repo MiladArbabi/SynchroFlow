@@ -40,6 +40,8 @@ import OverviewFT2Page from 'pages/ft2-pages/OverviewFT2Page';
 import FulfillmentQueuePage from 'pages/ft2-pages/FulfillmentQueuePage';
 import AlertsPage from 'pages/ft2-pages/AlertsPage';
 import ReturnsFT2Page from 'pages/ft2-pages/ReturnsFT2Page';
+import OrdersOutboundPage from 'pages/ft2-pages/OrdersOutboundPage';
+import OrdersInboundPage from 'pages/ft2-pages/OrdersInboundPage';
 import CashFlowPage from 'pages/ft2-pages/CashFlowPage';
 import DemandPage from 'pages/ft2-pages/DemandPage';
 
@@ -142,6 +144,12 @@ export function LifecycleRouteHost() {
 
       {/* ORDERS */}
       <Route path="/orders/*" element={<OrdersPage />} />
+
+      {/* ORDERS — OUTBOUND (shipped + tracking) */}
+      <Route path="/orders/outbound" element={<OrdersOutboundPage />} />
+
+      {/* ORDERS — INBOUND (WMS receiving) */}
+      <Route path="/orders/inbound" element={<OrdersInboundPage />} />
 
       {/* PRODUCTS */}
       <Route path="/products/*" element={<ProductsPage />} />

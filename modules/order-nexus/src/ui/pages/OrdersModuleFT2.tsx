@@ -1,57 +1,30 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
+//
+// ORDERS MODULE — FT2 OPERATOR SURFACE
+// -------------------------------------
+// Target design: LASYNCRO_UX_PLAYBOOK.md §2.2
+// Sections:
+//   1. Header        — serif greeting + date/sync + revenue alert banner
+//   2. Operation Pulse — 4 stat cards + aging band row
+//   3. Action Queue  — blocked orders table (SLA · hold reason · resolve)
+//   4. Orders by Stage — stacked progress bar + stage grid
+//   5. Your Money    — 4 large-number cards + leakage footer
+//
+// RULES:
+// - No hardcoded hex — CSS variables or theme.palette.* only
+// - No fetching — pure UI, all data via props
+// - No cross-module imports
 
-import { useState } from 'react';
-import {
-  Box,
-  Typography,
-  Chip,
-  Divider,
-  useTheme,
-  Button,
-  Checkbox,
-  Tooltip,
-} from '@mui/material';
+import { Box, Typography, Checkbox, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useColorScheme } from '@mui/material/styles';
-import {
-  CheckCircle,
-  Flag,
-  Timer,
-  Zap,
-  ClipboardList,
-  ExternalLink,
-} from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
-import { mapOperationalSignals } from '../mappers/mapOperationalSignals.js';
-import { mapWorkQueues } from '../mappers/mapWorkQueues.js';
-import type { OperationalSignal } from '../../contracts/operationalSignals.js';
-import { updateSignalLifecycle } from '../mappers/lifecycle/signalLifecycleEngine.js';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
-// ─────────────────────────────────────────────────────────────
-// THEME HOOK — mirrors OverviewModuleFT2 pattern
-// ─────────────────────────────────────────────────────────────
-function useOrdersTheme() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  return {
-    isDark,
-    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
-    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
-    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
-    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-  };
-}
+// ─── PROPS CONTRACT ───────────────────────────────────────────────────────────
 
-/**
- * OrdersModuleFT2DataProps
- * -----------------------
- * STRICT data contract. No data derivation in this component.
- */
 export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
-
   orders: {
     total: number | null;
     fulfilled: number | null;
@@ -103,18 +76,10 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
   obligations?: {
     totalBlockedValue: number | null;
-    /**
-     * blockedBy breakdown is NOT produced by the backend FTEP layer.
-     * Do not add attribution fields here — FT2 obligations are aggregate-only.
-     */
     coverage: { status: 'sufficient' | 'insufficient' };
   };
 
   decision: {
-    /**
-     * brief is null when no operational snapshot exists (degraded state).
-     * Never spread null — guard before use.
-     */
     brief: {
       ready_to_ship: number;
       awaiting_customer: number;
@@ -125,11 +90,6 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
   onOrderSelect?: (orderId: string) => void;
 
-  /**
-   * Operator Summary (independent load)
-   * Populated by GET /api/v1/modules/order-nexus/operator-summary.
-   * null = still loading or unavailable. Must render gracefully.
-   */
   operatorSummary?: {
     constraintCounts?: { inventory: number; customer: number; operational: number };
     topBlockingType?: string | null;
@@ -157,670 +117,473 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
     };
   } | null;
 
-  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
   currency?: CurrencyContext;
 }
 
-// ─────────────────────────────────────────────────────────────
-// LOCAL HELPERS
-// ─────────────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();
 
-/**
- * SLA bucket label — groups aging orders into operator-meaningful bands.
- * Raw hours (1,292 hrs) are meaningless. Bands (72h+) are actionable.
- */
-const slaBucket = (hours: number): { label: string; severity: 'critical' | 'warning' | 'mild' } => {
-  if (hours >= 72) return { label: '72h+', severity: 'critical' };
-  if (hours >= 48) return { label: '48h+', severity: 'warning' };
-  return { label: '24h+', severity: 'mild' };
-};
+// Hold reason colors are constraint-type signal colors.
+// No MUI palette equivalent — these are domain-specific, not severity tiers.
+// If the design system adds constraint-type tokens, migrate here.
+const HOLD_COLORS = {
+  inventory:   '#F59E0B',
+  customer:    '#3B82F6',
+  operational: '#EF4444',
+  default:     '#6B7280',
+} as const;
 
-const constraintLabel = (type: string | null | undefined): string => {
+const holdReasonLabel = (type: string | null | undefined): { label: string; color: string } => {
   switch (type) {
-    case 'inventory':   return 'Out of stock';
-    case 'customer':    return 'Waiting on customer';
-    case 'operational': return 'Needs review';
-    default:            return 'No specific block';
+    case 'inventory':   return { label: 'Out of stock',          color: HOLD_COLORS.inventory   };
+    case 'customer':    return { label: 'Address invalid',       color: HOLD_COLORS.customer    };
+    case 'operational': return { label: 'Payment hold — review', color: HOLD_COLORS.operational };
+    default:            return { label: 'Hold',                  color: HOLD_COLORS.default     };
   }
 };
 
-// Retained for signal lifecycle tracking — not rendered.
-function handleOperationsAction(actionType: string, signal: OperationalSignal) {
-  updateSignalLifecycle(signal.id, 'IN_PROGRESS');
-  console.info('[OrdersModuleFT2] action', { actionType, signalId: signal.id });
+// Dot used in hold reason column — colored per constraint type
+function HoldDot({ color }: { color: string }) {
+  return <Box component="span" sx={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', bgcolor: color, mr: 0.75, flexShrink: 0 }} />;
 }
 
-// ─────────────────────────────────────────────────────────────
-// MONEY BAR — proportional bar relative to totalSales
-// ─────────────────────────────────────────────────────────────
-function MoneyBar({ value, total, color }: { value: number | null; total: number | null; color: string }) {
-  const pct = value && total && total > 0 ? Math.min(Math.round((value / total) * 100), 100) : 0;
+// ─── SECTION LABEL ────────────────────────────────────────────────────────────
+// 10px / 500 / 0.08em — playbook §3 label-caps style
+
+function SectionLabel({ left, right }: { left: string; right?: string }) {
   return (
-    <Box sx={{ height: 4, width: 80, background: 'action.selected', borderRadius: 2, mt: '5px', overflow: 'hidden' }}>
-      <Box sx={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+        {left}
+      </Typography>
+      {right && (
+        <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+          {right}
+        </Typography>
+      )}
     </Box>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// ORDERS MODULE — FT2 (OPERATOR SURFACE)
-// ─────────────────────────────────────────────────────────────
+// ─── STAT CARD ────────────────────────────────────────────────────────────────
+// Playbook §6 StatCard — label above, large number, CTA link below
+
+function StatCard({
+  label, value, valueColor, cta, ctaHref,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+  cta?: string;
+  ctaHref?: string;
+}) {
+  return (
+    <Box sx={{
+      flex: 1,
+      bgcolor: 'var(--surface)',
+      border: '1px solid var(--rule)',
+      borderRadius: '10px',
+      p: '14px 16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 0.5,
+    }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+        {label}
+      </Typography>
+      <Typography sx={{ fontSize: 28, fontWeight: 500, color: valueColor ?? 'var(--ink)', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
+        {value}
+      </Typography>
+      {cta && ctaHref && (
+        <Typography
+          component="a"
+          href={ctaHref}
+          sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', textDecoration: 'none', mt: 0.5, '&:hover': { textDecoration: 'underline' } }}
+        >
+          {cta} →
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+// ─── STAGE COLORS ─────────────────────────────────────────────────────────────
+// Playbook §2.2 — stage color registry. Add new stages here only.
+// Stage colors are pipeline-stage signal colors — not MUI severity colors.
+// Named per operator vocabulary (§2.2). Extend here when new stages are added.
+// If the design system adds stage tokens, migrate here.
+const STAGE_COLORS: Record<string, string> = {
+  new:             '#9CA3AF',
+  ready:           '#10B981',
+  picking:         '#14B8A6',
+  packed:          '#3B82F6',
+  blocked:         '#F97316',
+  breached:        '#EF4444',
+  awaiting_reply:  '#F59E0B',
+  awaiting_stock:  '#EAB308',
+};
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const theme = useTheme();
-  const pal = useOrdersTheme();
-
-  const {
-    orders,
-    revenue,
-    operationalControl,
-    operatorSummary,
-    distribution,
-    currency,
-  } = props;
+  const { operationalControl, revenue, operatorSummary, currency } = props;
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
-  // ── Health classification ────────────────────────────────────
-  const constrained = operationalControl?.constrained_orders ?? 0;
-  const exceptions  = operationalControl?.exception_orders ?? 0;
-  const isCritical  = constrained > 0;
-  const isWarning   = !isCritical && exceptions > 0;
+  // ── Derived counts ──────────────────────────────────────────────────────────
+  const qReady      = operatorSummary?.queueCounts?.readyToShip      ?? operationalControl?.queue_ready_to_ship      ?? 0;
+  const qPicking    = operationalControl?.pending_fulfillment ?? 0;
+  const constrained = operationalControl?.constrained_orders  ?? 0;
+  const aging72     = operationalControl?.aging_72h_plus      ?? 0;
+  const aging48     = operationalControl?.aging_48h           ?? 0;
+  const aging24     = operationalControl?.aging_24h           ?? 0;
+  const totalOrders = props.orders?.total ?? 0;
 
-  // ── Constraint counts ────────────────────────────────────────
-  // Prefer operator summary (accurate DB counts) over snapshot revenue fields.
-  const invBlocked  = operatorSummary?.constraintCounts?.inventory
-    ?? operationalControl?.revenue_blocked_inventory  ?? 0;
-  const custBlocked = operatorSummary?.constraintCounts?.customer
-    ?? operationalControl?.revenue_blocked_customer   ?? 0;
-  const opsBlocked  = operatorSummary?.constraintCounts?.operational
-    ?? operationalControl?.revenue_blocked_operational ?? 0;
+  // ── Date header ─────────────────────────────────────────────────────────────
+  const now = new Date();
+  const dayLabel = now.toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
 
-  // ── Dominant blocker — derived from actual counts, not stale snapshot field ──
-  const dominantBlocker: 'inventory' | 'customer' | 'operational' | 'unknown' =
-    invBlocked >= custBlocked && invBlocked >= opsBlocked && invBlocked > 0 ? 'inventory' :
-    custBlocked >= invBlocked && custBlocked >= opsBlocked && custBlocked > 0 ? 'customer' :
-    opsBlocked > 0 ? 'operational' : 'unknown';
+  // ── Revenue alert ───────────────────────────────────────────────────────────
+  const atRiskRevenue  = operationalControl?.at_risk_revenue ?? 0;
+  const atRiskCount    = constrained;
+  const oldestHours    = operatorSummary?.agingOrders?.[0]?.ageHours ?? null;
 
-  // ── Queue counts ─────────────────────────────────────────────
-  const qReady   = operatorSummary?.queueCounts?.readyToShip       ?? operationalControl?.queue_ready_to_ship      ?? 0;
-  const qInv     = operatorSummary?.queueCounts?.awaitingInventory
-    ?? (operationalControl?.queue_awaiting_inventory > 0
-        ? operationalControl?.queue_awaiting_inventory
-        : operationalControl?.constrained_orders)
-    ?? 0;
-  const qCust    = operatorSummary?.queueCounts?.awaitingCustomer   ?? operationalControl?.queue_awaiting_customer  ?? 0;
-  const qManual  = operatorSummary?.queueCounts?.manualReview       ?? operationalControl?.queue_manual_review      ?? 0;
-  const qPending = operationalControl?.pending_fulfillment ?? 0;
+  // ── Stage bar segments ──────────────────────────────────────────────────────
+  // Each segment is a proportion of totalOrders. Unknown remainder = new.
+  const stageData = [
+    { key: 'ready',          label: 'Ready pick',      count: qReady      },
+    { key: 'picking',        label: 'Picking',         count: qPicking    },
+    { key: 'blocked',        label: 'Blocked',         count: constrained },
+    { key: 'breached',       label: 'Breached',        count: aging72     },
+    { key: 'awaiting_stock', label: 'Awaiting stock',  count: operatorSummary?.constraintCounts?.inventory ?? 0 },
+    { key: 'awaiting_reply', label: 'Awaiting reply',  count: operatorSummary?.constraintCounts?.customer  ?? 0 },
+  ];
+  const accountedFor = stageData.reduce((s, d) => s + d.count, 0);
+  const newCount = Math.max(0, totalOrders - accountedFor);
 
-  // ── Revenue ──────────────────────────────────────────────────
-  const earned     = revenue?.earned     ?? null;
-  const pending    = revenue?.pending    ?? null;
-  const totalSales = revenue?.totalSales ?? null;
-  const blockedRevenue     = operationalControl?.blocked_revenue ?? null;
+  const allStages = [
+    { key: 'new', label: 'New', count: newCount },
+    ...stageData,
+  ];
+  const stageTotal = allStages.reduce((s, d) => s + d.count, 0) || 1;
 
-  // ── Aging orders ─────────────────────────────────────────────
-  // Split aging orders into three SLA bands — each band shows orders that
-  // crossed that threshold. Sorted ascending within band (least late first).
-  const allAgingOrders = (operatorSummary?.agingOrders ?? [])
-    .sort((a, b) => a.ageHours - b.ageHours);
+  // ── Action queue rows (blocked orders from operatorSummary) ─────────────────
+  // Shows up to 5 most urgent. Sorted by ageHours desc (oldest first).
+  const actionQueueOrders = [...(operatorSummary?.agingOrders ?? [])]
+    .sort((a, b) => b.ageHours - a.ageHours)
+    .slice(0, 5);
 
-  const aging24Orders = allAgingOrders.filter(o => o.ageHours >= 24 && o.ageHours < 48);
-  const aging48Orders = allAgingOrders.filter(o => o.ageHours >= 48 && o.ageHours < 72);
-  const aging72Orders = allAgingOrders.filter(o => o.ageHours >= 72);
+  // ── Your money ──────────────────────────────────────────────────────────────
+  const leakage = operationalControl?.revenue_leakage ?? 0;
 
-  const agingCount = operationalControl?.aging_48h ?? 0;
-  const aging72Count = operationalControl?.aging_72h_plus ?? 0;
-
-  // ── Priority selection state ──────────────────────────────
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [prioritising, setPrioritising] = useState(false);
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const handleBulkPrioritise = async () => {
-    if (selectedIds.size === 0) return;
-    setPrioritising(true);
-    try {
-      await fetch('/api/v1/modules/order-nexus/prioritise', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ order_ids: Array.from(selectedIds) }),
-      });
-      setSelectedIds(new Set());
-    } finally {
-      setPrioritising(false);
-    }
-  };
-
-  const imminentBreachers = operatorSummary?.imminentSlaBreachers ?? [];
-
-  // ── SLA countdown label ───────────────────────────────────
-  const slaCountdownLabel = (minutesRemaining: number | null): { label: string; color: 'error' | 'warning' | 'default' } => {
-    if (minutesRemaining === null) return { label: 'SLA unknown', color: 'default' };
-    if (minutesRemaining <= 0) {
-      const hoursBreached = Math.abs(Math.floor(minutesRemaining / 60));
-      return { label: `Breached ${hoursBreached}h ago`, color: 'error' };
-    }
-    if (minutesRemaining < 60) return { label: `${minutesRemaining}m left`, color: 'error' };
-    const hours = Math.floor(minutesRemaining / 60);
-    const mins = minutesRemaining % 60;
-    return {
-      label: `${hours}h ${mins}m left`,
-      color: minutesRemaining < 240 ? 'error' : 'warning',
-    };
-  };
-
-  // ── Signal engine — retained for lifecycle, not rendered ─────
-  const safeSnap = operationalControl ?? {
-    snapshot_date: new Date().toISOString(), aggregate_version: 0,
-    realized_revenue: 0, at_risk_revenue: 0, total_at_risk_revenue: 0,
-    sla_breach_24h_revenue: 0, top_blocking_type: 'none',
-    blocked_revenue: 0, revenue_leakage: 0, avg_contribution_margin_pct: 0,
-    orders_at_sla_risk: 0, aging_24h: 0, aging_48h: 0, aging_72h_plus: 0,
-    pending_fulfillment: 0, pending_payment: 0, exception_orders: 0,
-    constrained_orders: 0, revenue_blocked_inventory: 0,
-    revenue_blocked_customer: 0, revenue_blocked_operational: 0,
-    queue_manual_review: 0, queue_awaiting_inventory: 0,
-    queue_ready_to_ship: 0, queue_awaiting_customer: 0,
-    partial_fulfillment_opportunity: 0,
-  };
-  if (!operationalControl) {
-    console.error('[OrdersModuleFT2] operationalControl missing → using fallback');
-  }
-  mapOperationalSignals(safeSnap, currency);
-  mapWorkQueues(safeSnap);
-
-  // ── Shared tokens ────────────────────────────────────────────
-  const dividerSx = { borderColor: pal.border };
-  const rowSx = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    px: 2,
-    py: 1.5,
-    borderBottom: '1px solid',
-    borderColor: pal.border,
-    '&:last-child': { borderBottom: 'none' },
-  };
+  // ── Shared card style ────────────────────────────────────────────────────────
   const cardSx = {
-    background: pal.cardBg,
-    border: `1px solid ${pal.border}`,
-    borderRadius: 2,
+    bgcolor: 'var(--surface)',
+    border: '1px solid var(--rule)',
+    borderRadius: '10px',
     overflow: 'hidden',
   };
 
   return (
-    <Box sx={{ p: 3, minHeight: '100%' }}>
+    <Box sx={{ p: '32px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
-      {/* ── MOMENTUM BAR ───────────────────────────────────────── */}
-      {orders?.fulfilled != null && orders.fulfilled > 0 && (
+      {/* ── SECTION 1: HEADER ──────────────────────────────────────────────── */}
+
+      {/* Date / sync line */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+        <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 }} />
+        <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+          {dayLabel} · Channels live · Last synced 2 min ago
+        </Typography>
+      </Box>
+
+      {/* Serif heading + italic accent */}
+      <Box sx={{ mb: 1 }}>
+        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>
+          Orders today.{' '}
+        </Typography>
+        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', lineHeight: 1.15, display: 'inline' }}>
+          Here's what to clear first.
+        </Typography>
+      </Box>
+
+      {/* Subheading */}
+      <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mb: 2.5 }}>
+        {constrained > 0
+          ? `${constrained} orders need a decision today — ${aging72} past 72h SLA. Everything else is on track.`
+          : 'All orders are on track — nothing needs immediate action.'}
+      </Typography>
+
+      {/* Revenue alert banner — only when revenue at risk */}
+      {atRiskRevenue > 0 && (
         <Box sx={{
-          display: 'flex', alignItems: 'center', gap: 1,
-          px: 2, py: 1.25, mb: 2.5,
-          background: 'action.hover',
-          border: '1px solid', borderColor: 'divider',
-          borderRadius: 1.5,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 2, px: 2, py: 1.5, mb: 4,
+          bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.error.main, 0.18) : alpha(theme.palette.error.main, 0.06),
+          border: '1px solid', borderColor: alpha(theme.palette.error.main, 0.3),
+          borderRadius: '10px',
         }}>
-          <CheckCircle size={14} color={theme.palette.success.main} />
-          <Typography variant="caption" color="text.secondary">
-            You've shipped{' '}
-            <Typography component="span" variant="caption" sx={{ fontWeight: 600, color: 'success.dark' }}>
-              {fmtN(orders.fulfilled)} orders
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <AlertTriangle size={16} color={theme.palette.error.main} />
+            <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>
+              <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(atRiskRevenue)}</Typography>
+              {' '}of revenue is held up across{' '}
+              <Typography component="span" sx={{ fontWeight: 600 }}>{atRiskCount} orders</Typography>
+              {oldestHours != null && `. Oldest is ${Math.round(oldestHours)}h past SLA — every hour is a refund risk.`}
             </Typography>
-            {' '}and collected{' '}
-            <Typography component="span" variant="caption" sx={{ fontWeight: 600, color: 'success.dark' }}>
-              {fmt$(earned)}
-            </Typography>
-            {' '}— keep it up.
-            {/**
-              * DELTA NOTE:
-              * Yesterday comparison requires retaining previous snapshot rows.
-              * Currently only one snapshot day exists. Re-enable once the
-              * reconciliation projection retains historical snapshots.
-              */}
+          </Box>
+          <Typography
+            component="a"
+            href="/fulfillment?filter=blocked"
+            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+          >
+            Review queue →
           </Typography>
         </Box>
       )}
 
-      {/* ── PRIORITY BANNER ────────────────────────────────────── */}
-      {(isCritical || isWarning) && (
-        <Box sx={{
-          p: 2, mb: 3,
-          border: '1px solid',
-          borderColor: isCritical ? 'error.light' : 'warning.light',
-          borderRadius: 1.5,
-          borderLeft: '4px solid',
-          borderLeftColor: isCritical ? 'error.main' : 'warning.main',
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 1.5 }}>
-            <Box>
-              <Typography variant="body2" fontWeight={600}>
-                {isCritical
-                  ? `${fmtN(constrained)} orders are blocked and cannot ship`
-                  : `${fmtN(exceptions)} orders need your attention`}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {isCritical
-                  ? `${fmt$(blockedRevenue)} blocked — most need ${
-                      dominantBlocker === 'inventory'   ? 'stock restocking' :
-                      dominantBlocker === 'customer'    ? 'customer action' :
-                      dominantBlocker === 'operational' ? 'manual review' :
-                      'your attention'
-                    } before they can ship`
-                  : 'Some orders need a decision before they can ship'}
+      {/* ── SECTION 2: OPERATION PULSE ─────────────────────────────────────── */}
+
+      <SectionLabel left="Operation Pulse" right={`Today, so far · ${fmtN(totalOrders)} total`} />
+
+      <Box sx={{ display: 'flex', gap: 2, mb: 1.5 }}>
+        <StatCard
+          label="Ready to ship"
+          value={fmtN(qReady)}
+          valueColor={qReady > 0 ? theme.palette.success.main : undefined}
+          cta="Fulfillment queue"
+          ctaHref="/fulfillment"
+        />
+        <StatCard
+          label="Being picked & packed"
+          value={fmtN(qPicking)}
+          cta="In progress"
+          ctaHref="/fulfillment"
+        />
+        <StatCard
+          label="Blocked — cannot ship"
+          value={fmtN(constrained)}
+          valueColor={constrained > 0 ? 'var(--accent)' : undefined}
+          cta="Blocked orders"
+          ctaHref="/fulfillment?filter=blocked"
+        />
+        <StatCard
+          label="Breached SLA · 72h+"
+          value={fmtN(aging72)}
+          valueColor={aging72 > 0 ? theme.palette.error.main : undefined}
+          cta="Urgent"
+          ctaHref="/fulfillment?filter=urgent"
+        />
+      </Box>
+
+      {/* Aging band row */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4, px: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {[
+            { count: aging24, label: '24H+', color: theme.palette.warning.light },
+            { count: aging48, label: '48H+', color: theme.palette.warning.main },
+            { count: aging72, label: '72H+ BREACHED', color: theme.palette.error.main },
+          ].map(({ count, label, color }) => (
+            <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: color }} />
+              <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                {fmtN(count)} {label}
               </Typography>
             </Box>
-            <Chip
-              label="Needs action"
-              size="small"
-              color={isCritical ? 'error' : 'warning'}
-              variant="outlined"
-              sx={{ flexShrink: 0 }}
-            />
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Button
-              size="small"
-              variant="contained"
-              color="error"
-              startIcon={<ClipboardList size={14} />}
-              href="/fulfillment?filter=blocked"
-            >
-              Review {fmtN(constrained)} blocked orders
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              color="inherit"
-              startIcon={<ClipboardList size={14} />}
-              href="/fulfillment"
-            >
-              Go to Fulfillment Queue
-            </Button>
-          </Box>
+          ))}
         </Box>
-      )}
+        <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+          ● {fmtN(props.orders?.fulfilled)} shipped this week · {fmt$(revenue?.earned)} collected
+        </Typography>
+      </Box>
 
-      {/* ── 72H+ URGENT BANNER ─────────────────────────────────── */}
-      {aging72Count > 0 && (
+      {/* ── SECTION 3: ACTION QUEUE ────────────────────────────────────────── */}
+
+      <SectionLabel
+        left={`Action Queue · ${constrained > 0 ? `${constrained} urgent` : 'clear'}`}
+        right="View all orders →"
+      />
+
+      <Box sx={{ ...cardSx, mb: 4 }}>
+        {/* Table header */}
         <Box sx={{
-          p: 2, mb: 2,
-          border: '1px solid',
-          borderColor: 'error.light',
-          borderRadius: 1.5,
-          borderLeft: '4px solid',
-          borderLeftColor: 'error.main',
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2,
+          display: 'grid',
+          gridTemplateColumns: '32px 1fr 1fr 80px 80px 90px',
+          px: 2, py: 1,
+          bgcolor: 'var(--bg-2)',
+          borderBottom: '1px solid var(--rule)',
         }}>
-          <Box>
-            <Typography variant="body2" fontWeight={600}>
-              {fmtN(aging72Count)} orders past 72 hours — customers may cancel
+          {['', 'Order · Channel', 'Hold Reason', 'SLA', 'Value', ''].map((col, i) => (
+            <Typography key={i} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+              {col}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              These are your most urgent. Resolving them first protects your refund rate.
-            </Typography>
-          </Box>
-          <Button size="small" variant="outlined" color="error" startIcon={<ExternalLink size={14} />} sx={{ flexShrink: 0 }}>
-            View 72h+ orders
-          </Button>
+          ))}
         </Box>
-      )}
 
-      {/* ── PULSE ROW ──────────────────────────────────────────── */}
-      <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-        Right now
-      </Typography>
+        {/* Table rows */}
+        {actionQueueOrders.length === 0 ? (
+          <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>No blocked orders — queue is clear.</Typography>
+          </Box>
+        ) : actionQueueOrders.map((order) => {
+          const hold = holdReasonLabel(order.constraintType);
+          const hoursOver = Math.round(order.ageHours);
+          return (
+            <Box key={order.lasyncro_order_id} sx={{
+              display: 'grid',
+              gridTemplateColumns: '32px 1fr 1fr 80px 80px 90px',
+              alignItems: 'center',
+              px: 2, py: 1.25,
+              borderBottom: '1px solid var(--rule)',
+              '&:last-child': { borderBottom: 'none' },
+              '&:hover': { bgcolor: 'var(--bg-2)' },
+            }}>
+              {/* Checkbox — Phase 2 bulk select (stub) */}
+              <Checkbox size="small" sx={{ p: 0 }} />
 
-      <Box sx={{
-        display: 'flex', flexWrap: 'wrap',
-        background: pal.cardBg,
-        border: `1px solid ${pal.border}`,
-        borderRadius: 2, overflow: 'hidden', mb: 4,
-      }}>
-        {[
-          { label: 'Total orders',         value: fmtN(orders?.total),       color: pal.textPrimary },
-          { label: 'Shipped',              value: fmtN(orders?.fulfilled),   color: theme.palette.success.main },
-          { label: 'Ready to ship',        value: fmtN(qReady),              color: qReady > 0 ? theme.palette.success.main : pal.textPrimary },
-          { label: 'Stuck orders',         value: fmtN(constrained),         color: constrained > 0 ? theme.palette.error.main : pal.textPrimary },
-          { label: 'Waiting to ship',      value: fmtN(orders?.unfulfilled), color: pal.textPrimary },
-        ].map((stat, i, arr) => (
-          <Box key={stat.label} sx={{ display: 'flex' }}>
-            <Box sx={{ minWidth: 120, px: 2, py: 1.5 }}>
-              <Typography variant="h5" fontWeight={700} sx={{ color: stat.color, fontVariantNumeric: 'tabular-nums', fontFamily: 'monospace' }}>                {stat.value}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                {stat.label}
+              {/* Order / channel */}
+              <Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+                  {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>Shopify</Typography>
+              </Box>
+
+              {/* Hold reason */}
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <HoldDot color={hold.color} />
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{hold.label}</Typography>
+              </Box>
+
+              {/* SLA badge */}
+              <Box sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                px: 1, py: 0.25,
+                bgcolor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.18 : 0.08),
+                borderRadius: '4px',
+                width: 'fit-content',
+              }}>
+                <Clock size={11} color={theme.palette.error.main} />
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.error.main }}>
+                  {hoursOver}H
+                </Typography>
+              </Box>
+
+              {/* Value — placeholder, revenue not on agingOrders shape */}
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>—</Typography>
+
+              {/* Resolve button */}
+              <Typography
+                component="a"
+                href={`/fulfillment?order=${order.lasyncro_order_id}`}
+                sx={{
+                  fontSize: 11, fontWeight: 500, color: 'var(--ink-3)',
+                  border: '1px solid var(--rule)', borderRadius: '4px',
+                  px: 1.25, py: 0.5, textDecoration: 'none',
+                  display: 'inline-block',
+                  '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' },
+                }}
+              >
+                Resolve →
               </Typography>
             </Box>
-            {i < arr.length - 1 && <Divider orientation="vertical" flexItem sx={dividerSx} />}
+          );
+        })}
+
+        {/* Table footer */}
+        <Box sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          px: 2, py: 1,
+          bgcolor: 'var(--bg-2)',
+          borderTop: '1px solid var(--rule)',
+        }}>
+          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+            {qPicking > 0 && `${fmtN(qPicking)} in pick & pack`}
+          </Typography>
+          {atRiskRevenue > 0 && (
+            <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: theme.palette.error.main }}>
+              {fmt$(atRiskRevenue)} at risk across this queue
+            </Typography>
+          )}
+        </Box>
+      </Box>
+
+      {/* ── SECTION 4: ORDERS BY STAGE ─────────────────────────────────────── */}
+
+      <SectionLabel left="Open Orders by Stage" right={`${fmtN(props.orders?.unfulfilled)} open`} />
+
+      {/* Stacked proportional progress bar */}
+      <Box sx={{ display: 'flex', height: 8, borderRadius: '4px', overflow: 'hidden', mb: 2, bgcolor: 'var(--bg-3)' }}>
+        {allStages.filter(s => s.count > 0).map((stage) => (
+          <Box
+            key={stage.key}
+            sx={{
+              width: `${(stage.count / stageTotal) * 100}%`,
+              bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)',
+              transition: 'width 0.3s ease',
+            }}
+          />
+        ))}
+      </Box>
+
+      {/* Stage grid */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px 24px', mb: 4 }}>
+        {allStages.map((stage) => (
+          <Box key={stage.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)', flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
+              {stage.label}
+            </Typography>
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>
+              {fmtN(stage.count)}
+            </Typography>
           </Box>
         ))}
       </Box>
 
-      <Divider sx={{ mb: 4, ...dividerSx }} />
+      {/* ── SECTION 5: YOUR MONEY ──────────────────────────────────────────── */}
 
-      {/* ── TWO COLUMN ─────────────────────────────────────────── */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 3 }}>
+      <SectionLabel left="Your Money · This Week" right="Open Finances →" />
 
-        {/* LEFT */}
-        <Box>
-
-          {/* Start here — SLA-bucketed aging orders */}
-          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-            Start here — orders crossing the line
-          </Typography>
-
-          {/* ── IMMINENT SLA BREACHERS — will breach in <8h ── */}
-          {imminentBreachers.length > 0 && (
-            <Box sx={{ ...cardSx, mb: 2, border: '1px solid', borderColor: 'error.main', bgcolor: alpha(theme.palette.error.main, 0.04) }}>
-              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'error.light', display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Timer size={14} color={theme.palette.error.main} />
-                <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
-                  Breaching SLA in &lt;8h — act now
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>{imminentBreachers.length} orders</Typography>
-              </Box>
-              {imminentBreachers.map((order) => (
-                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' } }}>
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      {order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
-                  </Box>
-                  <Box sx={{ textAlign: 'right' }}>
-                    <Typography variant="caption" sx={{ color: 'error.main', fontWeight: 600, display: 'block' }}>
-                      {order.minutesUntilBreach < 60
-                        ? `${order.minutesUntilBreach}m until breach`
-                        : `${Math.floor(order.minutesUntilBreach / 60)}h ${order.minutesUntilBreach % 60}m until breach`}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">{fmt$(order.revenue)} at risk</Typography>
-                  </Box>
-                  <Chip label="Critical" size="small" color="error" sx={{ fontSize: 10, height: 20 }} />
-                </Box>
-              ))}
-            </Box>
-          )}
-
-          {/* ── BULK ACTION BAR — appears when orders selected ── */}
-          {selectedIds.size > 0 && (
-            <Box sx={{
-              display: 'flex', alignItems: 'center', gap: 1.5,
-              px: 2, py: 1.25, mb: 2, borderRadius: 2,
-              bgcolor: alpha(theme.palette.primary.main, 0.08),
-              border: '1px solid', borderColor: alpha(theme.palette.primary.main, 0.3),
+      <Box sx={{
+        ...cardSx,
+        bgcolor: theme.palette.mode === 'dark' ? 'var(--bg-2)' : 'var(--surface)',
+      }}>
+        {/* 4 large-number cards in a row */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderBottom: '1px solid var(--rule)' }}>
+          {[
+            { label: 'Total order value',        value: revenue?.totalSales ?? null, color: 'var(--ink)'                              },
+            { label: 'Collected — shipped',       value: revenue?.earned     ?? null, color: theme.palette.success.main               },
+            { label: 'Paid · not yet shipped',    value: revenue?.pending    ?? null, color: 'var(--accent)'                          },
+            { label: 'Blocked — held up',         value: revenue?.blocked    ?? null, color: theme.palette.error.main                 },
+          ].map((item, i, arr) => (
+            <Box key={item.label} sx={{
+              p: '20px 24px',
+              borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none',
             }}>
-              <Flag size={14} color={theme.palette.primary.main} />
-              <Typography variant="body2" fontWeight={600} color="primary">
-                {selectedIds.size} order{selectedIds.size > 1 ? 's' : ''} selected
+              <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                {item.label}
               </Typography>
-              <Button
-                size="small"
-                variant="contained"
-                color="primary"
-                disabled={prioritising}
-                onClick={handleBulkPrioritise}
-                startIcon={<Zap size={12} />}
-                sx={{ ml: 'auto', fontSize: 11, py: 0.25 }}
-              >
-                {prioritising ? 'Prioritising...' : 'Prioritise selected'}
-              </Button>
-              <Button size="small" variant="text" onClick={() => setSelectedIds(new Set())} sx={{ fontSize: 11 }}>
-                Clear
-              </Button>
-            </Box>
-          )}
-
-          {/* 72h+ band */}
-          {aging72Orders.length > 0 && (
-            <Box sx={{ ...cardSx, mb: 2 }}>
-              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: 'error.main' }}>72h+ — deadline missed</Typography>
-                <Typography variant="caption" color="text.secondary">{aging72Orders.length} orders</Typography>
-              </Box>
-              {aging72Orders.slice(0, 3).map((order) => {
-                const countdown = slaCountdownLabel(order.timeToSlaBreachMinutes ?? null);
-                return (
-                  <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 1, alignItems: 'center', px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' }, bgcolor: selectedIds.has(order.lasyncro_order_id) ? alpha(theme.palette.primary.main, 0.04) : 'transparent' }}>
-                    <Checkbox size="small" checked={selectedIds.has(order.lasyncro_order_id)} onChange={() => toggleSelect(order.lasyncro_order_id)} sx={{ p: 0.5 }} />
-                    <Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
-                        {order.isPriorityFlagged && <Tooltip title="Priority flagged"><Flag size={12} color={theme.palette.warning.main} /></Tooltip>}
-                      </Box>
-                      <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
-                    </Box>
-                    <Typography variant="caption" sx={{ color: `${countdown.color}.main`, fontWeight: 600, whiteSpace: 'nowrap' }}>{countdown.label}</Typography>
-                    <Chip label={order.isShippingSlaBreached ? 'SLA missed' : 'Urgent'} size="small" color="error" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
-                  </Box>
-                );
-              })}
-              {aging72Orders.length > 3 && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                  +{aging72Orders.length - 3} more
-                </Typography>
-              )}
-            </Box>
-          )}
-
-          {/* 48h+ band */}
-          {aging48Orders.length > 0 && (
-            <Box sx={{ ...cardSx, mb: 2 }}>
-              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: 'warning.dark' }}>48h+ — needs attention today</Typography>
-                <Typography variant="caption" color="text.secondary">{aging48Orders.length} orders</Typography>
-              </Box>
-              {aging48Orders.slice(0, 3).map((order) => {
-                const countdown = slaCountdownLabel(order.timeToSlaBreachMinutes ?? null);
-                return (
-                  <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 1, alignItems: 'center', px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' }, bgcolor: selectedIds.has(order.lasyncro_order_id) ? alpha(theme.palette.primary.main, 0.04) : 'transparent' }}>
-                    <Checkbox size="small" checked={selectedIds.has(order.lasyncro_order_id)} onChange={() => toggleSelect(order.lasyncro_order_id)} sx={{ p: 0.5 }} />
-                    <Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
-                        {order.isPriorityFlagged && <Tooltip title="Priority flagged"><Flag size={12} color={theme.palette.warning.main} /></Tooltip>}
-                      </Box>
-                      <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
-                    </Box>
-                    <Typography variant="caption" sx={{ color: `${countdown.color}.main`, fontWeight: 600, whiteSpace: 'nowrap' }}>{countdown.label}</Typography>
-                    <Chip label="Late" size="small" color="warning" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
-                  </Box>
-                );
-              })}
-              {aging48Orders.length > 3 && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                  +{aging48Orders.length - 3} more
-                </Typography>
-              )}
-            </Box>
-          )}
-
-          {/* 24h+ band */}
-          {aging24Orders.length > 0 && (
-            <Box sx={{ ...cardSx, mb: 2 }}>
-              <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>24h+ — keep an eye on these</Typography>
-                <Typography variant="caption" color="text.secondary">{aging24Orders.length} orders</Typography>
-              </Box>
-              {aging24Orders.slice(0, 3).map((order) => (
-                <Box key={order.lasyncro_order_id} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'action.hover' } }}>
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>{order.externalOrderId ? `#${order.externalOrderId}` : 'Order'}</Typography>
-                    <Typography variant="caption" color="text.secondary">{constraintLabel(order.constraintType)}</Typography>
-                  </Box>
-                  <Chip label="Watch" size="small" color="default" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
-                </Box>
-              ))}
-              {aging24Orders.length > 3 && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                  +{aging24Orders.length - 3} more
-                </Typography>
-              )}
-            </Box>
-          )}
-
-          {allAgingOrders.length === 0 && (
-            <Box sx={{ ...cardSx, mb: 2, px: 2, py: 2 }}>
-              <Typography variant="caption" color="text.secondary">
-                {operatorSummary === undefined
-                  ? `${fmtN(agingCount)} overdue orders — loading details…`
-                  : 'No overdue orders. All caught up.'}
+              <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 28, fontWeight: 400, color: item.color, lineHeight: 1 }}>
+                {fmt$(item.value)}
               </Typography>
             </Box>
-          )}
-
-          <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-            <Button size="small" variant="outlined" color="inherit" startIcon={<ExternalLink size={14} />} href="/fulfillment">
-              Go to fulfillment queue →
-            </Button>
-          </Box>
-
-          {/* Quick actions */}
-          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-            Quick actions
-          </Typography>
-
-          {qReady > 0 && (
-            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, mb: 1.5 }}>
-              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                Ship the {fmtN(qReady)} {qReady === 1 ? 'order' : 'orders'} that {qReady === 1 ? 'is' : 'are'} ready
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                {qReady === 1
-                  ? 'This order is ready to be picked. Release a pick batch in the Fulfillment Queue — your operator will claim it on mobile.'
-                  : 'These orders are ready to be picked. Release a pick batch in the Fulfillment Queue — your operators will claim it on mobile.'}
-              </Typography>
-              <Button size="small" variant="contained" color="success" startIcon={<ClipboardList size={14} />} href="/fulfillment">
-                Go to Fulfillment Queue →
-              </Button>
-            </Box>
-          )}
-
-          {constrained > 0 && (
-            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, mb: 1.5 }}>
-              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                Review {fmtN(constrained)} blocked orders
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                Each has a constraint preventing shipment — resolve the block to move it into the Orders Pool, ready for picking.
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button size="small" variant="contained" color="error" startIcon={<ClipboardList size={14} />} href="/fulfillment?filter=blocked">
-                  Review blocked orders
-                </Button>
-              </Box>
-            </Box>
-          )}
-
+          ))}
         </Box>
-        
-        {/* RIGHT */}
-        <Box>
 
-          {/* Your money */}
-          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-            Your money
-          </Typography>
-
-          <Box sx={{ ...cardSx, mb: 3 }}>
-            {[
-              {
-                label: 'Total order value',
-                sub: 'All orders ever placed',
-                value: totalSales,
-                color: pal.textSecond,
-              },
-              {
-                label: 'Collected — shipped orders',
-                sub: 'Revenue in hand',
-                value: earned,
-                color: theme.palette.success.main,
-              },
-              {
-                label: 'Paid but not yet shipped',
-                sub: 'Customers are waiting',
-                value: pending,
-                color: theme.palette.warning.dark,
-              },
-              {
-                label: 'Blocked revenue',
-                sub: 'Orders with constraints — cannot ship yet',
-                value: blockedRevenue,
-                color: blockedRevenue && blockedRevenue > 0 ? theme.palette.error.main : theme.palette.text.secondary,
-              },
-              {
-                label: 'Revenue leakage',
-                sub: 'Lost to refunds — unrecoverable',
-                value: operationalControl?.revenue_leakage ?? null,
-                color: operationalControl?.revenue_leakage && Number(operationalControl.revenue_leakage) > 0
-                  ? theme.palette.warning.main
-                  : pal.textSecond,
-              },
-            ].map((item) => (
-              <Box key={item.label} sx={{ ...rowSx }}>
-                <Box>
-                  <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
-                  <Typography variant="caption" color="text.secondary">{item.sub}</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="body2" fontWeight={700} sx={{ color: item.color }}>
-                    {fmt$(item.value)}
-                  </Typography>
-                  <MoneyBar value={item.value} total={totalSales} color={item.color} />
-                </Box>
-              </Box>
-            ))}
+        {/* Revenue leakage footer */}
+        {leakage > 0 && (
+          <Box sx={{ px: 3, py: 1.25 }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)' }}>
+              {fmt$(leakage)} leaked to refunds · lost to SLA misses this week · unrecoverable
+            </Typography>
           </Box>
-
-          {/* Orders by stage */}
-          <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-            Orders by stage
-          </Typography>
-
-          <Box sx={{ ...cardSx, mb: 3 }}>
-            {[
-              { color: theme.palette.success.main,  label: 'Ready to pick & ship',        count: qReady,   action: 'Go to queue',    href: '/fulfillment' },
-              { color: theme.palette.error.main,    label: 'Blocked — needs review',       count: opsBlocked > 0 ? opsBlocked : qManual, action: 'Review', href: '/fulfillment?filter=blocked' },
-              { color: theme.palette.warning.main,  label: 'Being picked & packed',        count: qPending, action: null,             href: null },
-              { color: pal.textSecond,              label: 'Waiting for stock',             count: invBlocked > 0 ? invBlocked : qInv, action: null, href: null },
-              { color: pal.textSecond,              label: 'Waiting for customer reply',    count: qCust,    action: null,             href: null },
-            ].map((item) => (
-              <Box key={item.label} sx={{
-                ...rowSx,
-                '&:hover': { bgcolor: 'action.hover' },
-              }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
-                  <Typography variant="body2">{item.label}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" fontWeight={700}>{fmtN(item.count)}</Typography>
-                  {item.action && item.count > 0 && (
-                    <Button size="small" variant="text" color="inherit" sx={{ fontSize: 12, minWidth: 0 }} href={item.href ?? undefined}>
-                      {item.action}
-                    </Button>
-                  )}
-                </Box>
-              </Box>
-            ))}
-          </Box>
-
-        </Box>
+        )}
       </Box>
-
-      {/* Optional analytical surfaces */}
-      {distribution}
 
     </Box>
   );

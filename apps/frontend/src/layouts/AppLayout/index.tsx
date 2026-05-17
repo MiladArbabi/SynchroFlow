@@ -15,6 +15,7 @@ import { useSystemHealth } from 'hooks/useSystemHealth';
 import { SystemHealthBanner } from 'components/SystemHealthBanner';
 import { TrialCountdownBanner } from "../../components/TrialCountdownBanner";
 import { PostTrialInterstitial } from '../../components/PostTrialInterstitial';
+import { ChevronLeft } from "lucide-react";
 
 interface AppLayoutProps {
   children?: ReactNode;
@@ -22,11 +23,10 @@ interface AppLayoutProps {
   onCloseConnectModal: () => void;
 }
 
-type SidenavState = 'EXPANDED' | 'COMPACT' | 'CLOSED';
+type SidenavState = 'EXPANDED' | 'COMPACT';
 
 const SIDENAV_WIDTH_EXPANDED = 180;
-const SIDENAV_WIDTH_COMPACT = 75;
-const SIDENAV_WIDTH_CLOSED = 0;
+const SIDENAV_WIDTH_COMPACT = 56;
 
 
 const AppLayout = (props: AppLayoutProps) => {
@@ -39,11 +39,10 @@ const AppLayout = (props: AppLayoutProps) => {
     new Date(trialEndsAt) < new Date() &&
     (Date.now() - new Date(trialEndsAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
   const [sidenavState, setSidenavState] = useState<SidenavState>(() => {
-  const saved = localStorage.getItem('sidenavState') as SidenavState | null;
-
-  console.info('[SIDENAV][INIT_FROM_STORAGE]', { saved });
-
-    return saved ?? 'CLOSED';
+    const saved = localStorage.getItem('sidenavState') as SidenavState | null;
+    // Migrate legacy 'CLOSED' value from pre-refactor storage
+    if (!saved || saved === ('CLOSED' as string)) return 'EXPANDED';
+    return saved;
   });
   /**
    * LIFECYCLE → SIDENAV VISIBILITY CONTRACT
@@ -71,34 +70,18 @@ const AppLayout = (props: AppLayoutProps) => {
    * This prevents lifecycle from overriding toggle actions.
    */
   useEffect(() => {
-    // Only force-close when phase is definitively non-FT2.
-    // 'FT_MINUS_ONE' and 'FT1'/'FT1_READY' are stable non-FT2 phases.
-    // Never force-close during boot (phase undefined/null) — would destroy
-    // persisted COMPACT state before FT2 is confirmed.
+    // Outside FT2: sidenav visibility is controlled by isSidenavAllowed gate.
+    // No state mutation needed — preserves user preference across phase changes.
     const isDefinitelyNotFt2 = phase === 'FT_MINUS_ONE' || phase === 'FT1' || phase === 'FT1_READY' || phase === 'FT0' || phase === 'FT0_PREPARING';
-    if (isDefinitelyNotFt2 && sidenavState !== 'CLOSED') {
-      console.info('[SIDENAV][FORCE_CLOSE_OUTSIDE_FT2]', {
-        phase,
-        from: sidenavState,
-        to: 'CLOSED',
-      });
-      setSidenavState('CLOSED');
-    }
+    if (isDefinitelyNotFt2) return;
 
-    // On first FT2 entry, clear any stale FT1-era 'CLOSED' preference
-    // so the sidenav opens automatically for the merchant's first FT2 experience.
+    // First FT2 entry: restore saved preference or default to EXPANDED.
     if (isSidenavAllowed && !hasAutoOpenedRef.current) {
       hasAutoOpenedRef.current = true;
       const savedOnFt2Entry = localStorage.getItem('sidenavState') as SidenavState | null;
-      if (!savedOnFt2Entry) {
-        // No prior preference — first ever FT2 entry, open expanded
-        console.info('[SIDENAV][AUTO_OPEN_ON_FT2_ENTRY]', { phase });
-        setSidenavState('EXPANDED');
-      } else {
-        // Restore exact user preference — EXPANDED, COMPACT, or CLOSED
-        console.info('[SIDENAV][RESTORE_ON_FT2_ENTRY]', { phase, restored: savedOnFt2Entry });
-        setSidenavState(savedOnFt2Entry);
-      }
+      const isValid = savedOnFt2Entry === 'EXPANDED' || savedOnFt2Entry === 'COMPACT';
+      setSidenavState(isValid ? savedOnFt2Entry : 'EXPANDED');
+      console.info('[SIDENAV][RESTORE_ON_FT2_ENTRY]', { phase, restored: isValid ? savedOnFt2Entry : 'EXPANDED' });
     }
   }, [isSidenavAllowed, phase, sidenavState]);
 
@@ -113,12 +96,9 @@ const AppLayout = (props: AppLayoutProps) => {
     console.info('[SIDENAV][PERSIST]', { sidenavState });
   }, [sidenavState]);
 
-  const sidenavWidth =
-  sidenavState === 'EXPANDED'
+  const sidenavWidth = sidenavState === 'EXPANDED'
     ? SIDENAV_WIDTH_EXPANDED
-    : sidenavState === 'COMPACT'
-    ? SIDENAV_WIDTH_COMPACT
-    : SIDENAV_WIDTH_CLOSED;
+    : SIDENAV_WIDTH_COMPACT;
 
   // Connectivity check
   useEffect(() => {
@@ -143,101 +123,122 @@ const AppLayout = (props: AppLayoutProps) => {
 
   return (
     <ToastProvider>
-      <Box sx={{ width: "100vw", height: "100vh", display: "flex", bgcolor: "var(--bg)" }}>
-        
-        {/* SIDENAV */}
-        {isSidenavAllowed && (
-        <Box
-          sx={{
-            width: `${sidenavWidth}px`,
-            minWidth: `${sidenavWidth}px`,
-            maxWidth: `${sidenavWidth}px`,
-            height: "100%",
-            borderRight: sidenavState !== 'CLOSED' ? "1px solid var(--rule)" : "none",
-            display: sidenavState === 'CLOSED' ? 'none' : 'flex',
-            flexDirection: "column",
-            overflow: "hidden",
-            transition: "width 0.2s ease"
-          }}
-        >
-          <SidenavContent
-            brandName="LaSyncro"
-            routes={routes}
-            sidenavState={sidenavState}
-            isConnected={isConnected}
+      <Box sx={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", bgcolor: "var(--bg)" }}>
+
+        {/* TOP NAVBAR — full width, always on top */}
+        <Box sx={{ height: "48px", flexShrink: 0, borderBottom: "1px solid var(--rule)", zIndex: 1200 }}>
+          <TopnavbarContent
+            isEditing={false}
+            onEditToggle={() => {}}
+            onAddWidget={() => {}}
+            onToggleSidenav={
+              isSidenavAllowed
+                ? () => setSidenavState(prev => prev === 'EXPANDED' ? 'COMPACT' : 'EXPANDED')
+                : () => { console.warn('[SIDENAV][BLOCKED_TOGGLE]', { phase }); }
+            }
           />
         </Box>
-      )}
 
-        {/* MAIN AREA */}
-        <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
-          
-          {/* TOP NAVBAR */}
-          <Box
-            sx={{
-              height: "60px",
-              flexShrink: 0,
-              borderBottom: "1px solid var(--rule)"
-            }}
-          >
-            {/* TOPNAVBAR (toggle disabled outside FT2_READY) */}
-            <TopnavbarContent
-              isEditing={false}
-              onEditToggle={() => {}}
-              onAddWidget={() => {}}
-              onToggleSidenav={
-                isSidenavAllowed
-                  ? () => {
-                      setSidenavState(prev =>
-                        prev === 'EXPANDED'
-                          ? 'COMPACT'
-                          : prev === 'COMPACT'
-                          ? 'CLOSED'
-                          : 'EXPANDED'
-                      );
-                    }
-                  : () => {
-                      console.warn('[SIDENAV][BLOCKED_TOGGLE]', { phase });
-                    }
-              }
-            />
-          </Box>
+        {/* BELOW TOPNAV — sidenav + content side by side */}
+        <Box sx={{ flexGrow: 1, display: "flex", overflow: "hidden" }}>
 
-          {/* SYSTEM HEALTH BANNER (H-01) — FT2 only */}
-          {isSidenavAllowed && systemHealth && (
-            <SystemHealthBanner
-              status={systemHealth.status}
-              lagSeconds={systemHealth.snapshot?.lag_seconds}
-            />
+          {/* SIDENAV — below topnav, full remaining height */}
+          {isSidenavAllowed && (
+            <Box
+              sx={{
+                width: `${sidenavWidth}px`,
+                minWidth: `${sidenavWidth}px`,
+                maxWidth: `${sidenavWidth}px`,
+                height: "100%",
+                borderRight: "1px solid var(--rule)",
+                display: 'flex',
+                flexDirection: "column",
+                transition: "width 0.2s ease",
+                flexShrink: 0,
+                position: 'relative',
+              }}
+            >
+              <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <SidenavContent
+                  brandName="LaSyncro"
+                  routes={routes}
+                  sidenavState={sidenavState}
+                  isConnected={isConnected}
+                  isFt2Ready={isSidenavAllowed}
+                />
+              </Box>
+              {/* SIDENAV HANDLEBAR — fixed to right edge, vertically centered
+              Toggles EXPANDED ↔ COMPACT. Minimal but always discoverable. */}
+              <Box
+                onClick={() => setSidenavState(prev => prev === 'EXPANDED' ? 'COMPACT' : 'EXPANDED')}
+                sx={{
+                  position: 'absolute',
+                  right: -8,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: 16,
+                  height: 32,
+                  borderRadius: '0 4px 4px 0',
+                  bgcolor: 'var(--bg-3)',
+                  border: '1px solid var(--rule)',
+                  borderLeft: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  color: 'var(--ink-4)',
+                  transition: 'color 0.15s, background 0.15s',
+                  '&:hover': {
+                    bgcolor: 'var(--bg-3)',
+                    color: 'var(--ink)',
+                  },
+                }}
+              >
+                <ChevronLeft size={10} strokeWidth={3} style={{ transform: sidenavState === 'COMPACT' ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+              </Box>
+            </Box>
           )}
 
-          {/* TRIAL COUNTDOWN BANNER (UX-03) */}
-          <TrialCountdownBanner trialEndsAt={trialEndsAt} />
-          {/* POST-TRIAL INTERSTITIAL (UX-07) */}
-          <PostTrialInterstitial show={isPostTrial} />
+          {/* MAIN CONTENT AREA */}
+          <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-          {/* CONTENT AREA */}
-          <Box
-            sx={{
-              flexGrow: 1,
-              minWidth: 0,
-              width: "100%",
-              maxWidth: "100%",
-              overflowY: "auto",
-              overflowX: "hidden",
-              position: "relative"
-            }}
-          >
-            {props.children}
+            {/* SYSTEM HEALTH BANNER (H-01) — FT2 only */}
+            {isSidenavAllowed && systemHealth && (
+              <SystemHealthBanner
+                status={systemHealth.status}
+                lagSeconds={systemHealth.snapshot?.lag_seconds}
+              />
+            )}
+
+            {/* TRIAL COUNTDOWN BANNER (UX-03) */}
+            <TrialCountdownBanner trialEndsAt={trialEndsAt} />
+
+            {/* POST-TRIAL INTERSTITIAL (UX-07) */}
+            <PostTrialInterstitial show={isPostTrial} />
+
+            {/* PAGE CONTENT */}
+            <Box
+              sx={{
+                flexGrow: 1,
+                minWidth: 0,
+                width: "100%",
+                maxWidth: "100%",
+                overflowY: "auto",
+                overflowX: "hidden",
+                position: "relative",
+              }}
+            >
+              {props.children}
+            </Box>
           </Box>
         </Box>
       </Box>
-    
-    <ConnectStoreModal
-      isOpen={props.isConnectModalOpen}
-      onClose={props.onCloseConnectModal}
-    />
 
+      <ConnectStoreModal
+        isOpen={props.isConnectModalOpen}
+        onClose={props.onCloseConnectModal}
+      />
     </ToastProvider>
   );
 };

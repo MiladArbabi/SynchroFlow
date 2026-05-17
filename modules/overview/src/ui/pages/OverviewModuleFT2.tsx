@@ -1,7 +1,6 @@
 // modules/overview/src/ui/pages/OverviewModuleFT2.tsx
 import { Box, Typography, Skeleton, Chip } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
-import { useColorScheme } from '@mui/material/styles';
 import { RefreshCw } from 'lucide-react';
 import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
@@ -59,6 +58,8 @@ export interface OverviewModuleFT2DataProps {
    * Undefined = not fetched yet (loading state).
    */
 
+  /** Display name for the greeting — first_name from JWT. Falls back to "there" if absent. */
+  userName?: string | null;
   /** Shop display currency ISO code — e.g. 'GBP', 'USD'. Used to format revenue impact on signals. */
   currency?: string;
 
@@ -83,6 +84,8 @@ export interface OverviewModuleFT2DataProps {
 export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
   onNavigate?: (deepLink: string) => void;
   onRefreshBrief?: () => void;
+  onExportBrief?: () => void;
+  onResolveAll?: () => void;
 };
 
 type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']>['signals'][number]>;
@@ -104,19 +107,21 @@ function getSignalTone(priority: number): SignalToneKey {
 // Mirrors useSyncTheme pattern from SyncAnimationPage
 // ─────────────────────────────────────────────
 function useOverviewTheme() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useTheme();
+  // Use LaSyncro design tokens — consistent with all other modules.
+  // These CSS vars are defined in themes/index.tsx per color scheme.
   return {
-    isDark,
-    cardBg:       isDark ? '#1C2740' : '#FFFFFF',
-    pageBg:       isDark ? '#151D29' : '#F8F9FA',
-    border:       isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
-    divider:      isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
-    textPrimary:  isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:   isDark ? '#8B8F9A' : '#6B7280',
-    tileBg:       isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-    footerBg:     isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-    shadow:       isDark ? '0 1px 3px rgba(0,0,0,0.4)' : '0 1px 3px rgba(0,0,0,0.06)',
+    cardBg:      'var(--surface)',
+    pageBg:      'var(--bg)',
+    border:      'var(--rule)',
+    divider:     'var(--rule)',
+    textPrimary: 'var(--ink)',
+    textSecond:  'var(--ink-3)',
+    tileBg:      'var(--bg-2)',
+    footerBg:    'var(--bg-2)',
+    shadow:      theme.palette.mode === 'dark'
+      ? '0 1px 3px rgba(0,0,0,0.4)'
+      : '0 1px 3px rgba(0,0,0,0.06)',
   };
 }
 
@@ -154,28 +159,28 @@ function SignalCard({
 
   const toneMap = {
     urgent: {
-      bg: alpha(theme.palette.error.main, pal.isDark ? 0.15 : 0.08),
+      bg:     alpha(theme.palette.error.main, 0.1),
       border: theme.palette.error.main,
-      title: pal.isDark ? '#FF9999' : theme.palette.error.dark,
-      sub: pal.isDark ? '#FF9999' : theme.palette.error.main,
+      title:  theme.palette.error.main,
+      sub:    theme.palette.error.main,
     },
     warning: {
-      bg: alpha(theme.palette.warning.main, pal.isDark ? 0.15 : 0.1),
+      bg:     alpha(theme.palette.warning.main, 0.1),
       border: theme.palette.warning.main,
-      title: pal.isDark ? '#FFD580' : theme.palette.warning.dark,
-      sub: pal.isDark ? '#FFD580' : theme.palette.warning.main,
+      title:  theme.palette.warning.main,
+      sub:    theme.palette.warning.main,
     },
     info: {
-      bg: alpha(theme.palette.primary.main, pal.isDark ? 0.12 : 0.07),
+      bg:     alpha(theme.palette.primary.main, 0.08),
       border: theme.palette.primary.main,
-      title: pal.isDark ? '#93C5FD' : theme.palette.primary.dark,
-      sub: pal.isDark ? '#93C5FD' : theme.palette.primary.main,
+      title:  theme.palette.primary.main,
+      sub:    theme.palette.primary.main,
     },
     success: {
-      bg: alpha(theme.palette.success.main, pal.isDark ? 0.15 : 0.08),
+      bg:     alpha(theme.palette.success.main, 0.08),
       border: theme.palette.success.main,
-      title: pal.isDark ? '#86EFAC' : theme.palette.success.dark,
-      sub: pal.isDark ? '#86EFAC' : theme.palette.success.main,
+      title:  theme.palette.success.main,
+      sub:    theme.palette.success.main,
     },
   };
 
@@ -365,12 +370,100 @@ function AgingBand({
 }
 
 // ─────────────────────────────────────────────
+// BRIEF ROW — single row in The Brief table
+// Severity | Issue (title + sub) | £ at risk | Age | Snooze | Action
+// ─────────────────────────────────────────────
+function BriefRow({
+  signal,
+  onNavigate,
+  currency,
+}: {
+  signal: Signal;
+  onNavigate?: (deepLink: string) => void;
+  currency?: string;
+}) {
+  const theme = useTheme();
+  const pal = useOverviewTheme();
+  const isCritical = signal.priority <= 2;
+  const isAttention = signal.priority === 3 || signal.priority === 4;
+
+  const badgeBg = isCritical
+    ? alpha(theme.palette.error.main, 0.12)
+    : isAttention
+    ? alpha(theme.palette.warning.main, 0.12)
+    : alpha(theme.palette.success.main, 0.12);
+
+  const badgeColor = isCritical
+    ? theme.palette.error.main
+    : isAttention
+    ? theme.palette.warning.main
+    : theme.palette.success.main;
+
+  const badgeLabel = isCritical ? 'Critical' : isAttention ? 'Attention' : 'On Track';
+
+  return (
+    <Box sx={{
+      display: 'grid',
+      gridTemplateColumns: '110px 1fr 80px 48px 80px 96px',
+      px: '1.25rem',
+      py: '10px',
+      borderBottom: `0.5px solid ${pal.divider}`,
+      alignItems: 'center',
+      '&:last-child': { borderBottom: 'none' },
+    }}>
+      {/* Severity badge */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px', px: '6px', py: '3px', borderRadius: '4px', background: badgeBg, width: 'fit-content' }}>
+        <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: badgeColor, flexShrink: 0 }} />
+        <Typography sx={{ fontSize: 11, fontWeight: 500, color: badgeColor }}>{badgeLabel}</Typography>
+      </Box>
+      {/* Issue */}
+      <Box sx={{ pl: '8px' }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary, mb: '2px' }}>{signal.title}</Typography>
+        <Typography sx={{ fontSize: 11, color: pal.textSecond }}>{moduleLabel(signal.module)} · {signal.detail}</Typography>
+      </Box>
+      {/* £ at risk */}
+      <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary }}>
+        {signal.revenueImpact != null
+          ? new Intl.NumberFormat('en', { style: 'currency', currency: currency ?? 'GBP', maximumFractionDigits: 0 }).format(Math.round(signal.revenueImpact))
+          : '—'}
+      </Typography>
+      {/* Age — not yet in signal contract, placeholder */}
+      <Typography sx={{ fontSize: 12, color: pal.textSecond }}>—</Typography>
+      {/* Snooze */}
+      <Box
+        component="button"
+        sx={{ fontSize: 11, color: pal.textSecond, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', p: 0, '&:hover': { color: pal.textPrimary } }}
+      >
+        Snooze
+      </Box>
+      {/* Action */}
+      {onNavigate && (
+        <Box
+          component="button"
+          onClick={() => onNavigate(signal.deepLink)}
+          sx={{ fontSize: 12, fontWeight: 500, px: '10px', py: '5px', borderRadius: '5px', background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.85 } }}
+        >
+          {signal.priority <= 2 ? 'Review ›' : 'Open ›'}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function timeOfDay(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'morning';
+  if (h < 17) return 'afternoon';
+  return 'evening';
+}
+
+// ─────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────
 function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
   const theme = useTheme();
   const pal = useOverviewTheme();
-  const { morningBrief, pulse, onNavigate, onRefreshBrief } = props;
+  const { morningBrief, pulse, onNavigate, onRefreshBrief, onExportBrief, onResolveAll } = props;
 
   const isLoading = morningBrief === undefined;
   const isTrustGated = morningBrief === null;
@@ -394,30 +487,46 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
   const brandGreen = '#1D9E75';
 
   return (
-    <Box sx={{ p: { xs: 2, md: 3 } }}>
-      <Box
-        sx={{
-          background: cardBg,
-          border: `0.5px solid ${sectionBorder}`,
-          borderRadius: '12px',
-          overflow: 'hidden',
-          boxShadow: theme.palette.mode === 'dark'
-            ? '0 1px 3px rgba(0,0,0,0.4)'
-            : '0 1px 3px rgba(0,0,0,0.06)',
-        }}
-      >
-
-        {/* ── HEADER ── */}
-        <Box sx={{ p: '1.1rem 1.25rem 0.85rem', borderBottom: `0.5px solid ${sectionBorder}` }}>
-          <Typography sx={{
-            fontSize: 10, fontWeight: 500,
-            color: brandGreen,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            mb: '5px',
-          }}>
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </Typography>
+    <Box sx={{ p: { xs: 2, md: '32px 40px' }, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* ── HEADER — sits directly on page bg, no card container ── */}
+      <Box>
+        <Box sx={{ pb: '0.5rem' }}>
+          {/* DATE + PAGE ACTIONS row */}
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: '5px' }}>
+            <Typography sx={{
+              fontSize: 10, fontWeight: 500,
+              color: brandGreen,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}>
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              {' · '}
+              <Box component="span" sx={{ color: brandGreen }}>{isLoading ? 'SYNCING…' : 'LIVE'}</Box>
+            </Typography>
+            {/* PAGE ACTIONS — Export brief + Resolve all */}
+            {!isLoading && !isTrustGated && (
+              <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+                {onExportBrief && (
+                  <Box
+                    component="button"
+                    onClick={onExportBrief}
+                    sx={{ fontSize: 12, fontWeight: 500, px: '12px', py: '6px', borderRadius: '6px', border: `0.5px solid ${sectionBorder}`, background: 'transparent', color: pal.textPrimary, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                  >
+                    Export brief
+                  </Box>
+                )}
+                {onResolveAll && (
+                  <Box
+                    component="button"
+                    onClick={onResolveAll}
+                    sx={{ fontSize: 12, fontWeight: 500, px: '12px', py: '6px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', '&:hover': { opacity: 0.85 } }}
+                  >
+                    Resolve all →
+                  </Box>
+                )}
+              </Box>
+            )}
+          </Box>
 
           {isLoading ? (
             <>
@@ -435,120 +544,135 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             </>
           ) : (
             <>
-              <Typography sx={{ fontSize: 18, fontWeight: 500, color: 'text.primary', mb: '3px', lineHeight: 1.3 }}>
-                {greeting ?? 'Good morning'}
+              <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'text.primary', mb: '3px', lineHeight: 1.15 }}>
+                {props.userName ? `Good ${timeOfDay()}, ${props.userName}.` : (greeting ?? 'Good afternoon.')}
               </Typography>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.6 }}>
-                {summaryLine ?? 'Preparing your brief...'}
+              <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.6 }}>
+                {pulse?.blockedOrders
+                  ? `${signals.length} issue${signals.length !== 1 ? 's' : ''} need a decision today${pulse.blockedRevenue ? ` — ${new Intl.NumberFormat('en', { style: 'currency', currency: props.currency ?? 'GBP', maximumFractionDigits: 0 }).format(Math.round(Number(pulse.blockedRevenue)))} of revenue at stake` : ''}.`
+                  : (summaryLine ?? 'All operations are on track.')}
               </Typography>
             </>
           )}
         </Box>
 
-        {/* ── METRIC GRID ── */}
+        {/* ── STAT CARDS — 4 cards: Revenue at Risk · Orders Blocked · Ready to Ship · SLA Breached ── */}
         {!isLoading && !isTrustGated && (
-          <Box sx={{ p: '0.85rem 1.25rem', borderBottom: `0.5px solid ${sectionBorder}` }}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-              <MetricTile
-                value={pulse?.shipToday ?? null}
-                label="Ship today"
-                tone="neutral"
-                onClick={onNavigate ? () => onNavigate('/orders?filter=ready') : undefined}
-                navLabel="To orders"
-              />
-              <MetricTile
-                value={pulse?.blockedOrders ?? null}
-                label="Blocked orders"
-                tone={pulse?.blockedOrders ? 'warning' : 'neutral'}
-                onClick={onNavigate ? () => onNavigate('/orders?filter=blocked') : undefined}
-                navLabel="To orders"
-              />
-              <MetricTile
-                value={pulse?.blockedRevenue != null ? Math.round(Number(pulse.blockedRevenue)) : null}
-                label="Blocked Revenue"
-                tone={pulse?.blockedRevenue ? 'critical' : 'neutral'}
-                onClick={onNavigate ? () => onNavigate('/cash-flow?focus=constrained') : undefined}
-                navLabel="To cash flow"
-                currency={props.currency}
-              />
-            </Box>
-          </Box>
-        )}
-
-        {/* ── AGING BANDS — same tile style as metric grid ── */}
-        {!isLoading && !isTrustGated && pulse && (
-          <Box sx={{ p: '0.85rem 1.25rem', borderBottom: `0.5px solid ${sectionBorder}` }}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-              <MetricTile
-                value={pulse.aging24h}
-                label="24h+ early warning"
-                tone={pulse.aging24h ? 'warning' : 'neutral'}
-                onClick={onNavigate ? () => onNavigate('/orders?aging=24h') : undefined}
-                navLabel="To orders"
-              />
-              <MetricTile
-                value={pulse.aging48h}
-                label="48h+ needs attention"
-                tone={pulse.aging48h ? 'warning' : 'neutral'}
-                onClick={onNavigate ? () => onNavigate('/orders?aging=48h') : undefined}
-                navLabel="To orders"
-              />
-              <MetricTile
-                value={pulse.aging72hPlus}
-                label="72h+ SLA breached"
-                tone={pulse.aging72hPlus ? 'critical' : 'neutral'}
-                onClick={onNavigate ? () => onNavigate('/orders?aging=72h') : undefined}
-                navLabel="To orders"
-              />
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+              {/* Revenue at Risk — danger color */}
+              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px' }}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>Revenue at risk</Typography>
+                <Typography sx={{ fontSize: 28, fontWeight: 500, color: theme.palette.error.main, lineHeight: 1 }}>
+                  {pulse?.blockedRevenue != null
+                    ? new Intl.NumberFormat('en', { style: 'currency', currency: props.currency ?? 'GBP', maximumFractionDigits: 0 }).format(Math.round(Number(pulse.blockedRevenue)))
+                    : '—'}
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>
+                  {pulse?.blockedOrders ? `across ${pulse.blockedOrders} blocked orders` : 'no blocked orders'}
+                </Typography>
+              </Box>
+              {/* Orders Blocked */}
+              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?filter=blocked') : undefined}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>Orders blocked</Typography>
+                <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
+                  {pulse?.blockedOrders ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>3 SKU, 1 payment, 1 manual</Typography>
+              </Box>
+              {/* Ready to Ship */}
+              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?filter=ready') : undefined}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>Ready to ship</Typography>
+                <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
+                  {pulse?.shipToday ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>pickers on track for cutoff</Typography>
+              </Box>
+              {/* SLA Breached */}
+              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?aging=72h') : undefined}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>SLA breached</Typography>
+                <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
+                  {pulse?.aging72hPlus ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>72h+ past promised ship</Typography>
               </Box>
             </Box>
-        )}
+          )}
 
-        {/* ── SIGNALS ── */}
+        {/* ── THE BRIEF — severity-grouped table ── */}
         {!isLoading && !isTrustGated && (
-          <Box sx={{ p: '0.85rem 1.25rem', borderBottom: `0.5px solid ${sectionBorder}` }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: '8px' }}>
-              <Typography sx={{
-                fontSize: 11, fontWeight: 500,
-                color: 'text.secondary',
-                textTransform: 'uppercase',
-                letterSpacing: '0.07em',
-              }}>
-                {hasUrgent ? 'Needs attention' : 'Signals'}
-              </Typography>
-              <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
-                {signals.length} {signals.length === 1 ? 'item' : 'items'}
-              </Typography>
+          <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', mt: '16px' }}>
+            {/* Table header */}
+            <Box sx={{ px: '1.25rem', pt: '1.1rem', pb: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '0.5px solid var(--rule)' }}>
+              <Box>
+                <Typography sx={{ fontSize: 14, fontWeight: 600, color: pal.textPrimary }}>The Brief</Typography>
+                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '2px' }}>Ranked by commercial consequence</Typography>
+              </Box>
+              <Typography sx={{ fontSize: 11, color: pal.textSecond }}>{generatedTime ? `Updated ${generatedTime}` : 'Updating...'}</Typography>
+            </Box>
+
+            {/* Column headers */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '110px 1fr 80px 48px 80px 96px', px: '1.25rem', py: '8px', borderTop: '0.5px solid var(--rule)', borderBottom: '0.5px solid var(--rule)', background: 'var(--bg-3)' }}>
+              {['Severity', 'Issue', '£ at risk', 'Age', '', 'Action'].map(col => (
+                <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: pal.textSecond }}>{col}</Typography>
+              ))}
             </Box>
 
             {signals.length === 0 ? (
-              <Box sx={{
-                background: alpha(theme.palette.success.main, 0.08),
-                borderLeft: `3px solid ${theme.palette.success.main}`,
-                borderTopRightRadius: '8px',
-                borderBottomRightRadius: '8px',
-                p: '0.75rem 0.9rem',
-              }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 500, color: theme.palette.success.dark, lineHeight: 1.4 }}>
-                  No urgent issues today
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: theme.palette.success.main, lineHeight: 1.5 }}>
-                  All operations are on track
-                </Typography>
+              <Box sx={{ px: '1.25rem', py: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.success.main }} />
+                <Typography sx={{ fontSize: 13, color: pal.textSecond }}>No urgent issues — all operations on track</Typography>
               </Box>
             ) : (
-              signals.map((signal) => (
-                <SignalCard key={signal.id} signal={signal} onNavigate={onNavigate} currency={props.currency} />
-              ))
+              <>
+                {/* CRITICAL group */}
+                {signals.filter(s => s.priority <= 2).length > 0 && (
+                  <>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.error.main, 0.18) : alpha(theme.palette.error.main, 0.06) }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.error.main }} />
+                      <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.palette.error.main }}>Critical — Act today</Typography>
+                      <Typography sx={{ ml: 'auto', fontSize: 11, color: pal.textSecond }}>{signals.filter(s => s.priority <= 2).length} items</Typography>
+                    </Box>
+                    {signals.filter(s => s.priority <= 2).map(signal => (
+                      <BriefRow key={signal.id} signal={signal} onNavigate={onNavigate} currency={props.currency} />
+                    ))}
+                  </>
+                )}
+                {/* ATTENTION group */}
+                {signals.filter(s => s.priority === 3 || s.priority === 4).length > 0 && (
+                  <>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.warning.main, 0.18) : alpha(theme.palette.warning.main, 0.06) }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.warning.main }} />
+                      <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.palette.warning.main }}>Attention — Review this week</Typography>
+                      <Typography sx={{ ml: 'auto', fontSize: 11, color: pal.textSecond }}>{signals.filter(s => s.priority === 3 || s.priority === 4).length} items</Typography>
+                    </Box>
+                    {signals.filter(s => s.priority === 3 || s.priority === 4).map(signal => (
+                      <BriefRow key={signal.id} signal={signal} onNavigate={onNavigate} currency={props.currency} />
+                    ))}
+                  </>
+                )}
+                {/* ON TRACK group */}
+                {signals.filter(s => s.priority === 5).length > 0 && (
+                  <>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.success.main, 0.18) : alpha(theme.palette.success.main, 0.06) }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.success.main }} />
+                      <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.palette.success.main }}>On track — No action needed</Typography>
+                      <Typography sx={{ ml: 'auto', fontSize: 11, color: pal.textSecond }}>{signals.filter(s => s.priority === 5).length} items</Typography>
+                    </Box>
+                    {signals.filter(s => s.priority === 5).map(signal => (
+                      <BriefRow key={signal.id} signal={signal} onNavigate={onNavigate} currency={props.currency} />
+                    ))}
+                  </>
+                )}
+              </>
             )}
           </Box>
         )}
-
         
         {/* ── FOOTER ── */}
         <Box sx={{
           p: '0.75rem 1.25rem',
-          background: footerBg,
+          background: 'var(--bg-2)',
+          borderTop: '0.5px solid var(--rule)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -571,7 +695,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 gap: '4px',
                 fontSize: 11,
                 fontWeight: 500,
-                color: pal.isDark ? pal.textSecond : theme.palette.primary.main,
+                color: theme.palette.primary.main,
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',

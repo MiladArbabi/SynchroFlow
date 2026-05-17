@@ -49,6 +49,7 @@ export function useMorningBriefSnapshot(force = false) {
       return data as MorningBriefData;
     },
     // Refresh every 15 minutes — matches backend cache window
-    staleTime: 15 * 60 * 1000,
+    staleTime: (query) => query.state.data === null ? 0 : 15 * 60 * 1000,
+    refetchInterval: (query) => query.state.data === null ? 10 * 1000 : false,
   });
 }

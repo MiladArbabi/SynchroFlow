@@ -2,174 +2,144 @@
  *
  * PLATFORM NAVIGATION BOOTSTRAP
  * --------------------------------
- * Defines the authoritative sidenav structure for LaSyncro.
- *
- * OPERATOR MENTAL MODEL (not module names):
- *   DAILY OPS   — what you do every day (free + core)
- *   INTELLIGENCE — what makes you smarter (growth gate)
- *   CATALOG     — what you sell and who supplies it (core)
- *   SYSTEM      — alerts, problems, settings
+ * Single "WORKSPACE" group — 8 top-level items, children define submodules.
  *
  * RULES:
- * - Groups are platform-owned — modules register items into them
- * - Order is platform-controlled via order field
- * - requiredTier drives upgrade badge in SidenavContent
- * - Icons: lucide-react only, monochrome (color via theme, not icon)
- * - Never add business logic here — only nav structure
+ * - One group: 'workspace'. No sub-groups ever.
+ * - Max 8 top-level items. Product sign-off required to add more.
+ * - Children array → compact mode renders hover popover to the right.
+ *                  → expanded mode renders inline accordion below parent.
+ * - Parents with no children navigate directly on click in both modes.
+ * - Icons: lucide-react only, monochrome.
+ * - Tier gating: requiredTier shows upgrade badge, never hides the item.
+ * - Never add business logic here — nav structure only.
  */
 import {
   LayoutDashboard,
   ShoppingBag,
   Warehouse,
   TrendingUp,
-  BarChart2,
+  Box,
+  Truck,
   DollarSign,
   Users,
-  RotateCcw,
-  Package,
-  Truck,
-  AlertTriangle,
-  Map,
 } from 'lucide-react';
 import { registerNavGroup, registerNavItem } from './registerNav';
 
 export function bootstrapNavGroups() {
 
-  // ── GROUPS ────────────────────────────────────────────────────
-  registerNavGroup({ id: 'daily',        label: 'Daily Ops',     order: 10 });
-  registerNavGroup({ id: 'intelligence', label: 'Intelligence',  order: 20 });
-  registerNavGroup({ id: 'catalog',      label: 'Catalog',       order: 30 });
-  registerNavGroup({ id: 'system',       label: 'System',        order: 40 });
+  // ── SINGLE GROUP ──────────────────────────────────────────────────────────
+  registerNavGroup({ id: 'workspace', label: 'Workspace', order: 10 });
 
-  // ── DAILY OPS ─────────────────────────────────────────────────
-  // Free tier and above — core operational surfaces
+  // ── ITEMS — ordered by daily-use frequency ────────────────────────────────
+  // Do not reorder without product sign-off.
+
   registerNavItem({
     id: 'overview',
     title: 'Overview',
     path: '/overview',
-    group: 'daily',
+    group: 'workspace',
     order: 10,
     icon: LayoutDashboard,
     requiredModuleId: 'overview',
+    // No children — navigates directly in both compact and expanded modes.
   });
 
   registerNavItem({
     id: 'orders',
     title: 'Orders',
     path: '/orders',
-    group: 'daily',
+    group: 'workspace',
     order: 20,
     icon: ShoppingBag,
     requiredModuleId: 'order-nexus',
+    children: [
+      // Sidebar shortcuts mirror the 5-tab ModuleTabBar on all Orders routes.
+      // Order here controls accordion/popover render order — do not reorder.
+      { id: 'fulfillment', title: 'Fulfillment', path: '/fulfillment'      },
+      { id: 'outbound',    title: 'Outbound',    path: '/orders/outbound'  },
+      { id: 'inbound',     title: 'Inbound',     path: '/orders/inbound'   },
+      { id: 'returns',     title: 'Returns',     path: '/returns'          },
+    ],
   });
 
   registerNavItem({
-    id: 'wms',
+    id: 'warehouse',
     title: 'Warehouse',
     path: '/wms',
-    group: 'daily',
-    order: 40,
+    group: 'workspace',
+    order: 30,
     icon: Warehouse,
     requiredModuleId: 'wms-lite',
-  });
-
-  // ── INTELLIGENCE ──────────────────────────────────────────────
-  // Growth tier gate — visible but locked for starter/core
-  // Teased in sidenav with upgrade badge to drive conversion
-  registerNavItem({
-    id: 'cashflow',
-    title: 'Cash Flow',
-    path: '/cashflow',
-    group: 'intelligence',
-    order: 10,
-    icon: TrendingUp,
-    requiredModuleId: 'cashflow',
-    requiredTier: 'growth',
+    children: [
+      { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale' },
+      { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
+    ],
   });
 
   registerNavItem({
     id: 'demand',
     title: 'Demand',
     path: '/demand',
-    group: 'intelligence',
-    order: 20,
-    icon: BarChart2,
+    group: 'workspace',
+    order: 40,
+    icon: TrendingUp,
     requiredModuleId: 'demand',
     requiredTier: 'growth',
+    // No children — navigates directly.
+  });
+
+  registerNavItem({
+    id: 'inventory',
+    title: 'Inventory',
+    path: '/products',
+    group: 'workspace',
+    order: 50,
+    icon: Box,
+    requiredModuleId: 'products',
+    children: [
+      { id: 'products-catalog',       title: 'Catalog',         path: '/products/catalog'        },
+      { id: 'products-costs',         title: 'Costs',           path: '/products/costs'          },
+      { id: 'products-wms-readiness', title: 'WMS Readiness',   path: '/products/wms-readiness'  },
+      { id: 'problem-center',         title: 'Problem Center',  path: '/problem-center'          },
+    ],
+  });
+
+  registerNavItem({
+    id: 'suppliers',
+    title: 'Suppliers',
+    path: '/suppliers-portal',
+    group: 'workspace',
+    order: 60,
+    icon: Truck,
+    requiredModuleId: 'suppliers-portal',
+    // No children — navigates directly.
   });
 
   registerNavItem({
     id: 'finances',
     title: 'Finances',
-    path: '/finances',
-    group: 'intelligence',
-    order: 30,
+    path: '/cashflow',
+    group: 'workspace',
+    order: 70,
     icon: DollarSign,
-    requiredModuleId: 'finances',
+    requiredModuleId: 'cashflow',
     requiredTier: 'growth',
+    children: [
+      { id: 'cashflow',        title: 'Cash Flow', path: '/cashflow'        },
+      { id: 'finances-main',   title: 'Finances',  path: '/finances'        },
+      { id: 'finances-margin', title: 'Margin',    path: '/finances/margin' },
+    ],
   });
 
   registerNavItem({
-    id: 'customers',
-    title: 'Customers',
-    path: '/customers',
-    group: 'intelligence',
-    order: 40,
+    id: 'team',
+    title: 'Team',
+    path: '/members',
+    group: 'workspace',
+    order: 80,
     icon: Users,
-    requiredModuleId: 'customers',
-    requiredTier: 'growth',
-  });
-
-  registerNavItem({
-    id: 'returns',
-    title: 'Returns',
-    path: '/returns',
-    group: 'intelligence',
-    order: 50,
-    icon: RotateCcw,
-    requiredModuleId: 'returns',
-  });
-
-  // ── CATALOG ───────────────────────────────────────────────────
-  registerNavItem({
-    id: 'products',
-    title: 'Products',
-    path: '/products',
-    group: 'catalog',
-    order: 10,
-    icon: Package,
-    requiredModuleId: 'products',
-  });
-
-  registerNavItem({
-    id: 'suppliers-portal',
-    title: 'Suppliers',
-    path: '/suppliers-portal',
-    group: 'catalog',
-    order: 20,
-    icon: Truck,
-    requiredModuleId: 'suppliers-portal',
-  });
-
-  registerNavItem({
-    id: 'floor-planning',
-    title: 'Floor Planning',
-    path: '/floor-planning',
-    group: 'catalog',
-    order: 30,
-    icon: Map,
-    requiredModuleId: 'floor-planning',
-    requiredTier: 'scale',
-  });
-
-  // ── SYSTEM ────────────────────────────────────────────────────
-  registerNavItem({
-    id: 'problem-center',
-    title: 'Problem Center',
-    path: '/problem-center',
-    group: 'system',
-    order: 20,
-    icon: AlertTriangle,
-    requiredModuleId: 'problem-center',
+    // No requiredModuleId — team management is platform-level, not module-gated.
+    // No children — single destination, navigates directly.
   });
 }

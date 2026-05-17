@@ -114,3 +114,17 @@ export async function withTenant<T>(
 // - Prevents silent failures
 
 export default db;
+
+const systemConfig: knex.Knex.Config = {
+  ...dbConfig,
+  connection: {
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT),
+    user: process.env.PGMIGRATION_USER,
+    password: String(process.env.PGMIGRATION_PASSWORD || ''),
+    database: process.env.PGDATABASE,
+  },
+  pool: { min: 1, max: 5, acquireTimeoutMillis: 10000, idleTimeoutMillis: 30000 },
+};
+
+export const systemDb = knex(systemConfig);

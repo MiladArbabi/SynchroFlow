@@ -13,6 +13,7 @@
 
 import { Routes, Route } from 'react-router-dom';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import ReturnsOverviewPage from './ReturnsOverviewPage';
 import ReturnsItemsPage from './ReturnsItemsPage';
 import ReturnsSuppliersPage from './ReturnsSuppliersPage';
@@ -20,18 +21,7 @@ import ReturnsSuppliersPage from './ReturnsSuppliersPage';
 export default function ReturnsFT2Page() {
   return (
     <>
-      <ModuleTabBar tabs={[
-        { id: 'overview',   label: 'Overview',        path: '/returns' },
-        { id: 'items',      label: 'Returned Items',  path: '/returns/items' },
-        {
-          id: 'suppliers',
-          label: 'Suppliers',
-          path: '/returns/suppliers',
-          // Growth tier — supplier scorecard requires returns.analysis entitlement
-          feature: 'returns.analysis',
-          requiredTier: 'growth',
-        },
-      ]} />
+      <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <Routes>
         <Route path="/"          element={<ReturnsOverviewPage />} />
         <Route path="/items"     element={<ReturnsItemsPage />} />

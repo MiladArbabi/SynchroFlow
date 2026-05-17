@@ -31,6 +31,8 @@ export interface ModuleTab {
   id: string;
   label: string;
   path: string;
+  /** Optional count badge — shown as neutral pill when inactive, accent-ghost when active */
+  count?: number;
   /** If set, tab is locked for users below this tier */
   requiredTier?: 'core' | 'growth' | 'scale';
   /** PlanFeature key — if set, uses usePlanEntitlement to determine lock state */
@@ -133,6 +135,27 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
               }}>
                 {tab.label}
               </Typography>
+
+              {/* COUNT BADGE — neutral bg inactive, accent-ghost active */}
+              {tab.count != null && (
+                <Box sx={{
+                  px: '5px', py: '1px',
+                  borderRadius: '4px',
+                  bgcolor: active ? 'var(--accent-ghost)' : 'var(--bg-3)',
+                  border: `1px solid ${active ? 'var(--accent-border)' : 'var(--rule)'}`,
+                  minWidth: '18px',
+                  textAlign: 'center',
+                }}>
+                  <Typography sx={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: active ? 'var(--accent)' : 'var(--ink-4)',
+                    lineHeight: 1.6,
+                  }}>
+                    {tab.count}
+                  </Typography>
+                </Box>
+              )}
 
               {/* TIER UPGRADE BADGE */}
               {locked && tab.requiredTier && (

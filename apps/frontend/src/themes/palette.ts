@@ -41,7 +41,8 @@ export function buildPalette(mode: ThemeMode): ThemeOptions['palette'] {
   // One surface + one text color per mode.
   // No grey scales. No ambiguity.
   // ----------------------------------------------------------
-  const neutralSurface = isDark ? '#0B1220' : '#F8FAFC';
+  const neutralSurface = isDark ? '#0D1526' : '#F1F5F9';       // page background
+  const neutralElevated = isDark ? '#152032' : '#FFFFFF';       // card / panel surface
   const neutralText = isDark ? '#E5E7EB' : '#0F172A';
 
   // ----------------------------------------------------------
@@ -79,13 +80,13 @@ export function buildPalette(mode: ThemeMode): ThemeOptions['palette'] {
     },
 
     background: {
-      default: neutralSurface,
-      paper: neutralSurface,
+      default: neutralSurface,   // page / outlet background
+      paper: neutralElevated,    // cards, panels, modals — visually elevated above page
     },
 
     text: {
       primary: neutralText,
-      secondary: neutralText,
+      secondary: isDark ? '#9CA3AF' : '#475569',
     },
 
     divider: isDark ? '#1F2937' : '#E5E7EB',

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx
 import React from "react";
 import { useLocation, Link as RouterLink } from "react-router-dom";
@@ -14,7 +15,7 @@ import IconComponent from "../../components/Icon";
 import { TrialCountdownChip } from 'components/TrialCountdownChip';
 
 import ProfileSection from "layout/MainLayout/Header/ProfileSection";
-import { Bell } from 'lucide-react';
+import { Bell, Home } from 'lucide-react';
 import { Badge } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAlerts } from '../../pages/alerts/useAlerts';
@@ -60,45 +61,39 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
           overflow: "hidden"
         }}
       >
-        <IconButton onClick={onToggleSidenav} size="small" disableRipple>
-          <IconComponent name="PanelLeft" size="medium" color="inherit" />
-        </IconButton>
 
-        <MuiBreadcrumbs
+        {/* LOGO — switches between light/dark asset based on color scheme */}
+        <Box
+          component="img"
+          src={mode === 'dark' ? '/logo-dark.png' : '/logo.png'}
+          alt="LaSyncro"
+          sx={{ height: 22, width: 'auto', display: 'block', mr: 2, ml: 1, flexShrink: 0 }}
+        />
+
+       <MuiBreadcrumbs
           aria-label="breadcrumb"
-          sx={{
-            minWidth: 0,
-            overflow: "hidden",
-            whiteSpace: "nowrap",
-            textOverflow: "ellipsis"
-          }}
+          sx={{ minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
         >
-          <Link
-            component={RouterLink}
-            underline="hover"
-            color="inherit"
-            to="/"
-          />
+          {/* Home icon anchor */}
+          <Link component={RouterLink} to="/" underline="none" sx={{ display: 'flex', alignItems: 'center', color: 'var(--ink-3)', '&:hover': { color: 'var(--ink)' } }}>
+            <Home size={14} strokeWidth={1.75} />
+          </Link>
 
+          {/* Workspace static crumb — always present in FT2 */}
+          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Workspace</Typography>
+
+          {/* Dynamic path segments — last segment in brand orange */}
           {pathnames.map((value, index) => {
             const last = index === pathnames.length - 1;
-            const to = `/${pathnames
-              .slice(0, index + 1)
-              .join("/")}`;
-
+            const to = `/${pathnames.slice(0, index + 1).join("/")}`;
+            const label = capitalize(value.replace(/-/g, " "));
             return last ? (
-              <Typography color="text.primary" key={to}>
-                {capitalize(value.replace("-", " "))}
+              <Typography key={to} sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent)' }}>
+                {label}
               </Typography>
             ) : (
-              <Link
-                component={RouterLink}
-                underline="hover"
-                color="inherit"
-                to={to}
-                key={to}
-              >
-                {capitalize(value.replace("-", " "))}
+              <Link key={to} component={RouterLink} to={to} underline="hover" sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+                {label}
               </Link>
             );
           })}

@@ -21,6 +21,7 @@ import { useOrdersOperatorSummary } from '../orders/useOrdersOperatorSummary';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -90,10 +91,7 @@ export default function OrdersFT2Page() {
 
   return (
     <>
-      <ModuleTabBar tabs={[
-        { id: 'intelligence', label: 'Intelligence', path: '/orders' },
-        { id: 'fulfillment',  label: 'Fulfillment Queue', path: '/fulfillment' },
-      ]} />
+      <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}

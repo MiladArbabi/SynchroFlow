@@ -1,4 +1,4 @@
-import db from '@lasyncro/backend-core/db.js';
+import { systemDb } from '@lasyncro/backend-core/db.js';
 import { computeShopOperationalSnapshot } from './shopOperationalSnapshot.worker.js';
 import { aggregateAlertsForShop } from '../../services/alerts/alerts.aggregator.js';
 
@@ -46,9 +46,9 @@ export async function startShopSnapshotJobDispatcher() {
      * Wait 10 seconds after scheduling before processing,
      * giving the projection worker time to catch up.
      */
-    const jobs = await db('shop_snapshot_jobs')
+    const jobs = await systemDb('shop_snapshot_jobs')
       .select('shop_id')
-      .where('scheduled_at', '<=', db.raw(`NOW() - INTERVAL '2 seconds'`))
+      .where('scheduled_at', '<=', systemDb.raw(`NOW() - INTERVAL '2 seconds'`))
       .limit(20);
 
     for (const job of jobs) {
@@ -66,7 +66,7 @@ export async function startShopSnapshotJobDispatcher() {
          */
         await aggregateAlertsForShop(job.shop_id);
 
-        await db('shop_snapshot_jobs')
+        await systemDb('shop_snapshot_jobs')
           .where({ shop_id: job.shop_id })
           .delete();
 

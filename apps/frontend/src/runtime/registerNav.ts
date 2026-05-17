@@ -14,6 +14,8 @@ export interface NavItem {
   requiredFlagId?: string;
   /** Minimum subscription tier required to show this nav item (MON-06) */
   requiredTier?: string;
+  /** Submodule children — compact mode: hover popover right. Expanded mode: inline accordion. */
+  children?: { id: string; title: string; path: string; requiredTier?: string }[];
   meta?: Record<string, unknown>;
 }
 

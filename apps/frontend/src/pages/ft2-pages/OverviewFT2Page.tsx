@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -7,24 +6,17 @@ import { useTrustFt2Snapshot } from '../trust/useTrustFt2Snapshot';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { useMorningBriefSnapshot } from '../overview/useMorningBriefSnapshot';
 import { OverviewModuleFT2 } from '@lasyncro/overview';
-import type { FT2DateRange } from '@lasyncro/ui-ft2';
-import { FT2DateRangeBar } from '@lasyncro/ui-ft2';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
-import { FirstInsightBanner } from '../overview/FirstInsightBanner';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [range, setRange] = useState<FT2DateRange>({
-    preset: 'past_30_days',
-    from: null,
-    to: null,
-  });
+  
   const [forceRefresh, setForceRefresh] = useState(false);
 
-  const overviewModules = useOverviewModulesFt2Snapshot(range);
+  const overviewModules = useOverviewModulesFt2Snapshot();
   const trust = useTrustFt2Snapshot();
 
   /**
@@ -56,18 +48,6 @@ export default function OverviewPageFT2() {
 
   return (
     <>
-      {/**
-       * FIRST INSIGHT BANNER (B-06)
-       * ---------------------------
-       * Shown when constrained orders exist.
-       * Dismissed per session via sessionStorage.
-       * Navigates operator directly to Fulfillment Queue.
-       */}
-      <FirstInsightBanner
-        constrainedCount={operationalControl?.constrained_orders ?? null}
-        atRiskRevenue={operationalControl?.blocked_revenue ?? null}
-        onNavigateToQueue={() => navigate('/fulfillment')}
-      />
       <OverviewModuleFT2
         {...overviewProps}
 
@@ -80,10 +60,16 @@ export default function OverviewPageFT2() {
           aging72hPlus: operationalControl.aging_72h_plus ?? null,
         } : null}
         
+        userName={user?.first_name ?? null}
         morningBrief={isOwnerOrAdmin ? (morningBrief.data ?? null) : undefined}
         currency={displayCurrency}
         onNavigate={(deepLink) => navigate(deepLink)}
         onRefreshBrief={() => setForceRefresh(f => !f)}
+        onExportBrief={() => {
+          // TODO: implement brief export (PDF/CSV) — stub for now
+          console.info('[OVERVIEW] Export brief triggered');
+        }}
+        onResolveAll={() => navigate('/orders?filter=blocked')}
       />
     </>
   );

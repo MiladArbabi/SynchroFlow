@@ -12,6 +12,8 @@ export interface ResolvedNavItem {
   icon?: ElementType;
   disabled: boolean;
   requiredTier?: string;
+  /** Submodule children — passed through from NavItem. Tier gating applied per child. */
+  children?: { id: string; title: string; path: string; requiredTier?: string }[];
 }
 
 export interface ResolvedNavGroup {
@@ -109,6 +111,7 @@ export function resolveNavigation({
             icon: item.icon,
             disabled: visibility === 'locked',
             requiredTier: item.requiredTier,
+            children: item.children,
         });
     }
 

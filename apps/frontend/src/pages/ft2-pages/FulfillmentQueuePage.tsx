@@ -23,6 +23,7 @@ import { OrderDetailPanel } from '../orders/OrderDetailPanel';
 import { getSlaProximity, getAgeLabel } from '../orders/useConstrainedOrders';
 import { usePlanEntitlement } from '../../hooks/usePlanEntitlement';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 
 /**
  * FULFILLMENT QUEUE PAGE (B-01)
@@ -235,10 +236,7 @@ export default function FulfillmentQueuePage() {
 
   return (
     <Box>
-      <ModuleTabBar tabs={[
-        { id: 'intelligence', label: 'Intelligence', path: '/orders' },
-        { id: 'fulfillment',  label: 'Fulfillment Queue', path: '/fulfillment' },
-      ]} />
+      <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <Box sx={{ p: 3 }}>
 
       {/* PAGE HEADER */}
