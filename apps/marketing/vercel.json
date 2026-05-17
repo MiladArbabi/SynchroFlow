@@ -16,6 +16,10 @@
       "destination": "/about"
     },
     {
+      "source": "/privacy",
+      "destination": "/privacy"
+    },
+    {
       "source": "/compare",
       "destination": "/compare"
     },
