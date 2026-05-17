@@ -16,6 +16,10 @@
       "destination": "https://synchro-flow-marketing.vercel.app/about"
     },
     {
+      "source": "/privacy",
+      "destination": "https://synchro-flow-marketing.vercel.app/privacy"
+    },
+    {
       "source": "/compare",
       "destination": "https://synchro-flow-marketing.vercel.app/compare"
     },
