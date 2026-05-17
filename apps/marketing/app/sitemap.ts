@@ -20,6 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE_URL}/blog`,          lastModified: new Date(),             priority: 0.9, changeFrequency: 'daily'   },
     { url: `${BASE_URL}/compare`,       lastModified: new Date(),             priority: 0.8, changeFrequency: 'weekly'  },
     { url: `${BASE_URL}/checklist`,     lastModified: new Date('2026-05-01'), priority: 0.7, changeFrequency: 'monthly' },
+    { url: `${BASE_URL}/privacy`,       lastModified: new Date('2026-05-17'), priority: 0.3, changeFrequency: 'yearly'  },
   ]
 
   const dynamicRoutes: MetadataRoute.Sitemap = [

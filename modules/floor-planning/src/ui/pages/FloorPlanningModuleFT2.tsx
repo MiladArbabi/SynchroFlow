@@ -261,12 +261,15 @@ function FloorPlanningModuleFT2Inner({
   return (
     <Box sx={{ p: 2, maxWidth: tab === 'map' ? '100%' : 700, mx: 'auto' }}>
 
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" fontWeight={700}>Floor Planning</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Manage warehouse zones and barcode assignments for locations and products.
+      <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>
+          Your warehouse.{' '}
         </Typography>
-      </Box>
+        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', lineHeight: 1.15, display: 'inline' }}>
+          Every bin, mapped.
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>
+          Manage warehouse zones and barcode assignments for locations and products.
+      </Typography>
 
       {/* Primary tab navigation */}
       <Tabs
@@ -330,7 +333,7 @@ function FloorPlanningModuleFT2Inner({
         </Alert>
       )}
 
-      {!isLoading && !isError && tab !== 'map' && (
+      {!isLoading && !isError && tab === 'setup' && (
         <>
           <Box sx={{ mb: 4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
@@ -350,18 +353,18 @@ function FloorPlanningModuleFT2Inner({
               zones.map((zone) => <ZoneCard key={zone.location_code} zone={zone} />)
             )}
           </Box>
+          </>
+      )}
 
-          <Divider sx={{ mb: 4 }} />
-
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <PackageSearch size={18} />
-              <Typography variant="subtitle1" fontWeight={700}>Product Barcodes</Typography>
-              <Chip label={productBarcodes.length} size="small" />
-            </Box>
-            <ProductBarcodesTable items={productBarcodes} />
+      {!isLoading && !isError && tab === 'barcodes' && (
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <PackageSearch size={18} />
+            <Typography variant="subtitle1" fontWeight={700}>Product Barcodes</Typography>
+            <Chip label={productBarcodes.length} size="small" />
           </Box>
-        </>
+          <ProductBarcodesTable items={productBarcodes} />
+        </Box>
       )}
     </Box>
   );

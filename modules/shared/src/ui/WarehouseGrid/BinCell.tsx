@@ -1,4 +1,6 @@
 import { Box, Tooltip, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { alpha } from '@mui/material/styles';
 import type { BinOccupancy, LiveBinState, GridMode, GridVariant } from './WarehouseGrid.types.js';
 
 /**
@@ -41,9 +43,9 @@ const FONT_SIZE: Record<GridVariant, number> = {
 };
 
 const LIVE_COLOUR: Record<string, string> = {
-  picking: 'var(--color-warning, #f59e0b)',
-  stowing: 'var(--color-info, #3b82f6)',
-  reserved: 'var(--color-secondary, #8b5cf6)',
+  picking:  'var(--accent)',
+  stowing:  'var(--accent-hover)',
+  reserved: 'var(--accent-border)',
 };
 
 export function BinCell({
@@ -61,24 +63,24 @@ export function BinCell({
   const size = CELL_SIZE[variant];
   const fontSize = FONT_SIZE[variant];
   const hasStock = (occupancy?.on_hand_quantity ?? 0) > 0;
+  const theme = useTheme();
 
   // ── Background fill ──────────────────────────────────────────
-  let bg = 'var(--bg-3, rgba(0,0,0,0.06))'; // empty default
+  let bg = 'var(--bg-3)';
   if (hasStock && mode === 'heatmap') {
     const qty = occupancy!.on_hand_quantity;
-    // Simple 3-band heatmap: green → amber → red as stock depletes
     bg = qty > 10
-      ? 'rgba(34,197,94,0.18)'
+      ? alpha(theme.palette.success.main, 0.15)
       : qty > 3
-      ? 'rgba(245,158,11,0.18)'
-      : 'rgba(239,68,68,0.18)';
+      ? alpha(theme.palette.warning.main, 0.15)
+      : alpha(theme.palette.error.main, 0.15);
   } else if (hasStock) {
-    bg = 'rgba(34,197,94,0.12)';
+    bg = alpha(theme.palette.success.main, 0.10);
   }
-  if (isDimmed) bg = 'var(--bg-2, rgba(0,0,0,0.03))';
+  if (isDimmed) bg = 'var(--bg-2)';
 
   // ── Border ───────────────────────────────────────────────────
-  let border = '1px solid var(--rule, rgba(0,0,0,0.1))';
+  let border = '1px solid var(--rule)';
   if (isSelected)    border = '2px solid var(--accent)';
   if (isHighlighted) border = '2px solid var(--accent)';
   if (isFocused)     border = '2px solid var(--accent)';
@@ -159,7 +161,7 @@ export function BinCell({
             bottom: 3, right: 3,
             width: 5, height: 5,
             borderRadius: '50%',
-            background: 'rgba(34,197,94,0.8)',
+            background: alpha(theme.palette.success.main, 0.75),
           }} />
         )}
       </Box>

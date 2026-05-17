@@ -57,10 +57,11 @@ export function AisleColumn({
       {/* Aisle header label */}
       <Typography
         sx={{
-          fontSize: LABEL_SIZE[variant],
-          fontWeight: 700,
           fontFamily: 'monospace',
-          color: 'text.secondary',
+          color: 'var(--ink-4)',
+          fontSize: 10,
+          fontWeight: 500,
+          textTransform: 'uppercase' as const,
           letterSpacing: 1,
           mb: 0.5,
           userSelect: 'none',
