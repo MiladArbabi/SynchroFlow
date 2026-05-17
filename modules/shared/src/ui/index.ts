@@ -3,3 +3,5 @@ export * from './ModuleActivationBoundary.js';
 export * from './formatCurrency.js';
 export * from './ModuleErrorBoundary.js';
 export * from './ModuleLoadingSkeleton.js';
+export * from './WarehouseGrid/index.js';
+export * from './WarehouseGrid/WarehouseGrid.types.js';

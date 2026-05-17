@@ -22,6 +22,7 @@
     "src/index.ts",
     "src/contracts/**/*",
     "src/activation/**/*",
-    "src/ui/**/*"
+    "src/ui/**/*",
+    "src/ui/WarehouseGrid/**/*",
   ]
 }

@@ -102,3 +102,104 @@ export async function httpUpdateProductBarcode(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to update barcode' });
   }
 }
+
+/**
+ * GET /api/v1/floor-planning/grid
+ * --------------------------------
+ * Returns all warehouse_locations for the current shop, shaped for
+ * WarehouseGrid consumption. Includes all types (warehouse/lane/shelf/bin)
+ * so the grid can derive aisle groupings client-side.
+ *
+ * Bin occupancy is a separate endpoint (GET /grid/occupancy) to allow
+ * the grid to render layout immediately while occupancy loads lazily.
+ */
+export async function httpGetGrid(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const locations = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .orderBy('location_code', 'asc')
+        .select(
+          'location_code',
+          'type',
+          'parent_location_code',
+          'barcode',
+          'active'
+        );
+    });
+
+    return res.json({ locations });
+  } catch (err) {
+    console.error('[floor-planning] httpGetGrid failed', err);
+    return res.status(500).json({ error: 'Failed to fetch grid layout' });
+  }
+}
+
+/**
+ * GET /api/v1/floor-planning/grid/occupancy
+ * ------------------------------------------
+ * Returns per-bin stock data from inventory_truth, joined to variants
+ * for SKU/title context. Keyed by location_code for O(1) lookup in
+ * WarehouseGrid occupancy prop.
+ *
+ * Loaded lazily after grid layout renders — keeps initial paint fast.
+ *
+ * Response shape: Record<location_code, BinOccupancy>
+ *   BinOccupancy.on_hand_quantity — total units across all variants in bin
+ *   BinOccupancy.variants[]       — per-variant breakdown
+ */
+export async function httpGetBinOccupancy(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const rows = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return trx('inventory_truth as it')
+        .where('it.shop_id', shopId)
+        .where('it.on_hand_quantity', '>', 0)
+        .leftJoin('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+        .leftJoin('products as p', function () {
+          this.on('p.lasyncro_product_id', 'v.lasyncro_product_id')
+              .andOn('p.shop_id', trx.raw('?', [shopId]));
+        })
+        .select(
+          'it.location_code',
+          'it.lasyncro_variant_id',
+          'it.on_hand_quantity',
+          'v.sku',
+          'p.title as product_title'
+        )
+        .orderBy('it.location_code', 'asc');
+    });
+
+    // Group into Record<location_code, BinOccupancy>
+    const occupancy: Record<string, {
+      on_hand_quantity: number;
+      variants: { lasyncro_variant_id: string; sku: string | null; product_title: string | null; on_hand_quantity: number }[];
+    }> = {};
+
+    for (const row of rows) {
+      if (!occupancy[row.location_code]) {
+        occupancy[row.location_code] = { on_hand_quantity: 0, variants: [] };
+      }
+      occupancy[row.location_code].on_hand_quantity += row.on_hand_quantity;
+      occupancy[row.location_code].variants.push({
+        lasyncro_variant_id: row.lasyncro_variant_id,
+        sku: row.sku ?? null,
+        product_title: row.product_title ?? null,
+        on_hand_quantity: row.on_hand_quantity,
+      });
+    }
+
+    return res.json({ occupancy });
+  } catch (err) {
+    console.error('[floor-planning] httpGetBinOccupancy failed', err);
+    return res.status(500).json({ error: 'Failed to fetch bin occupancy' });
+  }
+}

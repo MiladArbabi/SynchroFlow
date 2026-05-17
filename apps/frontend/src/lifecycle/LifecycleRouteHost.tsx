@@ -33,6 +33,7 @@ import WelcomePage from 'pages/onboarding/WelcomePage';
 
 // FT2 pages (observability / governed truth surfaces)
 import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
+import OrderDetailPage from 'pages/ft2-pages/OrderDetailPage';
 import CustomersFT2Page from 'pages/ft2-pages/CustomersFT2Page';
 import ProductsFT2Page from 'pages/ft2-pages/ProductsFT2Page';
 import FinancesFT2Page from 'pages/ft2-pages/FinancesFT2Page';
@@ -189,6 +190,9 @@ export function LifecycleRouteHost() {
 
       {/* ORDERS */}
       <Route path="/orders/*" element={<OrdersFT2Page />} />
+
+      {/* ORDER DETAIL — single order drill-in (ORD-12) */}
+      <Route path="/orders/:orderId" element={<OrderDetailPage />} />
 
       {/* PRODUCTS */}
       <Route path="/products/*" element={<ProductsFT2Page />} />

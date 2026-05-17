@@ -3,7 +3,12 @@ import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
-import { httpGetLayout, httpUpdateProductBarcode } from './floor-planning.controller.js';
+import { 
+  httpGetLayout, 
+  httpUpdateProductBarcode, 
+  httpGetGrid, 
+  httpGetBinOccupancy
+} from './floor-planning.controller.js';
 
 /**
  * FLOOR PLANNING ROUTES
@@ -30,6 +35,22 @@ router.patch(
   requireFt2,
   requireAction('floor-planning:write'),
   httpUpdateProductBarcode
+);
+
+router.get(
+  '/grid',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:read'),
+  httpGetGrid
+);
+
+router.get(
+  '/grid/occupancy',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:read'),
+  httpGetBinOccupancy
 );
 
 export default router;

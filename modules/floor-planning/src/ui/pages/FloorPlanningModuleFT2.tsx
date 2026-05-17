@@ -1,5 +1,5 @@
 // modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -16,9 +16,12 @@ import {
   TableRow,
   Collapse,
   IconButton,
+  Tab,
+  Tabs,
 } from '@mui/material';
-import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp } from 'lucide-react';
-import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
+import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map } from 'lucide-react';
+import { ModuleErrorBoundary, ModuleLoadingSkeleton, WarehouseGrid } from '@lasyncro/shared/ui';
+import type { WarehouseLocation, BinOccupancy } from '@lasyncro/shared/ui';
 
 /**
  * FLOOR PLANNING MODULE — FT2 SURFACE
@@ -65,6 +68,10 @@ export type FloorPlanningPageProps = {
   isLoading: boolean;
   isError: boolean;
   onRefresh: () => void;
+  /** Grid data — loaded separately for fast layout paint */
+  gridLocations?: WarehouseLocation[];
+  gridOccupancy?: Record<string, BinOccupancy>;
+  isGridLoading?: boolean;
 };
 
 const TYPE_LABELS: Record<LocationType, {
@@ -241,29 +248,89 @@ function FloorPlanningModuleFT2Inner({
   data,
   isLoading,
   isError,
+  gridLocations,
+  gridOccupancy,
+  isGridLoading,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
   const productBarcodes = data?.product_barcodes ?? [];
+  const [tab, setTab] = useState<'map' | 'setup' | 'barcodes'>('map');
+  const [selectedBin, setSelectedBin] = useState<string | undefined>();
+  const handleBinSelect = useCallback((lc: string) => setSelectedBin((p) => p === lc ? undefined : lc), []);
 
   return (
-    <Box sx={{ p: 2, maxWidth: 700, mx: 'auto' }}>
+    <Box sx={{ p: 2, maxWidth: tab === 'map' ? '100%' : 700, mx: 'auto' }}>
 
-      <Box sx={{ mb: 3 }}>
+      <Box sx={{ mb: 2 }}>
         <Typography variant="h5" fontWeight={700}>Floor Planning</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           Manage warehouse zones and barcode assignments for locations and products.
         </Typography>
       </Box>
 
-      {isLoading && <ModuleLoadingSkeleton />}
+      {/* Primary tab navigation */}
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab icon={<Map size={15} />} iconPosition="start" label="Map" value="map" sx={{ minHeight: 40, fontSize: 13 }} />
+        <Tab icon={<LayoutDashboard size={15} />} iconPosition="start" label="Setup" value="setup" sx={{ minHeight: 40, fontSize: 13 }} />
+        <Tab icon={<Tag size={15} />} iconPosition="start" label="Barcodes" value="barcodes" sx={{ minHeight: 40, fontSize: 13 }} />
+      </Tabs>
 
-      {isError && (
+      {/* MAP TAB — 2D warehouse grid */}
+      {tab === 'map' && (
+        <Box>
+          {isGridLoading && <ModuleLoadingSkeleton />}
+          {!isGridLoading && (
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Box sx={{ flex: 1, overflowX: 'auto' }}>
+                <WarehouseGrid
+                  locations={gridLocations ?? []}
+                  occupancy={gridOccupancy}
+                  mode="map"
+                  variant="full"
+                  onBinSelect={handleBinSelect}
+                />
+              </Box>
+              {/* Bin detail panel */}
+              {selectedBin && (
+                <Paper variant="outlined" sx={{ width: 220, p: 2, borderRadius: 2, flexShrink: 0 }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ fontFamily: 'monospace', mb: 1 }}>
+                    {selectedBin}
+                  </Typography>
+                  {gridOccupancy?.[selectedBin] ? (
+                    <>
+                      <Typography variant="caption" color="text.secondary">
+                        {gridOccupancy[selectedBin].on_hand_quantity} units total
+                      </Typography>
+                      {gridOccupancy[selectedBin].variants.map((v) => (
+                        <Box key={v.lasyncro_variant_id} sx={{ mt: 1 }}>
+                          <Typography variant="caption" display="block" fontWeight={600}>{v.sku ?? '—'}</Typography>
+                          <Typography variant="caption" color="text.secondary">{v.on_hand_quantity} units</Typography>
+                        </Box>
+                      ))}
+                    </>
+                  ) : (
+                    <Typography variant="caption" color="text.disabled">Empty bin</Typography>
+                  )}
+                </Paper>
+              )}
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {isLoading && tab !== 'map' && <ModuleLoadingSkeleton />}
+
+      {isError && tab !== 'map' && (
         <Alert severity="error" sx={{ mb: 3 }}>
           Failed to load floor planning data. Please refresh.
         </Alert>
       )}
 
-      {!isLoading && !isError && (
+      {!isLoading && !isError && tab !== 'map' && (
         <>
           <Box sx={{ mb: 4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>

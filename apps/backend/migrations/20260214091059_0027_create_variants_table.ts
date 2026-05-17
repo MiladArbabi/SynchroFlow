@@ -41,6 +41,16 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['shop_id', 'barcode']); // fast EAN lookup at receive scan time
 
     /**
+     * VARIANT IMAGE URL
+     * -----------------
+     * Sourced from Shopify variant.image?.src at sync time.
+     * Nullable — variants may have no image (falls back to product image in UI).
+     * Used by: Order Detail, Pick Batch item list, Product Catalog.
+     * Never inferred — always platform-authoritative.
+     */
+    table.string('image_url', 2048).nullable();
+
+    /**
      * PRODUCT COST INVARIANT
      * ----------------------
      * Every variant must carry a canonical cost.
