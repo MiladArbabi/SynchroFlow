@@ -6,7 +6,8 @@ import { FloorPlanningModuleFT2 } from '@lasyncro/floor-planning';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGrid, useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useBinLog } from '../floor-planning/useBinLog';
-import { useBinStats } from 'pages/floor-planning/useBinStats';
+import { useBinStats } from '../floor-planning/useBinStats';
+import { useCreateZone, useDeleteZone, useUpdateZone } from '../floor-planning/useZoneManagement';
 
 /**
  * FLOOR PLANNING GATE PAGE
@@ -30,6 +31,9 @@ export default function FloorPlanningPage() {
   const { data: occupancyData } = useWarehouseGridOccupancy(!isGridLoading);
   const { data: binLogData, isLoading: isBinLogLoading } = useBinLog(activeBinLog);
   const { data: binStatsData } = useBinStats(selectedBin);
+  const createZone    = useCreateZone();
+  const deleteZone    = useDeleteZone();
+  const updateZone    = useUpdateZone();
 
   useEffect(() => {
     if (!variantId) { setVariantFocusBins([]); return; }
@@ -53,6 +57,9 @@ export default function FloorPlanningPage() {
       binStats={binStatsData}
       onBinSelect={setSelectedBin}
       variantFocusBins={variantFocusBins.length > 0 ? variantFocusBins : undefined}
+      onCreateZone={(payload) => createZone.mutateAsync(payload)}
+      onDeleteZone={(code) => deleteZone.mutateAsync(code)}
+      onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
     />
   );
 }

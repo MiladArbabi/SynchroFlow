@@ -223,6 +223,7 @@ export async function handleInventoryLevelUpdate(
               reference_id: randomUUID(),
               occurred_at: eventTime,
               device_event_id: null,
+              triggered_by: 'shopify_webhook', // traceability: Shopify inventory sync
             })
             .onConflict(['device_event_id'])
             .ignore();

@@ -91,9 +91,19 @@ export function WarehouseGrid({
 
   const gap = CANVAS_GAP[variant] ?? 12;
 
+  // Build sorted bin map for PickPathOverlay coordinate computation
+  const sortedBinMap = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const [aisle, bins] of aisleMap.entries()) {
+      m.set(aisle, [...bins].sort((a, b) => a.location_code.localeCompare(b.location_code)).map(b => b.location_code));
+    }
+    return m;
+  }, [aisleMap]);
+
   return (
     <Box
       sx={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'flex-start',
@@ -120,9 +130,12 @@ export function WarehouseGrid({
         />
       ))}
 
-      {/* Phase 2 — PickPathOverlay renders null until implemented */}
       {pickPath && pickPath.length > 0 && (
-        <PickPathOverlay pickPath={pickPath} />
+        <PickPathOverlay
+          pickPath={pickPath}
+          allBins={sortedBinMap}
+          variant={variant}
+        />
       )}
     </Box>
   );

@@ -147,6 +147,7 @@ const response = await client.request(`
             platform: 'shopify',
             location_code: `WH-${shopId}-ROOT`,
             occurred_at: new Date(),
+            triggered_by: 'system', // traceability: Shopify opening balance sync
           })
           .onConflict(['device_event_id'])
           .ignore();
@@ -170,6 +171,7 @@ const response = await client.request(`
           platform: 'shopify',
           location_code: `WH-${shopId}-ROOT`,
           occurred_at: new Date(),
+          triggered_by: 'system', // traceability: Shopify opening balance sync
         })
         .onConflict(['device_event_id'])
         .ignore();

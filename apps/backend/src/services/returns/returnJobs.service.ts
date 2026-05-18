@@ -432,6 +432,8 @@ export async function setOwnerDecision(
           reference_id: returnJobId,
           reference_type: 'return_job',
           occurred_at: now,
+          operator_id: decidedBy,       // traceability: owner/admin who made write-off decision
+          triggered_by: 'manual',       // traceability: manual return processing
         });
         console.info('[RETURN_WRITE_OFF]', { returnJobId, variantId: line.lasyncro_variant_id, qty: line.quantity_received });
       }

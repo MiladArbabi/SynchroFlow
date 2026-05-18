@@ -235,12 +235,14 @@ export async function seed(knex: Knex): Promise<void> {
       { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM', type: 'bin',       parent_location_code: 'A' },
     ];
 
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
     for (const loc of locationRows) {
       await trx('warehouse_locations')
         .insert({ shop_id: shop.id, ...loc })
         .onConflict(['shop_id', 'location_code'])
         .ignore();
     }
+    await trx.raw(`SET LOCAL "app.current_tenant" = '0'`); // reset after warehouse inserts
 
     console.log('[DEV_SEED] ✅ Warehouse locations seeded (ROOT + 3 aisles + 12 bins + PROBLEM)');
 

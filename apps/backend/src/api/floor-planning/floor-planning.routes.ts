@@ -10,7 +10,10 @@ import {
   httpGetBinOccupancy,
   httpGetBinLog,
   httpGetBinStats,
-  httpGetVariantBins
+  httpGetVariantBins,
+  httpCreateZone,
+  httpDeleteZone,
+  httpUpdateZone
 } from './floor-planning.controller.js';
 
 /**
@@ -38,6 +41,30 @@ router.patch(
   requireFt2,
   requireAction('floor-planning:write'),
   httpUpdateProductBarcode
+);
+
+router.post(
+  '/zones',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:write'),
+  httpCreateZone
+);
+
+router.patch(
+  '/zones/:locationCode',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:write'),
+  httpUpdateZone
+);
+
+router.delete(
+  '/zones/:locationCode',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:write'),
+  httpDeleteZone
 );
 
 router.get(

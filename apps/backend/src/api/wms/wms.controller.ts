@@ -1986,19 +1986,23 @@ export const httpReportStowException = async (req: Request, res: Response) => {
       const movementId = crypto.randomUUID();
       const deviceEventId = crypto.randomUUID();
 
-      await trx('inventory_movements').insert({
-        lasyncro_inventory_movement_id: movementId,
-        lasyncro_variant_id: task.lasyncro_variant_id,
-        shop_id: shopId,
-        movement_type: movementType,
-        quantity_delta: -affectedQty,
-        location_code: locationCode,
-        reference_type: 'stow_task',
-        reference_id: taskId,
-        platform: 'wms',
-        occurred_at: new Date(),
-        device_event_id: deviceEventId,
-      }).onConflict(['device_event_id']).ignore();
+      await trx('inventory_movements')
+        .insert({
+          lasyncro_inventory_movement_id: movementId,
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          shop_id: shopId,
+          movement_type: movementType,
+          quantity_delta: -affectedQty,
+          location_code: locationCode,
+          reference_type: 'stow_task',
+          reference_id: taskId,
+          platform: 'wms',
+          occurred_at: new Date(),
+          device_event_id: deviceEventId,
+          operator_id: userId,            // traceability: operator who reported exception
+          triggered_by: 'stow_confirm',   // traceability: occurred during stow workflow
+        })
+        .onConflict(['device_event_id']).ignore();
 
       // Decrement inventory_truth
       await trx('inventory_truth')

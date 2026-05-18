@@ -142,7 +142,7 @@ export async function confirmPickScan(
       lasyncro_variant_id: lasyncroVariantId,
       shop_id: shopId,
       movement_type: 'sale',
-      quantity_delta: -quantityConfirmed, // sale = negative delta
+      quantity_delta: -quantityConfirmed,
       location_code: locationCode,
       reference_type: 'order_revenue_unit',
       reference_id: lasyncroLineItemId,
@@ -150,6 +150,8 @@ export async function confirmPickScan(
       scan_source: scanSource,
       occurred_at: scannedAt,
       device_event_id: deviceEventId,
+      operator_id: scannedBy,        // traceability: operator who confirmed pick
+      triggered_by: 'pick_scan',     // traceability: source of movement
     })
     .onConflict(['device_event_id'])
     .ignore();

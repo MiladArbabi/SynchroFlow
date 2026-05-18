@@ -19,10 +19,15 @@ import {
   Tab,
   Tabs,
   Checkbox,
+  Button,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
 } from '@mui/material';
-import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText } from 'lucide-react';
+import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText, Eye, EyeOff, Trash2, Plus } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton, WarehouseGrid } from '@lasyncro/shared/ui';
-import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats } from '@lasyncro/shared/ui';
+import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats, WarehouseLocationType } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
 
@@ -81,6 +86,9 @@ export type FloorPlanningPageProps = {
   binStats?: BinStats;
   onBinSelect?: (locationCode: string) => void;
   variantFocusBins?: string[];
+  onCreateZone?: (payload: { location_code: string; type: WarehouseLocationType; parent_location_code?: string }) => Promise<void>;
+  onDeleteZone?: (locationCode: string) => Promise<void>;
+  onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
 };
 
 const TYPE_LABELS: Record<LocationType, {
@@ -93,18 +101,37 @@ const TYPE_LABELS: Record<LocationType, {
   bin:       { label: 'Bin',       color: 'warning'   },
 };
 
-function ZoneCard({ zone }: { zone: WarehouseZone }) {
+function ZoneCard({ zone, onDelete, onToggleActive }: {
+  zone: WarehouseZone;
+  onDelete?: (code: string) => void;
+  onToggleActive?: (code: string, active: boolean) => void;
+}) {
   const type = TYPE_LABELS[zone.type] ?? { label: zone.type, color: 'default' as const };
-
   return (
     <Paper variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2, opacity: zone.active ? 1 : 0.5 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Typography variant="body2" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
           {zone.location_code}
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           {!zone.active && <Chip label="Inactive" size="small" color="default" />}
           <Chip label={type.label} size="small" color={type.color} />
+          <IconButton
+            size="small"
+            title={zone.active ? 'Deactivate' : 'Activate'}
+            onClick={() => onToggleActive?.(zone.location_code, !zone.active)}
+            sx={{ color: zone.active ? 'var(--accent)' : 'var(--ink-4)' }}
+          >
+            {zone.active ? <EyeOff size={14} /> : <Eye size={14} />}
+          </IconButton>
+          <IconButton
+            size="small"
+            title="Delete zone"
+            onClick={() => onDelete?.(zone.location_code)}
+            sx={{ color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }}
+          >
+            <Trash2 size={14} />
+          </IconButton>
         </Box>
       </Box>
 
@@ -113,14 +140,12 @@ function ZoneCard({ zone }: { zone: WarehouseZone }) {
           Parent: {zone.parent_location_code}
         </Typography>
       )}
-
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
         <Tag size={13} />
         <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color={zone.barcode ? 'text.primary' : 'text.disabled'}>
           {zone.barcode ?? 'No barcode assigned'}
         </Typography>
       </Box>
-
       {zone.children_count > 0 && (
         <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
           {zone.children_count} child location{zone.children_count > 1 ? 's' : ''}
@@ -475,6 +500,9 @@ function FloorPlanningModuleFT2Inner({
   binStats,
   onBinSelect,
   variantFocusBins,
+  onCreateZone,
+  onDeleteZone,
+  onToggleZoneActive,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
   const productBarcodes = data?.product_barcodes ?? [];
@@ -516,11 +544,39 @@ function FloorPlanningModuleFT2Inner({
       return next;
     });
   }, [onBinSelect]);
-  const [logOpen, setLogOpen] = useState(false);
+  const [logOpen, setLogOpen]           = useState(false);
+  const [createOpen, setCreateOpen]     = useState(false);
+  const [createType, setCreateType]     = useState<WarehouseLocationType>('bin');
+  const [createCode, setCreateCode]     = useState('');
+  const [createParent, setCreateParent] = useState('');
+  const [createError, setCreateError]   = useState<string | null>(null);
+  const [creating, setCreating]         = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+
   const binCount      = (gridLocations ?? []).filter((l) => l.type === 'bin').length;
   const setupCount    = zones.length;
   const barcodesCount = zones.filter((z) => z.barcode !== null).length + productBarcodes.filter((p) => p.barcode !== null).length;
 
+    const handleCreate = async () => {
+    if (!createCode.trim()) { setCreateError('Location code is required'); return; }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      await onCreateZone?.({
+        location_code: createCode.trim().toUpperCase(),
+        type: createType,
+        parent_location_code: createParent.trim() || undefined,
+      });
+      setCreateCode('');
+      setCreateParent('');
+      setCreateOpen(false);
+    } catch (err: any) {
+      setCreateError(err?.response?.data?.error ?? 'Failed to create zone');
+    } finally {
+      setCreating(false);
+    }
+  };
+  
   return (
     <Box sx={{ p: '32px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
@@ -872,24 +928,92 @@ function FloorPlanningModuleFT2Inner({
       {!isLoading && !isError && tab === 'setup' && (
         <>
           <Box sx={{ mb: 4 }}>
+            {/* Header + Add button */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <LayoutDashboard size={18} />
               <Typography variant="subtitle1" fontWeight={700}>Warehouse Zones</Typography>
               <Chip label={zones.length} size="small" />
+              <Box sx={{ ml: 'auto' }}>
+                <Box
+                  onClick={() => { setCreateOpen(v => !v); setCreateError(null); }}
+                  sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, borderRadius: 1.5, cursor: 'pointer', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 12, fontWeight: 600, '&:hover': { bgcolor: 'var(--accent)', color: '#fff' }, transition: 'all 0.15s' }}
+                >
+                  <Plus size={13} />
+                  Add zone
+                </Box>
+              </Box>
             </Box>
+
+            {/* Inline create form */}
+            {createOpen && (
+              <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', mb: 1.5 }}>New Zone</Typography>
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                  <TextField
+                    label="Location code"
+                    size="small"
+                    value={createCode}
+                    onChange={e => setCreateCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. A-5"
+                    sx={{ width: 160 }}
+                    inputProps={{ style: { fontFamily: 'monospace' } }}
+                  />
+                  <FormControl size="small" sx={{ width: 130 }}>
+                    <InputLabel>Type</InputLabel>
+                    <Select value={createType} label="Type" onChange={e => setCreateType(e.target.value as WarehouseLocationType)}>
+                      <MenuItem value="bin">Bin</MenuItem>
+                      <MenuItem value="lane">Lane (Aisle)</MenuItem>
+                      <MenuItem value="shelf">Shelf</MenuItem>
+                      <MenuItem value="warehouse">Warehouse</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    label="Parent (optional)"
+                    size="small"
+                    value={createParent}
+                    onChange={e => setCreateParent(e.target.value.toUpperCase())}
+                    placeholder="e.g. A"
+                    sx={{ width: 160 }}
+                    inputProps={{ style: { fontFamily: 'monospace' } }}
+                  />
+                  <Button
+                    variant="contained"
+                    size="small"
+                    disabled={createLoading}
+                    onClick={handleCreate}
+                    sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent-hover)' }, textTransform: 'none', fontWeight: 600, height: 40 }}
+                  >
+                    {createLoading ? 'Creating...' : 'Create'}
+                  </Button>
+                  <Button size="small" onClick={() => setCreateOpen(false)} sx={{ height: 40, textTransform: 'none', color: 'var(--ink-3)' }}>
+                    Cancel
+                  </Button>
+                </Box>
+                {createError && (
+                  <Typography sx={{ fontSize: 11, color: 'var(--error, #ef4444)', mt: 1 }}>{createError}</Typography>
+                )}
+              </Paper>
+            )}
 
             {zones.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <LayoutDashboard size={36} style={{ opacity: 0.3 }} />
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                  No warehouse zones configured.
+                  No warehouse zones configured. Add your first zone above.
                 </Typography>
               </Paper>
             ) : (
-              zones.map((zone) => <ZoneCard key={zone.location_code} zone={zone} />)
+              zones.map((zone) => (
+                <ZoneCard
+                  key={zone.location_code}
+                  zone={zone}
+                  onDelete={onDeleteZone}
+                  onToggleActive={onToggleZoneActive}
+                />
+              ))
             )}
           </Box>
-          </>
+        </>
       )}
 
       {!isLoading && !isError && tab === 'barcodes' && (

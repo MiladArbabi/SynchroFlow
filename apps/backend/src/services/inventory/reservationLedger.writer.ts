@@ -88,10 +88,11 @@ export async function writeReservationHold(
       platform: null,
       location_code: locationCode,
       occurred_at: occurredAt ?? new Date(),
+      triggered_by: 'system', // traceability: system-managed reservation
     })
     .onConflict(['device_event_id'])
     .ignore();
-}
+  }
 
 /**
  * Reservation Release
@@ -133,6 +134,7 @@ export async function writeReservationRelease(
       platform: null,
       location_code: locationCode,
       occurred_at: occurredAt ?? new Date(),
+      triggered_by: 'system', // traceability: system-managed reservation release
     })
     .onConflict(['device_event_id'])
     .ignore();

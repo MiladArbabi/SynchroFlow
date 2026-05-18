@@ -204,6 +204,7 @@ export async function handleRefundCreated(
         reference_id: randomUUID(),
         occurred_at: new Date(refundCreatedAt),
         device_event_id: null,
+        triggered_by: 'shopify_webhook', // traceability: Shopify refund webhook
       });
 
       console.info('[REFUND_RETURN_MOVEMENT_WRITTEN]', {

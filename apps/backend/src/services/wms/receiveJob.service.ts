@@ -300,6 +300,8 @@ export async function closeReceiveJob(
         platform: 'wms',
         occurred_at: new Date(),
         device_event_id: deviceEventId,
+        operator_id: closedBy,  // traceability: operator who received stock
+        triggered_by: 'receive_job',      // traceability: source of movement
       })
       .onConflict(['device_event_id'])
       .ignore();

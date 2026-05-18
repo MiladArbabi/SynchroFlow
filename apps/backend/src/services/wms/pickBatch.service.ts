@@ -170,9 +170,9 @@ export async function releaseBatch(
         platform: 'wms',
         occurred_at: new Date(),
         device_event_id: deviceEventId,
+        operator_id: releasedBy,        // traceability: admin/owner who released batch
+        triggered_by: 'pick_scan',      // traceability: part of pick workflow
       })
-      .onConflict(['device_event_id'])
-      .ignore();
 
     // Decrement available, increment reserved on inventory_truth
     await trx('inventory_truth')

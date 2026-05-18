@@ -443,3 +443,146 @@ export async function httpGetVariantBins(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to fetch variant bins' });
   }
 }
+
+/**
+ * POST /api/v1/floor-planning/zones
+ * ----------------------------------
+ * Creates a new warehouse location (aisle/lane/bin/shelf).
+ * location_code must be unique per shop.
+ * parent_location_code must exist if provided.
+ *
+ * Body: { location_code, type, parent_location_code?, barcode? }
+ */
+export async function httpCreateZone(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { location_code, type, parent_location_code, barcode } = req.body;
+
+  if (!location_code || typeof location_code !== 'string' || !location_code.trim()) {
+    return res.status(400).json({ error: 'location_code is required' });
+  }
+  if (!['warehouse', 'lane', 'shelf', 'bin'].includes(type)) {
+    return res.status(400).json({ error: 'type must be warehouse | lane | shelf | bin' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Validate parent exists if provided
+      if (parent_location_code) {
+        const parent = await trx('warehouse_locations')
+          .where({ shop_id: shopId, location_code: parent_location_code })
+          .first();
+        if (!parent) {
+          throw new Error(`Parent location not found: ${parent_location_code}`);
+        }
+      }
+
+      await trx('warehouse_locations').insert({
+        shop_id: shopId,
+        location_code: location_code.trim().toUpperCase(),
+        type,
+        parent_location_code: parent_location_code?.trim() ?? null,
+        barcode: barcode?.trim() ?? null,
+        active: true,
+      });
+    });
+
+    console.info('[floor-planning] zone created', { shopId, location_code, type });
+    return res.status(201).json({ success: true, location_code: location_code.trim().toUpperCase() });
+  } catch (err: any) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: `Location code already exists: ${location_code}` });
+    }
+    if (err.message?.includes('Parent location not found')) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[floor-planning] httpCreateZone failed', err);
+    return res.status(500).json({ error: 'Failed to create zone' });
+  }
+}
+
+/**
+ * PATCH /api/v1/floor-planning/zones/:locationCode
+ * -------------------------------------------------
+ * Updates a zone's active status, barcode, or parent.
+ * location_code itself is immutable (it's the PK).
+ *
+ * Body: { active?, barcode?, parent_location_code? }
+ */
+export async function httpUpdateZone(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const locationCode = req.params.locationCode;
+  const { active, barcode, parent_location_code } = req.body;
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const updates: Record<string, unknown> = { updated_at: new Date() };
+      if (active !== undefined) updates.active = active;
+      if (barcode !== undefined) updates.barcode = barcode?.trim() ?? null;
+      if (parent_location_code !== undefined) updates.parent_location_code = parent_location_code?.trim() ?? null;
+
+      const updated = await trx('warehouse_locations')
+        .where({ shop_id: shopId, location_code: locationCode })
+        .update(updates);
+
+      if (updated === 0) throw new Error('Zone not found');
+    });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    if (err.message === 'Zone not found') return res.status(404).json({ error: err.message });
+    if (err.code === '23505') return res.status(409).json({ error: 'Barcode already assigned to another location' });
+    console.error('[floor-planning] httpUpdateZone failed', err);
+    return res.status(500).json({ error: 'Failed to update zone' });
+  }
+}
+
+/**
+ * DELETE /api/v1/floor-planning/zones/:locationCode
+ * --------------------------------------------------
+ * Deletes a zone. Children's parent_location_code is SET NULL (FK cascade).
+ * Blocked if zone has inventory (on_hand_quantity > 0).
+ */
+export async function httpDeleteZone(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const locationCode = req.params.locationCode;
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Block delete if bin has stock
+      const stock = await trx('inventory_truth')
+        .where({ shop_id: shopId, location_code: locationCode })
+        .where('on_hand_quantity', '>', 0)
+        .first();
+
+      if (stock) {
+        throw new Error('Cannot delete a location with stock. Move or adjust inventory first.');
+      }
+
+      const deleted = await trx('warehouse_locations')
+        .where({ shop_id: shopId, location_code: locationCode })
+        .delete();
+
+      if (deleted === 0) throw new Error('Zone not found');
+    });
+
+    console.info('[floor-planning] zone deleted', { shopId, locationCode });
+    return res.json({ success: true });
+  } catch (err: any) {
+    if (err.message === 'Zone not found') return res.status(404).json({ error: err.message });
+    if (err.message?.includes('Cannot delete')) return res.status(409).json({ error: err.message });
+    console.error('[floor-planning] httpDeleteZone failed', err);
+    return res.status(500).json({ error: 'Failed to delete zone' });
+  }
+}

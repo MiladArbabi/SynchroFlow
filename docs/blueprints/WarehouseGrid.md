@@ -1,7 +1,7 @@
 # WarehouseGrid — Blueprint & Integration Spec
 
 **Last updated: May 2026**
-**Status: Phase 1 complete — Phase 2 stubbed — Phase 3 interface locked**
+**Status: Phase 1 complete — Phase 2 largely complete — Phase 3 interface locked**
 
 ---
 
@@ -124,14 +124,27 @@ apps/frontend/src/pages/floor-planning/useWarehouseGrid.ts
 
 ---
 
-## Phase 2 Engineer Checklist
+## Phase 2 — Shipped (May 2026)
 
-- [ ] Implement `PickPathOverlay.tsx` — SVG polyline connecting bins in `pickPath` order
-- [ ] Wire `mini/pick` into WMS batch detail page
-- [ ] Wire `mini/heatmap` into Demand page
-- [ ] Wire `inline/focus` into Product detail page
-- [ ] Build `GET /api/v1/wms/live-activity` → feeds `liveActivity` prop (source: `inventory_unit_status`)
-- [ ] Add Alert deep-link: `location_code` chip → `/floor-planning?focus=<code>`
+- [x] Wire `mini/pick` into WMS batch detail — show pick map, expand on demand, highlight pick locations
+- [x] Wire `mini/heatmap` into Demand page — warehouse occupancy snapshot above variant list
+- [x] Alert deep-link — stockout alerts → `/floor-planning?variantId=<uuid>` → focused grid
+- [x] `GET /api/v1/floor-planning/bin/:locationCode/stats` — picks 7D, last pick, reorder signal
+- [x] `GET /api/v1/floor-planning/variant/:variantId/bins` — bin locations for a variant
+- [x] Bin detail panel — occupancy %, progress bar, contents, picks 7D, last pick, reorder in
+- [x] Bin Activity Log drawer — scoped slide-in, 30s polling, merged inventory_movements + pick_scan_log
+- [x] Left filter rail — 4 overlays (occupancy/stockout/empty/none), zone filters
+- [x] Map tab toolbar — bin count, overlay label, zoom/refresh controls
+- [x] Legend bar — EMPTY / BELOW 55% / 55-85% / HOT 85%+
+
+## Phase 2 Engineer Checklist — Remaining
+
+- [x] `PickPathOverlay.tsx` — SVG polyline with numbered stops, dashed accent line, mathematical coordinate derivation
+- [ ] `GET /api/v1/wms/live-activity` — feeds `liveActivity` prop from `inventory_unit_status` (no writers yet)
+- [ ] Wire `inline/focus` into Product detail page (page doesn't exist yet — needs product detail sprint)
+- [ ] Surfaced Today panel — left rail live intelligence (see GitHub issue #958)
+- [ ] Velocity + Open orders overlays (need writers for `inventory_unit_status`)
+- [ ] `canReleaseBatch` toolbar action in Map tab (add aisle/bin management UI)
 
 ## Phase 3 Engineer Checklist
 
