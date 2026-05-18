@@ -87,3 +87,12 @@ export interface BinLogResponse {
   location_code: string;
   events: BinLogEvent[];
 }
+
+export interface BinStats {
+  location_code: string;
+  picks_7d: number;
+  last_pick_at: string | null;
+  last_pick_by: string | null;
+  /** Minimum days of stock remaining across all variants in this bin. Null = no velocity data. */
+  reorder_in_days: number | null;
+}

@@ -8,7 +8,8 @@ import {
   httpUpdateProductBarcode, 
   httpGetGrid, 
   httpGetBinOccupancy,
-  httpGetBinLog
+  httpGetBinLog,
+  httpGetBinStats
 } from './floor-planning.controller.js';
 
 /**
@@ -60,6 +61,14 @@ router.get(
   requireFt2,
   requireAction('floor-planning:read'),
   httpGetBinLog
+);
+
+router.get(
+  '/bin/:locationCode/stats',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:read'),
+  httpGetBinStats
 );
 
 export default router;

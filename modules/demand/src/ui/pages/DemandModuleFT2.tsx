@@ -9,7 +9,7 @@ import {
   TrendingDown, TrendingUp, Package,
   CheckCircle, ChevronDown, ShoppingCart, Minus,
 } from 'lucide-react';
-import { formatCurrencyCompact, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
+import { BinOccupancy, formatCurrencyCompact, ModuleLoadingSkeleton, WarehouseGrid, WarehouseLocation } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
@@ -54,6 +54,8 @@ export type DemandModuleFT2Props = {
   isLoading: boolean;
   isError: boolean;
   currency?: CurrencyContext;
+  gridLocations?: WarehouseLocation[];
+  gridOccupancy?: Record<string, BinOccupancy>;
 };
 
 // ─────────────────────────────────────────────
@@ -208,7 +210,15 @@ function VariantRow({ variant, currency, pal }: {
 // ─────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────
-function DemandModuleFT2Inner({ data, isLoading, isError, currency }: DemandModuleFT2Props) {  const theme = useTheme();
+function DemandModuleFT2Inner({ 
+  data, 
+  isLoading, 
+  isError, 
+  currency, 
+  gridLocations, 
+  gridOccupancy 
+}: DemandModuleFT2Props) {
+  const theme = useTheme();
   const pal = useDemandTheme();
   const [showRest, setShowRest] = useState(false);
 
@@ -305,6 +315,32 @@ function DemandModuleFT2Inner({ data, isLoading, isError, currency }: DemandModu
               </Typography>
             ))}
           </Box>
+
+          {/* Warehouse occupancy snapshot — heatmap mini grid */}
+          {gridLocations && gridLocations.length > 0 && (
+            <Box sx={{ mb: 3, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                  Warehouse occupancy
+                </Typography>
+                {gridOccupancy && (
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                    {Object.values(gridOccupancy).filter(o => o.on_hand_quantity > 0).length} bins with stock
+                    {' · '}
+                    {gridLocations.filter(l => l.type === 'bin').length - Object.values(gridOccupancy).filter(o => o.on_hand_quantity > 0).length} empty
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ overflowX: 'auto' }}>
+                <WarehouseGrid
+                  locations={gridLocations}
+                  occupancy={gridOccupancy}
+                  mode="heatmap"
+                  variant="mini"
+                />
+              </Box>
+            </Box>
+          )}
 
           {/* Action items (critical + warning) */}
           {actionVariants.length === 0 ? (

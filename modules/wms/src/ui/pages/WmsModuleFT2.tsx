@@ -24,8 +24,8 @@ import PackSessionPage, {
 import ReceiveSessionPage, {
   type ReceiveJobLine,
 } from './ReceiveSessionPage.js';
-import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
-import { type } from 'os';
+import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
+import type { WarehouseLocation } from '@lasyncro/shared/ui';
 
 /**
  * WMS MODULE — FT2 SURFACE
@@ -78,6 +78,7 @@ export type WmsModuleFT2Props = {
   data: WmsData;
   isLoading: boolean;
   isError: boolean;
+  gridLocations?: WarehouseLocation[];
 
   onCreateReceiveJob?: (poId: string) => Promise<{ receive_job_id: string }>;
   onFetchReceiveJob?: (jobId: string) => Promise<{ job: { po_id: string; supplier_name: string }; lines: ReceiveJobLine[] }>;
@@ -132,16 +133,37 @@ const BatchCard = memo(function BatchCard({
   onContinuePick,
   onClaimPack,
   onContinuePack,
+  gridLocations,
+  onFetchLineItems,
 }: {
   batch: WmsBatch;
   onClaim: (batchId: string) => void;
   onContinuePick: (batchId: string) => void;
   onClaimPack: (batchId: string) => void;
   onContinuePack: (batchId: string) => void;
+  gridLocations?: WarehouseLocation[];
+  onFetchLineItems?: (batchId: string) => Promise<{ location_code: string }[]>;
 }) {
   const theme = useTheme();
   const status = STATUS_LABELS[batch.status] ?? { label: batch.status, color: 'default' as const };
   const releasedAt = new Date(batch.released_at).toLocaleTimeString();
+  const [mapOpen, setMapOpen] = useState(false);
+  const [pickLocations, setPickLocations] = useState<string[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+
+  const handleToggleMap = async () => {
+    if (mapOpen) { setMapOpen(false); return; }
+    if (!onFetchLineItems || !gridLocations?.length) { setMapOpen(true); return; }
+    setMapLoading(true);
+    try {
+      const items = await onFetchLineItems(batch.pick_batch_id);
+      const codes = [...new Set(
+        items.map((i) => i.location_code).filter(Boolean)
+      )].sort() as string[];
+      setPickLocations(codes);
+    } catch { /* silent — grid renders with empty highlight */ }
+    finally { setMapLoading(false); setMapOpen(true); }
+  };
 
   const pickProgress = batch.total_units > 0
     ? Math.round((batch.units_picked / batch.total_units) * 100)
@@ -187,6 +209,40 @@ const BatchCard = memo(function BatchCard({
           </Typography>
         </Box>
       </Box>
+
+      {/* MAP TOGGLE */}
+      {gridLocations && gridLocations.length > 0 && (
+        <Box
+          onClick={handleToggleMap}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 0.75,
+            mb: 1.5, cursor: 'pointer', width: 'fit-content',
+            fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+            '&:hover': { textDecoration: 'underline' },
+          }}
+        >
+          {mapLoading ? <CircularProgress size={11} /> : null}
+          {mapOpen ? 'Hide map' : 'Show pick map'}
+        </Box>
+      )}
+
+      {/* PICK MAP — mini grid with pick path */}
+      {mapOpen && gridLocations && (
+        <Box sx={{ mb: 2, border: '1px solid var(--rule)', borderRadius: 1, p: 1, bgcolor: 'var(--bg-2)', overflowX: 'auto' }}>
+          <WarehouseGrid
+            locations={gridLocations}
+            highlightedBins={pickLocations}
+            pickPath={pickLocations}
+            mode="pick"
+            variant="mini"
+          />
+          {pickLocations.length > 0 && (
+            <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', mt: 0.5, letterSpacing: '0.06em' }}>
+              Pick route: {pickLocations.join(' → ')}
+            </Typography>
+          )}
+        </Box>
+      )}
 
       {/* PICK PROGRESS */}
       {batch.status === 'picking' && (
@@ -369,6 +425,7 @@ function WmsModuleFT2Inner({
   stowTasks,
   onClaimStowTask,
   onConfirmStow,
+  gridLocations,
 }: WmsModuleFT2Props) {
   const [activeSession, setActiveSession] = useState<ActiveSession>(null);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -512,6 +569,8 @@ function WmsModuleFT2Inner({
           onContinuePick={(id) => void enterPickSession(id, false)}
           onClaimPack={(id) => void enterPackSession(id, true)}
           onContinuePack={(id) => void enterPackSession(id, false)}
+          gridLocations={gridLocations}
+          onFetchLineItems={onFetchLineItems}
         />
       ))}
 

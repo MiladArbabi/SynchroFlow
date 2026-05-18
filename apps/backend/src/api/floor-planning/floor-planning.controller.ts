@@ -282,3 +282,136 @@ export async function httpGetBinLog(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to fetch bin log' });
   }
 }
+
+/**
+ * GET /api/v1/floor-planning/bin/:locationCode/stats
+ * ---------------------------------------------------
+ * Returns pick activity stats for a bin:
+ *   picks_7d     — confirmed pick scans at this location in last 7 days
+ *   last_pick_at — timestamp of most recent pick scan
+ *   last_pick_by — operator name of most recent pick
+ *
+ * Source: pick_scan_log (immutable, tenant-scoped).
+ * Used by: bin detail panel (picks 7D, last pick fields).
+ *
+ * TRACEABILITY SPRINT: extend with stow_tasks for last stow signal.
+ */
+export async function httpGetBinStats(req: Request, res: Response) {
+  const shopId       = req.user?.shopId;
+  const locationCode = req.params.locationCode;
+
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!locationCode) return res.status(400).json({ error: 'locationCode required' });
+
+  try {
+    const stats = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const [picks7d, lastPick] = await Promise.all([
+        // Picks in last 7 days at this location
+        trx('pick_scan_log')
+          .where({ shop_id: shopId, location_code: locationCode, status: 'confirmed' })
+          .where('scanned_at', '>=', since7d)
+          .count('scan_id as count')
+          .first(),
+
+        // Most recent pick at this location
+        trx('pick_scan_log as psl')
+          .where({ 'psl.shop_id': shopId, 'psl.location_code': locationCode })
+          .leftJoin('users as u', 'u.id', 'psl.scanned_by')
+          .orderBy('psl.scanned_at', 'desc')
+          .first()
+          .select(
+            'psl.scanned_at as last_pick_at',
+            trx.raw(`TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) as last_pick_by`)
+          ),
+      ]);
+
+      return {
+        picks_7d:     Number(picks7d?.count ?? 0),
+        last_pick_at: lastPick?.last_pick_at ?? null,
+        last_pick_by: lastPick?.last_pick_by || null,
+      };
+    });
+
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const since7d  = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000);
+      const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      const [picks7d, lastPick, reorderSignals] = await Promise.all([
+        trx('pick_scan_log')
+          .where({ shop_id: shopId, location_code: locationCode, status: 'confirmed' })
+          .where('scanned_at', '>=', since7d)
+          .count('scan_id as count')
+          .first(),
+
+        trx('pick_scan_log as psl')
+          .where({ 'psl.shop_id': shopId, 'psl.location_code': locationCode })
+          .leftJoin('users as u', 'u.id', 'psl.scanned_by')
+          .orderBy('psl.scanned_at', 'desc')
+          .first()
+          .select(
+            'psl.scanned_at as last_pick_at',
+            trx.raw(`TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) as last_pick_by`)
+          ),
+
+        /**
+         * Reorder signal per variant at this bin:
+         * days_of_stock = available_quantity / velocity_per_day (30d)
+         * velocity_per_day = units_sold_30d / 30
+         * Null if no sales velocity.
+         */
+        trx('inventory_truth as it')
+          .where({ 'it.shop_id': shopId, 'it.location_code': locationCode })
+          .where('it.available_quantity', '>', 0)
+          .leftJoin(
+            trx('order_revenue_units as oru')
+              .where('oru.shop_id', shopId)
+              .where('oru.created_at', '>=', since30d)
+              .groupBy('oru.lasyncro_variant_id')
+              .select(
+                'oru.lasyncro_variant_id',
+                trx.raw('SUM(oru.quantity) as units_sold_30d')
+              )
+              .as('vel'),
+            'vel.lasyncro_variant_id',
+            'it.lasyncro_variant_id'
+          )
+          .select(
+            'it.lasyncro_variant_id',
+            'it.available_quantity',
+            trx.raw('COALESCE(vel.units_sold_30d, 0) as units_sold_30d'),
+            trx.raw(`
+              CASE
+                WHEN COALESCE(vel.units_sold_30d, 0) > 0
+                THEN ROUND(it.available_quantity / (COALESCE(vel.units_sold_30d, 0)::float / 30))
+                ELSE NULL
+              END as days_of_stock
+            `)
+          ),
+      ]);
+
+      // Aggregate reorder signal: take the minimum days_of_stock across all variants in this bin
+      const minDaysOfStock = reorderSignals
+        .map((r: any) => r.days_of_stock !== null ? Number(r.days_of_stock) : null)
+        .filter((d: number | null) => d !== null)
+        .reduce((min: number | null, d: number) => min === null || d < min ? d : min, null);
+
+      return {
+        picks_7d:        Number(picks7d?.count ?? 0),
+        last_pick_at:    lastPick?.last_pick_at ?? null,
+        last_pick_by:    lastPick?.last_pick_by || null,
+        reorder_in_days: minDaysOfStock,
+      };
+    });
+
+    return res.json({ location_code: locationCode, ...result });
+  } catch (err) {
+    console.error('[floor-planning] httpGetBinStats failed', err);
+    return res.status(500).json({ error: 'Failed to fetch bin stats' });
+  }
+}

@@ -1,5 +1,5 @@
 // modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -22,7 +22,7 @@ import {
 } from '@mui/material';
 import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton, WarehouseGrid } from '@lasyncro/shared/ui';
-import type { WarehouseLocation, BinOccupancy, BinLogResponse } from '@lasyncro/shared/ui';
+import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
 
@@ -78,6 +78,8 @@ export type FloorPlanningPageProps = {
   binLog?: BinLogResponse;
   isBinLogLoading?: boolean;
   onBinLogOpen?: (locationCode: string) => void;
+  binStats?: BinStats;
+  onBinSelect?: (locationCode: string) => void;
 };
 
 const TYPE_LABELS: Record<LocationType, {
@@ -469,12 +471,49 @@ function FloorPlanningModuleFT2Inner({
   binLog,
   isBinLogLoading,
   onBinLogOpen,
+  binStats,
+  onBinSelect,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
   const productBarcodes = data?.product_barcodes ?? [];
   const [tab, setTab] = useState<'map' | 'setup' | 'barcodes'>('map');
   const [selectedBin, setSelectedBin] = useState<string | undefined>();
-  const handleBinSelect = useCallback((lc: string) => setSelectedBin((p) => p === lc ? undefined : lc), []);
+  type OverlayId = 'occupancy' | 'stockout' | 'empty' | 'none';
+  const [overlay, setOverlay]         = useState<OverlayId>('occupancy');
+  const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['bin', 'lane', 'warehouse']));
+
+  // Derive grid props from overlay selection
+  const overlayGridMode = overlay === 'none' ? 'map' : overlay === 'stockout' || overlay === 'empty' ? 'focus' : 'heatmap';
+  const overlayFocusedBins = useMemo(() => {
+    if (overlay === 'empty') {
+      return (gridLocations ?? [])
+        .filter(l => l.type === 'bin' && ((gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0) === 0))
+        .map(l => l.location_code);
+    }
+    if (overlay === 'stockout') {
+      // Bins with stock but critically low — on_hand_quantity > 0 but <= 3 units
+      return (gridLocations ?? [])
+        .filter(l => l.type === 'bin') 
+        .filter(l => {
+          const qty = gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0;
+          return qty > 0 && qty <= 3;
+        })
+        .map(l => l.location_code);
+    }
+    return undefined;
+  }, [overlay, gridLocations, gridOccupancy]);
+
+  const filteredGridLocations = useMemo(() =>
+    (gridLocations ?? []).filter(l => zoneFilters.has(l.type)),
+    [gridLocations, zoneFilters]
+  );
+  const handleBinSelect = useCallback((lc: string) => {
+    setSelectedBin((p) => {
+      const next = p === lc ? undefined : lc;
+      onBinSelect?.(next ?? '');
+      return next;
+    });
+  }, [onBinSelect]);
   const [logOpen, setLogOpen] = useState(false);
   const binCount      = (gridLocations ?? []).filter((l) => l.type === 'bin').length;
   const setupCount    = zones.length;
@@ -548,6 +587,94 @@ function FloorPlanningModuleFT2Inner({
           {isGridLoading && <ModuleLoadingSkeleton />}
           {!isGridLoading && (
             <Box sx={{ display: 'flex', gap: 2, flex: 1, position: 'relative', overflow: 'hidden' }}>
+              {/* ── LEFT FILTER RAIL ─────────────────────────────── */}
+              <Box sx={{ width: 180, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                {/* VIEW OVERLAY */}
+                <Box>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                    View Overlay
+                  </Typography>
+                  {([
+                    { id: 'occupancy',    label: 'Occupancy',     sub: 'How full each bin is.' },
+                    { id: 'stockout',     label: 'Stock-out risk', sub: 'Bins below reorder.' },
+                    { id: 'empty',        label: 'Empty bins',     sub: 'Available capacity.' },
+                    { id: 'none',         label: 'No overlay',     sub: 'Just the layout.' },
+                  ] as const).map((o) => (
+                    <Box
+                      key={o.id}
+                      onClick={() => setOverlay(o.id)}
+                      sx={{
+                        px: 1.5, py: 1, mb: 0.5, borderRadius: 1.5, cursor: 'pointer',
+                        bgcolor: overlay === o.id ? 'var(--accent-ghost)' : 'transparent',
+                        border: '1px solid',
+                        borderColor: overlay === o.id ? 'var(--accent-border)' : 'transparent',
+                        transition: 'all 0.12s',
+                        '&:hover': { bgcolor: 'var(--bg-2)' },
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12, fontWeight: overlay === o.id ? 700 : 500, color: overlay === o.id ? 'var(--accent)' : 'var(--ink)' }}>
+                        {o.label}
+                      </Typography>
+                      <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', lineHeight: 1.3 }}>
+                        {o.sub}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+
+                <Divider />
+
+                {/* ZONE FILTERS */}
+                <Box>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                    Filter
+                  </Typography>
+                  {(['bin', 'lane', 'warehouse'] as const).map((type) => {
+                    const count = (gridLocations ?? []).filter(l => l.type === type).length;
+                    const active = zoneFilters.has(type);
+                    return (
+                      <Box
+                        key={type}
+                        onClick={() => setZoneFilters(prev => {
+                          const next = new Set(prev);
+                          next.has(type) ? next.delete(type) : next.add(type);
+                          return next;
+                        })}
+                        sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, cursor: 'pointer' }}
+                      >
+                        <Box sx={{
+                          width: 14, height: 14, borderRadius: 0.5, flexShrink: 0,
+                          border: '1.5px solid', borderColor: active ? 'var(--accent)' : 'var(--rule)',
+                          bgcolor: active ? 'var(--accent)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {active && <Box sx={{ width: 7, height: 7, bgcolor: '#fff', borderRadius: 0.25 }} />}
+                        </Box>
+                        <Typography sx={{ fontSize: 12, color: 'var(--ink-2)', textTransform: 'capitalize' }}>
+                          {type}s
+                        </Typography>
+                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', ml: 'auto' }}>
+                          {count}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+
+                <Divider />
+
+                {/* SURFACED TODAY — Phase 2c */}
+                <Box>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                    Surfaced Today
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontStyle: 'italic' }}>
+                    Live signals in Phase 2c
+                  </Typography>
+                </Box>
+              </Box>
+              {/* ── END FILTER RAIL ──────────────────────────────── */}
+
               <Box sx={{ flex: 1, overflowX: 'auto' }}>
               {/* Map toolbar — bin count + active overlay label + controls */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, px: 0.5 }}>
@@ -558,7 +685,7 @@ function FloorPlanningModuleFT2Inner({
                   </Typography>
                   {' · overlay: '}
                   <Typography component="span" sx={{ fontSize: 12, fontStyle: 'italic', color: 'var(--accent)' }}>
-                    occupancy
+                    {overlay}
                   </Typography>
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -575,9 +702,10 @@ function FloorPlanningModuleFT2Inner({
                 </Box>
               </Box>
               <WarehouseGrid
-                  locations={gridLocations ?? []}
-                  occupancy={gridOccupancy}
-                  mode="map"
+                  locations={filteredGridLocations}
+                  occupancy={overlay === 'none' ? undefined : gridOccupancy}
+                  focusedBins={overlayFocusedBins}
+                  mode={overlayGridMode}
                   variant="full"
                   onBinSelect={handleBinSelect}
                 />
@@ -663,17 +791,37 @@ function FloorPlanningModuleFT2Inner({
 
                     <Divider />
 
-                    {/* Phase 2 — picks 7D, last pick, reorder, tote */}
+                    {/* Pick stats — live from pick_scan_log */}
                     <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
                       {[
-                        { label: 'PICKS · 7D',  value: '—' },
-                        { label: 'LAST PICK',   value: '—' },
-                        { label: 'REORDER IN',  value: '—' },
-                        { label: 'TOTE',        value: '—' },
+                        {
+                          label: 'PICKS · 7D',
+                          value: binStats?.location_code === selectedBin
+                            ? String(binStats.picks_7d)
+                            : '—',
+                        },
+                        {
+                          label: 'LAST PICK',
+                          value: binStats?.location_code === selectedBin && binStats.last_pick_at
+                            ? (() => {
+                                const diff = Date.now() - new Date(binStats.last_pick_at).getTime();
+                                const h = Math.floor(diff / 3600000);
+                                const d = Math.floor(diff / 86400000);
+                                return h < 24 ? `${h}h ago` : `${d}d ago`;
+                              })()
+                            : '—',
+                        },
+                        {
+                          label: 'REORDER IN',
+                          value: binStats?.location_code === selectedBin && binStats.reorder_in_days !== null
+                            ? `${binStats.reorder_in_days}d`
+                            : '—',
+                        },
+                        { label: 'TOTE', value: '—' }, // Phase 3 — requires tote container data model
                       ].map(({ label, value }) => (
                         <Box key={label} sx={{ p: 1, bgcolor: 'var(--bg-2)', borderRadius: 1 }}>
                           <Typography sx={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.25 }}>{label}</Typography>
-                          <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
+                          <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
                         </Box>
                       ))}
                     </Box>

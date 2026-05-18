@@ -16,6 +16,7 @@ import type {
   PackOrder,
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
+import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useSearchParams } from 'react-router-dom';
 import PlanGate from '../../components/PlanGate';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -32,6 +33,7 @@ import { ModuleTabBar } from '../../components/ModuleTabBar';
 export default function WmsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data, isLoading, isError, refetch, stowTasks } = useWms();
+  const { data: gridData } = useWarehouseGrid();
 
   const { user } = useAuth();
   const userRole = user?.role ?? 'operator';
@@ -263,6 +265,7 @@ export default function WmsPage() {
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
       onRefresh={refetch}
+      gridLocations={gridData?.locations}
       isOnline={isOnline}
       queuedCount={queuedCount}
       stowTasks={stowTasks}
