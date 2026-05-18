@@ -110,6 +110,20 @@ apps/frontend/src/pages/floor-planning/useWarehouseGrid.ts
 
 ---
 
+## Phase 1 — Shipped (May 2026)
+
+- ✅ `WarehouseGrid` component — `full/mini/inline` variants, `map/heatmap/focus/pick` modes
+- ✅ `GET /api/v1/floor-planning/grid` — bin layout endpoint
+- ✅ `GET /api/v1/floor-planning/grid/occupancy` — per-bin stock endpoint
+- ✅ Floor Planning page — Map / Setup / Barcodes tabs
+- ✅ Per-tab serif headers matching Overview/Orders pattern
+- ✅ Map tab — toolbar, legend bar, dynamic subline, bin detail panel
+- ✅ Barcodes tab — Locations + Products sub-tabs, stat row, filter pills, dynamic subline
+- ✅ Tab count badges (bin count / zone count / barcoded count)
+- ✅ All tokens aligned to design system (CSS vars + `theme.palette.*`)
+
+---
+
 ## Phase 2 Engineer Checklist
 
 - [ ] Implement `PickPathOverlay.tsx` — SVG polyline connecting bins in `pickPath` order

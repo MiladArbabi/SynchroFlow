@@ -62,7 +62,7 @@ export function AisleColumn({
           fontSize: 10,
           fontWeight: 500,
           textTransform: 'uppercase' as const,
-          letterSpacing: 1,
+          letterSpacing: '0.08em',
           mb: 0.5,
           userSelect: 'none',
         }}

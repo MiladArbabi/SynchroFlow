@@ -68,3 +68,22 @@ export interface WarehouseGridProps {
   variant?: GridVariant;
   renderer?: GridRenderer;
 }
+
+/** Bin activity log — returned by GET /floor-planning/bin/:locationCode/log */
+export interface BinLogEvent {
+  id: string;
+  movement_type: string;
+  quantity_delta: number;
+  event_at: string;
+  triggered_by: string | null;
+  reference_type: string | null;
+  reference_id: string | null;
+  sku: string | null;
+  operator_name: string | null;
+  event_source: 'movement' | 'pick_scan';
+}
+
+export interface BinLogResponse {
+  location_code: string;
+  events: BinLogEvent[];
+}

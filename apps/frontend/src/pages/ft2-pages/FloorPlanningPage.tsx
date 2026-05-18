@@ -2,6 +2,8 @@
 import { FloorPlanningModuleFT2 } from '@lasyncro/floor-planning';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGrid, useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
+import { useBinLog } from '../floor-planning/useBinLog';
+import { useState } from 'react';
 
 /**
  * FLOOR PLANNING GATE PAGE
@@ -14,9 +16,11 @@ import { useWarehouseGrid, useWarehouseGridOccupancy } from '../floor-planning/u
  * All HTTP calls live here — FloorPlanningModuleFT2 module stays decoupled.
  */
 export default function FloorPlanningPage() {
+  const [activeBinLog, setActiveBinLog] = useState<string | undefined>();
   const { data, isLoading, isError, refetch } = useFloorPlanning();
   const { data: gridData, isLoading: isGridLoading } = useWarehouseGrid();
   const { data: occupancyData } = useWarehouseGridOccupancy(!isGridLoading);
+  const { data: binLogData, isLoading: isBinLogLoading } = useBinLog(activeBinLog);
 
   return (
     <FloorPlanningModuleFT2
@@ -27,6 +31,9 @@ export default function FloorPlanningPage() {
       gridLocations={gridData?.locations}
       gridOccupancy={occupancyData?.occupancy}
       isGridLoading={isGridLoading}
+      binLog={binLogData}
+      isBinLogLoading={isBinLogLoading}
+      onBinLogOpen={setActiveBinLog}
     />
   );
 }

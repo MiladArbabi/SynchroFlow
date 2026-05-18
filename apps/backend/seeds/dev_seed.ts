@@ -210,12 +210,29 @@ export async function seed(knex: Knex): Promise<void> {
     // ── WAREHOUSE LOCATIONS ──────────────────────────────────────────────────
     // Seed minimal bin locations for dev stow testing.
    const locationRows = [
-      { location_code: `WH-${shop.id}-ROOT`, barcode: null, type: 'warehouse' },
-      { location_code: `WH-${shop.id}-A01`, barcode: `LOC-A01`, type: 'bin' },
-      { location_code: `WH-${shop.id}-A02`, barcode: `LOC-A02`, type: 'bin' },
-      { location_code: `WH-${shop.id}-B01`, barcode: `LOC-B01`, type: 'bin' },
-      { location_code: `WH-${shop.id}-B02`, barcode: `LOC-B02`, type: 'bin' },
-      { location_code: `WH-${shop.id}-PROBLEM`, barcode: `LOC-PROBLEM`, type: 'bin' },
+      // Warehouse root
+      { location_code: 'WH-1-ROOT', barcode: null,          type: 'warehouse',  parent_location_code: null },
+      // Aisles (lane type)
+      { location_code: 'A',         barcode: null,          type: 'lane',       parent_location_code: 'WH-1-ROOT' },
+      { location_code: 'B',         barcode: null,          type: 'lane',       parent_location_code: 'WH-1-ROOT' },
+      { location_code: 'C',         barcode: null,          type: 'lane',       parent_location_code: 'WH-1-ROOT' },
+      // Aisle A bins
+      { location_code: 'A-1',       barcode: 'LOC-A-1',    type: 'bin',        parent_location_code: 'A' },
+      { location_code: 'A-2',       barcode: 'LOC-A-2',    type: 'bin',        parent_location_code: 'A' },
+      { location_code: 'A-3',       barcode: 'LOC-A-3',    type: 'bin',        parent_location_code: 'A' },
+      { location_code: 'A-4',       barcode: 'LOC-A-4',    type: 'bin',        parent_location_code: 'A' },
+      // Aisle B bins
+      { location_code: 'B-1',       barcode: 'LOC-B-1',    type: 'bin',        parent_location_code: 'B' },
+      { location_code: 'B-2',       barcode: 'LOC-B-2',    type: 'bin',        parent_location_code: 'B' },
+      { location_code: 'B-3',       barcode: 'LOC-B-3',    type: 'bin',        parent_location_code: 'B' },
+      { location_code: 'B-4',       barcode: 'LOC-B-4',    type: 'bin',        parent_location_code: 'B' },
+      // Aisle C bins
+      { location_code: 'C-1',       barcode: 'LOC-C-1',    type: 'bin',        parent_location_code: 'C' },
+      { location_code: 'C-2',       barcode: 'LOC-C-2',    type: 'bin',        parent_location_code: 'C' },
+      { location_code: 'C-3',       barcode: 'LOC-C-3',    type: 'bin',        parent_location_code: 'C' },
+      { location_code: 'C-4',       barcode: 'LOC-C-4',    type: 'bin',        parent_location_code: 'C' },
+      // Problem bin (WMS settings reference)
+      { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM', type: 'bin',       parent_location_code: 'A' },
     ];
 
     for (const loc of locationRows) {
@@ -225,12 +242,12 @@ export async function seed(knex: Knex): Promise<void> {
         .ignore();
     }
 
-    console.log('[DEV_SEED] ✅ Warehouse locations seeded (ROOT + 4 bins)');
+    console.log('[DEV_SEED] ✅ Warehouse locations seeded (ROOT + 3 aisles + 12 bins + PROBLEM)');
 
     // Seed problem bin location in WMS settings
     await trx('shop_wms_settings')
       .where({ shop_id: shop.id })
-      .update({ problem_bin_location: `WH-${shop.id}-PROBLEM` });
+      .update({ problem_bin_location: 'PROBLEM' });
 
     // ── QA OPERATIONAL DATA ──────────────────────────────────────────────────
     // Seeds a complete end-to-end flow for QA:

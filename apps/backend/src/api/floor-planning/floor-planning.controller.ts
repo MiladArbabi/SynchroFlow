@@ -203,3 +203,82 @@ export async function httpGetBinOccupancy(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to fetch bin occupancy' });
   }
 }
+
+/**
+ * GET /api/v1/floor-planning/bin/:locationCode/log
+ * -------------------------------------------------
+ * Returns a merged activity timeline for a specific bin location.
+ * Sources:
+ *   - inventory_movements — all stock deltas at this location
+ *   - pick_scan_log       — all pick scans at this location (with operator)
+ *
+ * Merged and sorted by occurred_at DESC, last 50 events.
+ *
+ * operator_id/triggered_by are nullable — populated by traceability sprint
+ * writers update. NULL = pre-traceability or system-driven movement.
+ *
+ * TRACEABILITY SPRINT: wire operator_id into writers listed in 0107 migration.
+ */
+export async function httpGetBinLog(req: Request, res: Response) {
+  const shopId       = req.user?.shopId;
+  const locationCode = req.params.locationCode;
+
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!locationCode) return res.status(400).json({ error: 'locationCode required' });
+
+  try {
+    const events = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Stock movements at this bin
+      const movements = await trx('inventory_movements as im')
+        .where({ 'im.shop_id': shopId, 'im.location_code': locationCode })
+        .leftJoin('variants as v', 'v.lasyncro_variant_id', 'im.lasyncro_variant_id')
+        .leftJoin('users as u', 'u.id', 'im.operator_id')
+        .orderBy('im.occurred_at', 'desc')
+        .limit(50)
+        .select(
+          'im.lasyncro_inventory_movement_id as id',
+          'im.movement_type',
+          'im.quantity_delta',
+          'im.occurred_at as event_at',
+          'im.triggered_by',
+          'im.reference_type',
+          'im.reference_id',
+          'v.sku',
+          trx.raw(`u.first_name || ' ' || u.last_name as operator_name`),
+          trx.raw(`'movement' as event_source`)
+        );
+
+      // Pick scans at this bin
+      const picks = await trx('pick_scan_log as psl')
+        .where({ 'psl.shop_id': shopId, 'psl.location_code': locationCode })
+        .leftJoin('variants as v', 'v.lasyncro_variant_id', 'psl.lasyncro_variant_id')
+        .leftJoin('users as u', 'u.id', 'psl.scanned_by')
+        .orderBy('psl.scanned_at', 'desc')
+        .limit(50)
+        .select(
+          'psl.scan_id as id',
+          trx.raw(`'pick_scan' as movement_type`),
+          trx.raw(`-psl.quantity_confirmed as quantity_delta`),
+          'psl.scanned_at as event_at',
+          trx.raw(`'pick_scan' as triggered_by`),
+          trx.raw(`'pick_batch' as reference_type`),
+          'psl.pick_batch_id as reference_id',
+          'v.sku',
+          trx.raw(`u.first_name || ' ' || u.last_name as operator_name`),
+          trx.raw(`'pick_scan' as event_source`)
+        );
+
+      // Merge + sort by event_at DESC, cap at 50
+      return [...movements, ...picks]
+        .sort((a, b) => new Date(b.event_at).getTime() - new Date(a.event_at).getTime())
+        .slice(0, 50);
+    });
+
+    return res.json({ location_code: locationCode, events });
+  } catch (err) {
+    console.error('[floor-planning] httpGetBinLog failed', err);
+    return res.status(500).json({ error: 'Failed to fetch bin log' });
+  }
+}

@@ -7,12 +7,16 @@
     "build": "rm -f tsconfig.tsbuildinfo && rm -rf dist && tsc -b tsconfig.json"
   },
   "dependencies": {
-    "@lasyncro/ui-ft2": "0.1.0"
+    "@lasyncro/ui-ft2": "0.1.0",
+    "jsbarcode": "^3.12.3"
   },
   "exports": {
     ".": {
       "types": "./dist/ui/index.d.ts",
       "default": "./dist/ui/index.js"
     }
+  },
+  "devDependencies": {
+    "@types/jsbarcode": "^3.11.4"
   }
 }
