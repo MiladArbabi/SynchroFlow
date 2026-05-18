@@ -11,12 +11,28 @@
 
 export type WarehouseLocationType = 'warehouse' | 'lane' | 'shelf' | 'bin';
 
+export type WarehouseZoneType =
+  | 'pick' | 'pack' | 'receive' | 'ship'
+  | 'returns' | 'quarantine' | 'kitting' | 'storage';
+
 export interface WarehouseLocation {
   location_code: string;
   type: WarehouseLocationType;
   parent_location_code: string | null;
   barcode: string | null;
   active: boolean;
+  /** Floor canvas coordinates (metres from top-left origin). Null = not yet positioned. */
+  position_x: number | null;
+  position_y: number | null;
+  /** Physical dimensions in metres */
+  width: number | null;
+  depth: number | null;
+  /** Rotation: 0=north, 90=east, 180=south, 270=west */
+  orientation: number;
+  /** Vertical shelf levels — drives 3D rack height */
+  rack_levels: number | null;
+  /** Operational zone — drives colour coding */
+  zone_type: WarehouseZoneType | null;
 }
 
 export interface BinOccupancy {

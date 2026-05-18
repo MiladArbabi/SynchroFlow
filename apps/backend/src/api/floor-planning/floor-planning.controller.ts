@@ -32,8 +32,14 @@ export async function httpGetLayout(req: Request, res: Response) {
           'parent_location_code',
           'active',
           trx.raw(`0 as children_count`),
-            /* Location barcodes stored on warehouse_locations.barcode (migration 0048). */
-          'barcode'
+          'barcode',
+          'position_x',
+          'position_y',
+          'width',
+          'depth',
+          'orientation',
+          'rack_levels',
+          'zone_type'
         );
 
       const productBarcodes = await trx('variants as v')
@@ -128,7 +134,14 @@ export async function httpGetGrid(req: Request, res: Response) {
           'type',
           'parent_location_code',
           'barcode',
-          'active'
+          'active',
+          'position_x',
+          'position_y',
+          'width',
+          'depth',
+          'orientation',
+          'rack_levels',
+          'zone_type'
         );
     });
 
@@ -457,7 +470,19 @@ export async function httpCreateZone(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { location_code, type, parent_location_code, barcode } = req.body;
+  const { 
+    location_code, 
+    type, 
+    parent_location_code, 
+    barcode, 
+    position_x, 
+    position_y, 
+    width, 
+    depth, 
+    orientation, 
+    rack_levels, 
+    zone_type 
+  } = req.body;
 
   if (!location_code || typeof location_code !== 'string' || !location_code.trim()) {
     return res.status(400).json({ error: 'location_code is required' });
@@ -487,6 +512,13 @@ export async function httpCreateZone(req: Request, res: Response) {
         parent_location_code: parent_location_code?.trim() ?? null,
         barcode: barcode?.trim() ?? null,
         active: true,
+        position_x: position_x ?? null,
+        position_y: position_y ?? null,
+        width: width ?? null,
+        depth: depth ?? null,
+        orientation: orientation ?? 0,
+        rack_levels: rack_levels ?? null,
+        zone_type: zone_type ?? 'storage',
       });
     });
 
@@ -517,16 +549,34 @@ export async function httpUpdateZone(req: Request, res: Response) {
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
   const locationCode = req.params.locationCode;
-  const { active, barcode, parent_location_code } = req.body;
+  const { 
+    active, 
+    barcode, 
+    parent_location_code, 
+    position_x, 
+    position_y, 
+    width, 
+    depth, 
+    orientation, 
+    rack_levels, 
+    zone_type 
+  } = req.body;
 
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       const updates: Record<string, unknown> = { updated_at: new Date() };
-      if (active !== undefined) updates.active = active;
-      if (barcode !== undefined) updates.barcode = barcode?.trim() ?? null;
+      if (active !== undefined)               updates.active = active;
+      if (barcode !== undefined)              updates.barcode = barcode?.trim() ?? null;
       if (parent_location_code !== undefined) updates.parent_location_code = parent_location_code?.trim() ?? null;
+      if (position_x !== undefined)           updates.position_x = position_x ?? null;
+      if (position_y !== undefined)           updates.position_y = position_y ?? null;
+      if (width !== undefined)                updates.width = width ?? null;
+      if (depth !== undefined)                updates.depth = depth ?? null;
+      if (orientation !== undefined)          updates.orientation = orientation ?? 0;
+      if (rack_levels !== undefined)          updates.rack_levels = rack_levels ?? null;
+      if (zone_type !== undefined)            updates.zone_type = zone_type ?? null;
 
       const updated = await trx('warehouse_locations')
         .where({ shop_id: shopId, location_code: locationCode })

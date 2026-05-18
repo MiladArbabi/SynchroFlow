@@ -56,6 +56,13 @@ export type WarehouseZone = {
   barcode: string | null;
   active: boolean;
   children_count: number;
+  position_x: number | null;
+  position_y: number | null;
+  width: number | null;
+  depth: number | null;
+  orientation: number;
+  rack_levels: number | null;
+  zone_type: string | null;
 };
 
 export type ProductBarcode = {
