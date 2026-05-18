@@ -80,6 +80,7 @@ export type FloorPlanningPageProps = {
   onBinLogOpen?: (locationCode: string) => void;
   binStats?: BinStats;
   onBinSelect?: (locationCode: string) => void;
+  variantFocusBins?: string[];
 };
 
 const TYPE_LABELS: Record<LocationType, {
@@ -473,6 +474,7 @@ function FloorPlanningModuleFT2Inner({
   onBinLogOpen,
   binStats,
   onBinSelect,
+  variantFocusBins,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
   const productBarcodes = data?.product_barcodes ?? [];
@@ -704,7 +706,7 @@ function FloorPlanningModuleFT2Inner({
               <WarehouseGrid
                   locations={filteredGridLocations}
                   occupancy={overlay === 'none' ? undefined : gridOccupancy}
-                  focusedBins={overlayFocusedBins}
+                  focusedBins={variantFocusBins ?? overlayFocusedBins}
                   mode={overlayGridMode}
                   variant="full"
                   onBinSelect={handleBinSelect}

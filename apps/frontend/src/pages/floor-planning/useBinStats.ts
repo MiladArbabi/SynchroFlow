@@ -1,12 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
-
-export interface BinStats {
-  location_code: string;
-  picks_7d: number;
-  last_pick_at: string | null;
-  last_pick_by: string | null;
-}
+export type { BinStats } from '@lasyncro/shared/ui';
+import type { BinStats } from '@lasyncro/shared/ui';
 
 /**
  * useBinStats — fetches pick activity stats for a selected bin.

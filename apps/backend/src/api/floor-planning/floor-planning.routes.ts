@@ -9,7 +9,8 @@ import {
   httpGetGrid, 
   httpGetBinOccupancy,
   httpGetBinLog,
-  httpGetBinStats
+  httpGetBinStats,
+  httpGetVariantBins
 } from './floor-planning.controller.js';
 
 /**
@@ -69,6 +70,14 @@ router.get(
   requireFt2,
   requireAction('floor-planning:read'),
   httpGetBinStats
+);
+
+router.get(
+  '/variant/:variantId/bins',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:read'),
+  httpGetVariantBins
 );
 
 export default router;

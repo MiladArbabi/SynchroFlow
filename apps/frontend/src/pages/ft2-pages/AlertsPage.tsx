@@ -70,6 +70,10 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
   };
 
   const deepLinkRoute = ALERT_TYPE_ROUTES[alert.alert_type];
+  const deepLinkWithEntity = deepLinkRoute && alert.entity_type === 'variant' && alert.entity_id
+    && (alert.alert_type === 'stockout_risk' || alert.alert_type === 'reorder_warning')
+    ? `${deepLinkRoute}?variantId=${alert.entity_id}`
+    : deepLinkRoute;
 
   const borderColor =
     alert.severity === 'critical'
@@ -133,7 +137,7 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
                 fontWeight: 600,
                 '&:hover': { textDecoration: 'underline' },
               }}
-              onClick={() => navigate(deepLinkRoute)}
+              onClick={() => navigate(deepLinkWithEntity ?? deepLinkRoute ?? '/')}
             >
               Go to {ALERT_TYPE_LABELS[alert.alert_type] ?? 'module'}
               <ArrowRight size={12} />

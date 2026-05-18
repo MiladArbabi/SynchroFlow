@@ -415,3 +415,31 @@ export async function httpGetBinStats(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to fetch bin stats' });
   }
 }
+
+/**
+ * GET /api/v1/floor-planning/variant/:variantId/bins
+ * ---------------------------------------------------
+ * Returns location_codes where this variant has stock.
+ * Used by: alert deep-links, future product detail page.
+ * Source: inventory_truth (available_quantity > 0).
+ */
+export async function httpGetVariantBins(req: Request, res: Response) {
+  const shopId    = req.user?.shopId;
+  const variantId = req.params.variantId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const rows = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('inventory_truth')
+        .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+        .where('available_quantity', '>', 0)
+        .orderBy('location_code', 'asc')
+        .select('location_code', 'available_quantity');
+    });
+    return res.json({ variant_id: variantId, bins: rows });
+  } catch (err) {
+    console.error('[floor-planning] httpGetVariantBins failed', err);
+    return res.status(500).json({ error: 'Failed to fetch variant bins' });
+  }
+}
